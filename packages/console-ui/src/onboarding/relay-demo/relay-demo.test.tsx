@@ -58,8 +58,12 @@ describe("RelayDemo", () => {
 
     const nodeRows = screen.getAllByTestId("relay-node-row");
     const messageRows = screen.getAllByTestId("relay-message-row");
+    expect(screen.getByTestId("relay-stage")).toHaveStyle({
+      gridAutoRows: "minmax(var(--relay-row-height), auto)",
+    });
     expect(nodeRows).toHaveLength(messageRows.length);
     nodeRows.forEach((nodeRow, index) => {
+      expect(nodeRow).toHaveClass("min-h-[var(--relay-row-height)]");
       expect(nodeRow.getAttribute("data-grid-row")).toBe(
         messageRows[index]?.getAttribute("data-grid-row"),
       );

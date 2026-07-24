@@ -276,6 +276,7 @@ function App() {
             subtitle={stepSubtitle(state.view, state.selectedTeam)}
             primaryLabel={state.view === 4 ? "开始使用" : "继续"}
             primaryDisabled={!canContinue(state) || teamBuilderOpen}
+            actionsHidden={teamBuilderOpen}
             onPrimary={continueJourney}
             secondary={
               state.view > 1 ? (
@@ -379,6 +380,7 @@ interface OnboardingShellProps {
   titleRef: React.RefObject<HTMLHeadingElement>;
   primaryLabel: string;
   primaryDisabled: boolean;
+  actionsHidden: boolean;
   onPrimary: () => void;
   secondary: ReactNode;
   children: ReactNode;
@@ -391,6 +393,7 @@ function OnboardingShell({
   titleRef,
   primaryLabel,
   primaryDisabled,
+  actionsHidden,
   onPrimary,
   secondary,
   children
@@ -409,43 +412,49 @@ function OnboardingShell({
       <PrototypeChrome />
 
       <section className="onboarding-stage">
-        <div className="stage-heading">
-          <motion.div
-            className="stage-kicker"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: reduceMotion ? 0 : 0.08 }}
-          >
-            第 {step} 步，共 4 步
-          </motion.div>
-          <h1 ref={titleRef} tabIndex={-1}>
-            {title}
-          </h1>
-          <p>{subtitle}</p>
-        </div>
+        <div className="onboarding-frame">
+          <div className="stage-heading">
+            <motion.div
+              className="stage-kicker"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: reduceMotion ? 0 : 0.08 }}
+            >
+              第 {step} 步，共 4 步
+            </motion.div>
+            <h1 ref={titleRef} tabIndex={-1}>
+              {title}
+            </h1>
+            <p>{subtitle}</p>
+          </div>
 
-        <div className="stage-content">
-          {children}
+          <div
+            className={[
+              "stage-content",
+              step === 3 || actionsHidden ? "stage-content--wide" : ""
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {children}
+          </div>
+
+          {actionsHidden ? null : (
+            <nav className="onboarding-actions" aria-label="引导步骤操作">
+              {secondary}
+              <PrototypeButton
+                ripple
+                onClick={onPrimary}
+                disabled={primaryDisabled}
+                data-testid="primary-action"
+              >
+                {primaryLabel}
+                <ArrowRight size={15} />
+              </PrototypeButton>
+            </nav>
+          )}
         </div>
       </section>
-
-      <footer className="onboarding-footer">
-        <div className="footer-inner">
-          <StepProgress current={step} />
-          <div className="footer-actions">
-            {secondary}
-            <PrototypeButton
-              ripple
-              onClick={onPrimary}
-              disabled={primaryDisabled}
-              data-testid="primary-action"
-            >
-              {primaryLabel}
-              <ArrowRight size={15} />
-            </PrototypeButton>
-          </div>
-        </div>
-      </footer>
     </motion.main>
   );
 }
@@ -464,27 +473,6 @@ function PrototypeChrome() {
       </div>
       <span className="prototype-label">首次启动</span>
     </header>
-  );
-}
-
-function StepProgress({ current }: { current: OnboardingStep }) {
-  return (
-    <div className="step-progress" aria-label={`第 ${current} 步，共 4 步`}>
-      <div className="step-dots" aria-hidden>
-        {[1, 2, 3, 4].map((step) => (
-          <span
-            key={step}
-            className={[
-              step < current ? "is-complete" : "",
-              step === current ? "is-current" : ""
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          />
-        ))}
-      </div>
-      <span className="step-count">{current} / 4</span>
-    </div>
   );
 }
 

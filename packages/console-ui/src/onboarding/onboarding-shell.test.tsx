@@ -95,6 +95,15 @@ describe("OnboardingShell", () => {
   it("keeps selection and environment state while navigating all four steps", async () => {
     renderShell();
 
+    expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-lg");
+    expect(screen.getByTestId("onboarding-actions")).toHaveClass(
+      "mt-4",
+      "justify-end",
+      "gap-2",
+    );
+    expect(screen.queryByText("1 / 4")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /开发团队/ })).toHaveAttribute(
       "aria-pressed",
@@ -102,8 +111,9 @@ describe("OnboardingShell", () => {
     ));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "1");
-    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[780px]");
-    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("justify-start");
+    expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
+    expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("justify-start");
+    expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-lg");
     fireEvent.click(screen.getByRole("button", { name: "重新播放" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "2");
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
@@ -129,8 +139,11 @@ describe("OnboardingShell", () => {
 
     expect(screen.getByRole("heading", { name: "AI 团队设计器" })).toBeInTheDocument();
     expect(screen.getByText("仍在第 2 步")).toBeInTheDocument();
-    expect(screen.getByLabelText("第 2 步，共 4 步")).toBeInTheDocument();
-    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[780px]");
+    expect(screen.getByText("第 2 步，共 4 步")).toBeInTheDocument();
+    expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
+    expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-lg");
+    expect(screen.queryByTestId("onboarding-actions")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "继续" })).not.toBeInTheDocument();
     expect(screen.getByTestId("team-builder-view")).toHaveClass(
       "h-[min(720px,calc(100dvh-220px))]",
     );

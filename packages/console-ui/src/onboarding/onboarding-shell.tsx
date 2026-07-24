@@ -220,19 +220,14 @@ export function OnboardingShell({
       >
         <div
           className={cn(
-            "flex w-full flex-col transition-[max-width]",
+            "flex w-full max-w-[780px] flex-col",
             state.step === 3
-              ? "max-w-[780px] justify-start"
+              ? "justify-start"
               : "justify-center",
-            state.step === 2 && state.teamBuilderOpen
-              ? "max-w-[780px]"
-              : state.step === 3
-                ? null
-                : "max-w-lg",
           )}
-          data-testid="onboarding-content-column"
+          data-testid="onboarding-layout-frame"
         >
-          <header className="text-center">
+          <header className="mx-auto w-full max-w-lg text-center">
             <p className="text-xs font-medium tabular-nums text-hint">
               第 {state.step} 步，共 4 步
             </p>
@@ -248,7 +243,14 @@ export function OnboardingShell({
             </p>
           </header>
 
-          <div className={cn("w-full", state.step === 3 ? "mt-5" : "mt-7")}>
+          <div
+            className={cn(
+              "w-full",
+              state.step === 3 ? "mt-5" : "mt-7",
+              state.step === 3 || state.teamBuilderOpen ? null : "mx-auto max-w-lg",
+            )}
+            data-testid="onboarding-content-column"
+          >
             {state.step === 1 ? (
               <EnvironmentStep
                 environment={environment}
@@ -296,46 +298,46 @@ export function OnboardingShell({
               </p>
             ) : null}
           </div>
+          {state.teamBuilderOpen ? null : (
+            <OnboardingActions
+              primaryLabel={state.step === 4
+                ? completionState === "saving"
+                  ? mode === "replay" ? "正在返回…" : "正在进入…"
+                  : mode === "replay" ? "完成回看" : "开始使用"
+                : "继续"}
+              primaryDisabled={primaryDisabled}
+              secondary={state.step > 1 ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  disabled={completionState === "saving"}
+                  onClick={() => dispatch({ type: "back" })}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                  上一步
+                </Button>
+              ) : environment.status === "ready" ? null : (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  disabled={environment.status === "checking"}
+                  onClick={() => void onRecheckCodex()}
+                >
+                  <RefreshCw
+                    className={cn("h-3.5 w-3.5", environment.status === "checking" && "animate-spin")}
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                  {environment.status === "checking" ? "正在检查" : "重新检查"}
+                </Button>
+              )}
+              onPrimary={() => void advance()}
+            />
+          )}
         </div>
       </section>
-
-      <OnboardingFooter
-        step={state.step}
-        primaryLabel={state.step === 4
-          ? completionState === "saving"
-            ? mode === "replay" ? "正在返回…" : "正在进入…"
-            : mode === "replay" ? "完成回看" : "开始使用"
-          : "继续"}
-        primaryDisabled={primaryDisabled}
-        secondary={state.step > 1 ? (
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            disabled={state.teamBuilderOpen || completionState === "saving"}
-            onClick={() => dispatch({ type: "back" })}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            上一步
-          </Button>
-        ) : environment.status === "ready" ? null : (
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            disabled={environment.status === "checking"}
-            onClick={() => void onRecheckCodex()}
-          >
-            <RefreshCw
-              className={cn("h-3.5 w-3.5", environment.status === "checking" && "animate-spin")}
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-            {environment.status === "checking" ? "正在检查" : "重新检查"}
-          </Button>
-        )}
-        onPrimary={() => void advance()}
-      />
     </main>
   );
 }
@@ -581,45 +583,29 @@ function ReadyStep(): JSX.Element {
   );
 }
 
-function OnboardingFooter({
-  step,
+function OnboardingActions({
   primaryLabel,
   primaryDisabled,
   secondary,
   onPrimary,
 }: {
-  step: OnboardingStep;
   primaryLabel: string;
   primaryDisabled: boolean;
   secondary: ReactNode;
   onPrimary: () => void;
 }): JSX.Element {
   return (
-    <footer className="shrink-0 border-t border-line bg-canvas px-7 py-3.5 max-sm:px-4">
-      <div className="mx-auto flex w-full max-w-[640px] items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-xs tabular-nums text-hint" aria-label={`第 ${step} 步，共 4 步`}>
-          <span className="flex items-center gap-2" aria-hidden="true">
-            {[1, 2, 3, 4].map((item) => (
-              <i
-                key={item}
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  item === step ? "bg-ink" : "bg-line-strong",
-                )}
-              />
-            ))}
-          </span>
-          <span>{step} / 4</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {secondary}
-          <Button type="button" size="lg" disabled={primaryDisabled} onClick={onPrimary}>
-            {primaryLabel}
-            <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    </footer>
+    <nav
+      className="mt-4 flex w-full items-center justify-end gap-2"
+      aria-label="引导步骤操作"
+      data-testid="onboarding-actions"
+    >
+      {secondary}
+      <Button type="button" size="lg" disabled={primaryDisabled} onClick={onPrimary}>
+        {primaryLabel}
+        <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+      </Button>
+    </nav>
   );
 }
 

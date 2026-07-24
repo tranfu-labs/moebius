@@ -124,7 +124,7 @@ export function RelayGraph({
         return (
           <div
             className={cn(
-              "relative min-h-[72px] border-b border-line transition-opacity last:border-b-0",
+              "relative min-h-[var(--relay-row-height)] border-b border-line transition-opacity last:border-b-0",
               visible ? "opacity-100" : "opacity-0",
             )}
             style={{ gridColumn: 1, gridRow: index + 1 }}

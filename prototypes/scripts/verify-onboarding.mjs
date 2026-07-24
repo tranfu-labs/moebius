@@ -60,6 +60,75 @@ async function expectStableStep(page, step) {
   }
 }
 
+async function expectActionGeometry(page, expectedFrameWidth) {
+  const geometry = await page.evaluate(() => {
+    const frame = document.querySelector(".onboarding-frame");
+    const content = document.querySelector(".stage-content");
+    const actions = document.querySelector(".onboarding-actions");
+    const primary = document.querySelector('[data-testid="primary-action"]');
+    const secondary = document.querySelector('[data-testid="back-action"]');
+    if (
+      !(frame instanceof HTMLElement)
+      || !(content instanceof HTMLElement)
+      || !(actions instanceof HTMLElement)
+      || !(primary instanceof HTMLElement)
+    ) {
+      throw new Error("Onboarding action geometry targets are missing.");
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    const primaryRect = primary.getBoundingClientRect();
+    const secondaryRect = secondary instanceof HTMLElement
+      ? secondary.getBoundingClientRect()
+      : null;
+    return {
+      frameWidth: frameRect.width,
+      verticalGap: actionsRect.top - contentRect.bottom,
+      primaryRightGap: frameRect.right - primaryRect.right,
+      buttonGap: secondaryRect === null
+        ? null
+        : primaryRect.left - secondaryRect.right,
+      horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      legacyProgressCount: document.querySelectorAll(
+        ".onboarding-footer, .step-progress, .step-dots, .step-count"
+      ).length
+    };
+  });
+
+  if (
+    expectedFrameWidth !== null
+    && Math.abs(geometry.frameWidth - expectedFrameWidth) > 0.5
+  ) {
+    throw new Error(
+      `Expected ${expectedFrameWidth}px onboarding frame, found ${geometry.frameWidth}px.`
+    );
+  }
+  if (Math.abs(geometry.verticalGap - 16) > 0.5) {
+    throw new Error(
+      `Expected 16px content-to-action gap, found ${geometry.verticalGap}px.`
+    );
+  }
+  if (Math.abs(geometry.primaryRightGap) > 0.5) {
+    throw new Error(
+      `Primary action is not aligned to the frame right edge: ${geometry.primaryRightGap}px.`
+    );
+  }
+  if (geometry.buttonGap !== null && Math.abs(geometry.buttonGap - 8) > 0.5) {
+    throw new Error(
+      `Expected 8px action gap, found ${geometry.buttonGap}px.`
+    );
+  }
+  if (geometry.horizontalOverflow > 0.5) {
+    throw new Error(
+      `Onboarding created ${geometry.horizontalOverflow}px horizontal overflow.`
+    );
+  }
+  if (geometry.legacyProgressCount !== 0) {
+    throw new Error("Legacy footer progress is still rendered.");
+  }
+}
+
 try {
   const desktopContext = await browser.newContext({
     viewport: { width: 1280, height: 800 },
@@ -90,6 +159,8 @@ try {
   ).waitFor();
   checks.push("desktop-copy-step-1-and-2");
   checks.push("keyboard-step-1-to-2");
+  await expectActionGeometry(desktopPage, 780);
+  checks.push("desktop-780-frame-and-external-actions");
 
   await desktopPage.getByTestId("back-action").click();
   await expectStableStep(desktopPage, 1);
@@ -105,9 +176,13 @@ try {
   await desktopPage.getByText(
     "你希望这支团队长期替你完成什么工作？"
   ).waitFor();
-  if (!(await desktopPage.getByTestId("primary-action").isDisabled())) {
-    throw new Error("Main onboarding continue must pause during AI team design.");
+  if (
+    (await desktopPage.getByTestId("primary-action").count()) !== 0
+    || (await desktopPage.locator(".onboarding-actions").count()) !== 0
+  ) {
+    throw new Error("Global onboarding actions must hide during AI team design.");
   }
+  checks.push("ai-team-builder-hides-global-actions");
   await desktopPage.getByTestId("builder-goal").fill(
     "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
   );
@@ -336,6 +411,8 @@ try {
   watchExternalRequests(reducedPage);
   await reducedPage.goto(prototypeUrl);
   await reducedPage.getByTestId("primary-action").click();
+  await expectActionGeometry(reducedPage, null);
+  checks.push("narrow-frame-and-actions-remain-aligned");
   await reducedPage.getByTestId("open-team-builder").click();
   await reducedPage.getByTestId("builder-goal").fill(
     "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"

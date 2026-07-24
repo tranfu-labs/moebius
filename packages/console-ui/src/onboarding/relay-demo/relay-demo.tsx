@@ -114,7 +114,7 @@ function RelayPlaybackDemo({
 
   return (
     <section
-      className="[--relay-lane-width:28px] overflow-hidden rounded-xl border border-line bg-card sm:[--relay-lane-width:64px]"
+      className="[--relay-lane-width:28px] [--relay-row-height:clamp(60px,8dvh,72px)] overflow-hidden rounded-xl border border-line bg-card sm:[--relay-lane-width:64px]"
       style={relayStyle}
       data-testid="onboarding-relay-demo-slot"
       data-relay-run={relayRun}
@@ -149,7 +149,7 @@ function RelayPlaybackDemo({
         ref={stageRef}
         className="grid max-h-[min(432px,calc(100dvh-280px))] gap-x-3 overflow-y-auto px-3"
         style={{
-          gridAutoRows: "minmax(72px, auto)",
+          gridAutoRows: "minmax(var(--relay-row-height), auto)",
           gridTemplateColumns: RELAY_STAGE_COLUMNS,
         }}
         aria-live="polite"
