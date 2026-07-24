@@ -1,8 +1,8 @@
 /*
  * 品牌令牌冻结快照（仅供本原型使用，不 import 正式设计令牌）。
- * 来源：Moebius 桌面端 Brand Spec v1.0（Open Design 项目 988e2f24）。
- * 姿态红线：零阴影、零渐变；紫只给数据 / @提及 / 焦点，每屏 ≤2 处；
- * 主按钮 = 白底黑字（dark）/ 黑底白字（light），不用紫。
+ * 来源：packages/console-ui/src/styles/tokens.css 的独立快照。
+ * 姿态红线：零阴影、零渐变；交互 accent 统一为 indigo #5E6AD2；
+ * 状态色只表达运行事实、裁决与危险。
  */
 
 :root {
@@ -17,7 +17,8 @@
   --faint: #6e6e6e;
   --border: #262626;
   --border-strong: #343434;
-  --accent: #c090ff;
+  --accent: #5e6ad2;
+  --accent-hover: #828fff;
   --success: #2ee03a;
   --info: #5fb3ff;
   --amber: #f0d050;
@@ -26,9 +27,9 @@
   --tint-amber: #2b2612;
   --tint-blue: #19232d;
   --tint-red: #321c1e;
-  --primary-bg: #f4f4f4;
-  --primary-fg: #101010;
-  --primary-hover: #ffffff;
+  --primary-bg: #5e6ad2;
+  --primary-fg: #f7f8f8;
+  --primary-hover: #828fff;
   --font-body:
     -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
     "Segoe UI", sans-serif;
@@ -47,7 +48,8 @@
   --faint: #8a8a8a;
   --border: #e8e8e8;
   --border-strong: #d8d8d8;
-  --accent: #7c4cb4;
+  --accent: #5e6ad2;
+  --accent-hover: #4b57c8;
   --success: #077c15;
   --info: #196aa9;
   --amber: #816a00;
@@ -56,7 +58,7 @@
   --tint-amber: #f3f2ef;
   --tint-blue: #eff2f6;
   --tint-red: #f9eff0;
-  --primary-bg: #181818;
-  --primary-fg: #fafafa;
-  --primary-hover: #000000;
+  --primary-bg: #5e6ad2;
+  --primary-fg: #ffffff;
+  --primary-hover: #4b57c8;
 }

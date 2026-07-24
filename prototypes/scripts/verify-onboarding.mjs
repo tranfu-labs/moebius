@@ -69,6 +69,11 @@ try {
   watchExternalRequests(desktopPage);
   await desktopPage.goto(prototypeUrl);
   await desktopPage.getByTestId("step-1").waitFor();
+  await desktopPage.getByRole("heading", { name: "环境准备" }).waitFor();
+  await desktopPage.getByText(
+    "moebius 用 codex 来运行每一位团队成员"
+  ).waitFor();
+  await desktopPage.getByText("首次启动", { exact: true }).waitFor();
   if ((await desktopPage.getByTestId("back-action").count()) !== 0) {
     throw new Error("The first onboarding step must not expose a back action.");
   }
@@ -78,6 +83,12 @@ try {
   await primary.focus();
   await desktopPage.keyboard.press("Enter");
   await expectStableStep(desktopPage, 2);
+  await desktopPage.getByRole("heading", { name: "选择一支团队" }).waitFor();
+  await desktopPage.getByText("跟 AI 聊出一支新团队").waitFor();
+  await desktopPage.getByText(
+    "你说一下要做什么样的活，AI 帮你把成员组齐"
+  ).waitFor();
+  checks.push("desktop-copy-step-1-and-2");
   checks.push("keyboard-step-1-to-2");
 
   await desktopPage.getByTestId("back-action").click();
@@ -88,13 +99,19 @@ try {
 
   await desktopPage.getByTestId("open-team-builder").click();
   await desktopPage.getByTestId("team-builder").waitFor();
+  await desktopPage.getByText("AI 团队设计器").waitFor();
+  await desktopPage.getByText("独立只读 AI 会话").waitFor();
+  await desktopPage.getByText("仍在第 2 步").waitFor();
+  await desktopPage.getByText(
+    "你希望这支团队长期替你完成什么工作？"
+  ).waitFor();
   if (!(await desktopPage.getByTestId("primary-action").isDisabled())) {
     throw new Error("Main onboarding continue must pause during AI team design.");
   }
   await desktopPage.getByTestId("builder-goal").fill(
     "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
   );
-  await desktopPage.getByLabel("发送目标").click();
+  await desktopPage.getByLabel("发送").click();
   await desktopPage.getByTestId("builder-typing").waitFor();
   checks.push("ai-team-builder-processing-indicator");
   await desktopPage.getByTestId("team-proposal").waitFor();
@@ -107,10 +124,25 @@ try {
       `Expected a four-member AI team proposal, found ${proposalMemberCount}.`
     );
   }
-  if ((await desktopPage.locator(".proposal-member code").count()) !== 0) {
-    throw new Error("The onboarding proposal must not expose Agent slugs.");
+  const proposalSlugs = await desktopPage
+    .locator(".proposal-member code")
+    .allTextContents();
+  if (
+    JSON.stringify(proposalSlugs) !== JSON.stringify([
+      "@launch-lead",
+      "@researcher",
+      "@content-writer",
+      "@brand-reviewer"
+    ])
+  ) {
+    throw new Error(
+      `The onboarding proposal slugs do not match desktop: ${proposalSlugs.join(", ")}`
+    );
   }
+  await desktopPage.getByRole("button", { name: "继续聊着调整" }).waitFor();
+  await desktopPage.getByRole("button", { name: "创建并选中" }).waitFor();
   checks.push("ai-team-builder-proposal");
+  checks.push("desktop-copy-team-builder");
   await desktopPage.screenshot({
     path: resolve(artifactDir, "team-builder-proposal-dark-wide.png"),
     fullPage: true
@@ -134,7 +166,7 @@ try {
   await desktopPage
     .getByLabel("调整团队提案")
     .fill("让负责人最后给我一份可复核的发布清单");
-  await desktopPage.getByLabel("发送调整").click();
+  await desktopPage.getByLabel("发送").click();
   await desktopPage.getByText(
     "已调整：让负责人最后给我一份可复核的发布清单"
   ).waitFor();
@@ -144,6 +176,14 @@ try {
 
   await desktopPage.getByTestId("primary-action").click();
   await expectStableStep(desktopPage, 3);
+  await desktopPage.getByRole("heading", {
+    name: "看看团队如何完成一次接力"
+  }).waitFor();
+  await desktopPage.getByText(
+    "每一次交接都会留下过程、结论和复核证据"
+  ).waitFor();
+  await desktopPage.getByText("接力演示").waitFor();
+  await desktopPage.getByText("对话记录").waitFor();
   await desktopPage
     .getByTestId("relay-stage")
     .getByText("事实、表达和品牌语气均已通过")
@@ -263,7 +303,7 @@ try {
   await expectStableStep(missingPage, 3);
   await missingPage
     .getByTestId("relay-stage")
-    .getByText("运行时长统计已修复并通过两轮测试")
+    .getByText("收尾：统计口径已修正")
     .waitFor();
   const developmentMembers = await missingPage
     .getByTestId("relay-beat")
@@ -271,9 +311,9 @@ try {
   const expectedDevelopmentMembers = [
     "开发经理",
     "开发",
-    "测试",
+    "软件测试",
     "开发",
-    "测试",
+    "软件测试",
     "开发经理"
   ];
   if (
@@ -297,7 +337,10 @@ try {
   await reducedPage.goto(prototypeUrl);
   await reducedPage.getByTestId("primary-action").click();
   await reducedPage.getByTestId("open-team-builder").click();
-  await reducedPage.getByLabel("发送目标").click();
+  await reducedPage.getByTestId("builder-goal").fill(
+    "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
+  );
+  await reducedPage.getByLabel("发送").click();
   await reducedPage.getByTestId("team-proposal").waitFor();
   await reducedPage.waitForTimeout(250);
   await reducedPage.screenshot({

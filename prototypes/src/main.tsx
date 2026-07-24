@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   Copy,
-  CornerUpLeft,
   FolderPlus,
   MessageSquarePlus,
   Moon,
@@ -35,6 +34,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 
+import moebiusLogoUrl from "../../assets/brand/generated/ui-icon-64.png";
 import {
   EASE_OUT,
   PrototypeButton,
@@ -54,14 +54,14 @@ import "./tokens.css";
 import "./styles.css";
 
 /*
- * 第 3 步接力故事线（PRD 固定 6 拍，参照真实本地会话案例口吻）：
- * 开发经理安排 → 开发执行 → 测试退回修改 → 开发修改 → 测试通过 → 开发经理交付。
+ * 第 3 步接力故事线冻结自 desktop 当前内置 development team：
+ * 开发经理安排 → 开发执行 → 软件测试退回修改 → 开发修改 → 软件测试通过 → 开发经理收尾。
  * member 索引对应 MEMBERS：0 开发经理 / 1 开发 / 2 测试。
  */
 const DEVELOPMENT_MEMBERS = [
-  { name: "开发经理", initial: "经", duty: "主 Agent" },
-  { name: "开发", initial: "开", duty: "实现" },
-  { name: "测试", initial: "测", duty: "复核" }
+  { name: "开发经理", slug: "dev-manager", initial: "经", duty: "主 Agent" },
+  { name: "开发", slug: "dev", initial: "开", duty: "负责方案落地、代码实现与验证。" },
+  { name: "软件测试", slug: "qa", initial: "测", duty: "负责测试执行、风险复核与质量意见。" }
 ] as const;
 
 const CREATED_TEAM: TeamChoice = {
@@ -74,10 +74,10 @@ const CREATED_TEAM: TeamChoice = {
 function membersForTeam(team: TeamChoice) {
   if (team.id === CREATED_TEAM.id) {
     return [
-      { name: "策略负责人", initial: "策", duty: "主 Agent" },
-      { name: "研究员", initial: "研", duty: "研究" },
-      { name: "内容作者", initial: "写", duty: "写作" },
-      { name: "品牌审校", initial: "审", duty: "审校" }
+      { name: "策略负责人", slug: "launch-lead", initial: "策", duty: "主 Agent" },
+      { name: "研究员", slug: "researcher", initial: "研", duty: "收集资料，核对产品信息和关键事实" },
+      { name: "内容作者", slug: "content-writer", initial: "写", duty: "撰写发布内容，并根据审校意见修改" },
+      { name: "品牌审校", slug: "brand-reviewer", initial: "审", duty: "检查事实、表达和品牌一致性" }
     ];
   }
 
@@ -97,41 +97,41 @@ interface RelayBeat {
 const DEVELOPMENT_RELAY_BEATS: RelayBeat[] = [
   {
     member: 0,
-    tag: "安排工作",
-    body: "我来负责这个问题。开发先定位统计口径和异常条件，完成修复后交由测试独立验证。",
+    tag: "第 1 棒",
+    body: "我先把时长统计问题拆成计算口径、边界样本和回归证据，开发先定位并提交修复。",
     handoff: { kind: "交给", to: 1 }
   },
   {
     member: 1,
-    tag: "定位并修复",
-    body: "问题出在断线后的时间仍被累计。我已按心跳断档重新切分时段，并补充回归测试。",
+    tag: "第 2 棒",
+    body: "已经定位到暂停区间被重复计入，修正实现并补上基础回归用例，请测试复核。",
     handoff: { kind: "交给", to: 2 }
   },
   {
     member: 2,
-    tag: "独立测试",
+    tag: "第 3 棒",
     pill: { tone: "danger", label: "测试未通过" },
-    body: "断线边界已经修复，但 pending 状态下仍有两处统计不一致，暂不能通过。",
+    body: "第一轮复核未通过：跨日运行仍有一分钟偏差，现有用例没有覆盖这个边界。",
     handoff: { kind: "退回修改", to: 1 }
   },
   {
     member: 1,
-    tag: "修改",
-    body: "已补齐 pending 状态的断档处理，新增用例全部通过，重新提交测试。",
+    tag: "第 4 棒",
+    body: "收到，已统一跨日取整口径并加入午夜边界用例，重新提交复核。",
     handoff: { kind: "交给", to: 2 }
   },
   {
     member: 2,
-    tag: "再次测试",
+    tag: "第 5 棒",
     pill: { tone: "success", label: "测试通过" },
-    body: "边界用例和回归测试均已通过，共 379 项测试通过，可以交付。",
+    body: "第二轮复核通过：暂停、跨日和取整边界都已覆盖，结果与预期一致。",
     handoff: { kind: "交给", to: 0 }
   },
   {
     member: 0,
-    tag: "交付结果",
+    tag: "第 6 棒",
     pill: { tone: "success", label: "已完成" },
-    body: "运行时长统计已修复并通过两轮测试。修改内容、测试结果和审查记录都在这里。"
+    body: "收尾：统计口径已修正，两轮复核及通过证据都保留在时间线中，本次目标完成。"
   }
 ];
 
@@ -274,7 +274,6 @@ function App() {
             titleRef={titleRef}
             title={stepTitle(state.view)}
             subtitle={stepSubtitle(state.view, state.selectedTeam)}
-            wide={state.view === 3}
             primaryLabel={state.view === 4 ? "开始使用" : "继续"}
             primaryDisabled={!canContinue(state) || teamBuilderOpen}
             onPrimary={continueJourney}
@@ -340,26 +339,24 @@ function App() {
 function stepTitle(step: OnboardingStep): string {
   switch (step) {
     case 1:
-      return "设置 Codex";
+      return "环境准备";
     case 2:
-      return "选择团队";
+      return "选择一支团队";
     case 3:
-      return "团队会这样完成你的目标";
+      return "看看团队如何完成一次接力";
     case 4:
       return "准备就绪";
   }
 }
 
-function stepSubtitle(step: OnboardingStep, team: TeamChoice): string {
+function stepSubtitle(step: OnboardingStep, _team: TeamChoice): string {
   switch (step) {
     case 1:
-      return "Agent 团队通过 Codex 在这台电脑上运行";
+      return "moebius 用 codex 来运行每一位团队成员";
     case 2:
-      return "选择最适合你工作的团队，稍后可以更改";
+      return "先选一支最接近你当前工作的团队，之后随时可以切换";
     case 3:
-      return team.id === CREATED_TEAM.id
-        ? "主 Agent 负责安排与交付，成员完成研究、撰写和审校"
-        : "主 Agent 负责安排与交付，成员完成开发、测试和修改";
+      return "每一次交接都会留下过程、结论和复核证据";
     case 4:
       return "团队已经就位，说出你的目标就能开工";
   }
@@ -380,7 +377,6 @@ interface OnboardingShellProps {
   title: string;
   subtitle: string;
   titleRef: React.RefObject<HTMLHeadingElement>;
-  wide: boolean;
   primaryLabel: string;
   primaryDisabled: boolean;
   onPrimary: () => void;
@@ -393,7 +389,6 @@ function OnboardingShell({
   title,
   subtitle,
   titleRef,
-  wide,
   primaryLabel,
   primaryDisabled,
   onPrimary,
@@ -421,7 +416,7 @@ function OnboardingShell({
             animate={{ opacity: 1 }}
             transition={{ delay: reduceMotion ? 0 : 0.08 }}
           >
-            首次启动 · 第 {step} 步，共 4 步
+            第 {step} 步，共 4 步
           </motion.div>
           <h1 ref={titleRef} tabIndex={-1}>
             {title}
@@ -429,7 +424,7 @@ function OnboardingShell({
           <p>{subtitle}</p>
         </div>
 
-        <div className={wide ? "stage-content stage-content--wide" : "stage-content"}>
+        <div className="stage-content">
           {children}
         </div>
       </section>
@@ -464,12 +459,10 @@ function PrototypeChrome() {
         <span />
       </div>
       <div className="brand-mark">
-        <span className="brand-glyph" aria-hidden>
-          M
-        </span>
-        <span>moebius</span>
+        <img className="brand-glyph" src={moebiusLogoUrl} alt="" />
+        <span>Moebius</span>
       </div>
-      <span className="prototype-label">交互原型</span>
+      <span className="prototype-label">首次启动</span>
     </header>
   );
 }
@@ -543,7 +536,7 @@ function EnvironmentStep({
         </span>
         <div>
           <strong>未找到 Codex</strong>
-          <p>在终端运行以下命令，然后重新检查</p>
+          <p>在终端运行以下命令，然后重新检查。</p>
         </div>
       </div>
 
@@ -620,9 +613,7 @@ function TeamStep({
   const reduceMotion = useReducedMotion();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [phase, setPhase] = useState<"goal" | "proposal">("goal");
-  const [goalDraft, setGoalDraft] = useState(
-    "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
-  );
+  const [goalDraft, setGoalDraft] = useState("");
   const [goal, setGoal] = useState("");
   const [adjustment, setAdjustment] = useState("");
   const [adjustedNote, setAdjustedNote] = useState("");
@@ -728,19 +719,24 @@ function TeamStep({
             type="button"
             className="builder-back"
             onClick={closeBuilder}
-            aria-label="返回团队列表"
+            aria-label="返回选团队"
           >
             <ArrowLeft size={14} />
           </button>
           <div>
-            <strong>创建团队</strong>
+            <strong>AI 团队设计器</strong>
+            <span>
+              <i />
+              独立只读 AI 会话
+            </span>
           </div>
+          <span className="builder-context-label">仍在第 2 步</span>
         </div>
 
         <div className="builder-thread" aria-live="polite" ref={threadRef}>
           <BuilderMessage>
-            <p>你想让这支团队负责什么工作？</p>
-            <small>描述目标即可，不需要预先安排成员和分工</small>
+            <p>你希望这支团队长期替你完成什么工作？</p>
+            <small>先说目标就好，不需要想好角色和分工。</small>
           </BuilderMessage>
 
           {goal ? (
@@ -752,7 +748,7 @@ function TeamStep({
           {phase === "proposal" ? (
             <>
               <BuilderMessage>
-                <p>根据你的目标，建议组建一支由 4 名成员组成的产品发布团队</p>
+                <p>我整理了一版团队方案。</p>
               </BuilderMessage>
               <section
                 className={`team-proposal ${proposalLocked ? "team-proposal--readonly" : ""}`}
@@ -761,46 +757,48 @@ function TeamStep({
               >
                 <div className="team-proposal__head">
                   <div>
-                    <span>团队方案 · 4 名成员</span>
+                    <span>团队提案 · 4 名成员</span>
                     <strong>{CREATED_TEAM.name}</strong>
                     <p>从资料研究到上线前复核，交付可直接发布的产品内容</p>
                   </div>
                   <Pill tone="info">
                     <Sparkles size={11} />
-                    草稿
+                    AI 生成
                   </Pill>
                 </div>
 
                 <div className="proposal-members">
                   <ProposalMember
                     name="策略负责人"
-                    duty="明确发布目标，安排工作并确认最终版本"
+                    slug="launch-lead"
+                    duty="统筹发布并确认最终版本"
                     primary
                   />
                   <ProposalMember
                     name="研究员"
-                    duty="收集资料，核对产品信息和关键事实"
+                    slug="researcher"
+                    duty="收集并核对关键信息"
                   />
                   <ProposalMember
                     name="内容作者"
-                    duty="撰写发布内容，并根据审校意见修改"
+                    slug="content-writer"
+                    duty="起草并按反馈修改内容"
                   />
                   <ProposalMember
                     name="品牌审校"
-                    duty="检查事实、表达和品牌一致性"
+                    slug="brand-reviewer"
+                    duty="复核事实、表达和品牌一致性"
                   />
                 </div>
 
                 <div
                   className="proposal-collaboration"
-                  aria-label="团队协作示例"
+                  aria-label="团队接力关系"
                 >
-                  <span>协作示例</span>
                   <p>
-                    你提出目标 → 策略负责人安排 → 研究员提供资料 →
-                    内容作者起草 ⇄ 品牌审校复核 → 策略负责人交付
+                    你 → 策略负责人 → 研究员 → 内容作者 → 品牌审校 →
+                    内容作者 → 品牌审校 → 策略负责人
                   </p>
-                  <small>未通过时，内容作者修改后再次提交审校</small>
                 </div>
 
                 {adjustedNote ? (
@@ -818,7 +816,7 @@ function TeamStep({
                       data-testid="adjust-proposal"
                     >
                       <MessageSquarePlus size={14} />
-                      调整方案
+                      继续聊着调整
                     </PrototypeButton>
                     <PrototypeButton
                       ripple
@@ -829,7 +827,7 @@ function TeamStep({
                       data-testid="confirm-created-team"
                     >
                       <Check size={14} />
-                      创建团队
+                      创建并选中
                     </PrototypeButton>
                   </div>
                 )}
@@ -862,13 +860,14 @@ function TeamStep({
             <textarea
               value={goalDraft}
               onChange={(event) => setGoalDraft(event.target.value)}
-              aria-label="描述团队目标"
+              placeholder="描述这支团队要长期完成的工作…"
+              aria-label="描述团队目标或回答问题"
               rows={2}
               data-testid="builder-goal"
             />
             <button
               type="submit"
-              aria-label="发送目标"
+              aria-label="发送"
               disabled={!goalDraft.trim() || aiPending}
             >
               <Send size={15} />
@@ -882,13 +881,13 @@ function TeamStep({
               ref={adjustmentRef}
               value={adjustment}
               onChange={(event) => setAdjustment(event.target.value)}
-              placeholder="例如：让策略负责人最后提供一份发布清单"
+              placeholder="继续聊着调整，比如“让负责人最后给我一份发布清单”…"
               aria-label="调整团队提案"
               rows={2}
             />
             <button
               type="submit"
-              aria-label="发送调整"
+              aria-label="发送"
               disabled={!adjustment.trim() || aiPending}
             >
               <Send size={15} />
@@ -900,8 +899,6 @@ function TeamStep({
   }
 
   const selectedIsCreated = selectedTeam.id === CREATED_TEAM.id;
-  const selectedMembers = membersForTeam(selectedTeam);
-
   return (
     <div className="team-list">
       <motion.button
@@ -913,7 +910,7 @@ function TeamStep({
             id: "development",
             name: "开发团队",
             primaryAgent: "开发经理",
-            members: ["开发", "测试"]
+            members: ["开发", "软件测试"]
           })
         }
         initial={{ opacity: 0, y: 12 }}
@@ -927,7 +924,7 @@ function TeamStep({
             </span>
             <div>
               <strong>开发团队</strong>
-              <span>规划、开发、审查与验收软件项目</span>
+              <span>内置团队</span>
             </div>
           </div>
           {!selectedIsCreated ? (
@@ -938,21 +935,27 @@ function TeamStep({
           ) : null}
         </div>
 
-        {!selectedIsCreated ? (
-          <div className="team-members">
-            {selectedMembers.map(({ name, initial, duty }) => (
-              <div className="member-chip" key={name}>
-                <span className="member-avatar" aria-hidden>
-                  {initial}
-                </span>
-                <span>
-                  <strong>{name}</strong>
-                  <small>{duty}</small>
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div className="team-members">
+          {membersForTeam({
+            id: "development",
+            name: "开发团队",
+            primaryAgent: "开发经理",
+            members: ["开发", "软件测试"]
+          }).map(({ name, initial, duty }) => (
+            <div className="member-chip" key={name}>
+              <span className="member-avatar" aria-hidden>
+                {initial}
+              </span>
+              <span>
+                <strong>{name}</strong>
+                <small>{duty}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="team-card__description">
+          负责软件方案、实现、测试、复核和主理收尾
+        </p>
       </motion.button>
 
       {selectedIsCreated ? (
@@ -970,9 +973,7 @@ function TeamStep({
               </span>
               <div>
                 <strong>{CREATED_TEAM.name}</strong>
-                <span>
-                  从资料研究到上线前复核，交付可直接发布的产品内容
-                </span>
+                <span>我的团队</span>
               </div>
             </div>
             <Pill tone="neutral">
@@ -993,35 +994,33 @@ function TeamStep({
               </div>
             ))}
           </div>
-          <div className="created-team-card__foot">
-            <button type="button" onClick={openBuilder}>
-              继续调整
-            </button>
-          </div>
+          <p className="team-card__description">
+            从资料研究到上线前复核，交付可直接发布的产品内容
+          </p>
         </motion.div>
-      ) : (
-        <motion.button
-          type="button"
-          className="create-team-card"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...SPRING_LAYOUT, delay: 0.09 }}
-          onClick={openBuilder}
-          data-testid="open-team-builder"
-        >
-          <span className="create-team-icon">
-            <MessageSquarePlus size={16} />
-          </span>
-          <span>
-            <strong>使用 AI 创建团队</strong>
-            <small>描述工作目标，获得成员和分工建议</small>
-          </span>
-          <Pill tone="info">
-            <Sparkles size={10} />
-            开始创建
-          </Pill>
-        </motion.button>
-      )}
+      ) : null}
+
+      <motion.button
+        type="button"
+        className="create-team-card"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...SPRING_LAYOUT, delay: 0.09 }}
+        onClick={openBuilder}
+        data-testid="open-team-builder"
+      >
+        <span className="create-team-icon">
+          <MessageSquarePlus size={16} />
+        </span>
+        <span>
+          <strong>跟 AI 聊出一支新团队</strong>
+          <small>你说一下要做什么样的活，AI 帮你把成员组齐</small>
+        </span>
+        <Pill tone="info">
+          <Sparkles size={10} />
+          开始对话
+        </Pill>
+      </motion.button>
     </div>
   );
 }
@@ -1047,10 +1046,12 @@ function BuilderMessage({
 
 function ProposalMember({
   name,
+  slug,
   duty,
   primary = false
 }: {
   name: string;
+  slug: string;
   duty: string;
   primary?: boolean;
 }) {
@@ -1063,6 +1064,7 @@ function ProposalMember({
         <strong>
           {name}
           {primary ? <small>主 Agent</small> : null}
+          <code>@{slug}</code>
         </strong>
         <p>{duty}</p>
       </div>
@@ -1145,7 +1147,7 @@ function RelayStep({
         <div>
           <span className="live-indicator">
             <span />
-            协作示例
+            接力演示
           </span>
           <strong>{team.name}</strong>
         </div>
@@ -1192,25 +1194,10 @@ function RelayStep({
             </span>
           ))}
         </div>
-        <span>工作记录</span>
+        <span>对话记录</span>
       </div>
 
       <div className="relay-timeline" ref={timelineRef}>
-        <div className="relay-goal-row">
-          <span className="relay-goal-label">你的目标</span>
-          <div className="relay-msg__body">
-            <div className="relay-msg__head">
-              <strong>你</strong>
-              <small>目标</small>
-            </div>
-            <p className="relay-msg__text">
-              {team.id === CREATED_TEAM.id
-                ? "为下周的产品更新准备一套可直接发布的内容。"
-                : "运行时长统计不准确，请找出原因并修复。"}
-            </p>
-          </div>
-        </div>
-
         <ol
           className="relay-history"
           aria-label="协作记录"
@@ -1317,34 +1304,14 @@ function RelayStep({
                   <div className="relay-msg__body">
                     <div className="relay-msg__head">
                       <strong>{member.name}</strong>
-                      <small>{beat.tag}</small>
-                      {beat.pill ? (
-                        <Pill tone={beat.pill.tone}>{beat.pill.label}</Pill>
+                      <small>第 {index + 1} 棒</small>
+                      {isCurrent ? (
+                        <Pill tone="amber">
+                          {isLast ? "收尾" : "处理中"}
+                        </Pill>
                       ) : null}
                     </div>
                     <p className="relay-msg__text">{beat.body}</p>
-                    {beat.handoff ? (
-                      <div className="relay-msg__foot">
-                        <span
-                          className={[
-                            "relay-handoff",
-                            beat.handoff.kind === "退回修改"
-                              ? "relay-handoff--back"
-                              : ""
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          {beat.handoff.kind === "退回修改" ? (
-                            <CornerUpLeft size={11} aria-hidden />
-                          ) : (
-                            <ArrowRight size={11} aria-hidden />
-                          )}
-                          {beat.handoff.kind}{" "}
-                          <b>{members[beat.handoff.to].name}</b>
-                        </span>
-                      </div>
-                    ) : null}
                   </div>
                 </motion.li>
               );
@@ -1378,9 +1345,9 @@ function RelayStep({
 
       <div className="relay-caption">
         <Users size={12} />
-        {team.id === CREATED_TEAM.id
-          ? "工作过程、修改记录和审校结果都会保留在对话中"
-          : "工作过程、修改记录和测试结果都会保留在对话中"}
+        {beatIndex === relayBeats.length - 1
+          ? "这支团队已带着复核证据完成接力。"
+          : "动画不会拦住你；看懂后可以随时继续。"}
       </div>
     </div>
   );

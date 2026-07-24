@@ -13,7 +13,7 @@ export const DEVELOPMENT_TEAM: TeamChoice = {
   id: "development",
   name: "开发团队",
   primaryAgent: "开发经理",
-  members: ["开发", "测试"]
+  members: ["开发", "软件测试"]
 };
 
 export interface OnboardingState {
