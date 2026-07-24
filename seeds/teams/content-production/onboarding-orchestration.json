@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "relayBeats": [
+    {
+      "speakerSlug": "content-production-orchestrator",
+      "message": "我先把这次内容目标拆成选题证据、正文、视觉和发布交付四段，先建立可核验的事实基础。"
+    },
+    {
+      "speakerSlug": "evidence-research",
+      "message": "已完成公开来源核验，整理出主选题、关键 claims、证据映射和仍需保留的限制。"
+    },
+    {
+      "speakerSlug": "editorial-production",
+      "message": "已在授权事实范围内完成平台终稿与标题候选，观点、数字和引用均可回溯到证据包。"
+    },
+    {
+      "speakerSlug": "visual-production",
+      "message": "已按入选终稿完成配图方案、成套正文图和公众号封面，并记录视觉 QA 与生成血缘。"
+    },
+    {
+      "speakerSlug": "publishing-delivery",
+      "message": "已生成保留源文件的媒体优化候选和经过验证的公众号 HTML，等待总控执行最终晋级。"
+    },
+    {
+      "speakerSlug": "content-production-orchestrator",
+      "message": "收尾：文字、视觉和发布候选的版本与血缘已核对，残余风险已列明，本地发布交付包可以交接。"
+    }
+  ]
+}

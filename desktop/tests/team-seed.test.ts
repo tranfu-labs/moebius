@@ -71,6 +71,80 @@ describe("built-in team seed", () => {
     expect(packageJson.build.extraResources).toContainEqual({ from: "../seeds/teams", to: "seed/teams" });
   });
 
+  it("packages a valid content production team with five specialized members", async () => {
+    const root = await makeTemporaryRoot();
+    const dataRoot = path.join(root, "data");
+
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot })).resolves.toMatchObject({
+      status: "seeded",
+    });
+
+    const snapshot = await readTeamSnapshot(
+      resolveTeamLocation({ dataRoot, teamId: "content-production", ownership: "system" }),
+    );
+    expect(snapshot).toMatchObject({
+      status: "usable",
+      canCreateConversation: true,
+      definition: {
+        name: "内容生产团队",
+        description: "负责选题调研、内容创作、视觉制作、发布包装和总控交付",
+        primaryAgentSlug: "content-production-orchestrator",
+        memberOrder: [
+          "content-production-orchestrator",
+          "evidence-research",
+          "editorial-production",
+          "visual-production",
+          "publishing-delivery",
+        ],
+      },
+    });
+    await expect(readTeamOnboardingOrchestration({
+      directory: snapshot.location.directory,
+      memberOrder: snapshot.definition?.memberOrder ?? [],
+    })).resolves.toMatchObject({
+      status: "ready",
+      source: "independent",
+      orchestration: {
+        version: 1,
+        relayBeats: [
+          { speakerSlug: "content-production-orchestrator" },
+          { speakerSlug: "evidence-research" },
+          { speakerSlug: "editorial-production" },
+          { speakerSlug: "visual-production" },
+          { speakerSlug: "publishing-delivery" },
+          { speakerSlug: "content-production-orchestrator" },
+        ],
+      },
+    });
+    expect(snapshot.members.map(({ slug, displayName, description }) => ({ slug, displayName, description }))).toEqual([
+      {
+        slug: "content-production-orchestrator",
+        displayName: "内容生产总控",
+        description: "负责内容生产调度、阶段门禁、结果验收与最终交付。",
+      },
+      {
+        slug: "evidence-research",
+        displayName: "内容情报与证据",
+        description: "负责公开素材捕获、选题研究、来源核验与证据整理。",
+      },
+      {
+        slug: "editorial-production",
+        displayName: "内容创作与编辑",
+        description: "负责证据大纲、平台稿、保真审校与标题候选。",
+      },
+      {
+        slug: "visual-production",
+        displayName: "视觉内容生产",
+        description: "负责正文配图规划、成套图片生成与公众号封面制作。",
+      },
+      {
+        slug: "publishing-delivery",
+        displayName: "发布包装与排版",
+        description: "负责媒体优化候选、公众号 HTML 排版与发布前技术交付。",
+      },
+    ]);
+  });
+
   it("skips the entire seed flow when the packaged fingerprint matches", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");

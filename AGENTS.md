@@ -69,7 +69,7 @@
 │   └── console-ui/             # shadcn/Radix + Tailwind 的 React 对话操作台组件库与 Storybook
 ├── prototypes/                 # 与生产代码双向隔离的 React + Motion 高保真原型沙盒，发布自包含单 HTML
 ├── seeds/
-│   └── teams/                  # 打包进桌面应用的只读内置团队种子
+│   └── teams/                  # 打包进桌面应用的开发 / 内容生产只读内置团队种子
 ├── sites/                      # 面向公众的自包含静态营销站点（与产品运行时零耦合）
 │   └── marketeam/              # 当前唯一官网：自包含 index.html + 同目录 DEPLOY.md（目录名 marketeam 为历史遗留；marketing-site 域）
 ├── scripts/

@@ -1,0 +1,12 @@
+{
+  "name": "内容生产团队",
+  "description": "负责选题调研、内容创作、视觉制作、发布包装和总控交付",
+  "primaryAgentSlug": "content-production-orchestrator",
+  "memberOrder": [
+    "content-production-orchestrator",
+    "evidence-research",
+    "editorial-production",
+    "visual-production",
+    "publishing-delivery"
+  ]
+}
