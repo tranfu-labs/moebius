@@ -902,6 +902,8 @@ describe("OperatorConsole", () => {
     const timeline = screen.getByRole("region", { name: "会话时间线" });
     const titleHeader = screen.getByTestId("conversation-title-header");
     const title = screen.getByRole("heading", { name: "默认会话" });
+    const composer = screen.getByRole("textbox", { name: "消息内容" }).closest("div.relative.w-full");
+    const composerHost = composer?.parentElement;
 
     expect(timeline).toContainElement(titleHeader);
     expect(timeline).not.toHaveClass("pt-20", "px-8");
@@ -914,6 +916,10 @@ describe("OperatorConsole", () => {
     );
     expect(titleHeader).not.toHaveClass("absolute", "pt-12", "window-drag-region");
     expect(title).toHaveClass("w-full", "max-w-[760px]", "text-left");
+    expect(composer).toHaveClass("w-full", "max-w-[760px]");
+    expect(composer).not.toHaveClass("max-w-[720px]");
+    expect(composerHost).toHaveClass("px-8");
+    expect(composerHost).not.toHaveClass("px-6");
     expect(title).not.toHaveClass("pl-10");
   });
 
@@ -1062,6 +1068,8 @@ describe("OperatorConsole", () => {
     const pendingZone = screen.getByTestId("primary-pending-zone");
     expect(within(pendingZone).getByText("先处理线上报错")).toBeVisible();
     expect(within(pendingZone).getByText("再补一份回归说明")).toBeVisible();
+    expect(pendingZone).toHaveClass("w-full", "max-w-[760px]");
+    expect(pendingZone).not.toHaveClass("max-w-[720px]");
     expect(screen.getByRole("region", { name: "会话时间线" })).toHaveClass("pb-72");
     expect(screen.getAllByTestId("active-run-block")).toHaveLength(3);
 

@@ -1,6 +1,10 @@
 import { ChevronDown, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
 import { useState } from "react";
 
+import {
+  MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+  MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+} from "@/console/conversation-layout";
 import { RoleComposer } from "@/console/role-composer";
 import {
   hasBlockingComposerAttachment,
@@ -102,11 +106,35 @@ export function NewConversationPage({
 
   return (
     <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label="新建对话">
-      <header className="window-drag-region shrink-0 px-8 pb-3 pt-12">
-        <h1 className="mx-auto max-w-[760px] truncate text-base font-semibold text-ink" title="新对话">新对话</h1>
+      <header
+        className={cn(
+          "window-drag-region shrink-0 pb-3 pt-12",
+          MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+        )}
+      >
+        <h1
+          className={cn(
+            "mx-auto w-full truncate text-base font-semibold text-ink",
+            MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+          )}
+          title="新对话"
+        >
+          新对话
+        </h1>
       </header>
-      <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6">
-        <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col justify-center py-8">
+      <div
+        className={cn(
+          "scroll-thin flex min-h-0 flex-1 flex-col overflow-auto pb-6",
+          MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+        )}
+      >
+        <div
+          className={cn(
+            "mx-auto flex w-full flex-1 flex-col justify-center py-8",
+            MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+          )}
+          data-testid="new-conversation-column"
+        >
           <p className="mb-8 text-center text-lg font-medium text-ink">描述你的目标，团队会开始推进</p>
           <RoleComposer
             value={draft}

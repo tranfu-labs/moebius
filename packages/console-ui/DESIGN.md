@@ -13,7 +13,7 @@
 - 暗色画布近纯黑（`--canvas: #101010`）、卡面微亮（`--card: #171717`）、描边可见（`--line: #262626` 实色）；亮色为同结构镜像（灰底白卡，`bg→surface` 向亮走，`hover/sel` 向灰走）。
 - 状态色相族令牌：`--status-{run,info,violet,neutral}-{fg,bg,line}` 及裁决 `--pass` / `--danger` 配套 tint，亮暗双主题成对定义；tint 底为实色（暗色如 `--status-run-bg: #2B2612`，亮色为 12% 浅洗底），fg 在其上满足正文对比度。
 - 桌面窗口顶层 header 统一使用 `--window-header-height: 46px`；macOS 交通灯、sidebar 展开/折叠按钮和会话 sticky 标题都由该高度容器配合 `items-center` 自然居中，禁止为单个控件追加 `top`、`padding-top` 或 translate 补偿。
-- 会话 sticky 标题、Agent 历史消息正文与主时间线活动 run 的角色名/实时正文使用同一条左边界；活动 run 的操作贴住同一正文列右边界。该正文列由宿主建立，通用 `RunBlock` 不内置主时间线缩进。**用户消息是唯一的例外**：按聊天惯例走右泳道（who 行右对齐 + 右侧气泡），不占用左正文列。
+- 会话 sticky 标题、Agent 历史消息正文与主时间线活动 run 的角色名/实时正文使用同一条左边界；活动 run 的操作贴住同一正文列右边界。已有会话 composer、待发射区与新对话 composer 复用该列的 `760px` 最大宽度和 `px-8` 页面 gutter，窄窗一起收缩；右侧子任务 composer 保留自己的可用宽度。该正文列由宿主建立，通用 `RunBlock` 与 `RoleComposer` 不内置主时间线宽度。**用户消息是唯一的例外**：按聊天惯例走右泳道（who 行右对齐 + 右侧气泡），不占用左正文列。
 - 圆角分级：卡片/表格 14px（`--radius`，Tailwind lg）、chip/菜单 12px（md）、控件/按钮/输入 10px（sm）、药丸与轻跳转全圆角、头像正圆；同一层级圆角必须一致。
 
 ## 排版

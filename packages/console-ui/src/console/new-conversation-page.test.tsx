@@ -4,6 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import { NewConversationPage, type NewConversationPageProps } from "./new-conversation-page";
 
 describe("NewConversationPage", () => {
+  it("aligns the new-conversation composer with the main conversation column", () => {
+    renderPage();
+
+    const column = screen.getByTestId("new-conversation-column");
+    const title = screen.getByRole("heading", { name: "新对话" });
+
+    expect(column).toHaveClass("w-full", "max-w-[760px]");
+    expect(column).not.toHaveClass("max-w-[720px]");
+    expect(column.parentElement).toHaveClass("px-8");
+    expect(column.parentElement).not.toHaveClass("px-6");
+    expect(title).toHaveClass("w-full", "max-w-[760px]");
+  });
+
   it("keeps drafting and team selection usable while project-dependent context and send stay unavailable", () => {
     const onDraftChange = vi.fn();
     const onSelectTeam = vi.fn();

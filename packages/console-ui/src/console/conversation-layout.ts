@@ -1,0 +1,2 @@
+export const MAIN_CONVERSATION_COLUMN_WIDTH_CLASS = "max-w-[760px]";
+export const MAIN_CONVERSATION_COLUMN_GUTTER_CLASS = "px-8";

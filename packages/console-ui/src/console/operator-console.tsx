@@ -27,6 +27,10 @@ import {
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
+import {
+  MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+  MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+} from "@/console/conversation-layout";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
 import type { WorkspaceFileContent } from "@/console/file-diff-view";
@@ -1094,11 +1098,17 @@ export function OperatorConsole({
             >
               {selectedSession ? (
                 <header
-                  className="sticky top-0 z-10 flex h-[var(--window-header-height)] items-center bg-canvas px-8"
+                  className={cn(
+                    "sticky top-0 z-10 flex h-[var(--window-header-height)] items-center bg-canvas",
+                    MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+                  )}
                   data-testid="conversation-title-header"
                 >
                   <h1
-                    className="mx-auto w-full max-w-[760px] truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink"
+                    className={cn(
+                      "mx-auto w-full truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink",
+                      MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+                    )}
                     title={selectedSession.title}
                   >
                     {selectedSession.title}
@@ -1107,12 +1117,15 @@ export function OperatorConsole({
               ) : null}
               {emptyConversation ? (
                 <ConversationEmptyState
-                  className={selectedSession ? "min-h-[calc(100%_-_var(--window-header-height))] px-8" : "px-8"}
+                  className={cn(
+                    selectedSession && "min-h-[calc(100%_-_var(--window-header-height))]",
+                    MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+                  )}
                   projectName={activeProject.title}
                 />
               ) : (
-                <div className="px-8">
-                  <div className="mx-auto max-w-[760px]">
+                <div className={MAIN_CONVERSATION_COLUMN_GUTTER_CLASS}>
+                  <div className={cn("mx-auto", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
                     <div>
                       {messages.map((message) => (
                         <TimelineEntry
@@ -1205,10 +1218,18 @@ export function OperatorConsole({
               </button>
             ) : null}
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-canvas px-6 pb-5 pt-3">
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-5 pt-3",
+                MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+              )}
+            >
                 {pendingPrimaryMessages.length > 0 ? (
                   <section
-                    className="pointer-events-auto mx-auto mb-2 max-w-[720px] rounded-[14px] border border-accent/35 bg-accent/10 px-3.5 py-2.5"
+                    className={cn(
+                      "pointer-events-auto mx-auto mb-2 w-full rounded-[14px] border border-accent/35 bg-accent/10 px-3.5 py-2.5",
+                      MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+                    )}
                     aria-label="待发射给主理人"
                     data-testid="primary-pending-zone"
                   >
@@ -1282,7 +1303,10 @@ export function OperatorConsole({
                       onChangeSessionTeam={onChangeSessionTeam}
                     />
                   }
-                  className="pointer-events-auto mx-auto max-w-[720px]"
+                  className={cn(
+                    "pointer-events-auto mx-auto",
+                    MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+                  )}
                 />
             </div>
             </div>

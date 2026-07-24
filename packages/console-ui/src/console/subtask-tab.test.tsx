@@ -31,6 +31,7 @@ describe("SubtaskTab", () => {
     });
 
     const input = screen.getByRole("textbox", { name: "消息内容" }) as HTMLTextAreaElement;
+    expect(input.closest("div.relative.w-full")).toHaveClass("max-w-[720px]");
     await act(async () => {
       input.setSelectionRange(1, 1);
       fireEvent.select(input);
