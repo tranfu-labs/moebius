@@ -1,6 +1,7 @@
 import {
   OnboardingShell,
   type OnboardingEnvironmentState,
+  type OnboardingMode,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
   type TeamBuilderViewState,
@@ -26,8 +27,12 @@ const INITIAL_TEAM_BUILDER_STATE: TeamBuilderViewState = {
 };
 
 export function OnboardingRoute({
+  mode = "first-run",
+  onExit,
   onComplete,
 }: {
+  mode?: OnboardingMode;
+  onExit?: () => void;
   onComplete: (teamKey: string) => void | Promise<void>;
 }): JSX.Element {
   const api = window.moebius;
@@ -181,6 +186,7 @@ export function OnboardingRoute({
 
   return (
     <OnboardingShell
+      mode={mode}
       environment={environment}
       teamsState={teamsState}
       teamBuilderState={teamBuilderState}
@@ -213,6 +219,7 @@ export function OnboardingRoute({
       }}
       onTeamBuilderCommit={commitBuilder}
       onCreatedTeamConsumed={() => setCreatedTeamKey(null)}
+      onExit={onExit}
       onComplete={onComplete}
     />
   );

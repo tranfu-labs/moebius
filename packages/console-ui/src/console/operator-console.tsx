@@ -7,6 +7,7 @@ import {
   PanelRight,
   PanelRightClose,
   Plus,
+  CircleHelp,
   Search,
   Settings,
 } from "lucide-react";
@@ -332,6 +333,7 @@ export interface OperatorConsoleProps {
   onRetryRun?: (sessionId: string, runId: string) => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
+  onReplayOnboarding?: () => void;
   onOpenExternalLink?: (url: string) => void;
   onRetryProjectList?: () => void;
   onRetryAgentTeams?: () => void;
@@ -448,6 +450,7 @@ export function OperatorConsole({
   onRetryRun,
   onEditAndResend,
   onOpenDiagnostics,
+  onReplayOnboarding,
   onOpenExternalLink,
   onRetryProjectList,
   onRetryAgentTeams,
@@ -920,6 +923,11 @@ export function OperatorConsole({
         />
 
         <footer className="shrink-0 border-t border-line p-2" data-testid="sidebar-footer">
+          <SidebarAction
+            icon={CircleHelp}
+            label="重新查看引导"
+            onClick={onReplayOnboarding}
+          />
           <SidebarAction icon={Settings} label="设置" />
         </footer>
 

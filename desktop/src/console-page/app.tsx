@@ -100,6 +100,7 @@ import {
   type SidebarVisibilityPreference,
 } from "./sidebar-preference.js";
 import { OnboardingRoute } from "../onboarding/onboarding-route.js";
+import { finishOnboardingPresentation } from "../onboarding/onboarding-completion.js";
 import {
   clearConsoleSelectionPreference,
   decideConsoleSelectionCommit,
@@ -318,7 +319,15 @@ function DesktopRoutes(): JSX.Element {
       <Route
         path="/onboarding/*"
         element={isFirstRunOnboarding(onboardingCompleted)
-          ? <OnboardingRoute onComplete={completeOnboarding} />
+          ? (
+              <OnboardingRoute
+                onComplete={(teamKey) => finishOnboardingPresentation({
+                  mode: "first-run",
+                  teamKey,
+                  onFirstRunComplete: completeOnboarding,
+                })}
+              />
+            )
           : <Navigate replace to="/" />}
       />
       <Route
@@ -339,6 +348,8 @@ function OperatorConsoleRoute(): JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
   const [pendingAgentTeamKey] = useState(() => readPendingAgentTeamKey(location.state));
+  const [replayingOnboarding, setReplayingOnboarding] = useState(false);
+  const replayReturnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (readPendingAgentTeamKey(location.state) === null) {
@@ -350,7 +361,42 @@ function OperatorConsoleRoute(): JSX.Element {
     );
   }, [location.hash, location.pathname, location.search, location.state, navigate]);
 
-  return <OperatorConsoleApp pendingAgentTeamKey={pendingAgentTeamKey} />;
+  const finishReplay = useCallback(() => {
+    setReplayingOnboarding(false);
+    window.requestAnimationFrame(() => replayReturnFocusRef.current?.focus());
+  }, []);
+
+  const startReplay = useCallback(() => {
+    replayReturnFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setReplayingOnboarding(true);
+  }, []);
+
+  return (
+    <>
+      <div
+        className={replayingOnboarding ? "hidden" : "contents"}
+        aria-hidden={replayingOnboarding ? "true" : undefined}
+        data-testid="operator-console-preserved-during-onboarding-replay"
+      >
+        <OperatorConsoleApp
+          pendingAgentTeamKey={pendingAgentTeamKey}
+          onReplayOnboarding={startReplay}
+        />
+      </div>
+      {replayingOnboarding ? (
+        <OnboardingRoute
+          mode="replay"
+          onExit={finishReplay}
+          onComplete={() => finishOnboardingPresentation({
+            mode: "replay",
+            onReplayComplete: finishReplay,
+          })}
+        />
+      ) : null}
+    </>
+  );
 }
 
 function readPendingAgentTeamKey(value: unknown): string | null {
@@ -363,8 +409,10 @@ function readPendingAgentTeamKey(value: unknown): string | null {
 
 export function OperatorConsoleApp({
   pendingAgentTeamKey: initialPendingAgentTeamKey = null,
+  onReplayOnboarding,
 }: {
   pendingAgentTeamKey?: string | null;
+  onReplayOnboarding?: () => void;
 }): JSX.Element {
   const [apiBase, setApiBase] = useState<string | null>(readQueryApiBase());
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
@@ -2404,6 +2452,7 @@ export function OperatorConsoleApp({
       }}
       onEditAndResend={editAndResend}
       onOpenDiagnostics={openDiagnostics}
+      onReplayOnboarding={onReplayOnboarding}
       onOpenExternalLink={window.moebius?.openExternalLink === undefined
         ? undefined
         : (url) => {

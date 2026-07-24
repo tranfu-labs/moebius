@@ -58,7 +58,12 @@ describe("OperatorConsole", () => {
       expect(entry).toHaveAttribute("title", ["新建对话", "搜索", "Agent 团队"][index]);
     }
     expect(projectHeading).toBeVisible();
+    expect(screen.getByRole("button", { name: "重新查看引导" })).toBeVisible();
     expect(screen.getByRole("button", { name: "设置" })).toBeVisible();
+    expect(within(footer).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "重新查看引导",
+      "设置",
+    ]);
 
     expect(sidebar).toContainElement(brandRegion);
     expect(sidebar).toContainElement(appActions);
@@ -98,6 +103,7 @@ describe("OperatorConsole", () => {
       "默认会话 对话菜单",
       "验收会话，需要你处理",
       "验收会话 对话菜单",
+      "重新查看引导",
       "设置",
     ]);
     for (const control of controls) {
@@ -114,6 +120,15 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "新建对话" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "搜索" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Agent 团队" })).toBeEnabled();
+  });
+
+  it("delegates onboarding replay without coupling the presentational console to routing", () => {
+    const onReplayOnboarding = vi.fn();
+    renderConsole({ onReplayOnboarding });
+
+    fireEvent.click(screen.getByRole("button", { name: "重新查看引导" }));
+
+    expect(onReplayOnboarding).toHaveBeenCalledOnce();
   });
 
   it("shows project loading structure while keeping independent application areas available", () => {

@@ -39,6 +39,35 @@ const developmentTeam: OperatorAgentTeam = {
 };
 
 describe("OnboardingShell", () => {
+  it("renders replay copy, exit, and completion without changing first-run copy", async () => {
+    const onExit = vi.fn();
+    const onComplete = vi.fn(async () => undefined);
+    renderShell({
+      mode: "replay",
+      onExit,
+      onComplete,
+    });
+
+    expect(screen.getByTestId("onboarding-step-1")).toHaveAttribute("data-onboarding-mode", "replay");
+    expect(screen.getByText("回看引导")).toBeInTheDocument();
+    expect(screen.queryByText("首次启动")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "退出引导回看" }));
+    expect(onExit).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /开发团队/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    expect(screen.getByRole("button", { name: "完成回看" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "开始使用" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "完成回看" }));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith("system:development"));
+  });
+
   it("hard-gates step 1 until Codex is ready and exposes install recovery", async () => {
     const onCopyInstallCommand = vi.fn();
     const onRecheckCodex = vi.fn();
@@ -49,6 +78,8 @@ describe("OnboardingShell", () => {
     });
 
     expect(screen.getByTestId("moebius-logo")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("首次启动")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退出引导回看" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
     expect(screen.getByText("brew install codex")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "复制" }));

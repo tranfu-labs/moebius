@@ -42,7 +42,10 @@ export type OnboardingEnvironmentState =
   | { status: "ready"; detail?: string }
   | { status: "error"; kind: "missing" | "unavailable" };
 
+export type OnboardingMode = "first-run" | "replay";
+
 export interface OnboardingShellProps {
+  mode?: OnboardingMode;
   environment: OnboardingEnvironmentState;
   teamsState: OperatorAgentTeamsState;
   teamBuilderState: TeamBuilderViewState;
@@ -56,10 +59,12 @@ export interface OnboardingShellProps {
   onTeamBuilderRetry: () => void | Promise<void>;
   onTeamBuilderCommit: (revision: number) => void | Promise<void>;
   onCreatedTeamConsumed?: () => void;
+  onExit?: () => void;
   onComplete: (teamKey: string) => void | Promise<void>;
 }
 
 export function OnboardingShell({
+  mode = "first-run",
   environment,
   teamsState,
   teamBuilderState,
@@ -73,6 +78,7 @@ export function OnboardingShell({
   onTeamBuilderRetry,
   onTeamBuilderCommit,
   onCreatedTeamConsumed,
+  onExit,
   onComplete,
 }: OnboardingShellProps): JSX.Element {
   const [state, dispatch] = useReducer(
@@ -174,6 +180,7 @@ export function OnboardingShell({
     <main
       className="flex h-screen min-h-[560px] flex-col overflow-hidden bg-canvas text-ink"
       data-testid={`onboarding-step-${String(state.step)}`}
+      data-onboarding-mode={mode}
     >
       <header
         className="window-drag-region grid h-[var(--window-header-height)] shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-4"
@@ -184,9 +191,25 @@ export function OnboardingShell({
           <MoebiusLogo className="h-6 w-6" decorative />
           Moebius
         </span>
-        <span className="justify-self-end text-xs tabular-nums text-hint">
-          首次启动
-        </span>
+        {mode === "replay" ? (
+          <span className="window-no-drag flex items-center justify-self-end gap-1 text-xs text-hint">
+            <span>回看引导</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label="退出引导回看"
+              title="退出引导回看"
+              onClick={onExit}
+            >
+              退出
+            </Button>
+          </span>
+        ) : (
+          <span className="justify-self-end text-xs tabular-nums text-hint">
+            首次启动
+          </span>
+        )}
       </header>
 
       <section
@@ -279,7 +302,9 @@ export function OnboardingShell({
       <OnboardingFooter
         step={state.step}
         primaryLabel={state.step === 4
-          ? completionState === "saving" ? "正在进入…" : "开始使用"
+          ? completionState === "saving"
+            ? mode === "replay" ? "正在返回…" : "正在进入…"
+            : mode === "replay" ? "完成回看" : "开始使用"
           : "继续"}
         primaryDisabled={primaryDisabled}
         secondary={state.step > 1 ? (
