@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tranfu-labs/agent-moebius.git"
+    "url": "git+https://github.com/tranfu-labs/moebius.git"
   },
-  "homepage": "https://github.com/tranfu-labs/agent-moebius#readme",
+  "homepage": "https://github.com/tranfu-labs/moebius#readme",
   "bugs": {
-    "url": "https://github.com/tranfu-labs/agent-moebius/issues"
+    "url": "https://github.com/tranfu-labs/moebius/issues"
   },
   "private": true,
   "type": "module",

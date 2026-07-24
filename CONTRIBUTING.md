@@ -9,7 +9,7 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 Moebius is a Node.js and TypeScript pnpm workspace. Use Node.js 24 and pnpm 9.15.4.
 
 ```bash
-git clone https://github.com/tranfu-labs/agent-moebius.git
+git clone https://github.com/tranfu-labs/moebius.git
 cd agent-moebius
 corepack enable
 pnpm install
@@ -97,6 +97,6 @@ First-time contributors can start with issues labeled `good first issue` or ask 
 
 ## Reporting bugs and proposing features
 
-Use the structured [GitHub Issue forms](https://github.com/tranfu-labs/agent-moebius/issues/new/choose). Search existing issues first and include reproducible evidence where possible.
+Use the structured [GitHub Issue forms](https://github.com/tranfu-labs/moebius/issues/new/choose). Search existing issues first and include reproducible evidence where possible.
 
-Do not report vulnerabilities in a public issue. Use [GitHub Security Advisories](https://github.com/tranfu-labs/agent-moebius/security/advisories/new) instead.
+Do not report vulnerabilities in a public issue. Use [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new) instead.

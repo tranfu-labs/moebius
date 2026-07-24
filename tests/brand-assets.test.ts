@@ -35,7 +35,7 @@ describe("brand asset contract", () => {
       path: "assets/brand/moebius.png",
       width: 1254,
       height: 1254,
-      sha256: "d590d7d5d2c087cbf12e775eb44aac7a7f97049c1c913e7d2ad74be0f70398db",
+      sha256: "40c17417130d9bf8dd3ea536c57ab8469416b452a25546fbc82db58f8291e3d9",
     });
     expect(manifest.assets.map(({ path: assetPath, width, maxBytes }) => ({
       path: assetPath,

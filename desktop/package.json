@@ -76,7 +76,7 @@
       {
         "provider": "github",
         "owner": "tranfu-labs",
-        "repo": "agent-moebius"
+        "repo": "moebius"
       }
     ]
   }

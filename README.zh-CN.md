@@ -11,7 +11,7 @@ Moebius 为开发者提供可持续运行、按角色分工的编码 Agent 团�
 </p>
 
 <p align="center">
-  <a href="https://github.com/tranfu-labs/agent-moebius/actions/workflows/ci.yml"><img src="https://github.com/tranfu-labs/agent-moebius/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tranfu-labs/moebius/actions/workflows/ci.yml"><img src="https://github.com/tranfu-labs/moebius/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
@@ -54,7 +54,7 @@ GitHub 模式还需要：
 ## 快速开始
 
 ```bash
-git clone https://github.com/tranfu-labs/agent-moebius.git
+git clone https://github.com/tranfu-labs/moebius.git
 cd agent-moebius
 corepack enable
 corepack prepare pnpm@9.15.4 --activate
@@ -153,7 +153,7 @@ Runner 把本机 Codex CLI 作为执行驱动。Agent Markdown 定义职责与�
 - 凭证应保存在 Codex、GitHub CLI 的常规凭证存储或环境变量中。不要提交 `.env` 或 `config.local.toml`。
 - 打包桌面产物目前没有签名或 notarization。打开前请核对 GitHub Release 及对应 commit 或 tag。
 
-请通过 [GitHub Security Advisories](https://github.com/tranfu-labs/agent-moebius/security/advisories/new) 私下报告安全漏洞。
+请通过 [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new) 私下报告安全漏洞。
 
 ## 开发
 

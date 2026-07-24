@@ -10,4 +10,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/agent-moebius/commits/main
+[Unreleased]: https://github.com/tranfu-labs/moebius/commits/main

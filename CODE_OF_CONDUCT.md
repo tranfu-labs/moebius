@@ -34,7 +34,7 @@ This Code of Conduct applies in all project spaces and whenever an individual of
 
 ## Enforcement
 
-Report abusive, harassing, or otherwise unacceptable behavior privately through [GitHub Security Advisories](https://github.com/tranfu-labs/agent-moebius/security/advisories/new). Do not include sensitive reports in a public issue.
+Report abusive, harassing, or otherwise unacceptable behavior privately through [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new). Do not include sensitive reports in a public issue.
 
 Maintainers will review and investigate reports promptly and fairly, respect the reporter's privacy, and respond in a manner appropriate to the circumstances. A maintainer with a conflict of interest must recuse themselves from handling the report.
 

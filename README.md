@@ -11,7 +11,7 @@ Moebius gives developers persistent, role-based coding-agent teams across local 
 </p>
 
 <p align="center">
-  <a href="https://github.com/tranfu-labs/agent-moebius/actions/workflows/ci.yml"><img src="https://github.com/tranfu-labs/agent-moebius/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tranfu-labs/moebius/actions/workflows/ci.yml"><img src="https://github.com/tranfu-labs/moebius/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
@@ -54,7 +54,7 @@ Packaged desktop releases support macOS on Apple Silicon only. Windows, Linux, I
 ## Quick start
 
 ```bash
-git clone https://github.com/tranfu-labs/agent-moebius.git
+git clone https://github.com/tranfu-labs/moebius.git
 cd agent-moebius
 corepack enable
 corepack prepare pnpm@9.15.4 --activate
@@ -153,7 +153,7 @@ The runner treats the local Codex CLI as the execution driver. Agent Markdown de
 - Keep credentials in the normal Codex and GitHub CLI stores or environment variables. Never commit `.env` or `config.local.toml`.
 - Packaged desktop artifacts are currently unsigned and unnotarized. Verify the GitHub Release and commit or tag before opening one.
 
-Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/tranfu-labs/agent-moebius/security/advisories/new).
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new).
 
 ## Development
 
