@@ -499,12 +499,14 @@ ipcMain.handle("action:check-updates", async () => {
       platform: process.platform,
       currentVersion: app.getVersion(),
       latestVersion: latestRelease?.version,
-      downloadUrl: latestRelease?.url ?? "https://github.com/tranfu-labs/moebius/releases/latest",
+      downloadUrl: latestRelease?.url ?? "https://github.com/tranfu-labs/agent-moebius/releases/latest",
     });
     status.update = decision;
     publishStatus();
     if (decision.action === "open-download-page") {
-      await shell.openExternal(decision.downloadUrl ?? "https://github.com/tranfu-labs/moebius/releases/latest");
+      await shell.openExternal(
+        decision.downloadUrl ?? "https://github.com/tranfu-labs/agent-moebius/releases/latest",
+      );
     }
     return;
   }
@@ -596,7 +598,7 @@ function formatError(error: unknown): string {
 
 async function fetchLatestDesktopRelease(): Promise<ReleaseMetadata | null> {
   try {
-    const response = await fetch("https://api.github.com/repos/tranfu-labs/moebius/releases/latest", {
+    const response = await fetch("https://api.github.com/repos/tranfu-labs/agent-moebius/releases/latest", {
       headers: {
         accept: "application/vnd.github+json",
         "user-agent": "moebius-desktop",
