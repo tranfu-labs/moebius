@@ -58,7 +58,7 @@ describe("dashboard tokens", () => {
     expect(globals).toContain("--radius: 14px");
   });
 
-  it("drops elevation shadows and uses a single-layer focus ring", () => {
+  it("drops elevation shadows and keeps shared focus and motion tokens", () => {
     expect(tokens.match(/--shadow-pop: none/g)?.length).toBe(3);
     expect(tokens).not.toContain("inset 0 0 0 1px");
     expect(tokens).toContain("--ring-focus: 0 0 0 2px var(--accent)");
@@ -67,10 +67,10 @@ describe("dashboard tokens", () => {
     expect(tokens).toContain("--ease-enter: cubic-bezier(0.165, 0.84, 0.44, 1)");
   });
 
-  it("self-hosts Inter Variable and applies cv01/ss03 globally", () => {
+  it("self-hosts Inter Variable without imposing a global focus-visible style", () => {
     expect(globals).toContain('font-family: "InterVar"');
     expect(globals).toContain("./fonts/inter-var-latin-cv01.woff2");
     expect(globals).toContain('font-feature-settings: "cv01", "ss03"');
-    expect(globals).toContain("box-shadow: var(--ring-focus)");
+    expect(globals).not.toMatch(/:focus-visible\s*\{/);
   });
 });

@@ -49,12 +49,6 @@
     letter-spacing: 0;
     font-feature-settings: "cv01", "ss03";
   }
-
-  :focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-    border-radius: 5px;
-  }
 }
 
 @layer utilities {
