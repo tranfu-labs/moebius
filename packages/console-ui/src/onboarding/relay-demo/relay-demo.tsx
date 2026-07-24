@@ -1,5 +1,5 @@
 import { Users } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 import type {
   OperatorAgentTeam,
@@ -54,9 +54,15 @@ function RelayPlaybackDemo({
     relayRun,
     reducedMotion,
   });
-  const activeSpeakerSlug = playback.activeIndex < 0
+  const holderIndex = playback.typingIndex >= 0
+    ? playback.typingIndex
+    : playback.activeIndex;
+  const activeSpeakerSlug = holderIndex < 0
     ? null
-    : beats[playback.activeIndex]!.speakerSlug;
+    : beats[holderIndex]!.speakerSlug;
+  const relayStyle = {
+    "--relay-graph-width": `calc(var(--relay-lane-width) * ${String(members.length)})`,
+  } as CSSProperties;
 
   useEffect(() => {
     if (playback.activeIndex < 0) {
@@ -108,7 +114,8 @@ function RelayPlaybackDemo({
 
   return (
     <section
-      className="overflow-hidden rounded-xl border border-line bg-card"
+      className="[--relay-lane-width:28px] overflow-hidden rounded-xl border border-line bg-card sm:[--relay-lane-width:64px]"
+      style={relayStyle}
       data-testid="onboarding-relay-demo-slot"
       data-relay-run={relayRun}
       data-motion={playback.reducedMotion ? "reduced" : "standard"}
@@ -116,10 +123,10 @@ function RelayPlaybackDemo({
       aria-label="团队接力演示"
     >
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
           <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-run-fg)]" aria-hidden="true" />
           <span className="text-xs text-sub">接力演示</span>
-          <strong className="truncate text-xs font-semibold text-ink">
+          <strong className="min-w-0 break-words text-xs font-semibold text-ink">
             {team.name ?? "所选团队"}
           </strong>
         </span>
@@ -130,15 +137,19 @@ function RelayPlaybackDemo({
         className="grid items-center gap-x-3 border-b border-line bg-sunken px-3 py-2 text-[10px] font-semibold text-hint"
         style={{ gridTemplateColumns: RELAY_STAGE_COLUMNS }}
       >
-        <RelayRoleColumns activeSpeakerSlug={activeSpeakerSlug} members={members} />
+        <RelayRoleColumns
+          activeSpeakerSlug={activeSpeakerSlug}
+          members={members}
+          reducedMotion={playback.reducedMotion}
+        />
         <span className="tracking-[0.04em]">对话记录</span>
       </div>
 
       <div
         ref={stageRef}
-        className="grid max-h-[360px] gap-x-3 overflow-y-auto px-3 py-1"
+        className="grid max-h-[min(432px,calc(100dvh-280px))] gap-x-3 overflow-y-auto px-3"
         style={{
-          gridAutoRows: "minmax(88px, auto)",
+          gridAutoRows: "minmax(72px, auto)",
           gridTemplateColumns: RELAY_STAGE_COLUMNS,
         }}
         aria-live="polite"
@@ -155,6 +166,8 @@ function RelayPlaybackDemo({
           activeIndex={playback.activeIndex}
           beats={beats}
           members={members}
+          reducedMotion={playback.reducedMotion}
+          typingIndex={playback.typingIndex}
           visibleCount={playback.visibleCount}
         />
       </div>

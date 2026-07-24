@@ -189,11 +189,23 @@ export function OnboardingShell({
         </span>
       </header>
 
-      <section className="flex min-h-0 flex-1 justify-center overflow-y-auto px-6 py-10 max-sm:px-4 max-sm:py-7">
+      <section
+        className={cn(
+          "flex min-h-0 flex-1 justify-center overflow-y-auto px-6 max-sm:px-4",
+          state.step === 3 ? "py-4 max-sm:py-5" : "py-10 max-sm:py-7",
+        )}
+      >
         <div
           className={cn(
-            "flex w-full flex-col justify-center transition-[max-width]",
-            state.step === 2 && state.teamBuilderOpen ? "max-w-[780px]" : "max-w-lg",
+            "flex w-full flex-col transition-[max-width]",
+            state.step === 3
+              ? "max-w-[780px] justify-start"
+              : "justify-center",
+            state.step === 2 && state.teamBuilderOpen
+              ? "max-w-[780px]"
+              : state.step === 3
+                ? null
+                : "max-w-lg",
           )}
           data-testid="onboarding-content-column"
         >
@@ -213,7 +225,7 @@ export function OnboardingShell({
             </p>
           </header>
 
-          <div className="mt-7 w-full">
+          <div className={cn("w-full", state.step === 3 ? "mt-5" : "mt-7")}>
             {state.step === 1 ? (
               <EnvironmentStep
                 environment={environment}

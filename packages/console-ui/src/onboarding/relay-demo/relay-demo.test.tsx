@@ -42,11 +42,18 @@ describe("RelayDemo", () => {
     renderDemo({ reducedMotion: true });
 
     const connectors = screen.getAllByTestId("relay-connector");
+    const tails = screen.getAllByTestId("relay-tail");
     expect(connectors).toHaveLength(5);
+    expect(tails).toHaveLength(5);
     for (const connector of connectors) {
       const y1 = Number(connector.getAttribute("data-y1"));
       const y2 = Number(connector.getAttribute("data-y2"));
       expect(y2 - y1).toBeLessThanOrEqual(1);
+    }
+    for (const tail of tails) {
+      const y1 = Number(tail.getAttribute("data-y1"));
+      const y2 = Number(tail.getAttribute("data-y2"));
+      expect(y2 - y1).toBe(1);
     }
 
     const nodeRows = screen.getAllByTestId("relay-node-row");
@@ -92,6 +99,67 @@ describe("RelayDemo", () => {
       Object.defineProperty(window.Element.prototype, "animate", originalAnimate);
     }
     vi.unstubAllGlobals();
+  });
+
+  it("shows a bounded typing phase before revealing the next beat", () => {
+    vi.useFakeTimers();
+    renderDemo();
+    const timing = createRelayPlaybackTiming(6, false);
+
+    act(() => {
+      vi.advanceTimersByTime(timing.typingOffsetsMs[0]!);
+    });
+    expect(screen.getByRole("status", { name: "经理 正在输入" })).toBeInTheDocument();
+    expect(screen.getByTestId("relay-holder-indicator")).toHaveAttribute(
+      "data-member-index",
+      "0",
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(
+        timing.revealOffsetsMs[0]! - timing.typingOffsetsMs[0]!,
+      );
+    });
+    expect(screen.queryByRole("status", { name: "经理 正在输入" })).not.toBeInTheDocument();
+    expect(screen.getByText("拆解任务并派工。")).toBeVisible();
+  });
+
+  it("keeps long desktop role labels readable and provides compact labels", () => {
+    const longNameTeam: OperatorAgentTeam = {
+      ...developmentTeam,
+      name: "AI 热点社媒编辑部",
+      memberOrder: ["manager", "researcher", "editor", "reviewer"],
+      onboardingOrchestration: {
+        status: "ready",
+        relayBeats: [
+          { speakerSlug: "manager", message: "确定选题。" },
+          { speakerSlug: "researcher", message: "核对热点。" },
+          { speakerSlug: "editor", message: "完成编辑。" },
+          { speakerSlug: "reviewer", message: "品牌复核。" },
+        ],
+      },
+      members: [
+        { slug: "manager", displayName: "策略负责人", description: "负责选题" },
+        { slug: "researcher", displayName: "热点研究员", description: "负责研究" },
+        { slug: "editor", displayName: "社交媒体编辑", description: "负责编辑" },
+        { slug: "reviewer", displayName: "品牌复核专员", description: "负责复核" },
+      ],
+    };
+
+    render(
+      <RelayDemo
+        team={longNameTeam}
+        relayRun={1}
+        reducedMotion
+        onReplay={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("AI 热点社媒编辑部")).not.toHaveClass("truncate");
+    const labels = screen.getAllByTestId("relay-role-label");
+    expect(labels).toHaveLength(4);
+    expect(labels.every((label) => !label.classList.contains("truncate"))).toBe(true);
+    expect(screen.getAllByTestId("relay-role-label-compact")).toHaveLength(4);
   });
 
   it("reads an AI team's relay metadata without branching on team id", () => {
@@ -170,6 +238,7 @@ describe("RelayDemo", () => {
     expect(createRelayPlaybackTiming(4, false).totalDurationMs).toBe(8_000);
     expect(createRelayPlaybackTiming(6, false).totalDurationMs).toBe(10_200);
     expect(createRelayPlaybackTiming(10, false).totalDurationMs).toBe(12_000);
+    expect(createRelayPlaybackTiming(6, false).typingOffsetsMs).toHaveLength(6);
   });
 
   it("parses the shared motion duration token for WAAPI timing", () => {

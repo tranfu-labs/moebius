@@ -3,14 +3,17 @@ import { useEffect, useMemo, useState } from "react";
 const STANDARD_BEAT_MS = 1_700;
 const STANDARD_MIN_MS = 8_000;
 const STANDARD_MAX_MS = 12_000;
-const STANDARD_FIRST_BEAT_MS = 400;
+const STANDARD_FIRST_BEAT_MS = 700;
 const STANDARD_FINISH_HOLD_MS = 800;
+const STANDARD_TYPING_LEAD_MS = 520;
 const REDUCED_FIRST_BEAT_MS = 120;
 const REDUCED_BEAT_MS = 260;
+const REDUCED_TYPING_LEAD_MS = 80;
 
 export interface RelayPlaybackTiming {
   totalDurationMs: number;
   revealOffsetsMs: number[];
+  typingOffsetsMs: number[];
 }
 
 export interface RelayPlaybackState {
@@ -18,6 +21,7 @@ export interface RelayPlaybackState {
   complete: boolean;
   reducedMotion: boolean;
   timing: RelayPlaybackTiming;
+  typingIndex: number;
   visibleCount: number;
 }
 
@@ -46,6 +50,8 @@ export function createRelayPlaybackTiming(
     return {
       revealOffsetsMs,
       totalDurationMs: revealOffsetsMs.at(-1)! + REDUCED_BEAT_MS,
+      typingOffsetsMs: revealOffsetsMs.map((offset) =>
+        Math.max(0, offset - REDUCED_TYPING_LEAD_MS)),
     };
   }
 
@@ -57,12 +63,15 @@ export function createRelayPlaybackTiming(
   const stepMs = beatCount === 1
     ? 0
     : (lastRevealMs - STANDARD_FIRST_BEAT_MS) / (beatCount - 1);
+  const revealOffsetsMs = Array.from(
+    { length: beatCount },
+    (_, index) => Math.round(STANDARD_FIRST_BEAT_MS + index * stepMs),
+  );
   return {
     totalDurationMs,
-    revealOffsetsMs: Array.from(
-      { length: beatCount },
-      (_, index) => Math.round(STANDARD_FIRST_BEAT_MS + index * stepMs),
-    ),
+    revealOffsetsMs,
+    typingOffsetsMs: revealOffsetsMs.map((offset) =>
+      Math.max(0, offset - STANDARD_TYPING_LEAD_MS)),
   };
 }
 
@@ -78,13 +87,20 @@ export function useRelayPlayback(input: {
     [input.beatCount, reducedMotion],
   );
   const [visibleCount, setVisibleCount] = useState(0);
+  const [typingIndex, setTypingIndex] = useState(-1);
   const [complete, setComplete] = useState(false);
 
   useEffect(() => {
     setVisibleCount(0);
+    setTypingIndex(-1);
     setComplete(false);
-    const timers = timing.revealOffsetsMs.map((delay, index) =>
-      window.setTimeout(() => setVisibleCount(index + 1), delay));
+    const timers = timing.revealOffsetsMs.flatMap((delay, index) => [
+      window.setTimeout(() => setTypingIndex(index), timing.typingOffsetsMs[index]),
+      window.setTimeout(() => {
+        setTypingIndex(-1);
+        setVisibleCount(index + 1);
+      }, delay),
+    ]);
     timers.push(window.setTimeout(() => setComplete(true), timing.totalDurationMs));
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer));
@@ -96,6 +112,7 @@ export function useRelayPlayback(input: {
     complete,
     reducedMotion,
     timing,
+    typingIndex,
     visibleCount,
   };
 }

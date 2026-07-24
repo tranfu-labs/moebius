@@ -71,6 +71,8 @@ describe("OnboardingShell", () => {
     ));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "1");
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[780px]");
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("justify-start");
     fireEvent.click(screen.getByRole("button", { name: "重新播放" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "2");
     fireEvent.click(screen.getByRole("button", { name: "继续" }));

@@ -8,11 +8,15 @@ export function RelayMessages({
   activeIndex,
   beats,
   members,
+  reducedMotion,
+  typingIndex,
   visibleCount,
 }: {
   activeIndex: number;
   beats: readonly OperatorAgentTeamRelayBeat[];
   members: readonly OperatorAgentTeamMember[];
+  reducedMotion: boolean;
+  typingIndex: number;
   visibleCount: number;
 }): JSX.Element {
   const membersBySlug = new Map(members.map((member) => [member.slug, member]));
@@ -25,11 +29,12 @@ export function RelayMessages({
         }
         const visible = index < visibleCount;
         const current = index === activeIndex;
+        const typing = index === typingIndex && !visible;
         return (
           <article
             className={cn(
-              "min-w-0 border-b border-line px-3 py-3 transition-[opacity,background-color] last:border-b-0",
-              visible ? "opacity-100" : "opacity-0",
+              "min-w-0 border-b border-line px-3 py-2.5 transition-[opacity,background-color] last:border-b-0",
+              visible || typing ? "opacity-100" : "opacity-0",
               current && "rounded-lg bg-sunken",
             )}
             style={{ gridColumn: 2, gridRow: index + 1 }}
@@ -37,25 +42,53 @@ export function RelayMessages({
             data-relay-row={index}
             data-grid-row={index + 1}
             data-visible={visible ? "true" : "false"}
-            aria-hidden={!visible}
+            data-typing={typing ? "true" : "false"}
+            aria-hidden={!visible && !typing}
             key={`message-${String(index)}`}
           >
-            <header className="flex min-w-0 items-center gap-2">
-              <strong className="truncate text-xs font-semibold text-ink">
-                {member.displayName || `@${member.slug}`}
-              </strong>
-              <span className="shrink-0 text-[10px] tabular-nums text-hint">
-                第 {index + 1} 棒
-              </span>
-              {current ? (
-                <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-run-fg)]">
-                  {index === beats.length - 1 ? "收尾" : "处理中"}
+            {typing ? (
+              <div
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-sunken px-2.5 py-2"
+                data-testid="relay-typing"
+                role="status"
+                aria-label={`${member.displayName || member.slug} 正在输入`}
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-[9px] font-semibold text-sub">
+                  {(member.displayName || member.slug).slice(0, 1)}
                 </span>
-              ) : null}
-            </header>
-            <p className={cn("mt-1.5 text-xs leading-5", current ? "text-ink" : "text-sub")}>
-              {beat.message}
-            </p>
+                <span className="flex items-center gap-1" aria-hidden="true">
+                  {[0, 1, 2].map((dot) => (
+                    <i
+                      className={cn(
+                        "h-1 w-1 rounded-full bg-sub",
+                        !reducedMotion && "animate-pulse",
+                      )}
+                      style={reducedMotion ? undefined : { animationDelay: `${String(dot * 120)}ms` }}
+                      key={dot}
+                    />
+                  ))}
+                </span>
+              </div>
+            ) : (
+              <>
+                <header className="flex min-w-0 items-center gap-2">
+                  <strong className="min-w-0 text-xs font-semibold text-ink">
+                    {member.displayName || `@${member.slug}`}
+                  </strong>
+                  <span className="shrink-0 text-[10px] tabular-nums text-hint">
+                    第 {index + 1} 棒
+                  </span>
+                  {current ? (
+                    <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-run-fg)]">
+                      {index === beats.length - 1 ? "收尾" : "处理中"}
+                    </span>
+                  ) : null}
+                </header>
+                <p className={cn("mt-1 text-xs leading-5", current ? "text-ink" : "text-sub")}>
+                  {beat.message}
+                </p>
+              </>
+            )}
           </article>
         );
       })}
