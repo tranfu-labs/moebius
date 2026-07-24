@@ -225,6 +225,14 @@
 - `github-response-intake.ts`、`goal-ledger.ts`、`local-config.ts`、`conversation.ts`、`conversation-interrupt.ts`、`issue-media.ts` 与 `ceo-orchestration.ts` 只做业务数据操作；`ceo-scripts.ts` 只读剧本数据并校验 workflow；`src/triggers/` 封装 mention 触发规则；`driver-pool.ts` 只承载 driver job 并发策略；`scanner.ts` 只做发现、`issue-dispatcher.ts` 只做派发与折叠、`state-persister.ts` 只做单写者状态持有与落盘；GitHub、Codex CLI、媒体 IO、状态文件读写分别由 `github.ts`、`codex.ts`、`media-assets.ts`、`state.ts`、`agent-context-state.ts`、`github-intake-state.ts`、`goal-ledger-state.ts` 适配；`runner.ts` 只做心跳编排、依赖装配与 issue-processing 主顺序，`src/runner/*` 只承载 runner 主链路内部的高内聚副作用协调（如验收 pre-pass、外部路由、Codex execution reaction），仍属于 GitHub issue runner 边界，不得成为新的业务事实源；`src/observer/` 是本地只读旁路，只读消费配置、目标账本、`.state` 与 run manifest，禁止被 runner 主链路依赖。
 - 本地脚本执行必须把 GitHub issue 内容当作数据处理，不能拼接成 shell 命令；调用外部命令必须使用 `child_process.spawn(cmd, args[])`，不得使用 `exec` / `execSync` / `shell: true`。
 
+## 会话上下文纪律（AI 执行时）
+长会话的主要开销来自工具输出灌大上下文（实测一次 33 分钟会话中工具输出占上下文 73%，其中截图、构建日志、批量读文件、全量 diff 是四个大头）。在本仓库执行任务时遵守：
+- 验证 UI 优先用文本断言（DOM 文本、退出码、evidence JSON）；只有断言无法覆盖的视觉问题才截图，且截图落盘留证即可，NEVER 用 `view_image` 把图片回读进上下文（单张即 1.7 万~2.7 万 token）。
+- 长命令（`pnpm test` / `typecheck` / `build` / `check`、vitest、验收脚本）把输出重定向到文件（如 `> /tmp/build.log 2>&1`），结束后只 `tail` / `rg` 关键行；NEVER 用 30 秒轮询逐片读回滚动日志（每片可达 1 万 token 且大量重复）。多条互不依赖的验证命令合成一条一次跑完，不要逐条串行等待。
+- 读文件按需分段：先用 `rg -n` 定位再读目标行段；NEVER 用一条命令串联 `sed -n '1,300p'` 全文连读多份文档。
+- 大任务（实施 → 反思 → 归档 → 提交）分阶段开新会话，避免前一阶段的截图、日志、diff 被后续每一轮重复计费；单会话上下文逼近窗口上限会触发压缩并显著拖慢每一步。
+- 收尾核对 diff 用 `git diff --stat` / `--name-only`；只对确需逐行确认的文件看全量 diff。
+
 ## 修改前检查
 - 改用户可见行为前，先读 `docs/product/` 对应的页面 / 流程 PRD。**`docs/product/` 是产品意图事实源，领先于实现（可以写还没做的）；`openspec/specs/` 是行为事实源，落后于实现（只记录已实现并验证的）。两者时间性相反，NEVER 互相替代，NEVER 把同一条规则原样抄两份。**
 - 读 `docs/architecture/module-map.md` 确认依赖边界。
