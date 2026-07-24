@@ -55,11 +55,11 @@
 │   ├── src/
 │   │   ├── main.ts             # Electron 主进程装配：数据根、PATH、自检、observer、runner、IPC
 │   │   ├── runner-child.ts     # utilityProcess 子进程入口，调用 src/runner.ts 的 start()
-│   │   ├── preload.ts          # 桌面操作台与状态页的窄 IPC 暴露
+│   │   ├── preload.ts          # browser 边界构建的 sandbox preload，只从纯 contract 暴露窄 IPC
 │   │   ├── console-page/       # 桌面操作台 renderer（含 selection/refresh gate、附件 preview/upload 草稿协调）
 │   │   ├── status-page/        # 桌面辅助诊断状态页静态资源
 │   │   ├── data-root.ts        # 数据根解析与首启种子拷贝计划
-│   │   ├── team-*.ts           # Agent 团队十一个模块：播种 / 核心存储 / 引导编排 / 有效性 / 记录 / IPC / 外部修改 / 文件管理 / 预选 / 会话运行时绑定（见 module-map）
+│   │   ├── team-*.ts           # Agent 团队实现、引导编排及 preload-safe IPC contract（见 module-map）
 │   │   ├── shell-path.ts       # macOS 登录 shell PATH 读取与合并
 │   │   ├── env-doctor.ts       # codex / gh / gh auth 自检
 │   │   ├── runner-supervisor.ts # runner 子进程状态机与崩溃退避
@@ -134,7 +134,7 @@
     - 端口冲突（被 Chrome debugger 或其他 CDP 工具占用）会导致 Electron 启动失败，可用 `lsof -iTCP:9222 -sTCP:LISTEN` 定位占用方。
 - 构建桌面主进程 / 操作台 / 状态页：`pnpm --filter @moebius/desktop build`
   - desktop build 会先构建 `@moebius/console-ui`，renderer 只消费组件库已由 Vite/PostCSS/Tailwind 编译的 `globals.css` package export；构建产物若残留 `@tailwind` / `@apply` 或缺少关键 utility 会直接失败。
-  - desktop 主进程与 runner child 产物为 Node ESM bundle，preload 为 Electron sandboxed CJS bundle；构建会拒绝 Node ESM 中的动态 `require` shim，也会拒绝 preload 中 sandbox 不支持的 `require("process")`。`yaml` 在三份 bundle 中固定解析到官方纯 ESM browser export 并内联，避免主进程或 preload 加载失败。
+  - desktop 主进程与 runner child 产物为 Node ESM bundle，preload 为按 browser 边界构建的 Electron sandboxed CJS bundle；主窗口与状态窗口显式保持 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`。preload 运行时只允许 `require("electron")`，IPC channel / renderer DTO 只从无 Node runtime 依赖的 `*-contract.ts` 导入；构建会拒绝 Node ESM 动态 `require` shim，以及 preload 中任何其它静态 `require()`。`yaml` 在 Node ESM bundle 中固定解析到官方纯 ESM browser export 并内联，避免主进程加载失败。
 - 打包桌面应用：`pnpm --filter @moebius/desktop dist`
   - electron-builder 只生成 macOS Apple Silicon（arm64）的 DMG 与 ZIP，产物名固定含 `mac-arm64`；不得生成 Windows、Linux、macOS x64 或 universal 产物。
   - `.app`、DMG、Dock、操作台、onboarding、辅助状态页与官网统一使用 `assets/brand/moebius.png` 的脚本派生产物。

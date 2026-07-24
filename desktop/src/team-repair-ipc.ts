@@ -3,21 +3,12 @@ import {
   removeUserTeamRecord,
 } from "./team-record-store.js";
 import { toListItem, type AgentTeamListItem } from "./team-ipc.js";
+import type {
+  AgentTeamRelocateRequest,
+  AgentTeamRepairRequest,
+} from "./team-repair-contract.js";
 
-export const TEAM_REPAIR_IPC_CHANNELS = {
-  selectRelocationFolder: "agent-teams:repair:select-relocation-folder",
-  relocate: "agent-teams:repair:relocate",
-  removeRecord: "agent-teams:repair:remove-record",
-} as const;
-
-export interface AgentTeamRepairRequest {
-  teamId: string;
-  ownership: "user";
-}
-
-export interface AgentTeamRelocateRequest extends AgentTeamRepairRequest {
-  directory: string;
-}
+export * from "./team-repair-contract.js";
 
 export async function relocateAgentTeamRecord(
   dataRoot: string,

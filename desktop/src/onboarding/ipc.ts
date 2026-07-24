@@ -1,9 +1,11 @@
 import { AiTeamBuilder } from "../ai-team-builder/index.js";
 import {
-  AI_TEAM_BUILDER_IPC_CHANNELS,
   registerAiTeamBuilderIpc,
-  type AiTeamBuilderIpcResponse,
 } from "../ai-team-builder-ipc.js";
+import {
+  AI_TEAM_BUILDER_IPC_CHANNELS,
+  type AiTeamBuilderIpcResponse,
+} from "../ai-team-builder/contract.js";
 import { checkCodex, type DoctorCheck } from "../env-doctor.js";
 import {
   readOnboardingCompletion,

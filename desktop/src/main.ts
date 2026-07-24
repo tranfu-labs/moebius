@@ -26,12 +26,10 @@ import { resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
+import { TEAM_FILE_MANAGER_IPC_CHANNEL } from "./team-file-manager-contract.js";
+import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
+import { TEAM_IPC_CHANNELS } from "./team-ipc-contract.js";
 import {
-  openAgentTeamLocationInFileManager,
-  TEAM_FILE_MANAGER_IPC_CHANNEL,
-} from "./team-file-manager.js";
-import {
-  TEAM_IPC_CHANNELS,
   addAgentTeamMember,
   createAgentTeam,
   duplicateBuiltInAgentTeam,
@@ -45,8 +43,8 @@ import {
   updateAgentTeamInformation,
   writeAgentTeamMember,
 } from "./team-ipc.js";
+import { TEAM_REPAIR_IPC_CHANNELS } from "./team-repair-contract.js";
 import {
-  TEAM_REPAIR_IPC_CHANNELS,
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
 } from "./team-repair-ipc.js";
@@ -57,12 +55,14 @@ import {
   loadAgentTeamSnapshot,
   resolveSessionAgentTeamHealth,
 } from "./team-runtime-binding.js";
+import { TEAM_EXTERNAL_CHANGE_IPC_CHANNEL } from "./team-external-change-contract.js";
 import {
-  TEAM_EXTERNAL_CHANGE_IPC_CHANNEL,
   checkAgentTeamMemberExternalChange,
 } from "./team-external-change.js";
 import {
   TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS,
+} from "./team-conversation-preference-contract.js";
+import {
   readLastUsedAgentTeam,
   recordSuccessfulConversationAgentTeam,
 } from "./team-conversation-preference.js";
@@ -208,6 +208,7 @@ function createWindow(): void {
       preload: path.join(dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -572,6 +573,7 @@ function openStatusPage(): void {
       preload: path.join(dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   statusWindow.on("closed", () => {

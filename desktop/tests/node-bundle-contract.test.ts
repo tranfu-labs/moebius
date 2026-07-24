@@ -23,12 +23,37 @@ describe("desktop Node bundle contract", () => {
       .not.toThrow();
   });
 
-  it.each(["require(\"process\")", "require('node:process')"])(
+  it("accepts Electron's renderer bridge module", () => {
+    expect(() => assertSandboxedPreloadBundle("const electron = require('electron');"))
+      .not.toThrow();
+  });
+
+  it.each([
+    "require(\"process\")",
+    "require('node:process')",
+    "require('node:path')",
+    "require('node:fs')",
+    "require('node:crypto')",
+    "require('node:child_process')",
+  ])(
     "rejects a sandboxed preload containing %s",
     (source) => {
       expect(() => assertSandboxedPreloadBundle(source, "preload.cjs")).toThrow(
-        /preload\.cjs requires process/u,
+        /preload\.cjs requires modules unavailable in Electron's sandboxed preload/u,
       );
     },
   );
+
+  it("reports every unsupported module in a generated preload bundle", () => {
+    const source = [
+      "require('electron');",
+      "require('node:path');",
+      "require('node:fs');",
+      "require('node:path');",
+    ].join("\n");
+
+    expect(() => assertSandboxedPreloadBundle(source, "preload.cjs")).toThrow(
+      /node:fs, node:path/u,
+    );
+  });
 });

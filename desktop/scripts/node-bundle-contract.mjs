@@ -1,5 +1,6 @@
 const esbuildDynamicRequireMarker = "Dynamic require of \"";
-const sandboxedPreloadProcessRequire = /\brequire\(["'](?:node:)?process["']\)/u;
+const staticRequirePattern = /\brequire\(\s*["']([^"']+)["']\s*\)/gu;
+const sandboxedPreloadAllowedRequires = new Set(["electron"]);
 
 export function assertStaticNodeBundle(source, label = "Node bundle") {
   if (source.includes(esbuildDynamicRequireMarker)) {
@@ -9,7 +10,13 @@ export function assertStaticNodeBundle(source, label = "Node bundle") {
 
 export function assertSandboxedPreloadBundle(source, label = "preload.cjs") {
   assertStaticNodeBundle(source, label);
-  if (sandboxedPreloadProcessRequire.test(source)) {
-    throw new Error(`${label} requires process, which is unavailable in Electron's sandboxed preload`);
+  const unsupportedRequires = [...source.matchAll(staticRequirePattern)]
+    .map((match) => match[1])
+    .filter((specifier) => specifier !== undefined && !sandboxedPreloadAllowedRequires.has(specifier));
+  if (unsupportedRequires.length > 0) {
+    const uniqueSpecifiers = [...new Set(unsupportedRequires)].sort();
+    throw new Error(
+      `${label} requires modules unavailable in Electron's sandboxed preload: ${uniqueSpecifiers.join(", ")}`,
+    );
   }
 }

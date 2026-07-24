@@ -2,40 +2,17 @@ import {
   AiTeamBuilder,
   AiTeamBuilderRequestError,
 } from "./ai-team-builder/index.js";
+import {
+  AI_TEAM_BUILDER_IPC_CHANNELS,
+  type AiTeamBuilderCommitRequest,
+  type AiTeamBuilderDraftRequest,
+  type AiTeamBuilderIpcResponse,
+  type AiTeamBuilderTurnRequest,
+} from "./ai-team-builder/contract.js";
 import { AiTeamBuilderStaleRevisionError } from "./ai-team-builder/state-machine.js";
 import type { AiTeamBuilderState } from "./ai-team-builder/dto.js";
 
-export const AI_TEAM_BUILDER_IPC_CHANNELS = {
-  state: "agent-teams:ai-builder:state",
-  start: "agent-teams:ai-builder:start",
-  submit: "agent-teams:ai-builder:submit",
-  adjust: "agent-teams:ai-builder:adjust",
-  retry: "agent-teams:ai-builder:retry",
-  commit: "agent-teams:ai-builder:commit",
-} as const;
-
-export interface AiTeamBuilderDraftRequest {
-  draftId: string;
-}
-
-export interface AiTeamBuilderTurnRequest extends AiTeamBuilderDraftRequest {
-  text: string;
-}
-
-export interface AiTeamBuilderCommitRequest extends AiTeamBuilderDraftRequest {
-  proposalRevision: number;
-}
-
-export type AiTeamBuilderIpcResponse =
-  | { ok: true; state: AiTeamBuilderState }
-  | {
-      ok: false;
-      error: {
-        code: "invalid-request" | "stale-revision" | "temporarily-unavailable";
-        humanMessage: string;
-        canRetry: boolean;
-      };
-    };
+export * from "./ai-team-builder/contract.js";
 
 export interface AiTeamBuilderIpcMain {
   handle(

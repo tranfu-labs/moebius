@@ -1,4 +1,4 @@
-import type { AgentTeamListItem } from "../team-ipc.js";
+import type { AgentTeamListItem } from "../team-ipc-contract.js";
 
 export interface AgentTeamSelection {
   teamKey: string;

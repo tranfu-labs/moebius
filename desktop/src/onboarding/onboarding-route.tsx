@@ -7,9 +7,9 @@ import {
 } from "@moebius/console-ui";
 import { useCallback, useEffect, useState } from "react";
 
-import type { AiTeamBuilderIpcResponse } from "../ai-team-builder-ipc.js";
+import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
-import type { AgentTeamListItem } from "../team-ipc.js";
+import type { AgentTeamListItem } from "../team-ipc-contract.js";
 import type { DesktopApi } from "../console-page/app.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";

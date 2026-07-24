@@ -1,24 +1,16 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isValidPathSegment, type TeamOwnership } from "./team-model.js";
+import type {
+  LastUsedAgentTeam,
+  SuccessfulConversationAgentTeamRequest,
+} from "./team-conversation-preference-contract.js";
 import { listAgentTeams } from "./team-ipc.js";
+import { isValidPathSegment } from "./team-model.js";
 
 export const LAST_USED_AGENT_TEAM_FILE = "last-used-team.json";
 
-export const TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS = {
-  readLastUsed: "agent-teams:read-last-used",
-  recordSuccessful: "agent-teams:record-successful-conversation",
-} as const;
-
-export interface LastUsedAgentTeam {
-  teamId: string;
-  ownership: TeamOwnership;
-}
-
-export interface SuccessfulConversationAgentTeamRequest extends LastUsedAgentTeam {
-  sessionId: string;
-}
+export * from "./team-conversation-preference-contract.js";
 
 interface LastUsedAgentTeamDocument extends LastUsedAgentTeam {
   version: 1;

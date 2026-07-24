@@ -42,25 +42,25 @@ import type {
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamUpdateInformationRequest,
   AgentTeamTrashUserRequest,
-} from "../team-ipc.js";
-import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-repair-ipc.js";
-import type { AgentTeamFileManagerRequest } from "../team-file-manager.js";
+} from "../team-ipc-contract.js";
+import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-repair-contract.js";
+import type { AgentTeamFileManagerRequest } from "../team-file-manager-contract.js";
 import type {
   LastUsedAgentTeam,
   SuccessfulConversationAgentTeamRequest,
-} from "../team-conversation-preference.js";
+} from "../team-conversation-preference-contract.js";
 import type {
   AiTeamBuilderCommitRequest,
   AiTeamBuilderDraftRequest,
   AiTeamBuilderIpcResponse,
   AiTeamBuilderTurnRequest,
-} from "../ai-team-builder-ipc.js";
+} from "../ai-team-builder/contract.js";
 import type { DoctorCheck } from "../env-doctor.js";
 import type { OnboardingCompletionStatus } from "../onboarding/first-run-marker.js";
 import type {
   AgentTeamExternalChangeRequest,
   AgentTeamExternalChangeResponse,
-} from "../team-external-change.js";
+} from "../team-external-change-contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";

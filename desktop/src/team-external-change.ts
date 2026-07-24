@@ -1,23 +1,15 @@
 import fs from "node:fs/promises";
 
-import { AgentTeamIpcRequestError, type AgentTeamMemberDocument } from "./team-ipc.js";
-import { parseAgentMarkdownIdentity, type TeamOwnership } from "./team-model.js";
+import {
+  type AgentTeamExternalChangeRequest,
+  type AgentTeamExternalChangeResponse,
+} from "./team-external-change-contract.js";
+import { AgentTeamIpcRequestError } from "./team-ipc.js";
+import { parseAgentMarkdownIdentity } from "./team-model.js";
 import { resolveRecordedTeamLocation } from "./team-record-store.js";
 import { getMemberAgentPath, resolveTeamLocation } from "./team-store.js";
 
-export const TEAM_EXTERNAL_CHANGE_IPC_CHANNEL = "agent-teams:check-member-agent-external-change";
-
-export interface AgentTeamExternalChangeRequest {
-  teamId: string;
-  ownership: TeamOwnership;
-  memberSlug: string;
-  knownAgentMarkdown: string;
-}
-
-export type AgentTeamExternalChangeResponse =
-  | { status: "ignored" }
-  | { status: "unchanged" }
-  | { status: "changed"; document: AgentTeamMemberDocument };
+export * from "./team-external-change-contract.js";
 
 /**
  * Reads only the requested AGENT.md. Referenced files and the rest of the team

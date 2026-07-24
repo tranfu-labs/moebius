@@ -64,15 +64,12 @@ await build({
 await build({
   bundle: true,
   format: "cjs",
-  platform: "node",
-  target: "node22",
+  platform: "browser",
+  target: "chrome120",
   sourcemap: true,
   entryPoints: [path.join(root, "src/preload.ts")],
   outfile: path.join(dist, "preload.cjs"),
   external: ["electron"],
-  alias: {
-    yaml: yamlBrowserEntry,
-  },
 });
 
 const preloadBundle = await fs.readFile(path.join(dist, "preload.cjs"), "utf8");

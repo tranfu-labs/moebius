@@ -4,12 +4,12 @@ import {
   getAgentTeamFileManagerLabel,
   TEAM_FILE_MANAGER_IPC_CHANNEL,
   type AgentTeamFileManagerRequest,
-} from "./team-file-manager.js";
+} from "./team-file-manager-contract.js";
 import {
   TEAM_EXTERNAL_CHANGE_IPC_CHANNEL,
   type AgentTeamExternalChangeRequest,
   type AgentTeamExternalChangeResponse,
-} from "./team-external-change.js";
+} from "./team-external-change-contract.js";
 import {
   TEAM_IPC_CHANNELS,
   type AgentTeamCreateRequest,
@@ -27,17 +27,17 @@ import {
   type AgentTeamPrimaryAgentWriteRequest,
   type AgentTeamUpdateInformationRequest,
   type AgentTeamTrashUserRequest,
-} from "./team-ipc.js";
+} from "./team-ipc-contract.js";
 import {
   TEAM_REPAIR_IPC_CHANNELS,
   type AgentTeamRelocateRequest,
   type AgentTeamRepairRequest,
-} from "./team-repair-ipc.js";
+} from "./team-repair-contract.js";
 import {
   TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS,
   type LastUsedAgentTeam,
   type SuccessfulConversationAgentTeamRequest,
-} from "./team-conversation-preference.js";
+} from "./team-conversation-preference-contract.js";
 import { OPEN_EXTERNAL_LINK_IPC_CHANNEL } from "./external-link.js";
 import {
   COPY_SESSION_LOG_PATH_IPC_CHANNEL,
@@ -49,7 +49,7 @@ import {
   type AiTeamBuilderDraftRequest,
   type AiTeamBuilderIpcResponse,
   type AiTeamBuilderTurnRequest,
-} from "./ai-team-builder-ipc.js";
+} from "./ai-team-builder/contract.js";
 import type { DoctorCheck } from "./env-doctor.js";
 import {
   ONBOARDING_IPC_CHANNELS,

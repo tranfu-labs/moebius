@@ -81,11 +81,32 @@
 - MUST provide a safe renderer drag region for the integrated main window while keeping interactive controls usable.
 - MUST keep status and observer diagnostics reachable from the operator console, but they must not be the default main-window experience.
 - MUST expose the local console server URL or equivalent local API capability to the renderer through preload, not through global Node integration.
-- MUST keep context isolation enabled and node integration disabled for renderer windows.
+- MUST explicitly keep the Chromium sandbox and context isolation enabled and node integration disabled for renderer windows.
 - MUST keep the status page available as an auxiliary diagnostic window.
 - MUST expose a narrow preload IPC that opens the native directory picker and returns only the selected folder path or null to the renderer.
 - MUST NOT write project rows, edit configuration, or start Codex inside the folder picker IPC.
 - MUST let the renderer persist the selected folder as a project through the loopback local console API rather than direct filesystem or SQLite access.
+
+### Sandboxed preload dependency boundary
+
+- MUST keep runtime IPC channels and renderer-visible DTOs in side-effect-free contract modules that do not import Node-only services at runtime.
+- MUST let preload and renderer code depend on those contracts, while Electron main-process IPC adapters remain the only layer that imports filesystem, process-spawning, configuration, or Codex services.
+- MUST build the preload against a browser-compatible module boundary and keep `electron` as its only runtime external module.
+- MUST fail the desktop build when the generated preload contains any static `require()` target other than `electron`.
+
+#### Scenario: Main-process implementation cannot leak into preload
+
+- **GIVEN** an IPC adapter imports `node:path`, `node:fs`, `node:crypto`, or a Codex service
+- **WHEN** preload needs the adapter's channel name or DTO
+- **THEN** preload imports the corresponding pure contract instead of the adapter
+- **AND** the generated preload contains no adapter, filesystem, configuration, or Codex implementation.
+
+#### Scenario: Unsupported preload module fails before startup
+
+- **GIVEN** a source change introduces a Node-only runtime import into the preload dependency graph
+- **WHEN** the desktop build bundles and validates the preload
+- **THEN** the build fails before Electron startup
+- **AND** the invalid preload artifact is not accepted as sandbox-compatible.
 
 ### local console server ownership
 - MUST ensure desktop mode starts exactly one local console server for the operator console.
