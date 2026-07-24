@@ -1200,7 +1200,7 @@ describe("OperatorConsole", () => {
     expect(loadFile).toHaveBeenCalledWith("session-a", "README.md");
   });
 
-  it("keeps historical Streamdown Markdown and hides machine details beside the output outlet", () => {
+  it("keeps historical Markdown and reveals an in-place output icon on message hover or focus", () => {
     renderConsole({
       messages: [message({
         id: 2,
@@ -1214,7 +1214,23 @@ describe("OperatorConsole", () => {
 
     expect(screen.getByRole("heading", { name: "完成" })).toBeVisible();
     expect(screen.getByText(/路径已隐藏/u)).toBeVisible();
-    expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
+    const outputButton = screen.getByRole("button", { name: "完整输出" });
+    expect(outputButton).toHaveAttribute("title", "完整输出");
+    expect(outputButton).toHaveClass(
+      "absolute",
+      "left-7",
+      "top-full",
+      "h-6",
+      "w-6",
+      "opacity-0",
+      "group-hover:opacity-100",
+      "group-focus-within:opacity-100",
+      "focus-visible:opacity-100",
+    );
+    expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
+    expect(outputButton).not.toHaveTextContent("完整输出");
+    expect(outputButton.querySelector("svg")).not.toBeNull();
+    expect(outputButton.parentElement).toHaveClass("relative", "pl-7");
     expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
   });
 

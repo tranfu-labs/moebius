@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Diamond,
+  FileText,
   PanelLeft,
   PanelLeftClose,
   PanelRight,
@@ -1948,7 +1949,7 @@ function TimelineEntry({
         <span className="font-semibold text-ink">{message.speaker === "agent" ? resolveOperatorMemberName(message.role) : "系统提示"}</span>
         <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt)}</span>
       </div>
-      <div className="pl-7">
+      <div className="relative pl-7">
       {message.speaker === "system" ? (
         <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message)}</div>
       ) : (
@@ -1968,11 +1969,11 @@ function TimelineEntry({
         </>
       )}
       {message.speaker === "agent" && message.runId !== null && onOpenEvidence ? (
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="mt-2"
+          className="absolute left-7 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
+          aria-label="完整输出"
+          title="完整输出"
           onClick={() => onOpenEvidence({
             kind: "run-output",
             sessionId: message.sessionId,
@@ -1981,8 +1982,8 @@ function TimelineEntry({
             fallbackOutput: message.body,
           })}
         >
-          完整输出
-        </Button>
+          <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+        </button>
       ) : null}
       </div>
     </div>

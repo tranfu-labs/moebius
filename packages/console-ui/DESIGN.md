@@ -57,6 +57,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **inbox 行**：`src/console/agent-message.tsx`——32px 圆形角色头像（右下角 15px stage 角标）+ 行 1（角色名 510 + stage muted + 右侧状态图标与 tnum 时间）+ 行 2 结论 + 行 3 箭头 + handoff；行间发丝线（行内 `border-t`），hover 行底色，无常驻卡片边框。
 - **Agent 首字头像与角色标签**：`src/console/agent-initial-avatar.tsx`（团队页 20/32px）与 `src/console/role-tag.tsx`（时间线 who 行 20px）共用同一身份体系——彩底正圆 + 深色首字，底色按 slug/toneKey 稳定取自身份色板（`--ident-1…6`，moebius-desktop-spec 6.6 采样，亮暗共用），同一角色全产品同色；头像自身保持装饰性，旁边必须保留可读名称。
 - **用户消息右泳道**：`operator-console.tsx` 的 `TimelineEntry` 与子任务标签的 `SubtaskTimelineEntry`——「你」的消息 who 行右对齐（时间戳 · 你 · 彩色头像），正文包在右侧 `rounded-[14px] border bg-card` 气泡内（max-w 85%）；Agent 与系统消息保持左正文列。
+- **历史消息轻操作**：`operator-console.tsx` 的成功 Agent 历史消息——完整输出入口保持在正文下方原有左边界，使用 24px `FileText` 图标按钮；按钮绝对定位在消息间隙中，默认透明，整条消息 hover / focus-within 或按钮 focus-visible 时显示，不占常驻操作行、不移动到 who 行右侧，也不使用 `ghost` 文字按钮。
 - **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px 510 + 14px 图标）在下。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。

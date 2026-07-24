@@ -148,7 +148,7 @@
   - 所有应用内品牌位置复用包内 `MoebiusLogo`，不得另画 SVG 或使用图标库中的 Infinity 代替。
   - `src/styles/tokens.css` 是包内令牌源：近黑底暗色优先的冷灰基底、accent 双主题统一靛蓝 `#5E6AD2`；运行状态渲染为状态 pill（图标 + tinted 底 + 同色描边），状态色相族为 running 琥珀 / pending 蓝 / waiting 紫 / completed 系中性灰，绿/红只用于裁决与危险（唯一例外：未读计数允许红色圆角标）；圆角基线 14px。`packages/console-ui/DESIGN.md` 是包内设计语言事实源（令牌纪律、排版、图标、状态语义、elevation/动效红线与组件模式目录）。
   - `@moebius/console-ui` 被 desktop renderer 复用；renderer 入口需引入 `@moebius/console-ui/globals.css`。desktop 的 `console.css` 只负责窗口/root 宿主约束，不得复制组件布局、按钮、输入框或卡片样式。
-  - 用户与 Agent 正文统一由 `MarkdownMessage` / Streamdown 渲染：历史消息使用 static mode，活动 run 使用唯一 streaming 节点原地替换 `liveMarkdown`；系统事实继续使用结构化组件。支持 GFM、CJK、Shiki、KaTeX 和 Mermaid strict；链接仅允许 `http/https/mailto`，图片仅允许 `http/https`，确认后通过 desktop 单用途 IPC 交给系统浏览器。
+  - 用户与 Agent 正文统一由 `MarkdownMessage` / Streamdown 渲染：历史消息使用 static mode，活动 run 使用唯一 streaming 节点原地替换 `liveMarkdown`；系统事实继续使用结构化组件。成功 Agent 历史消息的完整输出入口位于正文下方原有左边界，使用默认隐藏、整条消息 hover / focus-within 时显示且键盘可达的文件图标按钮，不恢复常驻 `ghost` 文字按钮。支持 GFM、CJK、Shiki、KaTeX 和 Mermaid strict；链接仅允许 `http/https/mailto`，图片仅允许 `http/https`，确认后通过 desktop 单用途 IPC 交给系统浏览器。
   - 主时间线的会话 sticky 标题、历史消息正文与活动 run 的角色名/实时 Markdown 共用同一正文列；活动 run 操作贴住该列右边界。已有会话 composer、待发射区和新对话 composer 复用该列的最大宽度与水平 gutter，窄窗一起收缩；右侧子任务 composer 保留独立宽度。此对齐由 `OperatorConsole` / `NewConversationPage` 宿主负责，通用 `RunBlock` 与 `RoleComposer` 保持容器无关。
 - 构建并验证 onboarding 高保真原型：`pnpm --filter @moebius/prototypes check`
   - `prototypes/` 是 private 的设计原型沙盒，不进入 desktop / console-ui 正式构建；双向禁止 import，完整规则见 `prototypes/AGENTS.md`。
