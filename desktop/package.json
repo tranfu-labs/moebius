@@ -8,7 +8,7 @@
     "build": "pnpm --filter @moebius/console-ui build && node scripts/build.mjs",
     "dev": "pnpm build && electron .",
     "dev:web-shell": "node scripts/dev-web-shell.mjs",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=1 --no-file-parallelism",
     "typecheck": "tsc --noEmit",
     "dist": "pnpm --workspace-root brand:check && pnpm build && electron-builder --mac --arm64"
   },

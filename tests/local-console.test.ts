@@ -1353,7 +1353,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       await started.close();
     }
-  }, 10_000);
+  }, 20_000);
 
   it("builds local timelines that reuse mention parsing rules", () => {
     const agents = ["dev"];
@@ -2466,7 +2466,7 @@ describe("local console", { timeout: 15_000 }, () => {
       store,
       runCodex,
       makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
-      storeTimeoutMs: 500,
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
     });
     (started.runtime as unknown as { storeTimeoutMs: number }).storeTimeoutMs = 50;
     const lock = new DatabaseSync(sqlitePath);

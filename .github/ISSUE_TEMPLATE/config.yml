@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/tranfu-labs/agent-moebius/discussions
+    about: Ask open-ended questions and discuss early ideas.
+  - name: Security vulnerability
+    url: https://github.com/tranfu-labs/agent-moebius/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue.

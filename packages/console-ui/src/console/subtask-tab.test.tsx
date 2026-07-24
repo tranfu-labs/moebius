@@ -70,7 +70,7 @@ describe("SubtaskTab", () => {
       onRetry,
       onInterrupt,
     }));
-    fireEvent.click(screen.getByRole("button", { name: "停下主理人" }));
+    fireEvent.click(screen.getByRole("button", { name: "停下当前这一步" }));
     expect(onInterrupt).toHaveBeenCalledWith("child-a", "run-active");
   });
 

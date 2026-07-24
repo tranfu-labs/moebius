@@ -1,6 +1,23 @@
 {
   "name": "moebius",
   "version": "0.1.0",
+  "description": "Local-first multi-agent collaboration for Codex, with an optional Electron desktop app and GitHub Issue runner.",
+  "keywords": [
+    "ai-agents",
+    "codex",
+    "electron",
+    "github-issues",
+    "multi-agent",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tranfu-labs/agent-moebius.git"
+  },
+  "homepage": "https://github.com/tranfu-labs/agent-moebius#readme",
+  "bugs": {
+    "url": "https://github.com/tranfu-labs/agent-moebius/issues"
+  },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.4",

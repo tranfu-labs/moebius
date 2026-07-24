@@ -16,9 +16,7 @@ import type {
   AgentTeamMemberWriteRequest,
   AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
-import {
-  readTeamOnboardingOrchestration,
-} from "./team-onboarding-orchestration.js";
+import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration.js";
 import {
   forgetTrashedUserTeamRecord,
   listRecordedUserTeamSnapshots,

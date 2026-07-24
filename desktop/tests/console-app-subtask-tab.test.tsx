@@ -46,6 +46,9 @@ describe("desktop App subtask tab wiring", () => {
       if (url.pathname === "/api/local-console/sessions/child-a/messages") {
         return jsonResponse({ accepted: true }, 202);
       }
+      if (url.pathname === "/api/local-console/sessions/child-a/runs/child-failed-run/retry") {
+        return jsonResponse({ accepted: true }, 202);
+      }
       if (url.pathname === "/api/local-console/sessions/child-a/interrupt") {
         return jsonResponse({ interrupted: true }, 202);
       }
@@ -91,8 +94,8 @@ describe("desktop App subtask tab wiring", () => {
     expect(retry).toBeDefined();
     await act(async () => retry!.click());
     await waitFor(() => requests.some((request) =>
-      request.path === "/api/local-console/sessions/child-a/messages"
-      && (request.body as { body?: string }).body === "@qa 请重试刚才没有完成的步骤。"));
+      request.path === "/api/local-console/sessions/child-a/runs/child-failed-run/retry"
+      && request.method === "POST"));
 
     const stop = await findElement<HTMLButtonElement>(
       '[data-testid="subtask-tab"] button[aria-label="停下当前这一步"]',

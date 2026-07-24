@@ -582,6 +582,13 @@ function isPathInside(root: string, candidate: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
 }
 
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error.code === "ENOENT" || error.code === "ENOTDIR");
+}
+
 function nonEmpty(value: string | undefined): string | null {
   return value !== undefined && value.trim() !== "" ? value : null;
 }
@@ -612,7 +619,10 @@ async function inspectRolloutCandidate(
         size: stat.size,
       },
     };
-  } catch {
-    return { status: "unavailable", reason: "unreadable" };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: isMissingFileError(error) ? "not-found" : "unreadable",
+    };
   }
 }

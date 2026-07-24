@@ -148,6 +148,7 @@ export function SubtaskTab({
           onInterrupt={activeRun?.interruptible === true
             ? () => onInterrupt(sessionId, activeRun.runId)
             : undefined}
+          interruptLabel="停下当前这一步"
           roles={roles}
           disabled={disabled}
           placeholder={continuationBlocked

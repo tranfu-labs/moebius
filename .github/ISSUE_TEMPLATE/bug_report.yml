@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible problem in Moebius
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues before filing a new report. Do not include secrets, credentials, or private repository content.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start Moebius with ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - macOS version:
+        - Apple Silicon model:
+        - Node.js and pnpm versions:
+        - Moebius version or commit:
+        - Launch mode: local, GitHub runner, or desktop
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or other evidence
+      description: Redact tokens, private paths, repository content, and other sensitive data.

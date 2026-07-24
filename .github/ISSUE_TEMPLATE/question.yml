@@ -1,0 +1,22 @@
+name: Question
+description: Ask a focused usage or development question
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the README and documentation first. Use Discussions for open-ended ideas and this form for questions with a specific answer.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to understand or accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and attempts
+      description: Include relevant mode, commands, documentation, and what you already tried.

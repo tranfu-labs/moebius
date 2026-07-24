@@ -21,9 +21,18 @@ function run(commandArgs) {
   }
 }
 
-run(["exec", "vitest", "run", ...args]);
-
-if (args.length === 0) {
+if (args.length > 0) {
+  run(["exec", "vitest", "run", ...args]);
+} else {
+  run(["exec", "vitest", "run", "--exclude", "tests/local-console.test.ts"]);
+  run([
+    "exec",
+    "vitest",
+    "run",
+    "tests/local-console.test.ts",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+  ]);
   run(["--filter", "@moebius/desktop", "test"]);
   run(["--filter", "@moebius/console-ui", "test"]);
 }
