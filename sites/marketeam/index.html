@@ -283,7 +283,53 @@
     .step-no { font: 700 .68rem/1.7 var(--mono); color: var(--atlas-blue); letter-spacing: .08em; }
     .step h3 { margin: 0; font-size: clamp(1.3rem, 2.2vw, 1.8rem); }
     .step p { margin: 0; color: var(--ink-2); }
-    #how .shot { margin-top: clamp(40px, 5vw, 64px); aspect-ratio: 21 / 9; }
+
+    /* SETUP 场景：onboarding「选择一支团队」特写（HTML/CSS 复刻 desktop 真实界面局部，与软件版本解耦；令牌取自 console-ui 暗色主题） */
+    .scene { margin: clamp(40px, 5vw, 64px) 0 0; }
+    .scene-crop {
+      overflow: hidden; padding: clamp(24px, 5vw, 52px);
+      border: 1px solid #26262A; border-radius: 18px; background: #101010;
+      color: #F4F4F4; font-size: 15px; line-height: 1.55;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', sans-serif;
+      box-shadow: 15px 18px 0 rgba(23,32,38,.11);
+    }
+    .scene-stage { max-width: 560px; margin-inline: auto; }
+    .scene-crop p { margin: 0; }
+    .oc-head { margin-bottom: 22px; text-align: center; }
+    .oc-step { color: #6E6E6E; font-size: .72em; }
+    .oc-title { margin-top: 6px; font-size: 1.42em; font-weight: 600; letter-spacing: -.02em; }
+    .oc-sub { margin-top: 6px; color: #A1A1A1; font-size: .84em; }
+    .oc-card { margin-bottom: 12px; padding: 16px; border: 1px solid #5E6AD2; border-radius: 12px; background: #2D2D2D; }
+    .oc-card-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .oc-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .oc-radio { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #5E6AD2; border-radius: 50%; }
+    .oc-radio i { width: 8px; height: 8px; border-radius: 50%; background: #5E6AD2; }
+    .oc-name { font-size: .92em; font-weight: 600; }
+    .oc-kind { margin-top: 2px; color: #A1A1A1; font-size: .76em; }
+    .oc-chosen {
+      flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+      border-radius: 999px; background: #1C1C1C; color: #A1A1A1; font-size: .76em; font-weight: 500;
+    }
+    .oc-members { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; padding-left: 30px; }
+    .oc-member { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid #262626; border-radius: 10px; background: #1C1C1C; }
+    .oc-mava {
+      flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px;
+      border: 1px solid #262626; border-radius: 50%; background: #171717;
+      color: #A1A1A1; font-size: .76em; font-weight: 600; font-style: normal;
+    }
+    .oc-mname { font-size: .78em; font-weight: 600; white-space: nowrap; }
+    .oc-mdesc { margin-top: 1px; color: #6E6E6E; font-size: .7em; }
+    .oc-teamdesc { margin-top: 12px; padding-left: 30px; color: #A1A1A1; font-size: .78em; }
+    .oc-ai { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px dashed #2E2E2E; border-radius: 12px; background: #171717; }
+    .oc-ai-ico { flex: 0 0 auto; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #1C1C1C; color: #A1A1A1; }
+    .oc-ai-name { font-size: .86em; font-weight: 600; }
+    .oc-ai-desc { margin-top: 2px; color: #A1A1A1; font-size: .76em; }
+    .oc-ai-pill {
+      flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 999px; background: #19232D; color: #5FB3FF;
+      font-size: .76em; font-weight: 500;
+    }
+    .scene-note { display: flex; justify-content: space-between; gap: 12px; margin: 12px 2px 0; }
 
     /* ═══ 02 开工条件（骨架：终端确认 + 承诺清单 + onboarding 截图待补）═══ */
     #faq { background: rgba(255,252,245,.7); }
@@ -404,6 +450,8 @@
       section.band::after { right: 15px; bottom: 13px; font-size: .56rem; }
       .band-head::before { display: none; }
       .promise-list { grid-template-columns: 1fr; }
+      .oc-members { grid-template-columns: 1fr; padding-left: 0; }
+      .oc-teamdesc { padding-left: 0; }
       .launch-coordinate { flex-direction: column; gap: 4px; }
       .terminal-card { padding: 22px 15px; }
       .actions { padding: 44px 16px 20px; }
@@ -459,33 +507,77 @@
       </div>
     </section>
 
-    <!-- ═══ 01 三步（骨架：文案为工作稿）═══ -->
+    <!-- ═══ 01 三步（SETUP / CHAT / REVIEW 文案已落地；SETUP 场景为 onboarding「选择一支团队」HTML/CSS 复刻特写）═══ -->
     <section class="band" id="how">
       <div class="wrap">
         <header class="band-head">
           <p class="band-kicker">01 / 它怎么推进</p>
-          <h2>交出去之后，它自己往前推。</h2>
+          <h2>三步，从组队到验收。</h2>
         </header>
         <div class="steps">
           <article class="step">
-            <span class="step-no">01 · ASK</span>
-            <h3>开工前，它先问清楚。</h3>
-            <p>目标、验收标准、哪些事必须你定，一次问清再动手。</p>
+            <span class="step-no">01 · SETUP</span>
+            <h3>挑一支团队开工。</h3>
+            <p>内置团队开箱即用；想定制，一句话让 AI 按你的项目攒一支。</p>
           </article>
           <article class="step">
-            <span class="step-no">02 · RUN</span>
-            <h3>干活的全程，它自己往前推。</h3>
-            <p>一步做完接下一步，不合格当场打回重来，都不经过你。</p>
+            <span class="step-no">02 · CHAT</span>
+            <h3>像发消息一样交代任务。</h3>
+            <p>主 Agent 接活派工，成员之间自己交接，全程在同一条时间线里看得见；什么时候该问你、什么时候直接跑，按你项目里的规矩来。</p>
           </article>
           <article class="step">
-            <span class="step-no">03 · DECIDE</span>
-            <h3>只有该你拍板的，才来打断你。</h3>
-            <p>带着上下文和选项来，你回一句话就继续。</p>
+            <span class="step-no">03 · REVIEW</span>
+            <h3>结果落在一张变更清单上。</h3>
+            <p>本轮动了哪些文件、每个文件改了什么，逐条 diff 摆在你面前，看完再定下一步。</p>
           </article>
         </div>
-        <div class="shot" role="img" aria-label="操作台实拍截图占位：三步在时间线上的真实样子，配批注。">
-          <span class="shot-note">ANNOTATED CONSOLE<br>操作台实拍 + 批注 · 待补</span>
-        </div>
+        <figure class="scene" role="img" aria-label="示意场景：首次启动引导第二步「选择一支团队」。内置「开发团队」卡片处于选中状态，成员为开发经理（主 Agent）、开发、软件测试；下方另有「跟 AI 聊出一支新团队」入口。">
+          <div class="scene-crop" aria-hidden="true">
+            <div class="scene-stage">
+              <div class="oc-head">
+                <p class="oc-step">第 2 步，共 4 步</p>
+                <p class="oc-title">选择一支团队</p>
+                <p class="oc-sub">先选一支最接近你当前工作的团队，之后随时可以切换</p>
+              </div>
+              <div class="oc-card">
+                <div class="oc-card-top">
+                  <div class="oc-id">
+                    <span class="oc-radio"><i></i></span>
+                    <div>
+                      <p class="oc-name">开发团队</p>
+                      <p class="oc-kind">内置团队</p>
+                    </div>
+                  </div>
+                  <span class="oc-chosen">✓ 已选择</span>
+                </div>
+                <div class="oc-members">
+                  <div class="oc-member">
+                    <i class="oc-mava">开</i>
+                    <div><p class="oc-mname">开发经理</p><p class="oc-mdesc">主 Agent</p></div>
+                  </div>
+                  <div class="oc-member">
+                    <i class="oc-mava">开</i>
+                    <div><p class="oc-mname">开发</p><p class="oc-mdesc">方案落地、代码实现与验证</p></div>
+                  </div>
+                  <div class="oc-member">
+                    <i class="oc-mava">软</i>
+                    <div><p class="oc-mname">软件测试</p><p class="oc-mdesc">测试执行、风险复核</p></div>
+                  </div>
+                </div>
+                <p class="oc-teamdesc">负责软件方案、实现、测试、复核和主理收尾</p>
+              </div>
+              <div class="oc-ai">
+                <span class="oc-ai-ico">＋</span>
+                <div>
+                  <p class="oc-ai-name">跟 AI 聊出一支新团队</p>
+                  <p class="oc-ai-desc">你说一下要做什么样的活，AI 帮你把成员组齐</p>
+                </div>
+                <span class="oc-ai-pill">✦ 开始对话</span>
+              </div>
+            </div>
+          </div>
+          <figcaption class="scene-note trace"><span>SCENE 01 · 选择一支团队 / ONBOARDING</span><span>示意场景 · 以真实软件界面为准</span></figcaption>
+        </figure>
       </div>
     </section>
 
