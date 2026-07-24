@@ -111,7 +111,7 @@ pnpm start -- --github-mode
 pnpm desktop
 ```
 
-匹配 `desktop-v*` 的 tag 会生成仅适用于 Apple Silicon Mac 的 DMG 和 ZIP。目前产物不做代码签名或 notarization，因此 macOS 可能显示安全提醒。打开前请检查 GitHub Release 的来源和对应 commit 或 tag，只在信任产物时使用系统提供的“打开”流程。
+匹配 `desktop-v*` 的 tag 会生成仅适用于 Apple Silicon Mac 的 DMG 和 ZIP。目前产物使用 Apple Developer ID 签名，但尚未 notarization，因此 macOS 仍可能显示安全提醒。打开前请检查 GitHub Release 的来源和对应 commit 或 tag，只在信任产物时使用系统提供的“打开”流程。
 
 ### 数据根目录
 
@@ -151,7 +151,7 @@ Runner 把本机 Codex CLI 作为执行驱动。Agent Markdown 定义职责与�
 - GitHub Issue workspace 权限按角色配置。`read-run` 是协作规则，不是操作系统级沙箱；这些角色仍可能运行命令并产生缓存或测试输出。
 - Issue 正文、评论、附件和项目文件可能进入 prompt 或被发送给配置的 Codex 服务。不要把秘密放进 Agent 可读取的内容。
 - 凭证应保存在 Codex、GitHub CLI 的常规凭证存储或环境变量中。不要提交 `.env` 或 `config.local.toml`。
-- 打包桌面产物目前没有签名或 notarization。打开前请核对 GitHub Release 及对应 commit 或 tag。
+- 打包桌面产物目前已做 Developer ID 签名，但尚未 notarization。打开前请核对 GitHub Release 及对应 commit 或 tag。
 
 请通过 [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new) 私下报告安全漏洞。
 

@@ -111,7 +111,7 @@ Run the desktop shell from source on macOS:
 pnpm desktop
 ```
 
-Desktop tags matching `desktop-v*` build DMG and ZIP artifacts for macOS Apple Silicon only. Current artifacts are not code-signed or notarized, so macOS may show a security warning. Review the release provenance and use the system-provided Open flow only if you trust the artifact.
+Desktop tags matching `desktop-v*` build DMG and ZIP artifacts for macOS Apple Silicon only. Current artifacts are signed with an Apple Developer ID but are not notarized, so macOS may show a security warning. Review the release provenance and use the system-provided Open flow only if you trust the artifact.
 
 ### Data roots
 
@@ -151,7 +151,7 @@ The runner treats the local Codex CLI as the execution driver. Agent Markdown de
 - GitHub issue workspace access is role-scoped. `read-run` is a collaboration rule, not an operating-system sandbox; such roles may still run commands and create caches or test output.
 - Issue bodies, comments, attachments, and project files may be included in prompts or passed to the configured Codex provider. Do not place secrets in content an agent can read.
 - Keep credentials in the normal Codex and GitHub CLI stores or environment variables. Never commit `.env` or `config.local.toml`.
-- Packaged desktop artifacts are currently unsigned and unnotarized. Verify the GitHub Release and commit or tag before opening one.
+- Packaged desktop artifacts are currently Developer ID-signed but not notarized. Verify the GitHub Release and commit or tag before opening one.
 
 Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/tranfu-labs/moebius/security/advisories/new).
 
