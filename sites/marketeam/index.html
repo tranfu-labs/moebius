@@ -285,7 +285,7 @@
     .step p { margin: 0; color: var(--ink-2); }
 
     /* SETUP 场景：onboarding「选择一支团队」特写（HTML/CSS 复刻 desktop 真实界面局部，与软件版本解耦；令牌取自 console-ui 暗色主题） */
-    .scene { margin: clamp(40px, 5vw, 64px) 0 0; }
+    .scene { margin: clamp(36px, 5vw, 60px) 0; }
     .scene-crop {
       overflow: hidden; padding: clamp(24px, 5vw, 52px);
       border: 1px solid #26262A; border-radius: 18px; background: #101010;
@@ -329,6 +329,45 @@
       padding: 4px 10px; border-radius: 999px; background: #19232D; color: #5FB3FF;
       font-size: .76em; font-weight: 500;
     }
+    /* CHAT 场景：onboarding 接力演示定格（种子团队真实接力剧本；桌面/移动各一份精确坐标的 SVG 泳道图） */
+    .scene-stage-wide { max-width: 680px; }
+    .rl-card { overflow: hidden; border: 1px solid #262626; border-radius: 12px; background: #171717; }
+    .rl-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #262626; font-size: .78em; }
+    .rl-head-dot { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #F0D050; }
+    .rl-head .dim { color: #A1A1A1; }
+    .rl-replay { padding: 3px 9px; border: 1px solid #2E2E2E; border-radius: 8px; color: #A1A1A1; font-size: .9em; }
+    .rl-lanes { display: grid; grid-template-columns: 216px 1fr; gap: 16px; padding: 8px 12px; border-bottom: 1px solid #262626; background: #1C1C1C; color: #6E6E6E; font-size: .64em; font-weight: 600; }
+    .rl-lanes-cols { display: grid; grid-template-columns: repeat(3, 72px); text-align: center; }
+    .rl-lane-short { display: none; }
+    .rl-stage { padding: 4px 0; }
+    .rl-row { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 16px; min-height: 64px; border-bottom: 1px solid #262626; }
+    .rl-row:last-child { border-bottom: 0; }
+    .rl-gcell { position: relative; }
+    .rl-conn { position: absolute; top: 0; left: 0; width: 100%; height: 31px; overflow: visible; }
+    .rl-conn path { fill: none; stroke: #2E2E2E; stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .rl-row-final .rl-conn path { stroke: #A1A1A1; }
+    .rl-node {
+      position: absolute; top: 19px; left: calc((var(--lane) + .5) * 33.3333%);
+      width: 11px; height: 11px; border: 2px solid #171717; border-radius: 50%;
+      background: #6E6E6E; translate: -50% 0;
+    }
+    .rl-node-cur { background: #F4F4F4; }
+    .rl-node-cur::after { content: ''; position: absolute; inset: -5px; border: 1px solid #A1A1A1; border-radius: 50%; }
+    .rl-tail { position: absolute; top: 25px; bottom: 0; left: calc((var(--lane) + .5) * 33.3333%); width: 1.5px; background: #2E2E2E; translate: -50% 0; }
+    .rl-body { min-width: 0; padding: 10px 12px 10px 0; }
+    .rl-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .rl-name { font-size: .76em; font-weight: 600; }
+    .rl-pill { margin-left: auto; padding: 2px 8px; border: 1px solid rgba(240,208,80,.35); border-radius: 999px; background: #2B2612; color: #F0D050; font-size: .64em; font-weight: 500; }
+    .rl-pill-danger { border-color: rgba(247,35,50,.35); background: #321C1E; color: #F72332; }
+    .rl-pill-pass { border-color: rgba(46,224,58,.32); background: #172C19; color: #2EE03A; }
+    .rl-msg {
+      margin-top: 3px; color: #A1A1A1; font-size: .74em; line-height: 1.55;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .rl-mention { padding: 1px 5px; border-radius: 6px; background: rgba(94,106,210,.16); color: #828FFF; font-weight: 600; white-space: nowrap; }
+    .rl-row-final { background: #1C1C1C; }
+    .rl-row-final .rl-msg { color: #F4F4F4; }
+    .rl-foot { padding: 9px 16px; border-top: 1px solid #262626; color: #6E6E6E; font-size: .66em; }
     .scene-note { display: flex; justify-content: space-between; gap: 12px; margin: 12px 2px 0; }
 
     /* ═══ 02 开工条件（骨架：终端确认 + 承诺清单 + onboarding 截图待补）═══ */
@@ -452,6 +491,11 @@
       .promise-list { grid-template-columns: 1fr; }
       .oc-members { grid-template-columns: 1fr; padding-left: 0; }
       .oc-teamdesc { padding-left: 0; }
+      .rl-lanes { grid-template-columns: 108px 1fr; }
+      .rl-lanes-cols { grid-template-columns: repeat(3, 36px); }
+      .rl-lane-full { display: none; }
+      .rl-lane-short { display: inline; }
+      .rl-row { grid-template-columns: 108px minmax(0, 1fr); min-height: 72px; }
       .launch-coordinate { flex-direction: column; gap: 4px; }
       .terminal-card { padding: 22px 15px; }
       .actions { padding: 44px 16px 20px; }
@@ -520,64 +564,145 @@
             <h3>挑一支团队开工。</h3>
             <p>内置团队开箱即用；想定制，一句话让 AI 按你的项目攒一支。</p>
           </article>
+          <figure class="scene" role="img" aria-label="示意场景：首次启动引导第二步「选择一支团队」。内置「开发团队」卡片处于选中状态，成员为开发经理（主 Agent）、开发、软件测试；下方另有「跟 AI 聊出一支新团队」入口。">
+            <div class="scene-crop" aria-hidden="true">
+              <div class="scene-stage">
+                <div class="oc-head">
+                  <p class="oc-step">第 2 步，共 4 步</p>
+                  <p class="oc-title">选择一支团队</p>
+                  <p class="oc-sub">先选一支最接近你当前工作的团队，之后随时可以切换</p>
+                </div>
+                <div class="oc-card">
+                  <div class="oc-card-top">
+                    <div class="oc-id">
+                      <span class="oc-radio"><i></i></span>
+                      <div>
+                        <p class="oc-name">开发团队</p>
+                        <p class="oc-kind">内置团队</p>
+                      </div>
+                    </div>
+                    <span class="oc-chosen">✓ 已选择</span>
+                  </div>
+                  <div class="oc-members">
+                    <div class="oc-member">
+                      <i class="oc-mava">开</i>
+                      <div><p class="oc-mname">开发经理</p><p class="oc-mdesc">主 Agent</p></div>
+                    </div>
+                    <div class="oc-member">
+                      <i class="oc-mava">开</i>
+                      <div><p class="oc-mname">开发</p><p class="oc-mdesc">方案落地、代码实现与验证</p></div>
+                    </div>
+                    <div class="oc-member">
+                      <i class="oc-mava">软</i>
+                      <div><p class="oc-mname">软件测试</p><p class="oc-mdesc">测试执行、风险复核</p></div>
+                    </div>
+                  </div>
+                  <p class="oc-teamdesc">负责软件方案、实现、测试、复核和主理收尾</p>
+                </div>
+                <div class="oc-ai">
+                  <span class="oc-ai-ico">＋</span>
+                  <div>
+                    <p class="oc-ai-name">跟 AI 聊出一支新团队</p>
+                    <p class="oc-ai-desc">你说一下要做什么样的活，AI 帮你把成员组齐</p>
+                  </div>
+                  <span class="oc-ai-pill">✦ 开始对话</span>
+                </div>
+              </div>
+            </div>
+            <figcaption class="scene-note trace"><span>SCENE 01 · 选择一支团队 / ONBOARDING</span><span>示意场景 · 以真实软件界面为准</span></figcaption>
+          </figure>
           <article class="step">
             <span class="step-no">02 · CHAT</span>
             <h3>像发消息一样交代任务。</h3>
-            <p>主 Agent 接活派工，成员之间自己交接，全程在同一条时间线里看得见；什么时候该问你、什么时候直接跑，按你项目里的规矩来。</p>
+            <p>主 Agent 派工，成员自己交接，全程在同一条时间线里看得见。</p>
           </article>
+          <figure class="scene" role="img" aria-label="示意场景：onboarding 接力演示定格。开发团队六棒接力：开发经理拆分任务并派工，开发修复并请测试复核，测试第一轮复核未通过打回，开发修正后重新提交，测试第二轮复核通过，开发经理收尾。">
+            <div class="scene-crop" aria-hidden="true">
+              <div class="scene-stage scene-stage-wide">
+                <div class="rl-card">
+                  <div class="rl-head">
+                    <span><i class="rl-head-dot"></i><span class="dim">接力演示</span> <b>开发团队</b></span>
+                    <span class="rl-replay">↻ 重播</span>
+                  </div>
+                  <div class="rl-lanes">
+                    <div class="rl-lanes-cols">
+                      <span><span class="rl-lane-full">开发经理</span><span class="rl-lane-short">开</span></span>
+                      <span><span class="rl-lane-full">开发</span><span class="rl-lane-short">开</span></span>
+                      <span><span class="rl-lane-full">软件测试</span><span class="rl-lane-short">软</span></span>
+                    </div>
+                    <span>对话记录</span>
+                  </div>
+                  <div class="rl-stage">
+                    <div class="rl-row" style="--lane:0">
+                      <div class="rl-gcell"><i class="rl-node"></i><i class="rl-tail"></i></div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">开发经理</span></div>
+                        <p class="rl-msg">我先把时长统计问题拆成计算口径、边界样本和回归证据，<span class="rl-mention">@dev</span> 先定位并提交修复。</p>
+                      </div>
+                    </div>
+                    <div class="rl-row" style="--lane:1">
+                      <div class="rl-gcell">
+                        <svg class="rl-conn" viewBox="0 0 300 31" preserveAspectRatio="none" aria-hidden="true"><path d="M50 0 C50 20 150 11 150 31"/></svg>
+                        <i class="rl-node"></i><i class="rl-tail"></i>
+                      </div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">开发</span></div>
+                        <p class="rl-msg">已经定位到暂停区间被重复计入，修正实现并补上基础回归用例，请 <span class="rl-mention">@qa</span> 复核。</p>
+                      </div>
+                    </div>
+                    <div class="rl-row" style="--lane:2">
+                      <div class="rl-gcell">
+                        <svg class="rl-conn" viewBox="0 0 300 31" preserveAspectRatio="none" aria-hidden="true"><path d="M150 0 C150 20 250 11 250 31"/></svg>
+                        <i class="rl-node"></i><i class="rl-tail"></i>
+                      </div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">软件测试</span><span class="rl-pill rl-pill-danger">测试未通过</span></div>
+                        <p class="rl-msg">第一轮复核未通过：跨日运行仍有一分钟偏差，现有用例没有覆盖这个边界。<span class="rl-mention">@dev</span></p>
+                      </div>
+                    </div>
+                    <div class="rl-row" style="--lane:1">
+                      <div class="rl-gcell">
+                        <svg class="rl-conn" viewBox="0 0 300 31" preserveAspectRatio="none" aria-hidden="true"><path d="M250 0 C250 20 150 11 150 31"/></svg>
+                        <i class="rl-node"></i><i class="rl-tail"></i>
+                      </div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">开发</span></div>
+                        <p class="rl-msg">收到，已统一跨日取整口径并加入午夜边界用例，重新提交 <span class="rl-mention">@qa</span> 复核。</p>
+                      </div>
+                    </div>
+                    <div class="rl-row" style="--lane:2">
+                      <div class="rl-gcell">
+                        <svg class="rl-conn" viewBox="0 0 300 31" preserveAspectRatio="none" aria-hidden="true"><path d="M150 0 C150 20 250 11 250 31"/></svg>
+                        <i class="rl-node"></i><i class="rl-tail"></i>
+                      </div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">软件测试</span><span class="rl-pill rl-pill-pass">测试通过</span></div>
+                        <p class="rl-msg">第二轮复核通过：暂停、跨日和取整边界都已覆盖，结果与预期一致。<span class="rl-mention">@dev-manager</span></p>
+                      </div>
+                    </div>
+                    <div class="rl-row rl-row-final" style="--lane:0">
+                      <div class="rl-gcell">
+                        <svg class="rl-conn" viewBox="0 0 300 31" preserveAspectRatio="none" aria-hidden="true"><path d="M250 0 C250 20 50 11 50 31"/></svg>
+                        <i class="rl-node rl-node-cur"></i>
+                      </div>
+                      <div class="rl-body">
+                        <div class="rl-row-head"><span class="rl-name">开发经理</span><span class="rl-pill">收尾</span></div>
+                        <p class="rl-msg">收尾：统计口径已修正，两轮复核及通过证据都保留在时间线中，本次目标完成。</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="rl-foot">这支团队已带着复核证据完成接力。</div>
+                </div>
+              </div>
+            </div>
+            <figcaption class="scene-note trace"><span>SCENE 02 · 接力演示 / RELAY DEMO</span><span>示意场景 · 以真实软件界面为准</span></figcaption>
+          </figure>
           <article class="step">
             <span class="step-no">03 · REVIEW</span>
             <h3>结果落在一张变更清单上。</h3>
             <p>本轮动了哪些文件、每个文件改了什么，逐条 diff 摆在你面前，看完再定下一步。</p>
           </article>
         </div>
-        <figure class="scene" role="img" aria-label="示意场景：首次启动引导第二步「选择一支团队」。内置「开发团队」卡片处于选中状态，成员为开发经理（主 Agent）、开发、软件测试；下方另有「跟 AI 聊出一支新团队」入口。">
-          <div class="scene-crop" aria-hidden="true">
-            <div class="scene-stage">
-              <div class="oc-head">
-                <p class="oc-step">第 2 步，共 4 步</p>
-                <p class="oc-title">选择一支团队</p>
-                <p class="oc-sub">先选一支最接近你当前工作的团队，之后随时可以切换</p>
-              </div>
-              <div class="oc-card">
-                <div class="oc-card-top">
-                  <div class="oc-id">
-                    <span class="oc-radio"><i></i></span>
-                    <div>
-                      <p class="oc-name">开发团队</p>
-                      <p class="oc-kind">内置团队</p>
-                    </div>
-                  </div>
-                  <span class="oc-chosen">✓ 已选择</span>
-                </div>
-                <div class="oc-members">
-                  <div class="oc-member">
-                    <i class="oc-mava">开</i>
-                    <div><p class="oc-mname">开发经理</p><p class="oc-mdesc">主 Agent</p></div>
-                  </div>
-                  <div class="oc-member">
-                    <i class="oc-mava">开</i>
-                    <div><p class="oc-mname">开发</p><p class="oc-mdesc">方案落地、代码实现与验证</p></div>
-                  </div>
-                  <div class="oc-member">
-                    <i class="oc-mava">软</i>
-                    <div><p class="oc-mname">软件测试</p><p class="oc-mdesc">测试执行、风险复核</p></div>
-                  </div>
-                </div>
-                <p class="oc-teamdesc">负责软件方案、实现、测试、复核和主理收尾</p>
-              </div>
-              <div class="oc-ai">
-                <span class="oc-ai-ico">＋</span>
-                <div>
-                  <p class="oc-ai-name">跟 AI 聊出一支新团队</p>
-                  <p class="oc-ai-desc">你说一下要做什么样的活，AI 帮你把成员组齐</p>
-                </div>
-                <span class="oc-ai-pill">✦ 开始对话</span>
-              </div>
-            </div>
-          </div>
-          <figcaption class="scene-note trace"><span>SCENE 01 · 选择一支团队 / ONBOARDING</span><span>示意场景 · 以真实软件界面为准</span></figcaption>
-        </figure>
       </div>
     </section>
 

@@ -41,3 +41,21 @@ Given 当前开发 worktree 路径或 git remote URL 仍含历史仓库 slug
 When 执行本次仓库内容改名
 Then 系统不重命名 worktree 根
 And 系统不修改 git remote
+
+## Requirement: 品牌资产从唯一母版脚本派生
+
+Source: docs/product/prd.md#产品命名
+
+系统 MUST 以 `assets/brand/moebius.png` 为唯一品牌母版。`pnpm brand:generate` MUST 使用 macOS `sips` 等比缩放生成 1024px 应用图标、64px UI 图标、32px favicon、180px Apple Touch Icon 及官网同内容部署副本，并更新 `assets/brand/manifest.json`；生成 MUST NOT 裁切、抠图或重绘。`pnpm brand:check` MUST 只读校验母版与全部产物的 SHA-256、PNG 签名、正方形尺寸、文件大小上限与同尺寸部署副本哈希。desktop 打包 MUST 先通过该门禁。`.app`、DMG、Dock、操作台、onboarding、辅助状态页与官网 MUST 统一使用母版的脚本派生产物。
+
+### Scenario: 生成产物与母版哈希一致
+
+Given 母版 `assets/brand/moebius.png` 未变更
+When 运行 `pnpm brand:check`
+Then 校验通过且不修改任何文件
+
+### Scenario: 打包前品牌门禁
+
+Given 任一品牌产物与 manifest 记录的哈希不一致
+When 执行 desktop 打包
+Then 打包在产物构建前失败并指向 `pnpm brand:generate`

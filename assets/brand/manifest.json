@@ -5,8 +5,8 @@
     "path": "assets/brand/moebius.png",
     "width": 1254,
     "height": 1254,
-    "bytes": 754041,
-    "sha256": "d590d7d5d2c087cbf12e775eb44aac7a7f97049c1c913e7d2ad74be0f70398db"
+    "bytes": 790905,
+    "sha256": "40c17417130d9bf8dd3ea536c57ab8469416b452a25546fbc82db58f8291e3d9"
   },
   "assets": [
     {
@@ -15,8 +15,8 @@
       "width": 1024,
       "height": 1024,
       "maxBytes": 1048576,
-      "bytes": 697917,
-      "sha256": "4c6b9f85535e809fca2e3985cf84dd4397b5416607d33c9a4a6425cf9ea5583a"
+      "bytes": 792136,
+      "sha256": "d208900568e9a2cb076f743d13bd82bd3195ebc869f060a6d9b98282ead08dd9"
     },
     {
       "path": "assets/brand/generated/ui-icon-64.png",
@@ -24,8 +24,8 @@
       "width": 64,
       "height": 64,
       "maxBytes": 32768,
-      "bytes": 3650,
-      "sha256": "64b6140c2ffed5f82ba011c35b7caa57225fc5e3a3d544f04177775e5d14fdb0"
+      "bytes": 4433,
+      "sha256": "9896b351fafa43f9097cba5dbe3907f9eba9a3f198c6a825b18ecc2470cffc0f"
     },
     {
       "path": "assets/brand/generated/favicon-32.png",
@@ -33,8 +33,8 @@
       "width": 32,
       "height": 32,
       "maxBytes": 16384,
-      "bytes": 1378,
-      "sha256": "068d16f62ef3ce3ad063f090fa76891e39c12c1c5aa7cbfb840b76f0dc02f741"
+      "bytes": 1715,
+      "sha256": "92b58126c2fb87121103e71897c44a7bb371e36812636b2742e2540396d6220c"
     },
     {
       "path": "assets/brand/generated/apple-touch-icon-180.png",
@@ -42,8 +42,8 @@
       "width": 180,
       "height": 180,
       "maxBytes": 131072,
-      "bytes": 26475,
-      "sha256": "450562cf7faa4f96509a87041605a7ce6ceaab7e08d6043fb5ae5ca0e0aa9ad1"
+      "bytes": 30608,
+      "sha256": "60b064dc1aad0ebe336a84e627ec1070f8c34ff15e6ca2ec8c2b2dd469058d1e"
     },
     {
       "path": "sites/marketeam/assets/moebius-icon-64.png",
@@ -51,8 +51,8 @@
       "width": 64,
       "height": 64,
       "maxBytes": 32768,
-      "bytes": 3650,
-      "sha256": "64b6140c2ffed5f82ba011c35b7caa57225fc5e3a3d544f04177775e5d14fdb0",
+      "bytes": 4433,
+      "sha256": "9896b351fafa43f9097cba5dbe3907f9eba9a3f198c6a825b18ecc2470cffc0f",
       "duplicateOf": "assets/brand/generated/ui-icon-64.png"
     },
     {
@@ -61,8 +61,8 @@
       "width": 32,
       "height": 32,
       "maxBytes": 16384,
-      "bytes": 1378,
-      "sha256": "068d16f62ef3ce3ad063f090fa76891e39c12c1c5aa7cbfb840b76f0dc02f741",
+      "bytes": 1715,
+      "sha256": "92b58126c2fb87121103e71897c44a7bb371e36812636b2742e2540396d6220c",
       "duplicateOf": "assets/brand/generated/favicon-32.png"
     },
     {
@@ -71,8 +71,8 @@
       "width": 180,
       "height": 180,
       "maxBytes": 131072,
-      "bytes": 26475,
-      "sha256": "450562cf7faa4f96509a87041605a7ce6ceaab7e08d6043fb5ae5ca0e0aa9ad1",
+      "bytes": 30608,
+      "sha256": "60b064dc1aad0ebe336a84e627ec1070f8c34ff15e6ca2ec8c2b2dd469058d1e",
       "duplicateOf": "assets/brand/generated/apple-touch-icon-180.png"
     }
   ]

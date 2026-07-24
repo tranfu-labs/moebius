@@ -1600,7 +1600,7 @@ Source: docs/product/pages/onboarding.md#第-3-步--团队接力演示
 
 系统 MUST 仅把团队成员顺序映射为稳定等宽的横向轨道。graph 总宽 MUST 等于 `memberCount × laneWidth`，成员节点横坐标 MUST 等于 `(memberIndex + 0.5) × laneWidth`；同一组几何结果 MUST 同时驱动角色表头、节点与 SVG viewBox，系统 MUST NOT 把任意成员数继续压入一个固定比例宽度。
 
-每一拍 MUST 在该拍 `speakerSlug` 的位置产生一个节点。每个已完成节点 MUST 向本拍边界绘制一段短 tail，下一拍 MUST 使用一条三次贝塞尔曲线从上一成员轨道转入当前成员轨道；tail 和 connector MUST 只属于第 `i - 1` 拍与第 `i` 拍之间的交接，任何连接的 `y1..y2` 索引差 MUST 不超过一个 beat 索引单位。系统 MUST NOT 渲染代表某成员贯穿多拍的竖线、首拍直连末拍的路径或其他跨拍 DAG 边。
+每一拍 MUST 在该拍 `speakerSlug` 的位置产生一个节点。每个已完成节点 MUST 绘制一段短 tail，tail 末端 MUST 与下一拍 connector 曲线的起点相接，MUST NOT 越过曲线转弯点留下下挂的竖线残段或与曲线之间产生细缝；下一拍 MUST 使用一条三次贝塞尔曲线从上一成员轨道转入当前成员轨道；tail 和 connector MUST 只属于第 `i - 1` 拍与第 `i` 拍之间的交接，任何连接的 `y1..y2` 索引差 MUST 不超过一个 beat 索引单位。系统 MUST NOT 渲染代表某成员贯穿多拍的竖线、首拍直连末拍的路径或其他跨拍 DAG 边。
 
 每拍节点行与该拍消息行 MUST 位于同一共享 CSS grid，且两者的 `grid-row` MUST 使用相同 beat 索引。已出现的拍次 MUST 留在同一舞台中，当前拍变化不得从数据或 DOM 中移除既有问题、修正或复核记录。
 

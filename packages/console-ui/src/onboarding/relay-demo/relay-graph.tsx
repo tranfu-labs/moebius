@@ -142,10 +142,7 @@ export function RelayGraph({
                 preserveAspectRatio="none"
               >
                 <path
-                  className={cn(
-                    "fill-none stroke-line-strong [vector-effect:non-scaling-stroke]",
-                    current && "stroke-sub",
-                  )}
+                  className="fill-none stroke-line-strong [vector-effect:non-scaling-stroke]"
                   d={connector.d}
                   pathLength={1}
                   strokeWidth={1.5}
@@ -176,9 +173,11 @@ export function RelayGraph({
               ) : null}
             </span>
             {index < beats.length - 1 ? (
+              // 末端与下一拍 connector 起点（行边界上方 6px）相接：本行 1px border-b，bottom 4px
+              // 使末端落在边界上方 5px，与曲线圆头起点微重叠以避免接缝、不产生下挂残段。
               <span
                 className={cn(
-                  "absolute bottom-[-6px] top-[25px] z-[1] w-[1.5px] bg-line-strong transition-opacity",
+                  "absolute bottom-[4px] top-[25px] z-[1] w-[1.5px] bg-line-strong transition-opacity",
                   index < activeIndex ? "opacity-100" : "opacity-0",
                 )}
                 style={{
