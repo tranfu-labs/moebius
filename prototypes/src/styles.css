@@ -72,6 +72,11 @@ button:focus-visible,
   overflow: hidden;
 }
 
+.onboarding-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
 /* ---------- 顶部窗口栏 ---------- */
 
 .prototype-chrome {
@@ -198,11 +203,19 @@ button:focus-visible,
 
 .onboarding-actions {
   display: flex;
-  width: 100%;
+  width: min(100%, 780px);
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
+  margin: 0 auto;
+}
+
+.onboarding-footer {
+  width: 100%;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  padding: 14px 36px;
 }
 
 /* ---------- 按钮 ---------- */
@@ -1839,6 +1852,11 @@ button:focus-visible,
   .onboarding-stage {
     justify-content: flex-start;
     padding: 34px 18px 28px;
+  }
+
+  .onboarding-footer {
+    padding-right: 18px;
+    padding-left: 18px;
   }
 
   .stage-heading h1 {

@@ -97,10 +97,17 @@ describe("OnboardingShell", () => {
 
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
     expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-lg");
+    expect(screen.getByTestId("onboarding-footer")).toHaveClass(
+      "shrink-0",
+      "border-t",
+    );
     expect(screen.getByTestId("onboarding-actions")).toHaveClass(
-      "mt-4",
+      "max-w-[780px]",
       "justify-end",
       "gap-2",
+    );
+    expect(screen.getByTestId("onboarding-stage")).not.toContainElement(
+      screen.getByTestId("onboarding-actions"),
     );
     expect(screen.queryByText("1 / 4")).not.toBeInTheDocument();
 
@@ -142,6 +149,7 @@ describe("OnboardingShell", () => {
     expect(screen.getByText("第 2 步，共 4 步")).toBeInTheDocument();
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
     expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-lg");
+    expect(screen.queryByTestId("onboarding-footer")).not.toBeInTheDocument();
     expect(screen.queryByTestId("onboarding-actions")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "继续" })).not.toBeInTheDocument();
     expect(screen.getByTestId("team-builder-view")).toHaveClass(

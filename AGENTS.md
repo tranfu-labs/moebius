@@ -124,7 +124,7 @@
   - 桌面壳只为 runner 注入 `MOEBIUS_DATA_ROOT`；`WORKDIR_ROOT` 默认派生自数据根（`<数据根>/workdir`），无需单独注入 workdir。runner child 显式以 GitHub mode 启动，因此不会重复启动 local console server。
 - 桌面壳每次启动生成随机附件 capability，并只通过 preload 窄接口交给 renderer；图片 preview、原件上传、草稿恢复和移除都走 loopback local-console 附件 API。renderer 不直接读取托管目录、SQLite 或普通文件内容，附件 DTO 与 DOM 不得暴露原始路径、托管路径或 blob id。
 - Agent 团队的 `team.json` 只保存名称、描述、主 Agent slug 与成员顺序；首次引导协作示例独立保存在同目录版本化 `onboarding-orchestration.json`，只供 onboarding RelayDemo。独立编排缺失或损坏不得改变团队健康度、身份指纹、会话 roster、真实主 Agent 调度或 Codex prompt；AI 建队在同一 staging 目录写入并重读两份文件后才登记。近期曾把 `relayBeats` 内嵌进 `team.json` / 团队记录的版本只做有界兼容：合法数据可过渡读取并在下一次安全团队写入前迁出，旧指纹重定位成功后收敛到核心指纹。
-  - onboarding 四步共用最大约 `780px` 的响应式对齐边界；普通步骤内容仍以 `max-w-lg` 居中，步骤操作位于内容区外下方 `16px`、以 `8px` 按钮间距整体右对齐，主 CTA 右边缘与 `780px` 边界一致。顶部“第 n 步，共 4 步”是唯一进度提示，不得恢复底部圆点、`n / 4` 或全窗口 footer；AI 团队设计器打开时隐藏全局步骤操作。
+  - onboarding 四步共用最大约 `780px` 的响应式内容边界；普通步骤内容仍以 `max-w-lg` 居中。全局步骤操作恢复为固定占据窗口底部的全宽 footer，内部沿用 `780px` 对齐边界、以 `8px` 按钮间距整体右对齐，且只承载按钮；顶部“第 n 步，共 4 步”仍是唯一进度提示，不得恢复底部圆点或 `n / 4`。中间步骤主体独立滚动且不被 footer 覆盖；AI 团队设计器打开时隐藏全局 footer。
   - onboarding 的 AI 团队设计器是普通 `max-w-lg` 引导主体的响应式例外，宽高上限约为 `780px × 720px`；提交时先在 renderer 即时显示右侧用户气泡，再与服务端公开消息无重复收敛。团队提案卡不得在纵向 flex 中收缩裁切成员，超高内容只滚动设计器对话区。
   - onboarding 第 3 步 RelayDemo 也是普通窄栏的响应式例外，主体上限约 `780px`；默认 `1180 × 760` 窗口应无手动滚动展示标准六棒，短窗口或更长脚本只滚动接力时间线。成员 graph 使用稳定等宽轨道，`graphWidth = memberCount × laneWidth`、`nodeX = (memberIndex + 0.5) × laneWidth`，相邻拍次以本拍短 tail 加三次贝塞尔曲线交接；宽窗口完整显示团队名和角色标签，reduced-motion 禁用位移与持续脉冲。
   - 已完成引导的用户可从操作台侧栏底部、设置上方进入“重新查看引导”；回看是保持操作台挂载的临时展示态，退出或完成后恢复原项目、对话、草稿与焦点，不调用首启完成 IPC、不改写 `.onboarding-completed`、不生成待消费团队或更新 last-used team。

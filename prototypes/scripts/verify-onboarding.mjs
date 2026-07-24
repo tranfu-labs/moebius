@@ -63,20 +63,23 @@ async function expectStableStep(page, step) {
 async function expectActionGeometry(page, expectedFrameWidth) {
   const geometry = await page.evaluate(() => {
     const frame = document.querySelector(".onboarding-frame");
-    const content = document.querySelector(".stage-content");
+    const stage = document.querySelector(".onboarding-stage");
+    const footer = document.querySelector(".onboarding-footer");
     const actions = document.querySelector(".onboarding-actions");
     const primary = document.querySelector('[data-testid="primary-action"]');
     const secondary = document.querySelector('[data-testid="back-action"]');
     if (
       !(frame instanceof HTMLElement)
-      || !(content instanceof HTMLElement)
+      || !(stage instanceof HTMLElement)
+      || !(footer instanceof HTMLElement)
       || !(actions instanceof HTMLElement)
       || !(primary instanceof HTMLElement)
     ) {
       throw new Error("Onboarding action geometry targets are missing.");
     }
     const frameRect = frame.getBoundingClientRect();
-    const contentRect = content.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
     const actionsRect = actions.getBoundingClientRect();
     const primaryRect = primary.getBoundingClientRect();
     const secondaryRect = secondary instanceof HTMLElement
@@ -84,15 +87,18 @@ async function expectActionGeometry(page, expectedFrameWidth) {
       : null;
     return {
       frameWidth: frameRect.width,
-      verticalGap: actionsRect.top - contentRect.bottom,
       primaryRightGap: frameRect.right - primaryRect.right,
+      footerBottomGap: window.innerHeight - footerRect.bottom,
+      stageFooterGap: footerRect.top - stageRect.bottom,
       buttonGap: secondaryRect === null
         ? null
         : primaryRect.left - secondaryRect.right,
       horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      footerCount: document.querySelectorAll(".onboarding-footer").length,
       legacyProgressCount: document.querySelectorAll(
-        ".onboarding-footer, .step-progress, .step-dots, .step-count"
-      ).length
+        ".step-progress, .step-dots, .step-count"
+      ).length,
+      actionsInFooter: footer.contains(actions)
     };
   });
 
@@ -104,9 +110,14 @@ async function expectActionGeometry(page, expectedFrameWidth) {
       `Expected ${expectedFrameWidth}px onboarding frame, found ${geometry.frameWidth}px.`
     );
   }
-  if (Math.abs(geometry.verticalGap - 16) > 0.5) {
+  if (Math.abs(geometry.footerBottomGap) > 0.5) {
     throw new Error(
-      `Expected 16px content-to-action gap, found ${geometry.verticalGap}px.`
+      `Onboarding footer is not pinned to the viewport bottom: ${geometry.footerBottomGap}px.`
+    );
+  }
+  if (Math.abs(geometry.stageFooterGap) > 0.5) {
+    throw new Error(
+      `Scrollable stage and footer are not adjacent: ${geometry.stageFooterGap}px.`
     );
   }
   if (Math.abs(geometry.primaryRightGap) > 0.5) {
@@ -123,6 +134,9 @@ async function expectActionGeometry(page, expectedFrameWidth) {
     throw new Error(
       `Onboarding created ${geometry.horizontalOverflow}px horizontal overflow.`
     );
+  }
+  if (geometry.footerCount !== 1 || !geometry.actionsInFooter) {
+    throw new Error("Onboarding actions must render inside one dedicated footer.");
   }
   if (geometry.legacyProgressCount !== 0) {
     throw new Error("Legacy footer progress is still rendered.");
@@ -160,7 +174,7 @@ try {
   checks.push("desktop-copy-step-1-and-2");
   checks.push("keyboard-step-1-to-2");
   await expectActionGeometry(desktopPage, 780);
-  checks.push("desktop-780-frame-and-external-actions");
+  checks.push("desktop-780-frame-and-fixed-action-footer");
 
   await desktopPage.getByTestId("back-action").click();
   await expectStableStep(desktopPage, 1);
@@ -179,10 +193,11 @@ try {
   if (
     (await desktopPage.getByTestId("primary-action").count()) !== 0
     || (await desktopPage.locator(".onboarding-actions").count()) !== 0
+    || (await desktopPage.locator(".onboarding-footer").count()) !== 0
   ) {
-    throw new Error("Global onboarding actions must hide during AI team design.");
+    throw new Error("Global onboarding footer must hide during AI team design.");
   }
-  checks.push("ai-team-builder-hides-global-actions");
+  checks.push("ai-team-builder-hides-global-footer");
   await desktopPage.getByTestId("builder-goal").fill(
     "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
   );
@@ -402,6 +417,41 @@ try {
   checks.push("development-team-review-revision-loop");
   await missingContext.close();
 
+  const lowContext = await browser.newContext({
+    viewport: { width: 1180, height: 560 },
+    colorScheme: "dark",
+    reducedMotion: "reduce"
+  });
+  const lowPage = await lowContext.newPage();
+  watchExternalRequests(lowPage);
+  await lowPage.goto(prototypeUrl);
+  await lowPage.getByTestId("primary-action").click();
+  await lowPage.getByTestId("primary-action").click();
+  await expectStableStep(lowPage, 3);
+  await lowPage
+    .getByTestId("relay-stage")
+    .getByText("收尾：统计口径已修正")
+    .waitFor();
+  await expectActionGeometry(lowPage, 780);
+  const footerTopBeforeScroll = await lowPage
+    .locator(".onboarding-footer")
+    .evaluate((footer) => footer.getBoundingClientRect().top);
+  await lowPage.locator(".onboarding-stage").evaluate((stage) => {
+    stage.scrollTop = stage.scrollHeight;
+  });
+  const footerTopAfterScroll = await lowPage
+    .locator(".onboarding-footer")
+    .evaluate((footer) => footer.getBoundingClientRect().top);
+  if (Math.abs(footerTopBeforeScroll - footerTopAfterScroll) > 0.5) {
+    throw new Error("Onboarding footer moved while the low-window stage scrolled.");
+  }
+  checks.push("low-window-fixed-action-footer");
+  await lowPage.screenshot({
+    path: resolve(artifactDir, "relay-dark-low.png"),
+    fullPage: true
+  });
+  await lowContext.close();
+
   const reducedContext = await browser.newContext({
     viewport: { width: 520, height: 860 },
     colorScheme: "dark",
@@ -412,7 +462,7 @@ try {
   await reducedPage.goto(prototypeUrl);
   await reducedPage.getByTestId("primary-action").click();
   await expectActionGeometry(reducedPage, null);
-  checks.push("narrow-frame-and-actions-remain-aligned");
+  checks.push("narrow-frame-and-footer-actions-remain-aligned");
   await reducedPage.getByTestId("open-team-builder").click();
   await reducedPage.getByTestId("builder-goal").fill(
     "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
@@ -474,6 +524,7 @@ const evidence = {
     "conversation-dark-wide.png",
     "environment-missing-light.png",
     "team-light-wide.png",
+    "relay-dark-low.png",
     "team-builder-proposal-reduced-narrow.png",
     "relay-reduced-narrow.png"
   ]

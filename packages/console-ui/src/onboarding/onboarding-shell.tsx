@@ -217,6 +217,7 @@ export function OnboardingShell({
           "flex min-h-0 flex-1 justify-center overflow-y-auto px-6 max-sm:px-4",
           state.step === 3 ? "py-4 max-sm:py-5" : "py-10 max-sm:py-7",
         )}
+        data-testid="onboarding-stage"
       >
         <div
           className={cn(
@@ -298,46 +299,46 @@ export function OnboardingShell({
               </p>
             ) : null}
           </div>
-          {state.teamBuilderOpen ? null : (
-            <OnboardingActions
-              primaryLabel={state.step === 4
-                ? completionState === "saving"
-                  ? mode === "replay" ? "正在返回…" : "正在进入…"
-                  : mode === "replay" ? "完成回看" : "开始使用"
-                : "继续"}
-              primaryDisabled={primaryDisabled}
-              secondary={state.step > 1 ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  disabled={completionState === "saving"}
-                  onClick={() => dispatch({ type: "back" })}
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                  上一步
-                </Button>
-              ) : environment.status === "ready" ? null : (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  disabled={environment.status === "checking"}
-                  onClick={() => void onRecheckCodex()}
-                >
-                  <RefreshCw
-                    className={cn("h-3.5 w-3.5", environment.status === "checking" && "animate-spin")}
-                    strokeWidth={1.5}
-                    aria-hidden="true"
-                  />
-                  {environment.status === "checking" ? "正在检查" : "重新检查"}
-                </Button>
-              )}
-              onPrimary={() => void advance()}
-            />
-          )}
         </div>
       </section>
+      {state.teamBuilderOpen ? null : (
+        <OnboardingFooter
+          primaryLabel={state.step === 4
+            ? completionState === "saving"
+              ? mode === "replay" ? "正在返回…" : "正在进入…"
+              : mode === "replay" ? "完成回看" : "开始使用"
+            : "继续"}
+          primaryDisabled={primaryDisabled}
+          secondary={state.step > 1 ? (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              disabled={completionState === "saving"}
+              onClick={() => dispatch({ type: "back" })}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              上一步
+            </Button>
+          ) : environment.status === "ready" ? null : (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              disabled={environment.status === "checking"}
+              onClick={() => void onRecheckCodex()}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", environment.status === "checking" && "animate-spin")}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+              {environment.status === "checking" ? "正在检查" : "重新检查"}
+            </Button>
+          )}
+          onPrimary={() => void advance()}
+        />
+      )}
     </main>
   );
 }
@@ -583,7 +584,7 @@ function ReadyStep(): JSX.Element {
   );
 }
 
-function OnboardingActions({
+function OnboardingFooter({
   primaryLabel,
   primaryDisabled,
   secondary,
@@ -595,17 +596,22 @@ function OnboardingActions({
   onPrimary: () => void;
 }): JSX.Element {
   return (
-    <nav
-      className="mt-4 flex w-full items-center justify-end gap-2"
-      aria-label="引导步骤操作"
-      data-testid="onboarding-actions"
+    <footer
+      className="shrink-0 border-t border-line bg-canvas px-6 py-3.5 max-sm:px-4"
+      data-testid="onboarding-footer"
     >
-      {secondary}
-      <Button type="button" size="lg" disabled={primaryDisabled} onClick={onPrimary}>
-        {primaryLabel}
-        <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-      </Button>
-    </nav>
+      <nav
+        className="mx-auto flex w-full max-w-[780px] items-center justify-end gap-2"
+        aria-label="引导步骤操作"
+        data-testid="onboarding-actions"
+      >
+        {secondary}
+        <Button type="button" size="lg" disabled={primaryDisabled} onClick={onPrimary}>
+          {primaryLabel}
+          <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+        </Button>
+      </nav>
+    </footer>
   );
 }
 

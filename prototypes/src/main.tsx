@@ -438,23 +438,24 @@ function OnboardingShell({
           >
             {children}
           </div>
-
-          {actionsHidden ? null : (
-            <nav className="onboarding-actions" aria-label="引导步骤操作">
-              {secondary}
-              <PrototypeButton
-                ripple
-                onClick={onPrimary}
-                disabled={primaryDisabled}
-                data-testid="primary-action"
-              >
-                {primaryLabel}
-                <ArrowRight size={15} />
-              </PrototypeButton>
-            </nav>
-          )}
         </div>
       </section>
+      {actionsHidden ? null : (
+        <footer className="onboarding-footer">
+          <nav className="onboarding-actions" aria-label="引导步骤操作">
+            {secondary}
+            <PrototypeButton
+              ripple
+              onClick={onPrimary}
+              disabled={primaryDisabled}
+              data-testid="primary-action"
+            >
+              {primaryLabel}
+              <ArrowRight size={15} />
+            </PrototypeButton>
+          </nav>
+        </footer>
+      )}
     </motion.main>
   );
 }
