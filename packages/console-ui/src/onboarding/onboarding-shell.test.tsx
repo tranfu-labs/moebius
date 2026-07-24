@@ -90,12 +90,17 @@ describe("OnboardingShell", () => {
     const onOpenTeamBuilder = vi.fn();
     renderShell({ onOpenTeamBuilder });
 
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-lg");
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByTestId("open-onboarding-team-builder"));
 
     expect(screen.getByRole("heading", { name: "AI 团队设计器" })).toBeInTheDocument();
     expect(screen.getByText("仍在第 2 步")).toBeInTheDocument();
     expect(screen.getByLabelText("第 2 步，共 4 步")).toBeInTheDocument();
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[780px]");
+    expect(screen.getByTestId("team-builder-view")).toHaveClass(
+      "h-[min(720px,calc(100dvh-220px))]",
+    );
     expect(onOpenTeamBuilder).toHaveBeenCalledOnce();
   });
 

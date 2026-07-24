@@ -55,7 +55,7 @@ export function TeamProposalCard({
     <section
       aria-label="AI 生成的团队提案"
       className={cn(
-        "ml-9 overflow-hidden rounded-lg border bg-card transition-colors max-sm:ml-0",
+        "ml-9 shrink-0 overflow-hidden rounded-lg border bg-card transition-colors max-sm:ml-0",
         readOnly ? "border-line" : "border-accent",
       )}
       data-testid="team-proposal"

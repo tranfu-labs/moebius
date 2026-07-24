@@ -190,7 +190,13 @@ export function OnboardingShell({
       </header>
 
       <section className="flex min-h-0 flex-1 justify-center overflow-y-auto px-6 py-10 max-sm:px-4 max-sm:py-7">
-        <div className="flex w-full max-w-lg flex-col justify-center">
+        <div
+          className={cn(
+            "flex w-full flex-col justify-center transition-[max-width]",
+            state.step === 2 && state.teamBuilderOpen ? "max-w-[780px]" : "max-w-lg",
+          )}
+          data-testid="onboarding-content-column"
+        >
           <header className="text-center">
             <p className="text-xs font-medium tabular-nums text-hint">
               第 {state.step} 步，共 4 步

@@ -62,18 +62,24 @@ export function TeamBuilderView({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState("");
   const [adjusting, setAdjusting] = useState(false);
-  const [localPending, setLocalPending] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState<{
+    text: string;
+    baseMessageCount: number;
+  } | null>(null);
+  const localPending = pendingUserMessage !== null;
   const busy = state.phase === "running" || state.phase === "committing" || localPending;
   const canCompose = state.phase === "idle"
     || state.phase === "clarifying"
     || (state.phase === "proposal" && adjusting);
+  const showPendingUserMessage = pendingUserMessage !== null
+    && state.messages.length <= pendingUserMessage.baseMessageCount;
 
   useEffect(() => {
     const thread = threadRef.current;
     if (thread !== null) {
       thread.scrollTop = thread.scrollHeight;
     }
-  }, [state.messages, state.phase, state.proposalRevision]);
+  }, [pendingUserMessage, state.messages, state.phase, state.proposalRevision]);
 
   useEffect(() => {
     setAdjusting(false);
@@ -85,7 +91,10 @@ export function TeamBuilderView({
     if (text.length === 0 || busy || !canCompose) {
       return;
     }
-    setLocalPending(true);
+    setPendingUserMessage({
+      text,
+      baseMessageCount: state.messages.length,
+    });
     setDraft("");
     try {
       if (state.phase === "proposal") {
@@ -94,7 +103,7 @@ export function TeamBuilderView({
         await onSubmit(text);
       }
     } finally {
-      setLocalPending(false);
+      setPendingUserMessage(null);
     }
   };
 
@@ -104,7 +113,10 @@ export function TeamBuilderView({
   };
 
   return (
-    <section className="flex h-[min(620px,calc(100dvh-160px))] min-h-[460px] w-full max-w-[780px] flex-col overflow-hidden rounded-lg border border-line bg-card text-ink">
+    <section
+      className="flex h-[min(720px,calc(100dvh-220px))] min-h-[460px] w-full max-w-[780px] flex-col overflow-hidden rounded-lg border border-line bg-card text-ink"
+      data-testid="team-builder-view"
+    >
       <header className="grid min-h-[58px] shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-line bg-sunken px-3.5">
         <Button type="button" size="icon" variant="outline" onClick={onBack} aria-label={backLabel}>
           <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -161,6 +173,17 @@ export function TeamBuilderView({
             onAdjust={startAdjustment}
             onCommit={(revision) => void onCommit(revision)}
           />
+        ) : null}
+
+        {showPendingUserMessage ? (
+          <div
+            className="flex max-w-[88%] self-end items-start gap-2 max-sm:max-w-[96%]"
+            data-testid="pending-team-builder-user-message"
+          >
+            <div className="min-w-0 rounded-lg rounded-tr-sm border border-accent/50 bg-hover px-3 py-2">
+              <MarkdownMessage content={pendingUserMessage.text} mode="static" />
+            </div>
+          </div>
         ) : null}
 
         {state.phase === "running" || localPending ? (

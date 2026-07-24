@@ -124,6 +124,7 @@
   - 桌面壳只为 runner 注入 `MOEBIUS_DATA_ROOT`；`WORKDIR_ROOT` 默认派生自数据根（`<数据根>/workdir`），无需单独注入 workdir。runner child 显式以 GitHub mode 启动，因此不会重复启动 local console server。
 - 桌面壳每次启动生成随机附件 capability，并只通过 preload 窄接口交给 renderer；图片 preview、原件上传、草稿恢复和移除都走 loopback local-console 附件 API。renderer 不直接读取托管目录、SQLite 或普通文件内容，附件 DTO 与 DOM 不得暴露原始路径、托管路径或 blob id。
 - Agent 团队的 `team.json` 只保存名称、描述、主 Agent slug 与成员顺序；首次引导协作示例独立保存在同目录版本化 `onboarding-orchestration.json`，只供 onboarding RelayDemo。独立编排缺失或损坏不得改变团队健康度、身份指纹、会话 roster、真实主 Agent 调度或 Codex prompt；AI 建队在同一 staging 目录写入并重读两份文件后才登记。近期曾把 `relayBeats` 内嵌进 `team.json` / 团队记录的版本只做有界兼容：合法数据可过渡读取并在下一次安全团队写入前迁出，旧指纹重定位成功后收敛到核心指纹。
+  - onboarding 的 AI 团队设计器是普通 `max-w-lg` 引导主体的响应式例外，宽高上限约为 `780px × 720px`；提交时先在 renderer 即时显示右侧用户气泡，再与服务端公开消息无重复收敛。团队提案卡不得在纵向 flex 中收缩裁切成员，超高内容只滚动设计器对话区。
   - 操作台采用 Codex 桌面端式两栏骨架：macOS 主窗口使用集成标题栏，左侧按已打开的持久化本地项目分组且只列根会话；带 `parentSessionId` 的裂变会话改由父时间线卡片聚合，每行显示子任务、成员与事实状态，点击后在右侧展开，窄窗覆盖主内容区；右侧主线仍是同一条多 agent 时间线，底部输入器承载项目 / 本地或隔离工作区上下文；输入器的 `@` 补全名单只取输入框底部当前显示团队的可用成员（含待生效团队），团队外的手写 `@slug` 保持普通文本；状态页和 observer 只保留为辅助诊断入口，路径、SQLite、runDir、cwd、内部 id 与原始输出不常驻对话页。
   - 桌面 renderer 只记住最后一次成功展示的用户根会话及其项目；重启时精确验证后恢复。没有记录、记录损坏、项目或会话已不可用时进入未选择项目的新建对话，不把 local-console API 的 `local/default` 或其他兼容回退当成用户选择。
   - 每个项目行右侧的新会话按钮只在该项目下创建会话；空白且无运行、消息或父子关系的会话可从 composer 项目菜单切换到其他已打开项目，保持 session id、草稿与选中态。create/open/rebind 共用同步 selection mutation gate；mutation owner refresh 可抢占旧 lease，非 owner refresh 不得提交，周期 refresh 保持 single-flight。已有消息、运行或父子关系的会话项目归属锁定。

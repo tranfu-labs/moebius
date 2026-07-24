@@ -74,8 +74,48 @@ describe("TeamBuilderView", () => {
     expect(screen.getAllByText("发布负责人")).toHaveLength(2);
     expect(screen.getByText("主 Agent")).toBeInTheDocument();
     expect(screen.getByText("@content-planner")).toBeInTheDocument();
+    expect(screen.getByTestId("team-proposal")).toHaveClass("shrink-0");
     fireEvent.click(screen.getByRole("button", { name: "创建并选中" }));
     expect(onCommit).toHaveBeenCalledWith(3);
+  });
+
+  it("shows a submitted user message immediately and reconciles without duplication", async () => {
+    let resolveSubmit: (() => void) | undefined;
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => {
+      resolveSubmit = resolve;
+    }));
+    const initialState = state({
+      phase: "idle",
+      messages: [{ role: "assistant", text: "你希望这支团队长期替你完成什么工作？" }],
+    });
+    const { rerender, props } = renderView({ state: initialState, onSubmit });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "描述团队目标或回答问题" }), {
+      target: { value: "持续做产品发布" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(screen.getByTestId("pending-team-builder-user-message")).toHaveTextContent(
+      "持续做产品发布",
+    );
+    expect(screen.getByRole("status", { name: "AI 正在处理" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeDisabled();
+
+    rerender(<TeamBuilderView {...props} state={state({
+      phase: "clarifying",
+      messages: [
+        ...initialState.messages,
+        { role: "user", text: "持续做产品发布" },
+        { role: "assistant", text: "主要面向谁？" },
+      ],
+    })} />);
+
+    expect(screen.queryByTestId("pending-team-builder-user-message")).not.toBeInTheDocument();
+    expect(screen.getAllByText("持续做产品发布")).toHaveLength(1);
+    resolveSubmit?.();
+    await waitFor(() => expect(
+      screen.queryByRole("status", { name: "AI 正在处理" }),
+    ).not.toBeInTheDocument());
   });
 
   it("turns the proposal into a read-only snapshot while the user writes an adjustment", async () => {

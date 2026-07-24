@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AiTeamBuilderIpcResponse } from "../src/ai-team-builder/contract.js";
 import { App, type DesktopApi } from "../src/console-page/app.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -141,6 +142,72 @@ describe("desktop onboarding routing", () => {
     expect(document.body.textContent).toContain("仍在第 2 步");
   });
 
+  it("shows the submitted AI builder message before the desktop IPC turn returns", async () => {
+    let resolveSubmit: ((response: AiTeamBuilderIpcResponse) => void) | null = null;
+    const submitOnboardingTeamBuilder = vi.fn(() => new Promise<AiTeamBuilderIpcResponse>(
+      (resolve) => {
+        resolveSubmit = resolve;
+      },
+    ));
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCodex: async () => ({ status: "ok", message: "已找到" }),
+      startOnboardingTeamBuilder: async () => ({
+        ok: true,
+        state: {
+          phase: "idle",
+          messages: [{
+            role: "assistant",
+            text: "你希望这支团队长期替你完成什么工作？",
+          }],
+          proposal: null,
+          proposalRevision: null,
+          error: null,
+          actions: ["cancel"],
+          selectedTeamId: null,
+        },
+      }),
+      submitOnboardingTeamBuilder,
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    await clickButton("继续");
+    await clickButton("跟 AI 聊出一支新团队");
+    const composer = await findElement<HTMLTextAreaElement>(
+      'textarea[aria-label="描述团队目标或回答问题"]',
+    );
+    await changeTextarea(composer, "持续做产品发布");
+    const sendButton = await findElement<HTMLButtonElement>('button[aria-label="发送"]');
+    await act(async () => sendButton.click());
+
+    const pendingMessage = await findElement('[data-testid="pending-team-builder-user-message"]');
+    expect(pendingMessage.textContent).toContain("持续做产品发布");
+    expect(document.querySelector('[role="status"][aria-label="AI 正在处理"]')).not.toBeNull();
+
+    await act(async () => resolveSubmit?.({
+      ok: true,
+      state: {
+        phase: "clarifying",
+        messages: [
+          { role: "assistant", text: "你希望这支团队长期替你完成什么工作？" },
+          { role: "user", text: "持续做产品发布" },
+          { role: "assistant", text: "主要面向谁？" },
+        ],
+        proposal: null,
+        proposalRevision: null,
+        error: null,
+        actions: ["cancel"],
+        selectedTeamId: null,
+      },
+    }));
+    await waitFor(() =>
+      document.querySelector('[data-testid="pending-team-builder-user-message"]') === null);
+
+    expect((document.body.textContent?.match(/持续做产品发布/g) ?? [])).toHaveLength(1);
+    expect(document.body.textContent).toContain("主要面向谁？");
+  });
+
   function installApi(overrides: Partial<DesktopApi>): void {
     const api: DesktopApi = {
       getLocalConsoleAttachmentCapability: async () => null,
@@ -178,6 +245,17 @@ async function findElement<T extends Element = Element>(selector: string): Promi
     return found !== null;
   });
   return found!;
+}
+
+async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  await act(async () => {
+    setter?.call(textarea, value);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
