@@ -120,7 +120,7 @@ export function buildCodexExecOptionsBase(model: string): string[] {
     "-c",
     "features.fast_mode=true",
     "-c",
-    'model_reasoning_effort="xhigh"',
+    'model_reasoning_effort="high"',
   ];
 }
 

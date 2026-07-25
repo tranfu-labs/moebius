@@ -97,7 +97,7 @@
 
 ### Codex provider 覆盖
 - MUST let the local configuration TOML expose an optional `[codex]` table carrying an optional `provider` string, so that a repository can switch its `codex` CLI invocations from the built-in subscription auth to an API gateway without editing the user's `~/.codex/config.toml`.
-- MUST default to the subscription mode when the `[codex]` table is absent or `provider` is missing/empty; in this mode the `codex exec` argv MUST be byte-for-byte equivalent to the baseline (`--yolo`, `--json`, `-m gpt-5.6-sol`, `-c service_tier="fast"`, `-c features.fast_mode=true`, `-c model_reasoning_effort="xhigh"` and no additional `-c` entries).
+- MUST default to the subscription mode when the `[codex]` table is absent or `provider` is missing/empty; in this mode the `codex exec` argv MUST be byte-for-byte equivalent to the baseline (`--yolo`, `--json`, `-m gpt-5.6-sol`, `-c service_tier="fast"`, `-c features.fast_mode=true`, `-c model_reasoning_effort="high"` and no additional `-c` entries).
 - MUST, when `provider = "<name>"` is set, load the API key and base URL from the process environment using the convention `<NAME_UPPERCASE>_API_KEY` and `<NAME_UPPERCASE>_BASE_URL` before spawning `codex`.
 - MUST reject startup with a visible error containing the missing variable name when either `<NAME_UPPERCASE>_API_KEY` or `<NAME_UPPERCASE>_BASE_URL` is absent; MUST NOT spawn `codex` under these conditions.
 - MUST, when a provider is resolved, append exactly five `-c` overrides to the end of the base `codex exec` argv, in this order: `model_provider=<name>`, `model_providers.<name>.name=<name>`, `model_providers.<name>.base_url=<literal-url>`, `model_providers.<name>.env_key=<NAME_UPPERCASE>_API_KEY`, `model_providers.<name>.wire_api=responses`.
@@ -270,6 +270,7 @@
 - MUST 让 `agents/dev.md` 要求「验收语句」数量与方案的功能点一一对应。
 - MUST 让 `agents/dev.md` 要求 dev 在已有验收语句上只做机械可执行化细化并说明理由；dev MUST NOT 自行改变验收目标、删减范围、合并或替换验收语句。确需调整时，dev MUST 请求需求持有者或真人用户在 issue 时间线确认。
 - MUST 让 `agents/dev.md` 要求 dev 实现阶段只能基于已确认验收清单执行；QA 增补只有经需求持有者或真人用户明确接受后才并入清单，执行方自述、loop watcher 转述或沉默都不能作为确认依据。
+- MUST 让 `agents/dev.md` 在 `code-verified` 的「验收证据」中提供可复核的紧凑证据包：base commit、覆盖 tracked diff 与未跟踪交付文件内容的可重算 workspace fingerprint、测试 / typecheck / 构建 / 必要验收命令及退出码、与已确认验收语句的对应关系；证据生成后工作树变化时 MUST 更新 fingerprint 并重跑受影响验证。
 - MUST 让 `agents/hermes-user.md` 在被 mention 请求验收方案或代码结果时，按可用「验收语句」逐条走查并输出结构化结论。
 - MUST 让 `agents/product-manager.md` 在被 mention 请求验收方案或代码结果时，按可用「验收语句」逐条走查并输出结构化结论。
 - MUST 让 `agents/product-manager.md` 与 `agents/hermes-user.md` 在验收方案或代码结果时只按已确认验收语句、以及已确认并入的 QA 增补验收语句逐条走查。
@@ -286,6 +287,7 @@
 - MUST 让 `agents/dev-manager.md` 以对话形式给出技术决策，MUST NOT 落 ADR / design 文件；当某决策会打破 `docs/architecture/module-map.md` 的依赖方向时，MUST 要求写码方在实现时补一条 ADR（自身不落盘）。
 - MUST 让 `agents/dev-manager.md` 承载方案评估方法论——一组不分先后的并行判断维度，至少覆盖：优先搜英文网络最佳实践 / 成熟开源框架 / 项目现有能力再决定是否自造；方案可行性与可靠性（失败模式、边界、降级 / 回滚）；对其它模块的影响与新增 BUG / 回归 / 安全漏洞风险；成本与长期演进。
 - MUST 让 `agents/dev-manager.md` 保持通用、自包含：只描述自身职责与方法论，MUST NOT 硬编码指向某个具体协作 agent；协作对象一律按承载 `agents/<name>.md` 的通用对象表述。
+- MUST 让 `agents/dev-manager.md` 在把已完成实现交给测试 / 复核对象时携带 dev 的验证快照、workspace fingerprint、门禁结果和验收证据，并要求先校验证据绑定、再做独立风险定向检查；MUST NOT 默认要求机械重跑全部门禁，仅在证据缺失或失配、工作树变化、定向检查异常或原证据明显不足时扩大验证范围。
 - MUST 让 `agents/dev-manager.md` 每条响应末尾以 `<!-- moebius:stage=in-progress -->` 结尾，阶段语义用正文表达，MUST NOT 为其新增注册 stage。
 - MUST 提供 `agents/secretary.md` 作为普通 Codex driver agent persona，与 `dev`、`dev-manager`、`product-manager`、`hermes-user` 同级、同样以 `agents/*.md` 文件名自动发现加载；其核心职责为采访并沉淀 CEO guardrail 漏判反馈，维护 `agents/ceo.md` 及相关 specs/tests/docs。
 - MUST 让 `agents/secretary.md` 通过 frontmatter 声明受信任 `pre_script: src/agent-prescripts/current-repo-workspace.ts`，使 secretary Codex cwd 固定为 moebius 当前仓库根目录。
@@ -300,7 +302,7 @@
 - MUST 让 secretary 在向 `agents/ceo.md` 追加规则前检查与既有规则是否冲突、或叠加导致 CEO 过度介入；每条新规则 MUST 在对应 change 的 spec-delta 中配一个 Given/When/Then 场景。
 - MUST 让 `in-progress` 承载“还在干活 / 采访 / 澄清 / 报进度 / 等待用户，不需要 CEO 阶段反思强制介入”的语义。
 - SHOULD 让 `plan-written` / `code-verified` 保持为 dev agent 的开发阶段语义；其他 Codex agent 的默认 stage MUST 为 `in-progress`。
-- MUST 提供 `agents/qa.md` 作为测试设计 Codex driver agent persona，与 `dev`、`dev-manager`、`product-manager`、`hermes-user`、`secretary` 同级、同样以 `agents/*.md` 文件名自动发现加载；核心职责为方案阶段的对抗性测试设计审查，MUST NOT 写实现代码，MUST NOT 亲自执行故障注入（增补用例由 dev 在实现阶段执行并附证据）。
+- MUST 提供 `agents/qa.md` 作为测试设计与实现复核 Codex driver agent persona，与 `dev`、`dev-manager`、`product-manager`、`hermes-user`、`secretary` 同级、同样以 `agents/*.md` 文件名自动发现加载；核心职责为方案阶段的对抗性测试设计审查，以及实现后的证据绑定校验与独立风险定向复核。qa MUST NOT 写实现代码；方案阶段的故障注入与破坏性实现复核用例由 dev 执行并附证据，qa MAY 在 `read-run` 边界内执行安全、可恢复的定向或对抗性检查。
 - MUST 让 `agents/qa.md` 以 `docs/architecture/invariants.md` 与需求原文为判定标准（oracle）审查方案；MUST NOT 把方案自述当作唯一判定标准（防止审查退化为"方案做到了方案说的"式确认）。
 - MUST 让 qa 对含运行时行为改动的 `plan-written` 方案执行四步审查：① 提取方案依赖的经验假设清单（外部行为事实性断言）并标注是否已验证；② 过故障矩阵（外部依赖 × {快速失败, 永久挂起, 慢成功, 状态丢失} × 流水线阶段），只列有问题的格；③ 用例二分——方案缺分支的静态可裁决缺陷当场判不通过、依赖经验假设的写成可机械执行的故障注入验收语句增补；④ 对抗性审查已有「验收语句」是否可机械执行、是否只覆盖 happy path。
 - MUST 让 qa 审查评论包含固定结论行 `QA 结论：通过` 或 `QA 结论：不通过`；不通过时每条缺陷 MUST 挂靠到具体故障矩阵格或 `invariants.md` 条目，未挂靠的泛化批评视为无效缺陷。
@@ -308,6 +310,8 @@
 - MUST 让 `agents/qa.md` 明确 QA 增补验收语句属于测试设计建议；qa 通过交棒时 MUST 标注增补部分，且增补只有经需求持有者或真人用户明确接受后才并入验收清单。
 - MUST 让 qa 不得替需求持有者或真人用户确认验收语句调整；通过交棒时只请求发起需求角色按原验收语句加 QA 增补验收方案，并明确是否接受这些增补。
 - MUST 对不触碰运行时代码、外部依赖、状态机、agent 协作协议的纯文档 / 文案类方案豁免四步审查：qa MUST 输出一句话豁免（含理由）并直接 mention 发起需求角色。
+- MUST 让 qa 在实现复核时先校验 dev 证据包的 base commit、workspace fingerprint、工作树现状、命令退出码与 artifact 引用，再阅读风险相关 diff 并执行能独立推翻实现结论的定向检查；涉及用户可见 UI 时 MUST 走真实页面验证。
+- MUST NOT 让 qa 默认重跑全部测试、typecheck 和构建；仅当 dev 证据缺失或未绑定当前工作树、工作树在证据后变化、定向检查出现异常，或变更风险使原证据明显不足时，才扩大到相应全量门禁，并在评论中说明触发条件。复用 dev 证据 MUST NOT 替代 qa 自己的通过 / 不通过结论。
 - MUST 让 `agents/qa.md` 每条响应末尾以 `<!-- moebius:stage=in-progress -->` 结尾，阶段语义用正文结论行表达，MUST NOT 为 qa 新增注册 stage。
 - MUST 让 qa 对同一需求的方案最多判两轮不通过；第三轮仍有分歧时 MUST 列明分歧点、判"有保留通过"并交人类裁决，MUST NOT 与 dev 无限空转。
 - MUST 提供 `docs/architecture/invariants.md` 作为系统级不变量事实源，至少覆盖 liveness（任何单点故障不得使心跳循环或任一 issue 推进永久停转；每个外部调用必须有界时或有看门狗）、safety（intake 游标只在 GitHub 留下可见结果后推进）、visibility（放弃或降级任务必须留下可见痕迹，且痕迹发布路径本身受前两者约束）三类。qa 发现新故障类时 MUST 以补丁建议形式回流，经人类确认后合并，MUST NOT 直接修改该文件。
