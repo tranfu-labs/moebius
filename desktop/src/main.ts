@@ -17,7 +17,12 @@ import electronUpdater from "electron-updater";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { startObserverServer, type StartedObserverServer } from "../../src/observer/server.js";
-import { buildSeedCopyPlan, executeSeedCopyPlan, resolveDesktopDataRoot } from "./data-root.js";
+import {
+  buildSeedCopyPlan,
+  executeSeedCopyPlan,
+  resolveDesktopDataRoot,
+  resolveDesktopInstanceUserDataPath,
+} from "./data-root.js";
 import { checkCodex } from "./env-doctor.js";
 import { integratedMainWindowOptions } from "./main-window-options.js";
 import { RunnerSupervisor, type RunnerProcess } from "./runner-supervisor.js";
@@ -78,6 +83,24 @@ import { registerOnboardingIpc } from "./onboarding/ipc.js";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(dirname, "..", "..");
 const { autoUpdater } = electronUpdater;
+const dataRoot = resolveDesktopDataRoot({
+  env: process.env,
+  isPackaged: app.isPackaged,
+  projectRoot,
+});
+const instanceUserDataPath = resolveDesktopInstanceUserDataPath({
+  dataRoot,
+  packagedDefaultDataRoot: resolveDesktopDataRoot({
+    env: {},
+    isPackaged: true,
+    projectRoot,
+  }),
+  defaultUserDataPath: app.getPath("userData"),
+});
+if (instanceUserDataPath !== app.getPath("userData")) {
+  fs.mkdirSync(instanceUserDataPath, { recursive: true });
+  app.setPath("userData", instanceUserDataPath);
+}
 
 if (!app.isPackaged) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
@@ -93,7 +116,7 @@ let isQuitting = false;
 
 const status: DesktopStatusSnapshot = {
   appVersion: app.getVersion(),
-  dataRoot: "",
+  dataRoot,
   observer: { status: "starting" },
   localConsole: { status: "starting" },
   runner: { status: "stopped", crashCount: 0, maxCrashCount: 3 },
@@ -138,11 +161,6 @@ app.on("window-all-closed", () => {
 });
 
 async function boot(): Promise<void> {
-  status.dataRoot = resolveDesktopDataRoot({
-    env: process.env,
-    isPackaged: app.isPackaged,
-    projectRoot,
-  });
   registerAiTeamBuilderIpc({
     ipcMain,
     builder: new AiTeamBuilder({ dataRoot: status.dataRoot }),

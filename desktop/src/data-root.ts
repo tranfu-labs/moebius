@@ -11,6 +11,12 @@ export interface ResolveDesktopDataRootInput {
   homeDir?: string;
 }
 
+export interface ResolveDesktopInstanceUserDataPathInput {
+  dataRoot: string;
+  packagedDefaultDataRoot: string;
+  defaultUserDataPath: string;
+}
+
 export interface SeedCopyOperation {
   source: string;
   destination: string;
@@ -37,6 +43,15 @@ export function resolveDesktopDataRoot(input: ResolveDesktopDataRootInput): stri
   }
 
   return path.resolve(input.projectRoot);
+}
+
+export function resolveDesktopInstanceUserDataPath(input: ResolveDesktopInstanceUserDataPathInput): string {
+  const dataRoot = path.resolve(input.dataRoot);
+  const packagedDefaultDataRoot = path.resolve(input.packagedDefaultDataRoot);
+  if (dataRoot === packagedDefaultDataRoot) {
+    return path.resolve(input.defaultUserDataPath);
+  }
+  return path.join(dataRoot, ".state", "desktop-user-data");
 }
 
 export async function buildSeedCopyPlan(input: {

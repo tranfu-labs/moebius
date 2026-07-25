@@ -59,13 +59,32 @@
 - **AND** the failure is not presented as the session having no agents.
 
 ### 启动与退出
-- MUST 启动应用即依次完成：数据根解析 → PATH 修复 → 首启种子拷贝 → 环境自检 → 启动 observer 服务 → 启动 main 进程拥有的 local console server → 派生 runner 子进程 → 打开操作台主窗口。
-- MUST 持有单实例锁：第二个应用实例启动时激活已有窗口后退出，NEVER 出现两个实例同时派生 runner 或并发写 `.state/`。
+- MUST 启动应用即依次完成：数据根解析 → 按规范化有效数据根准备实例作用域并取得单实例锁 → 打开操作台主窗口 → PATH 修复 → 首启种子拷贝 → 环境自检 → 启动 observer 服务 → 启动 main 进程拥有的 local console server → 派生 runner 子进程。
+- MUST 按规范化有效数据根持有单实例锁：相同数据根的第二个应用实例启动时激活已有窗口后退出，不同数据根的实例可以并存；NEVER 让相同数据根的两个实例同时派生 runner 或并发写 `.state/`。
 - MUST 在种子拷贝失败时不派生 runner 子进程，并把失败原因呈现在状态页；NEVER 让 runner 在缺失 `config.toml` 的数据根上静默启动失败。
 - MUST 在关闭主窗口时先停止 runner 子进程（温和信号，超时后强杀）、再关闭 local console server 与 observer，然后退出应用；NEVER 留下孤儿子进程。
 
+#### Scenario: 安装态与默认开发态并存
+- **GIVEN** 默认数据根为 `~/.moebius` 的安装态实例正在运行
+- **WHEN** 用户在仓库中以默认开发态启动桌面应用
+- **THEN** 开发态使用仓库根对应的独立实例作用域并打开自己的主窗口
+- **AND** 安装态实例继续运行。
+
+#### Scenario: 同一数据根的重复实例退出
+- **GIVEN** 一个实例已经持有规范化数据根 A 的实例作用域
+- **WHEN** 第二个实例以可规范化为同一数据根 A 的路径启动
+- **THEN** 第二个实例激活已有窗口后退出
+- **AND** 不启动第二套 runner、local console server 或 `.state` 写者。
+
+#### Scenario: 跨运行形态显式共享数据根
+- **GIVEN** 安装态与开发态都通过 `MOEBIUS_DATA_ROOT` 显式指向同一规范化数据根
+- **WHEN** 两者先后启动
+- **THEN** 两者竞争同一实例作用域
+- **AND** 只有先取得锁的实例继续启动。
+
 ### 数据根
 - MUST 打包态数据根默认为 `~/.moebius`，开发态默认为仓库根；`MOEBIUS_DATA_ROOT` 环境变量为最高优先级覆盖。
+- MUST 让打包态默认数据根继续使用既有 Electron `userData`，避免迁移已有 Chromium 配置与缓存；其他规范化数据根 MUST 稳定派生各自独立的 Electron `userData` 实例作用域。
 - MUST 把 runner 子进程工作目录设为数据根，使 `.state/` 等相对路径状态文件落在数据根下。
 - MUST 让 `WORKDIR_ROOT` 默认派生自数据根（`<数据根>/workdir`），NEVER 以应用包或源码目录为基准。防止 workdir 落在应用包 / 源码附近 MUST 由该默认值本身保证，NEVER 依赖各入口逐个注入环境变量；`MOEBIUS_WORKDIR_ROOT` 仅作显式覆盖（如放到独立磁盘）。
 - MUST 首启把 `agents/`（含 `ceo-scripts/`）与示例 `config.toml` 种子拷贝到数据根；已存在的文件 NEVER 覆盖。
