@@ -30,10 +30,16 @@ describe("child session summaries", () => {
 
     expect(summarizeChildSessions("parent", sources)).toEqual([
       expect.objectContaining({ sessionId: "running", memberName: "开发", status: "running", statusLabel: "进行中" }),
-      expect.objectContaining({ sessionId: "failed", memberName: "开发经理", status: "not-started", statusLabel: "没跑起来" }),
+      expect.objectContaining({ sessionId: "failed", memberName: "技术负责人", status: "not-started", statusLabel: "没跑起来" }),
       expect.objectContaining({ sessionId: "finished", memberName: "测试", status: "finished", statusLabel: "已结束" }),
     ]);
-    expect(resolveChildSessionMember(null, "Initial handoff:\n@product-manager 请接手")).toBe("产品经理");
+    expect(resolveChildSessionMember(null, "Initial handoff:\n@product-manager 请接手")).toBe("产品");
+    expect(resolveChildSessionMember("plan-executor", null, {
+      members: [{
+        name: "plan-executor",
+        agentMarkdown: "---\ndisplay_name: 方案执行者\ndescription: 负责执行\n---\n\nprivate",
+      }],
+    })).toBe("方案执行者");
   });
 
   it("returns an empty aggregate and degrades corrupt or missing child chains deterministically", () => {
@@ -161,6 +167,26 @@ describe("child session summaries", () => {
     } finally {
       database.close();
     }
+
+    const writer = new DatabaseSync(started.sqlitePath);
+    try {
+      writer.prepare(
+        `UPDATE session_agent_team_members
+         SET member_name = 'replacement', agent_markdown = '# 替换团队\n\n父会话后续改选\n'
+         WHERE session_id = ? AND slot = 'effective'`,
+      ).run(boundParent.session.sessionId);
+    } finally {
+      writer.close();
+    }
+    const childViewResponse = await fetch(new URL(
+      "/api/local-console/sessions/bound-child/view",
+      started.url,
+    ));
+    expect(childViewResponse.status).toBe(200);
+    await expect(childViewResponse.json()).resolves.toMatchObject({
+      session: { sessionId: "bound-child", parentSessionId: boundParent.session.sessionId },
+      memberIdentities: [{ slug: "dev", displayName: "开发" }],
+    });
   });
 });
 
@@ -173,6 +199,7 @@ function source(overrides: Partial<ChildSessionSummarySource>): ChildSessionSumm
     unresolvedSystemEventKind: null,
     latestAgentRole: null,
     initialBody: "Initial handoff:\n@dev-manager 请推进",
+    agentTeamSnapshot: null,
     chainValid: true,
     ...overrides,
   };

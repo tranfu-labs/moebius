@@ -40,9 +40,12 @@ import { ProjectFilesTab, type ProjectFilesData } from "@/console/project-files-
 import {
   ProcessTab,
   nextProcessTabTitle,
-  resolveOperatorMemberName,
   type OperatorProcessOutputState,
 } from "@/console/process-tab";
+import {
+  resolveOperatorMemberName,
+  type OperatorMemberIdentity,
+} from "@/console/member-name";
 import {
   ConversationSidebar,
   type ConversationSidebarProject,
@@ -75,6 +78,7 @@ import {
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
   updateRightSidebarProcessScroll,
+  parseRunOutputSourceKey,
   type RightSidebarTabsState,
 } from "@/console/right-sidebar-tabs";
 import { containsMachineText, sanitizeMachineText } from "@/console/machine-text";
@@ -208,6 +212,7 @@ export type OperatorChildSessionSummary = SubSessionCardItem;
 export interface OperatorSubSessionView {
   session: OperatorSession;
   messages: OperatorMessage[];
+  memberIdentities?: OperatorMemberIdentity[];
   activeRun: OperatorRunSnapshot | null;
 }
 
@@ -274,6 +279,7 @@ export interface OperatorConsoleProps {
   messages: OperatorMessage[];
   pendingPrimaryMessages?: OperatorMessage[];
   childSessions?: OperatorChildSessionSummary[];
+  memberIdentities?: readonly OperatorMemberIdentity[];
   openedSubSession?: OperatorSubSessionView | null;
   subSessionViews?: Readonly<Record<string, OperatorSubSessionViewState>>;
   subSessionComposerValue?: string;
@@ -395,6 +401,7 @@ export function OperatorConsole({
   messages,
   pendingPrimaryMessages = [],
   childSessions = [],
+  memberIdentities = [],
   subSessionViews = {},
   subSessionComposerValue = "",
   subSessionComposerAttachments = [],
@@ -656,7 +663,10 @@ export function OperatorConsole({
     onOpenSubSession?.(sessionId);
   };
 
-  const openEvidence = (intent: OperatorEvidenceOpenIntent) => {
+  const openEvidence = (
+    intent: OperatorEvidenceOpenIntent,
+    identities: readonly OperatorMemberIdentity[] = memberIdentities,
+  ) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
     setRightSidebarOpen(true, { ensureTabs: false });
     updateRightSidebarTabs(openRightSidebarSourceTab(effectiveRightSidebarTabs, intent.kind === "workspace-diff"
@@ -669,7 +679,7 @@ export function OperatorConsole({
       : {
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
           type: "run-output",
-          title: nextProcessTabTitle(effectiveRightSidebarTabs, intent.role),
+          title: nextProcessTabTitle(effectiveRightSidebarTabs, intent.role, identities),
           sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId),
         }));
     onOpenEvidence?.(intent);
@@ -1132,6 +1142,7 @@ export function OperatorConsole({
                         <TimelineEntry
                           key={message.id}
                           message={message}
+                          memberIdentities={memberIdentities}
                           childSessions={childSessions}
                           openedSubSessionId={openedSubSessionId}
                           onOpenSubSession={openSubSession}
@@ -1146,11 +1157,12 @@ export function OperatorConsole({
 
                     {displayedActiveRuns.map((run) => {
                       const isPrimaryRun = activeRun?.runId === run.runId;
-                      const roleLabel = localizeTimelineRole(run.role);
+                      const roleLabel = resolveOperatorMemberName(run.role, memberIdentities);
                       return (
                         <div data-testid="active-run-block" data-run-id={run.runId} key={run.runId}>
                           <RunBlock
                             role={run.role ?? "dev"}
+                            memberIdentities={memberIdentities}
                             summary={safeRunSummary(run.lastOutputSummary)}
                             liveMarkdown={run.liveMarkdown}
                             rawOutput={runRawOutput(run)}
@@ -1347,31 +1359,45 @@ export function OperatorConsole({
                 onOpenOutput={(input) => openEvidence({
                   kind: "run-output",
                   ...input,
-                })}
+                }, subSessionViews[sessionId]?.status === "ready"
+                  ? subSessionViews[sessionId].view.memberIdentities ?? []
+                  : [])}
                 onOpenExternalLink={onOpenExternalLink}
               />
             );
           },
-          "run-output": (tab) => (
-            <ProcessTab
-              title={tab.title}
-              state={tab.sourceKey === null
-                ? { status: "idle" }
-                : processOutputs[tab.sourceKey] ?? { status: "idle" }}
-              scrollSnapshot={tab.processScroll}
-              onScrollSnapshotChange={(snapshot) => {
-                updateRightSidebarTabs(updateRightSidebarProcessScroll(
-                  effectiveRightSidebarTabs,
-                  tab.id,
-                  snapshot,
-                ));
-              }}
-              onLoadPrevious={tab.sourceKey === null || onLoadProcessOutputPrevious === undefined
-                ? undefined
-                : (cursor) => onLoadProcessOutputPrevious(tab.sourceKey!, cursor)}
-              onOpenExternalLink={onOpenExternalLink}
-            />
-          ),
+          "run-output": (tab) => {
+            const locator = parseRunOutputSourceKey(tab.sourceKey, selectedSessionId);
+            const subSessionState = locator === null
+              ? undefined
+              : subSessionViews[locator.sessionId];
+            const processMemberIdentities = locator === null || locator.sessionId === selectedSessionId
+              ? memberIdentities
+              : subSessionState?.status === "ready"
+                ? subSessionState.view.memberIdentities ?? []
+                : [];
+            return (
+              <ProcessTab
+                title={tab.title}
+                state={tab.sourceKey === null
+                  ? { status: "idle" }
+                  : processOutputs[tab.sourceKey] ?? { status: "idle" }}
+                memberIdentities={processMemberIdentities}
+                scrollSnapshot={tab.processScroll}
+                onScrollSnapshotChange={(snapshot) => {
+                  updateRightSidebarTabs(updateRightSidebarProcessScroll(
+                    effectiveRightSidebarTabs,
+                    tab.id,
+                    snapshot,
+                  ));
+                }}
+                onLoadPrevious={tab.sourceKey === null || onLoadProcessOutputPrevious === undefined
+                  ? undefined
+                  : (cursor) => onLoadProcessOutputPrevious(tab.sourceKey!, cursor)}
+                onOpenExternalLink={onOpenExternalLink}
+              />
+            );
+          },
           "workspace-diff": () => selectedSession === null ? null : (
             <ChangeTab
               sessionId={selectedSession.sessionId}
@@ -1851,6 +1877,7 @@ function roleCompletionsForTeam(team: OperatorAgentTeam | undefined): RoleComple
 
 function TimelineEntry({
   message,
+  memberIdentities,
   childSessions = [],
   openedSubSessionId = null,
   onOpenSubSession,
@@ -1861,6 +1888,7 @@ function TimelineEntry({
   onOpenEvidence,
 }: {
   message: OperatorMessage;
+  memberIdentities: readonly OperatorMemberIdentity[];
   childSessions?: readonly OperatorChildSessionSummary[];
   openedSubSessionId?: string | null;
   onOpenSubSession?: (sessionId: string) => void;
@@ -1887,6 +1915,7 @@ function TimelineEntry({
       <RunOutcome
         status={outcome}
         role={message.role}
+        memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
         onRetry={(outcome === "run-not-started" || outcome === "run-stuck") && message.runId !== null
@@ -1944,9 +1973,16 @@ function TimelineEntry({
     <div className="group py-4 text-sm">
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
-          <RoleTag label={resolveOperatorMemberName(message.role)} toneKey={message.role ?? "agent"} />
+          <RoleTag
+            label={resolveOperatorMemberName(message.role, memberIdentities)}
+            toneKey={message.role ?? "agent"}
+          />
         ) : null}
-        <span className="font-semibold text-ink">{message.speaker === "agent" ? resolveOperatorMemberName(message.role) : "系统提示"}</span>
+        <span className="font-semibold text-ink">
+          {message.speaker === "agent"
+            ? resolveOperatorMemberName(message.role, memberIdentities)
+            : "系统提示"}
+        </span>
         <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt)}</span>
       </div>
       <div className="relative pl-7">
@@ -2097,19 +2133,6 @@ function formatTime(value: string): string {
 function nonBlank(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
-}
-
-function localizeTimelineRole(role: string | null): string {
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    "dev-manager": "技术负责人",
-    "hermes-user": "用户代表",
-    "product-manager": "产品",
-    qa: "测试",
-    secretary: "秘书",
-  };
-  return role === null ? "团队成员" : labels[role] ?? "团队成员";
 }
 
 async function unavailableWorkspaceDiff(): Promise<WorkspaceDiffData> {

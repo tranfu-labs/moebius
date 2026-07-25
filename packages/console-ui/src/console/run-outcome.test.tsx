@@ -66,4 +66,19 @@ describe("RunOutcome", () => {
 
     expect(screen.queryByRole("button", { name: /改一改重发/u })).not.toBeInTheDocument();
   });
+
+  it("shows the same custom member name for every terminal fact", () => {
+    for (const fixture of outcomeFixtures) {
+      const { unmount } = render(
+        <RunOutcome
+          status={fixture.status}
+          role="plan-executor"
+          memberIdentities={[{ slug: "plan-executor", displayName: "方案执行者" }]}
+        />,
+      );
+      expect(screen.getByText("方案执行者")).toBeVisible();
+      expect(screen.queryByText("协作者")).not.toBeInTheDocument();
+      unmount();
+    }
+  });
 });

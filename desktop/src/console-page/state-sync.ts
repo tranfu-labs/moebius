@@ -1,5 +1,6 @@
 import {
   parseRunOutputSourceKey,
+  resolveOperatorMemberName,
   type OperatorEvidenceOpenIntent,
   type OperatorEvidenceView,
   type OperatorProcessAppendOutput,
@@ -226,7 +227,7 @@ export async function loadEvidenceView(options: {
   ].filter((value): value is string => value !== null).join("\n\n");
   return {
     kind: "run-output",
-    title: `${localizeRole(options.intent.role)} · 完整输出`,
+    title: `${resolveOperatorMemberName(options.intent.role)} · 完整输出`,
     content: content || "这一步还没有可显示的输出。",
   };
 }
@@ -460,19 +461,6 @@ async function loadWorkspaceJson<T>(
 function labeledOutput(label: string, value: string | null | undefined): string | null {
   const text = value?.trim();
   return text ? `${label}\n${text}` : null;
-}
-
-function localizeRole(role: string | null): string {
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    "dev-manager": "技术负责人",
-    "hermes-user": "用户代表",
-    "product-manager": "产品",
-    qa: "测试",
-    secretary: "秘书",
-  };
-  return role === null ? "团队成员" : labels[role] ?? "团队成员";
 }
 
 export interface CreatedSession {

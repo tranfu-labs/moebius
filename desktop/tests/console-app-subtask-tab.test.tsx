@@ -98,7 +98,7 @@ describe("desktop App subtask tab wiring", () => {
       && request.method === "POST"));
 
     const stop = await findElement<HTMLButtonElement>(
-      '[data-testid="subtask-tab"] button[aria-label="停下当前这一步"]',
+      '[data-testid="subtask-tab"] button[aria-label="停下测试"]',
     );
     await act(async () => stop.click());
     await waitFor(() => requests.some((request) =>

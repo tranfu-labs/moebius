@@ -2,12 +2,17 @@ import { AlertTriangle, Ban, CirclePause, Clock3, FileText } from "lucide-react"
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import {
+  resolveOperatorMemberName,
+  type OperatorMemberIdentity,
+} from "@/console/member-name";
 
 export type RunOutcomeStatus = "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted";
 
 export interface RunOutcomeProps {
   status: RunOutcomeStatus;
   role?: string | null;
+  memberIdentities?: readonly OperatorMemberIdentity[];
   rawReason?: string | null;
   rawOutput?: string | null;
   defaultOpen?: boolean;
@@ -32,20 +37,10 @@ const outcomeDescriptions: Record<RunOutcomeStatus, string> = {
   "run-stuck": "你可以重试，或直接说话、换一个成员接手。",
 };
 
-const roleLabels: Record<string, string> = {
-  ceo: "CEO",
-  dev: "开发",
-  "dev-manager": "技术负责人",
-  "hermes-user": "用户代表",
-  "product-manager": "产品",
-  qa: "测试",
-  secretary: "秘书",
-  user: "你",
-};
-
 export function RunOutcome({
   status,
   role,
+  memberIdentities = [],
   rawReason: _rawReason,
   rawOutput,
   defaultOpen: _defaultOpen,
@@ -55,7 +50,9 @@ export function RunOutcome({
   onEditAndResend,
   className,
 }: RunOutcomeProps): JSX.Element {
-  const roleLabel = role ? localizeRole(role) : null;
+  const roleLabel = role
+    ? resolveOperatorMemberName(role, memberIdentities, "协作者")
+    : null;
 
   return (
     <div
@@ -115,8 +112,4 @@ function OutcomeIcon({ status }: { status: RunOutcomeStatus }): JSX.Element {
     return <CirclePause className="h-[15px] w-[15px] text-sub" strokeWidth={1.5} />;
   }
   return <Ban className="h-[15px] w-[15px] text-danger" strokeWidth={1.5} />;
-}
-
-function localizeRole(role: string): string {
-  return roleLabels[role] ?? "协作者";
 }
