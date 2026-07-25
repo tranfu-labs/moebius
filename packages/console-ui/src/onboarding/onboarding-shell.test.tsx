@@ -62,10 +62,25 @@ describe("OnboardingShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
-    expect(screen.getByRole("button", { name: "完成回看" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "开始使用" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "完成回看" }));
+    expect(screen.getByRole("button", { name: "开始使用" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "完成回看" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith("system:development"));
+  });
+
+  it("renders the supplied Codex version and uses generic copy when detail is absent", () => {
+    const version = "codex-cli 0.144.1";
+    const { rerender } = renderShell({
+      environment: { status: "ready", detail: version },
+    });
+
+    expect(screen.getByText(version)).toBeVisible();
+    expect(screen.queryByText("codex-cli 1.0")).not.toBeInTheDocument();
+
+    const props = createShellProps({ environment: { status: "ready" } });
+    rerender(<OnboardingShell {...props} />);
+    expect(screen.getByText("Agent 团队可以正常启动")).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/\bcodex(?:-cli)?\s+\d+\.\d+/iu);
   });
 
   it("hard-gates step 1 until Codex is ready and exposes install recovery", async () => {
@@ -81,6 +96,7 @@ describe("OnboardingShell", () => {
     expect(screen.getByText("首次启动")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "退出引导回看" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
+    expect(screen.getByText("未找到 Codex")).toBeVisible();
     expect(screen.getByText("brew install codex")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "复制" }));
     fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
@@ -90,6 +106,21 @@ describe("OnboardingShell", () => {
 
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).not.toMatch(/\b(?:gh|GitHub|PR|issue)\b/i);
+  });
+
+  it("hard-gates an unavailable Codex without showing installation recovery", () => {
+    renderShell({
+      environment: { status: "error", kind: "unavailable" },
+    });
+
+    expect(screen.getByText("Codex 暂时无法运行")).toBeVisible();
+    expect(screen.getByText(
+      "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
+    )).toBeVisible();
+    expect(screen.getByRole("button", { name: "重新检查" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
+    expect(screen.queryByText("brew install codex")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
   });
 
   it("keeps selection and environment state while navigating all four steps", async () => {
@@ -200,7 +231,13 @@ describe("OnboardingShell", () => {
 });
 
 function renderShell(overrides: Partial<OnboardingShellProps> = {}) {
-  const props: OnboardingShellProps = {
+  return render(<OnboardingShell {...createShellProps(overrides)} />);
+}
+
+function createShellProps(
+  overrides: Partial<OnboardingShellProps> = {},
+): OnboardingShellProps {
+  return {
     environment: { status: "ready", detail: "codex-cli 1.0" },
     teamsState: { status: "ready", teams: [developmentTeam] },
     teamBuilderState: {
@@ -224,5 +261,4 @@ function renderShell(overrides: Partial<OnboardingShellProps> = {}) {
     onComplete: vi.fn(),
     ...overrides,
   };
-  return render(<OnboardingShell {...props} />);
 }

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { checkCodex } from "../src/env-doctor.js";
 import {
   ONBOARDING_IPC_CHANNELS,
   registerOnboardingIpc,
@@ -69,6 +70,54 @@ describe("onboarding IPC boundary", () => {
       completed: true,
       completedAt: expect.any(String),
     });
+  });
+
+  it("passes the real version and safe error classifications through the existing DTO", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "onboarding-ipc-safe-"));
+    temporaryRoots.push(dataRoot);
+    const handlers = new Map<string, (event: unknown, request?: unknown) => Promise<unknown>>();
+    const ipcMain: OnboardingIpcMain = {
+      handle(channel, listener) {
+        handlers.set(channel, listener);
+      },
+    };
+    let outcome: "ready" | "missing" | "unavailable" = "ready";
+    registerOnboardingIpc({
+      ipcMain,
+      getDataRoot: () => dataRoot,
+      checkCodex: () => checkCodex({
+        runCommand: async () => {
+          if (outcome === "ready") {
+            return { exitCode: 0, stdout: "codex-cli 0.144.1\n", stderr: "" };
+          }
+          throw Object.assign(
+            new Error("raw failure at /Users/example/bin/codex"),
+            { code: outcome === "missing" ? "ENOENT" : "EACCES" },
+          );
+        },
+      }),
+      clipboard: { writeText: vi.fn() },
+    });
+
+    await expect(invoke(handlers, ONBOARDING_IPC_CHANNELS.checkCodex)).resolves.toEqual({
+      status: "ok",
+      message: "已找到",
+      detail: "codex-cli 0.144.1",
+    });
+
+    outcome = "missing";
+    await expect(invoke(handlers, ONBOARDING_IPC_CHANNELS.checkCodex)).resolves.toEqual({
+      status: "error",
+      message: "Codex 未找到",
+    });
+
+    outcome = "unavailable";
+    const unavailable = await invoke(handlers, ONBOARDING_IPC_CHANNELS.checkCodex);
+    expect(unavailable).toEqual({
+      status: "error",
+      message: "Codex 不可用",
+    });
+    expect(JSON.stringify(unavailable)).not.toContain("/Users/example");
   });
 });
 

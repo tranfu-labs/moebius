@@ -139,6 +139,28 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+.prototype-label--replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prototype-label--replay button {
+  min-height: 28px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 9px;
+}
+
+.prototype-label--replay button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
 /* ---------- 引导舞台 ---------- */
 
 .onboarding-stage {
@@ -400,6 +422,34 @@ button:focus-visible,
 
 .environment-card--error {
   padding: 20px;
+}
+
+.environment-card--checking {
+  display: flex;
+  min-height: 116px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  padding: 20px;
+}
+
+.environment-card--checking > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.environment-card--checking strong {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.environment-card--checking p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .missing-head {
@@ -818,6 +868,13 @@ button:focus-visible,
   flex: 0 0 auto;
   align-items: flex-start;
   gap: 8px;
+}
+
+.builder-adjustment-turn {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .builder-message--user {
@@ -1666,6 +1723,21 @@ button:focus-visible,
   color: var(--faint);
   font-size: 10px;
   padding: 9px 16px 0;
+}
+
+.replay-draft {
+  width: 100%;
+  min-height: 74px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 12px;
+  padding: 10px 5px 4px;
 }
 
 .conversation-inspector {

@@ -60,6 +60,16 @@ async function expectStableStep(page, step) {
   }
 }
 
+async function readReplayFixture(page) {
+  await page.getByTestId("replay-main-fixture").waitFor();
+  return {
+    project: await page.getByTestId("replay-project").textContent(),
+    conversation: await page.getByTestId("replay-conversation").textContent(),
+    draft: await page.getByTestId("replay-draft").inputValue(),
+    team: await page.getByTestId("replay-team").textContent()
+  };
+}
+
 async function expectActionGeometry(page, expectedFrameWidth) {
   const geometry = await page.evaluate(() => {
     const frame = document.querySelector(".onboarding-frame");
@@ -157,6 +167,11 @@ try {
     "moebius 用 codex 来运行每一位团队成员"
   ).waitFor();
   await desktopPage.getByText("首次启动", { exact: true }).waitFor();
+  const readySurfaceText = await desktopPage.getByTestId("step-1").textContent();
+  if (/\bcodex(?:-cli)?\s+\d+\.\d+/iu.test(readySurfaceText ?? "")) {
+    throw new Error("The static ready prototype must not claim a detected Codex version.");
+  }
+  checks.push("static-ready-does-not-fake-version");
   if ((await desktopPage.getByTestId("back-action").count()) !== 0) {
     throw new Error("The first onboarding step must not expose a back action.");
   }
@@ -256,10 +271,31 @@ try {
   await desktopPage
     .getByLabel("调整团队提案")
     .fill("让负责人最后给我一份可复核的发布清单");
+  const adjustmentBody = "让负责人最后给我一份可复核的发布清单";
   await desktopPage.getByLabel("发送").click();
-  await desktopPage.getByText(
-    "已调整：让负责人最后给我一份可复核的发布清单"
-  ).waitFor();
+  const adjustmentMessage = desktopPage.getByTestId("builder-adjustment-user");
+  const adjustmentTyping = desktopPage.getByTestId("builder-typing");
+  await adjustmentMessage.waitFor();
+  await adjustmentTyping.waitFor();
+  const messagePrecedesTyping = await adjustmentMessage.evaluate((message, typingTestId) => {
+    const typing = document.querySelector(`[data-testid="${typingTestId}"]`);
+    return typing !== null
+      && (message.compareDocumentPosition(typing) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }, "builder-typing");
+  if (!messagePrecedesTyping) {
+    throw new Error("The submitted adjustment must precede the typing indicator.");
+  }
+  if ((await desktopPage.getByText(adjustmentBody, { exact: true }).count()) !== 1) {
+    throw new Error("The pending adjustment body must be visible exactly once.");
+  }
+  checks.push("adjustment-user-message-precedes-typing");
+  await desktopPage.getByTestId("builder-adjustment-reply").waitFor();
+  await adjustmentTyping.waitFor({ state: "detached" });
+  if ((await desktopPage.getByText(adjustmentBody, { exact: true }).count()) !== 1) {
+    throw new Error("The resolved adjustment body must remain visible exactly once.");
+  }
+  await desktopPage.getByText("已按要求调整方案。", { exact: true }).waitFor();
+  checks.push("adjustment-reply-converges-without-duplication");
   await desktopPage.getByTestId("confirm-created-team").click();
   await desktopPage.getByTestId("created-team-card").waitFor();
   checks.push("ai-team-create-and-select");
@@ -372,6 +408,10 @@ try {
   if (!(await missingPrimary.isDisabled())) {
     throw new Error("Missing Codex scenario did not disable continue.");
   }
+  await missingPage.getByText("未找到 Codex", { exact: true }).waitFor();
+  await missingPage.getByText("brew install codex", { exact: true }).waitFor();
+  await missingPage.getByRole("button", { name: "复制" }).waitFor();
+  await missingPage.getByTestId("recheck").waitFor();
   await missingPage.screenshot({
     path: resolve(artifactDir, "environment-missing-light.png"),
     fullPage: true
@@ -416,6 +456,99 @@ try {
   }
   checks.push("development-team-review-revision-loop");
   await missingContext.close();
+
+  const unavailableContext = await browser.newContext({
+    viewport: { width: 1100, height: 760 },
+    colorScheme: "light"
+  });
+  const unavailablePage = await unavailableContext.newPage();
+  watchExternalRequests(unavailablePage);
+  await unavailablePage.goto(`${prototypeUrl}?scenario=unavailable&theme=light`);
+  const unavailablePrimary = unavailablePage.getByTestId("primary-action");
+  if (!(await unavailablePrimary.isDisabled())) {
+    throw new Error("Unavailable Codex scenario did not disable continue.");
+  }
+  await unavailablePage.getByText("Codex 暂时无法运行", { exact: true }).waitFor();
+  await unavailablePage.getByText(
+    "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
+    { exact: true }
+  ).waitFor();
+  if (
+    (await unavailablePage.getByText("brew install codex", { exact: true }).count()) !== 0
+    || (await unavailablePage.getByRole("button", { name: "复制" }).count()) !== 0
+    || (await unavailablePage.getByText(/\/Users\/|permission denied|stderr/iu).count()) !== 0
+  ) {
+    throw new Error("Unavailable recovery leaked installation or raw diagnostic content.");
+  }
+  await unavailablePage.screenshot({
+    path: resolve(artifactDir, "environment-unavailable-light.png"),
+    fullPage: true
+  });
+  await unavailablePage.getByTestId("recheck").click();
+  await unavailablePage.getByTestId("environment-checking").waitFor();
+  if (
+    (await unavailablePage.getByText("未找到 Codex", { exact: true }).count()) !== 0
+    || (await unavailablePage.getByText("Codex 暂时无法运行", { exact: true }).count()) !== 0
+  ) {
+    throw new Error("Checking must use a neutral state instead of a stale error card.");
+  }
+  await unavailablePage.waitForFunction(() => {
+    const button = document.querySelector('[data-testid="primary-action"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await unavailablePrimary.click();
+  await unavailablePage.getByTestId("step-2").waitFor();
+  checks.push("unavailable-codex-hard-gate-and-safe-recheck");
+  await unavailableContext.close();
+
+  const replayContext = await browser.newContext({
+    viewport: { width: 1180, height: 760 },
+    colorScheme: "dark"
+  });
+  const replayPage = await replayContext.newPage();
+  watchExternalRequests(replayPage);
+  await replayPage.goto(`${prototypeUrl}?mode=replay`);
+  const replayBaseline = await readReplayFixture(replayPage);
+  await replayPage.getByRole("button", { name: "重新查看引导" }).click();
+  await replayPage.getByTestId("step-1").waitFor();
+  await replayPage.getByText("回看引导", { exact: true }).waitFor();
+  await replayPage.getByRole("button", { name: "退出引导回看" }).click();
+  const replayAfterExit = await readReplayFixture(replayPage);
+  if (JSON.stringify(replayAfterExit) !== JSON.stringify(replayBaseline)) {
+    throw new Error("Exiting replay did not restore the deterministic main fixture.");
+  }
+  checks.push("replay-exit-restores-entry-fixture");
+
+  await replayPage.getByRole("button", { name: "重新查看引导" }).click();
+  await replayPage.getByTestId("primary-action").click();
+  await replayPage.getByTestId("open-team-builder").click();
+  await replayPage.getByTestId("builder-goal").fill(
+    "帮我持续做产品发布，从资料研究、内容撰写到上线前复核。"
+  );
+  await replayPage.getByLabel("发送").click();
+  await replayPage.getByTestId("team-proposal").waitFor();
+  await replayPage.getByTestId("confirm-created-team").click();
+  await replayPage.getByTestId("primary-action").click();
+  await expectStableStep(replayPage, 3);
+  await replayPage.getByTestId("primary-action").click();
+  await expectStableStep(replayPage, 4);
+  const replayFinishLabel = (
+    await replayPage.getByTestId("primary-action").textContent()
+  )?.trim();
+  if (!replayFinishLabel?.includes("开始使用") || replayFinishLabel.includes("完成回看")) {
+    throw new Error(`Replay step four used the wrong CTA: ${replayFinishLabel ?? ""}`);
+  }
+  await replayPage.getByTestId("primary-action").click();
+  const replayAfterFinish = await readReplayFixture(replayPage);
+  if (JSON.stringify(replayAfterFinish) !== JSON.stringify(replayBaseline)) {
+    throw new Error("Finishing replay changed the entry project, conversation, draft, or team.");
+  }
+  checks.push("replay-start-using-restores-entry-fixture");
+  await replayPage.screenshot({
+    path: resolve(artifactDir, "replay-main-dark.png"),
+    fullPage: true
+  });
+  await replayContext.close();
 
   const lowContext = await browser.newContext({
     viewport: { width: 1180, height: 560 },
@@ -523,7 +656,9 @@ const evidence = {
     "relay-dark-wide.png",
     "conversation-dark-wide.png",
     "environment-missing-light.png",
+    "environment-unavailable-light.png",
     "team-light-wide.png",
+    "replay-main-dark.png",
     "relay-dark-low.png",
     "team-builder-proposal-reduced-narrow.png",
     "relay-reduced-narrow.png"

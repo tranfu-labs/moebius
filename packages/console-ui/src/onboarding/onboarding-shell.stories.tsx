@@ -39,7 +39,7 @@ const meta = {
     layout: "fullscreen",
   },
   args: {
-    environment: { status: "ready", detail: "codex-cli 1.0" },
+    environment: { status: "ready" },
     teamsState: { status: "ready", teams: [editorialTeam] },
     teamBuilderState: {
       phase: "idle",

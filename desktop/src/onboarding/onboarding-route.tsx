@@ -6,7 +6,7 @@ import {
   type OperatorAgentTeamsState,
   type TeamBuilderViewState,
 } from "@moebius/console-ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
@@ -42,20 +42,28 @@ export function OnboardingRoute({
     INITIAL_TEAM_BUILDER_STATE,
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
+  const codexCheckSequenceRef = useRef(0);
 
   const checkCodex = useCallback(async () => {
+    const sequence = ++codexCheckSequenceRef.current;
     setEnvironment({ status: "checking" });
     try {
       const result = await api?.checkOnboardingCodex?.();
+      if (sequence !== codexCheckSequenceRef.current) {
+        return;
+      }
       if (result?.status === "ok") {
         setEnvironment({ status: "ready", detail: result.detail });
         return;
       }
       setEnvironment({
         status: "error",
-        kind: result?.message.includes("未找到") ? "missing" : "unavailable",
+        kind: result?.message === "Codex 未找到" ? "missing" : "unavailable",
       });
     } catch {
+      if (sequence !== codexCheckSequenceRef.current) {
+        return;
+      }
       setEnvironment({ status: "error", kind: "unavailable" });
     }
   }, [api]);

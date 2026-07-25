@@ -47,6 +47,7 @@ import {
   initialOnboardingState,
   onboardingReducer,
   type EnvironmentState,
+  type OnboardingMode,
   type OnboardingStep,
   type TeamChoice
 } from "./onboarding-state.js";
@@ -193,12 +194,17 @@ function App() {
     () => new URLSearchParams(window.location.search),
     []
   );
-  const initialEnvironment: EnvironmentState =
-    search.get("scenario") === "missing" ? "missing" : "ready";
+  const requestedScenario = search.get("scenario");
+  const initialEnvironment: EnvironmentState = requestedScenario === "missing"
+    ? "missing"
+    : requestedScenario === "unavailable"
+      ? "unavailable"
+      : "ready";
+  const initialMode: OnboardingMode =
+    search.get("mode") === "replay" ? "replay" : "first-run";
   const [state, dispatch] = useReducer(
     onboardingReducer,
-    initialEnvironment,
-    initialOnboardingState
+    initialOnboardingState(initialEnvironment, initialMode)
   );
   const [theme, setTheme] = useState<"dark" | "light">(
     search.get("theme") === "light" ? "light" : "dark"
@@ -249,8 +255,8 @@ function App() {
         theme={theme}
         onToggleOpen={() => setReviewOpen((current) => !current)}
         onThemeChange={setTheme}
-        onScenarioChange={(environment) => {
-          dispatch({ type: "reset", environment });
+        onScenarioChange={(environment, mode = "first-run") => {
+          dispatch({ type: "reset", environment, mode });
           setTeamBuilderOpen(false);
           setReviewOpen(false);
         }}
@@ -263,13 +269,24 @@ function App() {
             team={state.selectedTeam}
             titleRef={titleRef}
             onRestart={() => {
-              dispatch({ type: "reset" });
+              dispatch({ type: "enter-replay" });
+              setTeamBuilderOpen(false);
+            }}
+          />
+        ) : state.view === "main" ? (
+          <ReplayMainFixture
+            key="replay-main"
+            team={state.selectedTeam}
+            titleRef={titleRef}
+            onEnterReplay={() => {
+              dispatch({ type: "enter-replay" });
               setTeamBuilderOpen(false);
             }}
           />
         ) : (
           <OnboardingShell
             key="onboarding"
+            mode={state.mode}
             step={state.view}
             titleRef={titleRef}
             title={stepTitle(state.view)}
@@ -278,6 +295,10 @@ function App() {
             primaryDisabled={!canContinue(state) || teamBuilderOpen}
             actionsHidden={teamBuilderOpen}
             onPrimary={continueJourney}
+            onExit={() => {
+              dispatch({ type: "exit-replay" });
+              setTeamBuilderOpen(false);
+            }}
             secondary={
               state.view > 1 ? (
                 <PrototypeButton
@@ -374,6 +395,7 @@ function Pill({
 }
 
 interface OnboardingShellProps {
+  mode: OnboardingMode;
   step: OnboardingStep;
   title: string;
   subtitle: string;
@@ -382,11 +404,13 @@ interface OnboardingShellProps {
   primaryDisabled: boolean;
   actionsHidden: boolean;
   onPrimary: () => void;
+  onExit: () => void;
   secondary: ReactNode;
   children: ReactNode;
 }
 
 function OnboardingShell({
+  mode,
   step,
   title,
   subtitle,
@@ -395,6 +419,7 @@ function OnboardingShell({
   primaryDisabled,
   actionsHidden,
   onPrimary,
+  onExit,
   secondary,
   children
 }: OnboardingShellProps) {
@@ -409,7 +434,7 @@ function OnboardingShell({
       transition={{ duration: reduceMotion ? 0.12 : 0.3, ease: EASE_OUT }}
       data-testid={`step-${step}`}
     >
-      <PrototypeChrome />
+      <PrototypeChrome mode={mode} onExit={onExit} />
 
       <section className="onboarding-stage">
         <div className="onboarding-frame">
@@ -460,7 +485,13 @@ function OnboardingShell({
   );
 }
 
-function PrototypeChrome() {
+function PrototypeChrome({
+  mode = "first-run",
+  onExit
+}: {
+  mode?: OnboardingMode | "main";
+  onExit?: () => void;
+}) {
   return (
     <header className="prototype-chrome" aria-label="应用标题栏">
       <div className="traffic-lights" aria-hidden>
@@ -472,7 +503,22 @@ function PrototypeChrome() {
         <img className="brand-glyph" src={moebiusLogoUrl} alt="" />
         <span>Moebius</span>
       </div>
-      <span className="prototype-label">首次启动</span>
+      {mode === "replay" ? (
+        <span className="prototype-label prototype-label--replay">
+          <span>回看引导</span>
+          <button
+            type="button"
+            onClick={onExit}
+            aria-label="退出引导回看"
+          >
+            退出
+          </button>
+        </span>
+      ) : (
+        <span className="prototype-label">
+          {mode === "main" ? "操作台" : "首次启动"}
+        </span>
+      )}
     </header>
   );
 }
@@ -490,6 +536,25 @@ function EnvironmentStep({
   copied,
   onCopy
 }: EnvironmentStepProps) {
+  if (environment === "checking") {
+    return (
+      <motion.div
+        className="environment-card environment-card--checking"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={SPRING_LAYOUT}
+        role="status"
+        data-testid="environment-checking"
+      >
+        <RefreshCw size={17} className="is-spinning" />
+        <div>
+          <strong>正在检查 Codex</strong>
+          <p>检查完成后才会显示对应的恢复方式。</p>
+        </div>
+      </motion.div>
+    );
+  }
+
   if (environment === "ready") {
     return (
       <motion.div
@@ -497,6 +562,7 @@ function EnvironmentStep({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...SPRING_LAYOUT, delay: 0.05 }}
+        data-testid="environment-ready"
       >
         <StatusRow
           icon={<Check size={15} />}
@@ -518,47 +584,36 @@ function EnvironmentStep({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={SPRING_LAYOUT}
+      data-testid={`environment-${environment}`}
     >
       <div className="missing-head">
         <span className="status-icon status-icon--danger">
           <X size={15} />
         </span>
         <div>
-          <strong>未找到 Codex</strong>
-          <p>在终端运行以下命令，然后重新检查。</p>
+          <strong>
+            {environment === "missing" ? "未找到 Codex" : "Codex 暂时无法运行"}
+          </strong>
+          <p>
+            {environment === "missing"
+              ? "在终端运行以下命令，然后重新检查。"
+              : "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。"}
+          </p>
         </div>
       </div>
 
-      <div className="install-command">
-        <code>brew install codex</code>
-        <button
-          type="button"
-          className="copy-action"
-          onClick={onCopy}
-          aria-live="polite"
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? "已复制" : "复制"}
-        </button>
-      </div>
-
-      {environment === "checking" ? (
-        <div className="missing-foot">
-          <>
-            <span className="checking-pulse" />
-            正在检查 Codex…
-          </>
-        </div>
-      ) : null}
-
-      {environment === "checking" ? (
-        <div
-          className="checking-progress"
-          role="progressbar"
-          aria-label="正在检查 Codex"
-          data-testid="checking-progress"
-        >
-          <span />
+      {environment === "missing" ? (
+        <div className="install-command">
+          <code>brew install codex</code>
+          <button
+            type="button"
+            className="copy-action"
+            onClick={onCopy}
+            aria-live="polite"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? "已复制" : "复制"}
+          </button>
         </div>
       ) : null}
     </motion.div>
@@ -605,12 +660,17 @@ function TeamStep({
   const [goalDraft, setGoalDraft] = useState("");
   const [goal, setGoal] = useState("");
   const [adjustment, setAdjustment] = useState("");
-  const [adjustedNote, setAdjustedNote] = useState("");
+  const [adjustmentTurns, setAdjustmentTurns] = useState<Array<{
+    id: number;
+    text: string;
+    replied: boolean;
+  }>>([]);
   const [aiPending, setAiPending] = useState(false);
   const [proposalLocked, setProposalLocked] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const adjustmentRef = useRef<HTMLTextAreaElement>(null);
   const aiTurnTimerRef = useRef<number | null>(null);
+  const nextAdjustmentIdRef = useRef(1);
 
   useEffect(
     () => () => onSubflowChange(false),
@@ -634,7 +694,7 @@ function TeamStep({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [phase, goal, adjustedNote, aiPending]);
+  }, [phase, goal, adjustmentTurns, aiPending]);
 
   /*
    * 模拟 AI 处理一轮消息：先露出「正在输入」气泡，短暂延迟后再落地回复。
@@ -668,9 +728,17 @@ function TeamStep({
     if (!nextAdjustment || aiPending) {
       return;
     }
+    const turnId = nextAdjustmentIdRef.current;
+    nextAdjustmentIdRef.current += 1;
+    setAdjustmentTurns((turns) => [
+      ...turns,
+      { id: turnId, text: nextAdjustment, replied: false }
+    ]);
     setAdjustment("");
     runAiTurn(() => {
-      setAdjustedNote(`已调整：${nextAdjustment}`);
+      setAdjustmentTurns((turns) => turns.map((turn) =>
+        turn.id === turnId ? { ...turn, replied: true } : turn
+      ));
       setProposalLocked(false);
     });
   };
@@ -790,13 +858,6 @@ function TeamStep({
                   </p>
                 </div>
 
-                {adjustedNote ? (
-                  <div className="proposal-adjusted">
-                    <Check size={12} />
-                    {adjustedNote}
-                  </div>
-                ) : null}
-
                 {proposalLocked ? null : (
                   <div className="proposal-actions">
                     <PrototypeButton
@@ -823,6 +884,19 @@ function TeamStep({
               </section>
             </>
           ) : null}
+
+          {adjustmentTurns.map((turn) => (
+            <div className="builder-adjustment-turn" key={turn.id}>
+              <BuilderMessage from="user" testId="builder-adjustment-user">
+                <p>{turn.text}</p>
+              </BuilderMessage>
+              {turn.replied ? (
+                <BuilderMessage testId="builder-adjustment-reply">
+                  <p>已按要求调整方案。</p>
+                </BuilderMessage>
+              ) : null}
+            </div>
+          ))}
 
           {aiPending ? (
             <motion.div
@@ -1016,13 +1090,18 @@ function TeamStep({
 
 function BuilderMessage({
   from = "ai",
+  testId,
   children
 }: {
   from?: "ai" | "user";
+  testId?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={`builder-message builder-message--${from}`}>
+    <div
+      className={`builder-message builder-message--${from}`}
+      data-testid={testId}
+    >
       {from === "ai" ? (
         <span className="builder-avatar">
           <Sparkles size={13} />
@@ -1465,6 +1544,92 @@ function ConversationDestination({
   );
 }
 
+/* ---------- 回看入口：确定性主页面 fixture ---------- */
+
+function ReplayMainFixture({
+  team,
+  titleRef,
+  onEnterReplay
+}: {
+  team: TeamChoice;
+  titleRef: React.RefObject<HTMLHeadingElement>;
+  onEnterReplay: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.main
+      className="conversation-shell"
+      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: reduceMotion ? 0.12 : 0.32, ease: EASE_OUT }}
+      data-testid="replay-main-fixture"
+    >
+      <PrototypeChrome mode="main" />
+
+      <div className="conversation-layout">
+        <aside className="conversation-sidebar">
+          <div className="sidebar-action">
+            <MessageSquarePlus size={16} />
+            <span>新对话</span>
+          </div>
+          <div className="sidebar-section">
+            <span>项目</span>
+            <small data-testid="replay-project">Moebius Desktop</small>
+          </div>
+          <div className="sidebar-action is-active" data-testid="replay-conversation">
+            <Bot size={16} />
+            <span>整理发布计划</span>
+          </div>
+          <button
+            type="button"
+            className="restart-link"
+            onClick={onEnterReplay}
+          >
+            重新查看引导
+          </button>
+        </aside>
+
+        <section className="conversation-main">
+          <div className="conversation-heading">
+            <h1 ref={titleRef} tabIndex={-1}>
+              整理发布计划
+            </h1>
+            <p>项目与对话保持在进入回看前的状态。</p>
+          </div>
+
+          <div className="conversation-composer">
+            <div className="composer-context">
+              <span className="context-chip">Moebius Desktop</span>
+              <span className="context-chip" data-testid="replay-team">
+                <Users size={13} />
+                {team.name}
+              </span>
+            </div>
+            <textarea
+              className="replay-draft"
+              value="把本周发布清单拆成可验收任务"
+              aria-label="未提交草稿"
+              data-testid="replay-draft"
+              readOnly
+            />
+            <p>未提交草稿</p>
+          </div>
+        </section>
+
+        <aside className="conversation-inspector">
+          <span>当前上下文</span>
+          <div>
+            <strong>Moebius Desktop</strong>
+            <p>整理发布计划 · {team.name}</p>
+          </div>
+        </aside>
+      </div>
+    </motion.main>
+  );
+}
+
 /* ---------- 原型评审浮动控制（不属于产品界面） ---------- */
 
 interface ReviewControlsProps {
@@ -1472,7 +1637,10 @@ interface ReviewControlsProps {
   theme: "dark" | "light";
   onToggleOpen: () => void;
   onThemeChange: (theme: "dark" | "light") => void;
-  onScenarioChange: (environment: EnvironmentState) => void;
+  onScenarioChange: (
+    environment: EnvironmentState,
+    mode?: OnboardingMode
+  ) => void;
 }
 
 function ReviewControls({
@@ -1505,6 +1673,15 @@ function ReviewControls({
               </button>
               <button type="button" onClick={() => onScenarioChange("missing")}>
                 缺少 codex
+              </button>
+              <button type="button" onClick={() => onScenarioChange("unavailable")}>
+                codex 不可运行
+              </button>
+              <button
+                type="button"
+                onClick={() => onScenarioChange("ready", "replay")}
+              >
+                回看引导
               </button>
             </div>
             <div className="review-panel__row">

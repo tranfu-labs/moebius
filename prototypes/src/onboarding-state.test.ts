@@ -8,13 +8,16 @@ import {
 } from "./onboarding-state.js";
 
 describe("onboarding state", () => {
-  it("blocks the first step while Codex is missing or checking", () => {
+  it("blocks the first step while Codex is missing, unavailable, or checking", () => {
     const missing = initialOnboardingState("missing");
+    const unavailable = initialOnboardingState("unavailable");
     const checking = initialOnboardingState("checking");
 
     expect(canContinue(missing)).toBe(false);
+    expect(canContinue(unavailable)).toBe(false);
     expect(canContinue(checking)).toBe(false);
     expect(onboardingReducer(missing, { type: "continue" })).toBe(missing);
+    expect(onboardingReducer(unavailable, { type: "continue" })).toBe(unavailable);
     expect(onboardingReducer(checking, { type: "continue" })).toBe(checking);
   });
 
@@ -102,17 +105,57 @@ describe("onboarding state", () => {
   });
 
   it("lets recheck restore the hard gate without resetting the journey", () => {
-    let state = initialOnboardingState("missing");
-    state = onboardingReducer(state, {
-      type: "set-environment",
-      value: "checking"
-    });
-    state = onboardingReducer(state, {
-      type: "set-environment",
-      value: "ready"
-    });
+    for (const environment of ["missing", "unavailable"] as const) {
+      let state = initialOnboardingState(environment);
+      state = onboardingReducer(state, {
+        type: "set-environment",
+        value: "checking"
+      });
+      state = onboardingReducer(state, {
+        type: "set-environment",
+        value: "ready"
+      });
 
-    expect(canContinue(state)).toBe(true);
-    expect(onboardingReducer(state, { type: "continue" }).view).toBe(2);
+      expect(canContinue(state)).toBe(true);
+      expect(onboardingReducer(state, { type: "continue" }).view).toBe(2);
+    }
+  });
+
+  it("returns replay exit to the same main fixture and discards its team selection", () => {
+    const temporaryTeam = {
+      id: "temporary",
+      name: "临时团队",
+      primaryAgent: "临时负责人",
+      members: ["临时成员"]
+    };
+    let state = initialOnboardingState("ready", "replay");
+
+    expect(state.view).toBe("main");
+    state = onboardingReducer(state, { type: "enter-replay" });
+    state = onboardingReducer(state, { type: "continue" });
+    state = onboardingReducer(state, { type: "select-team", team: temporaryTeam });
+    state = onboardingReducer(state, { type: "exit-replay" });
+
+    expect(state.view).toBe("main");
+    expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);
+  });
+
+  it("finishes replay through Start using without applying its temporary team", () => {
+    const temporaryTeam = {
+      id: "temporary",
+      name: "临时团队",
+      primaryAgent: "临时负责人",
+      members: ["临时成员"]
+    };
+    let state = initialOnboardingState("ready", "replay");
+    state = onboardingReducer(state, { type: "enter-replay" });
+    state = onboardingReducer(state, { type: "continue" });
+    state = onboardingReducer(state, { type: "select-team", team: temporaryTeam });
+    state = onboardingReducer(state, { type: "continue" });
+    state = onboardingReducer(state, { type: "continue" });
+    state = onboardingReducer(state, { type: "continue" });
+
+    expect(state.view).toBe("main");
+    expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);
   });
 });

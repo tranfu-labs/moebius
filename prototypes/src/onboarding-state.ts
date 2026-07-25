@@ -1,6 +1,7 @@
 export type OnboardingStep = 1 | 2 | 3 | 4;
-export type EnvironmentState = "ready" | "missing" | "checking";
-export type PrototypeView = OnboardingStep | "conversation";
+export type EnvironmentState = "ready" | "missing" | "unavailable" | "checking";
+export type OnboardingMode = "first-run" | "replay";
+export type PrototypeView = OnboardingStep | "conversation" | "main";
 
 export interface TeamChoice {
   id: string;
@@ -18,8 +19,10 @@ export const DEVELOPMENT_TEAM: TeamChoice = {
 
 export interface OnboardingState {
   view: PrototypeView;
+  mode: OnboardingMode;
   environment: EnvironmentState;
   selectedTeam: TeamChoice;
+  replayEntryTeam: TeamChoice | null;
   relayRun: number;
 }
 
@@ -29,15 +32,24 @@ export type OnboardingAction =
   | { type: "set-environment"; value: EnvironmentState }
   | { type: "select-team"; team: TeamChoice }
   | { type: "replay-relay" }
-  | { type: "reset"; environment?: EnvironmentState };
+  | { type: "enter-replay" }
+  | { type: "exit-replay" }
+  | {
+      type: "reset";
+      environment?: EnvironmentState;
+      mode?: OnboardingMode;
+    };
 
 export function initialOnboardingState(
-  environment: EnvironmentState = "ready"
+  environment: EnvironmentState = "ready",
+  mode: OnboardingMode = "first-run"
 ): OnboardingState {
   return {
-    view: 1,
+    view: mode === "replay" ? "main" : 1,
+    mode,
     environment,
     selectedTeam: DEVELOPMENT_TEAM,
+    replayEntryTeam: mode === "replay" ? DEVELOPMENT_TEAM : null,
     relayRun: 0
   };
 }
@@ -56,11 +68,18 @@ export function onboardingReducer(
         return state;
       }
 
-      if (state.view === "conversation") {
+      if (state.view === "conversation" || state.view === "main") {
         return state;
       }
 
       if (state.view === 4) {
+        if (state.mode === "replay") {
+          return {
+            ...state,
+            view: "main",
+            selectedTeam: state.replayEntryTeam ?? state.selectedTeam
+          };
+        }
         return { ...state, view: "conversation" };
       }
 
@@ -71,7 +90,7 @@ export function onboardingReducer(
       };
     }
     case "back": {
-      if (state.view === "conversation" || state.view === 1) {
+      if (state.view === "conversation" || state.view === "main" || state.view === 1) {
         return state;
       }
 
@@ -96,7 +115,27 @@ export function onboardingReducer(
         ...state,
         relayRun: state.relayRun + 1
       };
+    case "enter-replay":
+      return {
+        ...state,
+        view: 1,
+        mode: "replay",
+        replayEntryTeam: state.selectedTeam,
+        relayRun: 0
+      };
+    case "exit-replay":
+      if (state.mode !== "replay") {
+        return state;
+      }
+      return {
+        ...state,
+        view: "main",
+        selectedTeam: state.replayEntryTeam ?? state.selectedTeam
+      };
     case "reset":
-      return initialOnboardingState(action.environment ?? "ready");
+      return initialOnboardingState(
+        action.environment ?? "ready",
+        action.mode ?? "first-run"
+      );
   }
 }

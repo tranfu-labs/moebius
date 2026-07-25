@@ -21,23 +21,58 @@ describe("desktop env doctor", () => {
     expect(calls).toEqual([{ command: "codex", args: ["--version"] }]);
   });
 
-  it("reports a missing or non-runnable Codex without probing another command", async () => {
-    await expect(checkCodex({
-      runCommand: async () => {
-        throw new Error("ENOENT");
-      },
-    })).resolves.toMatchObject({
-      status: "error",
-      message: "Codex 未找到",
-      detail: "ENOENT",
-    });
+  it.each(["ENOENT", "ENOTDIR"])(
+    "classifies %s as missing without leaking the spawn error",
+    async (code) => {
+      const error = Object.assign(
+        new Error(`spawn codex ${code} at /Users/example/bin/codex`),
+        { code },
+      );
 
-    await expect(checkCodex({
-      runCommand: async () => ({ exitCode: 1, stdout: "", stderr: "startup failed" }),
-    })).resolves.toMatchObject({
+      await expect(checkCodex({
+        runCommand: async () => {
+          throw error;
+        },
+      })).resolves.toEqual({
+        status: "error",
+        message: "Codex 未找到",
+      });
+    },
+  );
+
+  it.each([
+    {
+      name: "a non-zero exit",
+      runCommand: async () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "startup failed at /Users/example/.codex",
+      }),
+    },
+    {
+      name: "EACCES",
+      runCommand: async () => {
+        throw Object.assign(new Error("permission denied: /Users/example/bin/codex"), {
+          code: "EACCES",
+        });
+      },
+    },
+    {
+      name: "another spawn error",
+      runCommand: async () => {
+        throw Object.assign(new Error("spawn failed in /Users/example"), {
+          code: "UNKNOWN",
+        });
+      },
+    },
+    {
+      name: "an empty successful version",
+      runCommand: async () => ({ exitCode: 0, stdout: " \n", stderr: "" }),
+    },
+  ])("classifies $name as unavailable without raw detail", async ({ runCommand }) => {
+    await expect(checkCodex({ runCommand })).resolves.toEqual({
       status: "error",
       message: "Codex 不可用",
-      detail: "startup failed",
     });
   });
 });

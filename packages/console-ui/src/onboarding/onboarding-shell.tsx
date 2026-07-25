@@ -306,7 +306,7 @@ export function OnboardingShell({
           primaryLabel={state.step === 4
             ? completionState === "saving"
               ? mode === "replay" ? "正在返回…" : "正在进入…"
-              : mode === "replay" ? "完成回看" : "开始使用"
+              : "开始使用"
             : "继续"}
           primaryDisabled={primaryDisabled}
           secondary={state.step > 1 ? (
@@ -387,21 +387,25 @@ function EnvironmentStep({
             {environment.kind === "missing" ? "未找到 Codex" : "Codex 暂时无法运行"}
           </h2>
           <p className="mt-1 text-xs leading-5 text-sub">
-            在终端运行以下命令，然后重新检查。
+            {environment.kind === "missing"
+              ? "在终端运行以下命令，然后重新检查。"
+              : "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。"}
           </p>
         </div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-sunken py-2 pl-3 pr-2">
-        <code className="truncate font-mono text-xs text-ink">brew install codex</code>
-        <Button type="button" size="sm" variant="outline" onClick={onCopy}>
-          {copyConfirmed ? (
-            <Check className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
-          )}
-          {copyConfirmed ? "已复制" : "复制"}
-        </Button>
-      </div>
+      {environment.kind === "missing" ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-sunken py-2 pl-3 pr-2">
+          <code className="truncate font-mono text-xs text-ink">brew install codex</code>
+          <Button type="button" size="sm" variant="outline" onClick={onCopy}>
+            {copyConfirmed ? (
+              <Check className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
+            )}
+            {copyConfirmed ? "已复制" : "复制"}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }

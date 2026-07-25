@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AiTeamBuilderIpcResponse } from "../src/ai-team-builder/contract.js";
 import { App, type DesktopApi } from "../src/console-page/app.js";
+import type { DoctorCheck } from "../src/env-doctor.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -87,6 +88,97 @@ describe("desktop onboarding routing", () => {
     expect(window.location.hash).toBe("#/");
   });
 
+  it("replaces the displayed version after the existing shell PATH recheck", async () => {
+    const versions = ["codex-cli 0.144.1", "codex-cli 0.145.0"];
+    const checkOnboardingCodex = vi.fn(async () => ({
+      status: "ok" as const,
+      message: "已找到",
+      detail: versions.shift(),
+    }));
+    let statusListener: Parameters<NonNullable<DesktopApi["onStatus"]>>[0] | null = null;
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCodex,
+      onStatus(listener) {
+        statusListener = listener;
+        return () => undefined;
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    await waitFor(() => document.body.textContent?.includes("codex-cli 0.144.1") === true);
+    expect(document.body.textContent).not.toContain("codex-cli 0.145.0");
+    expect((await findButton("继续")).disabled).toBe(false);
+    expect(Array.from(document.querySelectorAll("button")).some(
+      (button) => button.textContent?.includes("重新检查"),
+    )).toBe(false);
+
+    await act(async () => statusListener?.({
+      runner: { status: "stopped" },
+      shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
+      seed: { status: "pending" },
+    }));
+    await waitFor(() => document.body.textContent?.includes("codex-cli 0.145.0") === true);
+
+    expect(checkOnboardingCodex).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain("codex-cli 0.144.1");
+    expect(document.body.textContent).toContain("codex-cli 0.145.0");
+    expect(Array.from(document.querySelectorAll("button")).some(
+      (button) => button.textContent?.includes("重新检查"),
+    )).toBe(false);
+  });
+
+  it("keeps the later shell PATH recheck when the initial check resolves last", async () => {
+    const initialCheck = deferred<DoctorCheck>();
+    const shellPathRecheck = deferred<DoctorCheck>();
+    const checkOnboardingCodex = vi.fn()
+      .mockImplementationOnce(() => initialCheck.promise)
+      .mockImplementationOnce(() => shellPathRecheck.promise);
+    let statusListener: Parameters<NonNullable<DesktopApi["onStatus"]>>[0] | null = null;
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCodex,
+      onStatus(listener) {
+        statusListener = listener;
+        return () => undefined;
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    await waitFor(() => statusListener !== null);
+
+    await act(async () => statusListener?.({
+      runner: { status: "stopped" },
+      shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
+      seed: { status: "pending" },
+    }));
+    await waitFor(() => checkOnboardingCodex.mock.calls.length === 2);
+
+    await act(async () => shellPathRecheck.resolve({
+      status: "ok",
+      message: "已找到",
+      detail: "codex-cli 0.145.0",
+    }));
+    await waitFor(() => document.body.textContent?.includes("codex-cli 0.145.0") === true);
+
+    await act(async () => {
+      initialCheck.resolve({
+        status: "ok",
+        message: "已找到",
+        detail: "codex-cli 0.144.1",
+      });
+      await initialCheck.promise;
+      await Promise.resolve();
+    });
+
+    expect(checkOnboardingCodex).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).toContain("codex-cli 0.145.0");
+    expect(document.body.textContent).not.toContain("codex-cli 0.144.1");
+    expect((await findButton("继续")).disabled).toBe(false);
+  });
+
   it("keeps Continue disabled until a failed Codex check succeeds", async () => {
     let codexReady = false;
     const checkOnboardingCodex = vi.fn(async () => codexReady
@@ -101,6 +193,8 @@ describe("desktop onboarding routing", () => {
     const continueButton = await findButton("继续");
     await waitFor(() => continueButton.disabled);
     expect(continueButton.disabled).toBe(true);
+    expect(document.body.textContent).toContain("未找到 Codex");
+    expect(document.body.textContent).toContain("brew install codex");
 
     codexReady = true;
     await clickButton("重新检查");
@@ -108,6 +202,100 @@ describe("desktop onboarding routing", () => {
 
     expect(checkOnboardingCodex).toHaveBeenCalledTimes(2);
     expect(continueButton.disabled).toBe(false);
+    expect(document.body.textContent).toContain("codex-cli 1.0");
+  });
+
+  it.each([
+    {
+      name: "a classified unavailable result",
+      check: async () => ({
+        status: "error" as const,
+        message: "Codex 不可用",
+        detail: "permission denied at /Users/example/bin/codex",
+      }),
+    },
+    {
+      name: "an unknown error result",
+      check: async () => ({
+        status: "error" as const,
+        message: "内部未找到 /Users/example/.codex",
+        detail: "raw stderr from /Users/example/.codex",
+      }),
+    },
+    {
+      name: "a rejected check",
+      check: async () => {
+        throw new Error("spawn failed at /Users/example/bin/codex");
+      },
+    },
+  ])("maps $name to safe unavailable recovery", async ({ check }) => {
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCodex: check,
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    await waitFor(() => document.body.textContent?.includes("Codex 暂时无法运行") === true);
+
+    expect(document.body.textContent).toContain(
+      "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
+    );
+    expect(document.body.textContent).not.toContain("brew install codex");
+    expect(document.body.textContent).not.toContain("/Users/example");
+    expect(Array.from(document.querySelectorAll("button")).some(
+      (button) => button.textContent?.trim() === "复制",
+    )).toBe(false);
+    expect((await findButton("重新检查")).disabled).toBe(false);
+    expect((await findButton("继续")).disabled).toBe(true);
+  });
+
+  it("finishes replay with Start using and preserves the mounted console draft", async () => {
+    const completeOnboarding = vi.fn();
+    installApi({
+      getOnboardingStatus: async () => ({
+        completed: true,
+        completedAt: "2026-07-24T00:00:00.000Z",
+      }),
+      completeOnboarding,
+      checkOnboardingCodex: async () => ({
+        status: "ok",
+        message: "已找到",
+        detail: "codex-cli 0.144.1",
+      }),
+      listAgentTeams: async () => ({
+        status: "ready",
+        teams: [developmentTeam, editorialTeam],
+      }),
+    });
+
+    await act(async () => root.render(<App />));
+    const consoleBeforeReplay = await findElement(
+      '[data-testid="operator-console-preserved-during-onboarding-replay"]',
+    );
+    const draft = await findElement<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    await changeTextarea(draft, "保留这份未提交草稿");
+    await clickButton("重新查看引导");
+
+    await findElement('[data-testid="onboarding-step-1"]');
+    expect(document.body.textContent).toContain("回看引导");
+    await clickButton("继续");
+    await clickButton("编辑团队");
+    await clickButton("继续");
+    await clickButton("继续");
+    expect((await findButton("开始使用")).disabled).toBe(false);
+    expect(Array.from(document.querySelectorAll("button")).some(
+      (button) => button.textContent?.includes("完成回看"),
+    )).toBe(false);
+    await clickButton("开始使用");
+
+    const consoleAfterReplay = await findElement(
+      '[data-testid="operator-console-preserved-during-onboarding-replay"]',
+    );
+    expect(consoleAfterReplay).toBe(consoleBeforeReplay);
+    expect(draft.value).toBe("保留这份未提交草稿");
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid^="onboarding-step-"]')).toBeNull();
   });
 
   it("opens the existing AI team builder service inside step 2", async () => {
@@ -270,6 +458,17 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
   }
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolvePromise!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -300,6 +499,17 @@ const developmentTeam = {
   status: "usable" as const,
   canCreateConversation: true,
   issues: [],
+};
+
+const editorialTeam = {
+  ...developmentTeam,
+  id: "editorial",
+  ownership: "user" as const,
+  definition: {
+    ...developmentTeam.definition,
+    name: "编辑团队",
+    description: "整理内容并复核发布",
+  },
 };
 
 const project = {
