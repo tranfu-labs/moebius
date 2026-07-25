@@ -50,7 +50,7 @@ export async function resolveShellPath(input: {
 export function mergePathValues(currentPath: string, loginPath: string): string {
   const seen = new Set<string>();
   const entries: string[] = [];
-  for (const value of [...loginPath.split(path.delimiter), ...currentPath.split(path.delimiter)]) {
+  for (const value of [...currentPath.split(path.delimiter), ...loginPath.split(path.delimiter)]) {
     const trimmed = value.trim();
     if (trimmed === "" || seen.has(trimmed)) {
       continue;

@@ -140,7 +140,24 @@
 - MUST 捕获 runner 子进程的 stdout/stderr 并落盘到数据根 `logs/` 下（按启动分文件），供崩溃排查；日志写入失败 NEVER 中断 runner 运行。
 
 ### 环境自检与 PATH
-- MUST 在 macOS 图形进程内做 PATH 修复（合并登录 shell 的 PATH）；读取失败时保底沿用原 PATH。
+- MUST 在 macOS 桌面主进程内按“继承 PATH 在前、登录 shell PATH 只补充缺失项”的稳定顺序修复 PATH，过滤空项并按首次出现去重，使终端启动时当前环境选择的可执行文件优先；继承 PATH 为 `undefined` 或空字符串时 MUST 使用登录 shell PATH，登录 shell 返回空 PATH、非零退出或探测抛错时 MUST 保底沿用原继承 PATH。
+
+#### Scenario: 终端启动保留当前 Codex 选择
+- **GIVEN** 启动桌面开发态的终端继承 PATH 与登录 shell PATH 分别优先解析到不同的 Codex 可执行文件
+- **WHEN** 桌面主进程完成 PATH 修复
+- **THEN** 最终 PATH 仍优先解析到终端继承 PATH 选择的 Codex
+- **AND** 登录 shell 中未出现于继承 PATH 的目录按原顺序追加。
+
+#### Scenario: Finder 类环境补充登录 PATH
+- **GIVEN** 桌面主进程没有继承 PATH 或继承 PATH 为空
+- **WHEN** 登录 shell 成功返回非空 PATH
+- **THEN** 最终 PATH 使用过滤空项并按首次出现去重后的登录 shell PATH。
+
+#### Scenario: 登录 shell 探测失败
+- **GIVEN** 桌面主进程已有继承 PATH
+- **WHEN** 登录 shell 返回空 PATH、非零退出或探测抛错
+- **THEN** 最终 PATH 保留原继承 PATH
+- **AND** 不引入登录 shell 返回的任何目录。
 
 ### 更新
 - MUST 让正式 macOS 应用通过 GitHub Releases 检查版本，有新版时跳转到 Apple Silicon 下载页。
