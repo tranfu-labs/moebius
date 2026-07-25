@@ -9,6 +9,7 @@ import {
   type AgentTeamSaveAllFailureView,
   type TeamBuilderViewState,
   type OperatorMessage,
+  type OperatorMemberIdentity,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
   type OperatorChildSessionSummary,
@@ -238,6 +239,7 @@ interface LocalConsoleState {
   messages: OperatorMessage[];
   pendingPrimaryMessages: OperatorMessage[];
   childSessions: OperatorChildSessionSummary[];
+  memberIdentities: OperatorMemberIdentity[];
   activeRun: OperatorRunSnapshot | null;
   activeRuns: OperatorRunSnapshot[];
   workspaceDiff: OperatorWorkspaceDiffSummary;
@@ -2329,6 +2331,7 @@ export function OperatorConsoleApp({
       messages={messagesWithPreviews}
       pendingPrimaryMessages={state?.pendingPrimaryMessages ?? []}
       childSessions={state?.childSessions ?? []}
+      memberIdentities={state?.memberIdentities ?? []}
       subSessionViews={subSessionViewsWithPreviews}
       subSessionComposerValue={activeSubSessionComposerValue}
       subSessionComposerAttachments={managedSubSessionAttachments.attachments}

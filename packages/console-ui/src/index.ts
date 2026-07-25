@@ -10,6 +10,7 @@ export * from "./console/agent-teams-page";
 export * from "./console/conversation-empty-state";
 export * from "./console/conversation-sidebar";
 export * from "./console/markdown-message";
+export type { OperatorMemberIdentity } from "./console/member-name";
 export * from "./console/composer-context";
 export * from "./console/change-tab";
 export * from "./console/file-diff-view";

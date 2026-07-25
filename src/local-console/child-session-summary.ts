@@ -5,7 +5,12 @@ import type {
   LocalConsoleChildSessionSummary,
   LocalConsoleSessionStatus,
   LocalConsoleSystemEventKind,
+  LocalConsoleAgentTeamSnapshot,
 } from "./types.js";
+import {
+  projectLocalConsoleMemberIdentities,
+  resolveLocalConsoleMemberName,
+} from "./member-identity.js";
 
 export const LOCAL_CHILD_SESSION_CARD_SOURCE_KIND = "local-child-session-card";
 
@@ -17,6 +22,7 @@ export interface ChildSessionSummarySource {
   unresolvedSystemEventKind: LocalConsoleSystemEventKind | null;
   latestAgentRole: string | null;
   initialBody: string | null;
+  agentTeamSnapshot: LocalConsoleAgentTeamSnapshot | null;
   chainValid: boolean;
 }
 
@@ -36,16 +42,27 @@ export function summarizeChildSessions(
     return {
       sessionId: source.sessionId,
       title: cleanText(source.title) ?? "子任务不可用",
-      memberName: resolveChildSessionMember(source.latestAgentRole, source.initialBody),
+      memberName: resolveChildSessionMember(
+        source.latestAgentRole,
+        source.initialBody,
+        source.agentTeamSnapshot,
+      ),
       status,
       statusLabel: childSessionStatusLabel(status),
     };
   });
 }
 
-export function resolveChildSessionMember(latestAgentRole: string | null, initialBody: string | null): string {
+export function resolveChildSessionMember(
+  latestAgentRole: string | null,
+  initialBody: string | null,
+  agentTeamSnapshot: LocalConsoleAgentTeamSnapshot | null = null,
+): string {
   const role = cleanText(latestAgentRole) ?? extractInitialHandoffRole(initialBody);
-  return role === null ? "成员未知" : localizeRole(role);
+  return resolveLocalConsoleMemberName(
+    role,
+    projectLocalConsoleMemberIdentities(agentTeamSnapshot),
+  );
 }
 
 export function childSessionStatus(
@@ -101,18 +118,4 @@ function extractInitialHandoffRole(body: string | null): string | null {
 function cleanText(value: string | null): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed === "" ? null : trimmed;
-}
-
-function localizeRole(role: string): string {
-  const normalized = role.toLowerCase();
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    qa: "测试",
-    "dev-manager": "开发经理",
-    "product-manager": "产品经理",
-    "hermes-user": "用户代表",
-    secretary: "秘书",
-  };
-  return labels[normalized] ?? role;
 }

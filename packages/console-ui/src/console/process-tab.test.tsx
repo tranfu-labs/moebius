@@ -132,6 +132,39 @@ describe("ProcessTab", () => {
     }, "dev")).toBe("开发 3");
   });
 
+  it("uses custom snapshot names for process titles and public Agent input", () => {
+    const memberIdentities = [
+      { slug: "plan-supervisor", displayName: "方案监督者" },
+      { slug: "plan-executor", displayName: "方案执行者" },
+    ];
+    expect(nextProcessTabTitle({ tabs: [] }, "plan-supervisor", memberIdentities)).toBe("方案监督者");
+    expect(nextProcessTabTitle({
+      tabs: [{ type: "run-output", title: "方案监督者" }],
+    }, "plan-supervisor", memberIdentities)).toBe("方案监督者 2");
+    expect(nextProcessTabTitle({
+      tabs: [{ type: "run-output", title: "方案监督者" }],
+    }, "plan-executor", memberIdentities)).toBe("方案执行者");
+
+    render(
+      <ProcessEvent
+        memberName="方案执行者"
+        memberIdentities={memberIdentities}
+        event={{
+          key: "public-custom",
+          kind: "public-message",
+          messageId: 2,
+          speaker: "agent",
+          role: "plan-supervisor",
+          markdown: "交给执行者继续",
+          attachments: [],
+          timestamp: "2026-07-25T00:00:00.000Z",
+        }}
+      />,
+    );
+    expect(screen.getByText("方案监督者")).toBeVisible();
+    expect(screen.queryByText("团队成员")).not.toBeInTheDocument();
+  });
+
   it("keeps a large process history to a bounded viewport plus overscan DOM", () => {
     const events = Array.from({ length: 1_000 }, (_, index) => ({
       key: `agent-${String(index)}`,

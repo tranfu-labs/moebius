@@ -1081,6 +1081,44 @@ describe("OperatorConsole", () => {
     expect(onInterrupt).toHaveBeenLastCalledWith("session-a", "run-1");
   });
 
+  it("uses effective custom member names across the main timeline, runs, facts, stops, and process tabs", () => {
+    const onInterrupt = vi.fn();
+    const memberIdentities = [
+      { slug: "plan-supervisor", displayName: "方案监督者" },
+      { slug: "plan-executor", displayName: "方案执行者" },
+    ];
+    const supervisorRun = { ...runSnapshot, runId: "run-supervisor", role: "plan-supervisor" };
+    const executorRun = { ...runSnapshot, runId: "run-executor", role: "plan-executor" };
+    renderConsole({
+      memberIdentities,
+      messages: [
+        message({ id: 10, speaker: "agent", role: "plan-supervisor", runId: "history-supervisor", body: "监督结论" }),
+        message({ id: 11, speaker: "agent", role: "plan-executor", runId: "history-executor", body: "执行结论" }),
+        message({ id: 12, speaker: "system", role: "plan-executor", runId: "fact-failed", status: "failed", systemEventKind: "run-not-started", body: "没跑起来" }),
+        message({ id: 13, speaker: "system", role: "plan-executor", runId: "fact-stuck", status: "stuck", systemEventKind: "run-stuck", body: "卡住" }),
+        message({ id: 14, speaker: "system", role: "plan-executor", runId: "fact-stopped", status: "interrupted", systemEventKind: "user-stopped", body: "停下" }),
+        message({ id: 15, speaker: "system", role: "plan-executor", runId: "fact-exhausted", status: "failed", systemEventKind: "retry-exhausted", body: "耗尽" }),
+      ],
+      activeRun: supervisorRun,
+      activeRuns: [supervisorRun, executorRun],
+      onInterrupt,
+    });
+
+    expect(screen.getAllByText("方案监督者").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("方案执行者").length).toBeGreaterThanOrEqual(6);
+    expect(screen.queryByText("团队成员")).not.toBeInTheDocument();
+    expect(screen.queryByText("协作者")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "停下方案执行者" }));
+    expect(onInterrupt).toHaveBeenCalledWith("session-a", "run-executor");
+
+    const outputButtons = screen.getAllByRole("button", { name: "完整输出" });
+    fireEvent.click(outputButtons[0]!);
+    fireEvent.click(outputButtons[1]!);
+    const panel = screen.getByTestId("right-sidebar");
+    expect(within(panel).getByRole("tab", { name: "方案监督者" })).toBeVisible();
+    expect(within(panel).getByRole("tab", { name: "方案执行者" })).toBeVisible();
+  });
+
   it("keeps the composer stop absent when only worker runs are active", () => {
     const onInterrupt = vi.fn();
     const workerRun = { ...runSnapshot, runId: "run-qa", role: "qa" };

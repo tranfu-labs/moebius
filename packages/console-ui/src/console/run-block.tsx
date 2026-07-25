@@ -4,6 +4,10 @@ import { cn } from "@/lib/utils";
 import { sanitizeMachineText } from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
 import { RoleTag } from "@/console/role-tag";
+import {
+  resolveOperatorMemberName,
+  type OperatorMemberIdentity,
+} from "@/console/member-name";
 
 export type RunBlockStepStatus = "completed" | "running" | "pending";
 
@@ -17,6 +21,7 @@ export interface RunBlockStep {
 
 export interface RunBlockProps {
   role: string;
+  memberIdentities?: readonly OperatorMemberIdentity[];
   elapsedTime?: string | null;
   summary?: string | null;
   rawOutput?: string | null;
@@ -29,19 +34,9 @@ export interface RunBlockProps {
   className?: string;
 }
 
-const roleLabels: Record<string, string> = {
-  ceo: "CEO",
-  dev: "开发",
-  "dev-manager": "技术负责人",
-  "hermes-user": "用户代表",
-  "product-manager": "产品",
-  qa: "测试",
-  secretary: "秘书",
-  user: "你",
-};
-
 export function RunBlock({
   role,
+  memberIdentities = [],
   elapsedTime: _elapsedTime,
   summary,
   rawOutput,
@@ -53,7 +48,7 @@ export function RunBlock({
   interruptLabel,
   className,
 }: RunBlockProps): JSX.Element {
-  const roleLabel = localizeRole(role);
+  const roleLabel = resolveOperatorMemberName(role, memberIdentities, "协作者");
   const usableSteps = steps?.length ? steps : null;
   const liveContent = nonBlank(liveMarkdown);
   const fallbackSummary = sanitizeMachineText(nonBlank(summary) ?? "正在推进这一步…", "正在推进这一步…");
@@ -120,10 +115,6 @@ function RunStepItem({ step }: { step: RunBlockStep; index: number }): JSX.Eleme
       {summary ? <span className="mt-0.5 block text-xs leading-5 text-sub">{sanitizeMachineText(summary)}</span> : null}
     </div>
   );
-}
-
-function localizeRole(role: string): string {
-  return roleLabels[role] ?? "协作者";
 }
 
 function nonBlank(value: string | null | undefined): string | null {

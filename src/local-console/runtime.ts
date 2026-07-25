@@ -56,6 +56,7 @@ import {
   type LocalConsoleWorkspaceDiffSummary,
   type LocalConsoleStore,
 } from "./types.js";
+import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
 import {
   generateLocalWorkspaceDiff,
   invalidateLocalWorkspaceFacts,
@@ -882,6 +883,12 @@ export class LocalConsoleRuntime {
             sqlitePath: this.options.store.sqlitePath,
             timeoutMs: this.storeTimeoutMs,
           }, selectedSession.sessionId));
+    const memberIdentities = selectedSession === null
+      ? []
+      : projectLocalConsoleMemberIdentities(
+          await this.storeCall("local-console-store-list-session-agent-team-snapshot", () =>
+            this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null)),
+        );
     const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
     const activeRuns = await this.activeRunSnapshots(sessionId);
     const activeRun = activeRuns.find((run) => run.runId === primaryRunId) ?? null;
@@ -897,6 +904,7 @@ export class LocalConsoleRuntime {
       messages: messages.filter(isVisibleTimelineMessage),
       pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
       childSessions,
+      memberIdentities,
       activeRuns,
       activeRun,
       workspaceDiff,
@@ -915,10 +923,15 @@ export class LocalConsoleRuntime {
     const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
     const activeRuns = await this.activeRunSnapshots(sessionId);
     const activeRun = activeRuns.find((run) => run.runId === primaryRunId) ?? null;
+    const memberIdentities = projectLocalConsoleMemberIdentities(
+      await this.storeCall("local-console-store-list-session-agent-team-snapshot", () =>
+        this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null)),
+    );
     return {
       session,
       messages: messages.filter(isVisibleTimelineMessage),
       pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
+      memberIdentities,
       activeRuns,
       activeRun,
       workspaceDiff: await this.readConversationWorkspaceDiff(sessionId),

@@ -2078,6 +2078,7 @@ function listChildSessionSummarySources(database: SqliteDatabase, parentSessionI
         unresolvedSystemEventKind: null,
         latestAgentRole: null,
         initialBody: null,
+        agentTeamSnapshot: null,
         chainValid: false,
       };
     }
@@ -2101,6 +2102,7 @@ function listChildSessionSummarySources(database: SqliteDatabase, parentSessionI
       unresolvedSystemEventKind: session.unresolvedSystemEventKind ?? null,
       latestAgentRole: isRecord(latestAgent) ? readNullableString(latestAgent.role, "role") : null,
       initialBody: isRecord(initialMessage) ? readString(initialMessage.body, "body") : null,
+      agentTeamSnapshot: listLocalSessionAgentTeamSnapshot(database, sessionId),
       chainValid: session.parentSessionId === parentSessionId,
     };
   });

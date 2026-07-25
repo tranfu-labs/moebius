@@ -7,6 +7,10 @@ import {
 
 import { MarkdownMessage } from "@/console/markdown-message";
 import { cn } from "@/lib/utils";
+import {
+  resolveOperatorMemberName,
+  type OperatorMemberIdentity,
+} from "@/console/member-name";
 
 export interface OperatorProcessPublicAttachment {
   kind: "image" | "file";
@@ -89,12 +93,14 @@ export type OperatorProcessTimelineEvent =
 export interface ProcessEventProps {
   event: OperatorProcessTimelineEvent;
   memberName: string;
+  memberIdentities?: readonly OperatorMemberIdentity[];
   onOpenExternalLink?: (url: string) => void;
 }
 
 export function ProcessEvent({
   event,
   memberName,
+  memberIdentities = [],
   onOpenExternalLink,
 }: ProcessEventProps): JSX.Element {
   switch (event.kind) {
@@ -115,9 +121,16 @@ export function ProcessEvent({
       );
     case "public-message":
       return (
-        <article className="py-2" aria-label={event.speaker === "user" ? "你" : roleLabel(event.role)}>
+        <article
+          className="py-2"
+          aria-label={event.speaker === "user"
+            ? "你"
+            : resolveOperatorMemberName(event.role, memberIdentities)}
+        >
           <p className="mb-1 text-xs font-medium text-sub">
-            {event.speaker === "user" ? "你" : roleLabel(event.role)}
+            {event.speaker === "user"
+              ? "你"
+              : resolveOperatorMemberName(event.role, memberIdentities)}
           </p>
           <MarkdownMessage
             content={event.markdown}
@@ -257,19 +270,6 @@ function ReadonlyBlock({ label, value }: { label: string; value: string }): JSX.
       )}
     </div>
   );
-}
-
-function roleLabel(role: string | null): string {
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    "dev-manager": "技术负责人",
-    "hermes-user": "用户代表",
-    "product-manager": "产品",
-    qa: "测试",
-    secretary: "秘书",
-  };
-  return role === null ? "团队成员" : labels[role] ?? role;
 }
 
 function stripTerminalControls(value: string): string {

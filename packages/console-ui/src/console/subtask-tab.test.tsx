@@ -70,7 +70,7 @@ describe("SubtaskTab", () => {
       onRetry,
       onInterrupt,
     }));
-    fireEvent.click(screen.getByRole("button", { name: "停下当前这一步" }));
+    fireEvent.click(screen.getByRole("button", { name: "停下测试" }));
     expect(onInterrupt).toHaveBeenCalledWith("child-a", "run-active");
   });
 
@@ -109,6 +109,52 @@ describe("SubtaskTab", () => {
       role: "qa",
       fallbackOutput: "running",
     });
+  });
+
+  it("keeps a child session's custom identity across history, active run, terminal facts, and stop", () => {
+    const onInterrupt = vi.fn();
+    const customMessages: OperatorMessage[] = [
+      messageForCustomMember({
+        id: 10,
+        speaker: "agent",
+        body: "正在执行自定义方案",
+        runId: "run-history",
+      }),
+      ...(["run-not-started", "run-stuck", "user-stopped", "retry-exhausted"] as const).map(
+        (systemEventKind, index) => messageForCustomMember({
+          id: 20 + index,
+          speaker: "system",
+          body: `终态 ${systemEventKind}`,
+          runId: `run-terminal-${String(index)}`,
+          systemEventKind,
+        }),
+      ),
+    ];
+    renderTab({
+      summary: {
+        sessionId: "child-a",
+        title: "自定义执行",
+        memberName: "方案执行者",
+        status: "running",
+        statusLabel: "进行中",
+      },
+      state: {
+        status: "ready",
+        view: {
+          session: { ...session, title: "自定义执行", status: "running" },
+          memberIdentities: [{ slug: "plan-executor", displayName: "方案执行者" }],
+          messages: customMessages,
+          activeRun: { ...activeRun, role: "plan-executor" },
+        },
+      },
+      onInterrupt,
+    });
+
+    expect(screen.getAllByText("方案执行者").length).toBeGreaterThanOrEqual(6);
+    expect(screen.getByText("正在执行自定义方案")).toBeVisible();
+    expect(screen.queryByText(/团队成员|协作者|成员未知/u)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "停下方案执行者" }));
+    expect(onInterrupt).toHaveBeenCalledWith("child-a", "run-active");
   });
 });
 
@@ -213,3 +259,23 @@ const activeRun: OperatorRunSnapshot = {
   tailDiagnostic: null,
   interruptible: true,
 };
+
+function messageForCustomMember(
+  input: Pick<OperatorMessage, "id" | "speaker" | "body" | "runId">
+    & Partial<OperatorMessage>,
+): OperatorMessage {
+  return {
+    id: input.id,
+    sessionId: "child-a",
+    speaker: input.speaker,
+    role: "plan-executor",
+    body: input.body,
+    status: input.speaker === "agent" ? "completed" : "failed",
+    runId: input.runId,
+    runDir: null,
+    error: input.error ?? null,
+    systemEventKind: input.systemEventKind ?? "other",
+    createdAt: "2026-07-25T00:00:00.000Z",
+    updatedAt: "2026-07-25T00:00:01.000Z",
+  };
+}

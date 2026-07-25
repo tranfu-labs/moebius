@@ -15,6 +15,7 @@ import { StructuredAttachmentList, type ComposerAttachment } from "@/console/str
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { resolveOperatorMemberName } from "@/console/member-name";
 
 export type OperatorSubSessionViewState =
   | { status: "idle" | "loading" }
@@ -67,10 +68,15 @@ export function SubtaskTab({
 }: SubtaskTabProps): JSX.Element {
   const view = state.status === "ready" ? state.view : null;
   const activeRun = view?.activeRun ?? null;
+  const memberIdentities = view?.memberIdentities ?? [];
   const continuationBlocked = view?.session.continuation?.canContinue === false;
   const disabled = sending || continuationBlocked || state.status !== "ready";
   const title = summary?.title ?? view?.session.title ?? "子任务";
-  const memberName = summary?.memberName ?? "成员未知";
+  const memberName = summary?.memberName ?? resolveOperatorMemberName(
+    activeRun?.role ?? view?.messages.find((message) => message.speaker === "agent")?.role ?? null,
+    memberIdentities,
+    "成员未知",
+  );
   const statusLabel = summary?.statusLabel ?? fallbackStatusLabel(view?.session.status);
 
   return (
@@ -106,6 +112,7 @@ export function SubtaskTab({
               <SubtaskTimelineEntry
                 key={message.id}
                 message={message}
+                memberIdentities={memberIdentities}
                 onRetry={onRetry}
                 onOpenOutput={onOpenOutput}
                 onOpenExternalLink={onOpenExternalLink}
@@ -115,6 +122,7 @@ export function SubtaskTab({
               <div className="py-4" data-testid="subtask-active-run">
                 <RunBlock
                   role={activeRun.role ?? "dev"}
+                  memberIdentities={memberIdentities}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
@@ -148,7 +156,9 @@ export function SubtaskTab({
           onInterrupt={activeRun?.interruptible === true
             ? () => onInterrupt(sessionId, activeRun.runId)
             : undefined}
-          interruptLabel="停下当前这一步"
+          interruptLabel={activeRun === null
+            ? undefined
+            : `停下${resolveOperatorMemberName(activeRun.role, memberIdentities, "当前这一步")}`}
           roles={roles}
           disabled={disabled}
           placeholder={continuationBlocked
@@ -168,11 +178,13 @@ export function SubtaskTab({
 
 function SubtaskTimelineEntry({
   message,
+  memberIdentities,
   onRetry,
   onOpenOutput,
   onOpenExternalLink,
 }: {
   message: OperatorMessage;
+  memberIdentities: NonNullable<OperatorSubSessionView["memberIdentities"]>;
   onRetry(runId: string): void;
   onOpenOutput?: SubtaskTabProps["onOpenOutput"];
   onOpenExternalLink?: (url: string) => void;
@@ -183,6 +195,7 @@ function SubtaskTimelineEntry({
       <RunOutcome
         status={outcome}
         role={message.role}
+        memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
         onRetry={(outcome === "run-not-started" || outcome === "run-stuck") && message.runId !== null
@@ -228,10 +241,15 @@ function SubtaskTimelineEntry({
     <article className="py-4 text-sm">
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
-          <RoleTag label={memberLabel(message.role)} toneKey={message.role ?? "agent"} />
+          <RoleTag
+            label={resolveOperatorMemberName(message.role, memberIdentities)}
+            toneKey={message.role ?? "agent"}
+          />
         ) : null}
         <span className="font-semibold text-ink">
-          {message.speaker === "agent" ? memberLabel(message.role) : "系统提示"}
+          {message.speaker === "agent"
+            ? resolveOperatorMemberName(message.role, memberIdentities)
+            : "系统提示"}
         </span>
       </div>
       <div className="pl-7">
@@ -324,17 +342,4 @@ function subtaskBadgeVariant(
     default:
       return "failed";
   }
-}
-
-function memberLabel(role: string | null): string {
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    "dev-manager": "技术负责人",
-    "hermes-user": "用户代表",
-    "product-manager": "产品",
-    qa: "测试",
-    secretary: "秘书",
-  };
-  return role === null ? "团队成员" : labels[role] ?? role;
 }

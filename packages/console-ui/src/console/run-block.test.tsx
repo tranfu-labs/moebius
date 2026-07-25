@@ -113,4 +113,19 @@ describe("RunBlock", () => {
     expect(screen.getByText(/路径已隐藏/u)).toBeVisible();
     expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
   });
+
+  it("uses the session member projection for custom roles and stop actions", () => {
+    render(
+      <RunBlock
+        role="plan-executor"
+        memberIdentities={[{ slug: "plan-executor", displayName: "方案执行者" }]}
+        summary="正在落实方案"
+        onInterrupt={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("方案执行者")).toBeVisible();
+    expect(screen.getByRole("button", { name: "停下方案执行者" })).toBeVisible();
+    expect(screen.queryByText("协作者")).not.toBeInTheDocument();
+  });
 });

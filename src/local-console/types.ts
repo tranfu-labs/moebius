@@ -137,6 +137,11 @@ export interface LocalConsoleAgentTeamSnapshot {
   members: LocalConsoleAgentTeamSnapshotMember[];
 }
 
+export interface LocalConsoleMemberIdentity {
+  slug: string;
+  displayName: string;
+}
+
 export interface LocalConsoleSessionWorkspaceSource {
   projectId: string;
   title: string;
@@ -404,6 +409,7 @@ export interface LocalConsoleStateSnapshot {
   messages: LocalConsoleMessage[];
   pendingPrimaryMessages: LocalConsoleMessage[];
   childSessions: LocalConsoleChildSessionSummary[];
+  memberIdentities: LocalConsoleMemberIdentity[];
   activeRuns: LocalConsoleRunSnapshot[];
   /** @deprecated Transitional primary-agent projection. New consumers use activeRuns. */
   activeRun: LocalConsoleRunSnapshot | null;
@@ -416,6 +422,7 @@ export interface LocalConsoleSessionView {
   session: LocalConsoleSessionSummary;
   messages: LocalConsoleMessage[];
   pendingPrimaryMessages: LocalConsoleMessage[];
+  memberIdentities: LocalConsoleMemberIdentity[];
   activeRuns: LocalConsoleRunSnapshot[];
   /** @deprecated Transitional primary-agent projection. New consumers use activeRuns. */
   activeRun: LocalConsoleRunSnapshot | null;

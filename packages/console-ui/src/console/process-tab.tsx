@@ -20,6 +20,10 @@ import {
 } from "@/console/process-scroll-model";
 import type { RightSidebarProcessScrollSnapshot } from "@/console/right-sidebar-tabs";
 import { cn } from "@/lib/utils";
+import {
+  resolveOperatorMemberName,
+  type OperatorMemberIdentity,
+} from "@/console/member-name";
 
 export interface OperatorProcessAttemptMeta {
   runId: string;
@@ -62,6 +66,7 @@ export type OperatorProcessOutputState =
 export interface ProcessTabProps {
   title: string;
   state: OperatorProcessOutputState;
+  memberIdentities?: readonly OperatorMemberIdentity[];
   scrollSnapshot?: RightSidebarProcessScrollSnapshot;
   onScrollSnapshotChange?: (snapshot: RightSidebarProcessScrollSnapshot) => void;
   onLoadPrevious?: (cursor: string) => void;
@@ -72,6 +77,7 @@ export interface ProcessTabProps {
 export function ProcessTab({
   title,
   state,
+  memberIdentities = [],
   scrollSnapshot,
   onScrollSnapshotChange,
   onLoadPrevious,
@@ -106,7 +112,11 @@ export function ProcessTab({
     scrollMargin: listRef.current?.offsetTop ?? 0,
   });
   const virtualItems = virtualizer.getVirtualItems();
-  const memberName = title.replace(/\s+\d+$/u, "");
+  const memberName = resolveOperatorMemberName(
+    output?.role ?? null,
+    memberIdentities,
+    title.replace(/\s+\d+$/u, ""),
+  );
 
   useEffect(() => {
     snapshotRef.current = scrollSnapshot;
@@ -304,6 +314,7 @@ export function ProcessTab({
                   <ProcessEvent
                     event={event}
                     memberName={memberName}
+                    memberIdentities={memberIdentities}
                     onOpenExternalLink={onOpenExternalLink}
                   />
                 </div>
@@ -326,27 +337,12 @@ export function ProcessTab({
   );
 }
 
-export function resolveOperatorMemberName(
-  role: string | null,
-  unknownLabel = "团队成员",
-): string {
-  const labels: Record<string, string> = {
-    ceo: "CEO",
-    dev: "开发",
-    "dev-manager": "技术负责人",
-    "hermes-user": "用户代表",
-    "product-manager": "产品",
-    qa: "测试",
-    secretary: "秘书",
-  };
-  return role === null ? unknownLabel : labels[role] ?? unknownLabel;
-}
-
 export function nextProcessTabTitle(
   state: { tabs: Array<{ type: string; title: string }> },
   role: string | null,
+  memberIdentities: readonly OperatorMemberIdentity[] = [],
 ): string {
-  const memberName = resolveOperatorMemberName(role, "成员未知");
+  const memberName = resolveOperatorMemberName(role, memberIdentities, "成员未知");
   const usedOrdinals = new Set(state.tabs.flatMap((tab): number[] => {
     if (tab.type !== "run-output") {
       return [];
@@ -365,6 +361,8 @@ export function nextProcessTabTitle(
   }
   return nextOrdinal === 1 ? memberName : `${memberName} ${String(nextOrdinal)}`;
 }
+
+export { resolveOperatorMemberName };
 
 function ProcessNotice({ children }: { children: ReactNode }): JSX.Element {
   return <p className="py-10 text-center text-sm leading-6 text-sub">{children}</p>;
