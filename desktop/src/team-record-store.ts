@@ -36,7 +36,7 @@ export interface UserTeamRecord {
   legacyRelayBeats?: TeamRelayBeat[];
 }
 
-interface UserTeamRecordsDocument {
+export interface UserTeamRecordsDocument {
   version: 2;
   records: UserTeamRecord[];
 }
@@ -94,6 +94,83 @@ export async function registerUserTeamSnapshot(snapshot: TeamSnapshot): Promise<
   const nextRecords = document.records.filter((record) => record.id !== nextRecord.id);
   nextRecords.push(nextRecord);
   await writeRecords(dataRoot, { version: 2, records: sortRecords(nextRecords) });
+}
+
+export async function readPersistedUserTeamRecordsDocument(
+  dataRoot: string,
+): Promise<UserTeamRecordsDocument | null> {
+  return (await readPersistedRecords(dataRoot))?.document ?? null;
+}
+
+async function readPersistedRecords(
+  dataRoot: string,
+): Promise<{ document: UserTeamRecordsDocument; sourceVersion: 1 | 2 } | null> {
+  try {
+    return parseRecordsDocumentWithSourceVersion(
+      await fs.readFile(getRecordsPath(dataRoot), "utf8"),
+    );
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function buildUserTeamRecordsDocument(
+  dataRoot: string,
+): Promise<UserTeamRecordsDocument> {
+  const locations = (await listTeamLocations(dataRoot)).filter((location) => location.ownership === "user");
+  const records: UserTeamRecord[] = [];
+  for (const location of locations) {
+    const snapshot = await readTeamSnapshot(location);
+    records.push(refreshRecordFromSnapshot({
+      id: location.id,
+      location: { kind: "managed", directoryName: path.basename(location.directory) },
+      identityFingerprint: null,
+      lastKnownDefinition: null,
+    }, snapshot));
+  }
+  return { version: 2, records: sortRecords(records) };
+}
+
+export function upsertUserTeamRecord(
+  document: UserTeamRecordsDocument,
+  snapshot: TeamSnapshot,
+): UserTeamRecordsDocument {
+  if (snapshot.location.ownership !== "user") {
+    throw new TeamRecordError("只有用户团队需要应用记录。");
+  }
+  const location = recordLocationFromDirectory(
+    snapshot.location.dataRoot,
+    snapshot.location.directory,
+  );
+  const existing = document.records.find((record) => record.id === snapshot.location.id);
+  const base: UserTeamRecord = existing ?? {
+    id: snapshot.location.id,
+    location,
+    identityFingerprint: null,
+    lastKnownDefinition: null,
+  };
+  const nextRecord = refreshRecordFromSnapshot({ ...base, location }, snapshot);
+  return {
+    version: 2,
+    records: sortRecords([
+      ...document.records.filter((record) => record.id !== nextRecord.id),
+      nextRecord,
+    ]),
+  };
+}
+
+export async function writeUserTeamRecordsDocument(
+  dataRoot: string,
+  document: UserTeamRecordsDocument | null,
+): Promise<void> {
+  if (document === null) {
+    await fs.rm(getRecordsPath(dataRoot), { force: true });
+    return;
+  }
+  await writeRecords(dataRoot, document);
 }
 
 export async function relocateUserTeamRecord(input: {
@@ -222,33 +299,14 @@ export class TeamRelocationError extends Error {
 }
 
 async function loadOrBootstrapRecords(dataRoot: string): Promise<UserTeamRecordsDocument> {
-  const recordsPath = getRecordsPath(dataRoot);
-  try {
-    const source = await fs.readFile(recordsPath, "utf8");
-    const document = parseRecordsDocument(source);
-    const raw: unknown = JSON.parse(source);
-    if (isPlainObject(raw) && raw.version === 1) {
-      await writeRecords(dataRoot, document);
+  const persisted = await readPersistedRecords(dataRoot);
+  if (persisted !== null) {
+    if (persisted.sourceVersion === 1) {
+      await writeRecords(dataRoot, persisted.document);
     }
-    return document;
-  } catch (error) {
-    if (!isNodeError(error) || error.code !== "ENOENT") {
-      throw error;
-    }
+    return persisted.document;
   }
-
-  const locations = (await listTeamLocations(dataRoot)).filter((location) => location.ownership === "user");
-  const records: UserTeamRecord[] = [];
-  for (const location of locations) {
-    const snapshot = await readTeamSnapshot(location);
-    records.push(refreshRecordFromSnapshot({
-      id: location.id,
-      location: { kind: "managed", directoryName: path.basename(location.directory) },
-      identityFingerprint: null,
-      lastKnownDefinition: null,
-    }, snapshot));
-  }
-  const document: UserTeamRecordsDocument = { version: 2, records: sortRecords(records) };
+  const document = await buildUserTeamRecordsDocument(dataRoot);
   await writeRecords(dataRoot, document);
   return document;
 }
@@ -324,7 +382,9 @@ async function writeRecords(dataRoot: string, document: UserTeamRecordsDocument)
   }
 }
 
-function parseRecordsDocument(source: string): UserTeamRecordsDocument {
+function parseRecordsDocumentWithSourceVersion(
+  source: string,
+): { document: UserTeamRecordsDocument; sourceVersion: 1 | 2 } {
   const value: unknown = JSON.parse(source);
   if (!isPlainObject(value) || (value.version !== 1 && value.version !== 2) || !Array.isArray(value.records)) {
     throw new TeamRecordError("Agent 团队记录文件无法读取。");
@@ -341,7 +401,10 @@ function parseRecordsDocument(source: string): UserTeamRecordsDocument {
     ids.add(record.id);
     directories.add(directory);
   }
-  return { version: 2, records: sortRecords(records) };
+  return {
+    document: { version: 2, records: sortRecords(records) },
+    sourceVersion: version,
+  };
 }
 
 function parseRecord(value: unknown, version: 1 | 2): UserTeamRecord {

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700">
+  <style>
+    text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #202124; }
+    .title { font-size: 22px; font-weight: 600; }
+    .label { font-size: 15px; font-weight: 600; }
+    .body { font-size: 13px; }
+    .box { fill: #fafafa; stroke: #6b7280; stroke-width: 1.5; rx: 12; }
+    .accent { fill: #eef2ff; stroke: #4f46e5; stroke-width: 1.5; rx: 12; }
+    .state { fill: #f0fdf4; stroke: #15803d; stroke-width: 1.5; rx: 12; }
+    .arrow { stroke: #4b5563; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .dash { stroke-dasharray: 7 5; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <text x="40" y="42" class="title">改造后：A/B/C 官方更新 + Agent profile + 双执行驱动</text>
+  <rect x="40" y="82" width="250" height="120" class="box"/>
+  <text x="60" y="112" class="label">package official C</text>
+  <text x="60" y="140" class="body">content + officialVersion</text>
+  <text x="60" y="164" class="body">per-slug recommendations</text>
+  <text x="60" y="188" class="body">启动只登记，不覆盖</text>
+  <rect x="370" y="82" width="290" height="120" class="state"/>
+  <text x="390" y="112" class="label">desktop team domain</text>
+  <text x="390" y="140" class="body">A applied baseline / B editable .system</text>
+  <text x="390" y="164" class="body">compare → impact → protected update</text>
+  <text x="390" y="188" class="body">pure rules + staged commit</text>
+  <path d="M290 142 L370 142" class="arrow"/>
+  <rect x="740" y="82" width="220" height="120" class="accent"/>
+  <text x="760" y="112" class="label">execution profile state</text>
+  <text x="760" y="140" class="body">recommended / override</text>
+  <text x="760" y="164" class="body">explicit user profiles</text>
+  <text x="760" y="188" class="body">team id + member slug</text>
+  <path d="M660 142 L740 142" class="arrow"/>
+  <rect x="1020" y="82" width="180" height="120" class="box"/>
+  <text x="1040" y="112" class="label">capability probes</text>
+  <text x="1040" y="140" class="body">Codex model/list</text>
+  <text x="1040" y="164" class="body">Kimi provider JSON</text>
+  <text x="1040" y="188" class="body">safe status only</text>
+  <path d="M1020 142 L960 142" class="arrow"/>
+  <rect x="370" y="285" width="290" height="120" class="accent"/>
+  <text x="390" y="315" class="label">session team snapshot</text>
+  <text x="390" y="343" class="body">slug + AGENT.md</text>
+  <text x="390" y="367" class="body">CLI + model + effort</text>
+  <text x="390" y="391" class="body">pending/effective 整体冻结</text>
+  <path d="M515 202 L515 285" class="arrow"/>
+  <path d="M850 202 L650 310" class="arrow dash"/>
+  <rect x="370" y="490" width="290" height="120" class="state"/>
+  <text x="390" y="520" class="label">LocalConsoleRuntime</text>
+  <text x="390" y="548" class="body">driver registry</text>
+  <text x="390" y="572" class="body">immutable run context + session link</text>
+  <text x="390" y="596" class="body">同 run resume / 原上下文 full fallback</text>
+  <path d="M515 405 L515 490" class="arrow"/>
+  <rect x="40" y="500" width="240" height="110" class="box"/>
+  <text x="60" y="530" class="label">Codex driver</text>
+  <text x="60" y="558" class="body">codex exec --json</text>
+  <text x="60" y="582" class="body">per-run model / effort</text>
+  <path d="M370 550 L280 550" class="arrow"/>
+  <rect x="750" y="500" width="240" height="110" class="box"/>
+  <text x="770" y="530" class="label">Kimi ACP driver</text>
+  <text x="770" y="558" class="body">new/resume + config verify</text>
+  <text x="770" y="582" class="body">prompt/cancel + bounded reverse RPC</text>
+  <path d="M660 550 L750 550" class="arrow"/>
+  <rect x="1020" y="285" width="180" height="120" class="box"/>
+  <text x="1040" y="315" class="label">console-ui</text>
+  <text x="1040" y="343" class="body">official states</text>
+  <text x="1040" y="367" class="body">profile editor</text>
+  <text x="1040" y="391" class="body">update impact/result</text>
+  <path d="M660 345 L1020 345" class="arrow"/>
+</svg>

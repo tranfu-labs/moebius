@@ -42,17 +42,17 @@ describe("AgentTeamsPage built-in duplication", () => {
 
     fireEvent.click(screen.getByTestId("agent-team-row"));
     expect(screen.getByTestId("agent-team-detail-view")).toHaveAttribute("data-team-key", builtInTeam.teamKey);
-    expect(screen.getByText("内置团队")).toBeVisible();
-    expect(screen.getByText("只读")).toBeVisible();
+    expect(screen.getByText("官方来源")).toBeVisible();
+    expect(screen.queryByText("只读")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "复制并编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
 
     await waitFor(() => expect(screen.getByTestId("agent-team-detail-view"))
       .toHaveAttribute("data-team-key", copiedTeam.teamKey));
     expect(onDuplicate).toHaveBeenCalledWith(builtInTeam.teamKey);
     expect(screen.getByText("用户团队")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).not.toHaveAttribute("readonly");
-    expect(screen.queryByRole("button", { name: "复制并编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制团队" })).not.toBeInTheDocument();
   });
 
   it("never shows team deletion or member mutation controls for a built-in team", async () => {
@@ -130,7 +130,7 @@ describe("AgentTeamsPage user-team file operations", () => {
     await openMenu("开发经理更多操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "复制 Agent" }));
 
-    const dialog = screen.getByRole("dialog", { name: "复制前先处理未保存修改" });
+    const dialog = screen.getByRole("dialog", { name: "还有未保存的修改" });
     expect(dialog).toHaveTextContent("只使用已经完整保存到磁盘的文件");
     expect(onDuplicateMember).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "放弃全部并继续" }));
@@ -180,7 +180,7 @@ describe("AgentTeamsPage user-team file operations", () => {
 
     await openMenu("我的开发团队更多操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "移到废纸篓 / 回收站" }));
-    const draftDialog = screen.getByRole("dialog", { name: "删除前先处理未保存修改" });
+    const draftDialog = screen.getByRole("dialog", { name: "还有未保存的修改" });
     expect(onTrashUserTeam).not.toHaveBeenCalled();
     fireEvent.click(within(draftDialog).getByRole("button", { name: "保存全部并继续" }));
 
@@ -223,7 +223,7 @@ describe("AgentTeamsPage file manager actions", () => {
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("user:development-copy", "manager"));
   });
 
-  it("uses the Windows label supplied by the desktop and keeps built-in content read-only", async () => {
+  it("uses the Windows label supplied by the desktop and keeps official content editable", async () => {
     const onOpenLocation = vi.fn().mockResolvedValue(undefined);
     render(<LocationHarness
       team={builtInTeam}
@@ -232,11 +232,9 @@ describe("AgentTeamsPage file manager actions", () => {
     />);
 
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    expect(screen.getByText("内置团队")).toBeVisible();
-    expect(screen.getByText("只读")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
-    expect(screen.queryByText("复制 Agent")).not.toBeInTheDocument();
-    expect(screen.queryByText("删除 Agent")).not.toBeInTheDocument();
+    expect(screen.getByText("官方来源")).toBeVisible();
+    expect(screen.queryByText("只读")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
 
     await openMenu("开发团队更多操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在文件资源管理器中显示" }));

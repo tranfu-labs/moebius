@@ -5,6 +5,19 @@ import type {
   TeamRepairIssueCode,
   TeamStatus,
 } from "./team-model.js";
+import type {
+  ExecutionCapabilitySnapshot,
+  ExecutionProfile,
+  ExecutionProfileBinding,
+  ExecutionProfileStatus,
+} from "./team-execution-profile.js";
+import type {
+  OfficialTeamUpdateState,
+} from "./team-official-management.js";
+import type {
+  AppliedOfficialTeamUpdate,
+  PreparedOfficialTeamUpdate,
+} from "./team-official-update.js";
 
 export const TEAM_IPC_CHANNELS = {
   list: "agent-teams:list",
@@ -19,6 +32,12 @@ export const TEAM_IPC_CHANNELS = {
   duplicateMember: "agent-teams:duplicate-member",
   trashMember: "agent-teams:trash-member",
   trashUserTeam: "agent-teams:trash-user-team",
+  readExecutionProfile: "agent-teams:read-execution-profile",
+  saveExecutionProfile: "agent-teams:save-execution-profile",
+  restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
+  refreshExecutionCapabilities: "agent-teams:refresh-execution-capabilities",
+  prepareOfficialUpdate: "agent-teams:prepare-official-update",
+  applyOfficialUpdate: "agent-teams:apply-official-update",
 } as const;
 
 export interface AgentTeamMemberSummary {
@@ -26,6 +45,11 @@ export interface AgentTeamMemberSummary {
   displayName: string;
   description: string;
   available?: boolean;
+  executionProfile?: {
+    source: ExecutionProfileBinding["source"];
+    effective: ExecutionProfile | null;
+    status: ExecutionProfileStatus["status"] | "not-configured";
+  };
 }
 
 export interface AgentTeamListItem {
@@ -35,6 +59,10 @@ export interface AgentTeamListItem {
   members: AgentTeamMemberSummary[];
   status: TeamStatus;
   canCreateConversation: boolean;
+  capabilities?: {
+    canEditContent: boolean;
+    canDeleteTeam: boolean;
+  };
   issues: Array<{ code: TeamRepairIssueCode; slug?: string }>;
   onboardingOrchestration?:
     | {
@@ -42,6 +70,7 @@ export interface AgentTeamListItem {
         relayBeats: Array<{ speakerSlug: string; message: string }>;
       }
     | { status: "unavailable" };
+  officialManagement?: OfficialTeamUpdateState;
 }
 
 export type AgentTeamListResponse =
@@ -76,11 +105,11 @@ export interface AgentTeamDuplicateUserRequest {
 }
 
 export interface AgentTeamMemberDuplicateRequest extends AgentTeamMemberRequest {
-  ownership: "user";
+  ownership: TeamOwnership;
 }
 
 export interface AgentTeamMemberTrashRequest extends AgentTeamMemberRequest {
-  ownership: "user";
+  ownership: TeamOwnership;
 }
 
 export interface AgentTeamTrashUserRequest {
@@ -108,3 +137,37 @@ export interface AgentTeamMemberAddResponse {
   team: AgentTeamListItem;
   member: AgentTeamMemberDocument;
 }
+
+export interface AgentTeamExecutionProfileDocument {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlug: string;
+  binding: ExecutionProfileBinding;
+  recommendation: ExecutionProfile | null;
+  effectiveProfile: ExecutionProfile;
+  status: ExecutionProfileStatus;
+  capabilities: ExecutionCapabilitySnapshot[];
+}
+
+export interface AgentTeamExecutionProfileSaveRequest extends AgentTeamMemberRequest {
+  profile: ExecutionProfile;
+  capabilitySnapshotId: string;
+}
+
+export interface AgentTeamExecutionCapabilityRequest {
+  cli: "codex" | "kimi";
+}
+
+export interface AgentTeamOfficialUpdateRequest {
+  teamId: string;
+  ownership: "system";
+}
+
+export interface AgentTeamOfficialUpdateCommitRequest {
+  plan: PreparedOfficialTeamUpdate;
+}
+
+export type AgentTeamOfficialUpdatePrepareResponse = PreparedOfficialTeamUpdate;
+export type AgentTeamOfficialUpdateCommitResponse = AppliedOfficialTeamUpdate & {
+  copiedTeam: AgentTeamListItem | null;
+};

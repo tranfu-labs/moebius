@@ -16,6 +16,9 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import {
+  type AgentExecutionProfile,
+  type AgentExecutionProfileDocument,
+  type AgentOfficialUpdateResult,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
@@ -364,6 +367,28 @@ export interface OperatorConsoleProps {
   onDiscardAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAllAgentTeamDrafts?: (teamKey: string) => void;
   onSaveAllAgentTeamDrafts?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
+  onReadAgentExecutionProfile?: (
+    teamKey: string,
+    memberSlug: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onSaveAgentExecutionProfile?: (
+    teamKey: string,
+    memberSlug: string,
+    profile: AgentExecutionProfile,
+    capabilitySnapshotId: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onRestoreAgentRecommendedProfile?: (
+    teamKey: string,
+    memberSlug: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onRefreshAgentExecutionCapabilities?: (
+    teamKey: string,
+    memberSlug: string,
+    cli: AgentExecutionProfile["cli"],
+  ) => Promise<AgentExecutionProfileDocument>;
+  onApplyOfficialAgentTeamUpdate?: (
+    teamKey: string,
+  ) => Promise<AgentOfficialUpdateResult>;
   onDuplicateBuiltInAgentTeam?: (teamKey: string) => Promise<string>;
   onRecheckAgentTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateAgentTeam?: (teamKey: string) => void | Promise<void>;
@@ -482,6 +507,11 @@ export function OperatorConsole({
   onDiscardAgentTeamMember,
   onDiscardAllAgentTeamDrafts,
   onSaveAllAgentTeamDrafts,
+  onReadAgentExecutionProfile,
+  onSaveAgentExecutionProfile,
+  onRestoreAgentRecommendedProfile,
+  onRefreshAgentExecutionCapabilities,
+  onApplyOfficialAgentTeamUpdate,
   onDuplicateBuiltInAgentTeam,
   onRecheckAgentTeam,
   onRelocateAgentTeam,
@@ -1039,6 +1069,11 @@ export function OperatorConsole({
             onDiscardMember={onDiscardAgentTeamMember}
             onDiscardAll={onDiscardAllAgentTeamDrafts}
             onSaveAll={onSaveAllAgentTeamDrafts}
+            onReadExecutionProfile={onReadAgentExecutionProfile}
+            onSaveExecutionProfile={onSaveAgentExecutionProfile}
+            onRestoreRecommendedProfile={onRestoreAgentRecommendedProfile}
+            onRefreshExecutionCapabilities={onRefreshAgentExecutionCapabilities}
+            onApplyOfficialUpdate={onApplyOfficialAgentTeamUpdate}
             onDuplicateBuiltInTeam={onDuplicateBuiltInAgentTeam}
             onRecheckTeam={onRecheckAgentTeam}
             onRelocateTeam={onRelocateAgentTeam}

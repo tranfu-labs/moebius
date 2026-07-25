@@ -483,6 +483,9 @@ export async function trashUserTeamDirectory(
   moveToTrash: MovePathToTrash,
 ): Promise<void> {
   assertTeamWritable(location);
+  if (location.ownership !== "user") {
+    throw new BuiltInTeamReadOnlyError(location.id);
+  }
   const sourceStats = await fs.stat(location.directory);
   if (!sourceStats.isDirectory()) {
     throw new TeamPathError(`User team path is not a directory: ${location.directory}`);
@@ -515,14 +518,15 @@ async function duplicateTeamDirectoryAsUserTeam(source: TeamLocation): Promise<T
 export function assertTeamWritable(location: TeamLocation): void {
   assertLocationMatchesLayout(location);
   const actualOwnership = determineTeamOwnership(location.dataRoot, location.directory);
-  if (actualOwnership === "system") {
-    throw new BuiltInTeamReadOnlyError(location.id);
-  }
   if (location.ownership !== actualOwnership) {
     throw new TeamPathError(`Team ownership does not match its disk location: ${location.directory}`);
   }
 }
 
+/**
+ * Kept for source compatibility with older callers. Official teams are editable
+ * now, so current mutation paths no longer throw this error.
+ */
 export class BuiltInTeamReadOnlyError extends Error {
   readonly code = "BUILT_IN_TEAM_READ_ONLY";
 

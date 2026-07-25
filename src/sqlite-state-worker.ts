@@ -9,6 +9,7 @@ import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
   LOCAL_CONSOLE_PROJECT_ID,
   LOCAL_CONSOLE_PROJECT_SOURCE_TYPE,
+  type LocalConsoleAgentTeamSnapshot,
   type LocalConsoleSessionSummary,
   type LocalConsoleSystemEventKind,
   type MoveEmptySessionResult,
@@ -131,6 +132,27 @@ function runCommand(input: WorkerInput): unknown {
         return listSessionMessageIndexes(database);
       case "local-rebuild-session-message-index":
         return rebuildSessionMessageIndex(database, input.command.sessionId, input.command.messages);
+      case "local-rebuild-execution-index":
+        return rebuildExecutionIndex(
+          database,
+          input.command.sessionId,
+          input.command.contexts,
+          input.command.links,
+        );
+      case "local-index-run-execution-context":
+        return indexRunExecutionContext(
+          database,
+          input.command.sessionId,
+          input.command.runId,
+          input.command.context,
+        );
+      case "local-index-execution-session-link":
+        return indexExecutionSessionLink(
+          database,
+          input.command.sessionId,
+          input.command.runId,
+          input.command.link,
+        );
       case "local-find-message-session":
         return findMessageSession(database, input.command.messageId);
       case "local-create-session":
@@ -337,6 +359,18 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_id ON session_messages(session_id, id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_session_status_id ON session_messages(session_id, status, id);
+    CREATE TABLE IF NOT EXISTS local_run_execution_contexts (
+      session_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      context_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, run_id)
+    );
+    CREATE TABLE IF NOT EXISTS local_execution_session_links (
+      session_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      link_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, run_id)
+    );
     CREATE TABLE IF NOT EXISTS local_attachment_blobs (
       blob_id TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK (kind IN ('image', 'file')),
@@ -473,6 +507,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionsCreatedAt(database, now);
   migrateSessionsProjectId(database, now);
   ensureSessionAgentTeamColumns(database);
+  ensureSessionAgentTeamProfileColumns(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
@@ -518,6 +553,21 @@ function ensureSessionAgentTeamColumns(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "sessions", "agent_team_pending_id")) {
     database.exec("ALTER TABLE sessions ADD COLUMN agent_team_pending_id TEXT");
   }
+}
+
+function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "session_agent_team_members", "execution_cli")) {
+    database.exec(
+      "ALTER TABLE session_agent_team_members ADD COLUMN execution_cli TEXT CHECK (execution_cli IS NULL OR execution_cli IN ('codex', 'kimi'))",
+    );
+  }
+  if (!tableHasColumn(database, "session_agent_team_members", "execution_model")) {
+    database.exec("ALTER TABLE session_agent_team_members ADD COLUMN execution_model TEXT");
+  }
+  if (!tableHasColumn(database, "session_agent_team_members", "execution_effort")) {
+    database.exec("ALTER TABLE session_agent_team_members ADD COLUMN execution_effort TEXT");
+  }
+  markSchemaMigration(database, "agent-runtime-profiles-session-snapshot");
 }
 
 function migrateSessionWorkspaceContext(database: SqliteDatabase): void {
@@ -1195,6 +1245,75 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
   return null;
 }
 
+function rebuildExecutionIndex(
+  database: SqliteDatabase,
+  sessionId: string,
+  contexts: unknown[],
+  links: unknown[],
+): null {
+  transaction(database, () => {
+    database.prepare("DELETE FROM local_run_execution_contexts WHERE session_id = ?").run(sessionId);
+    database.prepare("DELETE FROM local_execution_session_links WHERE session_id = ?").run(sessionId);
+    for (const context of contexts) {
+      const runId = readExecutionIndexIdentity(context, sessionId);
+      indexRunExecutionContext(database, sessionId, runId, context);
+    }
+    for (const link of links) {
+      const runId = readExecutionIndexIdentity(link, sessionId);
+      indexExecutionSessionLink(database, sessionId, runId, link);
+    }
+    return null;
+  });
+  return null;
+}
+
+function indexRunExecutionContext(
+  database: SqliteDatabase,
+  sessionId: string,
+  runId: string,
+  context: unknown,
+): null {
+  assertExecutionIndexIdentity(context, sessionId, runId);
+  database.prepare(
+    `INSERT INTO local_run_execution_contexts (session_id, run_id, context_json)
+     VALUES (?, ?, ?)
+     ON CONFLICT(session_id, run_id) DO UPDATE SET context_json = excluded.context_json`,
+  ).run(sessionId, runId, JSON.stringify(context));
+  return null;
+}
+
+function indexExecutionSessionLink(
+  database: SqliteDatabase,
+  sessionId: string,
+  runId: string,
+  link: unknown,
+): null {
+  assertExecutionIndexIdentity(link, sessionId, runId);
+  database.prepare(
+    `INSERT INTO local_execution_session_links (session_id, run_id, link_json)
+     VALUES (?, ?, ?)
+     ON CONFLICT(session_id, run_id) DO UPDATE SET link_json = excluded.link_json`,
+  ).run(sessionId, runId, JSON.stringify(link));
+  return null;
+}
+
+function readExecutionIndexIdentity(value: unknown, sessionId: string): string {
+  if (!isRecord(value) || readString(value.sessionId, "sessionId") !== sessionId) {
+    throw new Error(`execution fact belongs to another session: ${sessionId}`);
+  }
+  return readString(value.runId, "runId");
+}
+
+function assertExecutionIndexIdentity(
+  value: unknown,
+  sessionId: string,
+  runId: string,
+): void {
+  if (readExecutionIndexIdentity(value, sessionId) !== runId) {
+    throw new Error(`execution fact run id mismatch: ${runId}`);
+  }
+}
+
 function findMessageSession(database: SqliteDatabase, messageId: number): { sessionId: string } | null {
   const row = database.prepare("SELECT session_id FROM session_messages WHERE id = ?").get(messageId);
   if (!isRecord(row)) {
@@ -1736,7 +1855,7 @@ function replaceLocalSessionAgentTeamSnapshot(
   database: SqliteDatabase,
   sessionId: string,
   slot: "effective" | "pending",
-  snapshot: { members: Array<{ name: string; agentMarkdown: string }> } | undefined,
+  snapshot: LocalConsoleAgentTeamSnapshot | undefined,
 ): void {
   database.prepare(
     "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = ?",
@@ -1746,20 +1865,34 @@ function replaceLocalSessionAgentTeamSnapshot(
   }
   const insert = database.prepare(
     `INSERT INTO session_agent_team_members
-      (session_id, slot, member_name, agent_markdown, sort_order)
-     VALUES (?, ?, ?, ?, ?)`,
+      (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   snapshot.members.forEach((member, index) => {
-    insert.run(sessionId, slot, member.name, member.agentMarkdown, index);
+    const profile = member.executionProfile;
+    insert.run(
+      sessionId,
+      slot,
+      member.name,
+      member.agentMarkdown,
+      profile?.cli ?? null,
+      profile?.model ?? null,
+      profile?.effort ?? null,
+      index,
+    );
   });
 }
 
 function listLocalSessionAgentTeamSnapshot(
   database: SqliteDatabase,
   sessionId: string,
-): { members: Array<{ name: string; agentMarkdown: string }> } | null {
+): { members: Array<{
+  name: string;
+  agentMarkdown: string;
+  executionProfile: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+}> } | null {
   const rows = database.prepare(
-    `SELECT member_name, agent_markdown
+    `SELECT member_name, agent_markdown, execution_cli, execution_model, execution_effort
      FROM session_agent_team_members
      WHERE session_id = ? AND slot = 'effective'
      ORDER BY sort_order ASC, member_name ASC`,
@@ -1775,6 +1908,7 @@ function listLocalSessionAgentTeamSnapshot(
       return {
         name: readString(row.member_name, "member_name"),
         agentMarkdown: readString(row.agent_markdown, "agent_markdown"),
+        executionProfile: readExecutionProfile(row),
       };
     }),
   };
@@ -2002,8 +2136,9 @@ function createLocalChildSession(
       id: parentAgentTeamId ?? undefined,
     });
     database.prepare(
-      `INSERT INTO session_agent_team_members (session_id, slot, member_name, agent_markdown, sort_order)
-       SELECT ?, 'effective', member_name, agent_markdown, sort_order
+      `INSERT INTO session_agent_team_members
+        (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
+       SELECT ?, 'effective', member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'effective'
        ON CONFLICT(session_id, slot, member_name) DO NOTHING`,
@@ -3718,6 +3853,29 @@ function readNullableAgentTeamOwnership(value: unknown): "system" | "user" | nul
     return ownership;
   }
   throw new Error("Invalid agent_team_ownership");
+}
+
+function readExecutionProfile(row: Record<string, unknown>): {
+  cli: "codex" | "kimi";
+  model: string;
+  effort: string;
+} | null {
+  const cli = row.execution_cli;
+  const model = row.execution_model;
+  const effort = row.execution_effort;
+  if (cli == null && model == null && effort == null) {
+    return null;
+  }
+  if (
+    (cli !== "codex" && cli !== "kimi")
+    || typeof model !== "string"
+    || model.length === 0
+    || typeof effort !== "string"
+    || effort.length === 0
+  ) {
+    throw new Error("Invalid local session execution profile");
+  }
+  return { cli, model, effort };
 }
 
 function readLocalWorkspaceMode(value: unknown, field: string): "direct" | "worktree" {

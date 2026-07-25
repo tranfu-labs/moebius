@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { serializeTeamDefinition, type TeamDefinition } from "../src/team-model.js";
 import {
   addTeamMember,
-  BuiltInTeamReadOnlyError,
   createUserTeam,
   determineTeamOwnership,
   duplicateBuiltInTeamDirectory,
@@ -112,7 +111,7 @@ display_name: 开发经理
     });
   });
 
-  it("rejects direct data-layer writes to a built-in team before changing any file", async () => {
+  it("allows direct data-layer writes to official team content without changing its ownership", async () => {
     const dataRoot = await makeDataRoot();
     const location = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
     const manifestPath = path.join(location.directory, "team.json");
@@ -121,14 +120,11 @@ display_name: 开发经理
     await fs.writeFile(manifestPath, serializeTeamDefinition(usableDefinition), "utf8");
     await fs.writeFile(agentPath, "# 原始经理\n\n原始描述\n", "utf8");
 
-    await expect(writeTeamDefinition(location, { ...usableDefinition, name: "已修改" })).rejects.toBeInstanceOf(
-      BuiltInTeamReadOnlyError,
-    );
-    await expect(writeMemberAgentMarkdown(location, "manager", "# 已修改\n")).rejects.toMatchObject({
-      code: "BUILT_IN_TEAM_READ_ONLY",
-    });
-    expect(await fs.readFile(manifestPath, "utf8")).toBe(serializeTeamDefinition(usableDefinition));
-    expect(await fs.readFile(agentPath, "utf8")).toBe("# 原始经理\n\n原始描述\n");
+    await writeTeamDefinition(location, { ...usableDefinition, name: "已修改" });
+    await writeMemberAgentMarkdown(location, "manager", "# 已修改\n");
+    expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).toMatchObject({ name: "已修改" });
+    expect(await fs.readFile(agentPath, "utf8")).toBe("# 已修改\n");
+    expect(determineTeamOwnership(dataRoot, agentPath)).toBe("system");
   });
 
   it("switches the primary Agent only to a current member with a readable AGENT.md", async () => {
@@ -155,7 +151,7 @@ display_name: 开发经理
     });
   });
 
-  it("keeps externally modified files under .system owned and read-only", async () => {
+  it("keeps externally modified files under .system owned and editable", async () => {
     const dataRoot = await makeDataRoot();
     const location = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
     const agentPath = path.join(location.directory, "members", "manager", "AGENT.md");
@@ -166,10 +162,8 @@ display_name: 开发经理
     const [listed] = await listTeamLocations(dataRoot);
     expect(listed?.ownership).toBe("system");
     expect(determineTeamOwnership(dataRoot, agentPath)).toBe("system");
-    await expect(writeMemberAgentMarkdown(location, "manager", "# UI 绕过写入\n")).rejects.toMatchObject({
-      code: "BUILT_IN_TEAM_READ_ONLY",
-    });
-    expect(await fs.readFile(agentPath, "utf8")).toBe("# 外部修改的经理\n\n仍然是内置内容\n");
+    await writeMemberAgentMarkdown(location, "manager", "# UI 写入\n");
+    expect(await fs.readFile(agentPath, "utf8")).toBe("# UI 写入\n");
   });
 
   it("copies a usable built-in team into an editable user team that can add Agents", async () => {

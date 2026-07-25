@@ -7,6 +7,15 @@ import type {
   LocalConsoleSessionSummary,
 } from "../../src/local-console/types.js";
 import { resolveRecordedTeamLocation } from "./team-record-store.js";
+import {
+  readOfficialTeamStateDocument,
+  readTeamExecutionBindings,
+} from "./team-management-store.js";
+import {
+  resolveEffectiveExecutionProfile,
+  type ExecutionProfile,
+  type ExecutionProfileBinding,
+} from "./team-execution-profile.js";
 import { readTeamSnapshot, resolveTeamLocation } from "./team-store.js";
 
 export class AgentTeamRosterUnavailableError extends Error {
@@ -46,10 +55,17 @@ export async function loadAgentTeamSnapshot(input: {
   if (snapshot.status !== "usable") {
     throw new AgentTeamRosterUnavailableError(input.teamId);
   }
+  const profiles = await loadEffectiveProfiles({
+    dataRoot: input.dataRoot,
+    ownership: input.ownership,
+    teamId: input.teamId,
+    memberSlugs: snapshot.members.map((member) => member.slug),
+  });
   return {
     members: orderPrimaryFirst(snapshot).map((member) => ({
       name: member.slug,
       agentMarkdown: member.agentMarkdown,
+      executionProfile: profiles[member.slug] ?? null,
     })),
   };
 }
@@ -111,4 +127,30 @@ async function listSharedAgentFiles(directory: string): Promise<LocalConsoleAgen
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => ({ name: path.basename(entry.name, ".md"), path: path.join(directory, entry.name) }))
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function loadEffectiveProfiles(input: {
+  dataRoot: string;
+  ownership: "system" | "user";
+  teamId: string;
+  memberSlugs: readonly string[];
+}): Promise<Record<string, ExecutionProfile>> {
+  const bindings = await readTeamExecutionBindings(input);
+  const recommendations = input.ownership === "system"
+    ? (await readOfficialTeamStateDocument(input.dataRoot)).teams[input.teamId]?.appliedRecommendations ?? {}
+    : {};
+  return Object.fromEntries(input.memberSlugs.map((slug) => {
+    const binding: ExecutionProfileBinding = bindings[slug] ?? (
+      recommendations[slug] === undefined
+        ? {
+            source: "explicit",
+            profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+          }
+        : { source: "recommended" }
+    );
+    return [slug, resolveEffectiveExecutionProfile({
+      binding,
+      recommendation: recommendations[slug],
+    })];
+  }));
 }

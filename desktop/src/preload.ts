@@ -24,10 +24,18 @@ import {
   type AgentTeamMemberWriteRequest,
   type AgentTeamMemberDuplicateRequest,
   type AgentTeamMemberTrashRequest,
+  type AgentTeamExecutionCapabilityRequest,
+  type AgentTeamExecutionProfileDocument,
+  type AgentTeamExecutionProfileSaveRequest,
+  type AgentTeamOfficialUpdateCommitRequest,
+  type AgentTeamOfficialUpdateCommitResponse,
+  type AgentTeamOfficialUpdatePrepareResponse,
+  type AgentTeamOfficialUpdateRequest,
   type AgentTeamPrimaryAgentWriteRequest,
   type AgentTeamUpdateInformationRequest,
   type AgentTeamTrashUserRequest,
 } from "./team-ipc-contract.js";
+import type { ExecutionCapabilitySnapshot } from "./team-execution-profile.js";
 import {
   TEAM_REPAIR_IPC_CHANNELS,
   type AgentTeamRelocateRequest,
@@ -82,6 +90,22 @@ export interface MoebiusDesktopApi {
   duplicateAgentTeamMember(request: AgentTeamMemberDuplicateRequest): Promise<AgentTeamMemberAddResponse>;
   trashAgentTeamMember(request: AgentTeamMemberTrashRequest): Promise<AgentTeamListItem>;
   trashUserAgentTeam(request: AgentTeamTrashUserRequest): Promise<void>;
+  readAgentTeamExecutionProfile(request: AgentTeamMemberRequest): Promise<AgentTeamExecutionProfileDocument>;
+  saveAgentTeamExecutionProfile(
+    request: AgentTeamExecutionProfileSaveRequest,
+  ): Promise<AgentTeamExecutionProfileDocument>;
+  restoreAgentTeamRecommendedProfile(
+    request: AgentTeamMemberRequest,
+  ): Promise<AgentTeamExecutionProfileDocument>;
+  refreshAgentTeamExecutionCapabilities(
+    request: AgentTeamExecutionCapabilityRequest,
+  ): Promise<ExecutionCapabilitySnapshot>;
+  prepareAgentTeamOfficialUpdate(
+    request: AgentTeamOfficialUpdateRequest,
+  ): Promise<AgentTeamOfficialUpdatePrepareResponse>;
+  applyAgentTeamOfficialUpdate(
+    request: AgentTeamOfficialUpdateCommitRequest,
+  ): Promise<AgentTeamOfficialUpdateCommitResponse>;
   checkAgentTeamMemberExternalChange(
     request: AgentTeamExternalChangeRequest,
   ): Promise<AgentTeamExternalChangeResponse>;
@@ -188,6 +212,42 @@ const api: MoebiusDesktopApi = {
   },
   trashUserAgentTeam(request) {
     return ipcRenderer.invoke(TEAM_IPC_CHANNELS.trashUserTeam, request) as Promise<void>;
+  },
+  readAgentTeamExecutionProfile(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.readExecutionProfile,
+      request,
+    ) as Promise<AgentTeamExecutionProfileDocument>;
+  },
+  saveAgentTeamExecutionProfile(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.saveExecutionProfile,
+      request,
+    ) as Promise<AgentTeamExecutionProfileDocument>;
+  },
+  restoreAgentTeamRecommendedProfile(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.restoreRecommendedProfile,
+      request,
+    ) as Promise<AgentTeamExecutionProfileDocument>;
+  },
+  refreshAgentTeamExecutionCapabilities(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.refreshExecutionCapabilities,
+      request,
+    ) as Promise<ExecutionCapabilitySnapshot>;
+  },
+  prepareAgentTeamOfficialUpdate(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.prepareOfficialUpdate,
+      request,
+    ) as Promise<AgentTeamOfficialUpdatePrepareResponse>;
+  },
+  applyAgentTeamOfficialUpdate(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.applyOfficialUpdate,
+      request,
+    ) as Promise<AgentTeamOfficialUpdateCommitResponse>;
   },
   checkAgentTeamMemberExternalChange(request) {
     return ipcRenderer.invoke(

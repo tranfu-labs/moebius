@@ -219,7 +219,7 @@ description: 描述这个 Agent 负责什么。
     });
   });
 
-  it("reads and writes user member documents while preserving the store's built-in write rejection", async () => {
+  it("reads and writes both user and official member documents", async () => {
     const dataRoot = await makeDataRoot();
     const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
     const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
@@ -240,8 +240,8 @@ description: 描述这个 Agent 负责什么。
       teamId: "development",
       ownership: "system",
       memberSlug: "manager",
-      agentMarkdown: "# 不应写入\n",
-    })).rejects.toMatchObject({ code: "BUILT_IN_TEAM_READ_ONLY" });
+      agentMarkdown: "# 官方团队新经理\n",
+    })).resolves.toMatchObject({ displayName: "官方团队新经理" });
   });
 
   it("rejects malformed member requests before resolving a disk location", async () => {
@@ -253,7 +253,7 @@ description: 描述这个 Agent 负责什么。
     })).rejects.toMatchObject({ code: "AGENT_TEAM_IPC_REQUEST_INVALID" });
   });
 
-  it("persists a user primary Agent and rejects a direct built-in write without changing its manifest", async () => {
+  it("persists primary Agent changes for user and official teams", async () => {
     const dataRoot = await makeDataRoot();
     const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
     const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
@@ -262,8 +262,6 @@ description: 描述这个 Agent 负责什么。
       createUsableTeam(builtIn, twoMemberDefinition),
       createUsableTeam(user, twoMemberDefinition),
     ]);
-    const builtInManifest = await fs.readFile(path.join(builtIn.directory, "team.json"), "utf8");
-
     await expect(setAgentTeamPrimaryAgent(dataRoot, {
       teamId: "my-team",
       ownership: "user",
@@ -275,8 +273,9 @@ description: 描述这个 Agent 负责什么。
       teamId: "development",
       ownership: "system",
       primaryAgentSlug: "developer",
-    })).rejects.toMatchObject({ code: "BUILT_IN_TEAM_READ_ONLY" });
-    expect(await fs.readFile(path.join(builtIn.directory, "team.json"), "utf8")).toBe(builtInManifest);
+    })).resolves.toMatchObject({
+      definition: { primaryAgentSlug: "developer" },
+    });
   });
 
   it("duplicates a built-in team as a user-team list item and rejects user-team sources", async () => {

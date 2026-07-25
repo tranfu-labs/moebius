@@ -40,8 +40,14 @@ import {
   duplicateBuiltInAgentTeam,
   duplicateAgentTeamMember,
   duplicateUserAgentTeam,
+  applyAgentTeamOfficialUpdate,
   listAgentTeams,
+  prepareAgentTeamOfficialUpdate,
   readAgentTeamMember,
+  readAgentTeamExecutionProfile,
+  refreshAgentTeamExecutionCapability,
+  restoreAgentTeamRecommendedProfile,
+  saveAgentTeamExecutionProfile,
   setAgentTeamPrimaryAgent,
   trashAgentTeamMember,
   trashUserAgentTeam,
@@ -453,6 +459,24 @@ ipcMain.handle(TEAM_IPC_CHANNELS.trashMember, async (_event, request: unknown) =
 
 ipcMain.handle(TEAM_IPC_CHANNELS.trashUserTeam, async (_event, request: unknown) =>
   trashUserAgentTeam(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.readExecutionProfile, async (_event, request: unknown) =>
+  readAgentTeamExecutionProfile(status.dataRoot, request));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.saveExecutionProfile, async (_event, request: unknown) =>
+  saveAgentTeamExecutionProfile(status.dataRoot, request));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
+  restoreAgentTeamRecommendedProfile(status.dataRoot, request));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.refreshExecutionCapabilities, async (_event, request: unknown) =>
+  refreshAgentTeamExecutionCapability(request));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.prepareOfficialUpdate, async (_event, request: unknown) =>
+  prepareAgentTeamOfficialUpdate(status.dataRoot, request));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.applyOfficialUpdate, async (_event, request: unknown) =>
+  applyAgentTeamOfficialUpdate(status.dataRoot, request));
 
 ipcMain.handle(TEAM_EXTERNAL_CHANGE_IPC_CHANNEL, async (_event, request: unknown) =>
   checkAgentTeamMemberExternalChange(status.dataRoot, request));

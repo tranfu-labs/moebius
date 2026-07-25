@@ -49,6 +49,7 @@ import {
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
   type LocalConsoleAgentTeamSnapshot,
+  type LocalConsoleExecutionProfile,
   type LocalConsoleSnapshot,
   type LocalConsoleStateSnapshot,
   type LocalConsoleSessionView,
@@ -56,6 +57,19 @@ import {
   type LocalConsoleWorkspaceDiffSummary,
   type LocalConsoleStore,
 } from "./types.js";
+import {
+  createLocalExecutionRunner,
+  type LocalExecutionRunner,
+} from "./execution-driver.js";
+import {
+  createRunExecutionContext,
+  legacyCodexContextFingerprint,
+  planLocalExecutionRecovery,
+  readExecutionSessionLinks,
+  readRunExecutionContexts,
+  type LocalExecutionSessionLinkFact,
+  type LocalRunExecutionContextFact,
+} from "./execution-context.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
 import {
   generateLocalWorkspaceDiff,
@@ -79,7 +93,6 @@ import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
 import { readCodexThreadLinks } from "./codex-thread-link.js";
 import {
   buildLocalResumePrompt,
-  planLocalCodexRecovery,
   readLocalCodexRecoveryFacts,
   type LocalCodexResumeConsumedFact,
   type LocalCodexResumeIntentFact,
@@ -97,6 +110,7 @@ export interface LocalConsoleAgentFile {
   name: string;
   path?: string;
   agentMarkdown?: string;
+  executionProfile?: LocalConsoleExecutionProfile | null;
 }
 
 export interface LocalConsoleRuntimeOptions {
@@ -109,6 +123,7 @@ export interface LocalConsoleRuntimeOptions {
     session: LocalConsoleSessionSummary,
   ) => Promise<{ health: "usable" | "deleted" | "needs-repair"; reason: string | null }>;
   runCodex: (options: CodexRunOptions) => Promise<CodexRunResult>;
+  runExecution?: LocalExecutionRunner;
   makeRunDir: (count: number, now?: Date) => string;
   projectRoot: string;
   workdirRoot: string;
@@ -205,6 +220,7 @@ export class LocalConsoleRuntime {
   private readonly failureRetryLimit: number;
   private readonly staleRunningGraceMs: number;
   private readonly now: () => Date;
+  private readonly executionRunner: LocalExecutionRunner;
   private readonly processingSessions = new Set<string>();
   private readonly pendingProcessSessions = new Set<string>();
   private readonly workerLaneTails = new Map<string, Promise<void>>();
@@ -223,6 +239,9 @@ export class LocalConsoleRuntime {
     this.failureRetryLimit = options.failureRetryLimit ?? LOCAL_CONSOLE_FAILURE_RETRY_LIMIT;
     this.staleRunningGraceMs = options.staleRunningGraceMs ?? 5_000;
     this.now = options.now ?? (() => new Date());
+    this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
+      runCodex: options.runCodex,
+    });
   }
 
   get sqlitePath(): string {
@@ -728,10 +747,14 @@ export class LocalConsoleRuntime {
     );
     if (resumeRunId !== undefined) {
       const recoveryStore = this.codexRecoveryFactStore();
-      const links = recoveryStore === null
-        ? []
-        : await readCodexThreadLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId);
-      const link = links.find((candidate) => candidate.runId === resumeRunId);
+      const [executionLinks, codexLinks] = recoveryStore === null
+        ? [[], []]
+        : await Promise.all([
+            readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
+            readCodexThreadLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
+          ]);
+      const link = executionLinks.find((candidate) => candidate.runId === resumeRunId)
+        ?? codexLinks.find((candidate) => candidate.runId === resumeRunId);
       if (link !== undefined) {
         await this.storeCall("local-console-store-record-edit-resume", () =>
           recoveryStore!.recordCodexResumeIntent({
@@ -760,10 +783,14 @@ export class LocalConsoleRuntime {
       return false;
     }
     const recoveryStore = this.codexRecoveryFactStore();
-    const links = recoveryStore === null
-      ? []
-      : await readCodexThreadLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId);
-    const link = links.find((candidate) => candidate.runId === input.runId);
+    const [executionLinks, codexLinks] = recoveryStore === null
+      ? [[], []]
+      : await Promise.all([
+          readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
+          readCodexThreadLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
+        ]);
+    const link = executionLinks.find((candidate) => candidate.runId === input.runId)
+      ?? codexLinks.find((candidate) => candidate.runId === input.runId);
     const source = link === undefined
       ? messages.find((message) =>
           message.runId === input.runId
@@ -1157,6 +1184,7 @@ export class LocalConsoleRuntime {
             : persistedSnapshot.members.map((member) => ({
                 name: member.name,
                 agentMarkdown: member.agentMarkdown,
+                executionProfile: member.executionProfile ?? null,
               }));
           if (this.inactiveSessions.has(sessionId)) {
             return;
@@ -1266,16 +1294,8 @@ export class LocalConsoleRuntime {
             continue;
           }
 
-          const agentMarkdown = selectedAgent.agentMarkdown
+          const currentAgentMarkdown = selectedAgent.agentMarkdown
             ?? await fs.readFile(requireAgentFilePath(selectedAgent), "utf8");
-          const agentManifest = parseAgentManifest(agentMarkdown);
-          const fullPrompt = buildLocalAgentPrompt({
-            role: trigger.role,
-            agentMarkdown: agentManifest.body,
-            timeline,
-            primaryAgent: primaryAgent ?? trigger.role,
-            availableAgentNames: agentFiles.map((agent) => agent.name),
-          });
 
           activeRunDir = this.options.makeRunDir(messages.length, this.now());
           const resolvedRunDir = path.resolve(activeRunDir);
@@ -1289,52 +1309,89 @@ export class LocalConsoleRuntime {
           );
 
           const controller = new AbortController();
-          const workspace = await this.resolveWorkspace(sessionId, workspaceSource, controller.signal);
+          const currentWorkspace = await this.resolveWorkspace(sessionId, workspaceSource, controller.signal);
           if (this.inactiveSessions.has(sessionId)) {
             return;
           }
           const agentContents = await Promise.all(agentFiles.map(async (agent) => ({
             name: agent.name,
             agentMarkdown: agent.name === selectedAgent.name
-              ? agentMarkdown
+              ? currentAgentMarkdown
               : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
+            executionProfile: agent.executionProfile ?? null,
           })));
-          const contextFingerprint = localCodexContextFingerprint({
+          const currentContext = createRunExecutionContext({
+            sessionId,
+            runId: nextRunId,
+            sourceMessageId: claimedMessage.id,
             role: trigger.role,
-            agentMarkdown,
-            agentContents,
-            cwd: workspace.cwd,
-            workspaceMode: workspace.mode,
+            profile: selectedAgent.executionProfile ?? null,
+            workspace: currentWorkspace,
+            team: agentContents,
+            recordedAt: this.nowIso(),
           });
           const recoveryStore = this.codexRecoveryFactStore();
-          const [recoveryFacts, threadLinks] = recoveryStore === null
+          const [recoveryFacts, threadLinks, executionLinks, runContexts] = recoveryStore === null
             ? [
                 { intents: [], consumedIntentIds: new Set<string>() },
+                [],
+                [],
                 [],
               ]
             : await Promise.all([
                 readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
                 readCodexThreadLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
+                readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
+                readRunExecutionContexts(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
               ]);
-          let recoveryPlan = planLocalCodexRecovery({
+          let recoveryPlan = planLocalExecutionRecovery({
             sourceMessageId: claimedMessage.id,
             role: trigger.role,
-            contextFingerprint,
+            currentContext,
             intents: recoveryFacts.intents,
             consumedIntentIds: recoveryFacts.consumedIntentIds,
-            threadLinks,
+            executionLinks,
+            legacyCodexLinks: threadLinks,
+            contexts: runContexts,
           });
-          if (recoveryPlan.kind === "resume") {
+          if (recoveryPlan.kind === "unsafe") {
+            throw new Error(
+              `Unsafe execution recovery: immutable context is unavailable for ${recoveryPlan.intent.targetRunId}`,
+            );
+          }
+          if (recoveryPlan.kind === "resume" && recoveryPlan.context.engine === "codex") {
             const available = await (this.options.isCodexThreadAvailable
-              ?? defaultCodexThreadAvailability)(recoveryPlan.threadId);
+              ?? defaultCodexThreadAvailability)(recoveryPlan.externalSessionId);
             if (!available) {
               recoveryPlan = {
                 kind: "full-fallback",
                 intent: recoveryPlan.intent,
+                context: recoveryPlan.context,
                 reason: "rollout-unavailable",
               };
             }
           }
+          const executionContext = {
+            ...recoveryPlan.context,
+            sessionId,
+            runId: nextRunId,
+            sourceMessageId: claimedMessage.id,
+            recordedAt: this.nowIso(),
+          };
+          const workspace = workspaceFromExecutionContext(executionContext);
+          const executingAgent = executionContext.team.find((member) => member.name === trigger.role);
+          if (executingAgent === undefined) {
+            throw new Error(`Run execution context is missing Agent: ${trigger.role}`);
+          }
+          const agentManifest = parseAgentManifest(executingAgent.agentMarkdown);
+          const fullPrompt = buildLocalAgentPrompt({
+            role: trigger.role,
+            agentMarkdown: agentManifest.body,
+            timeline,
+            primaryAgent: executionContext.team[0]?.name ?? trigger.role,
+            availableAgentNames: executionContext.team.map((agent) => agent.name),
+          });
+          await this.recordRunExecutionContext(executionContext);
           const attachmentMessages = recoveryPlan.kind === "resume" && recoveryPlan.intent.reason === "edit-resend"
             ? [claimedMessage]
             : timelineMessages;
@@ -1387,12 +1444,13 @@ export class LocalConsoleRuntime {
           let progressFactTail = Promise.resolve();
           const result = await (async () => {
             try {
-              return await this.options.runCodex({
+              return await this.executionRunner({
                 prompt,
                 runDir: activeRunDir,
                 cwd: workspace.cwd,
+                profile: executionContext.profile,
                 mode: recoveryPlan.kind === "resume"
-                  ? { kind: "resume", threadId: recoveryPlan.threadId }
+                  ? { kind: "resume", externalSessionId: recoveryPlan.externalSessionId }
                   : { kind: "full" },
                 signal: controller.signal,
                 ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
@@ -1414,20 +1472,35 @@ export class LocalConsoleRuntime {
                         })));
                   }
                 },
-                onThreadStarted: async (threadId) => {
+                onSessionStarted: async ({ engine, externalSessionId }) => {
                   const active = this.activeRuns.get(nextRunId);
                   if (active?.runId === nextRunId) {
-                    active.threadId = threadId;
+                    active.threadId = externalSessionId;
                   }
-                  await this.recordCodexThreadLink({
+                  await this.recordExecutionSessionLink({
                     sessionId,
                     runId: nextRunId,
                     sourceMessageId: claimedMessage.id,
                     role: trigger.role,
-                    threadId,
+                    engine,
+                    externalSessionId,
                     startedAt: this.nowIso(),
-                    contextFingerprint,
+                    profileFingerprint: executionContext.profileFingerprint,
+                    contextFingerprint: executionContext.contextFingerprint,
                   });
+                  if (engine === "codex") {
+                    await this.recordCodexThreadLink({
+                      sessionId,
+                      runId: nextRunId,
+                      sourceMessageId: claimedMessage.id,
+                      role: trigger.role,
+                      threadId: externalSessionId,
+                      startedAt: this.nowIso(),
+                      contextFingerprint: executionContext.profile === null
+                        ? legacyCodexContextFingerprint(executionContext)
+                        : executionContext.contextFingerprint,
+                    });
+                  }
                 },
               });
             } finally {
@@ -1439,7 +1512,7 @@ export class LocalConsoleRuntime {
             await this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, result);
             return;
           }
-          if (recoveryStore !== null) {
+          if (recoveryStore !== null && executionContext.engine === "codex") {
             await this.storeCall("local-console-store-record-codex-usage", () =>
               recoveryStore.recordCodexRunUsage({
                 sessionId,
@@ -1627,40 +1700,38 @@ export class LocalConsoleRuntime {
     }
 
     const runId = `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
-    const agentMarkdown = input.selectedAgent.agentMarkdown
+    const currentAgentMarkdown = input.selectedAgent.agentMarkdown
       ?? await fs.readFile(requireAgentFilePath(input.selectedAgent), "utf8");
-    const agentManifest = parseAgentManifest(agentMarkdown);
-    const fullPrompt = buildLocalAgentPrompt({
-      role: input.role,
-      agentMarkdown: agentManifest.body,
-      timeline: input.timeline,
-      primaryAgent: input.agentFiles[0]?.name ?? input.role,
-      availableAgentNames: input.agentFiles.map((agent) => agent.name),
-    });
 
     const runDir = path.resolve(this.options.makeRunDir(input.timelineMessages.length, this.now()));
     const controller = new AbortController();
-    const workspace = await this.resolveWorkspace(input.sessionId, input.workspaceSource, controller.signal);
+    const currentWorkspace = await this.resolveWorkspace(input.sessionId, input.workspaceSource, controller.signal);
     if (this.closing || this.inactiveSessions.has(input.sessionId)) {
       return;
     }
     const agentContents = await Promise.all(input.agentFiles.map(async (agent) => ({
       name: agent.name,
       agentMarkdown: agent.name === input.selectedAgent.name
-        ? agentMarkdown
+        ? currentAgentMarkdown
         : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
+      executionProfile: agent.executionProfile ?? null,
     })));
-    const contextFingerprint = localCodexContextFingerprint({
+    const currentContext = createRunExecutionContext({
+      sessionId: input.sessionId,
+      runId,
+      sourceMessageId: input.sourceMessage.id,
       role: input.role,
-      agentMarkdown,
-      agentContents,
-      cwd: workspace.cwd,
-      workspaceMode: workspace.mode,
+      profile: input.selectedAgent.executionProfile ?? null,
+      workspace: currentWorkspace,
+      team: agentContents,
+      recordedAt: this.nowIso(),
     });
     const recoveryStore = this.codexRecoveryFactStore();
-    const [recoveryFacts, threadLinks] = recoveryStore === null
+    const [recoveryFacts, threadLinks, executionLinks, runContexts] = recoveryStore === null
       ? [
           { intents: [], consumedIntentIds: new Set<string>() },
+          [],
+          [],
           [],
         ]
       : await Promise.all([
@@ -1672,26 +1743,63 @@ export class LocalConsoleRuntime {
             recoveryStore.getSessionFactLogPath(input.sessionId),
             input.sessionId,
           ),
+          readExecutionSessionLinks(
+            recoveryStore.getSessionFactLogPath(input.sessionId),
+            input.sessionId,
+          ),
+          readRunExecutionContexts(
+            recoveryStore.getSessionFactLogPath(input.sessionId),
+            input.sessionId,
+          ),
         ]);
-    let recoveryPlan = planLocalCodexRecovery({
+    let recoveryPlan = planLocalExecutionRecovery({
       sourceMessageId: input.sourceMessage.id,
       role: input.role,
-      contextFingerprint,
+      currentContext,
       intents: recoveryFacts.intents,
       consumedIntentIds: recoveryFacts.consumedIntentIds,
-      threadLinks,
+      executionLinks,
+      legacyCodexLinks: threadLinks,
+      contexts: runContexts,
     });
-    if (recoveryPlan.kind === "resume") {
+    if (recoveryPlan.kind === "unsafe") {
+      throw new Error(
+        `Unsafe execution recovery: immutable context is unavailable for ${recoveryPlan.intent.targetRunId}`,
+      );
+    }
+    if (recoveryPlan.kind === "resume" && recoveryPlan.context.engine === "codex") {
       const available = await (this.options.isCodexThreadAvailable
-        ?? defaultCodexThreadAvailability)(recoveryPlan.threadId);
+        ?? defaultCodexThreadAvailability)(recoveryPlan.externalSessionId);
       if (!available) {
         recoveryPlan = {
           kind: "full-fallback",
           intent: recoveryPlan.intent,
+          context: recoveryPlan.context,
           reason: "rollout-unavailable",
         };
       }
     }
+    const executionContext = {
+      ...recoveryPlan.context,
+      sessionId: input.sessionId,
+      runId,
+      sourceMessageId: input.sourceMessage.id,
+      recordedAt: this.nowIso(),
+    };
+    const workspace = workspaceFromExecutionContext(executionContext);
+    const executingAgent = executionContext.team.find((member) => member.name === input.role);
+    if (executingAgent === undefined) {
+      throw new Error(`Run execution context is missing Agent: ${input.role}`);
+    }
+    const agentManifest = parseAgentManifest(executingAgent.agentMarkdown);
+    const fullPrompt = buildLocalAgentPrompt({
+      role: input.role,
+      agentMarkdown: agentManifest.body,
+      timeline: input.timeline,
+      primaryAgent: executionContext.team[0]?.name ?? input.role,
+      availableAgentNames: executionContext.team.map((agent) => agent.name),
+    });
+    await this.recordRunExecutionContext(executionContext);
     const preparedAttachments = this.options.attachmentManager === undefined
       ? { promptSuffix: "", imagePaths: [] as string[] }
       : await this.options.attachmentManager.prepareRunAttachments({
@@ -1751,12 +1859,13 @@ export class LocalConsoleRuntime {
     try {
       const result = await (async () => {
         try {
-          return await this.options.runCodex({
+          return await this.executionRunner({
             prompt,
             runDir,
             cwd: workspace.cwd,
+            profile: executionContext.profile,
             mode: recoveryPlan.kind === "resume"
-              ? { kind: "resume", threadId: recoveryPlan.threadId }
+              ? { kind: "resume", externalSessionId: recoveryPlan.externalSessionId }
               : { kind: "full" },
             signal: controller.signal,
             ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
@@ -1778,20 +1887,35 @@ export class LocalConsoleRuntime {
                     })));
               }
             },
-            onThreadStarted: async (threadId) => {
+            onSessionStarted: async ({ engine, externalSessionId }) => {
               const active = this.activeRuns.get(runId);
               if (active?.sessionId === input.sessionId) {
-                active.threadId = threadId;
+                active.threadId = externalSessionId;
               }
-              await this.recordCodexThreadLink({
+              await this.recordExecutionSessionLink({
                 sessionId: input.sessionId,
                 runId,
                 sourceMessageId: input.sourceMessage.id,
                 role: input.role,
-                threadId,
+                engine,
+                externalSessionId,
                 startedAt: this.nowIso(),
-                contextFingerprint,
+                profileFingerprint: executionContext.profileFingerprint,
+                contextFingerprint: executionContext.contextFingerprint,
               });
+              if (engine === "codex") {
+                await this.recordCodexThreadLink({
+                  sessionId: input.sessionId,
+                  runId,
+                  sourceMessageId: input.sourceMessage.id,
+                  role: input.role,
+                  threadId: externalSessionId,
+                  startedAt: this.nowIso(),
+                  contextFingerprint: executionContext.profile === null
+                    ? legacyCodexContextFingerprint(executionContext)
+                    : executionContext.contextFingerprint,
+                });
+              }
             },
           });
         } finally {
@@ -1803,7 +1927,7 @@ export class LocalConsoleRuntime {
         await this.recordDetachedWorkerResult(input.sessionId, runId, result);
         return;
       }
-      if (recoveryStore !== null) {
+      if (recoveryStore !== null && executionContext.engine === "codex") {
         await this.storeCall("local-console-store-record-worker-codex-usage", () =>
           recoveryStore.recordCodexRunUsage({
             sessionId: input.sessionId,
@@ -2728,6 +2852,28 @@ export class LocalConsoleRuntime {
     return await withLocalConsoleTimeout(Promise.resolve().then(operation), this.storeTimeoutMs, label);
   }
 
+  private async recordRunExecutionContext(
+    input: LocalRunExecutionContextFact,
+  ): Promise<void> {
+    const record = this.options.store.recordRunExecutionContext;
+    if (record === undefined) {
+      return;
+    }
+    await this.storeCall("local-console-store-record-run-execution-context", () =>
+      record.call(this.options.store, input));
+  }
+
+  private async recordExecutionSessionLink(
+    input: LocalExecutionSessionLinkFact,
+  ): Promise<void> {
+    const record = this.options.store.recordExecutionSessionLink;
+    if (record === undefined) {
+      return;
+    }
+    await this.storeCall("local-console-store-record-execution-session-link", () =>
+      record.call(this.options.store, input));
+  }
+
   private async recordCodexThreadLink(input: {
     sessionId: string;
     runId: string;
@@ -2785,25 +2931,18 @@ export class LocalConsoleRuntime {
   }
 }
 
-function localCodexContextFingerprint(input: {
-  role: string;
-  agentMarkdown: string;
-  agentContents: Array<{ name: string; agentMarkdown: string }>;
-  cwd: string;
-  workspaceMode: string;
-}): string {
-  return crypto.createHash("sha256").update(JSON.stringify({
-    role: input.role,
-    agentMarkdown: input.agentMarkdown,
-    team: [...input.agentContents]
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .map((agent) => ({
-        name: agent.name,
-        agentMarkdown: agent.agentMarkdown,
-      })),
-    cwd: path.resolve(input.cwd),
-    workspaceMode: input.workspaceMode,
-  })).digest("hex");
+function workspaceFromExecutionContext(
+  context: LocalRunExecutionContextFact,
+): ResolvedLocalWorkspace {
+  return {
+    cwd: path.resolve(context.workspace.cwd),
+    mode: context.workspace.mode === "worktree" ? "worktree" : "direct",
+    worktreePath: context.workspace.worktreePath,
+    worktreeUnavailableReason: context.workspace.worktreeUnavailableReason,
+    branchName: context.workspace.branchName,
+    baseRef: context.workspace.baseRef,
+    originalRepoRoot: context.workspace.originalRepoRoot,
+  };
 }
 
 async function defaultCodexThreadAvailability(threadId: string): Promise<boolean> {

@@ -131,10 +131,17 @@ export type LocalConsoleContinuationStatus =
 export interface LocalConsoleAgentTeamSnapshotMember {
   name: string;
   agentMarkdown: string;
+  executionProfile?: LocalConsoleExecutionProfile | null;
 }
 
 export interface LocalConsoleAgentTeamSnapshot {
   members: LocalConsoleAgentTeamSnapshotMember[];
+}
+
+export interface LocalConsoleExecutionProfile {
+  cli: "codex" | "kimi";
+  model: string;
+  effort: string;
 }
 
 export interface LocalConsoleMemberIdentity {
@@ -577,6 +584,8 @@ export interface LocalConsoleStore {
     startedAt: string;
     contextFingerprint?: string | null;
   }): Promise<void>;
+  recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
+  recordExecutionSessionLink?(input: import("./execution-context.js").LocalExecutionSessionLinkFact): Promise<void>;
   recordSystemAndComplete(input: {
     userMessageId: number;
     sessionId: string;

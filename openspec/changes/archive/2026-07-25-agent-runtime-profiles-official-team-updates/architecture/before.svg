@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520">
+  <style>
+    text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #202124; }
+    .title { font-size: 22px; font-weight: 600; }
+    .label { font-size: 15px; font-weight: 600; }
+    .body { font-size: 13px; }
+    .box { fill: #fafafa; stroke: #6b7280; stroke-width: 1.5; rx: 12; }
+    .warn { fill: #fff7ed; stroke: #c2410c; stroke-width: 1.5; rx: 12; }
+    .arrow { stroke: #4b5563; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <text x="40" y="42" class="title">现状：只读官方团队 + 覆盖式播种 + Codex-only</text>
+  <rect x="40" y="82" width="240" height="110" class="box"/>
+  <text x="60" y="112" class="label">package seeds/teams</text>
+  <text x="60" y="140" class="body">单一 root fingerprint</text>
+  <text x="60" y="164" class="body">无官方版本 / 推荐配置</text>
+  <rect x="360" y="82" width="300" height="110" class="warn"/>
+  <text x="380" y="112" class="label">team-seed.ts</text>
+  <text x="380" y="140" class="body">fingerprint 不同 → 整体替换 .system</text>
+  <text x="380" y="164" class="body">用户内容没有分叉保护</text>
+  <path d="M280 137 L360 137" class="arrow"/>
+  <rect x="740" y="82" width="300" height="110" class="warn"/>
+  <text x="760" y="112" class="label">.system 当前团队</text>
+  <text x="760" y="140" class="body">store 拒绝全部写入</text>
+  <text x="760" y="164" class="body">renderer ownership=system → readOnly</text>
+  <path d="M660 137 L740 137" class="arrow"/>
+  <rect x="40" y="280" width="280" height="120" class="box"/>
+  <text x="60" y="310" class="label">session team snapshot</text>
+  <text x="60" y="338" class="body">slug + AGENT.md</text>
+  <text x="60" y="362" class="body">没有 CLI / model / effort</text>
+  <rect x="420" y="280" width="260" height="120" class="warn"/>
+  <text x="440" y="310" class="label">LocalConsoleRuntime</text>
+  <text x="440" y="338" class="body">依赖 runCodex</text>
+  <text x="440" y="362" class="body">Codex thread / resume 专属</text>
+  <path d="M320 340 L420 340" class="arrow"/>
+  <rect x="780" y="280" width="260" height="120" class="box"/>
+  <text x="800" y="310" class="label">src/codex.ts</text>
+  <text x="800" y="338" class="body">全局 model / effort</text>
+  <text x="800" y="362" class="body">codex exec --json</text>
+  <path d="M680 340 L780 340" class="arrow"/>
+</svg>

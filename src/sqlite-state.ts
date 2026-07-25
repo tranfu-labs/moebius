@@ -25,6 +25,14 @@ export type SqliteStateCommand =
   | { kind: "local-complete-session-fact-migration"; now: string }
   | { kind: "local-list-session-message-indexes" }
   | { kind: "local-rebuild-session-message-index"; sessionId: string; messages: unknown[] }
+  | {
+      kind: "local-rebuild-execution-index";
+      sessionId: string;
+      contexts: unknown[];
+      links: unknown[];
+    }
+  | { kind: "local-index-run-execution-context"; sessionId: string; runId: string; context: unknown }
+  | { kind: "local-index-execution-session-link"; sessionId: string; runId: string; link: unknown }
   | { kind: "local-find-message-session"; messageId: number }
   | {
       kind: "local-commit-session-fact-write";
@@ -54,7 +62,13 @@ export type SqliteStateCommand =
       sessionId: string;
       agentTeamOwnership: "system" | "user";
       agentTeamId: string;
-      agentTeamSnapshot?: { members: Array<{ name: string; agentMarkdown: string }> };
+      agentTeamSnapshot?: {
+        members: Array<{
+          name: string;
+          agentMarkdown: string;
+          executionProfile?: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+        }>;
+      };
       now: string;
     }
   | { kind: "local-apply-pending-session-context"; sessionId: string; now: string }
@@ -75,7 +89,13 @@ export type SqliteStateCommand =
       title: string;
       agentTeamOwnership?: "system" | "user";
       agentTeamId?: string;
-      agentTeamSnapshot?: { members: Array<{ name: string; agentMarkdown: string }> };
+      agentTeamSnapshot?: {
+        members: Array<{
+          name: string;
+          agentMarkdown: string;
+          executionProfile?: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+        }>;
+      };
       workspaceMode?: "direct" | "worktree";
       initialMessage?: string;
       initialAttachmentIds?: string[];

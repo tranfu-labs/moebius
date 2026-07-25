@@ -255,6 +255,7 @@ describe("pending session context switches", () => {
   it("freezes the selected team content through the server boundary and promotes its pending snapshot", async () => {
     const root = await makeGitRoot();
     let selectedMarketingMarkdown = "# dev\n\nselected marketing version\n";
+    let selectedMarketingModel = "gpt-marketing-selected";
     let finishFirstRun!: (result: CodexRunResult) => void;
     const prompts: string[] = [];
     const runCodex = vi.fn((options: CodexRunOptions): Promise<CodexRunResult> => {
@@ -282,6 +283,13 @@ describe("pending session context switches", () => {
           agentMarkdown: binding.id === "marketing"
             ? selectedMarketingMarkdown
             : "# dev\n\noriginal development version\n",
+          executionProfile: {
+            cli: "codex",
+            model: binding.id === "marketing"
+              ? selectedMarketingModel
+              : "gpt-development-original",
+            effort: binding.id === "marketing" ? "medium" : "high",
+          },
         }],
       }),
       runCodex,
@@ -307,6 +315,7 @@ describe("pending session context switches", () => {
         body: { agentTeamOwnership: "user", agentTeamId: "marketing" },
       });
       selectedMarketingMarkdown = "# dev\n\nedited after selection\n";
+      selectedMarketingModel = "gpt-marketing-edited";
       finishFirstRun(successfulRun(root, "first"));
       await waitFor(async () => {
         const state = await readState(started.url, sessionId);
@@ -321,6 +330,9 @@ describe("pending session context switches", () => {
       await waitFor(() => runCodex.mock.calls.length === 2);
       expect(prompts[1]).toContain("selected marketing version");
       expect(prompts[1]).not.toContain("edited after selection");
+      expect(runCodex.mock.calls[0]?.[0].execOptions).toContain("gpt-development-original");
+      expect(runCodex.mock.calls[1]?.[0].execOptions).toContain("gpt-marketing-selected");
+      expect(runCodex.mock.calls[1]?.[0].execOptions).not.toContain("gpt-marketing-edited");
       expect(fallbackAgentFiles).not.toHaveBeenCalled();
     } finally {
       await started.close();

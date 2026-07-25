@@ -18,6 +18,11 @@ import {
 import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
 import {
   AgentTeamDetail,
+  type AgentExecutionProfile,
+  type AgentExecutionProfileDocument,
+  type AgentOfficialUpdateResult,
+  type AgentOfficialManagementState,
+  type AgentTeamDetailMember,
   type AgentTeamRepairIssueView,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
@@ -40,6 +45,7 @@ export interface OperatorAgentTeamMember {
   displayName: string;
   description: string;
   available?: boolean;
+  executionProfile?: AgentTeamDetailMember["executionProfile"];
 }
 
 export interface OperatorAgentTeamRelayBeat {
@@ -63,7 +69,10 @@ export interface OperatorAgentTeam {
   members: OperatorAgentTeamMember[];
   status: "usable" | "unfinished-draft" | "needs-repair";
   canCreateConversation: boolean;
+  canEditContent?: boolean;
+  canDeleteTeam?: boolean;
   issues?: AgentTeamRepairIssueView[];
+  officialManagement?: AgentOfficialManagementState;
 }
 
 export type OperatorAgentTeamsState =
@@ -136,6 +145,11 @@ export function AgentTeamsPage({
   onDiscardMember,
   onDiscardAll,
   onSaveAll,
+  onReadExecutionProfile,
+  onSaveExecutionProfile,
+  onRestoreRecommendedProfile,
+  onRefreshExecutionCapabilities,
+  onApplyOfficialUpdate,
   onDuplicateBuiltInTeam,
   onRecheckTeam,
   onRelocateTeam,
@@ -171,6 +185,26 @@ export function AgentTeamsPage({
   onDiscardMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAll?: (teamKey: string) => void;
   onSaveAll?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
+  onReadExecutionProfile?: (
+    teamKey: string,
+    memberSlug: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onSaveExecutionProfile?: (
+    teamKey: string,
+    memberSlug: string,
+    profile: AgentExecutionProfile,
+    capabilitySnapshotId: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onRestoreRecommendedProfile?: (
+    teamKey: string,
+    memberSlug: string,
+  ) => Promise<AgentExecutionProfileDocument>;
+  onRefreshExecutionCapabilities?: (
+    teamKey: string,
+    memberSlug: string,
+    cli: AgentExecutionProfile["cli"],
+  ) => Promise<AgentExecutionProfileDocument>;
+  onApplyOfficialUpdate?: (teamKey: string) => Promise<AgentOfficialUpdateResult>;
   onDuplicateBuiltInTeam?: (teamKey: string) => Promise<string>;
   onRecheckTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateTeam?: (teamKey: string) => void | Promise<void>;
@@ -190,12 +224,9 @@ export function AgentTeamsPage({
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
-  const [draftOperation, setDraftOperation] = useState<AgentTeamFileOperation | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [draftOperationError, setDraftOperationError] = useState<string | null>(null);
-  const [savingDraftsForOperation, setSavingDraftsForOperation] = useState(false);
   const contentView = view.kind === "information-dialog" ? view.returnView : view;
   const openedTeamKey = contentView.kind === "team-detail" ? contentView.teamKey : null;
   const openedTeam = state.status === "ready"
@@ -227,7 +258,6 @@ export function AgentTeamsPage({
     setDuplicateError(null);
     setFileManagerError(null);
     setActionError(null);
-    setDraftOperation(null);
     setConfirmationOperation(null);
     pendingListScrollRestoreRef.current = true;
     setView({ kind: "list" });
@@ -335,52 +365,6 @@ export function AgentTeamsPage({
     void executeFileOperation(operation);
   };
 
-  const requestFileOperation = (operation: AgentTeamFileOperation) => {
-    const hasUnsavedDrafts = openedDetailState !== null
-      && openedDetailState.teamKey === operation.team.teamKey
-      && Object.values(openedDetailState.memberEditors).some((editor) => editor?.isDirty === true);
-    setActionError(null);
-    if (hasUnsavedDrafts) {
-      setDraftOperationError(null);
-      setDraftOperation(operation);
-      return;
-    }
-    prepareFileOperation(operation);
-  };
-
-  const discardDraftsAndContinue = () => {
-    if (draftOperation === null) {
-      return;
-    }
-    const operation = draftOperation;
-    onDiscardAll?.(operation.team.teamKey);
-    setDraftOperation(null);
-    setDraftOperationError(null);
-    prepareFileOperation(operation);
-  };
-
-  const saveDraftsAndContinue = async () => {
-    if (draftOperation === null || onSaveAll === undefined || savingDraftsForOperation) {
-      return;
-    }
-    setSavingDraftsForOperation(true);
-    setDraftOperationError(null);
-    try {
-      const result = await onSaveAll(draftOperation.team.teamKey);
-      if (result.failures.length > 0) {
-        setDraftOperationError("有 Agent 未能保存。请处理保存失败后再继续。");
-        return;
-      }
-      const operation = draftOperation;
-      setDraftOperation(null);
-      prepareFileOperation(operation);
-    } catch (error) {
-      setDraftOperationError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSavingDraftsForOperation(false);
-    }
-  };
-
   return (
     <section
       ref={scrollContainerRef}
@@ -450,18 +434,33 @@ export function AgentTeamsPage({
                 <AgentTeamDetail
                   team={openedTeam}
                   state={openedDetailState}
-                  teamActions={openedTeam.ownership === "system" ? (
+                  teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
+                        {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => requestGuardedAction(() => setView({
+                                kind: "information-dialog",
+                                mode: "edit",
+                                team: openedTeam,
+                                returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
+                              }))}
+                          >
+                            修改信息
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           disabled={duplicatingTeamKey !== null || onDuplicateBuiltInTeam === undefined}
-                          onClick={() => void duplicateBuiltInTeam(openedTeam)}
+                          onClick={() => requestGuardedAction(() => duplicateBuiltInTeam(openedTeam))}
                         >
                           {duplicatingTeamKey === openedTeam.teamKey ? (
                             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
                           ) : null}
-                          {duplicatingTeamKey === openedTeam.teamKey ? "正在复制…" : "复制并编辑"}
+                          {duplicatingTeamKey === openedTeam.teamKey ? "正在复制…" : "复制团队"}
                         </Button>
                         {onOpenLocation !== undefined ? (
                           <TeamMoreMenu
@@ -478,17 +477,17 @@ export function AgentTeamsPage({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      {onUpdateTeamInformation !== undefined ? (
+                      {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setView({
-                            kind: "information-dialog",
-                            mode: "edit",
-                            team: openedTeam,
-                            returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
-                          })}
+                          onClick={() => requestGuardedAction(() => setView({
+                              kind: "information-dialog",
+                              mode: "edit",
+                              team: openedTeam,
+                              returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
+                            }))}
                         >
                           修改信息
                         </Button>
@@ -500,17 +499,21 @@ export function AgentTeamsPage({
                         onOpen={onOpenLocation === undefined ? undefined : () => void openLocation(openedTeam)}
                         onDuplicate={onDuplicateUserTeam === undefined
                           ? undefined
-                          : () => requestFileOperation({ kind: "duplicate-team", team: openedTeam })}
-                        onTrash={onTrashUserTeam === undefined
+                          : () => requestGuardedAction(
+                              () => prepareFileOperation({ kind: "duplicate-team", team: openedTeam }),
+                            )}
+                        onTrash={openedTeam.canDeleteTeam === false || onTrashUserTeam === undefined
                           ? undefined
-                          : () => requestFileOperation({ kind: "trash-team", team: openedTeam })}
+                          : () => requestGuardedAction(
+                              () => prepareFileOperation({ kind: "trash-team", team: openedTeam }),
+                            )}
                       />
                     </div>
                   )}
-                  memberActions={selectedMember !== undefined
+                  memberActions={(requestGuardedAction) => selectedMember !== undefined
                     && (onOpenLocation !== undefined
-                      || (openedTeam.ownership === "user"
-                        && (onDuplicateMember !== undefined || onTrashMember !== undefined))) ? (
+                      || onDuplicateMember !== undefined
+                      || onTrashMember !== undefined) ? (
                     <MemberMoreMenu
                       member={selectedMember}
                       isPrimary={selectedMember.slug === openedTeam.primaryAgentSlug}
@@ -519,26 +522,37 @@ export function AgentTeamsPage({
                       onOpen={onOpenLocation === undefined
                         ? undefined
                         : () => void openLocation(openedTeam, selectedMember.slug)}
-                      onDuplicate={openedTeam.ownership !== "user" || onDuplicateMember === undefined
+                      onDuplicate={onDuplicateMember === undefined
                         ? undefined
-                        : () => requestFileOperation({ kind: "duplicate-member", team: openedTeam, member: selectedMember })}
-                      onTrash={openedTeam.ownership !== "user" || onTrashMember === undefined
+                        : () => requestGuardedAction(
+                            () => prepareFileOperation({
+                              kind: "duplicate-member",
+                              team: openedTeam,
+                              member: selectedMember,
+                            }),
+                          )}
+                      onTrash={onTrashMember === undefined
                         ? undefined
-                        : () => requestFileOperation({ kind: "trash-member", team: openedTeam, member: selectedMember })}
+                        : () => requestGuardedAction(
+                            () => prepareFileOperation({
+                              kind: "trash-member",
+                              team: openedTeam,
+                              member: selectedMember,
+                            }),
+                          )}
                     />
                   ) : undefined}
                   onChangePrimaryAgent={onChangePrimaryAgent === undefined
                     ? undefined
                     : (memberSlug) => onChangePrimaryAgent(openedTeam.teamKey, memberSlug)}
-                  readOnly={openedTeam.ownership === "system"}
-                  onAddMember={openedTeam.ownership === "user" && onAddMember !== undefined
+                  readOnly={openedTeam.canEditContent === false}
+                  onAddMember={openedTeam.canEditContent !== false && onAddMember !== undefined
                     ? () => onAddMember(openedTeam.teamKey)
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={(memberSlug) => onSaveMember?.(openedTeam.teamKey, memberSlug)}
-                  onCheckExternalChange={openedTeam.ownership === "user"
-                    && openedTeam.status !== "needs-repair"
+                  onCheckExternalChange={openedTeam.status !== "needs-repair"
                     && onCheckMemberExternalChange !== undefined
                     ? (memberSlug) => onCheckMemberExternalChange(openedTeam.teamKey, memberSlug)
                     : undefined}
@@ -549,6 +563,32 @@ export function AgentTeamsPage({
                   onDiscardMember={(memberSlug) => onDiscardMember?.(openedTeam.teamKey, memberSlug)}
                   onDiscardAll={() => onDiscardAll?.(openedTeam.teamKey)}
                   onSaveAll={() => onSaveAll?.(openedTeam.teamKey) ?? Promise.resolve({ failures: [] })}
+                  onReadExecutionProfile={onReadExecutionProfile === undefined
+                    ? undefined
+                    : (memberSlug) => onReadExecutionProfile(openedTeam.teamKey, memberSlug)}
+                  onSaveExecutionProfile={onSaveExecutionProfile === undefined
+                    ? undefined
+                    : (memberSlug, profile, snapshotId) =>
+                      onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile, snapshotId)}
+                  onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined
+                    ? undefined
+                    : (memberSlug) => onRestoreRecommendedProfile(openedTeam.teamKey, memberSlug)}
+                  onRefreshExecutionCapabilities={onRefreshExecutionCapabilities === undefined
+                    ? undefined
+                    : (memberSlug, cli) =>
+                      onRefreshExecutionCapabilities(openedTeam.teamKey, memberSlug, cli)}
+                  onApplyOfficialUpdate={openedTeam.ownership === "system" && onApplyOfficialUpdate !== undefined
+                    ? () => onApplyOfficialUpdate(openedTeam.teamKey)
+                    : undefined}
+                  onOpenCopiedTeam={(teamId) => {
+                    const teamKey = `user:${teamId}`;
+                    if (state.status !== "ready"
+                      || !state.teams.some((team) => team.teamKey === teamKey)) {
+                      return;
+                    }
+                    setView({ kind: "team-detail", teamKey });
+                    onOpenTeam?.(teamKey);
+                  }}
                   onRecheck={onRecheckTeam === undefined ? undefined : () => onRecheckTeam(openedTeam.teamKey)}
                   onRelocate={openedTeam.ownership === "user"
                     && hasTeamLocationIssue(openedTeam)
@@ -684,20 +724,6 @@ export function AgentTeamsPage({
         />
       ) : null}
 
-      {draftOperation !== null ? (
-        <UnsavedFileOperationDialog
-          operation={draftOperation}
-          saving={savingDraftsForOperation}
-          error={draftOperationError}
-          onContinueEditing={() => {
-            setDraftOperation(null);
-            setDraftOperationError(null);
-          }}
-          onDiscard={() => discardDraftsAndContinue()}
-          onSave={() => void saveDraftsAndContinue()}
-        />
-      ) : null}
-
       {confirmationOperation !== null ? (
         <TrashConfirmationDialog
           operation={confirmationOperation}
@@ -814,40 +840,6 @@ function MemberMoreMenu({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function UnsavedFileOperationDialog({
-  operation,
-  saving,
-  error,
-  onContinueEditing,
-  onDiscard,
-  onSave,
-}: {
-  operation: AgentTeamFileOperation;
-  saving: boolean;
-  error: string | null;
-  onContinueEditing: () => void;
-  onDiscard: () => void;
-  onSave: () => void;
-}): JSX.Element {
-  const actionLabel = operation.kind.startsWith("duplicate") ? "复制" : "删除";
-  return (
-    <DialogFrame label={`${actionLabel}前先处理未保存修改`} dismissible={!saving} onDismiss={onContinueEditing}>
-      <h2 className="text-base font-semibold">{actionLabel}前先处理未保存修改</h2>
-      <p className="mt-2 text-sm leading-6 text-sub">
-        这项操作只使用已经完整保存到磁盘的文件。请先保存全部修改，或放弃未保存内容后继续。
-      </p>
-      {error !== null ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onContinueEditing}>继续编辑</Button>
-        <Button type="button" variant="outline" disabled={saving} onClick={onDiscard}>放弃全部并继续</Button>
-        <Button type="button" disabled={saving} onClick={onSave}>
-          {saving ? "正在逐个保存…" : "保存全部并继续"}
-        </Button>
-      </div>
-    </DialogFrame>
   );
 }
 
@@ -1056,7 +1048,18 @@ function AgentTeamRow({
         <span className="flex min-w-0 items-start gap-2">
           <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">{teamName(team)}</span>
           <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
-            {team.ownership === "system" ? <TeamStatusBadge kind="built-in" /> : null}
+            {team.ownership === "system" ? <TeamStatusBadge kind="official" /> : null}
+            {team.officialManagement?.customizationStatus === "customized"
+              ? <TeamStatusBadge kind="customized" />
+              : null}
+            {team.officialManagement?.updateStatus === "available"
+              ? <TeamStatusBadge kind="update" />
+              : null}
+            {team.members.some((member) =>
+              member.executionProfile?.status === "needs-adjustment"
+              || member.executionProfile?.status === "not-configured")
+              ? <TeamStatusBadge kind="profile" />
+              : null}
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
@@ -1101,15 +1104,27 @@ function AgentTeamRow({
   );
 }
 
-function TeamStatusBadge({ kind }: { kind: "built-in" | "unfinished" | "needs-repair" }): JSX.Element {
-  const label = kind === "built-in" ? "内置" : kind === "unfinished" ? "未完成" : "需要修复";
+function TeamStatusBadge({ kind }: {
+  kind: "official" | "customized" | "update" | "profile" | "unfinished" | "needs-repair";
+}): JSX.Element {
+  const label = kind === "official"
+    ? "官方来源"
+    : kind === "customized"
+      ? "已自定义"
+      : kind === "update"
+        ? "有更新"
+        : kind === "profile"
+          ? "运行配置需调整"
+          : kind === "unfinished"
+            ? "未完成"
+            : "需要修复";
   return (
     <span
       className={cn(
         "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] font-medium",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
-          : kind === "unfinished"
+          : kind === "unfinished" || kind === "customized" || kind === "profile"
             ? "border-line-strong bg-sunken text-sub"
             : "border-line bg-canvas text-sub",
       )}

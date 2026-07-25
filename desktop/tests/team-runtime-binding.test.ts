@@ -75,7 +75,15 @@ describe("session-scoped Agent team runtime binding", () => {
     await fs.writeFile(path.join(team.directory, "members", "dev", "AGENT.md"), "# dev\n\nchanged later\n", "utf8");
 
     expect(loaded.members).toEqual([
-      { name: "dev", agentMarkdown: "# dev\n\n负责 dev\n" },
+      {
+        name: "dev",
+        agentMarkdown: "# dev\n\n负责 dev\n",
+        executionProfile: {
+          cli: "codex",
+          model: "gpt-5.6-sol",
+          effort: "high",
+        },
+      },
     ]);
   });
 });

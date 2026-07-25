@@ -39,6 +39,12 @@ import type {
   LocalCodexResumeIntentFact,
   LocalCodexRunUsageFact,
 } from "./codex-resume.js";
+import {
+  readExecutionSessionLinks,
+  readRunExecutionContexts,
+  type LocalExecutionSessionLinkFact,
+  type LocalRunExecutionContextFact,
+} from "./execution-context.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;
@@ -631,6 +637,38 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     });
   }
 
+  async recordRunExecutionContext(input: LocalRunExecutionContextFact): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "run_execution_context",
+      input.runId,
+      input.recordedAt,
+      input,
+    );
+    await this.run({
+      kind: "local-index-run-execution-context",
+      sessionId: input.sessionId,
+      runId: input.runId,
+      context: input,
+    });
+  }
+
+  async recordExecutionSessionLink(input: LocalExecutionSessionLinkFact): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "execution_session_link",
+      input.runId,
+      input.startedAt,
+      input,
+    );
+    await this.run({
+      kind: "local-index-execution-session-link",
+      sessionId: input.sessionId,
+      runId: input.runId,
+      link: input,
+    });
+  }
+
   async recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void> {
     await this.appendIdempotentSessionFact(
       input.sessionId,
@@ -788,6 +826,17 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     for (const currentSessionId of sessionIds) {
       const messages = await this.readMessagesFromFacts(currentSessionId);
       await this.runDirect({ kind: "local-rebuild-session-message-index", sessionId: currentSessionId, messages });
+      const logPath = this.getSessionFactLogPath(currentSessionId);
+      const [contexts, links] = await Promise.all([
+        readRunExecutionContexts(logPath, currentSessionId),
+        readExecutionSessionLinks(logPath, currentSessionId),
+      ]);
+      await this.runDirect({
+        kind: "local-rebuild-execution-index",
+        sessionId: currentSessionId,
+        contexts,
+        links,
+      });
     }
   }
 

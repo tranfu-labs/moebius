@@ -110,6 +110,10 @@ export const WORKDIR_ROOT = RUNTIME_PATHS.workdirRoot;
 export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 
 export function buildCodexExecOptionsBase(model: string): string[] {
+  return buildCodexExecOptionsForProfile(model, "high");
+}
+
+export function buildCodexExecOptionsForProfile(model: string, effort: string): string[] {
   return [
     "--yolo",
     "--json",
@@ -120,7 +124,7 @@ export function buildCodexExecOptionsBase(model: string): string[] {
     "-c",
     "features.fast_mode=true",
     "-c",
-    'model_reasoning_effort="high"',
+    `model_reasoning_effort=${JSON.stringify(effort)}`,
   ];
 }
 
@@ -167,7 +171,15 @@ export function buildCodexExecOptions(
   cfg: CodexProviderConfig | null,
   model: string,
 ): string[] {
-  const base = buildCodexExecOptionsBase(model);
+  return buildCodexExecOptionsForRuntimeProfile(cfg, model, "high");
+}
+
+export function buildCodexExecOptionsForRuntimeProfile(
+  cfg: CodexProviderConfig | null,
+  model: string,
+  effort: string,
+): string[] {
+  const base = buildCodexExecOptionsForProfile(model, effort);
   if (cfg === null) {
     return base;
   }

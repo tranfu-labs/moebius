@@ -40,6 +40,13 @@ import type {
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
   AgentTeamMemberTrashRequest,
+  AgentTeamExecutionCapabilityRequest,
+  AgentTeamExecutionProfileDocument,
+  AgentTeamExecutionProfileSaveRequest,
+  AgentTeamOfficialUpdateCommitRequest,
+  AgentTeamOfficialUpdateCommitResponse,
+  AgentTeamOfficialUpdatePrepareResponse,
+  AgentTeamOfficialUpdateRequest,
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamUpdateInformationRequest,
   AgentTeamTrashUserRequest,
@@ -186,6 +193,24 @@ export interface DesktopApi {
   duplicateAgentTeamMember?: (request: AgentTeamMemberDuplicateRequest) => Promise<AgentTeamMemberAddResponse>;
   trashAgentTeamMember?: (request: AgentTeamMemberTrashRequest) => Promise<AgentTeamListItem>;
   trashUserAgentTeam?: (request: AgentTeamTrashUserRequest) => Promise<void>;
+  readAgentTeamExecutionProfile?: (
+    request: AgentTeamMemberRequest,
+  ) => Promise<AgentTeamExecutionProfileDocument>;
+  saveAgentTeamExecutionProfile?: (
+    request: AgentTeamExecutionProfileSaveRequest,
+  ) => Promise<AgentTeamExecutionProfileDocument>;
+  restoreAgentTeamRecommendedProfile?: (
+    request: AgentTeamMemberRequest,
+  ) => Promise<AgentTeamExecutionProfileDocument>;
+  refreshAgentTeamExecutionCapabilities?: (
+    request: AgentTeamExecutionCapabilityRequest,
+  ) => Promise<AgentTeamExecutionProfileDocument["capabilities"][number]>;
+  prepareAgentTeamOfficialUpdate?: (
+    request: AgentTeamOfficialUpdateRequest,
+  ) => Promise<AgentTeamOfficialUpdatePrepareResponse>;
+  applyAgentTeamOfficialUpdate?: (
+    request: AgentTeamOfficialUpdateCommitRequest,
+  ) => Promise<AgentTeamOfficialUpdateCommitResponse>;
   checkAgentTeamMemberExternalChange?: (
     request: AgentTeamExternalChangeRequest,
   ) => Promise<AgentTeamExternalChangeResponse>;
@@ -610,7 +635,7 @@ export function OperatorConsoleApp({
     const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
     const checkExternalChange = window.moebius?.checkAgentTeamMemberExternalChange;
     if (
-      team?.ownership !== "user"
+      team === undefined
       || current?.loadStatus !== "ready"
       || current.savedMarkdown === null
       || current.saveStatus === "saving"
@@ -817,7 +842,7 @@ export function OperatorConsoleApp({
   const changeAgentTeamPrimaryAgent = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
     const setPrimaryAgent = window.moebius?.setAgentTeamPrimaryAgent;
-    if (team === undefined || team.ownership !== "user" || setPrimaryAgent === undefined) {
+    if (team === undefined || setPrimaryAgent === undefined) {
       return;
     }
     if (team.primaryAgentSlug === memberSlug || !team.members.some((member) => member.slug === memberSlug)) {
@@ -843,6 +868,105 @@ export function OperatorConsoleApp({
     } catch (error) {
       setPrimaryAgentChange({ teamKey, status: "failed", error: formatError(error) });
     }
+  }, [agentTeamsState]);
+
+  const readAgentExecutionProfile = useCallback(async (teamKey: string, memberSlug: string) => {
+    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const readProfile = window.moebius?.readAgentTeamExecutionProfile;
+    if (team === undefined || readProfile === undefined) {
+      throw new Error("当前无法读取 Agent 运行配置。");
+    }
+    return readProfile({
+      teamId: team.id,
+      ownership: team.ownership,
+      memberSlug,
+    });
+  }, [agentTeamsState]);
+
+  const saveAgentExecutionProfile = useCallback(async (
+    teamKey: string,
+    memberSlug: string,
+    profile: { cli: "codex" | "kimi"; model: string; effort: string },
+    capabilitySnapshotId: string,
+  ) => {
+    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const saveProfile = window.moebius?.saveAgentTeamExecutionProfile;
+    if (team === undefined || saveProfile === undefined) {
+      throw new Error("当前无法保存 Agent 运行配置。");
+    }
+    const document = await saveProfile({
+      teamId: team.id,
+      ownership: team.ownership,
+      memberSlug,
+      profile,
+      capabilitySnapshotId,
+    });
+    setAgentTeamsRefreshNonce((current) => current + 1);
+    return document;
+  }, [agentTeamsState]);
+
+  const restoreAgentRecommendedProfile = useCallback(async (teamKey: string, memberSlug: string) => {
+    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const restore = window.moebius?.restoreAgentTeamRecommendedProfile;
+    if (team === undefined || restore === undefined) {
+      throw new Error("当前无法恢复官方推荐配置。");
+    }
+    const document = await restore({
+      teamId: team.id,
+      ownership: team.ownership,
+      memberSlug,
+    });
+    setAgentTeamsRefreshNonce((current) => current + 1);
+    return document;
+  }, [agentTeamsState]);
+
+  const refreshAgentExecutionCapabilities = useCallback(async (
+    teamKey: string,
+    memberSlug: string,
+    cli: "codex" | "kimi",
+  ) => {
+    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const refresh = window.moebius?.refreshAgentTeamExecutionCapabilities;
+    const readProfile = window.moebius?.readAgentTeamExecutionProfile;
+    if (team === undefined || refresh === undefined || readProfile === undefined) {
+      throw new Error("当前无法重新检查 Agent 运行能力。");
+    }
+    await refresh({ cli });
+    const document = await readProfile({
+      teamId: team.id,
+      ownership: team.ownership,
+      memberSlug,
+    });
+    setAgentTeamsRefreshNonce((current) => current + 1);
+    return document;
+  }, [agentTeamsState]);
+
+  const applyOfficialAgentTeamUpdate = useCallback(async (teamKey: string) => {
+    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const prepare = window.moebius?.prepareAgentTeamOfficialUpdate;
+    const apply = window.moebius?.applyAgentTeamOfficialUpdate;
+    if (team === undefined || team.ownership !== "system" || prepare === undefined || apply === undefined) {
+      throw new Error("当前无法更新这支官方团队。");
+    }
+    const plan = await prepare({ teamId: team.id, ownership: "system" });
+    const result = await apply({ plan });
+    if (result.copiedTeam !== null) {
+      const copiedTeam = toOperatorAgentTeam(result.copiedTeam);
+      setAgentTeamsState((current) => current.status !== "ready"
+        ? current
+        : {
+            status: "ready",
+            teams: current.teams.some((candidate) => candidate.teamKey === copiedTeam.teamKey)
+              ? current.teams
+              : [...current.teams, copiedTeam],
+          });
+    }
+    setAgentTeamsRefreshNonce((current) => current + 1);
+    return {
+      copiedTeamId: result.copiedTeamId,
+      appliedOfficialVersion: result.appliedOfficialVersion,
+      memberChanges: result.memberChanges,
+    };
   }, [agentTeamsState]);
 
   const activateCopiedAgentTeam = useCallback(async (copiedItem: AgentTeamListItem): Promise<string> => {
@@ -1156,12 +1280,12 @@ export function OperatorConsoleApp({
     assertAgentTeamDraftsResolved(teamKey);
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
     const duplicateMember = window.moebius?.duplicateAgentTeamMember;
-    if (team === undefined || team.ownership !== "user" || duplicateMember === undefined) {
+    if (team === undefined || duplicateMember === undefined) {
       throw new Error("当前无法复制这个 Agent，请稍后重试。");
     }
     const result = await duplicateMember({
       teamId: team.id,
-      ownership: "user",
+      ownership: team.ownership,
       memberSlug,
     });
     const updatedTeam = toOperatorAgentTeam(result.team);
@@ -1185,7 +1309,7 @@ export function OperatorConsoleApp({
     assertAgentTeamDraftsResolved(teamKey);
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
     const trashMember = window.moebius?.trashAgentTeamMember;
-    if (team === undefined || team.ownership !== "user" || trashMember === undefined) {
+    if (team === undefined || trashMember === undefined) {
       throw new Error("当前无法删除这个 Agent，请稍后重试。");
     }
     if (team.primaryAgentSlug === memberSlug) {
@@ -1333,7 +1457,7 @@ export function OperatorConsoleApp({
     }
     const updated = toOperatorAgentTeam(await relocateRecord({
       teamId: team.id,
-      ownership: "user",
+      ownership: team.ownership,
       directory,
     }));
     setAgentTeamsState((current) => current.status !== "ready"
@@ -2506,6 +2630,11 @@ export function OperatorConsoleApp({
         setAgentTeamSaveAllFailures([]);
       }}
       onSaveAllAgentTeamDrafts={saveAllDraftsAndLeave}
+      onReadAgentExecutionProfile={readAgentExecutionProfile}
+      onSaveAgentExecutionProfile={saveAgentExecutionProfile}
+      onRestoreAgentRecommendedProfile={restoreAgentRecommendedProfile}
+      onRefreshAgentExecutionCapabilities={refreshAgentExecutionCapabilities}
+      onApplyOfficialAgentTeamUpdate={applyOfficialAgentTeamUpdate}
       onDuplicateBuiltInAgentTeam={duplicateBuiltInAgentTeam}
       onRecheckAgentTeam={() => setAgentTeamsRefreshNonce((current) => current + 1)}
       onRelocateAgentTeam={relocateAgentTeam}
@@ -2639,10 +2768,17 @@ function toOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTeam {
     description: team.definition?.description ?? null,
     primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,
     memberOrder: team.definition?.memberOrder ?? [],
-    members: team.members.map((member) => ({ ...member, available: member.available !== false })),
+    members: team.members.map((member) => ({
+      ...member,
+      available: member.available !== false,
+      executionProfile: member.executionProfile,
+    })),
     status: team.status,
     canCreateConversation: team.canCreateConversation,
+    canEditContent: team.capabilities?.canEditContent ?? true,
+    canDeleteTeam: team.capabilities?.canDeleteTeam ?? team.ownership === "user",
     issues: team.issues,
+    officialManagement: team.officialManagement,
   };
 }
 

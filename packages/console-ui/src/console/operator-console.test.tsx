@@ -593,7 +593,7 @@ describe("OperatorConsole", () => {
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.tagName === "BUTTON")).toBe(true);
     expect(rows.every((row) => row.querySelector("svg") === null)).toBe(true);
-    expect(within(rows[0]).getByText("内置")).toBeVisible();
+    expect(within(rows[0]).getByText("官方来源")).toBeVisible();
     expect(within(rows[1]).getByText("未完成")).toBeVisible();
     expect(within(rows[2]).getByText("需要修复")).toBeVisible();
     expect(within(rows[0]).getByText("5 名成员 · 主 Agent：开发经理")).toBeVisible();
@@ -670,12 +670,12 @@ describe("OperatorConsole", () => {
     expect(onOpenAgentTeam).toHaveBeenCalledWith("system:development");
     expect(screen.getByTestId("agent-team-detail-view")).toHaveAttribute("data-team-key", "system:development");
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
-    expect(screen.getByText("内置团队")).toBeVisible();
-    expect(screen.getByText("只读")).toBeVisible();
+    expect(screen.getByText("官方来源")).toBeVisible();
+    expect(screen.queryByText("只读")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
-      .toHaveAttribute("aria-readonly", "true");
-    expect(screen.getByRole("button", { name: "复制并编辑" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+      .not.toHaveAttribute("aria-readonly", "true");
+    expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
     expect(screen.queryByTestId("agent-team-list")).not.toBeInTheDocument();
     expect(listPage.scrollTop).toBe(0);
 
@@ -685,7 +685,7 @@ describe("OperatorConsole", () => {
     expect(listPage.scrollTop).toBe(187);
   });
 
-  it("routes the built-in copy action through the dedicated whole-team callback", async () => {
+  it("keeps optional copying separate from direct official-team editing", async () => {
     const onDuplicateBuiltInAgentTeam = vi.fn().mockResolvedValue("user:development-copy");
     renderConsole({
       agentTeamsState: { status: "ready", teams: [fiveMemberTeam] },
@@ -694,7 +694,9 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "复制并编辑" }));
+    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+      .not.toHaveAttribute("aria-readonly", "true");
+    fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
 
     await waitFor(() => expect(onDuplicateBuiltInAgentTeam).toHaveBeenCalledWith("system:development"));
     expect(screen.queryByText("复制 Agent")).not.toBeInTheDocument();

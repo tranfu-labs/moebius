@@ -53,6 +53,7 @@ export interface LocalConsoleServerOptions {
   loadAgentTeamSnapshot?: LocalConsoleRuntimeOptions["loadAgentTeamSnapshot"];
   resolveAgentTeamHealth?: LocalConsoleRuntimeOptions["resolveAgentTeamHealth"];
   runCodex?: typeof runCodex;
+  runExecution?: LocalConsoleRuntimeOptions["runExecution"];
   makeRunDir?: (count: number, now?: Date) => string;
   storeTimeoutMs?: number;
   sqliteBusyTimeoutMs?: number;
@@ -104,6 +105,7 @@ export async function startLocalConsoleServer(options: LocalConsoleServerOptions
     loadAgentTeamSnapshot: options.loadAgentTeamSnapshot,
     resolveAgentTeamHealth: options.resolveAgentTeamHealth,
     runCodex: options.runCodex ?? runCodex,
+    runExecution: options.runExecution,
     makeRunDir: options.makeRunDir ?? makeLocalConsoleRunDir,
     projectRoot,
     workdirRoot,

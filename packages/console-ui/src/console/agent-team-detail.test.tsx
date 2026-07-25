@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AgentTeamDetail,
+  type AgentExecutionProfile,
   type AgentTeamDetailProps,
   type AgentTeamMemberEditorState,
 } from "./agent-team-detail";
@@ -105,7 +106,7 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
   });
 
-  it("shows primary Agent progress and errors without exposing a selector for built-in teams", () => {
+  it("shows primary Agent progress and keeps the selector available for official teams", () => {
     const props = detailProps();
     const { rerender } = render(<AgentTeamDetail
       {...props}
@@ -125,8 +126,8 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("切换失败：磁盘暂时不可写");
 
     rerender(<AgentTeamDetail {...props} team={{ ...props.team, ownership: "system" }} />);
-    expect(screen.queryByRole("combobox", { name: "主 Agent" })).not.toBeInTheDocument();
-    expect(screen.getByText("内置团队")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "主 Agent" })).toBeVisible();
+    expect(screen.getByText("官方来源")).toBeVisible();
   });
 
   it("disables duplicate saves while saving and retains a failed draft with retry", () => {
@@ -205,8 +206,8 @@ describe("AgentTeamDetail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     const dialog = screen.getByRole("dialog", { name: "还有未保存的修改" });
     expect(within(dialog).getByRole("button", { name: "继续编辑" })).toBeVisible();
-    expect(within(dialog).getByRole("button", { name: "放弃全部" })).toBeVisible();
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存全部并离开" }));
+    expect(within(dialog).getByRole("button", { name: "放弃全部并继续" })).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存全部并继续" }));
 
     await waitFor(() => expect(onSaveAll).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "还有未保存的修改" })).not.toBeInTheDocument());
@@ -223,31 +224,29 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("测试：权限不足");
   });
 
-  it("explains built-in ownership and keeps AGENT.md selectable but read-only", () => {
+  it("explains official ownership and keeps official AGENT.md editable", () => {
     const onSaveMember = vi.fn();
     const base = detailProps();
     renderDetail({
       team: { ...base.team, teamKey: "system:development", ownership: "system" },
       state: { ...base.state, teamKey: "system:development" },
-      readOnly: true,
-      teamActions: <button type="button">复制并编辑</button>,
+      readOnly: false,
+      teamActions: <button type="button">复制团队</button>,
       onSaveMember,
     });
 
-    expect(screen.getByText("内置团队")).toBeVisible();
-    expect(screen.getByText("只读")).toBeVisible();
-    expect(screen.getByRole("note")).toHaveTextContent("这是软件自带的只读团队");
-    expect(screen.getByRole("note")).toHaveTextContent("请先复制一份独立团队");
-    expect(screen.getByRole("button", { name: "复制并编辑" })).toBeVisible();
+    expect(screen.getByText("官方来源")).toBeVisible();
+    expect(screen.queryByText("只读")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
-      .toHaveAttribute("aria-readonly", "true");
-    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "放弃修改" })).not.toBeInTheDocument();
+      .not.toHaveAttribute("aria-readonly", "true");
+    expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "放弃修改" })).toBeVisible();
     expect(screen.queryByText("复制 Agent")).not.toBeInTheDocument();
     expect(screen.queryByText("删除 Agent")).not.toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "s", metaKey: true });
-    expect(onSaveMember).not.toHaveBeenCalled();
+    expect(onSaveMember).toHaveBeenCalledWith("manager");
   });
 
   it("quietly reports an automatically loaded external version", () => {
@@ -261,6 +260,242 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("status")).toHaveTextContent("文件在软件外面改过了，已载入最新内容");
     expect(screen.queryByRole("button", { name: "载入外部版本" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "用当前内容覆盖" })).not.toBeInTheDocument();
+  });
+
+  it("edits CLI, model, and effort independently from AGENT.md", async () => {
+    const onReadExecutionProfile = vi.fn().mockResolvedValue({
+      binding: { source: "recommended" },
+      recommendation: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      effectiveProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      status: { status: "available" },
+      capabilities: [
+        {
+          cli: "codex",
+          status: "available",
+          snapshotId: "codex-snapshot",
+          models: [{
+            id: "gpt-5.6-sol",
+            displayName: "GPT 5.6",
+            efforts: ["high"],
+            defaultEffort: "high",
+          }],
+        },
+        {
+          cli: "kimi",
+          status: "available",
+          snapshotId: "kimi-snapshot",
+          models: [{
+            id: "kimi-for-coding",
+            displayName: "Kimi for Coding",
+            efforts: ["medium", "high"],
+            defaultEffort: "medium",
+          }],
+        },
+      ],
+    });
+    const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) => ({
+      binding: { source: "explicit", profile },
+      recommendation: null,
+      effectiveProfile: profile,
+      status: { status: "available" },
+      capabilities: [],
+    }));
+    renderDetail({ onReadExecutionProfile, onSaveExecutionProfile });
+
+    await screen.findByTestId("agent-execution-profile-editor");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("kimi-for-coding");
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("medium");
+    fireEvent.change(screen.getByRole("combobox", { name: "思考程度" }), { target: { value: "high" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
+      "manager",
+      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      "kimi-snapshot",
+    ));
+  });
+
+  it("keeps per-member profile drafts across member switches and saves them before leaving", async () => {
+    const onReadExecutionProfile = vi.fn().mockImplementation(async () => executionProfileDocument());
+    const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) =>
+      executionProfileDocument(profile));
+    const onSaveAll = vi.fn().mockResolvedValue({ failures: [] });
+    const onLeave = vi.fn();
+    const base = detailProps({
+      state: stateWith(managerEditor({ isDirty: false })),
+      onReadExecutionProfile,
+      onSaveExecutionProfile,
+      onSaveAll,
+      onLeave,
+    });
+    const { rerender } = render(<AgentTeamDetail {...base} />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+
+    rerender(<AgentTeamDetail
+      {...base}
+      state={{ ...base.state, selectedMemberSlug: "dev" }}
+    />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+
+    rerender(<AgentTeamDetail
+      {...base}
+      state={{ ...base.state, selectedMemberSlug: "manager" }}
+    />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("kimi"));
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+    expect(onLeave).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "还有未保存的修改" }))
+      .getByRole("button", { name: "保存全部并继续" }));
+
+    await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
+      "manager",
+      { cli: "kimi", model: "kimi-for-coding", effort: "medium" },
+      "kimi-snapshot",
+    ));
+    await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
+  });
+
+  it.each([
+    ["返回团队列表", "Agent 团队"],
+    ["修改团队信息", "修改信息"],
+    ["复制内置团队", "复制团队"],
+    ["复制成员", "复制 Agent"],
+    ["删除成员", "删除 Agent"],
+    ["复制用户团队", "复制用户团队"],
+    ["删除用户团队", "删除用户团队"],
+    ["更新官方团队", "更新到最新版"],
+  ] as const)("guards %s when only the execution profile has an unsaved draft", async (actionKind, buttonName) => {
+    const action = vi.fn().mockResolvedValue(actionKind === "更新官方团队"
+      ? {
+          copiedTeamId: null,
+          appliedOfficialVersion: "2",
+          memberChanges: { added: [], removed: [], renamed: [], recommendationChanged: [] },
+        }
+      : undefined);
+    const base = detailProps({
+      state: stateWith(managerEditor({ isDirty: false })),
+      onReadExecutionProfile: vi.fn().mockResolvedValue(executionProfileDocument()),
+      onLeave: actionKind === "返回团队列表" ? action : vi.fn(),
+      teamActions: ["修改团队信息", "复制内置团队", "复制用户团队", "删除用户团队"].includes(actionKind)
+        ? (request) => <button type="button" onClick={() => request(action)}>{buttonName}</button>
+        : undefined,
+      memberActions: ["复制成员", "删除成员"].includes(actionKind)
+        ? (request) => <button type="button" onClick={() => request(action)}>{buttonName}</button>
+        : undefined,
+      onApplyOfficialUpdate: actionKind === "更新官方团队" ? action : undefined,
+    });
+    render(<AgentTeamDetail
+      {...base}
+      team={actionKind === "更新官方团队"
+        ? {
+            ...base.team,
+            ownership: "system",
+            officialManagement: {
+              currentOfficialVersion: "1",
+              latestOfficialVersion: "2",
+              customizationStatus: "clean",
+              updateStatus: "available",
+              primaryAction: "update",
+              requiresProtectiveCopy: false,
+              addedMembers: [],
+              removedMembers: [],
+              recommendationChangedMembers: [],
+              protectedMembers: [],
+              collidingMembers: [],
+            },
+          }
+        : base.team}
+    />);
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+
+    expect(screen.getByRole("dialog", { name: "还有未保存的修改" })).toBeVisible();
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an unverifiable capability and re-renders the authoritative profile document", async () => {
+    const available = executionProfileDocument();
+    const unavailable = {
+      ...available,
+      status: { status: "unable-to-verify" as const, reason: "CLI 暂时不可用" },
+      capabilities: available.capabilities.map((capability, index) => index === 0
+        ? {
+            ...capability,
+            status: "unable-to-verify" as const,
+            reason: "CLI 暂时不可用",
+          }
+        : capability),
+    };
+    const refreshed = executionProfileDocument();
+    const onRefreshExecutionCapabilities = vi.fn().mockResolvedValue(refreshed);
+    renderDetail({
+      state: stateWith(managerEditor({ isDirty: false })),
+      onReadExecutionProfile: vi.fn().mockResolvedValue(unavailable),
+      onRefreshExecutionCapabilities,
+    });
+
+    const refresh = await screen.findByRole("button", { name: "重新检查运行能力" });
+    fireEvent.click(refresh);
+
+    await waitFor(() => expect(onRefreshExecutionCapabilities).toHaveBeenCalledWith("manager", "codex"));
+    await waitFor(() => expect(screen.queryByText(/无法验证/u)).not.toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex");
+  });
+
+  it("shows an official update as a normal management state and reports the protected copy", async () => {
+    const onApplyOfficialUpdate = vi.fn().mockResolvedValue({
+      copiedTeamId: "development-copy",
+      appliedOfficialVersion: "2",
+      memberChanges: {
+        added: ["reviewer"],
+        removed: ["qa"],
+        renamed: [],
+        recommendationChanged: ["manager"],
+      },
+    });
+    const onOpenCopiedTeam = vi.fn();
+    const base = detailProps();
+    renderDetail({
+      team: {
+        ...base.team,
+        ownership: "system",
+        officialManagement: {
+          currentOfficialVersion: "1",
+          latestOfficialVersion: "2",
+          customizationStatus: "customized",
+          updateStatus: "available",
+          primaryAction: "protect-and-update",
+          requiresProtectiveCopy: true,
+          addedMembers: ["reviewer"],
+          removedMembers: ["qa"],
+          recommendationChangedMembers: ["manager"],
+          protectedMembers: ["qa"],
+          collidingMembers: [],
+        },
+      },
+      state: stateWith(managerEditor({ isDirty: false })),
+      onApplyOfficialUpdate,
+      onOpenCopiedTeam,
+    });
+
+    expect(screen.getByText("已自定义")).toBeVisible();
+    expect(screen.getByText("有更新")).toBeVisible();
+    expect(screen.getByText("当前 1 → 最新 2")).toBeVisible();
+    expect(screen.getByText("新增：@reviewer")).toBeVisible();
+    expect(screen.getByText("删除：@qa")).toBeVisible();
+    expect(screen.getByText("副本保护范围：@qa")).toBeVisible();
+    expect(screen.queryByText("这支团队需要修复")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保留副本并更新" }));
+    await waitFor(() => expect(onApplyOfficialUpdate).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(
+      "已保留为 development-copy；已更新到官方版本 2：新增 @reviewer；删除 @qa；推荐配置更新 @manager。",
+    )).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "进入保留的副本" }));
+    expect(onOpenCopiedTeam).toHaveBeenCalledWith("development-copy");
   });
 
   it("shows exactly the two external-conflict choices and keeps normal save paths out", () => {
@@ -489,4 +724,39 @@ function managerEditor(overrides: Partial<AgentTeamMemberEditorState> = {}): Age
 function replaceEditorText(editor: HTMLElement, value: string): void {
   editor.textContent = value;
   fireEvent.input(editor);
+}
+
+function executionProfileDocument(
+  effectiveProfile: AgentExecutionProfile = { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+) {
+  return {
+    binding: { source: "explicit" as const, profile: effectiveProfile },
+    recommendation: null,
+    effectiveProfile,
+    status: { status: "available" as const },
+    capabilities: [
+      {
+        cli: "codex" as const,
+        status: "available" as const,
+        snapshotId: "codex-snapshot",
+        models: [{
+          id: "gpt-5.6-sol",
+          displayName: "GPT 5.6",
+          efforts: ["high"],
+          defaultEffort: "high",
+        }],
+      },
+      {
+        cli: "kimi" as const,
+        status: "available" as const,
+        snapshotId: "kimi-snapshot",
+        models: [{
+          id: "kimi-for-coding",
+          displayName: "Kimi for Coding",
+          efforts: ["medium", "high"],
+          defaultEffort: "medium",
+        }],
+      },
+    ],
+  };
 }

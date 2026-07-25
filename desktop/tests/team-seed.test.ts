@@ -10,6 +10,7 @@ import {
   seedBuiltInTeams,
 } from "../src/team-seed.js";
 import { readTeamOnboardingOrchestration } from "../src/team-onboarding-orchestration.js";
+import { getPackagedTeamCacheDirectory } from "../src/team-management-store.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagedSeedRoot = path.join(repositoryRoot, "seeds", "teams");
@@ -164,7 +165,7 @@ describe("built-in team seed", () => {
     expect(await fs.readFile(developerAgent, "utf8")).toBe("# 本地外部修改\n");
   });
 
-  it("replaces the whole built-in subtree on upgrade without touching user teams", async () => {
+  it("registers a packaged upgrade without overwriting editable official or user teams", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
     const firstSeed = path.join(root, "seed-v1");
@@ -179,30 +180,34 @@ describe("built-in team seed", () => {
 
     const result = await seedBuiltInTeams({ seedTeamsRoot: secondSeed, dataRoot });
 
-    expect(result.status).toBe("seeded");
-    await expect(fs.access(path.join(getSystemTeamsRoot(dataRoot), "removed-in-v2"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    expect(result.status).toBe("skipped");
+    await expect(fs.access(path.join(getSystemTeamsRoot(dataRoot), "removed-in-v2"))).resolves.toBeUndefined();
     expect(await fs.readFile(path.join(getSystemTeamsRoot(dataRoot), "development", "version.txt"), "utf8")).toBe(
+      "v1",
+    );
+    expect(await fs.readFile(path.join(
+      getPackagedTeamCacheDirectory(dataRoot, "development"),
+      "version.txt",
+    ), "utf8")).toBe(
       "v2",
     );
     expect(await fs.readFile(userFile)).toEqual(userBytes);
   });
 
-  it("re-runs the full flow after an interruption before the marker is written", async () => {
+  it("does not use a missing legacy marker to overwrite an editable official team", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
     await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
     const systemRoot = getSystemTeamsRoot(dataRoot);
     const markerPath = path.join(systemRoot, TEAMS_SEED_MARKER_FILE);
-    const missingAgent = path.join(systemRoot, "development", "members", "qa", "AGENT.md");
+    const developerAgent = path.join(systemRoot, "development", "members", "dev", "AGENT.md");
     await fs.rm(markerPath);
-    await fs.rm(missingAgent);
+    await fs.writeFile(developerAgent, "# 本地外部修改\n", "utf8");
 
     const result = await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
 
-    expect(result.status).toBe("seeded");
-    expect(await fs.readFile(missingAgent, "utf8")).toContain("display_name: 软件测试");
+    expect(result.status).toBe("skipped");
+    expect(await fs.readFile(developerAgent, "utf8")).toBe("# 本地外部修改\n");
     expect((await fs.readFile(markerPath, "utf8")).trim()).toBe(
       await computeTeamSeedFingerprint(packagedSeedRoot),
     );
@@ -233,7 +238,28 @@ async function makeTemporaryRoot(): Promise<string> {
 async function writeTeamSeed(root: string, teamIds: readonly string[], version: string): Promise<void> {
   for (const teamId of teamIds) {
     const teamRoot = path.join(root, teamId);
-    await fs.mkdir(teamRoot, { recursive: true });
+    const memberRoot = path.join(teamRoot, "members", "dev");
+    await fs.mkdir(memberRoot, { recursive: true });
+    await fs.writeFile(path.join(teamRoot, "team.json"), JSON.stringify({
+      name: teamId,
+      description: `seed ${version}`,
+      primaryAgentSlug: "dev",
+      memberOrder: ["dev"],
+    }, null, 2), "utf8");
+    await fs.writeFile(path.join(memberRoot, "AGENT.md"), `# dev\n\n${version}\n`, "utf8");
+    await fs.writeFile(path.join(teamRoot, "official.json"), JSON.stringify({
+      schemaVersion: 1,
+      officialVersion: version,
+      members: {
+        dev: {
+          recommendedProfile: {
+            cli: "codex",
+            model: "gpt-5.6-sol",
+            effort: "high",
+          },
+        },
+      },
+    }, null, 2), "utf8");
     await fs.writeFile(path.join(teamRoot, "version.txt"), version, "utf8");
   }
 }

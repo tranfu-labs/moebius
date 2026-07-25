@@ -1,14 +1,32 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getSystemTeamsRoot, getTeamsRoot } from "./team-store.js";
+
+import {
+  cachePackagedTeam,
+  readExecutionBindingDocument,
+  readOfficialTeamStateDocument,
+  teamBindingKey,
+  writeExecutionBindingDocument,
+  writeOfficialTeamStateDocument,
+} from "./team-management-store.js";
+import {
+  computeOfficialTeamContentFingerprint,
+  readPackagedOfficialTeamManifest,
+  recommendationFingerprint,
+  recommendationsFromManifest,
+} from "./team-official-management.js";
+import { recoverOfficialTeamUpdateTransactions } from "./team-official-update.js";
+import { getSystemTeamsRoot, resolveTeamLocation } from "./team-store.js";
 
 export const TEAMS_SEED_MARKER_FILE = ".teams-seed.marker";
 
-const SEED_STAGING_DIRECTORY = ".system.seed-staging";
-const SEED_BACKUP_DIRECTORY = ".system.seed-backup";
-const MARKER_TEMP_FILE = ".teams-seed.marker.tmp";
 const FINGERPRINT_VERSION = "moebius-team-seed-v1";
+const DEFAULT_LEGACY_PROFILE = {
+  cli: "codex" as const,
+  model: "gpt-5.6-sol",
+  effort: "high",
+};
 
 export interface BuiltInTeamSeedResult {
   fingerprint: string;
@@ -25,47 +43,73 @@ export async function seedBuiltInTeams(input: {
   seedTeamsRoot: string;
   dataRoot: string;
 }): Promise<BuiltInTeamSeedResult> {
+  await recoverOfficialTeamUpdateTransactions(input.dataRoot);
   const seedTeamsRoot = path.resolve(input.seedTeamsRoot);
   const systemRoot = getSystemTeamsRoot(input.dataRoot);
-  const teamsRoot = getTeamsRoot(input.dataRoot);
-  const markerPath = path.join(systemRoot, TEAMS_SEED_MARKER_FILE);
   const fingerprint = await computeTeamSeedFingerprint(seedTeamsRoot);
+  const officialDocument = await readOfficialTeamStateDocument(input.dataRoot);
+  const bindingDocument = await readExecutionBindingDocument(input.dataRoot);
+  const packagedTeamIds = await listPackagedTeamIds(seedTeamsRoot);
+  let copiedTeamCount = 0;
 
-  if ((await readMarker(markerPath)) === fingerprint) {
-    return { fingerprint, status: "skipped" };
-  }
+  await fs.mkdir(systemRoot, { recursive: true });
 
-  await fs.mkdir(teamsRoot, { recursive: true });
-  const stagingRoot = path.join(teamsRoot, SEED_STAGING_DIRECTORY);
-  const backupRoot = path.join(teamsRoot, SEED_BACKUP_DIRECTORY);
-  await recoverInterruptedSwap({ systemRoot, stagingRoot, backupRoot });
-  await copySeedTree(seedTeamsRoot, stagingRoot);
-  const stagedFingerprint = await computeTeamSeedFingerprint(stagingRoot);
-  if (stagedFingerprint !== fingerprint) {
-    await fs.rm(stagingRoot, { recursive: true, force: true });
-    throw new Error("Team seed content changed while it was being staged");
-  }
-
-  const hadExistingSystemRoot = await pathExists(systemRoot);
-  if (hadExistingSystemRoot) {
-    await fs.rename(systemRoot, backupRoot);
-  }
-
-  try {
-    await fs.rename(stagingRoot, systemRoot);
-  } catch (error) {
-    if (hadExistingSystemRoot) {
-      await fs.rename(backupRoot, systemRoot);
+  for (const teamId of packagedTeamIds) {
+    const sourceDirectory = path.join(seedTeamsRoot, teamId);
+    const manifest = await readPackagedOfficialTeamManifest(sourceDirectory);
+    const packagedDirectory = await cachePackagedTeam({
+      dataRoot: input.dataRoot,
+      teamId,
+      sourceDirectory,
+    });
+    const packagedFingerprint = await computeOfficialTeamContentFingerprint(packagedDirectory);
+    const location = resolveTeamLocation({
+      dataRoot: input.dataRoot,
+      teamId,
+      ownership: "system",
+    });
+    const existed = await pathExists(location.directory);
+    if (!existed) {
+      await copyEditableTeamContent(sourceDirectory, location.directory);
+      copiedTeamCount += 1;
     }
-    throw error;
+
+    const currentFingerprint = await tryComputeContentFingerprint(location.directory);
+    const recommendations = recommendationsFromManifest(manifest);
+    if (officialDocument.teams[teamId] === undefined) {
+      officialDocument.teams[teamId] = {
+        appliedOfficialVersion: manifest.officialVersion,
+        appliedContentFingerprint: existed
+          ? currentFingerprint ?? packagedFingerprint
+          : packagedFingerprint,
+        appliedRecommendationFingerprint: recommendationFingerprint(recommendations),
+        appliedRecommendations: recommendations,
+        baselineConfidence: currentFingerprint === packagedFingerprint ? "verified" : "conservative",
+      };
+    }
+
+    const key = teamBindingKey("system", teamId);
+    if (bindingDocument.teams[key] === undefined) {
+      const memberSlugs = await readCurrentMemberSlugs(location.directory);
+      bindingDocument.teams[key] = {
+        ownership: "system",
+        members: Object.fromEntries(memberSlugs.map((slug) => [
+          slug,
+          Object.hasOwn(recommendations, slug)
+            ? { source: "recommended" as const }
+            : { source: "explicit" as const, profile: DEFAULT_LEGACY_PROFILE },
+        ])),
+      };
+    }
   }
 
-  if (hadExistingSystemRoot) {
-    await fs.rm(backupRoot, { recursive: true, force: true });
-  }
-  await writeMarkerLast(markerPath, fingerprint);
-
-  return { fingerprint, status: "seeded" };
+  await writeOfficialTeamStateDocument(input.dataRoot, officialDocument);
+  await writeExecutionBindingDocument(input.dataRoot, bindingDocument);
+  await writeMarker(path.join(systemRoot, TEAMS_SEED_MARKER_FILE), fingerprint);
+  return {
+    fingerprint,
+    status: copiedTeamCount > 0 ? "seeded" : "skipped",
+  };
 }
 
 export async function computeTeamSeedFingerprint(seedTeamsRoot: string): Promise<string> {
@@ -92,19 +136,73 @@ export async function computeTeamSeedFingerprint(seedTeamsRoot: string): Promise
   return hash.digest("hex");
 }
 
+async function listPackagedTeamIds(root: string): Promise<string[]> {
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort(compareNames);
+}
+
+async function copyEditableTeamContent(source: string, destination: string): Promise<void> {
+  await fs.mkdir(destination, { recursive: false });
+  try {
+    const entries = await fs.readdir(source, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === "official.json") {
+        continue;
+      }
+      await fs.cp(path.join(source, entry.name), path.join(destination, entry.name), {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      });
+    }
+  } catch (error) {
+    await fs.rm(destination, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function readCurrentMemberSlugs(teamDirectory: string): Promise<string[]> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await fs.readFile(path.join(teamDirectory, "team.json"), "utf8")) as unknown;
+  } catch {
+    return [];
+  }
+  if (
+    typeof value !== "object"
+    || value === null
+    || !("memberOrder" in value)
+    || !Array.isArray(value.memberOrder)
+  ) {
+    return [];
+  }
+  return value.memberOrder.filter((slug): slug is string => typeof slug === "string");
+}
+
+async function tryComputeContentFingerprint(teamDirectory: string): Promise<string | null> {
+  try {
+    return await computeOfficialTeamContentFingerprint(teamDirectory);
+  } catch {
+    return null;
+  }
+}
+
 async function collectSeedEntries(root: string, current = root): Promise<SeedEntry[]> {
   const directoryEntries = await fs.readdir(current, { withFileTypes: true });
   const collected: SeedEntry[] = [];
 
   for (const directoryEntry of directoryEntries.sort((left, right) => compareNames(left.name, right.name))) {
     const absolutePath = path.join(current, directoryEntry.name);
-    const relativePath = toFingerprintPath(path.relative(root, absolutePath));
+    const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
     if (relativePath === TEAMS_SEED_MARKER_FILE) {
       throw new Error(`${TEAMS_SEED_MARKER_FILE} is reserved and cannot be packaged as team seed content`);
     }
     if (directoryEntry.isDirectory()) {
       collected.push({ absolutePath, relativePath, type: "directory" });
-      collected.push(...(await collectSeedEntries(root, absolutePath)));
+      collected.push(...await collectSeedEntries(root, absolutePath));
       continue;
     }
     if (directoryEntry.isFile()) {
@@ -117,53 +215,8 @@ async function collectSeedEntries(root: string, current = root): Promise<SeedEnt
   return collected;
 }
 
-async function copySeedTree(sourceRoot: string, destinationRoot: string): Promise<void> {
-  await fs.rm(destinationRoot, { recursive: true, force: true });
-  await fs.mkdir(destinationRoot, { recursive: true });
-  const entries = await collectSeedEntries(sourceRoot);
-
-  for (const entry of entries) {
-    const destination = path.join(destinationRoot, ...entry.relativePath.split("/"));
-    if (entry.type === "directory") {
-      await fs.mkdir(destination, { recursive: true });
-      continue;
-    }
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.copyFile(entry.absolutePath, destination);
-  }
-}
-
-async function recoverInterruptedSwap(input: {
-  systemRoot: string;
-  stagingRoot: string;
-  backupRoot: string;
-}): Promise<void> {
-  await fs.rm(input.stagingRoot, { recursive: true, force: true });
-  if (!(await pathExists(input.backupRoot))) {
-    return;
-  }
-
-  if (await pathExists(input.systemRoot)) {
-    await fs.rm(input.backupRoot, { recursive: true, force: true });
-    return;
-  }
-
-  await fs.rename(input.backupRoot, input.systemRoot);
-}
-
-async function readMarker(markerPath: string): Promise<string | null> {
-  try {
-    return (await fs.readFile(markerPath, "utf8")).trim();
-  } catch (error) {
-    if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function writeMarkerLast(markerPath: string, fingerprint: string): Promise<void> {
-  const temporaryMarkerPath = path.join(path.dirname(markerPath), MARKER_TEMP_FILE);
+async function writeMarker(markerPath: string, fingerprint: string): Promise<void> {
+  const temporaryMarkerPath = `${markerPath}.${process.pid}.tmp`;
   await fs.writeFile(temporaryMarkerPath, `${fingerprint}\n`, "utf8");
   await fs.rename(temporaryMarkerPath, markerPath);
 }
@@ -178,10 +231,6 @@ async function pathExists(targetPath: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function toFingerprintPath(relativePath: string): string {
-  return relativePath.split(path.sep).join("/");
 }
 
 function compareNames(left: string, right: string): number {

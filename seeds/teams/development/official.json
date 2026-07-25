@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "officialVersion": "1",
+  "members": {
+    "dev-manager": {
+      "recommendedProfile": {
+        "cli": "codex",
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      }
+    },
+    "dev": {
+      "recommendedProfile": {
+        "cli": "codex",
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      }
+    },
+    "qa": {
+      "recommendedProfile": {
+        "cli": "codex",
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      }
+    }
+  }
+}
