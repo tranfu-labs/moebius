@@ -108,6 +108,16 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 - MUST keep each session jsonl as the durable timeline fact source and `session_messages` as a rebuildable index; project rows only describe workspace source and grouping.
 - MUST restore the same local project list after local console server or desktop shell restart when using the same SQLite database.
 
+### 兼容占位项目公开边界
+Source: docs/product/pages/main-left-sidebar.md#入口与去向
+
+- 系统 MUST 保留内部 `local/default` 项目、会话、cursor 与兼容消息入口，但当且仅当该项目仍可证明为自动初始化的未使用占位时，MUST 将它从公开项目列表及项目排序输入集合中排除。
+- 未使用占位 MUST 同时满足：项目 id/source/title/SQLite 数据根目录/worktree/移除与修复状态仍为自动基线；项目只关联未归档的 `default` 会话且不存在活动或归档的额外会话；该会话的 source、project、title、status、workspace、生效及 pending 团队、归档、注意状态均为自动基线；初始 cursor 存在且 processed 为 0、active message/run 为空。
+- `default` 作为父或子的 `sessions.parent_session_id`、作为父或子的 `session_edges`、effective/pending 团队成员快照，以及 `session_messages`、role threads、agent contexts、route decisions、acceptance facts、integration events、dead letters、workspace diffs 任一存在时，系统 MUST 保持该项目公开。
+- 对于未移除的活动兼容记录，项目或会话任一用户可控字段偏离自动基线时，系统 MUST 保持该项目公开；项目 workspace 探测缓存、项目/会话/cursor 时间戳、项目 `sort_order` 与未绑定消息的全局附件草稿不得单独使占位公开。
+- 过滤 MUST NOT 删除或迁移兼容项目、会话、cursor、关系、团队绑定或历史事实；兼容入口产生第一条历史后，项目与历史 MUST 立即重新可达。
+- 当公开项目为空时，local-console 状态 MUST 返回 `projects=[]` 与 `selectedSession=null`；API 可继续携带 `local/default` 兼容 fallback id，桌面选择恢复 MUST 将其解释为“新建对话、项目未选择”，不得记为用户历史选择。
+
 ### Local workspace source
 - MUST model local project workspace source as a folder path plus a worktree mode boolean.
 - MUST resolve local Codex cwd from the session's project workspace source before every Codex run and pass it explicitly to the Codex driver.
@@ -624,6 +634,41 @@ When the local console server or desktop shell restarts with the same SQLite dat
 Then the project list is restored
 And each project title reflects the real folder basename
 And each project's worktree mode is restored.
+
+### 场景 LC.T4.16A：全新或升级空占位不公开
+Given SQLite contains only the automatically initialized `local/default` project, session, and initial cursor
+And the data root is either the packaged default or a custom data root
+When the local console state is read before and after restart
+Then the public project list is empty
+And the compatibility rows still exist
+And the selected session is null
+And the desktop opens an unscoped new conversation without remembering `local/default`.
+
+### 场景 LC.T4.16B：任一历史事实或用户修改使占位继续公开
+Given the compatibility project differs from its automatic project or session field baseline
+Or it has an additional active or archived session
+Or `default` participates as parent or child in either relationship source
+Or it has an effective or pending team field or snapshot
+Or its cursor is missing, advanced, or active
+Or any enumerated session fact table contains a `default` fact
+When the public project list is read
+Then the compatibility project remains visible
+And no project, session, relationship, team snapshot, cursor, or fact is deleted.
+
+### 场景 LC.T4.16C：兼容入口产生历史后重新公开
+Given the unused compatibility placeholder is not in the public project list
+When a client writes a message through the compatible default local message endpoint
+Then the request remains supported
+And the compatibility project and default session become public
+And the message remains reachable after restart.
+
+### 场景 LC.T4.16D：项目排序忽略隐藏占位
+Given the unused compatibility placeholder is hidden
+And two real projects are public
+When the client submits a complete order containing those two public project ids
+Then the reorder succeeds without requiring the hidden compatibility id
+And the real projects preserve that relative order after restart
+And the compatibility row remains stored.
 
 ### 场景 LC.T4.17：local session project 引用完整
 Given an old local console SQLite database contains local sessions and messages but no projects table

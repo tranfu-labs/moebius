@@ -169,9 +169,11 @@ function runCommand(input: WorkerInput): unknown {
       case "local-remove-project":
         return removeLocalProject(database, input.command);
       case "local-reorder-projects":
-        return reorderLocalProjects(database, input.command.projectIds);
+        return reorderLocalProjects(database, input.command.projectIds, defaultLocalProjectFolderPath(input.sqlitePath));
       case "local-list-projects":
-        return listLocalProjects(database);
+        return listLocalProjects(database, defaultLocalProjectFolderPath(input.sqlitePath));
+      case "local-get-project":
+        return getLocalProject(database, input.command.projectId);
       case "local-get-session-workspace":
         return getLocalSessionWorkspace(database, input.command.sessionId);
       case "local-switch-session-workspace":
@@ -1486,18 +1488,27 @@ function updateLocalProject(
   });
 }
 
-function listLocalProjects(database: SqliteDatabase): unknown[] {
+function listLocalProjects(database: SqliteDatabase, defaultProjectFolderPath: string): unknown[] {
   const rows = database
     .prepare(
       "SELECT * FROM projects WHERE removed_at IS NULL ORDER BY sort_order ASC, created_at DESC, project_id ASC",
     )
     .all();
-  return rows.map((row) => readLocalProjectRow(database, row));
+  return rows
+    .filter((row) => !isUnusedDefaultLocalProject(database, row, defaultProjectFolderPath))
+    .map((row) => readLocalProjectRow(database, row));
 }
 
-function reorderLocalProjects(database: SqliteDatabase, projectIds: string[]): unknown[] {
+function reorderLocalProjects(
+  database: SqliteDatabase,
+  projectIds: string[],
+  defaultProjectFolderPath: string,
+): unknown[] {
   return transaction(database, () => {
-    const rows = database.prepare("SELECT project_id FROM projects WHERE removed_at IS NULL").all();
+    const rows = database
+      .prepare("SELECT * FROM projects WHERE removed_at IS NULL")
+      .all()
+      .filter((row) => !isUnusedDefaultLocalProject(database, row, defaultProjectFolderPath));
     const storedIds = rows.map((row) => {
       if (!isRecord(row)) {
         throw new Error("Invalid local console project row during reorder");
@@ -1514,8 +1525,114 @@ function reorderLocalProjects(database: SqliteDatabase, projectIds: string[]): u
     }
     const update = database.prepare("UPDATE projects SET sort_order = ? WHERE project_id = ?");
     projectIds.forEach((projectId, index) => update.run(index, projectId));
-    return listLocalProjects(database);
+    return listLocalProjects(database, defaultProjectFolderPath);
   });
+}
+
+function getLocalProject(database: SqliteDatabase, projectId: string): unknown {
+  const row = database
+    .prepare("SELECT * FROM projects WHERE project_id = ? AND removed_at IS NULL")
+    .get(projectId);
+  return row === undefined ? null : readLocalProjectRow(database, row);
+}
+
+function isUnusedDefaultLocalProject(
+  database: SqliteDatabase,
+  row: unknown,
+  defaultProjectFolderPath: string,
+): boolean {
+  if (!isRecord(row)) {
+    throw new Error("Invalid local console project row");
+  }
+  const normalizedDefaultFolderPath = path.resolve(defaultProjectFolderPath);
+  if (
+    readString(row.project_id, "project_id") !== LOCAL_CONSOLE_PROJECT_ID
+    || readString(row.source_type, "source_type") !== LOCAL_CONSOLE_PROJECT_SOURCE_TYPE
+    || readString(row.title, "title") !== projectTitleFromFolder(normalizedDefaultFolderPath)
+    || path.resolve(readString(row.folder_path, "folder_path")) !== normalizedDefaultFolderPath
+    || readBooleanNumber(row.worktree_mode, "worktree_mode")
+    || readNullableString(row.original_folder_path, "original_folder_path") !== null
+    || readNullableString(row.removed_at, "removed_at") !== null
+  ) {
+    return false;
+  }
+
+  const sessionRows = database
+    .prepare("SELECT * FROM sessions WHERE project_id = ?")
+    .all(LOCAL_CONSOLE_PROJECT_ID);
+  if (sessionRows.length !== 1 || !isRecord(sessionRows[0])) {
+    return false;
+  }
+  const session = sessionRows[0];
+  if (
+    readString(session.session_id, "session_id") !== LOCAL_CONSOLE_DEFAULT_SESSION_ID
+    || readString(session.source_type, "source_type") !== "local"
+    || readNullableString(session.source_owner, "source_owner") !== null
+    || readNullableString(session.source_repo, "source_repo") !== null
+    || session.source_issue_number !== null
+    || readNullableString(session.parent_session_id, "parent_session_id") !== null
+    || readNullableString(session.agent_team_ownership, "agent_team_ownership") !== null
+    || readNullableString(session.agent_team_id, "agent_team_id") !== null
+    || readNullableString(session.agent_team_pending_ownership, "agent_team_pending_ownership") !== null
+    || readNullableString(session.agent_team_pending_id, "agent_team_pending_id") !== null
+    || readNullableString(session.workspace_mode, "workspace_mode") !== "direct"
+    || readNullableString(session.workspace_pending_mode, "workspace_pending_mode") !== null
+    || readNullableString(session.title, "title") !== "默认会话"
+    || readString(session.status, "status") !== "active"
+    || readNullableString(session.archived_at, "archived_at") !== null
+    || readNullableString(session.awaits_human_reason, "awaits_human_reason") !== null
+    || readNullableString(session.unread_since, "unread_since") !== null
+  ) {
+    return false;
+  }
+
+  const cursor = database
+    .prepare("SELECT * FROM local_message_cursors WHERE session_id = ?")
+    .get(LOCAL_CONSOLE_DEFAULT_SESSION_ID);
+  if (
+    !isRecord(cursor)
+    || readNumber(cursor.processed_through_message_id, "processed_through_message_id") !== 0
+    || cursor.active_message_id !== null
+    || readNullableString(cursor.active_run_id, "active_run_id") !== null
+  ) {
+    return false;
+  }
+
+  const relationshipExists = database
+    .prepare(
+      `SELECT 1 AS found
+       WHERE EXISTS (
+         SELECT 1 FROM sessions
+         WHERE parent_session_id = ?
+       )
+       OR EXISTS (
+         SELECT 1 FROM session_edges
+         WHERE parent_session_id = ? OR child_session_id = ?
+       )`,
+    )
+    .get(
+      LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+      LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+      LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+    );
+  if (relationshipExists !== undefined) {
+    return false;
+  }
+
+  const factQueries = [
+    "SELECT 1 AS found FROM session_agent_team_members WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM session_messages WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM session_role_threads WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM session_agent_contexts WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_route_decisions WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_acceptance_facts WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_integration_events WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_dead_letters WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_workspace_diffs WHERE session_id = ? LIMIT 1",
+  ];
+  return factQueries.every((sql) =>
+    database.prepare(sql).get(LOCAL_CONSOLE_DEFAULT_SESSION_ID) === undefined
+  );
 }
 
 function getLocalSessionWorkspace(database: SqliteDatabase, sessionId: string): unknown {

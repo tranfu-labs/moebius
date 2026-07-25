@@ -89,6 +89,12 @@ describe("console selection preference", () => {
       remembered,
       snapshot: { projectId: "local", sessionId: "default", isRootSession: true },
     })).toEqual({ action: "open-new-conversation", persistenceEnabled: false });
+    expect(decideConsoleSelectionCommit({
+      startupPending: true,
+      persistenceEnabled: false,
+      remembered: { projectId: "local", sessionId: "default" },
+      snapshot: { projectId: "local", sessionId: "default", isRootSession: false },
+    })).toEqual({ action: "open-new-conversation", persistenceEnabled: false });
   });
 
   it("remembers only confirmed roots and disables persistence after an empty selection", () => {

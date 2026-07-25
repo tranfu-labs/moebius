@@ -108,6 +108,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     return this.run({ kind: "local-list-projects" });
   }
 
+  async getProject(projectId: string): Promise<LocalConsoleProjectSummary | null> {
+    return this.run({ kind: "local-get-project", projectId });
+  }
+
   async getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource> {
     return this.enqueue(async () => {
       if (this.messageIndexDirty) {

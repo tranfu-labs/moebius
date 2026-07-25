@@ -125,7 +125,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
     const store = await createSqliteLocalConsoleStore({ sqlitePath });
     await store.init();
-    const projectId = (await store.listProjects())[0]!.projectId;
+    const projectId = LOCAL_CONSOLE_PROJECT_ID;
     await store.createSession({
       sessionId: "local:bound-team",
       projectId,
@@ -227,7 +227,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const store = await createSqliteLocalConsoleStore({ sqlitePath });
     await store.init();
     try {
-      const projectId = (await store.listProjects())[0]!.projectId;
+      const projectId = LOCAL_CONSOLE_PROJECT_ID;
       const target = await store.createSession({
         sessionId: "local:archive-target",
         projectId,
@@ -591,20 +591,18 @@ describe("local console", { timeout: 15_000 }, () => {
     await Promise.all([folderA, folderB, folderC].map((folderPath) => fs.mkdir(folderPath, { recursive: true })));
     const store = await createSqliteLocalConsoleStore({ sqlitePath });
     await store.init();
-    const defaultProjectId = (await store.listProjects())[0]!.projectId;
     const projectA = await store.createProject({ folderPath: folderA, worktreeMode: false, now: "2026-07-09T00:00:01.000Z" });
     const projectB = await store.createProject({ folderPath: folderB, worktreeMode: false, now: "2026-07-09T00:00:02.000Z" });
     expect((await store.listProjects()).map((project) => project.projectId)).toEqual([
       projectB.projectId,
       projectA.projectId,
-      defaultProjectId,
     ]);
 
-    const explicitOrder = [projectA.projectId, defaultProjectId, projectB.projectId];
+    const explicitOrder = [projectA.projectId, projectB.projectId];
     await store.reorderProjects(explicitOrder);
     await store.updateProject({ projectId: projectB.projectId, worktreeMode: true, now: "2026-07-09T00:00:03.000Z" });
     expect((await store.listProjects()).map((project) => project.projectId)).toEqual(explicitOrder);
-    await expect(store.reorderProjects([projectA.projectId, projectB.projectId])).rejects.toThrow(
+    await expect(store.reorderProjects([projectA.projectId])).rejects.toThrow(
       "project order must contain every active project exactly once",
     );
     await store.close();
@@ -3315,6 +3313,10 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     return await this.inner.listProjects();
   }
 
+  async getProject(projectId: string): Promise<LocalConsoleProjectSummary | null> {
+    return await this.inner.getProject?.(projectId) ?? null;
+  }
+
   async getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource> {
     return await this.inner.getSessionWorkspace(sessionId);
   }
@@ -3557,6 +3559,10 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
 
   async listProjects(): Promise<LocalConsoleProjectSummary[]> {
     return await this.inner.listProjects();
+  }
+
+  async getProject(projectId: string): Promise<LocalConsoleProjectSummary | null> {
+    return await this.inner.getProject?.(projectId) ?? null;
   }
 
   async getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource> {

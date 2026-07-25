@@ -46,6 +46,7 @@ export type SqliteStateCommand =
   | { kind: "local-remove-project"; projectId: string; force: boolean; now: string }
   | { kind: "local-reorder-projects"; projectIds: string[] }
   | { kind: "local-list-projects" }
+  | { kind: "local-get-project"; projectId: string }
   | { kind: "local-get-session-workspace"; sessionId: string }
   | { kind: "local-switch-session-workspace"; sessionId: string; workspaceMode: "direct" | "worktree"; now: string }
   | {

@@ -28,6 +28,7 @@ import { buildLocalConsoleTimeline } from "./timeline.js";
 import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+  LOCAL_CONSOLE_PROJECT_ID,
   LocalConsoleBusyError,
   LocalConsoleProjectFolderError,
   LocalConsoleStoreTimeoutError,
@@ -493,8 +494,7 @@ export class LocalConsoleRuntime {
       throw new Error("Attachment ids must be unique");
     }
     await this.assertProjectDirectoryAvailable(resolvedProjectId);
-    const project = (await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects()))
-      .find((candidate) => candidate.projectId === resolvedProjectId);
+    const project = await this.storedProject(resolvedProjectId);
     if (project === undefined) {
       throw new Error(`local console project not found: ${resolvedProjectId}`);
     }
@@ -1932,16 +1932,11 @@ export class LocalConsoleRuntime {
 
   private async defaultProjectId(): Promise<string> {
     const projects = await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects());
-    const firstProject = projects[0];
-    if (firstProject === undefined) {
-      throw new Error("local console project list is empty");
-    }
-    return firstProject.projectId;
+    return projects[0]?.projectId ?? LOCAL_CONSOLE_PROJECT_ID;
   }
 
   private async assertProjectDirectoryAvailable(projectId: string): Promise<void> {
-    const project = (await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects()))
-      .find((candidate) => candidate.projectId === projectId);
+    const project = await this.storedProject(projectId);
     if (project === undefined) {
       throw new LocalConsoleProjectFolderError("LOCAL_PROJECT_NOT_FOUND", "项目不存在或已移除");
     }
@@ -1951,6 +1946,16 @@ export class LocalConsoleRuntime {
         "当前项目本地文件夹不可用，请先使用红色扳手修复",
       );
     }
+  }
+
+  private async storedProject(projectId: string): Promise<LocalConsoleProjectSummary | undefined> {
+    if (this.options.store.getProject !== undefined) {
+      return (await this.storeCall("local-console-store-get-project", () =>
+        this.options.store.getProject!(projectId)
+      )) ?? undefined;
+    }
+    return (await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects()))
+      .find((candidate) => candidate.projectId === projectId);
   }
 
   private async assertSessionProjectDirectoryAvailable(sessionId: string): Promise<void> {

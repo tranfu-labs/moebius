@@ -433,6 +433,7 @@ export interface LocalConsoleStore {
   removeProject?(input: { projectId: string; force: boolean; now: string }): Promise<LocalConsoleProjectRemovalResult>;
   reorderProjects(projectIds: string[]): Promise<LocalConsoleProjectSummary[]>;
   listProjects(): Promise<LocalConsoleProjectSummary[]>;
+  getProject?(projectId: string): Promise<LocalConsoleProjectSummary | null>;
   getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource>;
   getSessionBaselineCommit?(sessionId: string): Promise<string | null>;
   switchSessionWorkspace(input: {
