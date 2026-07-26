@@ -35,9 +35,37 @@ describe("ConversationRelayRail", () => {
       "data-hit-target",
       "row",
     );
-    expect(screen.getByTestId("relay-event-message-2")).toHaveClass(
-      "w-[var(--relay-expanded-width)]",
+    expect(screen.getByTestId("relay-event-message-2")).toHaveStyle({
+      width: "192px",
+    });
+  });
+
+  it("anchors motion to the shared left edge without a hover pyramid", () => {
+    renderRail();
+    const nav = screen.getByRole("navigation", { name: "当前主会话消息目录" });
+    const ticks = events.map((event) =>
+      nav.querySelector<HTMLElement>(`[data-relay-collapsed-tick="${event.id}"]`));
+
+    expect(nav).toHaveAttribute("data-motion-origin", "left");
+    expect(nav).toHaveStyle({ transformOrigin: "left center", width: "44px" });
+    for (const tick of ticks) {
+      expect(tick).not.toBeNull();
+      expect(tick).toHaveClass("left-2");
+      expect(tick).toHaveStyle({ transformOrigin: "left center" });
+    }
+
+    fireEvent.mouseEnter(screen.getByTestId("conversation-relay-rail"));
+
+    expect(nav).toHaveStyle({ width: "192px" });
+    expect(ticks[0]).toHaveStyle({ transform: "scaleX(0.18)" });
+    expect(ticks[1]).toHaveStyle({ transform: "scaleX(0.18)" });
+    const firstNode = nav.querySelector<HTMLElement>(
+      '[data-relay-expanded-node="message-1"]',
     );
+    const secondNode = nav.querySelector<HTMLElement>(
+      '[data-relay-expanded-node="message-2"]',
+    );
+    expect(firstNode?.style.left).not.toBe(secondNode?.style.left);
   });
 
   it("draws cubic connectors between adjacent event rows", () => {
@@ -46,6 +74,8 @@ describe("ConversationRelayRail", () => {
     const connector = screen.getByTestId("relay-connector");
     expect(connector.getAttribute("d")).toContain(" C ");
     expect(connector.getAttribute("d")).not.toContain(" H ");
+    expect(connector).toHaveAttribute("pathLength", "1");
+    expect(connector).toHaveStyle({ strokeDashoffset: "0" });
   });
 
   it("shows only readable member metadata and original reply for Agent preview", () => {
@@ -62,6 +92,13 @@ describe("ConversationRelayRail", () => {
     fireEvent.pointerMove(screen.getByTestId("relay-event-message-1"));
     expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("请实现目录轨");
     expect(screen.getByTestId("relay-event-preview")).not.toHaveTextContent("已经准备实现");
+    expect(screen.getByTestId("relay-preview-anchor")).toHaveClass(
+      "transition-[top]",
+      "motion-reduce:transition-none",
+    );
+    expect(screen.getByTestId("relay-preview-content")).toHaveClass(
+      "motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]",
+    );
   });
 
   it("keeps real node focus while the Popover opens, browses, and activates", async () => {

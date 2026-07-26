@@ -173,9 +173,12 @@ export function ConversationRelayRail({
         ref={stageRef}
         aria-label="当前主会话消息目录"
         className={cn(
-          "pointer-events-auto absolute left-0 overflow-visible",
-          expanded && "rounded-md border border-line bg-sunken",
+          "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+          expanded
+            ? "border-line bg-sunken"
+            : "border-transparent bg-transparent",
         )}
+        data-motion-origin="left"
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
         }}
@@ -186,33 +189,52 @@ export function ConversationRelayRail({
         style={{
           height: railHeight,
           top: stageTop,
+          transformOrigin: "left center",
           width: expanded ? expandedWidth : CONVERSATION_RELAY_COLLAPSED_WIDTH,
         }}
       >
         <svg
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute left-0 top-0 overflow-visible text-line-strong",
+            "pointer-events-none absolute left-0 top-0 overflow-visible text-line-strong transition-opacity duration-150 motion-reduce:transition-none",
             expanded ? "opacity-100" : "opacity-0",
           )}
           height={railHeight}
           viewBox={`0 0 ${String(expandedWidth)} ${String(railHeight)}`}
           width={expandedWidth}
         >
-          {paths.map((path) => (
-            <path
-              key={path.key}
-              d={path.d}
-              data-relay-from={path.from}
-              data-relay-to={path.to}
-              data-testid="relay-connector"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth={1.5}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+          {paths.map((path, pathIndex) => {
+            const emphasized = inspectedId === path.from || inspectedId === path.to;
+            return (
+              <path
+                key={path.key}
+                className="relay-motion-inline"
+                d={path.d}
+                data-relay-from={path.from}
+                data-relay-to={path.to}
+                data-testid="relay-connector"
+                fill="none"
+                pathLength={1}
+                stroke="currentColor"
+                strokeDasharray={1}
+                strokeLinecap="round"
+                strokeWidth={emphasized ? 2 : 1.5}
+                style={{
+                  opacity: expanded ? (emphasized ? 1 : 0.72) : 0,
+                  strokeDashoffset: expanded ? 0 : 1,
+                  transition: [
+                    "stroke-dashoffset 260ms var(--ease-enter)",
+                    "opacity 150ms var(--ease)",
+                    "stroke-width 150ms var(--ease)",
+                  ].join(", "),
+                  transitionDelay: expanded
+                    ? `${String(Math.min(pathIndex * 18, 126))}ms`
+                    : "0ms",
+                }}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
         </svg>
 
         {rows.map((row, rowIndex) => {
@@ -222,7 +244,7 @@ export function ConversationRelayRail({
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
                 aria-label={`暂时收起 ${String(row.count)} 条消息`}
                 className={cn(
-                  "absolute left-0 flex h-5 items-center text-[8px] tracking-[1px] text-hint",
+                  "absolute left-0 flex h-5 items-center text-[8px] tracking-[1px] text-hint transition-[width,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",
                 )}
                 data-testid="relay-omission"
@@ -247,12 +269,7 @@ export function ConversationRelayRail({
               type="button"
               aria-current={current ? "location" : undefined}
               aria-label={`${event.actorName}，${event.body}`}
-              className={cn(
-                "absolute left-0 z-[2] flex h-5 border-0 bg-transparent p-0 outline-none",
-                expanded
-                  ? "w-[var(--relay-expanded-width)] items-center hover:bg-hover focus-visible:bg-hover"
-                  : "w-11 items-center pl-2",
-              )}
+              className="absolute left-0 z-[2] flex h-5 items-center border-0 bg-transparent p-0 outline-none transition-[width,background-color] duration-200 ease-enter hover:bg-hover focus-visible:bg-hover motion-reduce:transition-none"
               data-hit-target={expanded ? "row" : "collapsed-row"}
               data-relay-event={event.id}
               data-testid={`relay-event-${event.id}`}
@@ -281,35 +298,62 @@ export function ConversationRelayRail({
                 setInspectedId(event.id);
               }}
               onMouseLeave={scheduleClose}
-              style={{ top: rowIndex * CONVERSATION_RELAY_ROW_HEIGHT }}
+              style={{
+                top: rowIndex * CONVERSATION_RELAY_ROW_HEIGHT,
+                width: expanded
+                  ? expandedWidth
+                  : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+              }}
             >
-              {expanded ? (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "absolute block border-2 border-sunken",
-                    event.kind === "user" ? "rotate-45 rounded-[2px]" : "rounded-full",
-                    current
-                      ? "h-3 w-3 bg-sunken outline outline-2 outline-sunken"
-                      : "h-[9px] w-[9px]",
-                  )}
-                  style={{
-                    backgroundColor: current ? "var(--sunken)" : eventColor,
-                    borderColor: current ? eventColor : "var(--sunken)",
-                    left: laneX - (current ? 6 : 4.5),
-                  }}
-                />
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "block rounded-full",
-                    current ? "h-[3px] w-6 opacity-100" : "h-0.5 w-[13px] opacity-70",
-                    inspected && !current && "w-[19px] opacity-100",
-                  )}
-                  style={{ backgroundColor: eventColor }}
-                />
-              )}
+              <span
+                aria-hidden="true"
+                className="relay-motion-inline absolute left-2 block rounded-full motion-reduce:transition-none"
+                data-relay-collapsed-tick={event.id}
+                style={{
+                  backgroundColor: eventColor,
+                  height: current ? 3 : 2,
+                  opacity: expanded ? 0 : current ? 1 : 0.7,
+                  transform: `scaleX(${expanded ? "0.18" : "1"})`,
+                  transformOrigin: "left center",
+                  transition: [
+                    "width 160ms var(--ease-enter)",
+                    "opacity 100ms var(--ease)",
+                    "transform 180ms var(--ease-enter)",
+                  ].join(", "),
+                  width: current ? 24 : inspected ? 19 : 13,
+                }}
+              />
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "relay-motion-inline absolute block border-2 border-sunken motion-reduce:transition-none",
+                  event.kind === "user" ? "rounded-[2px]" : "rounded-full",
+                  current
+                    ? "h-3 w-3 bg-sunken outline outline-2 outline-sunken"
+                    : "h-[9px] w-[9px]",
+                )}
+                data-relay-expanded-node={event.id}
+                style={{
+                  backgroundColor: current ? "var(--sunken)" : eventColor,
+                  borderColor: current ? eventColor : "var(--sunken)",
+                  left: expanded
+                    ? laneX - (current ? 6 : 4.5)
+                    : 8,
+                  opacity: expanded ? 1 : 0,
+                  transform: [
+                    event.kind === "user" ? "rotate(45deg)" : "",
+                    `scale(${expanded ? (inspected ? "1.16" : "1") : "0.45"})`,
+                  ].filter(Boolean).join(" "),
+                  transition: [
+                    "left 240ms var(--ease-enter)",
+                    "opacity 120ms var(--ease)",
+                    "transform 180ms var(--ease-enter)",
+                  ].join(", "),
+                  transitionDelay: expanded
+                    ? `${String(Math.min(rowIndex * 12, 96))}ms`
+                    : "0ms",
+                }}
+              />
             </button>
           );
         })}
@@ -317,7 +361,8 @@ export function ConversationRelayRail({
           <PopoverAnchor asChild>
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-0 h-5"
+              className="pointer-events-none absolute left-0 h-5 transition-[top] duration-200 ease-enter motion-reduce:transition-none"
+              data-testid="relay-preview-anchor"
               style={{
                 top: inspectedRowIndex * CONVERSATION_RELAY_ROW_HEIGHT,
                 width: expandedWidth,
@@ -341,19 +386,25 @@ export function ConversationRelayRail({
         sideOffset={12}
         data-testid="relay-event-preview"
       >
-        <p className="flex items-center gap-1.5 text-[11px] text-hint">
-          <span
-            aria-hidden="true"
-            className="h-[7px] w-[7px] rounded-full"
-            style={{ backgroundColor: inspectedEventColor }}
-          />
-          <span>{inspectedEvent.actorName}</span>
-          <span aria-hidden="true">·</span>
-          <time className="tnum">{formatRelayTime(inspectedEvent.updatedAt)}</time>
-        </p>
-        <p className="mt-1.5 line-clamp-3 text-xs leading-[1.55] text-ink">
-          {inspectedEvent.body}
-        </p>
+        <div
+          key={inspectedEvent.id}
+          className="motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]"
+          data-testid="relay-preview-content"
+        >
+          <p className="flex items-center gap-1.5 text-[11px] text-hint">
+            <span
+              aria-hidden="true"
+              className="h-[7px] w-[7px] rounded-full"
+              style={{ backgroundColor: inspectedEventColor }}
+            />
+            <span>{inspectedEvent.actorName}</span>
+            <span aria-hidden="true">·</span>
+            <time className="tnum">{formatRelayTime(inspectedEvent.updatedAt)}</time>
+          </p>
+          <p className="mt-1.5 line-clamp-3 text-xs leading-[1.55] text-ink">
+            {inspectedEvent.body}
+          </p>
+        </div>
       </PopoverContent>
     ) : null}
     </Popover>
