@@ -68,6 +68,7 @@ import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
 import { MarkdownMessage } from "@/console/markdown-message";
 import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
+import { RunTime } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
 import {
@@ -151,7 +152,7 @@ export interface OperatorSession {
   status: OperatorSessionStatus;
   awaitsHumanReason: "answer" | "confirmation" | "acceptance" | "exception" | null;
   unreadSince: string | null;
-  unresolvedSystemEventKind?: "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted" | "other" | null;
+  unresolvedSystemEventKind?: "run-not-started" | "run-stuck" | "user-stopped" | "resume-unavailable" | "retry-exhausted" | "other" | null;
   hasPendingControlWork?: boolean;
   lastMessageMentionsAgent?: boolean;
   continuation?: {
@@ -203,9 +204,20 @@ export interface OperatorMessage {
   runId: string | null;
   runDir: string | null;
   error: string | null;
-  systemEventKind?: "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted" | "other";
+  systemEventKind?: "run-not-started" | "run-stuck" | "user-stopped" | "resume-unavailable" | "retry-exhausted" | "other";
   sourceKind?: string | null;
   sourceId?: string | null;
+  runTiming?: {
+    stepId: string;
+    attempt: number;
+    createdAt: string;
+    startedAt: string | null;
+    elapsedMs: number | null;
+    completedAt: string | null;
+    status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
+    engine: "codex" | "kimi";
+    processOutputAvailable: boolean;
+  } | null;
   createdAt: string;
   updatedAt: string;
   attachments?: StructuredAttachment[];
@@ -245,8 +257,21 @@ export interface OperatorRunSnapshot {
   runId: string;
   role: string | null;
   status: "running";
-  startedAt: string;
-  elapsedMs: number;
+  createdAt?: string;
+  startedAt: string | null;
+  elapsedMs: number | null;
+  stepId?: string;
+  attempt?: number;
+  engine?: "codex" | "kimi";
+  processOutputAvailable?: boolean;
+  activity?: {
+    cursor: number;
+    kind: "command" | "tool" | "search" | "read" | "edit" | "progress";
+    phase: "running" | "completed";
+    action: string;
+    object: string | null;
+    occurredAt: string;
+  } | null;
   runDir: string | null;
   cwd: string | null;
   workspaceMode: "direct" | "worktree" | null;
@@ -1216,17 +1241,23 @@ export function OperatorConsole({
                           <RunBlock
                             role={run.role ?? "dev"}
                             memberIdentities={memberIdentities}
+                            elapsedMs={run.elapsedMs}
+                            activity={run.activity}
+                            processOutputAvailable={run.processOutputAvailable}
+                            outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
                             summary={safeRunSummary(run.lastOutputSummary)}
                             liveMarkdown={run.liveMarkdown}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
-                            onOpenOutput={(fallbackOutput) => openEvidence({
-                              kind: "run-output",
-                              sessionId: run.sessionId,
-                              runId: run.runId,
-                              role: run.role,
-                              fallbackOutput,
-                            })}
+                            onOpenOutput={run.processOutputAvailable !== false
+                              ? (fallbackOutput) => openEvidence({
+                                  kind: "run-output",
+                                  sessionId: run.sessionId,
+                                  runId: run.runId,
+                                  role: run.role,
+                                  fallbackOutput,
+                                })
+                              : undefined}
                             onInterrupt={!isPrimaryRun && run.interruptible
                               ? () => onInterrupt(run.sessionId, run.runId)
                               : undefined}
@@ -1971,7 +2002,9 @@ function TimelineEntry({
         memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
-        onRetry={(outcome === "run-not-started" || outcome === "run-stuck") && message.runId !== null
+        elapsedMs={message.runTiming?.elapsedMs}
+        completedAt={message.runTiming?.completedAt}
+        onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
           ? () => onRetryRun?.(message.sessionId, message.runId!)
           : undefined}
         onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
@@ -1982,7 +2015,7 @@ function TimelineEntry({
             })
           : undefined}
         onOpenDiagnostics={onOpenDiagnostics}
-        onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
+        onOpenOutput={message.runId === null || message.runTiming?.processOutputAvailable === false ? undefined : (fallbackOutput) => onOpenEvidence?.({
           kind: "run-output",
           sessionId: message.sessionId,
           runId: message.runId!,
@@ -2036,6 +2069,15 @@ function TimelineEntry({
             ? resolveOperatorMemberName(message.role, memberIdentities)
             : "系统提示"}
         </span>
+        {message.speaker === "agent"
+        && message.runTiming?.elapsedMs !== null
+        && message.runTiming?.elapsedMs !== undefined ? (
+          <RunTime
+            mode="completed"
+            elapsedMs={message.runTiming.elapsedMs}
+            completedAt={message.runTiming.completedAt}
+          />
+        ) : null}
         <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt)}</span>
       </div>
       <div className="relative pl-7">
@@ -2057,7 +2099,10 @@ function TimelineEntry({
           />
         </>
       )}
-      {message.speaker === "agent" && message.runId !== null && onOpenEvidence ? (
+      {message.speaker === "agent"
+      && message.runId !== null
+      && onOpenEvidence
+      && message.runTiming?.processOutputAvailable !== false ? (
         <button
           type="button"
           className="absolute left-7 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
@@ -2073,6 +2118,11 @@ function TimelineEntry({
         >
           <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
         </button>
+      ) : null}
+      {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
+        <p className="mt-2 text-xs text-hint">
+          完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+        </p>
       ) : null}
       </div>
     </div>

@@ -321,9 +321,19 @@ describe("local console conversation workspace diff through HTTP", () => {
       const unavailableResponse = await fetch(endpoint);
       expect(unavailableResponse.status).toBe(200);
       await expect(unavailableResponse.json()).resolves.toMatchObject({
-        status: "unavailable",
-        unavailableReason: "not-found",
-        events: [],
+        status: "settled",
+        unavailableReason: null,
+        attempts: [expect.objectContaining({
+          attempt: 1,
+          elapsedMs: expect.any(Number),
+          completedAt: expect.any(String),
+        })],
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "error",
+            message: "这次执行的过程记录不可用",
+          }),
+        ]),
       });
     } finally {
       if (previousCodexHome === undefined) {

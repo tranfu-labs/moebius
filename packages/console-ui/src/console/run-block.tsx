@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { sanitizeMachineText } from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
 import { RoleTag } from "@/console/role-tag";
+import { RunTime } from "@/console/run-time";
 import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
@@ -23,6 +24,13 @@ export interface RunBlockProps {
   role: string;
   memberIdentities?: readonly OperatorMemberIdentity[];
   elapsedTime?: string | null;
+  elapsedMs?: number | null;
+  activity?: {
+    action: string;
+    object: string | null;
+  } | null;
+  processOutputAvailable?: boolean;
+  outputUnavailableMessage?: string;
   summary?: string | null;
   rawOutput?: string | null;
   steps?: RunBlockStep[] | null;
@@ -37,7 +45,11 @@ export interface RunBlockProps {
 export function RunBlock({
   role,
   memberIdentities = [],
-  elapsedTime: _elapsedTime,
+  elapsedTime,
+  elapsedMs,
+  activity,
+  processOutputAvailable = true,
+  outputUnavailableMessage = "完整输出不可用",
   summary,
   rawOutput,
   steps,
@@ -58,8 +70,15 @@ export function RunBlock({
       <div className="flex items-center gap-2">
         <RoleTag label={roleLabel} toneKey={role} />
         <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
-        <span className="ml-auto flex items-center gap-0.5">
-          {onOpenOutput ? (
+        <span className="ml-auto flex items-center gap-2">
+          {elapsedMs !== null && elapsedMs !== undefined ? (
+            <RunTime mode="running" elapsedMs={elapsedMs} />
+          ) : nonBlank(elapsedTime) !== null ? (
+            <span className="tnum whitespace-nowrap text-xs text-sub">已进行 {elapsedTime}</span>
+          ) : (
+            <span className="text-xs text-sub">等待开始</span>
+          )}
+          {onOpenOutput && processOutputAvailable ? (
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
@@ -90,6 +109,21 @@ export function RunBlock({
             <RunStepItem key={step.id ?? `${step.title}-${index}`} step={step} index={index} />
           ))}
         </div>
+      ) : activity ? (
+        <div
+          className="mt-2.5 flex min-w-0 items-center gap-1 overflow-hidden pl-7 text-sm text-sub"
+          title={[activity.action, activity.object].filter(Boolean).join(" · ")}
+          tabIndex={0}
+          data-testid="run-activity"
+        >
+          <span className="shrink-0">{activity.action}</span>
+          {activity.object ? (
+            <>
+              <span aria-hidden="true" className="text-hint">·</span>
+              <span className="truncate">{activity.object}</span>
+            </>
+          ) : null}
+        </div>
       ) : (
         <div className="mt-2.5 max-w-full overflow-x-auto pl-7 text-sm text-sub" data-testid="run-live-output">
           <MarkdownMessage
@@ -102,6 +136,9 @@ export function RunBlock({
           />
         </div>
       )}
+      {!processOutputAvailable ? (
+        <p className="mt-1.5 pl-7 text-xs text-hint">{outputUnavailableMessage}</p>
+      ) : null}
     </div>
   );
 }

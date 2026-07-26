@@ -31,6 +31,8 @@ export interface OperatorProcessAttemptMeta {
   role: string;
   startedAt: string;
   status: "running" | "settled";
+  elapsedMs?: number | null;
+  completedAt?: string | null;
 }
 
 export interface OperatorProcessOutput {

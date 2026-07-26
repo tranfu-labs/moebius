@@ -458,6 +458,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     await this.runFact({ kind: "local-release-message-for-retry", ...input }, [input.sessionId]);
   }
 
+  async releaseMessageForResume(input: { userMessageId: number; sessionId: string; now: string }): Promise<void> {
+    await this.runFact({ kind: "local-release-message-for-resume", ...input }, [input.sessionId]);
+  }
+
   async recordFailure(input: {
     userMessageId: number;
     sessionId: string;
@@ -465,6 +469,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    body?: string;
+    systemEventKind?: LocalConsoleSystemEventKind;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-failure", ...input }, [input.sessionId]);
   }
@@ -601,6 +607,95 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
           role: input.role,
           body: input.body,
         },
+        messageUpserts: [],
+      });
+    });
+  }
+
+  async nextRunAttempt(input: { sessionId: string; stepId: string }): Promise<number> {
+    return await this.enqueue(async () => {
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, true);
+      let maximum = 0;
+      for (const event of events) {
+        if (event.type !== "run_lifecycle" || !isRecord(event.payload)) continue;
+        if (event.payload.phase !== "created" || event.payload.stepId !== input.stepId) continue;
+        if (typeof event.payload.attempt === "number" && Number.isInteger(event.payload.attempt)) {
+          maximum = Math.max(maximum, event.payload.attempt);
+        }
+      }
+      return maximum + 1;
+    });
+  }
+
+  async getRunTiming(input: {
+    sessionId: string;
+    runId: string;
+  }): Promise<import("./types.js").LocalConsoleRunTiming | null> {
+    return await this.enqueue(async () => {
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, true);
+      return readRunTimings(events).get(input.runId) ?? null;
+    });
+  }
+
+  async recordRunLifecycleEvent(input: {
+    sessionId: string;
+    runId: string;
+    stepId: string;
+    attempt: number;
+    phase: "created" | "started" | "paused" | "resumed" | "terminal";
+    role: string | null;
+    engine: "codex" | "kimi";
+    processOutputAvailable: boolean;
+    createdAt: string;
+    startedAt: string | null;
+    elapsedMs: number | null;
+    completedAt: string | null;
+    status: import("./types.js").LocalConsoleRunTiming["status"];
+    recordedAt: string;
+  }): Promise<void> {
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const singletonPhase = input.phase === "created" || input.phase === "started" || input.phase === "terminal";
+      const existing = singletonPhase
+        ? events.find((event) =>
+            event.type === "run_lifecycle"
+            && isRecord(event.payload)
+            && event.payload.runId === input.runId
+            && event.payload.phase === input.phase)
+        : undefined;
+      if (existing !== undefined) {
+        if (JSON.stringify(existing.payload) !== JSON.stringify(input)) {
+          throw new Error(`conflicting run lifecycle ${input.runId}:${input.phase}`);
+        }
+        return;
+      }
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "run_lifecycle",
+        recordedAt: input.recordedAt,
+        payload: input,
+        messageUpserts: [],
+      });
+    });
+  }
+
+  async recordRunActivityEvent(input: {
+    sessionId: string;
+    runId: string;
+    activity: import("./run-activity.js").LocalRunActivity;
+  }): Promise<void> {
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "run_activity",
+        recordedAt: input.activity.occurredAt,
+        payload: input,
         messageUpserts: [],
       });
     });
@@ -870,7 +965,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         messages.set(message.id, message);
       }
     }
-    return [...messages.values()].sort((left, right) => {
+    const timings = readRunTimings(events);
+    return [...messages.values()].map((message) => {
+      const timing = message.runId === null ? undefined : timings.get(message.runId);
+      return timing === undefined ? message : { ...message, runTiming: timing };
+    }).sort((left, right) => {
       const leftTimelineAt = left.speaker === "user"
         ? left.activatedAt ?? left.createdAt
         : left.createdAt;
@@ -940,6 +1039,42 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     this.operationTail = pending.then(() => undefined, () => undefined);
     return pending;
   }
+}
+
+function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types.js").LocalConsoleRunTiming> {
+  const timings = new Map<string, import("./types.js").LocalConsoleRunTiming>();
+  for (const event of events) {
+    if (event.type !== "run_lifecycle" || !isRecord(event.payload)) continue;
+    const payload = event.payload;
+    const runId = typeof payload.runId === "string" ? payload.runId : null;
+    const stepId = typeof payload.stepId === "string" ? payload.stepId : null;
+    const attempt = typeof payload.attempt === "number" ? payload.attempt : null;
+    const engine = payload.engine === "kimi" ? "kimi" : payload.engine === "codex" ? "codex" : null;
+    if (runId === null || stepId === null || attempt === null || engine === null) continue;
+    timings.set(runId, {
+      stepId,
+      attempt,
+      createdAt: typeof payload.createdAt === "string" ? payload.createdAt : event.recordedAt,
+      startedAt: typeof payload.startedAt === "string" ? payload.startedAt : null,
+      elapsedMs: typeof payload.elapsedMs === "number" ? Math.max(0, payload.elapsedMs) : null,
+      completedAt: typeof payload.completedAt === "string" ? payload.completedAt : null,
+      status: readRunTimingStatus(payload.status),
+      engine,
+      processOutputAvailable: payload.processOutputAvailable === true,
+    });
+  }
+  return timings;
+}
+
+function readRunTimingStatus(value: unknown): import("./types.js").LocalConsoleRunTiming["status"] {
+  return value === "running"
+    || value === "completed"
+    || value === "failed"
+    || value === "interrupted"
+    || value === "stuck"
+    || value === "paused"
+    ? value
+    : "created";
 }
 
 interface SessionFactEvent {
@@ -1203,7 +1338,7 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       runId: readNullableString(value.runId, "runId"),
       runDir: readNullableString(value.runDir, "runDir"),
       error: readNullableString(value.error, "error"),
-      systemEventKind: readSystemEventKind(value.systemEventKind),
+      systemEventKind: readMessageSystemEventKind(value.systemEventKind, value.error),
       failureCount: "failureCount" in value ? readNumber(value.failureCount, "failureCount") : 0,
       lastFailureReason: "lastFailureReason" in value ? readNullableString(value.lastFailureReason, "lastFailureReason") : null,
       sourceKind: "sourceKind" in value ? readNullableString(value.sourceKind, "sourceKind") : null,
@@ -1287,12 +1422,22 @@ function readSystemEventKind(value: unknown): LocalConsoleSystemEventKind {
     value === "run-not-started" ||
     value === "run-stuck" ||
     value === "user-stopped" ||
+    value === "resume-unavailable" ||
     value === "retry-exhausted" ||
     value === "other"
   ) {
     return value;
   }
   throw new Error(`Invalid local console system event kind: ${String(value)}`);
+}
+
+function readMessageSystemEventKind(kind: unknown, error: unknown): LocalConsoleSystemEventKind {
+  const persisted = readSystemEventKind(kind);
+  return persisted === "other"
+    && typeof error === "string"
+    && error.startsWith("resume-unavailable:")
+    ? "resume-unavailable"
+    : persisted;
 }
 
 function readWorkspaceMode(value: unknown, field: string): "direct" | "worktree" {

@@ -6,8 +6,14 @@ import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
+import { RunTime } from "@/console/run-time";
 
-export type RunOutcomeStatus = "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted";
+export type RunOutcomeStatus =
+  | "run-not-started"
+  | "run-stuck"
+  | "user-stopped"
+  | "resume-unavailable"
+  | "retry-exhausted";
 
 export interface RunOutcomeProps {
   status: RunOutcomeStatus;
@@ -15,6 +21,8 @@ export interface RunOutcomeProps {
   memberIdentities?: readonly OperatorMemberIdentity[];
   rawReason?: string | null;
   rawOutput?: string | null;
+  elapsedMs?: number | null;
+  completedAt?: string | null;
   defaultOpen?: boolean;
   onOpenOutput?: (rawOutput: string | null) => void;
   onOpenDiagnostics?: () => void;
@@ -27,6 +35,7 @@ const outcomeLabels: Record<RunOutcomeStatus, string> = {
   "retry-exhausted": "这一步反复没跑起来，已经不再重试",
   "run-not-started": "这一步没跑起来",
   "user-stopped": "你让这一步停下了",
+  "resume-unavailable": "原执行已经无法继续",
   "run-stuck": "这一步卡住了",
 };
 
@@ -34,6 +43,7 @@ const outcomeDescriptions: Record<RunOutcomeStatus, string> = {
   "retry-exhausted": "你可以说点什么，或换一个成员接手。",
   "run-not-started": "你可以重试，或直接说话、换一个成员接手。",
   "user-stopped": "已经产生的文件改动会保留；你可以继续说话，开启新的一轮。",
+  "resume-unavailable": "你可以重新运行，或直接说话、换一个成员接手。",
   "run-stuck": "你可以重试，或直接说话、换一个成员接手。",
 };
 
@@ -43,6 +53,8 @@ export function RunOutcome({
   memberIdentities = [],
   rawReason: _rawReason,
   rawOutput,
+  elapsedMs,
+  completedAt,
   defaultOpen: _defaultOpen,
   onOpenOutput,
   onOpenDiagnostics: _onOpenDiagnostics,
@@ -65,14 +77,19 @@ export function RunOutcome({
         <OutcomeIcon status={status} />
       </span>
       <span className="min-w-0 flex-1 text-[13px] leading-5 text-ink">
-        {outcomeLabels[status]}
-        {roleLabel ? <span className="ml-2 text-xs text-sub">{roleLabel}</span> : null}
+        <span className="flex flex-wrap items-center gap-x-2">
+          <span>{outcomeLabels[status]}</span>
+          {roleLabel ? <span className="text-xs text-sub">{roleLabel}</span> : null}
+          {elapsedMs !== null && elapsedMs !== undefined ? (
+            <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
+          ) : null}
+        </span>
         <span className="mt-0.5 block text-xs text-sub">{outcomeDescriptions[status]}</span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
-        {status === "run-not-started" || status === "run-stuck" ? (
+        {status === "run-not-started" || status === "run-stuck" || status === "resume-unavailable" ? (
           <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-            重试
+            {status === "resume-unavailable" ? "重新运行" : "重试"}
           </Button>
         ) : status === "user-stopped" && onEditAndResend !== undefined ? (
           <Button
@@ -110,6 +127,9 @@ function OutcomeIcon({ status }: { status: RunOutcomeStatus }): JSX.Element {
   }
   if (status === "user-stopped") {
     return <CirclePause className="h-[15px] w-[15px] text-sub" strokeWidth={1.5} />;
+  }
+  if (status === "resume-unavailable") {
+    return <Ban className="h-[15px] w-[15px] text-danger" strokeWidth={1.5} />;
   }
   return <Ban className="h-[15px] w-[15px] text-danger" strokeWidth={1.5} />;
 }

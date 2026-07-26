@@ -103,7 +103,7 @@ describe("local Codex recovery planning", () => {
 });
 
 describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
-  it("uses resume for a Retry and persists cached input usage", async () => {
+  it("creates a new full run for Retry and persists cached input usage", async () => {
     const root = await fixtureRoot();
     let call = 0;
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
@@ -138,9 +138,9 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
       messages.find((message) => message.speaker === "agent" && message.body === "resumed") ?? null);
 
     expect(runCodex).toHaveBeenCalledTimes(2);
-    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "resume", threadId: "thread-retry" });
+    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "full" });
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
-    expect(facts).toContain('"type":"codex_resume_consumed"');
+    expect(facts).not.toContain('"reason":"retry"');
     expect(facts).toContain('"cachedInputTokens":321');
   });
 
@@ -157,7 +157,7 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     });
     const first = await startFixtureServer(root, firstRun);
     await postSessionMessage(first.url, "default", "@dev keep working");
-    await waitForActiveRun(first.url);
+    const firstActiveRun = await waitForActiveRun(first.url);
     await first.close();
     cleanupServers.splice(cleanupServers.indexOf(first), 1);
 
@@ -189,6 +189,71 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     const messages = await getMessages(second.url);
     expect(messages.some((message) => message.systemEventKind === "run-stuck")).toBe(false);
     expect(messages.some((message) => message.systemEventKind === "user-stopped")).toBe(false);
+    const continued = messages.find((message) => message.body === "continued after restart");
+    expect(continued?.runId).toBe(firstActiveRun.runId);
+    expect(continued?.runTiming).toMatchObject({
+      attempt: firstActiveRun.attempt,
+      status: "completed",
+    });
+    const lifecycleFacts = (await fs.readFile(
+      second.runtime.getSessionFactLogPath("default"),
+      "utf8",
+    )).split("\n").filter(Boolean).map((line) => JSON.parse(line) as {
+      type?: string;
+      payload?: { runId?: string; phase?: string };
+    });
+    const sameRunLifecycle = lifecycleFacts.filter((fact) =>
+      fact.type === "run_lifecycle" && fact.payload?.runId === firstActiveRun.runId);
+    expect(sameRunLifecycle.filter((fact) => fact.payload?.phase === "created")).toHaveLength(1);
+    expect(sameRunLifecycle.some((fact) => fact.payload?.phase === "paused")).toBe(true);
+    expect(sameRunLifecycle.some((fact) => fact.payload?.phase === "resumed")).toBe(true);
+  });
+
+  it("does not rerun automatically when graceful recovery is unavailable", async () => {
+    const root = await fixtureRoot();
+    const firstRun = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("thread-unavailable");
+      return await new Promise<CodexRunResult>((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve(failed(
+          options,
+          `interrupted:${String(options.signal?.reason)}`,
+        )), { once: true });
+      });
+    });
+    const first = await startFixtureServer(root, firstRun);
+    await postSessionMessage(first.url, "default", "@dev keep working");
+    const firstActiveRun = await waitForActiveRun(first.url);
+    await first.close();
+    cleanupServers.splice(cleanupServers.indexOf(first), 1);
+
+    const replacementRun = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
+      ok: true,
+      finalText: "restarted explicitly",
+      threadId: "thread-replacement",
+      cachedInputTokens: 0,
+      runDir: options.runDir,
+      stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+      stderrPath: path.join(options.runDir, "stderr.log"),
+    }));
+    const second = await startFixtureServer(root, replacementRun, async () => false);
+    const unavailable = await waitForState(second.url, (messages) =>
+      messages.find((message) => message.systemEventKind === "resume-unavailable") ?? null);
+    expect(replacementRun).not.toHaveBeenCalled();
+    expect(unavailable.runId).toBe(firstActiveRun.runId);
+    expect(unavailable.runTiming).toMatchObject({
+      attempt: firstActiveRun.attempt,
+      status: "failed",
+    });
+
+    const retry = await fetch(new URL(
+      `/api/local-console/sessions/default/runs/${encodeURIComponent(unavailable.runId!)}/retry`,
+      second.url,
+    ), { method: "POST" });
+    expect(retry.status).toBe(202);
+    await waitForState(second.url, (messages) =>
+      messages.find((message) => message.body === "restarted explicitly") ?? null);
+    expect(replacementRun).toHaveBeenCalledTimes(1);
+    expect(replacementRun.mock.calls[0]?.[0].mode).toEqual({ kind: "full" });
   });
 
   it("continues an interrupted thread with the edited resend as an overriding delta", async () => {
@@ -336,13 +401,15 @@ async function waitForState<T>(
   throw new Error(`timed out waiting for local console state: ${JSON.stringify(latest)}`);
 }
 
-async function waitForActiveRun(url: string): Promise<void> {
+async function waitForActiveRun(url: string): Promise<{ runId: string; attempt: number }> {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const response = await fetch(new URL("/api/local-console/messages", url));
-    const body = await response.json() as { activeRun: unknown };
+    const body = await response.json() as {
+      activeRun: { runId: string; attempt: number } | null;
+    };
     if (body.activeRun !== null) {
-      return;
+      return body.activeRun;
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }

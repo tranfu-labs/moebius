@@ -11,6 +11,7 @@ import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
+import { RunTime } from "@/console/run-time";
 
 export interface OperatorProcessPublicAttachment {
   kind: "image" | "file";
@@ -27,6 +28,8 @@ export type OperatorProcessTimelineEvent =
       attempt: number;
       startedAt: string;
       status: "running" | "settled";
+      elapsedMs?: number | null;
+      completedAt?: string | null;
     }
   | {
       key: string;
@@ -109,7 +112,16 @@ export function ProcessEvent({
         <div className="border-t border-line pb-2 pt-5 first:border-t-0 first:pt-2">
           <div className="flex items-center justify-between gap-3 text-xs font-semibold text-ink">
             <span>第 {event.attempt} 次执行 · 本轮输入</span>
-            {event.status === "running" ? <span className="font-normal text-sub">正在执行</span> : null}
+            {typeof event.elapsedMs === "number" ? (
+              <RunTime
+                mode={event.status === "running" ? "running" : "completed"}
+                elapsedMs={event.elapsedMs}
+                completedAt={event.completedAt}
+                className="font-normal"
+              />
+            ) : (
+              <span className="font-normal text-sub">未开始</span>
+            )}
           </div>
         </div>
       );

@@ -165,6 +165,7 @@ function runCommand(input: WorkerInput): unknown {
       case "local-record-route-append":
       case "local-record-route-no-action":
       case "local-release-message-for-retry":
+      case "local-release-message-for-resume":
       case "local-record-agent-response":
       case "local-record-detached-run-started":
       case "local-record-detached-agent-response":
@@ -1406,6 +1407,7 @@ function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateC
     case "local-record-route-append": return recordLocalRouteAppend(database, command);
     case "local-record-route-no-action": return recordLocalRouteNoAction(database, command);
     case "local-release-message-for-retry": return releaseMessageForRetry(database, command);
+    case "local-release-message-for-resume": return releaseMessageForResume(database, command);
     case "local-record-agent-response": return recordAgentResponse(database, command);
     case "local-record-detached-run-started": return recordDetachedRunStarted(database, command);
     case "local-record-detached-agent-response": return recordDetachedAgentResponse(database, command);
@@ -2968,6 +2970,28 @@ function releaseMessageForRetry(
   });
 }
 
+function releaseMessageForResume(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-release-message-for-resume" }>,
+): null {
+  return transaction(database, () => {
+    ensureLocalCursor(database, input.sessionId, input.now);
+    const source = requireLocalMessage(database, input.userMessageId, input.sessionId);
+    if (source.speaker === "system") {
+      throw new Error("A system message cannot be resumed as an Agent source");
+    }
+    database
+      .prepare(
+        `UPDATE session_messages
+         SET status = 'pending', run_id = NULL, error = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(input.now, source.id);
+    rewindLocalCursorForRetry(database, input.sessionId, source.id, input.now);
+    return null;
+  });
+}
+
 function recordSystemAndComplete(
   database: SqliteDatabase,
   input: Extract<SqliteStateCommand, { kind: "local-record-system-and-complete" }>,
@@ -3008,13 +3032,13 @@ function recordFailure(database: SqliteDatabase, input: Extract<SqliteStateComma
     insertSystemMessage(
       database,
       input.sessionId,
-      "这一步没跑起来。你可以重试，或直接说话、换一个成员接手。",
+      input.body ?? "这一步没跑起来。你可以重试，或直接说话、换一个成员接手。",
       input.runId,
       input.runDir,
       input.error,
       input.now,
       source.speaker === "agent" ? "failed" : "displayed",
-      "run-not-started",
+      input.systemEventKind ?? "run-not-started",
     );
     completeSourceMessage(database, source, "failed", input.error, input.runId, input.runDir, input.now);
     return null;
@@ -3794,6 +3818,7 @@ function readSystemEventKind(value: unknown): LocalConsoleSystemEventKind {
     value === "run-not-started" ||
     value === "run-stuck" ||
     value === "user-stopped" ||
+    value === "resume-unavailable" ||
     value === "retry-exhausted" ||
     value === "other"
   ) {

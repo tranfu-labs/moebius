@@ -1820,7 +1820,7 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   });
 
-  it("releases the trigger for retry when recording an agent response fails before commit", async () => {
+  it("keeps a pre-commit response failure stopped until the user explicitly retries", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# dev\n\nROLE:dev");
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
@@ -1840,12 +1840,18 @@ describe("local console", { timeout: 15_000 }, () => {
       const session = await createSession(started.url, "record failure");
       await postSessionMessage(started.url, session.sessionId, "@dev retry me");
       await waitFor(() => runCodex.mock.calls.length === 1);
-      await waitForState(started.url, session.sessionId, (data) =>
-        data.pendingPrimaryMessages.some((entry) => entry.speaker === "user" && entry.status === "pending"),
+      const failed = await waitForState(started.url, session.sessionId, (data) =>
+        data.messages.some((entry) => entry.systemEventKind === "run-not-started"),
       );
+      expect(failed.pendingPrimaryMessages).toHaveLength(0);
       expect((await getState(started.url, session.sessionId)).messages.filter((entry) => entry.speaker === "agent")).toHaveLength(0);
 
-      await started.runtime.processPending(session.sessionId);
+      const failure = failed.messages.find((entry) => entry.systemEventKind === "run-not-started");
+      const retry = await fetch(new URL(
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(failure!.runId!)}/retry`,
+        started.url,
+      ), { method: "POST" });
+      expect(retry.status).toBe(202);
       const state = await waitForState(started.url, session.sessionId, (data) =>
         data.messages.some((entry) => entry.speaker === "agent" && entry.role === "dev"),
       );
@@ -2054,6 +2060,10 @@ describe("local console", { timeout: 15_000 }, () => {
     } = {};
     const runCodex = vi.fn((options: CodexRunOptions) => {
       captured.options = options;
+      options.onStructuredActivity?.({
+        type: "item.started",
+        item: { type: "command_execution", command: "pnpm test --filter /private/work" },
+      });
       options.onVisibleAgentMarkdown?.("## 第一段\n\n正在检查。");
       return new Promise<CodexRunResult>((resolve) => {
         captured.finish = resolve;
@@ -2074,13 +2084,25 @@ describe("local console", { timeout: 15_000 }, () => {
       );
       const runId = first.activeRun?.runId;
       expect(first.messages).toHaveLength(1);
+      expect(first.activeRun?.startedAt).not.toBeNull();
+      expect(first.activeRun?.elapsedMs).toBeGreaterThanOrEqual(0);
 
+      captured.options?.onStructuredActivity?.({
+        type: "item.completed",
+        item: { type: "file_change", path: "/private/work/src/run-block.tsx", status: "completed" },
+      });
       captured.options?.onVisibleAgentMarkdown?.("## 第二段\n\n检查完成。");
       const second = await waitForState(started.url, session.sessionId, (data) =>
         data.activeRun?.liveMarkdown === "## 第二段\n\n检查完成。",
       );
       expect(second.activeRun?.runId).toBe(runId);
       expect(second.messages).toHaveLength(1);
+      expect(second.activeRun?.activity).toMatchObject({
+        kind: "progress",
+        action: "正在处理",
+        object: "第二段",
+      });
+      expect(JSON.stringify(second.activeRun?.activity)).not.toContain("/private/work");
 
       const options = captured.options;
       const finishRun = captured.finish;
@@ -2101,11 +2123,23 @@ describe("local console", { timeout: 15_000 }, () => {
       );
       expect(completed.messages.map((entry) => entry.speaker)).toEqual(["user", "agent"]);
       expect(completed.messages[1]?.body).toBe("## 最终结果\n\n只落库一次。");
+      expect(completed.messages[1]?.runTiming).toMatchObject({
+        stepId: `message:${String(completed.messages[0]?.id)}`,
+        attempt: 1,
+        status: "completed",
+        engine: "codex",
+        processOutputAvailable: true,
+      });
+      expect(completed.messages[1]?.runTiming?.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(completed.messages[1]?.runTiming?.completedAt).not.toBeNull();
       const factLogPath = path.join(root, "sessions", `${Buffer.from(session.sessionId, "utf8").toString("base64url")}.jsonl`);
       const factEvents = (await fs.readFile(factLogPath, "utf8")).trimEnd().split("\n")
         .map((line) => JSON.parse(line) as { type: string; payload?: { body?: string } });
       expect(factEvents.filter((event) => event.type === "agent_progress").map((event) => event.payload?.body))
         .toEqual(["## 第一段\n\n正在检查。", "## 第二段\n\n检查完成。"]);
+      expect(factEvents.filter((event) => event.type === "run_activity")).toHaveLength(4);
+      expect(factEvents.filter((event) => event.type === "run_lifecycle").map((event) =>
+        (event.payload as { phase?: string }).phase)).toEqual(["created", "started", "terminal"]);
     } finally {
       await started.close();
     }
@@ -2310,7 +2344,7 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   }, 10_000);
 
-  it("dead-letters repeated Codex failures with run metadata and restores them after restart", async () => {
+  it("keeps failures user-retryable without automatic retries or retry exhaustion", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# Dev");
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
@@ -2333,15 +2367,27 @@ describe("local console", { timeout: 15_000 }, () => {
     const session = await createSession(started.url, "failure");
     try {
       await postSessionMessage(started.url, session.sessionId, "@dev fail");
-      await waitForState(started.url, session.sessionId, (data) =>
-        data.pendingPrimaryMessages.some((entry) =>
-          entry.speaker === "user" && entry.status === "pending" && entry.error === "exit:42"
-        ),
+      const first = await waitForState(started.url, session.sessionId, (data) =>
+        data.messages.some((entry) =>
+          entry.speaker === "system" && entry.systemEventKind === "run-not-started"
+        ) && data.activeRuns.length === 0,
       );
-      await started.runtime.processPending(session.sessionId);
+      expect(runCodex).toHaveBeenCalledTimes(1);
+      expect(first.pendingPrimaryMessages).toHaveLength(0);
+      expect(first.messages.some((entry) => entry.systemEventKind === "retry-exhausted")).toBe(false);
+      const firstFailure = first.messages.find((entry) => entry.systemEventKind === "run-not-started");
+      expect(firstFailure?.runId).not.toBeNull();
+
+      const retry = await fetch(new URL(
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(firstFailure!.runId!)}/retry`,
+        started.url,
+      ), { method: "POST" });
+      expect(retry.status).toBe(202);
       await waitForState(started.url, session.sessionId, (data) =>
-        data.messages.some((entry) => entry.speaker === "system" && entry.systemEventKind === "retry-exhausted"),
+        data.messages.filter((entry) => entry.systemEventKind === "run-not-started").length === 2
+        && data.activeRuns.length === 0,
       );
+      expect(runCodex).toHaveBeenCalledTimes(2);
     } finally {
       await started.close();
     }
@@ -2357,13 +2403,11 @@ describe("local console", { timeout: 15_000 }, () => {
     });
     try {
       const state = await getState(restarted.url, session.sessionId);
-      expect(state.messages).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ status: "failed", error: "exit:42", runDir: path.join(root, "runs", "run-2") }),
-          expect.objectContaining({ speaker: "system", systemEventKind: "retry-exhausted", body: expect.stringContaining("已经不再重试"), error: "exit:42" }),
-        ]),
-      );
-      expect(state.messages.filter((entry) => entry.speaker === "system" && entry.systemEventKind === "retry-exhausted")).toHaveLength(1);
+      const attempts = state.messages.filter((entry) =>
+        entry.speaker === "system" && entry.systemEventKind === "run-not-started");
+      expect(attempts).toHaveLength(2);
+      expect(attempts.map((entry) => entry.runTiming?.attempt)).toEqual([1, 2]);
+      expect(state.messages.some((entry) => entry.systemEventKind === "retry-exhausted")).toBe(false);
     } finally {
       await restarted.close();
     }
@@ -2585,13 +2629,19 @@ describe("local console", { timeout: 15_000 }, () => {
     let requestedRunId = "";
     try {
       await postSessionMessage(started.url, session.sessionId, "@dev retry this step");
-      await waitForState(started.url, session.sessionId, (data) =>
-        data.pendingPrimaryMessages.some((entry) =>
-          entry.speaker === "user"
-          && entry.status === "pending"
+      const failed = await waitForState(started.url, session.sessionId, (data) =>
+        data.messages.some((entry) =>
+          entry.speaker === "system"
+          && entry.systemEventKind === "run-not-started"
           && entry.error === "exit:42"),
       );
-      await started.runtime.processPending(session.sessionId);
+      const failure = failed.messages.find((entry) =>
+        entry.speaker === "system" && entry.systemEventKind === "run-not-started");
+      const retry = await fetch(new URL(
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(failure!.runId!)}/retry`,
+        started.url,
+      ), { method: "POST" });
+      expect(retry.status).toBe(202);
       const completed = await waitForState(started.url, session.sessionId, (data) =>
         data.messages.some((entry) => entry.speaker === "agent" && entry.body === "retry finished"),
       );
@@ -3032,7 +3082,17 @@ interface LocalRunSnapshotResponse {
   runId: string;
   role: string | null;
   status: "running";
-  elapsedMs: number;
+  createdAt: string;
+  startedAt: string | null;
+  elapsedMs: number | null;
+  activity: {
+    cursor: number;
+    kind: string;
+    phase: "running" | "completed";
+    action: string;
+    object: string | null;
+    occurredAt: string;
+  } | null;
   runDir: string | null;
   cwd: string | null;
   workspaceMode: "direct" | "worktree" | null;

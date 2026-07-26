@@ -198,6 +198,7 @@ export type SqliteStateCommand =
       now: string;
     }
   | { kind: "local-release-message-for-retry"; userMessageId: number; sessionId: string; now: string }
+  | { kind: "local-release-message-for-resume"; userMessageId: number; sessionId: string; now: string }
   | {
       kind: "local-record-agent-response";
       userMessageId: number;
@@ -229,7 +230,7 @@ export type SqliteStateCommand =
       kind: "local-record-detached-run-terminal";
       sessionId: string;
       body: string;
-      systemEventKind: "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted" | "other";
+      systemEventKind: import("./local-console/types.js").LocalConsoleSystemEventKind;
       runId: string;
       runDir: string | null;
       error: string;
@@ -241,7 +242,7 @@ export type SqliteStateCommand =
       userMessageId: number;
       sessionId: string;
       body: string;
-      systemEventKind: "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted" | "other";
+      systemEventKind: import("./local-console/types.js").LocalConsoleSystemEventKind;
       runId: string;
       runDir: string | null;
       now: string;
@@ -254,7 +255,7 @@ export type SqliteStateCommand =
       runDir: string | null;
       error: string | null;
       status?: "displayed" | "failed" | "interrupted" | "stuck";
-      systemEventKind: "run-not-started" | "run-stuck" | "user-stopped" | "retry-exhausted" | "other";
+      systemEventKind: import("./local-console/types.js").LocalConsoleSystemEventKind;
       now: string;
     }
   | {
@@ -265,6 +266,8 @@ export type SqliteStateCommand =
       runId: string | null;
       runDir: string | null;
       now: string;
+      body?: string;
+      systemEventKind?: import("./local-console/types.js").LocalConsoleSystemEventKind;
     }
   | {
       kind: "local-record-retryable-failure";

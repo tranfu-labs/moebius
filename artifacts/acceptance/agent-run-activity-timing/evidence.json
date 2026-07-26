@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "source": "real Electron BrowserWindow with intercepted local-console state",
+  "assertions": {
+    "currentActivityRows": 2,
+    "codexOutputButtons": 1,
+    "kimiOutputButtons": 0,
+    "stopTargets": 2,
+    "noPercentage": true,
+    "noHorizontalOverflow": true,
+    "narrowDarkReducedMotion": true,
+    "terminalDuration": "耗时 02:18",
+    "completionTimeAccessible": true,
+    "kimiOutputDegradedInPlace": true
+  },
+  "layout": {
+    "width": 1180,
+    "scrollWidth": 1180,
+    "height": 760,
+    "scrollHeight": 760
+  },
+  "narrowLayout": {
+    "width": 900,
+    "scrollWidth": 900,
+    "height": 560,
+    "scrollHeight": 560
+  },
+  "artifacts": {
+    "screenshot": "artifacts/acceptance/agent-run-activity-timing/electron-wide-light.png",
+    "narrowScreenshot": "artifacts/acceptance/agent-run-activity-timing/electron-narrow-dark-reduced.png"
+  }
+}

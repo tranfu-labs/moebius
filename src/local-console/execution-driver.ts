@@ -26,6 +26,8 @@ export interface LocalExecutionRunOptions {
   idleTimeoutMs?: number;
   maxDurationMs?: number;
   onVisibleAgentMarkdown?: (text: string) => void;
+  onProcessStarted?: () => void | Promise<void>;
+  onStructuredActivity?: (event: unknown) => void;
   onSessionStarted?: (input: {
     engine: LocalExecutionEngine;
     externalSessionId: string;
@@ -42,12 +44,17 @@ export function createLocalExecutionRunner(input: {
 } = {}): LocalExecutionRunner {
   const codex = input.runCodex ?? runCodex;
   const kimi = input.runKimi ?? runKimiAcp;
+  const codexReportsProcessStart = input.runCodex === undefined;
+  const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
     const engine = options.profile?.cli ?? "codex";
     if (engine === "kimi") {
       const profile = options.profile;
       if (profile === null || profile.cli !== "kimi") {
         throw new Error("Kimi execution requires a complete Kimi profile");
+      }
+      if (!kimiReportsProcessStart) {
+        await options.onProcessStarted?.();
       }
       return kimi({
         prompt: options.prompt,
@@ -60,6 +67,8 @@ export function createLocalExecutionRunner(input: {
         idleTimeoutMs: options.idleTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
+        onProcessStarted: options.onProcessStarted,
+        onStructuredActivity: options.onStructuredActivity,
         onSessionStarted: async (sessionId) => options.onSessionStarted?.({
           engine: "kimi",
           externalSessionId: sessionId,
@@ -68,6 +77,9 @@ export function createLocalExecutionRunner(input: {
     }
 
     const profile = options.profile;
+    if (!codexReportsProcessStart) {
+      await options.onProcessStarted?.();
+    }
     return codex({
       prompt: options.prompt,
       runDir: options.runDir,
@@ -89,6 +101,8 @@ export function createLocalExecutionRunner(input: {
       idleTimeoutMs: options.idleTimeoutMs,
       maxDurationMs: options.maxDurationMs,
       onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
+      onProcessStarted: options.onProcessStarted,
+      onStructuredActivity: options.onStructuredActivity,
       onThreadStarted: async (threadId) => options.onSessionStarted?.({
         engine: "codex",
         externalSessionId: threadId,

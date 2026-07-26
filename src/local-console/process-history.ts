@@ -22,6 +22,8 @@ export interface LocalConsoleProcessAttemptMeta {
   role: string;
   startedAt: string;
   status: "running" | "settled";
+  elapsedMs: number | null;
+  completedAt: string | null;
 }
 
 export type LocalConsoleProcessTimelineEvent =
@@ -34,6 +36,8 @@ export type LocalConsoleProcessTimelineEvent =
       attempt: number;
       startedAt: string;
       status: "running" | "settled";
+      elapsedMs: number | null;
+      completedAt: string | null;
     }
   | {
       key: string;
@@ -95,7 +99,7 @@ interface ResolvedAttempt {
   link: LocalCodexThreadLinkFact;
   meta: LocalConsoleProcessAttemptMeta;
   publicInput: LocalProcessPublicMessage[];
-  resolution: Awaited<ReturnType<typeof resolveCodexRollout>> & { status: "available" };
+  resolution: Awaited<ReturnType<typeof resolveCodexRollout>>;
 }
 
 type PreviousCursorState =
@@ -167,6 +171,15 @@ export async function loadLocalProcessHistoryPage(
       throw new ProcessCursorError();
     }
     if (state.stage === "output") {
+      if (attempt.resolution.status !== "available") {
+        state = previousIntroState(
+          options,
+          sourceMessageId,
+          state.attemptIndex,
+          introEvents(attempt).length,
+        );
+        continue;
+      }
       let slice;
       try {
         slice = await readCodexRolloutPage({
@@ -176,7 +189,7 @@ export async function loadLocalProcessHistoryPage(
           ...(state.identity === null
             ? {}
             : {
-                expectedIdentity: expectedIdentity(attempt, state.identity),
+                expectedIdentity: expectedIdentity(attempt.resolution, state.identity),
                 minimumSize: state.identity.minimumSize,
               }),
           maxBytes: remainingBytes,
@@ -343,19 +356,21 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
     return { unavailableReason: "link-missing" };
   }
   const grouped = groupLinks(links, anchor.sourceMessageId);
-  const meta = grouped.map((link, index) => ({
-    runId: link.runId,
-    attempt: index + 1,
-    role: link.role,
-    startedAt: link.startedAt,
-    status: options.activeRunIds.has(link.runId) ? "running" as const : "settled" as const,
-  }));
+  const meta = grouped.map((link, index) => {
+    const timing = options.messages.find((message) => message.runId === link.runId)?.runTiming;
+    return {
+      runId: link.runId,
+      attempt: timing?.attempt ?? index + 1,
+      role: link.role,
+      startedAt: timing?.startedAt ?? link.startedAt,
+      status: options.activeRunIds.has(link.runId) ? "running" as const : "settled" as const,
+      elapsedMs: timing?.elapsedMs ?? null,
+      completedAt: timing?.completedAt ?? null,
+    };
+  });
   const attempts: ResolvedAttempt[] = [];
   for (const [index, link] of grouped.entries()) {
     const resolution = await resolveCodexRollout(link.threadId, options.rollout);
-    if (resolution.status !== "available") {
-      return { unavailableReason: resolution.reason };
-    }
     let publicInput: LocalProcessPublicMessage[];
     try {
       publicInput = restorePublicInput(options.messages, link.sourceMessageId, link.runId);
@@ -382,8 +397,19 @@ function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent
       attempt: attempt.meta.attempt,
       startedAt: attempt.meta.startedAt,
       status: attempt.meta.status,
+      elapsedMs: attempt.meta.elapsedMs,
+      completedAt: attempt.meta.completedAt,
     },
     ...attempt.publicInput,
+    ...(attempt.resolution.status === "available"
+      ? []
+      : [{
+          key: `${attempt.link.runId}:unavailable`,
+          kind: "error" as const,
+          timestamp: attempt.meta.completedAt,
+          message: "这次执行的过程记录不可用",
+          detail: null,
+        }]),
     {
       key: `${attempt.link.runId}:execution`,
       kind: "execution-header",
@@ -478,9 +504,12 @@ function cursorIdentity(identity: CodexRolloutIdentity): CursorIdentity {
   };
 }
 
-function expectedIdentity(attempt: ResolvedAttempt, identity: CursorIdentity): CodexRolloutIdentity {
+function expectedIdentity(
+  resolution: Awaited<ReturnType<typeof resolveCodexRollout>> & { status: "available" },
+  identity: CursorIdentity,
+): CodexRolloutIdentity {
   return {
-    realPath: attempt.resolution.identity.realPath,
+    realPath: resolution.identity.realPath,
     device: identity.device,
     inode: identity.inode,
     size: identity.minimumSize,

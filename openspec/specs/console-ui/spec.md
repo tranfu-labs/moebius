@@ -870,23 +870,31 @@ Source: docs/product/pages/main-conversation.md#上下文
 ## Requirement: #10 时间线不显示过程状态
 Source: docs/product/pages/main-conversation.md#区域与信息
 
-系统 MUST 只把对话内容和最终事实放入时间线，并让消息时间仅在悬停或聚焦时显示。系统 MUST NOT 显示「已交棒」「已完成」「运行中」「未开始」等过程标签、过程图标或汇总计数条。
+系统 MUST 只把对话内容、当前活动投影和最终事实放入时间线，并让消息发送时刻仅在悬停或聚焦时显示。系统 MUST NOT 显示「已交棒」「已完成」「运行中」「未开始」等过程标签、过程图标或汇总计数条；run 自身语义明确的「已进行 / 耗时」不属于消息发送时刻。
 
 ### Scenario: 已结束的步骤只留下对话
 - GIVEN 一个成员已经完成当前步骤
 - WHEN 用户查看该步骤的历史记录
-- THEN 记录中没有过程标签、过程图标、操作条或常驻时间
+- THEN 记录中没有过程标签、过程图标或常驻消息发送时刻
+- AND 真实启动过的 run MAY 保留一次语义明确的「耗时」
 
-## Requirement: #11 运行记录只提供完整输出
-Source: docs/product/pages/main-conversation.md#运行中的操作条
+## Requirement: #11 运行记录展示最新活动、明确计时与精确停止
+Source: docs/product/pages/agent-conversation.md#页面结构
 
-系统 MUST 让活动运行记录继续原地展示当前最新可见输出，并在记录末尾只提供「完整输出」；四种事实记录 MUST 同样提供「完整输出」。主会话与子任务标签中的 Agent 历史消息、活动运行和终态事实只要带 run id，MUST 都能用所属 session 与 run 打开自己的完整输出。主时间线中成功结束的 Agent 历史消息 MUST 把完整输出入口保留在正文下方原有左边界，并呈现为仅在整条消息悬停或键盘聚焦时可见的图标按钮；该按钮 MUST 保持键盘可达并具有明确的「完整输出」可访问名称，MUST NOT 常驻显示文字按钮。系统 MUST NOT 在活动运行记录或已结束历史记录中呈现「停下」或计时；停下入口 MUST 仅位于空草稿的运行中输入框按钮。「完整输出」MUST 在步骤结束后保持可用。右侧栏正式形态已就绪，「完整输出」打开意图 MUST 打开或聚焦右侧栏对应的“过程”标签。过程内容 MUST 使用面向用户的结构化展示，并隐藏绝对路径和内部标识。系统 MUST NOT 把全量输出堆积进时间线，MUST NOT 用操作台故障诊断入口代替「完整输出」，MUST NOT 在入口文案、时间线或过程标签中泄露运行目录、工作目录、数据库路径或内部标识。
+系统 MUST 让每个活动 run 只占一条原地更新的记录，角色行常驻显示自己的「已进行」时长，活动行只显示当前最新安全活动。专业成员与独立子会话的记录 MUST 提供只作用于该 run 的停下操作；全局主 Agent 的停止仍由 composer 承载。系统 MUST NOT 显示百分比、轮播历史工具事件、把全量过程铺入时间线或让一个 run 的停止/时钟覆盖其他 run。
 
-### Scenario: 查看活动运行记录
-- GIVEN 时间线正在展示一个成员的活动运行记录
-- WHEN 用户查看该记录末尾与输入框操作区
-- THEN 活动运行记录只提供完整输出且没有停下按钮或计时
-- AND 空草稿输入框中存在唯一的停下按钮
+### Scenario: 多成员并行
+- GIVEN 主 Agent 与两个专业成员同时运行
+- WHEN 三个 run 的活动与时间分别更新
+- THEN 时间线保持三条独立活动记录
+- AND 每条记录的活动、时钟和停止目标只绑定自己的 run
+
+### Scenario: 运行中最新活动
+- GIVEN 一个成员的 run 已真实启动并产生结构化工具事件
+- WHEN 用户查看活动记录
+- THEN 角色行显示「已进行」与明确时长
+- AND 下一行只显示最新一条安全活动
+- AND 页面没有百分比或历史工具列表
 
 ### Scenario: 成功历史消息按需显示图标入口
 - GIVEN 主时间线存在一条带 run id 的成功 Agent 历史消息
@@ -901,8 +909,8 @@ Source: docs/product/pages/main-conversation.md#运行中的操作条
 - WHEN 用户激活该图标
 - THEN 系统使用该消息所属 session id 与 run id 打开或聚焦对应过程标签
 
-### Scenario: 没跑起来的记录也能调出完整输出
-- GIVEN 一个步骤留下了「这一步没跑起来」的记录
+### Scenario: 有稳定过程能力的没跑起来记录也能调出完整输出
+- GIVEN 一个能提供稳定过程记录的步骤留下了「这一步没跑起来」记录
 - WHEN 用户查看该记录
 - THEN 记录上常驻提供「完整输出」，与「重试」并存
 
@@ -917,6 +925,45 @@ Source: docs/product/pages/main-conversation.md#运行中的操作条
 - WHEN 用户点击该记录的「完整输出」
 - THEN 系统使用该子会话 id 与 run id 打开对应的过程标签
 - AND 不会错误读取父会话中同名或同时运行的步骤
+
+## Requirement: 终态只显示一次耗时并按需说明完成时刻
+Source: docs/product/pages/agent-conversation.md#完成时间
+
+系统 MUST 在承接 run 的最终 Agent 消息或系统事实中只显示一次「耗时」。完成时刻 MUST 通过耗时控件的悬停、键盘聚焦和屏幕阅读器说明提供；今天、本年内非今天与跨年 MUST 使用产品规定的分级格式。没有真实启动事实时 MUST NOT 显示 `00:00`。
+
+### Scenario: 成功 run 结束
+- GIVEN 一个真实启动的 run 成功结束
+- WHEN 最终 Agent 消息接管临时活动记录
+- THEN 消息常驻显示一次「耗时 mm:ss」
+- AND 聚焦耗时可获得「完成于」说明
+
+### Scenario: 未启动失败
+- GIVEN 一个 run 未确认进程启动就进入没跑起来终态
+- WHEN 系统事实接管临时记录
+- THEN 记录不显示耗时或 `00:00`
+- AND 完成时刻仍可通过可访问说明获得
+
+## Requirement: 完整输出能力按执行引擎局部降级
+Source: docs/product/pages/agent-conversation.md#完整输出
+
+系统 MUST 只为能提供稳定过程记录的 run 显示可点击完整输出入口。Kimi run MUST 保留最新活动、计时和最终回复，但原位说明当前执行不提供可恢复的完整过程记录，MUST NOT 打开空标签或借用 Codex 记录。
+
+### Scenario: Kimi run 工作中
+- GIVEN 当前活动 run 的执行引擎是 Kimi
+- WHEN 用户查看活动记录
+- THEN 最新活动与已进行时长正常显示
+- AND 完整输出位置显示不可用说明而不是按钮
+
+## Requirement: 恢复不可用事实提供明确重新运行
+Source: docs/product/pages/agent-conversation.md#四种事实与异常状态
+
+系统 MUST 将恢复校验失败显示为「原执行已经无法继续」，保留已有耗时，并提供明确的「重新运行」动作。系统 MUST NOT 把它混同为普通没跑起来或暗示会自动重试。
+
+### Scenario: 正常退出后无法恢复
+- GIVEN 原 run 的恢复校验失败且已有累计耗时
+- WHEN 用户查看终态事实
+- THEN 页面显示「原执行已经无法继续」与原耗时
+- AND 操作标为「重新运行」而不是自动继续或普通重试
 
 ## Requirement: 主时间线运行记录复用正文列
 Source: docs/product/pages/main-conversation.md#页面结构
@@ -1431,12 +1478,19 @@ Source: docs/product/pages/main-right-sidebar.md#标签条
 ## Requirement: 验收 #14 — 同一步骤的每次执行在一个过程标签内按序保留
 Source: docs/product/pages/main-right-sidebar.md#过程标签
 
-系统 MUST 在同一过程标签内按开始时间显示同一步骤的全部执行，并以「第 1 次执行」「第 2 次执行」连续编号；每次执行 MUST 保留自己启动时的公开输入和后续过程，活动过程标签 MUST 持续轮询，因此某次执行已 settled、下一次 retry 尚未开始的间隙也不得停止更新。系统 MUST NOT 用后一次执行覆盖前一次执行。
+系统 MUST 在同一过程标签内按开始时间显示同一步骤的全部执行，并以「第 1 次执行」「第 2 次执行」连续编号；每次执行 MUST 保留自己启动时的公开输入、独立耗时、完成时刻和后续过程，活动过程标签 MUST 持续轮询，因此某次执行已 settled、下一次 retry 尚未开始的间隙也不得停止更新。单次过程记录缺失 MUST 只在该次执行内显示不可用，MUST NOT 让其他尝试或整个标签一并失效。系统 MUST NOT 用后一次执行覆盖前一次执行。
 
 ### Scenario: 失败后重试同一步骤
 - GIVEN 某步骤第一次执行失败并产生原始错误，第二次执行随后成功
 - WHEN 用户查看该步骤的过程标签
 - THEN 标签内先显示含原始错误的「第 1 次执行」，再显示「第 2 次执行」
+- AND 两次执行分别显示自己的耗时与完成时刻
+
+### Scenario: 第二次执行记录缺失
+- GIVEN 同一步骤有三次执行且仅第二次 Codex 记录已缺失
+- WHEN 用户查看该步骤的过程标签
+- THEN 第二次执行原位显示记录不可用
+- AND 第一次与第三次执行仍完整可读
 
 ## Requirement: Codex 记录不可用时只显示明确空态
 Source: docs/product/pages/main-right-sidebar.md#过程标签

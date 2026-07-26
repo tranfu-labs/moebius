@@ -11,6 +11,7 @@ import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
 import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
+import { RunTime } from "@/console/run-time";
 import { StructuredAttachmentList, type ComposerAttachment } from "@/console/structured-attachments";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -123,11 +124,15 @@ export function SubtaskTab({
                 <RunBlock
                   role={activeRun.role ?? "dev"}
                   memberIdentities={memberIdentities}
+                  elapsedMs={activeRun.elapsedMs}
+                  activity={activeRun.activity}
+                  processOutputAvailable={activeRun.processOutputAvailable}
+                  outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
                   onOpenExternalLink={onOpenExternalLink}
-                  onOpenOutput={onOpenOutput === undefined
+                  onOpenOutput={onOpenOutput === undefined || activeRun.processOutputAvailable === false
                     ? undefined
                     : (fallbackOutput) => onOpenOutput({
                         sessionId: activeRun.sessionId,
@@ -135,6 +140,10 @@ export function SubtaskTab({
                         role: activeRun.role,
                         fallbackOutput,
                       })}
+                  onInterrupt={activeRun.interruptible
+                    ? () => onInterrupt(sessionId, activeRun.runId)
+                    : undefined}
+                  interruptLabel={`停下${resolveOperatorMemberName(activeRun.role, memberIdentities, "当前这一步")}`}
                   className="max-w-none"
                 />
               </div>
@@ -153,12 +162,7 @@ export function SubtaskTab({
           onAttachmentRetry={onComposerAttachmentRetry}
           onSubmit={onSend}
           runActive={activeRun !== null}
-          onInterrupt={activeRun?.interruptible === true
-            ? () => onInterrupt(sessionId, activeRun.runId)
-            : undefined}
-          interruptLabel={activeRun === null
-            ? undefined
-            : `停下${resolveOperatorMemberName(activeRun.role, memberIdentities, "当前这一步")}`}
+          onInterrupt={undefined}
           roles={roles}
           disabled={disabled}
           placeholder={continuationBlocked
@@ -198,10 +202,14 @@ function SubtaskTimelineEntry({
         memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
-        onRetry={(outcome === "run-not-started" || outcome === "run-stuck") && message.runId !== null
+        elapsedMs={message.runTiming?.elapsedMs}
+        completedAt={message.runTiming?.completedAt}
+        onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
           ? () => onRetry(message.runId!)
           : undefined}
-        onOpenOutput={message.runId === null || onOpenOutput === undefined
+        onOpenOutput={message.runId === null
+          || onOpenOutput === undefined
+          || message.runTiming?.processOutputAvailable === false
           ? undefined
           : (fallbackOutput) => onOpenOutput({
               sessionId: message.sessionId,
@@ -251,6 +259,15 @@ function SubtaskTimelineEntry({
             ? resolveOperatorMemberName(message.role, memberIdentities)
             : "系统提示"}
         </span>
+        {message.speaker === "agent"
+        && message.runTiming?.elapsedMs !== null
+        && message.runTiming?.elapsedMs !== undefined ? (
+          <RunTime
+            mode="completed"
+            elapsedMs={message.runTiming.elapsedMs}
+            completedAt={message.runTiming.completedAt}
+          />
+        ) : null}
       </div>
       <div className="pl-7">
       {message.speaker === "system" ? (
@@ -265,7 +282,10 @@ function SubtaskTimelineEntry({
             mode="message"
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
-          {message.speaker === "agent" && message.runId !== null && onOpenOutput !== undefined ? (
+          {message.speaker === "agent"
+          && message.runId !== null
+          && onOpenOutput !== undefined
+          && message.runTiming?.processOutputAvailable !== false ? (
             <Button
               type="button"
               variant="ghost"
@@ -280,6 +300,11 @@ function SubtaskTimelineEntry({
             >
               完整输出
             </Button>
+          ) : null}
+          {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
+            <p className="mt-2 text-xs text-hint">
+              完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+            </p>
           ) : null}
         </>
       )}
@@ -308,6 +333,7 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
     eventKind === "run-not-started"
     || eventKind === "run-stuck"
     || eventKind === "user-stopped"
+    || eventKind === "resume-unavailable"
     || eventKind === "retry-exhausted"
   ) {
     return eventKind;

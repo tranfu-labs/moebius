@@ -44,6 +44,7 @@ export const LOCAL_CONSOLE_SYSTEM_EVENT_KINDS = [
   "run-not-started",
   "run-stuck",
   "user-stopped",
+  "resume-unavailable",
   "retry-exhausted",
   "other",
 ] as const;
@@ -67,8 +68,21 @@ export interface LocalConsoleMessage {
   attachments?: LocalAttachment[];
   /** When a queued user message actually entered the primary-agent timeline. */
   activatedAt?: string | null;
+  runTiming?: LocalConsoleRunTiming | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LocalConsoleRunTiming {
+  stepId: string;
+  attempt: number;
+  createdAt: string;
+  startedAt: string | null;
+  elapsedMs: number | null;
+  completedAt: string | null;
+  status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
+  engine: "codex" | "kimi";
+  processOutputAvailable: boolean;
 }
 
 export type LocalConsoleChildSessionStatus =
@@ -379,8 +393,14 @@ export interface LocalConsoleRunSnapshot {
   runId: string;
   role: string | null;
   status: "running";
-  startedAt: string;
-  elapsedMs: number;
+  createdAt: string;
+  startedAt: string | null;
+  elapsedMs: number | null;
+  stepId: string;
+  attempt: number;
+  engine: "codex" | "kimi";
+  processOutputAvailable: boolean;
+  activity: import("./run-activity.js").LocalRunActivity | null;
   runDir: string | null;
   cwd: string | null;
   workspaceMode: LocalConsoleWorkspaceMode | null;
@@ -586,6 +606,29 @@ export interface LocalConsoleStore {
   }): Promise<void>;
   recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
   recordExecutionSessionLink?(input: import("./execution-context.js").LocalExecutionSessionLinkFact): Promise<void>;
+  nextRunAttempt?(input: { sessionId: string; stepId: string }): Promise<number>;
+  getRunTiming?(input: { sessionId: string; runId: string }): Promise<LocalConsoleRunTiming | null>;
+  recordRunLifecycleEvent?(input: {
+    sessionId: string;
+    runId: string;
+    stepId: string;
+    attempt: number;
+    phase: "created" | "started" | "paused" | "resumed" | "terminal";
+    role: string | null;
+    engine: "codex" | "kimi";
+    processOutputAvailable: boolean;
+    createdAt: string;
+    startedAt: string | null;
+    elapsedMs: number | null;
+    completedAt: string | null;
+    status: LocalConsoleRunTiming["status"];
+    recordedAt: string;
+  }): Promise<void>;
+  recordRunActivityEvent?(input: {
+    sessionId: string;
+    runId: string;
+    activity: import("./run-activity.js").LocalRunActivity;
+  }): Promise<void>;
   recordSystemAndComplete(input: {
     userMessageId: number;
     sessionId: string;
@@ -641,6 +684,11 @@ export interface LocalConsoleStore {
     sessionId: string;
     now: string;
   }): Promise<void>;
+  releaseMessageForResume?(input: {
+    userMessageId: number;
+    sessionId: string;
+    now: string;
+  }): Promise<void>;
   recordFailure(input: {
     userMessageId: number;
     sessionId: string;
@@ -648,6 +696,8 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    body?: string;
+    systemEventKind?: LocalConsoleSystemEventKind;
   }): Promise<void>;
   recordRetryableFailure(input: {
     userMessageId: number;

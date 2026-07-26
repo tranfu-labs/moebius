@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
 
 export type LocalCodexResumeReason = "graceful-shutdown" | "retry" | "edit-resend";
-export type LocalCodexResumeMode = "resume" | "full-fallback";
+export type LocalCodexResumeMode = "resume" | "full-fallback" | "unavailable";
 
 export interface LocalCodexResumeIntentFact {
   sessionId: string;
@@ -177,7 +177,7 @@ function parseResumeConsumed(value: unknown, sessionId: string): LocalCodexResum
     throw new Error(`invalid Codex resume consumed fact for ${sessionId}`);
   }
   const mode = readString(value.mode, "mode");
-  if (mode !== "resume" && mode !== "full-fallback") {
+  if (mode !== "resume" && mode !== "full-fallback" && mode !== "unavailable") {
     throw new Error(`invalid Codex resume mode: ${mode}`);
   }
   return {

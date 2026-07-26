@@ -1041,7 +1041,8 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /停下开发/u })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停下主理人" })).toBeVisible();
-    expect(screen.queryByText(/00:12|run-1|\/tmp\//u)).not.toBeInTheDocument();
+    expect(screen.getByText("已进行 00:12")).toBeVisible();
+    expect(screen.queryByText(/run-1|\/tmp\//u)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
     expect(onOpenEvidence).toHaveBeenCalledWith({
       kind: "run-output",

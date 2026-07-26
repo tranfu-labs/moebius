@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
   <title id="title">局部恢复后的数据流</title>
-  <desc id="desc">正常退出、Retry 与改一改重发写持久恢复意图，运行时校验后只恢复原 run 的线程，否则 full 降级。</desc>
+  <desc id="desc">只有正常退出写同一 run 的恢复意图；运行时校验成功继续原 run，失败显示无法继续且不自动重跑。</desc>
   <rect width="1280" height="720" fill="#F7F8FC"/>
   <text x="64" y="70" font-family="Inter, sans-serif" font-size="30" font-weight="700" fill="#1E2330">After · 仅同一次未完成执行可 resume</text>
   <text x="64" y="106" font-family="Inter, sans-serif" font-size="16" fill="#667085">普通步骤仍 full；恢复由持久事实和兼容性校验约束</text>
@@ -9,20 +9,20 @@
     <circle cx="92" cy="198" r="18" fill="#E6E8FA"/><path d="M84 198h16M92 190v16" stroke="#5E6AD2" stroke-width="2"/>
     <text x="124" y="204" font-size="20" font-weight="650" fill="#1E2330">恢复入口</text>
     <text x="76" y="248" font-size="15" fill="#667085">正常退出：先落盘再 abort</text>
-    <text x="76" y="278" font-size="15" fill="#667085">Retry：sessionId + runId</text>
-    <text x="76" y="308" font-size="15" fill="#667085">改一改重发：修正增量</text>
+    <text x="76" y="278" font-size="15" fill="#667085">重试 / 重新运行：新 run</text>
+    <text x="76" y="308" font-size="15" fill="#667085">改一改重发：新消息 + 新 run</text>
     <rect x="470" y="138" width="340" height="220" rx="18" fill="#FFFFFF" stroke="#5E6AD2" stroke-width="2"/>
     <circle cx="510" cy="178" r="18" fill="#FFF0D8"/><path d="M502 178h16" stroke="#C47A19" stroke-width="2"/>
     <text x="542" y="184" font-size="20" font-weight="650" fill="#1E2330">Recovery planner</text>
     <text x="498" y="228" font-size="15" fill="#667085">按原 runId 找唯一 thread</text>
     <text x="498" y="258" font-size="15" fill="#667085">校验 role / team / workspace</text>
     <text x="498" y="288" font-size="15" fill="#667085">匹配 → resume</text>
-    <text x="498" y="318" font-size="15" fill="#667085">不匹配 → full fallback</text>
+    <text x="498" y="318" font-size="15" fill="#667085">不匹配 → 无法继续，不自动重跑</text>
     <rect x="952" y="158" width="276" height="180" rx="18" fill="#FFFFFF" stroke="#5E6AD2" stroke-width="2"/>
     <circle cx="992" cy="198" r="18" fill="#E7F3EE"/><path d="M984 198l6 6 10-12" fill="none" stroke="#397C64" stroke-width="2"/>
     <text x="1024" y="204" font-size="20" font-weight="650" fill="#1E2330">Codex CLI</text>
     <text x="976" y="250" font-size="15" fill="#667085">resume &lt;threadId&gt;</text>
-    <text x="976" y="280" font-size="15" fill="#667085">或新 thread（full）</text>
+    <text x="976" y="280" font-size="15" fill="#667085">显式新 run 才启动 full</text>
     <text x="976" y="310" font-size="15" fill="#667085">返回 cached input tokens</text>
     <path d="M328 248H454" fill="none" stroke="#5E6AD2" stroke-width="3"/><path d="M446 240l12 8-12 8" fill="#5E6AD2"/>
     <path d="M810 248H936" fill="none" stroke="#5E6AD2" stroke-width="3"/><path d="M928 240l12 8-12 8" fill="#5E6AD2"/>
@@ -30,7 +30,7 @@
     <text x="362" y="498" font-size="20" font-weight="650" fill="#1E2330">session JSONL · 唯一恢复事实源</text>
     <text x="362" y="538" font-size="15" fill="#667085">thread link + context fingerprint</text>
     <text x="362" y="568" font-size="15" fill="#667085">resume intent + consumed outcome</text>
-    <text x="362" y="598" font-size="15" fill="#667085">每次尝试独立 run；缓存用量仅诊断可见</text>
+    <text x="362" y="598" font-size="15" fill="#667085">暂停 / 恢复沿用 run；重试才新增 run</text>
     <path d="M610 358V438" fill="none" stroke="#5E6AD2" stroke-width="3"/><path d="M602 430l8 12 8-12" fill="#5E6AD2"/>
     <path d="M682 438V374" fill="none" stroke="#5E6AD2" stroke-width="3" stroke-dasharray="8 8"/><path d="M674 382l8-12 8 12" fill="#5E6AD2"/>
   </g>

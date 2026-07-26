@@ -26,12 +26,12 @@ const steps: RunBlockStep[] = [
 ];
 
 describe("RunBlock", () => {
-  it("shows only live human-readable work without a stop control", () => {
+  it("shows a labeled duration and live human-readable work without an unbound stop control", () => {
     const { container } = render(<RunBlock role="dev" elapsedTime="3分12秒" steps={steps} />);
 
     expect(container.firstElementChild).toHaveClass("max-w-[680px]");
     expect(screen.getByText("开发")).toBeVisible();
-    expect(screen.queryByText("3分12秒")).not.toBeInTheDocument();
+    expect(screen.getByText("已进行 3分12秒")).toBeVisible();
     expect(screen.queryByRole("button", { name: /停下/u })).not.toBeInTheDocument();
     expect(screen.queryByText("已完成")).not.toBeInTheDocument();
     expect(screen.queryByText("进行中")).not.toBeInTheDocument();
@@ -83,7 +83,8 @@ describe("RunBlock", () => {
     expect(screen.queryByText(specialRaw)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
     expect(onOpenOutput).toHaveBeenCalledWith(specialRaw);
-    expect(screen.queryByText(/3秒|runDir|sessionId/u)).not.toBeInTheDocument();
+    expect(screen.getByText("已进行 3秒")).toBeVisible();
+    expect(screen.queryByText(/runDir|sessionId/u)).not.toBeInTheDocument();
   });
 
   it("replaces live Markdown inside the same run node", async () => {
@@ -127,5 +128,26 @@ describe("RunBlock", () => {
     expect(screen.getByText("方案执行者")).toBeVisible();
     expect(screen.getByRole("button", { name: "停下方案执行者" })).toBeVisible();
     expect(screen.queryByText("协作者")).not.toBeInTheDocument();
+  });
+
+  it("shows one structured activity with time and degrades Kimi complete output in place", () => {
+    const onOpenOutput = vi.fn();
+    render(
+      <RunBlock
+        role="dev"
+        elapsedMs={84_000}
+        activity={{ action: "正在运行命令", object: "pnpm test" }}
+        processOutputAvailable={false}
+        outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
+        onOpenOutput={onOpenOutput}
+        onInterrupt={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("已进行 01:24")).toBeVisible();
+    expect(screen.getByTestId("run-activity")).toHaveTextContent("正在运行命令·pnpm test");
+    expect(screen.getByText(/当前 Kimi 执行不提供可恢复/u)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "停下开发" })).toBeVisible();
   });
 });

@@ -1145,6 +1145,57 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 - THEN 同一个 run 始终只有一条活动记录且其 Markdown 从第一段原地替换为第二段
 - AND run 成功后 SQLite 只新增一条最终 Agent 消息
 
+## Requirement: run 生命周期以执行段事实记录真实耗时
+Source: docs/product/pages/agent-conversation.md#运行耗时
+
+系统 MUST 为每个 run 记录创建、执行进程启动、暂停/恢复执行段与终态事实，并只累计真实执行段；排队与暂停期间 MUST NOT 计时。未确认执行进程启动的终态 MUST NOT 产生虚假的零耗时。
+
+### Scenario: 进程启动前失败
+- GIVEN 一个 run 已离开队列但外部执行进程没有成功启动
+- WHEN run 进入没跑起来终态
+- THEN API 不提供已进行或耗时
+- AND 完成时刻仍记录真实终态时刻
+
+### Scenario: 执行后停止
+- GIVEN 一个 run 的执行进程已经启动并运行 84 秒
+- WHEN 用户精确停止该 run
+- THEN 终态事实记录累计耗时 84 秒与真正停止时刻
+- AND 同会话其他 run 的计时不受影响
+
+## Requirement: 活动事实只记录单调、安全的最新投影
+Source: docs/product/pages/agent-conversation.md#最新活动
+
+系统 MUST 从当前执行引擎的结构化事件投影有界的动作与安全对象，并按 run 内单调游标原地更新最新活动。系统 MUST NOT 在较新事件完成后回退到较早工具的开始事件，也 MUST NOT 在活动 DTO 中暴露命令参数全集、输出、绝对路径、运行目录、内部 ID 或原始协议类型。
+
+### Scenario: 较新并发工具完成
+- GIVEN 较早工具 A 仍运行且较新工具 B 已开始
+- WHEN B 产生完成事件
+- THEN 最新活动显示 B 的完成态
+- AND 后续无新事件时不闪回 A 的开始态
+
+### Scenario: 命令活动脱敏
+- GIVEN Codex 运行带绝对路径、内部 id 和多个命令参数
+- WHEN runtime 投影命令活动
+- THEN DTO 只包含安全的动作与命令对象
+- AND 不包含绝对路径、内部 id、cwd 或命令输出
+
+## Requirement: 步骤聚合多次用户触发的独立 run
+Source: docs/product/pages/agent-conversation.md#步骤、尝试与-run
+
+系统 MUST 为初次执行建立稳定步骤标识，并让用户重试创建同一步的新 run 与下一尝试序号；改一改重发创建新消息、新步骤和新 run。首版 MUST NOT 自动重试或产生新的 retry-exhausted 事实。
+
+### Scenario: 用户重试
+- GIVEN 同一步第 1 次 run 已进入终态
+- WHEN 用户点击重试
+- THEN 新 run 沿用步骤标识且 attempt 为 2
+- AND 新 run 从零独立计时
+
+### Scenario: 改一改重发
+- GIVEN 用户停止原 run 并修改原消息后发送
+- WHEN 新消息触发执行
+- THEN 新 run 使用新的步骤标识且 attempt 为 1
+- AND 原消息、原 run 与原耗时保持不变
+
 ## Requirement: JSONL 增量读取有界且不伪造 token 流
 Source: docs/product/pages/main-conversation.md#时间线
 
@@ -1488,50 +1539,58 @@ Source: docs/product/pages/main-right-sidebar.md#过程标签
 - AND 执行以 full-fallback 继续，不直接 resume
 
 ## Requirement: 仅显式同次未完成执行可以 resume
-Source: docs/product/pages/main-conversation.md#退出应用与恢复执行
+Source: docs/product/pages/agent-conversation.md#重试与恢复
 
-系统 MUST 只在存在指向原 runId 的未消费恢复意图时规划 resume。普通新消息、成员接力与下一步骤 MUST 继续使用 full。系统 MUST NOT 按 session+role、最新时间或最近 thread 猜测恢复目标。
+系统 MUST 只在存在指向原 runId 的未消费恢复意图时规划 resume。普通新消息、用户重试、成员接力与下一步骤 MUST 继续使用 full。系统 MUST NOT 按 session+role、最新时间或最近 thread 猜测恢复目标。
 
 ### Scenario: 普通下一步骤仍然 full
 - GIVEN 前一步已完成并持久化 thread link
 - WHEN 时间线中的下一条消息触发同一角色
 - THEN 新 run 使用完整共享时间线和 full 模式
 
-### Scenario: Retry 恢复唯一原 run
+### Scenario: 用户重试创建新的 full run
 - GIVEN stuck 记录关联原 runId 且该 run 有唯一兼容 thread link
-- WHEN 用户点击 Retry
-- THEN 新 run 使用该 threadId 的 resume 模式
+- WHEN 用户点击重试
+- THEN 系统创建同一步的下一 run 与 attempt
+- AND 新 run 使用 full 模式并从零计时
 
-## Requirement: 恢复兼容性失败时安全降级 full
-Source: docs/product/pages/main-conversation.md#退出应用与恢复执行
+## Requirement: 恢复兼容性失败时不自动重新执行
+Source: docs/product/pages/agent-conversation.md#重试与恢复
 
-系统 MUST 校验 session、source、role、团队/角色内容和工作空间身份，并在 resume 前确认本机 Codex rollout 可定位。任一不匹配、thread link 缺失/冲突或 rollout 不可用时，MUST 使用完整共享时间线 full，并记录恢复意图的 full-fallback 消费原因。
+系统 MUST 校验 session、source、role、团队/角色内容和工作空间身份，并在正常退出的自动 resume 前确认外部执行会话可定位。任一不匹配、关联缺失/冲突或外部会话不可用时，MUST 将原 run 收口为「无法继续」、冻结已有耗时并记录 unavailable 消费原因，MUST NOT 自动 full 重跑。用户已经明确发出的改一改重发属于新消息与新 run，其恢复关联不可用时 MAY 使用完整共享时间线 full。
 
 ### Scenario: 团队在停下后被切换
 - GIVEN 原 run 的角色或团队快照与当前有效团队不同
 - WHEN 用户执行改一改重发
 - THEN 系统不 resume 原 thread，改用当前团队和完整共享时间线 full
 
-## Requirement: 正常退出先持久化恢复意图
-Source: docs/product/pages/main-conversation.md#退出应用与恢复执行
+### Scenario: 正常退出后 rollout 已丢失
+- GIVEN 正常退出已为原 run 持久化恢复意图
+- WHEN 重启发现关联 rollout 已不可用
+- THEN 原 run 显示「无法继续」并保留退出前累计耗时
+- AND 系统不调用执行器，直到用户点击「重新运行」
 
-系统 MUST 在正常退出终止已建立 thread 的 active run 前持久化 graceful resume intent，并停止领取新消息。只有持久化成功的 run 才可在下次启动自动恢复；无法写入 intent 时 MUST 保留可见终态或由 orphan stuck 收敛。
+## Requirement: 正常退出先持久化恢复意图
+Source: docs/product/pages/agent-conversation.md#重试与恢复
+
+系统 MUST 在正常退出终止已建立外部执行会话的 active run 前持久化 graceful resume intent 与暂停生命周期事实，并停止领取新消息。只有持久化成功的 run 才可在下次启动自动恢复；精确恢复 MUST 复用原 Moebius run、步骤与 attempt，新执行段继续累计原耗时且关闭期间不计时。无法写入 intent 时 MUST 保留可见终态或由 orphan stuck 收敛。
 
 ### Scenario: 正常退出正在执行的 run
 - GIVEN 活动 run 已收到 thread.started
 - WHEN 用户正常退出应用
 - THEN session JSONL 先出现 graceful resume intent，再终止 Codex
-- AND 下次启动自动恢复该执行
+- AND 下次启动复用原 run 与 attempt 自动恢复该执行
+- AND 暂停期间不计入耗时
 
-## Requirement: 恢复尝试与缓存用量可诊断
-Source: docs/product/pages/main-conversation.md#退出应用与恢复执行
+## Requirement: 恢复执行段与缓存用量可诊断
+Source: docs/product/pages/agent-conversation.md#重试与恢复
 
-系统 MUST 为每次恢复创建独立 Moebius run，并把 resume/full-fallback 选择、原因及 Codex 返回的 cached input token 写入 session 诊断事实。系统 MUST NOT 在普通对话 state DTO 中展示 token cache 指标。
+系统 MUST 为同一 run 的暂停与恢复追加独立执行段事实，并把 resume/unavailable 选择、原因及 Codex 返回的 cached input token 写入 session 诊断事实。用户点击「重新运行」后创建的新 run MUST 独立记录。系统 MUST NOT 在普通对话 state DTO 中展示 token cache 指标。
 
 ### Scenario: resume 完成并返回 cache 用量
 - GIVEN Codex resume 成功且返回 cached_input_tokens
 - WHEN 运行完成
-- THEN session 事实可关联恢复意图、新 run 和 cached token
+- THEN session 事实可关联恢复意图、原 run 的新执行段和 cached token
 - AND 普通对话 API 不新增 token cache 字段
 
 ### Scenario: thread 关联持久化暂时失败

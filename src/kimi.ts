@@ -35,6 +35,8 @@ export interface KimiAcpRunOptions {
   workspaceAccess?: "read-write" | "read-only";
   permissionMode?: string;
   onVisibleAgentMarkdown?: (text: string) => void;
+  onProcessStarted?: () => void | Promise<void>;
+  onStructuredActivity?: (event: unknown) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
   transportFactory?: (input: {
     cwd: string;
@@ -82,6 +84,7 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
       env: withManagedKimiHome(process.env, runtimeHomes.managedHome),
       allowWrites: options.workspaceAccess !== "read-only",
     });
+    await options.onProcessStarted?.();
     return await runKimiAcpWithTransport(transport, {
       ...options,
       runDir,
@@ -173,6 +176,7 @@ export async function runKimiAcpWithTransport(
   };
   const clearUpdate = transport.onSessionUpdate((update) => {
     resetIdle();
+    options.onStructuredActivity?.(update);
     const text = readAgentTextChunk(update);
     if (text === null) return;
     finalText += text;

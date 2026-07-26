@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:agent-conversation": "vite build --mode agent-conversation && node scripts/publish-agent-conversation.mjs",
     "build:onboarding": "vite build && node scripts/publish-onboarding.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "verify:agent-conversation": "node scripts/verify-agent-conversation.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
-    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding"
+    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding && pnpm build:agent-conversation && pnpm verify:agent-conversation"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

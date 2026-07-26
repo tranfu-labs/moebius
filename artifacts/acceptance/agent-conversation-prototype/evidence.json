@@ -1,0 +1,27 @@
+{
+  "prototype": "docs/product/pages/agent-conversation.prototype.html",
+  "sha256": "77006426457a7c52c4064b841b94cb77073ea81fd14ab3bb446807a92f3ae548",
+  "checkedAt": "2026-07-26T05:24:16.158Z",
+  "checks": [
+    "single-html-has-no-external-resource-attributes",
+    "file-url-renders-wide-dark",
+    "multiple-agent-runs-remain-independent",
+    "kimi-output-unavailable-is-inline-and-not-clickable",
+    "process-tab-aggregates-independent-attempts",
+    "latest-activity-updates-in-place-without-concurrency-flashback",
+    "duration-switches-to-hour-format",
+    "terminal-duration-reveals-completed-at-on-focus",
+    "stopped-run-supports-retry-and-edit-resend",
+    "pause-freezes-and-continue-resumes-same-run",
+    "recovery-failure-requires-explicit-rerun",
+    "light-theme",
+    "narrow-overlay-has-no-horizontal-overflow",
+    "prefers-reduced-motion-removes-visible-transitions",
+    "narrow-process-overlay-closes-and-reopens-by-keyboard-ready-controls",
+    "no-http-or-https-requests"
+  ],
+  "screenshots": [
+    "agent-conversation-wide-light.png",
+    "agent-conversation-narrow-dark.png"
+  ]
+}

@@ -194,7 +194,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(facts).toContain('"engine":"codex"');
   });
 
-  it("falls back an old Kimi run with its original context after a Codex team switch", async () => {
+  it("retries the original input as a new current-team run after a team switch", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
       old: snapshot("old Kimi rules", {
@@ -208,7 +208,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
         effort: "medium",
       }),
     };
-    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "unexpected"));
+    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "new Codex retry completed"));
     let call = 0;
     const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
       call += 1;
@@ -277,19 +277,18 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForAgent(server.url, "old Kimi fallback completed");
+    await waitForAgent(server.url, "new Codex retry completed");
 
-    expect(kimi).toHaveBeenCalledTimes(2);
-    expect(kimi.mock.calls[1]?.[0]).toMatchObject({
-      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+    expect(kimi).toHaveBeenCalledTimes(1);
+    expect(codex).toHaveBeenCalledTimes(1);
+    expect(codex.mock.calls[0]?.[0]).toMatchObject({
       mode: { kind: "full" },
     });
-    expect(kimi.mock.calls[1]?.[0].prompt).toContain("old Kimi rules");
-    expect(kimi.mock.calls[1]?.[0].prompt).not.toContain("new Codex rules");
-    expect(codex).not.toHaveBeenCalled();
+    expect(codex.mock.calls[0]?.[0].prompt).toContain("new Codex rules");
+    expect(codex.mock.calls[0]?.[0].prompt).not.toContain("old Kimi rules");
   });
 
-  it("fails visibly without invoking any driver when the target run context is missing", async () => {
+  it("does not require the old run context when explicit retry creates a new run", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
       old: snapshot("old Kimi rules", {
@@ -303,7 +302,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
         effort: "medium",
       }),
     };
-    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "unexpected Codex"));
+    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "new Codex retry completed"));
     const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
       await options.onSessionStarted?.("kimi-session-missing-context");
       return {
@@ -361,12 +360,11 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    const failure = await waitForSystemEvent(server.url, "run-not-started");
+    await waitForAgent(server.url, "new Codex retry completed");
 
-    expect(failure.error).toContain("Unsafe execution recovery");
-    expect(failure.error).toContain(stopped.runId);
     expect(kimi).not.toHaveBeenCalled();
-    expect(codex).not.toHaveBeenCalled();
+    expect(codex).toHaveBeenCalledTimes(1);
+    expect(codex.mock.calls[0]?.[0]).toMatchObject({ mode: { kind: "full" } });
   });
 });
 

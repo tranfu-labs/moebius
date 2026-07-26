@@ -20,6 +20,8 @@ export interface CodexRunOptions {
   idleTimeoutMs?: number;
   maxDurationMs?: number;
   onVisibleAgentMarkdown?: (text: string) => void;
+  onProcessStarted?: () => void | Promise<void>;
+  onStructuredActivity?: (event: unknown) => void;
   onThreadStarted?: (threadId: string) => void | Promise<void>;
 }
 
@@ -250,6 +252,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   let forceSettleTimer: NodeJS.Timeout | null = null;
   let observedThreadId: string | null = null;
   let threadStartedCallback: Promise<void> = Promise.resolve();
+  let processStartedCallback: Promise<void> = Promise.resolve();
   let threadStartedCallbackError: string | null = null;
   let threadIdentityError: string | null = null;
   const terminationDelayMs = options.interruptTerminationDelayMs ?? INTERRUPT_TERMINATION_DELAY_MS;
@@ -262,6 +265,15 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   });
   child.once("error", (error) => resolveExit({ error }));
   child.once("close", (code, exitSignal) => resolveExit({ code, signal: exitSignal }));
+  child.once("spawn", () => {
+    try {
+      processStartedCallback = Promise.resolve(options.onProcessStarted?.()).catch((error: unknown) => {
+        stderrFile.write(`[moebius] codex-process-started-callback-failed:${formatUnknownError(error)}\n`);
+      });
+    } catch (error) {
+      stderrFile.write(`[moebius] codex-process-started-callback-failed:${formatUnknownError(error)}\n`);
+    }
+  });
 
   const beginTermination = () => {
     if (terminating) {
@@ -313,6 +325,11 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     watchdogs.recordActivity();
   };
   const handleStreamEvent = (event: unknown) => {
+    try {
+      options.onStructuredActivity?.(event);
+    } catch (error) {
+      stderrFile.write(`[moebius] codex-structured-activity-callback-failed:${formatUnknownError(error)}\n`);
+    }
     const threadId = extractCodexThreadId(event);
     if (threadId !== null) {
       if (observedThreadId === null) {
@@ -362,6 +379,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     handleStreamEvent(event);
   }
   await threadStartedCallback;
+  await processStartedCallback;
   signal?.removeEventListener("abort", handleAbort);
   if (terminationTimer !== null) {
     clearTimeout(terminationTimer);
