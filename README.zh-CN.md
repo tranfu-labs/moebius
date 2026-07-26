@@ -17,6 +17,29 @@ Moebius 为开发者提供可持续运行、按角色分工的编码 Agent 团�
 
 Moebius 仍在积极开发中；发布状态见[变更日志](CHANGELOG.md)。
 
+## Moebius 实际运行
+
+<table>
+  <tr>
+    <th width="50%">基于角色的 Agent 交棒执行中</th>
+    <th width="50%">代码验证完成</th>
+  </tr>
+  <tr>
+    <td>
+      <a href="./assets/screenshots/console-agent-handoff.jpg">
+        <img src="./assets/screenshots/console-agent-handoff.jpg" alt="Moebius 操作台展示 Agent 交棒执行中的状态">
+      </a>
+    </td>
+    <td>
+      <a href="./assets/screenshots/console-code-verified.jpg">
+        <img src="./assets/screenshots/console-code-verified.jpg" alt="Moebius 操作台展示代码验证完成的 Agent 执行结果">
+      </a>
+    </td>
+  </tr>
+</table>
+
+点击任一截图可查看原始分辨率图片。
+
 ## 为什么使用 Moebius
 
 - 用普通 Markdown 定义 Agent 职责与协作规则，不必把团队固化成单一工作流。
