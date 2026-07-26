@@ -80,6 +80,8 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
     });
     expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
+      "--disable",
+      "multi_agent",
       "-m",
       "gpt-5.6-sol",
       "-c",

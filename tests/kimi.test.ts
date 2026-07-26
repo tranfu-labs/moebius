@@ -11,6 +11,7 @@ import {
   runKimiAcpWithTransport,
   type KimiAcpTransport,
 } from "../src/kimi.js";
+import type { KimiRuntimeHomePaths } from "../src/kimi-runtime-home.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
 
 const temporaryRoots: string[] = [];
@@ -120,6 +121,16 @@ async function makeRunRoot(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-kimi-"));
   temporaryRoots.push(root);
   return root;
+}
+
+async function makeRuntimeHomes(root: string): Promise<KimiRuntimeHomePaths> {
+  const sourceHome = path.join(root, "kimi-source");
+  await fs.mkdir(sourceHome, { recursive: true });
+  await fs.writeFile(path.join(sourceHome, "config.toml"), "[tools]\ndisabled = []\n");
+  return {
+    sourceHome,
+    managedHome: path.join(root, "kimi-managed"),
+  };
 }
 
 describe("Kimi ACP driver", () => {
@@ -305,15 +316,18 @@ describe("Kimi ACP driver", () => {
 
   it("rejects an unsupported image before prompt and still closes the transport", async () => {
     const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
     const image = path.join(root, "image.bmp");
     await fs.writeFile(image, "not an image");
     const transport = fakeTransport();
+    const transportFactory = vi.fn(async () => transport);
     const codex = vi.fn();
     const runner = createLocalExecutionRunner({
       runCodex: codex,
       runKimi: async (options) => runKimiAcp({
         ...options,
-        transportFactory: async () => transport,
+        runtimeHomePaths,
+        transportFactory,
       }),
     });
     const result = await runner({
@@ -328,6 +342,11 @@ describe("Kimi ACP driver", () => {
     expect(transport.requests.some((request) => request.method === "session/prompt")).toBe(false);
     expect(transport.close).toHaveBeenCalledTimes(1);
     expect(codex).not.toHaveBeenCalled();
+    expect(transportFactory).toHaveBeenCalledWith(expect.objectContaining({
+      env: expect.objectContaining({
+        KIMI_CODE_HOME: runtimeHomePaths.managedHome,
+      }),
+    }));
   });
 
   it("requires authoritative model and effort options", async () => {
@@ -601,6 +620,7 @@ describe("Kimi ACP driver", () => {
   }) => {
     vi.useFakeTimers();
     const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
     const events: string[] = [];
     const transport = signalRecordingTransport(events);
     const defaultRequest = transport.request.bind(transport);
@@ -626,6 +646,7 @@ describe("Kimi ACP driver", () => {
       profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
       mode: { kind: "full" },
       signal: controller.signal,
+      runtimeHomePaths,
       transportFactory: vi.fn().mockResolvedValue(transport),
     });
 

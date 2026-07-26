@@ -107,7 +107,15 @@ describe("extractFinalAssistant", () => {
 
   it("builds full and resume codex args without ephemeral mode", () => {
     expect(buildCodexArgs("hello")).toEqual(
-      expect.arrayContaining(["exec", "--json", "-m", "gpt-5.6-sol", "hello"]),
+      expect.arrayContaining([
+        "exec",
+        "--json",
+        "--disable",
+        "multi_agent",
+        "-m",
+        "gpt-5.6-sol",
+        "hello",
+      ]),
     );
     expect(buildCodexArgs("hello")).not.toContain("--ephemeral");
 
@@ -120,6 +128,7 @@ describe("extractFinalAssistant", () => {
       "thread-1",
       "delta",
     ]);
+    expect(resumeArgs).toEqual(expect.arrayContaining(["--disable", "multi_agent"]));
     expect(resumeArgs).not.toContain("--ephemeral");
   });
 
@@ -534,6 +543,8 @@ describe("codex provider override", () => {
     const baseline = [
       "--yolo",
       "--json",
+      "--disable",
+      "multi_agent",
       "-m",
       "gpt-5.6-sol",
       "-c",

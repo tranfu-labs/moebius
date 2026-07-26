@@ -3,7 +3,15 @@ import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { DATA_ROOT } from "./config.js";
 import type { CodexRunResult } from "./codex.js";
+import {
+  KimiRuntimeIsolationError,
+  prepareKimiRuntimeHome,
+  resolveKimiRuntimeHomePaths,
+  type KimiRuntimeHomePaths,
+  withManagedKimiHome,
+} from "./kimi-runtime-home.js";
 import type {
   LocalConsoleExecutionProfile,
 } from "./local-console/types.js";
@@ -23,6 +31,7 @@ export interface KimiAcpRunOptions {
   imagePaths?: string[];
   idleTimeoutMs?: number;
   maxDurationMs?: number;
+  runtimeHomePaths?: KimiRuntimeHomePaths;
   onVisibleAgentMarkdown?: (text: string) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
   transportFactory?: (input: {
@@ -30,6 +39,7 @@ export interface KimiAcpRunOptions {
     readRoots: string[];
     stdoutPath: string;
     stderrPath: string;
+    env: NodeJS.ProcessEnv;
   }) => Promise<KimiAcpTransport>;
 }
 
@@ -56,11 +66,17 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
   const stderrPath = path.join(runDir, "kimi-stderr.log");
   let transport: KimiAcpTransport | null = null;
   try {
+    const runtimeHomes = options.runtimeHomePaths ?? resolveKimiRuntimeHomePaths({
+      dataRoot: DATA_ROOT,
+      env: process.env,
+    });
+    await prepareKimiRuntimeHome(runtimeHomes);
     transport = await (options.transportFactory ?? createKimiProcessTransport)({
       cwd: options.cwd,
       readRoots: [options.cwd, path.join(runDir, "input-attachments")],
       stdoutPath,
       stderrPath,
+      env: withManagedKimiHome(process.env, runtimeHomes.managedHome),
     });
     return await runKimiAcpWithTransport(transport, {
       ...options,
@@ -347,10 +363,11 @@ async function createKimiProcessTransport(input: {
   readRoots: string[];
   stdoutPath: string;
   stderrPath: string;
+  env: NodeJS.ProcessEnv;
 }): Promise<KimiAcpTransport> {
   const child = spawn("kimi", ["acp"], {
     cwd: input.cwd,
-    env: process.env,
+    env: input.env,
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -712,7 +729,7 @@ function firstString(...values: unknown[]): string | null {
 }
 
 function safeKimiError(error: unknown): string {
-  return error instanceof KimiAcpError
+  return error instanceof KimiAcpError || error instanceof KimiRuntimeIsolationError
     ? error.safeMessage
     : "Kimi 执行失败；未改用其他执行引擎。";
 }
