@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "relayBeats": [
+    {
+      "speakerSlug": "product-delivery-lead",
+      "message": "我先和你聊清产品命题与关键旅程；确认后，后续原型、方案和验收会按两个明确人工阶段推进。"
+    },
+    {
+      "speakerSlug": "product-reviewer",
+      "message": "用户视角评审已完成：主路径成立，但失败恢复必须在本页 PRD 中补清后才能进入原型。"
+    },
+    {
+      "speakerSlug": "ui-prototyper",
+      "message": "已按确认 PRD 生成可离线打开的交互原型，并完成宽窄视口、亮暗主题和键盘旅程验证。"
+    },
+    {
+      "speakerSlug": "implementation-lead",
+      "message": "OpenSpec 实施摘要和逐条验收清单已准备，等待 UI 与方案共同确认后即可自动落盘和开发。"
+    },
+    {
+      "speakerSlug": "functional-qa",
+      "message": "第一轮功能验收发现失败恢复缺少回归覆盖，已给出复现步骤和明确修复标准。"
+    },
+    {
+      "speakerSlug": "implementation-lead",
+      "message": "已补齐恢复逻辑与边界测试，定向测试、类型检查和必要构建全部通过。"
+    },
+    {
+      "speakerSlug": "visual-qa",
+      "message": "独立视觉验收通过；截图仅保存在本轮系统临时目录，主会话只保留结论和问题定位。"
+    },
+    {
+      "speakerSlug": "product-delivery-lead",
+      "message": "收尾：PRD、原型、OpenSpec、实现及双重验收均已闭环，交付路径和剩余风险已汇总。"
+    }
+  ]
+}

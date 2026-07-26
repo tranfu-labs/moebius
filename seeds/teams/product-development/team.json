@@ -1,0 +1,13 @@
+{
+  "name": "产品研发闭环团队",
+  "description": "把产品想法经过 PRD 采访、可交互 UI 原型、OpenSpec 实现、功能验收和视觉验收，自动推进为可验证的软件功能。",
+  "primaryAgentSlug": "product-delivery-lead",
+  "memberOrder": [
+    "product-delivery-lead",
+    "product-reviewer",
+    "ui-prototyper",
+    "implementation-lead",
+    "functional-qa",
+    "visual-qa"
+  ]
+}
