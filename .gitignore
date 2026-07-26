@@ -39,6 +39,8 @@ desktop/release/
 packages/*/dist/
 packages/*/storybook-static/
 prototypes/dist/
+/artifacts/acceptance/agent-conversation-prototype/
+/artifacts/acceptance/onboarding-prototype/
 
 .env
 sessions
