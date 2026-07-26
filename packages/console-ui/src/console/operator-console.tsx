@@ -790,7 +790,7 @@ export function OperatorConsole({
   const locateConversationRelayEvent = (event: ConversationRelayEvent) => {
     const timeline = timelineScrollRef.current;
     const target = conversationMessageRefs.current.get(event.messageId);
-    if (timeline === null || target === undefined) {
+    if (timeline === null || target === undefined || !target.isConnected) {
       setRelayFeedback("无法定位到原消息，已保持当前阅读位置");
       return;
     }

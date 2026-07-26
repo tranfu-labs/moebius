@@ -1721,6 +1721,88 @@ describe("OperatorConsole", () => {
     expect(screen.getByTestId("relay-connector").getAttribute("d")).toContain(" C ");
   });
 
+  it("keeps the timeline position unchanged when a relay target disappears", () => {
+    renderConsole({
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "请开始" }),
+        message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
+      ],
+      memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
+    });
+
+    const timeline = screen.getByRole("region", { name: "会话时间线" });
+    timeline.scrollTop = 137;
+    const target = screen.getByTestId("timeline-message-2");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(target, "isConnected", { configurable: true, value: false });
+    Object.defineProperty(target, "scrollIntoView", { configurable: true, value: scrollIntoView });
+
+    fireEvent.mouseEnter(screen.getByTestId("conversation-relay-rail"));
+    fireEvent.click(screen.getByTestId("relay-event-message-2"));
+
+    expect(timeline.scrollTop).toBe(137);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(screen.getByTestId("conversation-relay-feedback")).toHaveTextContent(
+      "无法定位到原消息，已保持当前阅读位置",
+    );
+  });
+
+  it("restores each root conversation to its own saved reading message", () => {
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const onReadingMessageChange = vi.fn();
+
+    try {
+      const sessionAMessages = [
+        message({ id: 1, sessionId: "session-a", body: "A 的阅读位置" }),
+        message({ id: 2, sessionId: "session-a", body: "A 的最新消息" }),
+      ];
+      const sessionBMessages = [
+        message({ id: 3, sessionId: "session-b", body: "B 的阅读位置" }),
+        message({ id: 4, sessionId: "session-b", body: "B 的最新消息" }),
+      ];
+      const { rerender } = renderConsole({
+        initialReadingMessageId: 1,
+        messages: sessionAMessages,
+        onReadingMessageChange,
+      });
+
+      rerender(<OperatorConsole {...baseProps({
+        initialReadingMessageId: 3,
+        messages: sessionBMessages,
+        onReadingMessageChange,
+        selectedSession: sessions[1],
+        selectedSessionId: "session-b",
+      })} />);
+      rerender(<OperatorConsole {...baseProps({
+        initialReadingMessageId: 1,
+        messages: sessionAMessages,
+        onReadingMessageChange,
+      })} />);
+
+      expect(scrollIntoView.mock.contexts.map((context) =>
+        (context as HTMLElement).dataset.messageId)).toEqual(["1", "3", "1"]);
+      expect(onReadingMessageChange.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+        ["session-a", 1],
+        ["session-b", 3],
+        ["session-a", 1],
+      ]);
+    } finally {
+      if (originalScrollIntoView === undefined) {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+      } else {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      }
+    }
+  });
+
   it("keeps machine terms out of the default conversation surface", () => {
     renderConsole({
       messages: [

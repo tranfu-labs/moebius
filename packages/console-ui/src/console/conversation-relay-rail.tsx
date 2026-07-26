@@ -1,8 +1,9 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
-  type WheelEvent,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,7 @@ export function ConversationRelayRail({
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const pendingFocusIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!expanded) {
@@ -90,6 +92,36 @@ export function ConversationRelayRail({
   const railHeight = rows.length * CONVERSATION_RELAY_ROW_HEIGHT;
   const stageTop = Math.max(0, (viewportHeight - railHeight) / 2);
   const paths = createConnectionPaths(rows, lanes);
+  const browse = useCallback((eventId: string, direction: -1 | 1) => {
+    const nextId = adjacentConversationRelayEventId(events, eventId, direction);
+    const nextEvent = events.find((event) => event.id === nextId);
+    pendingFocusIdRef.current = nextId === eventId ? null : nextId;
+    setBrowseId(nextId);
+    if (nextEvent !== undefined) onBrowse?.(nextEvent);
+  }, [events, onBrowse]);
+
+  useLayoutEffect(() => {
+    const pendingFocusId = pendingFocusIdRef.current;
+    if (pendingFocusId === null) return;
+    const target = stageRef.current
+      ?.querySelector<HTMLElement>(`[data-relay-event="${pendingFocusId}"]`);
+    if (target === undefined || target === null) return;
+    pendingFocusIdRef.current = null;
+    target.focus();
+  }, [rows]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport === null) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      if (Math.abs(event.deltaY) < 2) return;
+      event.preventDefault();
+      event.stopPropagation();
+      browse(focusId ?? events.at(-1)?.id ?? "", event.deltaY > 0 ? 1 : -1);
+    };
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [browse, events, focusId]);
 
   if (events.length === 0) return null;
 
@@ -106,24 +138,6 @@ export function ConversationRelayRail({
       setInspectedId(null);
     }, 120);
   };
-  const browse = (eventId: string, direction: -1 | 1) => {
-    const nextId = adjacentConversationRelayEventId(events, eventId, direction);
-    const nextEvent = events.find((event) => event.id === nextId);
-    setBrowseId(nextId);
-    if (nextEvent !== undefined) onBrowse?.(nextEvent);
-    window.requestAnimationFrame(() => {
-      stageRef.current
-        ?.querySelector<HTMLElement>(`[data-relay-event="${nextId}"]`)
-        ?.focus();
-    });
-  };
-  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (Math.abs(event.deltaY) < 2) return;
-    event.preventDefault();
-    event.stopPropagation();
-    browse(focusId ?? events.at(-1)?.id ?? "", event.deltaY > 0 ? 1 : -1);
-  };
-
   const style = {
     "--relay-expanded-width": `${String(expandedWidth)}px`,
     "--relay-height": `${String(railHeight)}px`,
@@ -137,12 +151,7 @@ export function ConversationRelayRail({
     : `var(${identityToken(inspectedEvent.actorKey)})`;
 
   return (
-    <Popover
-      open={inspectedEvent !== undefined && inspectedRowIndex >= 0}
-      onOpenChange={(open) => {
-        if (!open) setInspectedId(null);
-      }}
-    >
+    <Popover open={inspectedEvent !== undefined && inspectedRowIndex >= 0}>
     <div
       ref={viewportRef}
       className={cn(
@@ -158,7 +167,6 @@ export function ConversationRelayRail({
         setExpanded(true);
       }}
       onMouseLeave={scheduleClose}
-      onWheel={handleWheel}
       style={style}
     >
       <nav
@@ -195,6 +203,8 @@ export function ConversationRelayRail({
             <path
               key={path.key}
               d={path.d}
+              data-relay-from={path.from}
+              data-relay-to={path.to}
               data-testid="relay-connector"
               fill="none"
               stroke="currentColor"
@@ -322,8 +332,11 @@ export function ConversationRelayRail({
         align="center"
         className="w-[296px] max-w-[calc(100vw-24px)]"
         collisionPadding={12}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={() => setInspectedId(null)}
         onMouseEnter={cancelClose}
         onMouseLeave={scheduleClose}
+        onOpenAutoFocus={(event) => event.preventDefault()}
         side="right"
         sideOffset={12}
         data-testid="relay-event-preview"
@@ -367,8 +380,8 @@ function handleEventKeyDown(
 function createConnectionPaths(
   rows: readonly ConversationRelayRow[],
   lanes: ReadonlyMap<string, number>,
-): Array<{ d: string; key: string }> {
-  const paths: Array<{ d: string; key: string }> = [];
+): Array<{ d: string; from: string; key: string; to: string }> {
+  const paths: Array<{ d: string; from: string; key: string; to: string }> = [];
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
     const previous = rows[rowIndex - 1];
     const current = rows[rowIndex];
@@ -381,6 +394,8 @@ function createConnectionPaths(
       + CONVERSATION_RELAY_ROW_HEIGHT / 2;
     paths.push({
       key: `${previous.event.id}-${current.event.id}`,
+      from: previous.event.id,
+      to: current.event.id,
       d: createConversationRelayCurvePath(previousX, previousY, currentX, currentY),
     });
   }
