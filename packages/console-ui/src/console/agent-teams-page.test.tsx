@@ -429,7 +429,12 @@ const builtInTeam: OperatorAgentTeam = {
   description: "负责软件方案、实现和验收",
   primaryAgentSlug: "manager",
   memberOrder: ["manager"],
-  members: [{ slug: "manager", displayName: "开发经理", description: "默认接单" }],
+  members: [{
+    slug: "manager",
+    displayName: "开发经理",
+    description: "默认接单",
+    executionProfile: staticProfile(),
+  }],
   status: "usable",
   canCreateConversation: true,
 };
@@ -470,12 +475,31 @@ const userTeam: OperatorAgentTeam = {
   primaryAgentSlug: "manager",
   memberOrder: ["manager", "dev"],
   members: [
-    { slug: "manager", displayName: "开发经理", description: "默认接单" },
-    { slug: "dev", displayName: "开发", description: "负责实现" },
+    {
+      slug: "manager",
+      displayName: "开发经理",
+      description: "默认接单",
+      executionProfile: staticProfile(),
+    },
+    {
+      slug: "dev",
+      displayName: "开发",
+      description: "负责实现",
+      executionProfile: staticProfile(),
+    },
   ],
   status: "usable",
   canCreateConversation: true,
 };
+
+function staticProfile() {
+  const profile = { cli: "codex" as const, model: "gpt-5.6-sol", effort: "high" };
+  return {
+    binding: { source: "explicit" as const, profile },
+    recommendation: null,
+    effectiveProfile: profile,
+  };
+}
 
 function detailStateFor(
   teamKey: string,

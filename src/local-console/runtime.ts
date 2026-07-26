@@ -857,6 +857,24 @@ export class LocalConsoleRuntime {
     ) {
       throw new LocalConsoleBusyError();
     }
+    if (recoveryStore !== null && role !== null) {
+      const contexts = await readRunExecutionContexts(
+        recoveryStore.getSessionFactLogPath(input.sessionId),
+        input.sessionId,
+      );
+      if (contexts.some((context) => context.runId === input.runId)) {
+        await this.storeCall("local-console-store-record-user-retry", () =>
+          recoveryStore.recordCodexResumeIntent({
+            sessionId: input.sessionId,
+            intentId: crypto.randomUUID(),
+            targetRunId: input.runId,
+            sourceMessageId: source.id,
+            role,
+            reason: "retry",
+            createdAt: this.nowIso(),
+          }));
+      }
+    }
     await this.storeCall("local-console-store-release-user-retry", () =>
       this.options.store.releaseMessageForRetry({
         userMessageId: source.id,

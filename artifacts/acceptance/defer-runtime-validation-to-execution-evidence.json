@@ -1,0 +1,171 @@
+{
+  "change": "defer-runtime-validation-to-execution",
+  "environment": {
+    "surface": "Electron development desktop via CDP 9222",
+    "dataRoot": "isolated temporary acceptance root",
+    "cliShims": ["codex", "kimi"],
+    "startedAt": "2026-07-26T09:53:18.020Z",
+    "completedAt": "2026-07-26T09:55:59.645Z"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "at": "2026-07-26T09:53:34.773Z",
+      "assertions": {
+        "initialProfile": {
+          "cli": "codex",
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        "staticManagementCopyVisible": true,
+        "membersVisitedAcrossThreePolls": ["dev-manager", "dev", "qa"],
+        "forbiddenCopyPresent": [],
+        "shimInvocations": []
+      },
+      "exitCode": 0
+    },
+    {
+      "step": 2,
+      "at": "2026-07-26T09:53:44.473Z",
+      "assertions": {
+        "savedProfile": {
+          "cli": "codex",
+          "model": "portable-model-x",
+          "effort": "portable-effort-x"
+        },
+        "trimmed": true,
+        "saveDisabledAfterSuccess": true,
+        "valuesSurvivedMemberSwitch": true,
+        "bindingSource": "override",
+        "bindingDocumentContainsCapabilityData": false
+      },
+      "exitCode": 0
+    },
+    {
+      "step": 3,
+      "at": "2026-07-26T09:54:24.223Z",
+      "assertions": {
+        "project": "agent-moebius",
+        "team": "system:development",
+        "readinessAdvisory": "其中 3 名成员仍需完成 Codex 准备；可在 Agent 团队页调整。",
+        "sendEnabled": true,
+        "shimInvocationsBeforeSend": []
+      },
+      "exitCode": 0
+    },
+    {
+      "step": 4,
+      "at": "2026-07-26T09:54:42.962Z",
+      "sessionId": "local:2026-07-26T09:54:30.434Z-npsex8",
+      "assertions": {
+        "userMessageVisible": true,
+        "failureCopyVisible": true,
+        "stillRunning": false,
+        "sessionStatus": "failed",
+        "firstUserMessageStatus": "failed",
+        "sessionPrimaryProfile": {
+          "cli": "codex",
+          "model": "portable-model-x",
+          "effort": "portable-effort-x"
+        },
+        "process": {
+          "codexCalls": 1,
+          "kimiCalls": 0,
+          "capabilityProbeCalls": 0,
+          "realDriverArgs": [
+            "exec",
+            "--json",
+            "-m",
+            "portable-model-x",
+            "model_reasoning_effort=portable-effort-x"
+          ]
+        }
+      },
+      "exitCode": 0
+    },
+    {
+      "step": 5,
+      "at": "2026-07-26T09:55:25.553Z",
+      "sessionId": "local:2026-07-26T09:54:30.434Z-npsex8",
+      "assertions": {
+        "retrySucceeded": true,
+        "secondMessageVisible": true,
+        "thirdMessageVisible": true,
+        "successfulReplies": 3,
+        "teamStorePrimaryProfile": {
+          "cli": "kimi",
+          "model": "new-kimi-model",
+          "effort": "new-kimi-effort"
+        },
+        "oldSessionPrimaryProfile": {
+          "cli": "codex",
+          "model": "portable-model-x",
+          "effort": "portable-effort-x"
+        },
+        "oldRunProfiles": [
+          "codex/portable-model-x/portable-effort-x",
+          "codex/portable-model-x/portable-effort-x",
+          "codex/portable-model-x/portable-effort-x",
+          "codex/portable-model-x/portable-effort-x"
+        ],
+        "process": {
+          "codexCalls": 4,
+          "kimiCalls": 0,
+          "capabilityProbeCalls": 0
+        }
+      },
+      "exitCode": 0
+    },
+    {
+      "step": 6,
+      "at": "2026-07-26T09:55:45.464Z",
+      "sessionId": "local:2026-07-26T09:55:43.279Z-v4wnha",
+      "assertions": {
+        "userMessageVisible": true,
+        "failureCopyVisible": true,
+        "newSessionPrimaryProfile": {
+          "cli": "kimi",
+          "model": "new-kimi-model",
+          "effort": "new-kimi-effort"
+        },
+        "newRunProfile": {
+          "cli": "kimi",
+          "model": "new-kimi-model",
+          "effort": "new-kimi-effort"
+        },
+        "process": {
+          "codexCallsBeforeAndAfter": 4,
+          "kimiCalls": 1,
+          "capabilityProbeCalls": 0,
+          "lastInvocation": "kimi acp"
+        }
+      },
+      "exitCode": 0
+    }
+  ],
+  "result": {
+    "passed": true,
+    "desktopAssertionsExitCode": 0,
+    "screenshotsUsed": false,
+    "verification": {
+      "pnpmTest": {
+        "exitCode": 0,
+        "suites": [
+          "73 files / 680 tests",
+          "1 file / 51 tests",
+          "53 files / 298 tests",
+          "36 files / 317 tests"
+        ]
+      },
+      "pnpmTypecheck": {
+        "exitCode": 0
+      },
+      "desktopBuild": {
+        "exitCode": 0
+      },
+      "gitDiffCheck": {
+        "exitCode": 0
+      }
+    }
+  }
+}

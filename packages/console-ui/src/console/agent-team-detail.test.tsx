@@ -263,68 +263,62 @@ describe("AgentTeamDetail", () => {
   });
 
   it("edits CLI, model, and effort independently from AGENT.md", async () => {
-    const onReadExecutionProfile = vi.fn().mockResolvedValue({
-      binding: { source: "recommended" },
-      recommendation: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
-      effectiveProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
-      status: { status: "available" },
-      capabilities: [
-        {
-          cli: "codex",
-          status: "available",
-          snapshotId: "codex-snapshot",
-          models: [{
-            id: "gpt-5.6-sol",
-            displayName: "GPT 5.6",
-            efforts: ["high"],
-            defaultEffort: "high",
-          }],
-        },
-        {
-          cli: "kimi",
-          status: "available",
-          snapshotId: "kimi-snapshot",
-          models: [{
-            id: "kimi-for-coding",
-            displayName: "Kimi for Coding",
-            efforts: ["medium", "high"],
-            defaultEffort: "medium",
-          }],
-        },
-      ],
-    });
     const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) => ({
       binding: { source: "explicit", profile },
       recommendation: null,
       effectiveProfile: profile,
-      status: { status: "available" },
-      capabilities: [],
     }));
-    renderDetail({ onReadExecutionProfile, onSaveExecutionProfile });
+    renderDetail({ onSaveExecutionProfile });
 
-    await screen.findByTestId("agent-execution-profile-editor");
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+    expect(screen.getByTestId("agent-execution-profile-editor")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex");
     fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("kimi-for-coding");
-    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("medium");
-    fireEvent.change(screen.getByRole("combobox", { name: "思考程度" }), { target: { value: "high" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
+      target: { value: "kimi-for-coding" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "思考程度" }), { target: { value: "medium" } });
     fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
-      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
-      "kimi-snapshot",
+      { cli: "kimi", model: "kimi-for-coding", effort: "medium" },
     ));
   });
 
+  it("rejects blank static values and accepts an unknown non-empty profile", async () => {
+    const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile: AgentExecutionProfile) =>
+      executionProfileDocument({
+        ...profile,
+        model: profile.model.trim(),
+        effort: profile.effort.trim(),
+      }));
+    renderDetail({ onSaveExecutionProfile });
+    const model = screen.getByRole("textbox", { name: "Model" });
+    const effort = screen.getByRole("textbox", { name: "思考程度" });
+
+    fireEvent.change(model, { target: { value: "   " } });
+    expect(screen.getByText("请输入 model")).toBeVisible();
+    expect(screen.getByText("已保存配置没有改变。")).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+
+    fireEvent.change(model, { target: { value: "  future-model  " } });
+    fireEvent.change(effort, { target: { value: "  future-effort  " } });
+    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+
+    await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
+      "manager",
+      { cli: "codex", model: "  future-model  ", effort: "  future-effort  " },
+    ));
+    await waitFor(() => expect(model).toHaveValue("future-model"));
+    expect(effort).toHaveValue("future-effort");
+  });
+
   it("keeps per-member profile drafts across member switches and saves them before leaving", async () => {
-    const onReadExecutionProfile = vi.fn().mockImplementation(async () => executionProfileDocument());
     const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) =>
       executionProfileDocument(profile));
     const onSaveAll = vi.fn().mockResolvedValue({ failures: [] });
     const onLeave = vi.fn();
     const base = detailProps({
       state: stateWith(managerEditor({ isDirty: false })),
-      onReadExecutionProfile,
       onSaveExecutionProfile,
       onSaveAll,
       onLeave,
@@ -351,8 +345,7 @@ describe("AgentTeamDetail", () => {
 
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
-      { cli: "kimi", model: "kimi-for-coding", effort: "medium" },
-      "kimi-snapshot",
+      { cli: "kimi", model: "gpt-5.6-sol", effort: "high" },
     ));
     await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
   });
@@ -376,7 +369,6 @@ describe("AgentTeamDetail", () => {
       : undefined);
     const base = detailProps({
       state: stateWith(managerEditor({ isDirty: false })),
-      onReadExecutionProfile: vi.fn().mockResolvedValue(executionProfileDocument()),
       onLeave: actionKind === "返回团队列表" ? action : vi.fn(),
       teamActions: ["修改团队信息", "复制内置团队", "复制用户团队", "删除用户团队"].includes(actionKind)
         ? (request) => <button type="button" onClick={() => request(action)}>{buttonName}</button>
@@ -417,33 +409,18 @@ describe("AgentTeamDetail", () => {
     expect(action).not.toHaveBeenCalled();
   });
 
-  it("refreshes an unverifiable capability and re-renders the authoritative profile document", async () => {
-    const available = executionProfileDocument();
-    const unavailable = {
-      ...available,
-      status: { status: "unable-to-verify" as const, reason: "CLI 暂时不可用" },
-      capabilities: available.capabilities.map((capability, index) => index === 0
-        ? {
-            ...capability,
-            status: "unable-to-verify" as const,
-            reason: "CLI 暂时不可用",
-          }
-        : capability),
-    };
-    const refreshed = executionProfileDocument();
-    const onRefreshExecutionCapabilities = vi.fn().mockResolvedValue(refreshed);
-    renderDetail({
-      state: stateWith(managerEditor({ isDirty: false })),
-      onReadExecutionProfile: vi.fn().mockResolvedValue(unavailable),
-      onRefreshExecutionCapabilities,
+  it("keeps a static profile draft across parent rerenders without runtime-health UI", () => {
+    const base = detailProps({ state: stateWith(managerEditor({ isDirty: false })) });
+    const { rerender } = render(<AgentTeamDetail {...base} onSaveExecutionProfile={vi.fn()} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
+      target: { value: "future-model" },
     });
 
-    const refresh = await screen.findByRole("button", { name: "重新检查运行能力" });
-    fireEvent.click(refresh);
+    rerender(<AgentTeamDetail {...base} onSaveExecutionProfile={vi.fn()} />);
 
-    await waitFor(() => expect(onRefreshExecutionCapabilities).toHaveBeenCalledWith("manager", "codex"));
-    await waitFor(() => expect(screen.queryByText(/无法验证/u)).not.toBeInTheDocument());
-    expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex");
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("future-model");
+    expect(screen.queryByText("正在读取运行配置…")).not.toBeInTheDocument();
+    expect(screen.queryByText(/无法验证|需要调整|重新检查运行能力/u)).not.toBeInTheDocument();
   });
 
   it("shows an official update as a normal management state and reports the protected copy", async () => {
@@ -661,9 +638,24 @@ function detailProps(overrides: Partial<AgentTeamDetailProps> = {}): AgentTeamDe
       primaryAgentSlug: "manager",
       memberOrder: ["manager", "dev", "qa"],
       members: [
-        { slug: "manager", displayName: "开发经理", description: "默认接单" },
-        { slug: "dev", displayName: "开发", description: "负责实现" },
-        { slug: "qa", displayName: "测试", description: "负责验收" },
+        {
+          slug: "manager",
+          displayName: "开发经理",
+          description: "默认接单",
+          executionProfile: executionProfileDocument(),
+        },
+        {
+          slug: "dev",
+          displayName: "开发",
+          description: "负责实现",
+          executionProfile: executionProfileDocument(),
+        },
+        {
+          slug: "qa",
+          displayName: "测试",
+          description: "负责验收",
+          executionProfile: executionProfileDocument(),
+        },
       ],
     },
     state: stateWith(managerEditor()),
@@ -733,30 +725,5 @@ function executionProfileDocument(
     binding: { source: "explicit" as const, profile: effectiveProfile },
     recommendation: null,
     effectiveProfile,
-    status: { status: "available" as const },
-    capabilities: [
-      {
-        cli: "codex" as const,
-        status: "available" as const,
-        snapshotId: "codex-snapshot",
-        models: [{
-          id: "gpt-5.6-sol",
-          displayName: "GPT 5.6",
-          efforts: ["high"],
-          defaultEffort: "high",
-        }],
-      },
-      {
-        cli: "kimi" as const,
-        status: "available" as const,
-        snapshotId: "kimi-snapshot",
-        models: [{
-          id: "kimi-for-coding",
-          displayName: "Kimi for Coding",
-          efforts: ["medium", "high"],
-          defaultEffort: "medium",
-        }],
-      },
-    ],
   };
 }

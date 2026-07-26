@@ -39,9 +39,9 @@ export interface NewConversationTeamOption {
     description: string;
     available?: boolean;
     executionProfile?: {
-      effective: {
+      effectiveProfile: {
         cli: "codex" | "kimi";
-      } | null;
+      };
     };
   }>;
 }
@@ -257,7 +257,7 @@ function getNewConversationTeamCompatibility(
     return { affectedCount: 0, copy: "" };
   }
   const missing = team.members.flatMap((member): Array<"codex" | "kimi"> => {
-    const cli = member.executionProfile?.effective?.cli;
+    const cli = member.executionProfile?.effectiveProfile.cli;
     return (cli === "codex" || cli === "kimi") && !readiness[cli] ? [cli] : [];
   });
   const labels = [...new Set(missing)].map((cli) => cli === "codex" ? "Codex" : "Kimi");

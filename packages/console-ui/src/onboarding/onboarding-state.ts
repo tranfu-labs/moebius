@@ -99,7 +99,7 @@ export function getOnboardingTeamCompatibility(
     return { affectedCount: 0, clis: [], copy: "" };
   }
   const missing = team.members.flatMap((member): OnboardingCli[] => {
-    const cli = member.executionProfile?.effective?.cli;
+    const cli = member.executionProfile?.effectiveProfile.cli;
     return (cli === "codex" || cli === "kimi") && !isOnboardingCliReady(environment[cli])
       ? [cli]
       : [];

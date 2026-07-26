@@ -6,10 +6,8 @@ import type {
   TeamStatus,
 } from "./team-model.js";
 import type {
-  ExecutionCapabilitySnapshot,
   ExecutionProfile,
   ExecutionProfileBinding,
-  ExecutionProfileStatus,
 } from "./team-execution-profile.js";
 import type {
   OfficialTeamUpdateState,
@@ -35,21 +33,22 @@ export const TEAM_IPC_CHANNELS = {
   readExecutionProfile: "agent-teams:read-execution-profile",
   saveExecutionProfile: "agent-teams:save-execution-profile",
   restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
-  refreshExecutionCapabilities: "agent-teams:refresh-execution-capabilities",
   prepareOfficialUpdate: "agent-teams:prepare-official-update",
   applyOfficialUpdate: "agent-teams:apply-official-update",
 } as const;
+
+export interface AgentTeamExecutionProfileSummary {
+  binding: ExecutionProfileBinding;
+  recommendation: ExecutionProfile | null;
+  effectiveProfile: ExecutionProfile;
+}
 
 export interface AgentTeamMemberSummary {
   slug: string;
   displayName: string;
   description: string;
   available?: boolean;
-  executionProfile?: {
-    source: ExecutionProfileBinding["source"];
-    effective: ExecutionProfile | null;
-    status: ExecutionProfileStatus["status"] | "not-configured";
-  };
+  executionProfile?: AgentTeamExecutionProfileSummary;
 }
 
 export interface AgentTeamListItem {
@@ -138,24 +137,14 @@ export interface AgentTeamMemberAddResponse {
   member: AgentTeamMemberDocument;
 }
 
-export interface AgentTeamExecutionProfileDocument {
+export interface AgentTeamExecutionProfileDocument extends AgentTeamExecutionProfileSummary {
   teamId: string;
   ownership: TeamOwnership;
   memberSlug: string;
-  binding: ExecutionProfileBinding;
-  recommendation: ExecutionProfile | null;
-  effectiveProfile: ExecutionProfile;
-  status: ExecutionProfileStatus;
-  capabilities: ExecutionCapabilitySnapshot[];
 }
 
 export interface AgentTeamExecutionProfileSaveRequest extends AgentTeamMemberRequest {
   profile: ExecutionProfile;
-  capabilitySnapshotId: string;
-}
-
-export interface AgentTeamExecutionCapabilityRequest {
-  cli: "codex" | "kimi";
 }
 
 export interface AgentTeamOfficialUpdateRequest {

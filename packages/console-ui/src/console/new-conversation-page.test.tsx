@@ -129,13 +129,13 @@ describe("NewConversationPage", () => {
           slug: "dev",
           displayName: "开发",
           description: "实现功能",
-          executionProfile: { effective: { cli: "codex" } },
+          executionProfile: { effectiveProfile: { cli: "codex" } },
         },
         {
           slug: "qa",
           displayName: "测试",
           description: "功能验收",
-          executionProfile: { effective: { cli: "kimi" } },
+          executionProfile: { effectiveProfile: { cli: "kimi" } },
         },
       ],
     }];
@@ -147,6 +147,7 @@ describe("NewConversationPage", () => {
     expect(screen.getByTestId("new-conversation-team-compatibility")).toHaveTextContent(
       "其中 1 名成员仍需完成 Kimi 准备",
     );
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
 
     rerender(<NewConversationPage
       {...baseProps()}

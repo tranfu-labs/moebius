@@ -10,13 +10,21 @@ import {
   duplicateBuiltInAgentTeam,
   duplicateUserAgentTeam,
   listAgentTeams,
+  readAgentTeamExecutionProfile,
   readAgentTeamMember,
+  restoreAgentTeamRecommendedProfile,
+  saveAgentTeamExecutionProfile,
   setAgentTeamPrimaryAgent,
   trashAgentTeamMember,
   trashUserAgentTeam,
   updateAgentTeamInformation,
   writeAgentTeamMember,
 } from "../src/team-ipc.js";
+import {
+  readTeamExecutionBindings,
+  saveTeamExecutionBinding,
+  writeOfficialTeamStateDocument,
+} from "../src/team-management-store.js";
 import {
   resolveTeamLocation,
   writeMemberAgentMarkdown,
@@ -75,6 +83,98 @@ describe("Agent team IPC service", () => {
     });
     expect(JSON.stringify(result)).not.toContain(dataRoot);
     expect(JSON.stringify(result)).not.toContain("# 开发经理");
+  });
+
+  it("lists, reads, saves, and restores static profiles without starting either CLI", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    await createUsableTeam(builtIn);
+    const shimRoot = path.join(dataRoot, "shim-bin");
+    const shimLog = path.join(dataRoot, "shim.log");
+    await fs.mkdir(shimRoot);
+    for (const cli of ["codex", "kimi"]) {
+      const shimPath = path.join(shimRoot, cli);
+      await fs.writeFile(shimPath, `#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"${shimLog}\"\nexit 1\n`, "utf8");
+      await fs.chmod(shimPath, 0o755);
+    }
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${shimRoot}:${previousPath ?? ""}`;
+
+    try {
+      await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
+        status: "ready",
+        teams: [{
+          id: "development",
+          members: [{
+            slug: "manager",
+            executionProfile: {
+              binding: {
+                source: "explicit",
+                profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+              },
+              effectiveProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+            },
+          }],
+        }],
+      });
+      await writeOfficialTeamStateDocument(dataRoot, {
+        schemaVersion: 1,
+        teams: {
+          development: {
+            appliedOfficialVersion: "1",
+            appliedContentFingerprint: "content",
+            appliedRecommendationFingerprint: "recommendation",
+            appliedRecommendations: {
+              manager: { cli: "codex", model: "recommended-model", effort: "high" },
+            },
+            baselineConfidence: "verified",
+          },
+        },
+      });
+      await saveTeamExecutionBinding({
+        dataRoot,
+        ownership: "system",
+        teamId: "development",
+        memberSlug: "manager",
+        binding: { source: "recommended" },
+      });
+      const request = { teamId: "development", ownership: "system" as const, memberSlug: "manager" };
+      await expect(readAgentTeamExecutionProfile(dataRoot, request)).resolves.toMatchObject({
+        binding: { source: "recommended" },
+        effectiveProfile: { cli: "codex", model: "recommended-model", effort: "high" },
+      });
+      await expect(saveAgentTeamExecutionProfile(dataRoot, {
+        ...request,
+        profile: { cli: "kimi", model: "  future-model  ", effort: "  future-effort  " },
+      })).resolves.toMatchObject({
+        binding: {
+          source: "override",
+          profile: { cli: "kimi", model: "future-model", effort: "future-effort" },
+        },
+        effectiveProfile: { cli: "kimi", model: "future-model", effort: "future-effort" },
+      });
+      await expect(saveAgentTeamExecutionProfile(dataRoot, {
+        ...request,
+        profile: { cli: "kimi", model: "   ", effort: "high" },
+      })).rejects.toThrow("Model 不能为空");
+      await expect(readTeamExecutionBindings({
+        dataRoot,
+        ownership: "system",
+        teamId: "development",
+      })).resolves.toMatchObject({
+        manager: {
+          source: "override",
+          profile: { cli: "kimi", model: "future-model", effort: "future-effort" },
+        },
+      });
+      await expect(restoreAgentTeamRecommendedProfile(dataRoot, request)).resolves.toMatchObject({
+        binding: { source: "recommended" },
+        effectiveProfile: { cli: "codex", model: "recommended-model", effort: "high" },
+      });
+      await expect(fs.readFile(shimLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.env.PATH = previousPath;
+    }
   });
 
   it("keeps a usable team usable when its independent onboarding orchestration is invalid", async () => {

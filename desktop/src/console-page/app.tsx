@@ -40,7 +40,6 @@ import type {
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
   AgentTeamMemberTrashRequest,
-  AgentTeamExecutionCapabilityRequest,
   AgentTeamExecutionProfileDocument,
   AgentTeamExecutionProfileSaveRequest,
   AgentTeamOfficialUpdateCommitRequest,
@@ -211,9 +210,6 @@ export interface DesktopApi {
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
-  refreshAgentTeamExecutionCapabilities?: (
-    request: AgentTeamExecutionCapabilityRequest,
-  ) => Promise<AgentTeamExecutionProfileDocument["capabilities"][number]>;
   prepareAgentTeamOfficialUpdate?: (
     request: AgentTeamOfficialUpdateRequest,
   ) => Promise<AgentTeamOfficialUpdatePrepareResponse>;
@@ -609,7 +605,6 @@ export function OperatorConsoleApp({
   useEffect(() => {
     let cancelled = false;
     let pollTimer: number | undefined;
-    let checkedAfterShellReady = false;
 
     const applyReadiness = (next: OnboardingCliReadinessState) => {
       if (!cancelled) {
@@ -620,18 +615,17 @@ export function OperatorConsoleApp({
       }
     };
 
-    const refreshReadiness = async () => {
+    const readReadiness = async () => {
       const api = window.moebius;
-      if (api?.checkOnboardingCliReadiness !== undefined) {
-        await Promise.all([
-          api.checkOnboardingCliReadiness("codex"),
-          api.checkOnboardingCliReadiness("kimi"),
-        ]).catch(() => undefined);
-      }
       const next = await api?.getOnboardingCliReadinessState?.().catch(() => undefined);
       if (next !== undefined) {
         applyReadiness(next);
       }
+    };
+
+    const recheckAfterInstall = async (cli: OnboardingCli) => {
+      await window.moebius?.checkOnboardingCliReadiness?.(cli).catch(() => undefined);
+      await readReadiness();
     };
 
     const applyInstallSnapshot = (snapshot: OnboardingCliInstallSnapshot): boolean => {
@@ -651,45 +645,34 @@ export function OperatorConsoleApp({
       if (cancelled || next === undefined) {
         return;
       }
+      const completed = (["codex", "kimi"] as const).filter(
+        (cli) => cliInstallStatusRef.current[cli] === "running" && next[cli].status !== "running",
+      );
       applyInstallSnapshot(next.codex);
       applyInstallSnapshot(next.kimi);
+      await Promise.all(completed.map(recheckAfterInstall));
       const active = (["codex", "kimi"] as const).filter(
         (cli) => cliInstallStatusRef.current[cli] === "running",
       );
       if (active.length > 0) {
-        const readiness = await window.moebius?.getOnboardingCliReadinessState?.()
-          .catch(() => undefined);
-        if (readiness !== undefined) {
-          applyReadiness(readiness);
-        }
+        await readReadiness();
         pollTimer = window.setTimeout(() => void pollInstallations(), 750);
       } else {
-        const readiness = await window.moebius?.getOnboardingCliReadinessState?.()
-          .catch(() => undefined);
-        if (readiness !== undefined) {
-          applyReadiness(readiness);
-        }
+        await readReadiness();
       }
     };
 
-    void refreshReadiness().then(pollInstallations);
-    const unsubscribeStatus = window.moebius?.onStatus?.((snapshot) => {
-      if (!checkedAfterShellReady && snapshot.shellPath !== null) {
-        checkedAfterShellReady = true;
-        void refreshReadiness();
-      }
-    });
+    void readReadiness().then(pollInstallations);
     const unsubscribeInstall = window.moebius?.onOnboardingCliInstallSnapshot?.((snapshot) => {
       if (cancelled || !applyInstallSnapshot(snapshot)) {
         return;
       }
       if (snapshot.status !== "running") {
-        void refreshReadiness();
+        void recheckAfterInstall(snapshot.cli);
       }
     });
     return () => {
       cancelled = true;
-      unsubscribeStatus?.();
       unsubscribeInstall?.();
       if (pollTimer !== undefined) {
         window.clearTimeout(pollTimer);
@@ -987,24 +970,10 @@ export function OperatorConsoleApp({
     }
   }, [agentTeamsState]);
 
-  const readAgentExecutionProfile = useCallback(async (teamKey: string, memberSlug: string) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
-    const readProfile = window.moebius?.readAgentTeamExecutionProfile;
-    if (team === undefined || readProfile === undefined) {
-      throw new Error("当前无法读取 Agent 运行配置。");
-    }
-    return readProfile({
-      teamId: team.id,
-      ownership: team.ownership,
-      memberSlug,
-    });
-  }, [agentTeamsState]);
-
   const saveAgentExecutionProfile = useCallback(async (
     teamKey: string,
     memberSlug: string,
     profile: { cli: "codex" | "kimi"; model: string; effort: string },
-    capabilitySnapshotId: string,
   ) => {
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
     const saveProfile = window.moebius?.saveAgentTeamExecutionProfile;
@@ -1016,7 +985,6 @@ export function OperatorConsoleApp({
       ownership: team.ownership,
       memberSlug,
       profile,
-      capabilitySnapshotId,
     });
     setAgentTeamsRefreshNonce((current) => current + 1);
     return document;
@@ -1029,27 +997,6 @@ export function OperatorConsoleApp({
       throw new Error("当前无法恢复官方推荐配置。");
     }
     const document = await restore({
-      teamId: team.id,
-      ownership: team.ownership,
-      memberSlug,
-    });
-    setAgentTeamsRefreshNonce((current) => current + 1);
-    return document;
-  }, [agentTeamsState]);
-
-  const refreshAgentExecutionCapabilities = useCallback(async (
-    teamKey: string,
-    memberSlug: string,
-    cli: "codex" | "kimi",
-  ) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
-    const refresh = window.moebius?.refreshAgentTeamExecutionCapabilities;
-    const readProfile = window.moebius?.readAgentTeamExecutionProfile;
-    if (team === undefined || refresh === undefined || readProfile === undefined) {
-      throw new Error("当前无法重新检查 Agent 运行能力。");
-    }
-    await refresh({ cli });
-    const document = await readProfile({
       teamId: team.id,
       ownership: team.ownership,
       memberSlug,
@@ -2749,10 +2696,8 @@ export function OperatorConsoleApp({
         setAgentTeamSaveAllFailures([]);
       }}
       onSaveAllAgentTeamDrafts={saveAllDraftsAndLeave}
-      onReadAgentExecutionProfile={readAgentExecutionProfile}
       onSaveAgentExecutionProfile={saveAgentExecutionProfile}
       onRestoreAgentRecommendedProfile={restoreAgentRecommendedProfile}
-      onRefreshAgentExecutionCapabilities={refreshAgentExecutionCapabilities}
       onApplyOfficialAgentTeamUpdate={applyOfficialAgentTeamUpdate}
       onDuplicateBuiltInAgentTeam={duplicateBuiltInAgentTeam}
       onRecheckAgentTeam={() => setAgentTeamsRefreshNonce((current) => current + 1)}

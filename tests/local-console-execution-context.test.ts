@@ -14,7 +14,7 @@ const intent: LocalCodexResumeIntentFact = {
   targetRunId: "run-old",
   sourceMessageId: 7,
   role: "dev",
-  reason: "retry",
+  reason: "graceful-shutdown",
   createdAt: "2026-07-25T00:00:00.000Z",
 };
 
@@ -74,6 +74,29 @@ function link(
 }
 
 describe("local execution recovery planning", () => {
+  it("reruns an explicit Retry with the immutable old context instead of resuming", () => {
+    const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
+    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: current,
+      intents: [{ ...intent, reason: "retry" }],
+      consumedIntentIds: new Set(),
+      executionLinks: [link(old)],
+      legacyCodexLinks: [],
+      contexts: [old],
+    })).toMatchObject({
+      kind: "full-fallback",
+      reason: "explicit-retry",
+      context: {
+        engine: "kimi",
+        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        team: [{ agentMarkdown: "old team" }],
+      },
+    });
+  });
+
   it("resumes only the exact engine, profile and immutable run context", () => {
     const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
     const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });

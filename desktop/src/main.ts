@@ -45,7 +45,6 @@ import {
   prepareAgentTeamOfficialUpdate,
   readAgentTeamMember,
   readAgentTeamExecutionProfile,
-  refreshAgentTeamExecutionCapability,
   restoreAgentTeamRecommendedProfile,
   saveAgentTeamExecutionProfile,
   setAgentTeamPrimaryAgent,
@@ -235,9 +234,6 @@ async function boot(): Promise<void> {
   }
   publishStatus();
 
-  status.doctor = { codex: await checkCodex() };
-  publishStatus();
-
   await startObserver();
   await startLocalConsole();
   startRunner();
@@ -414,6 +410,10 @@ ipcMain.handle("action:open-observer", async () => {
 
 ipcMain.handle("action:open-status-page", async () => {
   openStatusPage();
+  status.doctor = null;
+  publishStatus();
+  status.doctor = { codex: await checkCodex() };
+  publishStatus();
 });
 
 ipcMain.handle("local-console:get-url", async () => status.localConsole.url ?? null);
@@ -501,9 +501,6 @@ ipcMain.handle(TEAM_IPC_CHANNELS.saveExecutionProfile, async (_event, request: u
 
 ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
   restoreAgentTeamRecommendedProfile(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.refreshExecutionCapabilities, async (_event, request: unknown) =>
-  refreshAgentTeamExecutionCapability(request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.prepareOfficialUpdate, async (_event, request: unknown) =>
   prepareAgentTeamOfficialUpdate(status.dataRoot, request));

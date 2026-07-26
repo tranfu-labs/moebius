@@ -348,9 +348,11 @@ Source: docs/product/pages/agent-teams.md#更新官方来源团队
 Source: docs/product/pages/agent-teams.md#Agent-运行配置
 
 The desktop MUST save a complete CLI/model/effort profile for each stable team id and member slug.
-Official members MUST distinguish current-version recommendation from user override; user teams and
-user-added members MUST use explicit profiles. Bindings MUST survive team relocation and MUST NOT
-enter team content fingerprints.
+Team list, detail, save and recommendation-restore operations MUST resolve only persisted bindings,
+current applied recommendations and static profile validation. They MUST NOT spawn, probe,
+authenticate or enumerate Codex or Kimi. Official members MUST distinguish recommendation from user
+override; user teams and user-added members MUST use explicit profiles. Bindings MUST survive team
+relocation and MUST NOT enter team content fingerprints.
 
 #### Scenario: Same slug in two teams remains independent
 
@@ -359,22 +361,50 @@ enter team content fingerprints.
 - **THEN** each team detail returns its own saved value
 - **AND** changing either profile does not modify the other team or either `AGENT.md`.
 
-### Requirement: Execution capabilities are probed without inventing options
+#### Scenario: Unknown but structurally valid model is saved
+
+- **GIVEN** a member draft contains CLI Kimi and model/effort values `"  future-model  "` and `"  future-effort  "` unknown to this machine
+- **WHEN** the team page saves the draft
+- **THEN** `future-model` and `future-effort` are persisted for that team/member
+- **AND** no Codex or Kimi process is started
+- **AND** another team containing the same slug remains unchanged.
+
+#### Scenario: Static profile is invalid
+
+- **GIVEN** model or effort contains only whitespace
+- **WHEN** the renderer or IPC validates the save request
+- **THEN** save is rejected with a field-safe reason
+- **AND** the previous binding remains effective
+- **AND** no CLI capability result is consulted.
+
+### Requirement: Environment capability probing remains outside team management
 
 Source: docs/product/pages/agent-teams.md#Agent-运行配置
+Source: docs/product/pages/agent-teams.md#非目标
+Source: docs/product/pages/main-conversation.md#选择工作空间与团队
 
-The desktop MUST derive Codex and Kimi model/effort options from each local CLI's machine-readable
-capability surface. A missing CLI, failed probe, unsupported protocol or stale option MUST produce a
-safe structured status. The system MUST retain saved values and MUST NOT silently choose a different
-CLI, model or effort. Raw stderr, secrets and local paths MUST NOT reach renderer DTOs.
+Execution capability probing MAY serve onboarding, AI team building or an explicit runtime
+diagnostics surface. The Agent Teams list/detail and profile mutation IPC MUST NOT expose capability
+snapshots, refresh actions, unable-to-verify state or needs-adjustment state. Removing team-management
+probing MUST NOT weaken onboarding's existing readiness, installation, revision or redaction contract.
+The normal operator console MUST NOT start Codex/Kimi readiness checks on mount, shell-ready, team
+navigation or message submission. It MAY consume readiness already produced by onboarding and MUST
+preserve onboarding's post-install recheck while an installation initiated there is still completing.
 
-#### Scenario: Kimi capability probe becomes unavailable
+#### Scenario: Opening a team while both CLIs are missing
 
-- **GIVEN** a member has a saved Kimi profile
-- **AND** `kimi provider list --json` currently fails
-- **WHEN** the team detail loads
-- **THEN** it reports the profile as unable to verify and preserves all three saved values
-- **AND** no Codex option is substituted.
+- **GIVEN** neither Codex nor Kimi can be resolved on PATH
+- **WHEN** the user opens a valid team and switches between members
+- **THEN** every saved static profile remains readable and editable
+- **AND** team management exposes no runtime-health state
+- **AND** onboarding readiness behavior is unchanged.
+
+#### Scenario: Opening the normal console does not probe both CLIs
+
+- **GIVEN** onboarding is not active and no onboarding installation is completing
+- **WHEN** the normal operator console mounts, receives shell-ready and opens Agent Teams
+- **THEN** neither Codex nor Kimi readiness check is started
+- **AND** an already available readiness snapshot may still drive the existing advisory compatibility copy.
 
 ### Requirement: Official three-way state is derived from A, B and C
 

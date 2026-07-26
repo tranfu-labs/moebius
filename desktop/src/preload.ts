@@ -24,7 +24,6 @@ import {
   type AgentTeamMemberWriteRequest,
   type AgentTeamMemberDuplicateRequest,
   type AgentTeamMemberTrashRequest,
-  type AgentTeamExecutionCapabilityRequest,
   type AgentTeamExecutionProfileDocument,
   type AgentTeamExecutionProfileSaveRequest,
   type AgentTeamOfficialUpdateCommitRequest,
@@ -35,7 +34,6 @@ import {
   type AgentTeamUpdateInformationRequest,
   type AgentTeamTrashUserRequest,
 } from "./team-ipc-contract.js";
-import type { ExecutionCapabilitySnapshot } from "./team-execution-profile.js";
 import {
   TEAM_REPAIR_IPC_CHANNELS,
   type AgentTeamRelocateRequest,
@@ -106,9 +104,6 @@ export interface MoebiusDesktopApi {
   restoreAgentTeamRecommendedProfile(
     request: AgentTeamMemberRequest,
   ): Promise<AgentTeamExecutionProfileDocument>;
-  refreshAgentTeamExecutionCapabilities(
-    request: AgentTeamExecutionCapabilityRequest,
-  ): Promise<ExecutionCapabilitySnapshot>;
   prepareAgentTeamOfficialUpdate(
     request: AgentTeamOfficialUpdateRequest,
   ): Promise<AgentTeamOfficialUpdatePrepareResponse>;
@@ -247,12 +242,6 @@ const api: MoebiusDesktopApi = {
       TEAM_IPC_CHANNELS.restoreRecommendedProfile,
       request,
     ) as Promise<AgentTeamExecutionProfileDocument>;
-  },
-  refreshAgentTeamExecutionCapabilities(request) {
-    return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.refreshExecutionCapabilities,
-      request,
-    ) as Promise<ExecutionCapabilitySnapshot>;
   },
   prepareAgentTeamOfficialUpdate(request) {
     return ipcRenderer.invoke(

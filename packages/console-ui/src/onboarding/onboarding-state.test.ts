@@ -101,9 +101,9 @@ describe("onboarding shell state", () => {
         {
           ...builtInDevelopmentTeam.members[0]!,
           executionProfile: {
-            source: "recommended",
-            effective: { cli: "codex", model: "gpt", effort: "high" },
-            status: "available",
+            binding: { source: "recommended" },
+            recommendation: { cli: "codex", model: "gpt", effort: "high" },
+            effectiveProfile: { cli: "codex", model: "gpt", effort: "high" },
           },
         },
         {
@@ -111,9 +111,12 @@ describe("onboarding shell state", () => {
           displayName: "测试",
           description: "验收",
           executionProfile: {
-            source: "explicit",
-            effective: { cli: "kimi", model: "kimi", effort: "high" },
-            status: "unable-to-verify",
+            binding: {
+              source: "explicit",
+              profile: { cli: "kimi", model: "kimi", effort: "high" },
+            },
+            recommendation: null,
+            effectiveProfile: { cli: "kimi", model: "kimi", effort: "high" },
           },
         },
       ],
@@ -128,6 +131,6 @@ describe("onboarding shell state", () => {
       clis: ["kimi"],
       copy: "其中 1 名成员仍需完成 Kimi 准备",
     });
-    expect(team.members[1]?.executionProfile?.effective?.cli).toBe("kimi");
+    expect(team.members[1]?.executionProfile?.effectiveProfile.cli).toBe("kimi");
   });
 });

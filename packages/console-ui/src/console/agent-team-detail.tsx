@@ -24,30 +24,13 @@ export interface AgentTeamDetailMember {
   displayName: string;
   description: string;
   available?: boolean;
-  executionProfile?: {
-    source: "recommended" | "override" | "explicit";
-    effective: AgentExecutionProfile | null;
-    status: "available" | "unable-to-verify" | "needs-adjustment" | "not-configured";
-  };
+  executionProfile?: AgentExecutionProfileDocument;
 }
 
 export interface AgentExecutionProfile {
   cli: "codex" | "kimi";
   model: string;
   effort: string;
-}
-
-export interface AgentExecutionCapability {
-  cli: "codex" | "kimi";
-  status: "available" | "missing" | "unavailable";
-  snapshotId: string;
-  models: Array<{
-    id: string;
-    displayName: string;
-    efforts: string[];
-    defaultEffort: string | null;
-  }>;
-  reason?: string;
 }
 
 export interface AgentExecutionProfileDocument {
@@ -57,17 +40,12 @@ export interface AgentExecutionProfileDocument {
   };
   recommendation: AgentExecutionProfile | null;
   effectiveProfile: AgentExecutionProfile;
-  status: {
-    status: "available" | "unable-to-verify" | "needs-adjustment";
-    reason?: string;
-  };
-  capabilities: AgentExecutionCapability[];
 }
 
 interface AgentExecutionProfileEditorState {
   document: AgentExecutionProfileDocument | null;
   draft: AgentExecutionProfile | null;
-  status: "idle" | "loading" | "saving" | "failed";
+  status: "idle" | "saving" | "failed";
   error: string | null;
 }
 
@@ -183,17 +161,11 @@ export interface AgentTeamDetailProps {
   onRecheck?(): void | Promise<void>;
   onRelocate?(): void | Promise<void>;
   onRemoveRecord?(): void | Promise<void>;
-  onReadExecutionProfile?(memberSlug: string): Promise<AgentExecutionProfileDocument>;
   onSaveExecutionProfile?(
     memberSlug: string,
     profile: AgentExecutionProfile,
-    capabilitySnapshotId: string,
   ): Promise<AgentExecutionProfileDocument>;
   onRestoreRecommendedProfile?(memberSlug: string): Promise<AgentExecutionProfileDocument>;
-  onRefreshExecutionCapabilities?(
-    memberSlug: string,
-    cli: AgentExecutionProfile["cli"],
-  ): Promise<AgentExecutionProfileDocument>;
   onApplyOfficialUpdate?(): Promise<AgentOfficialUpdateResult>;
   onOpenCopiedTeam?(teamId: string): void;
   onLeave(): void;
@@ -221,10 +193,8 @@ export function AgentTeamDetail({
   onRecheck,
   onRelocate,
   onRemoveRecord,
-  onReadExecutionProfile,
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
-  onRefreshExecutionCapabilities,
   onApplyOfficialUpdate,
   onOpenCopiedTeam,
   onLeave,
@@ -238,7 +208,10 @@ export function AgentTeamDetail({
   const [repairAction, setRepairAction] = useState<"idle" | "rechecking" | "relocating" | "removing">("idle");
   const [repairError, setRepairError] = useState<string | null>(null);
   const [removeRecordPromptOpen, setRemoveRecordPromptOpen] = useState(false);
-  const [profileEditors, setProfileEditors] = useState<Record<string, AgentExecutionProfileEditorState>>({});
+  const [profileEditors, setProfileEditors] = useState<Record<string, AgentExecutionProfileEditorState>>(
+    () => createProfileEditors(team),
+  );
+  const profileEditorsTeamKeyRef = useRef(team.teamKey);
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
@@ -283,16 +256,32 @@ export function AgentTeamDetail({
   const canAddMember = !readOnly
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
-  const selectedCapability = profileDraft === null
-    ? undefined
-    : profileDocument?.capabilities.find((candidate) => candidate.cli === profileDraft.cli);
-  const selectedCapabilityModel = profileDraft === null
-    ? undefined
-    : selectedCapability?.models.find((model) => model.id === profileDraft.model);
+  const profileModelError = profileDraft !== null && profileDraft.model.trim().length === 0
+    ? "请输入 model"
+    : null;
+  const profileEffortError = profileDraft !== null && profileDraft.effort.trim().length === 0
+    ? "请输入思考程度"
+    : null;
+  const profileDraftValid = profileDraft !== null
+    && profileModelError === null
+    && profileEffortError === null;
 
   useEffect(() => {
-    setProfileEditors({});
-  }, [team.teamKey]);
+    const teamChanged = profileEditorsTeamKeyRef.current !== team.teamKey;
+    profileEditorsTeamKeyRef.current = team.teamKey;
+    setProfileEditors((current) => {
+      const next = teamChanged ? {} : { ...current };
+      let changed = teamChanged;
+      for (const member of team.members) {
+        if (next[member.slug] !== undefined || member.executionProfile === undefined) {
+          continue;
+        }
+        next[member.slug] = profileEditorFromDocument(member.executionProfile);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [team.members, team.teamKey]);
 
   useEffect(() => {
     const handleSaveShortcut = (event: KeyboardEvent) => {
@@ -320,39 +309,6 @@ export function AgentTeamDetail({
     window.addEventListener("focus", check);
     return () => window.removeEventListener("focus", check);
   }, [onCheckExternalChange, selectedEditor?.loadStatus, selectedMember]);
-
-  useEffect(() => {
-    if (selectedMember === null || onReadExecutionProfile === undefined) {
-      return;
-    }
-    const memberSlug = selectedMember.slug;
-    if (profileEditors[memberSlug] !== undefined) {
-      return;
-    }
-    let active = true;
-    updateProfileEditor(memberSlug, { status: "loading", error: null });
-    void onReadExecutionProfile(memberSlug).then((document) => {
-      if (!active) return;
-      setProfileEditors((current) => ({
-        ...current,
-        [memberSlug]: {
-          document,
-          draft: current[memberSlug]?.draft ?? document.effectiveProfile,
-          status: "idle",
-          error: null,
-        },
-      }));
-    }).catch((error: unknown) => {
-      if (!active) return;
-      updateProfileEditor(memberSlug, {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    return () => {
-      active = false;
-    };
-  }, [onReadExecutionProfile, selectedMember]);
 
   const requestGuardedAction: AgentTeamGuardedAction = (action) => {
     if (hasExternalConflicts) {
@@ -399,30 +355,6 @@ export function AgentTeamDetail({
     }
   };
 
-  const refreshExecutionCapabilities = async (memberSlug: string, cli: AgentExecutionProfile["cli"]) => {
-    if (onRefreshExecutionCapabilities === undefined) {
-      return;
-    }
-    updateProfileEditor(memberSlug, { status: "loading", error: null });
-    try {
-      const document = await onRefreshExecutionCapabilities(memberSlug, cli);
-      setProfileEditors((current) => ({
-        ...current,
-        [memberSlug]: {
-          document,
-          draft: current[memberSlug]?.draft ?? document.effectiveProfile,
-          status: "idle",
-          error: null,
-        },
-      }));
-    } catch (error) {
-      updateProfileEditor(memberSlug, {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
   const applyOfficialUpdate = async () => {
     if (onApplyOfficialUpdate === undefined || officialUpdateStatus === "saving") {
       return;
@@ -455,11 +387,10 @@ export function AgentTeamDetail({
     ) {
       return false;
     }
-    const capability = document.capabilities.find((candidate) => candidate.cli === draft.cli);
-    if (capability === undefined) {
+    if (draft.model.trim().length === 0 || draft.effort.trim().length === 0) {
       updateProfileEditor(memberSlug, {
         status: "failed",
-        error: "暂时无法读取所选 CLI 的模型能力。",
+        error: draft.model.trim().length === 0 ? "Model 不能为空。" : "思考程度不能为空。",
       });
       return false;
     }
@@ -468,7 +399,6 @@ export function AgentTeamDetail({
       const savedDocument = await onSaveExecutionProfile(
         memberSlug,
         draft,
-        capability.snapshotId,
       );
       setProfileEditors((current) => ({
         ...current,
@@ -947,7 +877,6 @@ export function AgentTeamDetail({
               {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
             </div>
 
-            {onReadExecutionProfile !== undefined ? (
             <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -962,12 +891,7 @@ export function AgentTeamDetail({
                   </span>
                 ) : null}
               </div>
-              {profileStatus === "loading" ? (
-                <p className="mt-4 inline-flex items-center text-sm text-sub" role="status">
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                  正在读取运行配置…
-                </p>
-              ) : profileDraft !== null && profileDocument !== null ? (
+              {profileDraft !== null && profileDocument !== null ? (
                 <>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <label className="grid gap-1.5 text-xs text-hint">
@@ -977,16 +901,10 @@ export function AgentTeamDetail({
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
-                        onChange={(event) => {
-                          const cli = event.currentTarget.value as "codex" | "kimi";
-                          const capability = profileDocument.capabilities.find((candidate) => candidate.cli === cli);
-                          const model = capability?.models[0];
-                          updateProfileEditor(selectedMember.slug, { draft: {
-                            cli,
-                            model: model?.id ?? "",
-                            effort: model?.defaultEffort ?? model?.efforts[0] ?? "",
-                          } });
-                        }}
+                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
+                          ...profileDraft,
+                          cli: event.currentTarget.value as "codex" | "kimi",
+                        } })}
                       >
                         <option value="codex">Codex</option>
                         <option value="kimi">Kimi</option>
@@ -994,83 +912,39 @@ export function AgentTeamDetail({
                     </label>
                     <label className="grid gap-1.5 text-xs text-hint">
                       Model
-                      <select
+                      <input
                         aria-label="Model"
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.model}
-                        disabled={
-                          readOnly
-                          || profileStatus === "saving"
-                          || selectedCapability?.status !== "available"
-                        }
-                        onChange={(event) => {
-                          const modelId = event.currentTarget.value;
-                          const model = selectedCapability?.models.find((candidate) => candidate.id === modelId);
-                          updateProfileEditor(selectedMember.slug, { draft: {
-                            ...profileDraft,
-                            model: modelId,
-                            effort: model?.defaultEffort ?? model?.efforts[0] ?? "",
-                          } });
-                        }}
-                      >
-                        {selectedCapability?.models.map((model) => (
-                          <option key={model.id} value={model.id}>{model.displayName}</option>
-                        ))}
-                        {selectedCapability?.models.some((model) => model.id === profileDraft.model) !== true ? (
-                          <option value={profileDraft.model}>{profileDraft.model || "当前值不可用"}</option>
-                        ) : null}
-                      </select>
+                        disabled={readOnly || profileStatus === "saving"}
+                        aria-invalid={profileModelError !== null}
+                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
+                          ...profileDraft,
+                          model: event.currentTarget.value,
+                        }, error: null })}
+                      />
+                      {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
                     <label className="grid gap-1.5 text-xs text-hint">
                       思考程度
-                      <select
+                      <input
                         aria-label="思考程度"
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.effort}
-                        disabled={
-                          readOnly
-                          || profileStatus === "saving"
-                          || selectedCapability?.status !== "available"
-                        }
+                        disabled={readOnly || profileStatus === "saving"}
+                        aria-invalid={profileEffortError !== null}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
                           ...profileDraft,
                           effort: event.currentTarget.value,
-                        } })}
-                      >
-                        {selectedCapabilityModel?.efforts.map((effort) => (
-                          <option key={effort} value={effort}>{effort}</option>
-                        ))}
-                        {selectedCapabilityModel?.efforts.includes(profileDraft.effort) !== true ? (
-                          <option value={profileDraft.effort}>{profileDraft.effort || "当前值不可用"}</option>
-                        ) : null}
-                      </select>
+                        }, error: null })}
+                      />
+                      {profileEffortError !== null ? <span className="text-danger">{profileEffortError}</span> : null}
                     </label>
                   </div>
-                  {profileDocument.status.status !== "available" ? (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-sub" role="status">
-                      <span>
-                        {profileDocument.status.status === "unable-to-verify" ? "无法验证：" : "需要调整："}
-                        {profileDocument.status.reason ?? "当前配置不可用。"}
-                      </span>
-                      {profileDocument.status.status === "unable-to-verify"
-                        && onRefreshExecutionCapabilities !== undefined ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={profileStatus === "saving"}
-                            onClick={() => void refreshExecutionCapabilities(selectedMember.slug, profileDraft.cli)}
-                          >
-                            重新检查运行能力
-                          </Button>
-                        ) : null}
-                    </div>
-                  ) : null}
-                  {selectedCapability?.status !== "available" ? (
-                    <p className="mt-3 text-sm text-sub" role="status">
-                      系统没有替你更换 CLI 或模型。{selectedCapability?.reason ?? "暂时无法读取当前 CLI 能力。"}
-                    </p>
-                  ) : null}
+                  <p className="mt-3 text-sm text-sub">
+                    本页保存配置，不检查这台机器是否能运行它。
+                  </p>
+                  {!profileDraftValid ? <p className="mt-2 text-sm text-sub">已保存配置没有改变。</p> : null}
                   {profileError !== null ? <p className="mt-3 text-sm text-danger" role="alert">{profileError}</p> : null}
                   {!readOnly ? (
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -1109,7 +983,7 @@ export function AgentTeamDetail({
                         disabled={
                           !profileDirty
                           || profileStatus === "saving"
-                          || selectedCapability?.status !== "available"
+                          || !profileDraftValid
                         }
                         onClick={() => void saveExecutionProfile(selectedMember.slug)}
                       >
@@ -1124,7 +998,6 @@ export function AgentTeamDetail({
                 </p>
               )}
             </div>
-            ) : null}
 
             <div className="mt-5 flex items-center justify-between gap-3">
               <label htmlFor="agent-team-markdown-editor" className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
@@ -1369,6 +1242,27 @@ function isProfileEditorDirty(
       || editor.draft.model !== editor.document.effectiveProfile.model
       || editor.draft.effort !== editor.document.effectiveProfile.effort
     );
+}
+
+function createProfileEditors(
+  team: AgentTeamDetailTeam,
+): Record<string, AgentExecutionProfileEditorState> {
+  return Object.fromEntries(team.members.flatMap((member) => (
+    member.executionProfile === undefined
+      ? []
+      : [[member.slug, profileEditorFromDocument(member.executionProfile)]]
+  )));
+}
+
+function profileEditorFromDocument(
+  document: AgentExecutionProfileDocument,
+): AgentExecutionProfileEditorState {
+  return {
+    document,
+    draft: { ...document.effectiveProfile },
+    status: "idle",
+    error: null,
+  };
 }
 
 function repairIssueMessages(issues: readonly AgentTeamRepairIssueView[]): string[] {

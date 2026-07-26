@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360" role="img" aria-labelledby="title desc">
+  <title id="title">运行能力验证后移到真实执行</title>
+  <desc id="desc">团队详情只读取静态配置并立即编辑；首次发送持久化快照后直接启动绑定 CLI，以启动结果产生运行事实。</desc>
+  <rect width="980" height="360" fill="#101010"/>
+  <g font-family="Arial, sans-serif" font-size="16" fill="#f4f4f5" stroke="#52525b" stroke-width="2">
+    <rect x="40" y="55" width="170" height="70" rx="12" fill="#171717"/>
+    <rect x="300" y="55" width="210" height="70" rx="12" fill="#171717"/>
+    <rect x="600" y="55" width="210" height="70" rx="12" fill="#171717"/>
+    <rect x="40" y="255" width="170" height="70" rx="12" fill="#171717"/>
+    <rect x="300" y="255" width="210" height="70" rx="12" fill="#171717"/>
+    <rect x="600" y="235" width="210" height="110" rx="12" fill="#2b2612"/>
+    <rect x="850" y="255" width="100" height="70" rx="12" fill="#171717"/>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="15" fill="#f4f4f5" text-anchor="middle">
+    <text x="125" y="88">团队详情打开</text><text x="125" y="110">已有静态成员 DTO</text>
+    <text x="405" y="88">读取 bindings + 推荐</text><text x="405" y="110">只做静态规范化</text>
+    <text x="705" y="88">立即编辑/保存</text><text x="705" y="110">零 CLI 子进程</text>
+    <text x="125" y="288">首次发送</text><text x="125" y="310">无发送前预检</text>
+    <text x="405" y="288">原子持久化 session</text><text x="405" y="310">消息 + 团队快照</text>
+    <text x="705" y="270">真实启动绑定 CLI</text><text x="705" y="295">应用 model/effort</text><text x="705" y="320">结果即动态校验</text>
+    <text x="900" y="285">成功或</text><text x="900" y="307">没跑起来</text>
+  </g>
+  <g stroke="#828fff" stroke-width="3" fill="none" marker-end="url(#arrow2)">
+    <path d="M210 90 L300 90"/><path d="M510 90 L600 90"/>
+    <path d="M210 290 L300 290"/><path d="M510 290 L600 290"/><path d="M810 290 L850 290"/>
+  </g>
+  <defs><marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#828fff"/></marker></defs>
+</svg>

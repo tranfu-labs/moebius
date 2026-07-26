@@ -88,6 +88,45 @@ describe("desktop onboarding routing", () => {
     expect(window.location.hash).toBe("#/");
   });
 
+  it("does not probe either CLI when the normal console mounts, becomes shell-ready, or opens teams", async () => {
+    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") =>
+      readinessSnapshot(cli, cli === "codex" ? "ready" : "missing", 1));
+    let statusListener: Parameters<NonNullable<DesktopApi["onStatus"]>>[0] | null = null;
+    installApi({
+      getOnboardingStatus: async () => ({
+        completed: true,
+        completedAt: "2026-07-24T00:00:00.000Z",
+      }),
+      checkOnboardingCliReadiness,
+      getOnboardingCliReadinessState: async () => ({
+        codex: readinessSnapshot("codex", "ready", 1),
+        kimi: readinessSnapshot("kimi", "missing", 1),
+      }),
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "idle", 0),
+      }),
+      onStatus(listener) {
+        statusListener = listener;
+        return () => {
+          statusListener = null;
+        };
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="operator-sidebar"]');
+    await act(async () => statusListener?.({
+      runner: { status: "stopped" },
+      shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
+      seed: { status: "ok" },
+    }));
+    await clickButton("Agent 团队");
+    await findElement('[data-testid="agent-team-list"]');
+
+    expect(checkOnboardingCliReadiness).not.toHaveBeenCalled();
+  });
+
   it("replaces the displayed version after the existing shell PATH recheck", async () => {
     const versions = ["codex-cli 0.144.1", "codex-cli 0.145.0"];
     const checkOnboardingCodex = vi.fn(async () => ({

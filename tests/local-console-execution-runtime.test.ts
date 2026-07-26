@@ -137,12 +137,37 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
 
     await post(server.url, "@dev implement");
     await waitForAgent(server.url, "Kimi completed");
-    expect(kimi).toHaveBeenCalledTimes(1);
-    expect(kimi.mock.calls[0]?.[0]).toMatchObject({
-      profile: kimiProfile,
-      mode: { kind: "full" },
+    await post(server.url, "second message");
+    await waitForCalls(kimi, 2);
+    await post(server.url, "third message");
+    await waitForCalls(kimi, 3);
+
+    const createNew = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "new session message",
+        agentTeamOwnership: "user",
+        agentTeamId: "development",
+      }),
     });
-    expect(codex).not.toHaveBeenCalled();
+    expect(createNew.status).toBe(201);
+    await waitForCalls(codex, 1);
+
+    expect(kimi).toHaveBeenCalledTimes(3);
+    for (const [options] of kimi.mock.calls) {
+      expect(options).toMatchObject({
+        profile: kimiProfile,
+        mode: { kind: "full" },
+      });
+    }
+    expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
+      "-m",
+      "gpt-5.6-sol",
+      "-c",
+      'model_reasoning_effort="medium"',
+    ]));
 
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
     expect(facts).toContain('"type":"run_execution_context"');
@@ -155,10 +180,89 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     try {
       expect(database.prepare(
         "SELECT COUNT(*) AS count FROM local_run_execution_contexts WHERE session_id = 'default'",
-      ).get()).toEqual({ count: 1 });
+      ).get()).toEqual({ count: 3 });
       expect(database.prepare(
         "SELECT COUNT(*) AS count FROM local_execution_session_links WHERE session_id = 'default'",
-      ).get()).toEqual({ count: 1 });
+      ).get()).toEqual({ count: 3 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("persists a new session, first message, and bound snapshot before a missing driver fails", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "unexpected Codex"));
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => ({
+      ok: false,
+      reason: "Kimi CLI 未安装",
+      runDir: options.runDir,
+      stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+      stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+    }));
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Kimi primary", {
+        cli: "kimi",
+        model: "future-model",
+        effort: "future-effort",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+    });
+    servers.push(server);
+
+    const response = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "first message",
+        agentTeamOwnership: "user",
+        agentTeamId: "development",
+      }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json() as { session: { sessionId: string } };
+    await waitForCalls(kimi, 1);
+    expect(kimi).toHaveBeenCalledTimes(1);
+    expect(codex).not.toHaveBeenCalled();
+    const database = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      const failed = await waitForDatabaseRow(database, {
+        sql: `SELECT body, error, status, system_event_kind
+              FROM session_messages
+              WHERE session_id = ? AND speaker = 'system' AND system_event_kind = 'run-not-started'`,
+        params: [created.session.sessionId],
+      });
+      expect(failed).toMatchObject({
+        body: expect.stringContaining("这一步没跑起来"),
+        error: expect.stringContaining("Kimi CLI 未安装"),
+        status: "displayed",
+        system_event_kind: "run-not-started",
+      });
+      expect(database.prepare(
+        "SELECT agent_team_ownership, agent_team_id FROM sessions WHERE session_id = ?",
+      ).get(created.session.sessionId)).toEqual({
+        agent_team_ownership: "user",
+        agent_team_id: "development",
+      });
+      expect(database.prepare(
+        "SELECT body, status FROM session_messages WHERE session_id = ? AND speaker = 'user'",
+      ).get(created.session.sessionId)).toEqual({ body: "first message", status: "failed" });
+      expect(database.prepare(
+        `SELECT execution_cli, execution_model, execution_effort
+         FROM session_agent_team_members
+         WHERE session_id = ? AND slot = 'effective' AND sort_order = 0`,
+      ).get(created.session.sessionId)).toEqual({
+        execution_cli: "kimi",
+        execution_model: "future-model",
+        execution_effort: "future-effort",
+      });
     } finally {
       database.close();
     }
@@ -194,7 +298,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(facts).toContain('"engine":"codex"');
   });
 
-  it("retries the original input as a new current-team run after a team switch", async () => {
+  it("retries the original input with the old run snapshot after a team switch", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
       old: snapshot("old Kimi rules", {
@@ -277,15 +381,20 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForAgent(server.url, "new Codex retry completed");
+    await waitForAgent(server.url, "old Kimi fallback completed");
 
-    expect(kimi).toHaveBeenCalledTimes(1);
-    expect(codex).toHaveBeenCalledTimes(1);
-    expect(codex.mock.calls[0]?.[0]).toMatchObject({
+    expect(kimi).toHaveBeenCalledTimes(2);
+    expect(codex).not.toHaveBeenCalled();
+    expect(kimi.mock.calls[1]?.[0]).toMatchObject({
+      profile: {
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      },
       mode: { kind: "full" },
     });
-    expect(codex.mock.calls[0]?.[0].prompt).toContain("new Codex rules");
-    expect(codex.mock.calls[0]?.[0].prompt).not.toContain("old Kimi rules");
+    expect(kimi.mock.calls[1]?.[0].prompt).toContain("old Kimi rules");
+    expect(kimi.mock.calls[1]?.[0].prompt).not.toContain("new Codex rules");
   });
 
   it("does not require the old run context when explicit retry creates a new run", async () => {
@@ -407,6 +516,32 @@ async function waitForAgent(url: string, body: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`timed out waiting for ${body}`);
+}
+
+async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: number): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    if (mock.mock.calls.length >= count) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${String(count)} driver calls`);
+}
+
+async function waitForDatabaseRow(
+  database: DatabaseSync,
+  query: { sql: string; params: string[] },
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const row = database.prepare(query.sql).get(...query.params);
+    if (row !== undefined) {
+      return row as Record<string, unknown>;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("timed out waiting for persisted database row");
 }
 
 async function waitForSystemEvent(

@@ -395,24 +395,14 @@ export interface OperatorConsoleProps {
   onDiscardAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAllAgentTeamDrafts?: (teamKey: string) => void;
   onSaveAllAgentTeamDrafts?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
-  onReadAgentExecutionProfile?: (
-    teamKey: string,
-    memberSlug: string,
-  ) => Promise<AgentExecutionProfileDocument>;
   onSaveAgentExecutionProfile?: (
     teamKey: string,
     memberSlug: string,
     profile: AgentExecutionProfile,
-    capabilitySnapshotId: string,
   ) => Promise<AgentExecutionProfileDocument>;
   onRestoreAgentRecommendedProfile?: (
     teamKey: string,
     memberSlug: string,
-  ) => Promise<AgentExecutionProfileDocument>;
-  onRefreshAgentExecutionCapabilities?: (
-    teamKey: string,
-    memberSlug: string,
-    cli: AgentExecutionProfile["cli"],
   ) => Promise<AgentExecutionProfileDocument>;
   onApplyOfficialAgentTeamUpdate?: (
     teamKey: string,
@@ -537,10 +527,8 @@ export function OperatorConsole({
   onDiscardAgentTeamMember,
   onDiscardAllAgentTeamDrafts,
   onSaveAllAgentTeamDrafts,
-  onReadAgentExecutionProfile,
   onSaveAgentExecutionProfile,
   onRestoreAgentRecommendedProfile,
-  onRefreshAgentExecutionCapabilities,
   onApplyOfficialAgentTeamUpdate,
   onDuplicateBuiltInAgentTeam,
   onRecheckAgentTeam,
@@ -1111,10 +1099,8 @@ export function OperatorConsole({
             onDiscardMember={onDiscardAgentTeamMember}
             onDiscardAll={onDiscardAllAgentTeamDrafts}
             onSaveAll={onSaveAllAgentTeamDrafts}
-            onReadExecutionProfile={onReadAgentExecutionProfile}
             onSaveExecutionProfile={onSaveAgentExecutionProfile}
             onRestoreRecommendedProfile={onRestoreAgentRecommendedProfile}
-            onRefreshExecutionCapabilities={onRefreshAgentExecutionCapabilities}
             onApplyOfficialUpdate={onApplyOfficialAgentTeamUpdate}
             onDuplicateBuiltInTeam={onDuplicateBuiltInAgentTeam}
             onRecheckTeam={onRecheckAgentTeam}

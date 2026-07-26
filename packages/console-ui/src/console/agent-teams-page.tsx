@@ -145,10 +145,8 @@ export function AgentTeamsPage({
   onDiscardMember,
   onDiscardAll,
   onSaveAll,
-  onReadExecutionProfile,
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
-  onRefreshExecutionCapabilities,
   onApplyOfficialUpdate,
   onDuplicateBuiltInTeam,
   onRecheckTeam,
@@ -185,24 +183,14 @@ export function AgentTeamsPage({
   onDiscardMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAll?: (teamKey: string) => void;
   onSaveAll?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
-  onReadExecutionProfile?: (
-    teamKey: string,
-    memberSlug: string,
-  ) => Promise<AgentExecutionProfileDocument>;
   onSaveExecutionProfile?: (
     teamKey: string,
     memberSlug: string,
     profile: AgentExecutionProfile,
-    capabilitySnapshotId: string,
   ) => Promise<AgentExecutionProfileDocument>;
   onRestoreRecommendedProfile?: (
     teamKey: string,
     memberSlug: string,
-  ) => Promise<AgentExecutionProfileDocument>;
-  onRefreshExecutionCapabilities?: (
-    teamKey: string,
-    memberSlug: string,
-    cli: AgentExecutionProfile["cli"],
   ) => Promise<AgentExecutionProfileDocument>;
   onApplyOfficialUpdate?: (teamKey: string) => Promise<AgentOfficialUpdateResult>;
   onDuplicateBuiltInTeam?: (teamKey: string) => Promise<string>;
@@ -563,20 +551,13 @@ export function AgentTeamsPage({
                   onDiscardMember={(memberSlug) => onDiscardMember?.(openedTeam.teamKey, memberSlug)}
                   onDiscardAll={() => onDiscardAll?.(openedTeam.teamKey)}
                   onSaveAll={() => onSaveAll?.(openedTeam.teamKey) ?? Promise.resolve({ failures: [] })}
-                  onReadExecutionProfile={onReadExecutionProfile === undefined
-                    ? undefined
-                    : (memberSlug) => onReadExecutionProfile(openedTeam.teamKey, memberSlug)}
                   onSaveExecutionProfile={onSaveExecutionProfile === undefined
                     ? undefined
-                    : (memberSlug, profile, snapshotId) =>
-                      onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile, snapshotId)}
+                    : (memberSlug, profile) =>
+                      onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile)}
                   onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined
                     ? undefined
                     : (memberSlug) => onRestoreRecommendedProfile(openedTeam.teamKey, memberSlug)}
-                  onRefreshExecutionCapabilities={onRefreshExecutionCapabilities === undefined
-                    ? undefined
-                    : (memberSlug, cli) =>
-                      onRefreshExecutionCapabilities(openedTeam.teamKey, memberSlug, cli)}
                   onApplyOfficialUpdate={openedTeam.ownership === "system" && onApplyOfficialUpdate !== undefined
                     ? () => onApplyOfficialUpdate(openedTeam.teamKey)
                     : undefined}
@@ -1055,11 +1036,6 @@ function AgentTeamRow({
             {team.officialManagement?.updateStatus === "available"
               ? <TeamStatusBadge kind="update" />
               : null}
-            {team.members.some((member) =>
-              member.executionProfile?.status === "needs-adjustment"
-              || member.executionProfile?.status === "not-configured")
-              ? <TeamStatusBadge kind="profile" />
-              : null}
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
@@ -1105,7 +1081,7 @@ function AgentTeamRow({
 }
 
 function TeamStatusBadge({ kind }: {
-  kind: "official" | "customized" | "update" | "profile" | "unfinished" | "needs-repair";
+  kind: "official" | "customized" | "update" | "unfinished" | "needs-repair";
 }): JSX.Element {
   const label = kind === "official"
     ? "官方来源"
@@ -1113,18 +1089,16 @@ function TeamStatusBadge({ kind }: {
       ? "已自定义"
       : kind === "update"
         ? "有更新"
-        : kind === "profile"
-          ? "运行配置需调整"
-          : kind === "unfinished"
-            ? "未完成"
-            : "需要修复";
+        : kind === "unfinished"
+          ? "未完成"
+          : "需要修复";
   return (
     <span
       className={cn(
         "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] font-medium",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
-          : kind === "unfinished" || kind === "customized" || kind === "profile"
+          : kind === "unfinished" || kind === "customized"
             ? "border-line-strong bg-sunken text-sub"
             : "border-line bg-canvas text-sub",
       )}

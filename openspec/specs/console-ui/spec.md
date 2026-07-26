@@ -1851,10 +1851,10 @@ protection as user teams. The UI MUST NOT derive all editability from `ownership
 
 Source: docs/product/pages/agent-teams.md#官方版本与三方比较
 
-The team list and detail MUST render official source, customized, update available and unable to
-check update from server-provided state. Update available, customized and execution-profile
-adjustment MUST NOT create the Agent Teams sidebar repair indicator. The UI MUST NOT recompute
-A/B/C fingerprints or protection rules.
+The team list and detail MUST render official source, customized and update available from
+server-provided state. Update available and customized MUST NOT create the Agent Teams sidebar
+repair indicator. The UI MUST NOT recompute A/B/C fingerprints or protection rules and MUST NOT
+introduce a runtime-profile management status.
 
 #### Scenario: Customized official team has an update
 
@@ -1868,11 +1868,12 @@ A/B/C fingerprints or protection rules.
 
 Source: docs/product/pages/agent-teams.md#Agent-运行配置
 
-The selected member MUST expose CLI, model and effort from a capability snapshot, its source, and
-available restore/save actions. Profile drafts MUST survive member switches independently of Agent
-Markdown drafts. Save failure MUST retain the draft and state that the last saved profile remains
-effective. Leaving, duplicating or updating with either draft type MUST use one combined
-save/discard/cancel guard.
+The selected member MUST expose the saved CLI, model and effort, its source, and eligible
+restore/save actions without waiting for runtime capability data. CLI MUST be a Codex/Kimi enum;
+model and effort MUST be direct text values with static validation. Profile drafts MUST survive
+member switches independently of Agent Markdown drafts. Save failure MUST retain the draft and
+state that the last saved profile remains effective. Leaving, duplicating or updating with either
+draft type MUST use one combined save/discard/cancel guard.
 
 #### Scenario: Profile save fails while Markdown is clean
 
@@ -1881,6 +1882,28 @@ save/discard/cancel guard.
 - **THEN** all draft selections remain visible
 - **AND** the saved profile is still identified as effective
 - **AND** leaving the detail still triggers the dirty guard.
+
+#### Scenario: Parent rerenders while a profile is displayed
+
+- **GIVEN** a member's static profile is visible and the parent rerenders repeatedly with new callback identities
+- **WHEN** no team or member data changes
+- **THEN** the same profile and draft remain visible
+- **AND** no loading state or additional profile-read request appears.
+
+#### Scenario: Blank model is not saved
+
+- **GIVEN** a member has a valid saved profile
+- **WHEN** the user clears model and attempts to save
+- **THEN** the model field shows a static validation reason
+- **AND** save is disabled or rejected
+- **AND** the last saved profile remains effective.
+
+#### Scenario: Unknown text values are normalized and saved
+
+- **GIVEN** a member has a valid saved profile
+- **WHEN** the user enters `"  future-model  "` and `"  future-effort  "` and saves
+- **THEN** the profile is saved and rendered as `future-model` and `future-effort`
+- **AND** no local capability option is required.
 
 ### Requirement: Official update shows impact before and facts after
 
@@ -1899,18 +1922,18 @@ to that team. Failure MUST retain the prior team and retry action.
 - **THEN** the success result names the applied version, removed member and copy
 - **AND** the user can enter that copy from the result.
 
-### Requirement: Capability failure preserves saved profile visibly
+### Requirement: Team management renders no runtime capability health
 
-Source: docs/product/pages/agent-teams.md#运行配置不可用
+Source: docs/product/pages/agent-teams.md#运行配置静态校验
 
-Unable-to-verify and needs-adjustment states MUST show the saved CLI/model/effort when safe, explain
-that no replacement occurred, and offer recheck/adjust plus restore recommendation when eligible.
-This page MUST NOT decide or claim whether the state blocks conversation creation.
+The team list and detail MUST NOT render “正在读取运行配置”, unable-to-verify,
+needs-adjustment, recheck, capability-derived options or a runtime-profile repair badge. They MUST
+render persisted profile values and ordinary static/save errors. Runtime availability MUST NOT
+create the Agent Teams sidebar repair indicator.
 
-#### Scenario: Saved model is no longer supported
+#### Scenario: Local Kimi is unavailable
 
-- **GIVEN** the server confirms the saved model is unsupported
-- **WHEN** the member profile renders
-- **THEN** the original value remains visible with needs-adjustment
-- **AND** no replacement model is selected
-- **AND** no conversation-creation policy text is introduced.
+- **GIVEN** a member has a structurally valid saved Kimi profile and local Kimi is unavailable
+- **WHEN** team list and detail render
+- **THEN** the saved CLI/model/effort are editable
+- **AND** no runtime warning, recheck action or repair indicator appears.

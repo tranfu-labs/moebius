@@ -140,7 +140,8 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     expect(runCodex).toHaveBeenCalledTimes(2);
     expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "full" });
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
-    expect(facts).not.toContain('"reason":"retry"');
+    expect(facts).toContain('"reason":"retry"');
+    expect(facts).toContain('"reason":"explicit-retry"');
     expect(facts).toContain('"cachedInputTokens":321');
   });
 

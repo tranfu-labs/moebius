@@ -13,13 +13,11 @@ import type {
   AgentTeamMemberDocument,
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
-  AgentTeamExecutionCapabilityRequest,
   AgentTeamExecutionProfileDocument,
   AgentTeamExecutionProfileSaveRequest,
   AgentTeamOfficialUpdateCommitRequest,
   AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
-import { probeExecutionCapabilities } from "./execution-capabilities.js";
 import {
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
@@ -28,11 +26,9 @@ import {
   saveTeamExecutionBinding,
 } from "./team-management-store.js";
 import {
-  evaluateExecutionProfile,
   materializeExplicitBindings,
   normalizeExecutionProfile,
   resolveEffectiveExecutionProfile,
-  type ExecutionCapabilitySnapshot,
   type ExecutionProfile,
   type ExecutionProfileBinding,
 } from "./team-execution-profile.js";
@@ -76,8 +72,6 @@ const LEGACY_EXPLICIT_PROFILE: ExecutionProfile = {
   effort: "high",
 };
 
-const capabilityCache = new Map<"codex" | "kimi", ExecutionCapabilitySnapshot>();
-
 export async function listAgentTeams(input: {
   dataRoot: string;
   seedPending: boolean;
@@ -117,7 +111,7 @@ export async function createAgentTeam(dataRoot: string, rawRequest: unknown): Pr
   const snapshot = await createUserTeam(dataRoot, request);
   await initializeExplicitBindings(snapshot);
   await registerUserTeamSnapshot(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function readAgentTeamMember(dataRoot: string, rawRequest: unknown): Promise<AgentTeamMemberDocument> {
@@ -154,7 +148,7 @@ export async function addAgentTeamMember(
   });
   await refreshUserTeamRecord(result.team);
   return {
-    team: toListItem(result.team),
+    team: await toManagedListItemWithOnboardingOrchestration(result.team),
     member: toMemberDocument(result.member),
   };
 }
@@ -171,7 +165,7 @@ export async function updateAgentTeamInformation(
   const location = await resolveAgentTeamLocation(dataRoot, request);
   const snapshot = await updateTeamInformation(location, information);
   await refreshUserTeamRecord(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function setAgentTeamPrimaryAgent(
@@ -184,7 +178,7 @@ export async function setAgentTeamPrimaryAgent(
   // The store validates both write ownership and membership validity.
   const snapshot = await setTeamPrimaryAgent(location, request.primaryAgentSlug);
   await refreshUserTeamRecord(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function duplicateBuiltInAgentTeam(dataRoot: string, rawRequest: unknown): Promise<AgentTeamListItem> {
@@ -198,7 +192,7 @@ export async function duplicateBuiltInAgentTeam(dataRoot: string, rawRequest: un
   const snapshot = await readTeamSnapshot(destination);
   await copyTeamBindingsAsExplicit({ dataRoot, source, destination, snapshot });
   await registerUserTeamSnapshot(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function duplicateUserAgentTeam(dataRoot: string, rawRequest: unknown): Promise<AgentTeamListItem> {
@@ -208,7 +202,7 @@ export async function duplicateUserAgentTeam(dataRoot: string, rawRequest: unkno
   const snapshot = await readTeamSnapshot(destination);
   await copyTeamBindingsAsExplicit({ dataRoot, source, destination, snapshot });
   await registerUserTeamSnapshot(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function duplicateAgentTeamMember(
@@ -232,7 +226,10 @@ export async function duplicateAgentTeamMember(
     binding: { source: "explicit", profile: sourceProfile.effectiveProfile },
   });
   await refreshUserTeamRecord(result.team);
-  return { team: toListItem(result.team), member: toMemberDocument(result.member) };
+  return {
+    team: await toManagedListItemWithOnboardingOrchestration(result.team),
+    member: toMemberDocument(result.member),
+  };
 }
 
 export async function trashAgentTeamMember(
@@ -256,7 +253,7 @@ export async function trashAgentTeamMember(
     bindings,
   });
   await refreshUserTeamRecord(snapshot);
-  return toListItem(snapshot);
+  return toManagedListItemWithOnboardingOrchestration(snapshot);
 }
 
 export async function trashUserAgentTeam(
@@ -282,26 +279,10 @@ export async function readAgentTeamExecutionProfile(
   const request = parseMemberRequest(rawRequest);
   await resolveAgentTeamLocation(dataRoot, request);
   const resolved = await resolveStoredMemberProfile({ dataRoot, ...request });
-  const capabilities = await Promise.all([
-    getExecutionCapability("codex", false),
-    getExecutionCapability("kimi", false),
-  ]);
   return {
     ...request,
     ...resolved,
-    status: evaluateExecutionProfile(
-      resolved.effectiveProfile,
-      capabilities.find((capability) => capability.cli === resolved.effectiveProfile.cli),
-    ),
-    capabilities,
   };
-}
-
-export async function refreshAgentTeamExecutionCapability(
-  rawRequest: unknown,
-): Promise<ExecutionCapabilitySnapshot> {
-  const request = parseCapabilityRequest(rawRequest);
-  return getExecutionCapability(request.cli, true);
 }
 
 export async function saveAgentTeamExecutionProfile(
@@ -310,14 +291,6 @@ export async function saveAgentTeamExecutionProfile(
 ): Promise<AgentTeamExecutionProfileDocument> {
   const request = parseExecutionProfileSaveRequest(rawRequest);
   await resolveAgentTeamLocation(dataRoot, request);
-  const capability = await getExecutionCapability(request.profile.cli, true);
-  if (capability.snapshotId !== request.capabilitySnapshotId) {
-    throw new AgentTeamIpcRequestError("模型能力已经变化，请重新选择后保存。", "CAPABILITY_SNAPSHOT_STALE");
-  }
-  const status = evaluateExecutionProfile(request.profile, capability);
-  if (status.status !== "available") {
-    throw new AgentTeamIpcRequestError(status.reason, "EXECUTION_PROFILE_UNAVAILABLE");
-  }
   const official = request.ownership === "system"
     ? (await readOfficialTeamStateDocument(dataRoot)).teams[request.teamId]
     : undefined;
@@ -375,7 +348,7 @@ export async function applyAgentTeamOfficialUpdate(
   const result = await commitOfficialTeamUpdate({ dataRoot, plan: request.plan });
   const copiedTeam = result.copiedTeamId === null
     ? null
-    : toListItem(await readTeamSnapshot(resolveTeamLocation({
+    : await toManagedListItemWithOnboardingOrchestration(await readTeamSnapshot(resolveTeamLocation({
         dataRoot,
         teamId: result.copiedTeamId,
         ownership: "user",
@@ -455,32 +428,22 @@ async function toManagedListItemWithOnboardingOrchestration(
     ? (await readOfficialTeamStateDocument(snapshot.location.dataRoot)).teams[snapshot.location.id]
     : undefined;
   item.members = item.members.map((member) => {
-    const binding = bindings[member.slug];
-    const recommendation = official?.appliedRecommendations[member.slug];
+    const recommendation = official?.appliedRecommendations[member.slug] ?? null;
+    let binding = bindings[member.slug];
     if (binding === undefined) {
-      return {
-        ...member,
-        executionProfile: {
-          source: snapshot.location.ownership === "system" && recommendation !== undefined
-            ? "recommended"
-            : "explicit",
-          effective: recommendation ?? null,
-          status: "not-configured",
-        },
-      };
-    }
-    let effective: ExecutionProfile | null = null;
-    try {
-      effective = resolveEffectiveExecutionProfile({ binding, recommendation });
-    } catch {
-      // Invalid persisted values stay visible as a management state.
+      binding = recommendation === null
+        ? { source: "explicit", profile: LEGACY_EXPLICIT_PROFILE }
+        : { source: "recommended" };
     }
     return {
       ...member,
       executionProfile: {
-        source: binding.source,
-        effective,
-        status: effective === null ? "needs-adjustment" : "unable-to-verify",
+        binding,
+        recommendation,
+        effectiveProfile: resolveEffectiveExecutionProfile({
+          binding,
+          recommendation: recommendation ?? undefined,
+        }),
       },
     };
   });
@@ -600,19 +563,6 @@ async function resolveStoredMemberProfile(input: {
   };
 }
 
-async function getExecutionCapability(
-  cli: "codex" | "kimi",
-  refresh: boolean,
-): Promise<ExecutionCapabilitySnapshot> {
-  if (!refresh) {
-    const cached = capabilityCache.get(cli);
-    if (cached !== undefined) return cached;
-  }
-  const capability = await probeExecutionCapabilities({ cli });
-  capabilityCache.set(cli, capability);
-  return capability;
-}
-
 function findMember(snapshot: TeamSnapshot, memberSlug: string): TeamMemberSnapshot {
   const member = snapshot.members.find((candidate) => candidate.slug === memberSlug);
   if (member === undefined) {
@@ -659,21 +609,13 @@ function parsePrimaryAgentWriteRequest(value: unknown): AgentTeamPrimaryAgentWri
 
 function parseExecutionProfileSaveRequest(value: unknown): AgentTeamExecutionProfileSaveRequest {
   const member = parseMemberRequest(value);
-  if (!isPlainObject(value) || typeof value.capabilitySnapshotId !== "string") {
-    throw new AgentTeamIpcRequestError("保存运行配置需要有效的能力快照。");
+  if (!isPlainObject(value)) {
+    throw new AgentTeamIpcRequestError("保存运行配置需要有效的配置内容。");
   }
   return {
     ...member,
     profile: normalizeExecutionProfile(value.profile),
-    capabilitySnapshotId: value.capabilitySnapshotId,
   };
-}
-
-function parseCapabilityRequest(value: unknown): AgentTeamExecutionCapabilityRequest {
-  if (!isPlainObject(value) || (value.cli !== "codex" && value.cli !== "kimi")) {
-    throw new AgentTeamIpcRequestError("需要指定 Codex 或 Kimi。");
-  }
-  return { cli: value.cli };
 }
 
 function parseOfficialTeamRequest(value: unknown): { teamId: string; ownership: "system" } {

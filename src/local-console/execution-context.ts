@@ -73,7 +73,8 @@ export type LocalExecutionRecoveryPlan =
         | "profile-mismatch"
         | "legacy-context-mismatch"
         | "rollout-unavailable"
-        | "external-session-unavailable";
+        | "external-session-unavailable"
+        | "explicit-retry";
     }
   | {
       kind: "unsafe";
@@ -222,6 +223,9 @@ export function planLocalExecutionRecovery(input: {
       intent,
       reason: "run-context-missing",
     };
+  }
+  if (intent.reason === "retry") {
+    return fallback(intent, targetContext, "explicit-retry");
   }
   const executionLink = input.executionLinks.find((candidate) =>
     candidate.runId === intent.targetRunId
