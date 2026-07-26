@@ -17,6 +17,29 @@ Moebius gives developers persistent, role-based coding-agent teams across local 
 
 Moebius is under active development; see the [changelog](CHANGELOG.md) for release history.
 
+## Moebius in action
+
+<table>
+  <tr>
+    <th width="50%">Role-based handoff in progress</th>
+    <th width="50%">A code-verified result</th>
+  </tr>
+  <tr>
+    <td>
+      <a href="./assets/screenshots/console-agent-handoff.jpg">
+        <img src="./assets/screenshots/console-agent-handoff.jpg" alt="Moebius console showing an agent handoff in progress">
+      </a>
+    </td>
+    <td>
+      <a href="./assets/screenshots/console-code-verified.jpg">
+        <img src="./assets/screenshots/console-code-verified.jpg" alt="Moebius console showing a code-verified agent result">
+      </a>
+    </td>
+  </tr>
+</table>
+
+Click either screenshot to view it at full resolution.
+
 ## Why Moebius
 
 - Define agent responsibilities and collaboration rules in plain Markdown instead of hard-coding one fixed workflow.
