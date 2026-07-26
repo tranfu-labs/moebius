@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   confirmRuntimeConfig,
+  kimiClientFsCapabilities,
   resolveKimiFileRequestPath,
   runKimiAcp,
   runKimiAcpWithTransport,
@@ -22,7 +23,7 @@ afterEach(async () => {
     fs.rm(root, { recursive: true, force: true })));
 });
 
-function configOptions(model = "kimi-for-coding", effort = "high") {
+function configOptions(model = "kimi-for-coding", effort = "high", mode = "auto") {
   return [
     {
       id: "model",
@@ -36,7 +37,7 @@ function configOptions(model = "kimi-for-coding", effort = "high") {
     },
     {
       id: "mode",
-      currentValue: "auto",
+      currentValue: mode,
       options: [{ value: "auto" }, { value: "default" }],
     },
   ];
@@ -134,6 +135,60 @@ async function makeRuntimeHomes(root: string): Promise<KimiRuntimeHomePaths> {
 }
 
 describe("Kimi ACP driver", () => {
+  it("advertises no write capability and confirms a non-auto mode for read-only sessions", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({
+      sessionOptions: configOptions("kimi-for-coding", "high", "default"),
+    });
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "design only",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      workspaceAccess: "read-only",
+      permissionMode: "default",
+    })).resolves.toMatchObject({ ok: true });
+    expect(kimiClientFsCapabilities("read-only")).toEqual({
+      readTextFile: true,
+      writeTextFile: false,
+    });
+    expect(transport.requests[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: false },
+          terminal: false,
+        },
+      },
+    });
+    expect(transport.requests.some((request) =>
+      request.method === "session/set_config_option")).toBe(false);
+  });
+
+  it("passes a fail-closed write flag into the real Kimi transport factory", async () => {
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const transport = fakeTransport({
+      sessionOptions: configOptions("kimi-for-coding", "high", "default"),
+    });
+    const transportFactory = vi.fn(async () => transport);
+    await expect(runKimiAcp({
+      prompt: "design only",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      workspaceAccess: "read-only",
+      permissionMode: "default",
+      runtimeHomePaths,
+      transportFactory,
+    })).resolves.toMatchObject({ ok: true });
+    expect(transportFactory).toHaveBeenCalledWith(expect.objectContaining({
+      allowWrites: false,
+    }));
+  });
+
   it("authenticates the advertised Kimi login method before opening a session", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport({

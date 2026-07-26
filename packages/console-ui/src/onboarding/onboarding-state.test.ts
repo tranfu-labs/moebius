@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import {
+  canContinueOnboardingEnvironment,
+  chooseOnboardingBuilderCli,
   createOnboardingShellState,
+  getOnboardingTeamCompatibility,
   reduceOnboardingShell,
   resolveDefaultOnboardingTeamKey,
 } from "./onboarding-state";
@@ -77,5 +80,54 @@ describe("onboarding shell state", () => {
       unavailable,
       builtInDevelopmentTeam,
     ])).toBe("system:development");
+  });
+
+  it("allows Codex-only, Kimi-only, and dual readiness but blocks dual failure", () => {
+    const missing = { status: "missing" as const, revision: 1 };
+    const ready = { status: "ready" as const, revision: 1 };
+
+    expect(canContinueOnboardingEnvironment({ codex: ready, kimi: missing })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: missing, kimi: ready })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: ready, kimi: ready })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: missing, kimi: missing })).toBe(false);
+    expect(chooseOnboardingBuilderCli({ codex: missing, kimi: ready })).toBe("kimi");
+    expect(chooseOnboardingBuilderCli({ codex: ready, kimi: ready })).toBe("codex");
+  });
+
+  it("reports affected members without changing their configured CLI", () => {
+    const team: OperatorAgentTeam = {
+      ...builtInDevelopmentTeam,
+      members: [
+        {
+          ...builtInDevelopmentTeam.members[0]!,
+          executionProfile: {
+            source: "recommended",
+            effective: { cli: "codex", model: "gpt", effort: "high" },
+            status: "available",
+          },
+        },
+        {
+          slug: "qa",
+          displayName: "测试",
+          description: "验收",
+          executionProfile: {
+            source: "explicit",
+            effective: { cli: "kimi", model: "kimi", effort: "high" },
+            status: "unable-to-verify",
+          },
+        },
+      ],
+    };
+    const result = getOnboardingTeamCompatibility(team, {
+      codex: { status: "ready", revision: 1 },
+      kimi: { status: "missing", revision: 1 },
+    });
+
+    expect(result).toEqual({
+      affectedCount: 1,
+      clis: ["kimi"],
+      copy: "其中 1 名成员仍需完成 Kimi 准备",
+    });
+    expect(team.members[1]?.executionProfile?.effective?.cli).toBe("kimi");
   });
 });

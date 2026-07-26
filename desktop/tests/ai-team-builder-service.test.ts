@@ -49,7 +49,11 @@ describe("AiTeamBuilder service", () => {
       success({ phase: "clarifying", question: "主要面向专业用户还是大众用户？" }, "thread-1"),
       success(proposal, "thread-1"),
     ]);
-    const builder = new AiTeamBuilder({ dataRoot, codex });
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
 
     await expect(builder.start("onboarding")).resolves.toMatchObject({
       phase: "idle",
@@ -69,8 +73,14 @@ describe("AiTeamBuilder service", () => {
       proposal: { team: { name: "产品发布团队" } },
       actions: ["adjust", "commit", "cancel"],
     });
-    expect(codex.execute).toHaveBeenNthCalledWith(1, expect.objectContaining({ threadId: null }));
-    expect(codex.execute).toHaveBeenNthCalledWith(2, expect.objectContaining({ threadId: "thread-1" }));
+    expect(codex.execute).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ externalSessionId: null }),
+    );
+    expect(codex.execute).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ externalSessionId: "thread-1" }),
+    );
   });
 
   it("locks duplicate input while a turn is running without misclassifying a live poll as interrupted", async () => {
@@ -82,7 +92,11 @@ describe("AiTeamBuilder service", () => {
         resolveCodex = resolve;
       })),
     };
-    const builder = new AiTeamBuilder({ dataRoot, codex });
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
 
     const pending = builder.submit("onboarding", "持续负责产品发布");
     await vi.waitFor(() => {
@@ -102,7 +116,11 @@ describe("AiTeamBuilder service", () => {
       success({ phase: "proposal", members: [] }, "thread-1"),
       success({ phase: "proposal", still: "invalid" }, "thread-1"),
     ]);
-    const builder = new AiTeamBuilder({ dataRoot, codex });
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
 
     const state = await builder.submit("draft", "帮我做发布");
 
@@ -126,7 +144,11 @@ describe("AiTeamBuilder service", () => {
       success({ phase: "proposal", members: [] }, "thread-1"),
       success(proposal, "thread-1"),
     ]);
-    const builder = new AiTeamBuilder({ dataRoot, codex });
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
 
     await expect(builder.submit("draft", "帮我做发布")).resolves.toMatchObject({
       phase: "proposal",
@@ -134,7 +156,7 @@ describe("AiTeamBuilder service", () => {
     });
     expect(codex.execute).toHaveBeenCalledTimes(2);
     expect(codex.execute).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      threadId: "thread-1",
+      externalSessionId: "thread-1",
       prompt: expect.stringContaining("只修复以下问题"),
     }));
   });
@@ -146,7 +168,11 @@ describe("AiTeamBuilder service", () => {
       { ok: false, reason: "exit-code-1", resumeFailed: true },
       success({ ...proposal, team: { ...proposal.team, name: "调整后的团队" } }, "thread-2"),
     ]);
-    const builder = new AiTeamBuilder({ dataRoot, codex });
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
 
     await expect(builder.submit("draft", "帮我做发布")).resolves.toMatchObject({
       phase: "proposal",
@@ -165,9 +191,12 @@ describe("AiTeamBuilder service", () => {
         },
       ]),
     });
-    expect(codex.execute).toHaveBeenNthCalledWith(2, expect.objectContaining({ threadId: "thread-1" }));
+    expect(codex.execute).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ externalSessionId: "thread-1" }),
+    );
     expect(codex.execute).toHaveBeenNthCalledWith(3, expect.objectContaining({
-      threadId: null,
+      externalSessionId: null,
       prompt: expect.stringContaining("保存的对话"),
     }));
   });
@@ -177,6 +206,7 @@ describe("AiTeamBuilder service", () => {
     const first = new AiTeamBuilder({
       dataRoot,
       codex: queueCodex([success(proposal, "secret-thread")]),
+      resolveExecutionProfile: codexProfile,
     });
     await first.submit("agent-teams", "帮我做发布");
 
@@ -189,6 +219,7 @@ describe("AiTeamBuilder service", () => {
     });
     expect(Object.keys(restored).sort()).toEqual([
       "actions",
+      "builderCli",
       "error",
       "messages",
       "phase",
@@ -222,6 +253,7 @@ describe("AiTeamBuilder service", () => {
     const builder = new AiTeamBuilder({
       dataRoot,
       codex: queueCodex([success(proposal, "thread-1")]),
+      resolveExecutionProfile: codexProfile,
       writer,
     });
     await builder.submit("draft", "帮我做发布");
@@ -250,6 +282,7 @@ describe("AiTeamBuilder service", () => {
     const builder = new AiTeamBuilder({
       dataRoot,
       codex: queueCodex([success(proposal, "thread-1")]),
+      resolveExecutionProfile: codexProfile,
       writer,
     });
     await builder.submit("draft", "帮我做发布");
@@ -278,12 +311,16 @@ function queueCodex(
   };
 }
 
-function success(value: unknown, threadId: string) {
+function success(value: unknown, externalSessionId: string) {
   return {
     ok: true as const,
     finalText: JSON.stringify(value),
-    threadId,
+    externalSessionId,
   };
+}
+
+async function codexProfile() {
+  return { cli: "codex", model: "test-codex", effort: "high" } as const;
 }
 
 async function makeDataRoot(): Promise<string> {

@@ -1,7 +1,7 @@
 # desktop-shell 规格
 
 ## 域定位
-`desktop-shell` 负责把 runner 与 observer 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，直接调用本机 codex CLI。壳层只做装配、子进程监管、环境自检与更新提示，不承载任何业务规则；runner 行为事实源在 `github-issue-runner`，本地操作台与 observer 呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start` / `pnpm observer`）继续有效且行为不变。
+`desktop-shell` 负责把 runner 与 observer 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex 或 Kimi CLI。壳层只做装配、子进程监管、环境自检与更新提示，不承载任何业务规则；runner 行为事实源在 `github-issue-runner`，本地操作台与 observer 呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start` / `pnpm observer`）继续有效且行为不变。
 
 ## 业务规则
 
@@ -644,28 +644,41 @@ Acceptance: onboarding#7
 - WHEN 用户以 revision N 请求创建
 - THEN 系统一次创建全部成员及其有效 `AGENT.md`，登记普通用户团队并返回 selected 状态
 
-## Requirement: AI 建队使用隔离的 Codex execution profile
+## Requirement: AI 建队使用并冻结当前可用 CLI
 Source: docs/product/pages/onboarding.md#AI-建队技术约束
 Acceptance: onboarding#20
 
-系统 MUST 为每个草稿使用独立 Codex thread、固定 developer instructions、output schema、只读 sandbox、隔离 cwd、2 分钟 idle timeout 与 10 分钟 max-duration timeout。系统 MUST NOT 使用普通 Agent 的 `--yolo` 参数、项目 `AGENTS.md`、用户 MCP 或个人指令。
+系统 MUST 从引导 readiness service 最近一次完整能力结果中选择执行 CLI：Codex ready 时优先 Codex，仅 Kimi ready 时选择 Kimi，两者均不 ready 时拒绝启动。系统 MUST 在草稿生命周期内冻结所选 CLI、execution profile、隔离 cwd 与 provider session；submit、adjust、retry、恢复和唯一一次结构修复 MUST 继续使用同一 CLI，失败 MUST NOT 静默跨 CLI 降级。
 
-### Scenario: 首轮与续轮均保持隔离
-- GIVEN AI 建队草稿尚无 thread
-- WHEN 用户提交首轮目标并在回复后继续调整
-- THEN 首轮使用 `codex exec`、续轮使用 `codex exec resume <threadId>`，两轮参数均不含 `--yolo` 且输出受同一 schema 约束
+### Scenario: Kimi-only AI 建队
+- GIVEN 第 1 步最近一次完整结果只有 Kimi ready
+- WHEN 用户打开 AI 建队并继续多轮调整
+- THEN 草稿冻结 Kimi execution profile 与 provider session
+- AND 后续轮次继续使用 Kimi。
 
-## Requirement: AI 建队续轮显式保持只读 execution profile
+### Scenario: Codex 优先且失败不降级
+- GIVEN Codex 与 Kimi 均 ready
+- WHEN 用户启动草稿后 Codex turn 失败
+- THEN 草稿保持 Codex execution profile 与已有对话
+- AND 系统不自动改用 Kimi。
+
+## Requirement: AI 建队执行环境保持隔离只读
 Source: docs/product/pages/onboarding.md#AI-建队技术约束
 Acceptance: onboarding#20
 
-系统 MUST 在 AI 建队 `codex exec resume <threadId>` 续轮中显式传入 `--sandbox read-only` 与当前草稿的隔离 cwd。系统 MUST NOT 依赖 Codex thread state 隐式继承 sandbox 或 cwd 来满足隔离约束。
+系统 MUST 为每个草稿使用固定 developer instructions、output schema、只读文件系统边界、隔离 cwd、2 分钟 idle timeout 与 10 分钟 max-duration timeout。Codex 首轮与续轮 MUST 显式声明只读 sandbox 与隔离 cwd；Kimi ACP MUST NOT 宣告写能力，传输层 MUST 拒绝文件写入。两套驱动 MUST NOT 使用普通 Agent 的放权参数、项目 `AGENTS.md`、用户 MCP 或个人指令。
 
-### Scenario: 续轮命令声明只读 sandbox 与隔离 cwd
+### Scenario: Codex 续轮声明只读 sandbox 与隔离 cwd
 - GIVEN AI 建队草稿已有 Codex thread id 与独立 isolated cwd
 - WHEN 系统为下一轮构造 `codex exec resume <threadId>` 命令
 - THEN 参数包含 `--sandbox read-only` 与 `--cd <isolatedCwd>`
 - AND 参数不包含 `--yolo` 或其他绕过 sandbox 的选项
+
+### Scenario: Kimi 不获得文件写能力
+- GIVEN AI 建队草稿已冻结 Kimi profile
+- WHEN Kimi 会话尝试请求文件写入
+- THEN ACP capability 不宣告写权限且传输层拒绝该请求
+- AND 草稿状态仍由应用自身持久化。
 
 ## Requirement: AI 建队失败有界并保留可恢复内容
 Source: docs/product/pages/onboarding.md#第-2-步--ai-建队子流程
@@ -675,19 +688,19 @@ Acceptance: onboarding#21
 
 ### Scenario: 修复一次后仍非法
 - GIVEN 当前草稿已有对话和一版有效方案
-- WHEN 新一轮 Codex 输出非法且唯一一次修复 turn 仍非法
+- WHEN 新一轮所选 CLI 输出非法且唯一一次同 CLI 修复 turn 仍非法
 - THEN 状态变为 failed、原对话和有效方案仍可见、动作只允许用户显式重试或取消
 
 ## Requirement: renderer 只接收白名单 AI 建队 DTO
 Source: docs/product/pages/onboarding.md#AI-建队技术约束
 Acceptance: onboarding#22
 
-系统 MUST 只向 renderer 返回 phase、公开消息、方案预览、revision、安全错误摘要、可执行动作和 selected 终态的团队 id。系统 MUST NOT 返回 Codex thread id、原始 JSONL、schema 路径、cwd、内部堆栈或内部错误。
+系统 MUST 只向 renderer 返回 phase、公开消息、方案预览、revision、安全错误摘要、可执行动作、所选 CLI 枚举和 selected 终态的团队 id。系统 MUST NOT 返回 provider session id、模型、effort、原始协议记录、schema 路径、cwd、内部堆栈或内部错误。
 
-### Scenario: Codex 运行失败后的 IPC 响应
-- GIVEN Codex 子进程在内部运行目录中产生 stderr 与堆栈
+### Scenario: 所选 CLI 运行失败后的 IPC 响应
+- GIVEN 所选 CLI 在内部运行目录中产生 stderr 与堆栈
 - WHEN renderer 通过 AI 建队 IPC 读取草稿
-- THEN 响应只含安全 `error.code`、`humanMessage`、`canRetry` 与恢复动作，序列化结果不含任何内部路径或 thread id
+- THEN 响应只含安全 `error.code`、`humanMessage`、`canRetry` 与恢复动作，序列化结果不含任何内部路径或 provider session id
 
 ## Requirement: AI 建队提交对团队列表原子可见
 Source: docs/product/pages/agent-teams.md#AI-建队
@@ -760,81 +773,79 @@ Source: docs/product/pages/onboarding.md#重新查看引导
 - **THEN** renderer 按原有效 marker 进入主页面
 - **AND** 不恢复或强制继续回看。
 
-### Requirement: Codex 未就绪时第 1 步硬门禁
+### Requirement: 引导环境检查验证 Codex 与 Kimi 真实就绪
 
-Source: docs/product/pages/onboarding.md#指标与验收
-Acceptance ID: `onboarding#3`
+Source: docs/product/pages/onboarding.md#第-1-步-环境就绪至少一个-cli-可用
+Acceptance ID: `onboarding#3`, `onboarding#4`
 
-第 1 步 MUST 在 Codex 缺失或不可运行时保留全局 footer 中的“重新检查”和 disabled “继续”。Codex 缺失时 MUST 展示固定安装命令 `brew install codex` 及复制操作；Codex 已安装但不可运行时 MUST 只展示“请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。”，MUST NOT 展示安装命令、复制操作、底层路径或原始错误。只有一次新的检查返回可运行状态后才能放行。
+桌面引导 MUST 分别检查 Codex 与 Kimi 的真实版本、认证 / provider 配置及至少一个真实可用模型，且 MUST NOT 为检查发送真实推理请求、打开交互登录、修改项目文件或产生测试会话。只有版本和能力检查都成功的 CLI 才为 ready；任一 CLI ready 时 MUST 放行，两者都不 ready 时 MUST 阻断。`ENOENT` / `ENOTDIR` MUST 分类为 missing；未认证 MUST 分类为 needs-login；非零退出、不可执行、空版本或能力协议异常 MUST 分类为 unavailable。
 
-#### Scenario: 修复缺失的 Codex
+每套 CLI MUST 独立维护检查 revision。首次检查、shell PATH 自动复检、安装成功复检和手动复检 MUST 以同一 CLI 的 `(revision, phase)` 单调收敛：较旧 revision 不得覆盖较新结果；同一 revision 允许 checking 收敛到终态但不得从终态倒退。ready 行 MUST 展示当次真实版本；静态表面没有真实输入时 MUST NOT 伪造版本。结果 DTO MUST NOT 包含原始 stderr、异常文本、本地路径、PID、provider 密钥、token 或 session id。
 
-- **GIVEN** 第一次 Codex 检查返回缺失
-- **WHEN** 用户尚未完成一次成功的重新检查
-- **THEN** 页面展示 `brew install codex` 与复制操作
-- **AND** footer 的“继续”保持禁用且“重新检查”可用
-- **WHEN** 用户安装后点击“重新检查”且检查成功
-- **THEN** “继续”变为可用。
+#### Scenario: Kimi-only 放行
 
-#### Scenario: 修复不可运行的 Codex
+- **GIVEN** Codex missing 且 Kimi 的版本与模型能力检查成功
+- **WHEN** 双 CLI 检查收敛
+- **THEN** Kimi 行展示当次真实版本和 ready
+- **AND** 第 1 步允许继续
+- **AND** Codex 行保留独立安装入口。
 
-- **GIVEN** 第一次 Codex 检查确认 CLI 已存在但当前不可运行
-- **WHEN** 第 1 步展示错误恢复
-- **THEN** 页面展示固定登录 / 排障提示和“重新检查”
-- **AND** 页面不展示 `brew install codex`、复制操作、底层路径或原始错误
-- **AND** footer 的“继续”保持禁用
-- **WHEN** 用户修复后点击“重新检查”且检查成功
-- **THEN** “继续”变为可用。
+#### Scenario: 同一 revision 从 checking 收敛
 
-### Requirement: 引导环境检查只检查 Codex
+- **GIVEN** renderer 已收到 Kimi `checking revision=4`
+- **WHEN** 同一次检查随后返回 Kimi `ready revision=4`
+- **THEN** 页面收敛为 ready
+- **AND** 之后迟到的同 revision checking 不得使页面倒退。
 
-Source: docs/product/pages/onboarding.md#指标与验收
-Acceptance ID: `onboarding#4`
+#### Scenario: 检查不产生推理
 
-引导环境门禁与桌面环境诊断 MUST 只执行 `codex --version` 检查。检查成功时，正式 Electron 引导页 MUST 通过既有 `detail` 链路展示当次检查返回的真实版本文本，MUST NOT 使用硬编码版本、占位版本或上一次检查缓存的版本。首次检查、shell PATH 就绪后的既有自动复检或错误态手动重新检查成功后，renderer MUST 用最后发起的检查结果整体替换旧版本；并发检查乱序返回时，较早发起的结果 MUST NOT 覆盖较晚发起的结果。成功态 MUST NOT 为刷新版本新增“重新检查”。`env-doctor` MUST 仅将 `ENOENT` / `ENOTDIR` 分类为缺失，并将非零退出、`EACCES`、其他启动异常及退出码为 0 但无非空版本文本分类为不可运行。错误结果 MUST NOT 经状态快照或 onboarding IPC 向 renderer 传递原始 stderr、异常文本或本地路径。`env-doctor`、状态快照和辅助状态页 MUST NOT 检查或展示 gh CLI、gh 登录态、Claude 或 Node 环境；本需求 MUST NOT 增加登录态、provider、模型调用探针、IPC channel 或 DTO 字段。
+- **GIVEN** 用户进入第 1 步或触发重新检查
+- **WHEN** 主进程检查两套 CLI
+- **THEN** 只调用版本与 machine-readable 能力枚举
+- **AND** 不发送真实对话、不产生推理费用、不创建测试 session
+- **AND** 不检查 gh / GitHub、Claude Code、Node 或其他 CLI。
 
-#### Scenario: 首次成功检查展示真实版本
+### Requirement: 引导安装仅执行内置受信任动作
 
-- **GIVEN** `codex --version` 成功返回版本文本 A
-- **WHEN** 结果通过既有 onboarding IPC 到达 renderer
-- **THEN** 第 1 步通过态展示版本文本 A
-- **AND** 页面不以固定示例版本替换 A。
+Source: docs/product/pages/onboarding.md#第-1-步-cli-缺失与安装中
 
-#### Scenario: shell PATH 就绪后的自动复检刷新版本
+主进程 MUST 以随应用发布的 registry 执行 Codex 或 Kimi 安装。renderer MUST 只能提交 `codex | kimi` 枚举，MUST NOT 提交或影响 command、URL、args 或脚本文本。Codex 安装 MUST 参数化 spawn npm；Kimi 安装 MUST 以独立 curl 和 bash 进程通过 Node stream 连接，MUST NOT 使用 `exec`、`execSync`、`shell:true` 或 `bash -c`。
 
-- **GIVEN** 第 1 步首次检查成功并展示版本文本 A
-- **WHEN** shell PATH 就绪状态到达 renderer 并触发既有自动二次检查，且检查成功返回不同的版本文本 B
-- **THEN** 第 1 步展示版本文本 B
-- **AND** 页面不再展示版本文本 A
-- **AND** 成功态不显示“重新检查”。
+同一 CLI MUST 去重，Codex 与 Kimi MUST 可并发。点击安装后 renderer MUST 立即显示不可重复触发的 starting 状态；任务 MUST 提供 downloading、installing、verifying 等安全阶段、活动反馈、确认取消、超时和进程回收。成功 MUST 只自动复检对应 CLI；失败、取消和超时 MUST 保留独立重试且不得泄露底层输出。
 
-#### Scenario: 并发复检只接受最后发起的结果
+#### Scenario: renderer 不能注入命令
 
-- **GIVEN** 首次检查 A 尚未返回，shell PATH 就绪又触发自动复检 B
-- **WHEN** B 先成功返回新版文本，A 随后才返回旧版文本
-- **THEN** 第 1 步只展示 B 的新版文本
-- **AND** A 的晚到结果不改变页面环境状态。
+- **GIVEN** 恶意 renderer 调用 onboarding install IPC
+- **WHEN** 请求包含非白名单值或额外 command、URL、args
+- **THEN** 主进程拒绝请求
+- **AND** 不启动任何子进程。
 
-#### Scenario: 操作系统明确报告 Codex 缺失
+#### Scenario: Kimi 安装管道
 
-- **GIVEN** 启动 `codex --version` 时操作系统返回 `ENOENT` 或 `ENOTDIR`
-- **WHEN** 检查结果到达 renderer
-- **THEN** 第 1 步展示缺失态及安装恢复
-- **AND** 结果不包含原始异常文本或本地路径。
+- **GIVEN** 用户启动 Kimi 安装
+- **WHEN** 主进程创建安装任务
+- **THEN** curl 与 bash 分别以参数数组和 `shell:false` 启动
+- **AND** 下载输出只通过 Node stream 输入 bash stdin。
 
-#### Scenario: Codex 存在但检查不可用
+### Requirement: 引导后台安装受退出协调
 
-- **GIVEN** `codex --version` 非零退出、返回 `EACCES` / 其他启动异常，或成功退出但没有非空版本文本
-- **WHEN** 检查结果到达 renderer
-- **THEN** 第 1 步展示不可运行态而不是安装恢复
-- **AND** 结果不包含原始 stderr、异常文本或本地路径。
+Source: docs/product/pages/onboarding.md#操作与反馈
 
-#### Scenario: 不扩展可运行性探针
+安装 MUST 在用户离开第 1 步后继续，并通过主进程到 renderer 的安全 snapshot subscription 提供单项或双项聚合状态。已挂载且初始没有任务的操作台 MUST 能被后续回看引导启动的安装事件唤醒，并在任务成功后刷新 readiness。应用关闭且仍有运行任务时 MUST 阻止本次退出，允许用户留在应用或取消全部并退出；取消退出 MUST 等待所有已启动子进程实际 `close` 后才继续，MUST NOT 遗留孤儿安装进程。无法确认回收时 MUST 阻止退出并显示脱敏提示，MUST NOT 伪报取消成功。
 
-- **GIVEN** 用户进入引导第 1 步或触发重新检查
-- **WHEN** 主进程执行环境检查
-- **THEN** 唯一被探测的命令是 `codex --version`
-- **AND** 登录态、自定义 provider 和模型请求不属于本次检查。
+#### Scenario: 取消双安装并退出
+
+- **GIVEN** Codex 与 Kimi 安装都在运行
+- **WHEN** 用户选择取消全部安装并退出
+- **THEN** 主进程等待两套任务及 Kimi 管道全部子进程实际关闭
+- **AND** 确认回收后才退出。
+
+#### Scenario: 无法确认回收
+
+- **GIVEN** 安装子进程在 SIGTERM 与 SIGKILL 后仍未报告关闭
+- **WHEN** 回收期限到达
+- **THEN** 取消 Promise 以安全错误拒绝且任务保持 running
+- **AND** 应用保持打开并显示不含 PID、路径或底层输出的提示。
 
 ### Requirement: 第 2 步默认选择内置开发团队
 
@@ -915,11 +926,11 @@ Acceptance ID: `onboarding#11`
 Source: docs/product/pages/onboarding.md#指标与验收
 Acceptance ID: `onboarding#23`
 
-用户提交 AI 建队目标、追问回答或自然语言调整后，renderer MUST 在等待 Codex 结果期间立即把正文显示为右侧用户消息气泡，并在其后显示 AI 正在输入状态。服务端公开消息包含本轮用户消息后，renderer MUST 把临时气泡无重复地收敛为正式消息；系统 MUST NOT 等到完整 turn 返回才第一次显示用户正文。
+用户提交 AI 建队目标、追问回答或自然语言调整后，renderer MUST 在等待所选 CLI 结果期间立即把正文显示为右侧用户消息气泡，并在其后显示 AI 正在输入状态。服务端公开消息包含本轮用户消息后，renderer MUST 把临时气泡无重复地收敛为正式消息；系统 MUST NOT 等到完整 turn 返回才第一次显示用户正文。
 
-#### Scenario: Codex 回复尚未返回
+#### Scenario: 所选 CLI 回复尚未返回
 
-- **GIVEN** AI 建队输入框可提交且服务端 callback 仍在等待 Codex
+- **GIVEN** AI 建队输入框可提交且服务端 callback 仍在等待草稿冻结的 CLI
 - **WHEN** 用户发送一条非空消息
 - **THEN** 输入框清空并锁定
 - **AND** 同一条正文立即显示为右侧用户消息气泡
@@ -978,7 +989,7 @@ Acceptance ID: `onboarding#13`
 
 #### Scenario: 遍历所有引导状态
 
-- **GIVEN** 测试依次渲染 Codex 成功、缺失、团队选择、接力 slot、完成和 AI 建队状态
+- **GIVEN** 测试依次渲染 Codex-only、Kimi-only、双缺失、团队选择、接力 slot、完成和 AI 建队状态
 - **WHEN** 收集所有可见文案
 - **THEN** 不包含任何禁止术语。
 
@@ -1015,11 +1026,11 @@ Acceptance ID: `onboarding#15`
 Source: docs/product/pages/onboarding.md#指标与验收
 Acceptance ID: `onboarding#17`
 
-第 2 至第 4 步 MUST 提供“上一步”，第 1 步 MUST 不提供回退入口。返回 MUST 保留本次引导中的 Codex 通过状态和团队选择；从第 4 步返回第 3 步 MUST 增加一次接力重播轮次，使后续实现能从第一棒重新播放。
+第 2 至第 4 步 MUST 提供“上一步”，第 1 步 MUST 不提供回退入口。返回 MUST 保留本次引导中的双 CLI readiness、安装任务状态和团队选择；从第 4 步返回第 3 步 MUST 增加一次接力重播轮次，使后续实现能从第一棒重新播放。
 
 #### Scenario: 从第 4 步返回团队选择
 
-- **GIVEN** 用户已通过 Codex 检查、选择团队并到达第 4 步
+- **GIVEN** 用户已有至少一套 CLI ready、选择团队并到达第 4 步
 - **WHEN** 用户连续两次点击“上一步”
 - **THEN** 页面回到第 2 步
 - **AND** 原团队仍为选中态

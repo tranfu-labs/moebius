@@ -85,6 +85,10 @@ import {
 } from "./external-link.js";
 import { registerSessionLogClipboardIpc } from "./session-log-clipboard.js";
 import { registerOnboardingIpc } from "./onboarding/ipc.js";
+import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
+import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
+import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
+import { installerCleanupBlockedDialogOptions } from "./onboarding/shutdown-coordination.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(dirname, "..", "..");
@@ -118,6 +122,7 @@ let observerServer: StartedObserverServer | null = null;
 let localConsoleServer: StartedLocalConsoleServer | null = null;
 let localConsoleAttachmentCapability: string | null = null;
 let runnerSupervisor: RunnerSupervisor | null = null;
+let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let isQuitting = false;
 
 const status: DesktopStatusSnapshot = {
@@ -150,6 +155,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 let shutdownPromise: Promise<void> | null = null;
+let quitCoordinationPromise: Promise<void> | null = null;
 let shutdownComplete = false;
 
 app.on("before-quit", (event) => {
@@ -157,25 +163,43 @@ app.on("before-quit", (event) => {
     return;
   }
   event.preventDefault();
-  void shutdownAndQuit();
+  void requestShutdown();
 });
 
 app.on("window-all-closed", () => {
   if (!isQuitting) {
-    void shutdownAndQuit();
+    void requestShutdown();
   }
 });
 
 async function boot(): Promise<void> {
+  const onboardingReadiness = new OnboardingCliReadinessService();
+  const teamBuilder = new AiTeamBuilder({
+    dataRoot: status.dataRoot,
+    resolveExecutionProfile: async () => onboardingReadiness.resolveBuilderExecutionProfile(),
+  });
+  onboardingCliInstaller = new OnboardingCliInstallManager({
+    onInstallSucceeded: async (cli) => {
+      await onboardingReadiness.check(cli);
+    },
+  });
+  onboardingCliInstaller.subscribe((snapshot) => {
+    if (mainWindow !== null && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
+    }
+  });
   registerAiTeamBuilderIpc({
     ipcMain,
-    builder: new AiTeamBuilder({ dataRoot: status.dataRoot }),
+    builder: teamBuilder,
   });
 
   registerOnboardingIpc({
     ipcMain,
     getDataRoot: () => status.dataRoot,
     clipboard,
+    readiness: onboardingReadiness,
+    installer: onboardingCliInstaller,
+    teamBuilder,
   });
   if (process.platform === "darwin" && !app.isPackaged) {
     app.dock?.setIcon(path.join(dirname, "app-icon-1024.png"));
@@ -236,6 +260,15 @@ function createWindow(): void {
     },
   });
 
+  mainWindow.on("close", (event) => {
+    if (
+      !isQuitting
+      && (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0
+    ) {
+      event.preventDefault();
+      void requestShutdown();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -571,6 +604,54 @@ async function shutdownAndQuit(): Promise<void> {
     app.quit();
   })();
   return shutdownPromise;
+}
+
+async function requestShutdown(): Promise<void> {
+  if (shutdownComplete || shutdownPromise !== null) {
+    await shutdownAndQuit();
+    return;
+  }
+  if (quitCoordinationPromise !== null) {
+    return quitCoordinationPromise;
+  }
+  quitCoordinationPromise = (async () => {
+    const running = onboardingCliInstaller?.getRunningClis() ?? [];
+    if (running.length > 0) {
+      const options = {
+        type: "warning" as const,
+        buttons: ["留在应用", "取消安装并退出"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "CLI 仍在安装",
+        message: running.length === 1
+          ? `${running[0] === "codex" ? "Codex" : "Kimi"} CLI 仍在安装。`
+          : "Codex 与 Kimi CLI 仍在安装。",
+        detail: "可以留在 Moebius 等待安装完成，或取消全部安装后退出。",
+        noLink: true,
+      };
+      const result = mainWindow === null
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(mainWindow, options);
+      if (result.response === 0) {
+        return;
+      }
+      try {
+        await onboardingCliInstaller?.cancelAll();
+      } catch {
+        const cleanupBlocked = installerCleanupBlockedDialogOptions();
+        if (mainWindow === null) {
+          await dialog.showMessageBox(cleanupBlocked);
+        } else {
+          await dialog.showMessageBox(mainWindow, cleanupBlocked);
+        }
+        return;
+      }
+    }
+    await shutdownAndQuit();
+  })().finally(() => {
+    quitCoordinationPromise = null;
+  });
+  return quitCoordinationPromise;
 }
 
 async function closeObserver(): Promise<void> {

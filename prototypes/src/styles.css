@@ -161,6 +161,99 @@ button:focus-visible,
   color: var(--fg);
 }
 
+.install-aggregate {
+  position: absolute;
+  left: 50%;
+  z-index: 8;
+  transform: translateX(-50%);
+}
+
+.install-aggregate__trigger {
+  display: inline-flex;
+  min-height: 30px;
+  cursor: pointer;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 11px;
+}
+
+.install-aggregate__trigger:hover,
+.install-aggregate__trigger[aria-expanded="true"] {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.install-popover {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  width: 320px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--raised);
+  transform: translateX(-50%);
+}
+
+.install-popover__head,
+.install-popover__item {
+  display: flex;
+  align-items: center;
+}
+
+.install-popover__head {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.install-popover__head strong,
+.install-popover__item strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.install-popover__head span,
+.install-popover__item small {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.install-popover__item {
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.install-popover__item + .install-popover__item {
+  border-top: 1px solid var(--border);
+}
+
+.install-popover__item > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.install-popover__item button {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 5px;
+}
+
+.install-popover__item button:hover {
+  color: var(--danger);
+}
+
 /* ---------- 引导舞台 ---------- */
 
 .onboarding-stage {
@@ -366,6 +459,135 @@ button:focus-visible,
   border-radius: 16px;
   background: var(--surface);
   padding: 6px;
+}
+
+.cli-check-list {
+  padding: 0;
+}
+
+.cli-check-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.cli-check-row + .cli-check-row {
+  border-top: 1px solid var(--border);
+}
+
+.cli-check-row__body {
+  min-width: 0;
+}
+
+.cli-check-row__summary {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 8px;
+}
+
+.cli-check-row__summary strong {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cli-check-row__body > p {
+  margin: 1px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.status-icon--running {
+  background: var(--tint-amber);
+  color: var(--amber);
+}
+
+.cli-check-row .install-command {
+  margin-top: 10px;
+}
+
+.install-play {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--accent-hover);
+}
+
+.install-play:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.installation-inline,
+.installation-inline > span,
+.installation-inline button,
+.inline-retry,
+.environment-note {
+  display: flex;
+  align-items: center;
+}
+
+.installation-inline {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.installation-inline > span {
+  gap: 7px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.installation-inline i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--amber);
+  animation: checking-blink 900ms ease-in-out infinite;
+}
+
+.installation-inline button,
+.inline-retry {
+  cursor: pointer;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 6px 8px;
+}
+
+.installation-inline button:hover,
+.inline-retry:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.inline-retry {
+  margin-top: 10px;
+}
+
+.environment-note {
+  gap: 7px;
+  border-top: 1px solid var(--border);
+  margin: 0;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.45;
+  padding: 11px 16px;
 }
 
 .status-row {
@@ -773,6 +995,25 @@ button:focus-visible,
   color: var(--muted);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.team-compatibility-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--tint-amber);
+  margin: 12px 0 0 30px;
+  color: var(--amber);
+  font-size: 10px;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
+.team-compatibility-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .team-builder {
@@ -1567,6 +1808,40 @@ button:focus-visible,
   color: var(--success);
 }
 
+.ready-mark--neutral {
+  background: var(--raised);
+  color: var(--muted);
+}
+
+.ready-compatibility {
+  max-width: 360px;
+  margin: 14px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.destination-compatibility {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--tint-amber);
+  color: var(--amber);
+  padding: 9px 10px;
+}
+
+.destination-compatibility svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.destination-compatibility p {
+  margin: 0;
+  color: inherit;
+}
+
 /* ---------- 新建对话去向 ---------- */
 
 .conversation-layout {
@@ -1921,6 +2196,20 @@ button:focus-visible,
     justify-self: end;
   }
 
+  .install-aggregate__trigger span {
+    display: none;
+  }
+
+  .install-aggregate__trigger {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .install-popover {
+    width: min(320px, calc(100vw - 36px));
+  }
+
   .onboarding-stage {
     justify-content: flex-start;
     padding: 34px 18px 28px;
@@ -1960,6 +2249,10 @@ button:focus-visible,
     align-items: stretch;
     flex-direction: column;
     margin-left: 30px;
+  }
+
+  .team-compatibility-warning {
+    margin-left: 0;
   }
 
   .team-builder {

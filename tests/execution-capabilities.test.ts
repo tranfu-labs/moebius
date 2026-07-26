@@ -151,4 +151,44 @@ describe("execution capability discovery", () => {
       ["kimi", ["provider", "list", "--json"], 5_000],
     ]);
   });
+
+  it("reuses a prechecked Kimi version instead of running the version command twice", async () => {
+    const run = vi.fn<SafeCommandRunner>().mockResolvedValue({
+      stdout: JSON.stringify({
+        providers: [{
+          models: [{
+            alias: "kimi-for-coding",
+            support_efforts: ["high"],
+            default_effort: "high",
+          }],
+        }],
+      }),
+    });
+    const result = await probeKimiCapabilities({
+      knownCliVersion: "kimi 1.2.3",
+      runCommand: run,
+    });
+    expect(result).toMatchObject({
+      status: "available",
+      cliVersion: "kimi 1.2.3",
+    });
+    expect(run).toHaveBeenCalledExactlyOnceWith(
+      "kimi",
+      ["provider", "list", "--json"],
+      5_000,
+    );
+  });
+
+  it("classifies an explicitly empty Kimi provider list as authentication required", async () => {
+    const run = vi.fn<SafeCommandRunner>()
+      .mockResolvedValueOnce({ stdout: "kimi 1.2.3\n" })
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ providers: {}, models: {} }) });
+    const result = await probeKimiCapabilities({ runCommand: run });
+    expect(result).toMatchObject({
+      status: "unavailable",
+      failureCode: "AUTHENTICATION_REQUIRED",
+      models: [],
+    });
+    expect(result.reason).not.toContain("provider-token");
+  });
 });

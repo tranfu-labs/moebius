@@ -35,20 +35,22 @@ describe("AiTeamBuilderCodexSpawner", () => {
         stderrPath: path.join(options.runDir, "stderr.log"),
       };
     });
-    const spawner = new AiTeamBuilderCodexSpawner({ run, model: "test-model" });
+    const spawner = new AiTeamBuilderCodexSpawner({ run });
 
     await expect(spawner.execute({
       dataRoot,
       draftId: "draft-1",
       prompt: "持续做产品发布",
-      threadId: null,
-    })).resolves.toMatchObject({ ok: true, threadId: "thread-1" });
+      profile: { cli: "codex", model: "test-model", effort: "medium" },
+      externalSessionId: null,
+    })).resolves.toMatchObject({ ok: true, externalSessionId: "thread-1" });
     await expect(spawner.execute({
       dataRoot,
       draftId: "draft-1",
       prompt: "面向专业用户",
-      threadId: "thread-1",
-    })).resolves.toMatchObject({ ok: true, threadId: "thread-1" });
+      profile: { cli: "codex", model: "test-model", effort: "medium" },
+      externalSessionId: "thread-1",
+    })).resolves.toMatchObject({ ok: true, externalSessionId: "thread-1" });
 
     expect(calls).toHaveLength(2);
     expect(calls[0]).toMatchObject({
@@ -68,6 +70,9 @@ describe("AiTeamBuilderCodexSpawner", () => {
       "--sandbox",
       "read-only",
       "--output-schema",
+      "-m",
+      "test-model",
+      'model_reasoning_effort="medium"',
     ]));
     expect(calls[1]?.execOptions).toEqual(expect.arrayContaining([
       "--sandbox",
@@ -117,7 +122,8 @@ describe("AiTeamBuilderCodexSpawner", () => {
       dataRoot,
       draftId: "draft-2",
       prompt: "调整成员",
-      threadId: "missing-thread",
+      profile: { cli: "codex", model: "test-model", effort: "high" },
+      externalSessionId: "missing-thread",
     });
 
     expect(result).toEqual({ ok: false, reason: "exit-code-1", resumeFailed: true });

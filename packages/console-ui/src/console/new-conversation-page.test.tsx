@@ -119,6 +119,42 @@ describe("NewConversationPage", () => {
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
     expect(screen.getByText("磁盘空间不足")).toBeVisible();
   });
+
+  it("keeps the selected team's CLI compatibility warning until readiness recovers", () => {
+    const teams: NewConversationPageProps["teams"] = [{
+      teamKey: "system:development",
+      label: "开发团队",
+      members: [
+        {
+          slug: "dev",
+          displayName: "开发",
+          description: "实现功能",
+          executionProfile: { effective: { cli: "codex" } },
+        },
+        {
+          slug: "qa",
+          displayName: "测试",
+          description: "功能验收",
+          executionProfile: { effective: { cli: "kimi" } },
+        },
+      ],
+    }];
+    const { rerender } = renderPage({
+      teams,
+      cliReadiness: { codex: true, kimi: false },
+    });
+
+    expect(screen.getByTestId("new-conversation-team-compatibility")).toHaveTextContent(
+      "其中 1 名成员仍需完成 Kimi 准备",
+    );
+
+    rerender(<NewConversationPage
+      {...baseProps()}
+      teams={teams}
+      cliReadiness={{ codex: true, kimi: true }}
+    />);
+    expect(screen.queryByTestId("new-conversation-team-compatibility")).not.toBeInTheDocument();
+  });
 });
 
 const projects = [

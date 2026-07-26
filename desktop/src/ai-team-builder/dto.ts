@@ -5,6 +5,7 @@ import type {
   AiTeamBuilderPhase,
 } from "./state-machine.js";
 import type { AiTeamBuilderProposal } from "./validator.js";
+import type { ExecutionCli } from "../team-execution-profile.js";
 
 export type AiTeamBuilderAction = "retry" | "cancel" | "commit" | "adjust";
 
@@ -15,6 +16,7 @@ export interface AiTeamBuilderErrorSummary {
 }
 
 export interface AiTeamBuilderState {
+  builderCli: ExecutionCli | null;
   phase: AiTeamBuilderPhase;
   messages: AiTeamBuilderMessage[];
   proposal: AiTeamBuilderProposal | null;
@@ -26,6 +28,7 @@ export interface AiTeamBuilderState {
 
 export function toAiTeamBuilderState(draft: AiTeamBuilderDraft): AiTeamBuilderState {
   return {
+    builderCli: draft.executionProfile?.cli ?? null,
     phase: draft.phase,
     messages: draft.messages.map((message) => ({ role: message.role, text: message.text })),
     proposal: draft.proposal === null ? null : cloneProposal(draft.proposal),
@@ -73,7 +76,7 @@ function summarizeError(kind: AiTeamBuilderFailureKind): AiTeamBuilderErrorSumma
         humanMessage: "团队创建失败，方案仍已保留，可以重试。",
         canRetry: true,
       };
-    case "codex-failed":
+    case "engine-failed":
     case "interrupted":
       return {
         code: "temporarily-unavailable",

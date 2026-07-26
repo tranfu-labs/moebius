@@ -53,10 +53,14 @@ describe("AI team builder IPC outer boundary", () => {
       execute: vi.fn(async () => ({
         ok: true as const,
         finalText: JSON.stringify(proposal),
-        threadId: "secret-thread-id",
+        externalSessionId: "secret-thread-id",
       })),
     };
-    const handlers = registerForTest(new AiTeamBuilder({ dataRoot, codex }));
+    const handlers = registerForTest(new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    }));
 
     const started = await invoke(handlers, AI_TEAM_BUILDER_IPC_CHANNELS.start, {
       draftId: "onboarding",
@@ -99,9 +103,10 @@ describe("AI team builder IPC outer boundary", () => {
         execute: vi.fn(async () => ({
           ok: true as const,
           finalText: JSON.stringify(proposal),
-          threadId: "thread",
+          externalSessionId: "thread",
         })),
       },
+      resolveExecutionProfile: codexProfile,
       writer: {
         create: vi.fn(async () => {
           throw new Error(`${dataRoot}/private-stack`);
@@ -170,6 +175,10 @@ async function invoke(
     throw new Error(`Missing handler for ${channel}`);
   }
   return handler({}, request);
+}
+
+async function codexProfile() {
+  return { cli: "codex", model: "test-codex", effort: "high" } as const;
 }
 
 async function makeDataRoot(): Promise<string> {

@@ -1,15 +1,28 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { CODEX_MODEL } from "../../../src/config.js";
 import { isValidPathSegment } from "../team-model.js";
+import {
+  normalizeExecutionProfile,
+  type ExecutionCli,
+  type ExecutionProfile,
+} from "../team-execution-profile.js";
 import { AiTeamBuilderCodexSpawner } from "./codex-spawner.js";
+import type { AiTeamBuilderDriverPort } from "./driver.js";
 import { toAiTeamBuilderState, type AiTeamBuilderState } from "./dto.js";
+import {
+  resolveAiTeamBuilderExecutionProfile,
+  type AiTeamBuilderExecutionProfileResolver,
+} from "./execution-profile.js";
+import { AiTeamBuilderKimiSpawner } from "./kimi-spawner.js";
 import {
   acceptAiTeamBuilderClarifying,
   acceptAiTeamBuilderProposal,
   beginAiTeamBuilderCommit,
   beginAiTeamBuilderTurn,
   createAiTeamBuilderDraft,
+  assignAiTeamBuilderExecutionProfile,
   failAiTeamBuilderDraft,
   recoverInterruptedAiTeamBuilderDraft,
   resetAiTeamBuilderThreadForRebuild,
@@ -24,18 +37,7 @@ import {
   type AiTeamBuilderProposal,
 } from "./validator.js";
 
-export interface AiTeamBuilderCodexPort {
-  execute(input: {
-    dataRoot: string;
-    draftId: string;
-    prompt: string;
-    threadId: string | null;
-    signal?: AbortSignal;
-  }): Promise<
-    | { ok: true; finalText: string; threadId: string }
-    | { ok: false; reason: string; resumeFailed: boolean }
-  >;
-}
+export type AiTeamBuilderCodexPort = AiTeamBuilderDriverPort;
 
 export interface AiTeamBuilderWriterPort {
   create(dataRoot: string, proposal: AiTeamBuilderProposal): Promise<{ teamId: string }>;
@@ -43,19 +45,27 @@ export interface AiTeamBuilderWriterPort {
 
 export interface AiTeamBuilderOptions {
   dataRoot: string;
-  codex?: AiTeamBuilderCodexPort;
+  codex?: AiTeamBuilderDriverPort;
+  kimi?: AiTeamBuilderDriverPort;
+  resolveExecutionProfile?: AiTeamBuilderExecutionProfileResolver;
   writer?: AiTeamBuilderWriterPort;
 }
 
 export class AiTeamBuilder {
   private readonly dataRoot: string;
-  private readonly codex: AiTeamBuilderCodexPort;
+  private readonly drivers: Readonly<Record<ExecutionCli, AiTeamBuilderDriverPort>>;
+  private readonly resolveExecutionProfile: AiTeamBuilderExecutionProfileResolver;
   private readonly writer: AiTeamBuilderWriterPort;
   private readonly mutations = new Map<string, Promise<AiTeamBuilderState>>();
 
   constructor(options: AiTeamBuilderOptions) {
     this.dataRoot = path.resolve(options.dataRoot);
-    this.codex = options.codex ?? new AiTeamBuilderCodexSpawner();
+    this.drivers = {
+      codex: options.codex ?? new AiTeamBuilderCodexSpawner(),
+      kimi: options.kimi ?? new AiTeamBuilderKimiSpawner(),
+    };
+    this.resolveExecutionProfile =
+      options.resolveExecutionProfile ?? resolveAiTeamBuilderExecutionProfile;
     this.writer = options.writer ?? new AiTeamWriter();
   }
 
@@ -66,12 +76,13 @@ export class AiTeamBuilder {
   }
 
   async start(draftId: string): Promise<AiTeamBuilderState> {
-    return this.mutate(draftId, async () => toAiTeamBuilderState(await this.loadDraft(draftId)));
+    return this.mutate(draftId, async () =>
+      toAiTeamBuilderState(await this.ensureExecutionProfile(await this.loadDraft(draftId))));
   }
 
   async submit(draftId: string, text: string): Promise<AiTeamBuilderState> {
     return this.mutate(draftId, async () => {
-      const current = await this.loadDraft(draftId);
+      const current = await this.ensureExecutionProfile(await this.loadDraft(draftId));
       if (current.phase !== "idle" && current.phase !== "clarifying") {
         throw new AiTeamBuilderRequestError(`Cannot submit input while ${current.phase}.`);
       }
@@ -144,52 +155,57 @@ export class AiTeamBuilder {
   private async runCurrentTurn(initial: AiTeamBuilderDraft): Promise<AiTeamBuilderState> {
     const expectedTurnRevision = initial.turnRevision;
     let running = initial;
-    let result = await this.codex.execute({
+    const profile = requireExecutionProfile(running);
+    const driver = this.drivers[profile.cli];
+    let result = await driver.execute({
       dataRoot: this.dataRoot,
       draftId: running.draftId,
       prompt: running.pendingPrompt!,
-      threadId: running.threadId,
+      profile,
+      externalSessionId: running.externalSessionId,
     });
 
     if (!result.ok && result.resumeFailed && !running.threadRebuildUsed) {
       running = resetAiTeamBuilderThreadForRebuild(running);
       await this.saveDraft(running);
-      result = await this.codex.execute({
+      result = await driver.execute({
         dataRoot: this.dataRoot,
         draftId: running.draftId,
         prompt: buildReconstructionPrompt(running),
-        threadId: null,
+        profile,
+        externalSessionId: null,
       });
     }
     if (!result.ok) {
       return this.finishFailedTurn(
         running,
         {
-          kind: result.resumeFailed ? "resume-failed" : "codex-failed",
+          kind: result.resumeFailed ? "resume-failed" : "engine-failed",
           internalReason: result.reason,
         },
       );
     }
 
-    let threadId = result.threadId;
+    let externalSessionId = result.externalSessionId;
     let validation = parseAndValidateAiTeamBuilderOutput(result.finalText);
     if (!validation.ok) {
-      const repairResult = await this.codex.execute({
+      const repairResult = await driver.execute({
         dataRoot: this.dataRoot,
         draftId: running.draftId,
         prompt: buildRepairPrompt(validation.issues),
-        threadId,
+        profile,
+        externalSessionId,
       });
       if (!repairResult.ok) {
         return this.finishFailedTurn(
           running,
           {
-            kind: repairResult.resumeFailed ? "resume-failed" : "codex-failed",
+            kind: repairResult.resumeFailed ? "resume-failed" : "engine-failed",
             internalReason: repairResult.reason,
           },
         );
       }
-      threadId = repairResult.threadId;
+      externalSessionId = repairResult.externalSessionId;
       validation = parseAndValidateAiTeamBuilderOutput(repairResult.finalText);
       if (!validation.ok) {
         return this.finishFailedTurn(
@@ -207,8 +223,8 @@ export class AiTeamBuilder {
       return toAiTeamBuilderState(latest);
     }
     const completed = validation.value.phase === "clarifying"
-      ? acceptAiTeamBuilderClarifying(latest, validation.value.question, threadId)
-      : acceptAiTeamBuilderProposal(latest, validation.value, threadId);
+      ? acceptAiTeamBuilderClarifying(latest, validation.value.question, externalSessionId)
+      : acceptAiTeamBuilderProposal(latest, validation.value, externalSessionId);
     await this.saveDraft(completed);
     return toAiTeamBuilderState(completed);
   }
@@ -247,7 +263,11 @@ export class AiTeamBuilder {
     const draftPath = this.getDraftPath(draftId);
     let draft: AiTeamBuilderDraft;
     try {
-      draft = parseStoredDraft(await fs.readFile(draftPath, "utf8"), draftId);
+      const parsed = parseStoredDraft(await fs.readFile(draftPath, "utf8"), draftId);
+      draft = parsed.draft;
+      if (parsed.migrated) {
+        await this.saveDraft(draft);
+      }
     } catch (error) {
       if (!isNodeError(error) || error.code !== "ENOENT") {
         throw error;
@@ -264,6 +284,18 @@ export class AiTeamBuilder {
       await this.saveDraft(recovered);
     }
     return recovered;
+  }
+
+  private async ensureExecutionProfile(draft: AiTeamBuilderDraft): Promise<AiTeamBuilderDraft> {
+    if (draft.executionProfile !== null) {
+      return draft;
+    }
+    const assigned = assignAiTeamBuilderExecutionProfile(
+      draft,
+      await this.resolveExecutionProfile(),
+    );
+    await this.saveDraft(assigned);
+    return assigned;
   }
 
   private async saveDraft(draft: AiTeamBuilderDraft): Promise<void> {
@@ -311,16 +343,60 @@ ${proposal}
 ${draft.pendingPrompt ?? ""}`;
 }
 
-function parseStoredDraft(source: string, expectedDraftId: string): AiTeamBuilderDraft {
+function parseStoredDraft(
+  source: string,
+  expectedDraftId: string,
+): { draft: AiTeamBuilderDraft; migrated: boolean } {
   const value: unknown = JSON.parse(source);
   if (!isPlainObject(value)
-    || value.version !== 1
     || value.draftId !== expectedDraftId
     || typeof value.phase !== "string"
     || !Array.isArray(value.messages)) {
     throw new AiTeamBuilderRequestError("Stored AI team builder draft is invalid.");
   }
-  return value as unknown as AiTeamBuilderDraft;
+  if (value.version === 1) {
+    const { threadId: legacyThreadId, ...legacyDraft } = value;
+    const legacyError = isPlainObject(value.error) && value.error.kind === "codex-failed"
+      ? { ...value.error, kind: "engine-failed" }
+      : value.error;
+    return {
+      migrated: true,
+      draft: {
+        ...legacyDraft,
+        version: 2,
+        executionProfile: {
+          cli: "codex",
+          model: CODEX_MODEL,
+          effort: "high",
+        },
+        externalSessionId: typeof legacyThreadId === "string" ? legacyThreadId : null,
+        error: legacyError,
+      } as unknown as AiTeamBuilderDraft,
+    };
+  }
+  if (value.version !== 2) {
+    throw new AiTeamBuilderRequestError("Stored AI team builder draft version is unsupported.");
+  }
+  const executionProfile = value.executionProfile === null
+    ? null
+    : normalizeExecutionProfile(value.executionProfile);
+  return {
+    migrated: false,
+    draft: {
+      ...value,
+      executionProfile,
+      externalSessionId: typeof value.externalSessionId === "string"
+        ? value.externalSessionId
+        : null,
+    } as unknown as AiTeamBuilderDraft,
+  };
+}
+
+function requireExecutionProfile(draft: AiTeamBuilderDraft): ExecutionProfile {
+  if (draft.executionProfile === null) {
+    throw new AiTeamBuilderRequestError("AI team builder execution profile is not assigned.");
+  }
+  return draft.executionProfile;
 }
 
 function assertDraftId(draftId: string): void {

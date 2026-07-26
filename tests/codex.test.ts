@@ -502,6 +502,7 @@ describe("codex provider override", () => {
       developerInstructions: "Only design a team.",
       providerConfig: null,
       model: DEFAULT_CODEX_MODEL,
+      effort: "high",
     };
     const full = buildTeamBuilderExecOptions({ ...common, mode: "full" });
     const resume = buildTeamBuilderExecOptions({ ...common, mode: "resume" });

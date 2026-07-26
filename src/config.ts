@@ -209,6 +209,7 @@ export interface TeamBuilderExecOptionsInput {
   developerInstructions: string;
   providerConfig: CodexProviderConfig | null;
   model: string;
+  effort: string;
 }
 
 export function buildTeamBuilderExecOptions(input: TeamBuilderExecOptionsInput): string[] {
@@ -225,7 +226,7 @@ export function buildTeamBuilderExecOptions(input: TeamBuilderExecOptionsInput):
     "-c",
     "features.fast_mode=true",
     "-c",
-    'model_reasoning_effort="high"',
+    `model_reasoning_effort=${JSON.stringify(input.effort)}`,
     "-c",
     `developer_instructions=${JSON.stringify(input.developerInstructions)}`,
     "--sandbox",

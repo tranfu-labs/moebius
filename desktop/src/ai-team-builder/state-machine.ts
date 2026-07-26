@@ -1,3 +1,4 @@
+import type { ExecutionProfile } from "../team-execution-profile.js";
 import type { AiTeamBuilderProposal } from "./validator.js";
 
 export const AI_TEAM_BUILDER_FIRST_QUESTION = "你希望这支团队长期替你完成什么工作？";
@@ -17,7 +18,7 @@ export interface AiTeamBuilderMessage {
 }
 
 export type AiTeamBuilderFailureKind =
-  | "codex-failed"
+  | "engine-failed"
   | "resume-failed"
   | "invalid-output"
   | "commit-failed"
@@ -29,13 +30,14 @@ export interface AiTeamBuilderInternalError {
 }
 
 export interface AiTeamBuilderDraft {
-  version: 1;
+  version: 2;
   draftId: string;
   phase: AiTeamBuilderPhase;
   messages: AiTeamBuilderMessage[];
   proposal: AiTeamBuilderProposal | null;
   proposalRevision: number | null;
-  threadId: string | null;
+  executionProfile: ExecutionProfile | null;
+  externalSessionId: string | null;
   turnRevision: number;
   pendingPrompt: string | null;
   threadRebuildUsed: boolean;
@@ -46,7 +48,7 @@ export interface AiTeamBuilderDraft {
 
 export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
   return {
-    version: 1,
+    version: 2,
     draftId,
     phase: "idle",
     messages: [
@@ -57,7 +59,8 @@ export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
     ],
     proposal: null,
     proposalRevision: null,
-    threadId: null,
+    executionProfile: null,
+    externalSessionId: null,
     turnRevision: 0,
     pendingPrompt: null,
     threadRebuildUsed: false,
@@ -93,17 +96,35 @@ export function beginAiTeamBuilderTurn(
   };
 }
 
+export function assignAiTeamBuilderExecutionProfile(
+  draft: AiTeamBuilderDraft,
+  executionProfile: ExecutionProfile,
+): AiTeamBuilderDraft {
+  if (draft.executionProfile !== null) {
+    return draft;
+  }
+  if (draft.phase !== "idle") {
+    throw new AiTeamBuilderTransitionError(
+      `Cannot assign an execution profile while ${draft.phase}.`,
+    );
+  }
+  return {
+    ...draft,
+    executionProfile: { ...executionProfile },
+  };
+}
+
 export function acceptAiTeamBuilderClarifying(
   draft: AiTeamBuilderDraft,
   question: string,
-  threadId: string,
+  externalSessionId: string,
 ): AiTeamBuilderDraft {
   assertRunning(draft);
   return {
     ...draft,
     phase: "clarifying",
     messages: [...draft.messages, { role: "assistant", text: question }],
-    threadId,
+    externalSessionId,
     pendingPrompt: null,
     error: null,
     failedFrom: null,
@@ -113,7 +134,7 @@ export function acceptAiTeamBuilderClarifying(
 export function acceptAiTeamBuilderProposal(
   draft: AiTeamBuilderDraft,
   proposal: AiTeamBuilderProposal,
-  threadId: string,
+  externalSessionId: string,
 ): AiTeamBuilderDraft {
   assertRunning(draft);
   const proposalRevision = (draft.proposalRevision ?? 0) + 1;
@@ -129,7 +150,7 @@ export function acceptAiTeamBuilderProposal(
     ],
     proposal,
     proposalRevision,
-    threadId,
+    externalSessionId,
     pendingPrompt: null,
     error: null,
     failedFrom: null,
@@ -165,7 +186,7 @@ export function resetAiTeamBuilderThreadForRebuild(draft: AiTeamBuilderDraft): A
       },
     ],
     proposalRevision: 0,
-    threadId: null,
+    externalSessionId: null,
     threadRebuildUsed: true,
     error: null,
     failedFrom: null,

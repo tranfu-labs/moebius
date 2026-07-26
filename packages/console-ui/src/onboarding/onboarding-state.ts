@@ -1,6 +1,39 @@
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 
 export type OnboardingStep = 1 | 2 | 3 | 4;
+export type OnboardingCli = "codex" | "kimi";
+
+export type OnboardingCliReadinessStatus =
+  | "checking"
+  | "ready"
+  | "missing"
+  | "needs-login"
+  | "unavailable";
+
+export interface OnboardingCliReadiness {
+  status: OnboardingCliReadinessStatus;
+  revision: number;
+  version?: string;
+  lastKnownReady?: boolean;
+}
+
+export type OnboardingCliInstallStatus =
+  | "idle"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed-out";
+
+export interface OnboardingCliInstallation {
+  cli: OnboardingCli;
+  status: OnboardingCliInstallStatus;
+  revision: number;
+  stage?: "starting" | "downloading" | "installing" | "verifying";
+}
+
+export type OnboardingEnvironmentState = Record<OnboardingCli, OnboardingCliReadiness>;
+export type OnboardingInstallationState = Record<OnboardingCli, OnboardingCliInstallation>;
 
 export interface OnboardingShellState {
   step: OnboardingStep;
@@ -29,6 +62,66 @@ export function createOnboardingShellState(
     teamBuilderOpen: false,
     relayRun: 0,
   };
+}
+
+export function isOnboardingCliReady(state: OnboardingCliReadiness): boolean {
+  return state.status === "ready"
+    || (state.status === "checking" && state.lastKnownReady === true);
+}
+
+export function canContinueOnboardingEnvironment(
+  environment: OnboardingEnvironmentState,
+): boolean {
+  return isOnboardingCliReady(environment.codex)
+    || isOnboardingCliReady(environment.kimi);
+}
+
+export function chooseOnboardingBuilderCli(
+  environment: OnboardingEnvironmentState,
+): OnboardingCli | null {
+  if (isOnboardingCliReady(environment.codex)) {
+    return "codex";
+  }
+  return isOnboardingCliReady(environment.kimi) ? "kimi" : null;
+}
+
+export interface OnboardingTeamCompatibility {
+  affectedCount: number;
+  clis: OnboardingCli[];
+  copy: string;
+}
+
+export function getOnboardingTeamCompatibility(
+  team: OperatorAgentTeam | null,
+  environment: OnboardingEnvironmentState,
+): OnboardingTeamCompatibility {
+  if (team === null) {
+    return { affectedCount: 0, clis: [], copy: "" };
+  }
+  const missing = team.members.flatMap((member): OnboardingCli[] => {
+    const cli = member.executionProfile?.effective?.cli;
+    return (cli === "codex" || cli === "kimi") && !isOnboardingCliReady(environment[cli])
+      ? [cli]
+      : [];
+  });
+  const clis = [...new Set(missing)];
+  return {
+    affectedCount: missing.length,
+    clis,
+    copy: missing.length === 0
+      ? ""
+      : `其中 ${String(missing.length)} 名成员仍需完成 ${clis
+        .map((cli) => cli === "codex" ? "Codex" : "Kimi")
+        .join(" / ")} 准备`,
+  };
+}
+
+export function runningOnboardingInstallations(
+  installations: OnboardingInstallationState,
+): OnboardingCliInstallation[] {
+  return (["codex", "kimi"] as const)
+    .map((cli) => installations[cli])
+    .filter((installation) => installation.status === "running");
 }
 
 export function reduceOnboardingShell(

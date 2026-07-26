@@ -49,9 +49,14 @@ describe("AiTeamWriter", () => {
         execute: vi.fn(async () => ({
           ok: true as const,
           finalText: JSON.stringify({ phase: "proposal", ...proposal }),
-          threadId: "unconfirmed-draft-thread",
+          externalSessionId: "unconfirmed-draft-thread",
         })),
       },
+      resolveExecutionProfile: async () => ({
+        cli: "codex",
+        model: "test-codex",
+        effort: "high",
+      }),
     });
 
     await expect(builder.submit("agent-teams", "持续负责产品发布")).resolves.toMatchObject({

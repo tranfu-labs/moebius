@@ -32,6 +32,8 @@ export interface KimiAcpRunOptions {
   idleTimeoutMs?: number;
   maxDurationMs?: number;
   runtimeHomePaths?: KimiRuntimeHomePaths;
+  workspaceAccess?: "read-write" | "read-only";
+  permissionMode?: string;
   onVisibleAgentMarkdown?: (text: string) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
   transportFactory?: (input: {
@@ -40,6 +42,7 @@ export interface KimiAcpRunOptions {
     stdoutPath: string;
     stderrPath: string;
     env: NodeJS.ProcessEnv;
+    allowWrites: boolean;
   }) => Promise<KimiAcpTransport>;
 }
 
@@ -77,6 +80,7 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
       stdoutPath,
       stderrPath,
       env: withManagedKimiHome(process.env, runtimeHomes.managedHome),
+      allowWrites: options.workspaceAccess !== "read-only",
     });
     return await runKimiAcpWithTransport(transport, {
       ...options,
@@ -191,7 +195,7 @@ export async function runKimiAcpWithTransport(
       protocolVersion: ACP_PROTOCOL_VERSION,
       clientInfo: { name: "moebius", version: "1" },
       clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
+        fs: kimiClientFsCapabilities(options.workspaceAccess),
         terminal: false,
       },
     }));
@@ -243,6 +247,7 @@ export async function runKimiAcpWithTransport(
       readConfigOptions(sessionResult),
       options.profile.model,
       options.profile.effort,
+      options.permissionMode ?? "auto",
     );
     await raceLifecycle(Promise.resolve(options.onSessionStarted?.(sessionId)));
 
@@ -287,6 +292,7 @@ export async function confirmRuntimeConfig(
   configOptions: readonly unknown[],
   expectedModel: string,
   expectedEffort: string,
+  expectedPermissionMode = "auto",
 ): Promise<void> {
   const model = findConfigOption(configOptions, "model");
   const effort = findConfigOption(configOptions, "effort");
@@ -299,7 +305,7 @@ export async function confirmRuntimeConfig(
   }
   await setAndConfirm(model, expectedModel, "模型");
   await setAndConfirm(effort, expectedEffort, "思考程度");
-  await setAndConfirm(mode, "auto", "权限模式");
+  await setAndConfirm(mode, expectedPermissionMode, "权限模式");
 
   async function setAndConfirm(
     option: { id: string; currentValue: string | null; values: string[] },
@@ -333,6 +339,15 @@ export async function confirmRuntimeConfig(
   }
 }
 
+export function kimiClientFsCapabilities(
+  workspaceAccess: KimiAcpRunOptions["workspaceAccess"] = "read-write",
+): { readTextFile: true; writeTextFile: boolean } {
+  return {
+    readTextFile: true,
+    writeTextFile: workspaceAccess !== "read-only",
+  };
+}
+
 async function buildPromptContent(prompt: string, imagePaths: readonly string[]): Promise<unknown[]> {
   const content: unknown[] = [{ type: "text", text: prompt }];
   for (const imagePath of imagePaths) {
@@ -364,6 +379,7 @@ async function createKimiProcessTransport(input: {
   stdoutPath: string;
   stderrPath: string;
   env: NodeJS.ProcessEnv;
+  allowWrites: boolean;
 }): Promise<KimiAcpTransport> {
   const child = spawn("kimi", ["acp"], {
     cwd: input.cwd,
@@ -374,7 +390,14 @@ async function createKimiProcessTransport(input: {
   const stdoutLog = createWriteStream(input.stdoutPath, { flags: "a" });
   const stderrLog = createWriteStream(input.stderrPath, { flags: "a" });
   child.stderr.pipe(stderrLog);
-  return new ProcessKimiAcpTransport(child, input.cwd, input.readRoots, stdoutLog, stderrLog);
+  return new ProcessKimiAcpTransport(
+    child,
+    input.cwd,
+    input.readRoots,
+    input.allowWrites,
+    stdoutLog,
+    stderrLog,
+  );
 }
 
 class ProcessKimiAcpTransport implements KimiAcpTransport {
@@ -398,6 +421,7 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
     private readonly child: ChildProcessWithoutNullStreams,
     private readonly cwd: string,
     private readonly readRoots: string[],
+    private readonly allowWrites: boolean,
     private readonly stdoutLog: ReturnType<typeof createWriteStream>,
     private readonly stderrLog: ReturnType<typeof createWriteStream>,
   ) {
@@ -543,6 +567,14 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
         return;
       }
       if (method === "fs/write_text_file") {
+        if (!this.allowWrites) {
+          this.write({
+            jsonrpc: "2.0",
+            id,
+            error: { code: -32601, message: "Method not allowed" },
+          });
+          return;
+        }
         const filePath = await this.resolveAllowedPath(readParamString(params, "path"), true);
         const content = readParamString(params, "content");
         await fs.writeFile(filePath, content, "utf8");

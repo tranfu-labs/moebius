@@ -9,6 +9,12 @@ import {
   registerOnboardingIpc,
   type OnboardingIpcMain,
 } from "../src/onboarding/ipc.js";
+import { OnboardingCliInstallManager } from "../src/onboarding/cli-installer-manager.js";
+import { OnboardingCliReadinessService } from "../src/onboarding/cli-readiness.js";
+import {
+  capabilitySnapshotId,
+  type ExecutionCapabilitySnapshot,
+} from "../src/team-execution-profile.js";
 
 const temporaryRoots: string[] = [];
 
@@ -23,6 +29,11 @@ describe("onboarding IPC boundary", () => {
     temporaryRoots.push(dataRoot);
     const handlers = new Map<string, (event: unknown, request?: unknown) => Promise<unknown>>();
     const writeText = vi.fn();
+    const readiness = new OnboardingCliReadinessService({
+      runCommand: async (command) => ({ stdout: `${command} 1.0\n` }),
+      probeCapabilities: async ({ cli, knownCliVersion }) =>
+        availableCapability(cli, knownCliVersion),
+    });
     const ipcMain: OnboardingIpcMain = {
       handle(channel, listener) {
         handlers.set(channel, listener);
@@ -37,6 +48,7 @@ describe("onboarding IPC boundary", () => {
         detail: "codex-cli 1.0",
       }),
       clipboard: { writeText },
+      readiness,
     });
 
     await expect(invoke(handlers, ONBOARDING_IPC_CHANNELS.status)).resolves.toEqual({
@@ -49,7 +61,23 @@ describe("onboarding IPC boundary", () => {
       detail: "codex-cli 1.0",
     });
     await expect(invoke(handlers, ONBOARDING_IPC_CHANNELS.copyInstallCommand)).resolves.toBeUndefined();
-    expect(writeText).toHaveBeenCalledWith("brew install codex");
+    expect(writeText).toHaveBeenCalledWith("npm install -g @openai/codex");
+    await expect(invoke(
+      handlers,
+      ONBOARDING_IPC_CHANNELS.cliReadinessState,
+    )).resolves.toMatchObject({
+      codex: { cli: "codex", status: "checking", revision: 0 },
+      kimi: { cli: "kimi", status: "checking", revision: 0 },
+    });
+    await expect(invoke(
+      handlers,
+      ONBOARDING_IPC_CHANNELS.cliInstallState,
+    )).resolves.toMatchObject({
+      codex: { cli: "codex", status: "idle", revision: 0 },
+      kimi: { cli: "kimi", status: "idle", revision: 0 },
+    });
+    await invoke(handlers, ONBOARDING_IPC_CHANNELS.cliReadinessCheck, { cli: "codex" });
+    await invoke(handlers, ONBOARDING_IPC_CHANNELS.cliReadinessCheck, { cli: "kimi" });
     await expect(invoke(
       handlers,
       ONBOARDING_IPC_CHANNELS.teamBuilderStart,
@@ -119,6 +147,39 @@ describe("onboarding IPC boundary", () => {
     });
     expect(JSON.stringify(unavailable)).not.toContain("/Users/example");
   });
+
+  it("rejects renderer command injection before starting an installer", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "onboarding-ipc-invalid-"));
+    temporaryRoots.push(dataRoot);
+    const handlers = new Map<string, (event: unknown, request?: unknown) => Promise<unknown>>();
+    const spawnProcess = vi.fn();
+    registerOnboardingIpc({
+      ipcMain: {
+        handle(channel, listener) {
+          handlers.set(channel, listener);
+        },
+      },
+      getDataRoot: () => dataRoot,
+      clipboard: { writeText: vi.fn() },
+      installer: new OnboardingCliInstallManager({
+        spawnProcess: spawnProcess as never,
+      }),
+    });
+
+    await expect(invoke(
+      handlers,
+      ONBOARDING_IPC_CHANNELS.cliInstallStart,
+      {
+        cli: "kimi",
+        command: "bash",
+        url: "https://attacker.invalid/install.sh",
+        args: ["-c", "unsafe"],
+      },
+    )).rejects.toMatchObject({
+      code: "ONBOARDING_IPC_REQUEST_INVALID",
+    });
+    expect(spawnProcess).not.toHaveBeenCalled();
+  });
 });
 
 function invoke(
@@ -131,4 +192,26 @@ function invoke(
     throw new Error(`Missing handler for ${channel}`);
   }
   return handler({}, request);
+}
+
+function availableCapability(
+  cli: "codex" | "kimi",
+  cliVersion: string,
+): ExecutionCapabilitySnapshot {
+  const input = {
+    cli,
+    cliVersion,
+    status: "available" as const,
+    models: [{
+      id: `${cli}-model`,
+      displayName: `${cli} model`,
+      efforts: ["high"],
+      defaultEffort: "high",
+    }],
+  };
+  return {
+    ...input,
+    snapshotId: capabilitySnapshotId(input),
+    checkedAt: "2026-07-26T00:00:00.000Z",
+  };
 }

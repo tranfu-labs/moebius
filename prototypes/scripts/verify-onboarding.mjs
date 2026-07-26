@@ -164,7 +164,15 @@ try {
   await desktopPage.getByTestId("step-1").waitFor();
   await desktopPage.getByRole("heading", { name: "环境准备" }).waitFor();
   await desktopPage.getByText(
-    "moebius 用 codex 来运行每一位团队成员"
+    "Codex 或 Kimi 至少一个可用，就可以启动团队"
+  ).waitFor();
+  await desktopPage.getByText("Codex CLI 可用", { exact: true }).waitFor();
+  await desktopPage.getByText("Kimi CLI 未安装", { exact: true }).waitFor();
+  await desktopPage
+    .getByRole("button", { name: "安装 Kimi CLI" })
+    .waitFor();
+  await desktopPage.getByText(
+    "至少一个可用即可继续；未就绪的 CLI 只影响绑定它的团队成员。"
   ).waitFor();
   await desktopPage.getByText("首次启动", { exact: true }).waitFor();
   const readySurfaceText = await desktopPage.getByTestId("step-1").textContent();
@@ -172,6 +180,7 @@ try {
     throw new Error("The static ready prototype must not claim a detected Codex version.");
   }
   checks.push("static-ready-does-not-fake-version");
+  checks.push("dual-cli-independent-status-and-either-ready-gate");
   if ((await desktopPage.getByTestId("back-action").count()) !== 0) {
     throw new Error("The first onboarding step must not expose a back action.");
   }
@@ -183,9 +192,8 @@ try {
   await expectStableStep(desktopPage, 2);
   await desktopPage.getByRole("heading", { name: "选择一支团队" }).waitFor();
   await desktopPage.getByText("跟 AI 聊出一支新团队").waitFor();
-  await desktopPage.getByText(
-    "你说一下要做什么样的活，AI 帮你把成员组齐"
-  ).waitFor();
+  await desktopPage.getByText(/AI 将使用 Codex 帮你把成员组齐/u).waitFor();
+  await desktopPage.getByTestId("team-compatibility-warning").waitFor();
   checks.push("desktop-copy-step-1-and-2");
   checks.push("keyboard-step-1-to-2");
   await expectActionGeometry(desktopPage, 780);
@@ -200,7 +208,7 @@ try {
   await desktopPage.getByTestId("open-team-builder").click();
   await desktopPage.getByTestId("team-builder").waitFor();
   await desktopPage.getByText("AI 团队设计器").waitFor();
-  await desktopPage.getByText("独立只读 AI 会话").waitFor();
+  await desktopPage.getByText(/使用 Codex CLI · 独立只读 AI 会话/u).waitFor();
   await desktopPage.getByText("仍在第 2 步").waitFor();
   await desktopPage.getByText(
     "你希望这支团队长期替你完成什么工作？"
@@ -403,14 +411,23 @@ try {
   });
   const missingPage = await missingContext.newPage();
   watchExternalRequests(missingPage);
-  await missingPage.goto(`${prototypeUrl}?scenario=missing&theme=light`);
+  await missingPage.goto(`${prototypeUrl}?scenario=both-missing&theme=light`);
   const missingPrimary = missingPage.getByTestId("primary-action");
   if (!(await missingPrimary.isDisabled())) {
-    throw new Error("Missing Codex scenario did not disable continue.");
+    throw new Error("Both-missing scenario did not disable continue.");
   }
-  await missingPage.getByText("未找到 Codex", { exact: true }).waitFor();
-  await missingPage.getByText("brew install codex", { exact: true }).waitFor();
-  await missingPage.getByRole("button", { name: "复制" }).waitFor();
+  await missingPage.getByText("Codex CLI 未安装", { exact: true }).waitFor();
+  await missingPage.getByText("Kimi CLI 未安装", { exact: true }).waitFor();
+  await missingPage.getByText(
+    "npm install -g @openai/codex",
+    { exact: true }
+  ).waitFor();
+  await missingPage.getByText(
+    "curl -LsSf https://code.kimi.com/install.sh | bash",
+    { exact: true }
+  ).waitFor();
+  await missingPage.getByRole("button", { name: "安装 Codex CLI" }).waitFor();
+  await missingPage.getByRole("button", { name: "安装 Kimi CLI" }).waitFor();
   await missingPage.getByTestId("recheck").waitFor();
   await missingPage.screenshot({
     path: resolve(artifactDir, "environment-missing-light.png"),
@@ -428,7 +445,7 @@ try {
     path: resolve(artifactDir, "team-light-wide.png"),
     fullPage: true
   });
-  checks.push("missing-codex-hard-gate-and-recheck");
+  checks.push("both-missing-hard-gate-independent-guidance-and-recheck");
   await missingPage.getByTestId("primary-action").click();
   await expectStableStep(missingPage, 3);
   await missingPage
@@ -463,19 +480,19 @@ try {
   });
   const unavailablePage = await unavailableContext.newPage();
   watchExternalRequests(unavailablePage);
-  await unavailablePage.goto(`${prototypeUrl}?scenario=unavailable&theme=light`);
+  await unavailablePage.goto(`${prototypeUrl}?scenario=both-unavailable&theme=light`);
   const unavailablePrimary = unavailablePage.getByTestId("primary-action");
   if (!(await unavailablePrimary.isDisabled())) {
-    throw new Error("Unavailable Codex scenario did not disable continue.");
+    throw new Error("Both-unavailable scenario did not disable continue.");
   }
-  await unavailablePage.getByText("Codex 暂时无法运行", { exact: true }).waitFor();
+  await unavailablePage.getByText("Codex CLI 暂时无法验证", { exact: true }).waitFor();
   await unavailablePage.getByText(
-    "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
+    "Kimi CLI 已安装，需要登录",
     { exact: true }
   ).waitFor();
   if (
-    (await unavailablePage.getByText("brew install codex", { exact: true }).count()) !== 0
-    || (await unavailablePage.getByRole("button", { name: "复制" }).count()) !== 0
+    (await unavailablePage.getByText("npm install -g @openai/codex", { exact: true }).count()) !== 0
+    || (await unavailablePage.getByRole("button", { name: /安装 (?:Codex|Kimi) CLI/u }).count()) !== 0
     || (await unavailablePage.getByText(/\/Users\/|permission denied|stderr/iu).count()) !== 0
   ) {
     throw new Error("Unavailable recovery leaked installation or raw diagnostic content.");
@@ -485,10 +502,11 @@ try {
     fullPage: true
   });
   await unavailablePage.getByTestId("recheck").click();
-  await unavailablePage.getByTestId("environment-checking").waitFor();
+  await unavailablePage.getByTestId("cli-codex-checking").waitFor();
+  await unavailablePage.getByTestId("cli-kimi-checking").waitFor();
   if (
-    (await unavailablePage.getByText("未找到 Codex", { exact: true }).count()) !== 0
-    || (await unavailablePage.getByText("Codex 暂时无法运行", { exact: true }).count()) !== 0
+    (await unavailablePage.getByText("Codex CLI 暂时无法验证", { exact: true }).count()) !== 0
+    || (await unavailablePage.getByText("Kimi CLI 已安装，需要登录", { exact: true }).count()) !== 0
   ) {
     throw new Error("Checking must use a neutral state instead of a stale error card.");
   }
@@ -498,8 +516,85 @@ try {
   });
   await unavailablePrimary.click();
   await unavailablePage.getByTestId("step-2").waitFor();
-  checks.push("unavailable-codex-hard-gate-and-safe-recheck");
+  checks.push("unavailable-clis-hard-gate-and-safe-recheck");
   await unavailableContext.close();
+
+  const kimiContext = await browser.newContext({
+    viewport: { width: 1100, height: 760 },
+    colorScheme: "dark"
+  });
+  const kimiPage = await kimiContext.newPage();
+  watchExternalRequests(kimiPage);
+  await kimiPage.goto(`${prototypeUrl}?scenario=kimi-ready`);
+  const kimiPrimary = kimiPage.getByTestId("primary-action");
+  if (await kimiPrimary.isDisabled()) {
+    throw new Error("Kimi-only readiness did not unlock continue.");
+  }
+  await kimiPage.getByText("Kimi CLI 可用", { exact: true }).waitFor();
+  await kimiPrimary.click();
+  await kimiPage.getByText(/AI 将使用 Kimi 帮你把成员组齐/u).waitFor();
+  await kimiPage.getByTestId("team-compatibility-warning").waitFor();
+  await kimiPage.getByTestId("open-team-builder").click();
+  await kimiPage.getByText(/使用 Kimi CLI · 独立只读 AI 会话/u).waitFor();
+  await kimiPage.getByRole("button", { name: "返回选团队" }).click();
+  await kimiPage.getByTestId("primary-action").click();
+  await expectStableStep(kimiPage, 3);
+  await kimiPage.getByTestId("primary-action").click();
+  await expectStableStep(kimiPage, 4);
+  await kimiPage.getByRole("heading", { name: "团队已选好" }).waitFor();
+  await kimiPage.getByTestId("ready-compatibility").waitFor();
+  await kimiPage.getByTestId("primary-action").click();
+  await kimiPage.getByTestId("destination-compatibility").waitFor();
+  checks.push("kimi-only-builder-routing-and-partial-team-warning");
+  await kimiContext.close();
+
+  const installContext = await browser.newContext({
+    viewport: { width: 1100, height: 760 },
+    colorScheme: "dark"
+  });
+  const installPage = await installContext.newPage();
+  watchExternalRequests(installPage);
+  await installPage.goto(`${prototypeUrl}?scenario=install-recovery`);
+  await installPage.getByText("Kimi CLI 安装未完成", { exact: true }).waitFor();
+  await installPage.getByRole("button", { name: "重试安装 Kimi CLI" }).click();
+  await installPage.getByTestId("cli-kimi-installing").waitFor();
+  await installPage.getByTestId("install-aggregate").click();
+  const installDetails = installPage.getByTestId("install-details");
+  await installDetails.waitFor();
+  await installDetails
+    .getByText(/正在启动受信任安装程序|正在下载安装内容|正在写入并准备自动复检/u)
+    .waitFor();
+  await installPage.getByTestId("cli-kimi-ready").waitFor({ timeout: 5000 });
+  if ((await installPage.getByTestId("install-aggregate").count()) !== 0) {
+    throw new Error("Completed installation did not clear the title-bar aggregate.");
+  }
+  checks.push("install-failure-retry-progress-and-auto-recheck");
+  await installContext.close();
+
+  const dualInstallContext = await browser.newContext({
+    viewport: { width: 1100, height: 760 },
+    colorScheme: "dark"
+  });
+  const dualInstallPage = await dualInstallContext.newPage();
+  watchExternalRequests(dualInstallPage);
+  await dualInstallPage.goto(`${prototypeUrl}?scenario=both-missing`);
+  await dualInstallPage.getByRole("button", { name: "安装 Codex CLI" }).click();
+  await dualInstallPage.getByRole("button", { name: "安装 Kimi CLI" }).click();
+  await dualInstallPage.getByTestId("install-aggregate").waitFor();
+  await dualInstallPage.getByText("2 项 CLI 正在安装…", { exact: true }).waitFor();
+  await dualInstallPage.getByTestId("install-aggregate").click();
+  const dualDetails = dualInstallPage.getByTestId("install-details");
+  await dualDetails.getByText("Codex CLI", { exact: true }).waitFor();
+  await dualDetails.getByText("Kimi CLI", { exact: true }).waitFor();
+  await dualInstallPage.getByRole("button", { name: "取消安装 Codex CLI" }).click();
+  await dualInstallPage.getByTestId("cli-codex-cancelled").waitFor();
+  await dualInstallPage.getByText("正在安装 Kimi…", { exact: true }).waitFor();
+  await dualInstallPage.getByTestId("cli-kimi-ready").waitFor({ timeout: 5000 });
+  if (await dualInstallPage.getByTestId("primary-action").isDisabled()) {
+    throw new Error("A completed Kimi installation did not unlock the either-CLI gate.");
+  }
+  checks.push("dual-install-aggregate-details-cancel-and-degrade");
+  await dualInstallContext.close();
 
   const replayContext = await browser.newContext({
     viewport: { width: 1180, height: 760 },

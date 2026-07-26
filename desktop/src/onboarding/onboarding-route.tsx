@@ -1,6 +1,8 @@
 import {
   OnboardingShell,
+  type OnboardingCli,
   type OnboardingEnvironmentState,
+  type OnboardingInstallationState,
   type OnboardingMode,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
@@ -12,11 +14,28 @@ import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import type { AgentTeamListItem } from "../team-ipc-contract.js";
 import type { DesktopApi } from "../console-page/app.js";
+import type {
+  OnboardingCliReadinessSnapshot,
+  OnboardingCliReadinessState,
+} from "./cli-readiness-contract.js";
+import type {
+  OnboardingCliInstallSnapshot,
+  OnboardingCliInstallState,
+} from "./cli-installer-contract.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
+const INITIAL_ENVIRONMENT: OnboardingEnvironmentState = {
+  codex: { status: "checking", revision: 0 },
+  kimi: { status: "checking", revision: 0 },
+};
+const INITIAL_INSTALLATIONS: OnboardingInstallationState = {
+  codex: { cli: "codex", status: "idle", revision: 0 },
+  kimi: { cli: "kimi", status: "idle", revision: 0 },
+};
 
 const INITIAL_TEAM_BUILDER_STATE: TeamBuilderViewState = {
   phase: "idle",
+  builderCli: null,
   messages: [{
     role: "assistant",
     text: "你希望这支团队长期替你完成什么工作？\n\n先说目标就好，不需要想好角色和分工。",
@@ -36,37 +55,170 @@ export function OnboardingRoute({
   onComplete: (teamKey: string) => void | Promise<void>;
 }): JSX.Element {
   const api = window.moebius;
-  const [environment, setEnvironment] = useState<OnboardingEnvironmentState>({ status: "checking" });
+  const [environment, setEnvironment] = useState<OnboardingEnvironmentState>(INITIAL_ENVIRONMENT);
+  const [installations, setInstallations] = useState<OnboardingInstallationState>(
+    INITIAL_INSTALLATIONS,
+  );
   const [teamsState, setTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [teamBuilderState, setTeamBuilderState] = useState<TeamBuilderViewState>(
     INITIAL_TEAM_BUILDER_STATE,
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
-  const codexCheckSequenceRef = useRef(0);
+  const checkSequenceRef = useRef<Record<OnboardingCli, number>>({ codex: 0, kimi: 0 });
+  const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
+  const readinessMergeRef = useRef<Record<
+    OnboardingCli,
+    { revision: number; status: OnboardingCliReadinessSnapshot["status"] }
+  >>({
+    codex: { revision: -1, status: "checking" },
+    kimi: { revision: -1, status: "checking" },
+  });
+  const installationRevisionRef = useRef<Record<OnboardingCli, number>>({ codex: -1, kimi: -1 });
+  const installMutationPendingRef = useRef(new Set<OnboardingCli>());
 
-  const checkCodex = useCallback(async () => {
-    const sequence = ++codexCheckSequenceRef.current;
-    setEnvironment({ status: "checking" });
-    try {
-      const result = await api?.checkOnboardingCodex?.();
-      if (sequence !== codexCheckSequenceRef.current) {
-        return;
-      }
-      if (result?.status === "ok") {
-        setEnvironment({ status: "ready", detail: result.detail });
-        return;
-      }
-      setEnvironment({
-        status: "error",
-        kind: result?.message === "Codex 未找到" ? "missing" : "unavailable",
-      });
-    } catch {
-      if (sequence !== codexCheckSequenceRef.current) {
-        return;
-      }
-      setEnvironment({ status: "error", kind: "unavailable" });
+  const mergeReadinessSnapshot = useCallback((
+    snapshot: OnboardingCliReadinessSnapshot,
+  ): boolean => {
+    const previous = readinessMergeRef.current[snapshot.cli];
+    const sameRevisionCanAdvance = snapshot.revision === previous.revision
+      && previous.status === "checking"
+      && snapshot.status !== "checking";
+    const sameTerminalIsIdempotent = snapshot.revision === previous.revision
+      && previous.status === snapshot.status
+      && snapshot.status !== "checking";
+    if (
+      snapshot.revision < previous.revision
+      || (
+        snapshot.revision === previous.revision
+        && !sameRevisionCanAdvance
+        && !sameTerminalIsIdempotent
+      )
+    ) {
+      return false;
     }
-  }, [api]);
+    readinessMergeRef.current[snapshot.cli] = {
+      revision: snapshot.revision,
+      status: snapshot.status,
+    };
+    setEnvironment((current) => ({
+      ...current,
+      [snapshot.cli]: toViewReadiness(snapshot),
+    }));
+    return true;
+  }, []);
+
+  const mergeInstallationSnapshot = useCallback((
+    snapshot: OnboardingCliInstallSnapshot,
+    options: { allowEqual?: boolean } = {},
+  ): { accepted: boolean; becameSucceeded: boolean } => {
+    const previousRevision = installationRevisionRef.current[snapshot.cli];
+    if (
+      snapshot.revision < previousRevision
+      || (snapshot.revision === previousRevision && options.allowEqual !== true)
+    ) {
+      return { accepted: false, becameSucceeded: false };
+    }
+    installationRevisionRef.current[snapshot.cli] = snapshot.revision;
+    const previous = previousInstallationsRef.current[snapshot.cli];
+    const next = toViewInstallation(snapshot);
+    previousInstallationsRef.current = {
+      ...previousInstallationsRef.current,
+      [snapshot.cli]: next,
+    };
+    setInstallations((current) => ({ ...current, [snapshot.cli]: next }));
+    return {
+      accepted: true,
+      becameSucceeded: previous.status === "running" && next.status === "succeeded",
+    };
+  }, []);
+
+  const checkCli = useCallback(async (cli: OnboardingCli) => {
+    const sequence = ++checkSequenceRef.current[cli];
+    setEnvironment((current) => ({
+      ...current,
+      [cli]: {
+        status: "checking",
+        revision: current[cli].revision + 1,
+        lastKnownReady: current[cli].status === "ready"
+          || current[cli].lastKnownReady === true,
+      },
+    }));
+    try {
+      if (api?.checkOnboardingCliReadiness !== undefined) {
+        const result = await api.checkOnboardingCliReadiness(cli);
+        if (sequence !== checkSequenceRef.current[cli]) {
+          return;
+        }
+        mergeReadinessSnapshot(result);
+        return;
+      }
+      if (cli === "kimi") {
+        setEnvironment((current) => ({
+          ...current,
+          kimi: { status: "missing", revision: current.kimi.revision },
+        }));
+        return;
+      }
+      const legacy = await api?.checkOnboardingCodex?.();
+      if (sequence !== checkSequenceRef.current[cli]) {
+        return;
+      }
+      setEnvironment((current) => ({
+        ...current,
+        codex: legacy?.status === "ok"
+          ? {
+              status: "ready",
+              revision: current.codex.revision,
+              ...(legacy.detail === undefined ? {} : { version: legacy.detail }),
+            }
+          : {
+              status: legacy?.message === "Codex 未找到" ? "missing" : "unavailable",
+              revision: current.codex.revision,
+            },
+      }));
+    } catch {
+      if (sequence !== checkSequenceRef.current[cli]) {
+        return;
+      }
+      setEnvironment((current) => ({
+        ...current,
+        [cli]: { status: "unavailable", revision: current[cli].revision },
+      }));
+    }
+  }, [api, mergeReadinessSnapshot]);
+
+  const checkEnvironment = useCallback(async () => {
+    await Promise.all([checkCli("codex"), checkCli("kimi")]);
+  }, [checkCli]);
+
+  const loadReadinessState = useCallback(async () => {
+    if (api?.getOnboardingCliReadinessState === undefined) {
+      return;
+    }
+    try {
+      const next = await api.getOnboardingCliReadinessState();
+      mergeReadinessSnapshot(next.codex);
+      mergeReadinessSnapshot(next.kimi);
+    } catch {
+      // Keep the last safe renderer state; manual recheck remains available.
+    }
+  }, [api, mergeReadinessSnapshot]);
+
+  const loadInstallState = useCallback(async () => {
+    if (api?.getOnboardingCliInstallState === undefined) {
+      return;
+    }
+    try {
+      const next = await api.getOnboardingCliInstallState();
+      const codex = mergeInstallationSnapshot(next.codex);
+      const kimi = mergeInstallationSnapshot(next.kimi);
+      if (codex.becameSucceeded || kimi.becameSucceeded) {
+        await loadReadinessState();
+      }
+    } catch {
+      // Polling failure does not erase the last known task state.
+    }
+  }, [api, loadReadinessState, mergeInstallationSnapshot]);
 
   const loadTeams = useCallback(async (): Promise<OperatorAgentTeam[]> => {
     setTeamsState({ status: "loading" });
@@ -88,7 +240,7 @@ export function OnboardingRoute({
   }, [api]);
 
   useEffect(() => {
-    void Promise.all([checkCodex(), loadTeams()]);
+    void Promise.all([checkEnvironment(), loadTeams(), loadInstallState()]);
     if (api?.onStatus === undefined) {
       return;
     }
@@ -97,7 +249,7 @@ export function OnboardingRoute({
     const unsubscribe = api.onStatus((snapshot) => {
       if (!checkedAfterShellReady && snapshot.shellPath !== null) {
         checkedAfterShellReady = true;
-        void checkCodex();
+        void checkEnvironment();
       }
       if (!loadedAfterSeedReady && snapshot.seed?.status !== "pending") {
         loadedAfterSeedReady = true;
@@ -105,7 +257,37 @@ export function OnboardingRoute({
       }
     });
     return unsubscribe;
-  }, [api, checkCodex, loadTeams]);
+  }, [api, checkEnvironment, loadInstallState, loadTeams]);
+
+  useEffect(() => {
+    if (api?.onOnboardingCliInstallSnapshot === undefined) {
+      return;
+    }
+    return api.onOnboardingCliInstallSnapshot((snapshot) => {
+      const merged = mergeInstallationSnapshot(snapshot);
+      if (merged.becameSucceeded) {
+        void loadReadinessState();
+      }
+    });
+  }, [api, loadReadinessState, mergeInstallationSnapshot]);
+
+  useEffect(() => {
+    if (
+      api?.getOnboardingCliInstallState === undefined
+      || (installations.codex.status !== "running" && installations.kimi.status !== "running")
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadInstallState();
+    }, 750);
+    return () => window.clearInterval(timer);
+  }, [
+    api,
+    installations.codex.status,
+    installations.kimi.status,
+    loadInstallState,
+  ]);
 
   const applyBuilderResponse = useCallback((response: AiTeamBuilderIpcResponse): AiTeamBuilderState | null => {
     if (!response.ok) {
@@ -196,12 +378,71 @@ export function OnboardingRoute({
     <OnboardingShell
       mode={mode}
       environment={environment}
+      installations={installations}
       teamsState={teamsState}
       teamBuilderState={teamBuilderState}
       createdTeamKey={createdTeamKey}
-      onRecheckCodex={checkCodex}
-      onCopyInstallCommand={() => api?.copyOnboardingInstallCommand?.()
-        ?? navigator.clipboard.writeText("brew install codex")}
+      onRecheckEnvironment={checkEnvironment}
+      onInstallCli={async (cli) => {
+        if (
+          api?.startOnboardingCliInstall === undefined
+          || installMutationPendingRef.current.has(cli)
+          || previousInstallationsRef.current[cli].status === "running"
+        ) {
+          return;
+        }
+        installMutationPendingRef.current.add(cli);
+        const optimistic: OnboardingInstallationState[OnboardingCli] = {
+          cli,
+          status: "running",
+          revision: previousInstallationsRef.current[cli].revision,
+          stage: "starting",
+        };
+        previousInstallationsRef.current = {
+          ...previousInstallationsRef.current,
+          [cli]: optimistic,
+        };
+        setInstallations((current) => ({
+          ...current,
+          [cli]: optimistic,
+        }));
+        try {
+          mergeInstallationSnapshot(await api.startOnboardingCliInstall(cli));
+        } catch {
+          const failed: OnboardingInstallationState[OnboardingCli] = {
+            cli,
+            status: "failed",
+            revision: previousInstallationsRef.current[cli].revision,
+          };
+          previousInstallationsRef.current = {
+            ...previousInstallationsRef.current,
+            [cli]: failed,
+          };
+          setInstallations((current) => ({ ...current, [cli]: failed }));
+          await loadInstallState();
+        } finally {
+          installMutationPendingRef.current.delete(cli);
+        }
+      }}
+      onCancelCliInstallation={async (cli) => {
+        if (
+          api?.cancelOnboardingCliInstall === undefined
+          || installMutationPendingRef.current.has(cli)
+          || !window.confirm(
+            `确定取消 ${cli === "codex" ? "Codex" : "Kimi"} CLI 安装吗？另一套 CLI 不受影响。`,
+          )
+        ) {
+          return;
+        }
+        installMutationPendingRef.current.add(cli);
+        try {
+          mergeInstallationSnapshot(await api.cancelOnboardingCliInstall(cli));
+        } catch {
+          await loadInstallState();
+        } finally {
+          installMutationPendingRef.current.delete(cli);
+        }
+      }}
       onRetryTeams={async () => {
         await loadTeams();
       }}
@@ -231,6 +472,45 @@ export function OnboardingRoute({
       onComplete={onComplete}
     />
   );
+}
+
+function toViewEnvironment(
+  state: OnboardingCliReadinessState,
+): OnboardingEnvironmentState {
+  return {
+    codex: toViewReadiness(state.codex),
+    kimi: toViewReadiness(state.kimi),
+  };
+}
+
+function toViewReadiness(
+  snapshot: OnboardingCliReadinessSnapshot,
+): OnboardingEnvironmentState[OnboardingCli] {
+  return {
+    status: snapshot.status,
+    revision: snapshot.revision,
+    ...(snapshot.version === null ? {} : { version: snapshot.version }),
+  };
+}
+
+function toViewInstallations(
+  state: OnboardingCliInstallState,
+): OnboardingInstallationState {
+  return {
+    codex: toViewInstallation(state.codex),
+    kimi: toViewInstallation(state.kimi),
+  };
+}
+
+function toViewInstallation(
+  snapshot: OnboardingCliInstallSnapshot,
+): OnboardingInstallationState[OnboardingCli] {
+  return {
+    cli: snapshot.cli,
+    status: snapshot.status,
+    revision: snapshot.revision,
+    ...(snapshot.stage === null ? {} : { stage: snapshot.stage }),
+  };
 }
 
 function toOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTeam {

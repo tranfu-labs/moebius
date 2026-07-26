@@ -1,4 +1,4 @@
-import { ChevronDown, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
+import { ChevronDown, CircleAlert, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -38,6 +38,11 @@ export interface NewConversationTeamOption {
     displayName: string;
     description: string;
     available?: boolean;
+    executionProfile?: {
+      effective: {
+        cli: "codex" | "kimi";
+      } | null;
+    };
   }>;
 }
 
@@ -47,6 +52,7 @@ export interface NewConversationPageProps {
   selectedProjectId: string | null;
   selectedWorkspaceMode: "direct" | "worktree";
   selectedTeamKey: string | null;
+  cliReadiness?: { codex: boolean; kimi: boolean };
   draft: string;
   attachments?: readonly ComposerAttachment[];
   isSubmitting?: boolean;
@@ -70,6 +76,7 @@ export function NewConversationPage({
   selectedProjectId,
   selectedWorkspaceMode,
   selectedTeamKey,
+  cliReadiness,
   draft,
   attachments = [],
   isSubmitting = false,
@@ -89,6 +96,7 @@ export function NewConversationPage({
   const [confirmIndependentWorkspace, setConfirmIndependentWorkspace] = useState(false);
   const selectedProject = projects.find((project) => project.projectId === selectedProjectId && project.available);
   const selectedTeam = teams.find((team) => team.teamKey === selectedTeamKey);
+  const compatibility = getNewConversationTeamCompatibility(selectedTeam, cliReadiness);
   const hasAvailableProjects = projects.some((project) => project.available);
   const canSubmit = selectedProject !== undefined
     && selectedTeamKey !== null
@@ -196,6 +204,15 @@ export function NewConversationPage({
               </div>
             )}
           />
+          {compatibility.affectedCount > 0 ? (
+            <div
+              className="mt-3 flex items-start gap-2 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub"
+              data-testid="new-conversation-team-compatibility"
+            >
+              <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              <p>{compatibility.copy}；可在 Agent 团队页调整。</p>
+            </div>
+          ) : null}
           {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
         </div>
       </div>
@@ -230,6 +247,26 @@ export function NewConversationPage({
       ) : null}
     </section>
   );
+}
+
+function getNewConversationTeamCompatibility(
+  team: NewConversationTeamOption | undefined,
+  readiness: NewConversationPageProps["cliReadiness"],
+): { affectedCount: number; copy: string } {
+  if (team === undefined || readiness === undefined) {
+    return { affectedCount: 0, copy: "" };
+  }
+  const missing = team.members.flatMap((member): Array<"codex" | "kimi"> => {
+    const cli = member.executionProfile?.effective?.cli;
+    return (cli === "codex" || cli === "kimi") && !readiness[cli] ? [cli] : [];
+  });
+  const labels = [...new Set(missing)].map((cli) => cli === "codex" ? "Codex" : "Kimi");
+  return {
+    affectedCount: missing.length,
+    copy: missing.length === 0
+      ? ""
+      : `其中 ${String(missing.length)} 名成员仍需完成 ${labels.join(" / ")} 准备`,
+  };
 }
 
 function WorkspaceMenu({

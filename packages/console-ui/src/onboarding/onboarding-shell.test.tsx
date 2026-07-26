@@ -6,6 +6,10 @@ import {
   OnboardingShell,
   type OnboardingShellProps,
 } from "./onboarding-shell";
+import type {
+  OnboardingEnvironmentState,
+  OnboardingInstallationState,
+} from "./onboarding-state";
 
 const developmentTeam: OperatorAgentTeam = {
   teamKey: "system:development",
@@ -71,56 +75,113 @@ describe("OnboardingShell", () => {
   it("renders the supplied Codex version and uses generic copy when detail is absent", () => {
     const version = "codex-cli 0.144.1";
     const { rerender } = renderShell({
-      environment: { status: "ready", detail: version },
+      environment: createEnvironment({
+        codex: { status: "ready", revision: 1, version },
+      }),
     });
 
     expect(screen.getByText(version)).toBeVisible();
     expect(screen.queryByText("codex-cli 1.0")).not.toBeInTheDocument();
 
-    const props = createShellProps({ environment: { status: "ready" } });
+    const props = createShellProps({
+      environment: createEnvironment({
+        codex: { status: "ready", revision: 2 },
+      }),
+    });
     rerender(<OnboardingShell {...props} />);
-    expect(screen.getByText("Agent 团队可以正常启动")).toBeVisible();
+    expect(screen.getByText("已登录，可用于运行")).toBeVisible();
     expect(document.body.textContent).not.toMatch(/\bcodex(?:-cli)?\s+\d+\.\d+/iu);
   });
 
-  it("hard-gates step 1 until Codex is ready and exposes install recovery", async () => {
-    const onCopyInstallCommand = vi.fn();
-    const onRecheckCodex = vi.fn();
+  it("hard-gates step 1 until either CLI is ready and exposes independent install recovery", async () => {
+    const onInstallCli = vi.fn();
+    const onRecheckEnvironment = vi.fn();
     renderShell({
-      environment: { status: "error", kind: "missing" },
-      onCopyInstallCommand,
-      onRecheckCodex,
+      environment: createEnvironment({
+        codex: { status: "missing", revision: 1 },
+        kimi: { status: "missing", revision: 1 },
+      }),
+      onInstallCli,
+      onRecheckEnvironment,
     });
 
     expect(screen.getByTestId("moebius-logo")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByText("首次启动")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "退出引导回看" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
-    expect(screen.getByText("未找到 Codex")).toBeVisible();
-    expect(screen.getByText("brew install codex")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    expect(screen.getByText("Codex CLI 未安装")).toBeVisible();
+    expect(screen.getByText("Kimi CLI 未安装")).toBeVisible();
+    expect(screen.getByText("npm install -g @openai/codex")).toBeInTheDocument();
+    expect(screen.getByText("curl -LsSf https://code.kimi.com/install.sh | bash")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "安装 Kimi CLI" }));
     fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "已复制" })).toBeInTheDocument());
-    expect(onCopyInstallCommand).toHaveBeenCalledOnce();
-    expect(onRecheckCodex).toHaveBeenCalledOnce();
+    expect(onInstallCli).toHaveBeenCalledWith("kimi");
+    expect(onRecheckEnvironment).toHaveBeenCalledOnce();
 
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).not.toMatch(/\b(?:gh|GitHub|PR|issue)\b/i);
   });
 
-  it("hard-gates an unavailable Codex without showing installation recovery", () => {
+  it("hard-gates unavailable and needs-login CLIs without showing installation recovery", () => {
     renderShell({
-      environment: { status: "error", kind: "unavailable" },
+      environment: createEnvironment({
+        codex: { status: "unavailable", revision: 1 },
+        kimi: { status: "needs-login", revision: 1 },
+      }),
     });
 
-    expect(screen.getByText("Codex 暂时无法运行")).toBeVisible();
-    expect(screen.getByText(
+    expect(screen.getByText("Codex CLI 暂时无法验证")).toBeVisible();
+    expect(screen.queryByText(
       "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
-    )).toBeVisible();
+    )).not.toBeInTheDocument();
+    expect(screen.getByText("Kimi CLI 已安装，需要登录")).toBeVisible();
     expect(screen.getByRole("button", { name: "重新检查" })).toBeVisible();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
-    expect(screen.queryByText("brew install codex")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
+    expect(screen.queryByText("npm install -g @openai/codex")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /安装 (?:Codex|Kimi) CLI/ })).not.toBeInTheDocument();
+  });
+
+  it("allows Kimi-only continuation and keeps Codex recovery visible", () => {
+    renderShell({
+      environment: createEnvironment({
+        codex: { status: "missing", revision: 1 },
+        kimi: { status: "ready", revision: 1, version: "kimi 1.2.3" },
+      }),
+    });
+
+    expect(screen.getByText("Kimi CLI 可用")).toBeVisible();
+    expect(screen.getByText("kimi 1.2.3")).toBeVisible();
+    expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "安装 Codex CLI" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "重新检查" })).toBeVisible();
+  });
+
+  it("keeps running installation feedback in the title bar and supports cancellation", () => {
+    const onCancelCliInstallation = vi.fn();
+    renderShell({
+      installations: createInstallations({
+        kimi: { cli: "kimi", status: "running", revision: 2, stage: "downloading" },
+      }),
+      onCancelCliInstallation,
+    });
+
+    fireEvent.click(screen.getByTestId("install-aggregate"));
+    expect(screen.getByTestId("install-details")).toBeVisible();
+    expect(screen.getAllByText("正在下载安装内容…").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "取消安装 Kimi CLI" })[0]!);
+    expect(onCancelCliInstallation).toHaveBeenCalledWith("kimi");
+  });
+
+  it("keeps the verifying stage visible instead of collapsing it to generic progress", () => {
+    renderShell({
+      installations: createInstallations({
+        codex: { cli: "codex", status: "running", revision: 3, stage: "verifying" },
+      }),
+    });
+
+    expect(screen.getByText(
+      "安装完成，正在自动复检登录与模型能力…",
+    )).toBeVisible();
   });
 
   it("keeps selection and environment state while navigating all four steps", async () => {
@@ -176,7 +237,7 @@ describe("OnboardingShell", () => {
     fireEvent.click(screen.getByTestId("open-onboarding-team-builder"));
 
     expect(screen.getByRole("heading", { name: "AI 团队设计器" })).toBeInTheDocument();
-    expect(screen.getByText("仍在第 2 步")).toBeInTheDocument();
+    expect(screen.getByText("使用 Codex CLI · 仍在第 2 步")).toBeInTheDocument();
     expect(screen.getByText("第 2 步，共 4 步")).toBeInTheDocument();
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
     expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-lg");
@@ -238,7 +299,8 @@ function createShellProps(
   overrides: Partial<OnboardingShellProps> = {},
 ): OnboardingShellProps {
   return {
-    environment: { status: "ready", detail: "codex-cli 1.0" },
+    environment: createEnvironment(),
+    installations: createInstallations(),
     teamsState: { status: "ready", teams: [developmentTeam] },
     teamBuilderState: {
       phase: "idle",
@@ -250,8 +312,9 @@ function createShellProps(
       proposalRevision: null,
       error: null,
     },
-    onRecheckCodex: vi.fn(),
-    onCopyInstallCommand: vi.fn(),
+    onRecheckEnvironment: vi.fn(),
+    onInstallCli: vi.fn(),
+    onCancelCliInstallation: vi.fn(),
     onRetryTeams: vi.fn(),
     onOpenTeamBuilder: vi.fn(),
     onTeamBuilderSubmit: vi.fn(),
@@ -259,6 +322,26 @@ function createShellProps(
     onTeamBuilderRetry: vi.fn(),
     onTeamBuilderCommit: vi.fn(),
     onComplete: vi.fn(),
+    ...overrides,
+  };
+}
+
+function createEnvironment(
+  overrides: Partial<OnboardingEnvironmentState> = {},
+): OnboardingEnvironmentState {
+  return {
+    codex: { status: "ready", revision: 1, version: "codex-cli 1.0" },
+    kimi: { status: "missing", revision: 1 },
+    ...overrides,
+  };
+}
+
+function createInstallations(
+  overrides: Partial<OnboardingInstallationState> = {},
+): OnboardingInstallationState {
+  return {
+    codex: { cli: "codex", status: "idle", revision: 0 },
+    kimi: { cli: "kimi", status: "idle", revision: 0 },
     ...overrides,
   };
 }

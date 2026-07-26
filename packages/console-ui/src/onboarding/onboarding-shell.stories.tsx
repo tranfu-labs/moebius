@@ -39,7 +39,14 @@ const meta = {
     layout: "fullscreen",
   },
   args: {
-    environment: { status: "ready" },
+    environment: {
+      codex: { status: "ready", revision: 1 },
+      kimi: { status: "missing", revision: 1 },
+    },
+    installations: {
+      codex: { cli: "codex", status: "idle", revision: 0 },
+      kimi: { cli: "kimi", status: "idle", revision: 0 },
+    },
     teamsState: { status: "ready", teams: [editorialTeam] },
     teamBuilderState: {
       phase: "idle",
@@ -51,8 +58,9 @@ const meta = {
       proposalRevision: null,
       error: null,
     },
-    onRecheckCodex: () => undefined,
-    onCopyInstallCommand: () => undefined,
+    onRecheckEnvironment: () => undefined,
+    onInstallCli: () => undefined,
+    onCancelCliInstallation: () => undefined,
     onRetryTeams: () => undefined,
     onOpenTeamBuilder: () => undefined,
     onTeamBuilderSubmit: () => undefined,

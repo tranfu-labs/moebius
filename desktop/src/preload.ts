@@ -63,6 +63,15 @@ import {
   ONBOARDING_IPC_CHANNELS,
 } from "./onboarding/contract.js";
 import type { OnboardingCompletionStatus } from "./onboarding/first-run-marker.js";
+import type {
+  OnboardingCli,
+  OnboardingCliReadinessSnapshot,
+  OnboardingCliReadinessState,
+} from "./onboarding/cli-readiness-contract.js";
+import type {
+  OnboardingCliInstallSnapshot,
+  OnboardingCliInstallState,
+} from "./onboarding/cli-installer-contract.js";
 
 export interface MoebiusDesktopApi {
   onStatus(listener: (snapshot: DesktopStatusSnapshot) => void): () => void;
@@ -125,6 +134,14 @@ export interface MoebiusDesktopApi {
   completeOnboarding(): Promise<OnboardingCompletionStatus>;
   checkOnboardingCodex(): Promise<DoctorCheck>;
   copyOnboardingInstallCommand(): Promise<void>;
+  getOnboardingCliReadinessState(): Promise<OnboardingCliReadinessState>;
+  checkOnboardingCliReadiness(cli: OnboardingCli): Promise<OnboardingCliReadinessSnapshot>;
+  getOnboardingCliInstallState(): Promise<OnboardingCliInstallState>;
+  onOnboardingCliInstallSnapshot(
+    listener: (snapshot: OnboardingCliInstallSnapshot) => void,
+  ): () => void;
+  startOnboardingCliInstall(cli: OnboardingCli): Promise<OnboardingCliInstallSnapshot>;
+  cancelOnboardingCliInstall(cli: OnboardingCli): Promise<OnboardingCliInstallSnapshot>;
   startOnboardingTeamBuilder(request: AiTeamBuilderDraftRequest): Promise<AiTeamBuilderIpcResponse>;
   submitOnboardingTeamBuilder(request: AiTeamBuilderTurnRequest): Promise<AiTeamBuilderIpcResponse>;
   adjustOnboardingTeamBuilder(request: AiTeamBuilderTurnRequest): Promise<AiTeamBuilderIpcResponse>;
@@ -320,6 +337,46 @@ const api: MoebiusDesktopApi = {
   },
   copyOnboardingInstallCommand() {
     return ipcRenderer.invoke(ONBOARDING_IPC_CHANNELS.copyInstallCommand) as Promise<void>;
+  },
+  getOnboardingCliReadinessState() {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.cliReadinessState,
+    ) as Promise<OnboardingCliReadinessState>;
+  },
+  checkOnboardingCliReadiness(cli) {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.cliReadinessCheck,
+      { cli },
+    ) as Promise<OnboardingCliReadinessSnapshot>;
+  },
+  getOnboardingCliInstallState() {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.cliInstallState,
+    ) as Promise<OnboardingCliInstallState>;
+  },
+  onOnboardingCliInstallSnapshot(listener) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      snapshot: OnboardingCliInstallSnapshot,
+    ): void => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, wrapped);
+    return () => {
+      ipcRenderer.off(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, wrapped);
+    };
+  },
+  startOnboardingCliInstall(cli) {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.cliInstallStart,
+      { cli },
+    ) as Promise<OnboardingCliInstallSnapshot>;
+  },
+  cancelOnboardingCliInstall(cli) {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.cliInstallCancel,
+      { cli },
+    ) as Promise<OnboardingCliInstallSnapshot>;
   },
   startOnboardingTeamBuilder(request) {
     return ipcRenderer.invoke(

@@ -25,6 +25,7 @@ export async function probeExecutionCapabilities(input: {
   timeoutMs?: number;
   runCommand?: SafeCommandRunner;
   requestCodexModels?: (timeoutMs: number) => Promise<unknown>;
+  knownCliVersion?: string;
 }): Promise<ExecutionCapabilitySnapshot> {
   return input.cli === "codex"
     ? probeCodexCapabilities(input)
@@ -36,11 +37,16 @@ export async function probeCodexCapabilities(input: {
   timeoutMs?: number;
   runCommand?: SafeCommandRunner;
   requestCodexModels?: (timeoutMs: number) => Promise<unknown>;
+  knownCliVersion?: string;
 } = {}): Promise<ExecutionCapabilitySnapshot> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const run = input.runCommand ?? runCommandSafely;
   try {
-    const version = (await run("codex", ["--version"], timeoutMs)).stdout.trim() || null;
+    const version = input.knownCliVersion
+      ?? ((await run("codex", ["--version"], timeoutMs)).stdout.trim() || null);
+    if (version === null) {
+      throw new CapabilityProbeError("CLI_UNAVAILABLE", "Codex 没有返回版本信息。");
+    }
     const result = await (input.requestCodexModels ?? requestCodexModelList)(timeoutMs);
     return makeSnapshot({
       cli: "codex",
@@ -58,11 +64,16 @@ export async function probeKimiCapabilities(input: {
   now?: () => Date;
   timeoutMs?: number;
   runCommand?: SafeCommandRunner;
+  knownCliVersion?: string;
 } = {}): Promise<ExecutionCapabilitySnapshot> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const run = input.runCommand ?? runCommandSafely;
   try {
-    const version = (await run("kimi", ["--version"], timeoutMs)).stdout.trim() || null;
+    const version = input.knownCliVersion
+      ?? ((await run("kimi", ["--version"], timeoutMs)).stdout.trim() || null);
+    if (version === null) {
+      throw new CapabilityProbeError("CLI_UNAVAILABLE", "Kimi 没有返回版本信息。");
+    }
     const providerList = JSON.parse(
       (await run("kimi", ["provider", "list", "--json"], timeoutMs)).stdout,
     ) as unknown;
@@ -163,6 +174,9 @@ export function parseKimiProviderList(value: unknown): ExecutionCapabilityModel[
     };
   });
   if (models.length === 0) {
+    if (hasExplicitlyEmptyKimiProviders(value)) {
+      throw new CapabilityProbeError("AUTHENTICATION_REQUIRED", "Kimi 尚未配置可用 provider。");
+    }
     throw new CapabilityProbeError("CAPABILITY_PROTOCOL_UNAVAILABLE", "Kimi 没有返回可用模型。");
   }
   return models;
@@ -204,8 +218,10 @@ export async function runCommandSafely(
     });
     child.on("error", (error) => {
       finish(new CapabilityProbeError(
-        isNodeError(error) && error.code === "ENOENT" ? "CLI_MISSING" : "CLI_UNAVAILABLE",
-        isNodeError(error) && error.code === "ENOENT"
+        isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")
+          ? "CLI_MISSING"
+          : "CLI_UNAVAILABLE",
+        isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")
           ? "本机没有找到这套 CLI。"
           : "暂时无法启动这套 CLI。",
       ));
@@ -247,8 +263,10 @@ async function requestCodexModelList(timeoutMs: number): Promise<unknown> {
     };
     child.on("error", (error) => {
       finish(new CapabilityProbeError(
-        isNodeError(error) && error.code === "ENOENT" ? "CLI_MISSING" : "CLI_UNAVAILABLE",
-        isNodeError(error) && error.code === "ENOENT"
+        isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")
+          ? "CLI_MISSING"
+          : "CLI_UNAVAILABLE",
+        isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")
           ? "本机没有找到 Codex CLI。"
           : "暂时无法启动 Codex CLI。",
       ));
@@ -264,8 +282,32 @@ async function requestCodexModelList(timeoutMs: number): Promise<unknown> {
       if (!isPlainObject(message)) return;
       if (message.id === 1) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} })}\n`);
-        child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "model/list", params: {} })}\n`);
+        child.stdin.write(`${JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "account/read",
+          params: { refreshToken: false },
+        })}\n`);
       } else if (message.id === 2) {
+        if (message.error !== undefined) {
+          finish(new CapabilityProbeError(
+            "CAPABILITY_PROTOCOL_UNAVAILABLE",
+            "Codex 当前版本不支持认证状态读取。",
+          ));
+        } else if (codexAccountRequiresLogin(message)) {
+          finish(new CapabilityProbeError(
+            "AUTHENTICATION_REQUIRED",
+            "Codex 尚未登录。",
+          ));
+        } else {
+          child.stdin.write(`${JSON.stringify({
+            jsonrpc: "2.0",
+            id: 3,
+            method: "model/list",
+            params: {},
+          })}\n`);
+        }
+      } else if (message.id === 3) {
         if (message.error !== undefined) {
           finish(new CapabilityProbeError(
             "CAPABILITY_PROTOCOL_UNAVAILABLE",
@@ -310,6 +352,7 @@ function failedSnapshot(
     reason: error instanceof CapabilityProbeError
       ? error.safeMessage
       : "暂时无法读取这套 CLI 的模型能力。",
+    ...(error instanceof CapabilityProbeError ? { failureCode: error.code } : {}),
   });
 }
 
@@ -347,6 +390,22 @@ function collectKimiModelCandidates(value: unknown): KimiModelCandidate[] {
     }];
   }
   return Object.values(value).flatMap(collectKimiModelCandidates);
+}
+
+function hasExplicitlyEmptyKimiProviders(value: unknown): boolean {
+  if (!isPlainObject(value) || !Object.hasOwn(value, "providers")) {
+    return false;
+  }
+  return Array.isArray(value.providers)
+    ? value.providers.length === 0
+    : isPlainObject(value.providers) && Object.keys(value.providers).length === 0;
+}
+
+function codexAccountRequiresLogin(message: Record<string, unknown>): boolean {
+  if (!isPlainObject(message.result)) {
+    return false;
+  }
+  return message.result.account === null && message.result.requiresOpenaiAuth === true;
 }
 
 function kimiModelSupportsThinking(model: Record<string, unknown>): boolean {
@@ -399,6 +458,7 @@ export class CapabilityProbeError extends Error {
     readonly code:
       | "CLI_MISSING"
       | "CLI_UNAVAILABLE"
+      | "AUTHENTICATION_REQUIRED"
       | "CAPABILITY_TIMEOUT"
       | "CAPABILITY_PROTOCOL_UNAVAILABLE",
     readonly safeMessage: string,

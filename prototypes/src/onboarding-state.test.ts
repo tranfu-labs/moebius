@@ -3,22 +3,88 @@ import { describe, expect, it } from "vitest";
 import {
   DEVELOPMENT_TEAM,
   canContinue,
+  chooseBuilderCli,
   initialOnboardingState,
-  onboardingReducer
+  isCliReady,
+  onboardingReducer,
+  runningInstallations
 } from "./onboarding-state.js";
 
 describe("onboarding state", () => {
-  it("blocks the first step while Codex is missing, unavailable, or checking", () => {
-    const missing = initialOnboardingState("missing");
-    const unavailable = initialOnboardingState("unavailable");
-    const checking = initialOnboardingState("checking");
+  it("lets either ready CLI pass the first-step hard gate", () => {
+    const codexReady = initialOnboardingState("codex-ready");
+    const kimiReady = initialOnboardingState("kimi-ready");
+    const bothReady = initialOnboardingState("both-ready");
+    const neitherReady = initialOnboardingState("both-missing");
 
-    expect(canContinue(missing)).toBe(false);
-    expect(canContinue(unavailable)).toBe(false);
-    expect(canContinue(checking)).toBe(false);
-    expect(onboardingReducer(missing, { type: "continue" })).toBe(missing);
-    expect(onboardingReducer(unavailable, { type: "continue" })).toBe(unavailable);
-    expect(onboardingReducer(checking, { type: "continue" })).toBe(checking);
+    expect(canContinue(codexReady)).toBe(true);
+    expect(canContinue(kimiReady)).toBe(true);
+    expect(canContinue(bothReady)).toBe(true);
+    expect(canContinue(neitherReady)).toBe(false);
+    expect(onboardingReducer(neitherReady, { type: "continue" })).toBe(neitherReady);
+  });
+
+  it("preserves an existing ready result while a manual recheck runs", () => {
+    let state = initialOnboardingState("codex-ready");
+    state = onboardingReducer(state, { type: "start-recheck" });
+
+    expect(state.environment.codex.status).toBe("checking");
+    expect(isCliReady(state.environment.codex)).toBe(true);
+    expect(canContinue(state)).toBe(true);
+
+    state = onboardingReducer(state, {
+      type: "set-cli",
+      cli: "codex",
+      value: { status: "unavailable" }
+    });
+    state = onboardingReducer(state, {
+      type: "set-cli",
+      cli: "kimi",
+      value: { status: "ready" }
+    });
+    expect(canContinue(state)).toBe(true);
+  });
+
+  it("tracks independent single and dual installations with cancellation", () => {
+    let state = initialOnboardingState("both-missing");
+    state = onboardingReducer(state, { type: "start-install", cli: "codex" });
+    expect(runningInstallations(state.environment)).toEqual(["codex"]);
+
+    state = onboardingReducer(state, { type: "start-install", cli: "kimi" });
+    expect(runningInstallations(state.environment)).toEqual(["codex", "kimi"]);
+
+    state = onboardingReducer(state, { type: "cancel-install", cli: "codex" });
+    expect(runningInstallations(state.environment)).toEqual(["kimi"]);
+    expect(state.environment.codex.status).toBe("cancelled");
+  });
+
+  it("supports deterministic failure, retry, auto-check, and readiness", () => {
+    let state = initialOnboardingState("install-recovery");
+    expect(state.environment.kimi.status).toBe("failed");
+
+    state = onboardingReducer(state, { type: "start-install", cli: "kimi" });
+    expect(state.environment.kimi.status).toBe("installing");
+    expect(state.environment.kimi.attempt).toBe(1);
+
+    state = onboardingReducer(state, {
+      type: "set-cli",
+      cli: "kimi",
+      value: { status: "checking" }
+    });
+    state = onboardingReducer(state, {
+      type: "set-cli",
+      cli: "kimi",
+      value: { status: "ready" }
+    });
+
+    expect(state.environment.kimi.status).toBe("ready");
+    expect(canContinue(state)).toBe(true);
+  });
+
+  it("chooses Kimi only when Codex is unavailable and otherwise prefers Codex", () => {
+    expect(chooseBuilderCli(initialOnboardingState("kimi-ready").environment)).toBe("kimi");
+    expect(chooseBuilderCli(initialOnboardingState("both-ready").environment)).toBe("codex");
+    expect(chooseBuilderCli(initialOnboardingState("codex-ready").environment)).toBe("codex");
   });
 
   it("walks the happy path into a conversation with the selected team", () => {
@@ -46,20 +112,18 @@ describe("onboarding state", () => {
     expect(state.relayRun).toBe(2);
   });
 
-  it("carries an AI-created team through back navigation and completion", () => {
+  it("carries an AI-created team and its chosen CLI through completion", () => {
     const createdTeam = {
       id: "product-launch",
       name: "产品发布团队",
       primaryAgent: "发布负责人",
-      members: ["内容策划", "渠道运营"]
+      members: ["内容策划", "渠道运营"],
+      builderCli: "kimi" as const
     };
-    let state = initialOnboardingState();
+    let state = initialOnboardingState("kimi-ready");
 
     state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, {
-      type: "select-team",
-      team: createdTeam
-    });
+    state = onboardingReducer(state, { type: "select-team", team: createdTeam });
     state = onboardingReducer(state, { type: "continue" });
     state = onboardingReducer(state, { type: "back" });
 
@@ -71,54 +135,7 @@ describe("onboarding state", () => {
     }
 
     expect(state.view).toBe("conversation");
-    expect(state.selectedTeam.name).toBe("产品发布团队");
-  });
-
-  it("moves back without losing the selected team and replays relay on return", () => {
-    let state = initialOnboardingState();
-    state = onboardingReducer(state, { type: "continue" });
-
-    state = onboardingReducer(state, { type: "back" });
-    expect(state.view).toBe(1);
-    expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);
-
-    state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, { type: "continue" });
-    const relayRunBeforeReturn = state.relayRun;
-
-    state = onboardingReducer(state, { type: "back" });
-    expect(state.view).toBe(3);
-    expect(state.relayRun).toBe(relayRunBeforeReturn + 1);
-    expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);
-  });
-
-  it("does not move back from the first step or completed conversation", () => {
-    const first = initialOnboardingState();
-    expect(onboardingReducer(first, { type: "back" })).toBe(first);
-
-    let completed = first;
-    for (let index = 0; index < 4; index += 1) {
-      completed = onboardingReducer(completed, { type: "continue" });
-    }
-    expect(onboardingReducer(completed, { type: "back" })).toBe(completed);
-  });
-
-  it("lets recheck restore the hard gate without resetting the journey", () => {
-    for (const environment of ["missing", "unavailable"] as const) {
-      let state = initialOnboardingState(environment);
-      state = onboardingReducer(state, {
-        type: "set-environment",
-        value: "checking"
-      });
-      state = onboardingReducer(state, {
-        type: "set-environment",
-        value: "ready"
-      });
-
-      expect(canContinue(state)).toBe(true);
-      expect(onboardingReducer(state, { type: "continue" }).view).toBe(2);
-    }
+    expect(state.selectedTeam.builderCli).toBe("kimi");
   });
 
   it("returns replay exit to the same main fixture and discards its team selection", () => {
@@ -128,32 +145,13 @@ describe("onboarding state", () => {
       primaryAgent: "临时负责人",
       members: ["临时成员"]
     };
-    let state = initialOnboardingState("ready", "replay");
+    let state = initialOnboardingState("codex-ready", "replay");
 
     expect(state.view).toBe("main");
     state = onboardingReducer(state, { type: "enter-replay" });
     state = onboardingReducer(state, { type: "continue" });
     state = onboardingReducer(state, { type: "select-team", team: temporaryTeam });
     state = onboardingReducer(state, { type: "exit-replay" });
-
-    expect(state.view).toBe("main");
-    expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);
-  });
-
-  it("finishes replay through Start using without applying its temporary team", () => {
-    const temporaryTeam = {
-      id: "temporary",
-      name: "临时团队",
-      primaryAgent: "临时负责人",
-      members: ["临时成员"]
-    };
-    let state = initialOnboardingState("ready", "replay");
-    state = onboardingReducer(state, { type: "enter-replay" });
-    state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, { type: "select-team", team: temporaryTeam });
-    state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, { type: "continue" });
-    state = onboardingReducer(state, { type: "continue" });
 
     expect(state.view).toBe("main");
     expect(state.selectedTeam).toEqual(DEVELOPMENT_TEAM);

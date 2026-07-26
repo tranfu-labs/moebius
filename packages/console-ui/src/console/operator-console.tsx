@@ -9,6 +9,7 @@ import {
   PanelRightClose,
   Plus,
   CircleHelp,
+  RefreshCw,
   Search,
   Settings,
 } from "lucide-react";
@@ -305,6 +306,8 @@ export interface OperatorConsoleProps {
   agentTeamDetailState?: AgentTeamDetailState | null;
   agentTeamBuilder?: AgentTeamBuilderController;
   newConversation?: OperatorNewConversationState | null;
+  cliReadiness?: { codex: boolean; kimi: boolean };
+  activeCliInstallations?: Array<"codex" | "kimi">;
   onComposerChange(value: string): void;
   onComposerFilesAdded?: (files: File[]) => void;
   onComposerAttachmentRemove?: (clientId: string) => void;
@@ -445,6 +448,8 @@ export function OperatorConsole({
   agentTeamDetailState,
   agentTeamBuilder,
   newConversation = null,
+  cliReadiness,
+  activeCliInstallations = [],
   onComposerChange,
   onComposerFilesAdded,
   onComposerAttachmentRemove,
@@ -828,6 +833,18 @@ export function OperatorConsole({
 
   return (
     <div className={cn("relative flex h-screen min-h-[560px] overflow-hidden bg-canvas text-ink", className)}>
+      {activeCliInstallations.length > 0 ? (
+        <div
+          className="window-no-drag absolute left-1/2 top-2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub shadow-sm"
+          role="status"
+          data-testid="operator-cli-install-aggregate"
+        >
+          <RefreshCw className="h-3 w-3 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
+          {activeCliInstallations.length === 1
+            ? `正在安装 ${activeCliInstallations[0] === "codex" ? "Codex" : "Kimi"}…`
+            : `${String(activeCliInstallations.length)} 项 CLI 正在安装…`}
+        </div>
+      ) : null}
       <aside
         className={cn(
           "relative shrink-0 flex-col overflow-hidden border-r border-line bg-rail",
@@ -1107,6 +1124,7 @@ export function OperatorConsole({
             selectedProjectId={newConversation.selectedProjectId}
             selectedWorkspaceMode={newConversation.selectedWorkspaceMode}
             selectedTeamKey={newConversation.selectedTeamKey}
+            cliReadiness={cliReadiness}
             draft={newConversation.draft}
             attachments={composerAttachments}
             isSubmitting={newConversation.isSubmitting}

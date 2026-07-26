@@ -3,17 +3,20 @@ import {
   ArrowRight,
   Bot,
   Check,
+  CircleAlert,
   ChevronDown,
-  Copy,
   FolderPlus,
   MessageSquarePlus,
   Moon,
+  Play,
   RefreshCw,
   RotateCcw,
   Send,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Sun,
+  Terminal,
   Users,
   X
 } from "lucide-react";
@@ -43,9 +46,16 @@ import {
 } from "./beui-button.js";
 import { LoaderDots } from "./beui-loader.js";
 import {
+  DEVELOPMENT_TEAM,
   canContinue,
+  chooseBuilderCli,
   initialOnboardingState,
+  isCliReady,
   onboardingReducer,
+  runningInstallations,
+  type CliId,
+  type CliState,
+  type EnvironmentScenario,
   type EnvironmentState,
   type OnboardingMode,
   type OnboardingStep,
@@ -189,28 +199,51 @@ function relayBeatsForTeam(team: TeamChoice): RelayBeat[] {
     : DEVELOPMENT_RELAY_BEATS;
 }
 
+function teamCompatibility(team: TeamChoice, environment: EnvironmentState) {
+  const requiredClis: CliId[] = team.id === CREATED_TEAM.id
+    ? Array.from({ length: 4 }, () => team.builderCli ?? "codex")
+    : ["codex", "codex", "kimi"];
+  const missing = requiredClis.filter((cliId) => !isCliReady(environment[cliId]));
+  const labels = Array.from(new Set(missing.map((cliId) =>
+    cliId === "codex" ? "Codex" : "Kimi"
+  )));
+  return {
+    affected: missing.length,
+    labels,
+    copy: missing.length === 0
+      ? ""
+      : `其中 ${missing.length} 名成员仍需完成 ${labels.join(" / ")} 准备`
+  };
+}
+
 function App() {
   const search = useMemo(
     () => new URLSearchParams(window.location.search),
     []
   );
   const requestedScenario = search.get("scenario");
-  const initialEnvironment: EnvironmentState = requestedScenario === "missing"
-    ? "missing"
-    : requestedScenario === "unavailable"
-      ? "unavailable"
-      : "ready";
+  const initialScenario: EnvironmentScenario =
+    requestedScenario === "kimi-ready"
+      ? "kimi-ready"
+      : requestedScenario === "both-ready"
+        ? "both-ready"
+        : requestedScenario === "both-missing" || requestedScenario === "missing"
+          ? "both-missing"
+          : requestedScenario === "both-unavailable" || requestedScenario === "unavailable"
+            ? "both-unavailable"
+            : requestedScenario === "install-recovery"
+              ? "install-recovery"
+              : "codex-ready";
   const initialMode: OnboardingMode =
     search.get("mode") === "replay" ? "replay" : "first-run";
   const [state, dispatch] = useReducer(
     onboardingReducer,
-    initialOnboardingState(initialEnvironment, initialMode)
+    initialOnboardingState(initialScenario, initialMode)
   );
   const [theme, setTheme] = useState<"dark" | "light">(
     search.get("theme") === "light" ? "light" : "dark"
   );
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [teamBuilderOpen, setTeamBuilderOpen] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
@@ -232,21 +265,61 @@ function App() {
   }, []);
 
   const recheck = useCallback(() => {
-    dispatch({ type: "set-environment", value: "checking" });
+    const before = state.environment;
+    dispatch({ type: "start-recheck" });
     window.setTimeout(() => {
-      dispatch({ type: "set-environment", value: "ready" });
-    }, 1500);
-  }, []);
+      (["codex", "kimi"] as const).forEach((cliId) => {
+        if (before[cliId].status !== "installing") {
+          dispatch({
+            type: "set-cli",
+            cli: cliId,
+            value: { status: "ready" }
+          });
+        }
+      });
+    }, 900);
+  }, [state.environment]);
 
-  const copyInstallCommand = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText("brew install codex");
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }, []);
+  useEffect(() => {
+    const timers: number[] = [];
+    (["codex", "kimi"] as const).forEach((cliId) => {
+      const cliState = state.environment[cliId];
+      if (
+        cliState.status !== "installing"
+        && !(cliState.status === "checking" && cliState.attempt > 0)
+      ) {
+        return;
+      }
+      const advance = (
+        delay: number,
+        value: Partial<CliState> & Pick<CliState, "status">
+      ) => {
+        timers.push(window.setTimeout(() => {
+          dispatch({ type: "set-cli", cli: cliId, value });
+        }, delay));
+      };
+      if (cliState.installStage === "starting") {
+        advance(420, { status: "installing", installStage: "downloading" });
+      } else if (cliState.installStage === "downloading") {
+        advance(680, { status: "installing", installStage: "installing" });
+      } else if (cliState.installStage === "installing") {
+        advance(760, { status: "checking" });
+      } else if (cliState.status === "checking" && cliState.attempt > 0) {
+        advance(520, { status: "ready" });
+      }
+    });
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [
+    state.environment.codex.status,
+    state.environment.codex.installStage,
+    state.environment.codex.attempt,
+    state.environment.kimi.status,
+    state.environment.kimi.installStage,
+    state.environment.kimi.attempt
+  ]);
+
+  const compatibility = teamCompatibility(state.selectedTeam, state.environment);
+  const builderCli = chooseBuilderCli(state.environment);
 
   return (
     <div className="prototype-root">
@@ -255,8 +328,8 @@ function App() {
         theme={theme}
         onToggleOpen={() => setReviewOpen((current) => !current)}
         onThemeChange={setTheme}
-        onScenarioChange={(environment, mode = "first-run") => {
-          dispatch({ type: "reset", environment, mode });
+        onScenarioChange={(scenario, mode = "first-run") => {
+          dispatch({ type: "reset", scenario, mode });
           setTeamBuilderOpen(false);
           setReviewOpen(false);
         }}
@@ -267,6 +340,7 @@ function App() {
           <ConversationDestination
             key="conversation"
             team={state.selectedTeam}
+            environment={state.environment}
             titleRef={titleRef}
             onRestart={() => {
               dispatch({ type: "enter-replay" });
@@ -288,9 +362,10 @@ function App() {
             key="onboarding"
             mode={state.mode}
             step={state.view}
+            environment={state.environment}
             titleRef={titleRef}
-            title={stepTitle(state.view)}
-            subtitle={stepSubtitle(state.view, state.selectedTeam)}
+            title={stepTitle(state.view, compatibility.affected)}
+            subtitle={stepSubtitle(state.view, compatibility)}
             primaryLabel={state.view === 4 ? "开始使用" : "继续"}
             primaryDisabled={!canContinue(state) || teamBuilderOpen}
             actionsHidden={teamBuilderOpen}
@@ -299,6 +374,7 @@ function App() {
               dispatch({ type: "exit-replay" });
               setTeamBuilderOpen(false);
             }}
+            onCancelInstall={(cliId) => dispatch({ type: "cancel-install", cli: cliId })}
             secondary={
               state.view > 1 ? (
                 <PrototypeButton
@@ -310,34 +386,45 @@ function App() {
                   <ArrowLeft size={14} />
                   上一步
                 </PrototypeButton>
-              ) : state.environment !== "ready" ? (
+              ) : (
                 <PrototypeButton
                   variant="secondary"
                   onClick={recheck}
-                  disabled={state.environment === "checking"}
+                  disabled={
+                    state.environment.codex.status === "checking"
+                    && state.environment.kimi.status === "checking"
+                  }
                   data-testid="recheck"
                 >
                   <RefreshCw
                     size={14}
                     className={
-                      state.environment === "checking" ? "is-spinning" : ""
+                      state.environment.codex.status === "checking"
+                      && state.environment.kimi.status === "checking"
+                        ? "is-spinning"
+                        : ""
                     }
                   />
-                  {state.environment === "checking" ? "正在检查" : "重新检查"}
+                  {state.environment.codex.status === "checking"
+                    && state.environment.kimi.status === "checking"
+                    ? "正在检查"
+                    : "重新检查"}
                 </PrototypeButton>
-              ) : null
+              )
             }
           >
             {state.view === 1 ? (
               <EnvironmentStep
                 environment={state.environment}
-                copied={copied}
-                onCopy={copyInstallCommand}
+                onInstall={(cliId) => dispatch({ type: "start-install", cli: cliId })}
+                onCancel={(cliId) => dispatch({ type: "cancel-install", cli: cliId })}
               />
             ) : null}
             {state.view === 2 ? (
               <TeamStep
                 selectedTeam={state.selectedTeam}
+                environment={state.environment}
+                builderCli={builderCli}
                 onSelect={(team) => dispatch({ type: "select-team", team })}
                 onSubflowChange={setTeamBuilderOpen}
               />
@@ -350,7 +437,9 @@ function App() {
                 onReplay={() => dispatch({ type: "replay-relay" })}
               />
             ) : null}
-            {state.view === 4 ? <ReadyStep /> : null}
+            {state.view === 4 ? (
+              <ReadyStep compatibility={compatibility} />
+            ) : null}
           </OnboardingShell>
         )}
       </AnimatePresence>
@@ -358,7 +447,7 @@ function App() {
   );
 }
 
-function stepTitle(step: OnboardingStep): string {
+function stepTitle(step: OnboardingStep, affectedMembers = 0): string {
   switch (step) {
     case 1:
       return "环境准备";
@@ -367,20 +456,25 @@ function stepTitle(step: OnboardingStep): string {
     case 3:
       return "看看团队如何完成一次接力";
     case 4:
-      return "准备就绪";
+      return affectedMembers > 0 ? "团队已选好" : "准备就绪";
   }
 }
 
-function stepSubtitle(step: OnboardingStep, _team: TeamChoice): string {
+function stepSubtitle(
+  step: OnboardingStep,
+  compatibility: ReturnType<typeof teamCompatibility>
+): string {
   switch (step) {
     case 1:
-      return "moebius 用 codex 来运行每一位团队成员";
+      return "Codex 或 Kimi 至少一个可用，就可以启动团队";
     case 2:
       return "先选一支最接近你当前工作的团队，之后随时可以切换";
     case 3:
       return "每一次交接都会留下过程、结论和复核证据";
     case 4:
-      return "团队已经就位，说出你的目标就能开工";
+      return compatibility.affected > 0
+        ? compatibility.copy
+        : "团队已经就位，说出你的目标就能开工";
   }
 }
 
@@ -397,6 +491,7 @@ function Pill({
 interface OnboardingShellProps {
   mode: OnboardingMode;
   step: OnboardingStep;
+  environment: EnvironmentState;
   title: string;
   subtitle: string;
   titleRef: React.RefObject<HTMLHeadingElement>;
@@ -405,6 +500,7 @@ interface OnboardingShellProps {
   actionsHidden: boolean;
   onPrimary: () => void;
   onExit: () => void;
+  onCancelInstall: (cli: CliId) => void;
   secondary: ReactNode;
   children: ReactNode;
 }
@@ -412,6 +508,7 @@ interface OnboardingShellProps {
 function OnboardingShell({
   mode,
   step,
+  environment,
   title,
   subtitle,
   titleRef,
@@ -420,6 +517,7 @@ function OnboardingShell({
   actionsHidden,
   onPrimary,
   onExit,
+  onCancelInstall,
   secondary,
   children
 }: OnboardingShellProps) {
@@ -434,7 +532,12 @@ function OnboardingShell({
       transition={{ duration: reduceMotion ? 0.12 : 0.3, ease: EASE_OUT }}
       data-testid={`step-${step}`}
     >
-      <PrototypeChrome mode={mode} onExit={onExit} />
+      <PrototypeChrome
+        mode={mode}
+        environment={environment}
+        onExit={onExit}
+        onCancelInstall={onCancelInstall}
+      />
 
       <section className="onboarding-stage">
         <div className="onboarding-frame">
@@ -487,11 +590,20 @@ function OnboardingShell({
 
 function PrototypeChrome({
   mode = "first-run",
-  onExit
+  environment,
+  onExit,
+  onCancelInstall
 }: {
   mode?: OnboardingMode | "main";
+  environment?: EnvironmentState;
   onExit?: () => void;
+  onCancelInstall?: (cli: CliId) => void;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const installations = environment ? runningInstallations(environment) : [];
+  const installationLabel = installations.length === 1
+    ? `正在安装 ${installations[0] === "codex" ? "Codex" : "Kimi"}…`
+    : `${installations.length} 项 CLI 正在安装…`;
   return (
     <header className="prototype-chrome" aria-label="应用标题栏">
       <div className="traffic-lights" aria-hidden>
@@ -503,6 +615,56 @@ function PrototypeChrome({
         <img className="brand-glyph" src={moebiusLogoUrl} alt="" />
         <span>Moebius</span>
       </div>
+      {installations.length > 0 ? (
+        <div className="install-aggregate">
+          <button
+            type="button"
+            className="install-aggregate__trigger"
+            onClick={() => setDetailsOpen((open) => !open)}
+            aria-expanded={detailsOpen}
+            aria-label={`${installationLabel}，查看安装详情`}
+            data-testid="install-aggregate"
+          >
+            <RefreshCw size={12} className="is-spinning" />
+            <span>{installationLabel}</span>
+          </button>
+          {detailsOpen ? (
+            <div
+              className="install-popover"
+              role="dialog"
+              aria-label="CLI 安装详情"
+              data-testid="install-details"
+            >
+              <div className="install-popover__head">
+                <strong>CLI 安装</strong>
+                <span>{installations.length} 项进行中</span>
+              </div>
+              {installations.map((cliId) => {
+                const cliState = environment?.[cliId];
+                const name = cliId === "codex" ? "Codex CLI" : "Kimi CLI";
+                return (
+                  <div className="install-popover__item" key={cliId}>
+                    <span className="status-icon status-icon--running">
+                      <RefreshCw size={13} className="is-spinning" />
+                    </span>
+                    <span>
+                      <strong>{name}</strong>
+                      <small>{installStageCopy(cliState?.installStage)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onCancelInstall?.(cliId)}
+                      aria-label={`取消安装 ${name}`}
+                    >
+                      取消
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {mode === "replay" ? (
         <span className="prototype-label prototype-label--replay">
           <span>回看引导</span>
@@ -527,116 +689,163 @@ function PrototypeChrome({
 
 interface EnvironmentStepProps {
   environment: EnvironmentState;
-  copied: boolean;
-  onCopy: () => void;
+  onInstall: (cli: CliId) => void;
+  onCancel: (cli: CliId) => void;
 }
 
 function EnvironmentStep({
   environment,
-  copied,
-  onCopy
+  onInstall,
+  onCancel
 }: EnvironmentStepProps) {
-  if (environment === "checking") {
-    return (
-      <motion.div
-        className="environment-card environment-card--checking"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING_LAYOUT}
-        role="status"
-        data-testid="environment-checking"
-      >
-        <RefreshCw size={17} className="is-spinning" />
-        <div>
-          <strong>正在检查 Codex</strong>
-          <p>检查完成后才会显示对应的恢复方式。</p>
-        </div>
-      </motion.div>
-    );
-  }
-
-  if (environment === "ready") {
-    return (
-      <motion.div
-        className="environment-card"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...SPRING_LAYOUT, delay: 0.05 }}
-        data-testid="environment-ready"
-      >
-        <StatusRow
-          icon={<Check size={15} />}
-          label="Codex 已安装"
-          meta="已在这台电脑上找到"
-        />
-        <StatusRow
-          icon={<Check size={15} />}
-          label="Codex 可以运行"
-          meta="Agent 团队可以正常启动"
-        />
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div
-      className="environment-card environment-card--error"
+      className="environment-card cli-check-list"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={SPRING_LAYOUT}
-      data-testid={`environment-${environment}`}
+      data-testid="environment-ready"
+      aria-live="polite"
     >
-      <div className="missing-head">
-        <span className="status-icon status-icon--danger">
-          <X size={15} />
-        </span>
-        <div>
-          <strong>
-            {environment === "missing" ? "未找到 Codex" : "Codex 暂时无法运行"}
-          </strong>
-          <p>
-            {environment === "missing"
-              ? "在终端运行以下命令，然后重新检查。"
-              : "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。"}
-          </p>
-        </div>
-      </div>
-
-      {environment === "missing" ? (
-        <div className="install-command">
-          <code>brew install codex</code>
-          <button
-            type="button"
-            className="copy-action"
-            onClick={onCopy}
-            aria-live="polite"
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-            {copied ? "已复制" : "复制"}
-          </button>
-        </div>
-      ) : null}
+      <CliCheckRow
+        cli="codex"
+        state={environment.codex}
+        onInstall={onInstall}
+        onCancel={onCancel}
+      />
+      <CliCheckRow
+        cli="kimi"
+        state={environment.kimi}
+        onInstall={onInstall}
+        onCancel={onCancel}
+      />
+      <p className="environment-note">
+        <CircleAlert size={13} />
+        至少一个可用即可继续；未就绪的 CLI 只影响绑定它的团队成员。
+      </p>
     </motion.div>
   );
 }
 
-function StatusRow({
-  icon,
-  label,
-  meta
+function installStageCopy(stage?: CliState["installStage"]) {
+  switch (stage) {
+    case "starting":
+      return "正在启动受信任安装程序…";
+    case "downloading":
+      return "正在下载安装内容…";
+    case "installing":
+      return "正在写入并准备自动复检…";
+    default:
+      return "安装正在进行…";
+  }
+}
+
+function CliCheckRow({
+  cli,
+  state,
+  onInstall,
+  onCancel
 }: {
-  icon: ReactNode;
-  label: string;
-  meta: string;
+  cli: CliId;
+  state: CliState;
+  onInstall: (cli: CliId) => void;
+  onCancel: (cli: CliId) => void;
 }) {
+  const name = cli === "codex" ? "Codex CLI" : "Kimi CLI";
+  const command = cli === "codex"
+    ? "npm install -g @openai/codex"
+    : "curl -LsSf https://code.kimi.com/install.sh | bash";
+  const status = state.status;
+
+  let icon: ReactNode = <X size={15} />;
+  let iconTone = "danger";
+  let title = `${name} 未安装`;
+  let description = "可选安装，不影响已就绪 CLI 的继续使用。";
+
+  if (status === "ready") {
+    icon = <Check size={15} />;
+    iconTone = "pass";
+    title = `${name} 可用`;
+    description = "已登录，可用于运行";
+  } else if (status === "checking") {
+    icon = <RefreshCw size={14} className="is-spinning" />;
+    iconTone = state.lastKnownReady ? "pass" : "running";
+    title = `正在检查 ${name}`;
+    description = state.lastKnownReady
+      ? "复检期间保留最近一次可用结果"
+      : "正在确认版本、登录和真实模型能力";
+  } else if (status === "installing") {
+    icon = <RefreshCw size={14} className="is-spinning" />;
+    iconTone = "running";
+    title = `${name} 正在安装`;
+    description = installStageCopy(state.installStage);
+  } else if (status === "failed") {
+    title = `${name} 安装未完成`;
+    description = "安装已安全停止，没有更改另一套 CLI；可以重试。";
+  } else if (status === "cancelled") {
+    title = `${name} 安装已取消`;
+    description = "没有将取消误报为成功；需要时可以重新安装。";
+  } else if (status === "needs-login") {
+    icon = <Terminal size={15} />;
+    iconTone = "running";
+    title = `${name} 已安装，需要登录`;
+    description = cli === "codex"
+      ? "请在终端运行 codex 完成登录，修复后重新检查。"
+      : "请在终端运行 kimi 并完成 /login，修复后重新检查。";
+  } else if (status === "unavailable") {
+    icon = <CircleAlert size={15} />;
+    iconTone = "running";
+    title = `${name} 暂时无法验证`;
+    description = "暂时无法确认 Agent 可启动，请按终端提示修复后重新检查。";
+  }
+
   return (
-    <div className="status-row">
-      <span className="status-icon status-icon--pass">{icon}</span>
-      <div>
-        <strong>{label}</strong>
-        <span>{meta}</span>
+    <div className="cli-check-row" data-testid={`cli-${cli}-${status}`}>
+      <span className={`status-icon status-icon--${iconTone}`}>{icon}</span>
+      <div className="cli-check-row__body">
+        <div className="cli-check-row__summary">
+          <strong>{title}</strong>
+          {status === "ready" ? <Pill tone="success">可用</Pill> : null}
+          {status === "checking" && state.lastKnownReady ? (
+            <Pill tone="success">保持可用</Pill>
+          ) : null}
+        </div>
+        <p>{description}</p>
+        {status === "missing" ? (
+          <div className="install-command">
+            <code>{command}</code>
+            <button
+              type="button"
+              className="install-play"
+              onClick={() => onInstall(cli)}
+              aria-label={`安装 ${name}`}
+              title={`安装 ${name}`}
+            >
+              <Play size={14} />
+            </button>
+          </div>
+        ) : null}
+        {status === "installing" ? (
+          <div className="installation-inline">
+            <span><i />请保持 Moebius 打开</span>
+            <button type="button" onClick={() => onCancel(cli)}>
+              <Square size={11} />
+              取消
+            </button>
+          </div>
+        ) : null}
+        {status === "failed" || status === "cancelled" ? (
+          <button
+            type="button"
+            className="inline-retry"
+            onClick={() => onInstall(cli)}
+            aria-label={`重试安装 ${name}`}
+          >
+            <RefreshCw size={12} />
+            重试安装
+          </button>
+        ) : null}
       </div>
-      <Pill tone="success">通过</Pill>
     </div>
   );
 }
@@ -645,12 +854,16 @@ function StatusRow({
 
 interface TeamStepProps {
   selectedTeam: TeamChoice;
+  environment: EnvironmentState;
+  builderCli: CliId;
   onSelect: (team: TeamChoice) => void;
   onSubflowChange: (open: boolean) => void;
 }
 
 function TeamStep({
   selectedTeam,
+  environment,
+  builderCli,
   onSelect,
   onSubflowChange
 }: TeamStepProps) {
@@ -784,7 +997,7 @@ function TeamStep({
             <strong>AI 团队设计器</strong>
             <span>
               <i />
-              独立只读 AI 会话
+              使用 {builderCli === "codex" ? "Codex" : "Kimi"} CLI · 独立只读 AI 会话
             </span>
           </div>
           <span className="builder-context-label">仍在第 2 步</span>
@@ -871,7 +1084,7 @@ function TeamStep({
                     <PrototypeButton
                       ripple
                       onClick={() => {
-                        onSelect(CREATED_TEAM);
+                        onSelect({ ...CREATED_TEAM, builderCli });
                         closeBuilder();
                       }}
                       data-testid="confirm-created-team"
@@ -962,6 +1175,8 @@ function TeamStep({
   }
 
   const selectedIsCreated = selectedTeam.id === CREATED_TEAM.id;
+  const developmentCompatibility = teamCompatibility(DEVELOPMENT_TEAM, environment);
+  const selectedCompatibility = teamCompatibility(selectedTeam, environment);
   return (
     <div className="team-list">
       <motion.button
@@ -1019,6 +1234,14 @@ function TeamStep({
         <p className="team-card__description">
           负责软件方案、实现、测试、复核和主理收尾
         </p>
+        {developmentCompatibility.affected > 0 ? (
+          <div className="team-compatibility-warning" data-testid="team-compatibility-warning">
+            <CircleAlert size={13} />
+            <span>
+              {developmentCompatibility.copy}；之后可在 Agent 团队页调整
+            </span>
+          </div>
+        ) : null}
       </motion.button>
 
       {selectedIsCreated ? (
@@ -1060,6 +1283,14 @@ function TeamStep({
           <p className="team-card__description">
             从资料研究到上线前复核，交付可直接发布的产品内容
           </p>
+          {selectedCompatibility.affected > 0 ? (
+            <div className="team-compatibility-warning">
+              <CircleAlert size={13} />
+              <span>
+                {selectedCompatibility.copy}；之后可在 Agent 团队页调整
+              </span>
+            </div>
+          ) : null}
         </motion.div>
       ) : null}
 
@@ -1077,7 +1308,11 @@ function TeamStep({
         </span>
         <span>
           <strong>跟 AI 聊出一支新团队</strong>
-          <small>你说一下要做什么样的活，AI 帮你把成员组齐</small>
+          <small>
+            你说一下要做什么样的活，AI 将使用
+            {builderCli === "codex" ? " Codex " : " Kimi "}
+            帮你把成员组齐
+          </small>
         </span>
         <Pill tone="info">
           <Sparkles size={10} />
@@ -1423,19 +1658,29 @@ function RelayStep({
 
 /* ---------- 第 4 步 · 准备就绪 ---------- */
 
-function ReadyStep() {
+function ReadyStep({
+  compatibility
+}: {
+  compatibility: ReturnType<typeof teamCompatibility>;
+}) {
   const reduceMotion = useReducedMotion();
+  const partial = compatibility.affected > 0;
 
   return (
     <div className="ready-state">
       <motion.div
-        className="ready-mark"
+        className={`ready-mark ${partial ? "ready-mark--neutral" : ""}`}
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.82 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={reduceMotion ? { duration: 0.12 } : SPRING_LAYOUT}
       >
-        <Check size={38} />
+        {partial ? <Users size={36} /> : <Check size={38} />}
       </motion.div>
+      {partial ? (
+        <p className="ready-compatibility" data-testid="ready-compatibility">
+          进入新对话后仍会保留这条兼容性提示，直到环境或团队配置恢复。
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1444,17 +1689,20 @@ function ReadyStep() {
 
 interface ConversationDestinationProps {
   team: TeamChoice;
+  environment: EnvironmentState;
   titleRef: React.RefObject<HTMLHeadingElement>;
   onRestart: () => void;
 }
 
 function ConversationDestination({
   team,
+  environment,
   titleRef,
   onRestart
 }: ConversationDestinationProps) {
   const reduceMotion = useReducedMotion();
   const members = membersForTeam(team);
+  const compatibility = teamCompatibility(team, environment);
 
   return (
     <motion.main
@@ -1531,6 +1779,12 @@ function ConversationDestination({
             <strong>{team.name}</strong>
             <p>{team.primaryAgent}会先理解目标，再决定由谁接棒。</p>
           </div>
+          {compatibility.affected > 0 ? (
+            <div className="destination-compatibility" data-testid="destination-compatibility">
+              <CircleAlert size={13} />
+              <p>{compatibility.copy}；可在 Agent 团队页调整。</p>
+            </div>
+          ) : null}
           <div className="inspector-member-row">
             {members.map(({ name, initial }) => (
               <span key={name} title={name}>
@@ -1638,7 +1892,7 @@ interface ReviewControlsProps {
   onToggleOpen: () => void;
   onThemeChange: (theme: "dark" | "light") => void;
   onScenarioChange: (
-    environment: EnvironmentState,
+    scenario: EnvironmentScenario,
     mode?: OnboardingMode
   ) => void;
 }
@@ -1668,18 +1922,27 @@ function ReviewControls({
               <span>不属于产品界面</span>
             </div>
             <div className="review-panel__row">
-              <button type="button" onClick={() => onScenarioChange("ready")}>
-                正常路径
+              <button type="button" onClick={() => onScenarioChange("codex-ready")}>
+                Codex 可用
               </button>
-              <button type="button" onClick={() => onScenarioChange("missing")}>
-                缺少 codex
+              <button type="button" onClick={() => onScenarioChange("kimi-ready")}>
+                仅 Kimi 可用
               </button>
-              <button type="button" onClick={() => onScenarioChange("unavailable")}>
-                codex 不可运行
+              <button type="button" onClick={() => onScenarioChange("both-ready")}>
+                两者可用
+              </button>
+              <button type="button" onClick={() => onScenarioChange("both-missing")}>
+                两者缺失
+              </button>
+              <button type="button" onClick={() => onScenarioChange("both-unavailable")}>
+                登录与验证问题
+              </button>
+              <button type="button" onClick={() => onScenarioChange("install-recovery")}>
+                安装失败与重试
               </button>
               <button
                 type="button"
-                onClick={() => onScenarioChange("ready", "replay")}
+                onClick={() => onScenarioChange("codex-ready", "replay")}
               >
                 回看引导
               </button>

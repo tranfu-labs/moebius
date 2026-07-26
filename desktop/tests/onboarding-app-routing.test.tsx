@@ -112,7 +112,7 @@ describe("desktop onboarding routing", () => {
     expect((await findButton("继续")).disabled).toBe(false);
     expect(Array.from(document.querySelectorAll("button")).some(
       (button) => button.textContent?.includes("重新检查"),
-    )).toBe(false);
+    )).toBe(true);
 
     await act(async () => statusListener?.({
       runner: { status: "stopped" },
@@ -126,7 +126,7 @@ describe("desktop onboarding routing", () => {
     expect(document.body.textContent).toContain("codex-cli 0.145.0");
     expect(Array.from(document.querySelectorAll("button")).some(
       (button) => button.textContent?.includes("重新检查"),
-    )).toBe(false);
+    )).toBe(true);
   });
 
   it("keeps the later shell PATH recheck when the initial check resolves last", async () => {
@@ -193,8 +193,8 @@ describe("desktop onboarding routing", () => {
     const continueButton = await findButton("继续");
     await waitFor(() => continueButton.disabled);
     expect(continueButton.disabled).toBe(true);
-    expect(document.body.textContent).toContain("未找到 Codex");
-    expect(document.body.textContent).toContain("brew install codex");
+    expect(document.body.textContent).toContain("Codex CLI 未安装");
+    expect(document.body.textContent).toContain("npm install -g @openai/codex");
 
     codexReady = true;
     await clickButton("重新检查");
@@ -203,6 +203,252 @@ describe("desktop onboarding routing", () => {
     expect(checkOnboardingCodex).toHaveBeenCalledTimes(2);
     expect(continueButton.disabled).toBe(false);
     expect(document.body.textContent).toContain("codex-cli 1.0");
+  });
+
+  it("uses the dual CLI readiness boundary and allows a Kimi-only machine", async () => {
+    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") => (
+      cli === "codex"
+        ? {
+            cli,
+            status: "missing" as const,
+            code: "cli-missing" as const,
+            revision: 1,
+            version: null,
+            checkedAt: "2026-07-26T00:00:00.000Z",
+          }
+        : {
+            cli,
+            status: "ready" as const,
+            code: "ready" as const,
+            revision: 1,
+            version: "kimi 1.2.3",
+            checkedAt: "2026-07-26T00:00:00.000Z",
+          }
+    ));
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness,
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    await waitFor(() => document.body.textContent?.includes("kimi 1.2.3") === true);
+
+    expect(checkOnboardingCliReadiness.mock.calls.map(([cli]) => cli).sort()).toEqual([
+      "codex",
+      "kimi",
+    ]);
+    expect(document.body.textContent).toContain("Codex CLI 未安装");
+    expect(document.body.textContent).toContain("Kimi CLI 可用");
+    expect((await findButton("继续")).disabled).toBe(false);
+    expect((await findButton("重新检查")).disabled).toBe(false);
+  });
+
+  it("merges installer responses monotonically and shows pending before IPC resolves", async () => {
+    const initialState = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["getOnboardingCliInstallState"]>
+    >>>();
+    const started = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["startOnboardingCliInstall"]>
+    >>>();
+    const startOnboardingCliInstall = vi.fn(() => started.promise);
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness: async (cli) => cli === "codex"
+        ? readinessSnapshot("codex", "missing", 2)
+        : readinessSnapshot("kimi", "ready", 2, "kimi 1.2.3"),
+      getOnboardingCliInstallState: () => initialState.promise,
+      startOnboardingCliInstall,
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    const install = await findElement<HTMLButtonElement>(
+      'button[aria-label="安装 Codex CLI"]',
+    );
+    await act(async () => {
+      install.click();
+      install.click();
+    });
+
+    expect(startOnboardingCliInstall).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain("Codex CLI 正在安装");
+    expect(document.body.textContent).toContain("正在启动受信任安装程序");
+
+    await act(async () => started.resolve(installSnapshot(
+      "codex",
+      "running",
+      3,
+      "verifying",
+    )));
+    await waitFor(() =>
+      document.body.textContent?.includes("正在自动复检登录与模型能力") === true);
+
+    await act(async () => initialState.resolve({
+      codex: installSnapshot("codex", "idle", 1),
+      kimi: installSnapshot("kimi", "idle", 1),
+    }));
+    await act(async () => Promise.resolve());
+    expect(document.body.textContent).toContain("Codex CLI 正在安装");
+    expect(document.body.textContent).toContain("正在自动复检登录与模型能力");
+  });
+
+  it("does not let an older full readiness response overwrite newer per-CLI results", async () => {
+    const oldState = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["getOnboardingCliReadinessState"]>
+    >>>();
+    let installListener: ((
+      snapshot: Awaited<ReturnType<NonNullable<DesktopApi["startOnboardingCliInstall"]>>>,
+    ) => void) | null = null;
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness: async (cli) => cli === "codex"
+        ? readinessSnapshot("codex", "missing", 3)
+        : readinessSnapshot("kimi", "ready", 3, "kimi latest"),
+      getOnboardingCliReadinessState: () => oldState.promise,
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "idle", 0),
+      }),
+      onOnboardingCliInstallSnapshot(listener) {
+        installListener = listener;
+        return () => {
+          installListener = null;
+        };
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => document.body.textContent?.includes("kimi latest") === true);
+    await act(async () => {
+      installListener?.(installSnapshot("kimi", "running", 1, "verifying"));
+      installListener?.(installSnapshot("kimi", "succeeded", 2));
+    });
+    await act(async () => oldState.resolve({
+      codex: readinessSnapshot("codex", "ready", 1, "codex stale"),
+      kimi: readinessSnapshot("kimi", "missing", 1),
+    }));
+    await act(async () => Promise.resolve());
+
+    expect(document.body.textContent).toContain("kimi latest");
+    expect(document.body.textContent).not.toContain("codex stale");
+    expect((await findButton("继续")).disabled).toBe(false);
+  });
+
+  it("allows same-revision checking to become ready but never ready to regress to checking", async () => {
+    const kimiCheck = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["checkOnboardingCliReadiness"]>
+    >>>();
+    let installListener: ((
+      snapshot: Awaited<ReturnType<NonNullable<DesktopApi["startOnboardingCliInstall"]>>>,
+    ) => void) | null = null;
+    const getOnboardingCliReadinessState = vi.fn(async () => ({
+      codex: readinessSnapshot("codex", "missing", 4),
+      kimi: {
+        cli: "kimi" as const,
+        status: "checking" as const,
+        code: "checking" as const,
+        revision: 4,
+        version: null,
+        checkedAt: null,
+      },
+    }));
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness: (cli) => cli === "kimi"
+        ? kimiCheck.promise
+        : Promise.resolve(readinessSnapshot("codex", "missing", 4)),
+      getOnboardingCliReadinessState,
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "idle", 0),
+      }),
+      onOnboardingCliInstallSnapshot(listener) {
+        installListener = listener;
+        return () => {
+          installListener = null;
+        };
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await act(async () => {
+      installListener?.(installSnapshot("codex", "running", 1, "verifying"));
+      installListener?.(installSnapshot("codex", "succeeded", 2));
+    });
+    await waitFor(() => getOnboardingCliReadinessState.mock.calls.length === 1);
+    expect(document.body.textContent).toContain("正在检查 Kimi CLI");
+
+    await act(async () => kimiCheck.resolve(
+      readinessSnapshot("kimi", "ready", 4, "kimi ready rev4"),
+    ));
+    await waitFor(() => document.body.textContent?.includes("kimi ready rev4") === true);
+    expect((await findButton("继续")).disabled).toBe(false);
+
+    await act(async () => {
+      installListener?.(installSnapshot("codex", "running", 3, "verifying"));
+      installListener?.(installSnapshot("codex", "succeeded", 4));
+    });
+    await waitFor(() => getOnboardingCliReadinessState.mock.calls.length === 2);
+    await act(async () => Promise.resolve());
+
+    expect(document.body.textContent).toContain("kimi ready rev4");
+    expect(document.body.textContent).not.toContain("正在检查 Kimi CLI");
+    expect((await findButton("继续")).disabled).toBe(false);
+  });
+
+  it("converges a rejected installer start to a safe failure", async () => {
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness: async (cli) => cli === "codex"
+        ? readinessSnapshot("codex", "missing", 1)
+        : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "idle", 0),
+      }),
+      startOnboardingCliInstall: async () => {
+        throw new Error("/Users/example/private installer failure");
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    const install = await findElement<HTMLButtonElement>(
+      'button[aria-label="安装 Codex CLI"]',
+    );
+    await act(async () => install.click());
+    await waitFor(() => document.body.textContent?.includes("Codex CLI 安装未完成") === true);
+    expect(document.body.textContent).not.toContain("/Users/example");
+  });
+
+  it("requires explicit confirmation before cancelling one CLI installation", async () => {
+    const cancelOnboardingCliInstall = vi.fn(async () =>
+      installSnapshot("kimi", "cancelled", 2));
+    const confirm = vi.spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    installApi({
+      getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
+      checkOnboardingCliReadiness: async (cli) =>
+        readinessSnapshot(cli, cli === "codex" ? "ready" : "missing", 1),
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "running", 1, "installing"),
+      }),
+      cancelOnboardingCliInstall,
+    });
+
+    await act(async () => root.render(<App />));
+    const cancel = await findElement<HTMLButtonElement>(
+      'button[aria-label="取消安装 Kimi CLI"]',
+    );
+    await act(async () => cancel.click());
+    expect(cancelOnboardingCliInstall).not.toHaveBeenCalled();
+
+    await act(async () => cancel.click());
+    await waitFor(() => cancelOnboardingCliInstall.mock.calls.length === 1);
+    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining("另一套 CLI 不受影响"));
+    await waitFor(() => document.body.textContent?.includes("Kimi CLI 安装已取消") === true);
   });
 
   it.each([
@@ -236,15 +482,15 @@ describe("desktop onboarding routing", () => {
 
     await act(async () => root.render(<App />));
     await findElement('[data-testid="onboarding-step-1"]');
-    await waitFor(() => document.body.textContent?.includes("Codex 暂时无法运行") === true);
+    await waitFor(() => document.body.textContent?.includes("Codex CLI 暂时无法验证") === true);
 
     expect(document.body.textContent).toContain(
-      "请在终端运行 codex，完成登录或按终端提示修复后，再回来重新检查。",
+      "暂时无法确认 Agent 可启动，请按终端提示修复后重新检查。",
     );
-    expect(document.body.textContent).not.toContain("brew install codex");
+    expect(document.body.textContent).not.toContain("npm install -g @openai/codex");
     expect(document.body.textContent).not.toContain("/Users/example");
     expect(Array.from(document.querySelectorAll("button")).some(
-      (button) => button.textContent?.trim() === "复制",
+      (button) => button.getAttribute("aria-label") === "安装 Codex CLI",
     )).toBe(false);
     expect((await findButton("重新检查")).disabled).toBe(false);
     expect((await findButton("继续")).disabled).toBe(true);
@@ -298,6 +544,66 @@ describe("desktop onboarding routing", () => {
     expect(document.querySelector('[data-testid^="onboarding-step-"]')).toBeNull();
   });
 
+  it("keeps global installer activity live when a preserved console starts from zero tasks", async () => {
+    let codexReady = false;
+    const installListeners = new Set<(
+      snapshot: Awaited<ReturnType<NonNullable<DesktopApi["startOnboardingCliInstall"]>>>,
+    ) => void>();
+    const getOnboardingCliReadinessState = vi.fn(async () => ({
+      codex: readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1),
+      kimi: readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
+    }));
+    installApi({
+      getOnboardingStatus: async () => ({
+        completed: true,
+        completedAt: "2026-07-24T00:00:00.000Z",
+      }),
+      checkOnboardingCliReadiness: async (cli) => cli === "codex"
+        ? readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1)
+        : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
+      getOnboardingCliReadinessState,
+      getOnboardingCliInstallState: async () => ({
+        codex: installSnapshot("codex", "idle", 0),
+        kimi: installSnapshot("kimi", "idle", 0),
+      }),
+      onOnboardingCliInstallSnapshot(listener) {
+        installListeners.add(listener);
+        return () => installListeners.delete(listener);
+      },
+      startOnboardingCliInstall: async () => {
+        const snapshot = installSnapshot("codex", "running", 1, "installing");
+        for (const listener of installListeners) listener(snapshot);
+        return snapshot;
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="operator-sidebar"]');
+    await clickButton("重新查看引导");
+    const install = await findElement<HTMLButtonElement>(
+      'button[aria-label="安装 Codex CLI"]',
+    );
+    await act(async () => install.click());
+    await waitFor(() => document.body.textContent?.includes("Codex CLI 正在安装") === true);
+
+    await clickButton("继续");
+    await clickButton("继续");
+    await clickButton("继续");
+    await clickButton("开始使用");
+    await findElement('[data-testid="operator-sidebar"]');
+    await waitFor(() => document.body.textContent?.includes("正在安装 Codex…") === true);
+
+    const readinessCallsBeforeCompletion = getOnboardingCliReadinessState.mock.calls.length;
+    codexReady = true;
+    await act(async () => {
+      const succeeded = installSnapshot("codex", "succeeded", 2);
+      for (const listener of installListeners) listener(succeeded);
+    });
+    await waitFor(() =>
+      getOnboardingCliReadinessState.mock.calls.length > readinessCallsBeforeCompletion);
+    await waitFor(() => !document.body.textContent?.includes("正在安装 Codex…"));
+  });
+
   it("opens the existing AI team builder service inside step 2", async () => {
     const startOnboardingTeamBuilder = vi.fn(async () => ({
       ok: true as const,
@@ -312,6 +618,7 @@ describe("desktop onboarding routing", () => {
         error: null,
         actions: ["cancel" as const],
         selectedTeamId: null,
+        builderCli: null,
       },
     }));
     installApi({
@@ -353,6 +660,7 @@ describe("desktop onboarding routing", () => {
           error: null,
           actions: ["cancel"],
           selectedTeamId: null,
+          builderCli: null,
         },
       }),
       submitOnboardingTeamBuilder,
@@ -387,6 +695,7 @@ describe("desktop onboarding routing", () => {
         error: null,
         actions: ["cancel"],
         selectedTeamId: null,
+        builderCli: "codex",
       },
     }));
     await waitFor(() =>
@@ -474,6 +783,41 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function readinessSnapshot(
+  cli: "codex" | "kimi",
+  status: "ready" | "missing",
+  revision: number,
+  version: string | null = null,
+) {
+  return {
+    cli,
+    status,
+    code: status === "ready" ? "ready" as const : "cli-missing" as const,
+    revision,
+    version,
+    checkedAt: "2026-07-26T00:00:00.000Z",
+  };
+}
+
+function installSnapshot(
+  cli: "codex" | "kimi",
+  status: "idle" | "running" | "succeeded" | "failed" | "cancelled" | "timed-out",
+  revision: number,
+  stage: "starting" | "downloading" | "installing" | "verifying" | null = null,
+) {
+  return {
+    cli,
+    status,
+    revision,
+    stage,
+    displayCommand: cli === "codex"
+      ? "npm install -g @openai/codex"
+      : "curl -LsSf https://code.kimi.com/install.sh | bash",
+    startedAt: status === "idle" ? null : "2026-07-26T00:00:00.000Z",
+    updatedAt: "2026-07-26T00:00:00.000Z",
+  };
 }
 
 const developmentTeam = {

@@ -66,6 +66,15 @@ import type {
 import type { DoctorCheck } from "../env-doctor.js";
 import type { OnboardingCompletionStatus } from "../onboarding/first-run-marker.js";
 import type {
+  OnboardingCli,
+  OnboardingCliReadinessSnapshot,
+  OnboardingCliReadinessState,
+} from "../onboarding/cli-readiness-contract.js";
+import type {
+  OnboardingCliInstallSnapshot,
+  OnboardingCliInstallState,
+} from "../onboarding/cli-installer-contract.js";
+import type {
   AgentTeamExternalChangeRequest,
   AgentTeamExternalChangeResponse,
 } from "../team-external-change-contract.js";
@@ -233,6 +242,14 @@ export interface DesktopApi {
   completeOnboarding?: () => Promise<OnboardingCompletionStatus>;
   checkOnboardingCodex?: () => Promise<DoctorCheck>;
   copyOnboardingInstallCommand?: () => Promise<void>;
+  getOnboardingCliReadinessState?: () => Promise<OnboardingCliReadinessState>;
+  checkOnboardingCliReadiness?: (cli: OnboardingCli) => Promise<OnboardingCliReadinessSnapshot>;
+  getOnboardingCliInstallState?: () => Promise<OnboardingCliInstallState>;
+  onOnboardingCliInstallSnapshot?: (
+    listener: (snapshot: OnboardingCliInstallSnapshot) => void,
+  ) => () => void;
+  startOnboardingCliInstall?: (cli: OnboardingCli) => Promise<OnboardingCliInstallSnapshot>;
+  cancelOnboardingCliInstall?: (cli: OnboardingCli) => Promise<OnboardingCliInstallSnapshot>;
   startOnboardingTeamBuilder?: (request: AiTeamBuilderDraftRequest) => Promise<AiTeamBuilderIpcResponse>;
   submitOnboardingTeamBuilder?: (request: AiTeamBuilderTurnRequest) => Promise<AiTeamBuilderIpcResponse>;
   adjustOnboardingTeamBuilder?: (request: AiTeamBuilderTurnRequest) => Promise<AiTeamBuilderIpcResponse>;
@@ -475,6 +492,15 @@ export function OperatorConsoleApp({
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const [agentTeamsState, setAgentTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
+  const [onboardingCliReadiness, setOnboardingCliReadiness] = useState<
+    { codex: boolean; kimi: boolean } | undefined
+  >(undefined);
+  const [activeCliInstallations, setActiveCliInstallations] = useState<OnboardingCli[]>([]);
+  const cliInstallRevisionRef = useRef<Record<OnboardingCli, number>>({ codex: -1, kimi: -1 });
+  const cliInstallStatusRef = useRef<Record<OnboardingCli, OnboardingCliInstallSnapshot["status"]>>({
+    codex: "idle",
+    kimi: "idle",
+  });
   const [lastUsedAgentTeamKey, setLastUsedAgentTeamKey] = useState<string | null>(null);
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,
@@ -579,6 +605,97 @@ export function OperatorConsoleApp({
       }
     };
   }, [agentTeamsRefreshNonce]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let checkedAfterShellReady = false;
+
+    const applyReadiness = (next: OnboardingCliReadinessState) => {
+      if (!cancelled) {
+        setOnboardingCliReadiness({
+          codex: next.codex.status === "ready",
+          kimi: next.kimi.status === "ready",
+        });
+      }
+    };
+
+    const refreshReadiness = async () => {
+      const api = window.moebius;
+      if (api?.checkOnboardingCliReadiness !== undefined) {
+        await Promise.all([
+          api.checkOnboardingCliReadiness("codex"),
+          api.checkOnboardingCliReadiness("kimi"),
+        ]).catch(() => undefined);
+      }
+      const next = await api?.getOnboardingCliReadinessState?.().catch(() => undefined);
+      if (next !== undefined) {
+        applyReadiness(next);
+      }
+    };
+
+    const applyInstallSnapshot = (snapshot: OnboardingCliInstallSnapshot): boolean => {
+      if (snapshot.revision <= cliInstallRevisionRef.current[snapshot.cli]) {
+        return false;
+      }
+      cliInstallRevisionRef.current[snapshot.cli] = snapshot.revision;
+      cliInstallStatusRef.current[snapshot.cli] = snapshot.status;
+      setActiveCliInstallations((["codex", "kimi"] as const).filter(
+        (cli) => cliInstallStatusRef.current[cli] === "running",
+      ));
+      return true;
+    };
+
+    const pollInstallations = async () => {
+      const next = await window.moebius?.getOnboardingCliInstallState?.().catch(() => undefined);
+      if (cancelled || next === undefined) {
+        return;
+      }
+      applyInstallSnapshot(next.codex);
+      applyInstallSnapshot(next.kimi);
+      const active = (["codex", "kimi"] as const).filter(
+        (cli) => cliInstallStatusRef.current[cli] === "running",
+      );
+      if (active.length > 0) {
+        const readiness = await window.moebius?.getOnboardingCliReadinessState?.()
+          .catch(() => undefined);
+        if (readiness !== undefined) {
+          applyReadiness(readiness);
+        }
+        pollTimer = window.setTimeout(() => void pollInstallations(), 750);
+      } else {
+        const readiness = await window.moebius?.getOnboardingCliReadinessState?.()
+          .catch(() => undefined);
+        if (readiness !== undefined) {
+          applyReadiness(readiness);
+        }
+      }
+    };
+
+    void refreshReadiness().then(pollInstallations);
+    const unsubscribeStatus = window.moebius?.onStatus?.((snapshot) => {
+      if (!checkedAfterShellReady && snapshot.shellPath !== null) {
+        checkedAfterShellReady = true;
+        void refreshReadiness();
+      }
+    });
+    const unsubscribeInstall = window.moebius?.onOnboardingCliInstallSnapshot?.((snapshot) => {
+      if (cancelled || !applyInstallSnapshot(snapshot)) {
+        return;
+      }
+      if (snapshot.status !== "running") {
+        void refreshReadiness();
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribeStatus?.();
+      unsubscribeInstall?.();
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, []);
 
   const loadAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string) => {
     const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
@@ -2492,6 +2609,8 @@ export function OperatorConsoleApp({
         isSubmitting: newConversation.isSubmitting,
         error: newConversation.error ?? clientError,
       }}
+      cliReadiness={onboardingCliReadiness}
+      activeCliInstallations={activeCliInstallations}
       onComposerChange={(value) => {
         conversationDraftStoreRef.current.write(sessionDraftKey(selectionRef.current.sessionId), value);
         setComposerValue(value);

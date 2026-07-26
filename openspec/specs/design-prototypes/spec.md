@@ -27,14 +27,14 @@ The onboarding high-fidelity prototype MUST build to one HTML file whose require
 
 Source: `docs/product/pages/onboarding.md#操作与反馈`
 
-The prototype MUST use generic ready-state copy without claiming a concrete Codex version because it does not run the production environment check. It MUST enforce the environment hard gate for both missing and unavailable Codex states, carry the selected team through the first-run journey, allow the relay demonstration to be replayed or skipped by continuing, and finish first-run onboarding in a new-conversation state that visibly retains the selected team.
+The prototype MUST model Codex and Kimi as independent readiness and installation rows without claiming concrete detected versions. Codex-only, Kimi-only, and dual-ready scenarios MUST continue; only dual-not-ready MUST block. Missing, needs-login, unavailable, checking, installing, failed, cancelled, and recovered states MUST remain deterministic and MUST make no external request. The journey MUST carry the selected team through first run, allow the relay demonstration to be replayed or skipped, and finish in a new-conversation state that visibly retains the selected team and any compatibility warning.
 
 #### Scenario: Ready review does not fake a version
 
-- **GIVEN** the self-contained prototype is opened in its ready environment scenario
+- **GIVEN** the self-contained prototype is opened in a ready environment scenario
 - **WHEN** step one is shown
-- **THEN** generic Codex-ready copy is visible
-- **AND** no concrete Codex version is presented as a detected result
+- **THEN** generic ready copy is visible for each ready CLI
+- **AND** no concrete CLI version is presented as a detected result
 
 #### Scenario: Happy path reaches new conversation
 
@@ -43,22 +43,42 @@ The prototype MUST use generic ready-state copy without claiming a concrete Code
 - **THEN** the prototype shows the new-conversation destination
 - **AND** the destination displays the selected team
 
-#### Scenario: Missing Codex blocks progress
+#### Scenario: Kimi-only continues
 
-- **GIVEN** the missing-Codex review scenario
+- **GIVEN** Codex is missing and Kimi is ready
+- **WHEN** step one is shown
+- **THEN** the primary continue action is enabled
+- **AND** the Codex row retains its independent install action
+- **AND** AI team building identifies Kimi.
+
+#### Scenario: Both CLIs unavailable block progress
+
+- **GIVEN** neither Codex nor Kimi is ready
 - **WHEN** step one is shown
 - **THEN** the primary continue action is disabled
-- **AND** the install command and copy action are visible
-- **AND** a recheck action can restore the ready state without reloading
+- **AND** each row keeps its own approved install, login, or troubleshooting action
+- **AND** no raw error or local path is visible.
 
-#### Scenario: Unavailable Codex blocks progress without installation guidance
+#### Scenario: Installation recovery
 
-- **GIVEN** the unavailable-Codex review scenario
-- **WHEN** step one is shown
-- **THEN** the primary continue action is disabled
-- **AND** the approved login / troubleshooting guidance and recheck action are visible
-- **AND** no install command, copy action, raw error, or local path is visible
-- **AND** a successful recheck restores the ready state without reloading
+- **GIVEN** a deterministic failed-installation fixture
+- **WHEN** the reviewer retries the affected CLI
+- **THEN** the row immediately shows ongoing staged feedback
+- **AND** success auto-checks only that row and reaches ready
+- **AND** no external installer or network request is made.
+
+### Requirement: Prototype verifies dual CLI install aggregation
+
+Source: `docs/product/pages/onboarding.md#操作与反馈`
+
+The prototype MUST provide deterministic single and dual installation fixtures whose header aggregation, per-CLI cancellation, failure, retry, success, and navigation persistence can be verified from the self-contained HTML.
+
+#### Scenario: Reviewer navigates while two installations run
+
+- **GIVEN** both deterministic installers are active and one CLI is already ready
+- **WHEN** the reviewer leaves step one
+- **THEN** the header keeps a two-task aggregate
+- **AND** opening it identifies both CLI tasks and their current stages.
 
 ### Requirement: Onboarding prototype supports deterministic replay review
 

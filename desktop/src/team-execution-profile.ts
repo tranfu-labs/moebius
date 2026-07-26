@@ -27,7 +27,15 @@ export interface ExecutionCapabilitySnapshot {
   snapshotId: string;
   checkedAt: string;
   reason?: string;
+  failureCode?: ExecutionCapabilityFailureCode;
 }
+
+export type ExecutionCapabilityFailureCode =
+  | "CLI_MISSING"
+  | "CLI_UNAVAILABLE"
+  | "AUTHENTICATION_REQUIRED"
+  | "CAPABILITY_TIMEOUT"
+  | "CAPABILITY_PROTOCOL_UNAVAILABLE";
 
 export type ExecutionProfileStatus =
   | { status: "available"; profile: ExecutionProfile }
@@ -71,6 +79,7 @@ export function capabilitySnapshotId(input: {
   cliVersion: string | null;
   status: ExecutionCapabilitySnapshot["status"];
   models: readonly ExecutionCapabilityModel[];
+  failureCode?: ExecutionCapabilityFailureCode;
 }): string {
   const hash = createHash("sha256");
   hash.update("moebius-execution-capability-v1\0");
@@ -78,6 +87,7 @@ export function capabilitySnapshotId(input: {
     cli: input.cli,
     cliVersion: input.cliVersion,
     status: input.status,
+    failureCode: input.failureCode ?? null,
     models: [...input.models]
       .map((model) => ({
         id: model.id,

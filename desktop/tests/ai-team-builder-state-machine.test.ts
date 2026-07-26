@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptAiTeamBuilderProposal,
+  assignAiTeamBuilderExecutionProfile,
   beginAiTeamBuilderCommit,
   beginAiTeamBuilderTurn,
   createAiTeamBuilderDraft,
@@ -29,6 +30,22 @@ const proposal = {
 };
 
 describe("AI team builder state machine", () => {
+  it("assigns an execution profile once and keeps it frozen", () => {
+    const assigned = assignAiTeamBuilderExecutionProfile(
+      createAiTeamBuilderDraft("draft"),
+      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+    );
+    expect(assignAiTeamBuilderExecutionProfile(
+      assigned,
+      { cli: "codex", model: "gpt", effort: "medium" },
+    )).toBe(assigned);
+    expect(assigned).toMatchObject({
+      version: 2,
+      executionProfile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      externalSessionId: null,
+    });
+  });
+
   it("accepts only the current proposal revision for commit", () => {
     const running = beginAiTeamBuilderTurn(createAiTeamBuilderDraft("draft"), "目标", {
       appendUserMessage: true,
