@@ -143,6 +143,7 @@ import {
   type RightSidebarVisibilityPreference,
 } from "./right-sidebar-preference.js";
 import { createRightSidebarTabsStore } from "./right-sidebar-tabs-store.js";
+import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import {
   applyAgentTeamMemberExternalChange,
   clearAgentTeamMemberExternalChange,
@@ -470,6 +471,9 @@ export function OperatorConsoleApp({
   const [state, setState] = useState<LocalConsoleState | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
   const rightSidebarTabsStoreRef = useRef(createRightSidebarTabsStore(window.localStorage));
+  const conversationReadingPositionStoreRef = useRef(
+    createConversationReadingPositionStore(window.localStorage),
+  );
   const [rightSidebarTabs, setRightSidebarTabs] = useState<RightSidebarTabsState>(() =>
     rightSidebarTabsStoreRef.current.read(selection.sessionId),
   );
@@ -544,6 +548,16 @@ export function OperatorConsoleApp({
     currentDraftKey: activeSubSessionDraftKey,
     onError: reportAttachmentError,
   });
+
+  useEffect(() => {
+    if (state === null) return;
+    conversationReadingPositionStoreRef.current.retain(
+      state.projects.flatMap((candidate) =>
+        candidate.sessions
+          .filter((session) => session.parentSessionId == null)
+          .map((session) => session.sessionId)),
+    );
+  }, [state]);
 
   const commitAgentTeamDraftState = useCallback((nextState: AgentTeamDraftState) => {
     agentTeamDraftStateRef.current = nextState;
@@ -2517,6 +2531,12 @@ export function OperatorConsoleApp({
       selectedSessionId={selection.sessionId}
       selectedSession={selectedSession}
       messages={messagesWithPreviews}
+      initialReadingMessageId={selectedSession === null
+        ? null
+        : conversationReadingPositionStoreRef.current.read(selectedSession.sessionId)}
+      onReadingMessageChange={(sessionId, messageId) => {
+        conversationReadingPositionStoreRef.current.write(sessionId, messageId);
+      }}
       pendingPrimaryMessages={state?.pendingPrimaryMessages ?? []}
       childSessions={state?.childSessions ?? []}
       memberIdentities={state?.memberIdentities ?? []}

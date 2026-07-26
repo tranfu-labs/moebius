@@ -1697,6 +1697,30 @@ describe("OperatorConsole", () => {
     expect(timeline.scrollTop).toBe(1_000);
   });
 
+  it("owns one relay rail in the main conversation and keeps it out of the session sidebar", () => {
+    renderConsole({
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "请开始" }),
+        message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
+      ],
+      memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
+    });
+
+    const slot = screen.getByTestId("main-conversation-relay-slot");
+    const rail = within(slot).getByTestId("conversation-relay-rail");
+    expect(rail).toBeInTheDocument();
+    expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
+      "conversation-relay-rail",
+    )).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(rail);
+    expect(screen.getByTestId("relay-event-message-2")).toHaveAttribute(
+      "data-hit-target",
+      "row",
+    );
+    expect(screen.getByTestId("relay-connector").getAttribute("d")).toContain(" C ");
+  });
+
   it("keeps machine terms out of the default conversation surface", () => {
     renderConsole({
       messages: [

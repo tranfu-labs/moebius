@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => {
   const input =
     mode === "agent-conversation"
       ? resolve(here, "agent-conversation.html")
+      : mode === "main-conversation"
+        ? resolve(here, "src/main-conversation/index.html")
       : resolve(here, "index.html");
 
   return {

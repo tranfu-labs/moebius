@@ -14,7 +14,15 @@ import {
   Settings,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import {
   type AgentExecutionProfile,
@@ -32,6 +40,11 @@ import {
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
+import { ConversationRelayRail } from "@/console/conversation-relay-rail";
+import {
+  projectConversationRelayEvents,
+  type ConversationRelayEvent,
+} from "@/console/conversation-relay-rail-model";
 import {
   MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
   MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
@@ -306,6 +319,8 @@ export interface OperatorConsoleProps {
   selectedSessionId: string;
   selectedSession: OperatorSession | null;
   messages: OperatorMessage[];
+  initialReadingMessageId?: number | null;
+  onReadingMessageChange?: (sessionId: string, messageId: number) => void;
   pendingPrimaryMessages?: OperatorMessage[];
   childSessions?: OperatorChildSessionSummary[];
   memberIdentities?: readonly OperatorMemberIdentity[];
@@ -442,6 +457,8 @@ export function OperatorConsole({
   selectedSessionId,
   selectedSession,
   messages,
+  initialReadingMessageId = null,
+  onReadingMessageChange,
   pendingPrimaryMessages = [],
   childSessions = [],
   memberIdentities = [],
@@ -573,6 +590,15 @@ export function OperatorConsole({
   const timelineScrollRef = useRef<HTMLElement | null>(null);
   const followTimelineRef = useRef(true);
   const parentScrollTopRef = useRef(0);
+  const parentConversationPaneRef = useRef<HTMLDivElement | null>(null);
+  const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
+  const restoredReadingSessionRef = useRef<string | null>(null);
+  const conversationFocusFrameRef = useRef<number | null>(null);
+  const conversationHighlightTimerRef = useRef<number | null>(null);
+  const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
+  const [currentRelayEventId, setCurrentRelayEventId] = useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
+  const [relayFeedback, setRelayFeedback] = useState("");
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
@@ -629,6 +655,13 @@ export function OperatorConsole({
     && !selectedAgentTeamUnavailable
     && !continuationBlocked;
   const emptyConversation = messages.length === 0 && displayedActiveRuns.length === 0;
+  const conversationRelayEvents = useMemo(
+    () => projectConversationRelayEvents(
+      messages,
+      (role) => resolveOperatorMemberName(role, memberIdentities),
+    ),
+    [memberIdentities, messages],
+  );
   const resultCardVisible = shouldShowResultCard({
     diffAvailable: workspaceDiff.available,
     isRunning: displayedActiveRuns.length > 0 || selectedSession?.status === "running" || (selectedSession?.runningCount ?? 0) > 0,
@@ -682,21 +715,104 @@ export function OperatorConsole({
     rightSidebarTabs,
   ]);
 
-  useEffect(() => {
-    followTimelineRef.current = true;
-    setShowJumpToBottom(false);
-  }, [selectedSessionId]);
+  useLayoutEffect(() => {
+    const pane = parentConversationPaneRef.current;
+    if (pane === null) return;
+    const update = () => setConversationPaneWidth(Math.round(pane.getBoundingClientRect().width));
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [applicationView, newConversation]);
+
+  useEffect(() => () => {
+    if (conversationFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(conversationFocusFrameRef.current);
+    }
+    if (conversationHighlightTimerRef.current !== null) {
+      window.clearTimeout(conversationHighlightTimerRef.current);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (restoredReadingSessionRef.current === selectedSessionId) return;
+    if (conversationRelayEvents.length === 0) {
+      setCurrentRelayEventId(null);
+      return;
+    }
+    if (!messages.some((message) => message.sessionId === selectedSessionId)) return;
+    const savedEvent = initialReadingMessageId === null
+      ? undefined
+      : conversationRelayEvents.find((event) => event.messageId === initialReadingMessageId);
+    const targetEvent = savedEvent ?? conversationRelayEvents.at(-1);
+    if (targetEvent === undefined) return;
+    restoredReadingSessionRef.current = selectedSessionId;
+    setCurrentRelayEventId(targetEvent.id);
+    onReadingMessageChange?.(selectedSessionId, targetEvent.messageId);
+
+    const timeline = timelineScrollRef.current;
+    const target = conversationMessageRefs.current.get(targetEvent.messageId);
+    const followsLatest = targetEvent.id === conversationRelayEvents.at(-1)?.id;
+    followTimelineRef.current = followsLatest;
+    setShowJumpToBottom(!followsLatest);
+    if (timeline === null) return;
+    if (followsLatest || target === undefined) {
+      timeline.scrollTop = timeline.scrollHeight;
+      return;
+    }
+    target.scrollIntoView({ block: "center", behavior: "auto" });
+  }, [
+    conversationRelayEvents,
+    initialReadingMessageId,
+    onReadingMessageChange,
+    selectedSessionId,
+  ]);
 
   useLayoutEffect(() => {
     const timeline = timelineScrollRef.current;
     if (timeline !== null && followTimelineRef.current) {
       timeline.scrollTop = timeline.scrollHeight;
+      const latestEvent = conversationRelayEvents.at(-1);
+      if (latestEvent !== undefined) {
+        setCurrentRelayEventId(latestEvent.id);
+        onReadingMessageChange?.(selectedSessionId, latestEvent.messageId);
+      }
     }
   }, [
+    conversationRelayEvents,
     messages.length,
     displayedActiveRuns.map((run) => `${run.runId}:${run.lastOutputSummary}:${run.liveMarkdown ?? ""}`).join("|"),
+    onReadingMessageChange,
     selectedSessionId,
   ]);
+
+  const locateConversationRelayEvent = (event: ConversationRelayEvent) => {
+    const timeline = timelineScrollRef.current;
+    const target = conversationMessageRefs.current.get(event.messageId);
+    if (timeline === null || target === undefined) {
+      setRelayFeedback("无法定位到原消息，已保持当前阅读位置");
+      return;
+    }
+    const latestEvent = conversationRelayEvents.at(-1);
+    followTimelineRef.current = latestEvent?.id === event.id;
+    setShowJumpToBottom(!followTimelineRef.current);
+    setCurrentRelayEventId(event.id);
+    onReadingMessageChange?.(selectedSessionId, event.messageId);
+    target.scrollIntoView({
+      block: "center",
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+    target.focus({ preventScroll: true });
+    setHighlightedMessageId(event.messageId);
+    setRelayFeedback("已定位并突出原消息");
+    if (conversationHighlightTimerRef.current !== null) {
+      window.clearTimeout(conversationHighlightTimerRef.current);
+    }
+    conversationHighlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedMessageId(null);
+    }, prefersReducedMotion() ? 700 : 1500);
+  };
 
   const openSubSession = (sessionId: string) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
@@ -1154,9 +1270,30 @@ export function OperatorConsole({
         ) : (
           <>
             <div
+              ref={parentConversationPaneRef}
               className="relative flex min-h-0 flex-1 flex-col"
               data-testid="parent-conversation-pane"
             >
+            {selectedSession !== null && conversationRelayEvents.length > 0 ? (
+              <div
+                className={cn(
+                  "pointer-events-none absolute top-[calc(var(--window-header-height)+12px)] z-20 w-11",
+                  pendingPrimaryMessages.length > 0 ? "bottom-72" : "bottom-40",
+                )}
+                data-testid="main-conversation-relay-slot"
+                style={{ left: "max(8px, calc(50% - 424px))" }}
+              >
+                <ConversationRelayRail
+                  containerWidth={conversationPaneWidth}
+                  currentEventId={currentRelayEventId}
+                  events={conversationRelayEvents}
+                  onActivate={locateConversationRelayEvent}
+                  onBrowse={() => {
+                    setRelayFeedback("目录焦点已移动；主时间线位置保持不变");
+                  }}
+                />
+              </div>
+            ) : null}
             <section
               className={cn(
                 "scroll-thin min-h-0 flex-1 overflow-auto",
@@ -1169,6 +1306,28 @@ export function OperatorConsole({
                 const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
                 followTimelineRef.current = atBottom;
                 setShowJumpToBottom(!atBottom);
+                if (conversationFocusFrameRef.current !== null) return;
+                conversationFocusFrameRef.current = window.requestAnimationFrame(() => {
+                  conversationFocusFrameRef.current = null;
+                  const bounds = timeline.getBoundingClientRect();
+                  const readingCenter = bounds.top + bounds.height / 2;
+                  let nearest: ConversationRelayEvent | null = null;
+                  let nearestDistance = Number.POSITIVE_INFINITY;
+                  for (const relayEvent of conversationRelayEvents) {
+                    const element = conversationMessageRefs.current.get(relayEvent.messageId);
+                    if (element === undefined) continue;
+                    const rect = element.getBoundingClientRect();
+                    const distance = Math.abs(rect.top + rect.height / 2 - readingCenter);
+                    if (distance < nearestDistance) {
+                      nearest = relayEvent;
+                      nearestDistance = distance;
+                    }
+                  }
+                  if (nearest !== null && nearest.id !== currentRelayEventId) {
+                    setCurrentRelayEventId(nearest.id);
+                    onReadingMessageChange?.(selectedSessionId, nearest.messageId);
+                  }
+                });
               }}
             >
               {selectedSession ? (
@@ -1203,19 +1362,33 @@ export function OperatorConsole({
                   <div className={cn("mx-auto", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
                     <div>
                       {messages.map((message) => (
-                        <TimelineEntry
+                        <div
                           key={message.id}
-                          message={message}
-                          memberIdentities={memberIdentities}
-                          childSessions={childSessions}
-                          openedSubSessionId={openedSubSessionId}
-                          onOpenSubSession={openSubSession}
-                          onRetryRun={onRetryRun}
-                          onEditAndResend={onEditAndResend}
-                          onOpenDiagnostics={onOpenDiagnostics}
-                          onOpenExternalLink={onOpenExternalLink}
-                          onOpenEvidence={openEvidence}
-                        />
+                          ref={(element) => {
+                            if (element === null) conversationMessageRefs.current.delete(message.id);
+                            else conversationMessageRefs.current.set(message.id, element);
+                          }}
+                          className={cn(
+                            "rounded-md outline-none transition-colors",
+                            highlightedMessageId === message.id && "bg-accent/10",
+                          )}
+                          data-message-id={message.id}
+                          data-testid={`timeline-message-${String(message.id)}`}
+                          tabIndex={-1}
+                        >
+                          <TimelineEntry
+                            message={message}
+                            memberIdentities={memberIdentities}
+                            childSessions={childSessions}
+                            openedSubSessionId={openedSubSessionId}
+                            onOpenSubSession={openSubSession}
+                            onRetryRun={onRetryRun}
+                            onEditAndResend={onEditAndResend}
+                            onOpenDiagnostics={onOpenDiagnostics}
+                            onOpenExternalLink={onOpenExternalLink}
+                            onOpenEvidence={openEvidence}
+                          />
+                        </div>
                       ))}
                     </div>
 
@@ -1279,6 +1452,9 @@ export function OperatorConsole({
                 </div>
               )}
             </section>
+            <p className="sr-only" aria-live="polite" data-testid="conversation-relay-feedback">
+              {relayFeedback}
+            </p>
 
             {showJumpToBottom ? (
               <button
@@ -2217,6 +2393,11 @@ function formatTime(value: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(parsed);
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function nonBlank(value: string | null | undefined): string | null {
