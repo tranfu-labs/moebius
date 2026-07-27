@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import {
+  RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES,
   addBlankRightSidebarTab,
   closeRightSidebarTab,
@@ -24,6 +25,7 @@ import {
   type RightSidebarTabType,
   type RightSidebarTabsState,
 } from "@/console/right-sidebar-tabs";
+import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export const DEFAULT_RIGHT_SIDEBAR_WIDTH_PX = 420;
@@ -71,6 +73,7 @@ export function RightSidebar({
   contentSlots = {},
   className,
 }: RightSidebarProps): JSX.Element | null {
+  const { t } = useI18n();
   const resizeGestureRef = useRef<ResizeGesture | null>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null;
 
@@ -103,7 +106,7 @@ export function RightSidebar({
         className,
       )}
       style={narrow ? undefined : { width: `${width}px` }}
-      aria-label="右侧栏"
+      aria-label={t("console.rightSidebar.label")}
       data-layout={narrow ? "overlay" : "split"}
       data-testid="right-sidebar"
     >
@@ -111,12 +114,12 @@ export function RightSidebar({
         <div
           className="window-no-drag group absolute inset-y-0 left-0 z-30 w-1 -translate-x-1/2 cursor-col-resize touch-none"
           role="separator"
-          aria-label="调整右侧栏宽度"
+          aria-label={t("console.rightSidebar.resize")}
           aria-orientation="vertical"
           aria-valuemin={MIN_RIGHT_SIDEBAR_WIDTH_PX}
           aria-valuemax={MAX_RIGHT_SIDEBAR_WIDTH_PX}
           aria-valuenow={width}
-          aria-valuetext={`${width} 像素`}
+          aria-valuetext={t("sidebar.widthPixels", { width })}
           data-testid="right-sidebar-resize-handle"
           onPointerDown={(event) => {
             if (event.button !== 0) {
@@ -142,44 +145,47 @@ export function RightSidebar({
         <div
           className="scroll-thin window-no-drag flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
           role="tablist"
-          aria-label="右侧栏标签"
+          aria-label={t("console.rightSidebar.tabs")}
         >
-          {state.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={cn(
-                "flex h-[30px] max-w-[150px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-[12.5px] font-medium transition-colors",
-                activeTab?.id === tab.id ? "bg-sel text-ink" : "text-sub hover:bg-hover hover:text-ink",
-              )}
-            >
-              <button
-                type="button"
-                className="flex min-w-0 items-center gap-1.5"
-                role="tab"
-                aria-selected={activeTab?.id === tab.id}
-                title={tab.title}
-                onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
+          {state.tabs.map((tab) => {
+            const displayTitle = rightSidebarTabDisplayTitle(tab, t);
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  "flex h-[30px] max-w-[150px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-[12.5px] font-medium transition-colors",
+                  activeTab?.id === tab.id ? "bg-sel text-ink" : "text-sub hover:bg-hover hover:text-ink",
+                )}
               >
-                <TabIcon type={tab.type} />
-                <span className="truncate">{tab.title}</span>
-              </button>
-              <button
-                type="button"
-                className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-sub hover:bg-sunken hover:text-ink"
-                aria-label={`关闭标签：${tab.title}`}
-                onClick={() => onStateChange(closeRightSidebarTab(state, tab.id, createTabId()))}
-              >
-                <X className="h-[11px] w-[11px]" strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-1.5"
+                  role="tab"
+                  aria-selected={activeTab?.id === tab.id}
+                  title={displayTitle}
+                  onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
+                >
+                  <TabIcon type={tab.type} />
+                  <span className="truncate">{displayTitle}</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-sub hover:bg-sunken hover:text-ink"
+                  aria-label={t("console.rightSidebar.closeTab", { title: displayTitle })}
+                  onClick={() => onStateChange(closeRightSidebarTab(state, tab.id, createTabId()))}
+                >
+                  <X className="h-[11px] w-[11px]" strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <button
           type="button"
           className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-          aria-label="新建空白标签"
-          title="新建空白标签"
+          aria-label={t("console.rightSidebar.newTab")}
+          title={t("console.rightSidebar.newTab")}
           onClick={() => onStateChange(addBlankRightSidebarTab(state, createTabId()))}
         >
           <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -189,8 +195,8 @@ export function RightSidebar({
           <button
             type="button"
             className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-            aria-label="关闭右侧栏并回到会话区"
-            title="回到会话区"
+            aria-label={t("console.rightSidebar.closeReturn")}
+            title={t("console.rightSidebar.return")}
             onClick={() => onOpenChange(false)}
           >
             <X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -200,7 +206,7 @@ export function RightSidebar({
 
       <div className="scroll-thin min-h-0 flex-1 overflow-auto" data-testid="right-sidebar-content">
         {activeTab === null ? (
-          <div className="grid min-h-full place-items-center p-6 text-sm text-sub">正在准备标签…</div>
+          <div className="grid min-h-full place-items-center p-6 text-sm text-sub">{t("console.rightSidebar.preparing")}</div>
         ) : activeTab.type === "blank" ? (
           <BlankTab
             isGitRepository={isGitRepository}
@@ -221,12 +227,15 @@ function BlankTab({
   isGitRepository: boolean;
   onSelect: (type: RightSidebarSelectableTabType) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const visibleTypes = RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES.filter(
     (type) => type !== "workspace-diff" || isGitRepository,
   );
   return (
     <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-6 py-10">
-      <h2 className="text-center font-display text-base font-semibold tracking-[-0.01em] text-ink">这个标签要看什么</h2>
+      <h2 className="text-center font-display text-base font-semibold tracking-[-0.01em] text-ink">
+        {t("console.rightSidebar.chooseContent")}
+      </h2>
       <div className="mt-5 overflow-hidden rounded-md border border-line bg-card">
         {visibleTypes.map((type) => (
           <button
@@ -242,10 +251,10 @@ function BlankTab({
             )}
             <span>
               <span className="block text-sm font-medium text-ink">
-                {type === "workspace-diff" ? "改动" : "项目文件"}
+                {t(type === "workspace-diff" ? "console.rightSidebar.changes" : "console.rightSidebar.projectFiles")}
               </span>
               <span className="mt-0.5 block text-xs leading-5 text-sub">
-                {type === "workspace-diff" ? "这段对话期间变了什么" : "浏览完整项目树"}
+                {t(type === "workspace-diff" ? "console.rightSidebar.changesDescription" : "console.rightSidebar.projectFilesDescription")}
               </span>
             </span>
           </button>
@@ -253,35 +262,49 @@ function BlankTab({
       </div>
       {!isGitRepository ? (
         <p className="mt-3 text-xs leading-5 text-sub" role="note">
-          这个项目文件夹不是 git 仓库，无法可靠判断这段对话期间的改动，因此只提供项目文件。
+          {t("console.rightSidebar.notGit")}
         </p>
       ) : null}
       <p className="mt-5 text-center text-xs leading-5 text-sub">
-        成员的完整输出和子任务从左边的主对话区点开。
+        {t("console.rightSidebar.openFromTimeline")}
       </p>
     </div>
   );
 }
 
 function ContentSlotPlaceholder({ tab }: { tab: RightSidebarTab }): JSX.Element {
-  const label = tab.type === "workspace-diff"
-    ? "改动"
-    : tab.type === "project-files"
-      ? "项目文件"
-      : tab.type === "file-reference"
-        ? "文件引用"
-      : tab.type === "run-output"
-        ? "过程"
-        : "子任务";
+  const { t } = useI18n();
+  const label = rightSidebarTabLabel(tab.type, t);
   return (
     <div className="grid min-h-full place-items-center p-6 text-center">
       <div>
         <TabIcon type={tab.type} className="mx-auto h-5 w-5 text-hint" />
         <h2 className="mt-3 text-sm font-medium text-ink">{label}</h2>
-        <p className="mt-1 text-xs leading-5 text-sub">此标签的内容将在后续功能中接入。</p>
+        <p className="mt-1 text-xs leading-5 text-sub">{t("console.rightSidebar.placeholder")}</p>
       </div>
     </div>
   );
+}
+
+function rightSidebarTabLabel(type: RightSidebarTabType, t: Translate): string {
+  if (type === "workspace-diff") return t("console.rightSidebar.changes");
+  if (type === "project-files") return t("console.rightSidebar.projectFiles");
+  if (type === "file-reference") return t("console.rightSidebar.fileReference");
+  if (type === "run-output") return t("console.rightSidebar.process");
+  return t("console.rightSidebar.subtask");
+}
+
+function rightSidebarTabDisplayTitle(tab: RightSidebarTab, t: Translate): string {
+  if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank) {
+    return t("console.rightSidebar.blank");
+  }
+  if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff) {
+    return t("console.rightSidebar.changes");
+  }
+  if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles) {
+    return t("console.rightSidebar.projectFiles");
+  }
+  return tab.title;
 }
 
 function TabIcon({

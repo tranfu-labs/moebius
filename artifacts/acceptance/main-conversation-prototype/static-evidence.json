@@ -1,0 +1,14 @@
+{
+  "prototype": "docs/product/pages/main-conversation.prototype.html",
+  "sha256": "ee54c6121796bac4e8229ad794490278c17eb11fd39c6bba19c24163640ab355",
+  "checkedAt": "2026-07-27T10:58:00.678Z",
+  "checks": [
+    "prototype-marker",
+    "single-html-has-no-external-resource-attributes",
+    "prototype-disclaimer",
+    "interactive-fixture-content",
+    "responsive-keyboard-location-and-motion-contracts",
+    "no-gradient-or-shadow",
+    "no-network-primitive"
+  ]
+}

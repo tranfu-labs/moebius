@@ -8,12 +8,14 @@ export interface AgentTeamFileManagerRequest {
   memberSlug?: string;
 }
 
-export function getAgentTeamFileManagerLabel(platform: NodeJS.Platform): string {
+export type AgentTeamFileManagerKind = "finder" | "windows-explorer" | "file-manager";
+
+export function getAgentTeamFileManagerKind(platform: NodeJS.Platform): AgentTeamFileManagerKind {
   if (platform === "darwin") {
-    return "在 Finder 中打开";
+    return "finder";
   }
   if (platform === "win32") {
-    return "在文件资源管理器中显示";
+    return "windows-explorer";
   }
-  return "在文件管理器中打开";
+  return "file-manager";
 }

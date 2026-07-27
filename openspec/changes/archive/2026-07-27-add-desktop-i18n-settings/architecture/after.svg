@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520">
+  <style>
+    text{font-family:Inter,Arial,sans-serif;fill:#202124;font-size:15px}
+    .title{font-size:22px;font-weight:600}.box{fill:#fff;stroke:#5f6368;stroke-width:2;rx:14}
+    .accent{fill:#eef0ff;stroke:#5e6ad2;stroke-width:2;rx:14}.arrow{stroke:#5f6368;stroke-width:2;fill:none;marker-end:url(#a)}
+  </style>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#5f6368"/></marker></defs>
+  <text x="38" y="40" class="title">After: persist first, then commit locale globally</text>
+  <rect x="40" y="92" width="225" height="100" class="accent"/><text x="78" y="130">console-ui provider</text><text x="78" y="156">zh-CN.ts / en.ts</text><text x="78" y="180">SettingsDialog</text>
+  <rect x="330" y="92" width="210" height="100" class="box"/><text x="378" y="130">desktop renderer</text><text x="378" y="156">active / pending</text><text x="378" y="180">saving / failed</text>
+  <rect x="605" y="92" width="190" height="100" class="box"/><text x="666" y="130">preload</text><text x="634" y="156">read / save / subscribe</text>
+  <rect x="860" y="92" width="215" height="100" class="box"/><text x="918" y="130">main process</text><text x="896" y="156">serialize + broadcast</text>
+  <rect x="860" y="300" width="215" height="90" class="accent"/><text x="900" y="338">preference file</text><text x="887" y="366">temp file → rename</text>
+  <rect x="535" y="410" width="260" height="75" class="box"/><text x="586" y="444">status / native copy</text><text x="572" y="469">desktop zh-CN.ts / en.ts</text>
+  <path d="M265 142H330" class="arrow"/><path d="M540 142H605" class="arrow"/><path d="M795 142H860" class="arrow"/>
+  <path d="M968 192V300" class="arrow"/><path d="M860 168C770 250 500 270 420 192" class="arrow"/>
+  <path d="M905 390C850 430 820 445 795 447" class="arrow"/>
+  <text x="458" y="252">broadcast only after successful rename</text>
+</svg>

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ArrowUp, Plus, Square } from "lucide-react";
 
+import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -17,15 +18,33 @@ export interface RoleCompletion {
   avatar?: string;
 }
 
-export const ROLE_COMPLETIONS = [
-  { handle: "ceo", label: "CEO", description: "澄清目标并编排任务", avatar: "C" },
-  { handle: "dev", label: "开发", description: "写方案并实现代码", avatar: "开" },
-  { handle: "qa", label: "测试", description: "审查方案与测试设计", avatar: "测" },
-  { handle: "dev-manager", label: "技术负责人", description: "技术决策与质量把关", avatar: "技" },
-  { handle: "product-manager", label: "产品", description: "确认需求与验收范围", avatar: "产" },
-  { handle: "hermes-user", label: "用户代表", description: "从用户视角验收体验", avatar: "用" },
-  { handle: "secretary", label: "秘书", description: "维护 CEO 规则与文档", avatar: "秘" },
-] as const satisfies readonly RoleCompletion[];
+const ROLE_COMPLETION_META = [
+  { handle: "ceo", labelKey: "console.role.ceo", descriptionKey: "console.role.ceoDescription", avatar: "C" },
+  { handle: "dev", labelKey: "console.role.dev", descriptionKey: "console.role.devDescription", avatar: "D" },
+  { handle: "qa", labelKey: "console.role.qa", descriptionKey: "console.role.qaDescription", avatar: "Q" },
+  { handle: "dev-manager", labelKey: "console.role.devManager", descriptionKey: "console.role.devManagerDescription", avatar: "T" },
+  { handle: "product-manager", labelKey: "console.role.product", descriptionKey: "console.role.productDescription", avatar: "P" },
+  { handle: "hermes-user", labelKey: "console.role.user", descriptionKey: "console.role.userDescription", avatar: "U" },
+  { handle: "secretary", labelKey: "console.role.secretary", descriptionKey: "console.role.secretaryDescription", avatar: "S" },
+] as const satisfies readonly {
+  handle: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  avatar: string;
+}[];
+
+function localizedRoleCompletions(t: Translate): readonly RoleCompletion[] {
+  return ROLE_COMPLETION_META.map((role) => ({
+    handle: role.handle,
+    label: t(role.labelKey),
+    description: t(role.descriptionKey),
+    avatar: role.avatar,
+  }));
+}
+
+export const ROLE_COMPLETIONS = localizedRoleCompletions(
+  (key, values) => translate("zh-CN", key, values),
+);
 
 export type RoleHandle = string;
 
@@ -176,15 +195,15 @@ export function RoleComposer({
   value,
   onValueChange,
   onSubmit,
-  placeholder = "描述你的目标，@ 一个角色开始…",
+  placeholder,
   statusText,
-  submitLabel = "发送消息",
-  interruptLabel = "停下主理人",
+  submitLabel,
+  interruptLabel,
   disabled = false,
   submitDisabled = false,
   runActive = false,
   onInterrupt,
-  roles: roleOptions = ROLE_COMPLETIONS,
+  roles,
   context,
   className,
   attachments = [],
@@ -192,6 +211,11 @@ export function RoleComposer({
   onAttachmentRemove,
   onAttachmentRetry,
 }: RoleComposerProps): JSX.Element {
+  const { t } = useI18n();
+  const roleOptions = roles ?? localizedRoleCompletions(t);
+  const resolvedPlaceholder = placeholder ?? t("console.roleComposer.placeholder");
+  const resolvedSubmitLabel = submitLabel ?? t("console.roleComposer.submit");
+  const resolvedInterruptLabel = interruptLabel ?? t("console.roleComposer.interrupt");
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const pendingCaretRef = React.useRef<number | null>(null);
@@ -290,7 +314,7 @@ export function RoleComposer({
           id={listboxId}
           role="listbox"
           className="absolute bottom-full left-0 z-30 mb-2 w-full rounded-md border border-line bg-sunken p-1.5"
-          aria-label="角色补全面板"
+          aria-label={t("console.roleComposer.completions")}
         >
           {matchingRoleOptions.map((role, index) => (
             <button
@@ -361,8 +385,8 @@ export function RoleComposer({
             value={value}
             rows={2}
             disabled={disabled}
-            placeholder={placeholder}
-            aria-label="消息内容"
+            placeholder={resolvedPlaceholder}
+            aria-label={t("console.roleComposer.message")}
             aria-autocomplete="list"
             aria-expanded={panelOpen}
             aria-controls={panelOpen ? listboxId : undefined}
@@ -418,8 +442,8 @@ export function RoleComposer({
               runActive ? "right-[84px]" : "right-12",
             )}
             disabled={disabled}
-            aria-label="添加附件"
-            title="添加附件"
+            aria-label={t("console.roleComposer.addAttachment")}
+            title={t("console.roleComposer.addAttachment")}
             onClick={() => fileInputRef.current?.click()}
           >
             <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -430,8 +454,8 @@ export function RoleComposer({
               size="icon"
               className="absolute bottom-3 right-12 h-8 w-8 rounded-[10px] bg-ink p-0 text-canvas hover:opacity-85"
               disabled={!canSubmit}
-              aria-label={submitLabel}
-              title={submitLabel}
+              aria-label={resolvedSubmitLabel}
+              title={resolvedSubmitLabel}
               onClick={() => onSubmit?.(value, readyAttachmentIds)}
             >
               <ArrowUp className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -447,8 +471,8 @@ export function RoleComposer({
                 : "bg-ink text-canvas hover:opacity-85",
             )}
             disabled={runActive ? disabled || onInterrupt === undefined : !canSubmit}
-            aria-label={runActive ? interruptLabel : submitLabel}
-            title={runActive ? interruptLabel : submitLabel}
+            aria-label={runActive ? resolvedInterruptLabel : resolvedSubmitLabel}
+            title={runActive ? resolvedInterruptLabel : resolvedSubmitLabel}
             onClick={runActive ? onInterrupt : () => onSubmit?.(value, readyAttachmentIds)}
           >
             {runActive ? (

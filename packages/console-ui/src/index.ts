@@ -1,6 +1,7 @@
 export * from "./ai-team-builder/team-builder-view";
 export * from "./ai-team-builder/team-proposal-card";
 export * from "./brand/moebius-logo";
+export * from "./i18n";
 export * from "./onboarding/onboarding-shell";
 export * from "./onboarding/onboarding-state";
 export * from "./console/accept-card";
@@ -33,6 +34,7 @@ export * from "./console/run-block";
 export * from "./console/run-outcome";
 export * from "./console/session-context-header";
 export * from "./console/session-team-menu";
+export * from "./console/settings-dialog";
 export * from "./console/sub-session-card";
 export * from "./console/sub-session-panel";
 export * from "./console/subtask-tab";

@@ -1,4 +1,5 @@
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import type { Translate } from "@/i18n";
 
 export type OnboardingStep = 1 | 2 | 3 | 4;
 export type OnboardingCli = "codex" | "kimi";
@@ -94,6 +95,7 @@ export interface OnboardingTeamCompatibility {
 export function getOnboardingTeamCompatibility(
   team: OperatorAgentTeam | null,
   environment: OnboardingEnvironmentState,
+  t: Translate,
 ): OnboardingTeamCompatibility {
   if (team === null) {
     return { affectedCount: 0, clis: [], copy: "" };
@@ -110,9 +112,12 @@ export function getOnboardingTeamCompatibility(
     clis,
     copy: missing.length === 0
       ? ""
-      : `其中 ${String(missing.length)} 名成员仍需完成 ${clis
-        .map((cli) => cli === "codex" ? "Codex" : "Kimi")
-        .join(" / ")} 准备`,
+      : t("onboarding.teamCompatibility", {
+          count: missing.length,
+          clis: clis
+            .map((cli) => cli === "codex" ? "Codex" : "Kimi")
+            .join(" / "),
+        }),
   };
 }
 

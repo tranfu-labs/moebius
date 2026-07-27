@@ -11,6 +11,7 @@ import {
   readyComposerAttachmentIds,
   type ComposerAttachment,
 } from "@/console/structured-attachments";
+import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -93,10 +94,11 @@ export function NewConversationPage({
   onSubmit,
   className,
 }: NewConversationPageProps): JSX.Element {
+  const { t } = useI18n();
   const [confirmIndependentWorkspace, setConfirmIndependentWorkspace] = useState(false);
   const selectedProject = projects.find((project) => project.projectId === selectedProjectId && project.available);
   const selectedTeam = teams.find((team) => team.teamKey === selectedTeamKey);
-  const compatibility = getNewConversationTeamCompatibility(selectedTeam, cliReadiness);
+  const compatibility = getNewConversationTeamCompatibility(selectedTeam, cliReadiness, t);
   const hasAvailableProjects = projects.some((project) => project.available);
   const canSubmit = selectedProject !== undefined
     && selectedTeamKey !== null
@@ -106,14 +108,14 @@ export function NewConversationPage({
     && !isProjectMutationPending;
   const disabledReason = selectedProject === undefined
     ? hasAvailableProjects
-      ? "选择一个项目后才能发送"
-      : "还没有项目，从上面的项目按钮添加一个"
+      ? t("console.newConversation.selectProject")
+      : t("console.newConversation.addProjectFirst")
     : selectedTeamKey === null
-      ? "选择一支可用的 Agent 团队后才能发送"
+      ? t("console.newConversation.selectTeam")
       : undefined;
 
   return (
-    <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label="新建对话">
+    <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label={t("console.newConversation.label")}>
       <header
         className={cn(
           "window-drag-region shrink-0 pb-3 pt-12",
@@ -125,9 +127,9 @@ export function NewConversationPage({
             "mx-auto w-full truncate text-base font-semibold text-ink",
             MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
           )}
-          title="新对话"
+          title={t("console.newConversation.title")}
         >
-          新对话
+          {t("console.newConversation.title")}
         </h1>
       </header>
       <div
@@ -143,7 +145,7 @@ export function NewConversationPage({
           )}
           data-testid="new-conversation-column"
         >
-          <p className="mb-8 text-center text-lg font-medium text-ink">描述你的目标，团队会开始推进</p>
+          <p className="mb-8 text-center text-lg font-medium text-ink">{t("console.newConversation.invitation")}</p>
           <RoleComposer
             value={draft}
             attachments={attachments}
@@ -161,7 +163,7 @@ export function NewConversationPage({
               })) ?? []}
             disabled={isSubmitting}
             submitDisabled={!canSubmit}
-            placeholder="描述你的目标…"
+            placeholder={t("console.newConversation.placeholder")}
             statusText={disabledReason}
             context={(
               <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-sub">
@@ -189,15 +191,15 @@ export function NewConversationPage({
                 ) : null}
                 <label className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink">
                   <Diamond className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-                  <span className="sr-only">Agent 团队</span>
+                  <span className="sr-only">{t("console.common.agentTeam")}</span>
                   <select
                     className="min-w-0 max-w-48 bg-transparent text-xs text-inherit outline-none"
-                    aria-label="Agent 团队"
+                    aria-label={t("console.common.agentTeam")}
                     value={selectedTeamKey ?? ""}
                     disabled={isSubmitting || teams.length === 0}
                     onChange={(event) => onSelectTeam(event.currentTarget.value)}
                   >
-                    {teams.length === 0 ? <option value="">没有可用团队</option> : null}
+                    {teams.length === 0 ? <option value="">{t("console.newConversation.noTeams")}</option> : null}
                     {teams.map((team) => <option key={team.teamKey} value={team.teamKey}>{team.label}</option>)}
                   </select>
                 </label>
@@ -210,7 +212,7 @@ export function NewConversationPage({
               data-testid="new-conversation-team-compatibility"
             >
               <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <p>{compatibility.copy}；可在 Agent 团队页调整。</p>
+              <p>{t("console.newConversation.compatibilityHint", { copy: compatibility.copy })}</p>
             </div>
           ) : null}
           {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
@@ -222,15 +224,15 @@ export function NewConversationPage({
             className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink"
             role="dialog"
             aria-modal="true"
-            aria-label="换成独立工作空间"
+            aria-label={t("console.newConversation.switchWorktree")}
           >
-            <h2 className="text-base font-semibold">换成独立工作空间</h2>
+            <h2 className="text-base font-semibold">{t("console.newConversation.switchWorktree")}</h2>
             <p className="mt-2 text-sm leading-6 text-sub">
-              副本基于项目当前所在的提交，不包含你还没提交的改动。
+              {t("console.newConversation.worktreeWarning")}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setConfirmIndependentWorkspace(false)}>
-                取消
+                {t("console.common.cancel")}
               </Button>
               <Button
                 type="button"
@@ -239,7 +241,7 @@ export function NewConversationPage({
                   setConfirmIndependentWorkspace(false);
                 }}
               >
-                换过去
+                {t("console.newConversation.switch")}
               </Button>
             </div>
           </section>
@@ -252,6 +254,7 @@ export function NewConversationPage({
 function getNewConversationTeamCompatibility(
   team: NewConversationTeamOption | undefined,
   readiness: NewConversationPageProps["cliReadiness"],
+  t: Translate,
 ): { affectedCount: number; copy: string } {
   if (team === undefined || readiness === undefined) {
     return { affectedCount: 0, copy: "" };
@@ -265,7 +268,10 @@ function getNewConversationTeamCompatibility(
     affectedCount: missing.length,
     copy: missing.length === 0
       ? ""
-      : `其中 ${String(missing.length)} 名成员仍需完成 ${labels.join(" / ")} 准备`,
+      : t("console.newConversation.membersNeedCli", {
+          count: missing.length,
+          clis: labels.join(" / "),
+        }),
   };
 }
 
@@ -282,14 +288,15 @@ function WorkspaceMenu({
   onSelectDirect(): void;
   onSelectIndependent(): void;
 }): JSX.Element {
-  const label = mode === "worktree" ? "独立工作空间" : "默认工作空间";
+  const { t } = useI18n();
+  const label = t(mode === "worktree" ? "console.workspace.worktree" : "console.workspace.direct");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
-          aria-label={`工作空间：${label}，点击切换`}
+          aria-label={t("console.composerContext.workspaceSwitch", { workspace: label })}
           disabled={disabled}
         >
           <Laptop className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -300,8 +307,8 @@ function WorkspaceMenu({
       <DropdownMenuContent align="start" side="top" className="w-72">
         <DropdownMenuCheckboxItem checked={mode === "direct"} onSelect={() => mode !== "direct" && onSelectDirect()}>
           <span className="grid gap-0.5">
-            <span>默认工作空间</span>
-            <span className="text-xs font-normal text-sub">直接改项目文件夹里的文件</span>
+            <span>{t("console.workspace.direct")}</span>
+            <span className="text-xs font-normal text-sub">{t("console.workspace.directDescription")}</span>
           </span>
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
@@ -310,11 +317,11 @@ function WorkspaceMenu({
           onSelect={() => mode !== "worktree" && onSelectIndependent()}
         >
           <span className="grid gap-0.5">
-            <span>独立工作空间</span>
+            <span>{t("console.workspace.worktree")}</span>
             <span className="text-xs font-normal text-sub">
               {independentAvailable
-                ? "把改动隔离在一份副本里"
-                : "这个项目文件夹不是 git 仓库，无法隔离改动"}
+                ? t("console.workspace.worktreeDescription")
+                : t("console.workspace.notGit")}
             </span>
           </span>
         </DropdownMenuCheckboxItem>
@@ -336,17 +343,20 @@ function ProjectMenu({
   onSelectProject(projectId: string): void;
   onAddProject(): void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
-          aria-label={selectedProject ? `项目：${selectedProject.title}，点击切换` : "项目：未选择，点击选择"}
+          aria-label={selectedProject
+            ? t("console.composerContext.projectSwitch", { project: selectedProject.title })
+            : t("console.newConversation.projectUnselected")}
           disabled={disabled}
         >
           <FolderOpen className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-          <span className="max-w-48 truncate">{selectedProject?.title ?? "选择项目"}</span>
+          <span className="max-w-48 truncate">{selectedProject?.title ?? t("console.newConversation.chooseProject")}</span>
           <ChevronDown className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -363,7 +373,7 @@ function ProjectMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onAddProject}>
           <Plus className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-          添加项目…
+          {t("console.newConversation.addProject")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

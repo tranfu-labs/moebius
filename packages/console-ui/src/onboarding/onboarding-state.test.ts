@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { translate } from "@/i18n";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import {
@@ -124,7 +125,7 @@ describe("onboarding shell state", () => {
     const result = getOnboardingTeamCompatibility(team, {
       codex: { status: "ready", revision: 1 },
       kimi: { status: "missing", revision: 1 },
-    });
+    }, (key, values) => translate("zh-CN", key, values));
 
     expect(result).toEqual({
       affectedCount: 1,
@@ -132,5 +133,32 @@ describe("onboarding shell state", () => {
       copy: "其中 1 名成员仍需完成 Kimi 准备",
     });
     expect(team.members[1]?.executionProfile?.effectiveProfile.cli).toBe("kimi");
+  });
+
+  it("localizes the compatibility explanation in English", () => {
+    const result = getOnboardingTeamCompatibility({
+      ...builtInDevelopmentTeam,
+      members: [{
+        ...builtInDevelopmentTeam.members[0]!,
+        executionProfile: {
+          binding: {
+            source: "explicit",
+            profile: {
+              cli: "kimi",
+              model: "kimi",
+              effort: "high",
+            },
+          },
+          recommendation: null,
+          effectiveProfile: { cli: "kimi", model: "kimi", effort: "high" },
+        },
+      }],
+    }, {
+      codex: { status: "ready", revision: 1 },
+      kimi: { status: "missing", revision: 1 },
+    }, (key, values) => translate("en", key, values));
+
+    expect(result.copy).toBe("1 members still need Kimi setup");
+    expect(result.copy).not.toMatch(/\p{Script=Han}/u);
   });
 });

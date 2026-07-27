@@ -1,6 +1,7 @@
 import {
   parseRunOutputSourceKey,
-  resolveOperatorMemberName,
+  type Translate,
+  type TranslationKey,
   type OperatorEvidenceOpenIntent,
   type OperatorEvidenceView,
   type OperatorProcessAppendOutput,
@@ -227,14 +228,15 @@ export async function loadEvidenceView(options: {
   apiBase: string;
   intent: OperatorEvidenceOpenIntent;
   fetch: FetchLike;
+  t: Translate;
 }): Promise<OperatorEvidenceView> {
   if (options.intent.kind === "workspace-diff") {
     return {
       kind: "workspace-diff",
-      title: "对话改动",
+      title: options.t("desktop.evidence.workspaceDiffTitle"),
       content: options.intent.fileCount === 0
-        ? "这段对话期间没有文件发生改动。"
-        : `这段对话期间有 ${String(options.intent.fileCount)} 个文件发生改动。`,
+        ? options.t("desktop.evidence.noWorkspaceChanges")
+        : options.t("desktop.evidence.workspaceChangeCount", { count: options.intent.fileCount }),
     };
   }
 
@@ -253,14 +255,16 @@ export async function loadEvidenceView(options: {
     throw new Error(body.error ?? "complete output request failed");
   }
   const content = [
-    labeledOutput("标准输出", body.stdout),
-    labeledOutput("错误输出", body.stderr),
-    labeledOutput("记录", body.fallback ?? options.intent.fallbackOutput),
+    labeledOutput(options.t("desktop.evidence.stdout"), body.stdout),
+    labeledOutput(options.t("desktop.evidence.stderr"), body.stderr),
+    labeledOutput(options.t("desktop.evidence.record"), body.fallback ?? options.intent.fallbackOutput),
   ].filter((value): value is string => value !== null).join("\n\n");
   return {
     kind: "run-output",
-    title: `${resolveOperatorMemberName(options.intent.role)} · 完整输出`,
-    content: content || "这一步还没有可显示的输出。",
+    title: options.t("desktop.evidence.fullOutputTitle", {
+      member: translatedEvidenceMemberName(options.intent.role, options.t),
+    }),
+    content: content || options.t("desktop.evidence.noOutput"),
   };
 }
 
@@ -616,6 +620,25 @@ function labeledOutput(label: string, value: string | null | undefined): string 
   return text ? `${label}\n${text}` : null;
 }
 
+const evidenceMemberKeys: Readonly<Record<string, TranslationKey>> = {
+  ceo: "console.role.ceo",
+  dev: "console.role.dev",
+  "dev-manager": "console.role.devManager",
+  "product-manager": "console.role.product",
+  qa: "console.role.qa",
+  secretary: "console.role.secretary",
+  "hermes-user": "console.role.user",
+  user: "console.role.user",
+};
+
+function translatedEvidenceMemberName(role: string | null, t: Translate): string {
+  if (role === null || role.trim() === "") {
+    return t("console.common.collaborator");
+  }
+  const key = evidenceMemberKeys[role];
+  return key === undefined ? `@${role}` : t(key);
+}
+
 export interface CreatedSession {
   sessionId: string;
   agentTeamOwnership?: "system" | "user" | null;
@@ -651,6 +674,7 @@ export interface ConsoleStateActionsOptions {
   apiBase: string | null;
   coordinator: ConsoleStateCoordinator;
   fetch: FetchLike;
+  t: Translate;
   getSelection(): ConsoleSelection;
   commitSelection(selection: ConsoleSelection): void;
   refresh(selection: ConsoleSelection, mutationOwner?: SelectionMutationToken): Promise<boolean>;
@@ -677,7 +701,7 @@ export class ConsoleStateActions {
     attachmentIds: readonly string[] = [],
   ): Promise<CreatedSession | null> => {
     if (this.options.apiBase === null) {
-      this.options.setError("local console server unavailable");
+      this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       return null;
     }
     const normalizedMessage = initialMessage.trim();
@@ -723,11 +747,11 @@ export class ConsoleStateActions {
 
   readonly addProject = async (existingProjectIds: readonly string[]): Promise<{ projectId: string } | null> => {
     if (this.options.apiBase === null) {
-      this.options.setError("local console server unavailable");
+      this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       return null;
     }
     if (this.options.selectProjectFolder === undefined) {
-      this.options.setError("desktop folder picker unavailable");
+      this.options.setError(this.options.t("desktop.error.folderPickerUnavailable"));
       return null;
     }
     const token = this.beginMutation("open-project");
@@ -750,7 +774,7 @@ export class ConsoleStateActions {
         throw new Error(body.error ?? "open project failed");
       }
       if (existingProjectIds.includes(body.project.projectId)) {
-        this.options.setError("该文件夹已被使用，请直接选择已有项目。");
+        this.options.setError(this.options.t("desktop.error.folderAlreadyUsed"));
         return null;
       }
       await this.options.refresh(this.options.getSelection(), token);
@@ -765,11 +789,11 @@ export class ConsoleStateActions {
 
   readonly openProject = async (): Promise<void> => {
     if (this.options.apiBase === null) {
-      this.options.setError("local console server unavailable");
+      this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       return;
     }
     if (this.options.selectProjectFolder === undefined) {
-      this.options.setError("desktop folder picker unavailable");
+      this.options.setError(this.options.t("desktop.error.folderPickerUnavailable"));
       return;
     }
     const token = this.beginMutation("open-project");
@@ -873,7 +897,7 @@ export class ConsoleStateActions {
   readonly reorderProjects = async (projectIds: string[]): Promise<boolean> => {
     if (this.options.apiBase === null || this.options.coordinator.isSelectionMutationPending) {
       if (this.options.apiBase === null) {
-        this.options.setError("local console server unavailable");
+        this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       }
       return false;
     }
@@ -898,7 +922,7 @@ export class ConsoleStateActions {
 
   readonly archiveSession = async (sessionId: string, projectId: string): Promise<void> => {
     if (this.options.apiBase === null) {
-      this.options.setError("local console server unavailable");
+      this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       return;
     }
     const token = this.beginMutation("archive-session");
@@ -985,7 +1009,7 @@ export class ConsoleStateActions {
     fallbackError: string,
   ): Promise<void> {
     if (this.options.apiBase === null) {
-      this.options.setError("local console server unavailable");
+      this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
       return;
     }
     try {

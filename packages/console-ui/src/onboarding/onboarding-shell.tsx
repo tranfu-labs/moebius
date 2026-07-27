@@ -32,6 +32,7 @@ import {
   type TeamBuilderViewState,
 } from "@/ai-team-builder/team-builder-view";
 import { cn } from "@/lib/utils";
+import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import {
   createOnboardingShellState,
@@ -93,6 +94,7 @@ export function OnboardingShell({
   onExit,
   onComplete,
 }: OnboardingShellProps): JSX.Element {
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(
     reduceOnboardingShell,
     canContinueOnboardingEnvironment(environment),
@@ -107,7 +109,7 @@ export function OnboardingShell({
     [teamsState],
   );
   const selectedTeam = usableTeams.find((team) => team.teamKey === state.selectedTeamKey) ?? null;
-  const compatibility = getOnboardingTeamCompatibility(selectedTeam, environment);
+  const compatibility = getOnboardingTeamCompatibility(selectedTeam, environment, t);
   const builderCli = chooseOnboardingBuilderCli(environment);
 
   useEffect(() => {
@@ -174,7 +176,7 @@ export function OnboardingShell({
     >
       <header
         className="window-drag-region grid h-[var(--window-header-height)] shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-4"
-        aria-label="应用标题栏"
+        aria-label={t("onboarding.windowTitle")}
       >
         <InstallationAggregate
           installations={installations}
@@ -186,21 +188,21 @@ export function OnboardingShell({
         </span>
         {mode === "replay" ? (
           <span className="window-no-drag flex items-center justify-self-end gap-1 text-xs text-hint">
-            <span>回看引导</span>
+            <span>{t("onboarding.replay")}</span>
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              aria-label="退出引导回看"
-              title="退出引导回看"
+              aria-label={t("onboarding.exitReplay")}
+              title={t("onboarding.exitReplay")}
               onClick={onExit}
             >
-              退出
+              {t("onboarding.exit")}
             </Button>
           </span>
         ) : (
           <span className="justify-self-end text-xs tabular-nums text-hint">
-            首次启动
+            {t("onboarding.firstRun")}
           </span>
         )}
       </header>
@@ -223,17 +225,17 @@ export function OnboardingShell({
         >
           <header className="mx-auto w-full max-w-lg text-center">
             <p className="text-xs font-medium tabular-nums text-hint">
-              第 {state.step} 步，共 4 步
+              {t("onboarding.progress", { step: state.step })}
             </p>
             <h1
               ref={titleRef}
               className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink outline-none"
               tabIndex={-1}
             >
-              {stepTitle(state.step, compatibility.affectedCount)}
+              {stepTitle(t, state.step, compatibility.affectedCount)}
             </h1>
             <p className="mt-2 text-[13px] leading-5 text-sub">
-              {stepSubtitle(state.step, compatibility)}
+              {stepSubtitle(t, state.step, compatibility)}
             </p>
           </header>
 
@@ -258,8 +260,12 @@ export function OnboardingShell({
                 <TeamBuilderView
                   state={teamBuilderState}
                   contextLabel={(teamBuilderState.builderCli ?? builderCli) === null
-                    ? "仍在第 2 步"
-                    : `使用 ${(teamBuilderState.builderCli ?? builderCli) === "codex" ? "Codex" : "Kimi"} CLI · 仍在第 2 步`}
+                    ? t("onboarding.builderContext")
+                    : t("onboarding.builderContextCli", {
+                        cli: (teamBuilderState.builderCli ?? builderCli) === "codex"
+                          ? "Codex"
+                          : "Kimi",
+                      })}
                   onBack={() => dispatch({ type: "close-team-builder" })}
                   onSubmit={onTeamBuilderSubmit}
                   onAdjust={onTeamBuilderAdjust}
@@ -293,7 +299,7 @@ export function OnboardingShell({
             {state.step === 4 ? <ReadyStep compatibility={compatibility} /> : null}
             {completionState === "error" ? (
               <p className="mt-4 text-center text-sm text-danger" role="alert">
-                暂时无法保存引导进度，请重试。
+                {t("onboarding.saveProgressFailed")}
               </p>
             ) : null}
           </div>
@@ -303,9 +309,9 @@ export function OnboardingShell({
         <OnboardingFooter
           primaryLabel={state.step === 4
             ? completionState === "saving"
-              ? mode === "replay" ? "正在返回…" : "正在进入…"
-              : "开始使用"
-            : "继续"}
+              ? mode === "replay" ? t("onboarding.savingReturn") : t("onboarding.savingEnter")
+              : t("onboarding.startUsing")
+            : t("onboarding.continue")}
           primaryDisabled={primaryDisabled}
           secondary={state.step > 1 ? (
             <Button
@@ -316,7 +322,7 @@ export function OnboardingShell({
               onClick={() => dispatch({ type: "back" })}
             >
               <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-              上一步
+              {t("onboarding.previous")}
             </Button>
           ) : (
             <Button
@@ -335,7 +341,7 @@ export function OnboardingShell({
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
-              重新检查
+              {t("onboarding.recheck")}
             </Button>
           )}
           onPrimary={() => void advance()}
@@ -356,10 +362,11 @@ function EnvironmentStep({
   onInstall: (cli: OnboardingCli) => void | Promise<void>;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <section
       className="overflow-hidden rounded-xl border border-line bg-card"
-      aria-label="CLI 环境检查"
+      aria-label={t("onboarding.environmentLabel")}
       aria-live="polite"
     >
       {(["codex", "kimi"] as const).map((cli) => (
@@ -374,7 +381,7 @@ function EnvironmentStep({
       ))}
       <div className="flex items-start gap-2 border-t border-line bg-sunken px-4 py-3 text-xs leading-5 text-sub">
         <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-        <p>至少一个可用即可继续；未就绪的 CLI 只影响绑定它的团队成员。</p>
+        <p>{t("onboarding.environmentMinimum")}</p>
       </div>
     </section>
   );
@@ -393,12 +400,13 @@ function CliReadinessRow({
   onInstall: (cli: OnboardingCli) => void | Promise<void>;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const name = cli === "codex" ? "Codex CLI" : "Kimi CLI";
   const installing = installation.status === "running";
   const recoverableInstall = installation.status === "failed"
     || installation.status === "cancelled"
     || installation.status === "timed-out";
-  const visual = getCliVisual(cli, readiness, installation);
+  const visual = getCliVisual(t, cli, readiness, installation);
   return (
     <div
       className="grid grid-cols-[32px_minmax(0,1fr)] gap-3 border-b border-line px-4 py-3.5"
@@ -417,7 +425,7 @@ function CliReadinessRow({
           <strong className="block text-sm font-semibold text-ink">{visual.title}</strong>
           {isOnboardingCliReady(readiness) && !installing ? (
             <span className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-medium text-pass">
-              可用
+              {t("onboarding.cliAvailable")}
             </span>
           ) : null}
         </span>
@@ -434,8 +442,8 @@ function CliReadinessRow({
               size="icon"
               variant="outline"
               className="h-7 w-7 shrink-0"
-              aria-label={`安装 ${name}`}
-              title={`安装 ${name}`}
+              aria-label={t("onboarding.installCli", { cli: name })}
+              title={t("onboarding.installCli", { cli: name })}
               onClick={() => void onInstall(cli)}
             >
               <Play className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
@@ -444,16 +452,16 @@ function CliReadinessRow({
         ) : null}
         {installing ? (
           <span className="mt-2 flex items-center justify-between gap-3 text-xs text-sub">
-            <span>请保持 Moebius 打开</span>
+            <span>{t("onboarding.keepOpen")}</span>
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              aria-label={`取消安装 ${name}`}
+              aria-label={t("onboarding.cancelInstall", { cli: name })}
               onClick={() => void onCancel(cli)}
             >
               <Square className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-              取消
+              {t("onboarding.cancel")}
             </Button>
           </span>
         ) : null}
@@ -463,11 +471,11 @@ function CliReadinessRow({
             type="button"
             size="sm"
             variant="outline"
-            aria-label={`重试安装 ${name}`}
+            aria-label={t("onboarding.retryInstall", { cli: name })}
             onClick={() => void onInstall(cli)}
           >
             <RefreshCw className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-            重试安装
+            {t("onboarding.retryInstall", { cli: name })}
           </Button>
         ) : null}
       </span>
@@ -476,6 +484,7 @@ function CliReadinessRow({
 }
 
 function getCliVisual(
+  t: Translate,
   cli: OnboardingCli,
   readiness: OnboardingEnvironmentState[OnboardingCli],
   installation: OnboardingCliInstallation,
@@ -485,19 +494,20 @@ function getCliVisual(
     return {
       icon: <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" strokeWidth={1.6} aria-hidden="true" />,
       tone: "neutral",
-      title: `${name} 正在安装`,
-      detail: installStageCopy(installation.stage),
+      title: t("onboarding.installingTitle", { cli: name }),
+      detail: installStageCopy(t, installation.stage),
     };
   }
   if (installation.status === "failed" || installation.status === "cancelled" || installation.status === "timed-out") {
-    const ending = installation.status === "cancelled"
-      ? "已取消"
-      : installation.status === "timed-out" ? "已超时" : "未完成";
     return {
       icon: <X className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
       tone: "danger",
-      title: `${name} 安装${ending}`,
-      detail: "安装已安全停止，没有改变另一套 CLI；可以独立重试。",
+      title: installation.status === "cancelled"
+        ? t("onboarding.installCancelledTitle", { cli: name })
+        : installation.status === "timed-out"
+          ? t("onboarding.installTimedOutTitle", { cli: name })
+          : t("onboarding.installFailedTitle", { cli: name }),
+      detail: t("onboarding.installStoppedDetail"),
     };
   }
   switch (readiness.status) {
@@ -505,56 +515,56 @@ function getCliVisual(
       return {
         icon: <Check className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />,
         tone: "pass",
-        title: `${name} 可用`,
-        detail: readiness.version ?? "已登录，可用于运行",
+        title: t("onboarding.cliReadyTitle", { cli: name }),
+        detail: readiness.version ?? t("onboarding.cliReadyDetail"),
       };
     case "checking":
       return {
         icon: <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" strokeWidth={1.6} aria-hidden="true" />,
         tone: readiness.lastKnownReady === true ? "pass" : "neutral",
-        title: `正在检查 ${name}`,
+        title: t("onboarding.cliCheckingTitle", { cli: name }),
         detail: readiness.lastKnownReady === true
-          ? "复检期间保留最近一次可用结果"
-          : "正在确认版本、登录和真实模型能力",
+          ? t("onboarding.cliRecheckingDetail")
+          : t("onboarding.cliCheckingDetail"),
       };
     case "missing":
       return {
         icon: <X className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />,
         tone: "danger",
-        title: `${name} 未安装`,
-        detail: "可选安装，不影响已就绪 CLI 的继续使用。",
+        title: t("onboarding.cliMissingTitle", { cli: name }),
+        detail: t("onboarding.cliMissingDetail"),
       };
     case "needs-login":
       return {
         icon: <Terminal className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
         tone: "neutral",
-        title: `${name} 已安装，需要登录`,
+        title: t("onboarding.cliNeedsLoginTitle", { cli: name }),
         detail: cli === "codex"
-          ? "请在终端运行 codex 完成登录，修复后重新检查。"
-          : "请在终端运行 kimi 并完成 /login，修复后重新检查。",
+          ? t("onboarding.codexLoginDetail")
+          : t("onboarding.kimiLoginDetail"),
       };
     case "unavailable":
       return {
         icon: <CircleAlert className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
         tone: "neutral",
-        title: `${name} 暂时无法验证`,
-        detail: "暂时无法确认 Agent 可启动，请按终端提示修复后重新检查。",
+        title: t("onboarding.cliUnavailableTitle", { cli: name }),
+        detail: t("onboarding.cliUnavailableDetail"),
       };
   }
 }
 
-function installStageCopy(stage: OnboardingCliInstallation["stage"]): string {
+function installStageCopy(t: Translate, stage: OnboardingCliInstallation["stage"]): string {
   switch (stage) {
     case "starting":
-      return "正在启动受信任安装程序…";
+      return t("onboarding.installStarting");
     case "downloading":
-      return "正在下载安装内容…";
+      return t("onboarding.installDownloading");
     case "installing":
-      return "正在写入并准备自动复检…";
+      return t("onboarding.installWriting");
     case "verifying":
-      return "安装完成，正在自动复检登录与模型能力…";
+      return t("onboarding.installVerifying");
     default:
-      return "安装正在进行…";
+      return t("onboarding.installInProgress");
   }
 }
 
@@ -575,21 +585,22 @@ function TeamSelectionStep({
   onRetry?: () => void | Promise<void>;
   onOpenBuilder: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   if (teamsState.status === "loading") {
     return (
       <div className="flex min-h-32 items-center justify-center rounded-xl border border-line bg-card" role="status">
         <LoaderCircle className="h-5 w-5 animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
-        <span className="ml-2 text-sm text-sub">正在载入团队…</span>
+        <span className="ml-2 text-sm text-sub">{t("onboarding.teamsLoading")}</span>
       </div>
     );
   }
   if (teamsState.status !== "ready") {
     return (
       <div className="rounded-xl border border-line bg-card p-5 text-center">
-        <p className="text-sm text-sub">内置团队暂时不可用。</p>
+        <p className="text-sm text-sub">{t("onboarding.teamsUnavailable")}</p>
         {onRetry ? (
           <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
-            重新载入
+            {t("onboarding.teamsReload")}
           </Button>
         ) : null}
       </div>
@@ -618,17 +629,18 @@ function TeamSelectionStep({
           <MessageSquarePlus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <strong className="block text-sm font-semibold text-ink">跟 AI 聊出一支新团队</strong>
+          <strong className="block text-sm font-semibold text-ink">{t("onboarding.buildTeam")}</strong>
           <small className="mt-0.5 block text-xs leading-5 text-sub">
-            你说一下要做什么样的活，
             {builderCli === null
-              ? "环境就绪后 AI 帮你把成员组齐"
-              : `AI 将使用 ${builderCli === "codex" ? "Codex" : "Kimi"} 帮你把成员组齐`}
+              ? t("onboarding.buildTeamWaiting")
+              : t("onboarding.buildTeamWithCli", {
+                  cli: builderCli === "codex" ? "Codex" : "Kimi",
+                })}
           </small>
         </span>
         <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--status-info-bg)] px-2.5 py-1 text-xs font-medium text-[var(--status-info-fg)]">
           <Sparkles className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-          开始对话
+          {t("onboarding.startConversation")}
         </span>
       </button>
     </div>
@@ -646,12 +658,13 @@ function TeamChoiceCard({
   selected: boolean;
   onSelect: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const membersBySlug = new Map(team.members.map((member) => [member.slug, member]));
   const orderedMembers = team.memberOrder
     .map((slug) => membersBySlug.get(slug))
     .filter((member): member is NonNullable<typeof member> => member !== undefined)
     .slice(0, 3);
-  const compatibility = getOnboardingTeamCompatibility(team, environment);
+  const compatibility = getOnboardingTeamCompatibility(team, environment, t);
   return (
     <button
       type="button"
@@ -674,17 +687,19 @@ function TeamChoiceCard({
           </span>
           <span className="min-w-0">
             <strong className="block truncate text-sm font-semibold text-ink">
-              {team.name ?? "未命名团队"}
+              {team.name ?? t("onboarding.unnamedTeam")}
             </strong>
             <small className="mt-0.5 block text-xs text-sub">
-              {team.ownership === "system" ? "内置团队" : "我的团队"}
+              {team.ownership === "system"
+                ? t("onboarding.builtInTeam")
+                : t("onboarding.myTeam")}
             </small>
           </span>
         </span>
         {selected ? (
           <span className="flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-medium text-sub">
             <Check className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-            已选择
+            {t("onboarding.selected")}
           </span>
         ) : null}
       </span>
@@ -700,7 +715,9 @@ function TeamChoiceCard({
                   {member.displayName || `@${member.slug}`}
                 </strong>
                 <small className="block truncate text-[11px] text-hint">
-                  {member.slug === team.primaryAgentSlug ? "主 Agent" : member.description}
+                  {member.slug === team.primaryAgentSlug
+                    ? t("onboarding.primaryAgent")
+                    : member.description}
                 </small>
               </span>
             </span>
@@ -716,7 +733,9 @@ function TeamChoiceCard({
           data-testid="team-compatibility-warning"
         >
           <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-          <span>{compatibility.copy}；之后可在 Agent 团队页调整</span>
+          <span>{t("onboarding.adjustTeamLater", {
+            compatibility: compatibilityCopy(t, compatibility),
+          })}</span>
         </span>
       ) : null}
     </button>
@@ -728,6 +747,7 @@ function ReadyStep({
 }: {
   compatibility: ReturnType<typeof getOnboardingTeamCompatibility>;
 }): JSX.Element {
+  const { t } = useI18n();
   const partial = compatibility.affectedCount > 0;
   return (
     <div className="flex flex-col items-center py-4 text-center">
@@ -743,7 +763,7 @@ function ReadyStep({
       </span>
       {partial ? (
         <p className="mt-4 max-w-md text-sm leading-6 text-sub" data-testid="ready-compatibility">
-          进入新对话后仍会保留这条兼容性提示，直到环境或团队配置恢复。
+          {t("onboarding.readyCompatibility")}
         </p>
       ) : null}
     </div>
@@ -757,14 +777,17 @@ function InstallationAggregate({
   installations: OnboardingInstallationState;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const running = runningOnboardingInstallations(installations);
   if (running.length === 0) {
     return <span aria-hidden="true" />;
   }
   const label = running.length === 1
-    ? `正在安装 ${running[0]!.cli === "codex" ? "Codex" : "Kimi"}…`
-    : `${String(running.length)} 项 CLI 正在安装…`;
+    ? t("onboarding.installingOne", {
+        cli: running[0]!.cli === "codex" ? "Codex" : "Kimi",
+      })
+    : t("onboarding.installingMany", { count: running.length });
   return (
     <span className="window-no-drag relative justify-self-start text-xs text-sub">
       <Button
@@ -772,7 +795,7 @@ function InstallationAggregate({
         size="sm"
         variant="ghost"
         aria-expanded={open}
-        aria-label={`${label}，查看安装详情`}
+        aria-label={t("onboarding.installDetailsAction", { label })}
         data-testid="install-aggregate"
         onClick={() => setOpen((current) => !current)}
       >
@@ -783,12 +806,14 @@ function InstallationAggregate({
         <span
           className="absolute left-0 top-full z-20 mt-2 grid w-72 gap-2 rounded-lg border border-line bg-card p-3 shadow-lg"
           role="dialog"
-          aria-label="CLI 安装详情"
+          aria-label={t("onboarding.installDetails")}
           data-testid="install-details"
         >
           <span className="flex items-center justify-between">
-            <strong className="text-xs font-semibold text-ink">CLI 安装</strong>
-            <small className="text-xs text-hint">{running.length} 项进行中</small>
+            <strong className="text-xs font-semibold text-ink">{t("onboarding.installation")}</strong>
+            <small className="text-xs text-hint">
+              {t("onboarding.itemsInProgress", { count: running.length })}
+            </small>
           </span>
           {running.map((installation) => {
             const name = installation.cli === "codex" ? "Codex CLI" : "Kimi CLI";
@@ -801,17 +826,17 @@ function InstallationAggregate({
                 <span className="min-w-0">
                   <strong className="block text-xs font-medium text-ink">{name}</strong>
                   <small className="block truncate text-[11px] text-hint">
-                    {installStageCopy(installation.stage)}
+                    {installStageCopy(t, installation.stage)}
                   </small>
                 </span>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
-                  aria-label={`取消安装 ${name}`}
+                  aria-label={t("onboarding.cancelInstall", { cli: name })}
                   onClick={() => void onCancel(installation.cli)}
                 >
-                  取消
+                  {t("onboarding.cancel")}
                 </Button>
               </span>
             );
@@ -833,6 +858,7 @@ function OnboardingFooter({
   secondary: ReactNode;
   onPrimary: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <footer
       className="shrink-0 border-t border-line bg-canvas px-6 py-3.5 max-sm:px-4"
@@ -840,7 +866,7 @@ function OnboardingFooter({
     >
       <nav
         className="mx-auto flex w-full max-w-[780px] items-center justify-end gap-2"
-        aria-label="引导步骤操作"
+        aria-label={t("onboarding.actions")}
         data-testid="onboarding-actions"
       >
         {secondary}
@@ -853,33 +879,48 @@ function OnboardingFooter({
   );
 }
 
-function stepTitle(step: OnboardingStep, affectedMembers: number): string {
+function stepTitle(t: Translate, step: OnboardingStep, affectedMembers: number): string {
   switch (step) {
     case 1:
-      return "环境准备";
+      return t("onboarding.step1Title");
     case 2:
-      return "选择一支团队";
+      return t("onboarding.step2Title");
     case 3:
-      return "看看团队如何完成一次接力";
+      return t("onboarding.step3Title");
     case 4:
-      return affectedMembers > 0 ? "团队已选好" : "准备就绪";
+      return affectedMembers > 0
+        ? t("onboarding.step4PartialTitle")
+        : t("onboarding.step4ReadyTitle");
   }
 }
 
 function stepSubtitle(
+  t: Translate,
   step: OnboardingStep,
   compatibility: ReturnType<typeof getOnboardingTeamCompatibility>,
 ): string {
   switch (step) {
     case 1:
-      return "Codex 或 Kimi 至少一个可用，就可以启动团队";
+      return t("onboarding.step1Subtitle");
     case 2:
-      return "先选一支最接近你当前工作的团队，之后随时可以切换";
+      return t("onboarding.step2Subtitle");
     case 3:
-      return "每一次交接都会留下过程、结论和复核证据";
+      return t("onboarding.step3Subtitle");
     case 4:
       return compatibility.affectedCount > 0
-        ? compatibility.copy
-        : "团队已经就位，说出你的目标就能开工";
+        ? compatibilityCopy(t, compatibility)
+        : t("onboarding.step4ReadySubtitle");
   }
+}
+
+function compatibilityCopy(
+  t: Translate,
+  compatibility: ReturnType<typeof getOnboardingTeamCompatibility>,
+): string {
+  return t("onboarding.teamCompatibility", {
+    count: compatibility.affectedCount,
+    clis: compatibility.clis
+      .map((cli) => cli === "codex" ? "Codex" : "Kimi")
+      .join(" / "),
+  });
 }

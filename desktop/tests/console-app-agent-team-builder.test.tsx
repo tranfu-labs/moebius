@@ -121,6 +121,42 @@ describe("desktop App Agent Teams AI builder wiring", () => {
     const teamSelector = await findElement<HTMLSelectElement>('select[aria-label="Agent 团队"]');
     expect(teamSelector.value).toBe("system:development");
   });
+
+  it("uses the committed English locale in callback error paths after a live language switch", async () => {
+    let localeListener: ((locale: "zh-CN" | "en") => void) | undefined;
+    Object.defineProperty(window, "moebius", {
+      configurable: true,
+      value: {
+        getLocalConsoleAttachmentCapability: async () => null,
+        listAgentTeams: async () => ({ status: "ready" as const, teams: [builtInTeam] }),
+        readLastUsedAgentTeam: async () => ({ ownership: "system", teamId: "development" }),
+        onLanguagePreferenceChanged: (listener: (locale: "zh-CN" | "en") => void) => {
+          localeListener = listener;
+          return () => undefined;
+        },
+      },
+    });
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => localeListener !== undefined);
+    await act(async () => localeListener?.("en"));
+
+    await act(async () => (await findButton("Agent teams")).click());
+    const createButton = await findButton("New team");
+    await act(async () => {
+      createButton.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    const aiEntry = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.includes("Design a new team with AI") === true);
+    await act(async () => aiEntry.click());
+
+    await findElement("h1", (element) => element.textContent === "AI Team Designer");
+    await findElement<HTMLElement>("[role='alert']", (element) =>
+      element.textContent?.includes(
+        "The AI team designer is temporarily unavailable. Try again shortly.",
+      ) === true);
+    expect(host.textContent).not.toContain("AI 团队设计器暂时不可用");
+  });
 });
 
 async function findButton(name: string): Promise<HTMLButtonElement> {

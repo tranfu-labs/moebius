@@ -5,6 +5,7 @@ import {
   type TeamBuilderViewState,
 } from "@/ai-team-builder/team-builder-view";
 import type { TeamProposalPreview } from "@/ai-team-builder/team-proposal-card";
+import { I18nProvider } from "@/i18n";
 
 const proposal: TeamProposalPreview = {
   team: {
@@ -74,6 +75,13 @@ const meta = {
   },
   parameters: { layout: "fullscreen" },
   globals: { theme: "dark" },
+  decorators: [
+    (Story) => (
+      <I18nProvider locale="zh-CN">
+        <Story />
+      </I18nProvider>
+    ),
+  ],
 } satisfies Meta<typeof TeamBuilderView>;
 
 export default meta;

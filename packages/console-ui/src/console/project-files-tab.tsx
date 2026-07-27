@@ -7,6 +7,7 @@ import {
   type WorkspaceFileChange,
   type WorkspaceFileContent,
 } from "@/console/file-diff-view";
+import { useI18n } from "@/i18n";
 
 export type ProjectFilesData =
   | {
@@ -35,13 +36,14 @@ export function ProjectFilesTab({
   loadFiles,
   loadFile,
 }: ProjectFilesTabProps): JSX.Element {
+  const { t } = useI18n();
   const [files, setFiles] = useState<ProjectFilesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentScrollTop, setContentScrollTop] = useState(0);
-  const location = workspaceLocationCopy(workspaceMode);
+  const location = workspaceLocationCopy(workspaceMode, t);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,22 +103,22 @@ export function ProjectFilesTab({
   }, [loadFile, selectedPath, sessionId]);
 
   if (loading && files === null) {
-    return <ProjectFilesMessage>正在读取项目文件…</ProjectFilesMessage>;
+    return <ProjectFilesMessage>{t("console.projectFiles.loading")}</ProjectFilesMessage>;
   }
   if (files === null || !files.available) {
-    return <ProjectFilesMessage>当前工作空间不可用，暂时无法读取项目文件。</ProjectFilesMessage>;
+    return <ProjectFilesMessage>{t("console.projectFiles.unavailable")}</ProjectFilesMessage>;
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="project-files-tab">
       <div className="shrink-0 border-b border-line px-3 py-3 text-xs leading-5 text-sub">
-        <p className="font-medium text-ink">正在浏览完整项目树（{location.label}）。</p>
+        <p className="font-medium text-ink">{t("console.projectFiles.browsing", { location: location.label })}</p>
         {location.consequence !== null ? (
-          <p className="mt-1">这里显示的是一份隔离副本，你的项目文件夹没有被动过。</p>
+          <p className="mt-1">{t("console.projectFiles.isolatedCopy")}</p>
         ) : null}
       </div>
       {files.files.length === 0 ? (
-        <ProjectFilesMessage>这个项目文件夹里还没有文件。</ProjectFilesMessage>
+        <ProjectFilesMessage>{t("console.projectFiles.empty")}</ProjectFilesMessage>
       ) : (
         <>
           <WorkspaceFileTree

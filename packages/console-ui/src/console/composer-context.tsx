@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import type { OperatorProject, OperatorSession } from "@/console/operator-console";
 import { SessionTeamMenu } from "@/console/session-team-menu";
+import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -43,15 +44,18 @@ export function ComposerContext({
   onChangeSessionWorkspace?: (sessionId: string, workspaceMode: WorkspaceMode) => void;
   onChangeSessionTeam?: (sessionId: string, team: OperatorAgentTeam) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1440 : window.innerWidth);
   const visible = visibleComposerContextEntries(viewportWidth);
   const effectiveMode = selectedSession?.workspaceMode ?? "direct";
-  const workspaceLabel = workspaceModeLabel(effectiveMode);
+  const workspaceLabel = workspaceModeLabel(effectiveMode, t);
   const branchName = selectedSession?.branchName ?? project.branchName ?? "—";
   const independentUnavailable = selectedSession?.workspaceUnavailableReason === "not-git-repository";
   const pendingDescription = pendingAgentTeam === undefined
     ? null
-    : `当前这一步跑完后换成${pendingAgentTeam.name?.trim() || "未命名团队"}`;
+    : t("console.composerContext.pendingTeam", {
+        team: pendingAgentTeam.name?.trim() || t("console.common.untitledTeam"),
+      });
 
   useEffect(() => {
     const updateWidth = () => setViewportWidth(window.innerWidth);
@@ -67,7 +71,7 @@ export function ComposerContext({
             <button
               type="button"
               className={cn(COMPOSER_CHIP_CLASS, "opacity-40")}
-              aria-label={`项目：${project.title}，点击切换`}
+              aria-label={t("console.composerContext.projectSwitch", { project: project.title })}
               disabled
             >
               <FolderOpen className="h-[13px] w-[13px] shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
@@ -80,7 +84,7 @@ export function ComposerContext({
                 <button
                   type="button"
                   className={COMPOSER_CHIP_CLASS}
-                  aria-label={`项目：${project.title}，点击切换`}
+                  aria-label={t("console.composerContext.projectSwitch", { project: project.title })}
                 >
                   <FolderOpen className="h-[13px] w-[13px] shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
                   <span className="truncate">{project.title}</span>
@@ -105,7 +109,7 @@ export function ComposerContext({
             </DropdownMenu>
           )
         ) : (
-          <span className={COMPOSER_LOCKED_CLASS} aria-label={`项目：${project.title}，已锁定`}>
+          <span className={COMPOSER_LOCKED_CLASS} aria-label={t("console.composerContext.projectLocked", { project: project.title })}>
             <FolderOpen className="h-[13px] w-[13px] shrink-0" strokeWidth={1.5} aria-hidden="true" />
             <span className="truncate">{project.title}</span>
           </span>
@@ -117,7 +121,7 @@ export function ComposerContext({
               <button
                 type="button"
                 className={COMPOSER_CHIP_CLASS}
-                aria-label={`工作空间：${workspaceLabel}，点击切换`}
+                aria-label={t("console.composerContext.workspaceSwitch", { workspace: workspaceLabel })}
                 disabled={disabled}
               >
                 <Laptop className="h-[13px] w-[13px] shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
@@ -131,8 +135,8 @@ export function ComposerContext({
                 onSelect={() => effectiveMode !== "direct" && onChangeSessionWorkspace(selectedSession.sessionId, "direct")}
               >
                 <span className="grid gap-0.5">
-                  <span>默认工作空间</span>
-                  <span className="text-xs font-normal text-sub">直接改项目文件夹里的文件</span>
+                  <span>{t("console.workspace.direct")}</span>
+                  <span className="text-xs font-normal text-sub">{t("console.workspace.directDescription")}</span>
                 </span>
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
@@ -141,24 +145,24 @@ export function ComposerContext({
                 onSelect={() => effectiveMode !== "worktree" && onChangeSessionWorkspace(selectedSession.sessionId, "worktree")}
               >
                 <span className="grid gap-0.5">
-                  <span>独立工作空间</span>
+                  <span>{t("console.workspace.worktree")}</span>
                   <span className="text-xs font-normal text-sub">
                     {independentUnavailable
-                      ? "这个项目文件夹不是 git 仓库，无法隔离改动"
-                      : "把改动隔离在一份副本里"}
+                      ? t("console.workspace.notGit")
+                      : t("console.workspace.worktreeDescription")}
                   </span>
                 </span>
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <span className={COMPOSER_LOCKED_CLASS} aria-label={`工作空间：${workspaceLabel}，已锁定`}>
+          <span className={COMPOSER_LOCKED_CLASS} aria-label={t("console.composerContext.workspaceLocked", { workspace: workspaceLabel })}>
             <Laptop className="h-[13px] w-[13px] shrink-0" strokeWidth={1.5} aria-hidden="true" />
             {workspaceLabel}
           </span>
         )}</span> : null}
 
-        {visible.branch ? <span className={COMPOSER_LOCKED_CLASS} aria-label={`分支：${branchName}`} data-context-entry="branch">
+        {visible.branch ? <span className={COMPOSER_LOCKED_CLASS} aria-label={t("console.composerContext.branch", { branch: branchName })} data-context-entry="branch">
           <GitBranch className="h-[13px] w-[13px] shrink-0" strokeWidth={1.5} aria-hidden="true" />
           <span className="truncate font-mono text-[11.5px]">{branchName}</span>
         </span> : null}
@@ -185,14 +189,14 @@ export function ComposerContext({
   );
 }
 
-/* 可点 chip：h28 r12 描边（moebius-desktop-spec .chip）；锁定项退化为纯文本 */
+/* i18n-exempt: developer-only component note; interactive chip uses h28/r12 and locked entries use plain text */
 const COMPOSER_CHIP_CLASS =
   "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs font-medium text-ink transition-colors hover:bg-hover";
 const COMPOSER_LOCKED_CLASS =
   "inline-flex min-w-0 items-center gap-1.5 px-1 py-1 text-sub";
 
-function workspaceModeLabel(mode: WorkspaceMode): string {
-  return mode === "worktree" ? "独立工作空间" : "默认工作空间";
+function workspaceModeLabel(mode: WorkspaceMode, t: Translate): string {
+  return t(mode === "worktree" ? "console.workspace.worktree" : "console.workspace.direct");
 }
 
 export function visibleComposerContextEntries(width: number): {

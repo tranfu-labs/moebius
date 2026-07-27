@@ -31,7 +31,7 @@ const badgeVariants = cva(
   }
 );
 
-/* running 的半满饼图为自绘 12px SVG（lucide 无对应精度图形） */
+/* i18n-exempt: developer-only note; running uses a custom 12px half-filled pie icon. */
 function HalfPieIcon(): JSX.Element {
   return (
     <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">

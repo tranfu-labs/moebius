@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => {
       ? resolve(here, "agent-conversation.html")
       : mode === "main-conversation"
         ? resolve(here, "src/main-conversation/index.html")
+      : mode === "settings"
+        ? resolve(here, "src/settings/index.html")
       : resolve(here, "index.html");
 
   return {

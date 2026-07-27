@@ -12,6 +12,7 @@ import {
   type StreamdownProps,
 } from "streamdown";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
   type MarkdownFileReference,
   type MarkdownMemberIdentity,
 } from "@/console/markdown-internal-reference";
+import { machineTextPlaceholders } from "@/console/machine-text";
 
 export interface MarkdownMessageProps {
   content: string;
@@ -59,6 +61,7 @@ export function MarkdownMessage({
   onOpenTeamMember,
   className,
 }: MarkdownMessageProps): JSX.Element {
+  const { t } = useI18n();
   const [intentKey] = useState(createMarkdownIntentKey);
   useEffect(() => {
     retainMarkdownInternalIntentRegistry(intentKey);
@@ -78,9 +81,13 @@ export function MarkdownMessage({
   const remarkPlugins = useMemo<NonNullable<StreamdownProps["remarkPlugins"]>>(
     () => [
       ...Object.values(defaultRemarkPlugins),
-      createMarkdownInternalReferencePlugin(memberIdentities, intentKey),
+      createMarkdownInternalReferencePlugin(
+        memberIdentities,
+        intentKey,
+        machineTextPlaceholders(t),
+      ),
     ],
-    [intentKey, memberIdentities],
+    [intentKey, memberIdentities, t],
   );
   const streaming = mode === "streaming";
 
@@ -134,6 +141,7 @@ function SafeMarkdownLink({
   onOpenFileReference,
   onOpenTeamMember,
 }: SafeMarkdownLinkProps): JSX.Element {
+  const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const intent = readMarkdownInternalIntent(href, intentKey);
   const fileReference = intent.fileReference;
@@ -185,13 +193,13 @@ function SafeMarkdownLink({
       {confirming ? (
         <span
           role="dialog"
-          aria-label="确认打开外部链接"
+          aria-label={t("console.markdown.confirmExternal")}
           className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-md border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
         >
           <span className="block break-all text-sub">{safeUrl}</span>
           <span className="mt-3 flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-              取消
+              {t("console.common.cancel")}
             </Button>
             <Button
               type="button"
@@ -203,7 +211,7 @@ function SafeMarkdownLink({
               }}
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              打开链接
+              {t("console.markdown.openLink")}
             </Button>
           </span>
         </span>

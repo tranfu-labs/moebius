@@ -1,7 +1,11 @@
 import { FileText, Square } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { sanitizeMachineText } from "@/console/machine-text";
+import {
+  machineTextPlaceholders,
+  sanitizeMachineText,
+} from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import { RoleTag } from "@/console/role-tag";
@@ -52,7 +56,7 @@ export function RunBlock({
   elapsedMs,
   activity,
   processOutputAvailable = true,
-  outputUnavailableMessage = "完整输出不可用",
+  outputUnavailableMessage,
   summary,
   rawOutput,
   steps,
@@ -65,10 +69,22 @@ export function RunBlock({
   interruptLabel,
   className,
 }: RunBlockProps): JSX.Element {
-  const roleLabel = resolveOperatorMemberName(role, memberIdentities, "协作者");
+  const { t } = useI18n();
+  const machineText = machineTextPlaceholders(t);
+  const roleLabel = resolveOperatorMemberName(
+    role,
+    memberIdentities,
+    t,
+    t("console.common.collaborator"),
+  );
   const usableSteps = steps?.length ? steps : null;
   const liveContent = nonBlank(liveMarkdown);
-  const fallbackSummary = sanitizeMachineText(nonBlank(summary) ?? "正在推进这一步…", "正在推进这一步…");
+  const progressFallback = t("console.runBlock.progress");
+  const fallbackSummary = sanitizeMachineText(
+    nonBlank(summary) ?? progressFallback,
+    progressFallback,
+    machineText,
+  );
 
   return (
     <div className={cn("max-w-[680px]", className)}>
@@ -79,16 +95,18 @@ export function RunBlock({
           {elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="running" elapsedMs={elapsedMs} />
           ) : nonBlank(elapsedTime) !== null ? (
-            <span className="tnum whitespace-nowrap text-xs text-sub">已进行 {elapsedTime}</span>
+            <span className="tnum whitespace-nowrap text-xs text-sub">
+              {t("console.runTime.elapsed", { duration: elapsedTime ?? "" })}
+            </span>
           ) : (
-            <span className="text-xs text-sub">等待开始</span>
+            <span className="text-xs text-sub">{t("console.runBlock.waiting")}</span>
           )}
           {onOpenOutput && processOutputAvailable ? (
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
-              aria-label="完整输出"
-              title="完整输出"
+              aria-label={t("console.common.fullOutput")}
+              title={t("console.common.fullOutput")}
               onClick={() => onOpenOutput(nonBlank(rawOutput))}
             >
               <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -99,8 +117,8 @@ export function RunBlock({
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
               onClick={onInterrupt}
-              aria-label={interruptLabel ?? `停下${roleLabel}`}
-              title={interruptLabel ?? `停下${roleLabel}`}
+              aria-label={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
+              title={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
             >
               <Square className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             </button>
@@ -145,19 +163,27 @@ export function RunBlock({
         </div>
       )}
       {!processOutputAvailable ? (
-        <p className="mt-1.5 pl-7 text-xs text-hint">{outputUnavailableMessage}</p>
+        <p className="mt-1.5 pl-7 text-xs text-hint">
+          {outputUnavailableMessage ?? t("console.common.outputUnavailable")}
+        </p>
       ) : null}
     </div>
   );
 }
 
 function RunStepItem({ step }: { step: RunBlockStep; index: number }): JSX.Element {
+  const { t } = useI18n();
+  const machineText = machineTextPlaceholders(t);
   const summary = nonBlank(step.summary);
 
   return (
     <div className="border-l border-line pl-3 text-sm text-ink">
-      <span>{sanitizeMachineText(step.title)}</span>
-      {summary ? <span className="mt-0.5 block text-xs leading-5 text-sub">{sanitizeMachineText(summary)}</span> : null}
+      <span>{sanitizeMachineText(step.title, machineText.machine, machineText)}</span>
+      {summary ? (
+        <span className="mt-0.5 block text-xs leading-5 text-sub">
+          {sanitizeMachineText(summary, machineText.machine, machineText)}
+        </span>
+      ) : null}
     </div>
   );
 }

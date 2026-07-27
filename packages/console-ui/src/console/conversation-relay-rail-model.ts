@@ -44,6 +44,7 @@ export type ConversationRelayRow =
 export function projectConversationRelayEvents(
   messages: readonly ConversationRelayMessageInput[],
   resolveAgentName: (role: string | null) => string,
+  t: Translate,
 ): ConversationRelayEvent[] {
   return messages.flatMap((message) => {
     if (
@@ -56,14 +57,16 @@ export function projectConversationRelayEvents(
     const kind = message.speaker;
     const actorKey = kind === "user" ? "user" : (message.role?.trim() || "agent");
     const body = message.body.trim()
-      || message.attachments?.map((attachment) => attachment.displayName).join("、")
-      || "附件消息";
+      || message.attachments
+        ?.map((attachment) => attachment.displayName)
+        .join(t("console.relay.attachmentSeparator"))
+      || t("console.relay.attachmentMessage");
     return [{
       id: `message-${String(message.id)}`,
       messageId: message.id,
       kind,
       actorKey,
-      actorName: kind === "user" ? "你" : resolveAgentName(message.role),
+      actorName: kind === "user" ? t("console.common.you") : resolveAgentName(message.role),
       body,
       updatedAt: message.updatedAt,
     }];
@@ -207,3 +210,4 @@ function range(start: number, end: number): number[] {
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
 }
+import type { Translate } from "@/i18n";

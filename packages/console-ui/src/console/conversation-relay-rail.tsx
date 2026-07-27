@@ -23,6 +23,7 @@ import {
 } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 import {
   Popover,
   PopoverAnchor,
@@ -46,6 +47,7 @@ export function ConversationRelayRail({
   onBrowse,
   className,
 }: ConversationRelayRailProps): JSX.Element | null {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [browseId, setBrowseId] = useState(currentEventId ?? events.at(-1)?.id ?? "");
@@ -171,7 +173,7 @@ export function ConversationRelayRail({
     >
       <nav
         ref={stageRef}
-        aria-label="当前主会话消息目录"
+        aria-label={t("console.relayRail.label")}
         className={cn(
           "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
           expanded
@@ -242,7 +244,7 @@ export function ConversationRelayRail({
             return (
               <div
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
-                aria-label={`暂时收起 ${String(row.count)} 条消息`}
+                aria-label={t("console.relayRail.omitted", { count: row.count })}
                 className={cn(
                   "absolute left-0 flex h-5 items-center text-[8px] tracking-[1px] text-hint transition-[width,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",

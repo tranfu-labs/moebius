@@ -17,6 +17,7 @@ import {
   CopyableAgentSlug,
 } from "@/console/agent-markdown-mention-editor";
 import { cn } from "@/lib/utils";
+import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 
 export interface AgentTeamDetailMember {
@@ -199,6 +200,7 @@ export function AgentTeamDetail({
   onOpenCopiedTeam,
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
+  const { t } = useI18n();
   const pendingGuardedActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [externalConflictPromptOpen, setExternalConflictPromptOpen] = useState(false);
@@ -257,10 +259,10 @@ export function AgentTeamDetail({
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
   const profileModelError = profileDraft !== null && profileDraft.model.trim().length === 0
-    ? "请输入 model"
+    ? t("console.agentTeamDetail.enterModel")
     : null;
   const profileEffortError = profileDraft !== null && profileDraft.effort.trim().length === 0
-    ? "请输入思考程度"
+    ? t("console.agentTeamDetail.enterEffort")
     : null;
   const profileDraftValid = profileDraft !== null
     && profileModelError === null
@@ -366,7 +368,7 @@ export function AgentTeamDetail({
       const result = await onApplyOfficialUpdate();
       setOfficialUpdateStatus("saved");
       setOfficialUpdateCopyTeamId(result.copiedTeamId);
-      setOfficialUpdateMessage(formatOfficialUpdateResult(result));
+      setOfficialUpdateMessage(formatOfficialUpdateResult(t, result));
     } catch (error) {
       setOfficialUpdateStatus("failed");
       setOfficialUpdateMessage(error instanceof Error ? error.message : String(error));
@@ -390,7 +392,9 @@ export function AgentTeamDetail({
     if (draft.model.trim().length === 0 || draft.effort.trim().length === 0) {
       updateProfileEditor(memberSlug, {
         status: "failed",
-        error: draft.model.trim().length === 0 ? "Model 不能为空。" : "思考程度不能为空。",
+        error: draft.model.trim().length === 0
+          ? t("console.agentTeamDetail.modelRequired")
+          : t("console.agentTeamDetail.effortRequired"),
       });
       return false;
     }
@@ -476,7 +480,7 @@ export function AgentTeamDetail({
         onClick={() => requestGuardedAction(onLeave)}
       >
         <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-        Agent 团队
+        {t("console.agentTeamDetail.back")}
       </button>
 
       <header className="border-b border-line pb-7">
@@ -484,29 +488,31 @@ export function AgentTeamDetail({
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
               <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
-                {team.name?.trim() || "未命名团队"}
+                {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
               </h1>
               <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[11px] font-medium text-sub">
-                {team.ownership === "system" ? "官方来源" : "用户团队"}
+                {team.ownership === "system"
+                  ? t("console.agentTeamDetail.official")
+                  : t("console.agentTeamDetail.userTeam")}
               </span>
               {team.officialManagement?.customizationStatus === "customized" ? (
                 <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-sub">
-                  已自定义
+                  {t("console.agentTeamDetail.customized")}
                 </span>
               ) : null}
               {team.officialManagement?.updateStatus === "available" ? (
                 <span className="shrink-0 rounded-sm bg-sel px-1.5 py-0.5 text-[11px] font-medium text-ink">
-                  有更新
+                  {t("console.agentTeamDetail.updateAvailable")}
                 </span>
               ) : null}
               {readOnly ? (
                 <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-hint">
-                  只读
+                  {t("console.agentTeamDetail.readOnly")}
                 </span>
               ) : null}
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-sub">
-              {team.description?.trim() || "这支团队还没有填写用途说明。"}
+              {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
             </p>
           </div>
           {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
@@ -516,18 +522,21 @@ export function AgentTeamDetail({
           <div className="mt-5 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-ink">新版官方团队可用</p>
+                <p className="text-sm font-medium text-ink">
+                  {t("console.agentTeamDetail.officialUpdateAvailable")}
+                </p>
                 <p className="mt-1 text-sm leading-6 text-sub">
                   {team.officialManagement.requiresProtectiveCopy
-                    ? "当前内容或成员配置需要保留；更新时会先创建独立用户团队副本。"
-                    : "更新会保留用户设置的 CLI、模型与思考程度。"}
+                    ? t("console.agentTeamDetail.protectBeforeUpdate")
+                    : t("console.agentTeamDetail.preserveRuntimeSettings")}
                 </p>
                 {team.officialManagement.currentOfficialVersion !== undefined
                   && team.officialManagement.latestOfficialVersion !== undefined ? (
                     <p className="mt-1 text-xs text-hint">
-                      当前 {team.officialManagement.currentOfficialVersion}
-                      {" → "}
-                      最新 {team.officialManagement.latestOfficialVersion}
+                      {t("console.agentTeamDetail.versionChange", {
+                        current: team.officialManagement.currentOfficialVersion,
+                        latest: team.officialManagement.latestOfficialVersion,
+                      })}
                     </p>
                   ) : null}
                 {team.officialManagement.addedMembers.length > 0
@@ -536,25 +545,35 @@ export function AgentTeamDetail({
                   || team.officialManagement.recommendationChangedMembers.length > 0 ? (
                     <div className="mt-1 space-y-0.5 text-xs text-hint">
                       {team.officialManagement.addedMembers.length > 0
-                        ? <p>新增：{formatAgentSlugs(team.officialManagement.addedMembers)}</p>
+                        ? <p>{t("console.agentTeamDetail.added", {
+                            agents: formatAgentSlugs(t, team.officialManagement.addedMembers),
+                          })}</p>
                         : null}
                       {team.officialManagement.removedMembers.length > 0
-                        ? <p>删除：{formatAgentSlugs(team.officialManagement.removedMembers)}</p>
+                        ? <p>{t("console.agentTeamDetail.removed", {
+                            agents: formatAgentSlugs(t, team.officialManagement.removedMembers),
+                          })}</p>
                         : null}
                       {(team.officialManagement.renamedMembers?.length ?? 0) > 0
                         ? (
                             <p>
-                              改名：{team.officialManagement.renamedMembers!
-                                .map(({ from, to }) => `@${from} → @${to}`)
-                                .join("、")}
+                              {t("console.agentTeamDetail.renamed", {
+                                agents: team.officialManagement.renamedMembers!
+                                  .map(({ from, to }) => `@${from} → @${to}`)
+                                  .join(t("console.agentTeamDetail.listSeparator")),
+                              })}
                             </p>
                           )
                         : null}
                       {team.officialManagement.recommendationChangedMembers.length > 0
                         ? (
                             <p>
-                              推荐配置变化：
-                              {formatAgentSlugs(team.officialManagement.recommendationChangedMembers)}
+                              {t("console.agentTeamDetail.recommendationChanged", {
+                                agents: formatAgentSlugs(
+                                  t,
+                                  team.officialManagement.recommendationChangedMembers,
+                                ),
+                              })}
                             </p>
                           )
                         : null}
@@ -563,11 +582,12 @@ export function AgentTeamDetail({
                 {team.officialManagement.protectedMembers.length > 0
                   || team.officialManagement.collidingMembers.length > 0 ? (
                     <p className="mt-1 text-xs text-hint">
-                      副本保护范围：
-                      {formatAgentSlugs([
-                        ...team.officialManagement.protectedMembers,
-                        ...team.officialManagement.collidingMembers,
-                      ])}
+                      {t("console.agentTeamDetail.protectionScope", {
+                        agents: formatAgentSlugs(t, [
+                          ...team.officialManagement.protectedMembers,
+                          ...team.officialManagement.collidingMembers,
+                        ]),
+                      })}
                     </p>
                   ) : null}
               </div>
@@ -578,10 +598,10 @@ export function AgentTeamDetail({
                   onClick={() => requestGuardedAction(applyOfficialUpdate)}
                 >
                   {officialUpdateStatus === "saving"
-                    ? "正在更新…"
+                    ? t("console.agentTeamDetail.updating")
                     : team.officialManagement.requiresProtectiveCopy
-                      ? "保留副本并更新"
-                      : "更新到最新版"}
+                      ? t("console.agentTeamDetail.protectAndUpdate")
+                      : t("console.agentTeamDetail.updateLatest")}
                 </Button>
               ) : null}
             </div>
@@ -602,7 +622,7 @@ export function AgentTeamDetail({
                       size="sm"
                       onClick={() => onOpenCopiedTeam(officialUpdateCopyTeamId)}
                     >
-                      进入保留的副本
+                      {t("console.agentTeamDetail.openProtectedCopy")}
                     </Button>
                   ) : null}
               </div>
@@ -615,12 +635,16 @@ export function AgentTeamDetail({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-danger">这支团队需要修复</p>
+                <p className="text-sm font-medium text-danger">
+                  {t("console.agentTeamDetail.needsRepair")}
+                </p>
                 <ul className="mt-1 space-y-1 text-sm leading-5 text-sub">
-                  {repairIssueMessages(team.issues ?? []).map((message) => <li key={message}>{message}</li>)}
+                  {repairIssueMessages(t, team.issues ?? []).map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
                 </ul>
                 <p className="mt-2 text-sm leading-5 text-sub">
-                  修复前不能用于新建对话；已有会话和历史消息不会消失。
+                  {t("console.agentTeamDetail.repairNotice")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {onRecheck !== undefined ? (
@@ -636,7 +660,9 @@ export function AgentTeamDetail({
                       ) : (
                         <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                       )}
-                      {repairAction === "rechecking" ? "正在检查" : "重新检查"}
+                      {repairAction === "rechecking"
+                        ? t("console.agentTeamDetail.checking")
+                        : t("console.agentTeamDetail.recheck")}
                     </Button>
                   ) : null}
                   {onRelocate !== undefined ? (
@@ -652,7 +678,9 @@ export function AgentTeamDetail({
                       ) : (
                         <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                       )}
-                      {repairAction === "relocating" ? "正在验证" : "重新定位团队"}
+                      {repairAction === "relocating"
+                        ? t("console.agentTeamDetail.verifying")
+                        : t("console.agentTeamDetail.relocate")}
                     </Button>
                   ) : null}
                   {onRemoveRecord !== undefined ? (
@@ -667,7 +695,7 @@ export function AgentTeamDetail({
                       }}
                     >
                       <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                      移除记录
+                      {t("console.agentTeamDetail.removeRecord")}
                     </Button>
                   ) : null}
                 </div>
@@ -678,12 +706,12 @@ export function AgentTeamDetail({
         ) : null}
 
         <div className="mt-6 flex min-h-8 flex-wrap items-center gap-3 text-sm">
-          <span className="text-hint">主 Agent</span>
+          <span className="text-hint">{t("console.agentTeamDetail.primaryAgent")}</span>
           {!readOnly ? (
             <div className="relative">
               <select
                 className="h-8 min-w-40 appearance-none rounded-md border border-line bg-card py-1 pl-2.5 pr-8 text-sm text-ink transition-colors hover:bg-hover disabled:cursor-wait disabled:text-sub"
-                aria-label="主 Agent"
+                aria-label={t("console.agentTeamDetail.primaryAgent")}
                 value={primaryMember?.slug ?? ""}
                 disabled={
                   onChangePrimaryAgent === undefined
@@ -692,7 +720,9 @@ export function AgentTeamDetail({
                 }
                 onChange={(event) => void onChangePrimaryAgent?.(event.currentTarget.value)}
               >
-                {primaryMember === undefined ? <option value="" disabled>暂未设置</option> : null}
+                {primaryMember === undefined ? (
+                  <option value="" disabled>{t("console.agentTeamDetail.notSet")}</option>
+                ) : null}
                 {availableMembers.map((member) => (
                   <option key={member.slug} value={member.slug}>
                     {member.displayName || `@${member.slug}`}
@@ -707,24 +737,28 @@ export function AgentTeamDetail({
             </div>
           ) : (
             <span className="rounded-md border border-line bg-card px-2.5 py-1.5 text-ink">
-              {primaryMember?.displayName || "暂未设置"}
+              {primaryMember?.displayName || t("console.agentTeamDetail.notSet")}
             </span>
           )}
           <span className="min-h-5 text-xs text-sub" aria-live="polite">
             {primaryAgentChangeStatus === "saving" ? (
               <span className="inline-flex items-center" role="status">
                 <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                正在保存…
+                {t("console.agentTeamDetail.saving")}
               </span>
             ) : null}
             {primaryAgentChangeStatus === "saved" ? (
               <span className="inline-flex items-center" role="status">
                 <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                已保存
+                {t("console.agentTeamDetail.saved")}
               </span>
             ) : null}
             {primaryAgentChangeStatus === "failed" ? (
-              <span className="text-danger" role="alert">切换失败：{primaryAgentChangeError || "请重试"}</span>
+              <span className="text-danger" role="alert">
+                {t("console.agentTeamDetail.switchFailed", {
+                  error: primaryAgentChangeError || t("console.agentTeamDetail.tryAgain"),
+                })}
+              </span>
             ) : null}
           </span>
         </div>
@@ -732,7 +766,9 @@ export function AgentTeamDetail({
 
       <div className="border-b border-line py-6">
         <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">团队成员</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+            {t("console.agentTeamDetail.members")}
+          </h2>
           <div className="flex items-center gap-2">
             {memberSelectorActions}
             {canAddMember && orderedMembers.length > 0 ? (
@@ -748,7 +784,9 @@ export function AgentTeamDetail({
                 ) : (
                   <Plus className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                 )}
-                {addMemberStatus === "adding" ? "正在添加" : "添加 Agent"}
+                {addMemberStatus === "adding"
+                  ? t("console.agentTeamDetail.adding")
+                  : t("console.agentTeamDetail.addAgent")}
               </Button>
             ) : null}
           </div>
@@ -756,7 +794,7 @@ export function AgentTeamDetail({
         <div
           className="scroll-thin flex min-w-0 flex-nowrap gap-2 overflow-x-auto pb-2"
           role="tablist"
-          aria-label="团队成员"
+          aria-label={t("console.agentTeamDetail.members")}
           data-testid="agent-team-member-selector"
         >
           {orderedMembers.map((member) => {
@@ -780,17 +818,33 @@ export function AgentTeamDetail({
               >
                 <AgentInitialAvatar displayName={member.displayName} slug={member.slug} />
                 <span>{member.displayName || `@${member.slug}`}</span>
-                {primary ? <span className="text-xs text-hint">· 主 Agent</span> : null}
-                {member.available === false ? <span className="text-xs text-danger">· 不可用</span> : null}
+                {primary ? (
+                  <span className="text-xs text-hint">
+                    {t("console.agentTeamDetail.primarySuffix")}
+                  </span>
+                ) : null}
+                {member.available === false ? (
+                  <span className="text-xs text-danger">
+                    {t("console.agentTeamDetail.unavailableSuffix")}
+                  </span>
+                ) : null}
                 {dirty ? (
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent" title="未保存" aria-label="未保存" />
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-accent"
+                    title={t("console.agentTeamDetail.unsaved")}
+                    aria-label={t("console.agentTeamDetail.unsaved")}
+                  />
                 ) : null}
               </button>
             );
           })}
         </div>
         {addMemberStatus === "failed" && orderedMembers.length > 0 ? (
-          <p className="mt-2 text-sm text-danger" role="alert">添加失败：{addMemberError || "请重试"}</p>
+          <p className="mt-2 text-sm text-danger" role="alert">
+            {t("console.agentTeamDetail.addFailed", {
+              error: addMemberError || t("console.agentTeamDetail.tryAgain"),
+            })}
+          </p>
         ) : null}
       </div>
 
@@ -800,7 +854,9 @@ export function AgentTeamDetail({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-danger">以下成员未能保存，请检查后重试</p>
+                <p className="text-sm font-medium text-danger">
+                  {t("console.agentTeamDetail.membersSaveFailed")}
+                </p>
                 <ul className="mt-1 space-y-1 text-sm text-sub">
                   {state.saveAllFailures.map((failure) => (
                     <li key={failure.memberSlug}>
@@ -815,8 +871,12 @@ export function AgentTeamDetail({
 
         {selectedMember === null ? (
           <div className="border-y border-line px-6 py-12 text-center">
-            <p className="text-sm font-medium text-ink">还没有团队成员</p>
-            <p className="mt-2 text-sm text-sub">添加第一个 Agent 来接收任务，成功后它会自动成为主 Agent。</p>
+            <p className="text-sm font-medium text-ink">
+              {t("console.agentTeamDetail.noMembers")}
+            </p>
+            <p className="mt-2 text-sm text-sub">
+              {t("console.agentTeamDetail.addFirstDescription")}
+            </p>
             {canAddMember ? (
               <Button
                 type="button"
@@ -829,28 +889,38 @@ export function AgentTeamDetail({
                 ) : (
                   <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                 )}
-                {addMemberStatus === "adding" ? "正在添加…" : "添加第一个 Agent"}
+                {addMemberStatus === "adding"
+                  ? t("console.agentTeamDetail.addingEllipsis")
+                  : t("console.agentTeamDetail.addFirst")}
               </Button>
             ) : null}
             {addMemberStatus === "failed" ? (
-              <p className="mt-3 text-sm text-danger" role="alert">添加失败：{addMemberError || "请重试"}</p>
+              <p className="mt-3 text-sm text-danger" role="alert">
+                {t("console.agentTeamDetail.addFailed", {
+                  error: addMemberError || t("console.agentTeamDetail.tryAgain"),
+                })}
+              </p>
             ) : null}
           </div>
         ) : selectedEditor?.loadStatus === "failed" ? (
           <div className="border-y border-line py-8" role="alert">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <p className="text-sm font-medium text-danger">暂时无法读取 {selectedMember.displayName || `@${selectedMember.slug}`} 的 AGENT.md</p>
+              <p className="text-sm font-medium text-danger">
+                {t("console.agentTeamDetail.agentFileUnreadable", {
+                  agent: selectedMember.displayName || `@${selectedMember.slug}`,
+                })}
+              </p>
               {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
             </div>
             <p className="mt-1 text-sm text-sub">{selectedEditor.loadError}</p>
             <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => onRetryLoad(selectedMember.slug)}>
-              重试
+              {t("console.agentTeamDetail.retry")}
             </Button>
           </div>
         ) : selectedEditor?.loadStatus !== "ready" ? (
           <div className="flex min-h-48 items-center justify-center border-y border-line text-sm text-sub" role="status">
             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-            正在读取 AGENT.md…
+            {t("console.agentTeamDetail.readingAgentFile")}
           </div>
         ) : (
           <>
@@ -867,7 +937,11 @@ export function AgentTeamDetail({
                     <h2 className="truncate text-lg font-semibold tracking-[-0.01em] text-ink">
                       {selectedEditor.displayName || selectedMember.displayName || `@${selectedMember.slug}`}
                     </h2>
-                    {selectedEditor.isDirty ? <span className="text-xs font-medium text-accent">未保存</span> : null}
+                    {selectedEditor.isDirty ? (
+                      <span className="text-xs font-medium text-accent">
+                        {t("console.agentTeamDetail.unsaved")}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-sub">
                     {selectedEditor.description || selectedMember.description || `@${selectedMember.slug}`}
@@ -880,14 +954,21 @@ export function AgentTeamDetail({
             <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">运行配置</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+                    {t("console.agentTeamDetail.runtimeConfiguration")}
+                  </h3>
                   <p className="mt-1 text-sm text-sub">
-                    独立属于“{team.name?.trim() || "未命名团队"} / @{selectedMember.slug}”。
+                    {t("console.agentTeamDetail.runtimeOwnership", {
+                      team: team.name?.trim() || t("console.agentTeamDetail.unnamed"),
+                      slug: selectedMember.slug,
+                    })}
                   </p>
                 </div>
                 {profileDocument !== null ? (
                   <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-sub">
-                    {profileDocument.binding.source === "recommended" ? "跟随推荐" : "用户覆盖"}
+                    {profileDocument.binding.source === "recommended"
+                      ? t("console.agentTeamDetail.followRecommendation")
+                      : t("console.agentTeamDetail.userOverride")}
                   </span>
                 ) : null}
               </div>
@@ -926,9 +1007,9 @@ export function AgentTeamDetail({
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
                     <label className="grid gap-1.5 text-xs text-hint">
-                      思考程度
+                      {t("console.agentTeamDetail.effort")}
                       <input
-                        aria-label="思考程度"
+                        aria-label={t("console.agentTeamDetail.effort")}
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.effort}
                         disabled={readOnly || profileStatus === "saving"}
@@ -942,9 +1023,13 @@ export function AgentTeamDetail({
                     </label>
                   </div>
                   <p className="mt-3 text-sm text-sub">
-                    本页保存配置，不检查这台机器是否能运行它。
+                    {t("console.agentTeamDetail.runtimeValidationNotice")}
                   </p>
-                  {!profileDraftValid ? <p className="mt-2 text-sm text-sub">已保存配置没有改变。</p> : null}
+                  {!profileDraftValid ? (
+                    <p className="mt-2 text-sm text-sub">
+                      {t("console.agentTeamDetail.savedUnchanged")}
+                    </p>
+                  ) : null}
                   {profileError !== null ? <p className="mt-3 text-sm text-danger" role="alert">{profileError}</p> : null}
                   {!readOnly ? (
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -975,7 +1060,7 @@ export function AgentTeamDetail({
                               });
                             }}
                           >
-                            恢复推荐配置
+                            {t("console.agentTeamDetail.restoreRecommendation")}
                           </Button>
                         ) : null}
                       <Button
@@ -987,14 +1072,18 @@ export function AgentTeamDetail({
                         }
                         onClick={() => void saveExecutionProfile(selectedMember.slug)}
                       >
-                        {profileStatus === "saving" ? "正在保存…" : "保存运行配置"}
+                        {profileStatus === "saving"
+                          ? t("console.agentTeamDetail.saving")
+                          : t("console.agentTeamDetail.saveRuntime")}
                       </Button>
                     </div>
                   ) : null}
                 </>
               ) : (
                 <p className="mt-4 text-sm text-danger" role="alert">
-                  运行配置读取失败：{profileError ?? "请稍后重试。"}
+                  {t("console.agentTeamDetail.runtimeReadFailed", {
+                    error: profileError ?? t("console.agentTeamDetail.tryAgainLater"),
+                  })}
                 </p>
               )}
             </div>
@@ -1004,7 +1093,7 @@ export function AgentTeamDetail({
                 AGENT.md
               </label>
               <div className="flex items-center gap-1 text-xs text-hint">
-                {readOnly ? <span>只读 ·</span> : null}
+                {readOnly ? <span>{t("console.agentTeamDetail.readOnlyPrefix")}</span> : null}
                 <CopyableAgentSlug slug={selectedMember.slug} />
               </div>
             </div>
@@ -1020,18 +1109,24 @@ export function AgentTeamDetail({
 
             {selectedEditor.externalChangeStatus === "reloaded" ? (
               <div className="mt-3 border-l-2 border-line-strong bg-sunken px-3 py-2 text-sm text-sub" role="status">
-                文件在软件外面改过了，已载入最新内容。
+                {t("console.agentTeamDetail.externalReloaded")}
               </div>
             ) : null}
 
             {selectedEditor.externalChangeStatus === "conflict" ? (
               <div className="mt-3 border border-line bg-sunken px-3 py-3" role="alert">
-                <p className="text-sm font-medium text-ink">文件在软件外面被改过了</p>
+                <p className="text-sm font-medium text-ink">
+                  {t("console.agentTeamDetail.externalChanged")}
+                </p>
                 <p className="mt-1 text-sm leading-6 text-sub">
-                  当前未保存内容已为你保留。请选择要继续使用哪个版本。
+                  {t("console.agentTeamDetail.externalConflictDescription")}
                 </p>
                 {selectedEditor.saveStatus === "failed" ? (
-                  <p className="mt-2 text-sm text-danger">覆盖失败：{selectedEditor.saveError}</p>
+                  <p className="mt-2 text-sm text-danger">
+                    {t("console.agentTeamDetail.overwriteFailed", {
+                      error: selectedEditor.saveError ?? "",
+                    })}
+                  </p>
                 ) : null}
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <Button
@@ -1040,14 +1135,16 @@ export function AgentTeamDetail({
                     disabled={selectedEditor.saveStatus === "saving"}
                     onClick={() => onLoadExternalVersion?.(selectedMember.slug)}
                   >
-                    载入外部版本
+                    {t("console.agentTeamDetail.loadExternal")}
                   </Button>
                   <Button
                     type="button"
                     disabled={selectedEditor.saveStatus === "saving"}
                     onClick={() => void onOverwriteExternalVersion?.(selectedMember.slug)}
                   >
-                    {selectedEditor.saveStatus === "saving" ? "正在覆盖…" : "用当前内容覆盖"}
+                    {selectedEditor.saveStatus === "saving"
+                      ? t("console.agentTeamDetail.overwriting")
+                      : t("console.agentTeamDetail.overwriteCurrent")}
                   </Button>
                 </div>
               </div>
@@ -1055,9 +1152,13 @@ export function AgentTeamDetail({
 
             {selectedEditor.saveStatus === "failed" && selectedEditor.externalChangeStatus !== "conflict" ? (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-danger/30 bg-danger/5 px-3 py-2.5" role="alert">
-                <span className="text-sm text-danger">保存失败：{selectedEditor.saveError}</span>
+                <span className="text-sm text-danger">
+                  {t("console.agentTeamDetail.saveFailed", {
+                    error: selectedEditor.saveError ?? "",
+                  })}
+                </span>
                 <Button type="button" variant="outline" size="sm" onClick={() => void onSaveMember(selectedMember.slug)}>
-                  重试
+                  {t("console.agentTeamDetail.retry")}
                 </Button>
               </div>
             ) : null}
@@ -1067,7 +1168,7 @@ export function AgentTeamDetail({
                 {selectedEditor.saveStatus === "saving" ? (
                   <span className="mr-auto inline-flex items-center text-sm text-sub" role="status">
                     <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                    正在保存…
+                    {t("console.agentTeamDetail.saving")}
                   </span>
                 ) : null}
                 <Button
@@ -1076,14 +1177,16 @@ export function AgentTeamDetail({
                   disabled={!selectedEditor.isDirty || selectedEditor.saveStatus === "saving"}
                   onClick={() => onDiscardMember(selectedMember.slug)}
                 >
-                  放弃修改
+                  {t("console.agentTeamDetail.discardChanges")}
                 </Button>
                 <Button
                   type="button"
                   disabled={!canSaveCurrent}
                   onClick={() => void onSaveMember(selectedMember.slug)}
                 >
-                  {selectedEditor.saveStatus === "saving" ? "正在保存" : "保存"}
+                  {selectedEditor.saveStatus === "saving"
+                    ? t("console.agentTeamDetail.savingNoEllipsis")
+                    : t("console.agentTeamDetail.save")}
                 </Button>
               </div>
             ) : null}
@@ -1098,17 +1201,24 @@ export function AgentTeamDetail({
             setLeavePromptOpen(false);
           }
         }}>
-          <div className="w-full max-w-md border border-line bg-card p-5 text-ink" role="dialog" aria-modal="true" aria-label="还有未保存的修改">
-            <h2 className="text-base font-semibold">还有未保存的修改</h2>
+          <div
+            className="w-full max-w-md border border-line bg-card p-5 text-ink"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("console.agentTeamDetail.unsavedDialog")}
+          >
+            <h2 className="text-base font-semibold">
+              {t("console.agentTeamDetail.unsavedDialog")}
+            </h2>
             <p className="mt-2 text-sm leading-6 text-sub">
-              这项操作只使用已经完整保存到磁盘的文件。可以继续编辑、放弃全部修改，或逐个保存后继续。
+              {t("console.agentTeamDetail.unsavedDialogDescription")}
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button type="button" variant="ghost" disabled={savingAll} onClick={() => {
                 pendingGuardedActionRef.current = null;
                 setLeavePromptOpen(false);
               }}>
-                继续编辑
+                {t("console.agentTeamDetail.continueEditing")}
               </Button>
               <Button type="button" variant="outline" disabled={savingAll || hasSavingMembers} onClick={() => {
                 onDiscardAll();
@@ -1125,10 +1235,14 @@ export function AgentTeamDetail({
                 ));
                 continueGuardedAction();
               }}>
-                放弃全部并继续
+                {t("console.agentTeamDetail.discardAllContinue")}
               </Button>
               <Button type="button" disabled={savingAll || hasSavingMembers} onClick={() => void saveAllAndContinue()}>
-                {savingAll ? "正在逐个保存…" : hasSavingMembers ? "正在保存当前成员…" : "保存全部并继续"}
+                {savingAll
+                  ? t("console.agentTeamDetail.savingEach")
+                  : hasSavingMembers
+                    ? t("console.agentTeamDetail.savingCurrentMember")
+                    : t("console.agentTeamDetail.saveAllContinue")}
               </Button>
             </div>
           </div>
@@ -1137,10 +1251,17 @@ export function AgentTeamDetail({
 
       {externalConflictPromptOpen ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6">
-          <div className="w-full max-w-md border border-line bg-card p-5 text-ink" role="dialog" aria-modal="true" aria-label="无法返回团队列表">
-            <h2 className="text-base font-semibold">无法返回团队列表</h2>
+          <div
+            className="w-full max-w-md border border-line bg-card p-5 text-ink"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("console.agentTeamDetail.cannotReturn")}
+          >
+            <h2 className="text-base font-semibold">
+              {t("console.agentTeamDetail.cannotReturn")}
+            </h2>
             <p className="mt-2 text-sm leading-6 text-sub">
-              以下 Agent 的文件在应用外被修改，需要先选择载入外部版本或用当前内容覆盖：
+              {t("console.agentTeamDetail.cannotReturnDescription")}
             </p>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ink">
               {externalConflictMemberSlugs.map((slug) => (
@@ -1148,7 +1269,9 @@ export function AgentTeamDetail({
               ))}
             </ul>
             <div className="mt-5 flex justify-end">
-              <Button type="button" onClick={() => setExternalConflictPromptOpen(false)}>知道了</Button>
+              <Button type="button" onClick={() => setExternalConflictPromptOpen(false)}>
+                {t("console.agentTeamDetail.understood")}
+              </Button>
             </div>
           </div>
         </div>
@@ -1156,15 +1279,22 @@ export function AgentTeamDetail({
 
       {removeRecordPromptOpen ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6">
-          <div className="w-full max-w-md border border-line bg-card p-5 text-ink" role="dialog" aria-modal="true" aria-label="移除失效团队记录">
-            <h2 className="text-base font-semibold">移除失效团队记录？</h2>
+          <div
+            className="w-full max-w-md border border-line bg-card p-5 text-ink"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("console.agentTeamDetail.removeInvalidRecord")}
+          >
+            <h2 className="text-base font-semibold">
+              {t("console.agentTeamDetail.removeInvalidRecordTitle")}
+            </h2>
             <p className="mt-2 text-sm leading-6 text-sub">
-              这只会从应用中移除这条失效记录，不会删除、移动或修改磁盘上的任何文件。已有会话和历史消息也会保留。
+              {t("console.agentTeamDetail.removeInvalidRecordDescription")}
             </p>
             {repairError !== null ? <p className="mt-3 text-sm text-danger" role="alert">{repairError}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
               <Button type="button" variant="ghost" disabled={repairAction === "removing"} onClick={() => setRemoveRecordPromptOpen(false)}>
-                取消
+                {t("console.agentTeamDetail.cancel")}
               </Button>
               <Button
                 type="button"
@@ -1172,7 +1302,9 @@ export function AgentTeamDetail({
                 disabled={repairAction === "removing"}
                 onClick={() => void runRepairAction("removing", onRemoveRecord)}
               >
-                {repairAction === "removing" ? "正在移除记录…" : "只移除记录"}
+                {repairAction === "removing"
+                  ? t("console.agentTeamDetail.removingRecord")
+                  : t("console.agentTeamDetail.removeOnly")}
               </Button>
             </div>
           </div>
@@ -1205,30 +1337,48 @@ function memberLabel(members: readonly AgentTeamDetailMember[], memberSlug: stri
   return members.find((member) => member.slug === memberSlug)?.displayName || `@${memberSlug}`;
 }
 
-function formatAgentSlugs(slugs: readonly string[]): string {
-  return [...new Set(slugs)].map((slug) => `@${slug}`).join("、");
+function formatAgentSlugs(t: Translate, slugs: readonly string[]): string {
+  return [...new Set(slugs)]
+    .map((slug) => `@${slug}`)
+    .join(t("console.agentTeamDetail.listSeparator"));
 }
 
-function formatOfficialUpdateResult(result: AgentOfficialUpdateResult): string {
+function formatOfficialUpdateResult(t: Translate, result: AgentOfficialUpdateResult): string {
   const facts = [
     result.memberChanges.added.length > 0
-      ? `新增 ${formatAgentSlugs(result.memberChanges.added)}`
+      ? t("console.agentTeamDetail.addedFact", {
+          agents: formatAgentSlugs(t, result.memberChanges.added),
+        })
       : null,
     result.memberChanges.removed.length > 0
-      ? `删除 ${formatAgentSlugs(result.memberChanges.removed)}`
+      ? t("console.agentTeamDetail.removedFact", {
+          agents: formatAgentSlugs(t, result.memberChanges.removed),
+        })
       : null,
     result.memberChanges.renamed.length > 0
-      ? `改名 ${result.memberChanges.renamed.map(({ from, to }) => `@${from} → @${to}`).join("、")}`
+      ? t("console.agentTeamDetail.renamedFact", {
+          agents: result.memberChanges.renamed
+            .map(({ from, to }) => `@${from} → @${to}`)
+            .join(t("console.agentTeamDetail.listSeparator")),
+        })
       : null,
     result.memberChanges.recommendationChanged.length > 0
-      ? `推荐配置更新 ${formatAgentSlugs(result.memberChanges.recommendationChanged)}`
+      ? t("console.agentTeamDetail.recommendationFact", {
+          agents: formatAgentSlugs(t, result.memberChanges.recommendationChanged),
+        })
       : null,
   ].filter((fact): fact is string => fact !== null);
   const copyFact = result.copiedTeamId === null
     ? ""
-    : `已保留为 ${result.copiedTeamId}；`;
-  const memberFact = facts.length === 0 ? "成员无变化" : facts.join("；");
-  return `${copyFact}已更新到官方版本 ${result.appliedOfficialVersion}：${memberFact}。`;
+    : t("console.agentTeamDetail.copyPreservedFact", { id: result.copiedTeamId });
+  const memberFact = facts.length === 0
+    ? t("console.agentTeamDetail.noMemberChanges")
+    : facts.join(t("console.agentTeamDetail.factSeparator"));
+  return t("console.agentTeamDetail.updateResult", {
+    copy: copyFact,
+    version: result.appliedOfficialVersion,
+    changes: memberFact,
+  });
 }
 
 function isProfileEditorDirty(
@@ -1265,34 +1415,39 @@ function profileEditorFromDocument(
   };
 }
 
-function repairIssueMessages(issues: readonly AgentTeamRepairIssueView[]): string[] {
+function repairIssueMessages(
+  t: Translate,
+  issues: readonly AgentTeamRepairIssueView[],
+): string[] {
   const messages = issues.map((issue) => {
     switch (issue.code) {
       case "team-directory-missing":
       case "team-directory-unreadable":
-        return "团队文件夹已移动、重命名或暂时无法访问。";
+        return t("console.agentTeamDetail.repairDirectory");
       case "team-manifest-missing":
       case "team-manifest-unreadable":
       case "team-manifest-invalid":
-        return "团队信息文件缺失、损坏或暂时无法读取。";
+        return t("console.agentTeamDetail.repairManifest");
       case "member-slug-missing":
-        return "有成员缺少稳定标识，需要在团队信息文件中修正。";
+        return t("console.agentTeamDetail.repairMissingSlug");
       case "member-slug-duplicate":
         return issue.slug === undefined
-          ? "团队中有重复的成员标识。"
-          : `成员标识 @${issue.slug} 出现重复。`;
+          ? t("console.agentTeamDetail.repairDuplicateSlug")
+          : t("console.agentTeamDetail.repairDuplicateSlugNamed", { slug: issue.slug });
       case "primary-agent-not-member":
-        return "当前主 Agent 已不在可用成员中，请先选择另一名可用成员。";
+        return t("console.agentTeamDetail.repairPrimary");
       case "member-agent-missing":
       case "member-agent-unreadable":
         return issue.slug === undefined
-          ? "有成员的 AGENT.md 缺失或暂时无法读取。"
-          : `@${issue.slug} 的 AGENT.md 缺失或暂时无法读取。`;
+          ? t("console.agentTeamDetail.repairAgentFile")
+          : t("console.agentTeamDetail.repairAgentFileNamed", { slug: issue.slug });
       case "member-agent-metadata-invalid":
         return issue.slug === undefined
-          ? "有成员的 AGENT.md 身份元数据不完整或格式错误。"
-          : `@${issue.slug} 的 AGENT.md 身份元数据不完整或格式错误。`;
+          ? t("console.agentTeamDetail.repairMetadata")
+          : t("console.agentTeamDetail.repairMetadataNamed", { slug: issue.slug });
     }
   });
-  return [...new Set(messages.length > 0 ? messages : ["团队文件暂时无法完整读取。"])];
+  return [...new Set(messages.length > 0
+    ? messages
+    : [t("console.agentTeamDetail.filesUnavailable")])];
 }

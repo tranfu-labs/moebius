@@ -1,4 +1,7 @@
-import { sanitizeMachineTextFragment } from "./machine-text";
+import {
+  sanitizeMachineTextFragment,
+  type MachineTextPlaceholders,
+} from "./machine-text";
 
 export interface MarkdownFileReference {
   path: string;
@@ -53,10 +56,12 @@ export function parseMarkdownFileReference(value: string | null | undefined): Ma
 export function createMarkdownInternalReferencePlugin(
   identities: readonly MarkdownMemberIdentity[],
   intentKey: string,
+  machineText: MachineTextPlaceholders,
 ): [typeof markdownInternalReferencePlugin, MarkdownInternalReferencePluginOptions] {
   return [markdownInternalReferencePlugin, {
     identities: identities.map((identity) => ({ ...identity })),
     intentKey,
+    machineText,
   }];
 }
 
@@ -92,6 +97,7 @@ export function retainMarkdownInternalIntentRegistry(intentKey: string): void {
 interface MarkdownInternalReferencePluginOptions {
   identities: MarkdownMemberIdentity[];
   intentKey: string;
+  machineText: MachineTextPlaceholders;
 }
 
 interface MarkdownNode {
@@ -125,7 +131,7 @@ function markdownInternalReferencePlugin(
     };
     intentRegistries.set(options.intentKey, context.intents);
     const definitions = collectDefinitions(tree);
-    transformNode(tree, known, definitions, context);
+    transformNode(tree, known, definitions, context, options.machineText);
   };
 }
 
@@ -150,25 +156,26 @@ function transformNode(
   known: ReadonlyMap<string, MarkdownMemberIdentity>,
   definitions: ReadonlyMap<string, MarkdownNode>,
   context: MarkdownIntentContext,
+  machineText: MachineTextPlaceholders,
 ): void {
   if (node.type === "definition") {
     if (typeof node.title === "string") {
-      node.title = sanitizeMachineTextFragment(node.title);
+      node.title = sanitizeMachineTextFragment(node.title, machineText);
     }
     return;
   }
   if (node.type === "code" || node.type === "inlineCode" || node.type === "html") {
     if (typeof node.value === "string") {
-      node.value = sanitizeMachineTextFragment(node.value);
+      node.value = sanitizeMachineTextFragment(node.value, machineText);
     }
     return;
   }
   if (node.type === "image" || node.type === "imageReference") {
     if (typeof node.alt === "string") {
-      node.alt = sanitizeMachineTextFragment(node.alt);
+      node.alt = sanitizeMachineTextFragment(node.alt, machineText);
     }
     if (typeof node.title === "string") {
-      node.title = sanitizeMachineTextFragment(node.title);
+      node.title = sanitizeMachineTextFragment(node.title, machineText);
     }
     return;
   }
@@ -185,7 +192,7 @@ function transformNode(
   }
   if (node.type === "link") {
     if (typeof node.title === "string") {
-      node.title = sanitizeMachineTextFragment(node.title);
+      node.title = sanitizeMachineTextFragment(node.title, machineText);
     }
     const reference = parseMarkdownFileReference(node.url);
     if (reference !== null) {
@@ -194,7 +201,7 @@ function transformNode(
         memberSlug: null,
       });
     }
-    sanitizeVisibleChildren(node);
+    sanitizeVisibleChildren(node, machineText);
     return;
   }
   if (!Array.isArray(node.children)) {
@@ -203,24 +210,27 @@ function transformNode(
   const nextChildren: MarkdownNode[] = [];
   for (const child of node.children) {
     if (child.type === "text" && typeof child.value === "string") {
-      const sanitized = sanitizeMachineTextFragment(child.value);
+      const sanitized = sanitizeMachineTextFragment(child.value, machineText);
       nextChildren.push(...mentionNodes(sanitized, known, context));
       continue;
     }
-    transformNode(child, known, definitions, context);
+    transformNode(child, known, definitions, context, machineText);
     nextChildren.push(child);
   }
   node.children = nextChildren;
 }
 
-function sanitizeVisibleChildren(node: MarkdownNode): void {
+function sanitizeVisibleChildren(
+  node: MarkdownNode,
+  machineText: MachineTextPlaceholders,
+): void {
   visit(node, (child) => {
     if (
       child !== node
       && child.type !== "definition"
       && typeof child.value === "string"
     ) {
-      child.value = sanitizeMachineTextFragment(child.value);
+      child.value = sanitizeMachineTextFragment(child.value, machineText);
     }
   });
 }

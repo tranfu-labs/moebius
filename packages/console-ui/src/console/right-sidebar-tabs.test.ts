@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EMPTY_RIGHT_SIDEBAR_TABS,
+  RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES,
   RIGHT_SIDEBAR_TAB_TYPES,
   addBlankRightSidebarTab,
@@ -110,7 +111,7 @@ describe("right sidebar tab model", () => {
       tabs: [{
         id: "fallback-blank",
         type: "blank",
-        title: "新标签",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank,
         sourceKey: null,
         closable: true,
       }],
@@ -130,7 +131,11 @@ describe("right sidebar tab model", () => {
     const userSelected = selectRightSidebarTab(converted, "diff");
     const contentRefresh = parseRightSidebarTabsState(JSON.parse(serializeRightSidebarTabsState(userSelected)));
 
-    expect(converted.tabs[1]).toMatchObject({ type: "project-files", title: "项目文件", sourceKey: null });
+    expect(converted.tabs[1]).toMatchObject({
+      type: "project-files",
+      title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles,
+      sourceKey: null,
+    });
     expect(contentRefresh.activeTabId).toBe("diff");
   });
 
@@ -146,7 +151,7 @@ describe("right sidebar tab model", () => {
       tabs: [{
         id: "known",
         type: "project-files",
-        title: "项目文件",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles,
         sourceKey: null,
         closable: true,
       }],

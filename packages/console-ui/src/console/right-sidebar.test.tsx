@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { I18nProvider } from "@/i18n";
+
 import {
   DEFAULT_RIGHT_SIDEBAR_WIDTH_PX,
   MAX_RIGHT_SIDEBAR_WIDTH_PX,
@@ -37,6 +39,17 @@ describe("RightSidebar", () => {
     expect(within(content).queryByRole("button", { name: /改动/u })).not.toBeInTheDocument();
     expect(within(content).getByRole("button", { name: /项目文件/u })).toBeVisible();
     expect(within(content).getByRole("note")).toHaveTextContent("不是 git 仓库");
+  });
+
+  it("renders stable built-in tab codes through the active English locale", () => {
+    renderSidebar({
+      state: addBlankRightSidebarTab(initialState(), "blank"),
+    }, "en");
+
+    expect(screen.getByRole("tab", { name: "Changes" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "New tab" })).toBeVisible();
+    expect(screen.queryByText("改动")).not.toBeInTheDocument();
+    expect(screen.queryByText("新标签")).not.toBeInTheDocument();
   });
 
   it("keeps plus reachable beside an overflowing tablist and closes every tab", () => {
@@ -82,21 +95,26 @@ describe("RightSidebar", () => {
   });
 });
 
-function renderSidebar(overrides: Partial<React.ComponentProps<typeof RightSidebar>> = {}) {
+function renderSidebar(
+  overrides: Partial<React.ComponentProps<typeof RightSidebar>> = {},
+  locale: "zh-CN" | "en" = "zh-CN",
+) {
   let nextId = 1;
   return render(
-    <RightSidebar
-      open
-      width={DEFAULT_RIGHT_SIDEBAR_WIDTH_PX}
-      narrow={false}
-      isGitRepository
-      state={initialState()}
-      onStateChange={() => undefined}
-      onOpenChange={() => undefined}
-      onWidthChange={() => undefined}
-      createTabId={() => `generated-${String(nextId++)}`}
-      {...overrides}
-    />,
+    <I18nProvider locale={locale}>
+      <RightSidebar
+        open
+        width={DEFAULT_RIGHT_SIDEBAR_WIDTH_PX}
+        narrow={false}
+        isGitRepository
+        state={initialState()}
+        onStateChange={() => undefined}
+        onOpenChange={() => undefined}
+        onWidthChange={() => undefined}
+        createTabId={() => `generated-${String(nextId++)}`}
+        {...overrides}
+      />
+    </I18nProvider>,
   );
 }
 

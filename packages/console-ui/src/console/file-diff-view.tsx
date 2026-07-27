@@ -6,6 +6,7 @@ import {
   type UIEvent,
 } from "react";
 
+import { translate, useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export interface WorkspaceFileChange {
@@ -42,16 +43,19 @@ export type WorkspaceFileContent =
         | "workspace-unavailable";
     };
 
-export function workspaceLocationCopy(mode: "direct" | "worktree"): {
+export function workspaceLocationCopy(
+  mode: "direct" | "worktree",
+  t: Translate = (key, values) => translate("zh-CN", key, values),
+): {
   label: string;
   consequence: string | null;
 } {
   return mode === "worktree"
     ? {
-        label: "独立工作空间",
-        consequence: "这些改动在一份隔离副本里，你的项目文件夹没有被动过。",
+        label: t("console.fileDiff.worktree"),
+        consequence: t("console.fileDiff.worktreeConsequence"),
       }
-    : { label: "项目文件夹", consequence: null };
+    : { label: t("console.fileDiff.projectFolder"), consequence: null };
 }
 
 export function WorkspaceFileTree({
@@ -65,6 +69,7 @@ export function WorkspaceFileTree({
   onSelect(path: string): void;
   className?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const tree = useMemo(() => buildWorkspaceFileTree(files), [files]);
 
@@ -76,7 +81,7 @@ export function WorkspaceFileTree({
     <div
       className={cn("scroll-thin overflow-auto", className)}
       role="tree"
-      aria-label="项目文件树"
+      aria-label={t("console.fileDiff.treeLabel")}
       data-testid="workspace-file-tree"
     >
       {tree.map((node) => (
@@ -107,6 +112,7 @@ export function FileDiffView({
   onScrollTopChange?: (scrollTop: number) => void;
   className?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -116,11 +122,11 @@ export function FileDiffView({
   }, [content, path, scrollTop]);
 
   if (path === null) {
-    return <FileContentMessage className={className}>从上面的文件树选择一个文件。</FileContentMessage>;
+    return <FileContentMessage className={className}>{t("console.fileDiff.selectFile")}</FileContentMessage>;
   }
 
   return (
-    <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label="文件内容">
+    <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label={t("console.fileDiff.contentLabel")}>
       <div
         className="shrink-0 border-b border-line px-3 py-2 font-mono text-xs text-sub selection:bg-sel selection:text-ink"
         data-testid="selected-file-path"
@@ -128,11 +134,11 @@ export function FileDiffView({
         {path}
       </div>
       {loading ? (
-        <FileContentMessage>正在读取文件内容…</FileContentMessage>
+        <FileContentMessage>{t("console.fileDiff.loading")}</FileContentMessage>
       ) : content === null ? (
-        <FileContentMessage>暂时无法读取文件内容，请重试。</FileContentMessage>
+        <FileContentMessage>{t("console.fileDiff.loadFailed")}</FileContentMessage>
       ) : !content.available ? (
-        <FileContentMessage>{fileUnavailableCopy(content.reason)}</FileContentMessage>
+        <FileContentMessage>{fileUnavailableCopy(content.reason, t)}</FileContentMessage>
       ) : (
         <div
           ref={scrollRef}
@@ -142,7 +148,7 @@ export function FileDiffView({
         >
           <div className="min-w-max py-1">
             {content.lines.length === 0 ? (
-              <div className="px-3 py-6 text-sub">这个文件是空的。</div>
+              <div className="px-3 py-6 text-sub">{t("console.fileDiff.empty")}</div>
             ) : content.lines.map((line, index) => (
               <div
                 key={`${String(line.oldLineNumber)}:${String(line.newLineNumber)}:${String(index)}`}
@@ -225,6 +231,7 @@ function FileTreeNode({
   onSelect(path: string): void;
   depth?: number;
 }): JSX.Element {
+  const { t } = useI18n();
   if (node.kind === "directory") {
     return (
       <div role="treeitem" aria-expanded="true" aria-label={node.name}>
@@ -270,7 +277,7 @@ function FileTreeNode({
       <File className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
       {change !== null && change.changed !== false && (change.additions !== null || change.deletions !== null) ? (
-        <span className="tnum flex shrink-0 gap-1 text-[11px]" aria-label={changeSummary(change)}>
+        <span className="tnum flex shrink-0 gap-1 text-[11px]" aria-label={changeSummary(change, t)}>
           {change.additions !== null ? <span className="text-pass">+{change.additions}</span> : null}
           {change.deletions !== null ? <span className="text-danger">−{change.deletions}</span> : null}
         </span>
@@ -286,20 +293,27 @@ function compareFileTreeNodes(left: FileTreeNodeModel, right: FileTreeNodeModel)
   return left.name.localeCompare(right.name);
 }
 
-function changeSummary(change: WorkspaceFileChange): string {
-  const additions = change.additions === null ? "新增行数不可用" : `新增 ${String(change.additions)} 行`;
-  const deletions = change.deletions === null ? "删除行数不可用" : `删除 ${String(change.deletions)} 行`;
-  return `${additions}，${deletions}`;
+function changeSummary(change: WorkspaceFileChange, t: Translate): string {
+  const additions = change.additions === null
+    ? t("console.fileDiff.additionsUnavailable")
+    : t("console.fileDiff.additions", { count: change.additions });
+  const deletions = change.deletions === null
+    ? t("console.fileDiff.deletionsUnavailable")
+    : t("console.fileDiff.deletions", { count: change.deletions });
+  return t("console.fileDiff.changeSummary", { additions, deletions });
 }
 
-function fileUnavailableCopy(reason: Extract<WorkspaceFileContent, { available: false }>["reason"]): string {
+function fileUnavailableCopy(
+  reason: Extract<WorkspaceFileContent, { available: false }>["reason"],
+  t: Translate,
+): string {
   const copy: Record<typeof reason, string> = {
-    "binary-file": "这个文件不是文本文件，无法在这里显示。",
-    "file-too-large": "这个文件太大，无法在这里显示。",
-    "not-found": "这个文件已经不存在，无法继续显示。",
-    "not-file": "所选项目不是普通文件，无法显示内容。",
-    "outside-workspace": "这个文件不在当前工作空间内，无法读取。",
-    "workspace-unavailable": "当前工作空间不可用，暂时无法读取文件。",
+    "binary-file": t("console.fileDiff.binary"),
+    "file-too-large": t("console.fileDiff.tooLarge"),
+    "not-found": t("console.fileDiff.notFound"),
+    "not-file": t("console.fileDiff.notFile"),
+    "outside-workspace": t("console.fileDiff.outside"),
+    "workspace-unavailable": t("console.fileDiff.workspaceUnavailable"),
   };
   return copy[reason];
 }

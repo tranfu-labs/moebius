@@ -102,6 +102,11 @@ await fs.copyFile(path.join(brandAssets, "favicon-32.png"), path.join(dist, "con
 await fs.copyFile(path.join(root, "src/status-page/index.html"), path.join(dist, "status-page/index.html"));
 await fs.copyFile(path.join(root, "src/status-page/status.css"), path.join(dist, "status-page/status.css"));
 await fs.copyFile(path.join(root, "src/status-page/status.js"), path.join(dist, "status-page/status.js"));
+await fs.cp(
+  path.join(root, "src/status-page/locales"),
+  path.join(dist, "status-page/locales"),
+  { recursive: true },
+);
 await fs.copyFile(path.join(brandAssets, "favicon-32.png"), path.join(dist, "status-page/favicon-32.png"));
 await fs.copyFile(path.join(brandAssets, "ui-icon-64.png"), path.join(dist, "status-page/moebius-icon-64.png"));
 await fs.copyFile(path.join(brandAssets, "app-icon-1024.png"), path.join(dist, "app-icon-1024.png"));

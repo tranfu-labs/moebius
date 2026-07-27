@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OperatorProcessOutput } from "@moebius/console-ui";
+import { translate, type OperatorProcessOutput } from "@moebius/console-ui";
 import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
@@ -31,6 +31,9 @@ interface TestState {
   selectedProjectId: string;
   selectedSessionId: string;
 }
+
+const zhT: Parameters<typeof loadEvidenceView>[0]["t"] = (key, values) =>
+  translate("zh-CN", key, values);
 
 describe("ProcessInvocationRequestCoordinator", () => {
   it("isolates run keys, rejects stale slow responses, and aborts all work on session change", () => {
@@ -205,6 +208,7 @@ describe("loadEvidenceView", () => {
       apiBase: "http://127.0.0.1:8787/",
       intent: { kind: "workspace-diff", sessionId: "session-a", fileCount: 0 },
       fetch,
+      t: zhT,
     })).resolves.toEqual({
       kind: "workspace-diff",
       title: "对话改动",
@@ -233,6 +237,7 @@ describe("loadEvidenceView", () => {
         fallbackOutput: null,
       },
       fetch,
+      t: zhT,
     });
 
     expect(String(fetch.mock.calls[0]?.[0])).toContain("sessions/session-a/runs/run-1/output");
@@ -890,6 +895,7 @@ describe("ConsoleStateActions", () => {
       apiBase: "http://127.0.0.1:8787/",
       coordinator,
       fetch,
+      t: zhT,
       getSelection: () => selection,
       commitSelection: (nextSelection) => {
         selection = nextSelection;
@@ -1131,6 +1137,7 @@ function refreshOptions(input: {
     selection: input.selection ?? { projectId: "project-a", sessionId: "session-a" },
     coordinator: input.coordinator,
     fetch: input.fetch,
+    t: zhT,
     readSelection: (state: TestState) => ({
       projectId: state.selectedProjectId,
       sessionId: state.selectedSessionId,
@@ -1163,6 +1170,7 @@ function actionHarness(input: {
     apiBase: "http://127.0.0.1:8787/",
     coordinator: input.coordinator,
     fetch: input.fetch,
+    t: zhT,
     getSelection: () => selection,
     commitSelection: (nextSelection) => {
       selection = nextSelection;

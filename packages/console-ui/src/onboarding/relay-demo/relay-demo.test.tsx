@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { I18nProvider } from "@/i18n";
 import { RelayDemo } from "./relay-demo";
 import { createRelayPlaybackTiming, parseRelayDurationToken } from "./relay-motion";
 
@@ -151,12 +152,14 @@ describe("RelayDemo", () => {
     };
 
     render(
-      <RelayDemo
-        team={longNameTeam}
-        relayRun={1}
-        reducedMotion
-        onReplay={vi.fn()}
-      />,
+      <I18nProvider locale="zh-CN">
+        <RelayDemo
+          team={longNameTeam}
+          relayRun={1}
+          reducedMotion
+          onReplay={vi.fn()}
+        />
+      </I18nProvider>,
     );
 
     expect(screen.getByText("AI 热点社媒编辑部")).not.toHaveClass("truncate");
@@ -183,12 +186,14 @@ describe("RelayDemo", () => {
     };
 
     render(
-      <RelayDemo
-        team={aiTeam}
-        relayRun={1}
-        reducedMotion
-        onReplay={vi.fn()}
-      />,
+      <I18nProvider locale="zh-CN">
+        <RelayDemo
+          team={aiTeam}
+          relayRun={1}
+          reducedMotion
+          onReplay={vi.fn()}
+        />
+      </I18nProvider>,
     );
 
     expect(screen.getByText("锁定发布目标。")).toBeInTheDocument();
@@ -206,12 +211,14 @@ describe("RelayDemo", () => {
     };
 
     render(
-      <RelayDemo
-        team={invalidTeam}
-        relayRun={1}
-        reducedMotion
-        onReplay={vi.fn()}
-      />,
+      <I18nProvider locale="zh-CN">
+        <RelayDemo
+          team={invalidTeam}
+          relayRun={1}
+          reducedMotion
+          onReplay={vi.fn()}
+        />
+      </I18nProvider>,
     );
 
     expect(screen.getByText("暂无可播放的协作示例")).toBeInTheDocument();
@@ -221,12 +228,14 @@ describe("RelayDemo", () => {
 
   it("allows onboarding to continue when orchestration is missing", () => {
     render(
-      <RelayDemo
-        team={{ ...developmentTeam, onboardingOrchestration: { status: "unavailable" } }}
-        relayRun={1}
-        reducedMotion
-        onReplay={vi.fn()}
-      />,
+      <I18nProvider locale="zh-CN">
+        <RelayDemo
+          team={{ ...developmentTeam, onboardingOrchestration: { status: "unavailable" } }}
+          relayRun={1}
+          reducedMotion
+          onReplay={vi.fn()}
+        />
+      </I18nProvider>,
     );
 
     expect(screen.getByText("暂无可播放的协作示例")).toBeInTheDocument();
@@ -257,11 +266,13 @@ function renderDemo(overrides: Partial<{
   reducedMotion: boolean;
 }> = {}) {
   return render(
-    <RelayDemo
-      team={developmentTeam}
-      relayRun={1}
-      reducedMotion={overrides.reducedMotion}
-      onReplay={overrides.onReplay ?? vi.fn()}
-    />,
+    <I18nProvider locale="zh-CN">
+      <RelayDemo
+        team={developmentTeam}
+        relayRun={1}
+        reducedMotion={overrides.reducedMotion}
+        onReplay={overrides.onReplay ?? vi.fn()}
+      />
+    </I18nProvider>,
   );
 }

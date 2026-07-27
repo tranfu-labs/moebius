@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -27,16 +28,17 @@ export function SessionTeamMenu({
   disabled?: boolean;
   onSelectTeam?: (team: OperatorAgentTeam) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const displayedTeam = pendingTeam ?? team;
   if (displayedTeam === undefined && missingTeamId == null) {
     return null;
   }
-  const teamLabel = displayedTeam?.name?.trim() || missingTeamId || "未命名团队";
+  const teamLabel = displayedTeam?.name?.trim() || missingTeamId || t("console.common.untitledTeam");
   const needsAttention = pendingTeam === undefined && (health === "deleted" || health === "needs-repair" || team?.status === "needs-repair");
-  const stateLabel = health === "deleted" ? "已删除" : "需要修复";
+  const stateLabel = t(health === "deleted" ? "console.sessionTeam.deleted" : "console.sessionTeam.needsRepair");
   const accessibleLabel = needsAttention
-    ? `Agent 团队：${teamLabel}，${stateLabel}，点击切换`
-    : `Agent 团队：${teamLabel}，点击切换`;
+    ? t("console.sessionTeam.switchWithState", { team: teamLabel, state: stateLabel })
+    : t("console.sessionTeam.switch", { team: teamLabel });
   const choices = teams.filter((candidate) => candidate.canCreateConversation);
 
   return (
@@ -75,12 +77,12 @@ export function SessionTeamMenu({
               }
             }}
           >
-            {candidate.name?.trim() || "未命名团队"}
+            {candidate.name?.trim() || t("console.common.untitledTeam")}
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-xs leading-5 text-sub">
-          这段对话用的是开始时载入的那份团队内容，之后在 Agent 团队页的修改不影响它。
+          {t("console.sessionTeam.snapshotNotice")}
         </p>
       </DropdownMenuContent>
     </DropdownMenu>

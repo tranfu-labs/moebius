@@ -1,0 +1,14 @@
+{
+  "prototype": "docs/product/pages/settings.prototype.html",
+  "sha256": "65083835eab14deec84ac31c32fa05ad5a48c8a79ca3c25e6156bc9f85d3390f",
+  "checkedAt": "2026-07-27T10:58:02.169Z",
+  "checks": [
+    "prototype-marker",
+    "single-html-has-no-external-resource-attributes",
+    "bilingual-and-prototype-content",
+    "persistence-failure-focus-theme-and-motion-contracts",
+    "no-gradient-or-shadow",
+    "no-network-primitive",
+    "no-production-runtime-coupling"
+  ]
+}

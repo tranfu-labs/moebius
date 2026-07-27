@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { translate } from "@/i18n";
 
 import { ProcessEvent, escapeTerminalControls } from "./process-event";
 import { resolveOperatorMemberName } from "./member-name";
@@ -114,7 +115,11 @@ describe("ProcessTab", () => {
   });
 
   it("keeps stable member labels and monotonic duplicate titles", () => {
-    expect(resolveOperatorMemberName("dev")).toBe("开发");
+    expect(resolveOperatorMemberName(
+      "dev",
+      [],
+      (key, values) => translate("zh-CN", key, values),
+    )).toBe("开发");
     expect(nextProcessTabTitle({
       tabs: [
         { type: "run-output", title: "开发" },

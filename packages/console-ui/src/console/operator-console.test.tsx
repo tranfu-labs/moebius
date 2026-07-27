@@ -134,6 +134,41 @@ describe("OperatorConsole", () => {
     expect(onReplayOnboarding).toHaveBeenCalledOnce();
   });
 
+  it("opens the controlled language settings dialog without unmounting the workspace", () => {
+    const onSelectLocale = vi.fn();
+    renderConsole({ onSelectLocale });
+    const sidebar = screen.getByTestId("operator-sidebar");
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeVisible();
+    expect(sidebar).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "English" }));
+    expect(onSelectLocale).toHaveBeenCalledWith("en");
+  });
+
+  it("renders the settings entry and dialog from the active English resource", () => {
+    renderConsole({ activeLocale: "en" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    expect(screen.getByText("Choose the language used by the Moebius interface.")).toBeVisible();
+  });
+
+  it("preserves user content and the mounted workspace when the active locale changes", () => {
+    const props = baseProps({
+      composerValue: "用户草稿 must stay byte-for-byte",
+      messages: [message({ id: 1, body: "Agent 原始回复 must stay byte-for-byte" })],
+    });
+    const view = render(<OperatorConsole {...props} />);
+    const workspace = screen.getByTestId("operator-sidebar").parentElement;
+
+    view.rerender(<OperatorConsole {...props} activeLocale="en" />);
+
+    expect(screen.getByDisplayValue("用户草稿 must stay byte-for-byte")).toBeVisible();
+    expect(screen.getByText("Agent 原始回复 must stay byte-for-byte")).toBeVisible();
+    expect(screen.getByTestId("operator-sidebar").parentElement).toBe(workspace);
+  });
+
   it("shows project loading structure while keeping independent application areas available", () => {
     renderConsole({ projectListState: "loading" });
 

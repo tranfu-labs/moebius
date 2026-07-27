@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 
@@ -32,10 +33,11 @@ export function SubSessionCard({
   onOpen?: (sessionId: string) => void;
   className?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <section
       className={cn("overflow-hidden rounded-md border border-line bg-card", className)}
-      aria-label="子任务"
+      aria-label={t("console.subSession.label")}
       data-testid="sub-session-card"
     >
       {items.map((item) => {
@@ -48,7 +50,11 @@ export function SubSessionCard({
               "grid min-h-11 w-full grid-cols-[minmax(0,1fr)_minmax(5rem,auto)_auto] items-center gap-3 border-b border-line px-3.5 text-left text-[13px] last:border-b-0 hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent",
               opened && "bg-sel",
             )}
-            aria-label={`${item.title}，负责成员：${item.memberName}，状态：${item.statusLabel}`}
+            aria-label={t("console.subSession.itemLabel", {
+              title: item.title,
+              member: item.memberName,
+              status: item.statusLabel,
+            })}
             aria-pressed={opened}
             data-session-id={item.sessionId}
             data-status={item.status}

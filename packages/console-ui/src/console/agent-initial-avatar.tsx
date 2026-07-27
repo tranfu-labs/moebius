@@ -12,7 +12,7 @@ export interface AgentInitialAvatarProps {
 
 export function agentInitialGlyph(displayName: string, slug: string): string {
   const source = displayName.trim() || slug.trim();
-  const glyph = Array.from(source)[0] ?? "协";
+  const glyph = Array.from(source)[0] ?? "A";
   return /^[a-z]$/iu.test(glyph) ? glyph.toLocaleUpperCase("en-US") : glyph;
 }
 

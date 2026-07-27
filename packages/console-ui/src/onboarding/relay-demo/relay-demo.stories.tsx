@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { I18nProvider } from "@/i18n";
 import { RelayDemo } from "./relay-demo";
 
 const developmentTeam: OperatorAgentTeam = {
@@ -36,9 +37,11 @@ const meta = {
   component: RelayDemo,
   decorators: [
     (Story) => (
-      <div className="mx-auto w-full max-w-[780px]">
-        <Story />
-      </div>
+      <I18nProvider locale="zh-CN">
+        <div className="mx-auto w-full max-w-[780px]">
+          <Story />
+        </div>
+      </I18nProvider>
     ),
   ],
   args: {

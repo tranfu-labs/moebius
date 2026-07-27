@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useI18n, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export interface FileReferenceLine {
@@ -59,6 +60,7 @@ export function FileReferenceTab({
   initialContent,
   loadReference,
 }: FileReferenceTabProps): JSX.Element {
+  const { t } = useI18n();
   const [content, setContent] = useState<FileReferenceContent | null>(initialContent ?? null);
   const [loading, setLoading] = useState(initialContent === undefined);
   const targetRef = useRef<HTMLDivElement | null>(null);
@@ -109,7 +111,7 @@ export function FileReferenceTab({
   return (
     <section
       className="flex h-full min-h-0 flex-col overflow-hidden"
-      aria-label="文件引用详情"
+      aria-label={t("console.fileReference.detail")}
       data-testid="file-reference-tab"
     >
       <div className="shrink-0 border-b border-line px-3 py-2.5">
@@ -120,17 +122,21 @@ export function FileReferenceTab({
           {content?.path ?? filePath}
         </div>
         <p className="mt-1 text-xs text-hint">
-          目标位置：第 {line} 行{column === null ? "" : `，第 ${String(column)} 列`}
+          {column === null
+            ? t("console.fileReference.targetLine", { line })
+            : t("console.fileReference.targetLineColumn", { line, column })}
         </p>
       </div>
       {loading ? (
-        <FileReferenceMessage>正在读取目标行…</FileReferenceMessage>
+        <FileReferenceMessage>{t("console.fileReference.loading")}</FileReferenceMessage>
       ) : content === null || !content.available ? (
-        <FileReferenceMessage>{fileReferenceUnavailableCopy(content?.reason ?? "unavailable")}</FileReferenceMessage>
+        <FileReferenceMessage>{t(fileReferenceUnavailableKey(content?.reason ?? "unavailable"))}</FileReferenceMessage>
       ) : (
         <div className="scroll-thin min-h-0 flex-1 select-text overflow-auto font-mono text-xs leading-5">
           {content.truncatedBefore ? (
-            <p className="border-b border-line px-3 py-1.5 text-center text-hint">仅显示目标行附近内容</p>
+            <p className="border-b border-line px-3 py-1.5 text-center text-hint">
+              {t("console.fileReference.nearbyOnly")}
+            </p>
           ) : null}
           <div className="min-w-max py-1">
             {content.lines.map((entry) => {
@@ -161,7 +167,9 @@ export function FileReferenceTab({
             })}
           </div>
           {content.truncatedAfter ? (
-            <p className="border-t border-line px-3 py-1.5 text-center text-hint">目标行之后仍有内容</p>
+            <p className="border-t border-line px-3 py-1.5 text-center text-hint">
+              {t("console.fileReference.moreAfter")}
+            </p>
           ) : null}
         </div>
       )}
@@ -177,20 +185,20 @@ function FileReferenceMessage({ children }: { children: React.ReactNode }): JSX.
   );
 }
 
-function fileReferenceUnavailableCopy(
+function fileReferenceUnavailableKey(
   reason: Extract<FileReferenceContent, { available: false }>["reason"],
-): string {
-  const copy: Record<typeof reason, string> = {
-    "invalid-path": "这个文件引用无效，无法读取。",
-    "outside-trusted-roots": "这个文件不在当前会话允许读取的位置。",
-    "not-found": "这个文件已经不存在。",
-    "not-file": "这个引用没有指向普通文件。",
-    "binary-file": "这个文件不是可显示的 UTF-8 文本。",
-    "line-too-large": "目标附近存在过长单行，无法安全显示。",
-    "response-too-large": "目标附近内容超过本次安全显示范围。",
-    "line-not-found": "这个文件没有链接中指定的目标行。",
-    "scan-limit": "目标行超出本次安全读取范围。",
-    unavailable: "暂时无法读取这个文件引用。",
+): TranslationKey {
+  const keys: Record<typeof reason, TranslationKey> = {
+    "invalid-path": "console.fileReference.error.invalid-path",
+    "outside-trusted-roots": "console.fileReference.error.outside-trusted-roots",
+    "not-found": "console.fileReference.error.not-found",
+    "not-file": "console.fileReference.error.not-file",
+    "binary-file": "console.fileReference.error.binary-file",
+    "line-too-large": "console.fileReference.error.line-too-large",
+    "response-too-large": "console.fileReference.error.response-too-large",
+    "line-not-found": "console.fileReference.error.line-not-found",
+    "scan-limit": "console.fileReference.error.scan-limit",
+    unavailable: "console.fileReference.error.unavailable",
   };
-  return copy[reason];
+  return keys[reason];
 }

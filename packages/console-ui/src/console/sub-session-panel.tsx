@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 export function SubSessionPanel({
   title,
@@ -20,6 +21,7 @@ export function SubSessionPanel({
   ariaLabel?: string;
   closeLabel?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <aside
       className={cn(
@@ -27,7 +29,7 @@ export function SubSessionPanel({
         narrow ? "left-0 w-full border-l-0" : "w-1/2 min-w-[360px]",
         className,
       )}
-      aria-label={ariaLabel ?? `子会话：${title}`}
+      aria-label={ariaLabel ?? t("console.subSessionPanel.label", { title })}
       data-layout={narrow ? "overlay" : "split"}
       data-testid="sub-session-panel"
     >
@@ -36,7 +38,7 @@ export function SubSessionPanel({
         <button
           type="button"
           className="window-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-          aria-label={closeLabel ?? "关闭子会话"}
+          aria-label={closeLabel ?? t("console.subSessionPanel.close")}
           onClick={onClose}
         >
           <X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />

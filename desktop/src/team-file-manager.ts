@@ -71,7 +71,7 @@ export class AgentTeamFileManagerError extends Error {
   readonly code = "AGENT_TEAM_FILE_MANAGER_OPEN_FAILED";
 
   constructor() {
-    super("暂时无法打开这个位置。请确认相关文件仍然存在，并检查访问权限后重试。");
+    super("Unable to open the requested Agent team location.");
     this.name = "AgentTeamFileManagerError";
   }
 }

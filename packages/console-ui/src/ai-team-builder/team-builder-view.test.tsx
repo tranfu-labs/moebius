@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { I18nProvider } from "@/i18n";
 import {
   TeamBuilderView,
   type TeamBuilderViewProps,
@@ -101,14 +102,18 @@ describe("TeamBuilderView", () => {
     expect(screen.getByRole("status", { name: "AI 正在处理" })).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeDisabled();
 
-    rerender(<TeamBuilderView {...props} state={state({
-      phase: "clarifying",
-      messages: [
-        ...initialState.messages,
-        { role: "user", text: "持续做产品发布" },
-        { role: "assistant", text: "主要面向谁？" },
-      ],
-    })} />);
+    rerender(
+      <I18nProvider locale="zh-CN">
+        <TeamBuilderView {...props} state={state({
+          phase: "clarifying",
+          messages: [
+            ...initialState.messages,
+            { role: "user", text: "持续做产品发布" },
+            { role: "assistant", text: "主要面向谁？" },
+          ],
+        })} />
+      </I18nProvider>,
+    );
 
     expect(screen.queryByTestId("pending-team-builder-user-message")).not.toBeInTheDocument();
     expect(screen.getAllByText("持续做产品发布")).toHaveLength(1);
@@ -147,17 +152,21 @@ describe("TeamBuilderView", () => {
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "创建并选中" })).not.toBeInTheDocument();
 
-    rerender(<TeamBuilderView {...props} state={state({
-      phase: "failed",
-      messages: [],
-      proposal,
-      proposalRevision: 1,
-      error: {
-        code: "invalid-response",
-        humanMessage: "AI 返回的团队方案不完整，请重试这一轮。",
-        canRetry: true,
-      },
-    })} />);
+    rerender(
+      <I18nProvider locale="zh-CN">
+        <TeamBuilderView {...props} state={state({
+          phase: "failed",
+          messages: [],
+          proposal,
+          proposalRevision: 1,
+          error: {
+            code: "invalid-response",
+            humanMessage: "AI 返回的团队方案不完整，请重试这一轮。",
+            canRetry: true,
+          },
+        })} />
+      </I18nProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(props.onRetry).toHaveBeenCalledTimes(1);
   });
@@ -194,6 +203,31 @@ describe("TeamBuilderView", () => {
     expect(screen.getByText("持续做产品发布")).toBeInTheDocument();
     expect(screen.getByText("主要面向谁？")).toBeInTheDocument();
   });
+
+  it("renders English interface copy without translating generated team content", () => {
+    render(
+      <I18nProvider locale="en">
+        <TeamBuilderView
+          state={state({
+            phase: "proposal",
+            messages: [{ role: "assistant", text: "我整理了一版团队方案。" }],
+            proposal,
+            proposalRevision: 3,
+          })}
+          onBack={vi.fn()}
+          onSubmit={vi.fn()}
+          onAdjust={vi.fn()}
+          onRetry={vi.fn()}
+          onCommit={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "AI Team Designer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create and select" })).toBeInTheDocument();
+    expect(screen.getByText("我整理了一版团队方案。")).toBeInTheDocument();
+    expect(screen.getAllByText("发布负责人")).toHaveLength(2);
+  });
 });
 
 function state(overrides: Partial<TeamBuilderViewState>): TeamBuilderViewState {
@@ -218,7 +252,11 @@ function renderView(overrides: Partial<TeamBuilderViewProps>) {
     ...overrides,
   };
   return {
-    ...render(<TeamBuilderView {...props} />),
+    ...render(
+      <I18nProvider locale="zh-CN">
+        <TeamBuilderView {...props} />
+      </I18nProvider>,
+    ),
     props,
   };
 }

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { FileReferenceTab } from "./file-reference-tab";
+import { I18nProvider } from "../i18n";
 
 describe("FileReferenceTab", () => {
   it("loads the requested line window and highlights the real target line", async () => {
@@ -85,5 +86,30 @@ describe("FileReferenceTab", () => {
     );
 
     expect(await screen.findByText(copy)).toBeVisible();
+  });
+
+  it("renders labels and bounded errors from the English resource", async () => {
+    render(
+      <I18nProvider locale="en">
+        <FileReferenceTab
+          sessionId="session-a"
+          filePath="/workspace/large.txt"
+          line={4}
+          column={2}
+          loadReference={vi.fn().mockResolvedValue({
+            available: false,
+            path: "/workspace/large.txt",
+            lines: [],
+            reason: "line-too-large",
+            targetLine: 4,
+            targetColumn: 2,
+          })}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("region", { name: "File reference details" })).toBeVisible();
+    expect(screen.getByText("Target: line 4, column 2")).toBeVisible();
+    expect(await screen.findByText("A line near the target is too long to display safely.")).toBeVisible();
   });
 });

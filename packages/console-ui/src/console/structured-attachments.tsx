@@ -1,5 +1,6 @@
 import { AlertTriangle, FileText, Image as ImageIcon, LoaderCircle, RotateCcw, X } from "lucide-react";
 
+import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export type StructuredAttachmentKind = "image" | "file";
@@ -34,11 +35,12 @@ export function StructuredAttachmentList({
   onRetry?: (id: string) => void;
   className?: string;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (attachments.length === 0) {
     return null;
   }
   return (
-    <div className={cn("flex min-w-0 flex-wrap gap-2", className)} aria-label={mode === "draft" ? "附件草稿" : "消息附件"}>
+    <div className={cn("flex min-w-0 flex-wrap gap-2", className)} aria-label={t(mode === "draft" ? "console.attachments.draft" : "console.attachments.message")}>
       {attachments.map((attachment, index) => {
         const draft = "clientId" in attachment ? attachment : null;
         const itemId = draft?.clientId ?? attachment.attachmentId ?? `${attachment.displayName}:${String(index)}`;
@@ -50,8 +52,8 @@ export function StructuredAttachmentList({
               <button
                 type="button"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-                aria-label={`重试附件 ${attachment.displayName}`}
-                title={`重试 ${attachment.displayName}`}
+                aria-label={t("console.attachments.retryLabel", { name: attachment.displayName })}
+                title={t("console.attachments.retry", { name: attachment.displayName })}
                 onClick={() => onRetry(itemId)}
               >
                 <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -61,8 +63,8 @@ export function StructuredAttachmentList({
               <button
                 type="button"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-                aria-label={`移除附件 ${attachment.displayName}`}
-                title={`移除 ${attachment.displayName}`}
+                aria-label={t("console.attachments.removeLabel", { name: attachment.displayName })}
+                title={t("console.attachments.remove", { name: attachment.displayName })}
                 onClick={() => onRemove(itemId)}
               >
                 <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -76,7 +78,10 @@ export function StructuredAttachmentList({
             <article
               key={itemId}
               className="relative flex h-24 w-32 min-w-0 overflow-hidden rounded-[10px] border border-line bg-sunken"
-              aria-label={`${attachment.displayName}，${attachmentStatusLabel(status)}`}
+              aria-label={t("console.attachments.itemLabel", {
+                name: attachment.displayName,
+                status: attachmentStatusLabel(status, t),
+              })}
               title={attachment.displayName}
             >
               {attachment.previewUrl ? (
@@ -89,7 +94,7 @@ export function StructuredAttachmentList({
               <span className="absolute inset-x-0 bottom-0 flex min-w-0 items-center gap-1 bg-ink/70 px-2 py-1 text-[11px] text-white">
                 {status === "pending" ? <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" /> : null}
                 {status === "failed" ? <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> : null}
-                <span className="min-w-0 flex-1 truncate">{status === "pending" ? "准备中…" : attachment.displayName}</span>
+                <span className="min-w-0 flex-1 truncate">{status === "pending" ? t("console.attachments.preparing") : attachment.displayName}</span>
                 {actions}
               </span>
               {error ? <span className="sr-only">{error}</span> : null}
@@ -104,7 +109,10 @@ export function StructuredAttachmentList({
               "flex min-h-14 min-w-0 max-w-full items-center gap-2 rounded-[10px] border bg-sunken px-3 py-2",
               status === "failed" ? "border-danger/40" : "border-line",
             )}
-            aria-label={`${attachment.displayName}，${attachmentStatusLabel(status)}`}
+            aria-label={t("console.attachments.itemLabel", {
+              name: attachment.displayName,
+              status: attachmentStatusLabel(status, t),
+            })}
             title={attachment.displayName}
           >
             {status === "pending" ? (
@@ -118,9 +126,9 @@ export function StructuredAttachmentList({
               <span className="block max-w-56 truncate text-xs font-medium text-ink">{attachment.displayName}</span>
               <span className={cn("block truncate text-[11px]", status === "failed" ? "text-danger" : "text-hint")}>
                 {status === "pending"
-                  ? "准备中…"
+                  ? t("console.attachments.preparing")
                   : status === "failed"
-                    ? error ?? "没有准备好"
+                    ? error ?? t("console.attachments.notReady")
                     : `${attachmentTypeLabel(attachment.mediaType)} · ${formatByteSize(attachment.byteSize)}`}
               </span>
             </span>
@@ -142,10 +150,10 @@ export function readyComposerAttachmentIds(attachments: readonly ComposerAttachm
     : []);
 }
 
-function attachmentStatusLabel(status: ComposerAttachmentStatus): string {
-  if (status === "pending") return "准备中";
-  if (status === "failed") return "准备失败";
-  return "已准备";
+function attachmentStatusLabel(status: ComposerAttachmentStatus, t: Translate): string {
+  if (status === "pending") return t("console.attachments.statusPreparing");
+  if (status === "failed") return t("console.attachments.statusFailed");
+  return t("console.attachments.statusReady");
 }
 
 function attachmentTypeLabel(mediaType: string): string {

@@ -48,6 +48,12 @@ export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
   activeTabId: null,
 };
 
+export const RIGHT_SIDEBAR_BUILTIN_TAB_TITLES = {
+  blank: "builtin:blank",
+  workspaceDiff: "builtin:workspace-diff",
+  projectFiles: "builtin:project-files",
+} as const;
+
 const RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v2:";
 const STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v3:";
 const FILE_REFERENCE_SOURCE_KEY_PREFIX = "file-reference-v1:";
@@ -161,7 +167,7 @@ export function createBlankRightSidebarTab(id: string): RightSidebarTab {
   return {
     id,
     type: "blank",
-    title: "新标签",
+    title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank,
     sourceKey: null,
     closable: true,
   };
@@ -191,14 +197,14 @@ export function ensureRightSidebarTabsForOpen(
     ? {
         id: options.id,
         type: "workspace-diff",
-        title: "改动",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
         sourceKey: null,
         closable: true,
       }
     : {
         id: options.id,
         type: "project-files",
-        title: "项目文件",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles,
         sourceKey: null,
         closable: true,
       };
@@ -323,7 +329,7 @@ function sameRightSidebarSource(
 }
 
 function isUnknownProcessTitle(title: string): boolean {
-  return /^成员未知(?: [2-9]\d*)?$/u.test(title);
+  return /^(?:成员未知|Unknown member)(?: [2-9]\d*)?$/u.test(title); // i18n-exempt: recognizes persisted locale-specific dynamic titles
 }
 
 function readPositiveInteger(value: string): number | null {
@@ -388,7 +394,9 @@ export function convertBlankRightSidebarTab(
   tabId: string,
   type: RightSidebarSelectableTabType,
 ): RightSidebarTabsState {
-  const title = type === "workspace-diff" ? "改动" : "项目文件";
+  const title = type === "workspace-diff"
+    ? RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff
+    : RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles;
   return {
     tabs: state.tabs.map((tab) => tab.id === tabId && tab.type === "blank"
       ? { ...tab, type, title }
@@ -415,7 +423,7 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
     return [{
       id: entry.id,
       type: entry.type,
-      title: entry.title,
+      title: normalizeBuiltinTabTitle(entry.type, entry.title),
       sourceKey: entry.sourceKey,
       closable: true,
     }];
@@ -435,6 +443,19 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
 
 export function serializeRightSidebarTabsState(state: RightSidebarTabsState): string {
   return JSON.stringify(parseRightSidebarTabsState(state));
+}
+
+function normalizeBuiltinTabTitle(type: RightSidebarTabType, title: string): string {
+  if (type === "blank") {
+    return RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank;
+  }
+  if (type === "workspace-diff") {
+    return RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff;
+  }
+  if (type === "project-files") {
+    return RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles;
+  }
+  return title;
 }
 
 function isRightSidebarTabType(value: unknown): value is RightSidebarTabType {

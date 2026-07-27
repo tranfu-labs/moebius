@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { resolveOperatorMemberName } from "@/console/member-name";
+import { useI18n, type Translate } from "@/i18n";
 
 export type OperatorSubSessionViewState =
   | { status: "idle" | "loading" }
@@ -73,23 +74,25 @@ export function SubtaskTab({
   onOpenTeamMember,
   className,
 }: SubtaskTabProps): JSX.Element {
+  const { t } = useI18n();
   const view = state.status === "ready" ? state.view : null;
   const activeRun = view?.activeRun ?? null;
   const memberIdentities = view?.memberIdentities ?? [];
   const continuationBlocked = view?.session.continuation?.canContinue === false;
   const disabled = sending || continuationBlocked || state.status !== "ready";
-  const title = summary?.title ?? view?.session.title ?? "子任务";
+  const title = summary?.title ?? view?.session.title ?? t("console.subtask.title");
   const memberName = summary?.memberName ?? resolveOperatorMemberName(
     activeRun?.role ?? view?.messages.find((message) => message.speaker === "agent")?.role ?? null,
     memberIdentities,
-    "成员未知",
+    t,
+    t("console.common.unknownMember"),
   );
-  const statusLabel = summary?.statusLabel ?? fallbackStatusLabel(view?.session.status);
+  const statusLabel = summary?.statusLabel ?? fallbackStatusLabel(view?.session.status, t);
 
   return (
     <section
       className={cn("flex min-h-full flex-col", className)}
-      aria-label={`子任务：${title}`}
+      aria-label={t("console.subtask.label", { title })}
       data-session-id={sessionId}
       data-testid="subtask-tab"
     >
@@ -101,7 +104,7 @@ export function SubtaskTab({
           <Badge variant={subtaskBadgeVariant(summary?.status ?? view?.session.status)}>{statusLabel}</Badge>
         </div>
         <p className="mt-1 text-xs leading-5 text-hint">
-          关闭标签只会关闭这个视图，不会取消子任务。
+          {t("console.subtask.closeNotice")}
         </p>
       </header>
 
@@ -109,11 +112,11 @@ export function SubtaskTab({
         {state.status === "error" ? (
           <SubtaskStateMessage tone="danger">{state.message}</SubtaskStateMessage>
         ) : view === null ? (
-          <SubtaskStateMessage>正在加载子任务内容…</SubtaskStateMessage>
+          <SubtaskStateMessage>{t("console.subtask.loading")}</SubtaskStateMessage>
         ) : (
           <div>
             {view.messages.length === 0 && activeRun === null ? (
-              <SubtaskStateMessage>这个子任务还没有推进内容。</SubtaskStateMessage>
+              <SubtaskStateMessage>{t("console.subtask.empty")}</SubtaskStateMessage>
             ) : null}
             {view.messages.map((message) => (
               <SubtaskTimelineEntry
@@ -136,7 +139,7 @@ export function SubtaskTab({
                   elapsedMs={activeRun.elapsedMs}
                   activity={activeRun.activity}
                   processOutputAvailable={activeRun.processOutputAvailable}
-                  outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
+                  outputUnavailableMessage={t("console.common.kimiOutputUnavailable")}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
@@ -155,7 +158,14 @@ export function SubtaskTab({
                   onInterrupt={activeRun.interruptible
                     ? () => onInterrupt(sessionId, activeRun.runId)
                     : undefined}
-                  interruptLabel={`停下${resolveOperatorMemberName(activeRun.role, memberIdentities, "当前这一步")}`}
+                  interruptLabel={t("console.runBlock.stopMember", {
+                    member: resolveOperatorMemberName(
+                      activeRun.role,
+                      memberIdentities,
+                      t,
+                      t("console.subtask.currentStep"),
+                    ),
+                  })}
                   className="max-w-none"
                 />
               </div>
@@ -178,12 +188,12 @@ export function SubtaskTab({
           roles={roles}
           disabled={disabled}
           placeholder={continuationBlocked
-            ? view?.session.continuation?.reason ?? "当前子任务暂时不能继续"
+            ? view?.session.continuation?.reason ?? t("console.subtask.cannotContinue")
             : activeRun
-              ? "说点什么，或 @ 一个成员…"
-              : "推进这个子任务，或 @ 一个成员…"}
+              ? t("console.subtask.activePlaceholder")
+              : t("console.subtask.placeholder")}
           statusText={continuationBlocked
-            ? view?.session.continuation?.reason ?? "当前子任务暂时不能继续"
+            ? view?.session.continuation?.reason ?? t("console.subtask.cannotContinue")
             : undefined}
           className="mx-auto max-w-[720px]"
         />
@@ -211,6 +221,7 @@ function SubtaskTimelineEntry({
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const outcome = terminalOutcome(message);
   if (outcome !== null) {
     return (
@@ -245,8 +256,8 @@ function SubtaskTimelineEntry({
     return (
       <article className="py-4 text-sm">
         <div className="mb-1.5 flex items-center justify-end gap-2 text-[12.5px] text-sub">
-          <span className="font-semibold text-ink">你</span>
-          <RoleTag label="你" toneKey="user" />
+          <span className="font-semibold text-ink">{t("console.common.you")}</span>
+          <RoleTag label={t("console.common.you")} toneKey="user" />
         </div>
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
@@ -276,14 +287,14 @@ function SubtaskTimelineEntry({
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
           <RoleTag
-            label={resolveOperatorMemberName(message.role, memberIdentities)}
+            label={resolveOperatorMemberName(message.role, memberIdentities, t)}
             toneKey={message.role ?? "agent"}
           />
         ) : null}
         <span className="font-semibold text-ink">
           {message.speaker === "agent"
-            ? resolveOperatorMemberName(message.role, memberIdentities)
-            : "系统提示"}
+            ? resolveOperatorMemberName(message.role, memberIdentities, t)
+            : t("console.common.systemNotice")}
         </span>
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
@@ -332,12 +343,12 @@ function SubtaskTimelineEntry({
                 fallbackOutput: message.body,
               })}
             >
-              完整输出
+              {t("console.common.fullOutput")}
             </Button>
           ) : null}
           {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
             <p className="mt-2 text-xs text-hint">
-              完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+              {t("console.common.kimiOutputUnavailable")}
             </p>
           ) : null}
         </>
@@ -390,14 +401,17 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
   return null;
 }
 
-function fallbackStatusLabel(status: OperatorSubSessionView["session"]["status"] | undefined): string {
-  if (status === "running") return "进行中";
-  if (status === "waiting") return "等待中";
-  if (status === "stuck") return "卡住了";
-  if (status === "failed") return "没跑起来";
-  if (status === "interrupted") return "已停下";
-  if (status === "idle") return "已结束";
-  return "状态未知";
+function fallbackStatusLabel(
+  status: OperatorSubSessionView["session"]["status"] | undefined,
+  t: Translate,
+): string {
+  if (status === "running") return t("console.subtask.statusRunning");
+  if (status === "waiting") return t("console.subtask.statusWaiting");
+  if (status === "stuck") return t("console.subtask.statusStuck");
+  if (status === "failed") return t("console.subtask.statusFailed");
+  if (status === "interrupted") return t("console.subtask.statusInterrupted");
+  if (status === "idle") return t("console.subtask.statusFinished");
+  return t("console.subtask.statusUnknown");
 }
 
 function subtaskBadgeVariant(

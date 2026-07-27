@@ -1,23 +1,26 @@
+import type { Translate, TranslationKey } from "@/i18n";
+
 export interface OperatorMemberIdentity {
   slug: string;
   displayName: string;
 }
 
-const BUILT_IN_MEMBER_NAMES: Readonly<Record<string, string>> = {
-  ceo: "CEO",
-  dev: "开发",
-  "dev-manager": "技术负责人",
-  "hermes-user": "用户代表",
-  "product-manager": "产品",
-  qa: "测试",
-  secretary: "秘书",
-  user: "你",
+const builtInMemberKeys: Readonly<Record<string, TranslationKey>> = {
+  ceo: "console.role.ceo",
+  dev: "console.role.dev",
+  "dev-manager": "console.role.devManager",
+  "hermes-user": "console.role.user",
+  "product-manager": "console.role.product",
+  qa: "console.role.qa",
+  secretary: "console.role.secretary",
+  user: "console.common.you",
 };
 
 export function resolveOperatorMemberName(
   role: string | null,
-  memberIdentities: readonly OperatorMemberIdentity[] = [],
-  unknownLabel = "团队成员",
+  memberIdentities: readonly OperatorMemberIdentity[],
+  t: Translate,
+  unknownLabel = t("console.common.collaborator"),
 ): string {
   if (role === null || role.trim() === "") {
     return unknownLabel;
@@ -29,5 +32,6 @@ export function resolveOperatorMemberName(
   if (memberIdentities.length > 0) {
     return unknownLabel;
   }
-  return BUILT_IN_MEMBER_NAMES[role] ?? unknownLabel;
+  const key = builtInMemberKeys[role];
+  return key === undefined ? unknownLabel : t(key);
 }

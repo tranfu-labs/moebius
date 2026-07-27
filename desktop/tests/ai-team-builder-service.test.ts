@@ -198,7 +198,6 @@ describe("AiTeamBuilder service", () => {
       proposal: { team: { name: proposal.team.name } },
       error: {
         code: "context-lost",
-        humanMessage: "AI 上下文暂时无法继续，已保留对话和最后有效方案。",
       },
     });
     await expect(builder.retry("draft")).resolves.toMatchObject({
@@ -233,7 +232,6 @@ describe("AiTeamBuilder service", () => {
       phase: "failed",
       error: {
         code: "temporarily-unavailable",
-        humanMessage: "AI 团队设计器暂时不可用，已保留当前内容。",
       },
     });
     const stored = JSON.parse(await fs.readFile(

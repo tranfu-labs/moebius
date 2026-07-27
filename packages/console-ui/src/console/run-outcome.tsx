@@ -1,5 +1,6 @@
 import { AlertTriangle, Ban, CirclePause, Clock3, FileText } from "lucide-react";
 
+import { useI18n, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -32,20 +33,20 @@ export interface RunOutcomeProps {
   className?: string;
 }
 
-const outcomeLabels: Record<RunOutcomeStatus, string> = {
-  "retry-exhausted": "这一步反复没跑起来，已经不再重试",
-  "run-not-started": "这一步没跑起来",
-  "user-stopped": "你让这一步停下了",
-  "resume-unavailable": "原执行已经无法继续",
-  "run-stuck": "这一步卡住了",
+const outcomeLabelKeys: Record<RunOutcomeStatus, TranslationKey> = {
+  "retry-exhausted": "console.runOutcome.retryExhausted.title",
+  "run-not-started": "console.runOutcome.notStarted.title",
+  "user-stopped": "console.runOutcome.userStopped.title",
+  "resume-unavailable": "console.runOutcome.resumeUnavailable.title",
+  "run-stuck": "console.runOutcome.stuck.title",
 };
 
-const outcomeDescriptions: Record<RunOutcomeStatus, string> = {
-  "retry-exhausted": "你可以说点什么，或换一个成员接手。",
-  "run-not-started": "你可以重试，或直接说话、换一个成员接手。",
-  "user-stopped": "已经产生的文件改动会保留；你可以继续说话，开启新的一轮。",
-  "resume-unavailable": "你可以重新运行，或直接说话、换一个成员接手。",
-  "run-stuck": "你可以重试，或直接说话、换一个成员接手。",
+const outcomeDescriptionKeys: Record<RunOutcomeStatus, TranslationKey> = {
+  "retry-exhausted": "console.runOutcome.retryExhausted.description",
+  "run-not-started": "console.runOutcome.notStarted.description",
+  "user-stopped": "console.runOutcome.userStopped.description",
+  "resume-unavailable": "console.runOutcome.resumeUnavailable.description",
+  "run-stuck": "console.runOutcome.stuck.description",
 };
 
 export function RunOutcome({
@@ -64,8 +65,9 @@ export function RunOutcome({
   onEditAndResend,
   className,
 }: RunOutcomeProps): JSX.Element {
+  const { t } = useI18n();
   const roleLabel = role
-    ? resolveOperatorMemberName(role, memberIdentities, "协作者")
+    ? resolveOperatorMemberName(role, memberIdentities, t, t("console.common.collaborator"))
     : null;
 
   return (
@@ -80,36 +82,36 @@ export function RunOutcome({
       </span>
       <span className="min-w-0 flex-1 text-[13px] leading-5 text-ink">
         <span className="flex flex-wrap items-center gap-x-2">
-          <span>{outcomeLabels[status]}</span>
+          <span>{t(outcomeLabelKeys[status])}</span>
           {roleLabel ? <span className="text-xs text-sub">{roleLabel}</span> : null}
           {elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
           ) : null}
         </span>
         <span className="mt-0.5 block text-xs text-sub">
-          {description?.trim() || outcomeDescriptions[status]}
+          {description?.trim() || t(outcomeDescriptionKeys[status])}
         </span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {status === "run-not-started" || status === "run-stuck" || status === "resume-unavailable" ? (
           <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-            {status === "resume-unavailable" ? "重新运行" : "重试"}
+            {t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}
           </Button>
         ) : status === "user-stopped" && onEditAndResend !== undefined ? (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            aria-label="改一改重发这轮消息"
+            aria-label={t("console.runOutcome.editResendLabel")}
             onClick={onEditAndResend}
           >
-            改一改重发
+            {t("console.runOutcome.editResend")}
           </Button>
         ) : null}
         {onOpenOutput ? (
           <Button type="button" variant="ghost" size="sm" onClick={() => onOpenOutput(nonBlank(rawOutput))}>
             <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            完整输出
+            {t("console.common.fullOutput")}
           </Button>
         ) : null}
       </span>

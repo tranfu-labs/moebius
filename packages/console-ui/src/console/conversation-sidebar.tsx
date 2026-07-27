@@ -2,6 +2,7 @@ import * as React from "react";
 import { ChevronRight, MoreHorizontal, Plus, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import {
   deriveProjectStatusDot,
   deriveStatusDot,
@@ -70,23 +71,26 @@ export interface ConversationSidebarProps {
   className?: string;
 }
 
-const statusLabel: Record<ConversationSessionStatus, string> = {
-  red: "需要你处理",
-  blue: "有新结果",
-  blink: "正在运行",
-  none: "当前静止"
+const statusLabelKey: Record<ConversationSessionStatus, TranslationKey> = {
+  red: "console.conversationSidebar.needsYou",
+  blue: "console.conversationSidebar.newResult",
+  blink: "console.conversationSidebar.running",
+  none: "console.conversationSidebar.idle",
 };
 
 export { deriveProjectStatusDot, deriveStatusDot } from "@/console/status-dot";
 
-export function projectDirectoryName(project: Pick<ConversationSidebarProject, "path" | "label">): string {
+export function projectDirectoryName(
+  project: Pick<ConversationSidebarProject, "path" | "label">,
+  fallback = translate("zh-CN", "console.conversationSidebar.untitledProject"),
+): string {
   const displayName = project.label?.trim();
   if (displayName) {
     return displayName;
   }
   const trimmed = project.path.trim().replace(/[\\/]+$/u, "");
   const directory = trimmed.split(/[\\/]/u).filter(Boolean).at(-1);
-  return directory || "未命名项目";
+  return directory || fallback;
 }
 
 export function orderSessionsByCreatedAt<T extends { createdAt: string }>(sessions: readonly T[]): T[] {
@@ -165,6 +169,7 @@ export function ConversationSidebar({
   showProjectPath = true,
   className
 }: ConversationSidebarProps): JSX.Element {
+  const { t } = useI18n();
   const [collapsedProjectIds, setCollapsedProjectIds] = React.useState<Set<string>>(() => new Set());
   const [draftProjectOrder, setDraftProjectOrder] = React.useState<string[] | null>(null);
   const [draggingProjectId, setDraggingProjectId] = React.useState<string | null>(null);
@@ -279,32 +284,38 @@ export function ConversationSidebar({
   return (
     <aside
       className={cn("flex w-[248px] flex-col bg-rail text-ink", className)}
-      aria-label="项目和会话"
+      aria-label={t("console.conversationSidebar.label")}
     >
-      <nav className="scroll-thin min-h-0 flex-1 overflow-auto px-2 pb-2" aria-label="项目列表">
+      <nav className="scroll-thin min-h-0 flex-1 overflow-auto px-2 pb-2" aria-label={t("console.conversationSidebar.projectList")}>
         {dataState === "loading" ? (
           <ProjectListSkeleton />
         ) : dataState === "error" ? (
           <ProjectListError onRetry={onRetry} />
         ) : visibleProjects.length === 0 ? (
           <p className="px-2 py-3 text-xs leading-5 text-hint" data-testid="conversation-sidebar-no-projects">
-            从“新建对话”添加第一个项目
+            {t("console.conversationSidebar.addFirstProject")}
           </p>
         ) : visibleProjects.map((project) => {
-          const projectName = projectDirectoryName(project);
+          const projectName = projectDirectoryName(project, t("console.conversationSidebar.untitledProject"));
           const orderedSessions = orderSessionsByCreatedAt(project.sessions);
           const expanded = !collapsedProjectIds.has(project.id);
           const aggregatedStatus = expanded ? "none" : deriveProjectStatusDot(project.sessions);
           const conversationListId = `project-${project.id}-conversations`;
-          const projectAccessibleName = `${projectName} 项目，${expanded ? "已展开" : "已折叠"}${
-            aggregatedStatus === "none" ? "" : `，${statusLabel[aggregatedStatus]}`
-          }`;
+          const projectAccessibleName = t("console.conversationSidebar.projectState", {
+            project: projectName,
+            expanded: t(expanded ? "console.conversationSidebar.expanded" : "console.conversationSidebar.collapsed"),
+            status: aggregatedStatus === "none"
+              ? ""
+              : t("console.conversationSidebar.projectStatus", {
+                  status: t(statusLabelKey[aggregatedStatus]),
+                }),
+          });
           const newConversationDisabledReason = project.newConversationDisabledReason
-            ?? (projectActionsDisabled ? projectActionsDisabledReason ?? "项目正在变更，请稍后再试" : null)
-            ?? (disabled ? disabledReason ?? "项目正在变更，请稍后再试" : null);
+            ?? (projectActionsDisabled ? projectActionsDisabledReason ?? t("sidebar.projectChanging") : null)
+            ?? (disabled ? disabledReason ?? t("sidebar.projectChanging") : null);
 
           return (
-            <section key={project.id} className="mb-2" aria-label={`${projectName} 项目`}>
+            <section key={project.id} className="mb-2" aria-label={t("console.conversationSidebar.project", { project: projectName })}>
               <div
                 ref={(element) => {
                   if (element === null) {
@@ -403,10 +414,10 @@ export function ConversationSidebar({
                   <button
                     type="button"
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-danger hover:bg-danger/10 disabled:pointer-events-none disabled:opacity-40"
-                    aria-label={`修复 ${projectName} 项目文件夹`}
+                    aria-label={t("console.conversationSidebar.repairProject", { project: projectName })}
                     aria-description={project.directoryUnavailableReason ?? undefined}
                     data-project-row-action="repair-project"
-                    title={project.directoryUnavailableReason ?? "当前项目本地文件夹未找到，可以指定新的文件夹"}
+                    title={project.directoryUnavailableReason ?? t("console.conversationSidebar.folderMissing")}
                     disabled={disabled || projectActionsDisabled}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -420,10 +431,10 @@ export function ConversationSidebar({
                   <button
                     type="button"
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label={`在 ${projectName} 中新建会话`}
+                    aria-label={t("console.conversationSidebar.newInProject", { project: projectName })}
                     aria-description={newConversationDisabledReason ?? undefined}
                     data-project-row-action="new-conversation"
-                    title={newConversationDisabledReason ?? `在 ${projectName} 中新建会话`}
+                    title={newConversationDisabledReason ?? t("console.conversationSidebar.newInProject", { project: projectName })}
                     disabled={newConversationDisabledReason !== null}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -441,8 +452,8 @@ export function ConversationSidebar({
                       <button
                         type="button"
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
-                        aria-label={`${projectName} 项目菜单`}
-                        title={`${projectName} 项目菜单`}
+                        aria-label={t("console.conversationSidebar.projectMenu", { project: projectName })}
+                        title={t("console.conversationSidebar.projectMenu", { project: projectName })}
                         data-project-row-action="project-menu"
                         disabled={disabled || projectActionsDisabled}
                         onClick={(event) => event.stopPropagation()}
@@ -450,21 +461,21 @@ export function ConversationSidebar({
                         <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" aria-label={`${projectName} 项目操作`} className="min-w-48">
+                    <DropdownMenuContent align="end" aria-label={t("console.conversationSidebar.projectActions", { project: projectName })} className="min-w-48">
                       {onShowProjectInFolder ? (
                         <DropdownMenuItem onSelect={() => onShowProjectInFolder(project)}>
-                          在文件管理器中显示
+                          {t("console.conversationSidebar.showInManager")}
                         </DropdownMenuItem>
                       ) : null}
                       {onRenameProject ? (
                         <DropdownMenuItem onSelect={() => onRenameProject(project)}>
-                          修改显示名称
+                          {t("console.conversationSidebar.rename")}
                         </DropdownMenuItem>
                       ) : null}
                       {onRemoveProject ? <DropdownMenuSeparator /> : null}
                       {onRemoveProject ? (
                         <DropdownMenuItem className="text-danger focus:text-danger" onSelect={() => onRemoveProject(project)}>
-                          移除项目
+                          {t("console.conversationSidebar.removeProject")}
                         </DropdownMenuItem>
                       ) : null}
                     </DropdownMenuContent>
@@ -478,10 +489,10 @@ export function ConversationSidebar({
                   className="px-8 py-1.5 text-xs text-hint"
                   data-testid="conversation-sidebar-empty-project"
                 >
-                  还没有对话
+                  {t("console.conversationSidebar.noConversations")}
                 </p>
               ) : (
-                <div id={conversationListId} className="space-y-0.5" role="list" aria-label={`${projectName} 对话`}>
+                <div id={conversationListId} className="space-y-0.5" role="list" aria-label={t("console.conversationSidebar.projectConversations", { project: projectName })}>
                   {orderedSessions.map((session) => (
                     <SessionRow
                       key={session.id}
@@ -505,8 +516,9 @@ export function ConversationSidebar({
 }
 
 function ProjectListSkeleton(): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="space-y-3 px-2 py-2" aria-label="项目正在加载" aria-busy="true" data-testid="conversation-sidebar-loading">
+    <div className="space-y-3 px-2 py-2" aria-label={t("console.conversationSidebar.projectsLoading")} aria-busy="true" data-testid="conversation-sidebar-loading">
       {["first", "second", "third"].map((key, index) => (
         <div key={key} className="animate-pulse space-y-2" aria-hidden="true">
           <div className="flex h-8 items-center gap-2">
@@ -522,17 +534,18 @@ function ProjectListSkeleton(): JSX.Element {
 }
 
 function ProjectListError({ onRetry }: { onRetry?: () => void }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="mx-2 mt-2 rounded-lg border border-line bg-card px-3 py-3" role="alert" data-testid="conversation-sidebar-error">
-      <p className="text-sm font-medium text-ink">项目加载失败</p>
-      <p className="mt-1 text-xs leading-5 text-sub">暂时无法显示项目，请重试。</p>
+      <p className="text-sm font-medium text-ink">{t("console.conversationSidebar.loadFailed")}</p>
+      <p className="mt-1 text-xs leading-5 text-sub">{t("console.conversationSidebar.loadFailedDescription")}</p>
       {onRetry ? (
         <button
           type="button"
           className="mt-2 h-7 rounded-md border border-line bg-input px-2.5 text-xs font-medium text-ink hover:bg-hover"
           onClick={onRetry}
         >
-          重试
+          {t("common.retry")}
         </button>
       ) : null}
     </div>
@@ -556,6 +569,7 @@ function SessionRow({
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   disabled: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [copyFeedback, setCopyFeedback] = React.useState<"success" | CopySessionLogPathFailureReason | null>(null);
   const [copyPending, setCopyPending] = React.useState(false);
@@ -567,10 +581,10 @@ function SessionRow({
     return () => window.clearTimeout(timer);
   }, [copyFeedback]);
   const status = deriveStatusDot(session);
-  const accessibleName = [session.title, status === "none" ? null : statusLabel[status]]
+  const accessibleName = [session.title, status === "none" ? null : t(statusLabelKey[status])]
     .filter((part): part is string => part !== null)
     .join("，");
-  const archiveDisabledReason = session.isRunning ? "当前对话正在运行，请先中止或等待运行结束" : null;
+  const archiveDisabledReason = session.isRunning ? t("console.conversationSidebar.archiveRunning") : null;
   return (
     <div className="group relative flex h-8 min-w-0 items-center" data-testid="conversation-sidebar-session-row">
       <button
@@ -612,28 +626,28 @@ function SessionRow({
                 "absolute right-1 flex h-6 w-6 items-center justify-center rounded-md bg-rail text-sub opacity-0 hover:bg-hover hover:text-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100",
                 menuOpen && "opacity-100",
               )}
-              aria-label={`${session.title} 对话菜单`}
-              title={`${session.title} 对话菜单`}
+              aria-label={t("console.conversationSidebar.conversationMenu", { title: session.title })}
+              title={t("console.conversationSidebar.conversationMenu", { title: session.title })}
               disabled={disabled}
             >
               <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" aria-label={`${session.title} 对话操作`} className="min-w-32">
+          <DropdownMenuContent align="end" aria-label={t("console.conversationSidebar.conversationActions", { title: session.title })} className="min-w-32">
             {onArchiveSession !== undefined ? (
               <DropdownMenuItem
                 disabled={archiveDisabledReason !== null}
                 aria-description={archiveDisabledReason ?? undefined}
-                title={archiveDisabledReason ?? "归档"}
+                title={archiveDisabledReason ?? t("console.conversationSidebar.archive")}
                 onSelect={() => onArchiveSession(session.id, projectId)}
               >
-                归档
+                {t("console.conversationSidebar.archive")}
               </DropdownMenuItem>
             ) : null}
             {onCopySessionLogPath !== undefined ? (
               <DropdownMenuItem
                 disabled={copyPending}
-                title="复制对话记录路径"
+                title={t("console.conversationSidebar.copyPath")}
                 onSelect={() => {
                   setCopyPending(true);
                   setCopyFeedback(null);
@@ -643,7 +657,7 @@ function SessionRow({
                     .finally(() => setCopyPending(false));
                 }}
               >
-                复制对话记录路径
+                {t("console.conversationSidebar.copyPath")}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
@@ -657,35 +671,36 @@ function SessionRow({
           )}
           role={copyFeedback === "success" ? "status" : "alert"}
         >
-          {copyFeedback === "success" ? "路径已复制" : copySessionLogFailureMessage(copyFeedback)}
+          {copyFeedback === "success" ? t("console.conversationSidebar.pathCopied") : copySessionLogFailureMessage(copyFeedback, t)}
         </span>
       ) : null}
     </div>
   );
 }
 
-function copySessionLogFailureMessage(reason: CopySessionLogPathFailureReason): string {
+function copySessionLogFailureMessage(reason: CopySessionLogPathFailureReason, t: Translate): string {
   switch (reason) {
     case "invalid-session":
-      return "无法复制对话记录路径：对话无效";
+      return t("console.conversationSidebar.copyInvalid");
     case "service-unavailable":
-      return "无法复制对话记录路径：记录服务尚未就绪";
+      return t("console.conversationSidebar.copyServiceUnavailable");
     case "record-unavailable":
-      return "无法复制对话记录路径：记录文件不可用";
+      return t("console.conversationSidebar.copyRecordUnavailable");
     case "clipboard-unavailable":
-      return "无法复制对话记录路径：系统剪贴板不可用";
+      return t("console.conversationSidebar.copyClipboardUnavailable");
     case "unknown":
-      return "无法复制对话记录路径，请稍后重试";
+      return t("console.conversationSidebar.copyUnknown");
   }
 }
 
 function StatusIcon({ status }: { status: ConversationSessionStatus }): JSX.Element {
+  const { t } = useI18n();
   return (
     <span
       className="flex h-4 w-4 items-center justify-center"
       role="img"
-      aria-label={statusLabel[status]}
-      title={statusLabel[status]}
+      aria-label={t(statusLabelKey[status])}
+      title={t(statusLabelKey[status])}
       data-status-indicator={status}
     >
       {status === "red" ? <span className="h-[7px] w-[7px] rounded-full bg-danger" aria-hidden="true" /> : null}

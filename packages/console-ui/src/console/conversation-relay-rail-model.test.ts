@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { translate } from "@/i18n";
 
 import {
   adjacentConversationRelayEventId,
@@ -19,6 +20,10 @@ const EVENTS: ConversationRelayEvent[] = Array.from({ length: 13 }, (_, index) =
   body: `message ${String(index + 1)}`,
   updatedAt: "2026-07-26T10:00:00.000Z",
 }));
+const zhT: Parameters<typeof projectConversationRelayEvents>[2] = (key, values) =>
+  translate("zh-CN", key, values);
+const enT: Parameters<typeof projectConversationRelayEvents>[2] = (key, values) =>
+  translate("en", key, values);
 
 describe("conversation relay rail model", () => {
   it("projects only user and visible final Agent messages", () => {
@@ -28,12 +33,25 @@ describe("conversation relay rail model", () => {
       message(3, "system", null, "系统事实"),
       { ...message(4, "agent", "qa", "子会话"), sourceKind: "local-child-session-card" },
       { ...message(5, "agent", "qa", "运行占位"), sourceKind: "local-worker-run" },
-    ], (role) => role === "dev" ? "开发工程师" : "测试工程师");
+    ], (role) => role === "dev" ? "开发工程师" : "测试工程师", zhT);
 
     expect(events.map((event) => [event.messageId, event.actorName])).toEqual([
       [1, "你"],
       [2, "开发工程师"],
     ]);
+  });
+
+  it("projects English user and attachment fallback copy without Chinese separators", () => {
+    const events = projectConversationRelayEvents([
+      { ...message(1, "user", null, ""), attachments: [{ displayName: "brief.md" }, { displayName: "logo.png" }] },
+      message(2, "user", null, ""),
+    ], () => "Agent", enT);
+
+    expect(events.map((event) => [event.actorName, event.body])).toEqual([
+      ["You", "brief.md, logo.png"],
+      ["You", "Attachment message"],
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/\p{Script=Han}/u);
   });
 
   it("derives a viewport capacity and responsive overlay width", () => {

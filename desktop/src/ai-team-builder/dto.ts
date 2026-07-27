@@ -11,7 +11,6 @@ export type AiTeamBuilderAction = "retry" | "cancel" | "commit" | "adjust";
 
 export interface AiTeamBuilderErrorSummary {
   code: "temporarily-unavailable" | "invalid-response" | "context-lost" | "create-failed";
-  humanMessage: string;
   canRetry: boolean;
 }
 
@@ -61,26 +60,22 @@ function summarizeError(kind: AiTeamBuilderFailureKind): AiTeamBuilderErrorSumma
     case "invalid-output":
       return {
         code: "invalid-response",
-        humanMessage: "AI 返回的团队方案不完整，请重试这一轮。",
         canRetry: true,
       };
     case "resume-failed":
       return {
         code: "context-lost",
-        humanMessage: "AI 上下文暂时无法继续，已保留对话和最后有效方案。",
         canRetry: true,
       };
     case "commit-failed":
       return {
         code: "create-failed",
-        humanMessage: "团队创建失败，方案仍已保留，可以重试。",
         canRetry: true,
       };
     case "engine-failed":
     case "interrupted":
       return {
         code: "temporarily-unavailable",
-        humanMessage: "AI 团队设计器暂时不可用，已保留当前内容。",
         canRetry: true,
       };
   }

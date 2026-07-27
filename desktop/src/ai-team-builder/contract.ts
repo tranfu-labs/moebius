@@ -27,7 +27,6 @@ export type AiTeamBuilderIpcResponse =
       ok: false;
       error: {
         code: "invalid-request" | "stale-revision" | "temporarily-unavailable";
-        humanMessage: string;
         canRetry: boolean;
       };
     };

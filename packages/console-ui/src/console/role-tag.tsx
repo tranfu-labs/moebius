@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
 /**
- * 成员标识：20px 彩色正圆 + 角色名首字。
- * 底色来自身份色板（tokens.css --ident-1…6，moebius-desktop-spec 6.6 采样），
- * 按 toneKey 稳定取色，同一角色全产品同色；标签为装饰性，旁边必须保留可读名称。
+ * i18n-exempt: developer-only identity marker documentation.
+ * Uses a stable identity-token color and the first glyph of the role name.
+ * The marker is decorative; an adjacent readable name is always required.
  */
 export function RoleTag({
   label,

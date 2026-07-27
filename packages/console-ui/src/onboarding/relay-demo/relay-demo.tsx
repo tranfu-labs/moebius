@@ -5,6 +5,7 @@ import type {
   OperatorAgentTeam,
   OperatorAgentTeamRelayBeat,
 } from "@/console/agent-teams-page";
+import { useI18n } from "@/i18n";
 import { RelayGraph, RelayRoleColumns, RELAY_STAGE_COLUMNS } from "./relay-graph";
 import { RelayMessages } from "./relay-messages";
 import { parseRelayDurationToken, useRelayPlayback } from "./relay-motion";
@@ -47,6 +48,7 @@ function RelayPlaybackDemo({
 }: RelayDemoProps & {
   relay: NonNullable<ReturnType<typeof readRelayTeam>>;
 }): JSX.Element {
+  const { t } = useI18n();
   const stageRef = useRef<HTMLDivElement>(null);
   const { beats, members } = relay;
   const playback = useRelayPlayback({
@@ -120,14 +122,14 @@ function RelayPlaybackDemo({
       data-relay-run={relayRun}
       data-motion={playback.reducedMotion ? "reduced" : "standard"}
       data-total-duration-ms={playback.timing.totalDurationMs}
-      aria-label="团队接力演示"
+      aria-label={t("onboarding.relay.label")}
     >
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
           <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-run-fg)]" aria-hidden="true" />
-          <span className="text-xs text-sub">接力演示</span>
+          <span className="text-xs text-sub">{t("onboarding.relay.title")}</span>
           <strong className="min-w-0 break-words text-xs font-semibold text-ink">
-            {team.name ?? "所选团队"}
+            {team.name ?? t("onboarding.relay.selectedTeam")}
           </strong>
         </span>
         <RelayReplayButton onReplay={onReplay} />
@@ -142,7 +144,7 @@ function RelayPlaybackDemo({
           members={members}
           reducedMotion={playback.reducedMotion}
         />
-        <span className="tracking-[0.04em]">对话记录</span>
+        <span className="tracking-[0.04em]">{t("onboarding.relay.messages")}</span>
       </div>
 
       <div
@@ -176,8 +178,8 @@ function RelayPlaybackDemo({
         <Users className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
         <span>
           {playback.complete
-            ? "这支团队已带着复核证据完成接力。"
-            : "动画不会拦住你；看懂后可以随时继续。"}
+            ? t("onboarding.relay.complete")
+            : t("onboarding.relay.canContinue")}
         </span>
       </footer>
     </section>
@@ -185,23 +187,24 @@ function RelayPlaybackDemo({
 }
 
 function RelayUnavailable({ team }: { team: OperatorAgentTeam }): JSX.Element {
+  const { t } = useI18n();
   return (
     <section
       className="overflow-hidden rounded-xl border border-line bg-card"
       data-testid="onboarding-relay-demo-slot"
       data-orchestration-status="unavailable"
-      aria-label="团队接力演示"
+      aria-label={t("onboarding.relay.label")}
     >
       <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
         <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-hint" aria-hidden="true" />
-        <span className="text-xs text-sub">接力演示</span>
+        <span className="text-xs text-sub">{t("onboarding.relay.title")}</span>
         <strong className="truncate text-xs font-semibold text-ink">
-          {team.name ?? "所选团队"}
+          {team.name ?? t("onboarding.relay.selectedTeam")}
         </strong>
       </div>
       <div className="flex min-h-56 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-        <strong className="text-sm font-semibold text-ink">暂无可播放的协作示例</strong>
-        <p className="text-xs text-sub">不影响这支团队的实际使用</p>
+        <strong className="text-sm font-semibold text-ink">{t("onboarding.relay.unavailable")}</strong>
+        <p className="text-xs text-sub">{t("onboarding.relay.unavailableDetail")}</p>
       </div>
     </section>
   );

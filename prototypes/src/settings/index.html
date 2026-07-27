@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Moebius 设置弹窗设计原型，非正式产品实现。产品事实源：docs/product/pages/settings.md"
+    />
+    <title>Moebius · 设置原型</title>
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <div class="prototype" data-prototype="settings">
+      <div class="prototype-disclaimer">
+        <span class="prototype-dot" aria-hidden="true"></span>
+        <span>设计原型 · 非正式产品实现</span>
+      </div>
+
+      <main class="workspace" id="workspace">
+        <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="sidebar.label">
+          <header class="brand-row">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32">
+                <path d="M8.2 10.3c2.2-3.1 6.3-4 9.5-2.1l6.2 3.7a4.8 4.8 0 0 1 0 8.2l-6.2 3.7c-3.2 1.9-7.3 1-9.5-2.1-2.1-3-1.6-7.2 1.2-9.6l3.7-3.2" />
+                <path d="M23.8 21.7c-2.2 3.1-6.3 4-9.5 2.1l-6.2-3.7a4.8 4.8 0 0 1 0-8.2l6.2-3.7c3.2-1.9 7.3-1 9.5 2.1 2.1 3 1.6 7.2-1.2 9.6l-3.7 3.2" />
+              </svg>
+            </div>
+            <strong>Moebius</strong>
+            <button
+              class="icon-button sidebar-toggle"
+              type="button"
+              data-i18n-aria-label="sidebar.collapse"
+              data-i18n-title="sidebar.collapse"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          </header>
+
+          <nav class="primary-nav">
+            <button type="button" class="nav-row">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              <span data-i18n="sidebar.newConversation"></span>
+            </button>
+            <button type="button" class="nav-row">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16" cy="9" r="3" /><path d="M3 20a5 5 0 0 1 10 0M12 20a5 5 0 0 1 9 0" /></svg>
+              <span data-i18n="sidebar.agentTeams"></span>
+            </button>
+            <button type="button" class="nav-row">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+              <span data-i18n="sidebar.search"></span>
+              <kbd>⌘K</kbd>
+            </button>
+          </nav>
+
+          <div class="project-section">
+            <div class="section-label" data-i18n="sidebar.projects"></div>
+            <div class="project-row">
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+              <span class="folder-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M3 6.5h6l2 2h10v10H3z" /></svg>
+              </span>
+              <strong>Moebius 桌面端</strong>
+              <button class="row-action" type="button" aria-label="More">•••</button>
+            </div>
+            <button class="conversation-row is-current" type="button">
+              <span class="conversation-glyph" aria-hidden="true"></span>
+              <span data-i18n="sidebar.currentConversation"></span>
+              <span class="conversation-time">12m</span>
+            </button>
+            <button class="conversation-row" type="button">
+              <span class="conversation-glyph" aria-hidden="true"></span>
+              <span data-i18n="sidebar.previousConversation"></span>
+              <span class="conversation-time">2h</span>
+            </button>
+          </div>
+
+          <div class="sidebar-bottom">
+            <button type="button" class="nav-row">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6M4 4v4.6h4.6" /></svg>
+              <span data-i18n="sidebar.revisitOnboarding"></span>
+            </button>
+            <button
+              id="open-settings"
+              type="button"
+              class="nav-row"
+              aria-haspopup="dialog"
+              aria-controls="settings-dialog"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>
+              <span data-i18n="sidebar.settings"></span>
+            </button>
+          </div>
+        </aside>
+
+        <section class="conversation">
+          <header class="conversation-header">
+            <div>
+              <span class="eyebrow">Moebius 桌面端</span>
+              <h1 data-i18n="conversation.title"></h1>
+            </div>
+            <div class="header-actions">
+              <span class="status-pill">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4" /></svg>
+                <span data-i18n="conversation.status"></span>
+              </span>
+              <button class="icon-button" type="button" data-i18n-aria-label="conversation.more">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="timeline">
+            <article class="message agent-message">
+              <div class="message-meta">
+                <span class="avatar agent-avatar">产</span>
+                <strong data-i18n="conversation.agentName"></strong>
+                <time>14:22</time>
+              </div>
+              <p>设置 PRD 已确认。我会在不离开当前任务的前提下，为应用级配置提供清晰、可恢复的入口。</p>
+            </article>
+            <article class="message user-message">
+              <div class="message-meta">
+                <time>14:24</time>
+                <strong data-i18n="conversation.you"></strong>
+                <span class="avatar user-avatar">你</span>
+              </div>
+              <p>支持 i18n，然后设置弹窗里可以修改。</p>
+            </article>
+            <article class="message agent-message">
+              <div class="message-meta">
+                <span class="avatar proto-avatar">原</span>
+                <strong data-i18n="conversation.prototypeAgent"></strong>
+                <time>14:25</time>
+              </div>
+              <p>我正在制作隔离、可交互且可离线查看的高保真 HTML 原型。</p>
+            </article>
+          </div>
+
+          <div class="composer-wrap">
+            <div class="composer">
+              <textarea rows="3" data-i18n-placeholder="conversation.draft"></textarea>
+              <div class="composer-footer">
+                <button class="team-select" type="button">
+                  <span class="team-orb" aria-hidden="true"></span>
+                  <span data-i18n="conversation.team"></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
+                </button>
+                <button class="send-button" type="button" data-i18n-aria-label="conversation.send">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19V5m-6 6 6-6 6 6" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <div id="settings-layer" class="settings-layer" hidden>
+        <div class="scrim" data-testid="settings-backdrop"></div>
+        <section
+          id="settings-dialog"
+          class="settings-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+          aria-describedby="settings-description"
+        >
+          <header class="dialog-header">
+            <h2 id="settings-title" data-i18n="settings.title"></h2>
+            <button
+              id="close-settings"
+              class="icon-button close-button"
+              type="button"
+              data-i18n-aria-label="settings.close"
+              data-i18n-title="settings.close"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+          </header>
+
+          <div class="dialog-body">
+            <nav class="settings-nav" data-i18n-aria-label="settings.categories">
+              <button type="button" class="settings-category is-active" aria-current="page">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M6 15v4" /></svg>
+                <span data-i18n="settings.general"></span>
+              </button>
+            </nav>
+
+            <div class="settings-content">
+              <div class="content-heading">
+                <h3 data-i18n="settings.general"></h3>
+                <p id="settings-description" data-i18n="settings.generalDescription"></p>
+              </div>
+
+              <div class="setting-group" id="language-setting">
+                <div class="setting-label">
+                  <h4 data-i18n="settings.language"></h4>
+                  <p data-i18n="settings.languageDescription"></p>
+                </div>
+                <div class="language-options" role="radiogroup" data-i18n-aria-label="settings.language">
+                  <button type="button" class="language-option" role="radio" data-locale="zh-CN">
+                    <span class="radio-mark" aria-hidden="true"><span></span></span>
+                    <span class="language-copy">
+                      <strong data-i18n="language.zhCN"></strong>
+                      <small>zh-CN</small>
+                    </span>
+                    <span class="option-state" data-option-state="zh-CN"></span>
+                  </button>
+                  <button type="button" class="language-option" role="radio" data-locale="en">
+                    <span class="radio-mark" aria-hidden="true"><span></span></span>
+                    <span class="language-copy">
+                      <strong data-i18n="language.en"></strong>
+                      <small>English</small>
+                    </span>
+                    <span class="option-state" data-option-state="en"></span>
+                  </button>
+                </div>
+                <div class="save-feedback" id="save-feedback" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>

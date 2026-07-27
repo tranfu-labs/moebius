@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { I18nProvider } from "@/i18n";
 import {
   OnboardingShell,
   type OnboardingShellProps,
@@ -88,7 +89,11 @@ describe("OnboardingShell", () => {
         codex: { status: "ready", revision: 2 },
       }),
     });
-    rerender(<OnboardingShell {...props} />);
+    rerender(
+      <I18nProvider locale="zh-CN">
+        <OnboardingShell {...props} />
+      </I18nProvider>,
+    );
     expect(screen.getByText("已登录，可用于运行")).toBeVisible();
     expect(document.body.textContent).not.toMatch(/\bcodex(?:-cli)?\s+\d+\.\d+/iu);
   });
@@ -292,7 +297,11 @@ describe("OnboardingShell", () => {
 });
 
 function renderShell(overrides: Partial<OnboardingShellProps> = {}) {
-  return render(<OnboardingShell {...createShellProps(overrides)} />);
+  return render(
+    <I18nProvider locale="zh-CN">
+      <OnboardingShell {...createShellProps(overrides)} />
+    </I18nProvider>,
+  );
 }
 
 function createShellProps(

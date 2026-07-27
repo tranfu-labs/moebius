@@ -57,7 +57,6 @@ async function invokeSafely(operation: () => Promise<AiTeamBuilderState>): Promi
         ok: false,
         error: {
           code: "stale-revision",
-          humanMessage: "这版团队方案已经更新，请确认当前显示的方案后再创建。",
           canRetry: false,
         },
       };
@@ -67,7 +66,6 @@ async function invokeSafely(operation: () => Promise<AiTeamBuilderState>): Promi
         ok: false,
         error: {
           code: "invalid-request",
-          humanMessage: "AI 建队请求无效，请刷新后重试。",
           canRetry: false,
         },
       };
@@ -76,7 +74,6 @@ async function invokeSafely(operation: () => Promise<AiTeamBuilderState>): Promi
       ok: false,
       error: {
         code: "temporarily-unavailable",
-        humanMessage: "AI 团队设计器暂时不可用，请稍后重试。",
         canRetry: true,
       },
     };

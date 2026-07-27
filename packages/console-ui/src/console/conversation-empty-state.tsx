@@ -1,5 +1,6 @@
 import { Braces } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export interface ConversationEmptyStateProps {
@@ -8,6 +9,7 @@ export interface ConversationEmptyStateProps {
 }
 
 export function ConversationEmptyState({ projectName, className }: ConversationEmptyStateProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className={cn("grid min-h-full place-items-center pb-12 text-center", className)}>
       <div>
@@ -15,7 +17,7 @@ export function ConversationEmptyState({ projectName, className }: ConversationE
           <Braces className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <h1 className="font-display text-[26px] font-medium leading-9 tracking-[-0.025em] text-ink">
-          想在 <span className="font-semibold">{projectName}</span> 中完成什么？
+          {t("console.emptyState.promptBefore")} <span className="font-semibold">{projectName}</span> {t("console.emptyState.promptAfter")}
         </h1>
       </div>
     </div>

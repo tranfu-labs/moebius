@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 import type {
   OperatorAgentTeamMember,
   OperatorAgentTeamRelayBeat,
@@ -19,6 +20,7 @@ export function RelayMessages({
   typingIndex: number;
   visibleCount: number;
 }): JSX.Element {
+  const { t } = useI18n();
   const membersBySlug = new Map(members.map((member) => [member.slug, member]));
   return (
     <>
@@ -51,7 +53,9 @@ export function RelayMessages({
                 className="inline-flex items-center gap-2 rounded-lg border border-line bg-sunken px-2.5 py-2"
                 data-testid="relay-typing"
                 role="status"
-                aria-label={`${member.displayName || member.slug} 正在输入`}
+                aria-label={t("onboarding.relay.typing", {
+                  name: member.displayName || member.slug,
+                })}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-[9px] font-semibold text-sub">
                   {(member.displayName || member.slug).slice(0, 1)}
@@ -76,11 +80,13 @@ export function RelayMessages({
                     {member.displayName || `@${member.slug}`}
                   </strong>
                   <span className="shrink-0 text-[10px] tabular-nums text-hint">
-                    第 {index + 1} 棒
+                    {t("onboarding.relay.beat", { count: index + 1 })}
                   </span>
                   {current ? (
                     <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-run-fg)]">
-                      {index === beats.length - 1 ? "收尾" : "处理中"}
+                      {index === beats.length - 1
+                        ? t("onboarding.relay.wrapUp")
+                        : t("onboarding.relay.processing")}
                     </span>
                   ) : null}
                 </header>

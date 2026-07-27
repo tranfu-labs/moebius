@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 export interface AgentMentionMember {
   slug: string;
@@ -133,6 +134,7 @@ export function AgentMarkdownMentionEditor({
   disabled = false,
   onValueChange,
 }: AgentMarkdownMentionEditorProps): JSX.Element {
+  const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const composingRef = useRef(false);
@@ -308,7 +310,7 @@ export function AgentMarkdownMentionEditor({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="团队成员提及补全"
+          aria-label={t("console.mentionEditor.completions")}
           className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-md border border-line bg-sunken p-1.5"
         >
           {matches.map((member, index) => (
@@ -338,6 +340,7 @@ export function AgentMarkdownMentionEditor({
 }
 
 export function CopyableAgentSlug({ slug, className }: { slug: string; className?: string }): JSX.Element {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -346,8 +349,8 @@ export function CopyableAgentSlug({ slug, className }: { slug: string; className
         "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-hint hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30",
         className,
       )}
-      aria-label={`复制 @${slug}`}
-      title={`复制 @${slug}`}
+      aria-label={t("console.mentionEditor.copy", { slug })}
+      title={t("console.mentionEditor.copy", { slug })}
       onClick={async () => {
         if (await copyPlainText(`@${slug}`)) {
           setCopied(true);
@@ -357,12 +360,13 @@ export function CopyableAgentSlug({ slug, className }: { slug: string; className
     >
       <span>@{slug}</span>
       {copied ? <Check className="h-3 w-3" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
-      <span className="sr-only" aria-live="polite">{copied ? "已复制" : ""}</span>
+      <span className="sr-only" aria-live="polite">{copied ? t("console.mentionEditor.copied") : ""}</span>
     </button>
   );
 }
 
 function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -370,8 +374,11 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
       contentEditable={false}
       data-agent-mention={member.slug}
       className="group relative mx-0.5 inline-flex items-baseline rounded-md bg-accent/10 px-1.5 py-0.5 font-medium text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
-      aria-label={`${member.displayName || member.slug}，复制 @${member.slug}`}
-      title={`@${member.slug} · 点击复制`}
+      aria-label={t("console.mentionEditor.memberCopy", {
+        member: member.displayName || member.slug,
+        slug: member.slug,
+      })}
+      title={t("console.mentionEditor.clickCopy", { slug: member.slug })}
       onClick={async () => {
         if (await copyPlainText(`@${member.slug}`)) {
           setCopied(true);
@@ -384,7 +391,9 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
         role="tooltip"
         className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[11px] font-normal leading-4 text-card group-hover:block group-focus-visible:block"
       >
-        {copied ? `已复制 @${member.slug}` : `@${member.slug} · 点击复制`}
+        {copied
+          ? t("console.mentionEditor.copiedSlug", { slug: member.slug })
+          : t("console.mentionEditor.clickCopy", { slug: member.slug })}
       </span>
     </button>
   );

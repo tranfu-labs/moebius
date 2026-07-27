@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RunTime } from "@/console/run-time";
 
@@ -145,6 +146,7 @@ export function ProcessEvent({
   invocationState = { status: "idle" },
   onLoadInvocation,
 }: ProcessEventProps): JSX.Element {
+  const { t } = useI18n();
   if (event.kind === "attempt-header") {
     return (
       <AttemptDebugHeader
@@ -158,7 +160,7 @@ export function ProcessEvent({
   if (event.kind === "execution-header") {
     return (
       <div className="border-t border-line pb-2 pt-4 text-xs font-semibold text-ink">
-        调用与输出
+        {t("console.processEvent.callsAndOutput")}
       </div>
     );
   }
@@ -172,8 +174,8 @@ export function ProcessEvent({
   switch (event.kind) {
     case "agent-output":
       return (
-        <DebugCard icon={<Braces className="h-4 w-4" strokeWidth={1.5} />} title="Agent 原始输出" header={header}>
-          <ReadonlyBlock label="原始输出" value={event.output} />
+        <DebugCard icon={<Braces className="h-4 w-4" strokeWidth={1.5} />} title={t("console.processEvent.agentRawOutput")} header={header}>
+          <ReadonlyBlock label={t("console.processEvent.rawOutput")} value={event.output} />
           <ReadonlyBlock label="raw payload" value={event.rawPayload} />
         </DebugCard>
       );
@@ -238,7 +240,7 @@ export function ProcessEvent({
       );
     case "unsupported-debug":
       return (
-        <DebugCard icon={<Braces className="h-4 w-4" strokeWidth={1.5} />} title="未识别事件" header={header}>
+        <DebugCard icon={<Braces className="h-4 w-4" strokeWidth={1.5} />} title={t("console.processEvent.unknownEvent")} header={header}>
           <ReadonlyBlock label="raw payload" value={event.rawPayload} />
         </DebugCard>
       );
@@ -256,6 +258,7 @@ function AttemptDebugHeader({
   invocationState: OperatorProcessInvocationState;
   onLoadInvocation?: (sessionId: string, runId: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const invocation = invocationState.status === "ready"
     && invocationState.invocation.status === "available"
     ? invocationState.invocation
@@ -268,7 +271,7 @@ function AttemptDebugHeader({
   return (
     <article className="border-t border-line pb-4 pt-5 first:border-t-0 first:pt-2">
       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-ink">
-        <span>第 {event.attempt} 次执行 · {event.status}</span>
+        <span>{t("console.processEvent.attempt", { attempt: event.attempt, status: event.status })}</span>
         {typeof event.elapsedMs === "number" ? (
           <RunTime
             mode={event.status === "running" ? "running" : "completed"}
@@ -285,14 +288,14 @@ function AttemptDebugHeader({
         <DebugMeta label="CLI" value={cliVersion} />
         <DebugMeta label="run" value={event.runId} />
         <DebugMeta label="thread" value={metadata?.threadId ?? event.threadId} />
-        <DebugMeta label="开始" value={event.startedAt} />
-        <DebugMeta label="完成" value={event.completedAt ?? (event.status === "running" ? "running" : null)} />
+        <DebugMeta label={t("console.processEvent.started")} value={event.startedAt} />
+        <DebugMeta label={t("console.processEvent.completed")} value={event.completedAt ?? (event.status === "running" ? "running" : null)} />
         {metadata?.cwd !== null && metadata?.cwd !== undefined
           ? <DebugMeta label="cwd" value={metadata.cwd} />
           : null}
       </dl>
       <p className="mt-3 rounded-sm border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub">
-        本地原始调试信息，可能包含提示词、本机路径、内部标识和工具返回内容。
+        {t("console.processEvent.sensitiveNotice")}
       </p>
       <div className="mt-3 grid gap-2">
         <PromptDisclosure
@@ -339,6 +342,7 @@ function PromptDisclosure({
   runId: string;
   onLoadInvocation?: (sessionId: string, runId: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const request = () => {
     if (state.status === "idle" || state.status === "error") {
       onLoadInvocation?.(sessionId, runId);
@@ -358,26 +362,26 @@ function PromptDisclosure({
       </summary>
       <div className="mt-2 border-t border-line pt-2">
         {state.status === "idle" || state.status === "loading" ? (
-          <p className="text-xs text-sub">正在读取这次执行的提示词…</p>
+          <p className="text-xs text-sub">{t("console.processEvent.loadingPrompts")}</p>
         ) : state.status === "error" ? (
           <p className="text-xs text-sub">
-            提示词暂时无法读取：{state.message}
+            {t("console.processEvent.promptLoadFailed", { error: state.message })}
             <button
               type="button"
               className="ml-2 rounded-sm border border-line px-2 py-1 text-ink hover:bg-hover"
               onClick={request}
             >
-              重试
+              {t("common.retry")}
             </button>
           </p>
         ) : state.invocation.status !== "available" ? (
           <p className="text-xs text-sub">
             {state.invocation.status === "malformed"
-              ? "这次执行的提示词记录无法解析。"
-              : "这次执行的提示词记录不可用。"}
+              ? t("console.processEvent.promptMalformed")
+              : t("console.processEvent.promptUnavailable")}
           </p>
         ) : state.invocation.prompts[layer].status === "not-recorded" ? (
-          <p className="text-xs text-sub">该层未记录。</p>
+          <p className="text-xs text-sub">{t("console.processEvent.layerNotRecorded")}</p>
         ) : (
           <div className="grid gap-2">
             {state.invocation.prompts[layer].contents.map((content, index) => (
@@ -410,6 +414,7 @@ function DebugCard({
   danger?: boolean;
   children: ReactNode;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <article className={cn(
       "my-2 overflow-hidden rounded-lg border bg-card",
@@ -435,9 +440,10 @@ function DebugEventHeader({
   timestamp: string | null;
   protocolType: string;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <p className="mt-1 break-all font-mono text-[11px] leading-4 text-sub">
-      {timestamp ?? "timestamp 未记录"} · {protocolType}
+      {timestamp ?? t("console.processEvent.timestampMissing")} · {protocolType}
     </p>
   );
 }
@@ -451,29 +457,32 @@ function DebugFacts({
   status: string | null;
   phase: string;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <p className="mt-1 break-all font-mono text-[11px] leading-4 text-sub">
-      call_id: {callId ?? "未记录"} · {status ?? phase}
+      call_id: {callId ?? t("console.processEvent.notRecorded")} · {status ?? phase}
     </p>
   );
 }
 
 function DebugMeta({ label, value }: { label: string; value: string | null }): JSX.Element {
+  const { t } = useI18n();
   return (
     <>
       <dt className="font-mono text-sub">{label}</dt>
-      <dd className="min-w-0 break-all font-mono text-ink">{value ?? "未记录"}</dd>
+      <dd className="min-w-0 break-all font-mono text-ink">{value ?? t("console.processEvent.notRecorded")}</dd>
     </>
   );
 }
 
 function ReadonlyBlock({ label, value }: { label: string; value: string }): JSX.Element {
+  const { t } = useI18n();
   const displayValue = escapeTerminalControls(value);
   const collapsible = displayValue.length > 1_200 || displayValue.split("\n").length > 20;
   return (
     <details className="border-t border-line px-3 py-2" open={!collapsible}>
       <summary className="cursor-pointer select-none text-[11px] font-medium text-sub">
-        {collapsible ? `展开完整${label}` : label}
+        {collapsible ? t("console.processEvent.expandFull", { label }) : label}
       </summary>
       <pre className="scroll-thin mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">
         {displayValue}

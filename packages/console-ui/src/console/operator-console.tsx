@@ -22,6 +22,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 
 import {
@@ -32,6 +33,7 @@ import {
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
 import { MoebiusLogo } from "@/brand/moebius-logo";
+import { I18nProvider, translate, useI18n, type Locale, type Translate } from "@/i18n";
 import {
   AgentTeamsPage,
   type AgentTeamBuilderController,
@@ -76,6 +78,7 @@ import {
 } from "@/console/conversation-sidebar";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
+import { SettingsDialog, type LanguageSaveStatus } from "@/console/settings-dialog";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -101,6 +104,7 @@ import {
   createRunOutputSourceKey,
   dedupeRunOutputTabsByStableStep,
   EMPTY_RIGHT_SIDEBAR_TABS,
+  RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
   parseFileReferenceSourceKey,
@@ -108,7 +112,11 @@ import {
   parseRunOutputSourceKey,
   type RightSidebarTabsState,
 } from "@/console/right-sidebar-tabs";
-import { containsMachineText, sanitizeMachineText } from "@/console/machine-text";
+import {
+  containsMachineText,
+  machineTextPlaceholders,
+  sanitizeMachineText,
+} from "@/console/machine-text";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -139,8 +147,6 @@ export const MIN_SIDEBAR_WIDTH_PX = 220;
 export const MAX_SIDEBAR_WIDTH_PX = 360;
 export const NARROW_WINDOW_WIDTH_PX = 760;
 export const STACKED_TEAM_ROW_WINDOW_WIDTH_PX = 1024;
-const AGENT_TEAMS_REPAIR_INDICATOR_LABEL = "有 Agent 团队需要修复";
-
 interface SidebarResizeGesture {
   pointerId: number;
   startX: number;
@@ -358,6 +364,11 @@ export interface OperatorConsoleProps {
   newConversation?: OperatorNewConversationState | null;
   cliReadiness?: { codex: boolean; kimi: boolean };
   activeCliInstallations?: Array<"codex" | "kimi">;
+  activeLocale?: Locale;
+  pendingLocale?: Locale | null;
+  languageSaveStatus?: LanguageSaveStatus;
+  onSelectLocale?: (locale: Locale) => void;
+  onRetryLocaleSave?: () => void;
   onComposerChange(value: string): void;
   onComposerFilesAdded?: (files: File[]) => void;
   onComposerAttachmentRemove?: (clientId: string) => void;
@@ -500,6 +511,11 @@ export function OperatorConsole({
   newConversation = null,
   cliReadiness,
   activeCliInstallations = [],
+  activeLocale = "zh-CN",
+  pendingLocale = null,
+  languageSaveStatus = "idle",
+  onSelectLocale,
+  onRetryLocaleSave,
   onComposerChange,
   onComposerFilesAdded,
   onComposerAttachmentRemove,
@@ -570,7 +586,7 @@ export function OperatorConsole({
   onRecheckAgentTeam,
   onRelocateAgentTeam,
   onRemoveAgentTeamRecord,
-  agentTeamFileManagerLabel = "在文件管理器中打开",
+  agentTeamFileManagerLabel,
   onOpenAgentTeamLocation,
   onDuplicateUserAgentTeam,
   onDuplicateAgentTeamMember,
@@ -595,6 +611,8 @@ export function OperatorConsole({
   onLoadProcessOutputPrevious,
   className,
 }: OperatorConsoleProps): JSX.Element {
+  const t: Translate = (key, values) => translate(activeLocale, key, values);
+  const resolvedAgentTeamFileManagerLabel = agentTeamFileManagerLabel ?? t("console.operator.fileManager");
   const displayedActiveRuns = activeRuns ?? (activeRun === null ? [] : [activeRun]);
   const [uncontrolledSidebarOpen, setUncontrolledSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH_PX);
@@ -616,6 +634,7 @@ export function OperatorConsole({
   const restoredReadingSessionRef = useRef<string | null>(null);
   const conversationFocusFrameRef = useRef<number | null>(null);
   const conversationHighlightTimerRef = useRef<number | null>(null);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
   const [currentRelayEventId, setCurrentRelayEventId] = useState<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
@@ -629,6 +648,7 @@ export function OperatorConsole({
     cancel?: () => void;
   } | null>(null);
   const [conversationRouteConflictOpen, setConversationRouteConflictOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingConversationRouteDrafts, setSavingConversationRouteDrafts] = useState(false);
   const [renameTarget, setRenameTarget] = useState<OperatorProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -643,7 +663,7 @@ export function OperatorConsole({
   const activeProjectUnavailable = activeProject.directoryAvailable === false;
   const projectListUnavailable = projectListState !== "ready";
   const projectConfigurationPending = isProjectMutationPending;
-  const sidebarProjects = visibleProjects.map(toSidebarProject);
+  const sidebarProjects = visibleProjects.map((item) => toSidebarProject(item, t));
   const hasAgentTeamNeedingRepair = agentTeamsState.status === "ready"
     && agentTeamsState.teams.some((team) => team.status === "needs-repair");
   const conversationAgentTeam = agentTeamsState.status === "ready"
@@ -680,9 +700,10 @@ export function OperatorConsole({
   const conversationRelayEvents = useMemo(
     () => projectConversationRelayEvents(
       messages,
-      (role) => resolveOperatorMemberName(role, memberIdentities),
+      (role) => resolveOperatorMemberName(role, memberIdentities, t),
+      t,
     ),
-    [memberIdentities, messages],
+    [memberIdentities, messages, t],
   );
   const resultCardVisible = shouldShowResultCard({
     diffAvailable: workspaceDiff.available,
@@ -820,7 +841,8 @@ export function OperatorConsole({
     const timeline = timelineScrollRef.current;
     const target = conversationMessageRefs.current.get(event.messageId);
     if (timeline === null || target === undefined || !target.isConnected) {
-      setRelayFeedback("无法定位到原消息，已保持当前阅读位置");
+      followTimelineRef.current = false;
+      setRelayFeedback(t("console.operator.relayNotFound"));
       return;
     }
     const latestEvent = conversationRelayEvents.at(-1);
@@ -834,7 +856,7 @@ export function OperatorConsole({
     });
     target.focus({ preventScroll: true });
     setHighlightedMessageId(event.messageId);
-    setRelayFeedback("已定位并突出原消息");
+    setRelayFeedback(t("console.operator.relayLocated"));
     if (conversationHighlightTimerRef.current !== null) {
       window.clearTimeout(conversationHighlightTimerRef.current);
     }
@@ -850,7 +872,7 @@ export function OperatorConsole({
     updateRightSidebarTabs(openRightSidebarSourceTab(effectiveRightSidebarTabs, {
       id: createRightSidebarTabId(nextRightSidebarTabIdRef),
       type: "sub-session",
-      title: childSession?.title ?? "子任务",
+      title: childSession?.title ?? t("console.subtask.title"),
       sourceKey: `sub-session:${sessionId}`,
     }));
     onOpenSubSession?.(sessionId);
@@ -874,7 +896,7 @@ export function OperatorConsole({
         updateRightSidebarTabs((current) => openRightSidebarSourceTab(current, {
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
           type: "file-reference",
-          title: fileReferenceTabTitle(canonicalReference),
+          title: fileReferenceTabTitle(canonicalReference, t),
           sourceKey,
         }));
       })
@@ -904,13 +926,13 @@ export function OperatorConsole({
       ? {
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
           type: "workspace-diff",
-          title: "改动",
+          title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
           sourceKey: `workspace-diff:${intent.sessionId}`,
         }
       : {
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
           type: "run-output",
-          title: nextProcessTabTitle(effectiveRightSidebarTabs, intent.role, identities),
+          title: nextProcessTabTitle(effectiveRightSidebarTabs, intent.role, identities, t),
           sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId, intent.stepId),
         }));
     onOpenEvidence?.(intent);
@@ -944,7 +966,7 @@ export function OperatorConsole({
       const title = shouldCorrectTitle
         ? nextProcessTabTitle({
             tabs: nextState.tabs.filter((candidate) => candidate.id !== tab.id),
-          }, role, identities)
+          }, role, identities, t)
         : tab.title;
       nextState = {
         ...nextState,
@@ -1093,8 +1115,8 @@ export function OperatorConsole({
         >
           <RefreshCw className="h-3 w-3 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
           {activeCliInstallations.length === 1
-            ? `正在安装 ${activeCliInstallations[0] === "codex" ? "Codex" : "Kimi"}…`
-            : `${String(activeCliInstallations.length)} 项 CLI 正在安装…`}
+            ? t("console.operator.installingCli", { cli: activeCliInstallations[0] === "codex" ? "Codex" : "Kimi" })
+            : t("console.operator.installingClis", { count: activeCliInstallations.length })}
         </div>
       ) : null}
       <aside
@@ -1113,8 +1135,8 @@ export function OperatorConsole({
           <button
             type="button"
             className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
-            aria-label="关闭侧边栏"
-            title="关闭侧边栏"
+            aria-label={translate(activeLocale, "sidebar.close")}
+            title={translate(activeLocale, "sidebar.close")}
             onClick={() => setSidebarOpen(false)}
           >
             <PanelLeftClose className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -1129,28 +1151,38 @@ export function OperatorConsole({
           <span className="truncate font-display text-[14.5px] font-semibold tracking-[-0.01em]">Moebius</span>
         </div>
 
-        <nav className="shrink-0 space-y-1 px-2.5 pb-1 pt-3" aria-label="应用导航" data-testid="sidebar-app-actions">
+        <nav
+          className="shrink-0 space-y-1 px-2.5 pb-1 pt-3"
+          aria-label={translate(activeLocale, "sidebar.navigation")}
+          data-testid="sidebar-app-actions"
+        >
           <SidebarAction
             icon={Plus}
-            label="新建对话"
+            label={translate(activeLocale, "sidebar.newConversation")}
             selected={newConversation !== null && applicationView === "conversation"}
             disabled={projectListUnavailable || isSelectionMutationPending || projectConfigurationPending}
-            disabledReason={(projectListUnavailable ? "项目数据尚不可用" : undefined)
-              ?? (isSelectionMutationPending || projectConfigurationPending ? "项目正在变更，请稍后再试" : undefined)}
+            disabledReason={(projectListUnavailable
+              ? translate(activeLocale, "sidebar.projectUnavailable")
+              : undefined)
+              ?? (isSelectionMutationPending || projectConfigurationPending
+                ? translate(activeLocale, "sidebar.projectChanging")
+                : undefined)}
             onClick={() => openNewConversation()}
           />
           <SidebarAction
             icon={Search}
-            label="搜索"
+            label={translate(activeLocale, "sidebar.search")}
             disabled={projectListUnavailable}
-            disabledReason={projectListUnavailable ? "项目数据尚不可用" : undefined}
+            disabledReason={projectListUnavailable
+              ? translate(activeLocale, "sidebar.projectUnavailable")
+              : undefined}
             onClick={() => setApplicationOverlay({ kind: "search" })}
           />
           <SidebarAction
             icon={Diamond}
-            label="Agent 团队"
+            label={translate(activeLocale, "sidebar.agentTeams")}
             selected={applicationView === "agent-teams"}
-            statusIndicatorLabel={hasAgentTeamNeedingRepair ? AGENT_TEAMS_REPAIR_INDICATOR_LABEL : undefined}
+            statusIndicatorLabel={hasAgentTeamNeedingRepair ? t("console.operator.teamNeedsRepair") : undefined}
             disabled={activeProjectUnavailable}
             disabledReason={activeProject.directoryUnavailableReason ?? undefined}
             onClick={() => setApplicationView("agent-teams")}
@@ -1158,8 +1190,10 @@ export function OperatorConsole({
         </nav>
 
         <div className="flex shrink-0 items-center justify-between px-5 pb-1.5 pt-4 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
-          <span>项目</span>
-          {projectConfigurationPending ? <span role="status">正在更新…</span> : null}
+          <span>{translate(activeLocale, "sidebar.projects")}</span>
+          {projectConfigurationPending
+            ? <span role="status">{translate(activeLocale, "sidebar.updating")}</span>
+            : null}
         </div>
         <ConversationSidebar
           projects={sidebarProjects}
@@ -1230,30 +1264,35 @@ export function OperatorConsole({
           }}
           onRetry={onRetryProjectList}
           disabled={isSelectionMutationPending}
-          disabledReason="项目正在变更，请稍后再试"
+          disabledReason={translate(activeLocale, "sidebar.projectChanging")}
           projectActionsDisabled={projectConfigurationPending}
-          projectActionsDisabledReason="项目配置正在更新"
+          projectActionsDisabledReason={translate(activeLocale, "sidebar.projectConfigUpdating")}
           className="min-h-0 w-full flex-1 overflow-hidden border-0"
         />
 
         <footer className="shrink-0 border-t border-line p-2" data-testid="sidebar-footer">
           <SidebarAction
             icon={CircleHelp}
-            label="重新查看引导"
+            label={translate(activeLocale, "sidebar.help")}
             onClick={onReplayOnboarding}
           />
-          <SidebarAction icon={Settings} label="设置" />
+          <SidebarAction
+            icon={Settings}
+            label={translate(activeLocale, "sidebar.settings")}
+            buttonRef={settingsTriggerRef}
+            onClick={() => setSettingsOpen(true)}
+          />
         </footer>
 
         <div
           className="window-no-drag group absolute inset-y-0 right-0 z-30 w-1 cursor-col-resize touch-none"
           role="separator"
-          aria-label="调整侧边栏宽度"
+          aria-label={translate(activeLocale, "sidebar.resize")}
           aria-orientation="vertical"
           aria-valuemin={MIN_SIDEBAR_WIDTH_PX}
           aria-valuemax={MAX_SIDEBAR_WIDTH_PX}
           aria-valuenow={sidebarWidth}
-          aria-valuetext={`${sidebarWidth} 像素`}
+          aria-valuetext={translate(activeLocale, "sidebar.widthPixels", { width: sidebarWidth })}
           data-testid="sidebar-resize-handle"
           onPointerDown={(event) => {
             if (event.button !== 0) {
@@ -1290,8 +1329,8 @@ export function OperatorConsole({
             <button
               type="button"
               className="window-no-drag z-20 ml-[96px] flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-              aria-label="打开侧边栏"
-              title="打开侧边栏"
+              aria-label={t("console.operator.openSidebar")}
+              title={t("console.operator.openSidebar")}
               onClick={() => setSidebarOpen(true)}
             >
               <PanelLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -1300,8 +1339,8 @@ export function OperatorConsole({
           <button
             type="button"
             className="window-no-drag z-20 ml-auto mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
-            aria-label={requestedRightSidebarOpen ? "隐藏右侧栏" : "显示右侧栏"}
-            title={requestedRightSidebarOpen ? "隐藏右侧栏" : "显示右侧栏"}
+            aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
+            title={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
             aria-pressed={requestedRightSidebarOpen}
             onClick={() => setRightSidebarOpen(!requestedRightSidebarOpen)}
           >
@@ -1345,7 +1384,7 @@ export function OperatorConsole({
             onRecheckTeam={onRecheckAgentTeam}
             onRelocateTeam={onRelocateAgentTeam}
             onRemoveTeamRecord={onRemoveAgentTeamRecord}
-            fileManagerActionLabel={agentTeamFileManagerLabel}
+            fileManagerActionLabel={resolvedAgentTeamFileManagerLabel}
             onOpenLocation={onOpenAgentTeamLocation}
             onDuplicateUserTeam={onDuplicateUserAgentTeam}
             onDuplicateMember={onDuplicateAgentTeamMember}
@@ -1367,7 +1406,7 @@ export function OperatorConsole({
                 .filter((team) => team.canCreateConversation)
                 .map((team) => ({
                   teamKey: team.teamKey,
-                  label: team.name?.trim() || "未命名团队",
+                  label: team.name?.trim() || t("console.common.untitledTeam"),
                   members: team.members,
                 }))
               : []}
@@ -1412,7 +1451,7 @@ export function OperatorConsole({
                   events={conversationRelayEvents}
                   onActivate={locateConversationRelayEvent}
                   onBrowse={() => {
-                    setRelayFeedback("目录焦点已移动；主时间线位置保持不变");
+                    setRelayFeedback(t("console.operator.relayFocusMoved"));
                   }}
                 />
               </div>
@@ -1422,7 +1461,7 @@ export function OperatorConsole({
                 "scroll-thin min-h-0 flex-1 overflow-auto",
                 pendingPrimaryMessages.length > 0 ? "pb-72" : "pb-44",
               )}
-              aria-label="会话时间线"
+              aria-label={t("console.operator.timeline")}
               ref={timelineScrollRef}
               onScroll={(event) => {
                 const timeline = event.currentTarget;
@@ -1520,7 +1559,7 @@ export function OperatorConsole({
 
                     {displayedActiveRuns.map((run) => {
                       const isPrimaryRun = activeRun?.runId === run.runId;
-                      const roleLabel = resolveOperatorMemberName(run.role, memberIdentities);
+                      const roleLabel = resolveOperatorMemberName(run.role, memberIdentities, t);
                       return (
                         <div data-testid="active-run-block" data-run-id={run.runId} key={run.runId}>
                           <RunBlock
@@ -1529,8 +1568,8 @@ export function OperatorConsole({
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
                             processOutputAvailable={run.processOutputAvailable}
-                            outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
-                            summary={safeRunSummary(run.lastOutputSummary)}
+                            outputUnavailableMessage={t("console.common.kimiOutputUnavailable")}
+                            summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
@@ -1549,7 +1588,7 @@ export function OperatorConsole({
                             onInterrupt={!isPrimaryRun && run.interruptible
                               ? () => onInterrupt(run.sessionId, run.runId)
                               : undefined}
-                            interruptLabel={!isPrimaryRun ? `停下${roleLabel}` : undefined}
+                            interruptLabel={!isPrimaryRun ? t("console.runBlock.stopMember", { member: roleLabel }) : undefined}
                             className="mt-4 max-w-none"
                           />
                         </div>
@@ -1569,10 +1608,10 @@ export function OperatorConsole({
 
                     {lastError ? (
                       <div className="mt-4 flex items-center justify-between gap-3 border-t border-line py-3 text-sm text-danger">
-                        <span>操作台遇到问题，请打开开发者诊断查看日志。</span>
+                        <span>{t("console.operator.consoleError")}</span>
                         {onOpenDiagnostics ? (
                           <Button type="button" variant="outline" size="sm" onClick={onOpenDiagnostics}>
-                            查看日志
+                            {t("console.operator.viewLogs")}
                           </Button>
                         ) : null}
                       </div>
@@ -1602,7 +1641,7 @@ export function OperatorConsole({
                 }}
               >
                 <ArrowDown className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                回到底部
+                {t("console.operator.jumpBottom")}
               </button>
             ) : null}
 
@@ -1618,16 +1657,18 @@ export function OperatorConsole({
                       "pointer-events-auto mx-auto mb-2 w-full rounded-[14px] border border-accent/35 bg-accent/10 px-3.5 py-2.5",
                       MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                     )}
-                    aria-label="待发射给主理人"
+                    aria-label={t("console.operator.pendingPrimary")}
                     data-testid="primary-pending-zone"
                   >
-                    <p className="text-xs font-medium text-accent">待发射给主理人</p>
+                    <p className="text-xs font-medium text-accent">{t("console.operator.pendingPrimary")}</p>
                     <ol className="scroll-thin mt-1.5 max-h-24 space-y-1 overflow-y-auto pr-1 text-sm text-ink">
                       {pendingPrimaryMessages.map((message, index) => (
                         <li key={message.id} className="flex min-w-0 gap-2">
                           <span className="shrink-0 text-sub">{index + 1}</span>
                           <span className="truncate">
-                            {message.body.trim() || message.attachments?.map((attachment) => attachment.displayName).join("、") || "附件消息"}
+                            {message.body.trim()
+                              || message.attachments?.map((attachment) => attachment.displayName).join(", ")
+                              || t("console.operator.attachmentMessage")}
                           </span>
                         </li>
                       ))}
@@ -1649,24 +1690,24 @@ export function OperatorConsole({
                   roles={roleCompletionsForTeam(displayedConversationAgentTeam)}
                   disabled={isSending || isSelectionMutationPending || isSessionProjectUpdating || activeProjectUnavailable || selectedAgentTeamUnavailable || continuationBlocked}
                   placeholder={activeProjectUnavailable
-                    ? "项目文件夹不可用，请先使用红色扳手修复"
+                    ? t("console.operator.projectUnavailable")
                     : selectedSession?.agentTeamHealth === "deleted"
-                      ? "这支团队已删除，请改选一支团队"
+                      ? t("console.operator.teamDeleted")
                       : selectedAgentTeamUnavailable
-                        ? "当前 Agent 团队需要修复"
+                        ? t("console.operator.teamNeedsRepairShort")
                         : continuationBlocked
-                          ? selectedSession?.continuation?.reason ?? "当前对话暂时不能继续"
+                          ? selectedSession?.continuation?.reason ?? t("console.operator.cannotContinue")
                       : activeRun
-                        ? "继续告诉主理人…"
-                        : "告诉主理人你的目标…"}
+                        ? t("console.operator.continuePlaceholder")
+                        : t("console.operator.placeholder")}
                   statusText={activeProjectUnavailable
-                    ? "历史对话只读；修复文件夹后可继续"
+                    ? t("console.operator.readOnlyRepair")
                     : selectedSession?.agentTeamHealth === "deleted"
-                      ? "历史对话只读；改选一支团队后可继续"
+                      ? t("console.operator.readOnlySelectTeam")
                       : selectedAgentTeamUnavailable
-                        ? "历史对话只读；修复或改选团队后可继续"
+                        ? t("console.operator.readOnlyRepairOrTeam")
                         : continuationBlocked
-                          ? selectedSession?.continuation?.reason ?? "历史对话只读"
+                          ? selectedSession?.continuation?.reason ?? t("console.operator.readOnly")
                       : undefined}
                   context={
                     <ComposerContext
@@ -1809,10 +1850,27 @@ export function OperatorConsole({
         <ApplicationPlaceholder overlay={applicationOverlay} onClose={() => setApplicationOverlay(null)} />
       ) : null}
 
+      <I18nProvider locale={activeLocale}>
+        <SettingsDialog
+          open={settingsOpen}
+          activeLocale={activeLocale}
+          pendingLocale={pendingLocale}
+          saveStatus={languageSaveStatus}
+          onOpenChange={(open) => {
+            setSettingsOpen(open);
+            if (!open) {
+              window.requestAnimationFrame(() => settingsTriggerRef.current?.focus());
+            }
+          }}
+          onSelectLocale={(locale) => onSelectLocale?.(locale)}
+          onRetry={() => onRetryLocaleSave?.()}
+        />
+      </I18nProvider>
+
       {renameTarget ? (
         <ProjectActionDialog
-          title="修改显示名称"
-          description="只修改 Moebius 中显示的名称，不会重命名磁盘文件夹。留空会恢复为文件夹名。"
+          title={t("console.operator.renameTitle")}
+          description={t("console.operator.renameDescription")}
           error={projectActionError}
           onCancel={() => {
             if (!isProjectMutationPending) {
@@ -1821,7 +1879,7 @@ export function OperatorConsole({
           }}
         >
           <label className="grid gap-1.5 text-sm font-medium text-ink">
-            显示名称
+            {t("console.operator.displayName")}
             <Input
               autoFocus
               value={renameValue}
@@ -1837,7 +1895,7 @@ export function OperatorConsole({
           </label>
           <DialogButtons
             pending={isProjectMutationPending}
-            confirmLabel="保存"
+            confirmLabel={t("console.operator.save")}
             onCancel={() => setRenameTarget(null)}
             onConfirm={() => {
               void submitProjectRename(renameTarget, renameValue, onRenameProject, setProjectActionError, setRenameTarget);
@@ -1848,8 +1906,8 @@ export function OperatorConsole({
 
       {repairRequest ? (
         <ProjectActionDialog
-          title="修复项目文件夹"
-          description="确认后，Moebius 将从新位置继续使用原项目历史；不会移动、复制或重命名任何磁盘文件。"
+          title={t("console.operator.repairTitle")}
+          description={t("console.operator.repairDescription")}
           error={projectActionError}
           onCancel={() => {
             if (!isProjectMutationPending) {
@@ -1859,17 +1917,17 @@ export function OperatorConsole({
         >
           <dl className="grid gap-3 rounded-lg border border-line bg-rail p-3 text-xs">
             <div className="grid gap-1">
-              <dt className="font-medium text-sub">原位置</dt>
+              <dt className="font-medium text-sub">{t("console.operator.oldLocation")}</dt>
               <dd className="break-all text-ink" data-testid="repair-original-folder">{repairRequest.project.folderPath}</dd>
             </div>
             <div className="grid gap-1 border-t border-line pt-3">
-              <dt className="font-medium text-sub">新位置</dt>
+              <dt className="font-medium text-sub">{t("console.operator.newLocation")}</dt>
               <dd className="break-all text-ink" data-testid="repair-new-folder">{repairRequest.folderPath}</dd>
             </div>
           </dl>
           <DialogButtons
             pending={isProjectMutationPending}
-            confirmLabel="确认新位置"
+            confirmLabel={t("console.operator.confirmLocation")}
             onCancel={() => setRepairRequest(null)}
             onConfirm={() => {
               void submitProjectFolderRepair(repairRequest, onRepairProjectFolder, setProjectActionError, setRepairRequest);
@@ -1880,14 +1938,14 @@ export function OperatorConsole({
 
       {runningRemovalTarget ? (
         <ProjectActionDialog
-          title="项目中仍有 Agent 正在运行"
-          description={`“${runningRemovalTarget.title}”中的运行必须先停止。你可以取消，或继续到强制中止与移除确认。`}
+          title={t("console.operator.runningTitle")}
+          description={t("console.operator.runningDescription", { project: runningRemovalTarget.title })}
           icon={<AlertTriangle className="h-5 w-5 text-danger" strokeWidth={1.5} aria-hidden="true" />}
           onCancel={() => setRunningRemovalTarget(null)}
         >
           <DialogButtons
             pending={false}
-            confirmLabel="强制中止并继续"
+            confirmLabel={t("console.operator.forceContinue")}
             danger
             onCancel={() => setRunningRemovalTarget(null)}
             onConfirm={() => {
@@ -1900,8 +1958,8 @@ export function OperatorConsole({
 
       {removalRequest ? (
         <ProjectActionDialog
-          title="移除项目？"
-          description={`“${removalRequest.project.title}”会从侧边栏消失，其对话将归档并保留。此操作绝不会删除或修改磁盘上的项目文件夹。`}
+          title={t("console.operator.removeTitle")}
+          description={t("console.operator.removeDescription", { project: removalRequest.project.title })}
           error={projectActionError}
           onCancel={() => {
             if (!isProjectMutationPending) {
@@ -1910,11 +1968,11 @@ export function OperatorConsole({
           }}
         >
           <p className="rounded-md border border-line bg-rail px-3 py-2 text-xs text-sub">
-            磁盘文件夹将保留：{removalRequest.project.folderPath}
+            {t("console.operator.folderPreserved", { path: removalRequest.project.folderPath })}
           </p>
           <DialogButtons
             pending={isProjectMutationPending}
-            confirmLabel={removalRequest.force ? "中止并移除" : "移除项目"}
+            confirmLabel={t(removalRequest.force ? "console.operator.interruptRemove" : "console.operator.removeProject")}
             danger
             onCancel={() => setRemovalRequest(null)}
             onConfirm={() => {
@@ -1936,8 +1994,8 @@ export function OperatorConsole({
 
       {pendingConversationRoute ? (
         <ProjectActionDialog
-          title="还有未保存的修改"
-          description="可以继续编辑、放弃全部修改，或保存全部后前往对话。"
+          title={t("console.operator.unsavedTitle")}
+          description={t("console.operator.unsavedDescription")}
           onCancel={() => {
             pendingConversationRoute.cancel?.();
             setPendingConversationRoute(null);
@@ -1945,7 +2003,7 @@ export function OperatorConsole({
         >
           <DialogButtons
             pending={savingConversationRouteDrafts}
-            confirmLabel="保存全部并离开"
+            confirmLabel={t("console.operator.saveAllLeave")}
             onCancel={() => {
               pendingConversationRoute.cancel?.();
               setPendingConversationRoute(null);
@@ -1976,15 +2034,15 @@ export function OperatorConsole({
               void completeConversationRoute(pendingConversationRoute.run);
             }}
           >
-            放弃全部
+            {t("console.operator.discardAll")}
           </Button>
         </ProjectActionDialog>
       ) : null}
 
       {conversationRouteConflictOpen ? (
         <ProjectActionDialog
-          title="无法前往对话"
-          description="有 Agent 文件在应用外被修改。请先在团队详情中选择载入外部版本或用当前内容覆盖。"
+          title={t("console.operator.cannotNavigate")}
+          description={t("console.operator.externalConflict")}
           onCancel={() => {
             pendingConversationRoute?.cancel?.();
             setPendingConversationRoute(null);
@@ -1996,7 +2054,7 @@ export function OperatorConsole({
               pendingConversationRoute?.cancel?.();
               setPendingConversationRoute(null);
               setConversationRouteConflictOpen(false);
-            }}>知道了</Button>
+            }}>{t("console.operator.gotIt")}</Button>
           </div>
         </ProjectActionDialog>
       ) : null}
@@ -2081,11 +2139,12 @@ function DialogButtons({
   onCancel(): void;
   onConfirm(): void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="flex justify-end gap-2">
-      <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>取消</Button>
+      <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>{t("console.common.cancel")}</Button>
       <Button type="button" variant={danger ? "danger" : "default"} disabled={pending} onClick={onConfirm}>
-        {pending ? "处理中…" : confirmLabel}
+        {pending ? t("console.operator.processing") : confirmLabel}
       </Button>
     </div>
   );
@@ -2154,6 +2213,7 @@ function SidebarAction({
   onClick,
   disabled = false,
   disabledReason,
+  buttonRef,
 }: {
   icon: LucideIcon;
   label: string;
@@ -2162,9 +2222,11 @@ function SidebarAction({
   onClick?: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  buttonRef?: Ref<HTMLButtonElement>;
 }): JSX.Element {
   return (
     <button
+      ref={buttonRef}
       type="button"
       className={cn(
         "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-ink hover:bg-hover",
@@ -2202,6 +2264,7 @@ function ApplicationPlaceholder({
   overlay: OperatorApplicationOverlay;
   onClose: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-6" data-testid="application-overlay">
       <section
@@ -2211,14 +2274,14 @@ function ApplicationPlaceholder({
         aria-labelledby="application-placeholder-title"
       >
         <h1 id="application-placeholder-title" className="text-lg font-semibold tracking-[-0.01em] text-ink">
-          全局搜索
+          {t("console.operator.searchTitle")}
         </h1>
         <p className="mt-2 text-sm leading-6 text-sub">
-          全局搜索将在后续任务中提供。关闭此窗口后会回到原来的项目和对话。
+          {t("console.operator.searchDescription")}
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
-            关闭
+            {t("common.close")}
           </Button>
         </div>
       </section>
@@ -2272,7 +2335,7 @@ function resolveMessageProcessRole(
 }
 
 function isUnknownProcessTabTitle(title: string): boolean {
-  return /^成员未知(?: [2-9]\d*)?$/u.test(title);
+  return /^(?:成员未知|Unknown member)(?: [2-9]\d*)?$/u.test(title); // i18n-exempt: recognizes persisted locale-specific tab titles
 }
 
 function TimelineEntry({
@@ -2304,6 +2367,7 @@ function TimelineEntry({
   onOpenTeamMember?: (slug: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
 }): JSX.Element {
+  const { locale, t } = useI18n();
   if (message.sourceKind === "local-child-session-card") {
     const sessionIds = parseChildSessionCardIds(message.body);
     const items = sessionIds === null
@@ -2325,7 +2389,7 @@ function TimelineEntry({
           memberIdentities={memberIdentities}
           rawReason={message.error ?? message.body}
           rawOutput={message.error ?? message.body}
-          description={terminalOutcomeDescription(message)}
+          description={terminalOutcomeDescription(message, t)}
           elapsedMs={message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
           onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
@@ -2350,7 +2414,7 @@ function TimelineEntry({
         />
         {message.runTiming?.processOutputAvailable === false ? (
           <p className="mt-2 pl-7 text-xs text-hint">
-            完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+            {t("console.common.kimiOutputUnavailable")}
           </p>
         ) : null}
       </div>
@@ -2361,9 +2425,9 @@ function TimelineEntry({
     return (
       <div className="group py-4 text-sm">
         <div className="mb-1.5 flex items-center justify-end gap-2 text-[12.5px] text-sub">
-          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt)}</span>
-          <span className="font-semibold text-ink">你</span>
-          <RoleTag label="你" toneKey="user" />
+          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+          <span className="font-semibold text-ink">{t("console.common.you")}</span>
+          <RoleTag label={t("console.common.you")} toneKey="user" />
         </div>
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
@@ -2393,14 +2457,14 @@ function TimelineEntry({
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
           <RoleTag
-            label={resolveOperatorMemberName(message.role, memberIdentities)}
+            label={resolveOperatorMemberName(message.role, memberIdentities, t)}
             toneKey={message.role ?? "agent"}
           />
         ) : null}
         <span className="font-semibold text-ink">
           {message.speaker === "agent"
-            ? resolveOperatorMemberName(message.role, memberIdentities)
-            : "系统提示"}
+            ? resolveOperatorMemberName(message.role, memberIdentities, t)
+            : t("console.common.systemNotice")}
         </span>
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
@@ -2411,11 +2475,11 @@ function TimelineEntry({
             completedAt={message.runTiming.completedAt}
           />
         ) : null}
-        <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt)}</span>
+        <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
       </div>
       <div className="relative pl-7">
       {message.speaker === "system" ? (
-        <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message)}</div>
+        <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message, t)}</div>
       ) : (
         <>
           {message.body.trim() === "" ? null : (
@@ -2442,8 +2506,8 @@ function TimelineEntry({
         <button
           type="button"
           className="absolute left-7 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
-          aria-label="完整输出"
-          title="完整输出"
+          aria-label={t("console.common.fullOutput")}
+          title={t("console.common.fullOutput")}
           onClick={() => onOpenEvidence({
             kind: "run-output",
             sessionId: message.sessionId,
@@ -2458,7 +2522,7 @@ function TimelineEntry({
       ) : null}
       {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
         <p className="mt-2 text-xs text-hint">
-          完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+          {t("console.common.kimiOutputUnavailable")}
         </p>
       ) : null}
       </div>
@@ -2466,7 +2530,7 @@ function TimelineEntry({
   );
 }
 
-function toSidebarProject(project: OperatorProject): ConversationSidebarProject {
+function toSidebarProject(project: OperatorProject, t: Translate): ConversationSidebarProject {
   return {
     id: project.projectId,
     path: project.folderPath,
@@ -2487,7 +2551,7 @@ function toSidebarProject(project: OperatorProject): ConversationSidebarProject 
         : null,
       isNonContinuable: project.directoryAvailable === false || session.continuation?.canContinue === false,
       createdAt: session.createdAt,
-      summary: sessionSummary(session),
+      summary: sessionSummary(session, t),
     })),
   };
 }
@@ -2523,15 +2587,15 @@ function restoreTimelineScroll(
   });
 }
 
-function sessionSummary(session: OperatorSession): string | undefined {
+function sessionSummary(session: OperatorSession, t: Translate): string | undefined {
   if (session.errorCount > 0) {
-    return `错误 ${session.errorCount}`;
+    return t("console.operator.errors", { count: session.errorCount });
   }
   if (session.stuckCount > 0) {
-    return `卡住 ${session.stuckCount}`;
+    return t("console.operator.stuck", { count: session.stuckCount });
   }
   if (session.interruptedCount > 0) {
-    return `中断 ${session.interruptedCount}`;
+    return t("console.operator.interrupted", { count: session.interruptedCount });
   }
   return undefined;
 }
@@ -2542,34 +2606,46 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
     : null;
 }
 
-function terminalOutcomeDescription(message: OperatorMessage): string | null {
+function terminalOutcomeDescription(message: OperatorMessage, t: Translate): string | null {
   return message.error === "codex-cli-upgrade-required"
-    ? sanitizeMachineText(message.body)
+    ? sanitizeMachineText(
+        message.body,
+        machineTextPlaceholders(t).machine,
+        machineTextPlaceholders(t),
+      )
     : null;
 }
 
-function systemSummary(message: OperatorMessage): string {
-  return sanitizeMachineText(message.body, "系统记录已更新。");
+function systemSummary(message: OperatorMessage, t: Translate): string {
+  return sanitizeMachineText(
+    message.body,
+    t("console.operator.systemUpdated"),
+    machineTextPlaceholders(t),
+  );
 }
 
-function safeRunSummary(summary: string | null | undefined): string {
+function safeRunSummary(summary: string | null | undefined, t: Translate): string {
   const text = nonBlank(summary);
   if (!text || containsMachineText(text)) {
-    return "正在推进这一步…";
+    return t("console.runBlock.progress");
   }
-  return sanitizeMachineText(text, "正在推进这一步…");
+  return sanitizeMachineText(
+    text,
+    t("console.runBlock.progress"),
+    machineTextPlaceholders(t),
+  );
 }
 
 function runRawOutput(activeRun: OperatorRunSnapshot): string {
   return [activeRun.stdoutTail, activeRun.stderrTail, activeRun.tailDiagnostic].filter(nonBlank).join("\n");
 }
 
-function formatTime(value: string): string {
+function formatTime(value: string, locale: Locale): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -2630,8 +2706,9 @@ async function unavailableFileReference(
   };
 }
 
-function fileReferenceTabTitle(reference: MarkdownFileReference): string {
-  const name = reference.path.split("/").filter(Boolean).at(-1) ?? "文件引用";
+function fileReferenceTabTitle(reference: MarkdownFileReference, t: Translate): string {
+  const name = reference.path.split("/").filter(Boolean).at(-1)
+    ?? t("console.rightSidebar.fileReference");
   const column = reference.column === null ? "" : `:${String(reference.column)}`;
   return `${name}:${String(reference.line)}${column}`;
 }

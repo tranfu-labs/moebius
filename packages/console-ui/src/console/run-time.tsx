@@ -1,3 +1,4 @@
+import { translate, useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export function formatRunDuration(elapsedMs: number): string {
@@ -10,17 +11,27 @@ export function formatRunDuration(elapsedMs: number): string {
     : `${pad(minutes)}:${pad(seconds)}`;
 }
 
-export function formatRunCompletedAt(value: string, now = new Date()): string {
+export function formatRunCompletedAt(
+  value: string,
+  now = new Date(),
+  t: Translate = (key, values) => translate("zh-CN", key, values),
+): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "完成时刻未知";
+  if (Number.isNaN(date.getTime())) return t("console.runTime.completedUnknown");
   const sameYear = date.getFullYear() === now.getFullYear();
   const sameDay = sameYear
     && date.getMonth() === now.getMonth()
     && date.getDate() === now.getDate();
   const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  if (sameDay) return `完成于 ${clock}`;
-  const day = `${String(date.getMonth() + 1)}月${String(date.getDate())}日 ${clock}`;
-  return sameYear ? `完成于 ${day}` : `完成于 ${String(date.getFullYear())}年${day}`;
+  if (sameDay) return t("console.runTime.completedAt", { time: clock });
+  const day = t("console.runTime.monthDay", {
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+    time: clock,
+  });
+  return sameYear
+    ? t("console.runTime.completedAt", { time: day })
+    : t("console.runTime.completedAtYear", { year: date.getFullYear(), time: day });
 }
 
 export function RunTime({
@@ -34,10 +45,16 @@ export function RunTime({
   completedAt?: string | null;
   className?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const duration = formatRunDuration(elapsedMs);
-  const visible = `${mode === "running" ? "已进行" : "耗时"} ${duration}`;
-  const completedLabel = completedAt ? formatRunCompletedAt(completedAt) : null;
-  const accessible = completedLabel === null ? visible : `${visible}，${completedLabel}`;
+  const visible = t(
+    mode === "running" ? "console.runTime.elapsed" : "console.runTime.duration",
+    { duration },
+  );
+  const completedLabel = completedAt ? formatRunCompletedAt(completedAt, new Date(), t) : null;
+  const accessible = completedLabel === null
+    ? visible
+    : t("console.runTime.accessible", { duration: visible, completed: completedLabel });
   return (
     <span
       className={cn("tnum whitespace-nowrap text-xs text-sub", className)}

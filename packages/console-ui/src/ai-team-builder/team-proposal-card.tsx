@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 import { Button } from "@/ui/button";
 
 export interface TeamProposalMember {
@@ -49,11 +50,12 @@ export function TeamProposalCard({
   onAdjust,
   onCommit,
 }: TeamProposalCardProps): JSX.Element {
+  const { t } = useI18n();
   const membersBySlug = new Map(proposal.members.map((member) => [member.slug, member]));
 
   return (
     <section
-      aria-label="AI 生成的团队提案"
+      aria-label={t("teamBuilder.proposalLabel")}
       className={cn(
         "ml-9 shrink-0 overflow-hidden rounded-lg border bg-card transition-colors max-sm:ml-0",
         readOnly ? "border-line" : "border-accent",
@@ -63,7 +65,7 @@ export function TeamProposalCard({
       <div className="flex items-start justify-between gap-3 border-b border-line bg-sunken p-4">
         <div className="min-w-0">
           <span className="text-xs font-semibold uppercase tracking-[0.05em] text-sub">
-            团队提案 · {proposal.members.length} 名成员
+            {t("teamBuilder.proposalMembers", { count: proposal.members.length })}
           </span>
           <h2 className="mt-1.5 truncate text-base font-semibold tracking-[-0.01em] text-ink">
             {proposal.team.name}
@@ -72,7 +74,7 @@ export function TeamProposalCard({
         </div>
         <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-accent/30 bg-sel px-2.5 text-xs font-medium text-accent">
           <Sparkles className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
-          AI 生成
+          {t("teamBuilder.generated")}
         </span>
       </div>
 
@@ -89,7 +91,7 @@ export function TeamProposalCard({
                   <strong className="text-sm font-medium text-ink">{member.name}</strong>
                   {primary ? (
                     <span className="rounded-full bg-sel px-2 py-0.5 text-[11px] font-medium text-accent">
-                      主 Agent
+                      {t("teamBuilder.primaryAgent")}
                     </span>
                   ) : null}
                   <code className="text-xs text-hint">@{member.slug}</code>
@@ -102,10 +104,10 @@ export function TeamProposalCard({
       </div>
 
       <div
-        aria-label="团队接力关系"
+        aria-label={t("teamBuilder.relayLabel")}
         className="flex flex-wrap items-center justify-center gap-2 border-t border-line bg-sunken px-3 py-2.5 text-xs text-hint"
       >
-        <span>你</span>
+        <span>{t("teamBuilder.you")}</span>
         {proposal.relayBeats.map((beat, index) => {
           const member = membersBySlug.get(beat.speakerSlug);
           return (
@@ -123,7 +125,7 @@ export function TeamProposalCard({
         <div className="flex items-center justify-end gap-2 border-t border-line p-3 max-sm:flex-col-reverse max-sm:items-stretch">
           <Button type="button" variant="outline" onClick={onAdjust} disabled={committing}>
             <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            继续聊着调整
+            {t("teamBuilder.adjust")}
           </Button>
           <Button
             type="button"
@@ -132,7 +134,7 @@ export function TeamProposalCard({
             data-testid="confirm-created-team"
           >
             <Check className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {committing ? "正在创建…" : "创建并选中"}
+            {committing ? t("teamBuilder.creating") : t("teamBuilder.createAndSelect")}
           </Button>
         </div>
       ) : null}

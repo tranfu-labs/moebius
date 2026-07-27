@@ -3,6 +3,7 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { cn } from "@/lib/utils";
 import { MarkdownMessage } from "@/console/markdown-message";
+import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 
 export type AgentStage = "in-progress" | "plan-written" | "code-verified";
 
@@ -18,31 +19,31 @@ export interface AgentMessageProps {
   onOpenExternalLink?: (url: string) => void;
 }
 
-const roleLabels: Record<string, string> = {
-  ceo: "CEO",
-  dev: "开发",
-  "dev-manager": "技术负责人",
-  "hermes-user": "用户代表",
-  "product-manager": "产品",
-  qa: "测试",
-  secretary: "秘书",
-  user: "你",
+const roleLabelKeys: Record<string, TranslationKey> = {
+  ceo: "console.role.ceo",
+  dev: "console.role.dev",
+  "dev-manager": "console.role.devManager",
+  "hermes-user": "console.role.user",
+  "product-manager": "console.role.product",
+  qa: "console.role.qa",
+  secretary: "console.role.secretary",
+  user: "console.common.you",
 };
 
 const roleAvatars: Record<string, string> = {
   ceo: "C",
-  dev: "开",
-  "dev-manager": "技",
-  "hermes-user": "用",
-  "product-manager": "产",
-  qa: "测",
-  secretary: "秘",
+  dev: "D",
+  "dev-manager": "T",
+  "hermes-user": "U",
+  "product-manager": "P",
+  qa: "Q",
+  secretary: "S",
 };
 
-const stageLabels: Record<AgentStage, string> = {
-  "code-verified": "代码已验证",
-  "in-progress": "进行中",
-  "plan-written": "方案已写好",
+const stageLabelKeys: Record<AgentStage, TranslationKey> = {
+  "code-verified": "console.agentMessage.codeVerified",
+  "in-progress": "console.agentMessage.inProgress",
+  "plan-written": "console.agentMessage.planWritten",
 };
 
 export function AgentMessage({
@@ -56,13 +57,14 @@ export function AgentMessage({
   className,
   onOpenExternalLink,
 }: AgentMessageProps): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
-  const parsed = parseAgentMarkdown(rawMarkdown);
-  const roleLabel = localizeRole(role);
+  const parsed = parseAgentMarkdown(rawMarkdown, t);
+  const roleLabel = localizeRole(role, t);
   const resolvedStage = nonBlank(stage) ?? parsed.stage;
-  const stageLabel = localizeStage(resolvedStage);
-  const conclusionText = nonBlank(conclusion) ?? parsed.conclusion ?? "暂无结论摘要";
-  const handoffText = nonBlank(handoff) ?? parsed.handoff ?? "暂无下一步";
+  const stageLabel = localizeStage(resolvedStage, t);
+  const conclusionText = nonBlank(conclusion) ?? parsed.conclusion ?? t("console.agentMessage.noConclusion");
+  const handoffText = nonBlank(handoff) ?? parsed.handoff ?? t("console.agentMessage.noNextStep");
 
   const toggle = (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => {
     event.preventDefault();
@@ -74,7 +76,7 @@ export function AgentMessage({
       <summary
         className="grid cursor-pointer list-none grid-cols-[32px_minmax(0,1fr)] gap-x-3 rounded-md outline-none transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden"
         aria-expanded={open}
-        aria-label={open ? `收起${roleLabel}原文` : `展开${roleLabel}原文`}
+        aria-label={t(open ? "console.agentMessage.collapseRaw" : "console.agentMessage.expandRaw", { role: roleLabel })}
         tabIndex={0}
         onClick={toggle}
         onKeyDown={(event) => {
@@ -85,7 +87,7 @@ export function AgentMessage({
       >
         <span className="relative mt-0.5 h-8 w-8" aria-hidden="true">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ava-bg text-xs font-medium text-ava-fg">
-            {roleAvatars[role] ?? "协"}
+            {roleAvatars[role] ?? "A"}
           </span>
           <span className="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-line bg-card text-sub">
             <StageBadgeIcon stage={resolvedStage} />
@@ -137,15 +139,18 @@ function StageStatusIcon({ stage }: { stage: string | null }): JSX.Element {
   return <Circle className="h-4 w-4 text-hint" strokeWidth={1.5} aria-hidden="true" />;
 }
 
-export function parseAgentMarkdown(rawMarkdown: string): {
+export function parseAgentMarkdown(
+  rawMarkdown: string,
+  t: Translate = (key, values) => translate("zh-CN", key, values),
+): {
   conclusion: string | null;
   stage: AgentStage | null;
   handoff: string | null;
 } {
   return {
-    conclusion: firstParagraph(extractSection(rawMarkdown, "结论")),
+    conclusion: firstParagraph(extractSection(rawMarkdown, "结论")), // i18n-exempt: structured Agent markdown protocol marker
     stage: extractStage(rawMarkdown),
-    handoff: extractHandoff(rawMarkdown),
+    handoff: extractHandoff(rawMarkdown, t),
   };
 }
 
@@ -187,8 +192,8 @@ function extractStage(markdown: string): AgentStage | null {
   return match ? (match[1] as AgentStage) : null;
 }
 
-function extractHandoff(markdown: string): string | null {
-  const nextSection = extractSection(markdown, "下一步");
+function extractHandoff(markdown: string, t: Translate): string | null {
+  const nextSection = extractSection(markdown, "下一步"); // i18n-exempt: structured Agent markdown protocol marker
   if (!nextSection) {
     return null;
   }
@@ -196,38 +201,41 @@ function extractHandoff(markdown: string): string | null {
   const line = nextSection
     .split(/\r?\n/u)
     .map((item) => item.trim())
-    .find((item) => item.startsWith("交棒：") || item.startsWith("等待真人："));
+    .find((item) => item.startsWith("交棒：") || item.startsWith("等待真人：")); // i18n-exempt: structured Agent markdown protocol marker
 
   if (!line) {
     return null;
   }
 
-  if (line.startsWith("等待真人：")) {
-    const text = line.slice("等待真人：".length).trim();
-    return text ? `等你：${text}` : "等你";
+  if (line.startsWith("等待真人：")) { // i18n-exempt: structured Agent markdown protocol marker
+    const text = line.slice("等待真人：".length).trim(); // i18n-exempt: structured Agent markdown protocol marker
+    return text ? t("console.agentMessage.waitingForYouDetail", { text }) : t("console.agentMessage.waitingForYou");
   }
 
-  const handoff = line.slice("交棒：".length).trim();
+  const handoff = line.slice("交棒：".length).trim(); // i18n-exempt: structured Agent markdown protocol marker
   const match = handoff.match(/^@([a-z-]+)\s*(.*)$/u);
   if (!match) {
-    return `交棒：${handoff}`;
+    return t("console.agentMessage.handoffRaw", { text: handoff });
   }
 
-  const target = localizeRole(match[1]);
+  const target = localizeRole(match[1], t);
   const rest = match[2].trim();
-  return rest ? `交给「${target}」${rest}` : `交给「${target}」`;
+  return rest
+    ? t("console.agentMessage.handoffDetail", { target, text: rest })
+    : t("console.agentMessage.handoff", { target });
 }
 
-function localizeRole(role: string): string {
-  return roleLabels[role] ?? "协作者";
+function localizeRole(role: string, t: Translate): string {
+  const key = roleLabelKeys[role];
+  return key === undefined ? t("console.common.collaborator") : t(key);
 }
 
-function localizeStage(stage: string | null): string {
+function localizeStage(stage: string | null, t: Translate): string {
   if (stage === "in-progress" || stage === "plan-written" || stage === "code-verified") {
-    return stageLabels[stage];
+    return t(stageLabelKeys[stage]);
   }
 
-  return "阶段未知";
+  return t("console.agentMessage.unknownStage");
 }
 
 function nonBlank(value: string | null | undefined): string | null {

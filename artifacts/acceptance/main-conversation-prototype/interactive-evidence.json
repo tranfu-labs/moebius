@@ -1,0 +1,34 @@
+{
+  "prototype": "docs/product/pages/main-conversation.prototype.html",
+  "checkedAt": "2026-07-27T10:58:01.706Z",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "tallCapacity": 28,
+  "compactCapacity": 19,
+  "wideContainer": 844,
+  "narrowContainer": 718,
+  "screenshots": [
+    "wide-expanded-dark.png",
+    "narrow-expanded-light.png",
+    "medium-reduced-motion.png"
+  ],
+  "checks": [
+    "rail-owned-by-current-main-conversation",
+    "capacity-derived-from-main-timeline-viewport",
+    "expanded-swimlanes-overlay-without-layout-shift",
+    "expanded-event-uses-full-row-hit-target",
+    "onboarding-style-git-graph-curves",
+    "agent-hover-card-uses-two-line-readable-template",
+    "preview-offset-fixed-to-panel-not-lane",
+    "pointer-location-and-highlight",
+    "keyboard-browse-without-scroll-then-activate",
+    "failed-location-preserves-position-and-recovery-succeeds",
+    "height-responsive-focus-window",
+    "main-container-width-responsive-and-rail-never-migrates",
+    "light-and-dark-theme",
+    "reduced-motion-equivalent-interaction",
+    "file-url-without-network-requests"
+  ]
+}

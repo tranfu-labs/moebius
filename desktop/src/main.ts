@@ -88,6 +88,16 @@ import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
 import { installerCleanupBlockedDialogOptions } from "./onboarding/shutdown-coordination.js";
+import {
+  LANGUAGE_PREFERENCE_IPC_CHANNELS,
+  type DesktopLocale,
+} from "./language-preference-contract.js";
+import { createLanguagePreferenceIpcHandlers } from "./language-preference-ipc.js";
+import {
+  readLanguagePreference,
+  saveLanguagePreference,
+} from "./language-preference.js";
+import { translateDesktop } from "./i18n/index.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(dirname, "..", "..");
@@ -111,7 +121,7 @@ if (instanceUserDataPath !== app.getPath("userData")) {
   app.setPath("userData", instanceUserDataPath);
 }
 
-if (!app.isPackaged) {
+if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
 }
 
@@ -123,6 +133,7 @@ let localConsoleAttachmentCapability: string | null = null;
 let runnerSupervisor: RunnerSupervisor | null = null;
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let isQuitting = false;
+let activeLocale: DesktopLocale = "zh-CN";
 
 const status: DesktopStatusSnapshot = {
   appVersion: app.getVersion(),
@@ -172,6 +183,8 @@ app.on("window-all-closed", () => {
 });
 
 async function boot(): Promise<void> {
+  activeLocale = await readLanguagePreference(status.dataRoot);
+  registerLanguagePreferenceIpc();
   const onboardingReadiness = new OnboardingCliReadinessService();
   const teamBuilder = new AiTeamBuilder({
     dataRoot: status.dataRoot,
@@ -244,7 +257,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 760,
-    minWidth: 900,
+    minWidth: 520,
     minHeight: 560,
     title: "Moebius",
     ...integratedMainWindowOptions(process.platform),
@@ -270,7 +283,23 @@ function createWindow(): void {
   });
   mainWindow.webContents.on("did-finish-load", publishStatus);
   installExternalNavigationGuards(mainWindow.webContents, pathToFileURL(consolePagePath).href);
-  void mainWindow.loadFile(consolePagePath);
+  void mainWindow.loadFile(consolePagePath, { query: { locale: activeLocale } });
+}
+
+function registerLanguagePreferenceIpc(): void {
+  const handlers = createLanguagePreferenceIpcHandlers({
+    getActiveLocale: () => activeLocale,
+    setActiveLocale: (locale) => {
+      activeLocale = locale;
+    },
+    persist: (locale) => saveLanguagePreference(status.dataRoot, locale),
+    getBroadcastTargets: () => BrowserWindow.getAllWindows().map((window) => window.webContents),
+  });
+  ipcMain.handle(LANGUAGE_PREFERENCE_IPC_CHANNELS.read, () => handlers.read());
+  ipcMain.handle(
+    LANGUAGE_PREFERENCE_IPC_CHANNELS.save,
+    (_event, candidate: unknown) => handlers.save(candidate),
+  );
 }
 
 async function startObserver(): Promise<void> {
@@ -459,7 +488,7 @@ ipcMain.handle(TEAM_IPC_CHANNELS.duplicateBuiltIn, async (_event, request: unkno
 ipcMain.handle(TEAM_REPAIR_IPC_CHANNELS.selectRelocationFolder, async () => {
   const options: OpenDialogOptions = {
     properties: ["openDirectory"],
-    title: "重新定位 Agent 团队",
+    title: translateDesktop(activeLocale, "dialog.relocateTeam"),
     defaultPath: getTeamsRoot(status.dataRoot),
   };
   const result = mainWindow === null
@@ -526,7 +555,7 @@ ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.recordSuccessful, async
 ipcMain.handle("project:select-folder", async () => {
   const options: OpenDialogOptions = {
     properties: ["openDirectory", "createDirectory"],
-    title: "打开本地项目文件夹",
+    title: translateDesktop(activeLocale, "dialog.openProject"),
   };
   const result =
     mainWindow === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
@@ -542,8 +571,8 @@ ipcMain.handle("project:select-folder-for-repair", async (_event, projectId: unk
   }
   const options: OpenDialogOptions = {
     properties: ["openDirectory"],
-    title: "为项目指定新的本地文件夹",
-    buttonLabel: "选择新位置",
+    title: translateDesktop(activeLocale, "dialog.repairProject"),
+    buttonLabel: translateDesktop(activeLocale, "dialog.selectLocation"),
   };
   const result =
     mainWindow === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
@@ -616,14 +645,19 @@ async function requestShutdown(): Promise<void> {
     if (running.length > 0) {
       const options = {
         type: "warning" as const,
-        buttons: ["留在应用", "取消安装并退出"],
+        buttons: [
+          translateDesktop(activeLocale, "dialog.quit.stay"),
+          translateDesktop(activeLocale, "dialog.quit.cancelInstall"),
+        ],
         defaultId: 0,
         cancelId: 0,
-        title: "CLI 仍在安装",
+        title: translateDesktop(activeLocale, "dialog.quit.title"),
         message: running.length === 1
-          ? `${running[0] === "codex" ? "Codex" : "Kimi"} CLI 仍在安装。`
-          : "Codex 与 Kimi CLI 仍在安装。",
-        detail: "可以留在 Moebius 等待安装完成，或取消全部安装后退出。",
+          ? translateDesktop(activeLocale, "dialog.quit.oneInstalling", {
+              cli: running[0] === "codex" ? "Codex" : "Kimi",
+            })
+          : translateDesktop(activeLocale, "dialog.quit.bothInstalling"),
+        detail: translateDesktop(activeLocale, "dialog.quit.detail"),
         noLink: true,
       };
       const result = mainWindow === null
@@ -635,7 +669,7 @@ async function requestShutdown(): Promise<void> {
       try {
         await onboardingCliInstaller?.cancelAll();
       } catch {
-        const cleanupBlocked = installerCleanupBlockedDialogOptions();
+        const cleanupBlocked = installerCleanupBlockedDialogOptions(activeLocale);
         if (mainWindow === null) {
           await dialog.showMessageBox(cleanupBlocked);
         } else {
@@ -690,7 +724,7 @@ function openStatusPage(): void {
     height: 560,
     minWidth: 520,
     minHeight: 420,
-    title: "Moebius 状态",
+    title: translateDesktop(activeLocale, "window.statusTitle"),
     webPreferences: {
       preload: path.join(dirname, "preload.cjs"),
       contextIsolation: true,
@@ -702,7 +736,9 @@ function openStatusPage(): void {
     statusWindow = null;
   });
   statusWindow.webContents.on("did-finish-load", publishStatus);
-  void statusWindow.loadFile(path.join(dirname, "status-page", "index.html"));
+  void statusWindow.loadFile(path.join(dirname, "status-page", "index.html"), {
+    query: { locale: activeLocale },
+  });
 }
 
 function resolveSeedRoot(): string {

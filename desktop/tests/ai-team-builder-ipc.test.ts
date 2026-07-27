@@ -127,7 +127,6 @@ describe("AI team builder IPC outer boundary", () => {
       ok: false,
       error: {
         code: "stale-revision",
-        humanMessage: "这版团队方案已经更新，请确认当前显示的方案后再创建。",
         canRetry: false,
       },
     });

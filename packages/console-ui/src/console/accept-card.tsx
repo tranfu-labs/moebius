@@ -1,5 +1,6 @@
 import { ExternalLink, Hand } from "lucide-react";
 
+import { translate, useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -34,19 +35,25 @@ export function acceptanceConclusion(items: AcceptanceItem[]): "pass" | "fail" |
   return items.every((item) => item.decision === "pass") ? "pass" : "fail";
 }
 
-export function formatAcceptanceProtocol(items: AcceptanceItem[], note?: string): string {
+export function formatAcceptanceProtocol(
+  items: AcceptanceItem[],
+  note?: string,
+  t: Translate = (key, values) => translate("zh-CN", key, values),
+): string {
   const undecided = items.find((item) => item.decision === "pending");
   if (undecided) {
     throw new Error(`Cannot format acceptance protocol with pending item: ${undecided.id}`);
   }
 
   const lines = items.map((item, index) => {
-    const verdict = item.decision === "pass" ? "通过" : "不通过";
-    const basis = note?.trim() || item.evidence?.trim() || "已按验收语句走查";
-    return `${index + 1}. ${verdict} — ${basis}`;
+    const verdict = t(item.decision === "pass" ? "console.accept.pass" : "console.accept.fail");
+    const basis = note?.trim() || item.evidence?.trim() || t("console.accept.defaultBasis");
+    return t("console.accept.protocolLine", { index: index + 1, verdict, basis });
   });
 
-  lines.push(`验收结论：${acceptanceConclusion(items) === "pass" ? "通过" : "不通过"}`);
+  lines.push(t("console.accept.conclusion", {
+    verdict: t(acceptanceConclusion(items) === "pass" ? "console.accept.pass" : "console.accept.fail"),
+  }));
   return lines.join("\n");
 }
 
@@ -56,33 +63,34 @@ export function AcceptCard({
   selfTestSummary,
   selfTestHref,
   items,
-  notePlaceholder = "写下你判定的依据，方便回溯",
+  notePlaceholder,
   className
 }: AcceptCardProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <Card className={cn("max-w-[680px] p-4", className)}>
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
         <Hand className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
-        <span>轮到你了 · 「{reviewerLabel}」请你验收</span>
+        <span>{t("console.accept.yourTurn", { reviewer: reviewerLabel })}</span>
       </div>
 
       <div className="space-y-1 text-sm">
         <p>
-          <span className="font-semibold text-ink">改了什么</span>
+          <span className="font-semibold text-ink">{t("console.accept.whatChanged")}</span>
           <span className="text-ink"> · {summary}</span>
         </p>
         <p>
-          <span className="font-semibold text-ink">已自测</span>
+          <span className="font-semibold text-ink">{t("console.accept.selfTested")}</span>
           <span className="text-ink"> · {selfTestSummary}</span>
           {selfTestHref ? (
             <a className="ml-1 inline-flex items-center gap-1 text-accent" href={selfTestHref}>
-              点开看记录 <ExternalLink className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+              {t("console.accept.openRecord")} <ExternalLink className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
             </a>
           ) : null}
         </p>
       </div>
 
-      <div className="my-2.5 text-xs font-semibold text-sub">按验收语句逐条走查：</div>
+      <div className="my-2.5 text-xs font-semibold text-sub">{t("console.accept.reviewEach")}</div>
 
       <div className="space-y-2.5">
         {items.map((item, index) => (
@@ -91,19 +99,20 @@ export function AcceptCard({
       </div>
 
       <label className="mt-4 block text-xs text-sub" htmlFor="acceptance-note">
-        依据（选填）
+        {t("console.accept.basisOptional")}
       </label>
-      <Input id="acceptance-note" className="mt-1" placeholder={notePlaceholder} />
+      <Input id="acceptance-note" className="mt-1" placeholder={notePlaceholder ?? t("console.accept.notePlaceholder")} />
 
       <div className="mt-3.5 flex flex-wrap gap-2.5">
-        <Button>提交验收结果</Button>
-        <Button variant="outline">先不验，回复别的</Button>
+        <Button>{t("console.accept.submit")}</Button>
+        <Button variant="outline">{t("console.accept.skip")}</Button>
       </div>
     </Card>
   );
 }
 
 function AcceptanceRow({ item, index }: { item: AcceptanceItem; index: number }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div>
       <div className="flex items-center gap-2.5">
@@ -115,23 +124,24 @@ function AcceptanceRow({ item, index }: { item: AcceptanceItem; index: number })
         {item.artifactLabel ? (
           <>
             <a className="text-accent" href="#">
-              打开
+              {t("console.accept.open")}
             </a>
-            <span>产物「{item.artifactLabel}」</span>
+            <span>{t("console.accept.artifact", { label: item.artifactLabel })}</span>
             <span>·</span>
           </>
         ) : null}
-        {item.evidence ? <span>{item.evidence}</span> : <span className="text-hint">暂无可挂证据 · 请你自己判断走查</span>}
+        {item.evidence ? <span>{item.evidence}</span> : <span className="text-hint">{t("console.accept.noEvidence")}</span>}
       </div>
     </div>
   );
 }
 
 function DecisionSegment({ decision }: { decision: AcceptanceDecision }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <span className="flex shrink-0 items-center gap-2" aria-label="验收裁决">
-      <Badge variant={decision === "pass" ? "pass" : "interrupted"}>通过</Badge>
-      <Badge variant={decision === "fail" ? "failed" : "interrupted"}>不通过</Badge>
+    <span className="flex shrink-0 items-center gap-2" aria-label={t("console.accept.decision")}>
+      <Badge variant={decision === "pass" ? "pass" : "interrupted"}>{t("console.accept.pass")}</Badge>
+      <Badge variant={decision === "fail" ? "failed" : "interrupted"}>{t("console.accept.fail")}</Badge>
     </span>
   );
 }

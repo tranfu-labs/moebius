@@ -9,6 +9,7 @@ import {
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { MarkdownMessage } from "@/console/markdown-message";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -52,13 +53,15 @@ export interface TeamBuilderViewProps {
 export function TeamBuilderView({
   state,
   contextLabel,
-  backLabel = "返回选团队",
+  backLabel,
   onBack,
   onSubmit,
   onAdjust,
   onRetry,
   onCommit,
 }: TeamBuilderViewProps): JSX.Element {
+  const { t } = useI18n();
+  const resolvedBackLabel = backLabel ?? t("teamBuilder.back");
   const threadRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState("");
@@ -119,14 +122,14 @@ export function TeamBuilderView({
       data-testid="team-builder-view"
     >
       <header className="grid min-h-[58px] shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-line bg-sunken px-3.5">
-        <Button type="button" size="icon" variant="outline" onClick={onBack} aria-label={backLabel}>
+        <Button type="button" size="icon" variant="outline" onClick={onBack} aria-label={resolvedBackLabel}>
           <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
         </Button>
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-ink">AI 团队设计器</h1>
+          <h1 className="text-sm font-semibold text-ink">{t("teamBuilder.title")}</h1>
           <span className="mt-0.5 flex items-center gap-1.5 text-xs text-hint">
             <i className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
-            独立只读 AI 会话
+            {t("teamBuilder.readOnlySession")}
           </span>
         </div>
         {contextLabel ? (
@@ -188,13 +191,13 @@ export function TeamBuilderView({
         ) : null}
 
         {state.phase === "running" || localPending ? (
-          <div className="flex max-w-[88%] items-start gap-2" role="status" aria-label="AI 正在处理">
+          <div className="flex max-w-[88%] items-start gap-2" role="status" aria-label={t("teamBuilder.processing")}>
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent text-accent">
               <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             </span>
             <div className="rounded-lg rounded-tl-sm border border-line bg-sunken px-3 py-2.5">
               <LoaderCircle className="h-4 w-4 animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
-              <span className="sr-only">正在输入</span>
+              <span className="sr-only">{t("teamBuilder.typing")}</span>
             </div>
           </div>
         ) : null}
@@ -208,7 +211,7 @@ export function TeamBuilderView({
             {state.error.canRetry ? (
               <Button className="mt-3" type="button" size="sm" variant="outline" onClick={() => void onRetry()}>
                 <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                重试
+                {t("teamBuilder.retry")}
               </Button>
             ) : null}
           </div>
@@ -218,15 +221,15 @@ export function TeamBuilderView({
       <form className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2 border-t border-line bg-canvas p-2.5" onSubmit={submit}>
         <textarea
           ref={composerRef}
-          aria-label={adjusting ? "调整团队提案" : "描述团队目标或回答问题"}
+          aria-label={adjusting ? t("teamBuilder.adjustLabel") : t("teamBuilder.goalLabel")}
           className="min-h-12 max-h-24 w-full resize-none rounded-md border border-line bg-input px-3 py-2 text-sm leading-5 text-ink outline-none placeholder:text-hint focus:border-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!canCompose || busy}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={adjusting
-            ? "继续聊着调整，比如“让负责人最后给我一份发布清单”…"
+            ? t("teamBuilder.adjustPlaceholder")
             : state.phase === "clarifying"
-              ? "回答这个问题…"
-              : "描述这支团队要长期完成的工作…"}
+              ? t("teamBuilder.answerPlaceholder")
+              : t("teamBuilder.goalPlaceholder")}
           rows={2}
           value={draft}
         />
@@ -234,7 +237,7 @@ export function TeamBuilderView({
           type="submit"
           size="icon"
           className="rounded-full"
-          aria-label="发送"
+          aria-label={t("teamBuilder.send")}
           disabled={!canCompose || busy || draft.trim().length === 0}
         >
           <Send className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />

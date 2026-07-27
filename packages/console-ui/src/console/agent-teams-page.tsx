@@ -28,6 +28,7 @@ import {
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
 import { cn } from "@/lib/utils";
+import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import {
   DropdownMenu,
@@ -37,8 +38,6 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Input } from "@/ui/input";
-
-const FILE_MANAGER_OPEN_ERROR = "暂时无法打开这个位置。请确认相关文件仍然存在，并检查访问权限后重试。";
 
 export interface OperatorAgentTeamMember {
   slug: string;
@@ -152,7 +151,7 @@ export function AgentTeamsPage({
   onRecheckTeam,
   onRelocateTeam,
   onRemoveTeamRecord,
-  fileManagerActionLabel = "在文件管理器中打开",
+  fileManagerActionLabel,
   onOpenLocation,
   onDuplicateUserTeam,
   onDuplicateMember,
@@ -205,6 +204,8 @@ export function AgentTeamsPage({
   onTrashUserTeam?: (teamKey: string) => void | Promise<void>;
   onBack: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
+  const resolvedFileManagerActionLabel = fileManagerActionLabel ?? t("console.agentTeams.openInFileManager");
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const listScrollTopRef = useRef(0);
   const pendingListScrollRestoreRef = useRef(false);
@@ -287,7 +288,7 @@ export function AgentTeamsPage({
       const copiedTeamKey = await onDuplicateBuiltInTeam(team.teamKey);
       setView({ kind: "team-detail", teamKey: copiedTeamKey });
     } catch (error) {
-      setDuplicateError(error instanceof Error ? error.message : "暂时无法复制团队，请稍后重试。");
+      setDuplicateError(error instanceof Error ? error.message : t("console.agentTeams.duplicateFailed"));
     } finally {
       setDuplicatingTeamKey(null);
     }
@@ -315,23 +316,23 @@ export function AgentTeamsPage({
     try {
       if (operation.kind === "duplicate-team") {
         if (onDuplicateUserTeam === undefined) {
-          throw new Error("当前无法复制这支团队，请稍后重试。");
+          throw new Error(t("console.agentTeams.duplicateTeamUnavailable"));
         }
         const copiedTeamKey = await onDuplicateUserTeam(operation.team.teamKey);
         setView({ kind: "team-detail", teamKey: copiedTeamKey });
       } else if (operation.kind === "duplicate-member") {
         if (onDuplicateMember === undefined) {
-          throw new Error("当前无法复制这个 Agent，请稍后重试。");
+          throw new Error(t("console.agentTeams.duplicateAgentUnavailable"));
         }
         await onDuplicateMember(operation.team.teamKey, operation.member.slug);
       } else if (operation.kind === "trash-member") {
         if (onTrashMember === undefined) {
-          throw new Error("当前无法删除这个 Agent，请稍后重试。");
+          throw new Error(t("console.agentTeams.deleteAgentUnavailable"));
         }
         await onTrashMember(operation.team.teamKey, operation.member.slug);
       } else {
         if (onTrashUserTeam === undefined) {
-          throw new Error("当前无法把这支团队移到系统废纸篓或回收站，请稍后重试。");
+          throw new Error(t("console.agentTeams.trashTeamUnavailable"));
         }
         await onTrashUserTeam(operation.team.teamKey);
         returnToList();
@@ -364,19 +365,19 @@ export function AgentTeamsPage({
           <div
             className="flex min-h-[460px] w-full justify-center"
             role="region"
-            aria-label="AI 建队"
+            aria-label={t("console.agentTeams.aiBuilder")}
             data-testid="agent-team-ai-builder-view"
           >
             {aiTeamBuilder?.state === null || aiTeamBuilder === undefined ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-sub" role="status">
                 <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                正在打开 AI 团队设计器…
+                {t("console.agentTeams.openingAiBuilder")}
               </div>
             ) : (
               <TeamBuilderView
                 state={aiTeamBuilder.state}
-                contextLabel="Agent 团队"
-                backLabel="返回 Agent 团队"
+                contextLabel={t("console.agentTeams.title")}
+                backLabel={t("console.agentTeams.back")}
                 onBack={returnFromAiBuilder}
                 onSubmit={aiTeamBuilder.onSubmit}
                 onAdjust={aiTeamBuilder.onAdjust}
@@ -399,13 +400,13 @@ export function AgentTeamsPage({
           <div
             className="min-h-40"
             role="region"
-            aria-label={`${teamName(openedTeam)}详情`}
+            aria-label={t("console.agentTeams.detailLabel", { team: teamName(t, openedTeam) })}
             data-testid="agent-team-detail-view"
             data-team-key={openedTeam.teamKey}
           >
             {openedDetailState === null ? (
               <div className="flex min-h-40 items-center justify-center text-sm text-sub" role="status">
-                正在读取团队详情…
+                {t("console.agentTeams.loadingDetail")}
               </div>
             ) : (
               <>
@@ -416,7 +417,7 @@ export function AgentTeamsPage({
                 ) : null}
                 {fileManagerError !== null ? (
                   <div className="mb-4 border border-danger/30 bg-danger/5 px-3 py-2.5 text-sm text-danger" role="alert">
-                    {FILE_MANAGER_OPEN_ERROR}
+                    {t("console.agentTeams.fileManagerError")}
                   </div>
                 ) : null}
                 <AgentTeamDetail
@@ -437,7 +438,7 @@ export function AgentTeamsPage({
                                 returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
                               }))}
                           >
-                            修改信息
+                            {t("console.agentTeams.editInformation")}
                           </Button>
                         ) : null}
                         <Button
@@ -448,12 +449,16 @@ export function AgentTeamsPage({
                           {duplicatingTeamKey === openedTeam.teamKey ? (
                             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
                           ) : null}
-                          {duplicatingTeamKey === openedTeam.teamKey ? "正在复制…" : "复制团队"}
+                          {duplicatingTeamKey === openedTeam.teamKey
+                            ? t("console.agentTeams.duplicating")
+                            : t("console.agentTeams.duplicateTeam")}
                         </Button>
                         {onOpenLocation !== undefined ? (
                           <TeamMoreMenu
-                            triggerLabel={`${teamName(openedTeam)}更多操作`}
-                            fileManagerActionLabel={fileManagerActionLabel}
+                            triggerLabel={t("console.agentTeams.moreActions", {
+                              name: teamName(t, openedTeam),
+                            })}
+                            fileManagerActionLabel={resolvedFileManagerActionLabel}
                             disabled={duplicatingTeamKey !== null}
                             onOpen={() => void openLocation(openedTeam)}
                           />
@@ -477,12 +482,14 @@ export function AgentTeamsPage({
                               returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
                             }))}
                         >
-                          修改信息
+                          {t("console.agentTeams.editInformation")}
                         </Button>
                       ) : null}
                       <TeamMoreMenu
-                        triggerLabel={`${teamName(openedTeam)}更多操作`}
-                        fileManagerActionLabel={fileManagerActionLabel}
+                        triggerLabel={t("console.agentTeams.moreActions", {
+                          name: teamName(t, openedTeam),
+                        })}
+                        fileManagerActionLabel={resolvedFileManagerActionLabel}
                         disabled={mutationKey !== null}
                         onOpen={onOpenLocation === undefined ? undefined : () => void openLocation(openedTeam)}
                         onDuplicate={onDuplicateUserTeam === undefined
@@ -506,7 +513,7 @@ export function AgentTeamsPage({
                       member={selectedMember}
                       isPrimary={selectedMember.slug === openedTeam.primaryAgentSlug}
                       disabled={mutationKey !== null}
-                      fileManagerActionLabel={fileManagerActionLabel}
+                      fileManagerActionLabel={resolvedFileManagerActionLabel}
                       onOpen={onOpenLocation === undefined
                         ? undefined
                         : () => void openLocation(openedTeam, selectedMember.slug)}
@@ -590,25 +597,27 @@ export function AgentTeamsPage({
           <>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="mb-2 text-xs font-medium text-hint">应用管理</p>
+                <p className="mb-2 text-xs font-medium text-hint">{t("console.agentTeams.appManagement")}</p>
                 <h1 id="agent-teams-title" className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-                  Agent 团队
+                  {t("console.agentTeams.title")}
                 </h1>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-sub">查看和管理负责不同任务的 Agent 团队</p>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-sub">
+                  {t("console.agentTeams.description")}
+                </p>
               </div>
               {state.status === "ready" && (onCreateTeam !== undefined || aiTeamBuilder !== undefined) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button type="button" className="mt-6 shrink-0">
                       <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-                      新建团队
+                      {t("console.agentTeams.newTeam")}
                       <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuItem disabled={aiTeamBuilder === undefined} onSelect={openAiBuilder}>
                       <Sparkles className="mr-2 h-3.5 w-3.5 text-accent" strokeWidth={1.5} aria-hidden="true" />
-                      跟 AI 聊出一支新团队
+                      {t("console.agentTeams.buildWithAi")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={onCreateTeam === undefined}
@@ -619,7 +628,7 @@ export function AgentTeamsPage({
                       })}
                     >
                       <Plus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-                      从空白开始
+                      {t("console.agentTeams.startBlank")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -629,22 +638,22 @@ export function AgentTeamsPage({
             {state.status === "loading" ? <AgentTeamsLoading /> : null}
             {state.status === "error" ? (
               <AgentTeamsFailure
-                title="暂时无法加载 Agent 团队"
-                description="团队数据没有被清空，稍后重试即可。"
+                title={t("console.agentTeams.loadFailed")}
+                description={t("console.agentTeams.loadFailedDescription")}
                 onRetry={onRetry}
               />
             ) : null}
             {state.status === "configuration-error" ? (
               <AgentTeamsFailure
-                title="应用配置异常"
-                description="软件自带的 Agent 团队无法读取。请重试；如果问题持续，请打开诊断信息寻求帮助。"
+                title={t("console.agentTeams.configurationError")}
+                description={t("console.agentTeams.configurationErrorDescription")}
                 onRetry={onRetry}
               />
             ) : null}
             {state.status === "ready" ? (
               <div
                 className="mt-8 min-h-40"
-                aria-label="团队数据已载入"
+                aria-label={t("console.agentTeams.dataLoaded")}
                 data-testid="agent-teams-data-container"
                 data-team-count={state.teams.length}
                 data-selected-team-key={selectedTeamKey ?? undefined}
@@ -664,7 +673,7 @@ export function AgentTeamsPage({
             ) : null}
 
             <Button type="button" variant="outline" className="mt-6" onClick={onBack}>
-              返回当前对话
+              {t("console.agentTeams.returnConversation")}
             </Button>
           </>
         )}
@@ -672,9 +681,9 @@ export function AgentTeamsPage({
 
       {view.kind === "information-dialog" && view.mode === "create" && onCreateTeam !== undefined ? (
         <TeamInformationDialog
-          title="新建团队"
-          description="先填写团队的基本信息。创建后可以在团队详情中逐步添加 Agent。"
-          confirmLabel="创建团队"
+          title={t("console.agentTeams.newTeam")}
+          description={t("console.agentTeams.createDescription")}
+          confirmLabel={t("console.agentTeams.createTeam")}
           initialValue={{ name: "", description: "" }}
           onCancel={() => setView(view.returnView)}
           onConfirm={async (information) => {
@@ -690,9 +699,9 @@ export function AgentTeamsPage({
 
       {view.kind === "information-dialog" && view.mode === "edit" && onUpdateTeamInformation !== undefined ? (
         <TeamInformationDialog
-          title="修改团队信息"
-          description="这里只修改团队名称和一句话描述，不会改变成员或主 Agent。"
-          confirmLabel="保存"
+          title={t("console.agentTeams.editTeam")}
+          description={t("console.agentTeams.editDescription")}
+          confirmLabel={t("console.agentTeams.save")}
           initialValue={{
             name: view.team.name ?? "",
             description: view.team.description ?? "",
@@ -732,12 +741,13 @@ function TeamMoreMenu({
   onDuplicate?: () => void;
   onTrash?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label={triggerLabel}>
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          更多
+          {t("console.agentTeams.more")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -750,14 +760,14 @@ function TeamMoreMenu({
         {onDuplicate !== undefined ? (
           <DropdownMenuItem onSelect={onDuplicate}>
             <Copy className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            复制团队
+            {t("console.agentTeams.duplicateTeam")}
           </DropdownMenuItem>
         ) : null}
         {(onOpen !== undefined || onDuplicate !== undefined) && onTrash !== undefined ? <DropdownMenuSeparator /> : null}
         {onTrash !== undefined ? (
           <DropdownMenuItem className="text-danger focus:text-danger" onSelect={onTrash}>
             <Trash2 className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            移到废纸篓 / 回收站
+            {t("console.agentTeams.moveToTrash")}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -782,6 +792,7 @@ function MemberMoreMenu({
   onDuplicate?: () => void;
   onTrash?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -790,7 +801,9 @@ function MemberMoreMenu({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          aria-label={`${member.displayName || `@${member.slug}`}更多操作`}
+          aria-label={t("console.agentTeams.moreActions", {
+            name: member.displayName || `@${member.slug}`,
+          })}
         >
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </Button>
@@ -805,7 +818,7 @@ function MemberMoreMenu({
         {onDuplicate !== undefined ? (
           <DropdownMenuItem onSelect={onDuplicate}>
             <Copy className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            复制 Agent
+            {t("console.agentTeams.duplicateAgent")}
           </DropdownMenuItem>
         ) : null}
         {(onOpen !== undefined || onDuplicate !== undefined) && onTrash !== undefined ? <DropdownMenuSeparator /> : null}
@@ -816,7 +829,9 @@ function MemberMoreMenu({
             onSelect={onTrash}
           >
             <Trash2 className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {isPrimary ? "删除 Agent（请先更换主 Agent）" : "删除 Agent"}
+            {isPrimary
+              ? t("console.agentTeams.deletePrimaryDisabled")
+              : t("console.agentTeams.deleteAgent")}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -835,38 +850,51 @@ function TrashConfirmationDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const isTeam = operation.kind === "trash-team";
   const title = isTeam
-    ? `把“${teamName(operation.team)}”移到系统废纸篓或回收站？`
-    : `删除“${operation.member.displayName || `@${operation.member.slug}`}”？`;
+    ? t("console.agentTeams.trashTeamTitle", { team: teamName(t, operation.team) })
+    : t("console.agentTeams.deleteAgentTitle", {
+        agent: operation.member.displayName || `@${operation.member.slug}`,
+      });
   return (
     <DialogFrame label={title} dismissible={!pending} onDismiss={onCancel}>
       <h2 className="text-base font-semibold">{title}</h2>
       {isTeam ? (
         <>
           <p className="mt-2 text-sm leading-6 text-sub">
-            这支团队包含 {operation.team.members.length} 个 Agent：
-            {operation.team.members.map((member) => member.displayName || `@${member.slug}`).join("、") || "暂无成员"}。
-            团队目录、每个 Agent 的 AGENT.md 和目录中的相关文件都会一起移到系统废纸篓或回收站。
+            {t("console.agentTeams.trashTeamDetail", {
+              count: operation.team.members.length,
+              members: operation.team.members
+                .map((member) => member.displayName || `@${member.slug}`)
+                .join(t("console.agentTeams.memberSeparator"))
+                || t("console.agentTeams.noMembers"),
+            })}
           </p>
           <p className="mt-2 text-sm leading-6 text-sub">
-            已有会话及其创建时载入的团队版本会保留。本应用不提供永久删除或独立的已删除团队页面。
+            {t("console.agentTeams.trashTeamHistory")}
           </p>
         </>
       ) : (
         <>
           <p className="mt-2 text-sm leading-6 text-sub">
-            该 Agent 的整个目录、AGENT.md 和相关文件会移到系统废纸篓或回收站。
+            {t("console.agentTeams.trashAgentDetail")}
           </p>
           <p className="mt-2 text-sm leading-6 text-sub">
-            其他成员的交棒规则可能仍引用 @{operation.member.slug}。产品不会自动理解、清理或改写这些规则；确认后仍会删除。
+            {t("console.agentTeams.trashAgentHandoff", { slug: operation.member.slug })}
           </p>
         </>
       )}
       <div className="mt-5 flex justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>取消</Button>
+        <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
+          {t("console.agentTeams.cancel")}
+        </Button>
         <Button type="button" variant="danger" disabled={pending} onClick={onConfirm}>
-          {pending ? "正在移到系统废纸篓…" : isTeam ? "移到废纸篓 / 回收站" : "删除 Agent"}
+          {pending
+            ? t("console.agentTeams.movingToTrash")
+            : isTeam
+              ? t("console.agentTeams.moveToTrash")
+              : t("console.agentTeams.deleteAgent")}
         </Button>
       </div>
     </DialogFrame>
@@ -919,6 +947,7 @@ function TeamInformationDialog({
   onCancel: () => void;
   onConfirm: (information: AgentTeamInformationInput) => Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const [name, setName] = useState(initialValue.name);
   const [teamDescription, setTeamDescription] = useState(initialValue.description);
   const [pending, setPending] = useState(false);
@@ -962,7 +991,7 @@ function TeamInformationDialog({
         <p className="mt-2 text-sm leading-6 text-sub">{description}</p>
         <div className="mt-5 grid gap-4">
           <label className="grid gap-1.5 text-sm font-medium text-ink">
-            团队名称
+            {t("console.agentTeams.teamName")}
             <Input
               autoFocus
               value={name}
@@ -972,7 +1001,7 @@ function TeamInformationDialog({
             />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-ink">
-            一句话描述
+            {t("console.agentTeams.shortDescription")}
             <Input
               value={teamDescription}
               disabled={pending}
@@ -984,10 +1013,10 @@ function TeamInformationDialog({
         {error !== null ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
-            取消
+            {t("console.agentTeams.cancel")}
           </Button>
           <Button type="submit" disabled={!canSubmit}>
-            {pending ? "正在保存…" : confirmLabel}
+            {pending ? t("console.agentTeams.saving") : confirmLabel}
           </Button>
         </div>
       </form>
@@ -1004,6 +1033,7 @@ function AgentTeamRow({
   useStackedLayout: boolean;
   onOpen: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const orderedMembers = orderTeamMembers(team);
   const visibleMemberLimit = 3;
   const visibleMembers = orderedMembers.slice(0, visibleMemberLimit);
@@ -1027,7 +1057,9 @@ function AgentTeamRow({
     >
       <span className="min-w-0 px-5 py-5">
         <span className="flex min-w-0 items-start gap-2">
-          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">{teamName(team)}</span>
+          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">
+            {teamName(t, team)}
+          </span>
           <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
             {team.ownership === "system" ? <TeamStatusBadge kind="official" /> : null}
             {team.officialManagement?.customizationStatus === "customized"
@@ -1040,8 +1072,12 @@ function AgentTeamRow({
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
         </span>
-        <span className="mt-2 block line-clamp-2 text-sm leading-5 text-sub">{teamDescription(team)}</span>
-        <span className="mt-3 block text-xs text-hint">{teamMemberSummary(team, primaryAgent?.displayName)}</span>
+        <span className="mt-2 block line-clamp-2 text-sm leading-5 text-sub">
+          {teamDescription(t, team)}
+        </span>
+        <span className="mt-3 block text-xs text-hint">
+          {teamMemberSummary(t, team, primaryAgent?.displayName)}
+        </span>
       </span>
 
       <span
@@ -1052,7 +1088,7 @@ function AgentTeamRow({
         data-testid="agent-team-members"
       >
         {team.status === "needs-repair" ? (
-          <span className="text-sm text-sub">成员信息暂时无法读取</span>
+          <span className="text-sm text-sub">{t("console.agentTeams.membersUnavailable")}</span>
         ) : visibleMembers.map((member) => {
           const isPrimary = member.slug === team.primaryAgentSlug;
           return (
@@ -1063,14 +1099,18 @@ function AgentTeamRow({
             >
               <AgentInitialAvatar displayName={member.displayName} slug={member.slug} className="mr-1.5" />
               <span className="min-w-0 flex-1 truncate">{member.displayName}</span>
-              {isPrimary ? <span className="ml-1 whitespace-nowrap text-hint">· 主 Agent</span> : null}
+              {isPrimary ? (
+                <span className="ml-1 whitespace-nowrap text-hint">
+                  {t("console.agentTeams.primarySuffix")}
+                </span>
+              ) : null}
             </span>
           );
         })}
         {team.status !== "needs-repair" && hiddenMemberCount > 0 ? (
           <span
             className="inline-flex h-8 shrink-0 items-center rounded-md border border-line bg-canvas px-2.5 text-xs font-normal text-sub"
-            aria-label={`还有 ${hiddenMemberCount} 名成员`}
+            aria-label={t("console.agentTeams.moreMembers", { count: hiddenMemberCount })}
           >
             ＋{hiddenMemberCount}
           </span>
@@ -1083,15 +1123,16 @@ function AgentTeamRow({
 function TeamStatusBadge({ kind }: {
   kind: "official" | "customized" | "update" | "unfinished" | "needs-repair";
 }): JSX.Element {
+  const { t } = useI18n();
   const label = kind === "official"
-    ? "官方来源"
+    ? t("console.agentTeams.official")
     : kind === "customized"
-      ? "已自定义"
+      ? t("console.agentTeams.customized")
       : kind === "update"
-        ? "有更新"
+        ? t("console.agentTeams.updateAvailable")
         : kind === "unfinished"
-          ? "未完成"
-          : "需要修复";
+          ? t("console.agentTeams.unfinished")
+          : t("console.agentTeams.needsRepair");
   return (
     <span
       className={cn(
@@ -1127,35 +1168,41 @@ function orderTeamMembers(team: OperatorAgentTeam): OperatorAgentTeamMember[] {
   return orderedMembers;
 }
 
-function teamName(team: OperatorAgentTeam): string {
-  return team.name?.trim() || "未命名团队";
+function teamName(t: Translate, team: OperatorAgentTeam): string {
+  return team.name?.trim() || t("console.agentTeams.unnamed");
 }
 
-function teamDescription(team: OperatorAgentTeam): string {
+function teamDescription(t: Translate, team: OperatorAgentTeam): string {
   if (team.description?.trim()) {
     return team.description;
   }
   if (team.status === "unfinished-draft") {
-    return "还没有可接收任务的 Agent。";
+    return t("console.agentTeams.noReceivingAgent");
   }
   if (team.status === "needs-repair") {
-    return "团队文件暂时无法完整读取。";
+    return t("console.agentTeams.filesUnavailable");
   }
-  return "这支团队还没有填写用途说明。";
+  return t("console.agentTeams.noDescription");
 }
 
-function teamMemberSummary(team: OperatorAgentTeam, primaryAgentName?: string): string {
+function teamMemberSummary(
+  t: Translate,
+  team: OperatorAgentTeam,
+  primaryAgentName?: string,
+): string {
   if (team.status === "needs-repair") {
-    return "暂时无法用于新对话";
+    return t("console.agentTeams.cannotCreateConversation");
   }
-  const countLabel = `${team.members.length} 名成员`;
   if (primaryAgentName !== undefined) {
-    return `${countLabel} · 主 Agent：${primaryAgentName}`;
+    return t("console.agentTeams.memberSummaryPrimary", {
+      count: team.members.length,
+      primary: primaryAgentName,
+    });
   }
   if (team.status === "unfinished-draft") {
-    return `${countLabel} · 尚未设置主 Agent`;
+    return t("console.agentTeams.memberSummaryUnset", { count: team.members.length });
   }
-  return `${countLabel} · 主 Agent 暂不可用`;
+  return t("console.agentTeams.memberSummaryUnavailable", { count: team.members.length });
 }
 
 function hasTeamLocationIssue(team: OperatorAgentTeam): boolean {
@@ -1164,8 +1211,9 @@ function hasTeamLocationIssue(team: OperatorAgentTeam): boolean {
 }
 
 function AgentTeamsLoading(): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="mt-8 space-y-4" role="status" aria-label="Agent 团队正在加载">
+    <div className="mt-8 space-y-4" role="status" aria-label={t("console.agentTeams.loading")}>
       {[0, 1].map((index) => (
         <div
           key={index}
@@ -1184,7 +1232,7 @@ function AgentTeamsLoading(): JSX.Element {
           </div>
         </div>
       ))}
-      <span className="sr-only">正在读取团队信息…</span>
+      <span className="sr-only">{t("console.agentTeams.readingInformation")}</span>
     </div>
   );
 }
@@ -1198,6 +1246,7 @@ function AgentTeamsFailure({
   description: string;
   onRetry?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="mt-8 rounded-xl border border-line bg-rail p-5" role="alert">
       <div className="flex items-start gap-3">
@@ -1206,7 +1255,7 @@ function AgentTeamsFailure({
           <p className="text-sm font-medium text-ink">{title}</p>
           <p className="mt-1 text-sm leading-6 text-sub">{description}</p>
           <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
-            重试
+            {t("console.agentTeams.retry")}
           </Button>
         </div>
       </div>

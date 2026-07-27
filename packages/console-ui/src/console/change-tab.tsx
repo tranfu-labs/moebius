@@ -13,6 +13,7 @@ import {
   type WorkspaceFileChange,
   type WorkspaceFileContent,
 } from "@/console/file-diff-view";
+import { useI18n, type Translate } from "@/i18n";
 
 export type WorkspaceDiffData =
   | {
@@ -57,6 +58,7 @@ export function ChangeTab({
   loadDiff,
   loadFile,
 }: ChangeTabProps): JSX.Element {
+  const { t } = useI18n();
   const [diff, setDiff] = useState<WorkspaceDiffData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +69,7 @@ export function ChangeTab({
   const [pendingRefresh, setPendingRefresh] = useState<PendingRefresh | null>(null);
   const requestGenerationRef = useRef(0);
   const previousWorkingRef = useRef(isWorking);
-  const location = workspaceLocationCopy(workspaceMode);
+  const location = workspaceLocationCopy(workspaceMode, t);
 
   const applyDiff = useCallback((nextDiff: WorkspaceDiffData, nextContent: WorkspaceFileContent | null = null) => {
     setDiff(nextDiff);
@@ -169,21 +171,21 @@ export function ChangeTab({
   }, [loadFile, selectedPath, sessionId]);
 
   if (!conversationStarted) {
-    return <ChangeStateMessage>这段对话还没有开始，团队尚未工作。</ChangeStateMessage>;
+    return <ChangeStateMessage>{t("console.changeTab.notStarted")}</ChangeStateMessage>;
   }
   if (loading && diff === null) {
-    return <ChangeStateMessage>正在读取这段对话期间的项目改动…</ChangeStateMessage>;
+    return <ChangeStateMessage>{t("console.changeTab.loading")}</ChangeStateMessage>;
   }
   if (diff === null || !diff.available) {
     return (
       <ChangeStateMessage>
-        <p>{diffUnavailableCopy(diff?.reason ?? "workspace-unavailable")}</p>
+        <p>{diffUnavailableCopy(diff?.reason ?? "workspace-unavailable", t)}</p>
         <button
           type="button"
           className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
           onClick={() => void refresh(true)}
         >
-          重试
+          {t("common.retry")}
         </button>
       </ChangeStateMessage>
     );
@@ -198,7 +200,7 @@ export function ChangeTab({
           refreshing={refreshing}
           onRefresh={() => void refresh(false)}
         />
-        <ChangeStateMessage>这段对话期间，项目文件没有发生变化。</ChangeStateMessage>
+        <ChangeStateMessage>{t("console.changeTab.noChanges")}</ChangeStateMessage>
       </div>
     );
   }
@@ -218,7 +220,7 @@ export function ChangeTab({
           className="shrink-0 border-b border-line bg-sel px-3 py-2 text-left text-xs font-medium text-accent hover:bg-hover"
           onClick={() => applyDiff(pendingRefresh.diff, pendingRefresh.content)}
         >
-          有新改动，点击后查看
+          {t("console.changeTab.newChanges")}
         </button>
       ) : null}
       <WorkspaceFileTree
@@ -254,15 +256,16 @@ function ChangeHeader({
   refreshing: boolean;
   onRefresh(): void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="shrink-0 border-b border-line px-3 py-3 text-xs leading-5 text-sub">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-medium text-ink">
-            这段对话期间，项目发生了这些改动（{locationLabel}）。
+            {t("console.changeTab.summary", { location: locationLabel })}
           </p>
           {consequence !== null ? <p className="mt-1">{consequence}</p> : null}
-          {isWorking ? <p className="mt-1">团队正在工作，这份列表截至上一轮结束。</p> : null}
+          {isWorking ? <p className="mt-1">{t("console.changeTab.workingStale")}</p> : null}
         </div>
         {isWorking ? (
           <button
@@ -272,7 +275,7 @@ function ChangeHeader({
             onClick={onRefresh}
           >
             <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {refreshing ? "刷新中" : "刷新"}
+            {t(refreshing ? "console.changeTab.refreshing" : "console.changeTab.refresh")}
           </button>
         ) : null}
       </div>
@@ -290,13 +293,16 @@ function hasRefreshChange(
     || JSON.stringify(currentContent) !== JSON.stringify(nextContent);
 }
 
-function diffUnavailableCopy(reason: NonNullable<Extract<WorkspaceDiffData, { available: false }>["reason"]>): string {
+function diffUnavailableCopy(
+  reason: NonNullable<Extract<WorkspaceDiffData, { available: false }>["reason"]>,
+  t: Translate,
+): string {
   const copy: Record<typeof reason, string> = {
-    "missing-baseline": "这段对话没有可用的开始基线，当前无法读取累计改动。",
-    "not-git-repository": "这个项目文件夹不是 git 仓库，无法可靠读取改动。",
-    "workspace-unavailable": "当前工作空间不可用，暂时无法读取改动。",
-    "baseline-unavailable": "这段对话开始时的项目状态已不可用，当前无法读取累计改动。",
-    "no-session": "当前没有可读取改动的对话。",
+    "missing-baseline": t("console.changeTab.missingBaseline"),
+    "not-git-repository": t("console.changeTab.notGit"),
+    "workspace-unavailable": t("console.changeTab.workspaceUnavailable"),
+    "baseline-unavailable": t("console.changeTab.baselineUnavailable"),
+    "no-session": t("console.changeTab.noSession"),
   };
   return copy[reason];
 }

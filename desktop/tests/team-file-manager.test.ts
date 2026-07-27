@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AgentTeamFileManagerError,
-  getAgentTeamFileManagerLabel,
+  getAgentTeamFileManagerKind,
   openAgentTeamLocationInFileManager,
 } from "../src/team-file-manager.js";
 import { listRecordedUserTeamSnapshots, relocateUserTeamRecord } from "../src/team-record-store.js";
@@ -20,10 +20,10 @@ afterEach(async () => {
 });
 
 describe("Agent team file manager", () => {
-  it("uses platform-appropriate action labels", () => {
-    expect(getAgentTeamFileManagerLabel("darwin")).toBe("在 Finder 中打开");
-    expect(getAgentTeamFileManagerLabel("win32")).toBe("在文件资源管理器中显示");
-    expect(getAgentTeamFileManagerLabel("linux")).toBe("在文件管理器中打开");
+  it("exposes stable platform kinds instead of localized preload copy", () => {
+    expect(getAgentTeamFileManagerKind("darwin")).toBe("finder");
+    expect(getAgentTeamFileManagerKind("win32")).toBe("windows-explorer");
+    expect(getAgentTeamFileManagerKind("linux")).toBe("file-manager");
   });
 
   it("opens the team directory and the selected member directory", async () => {
@@ -95,7 +95,7 @@ describe("Agent team file manager", () => {
     expect(openPath).toHaveBeenCalledWith(external);
   });
 
-  it("replaces missing, inaccessible, and shell errors with a user-facing message", async () => {
+  it("replaces missing, inaccessible, and shell errors with a stable error code", async () => {
     const dataRoot = await makeDataRoot();
     const openPath = vi.fn().mockRejectedValue(new Error("EACCES /private/internal/path"));
 
@@ -106,7 +106,6 @@ describe("Agent team file manager", () => {
     })).rejects.toMatchObject({
       name: "AgentTeamFileManagerError",
       code: "AGENT_TEAM_FILE_MANAGER_OPEN_FAILED",
-      message: "暂时无法打开这个位置。请确认相关文件仍然存在，并检查访问权限后重试。",
     } satisfies Partial<AgentTeamFileManagerError>);
     expect(openPath).not.toHaveBeenCalled();
 
@@ -118,8 +117,8 @@ describe("Agent team file manager", () => {
       shell: { openPath },
     }).catch((error: unknown) => error);
     expect(shellFailure).toBeInstanceOf(AgentTeamFileManagerError);
-    expect((shellFailure as Error).message).toBe(
-      "暂时无法打开这个位置。请确认相关文件仍然存在，并检查访问权限后重试。",
+    expect((shellFailure as AgentTeamFileManagerError).code).toBe(
+      "AGENT_TEAM_FILE_MANAGER_OPEN_FAILED",
     );
     expect((shellFailure as Error).message).not.toMatch(/EACCES|private|internal/u);
   });

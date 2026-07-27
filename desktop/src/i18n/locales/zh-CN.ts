@@ -1,0 +1,16 @@
+export const zhCN = {
+  "window.statusTitle": "Moebius 状态",
+  "dialog.relocateTeam": "重新定位 Agent 团队",
+  "dialog.openProject": "打开本地项目文件夹",
+  "dialog.repairProject": "为项目指定新的本地文件夹",
+  "dialog.selectLocation": "选择新位置",
+  "dialog.quit.stay": "留在应用",
+  "dialog.quit.cancelInstall": "取消安装并退出",
+  "dialog.quit.title": "CLI 仍在安装",
+  "dialog.quit.oneInstalling": "{cli} CLI 仍在安装。",
+  "dialog.quit.bothInstalling": "Codex 与 Kimi CLI 仍在安装。",
+  "dialog.quit.detail": "可以留在 Moebius 等待安装完成，或取消全部安装后退出。",
+  "dialog.cleanup.title": "安装进程仍在回收",
+  "dialog.cleanup.message": "尚未确认 CLI 安装进程已经安全退出。",
+  "dialog.cleanup.detail": "Moebius 已阻止退出。请留在应用中稍后重试，避免遗留后台安装进程。",
+} as const;

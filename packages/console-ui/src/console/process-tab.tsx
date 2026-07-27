@@ -25,6 +25,7 @@ import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
+import { translate, useI18n, type Translate } from "@/i18n";
 export interface OperatorProcessAttemptMeta {
   runId: string;
   attempt: number;
@@ -94,6 +95,7 @@ export function ProcessTab({
   onLoadPrevious,
   className,
 }: ProcessTabProps): JSX.Element {
+  const { t } = useI18n();
   const sectionRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
@@ -263,41 +265,41 @@ export function ProcessTab({
     <section
       ref={sectionRef}
       className={cn("relative min-h-full select-text px-5 pb-5 text-sm text-ink", className)}
-      aria-label={`${title}的过程输出`}
+      aria-label={t("console.process.outputLabel", { title })}
       data-testid="process-tab"
     >
       <header className="sticky top-0 z-10 -mx-5 flex items-start justify-between gap-3 border-b border-line bg-canvas px-5 py-4">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-ink" title={title}>
-            {title} · 这一步的调试调用链
+            {t("console.process.debugChain", { title })}
           </h2>
           <p className="mt-1 text-xs text-sub">
             {scrollModel.mode === "reading"
-              ? "已暂停跟随"
+              ? t("console.process.followPaused")
               : output?.status === "running"
-                ? "跟随最新"
-                : "只读完整过程"}
+                ? t("console.process.followLatest")
+                : t("console.process.readOnly")}
           </p>
         </div>
       </header>
 
       {state.status === "idle" || state.status === "loading" ? (
-        <ProcessNotice>正在读取 Codex 过程记录…</ProcessNotice>
+        <ProcessNotice>{t("console.process.loading")}</ProcessNotice>
       ) : state.status === "error" ? (
-        <ProcessNotice>Codex 过程记录暂时无法读取：{state.message}</ProcessNotice>
+        <ProcessNotice>{t("console.process.loadFailed", { error: state.message })}</ProcessNotice>
       ) : state.output.status === "unavailable" ? (
         <ProcessNotice>
-          <span className="block font-medium text-ink">Codex 过程记录文件已不可用</span>
-          <span className="mt-1 block">这一步的最终回复仍保留在主对话区。</span>
+          <span className="block font-medium text-ink">{t("console.process.unavailable")}</span>
+          <span className="mt-1 block">{t("console.process.replyPreserved")}</span>
         </ProcessNotice>
       ) : events.length === 0 ? (
-        <ProcessNotice>这一步没有产生可显示的过程事件。</ProcessNotice>
+        <ProcessNotice>{t("console.process.empty")}</ProcessNotice>
       ) : (
         <>
           {state.loadingPrevious === true ? (
-            <p className="py-2 text-center text-xs text-sub">正在加载更早过程…</p>
+            <p className="py-2 text-center text-xs text-sub">{t("console.process.loadingEarlier")}</p>
           ) : state.output.previousCursor !== null ? (
-            <p className="py-2 text-center text-xs text-sub">↑ 向上滚动加载更早过程</p>
+            <p className="py-2 text-center text-xs text-sub">{t("console.process.scrollEarlier")}</p>
           ) : null}
           <div
             ref={listRef}
@@ -344,7 +346,7 @@ export function ProcessTab({
           className="sticky bottom-4 ml-auto mt-3 block rounded-full border border-line bg-card px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
           onClick={returnLatest}
         >
-          ↓ {scrollModel.unreadCount} 条新内容 / 到最新
+          {t("console.process.toLatest", { count: scrollModel.unreadCount })}
         </button>
       ) : null}
     </section>
@@ -355,8 +357,14 @@ export function nextProcessTabTitle(
   state: { tabs: Array<{ type: string; title: string }> },
   role: string | null,
   memberIdentities: readonly OperatorMemberIdentity[] = [],
+  t: Translate = (key, values) => translate("zh-CN", key, values),
 ): string {
-  const memberName = resolveOperatorMemberName(role, memberIdentities, "成员未知");
+  const memberName = resolveOperatorMemberName(
+    role,
+    memberIdentities,
+    t,
+    t("console.common.unknownMember"),
+  );
   const usedOrdinals = new Set(state.tabs.flatMap((tab): number[] => {
     if (tab.type !== "run-output") {
       return [];

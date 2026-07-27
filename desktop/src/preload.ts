@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopStatusSnapshot } from "./status.js";
 import {
-  getAgentTeamFileManagerLabel,
+  getAgentTeamFileManagerKind,
   TEAM_FILE_MANAGER_IPC_CHANNEL,
+  type AgentTeamFileManagerKind,
   type AgentTeamFileManagerRequest,
 } from "./team-file-manager-contract.js";
 import {
@@ -70,8 +71,15 @@ import type {
   OnboardingCliInstallSnapshot,
   OnboardingCliInstallState,
 } from "./onboarding/cli-installer-contract.js";
+import {
+  LANGUAGE_PREFERENCE_IPC_CHANNELS,
+  type DesktopLocale,
+} from "./language-preference-contract.js";
 
 export interface MoebiusDesktopApi {
+  readLanguagePreference(): Promise<DesktopLocale>;
+  saveLanguagePreference(locale: DesktopLocale): Promise<DesktopLocale>;
+  onLanguagePreferenceChanged(listener: (locale: DesktopLocale) => void): () => void;
   onStatus(listener: (snapshot: DesktopStatusSnapshot) => void): () => void;
   getLocalConsoleUrl(): Promise<string | null>;
   getLocalConsoleAttachmentCapability(): Promise<string | null>;
@@ -83,7 +91,7 @@ export interface MoebiusDesktopApi {
   selectProjectFolder(): Promise<string | null>;
   selectFolderForRepair(projectId: string): Promise<string | null>;
   showInFolder(folderPath: string): Promise<void>;
-  readonly agentTeamFileManagerLabel: string;
+  readonly agentTeamFileManagerKind: AgentTeamFileManagerKind;
   openAgentTeamLocation(request: AgentTeamFileManagerRequest): Promise<void>;
   listAgentTeams(): Promise<AgentTeamListResponse>;
   createAgentTeam(request: AgentTeamCreateRequest): Promise<AgentTeamListItem>;
@@ -146,6 +154,21 @@ export interface MoebiusDesktopApi {
 }
 
 const api: MoebiusDesktopApi = {
+  readLanguagePreference() {
+    return ipcRenderer.invoke(LANGUAGE_PREFERENCE_IPC_CHANNELS.read) as Promise<DesktopLocale>;
+  },
+  saveLanguagePreference(locale) {
+    return ipcRenderer.invoke(LANGUAGE_PREFERENCE_IPC_CHANNELS.save, locale) as Promise<DesktopLocale>;
+  },
+  onLanguagePreferenceChanged(listener) {
+    const wrapped = (_event: Electron.IpcRendererEvent, locale: DesktopLocale): void => {
+      listener(locale);
+    };
+    ipcRenderer.on(LANGUAGE_PREFERENCE_IPC_CHANNELS.changed, wrapped);
+    return () => {
+      ipcRenderer.off(LANGUAGE_PREFERENCE_IPC_CHANNELS.changed, wrapped);
+    };
+  },
   onStatus(listener) {
     const wrapped = (_event: Electron.IpcRendererEvent, snapshot: DesktopStatusSnapshot): void => {
       listener(snapshot);
@@ -185,7 +208,7 @@ const api: MoebiusDesktopApi = {
   showInFolder(folderPath) {
     return ipcRenderer.invoke("project:show-in-folder", folderPath) as Promise<void>;
   },
-  agentTeamFileManagerLabel: getAgentTeamFileManagerLabel(process.platform),
+  agentTeamFileManagerKind: getAgentTeamFileManagerKind(process.platform),
   openAgentTeamLocation(request) {
     return ipcRenderer.invoke(TEAM_FILE_MANAGER_IPC_CHANNEL, request) as Promise<void>;
   },

@@ -7,6 +7,7 @@ import {
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
   type TeamBuilderViewState,
+  useI18n,
 } from "@moebius/console-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -14,6 +15,10 @@ import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import type { AgentTeamListItem } from "../team-ipc-contract.js";
 import type { DesktopApi } from "../console-page/app.js";
+import {
+  toTeamBuilderIpcViewError,
+  toTeamBuilderViewState,
+} from "../team-builder-view-state.js";
 import type {
   OnboardingCliReadinessSnapshot,
   OnboardingCliReadinessState,
@@ -33,18 +38,6 @@ const INITIAL_INSTALLATIONS: OnboardingInstallationState = {
   kimi: { cli: "kimi", status: "idle", revision: 0 },
 };
 
-const INITIAL_TEAM_BUILDER_STATE: TeamBuilderViewState = {
-  phase: "idle",
-  builderCli: null,
-  messages: [{
-    role: "assistant",
-    text: "你希望这支团队长期替你完成什么工作？\n\n先说目标就好，不需要想好角色和分工。",
-  }],
-  proposal: null,
-  proposalRevision: null,
-  error: null,
-};
-
 export function OnboardingRoute({
   mode = "first-run",
   onExit,
@@ -54,6 +47,7 @@ export function OnboardingRoute({
   onExit?: () => void;
   onComplete: (teamKey: string) => void | Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const api = window.moebius;
   const [environment, setEnvironment] = useState<OnboardingEnvironmentState>(INITIAL_ENVIRONMENT);
   const [installations, setInstallations] = useState<OnboardingInstallationState>(
@@ -61,7 +55,7 @@ export function OnboardingRoute({
   );
   const [teamsState, setTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [teamBuilderState, setTeamBuilderState] = useState<TeamBuilderViewState>(
-    INITIAL_TEAM_BUILDER_STATE,
+    () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
   const checkSequenceRef = useRef<Record<OnboardingCli, number>>({ codex: 0, kimi: 0 });
@@ -172,7 +166,7 @@ export function OnboardingRoute({
               ...(legacy.detail === undefined ? {} : { version: legacy.detail }),
             }
           : {
-              status: legacy?.message === "Codex 未找到" ? "missing" : "unavailable",
+              status: legacy?.message === "Codex 未找到" ? "missing" : "unavailable", // i18n-exempt: legacy-protocol-value
               revision: current.codex.revision,
             },
       }));
@@ -294,13 +288,13 @@ export function OnboardingRoute({
       setTeamBuilderState((current) => ({
         ...current,
         phase: "failed",
-        error: response.error,
+        error: toTeamBuilderIpcViewError(response.error, t),
       }));
       return null;
     }
-    setTeamBuilderState(response.state);
+    setTeamBuilderState(toTeamBuilderViewState(response.state, t));
     return response.state;
-  }, []);
+  }, [t]);
 
   const invokeBuilder = useCallback(async (
     operation: (desktopApi: DesktopApi) => Promise<AiTeamBuilderIpcResponse>,
@@ -311,7 +305,7 @@ export function OnboardingRoute({
         phase: "failed",
         error: {
           code: "temporarily-unavailable",
-          humanMessage: "AI 团队设计器暂时不可用，请稍后重试。",
+          humanMessage: t("teamBuilder.unavailable"),
           canRetry: true,
         },
       }));
@@ -325,13 +319,13 @@ export function OnboardingRoute({
         phase: "failed",
         error: {
           code: "temporarily-unavailable",
-          humanMessage: "AI 团队设计器暂时不可用，请稍后重试。",
+          humanMessage: t("teamBuilder.unavailable"),
           canRetry: true,
         },
       }));
       return null;
     }
-  }, [api, applyBuilderResponse]);
+  }, [api, applyBuilderResponse, t]);
 
   const invokeDraftOperation = useCallback((
     operation: NonNullable<DesktopApi["startOnboardingTeamBuilder"]>,
@@ -429,7 +423,9 @@ export function OnboardingRoute({
           api?.cancelOnboardingCliInstall === undefined
           || installMutationPendingRef.current.has(cli)
           || !window.confirm(
-            `确定取消 ${cli === "codex" ? "Codex" : "Kimi"} CLI 安装吗？另一套 CLI 不受影响。`,
+            t("onboarding.cancelInstallConfirm", {
+              cli: cli === "codex" ? "Codex" : "Kimi",
+            }),
           )
         ) {
           return;
@@ -472,6 +468,17 @@ export function OnboardingRoute({
       onComplete={onComplete}
     />
   );
+}
+
+function createInitialTeamBuilderState(initialPrompt: string): TeamBuilderViewState {
+  return {
+    phase: "idle",
+    builderCli: null,
+    messages: [{ role: "assistant", text: initialPrompt }],
+    proposal: null,
+    proposalRevision: null,
+    error: null,
+  };
 }
 
 function toViewEnvironment(

@@ -1,5 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export type SessionContextStatus = "waiting" | "running" | "idle" | "completed";
@@ -42,10 +43,11 @@ function ParentCrumb({
   parentTitle: string;
   onOpenParent?: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const content = (
     <>
       <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-      <span className="truncate">属于：{parentTitle}</span>
+      <span className="truncate">{t("console.sessionContext.belongsTo", { title: parentTitle })}</span>
     </>
   );
 

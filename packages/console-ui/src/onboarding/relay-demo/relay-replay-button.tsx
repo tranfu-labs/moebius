@@ -1,8 +1,10 @@
 import { RotateCcw } from "lucide-react";
 
 import { Button } from "@/ui/button";
+import { useI18n } from "@/i18n";
 
 export function RelayReplayButton({ onReplay }: { onReplay: () => void }): JSX.Element {
+  const { t } = useI18n();
   return (
     <Button
       type="button"
@@ -13,7 +15,7 @@ export function RelayReplayButton({ onReplay }: { onReplay: () => void }): JSX.E
       data-testid="replay-relay"
     >
       <RotateCcw className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
-      重新播放
+      {t("onboarding.relay.replay")}
     </Button>
   );
 }

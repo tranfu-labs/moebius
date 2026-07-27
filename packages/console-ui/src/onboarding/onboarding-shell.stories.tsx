@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { I18nProvider } from "@/i18n";
 import { OnboardingShell } from "./onboarding-shell";
 
 const editorialTeam: OperatorAgentTeam = {
@@ -38,6 +39,13 @@ const meta = {
   parameters: {
     layout: "fullscreen",
   },
+  decorators: [
+    (Story) => (
+      <I18nProvider locale="zh-CN">
+        <Story />
+      </I18nProvider>
+    ),
+  ],
   args: {
     environment: {
       codex: { status: "ready", revision: 1 },
