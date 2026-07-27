@@ -24,7 +24,15 @@ function run(commandArgs) {
 if (args.length > 0) {
   run(["exec", "vitest", "run", ...args]);
 } else {
-  run(["exec", "vitest", "run", "--exclude", "tests/local-console.test.ts"]);
+  run([
+    "exec",
+    "vitest",
+    "run",
+    "--exclude",
+    "tests/local-console.test.ts",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+  ]);
   run([
     "exec",
     "vitest",

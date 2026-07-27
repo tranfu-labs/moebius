@@ -44,12 +44,15 @@ CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
    - Assert bundle version and build equal `<VERSION>` and the executable is arm64.
    - Record both file sizes and SHA-256 hashes.
    - If electron-builder download traffic has no byte progress for 120 seconds, first confirm no active `codesign`; then terminate only the stalled builder and retry the missing format from `desktop/release/mac-arm64/Moebius.app` with `--prepackaged`.
-6. Commit and push.
+6. Commit, push, and require remote CI.
    - Run `git diff --check` and require only expected release metadata changes.
    - Commit as `chore(release): prepare v<VERSION>`.
    - Fetch again; if remote moved → stop before tagging.
-   - Create annotated tag `v<VERSION>` with message `Moebius v<VERSION>`.
-   - Atomically push `main` and the tag.
+   - Push `main` without creating or pushing the tag.
+   - Find the `CI` workflow run whose `headSha` exactly equals the release commit. Allow up to 5 minutes for the push-triggered run to appear; ignore runs for other commits.
+   - Wait for that exact run to complete and require `conclusion=success`. If it fails, is cancelled, times out, or never appears → stop before tag or Release creation and report the run URL or missing-run state.
+   - Fetch again after CI succeeds. Require `main`, `origin/main`, and the successful CI `headSha` to equal the release commit; if remote moved → stop before tagging.
+   - Create annotated tag `v<VERSION>` with message `Moebius v<VERSION>` and push only that tag.
 7. Create and publish the GitHub Release.
    - Create a verified-tag Draft Release in `tranfu-labs/moebius`, titled `Moebius v<VERSION>`.
    - Write Chinese notes from the previous-tag diff. Include macOS arm64-only support, Developer ID Team `NP667JFK84`, current lack of notarization, and both SHA-256 hashes.
@@ -64,6 +67,7 @@ CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
 
 - Missing tools, credentials, version, files, or signing identity → stop before external mutation and name the missing requirement.
 - Dirty worktree with unrelated changes → stop; NEVER stash, overwrite, or delete them.
+- CI failure after pushing the release commit → leave `main` at the untagged release commit, report the exact run, and stop. On resume, reuse that commit after its exact CI run succeeds; NEVER create a duplicate release-preparation commit.
 - Failure after Draft creation → leave the Draft intact, list uploaded/missing assets, and give the exact resume step.
 - Unexpected tracked files produced by validation → stop and report. Remove only untracked artifacts proven to be created by this run.
 
