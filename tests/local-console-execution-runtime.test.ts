@@ -91,6 +91,8 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
       "--disable",
       "multi_agent",
+      "-c",
+      "agents.enabled=false",
       "-m",
       "gpt-5.6-sol",
       "-c",
