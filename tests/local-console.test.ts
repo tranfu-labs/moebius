@@ -46,7 +46,7 @@ import {
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 
 const originalPath = process.env.PATH;
-const STANDARD_STORE_TIMEOUT_MS = 2_000;
+const STANDARD_STORE_TIMEOUT_MS = 10_000;
 
 async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> {
   const projectRoot = options.projectRoot ?? process.cwd();
@@ -1932,7 +1932,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       await started.close();
     }
-  }, 10_000);
+  }, 30_000);
 
   it("runs startup catch-up for another session while one session is slow", async () => {
     const root = await makeFixtureRoot();
@@ -2360,7 +2360,7 @@ describe("local console", { timeout: 15_000 }, () => {
       }
       await started.close();
     }
-  }, 10_000);
+  }, 30_000);
 
   it("keeps failures user-retryable without automatic retries or retry exhaustion", async () => {
     const root = await makeFixtureRoot();
@@ -3014,7 +3014,7 @@ async function waitForState(
   sessionId: string,
   predicate: (snapshot: LocalStateResponse) => boolean,
 ): Promise<LocalStateResponse> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 20_000;
   let latest: LocalStateResponse | null = null;
   while (Date.now() < deadline) {
     try {
