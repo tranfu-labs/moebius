@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
 
 export type LocalCodexResumeReason = "graceful-shutdown" | "retry" | "edit-resend";
 export type LocalCodexResumeMode = "resume" | "full-fallback" | "unavailable";
@@ -33,61 +32,6 @@ export interface LocalCodexRunUsageFact {
 export interface LocalCodexRecoveryFacts {
   intents: LocalCodexResumeIntentFact[];
   consumedIntentIds: Set<string>;
-}
-
-export type LocalCodexRecoveryPlan =
-  | { kind: "full"; intent: null; reason: "no-resume-intent" }
-  | {
-      kind: "resume";
-      intent: LocalCodexResumeIntentFact;
-      threadId: string;
-      reason: "compatible";
-    }
-  | {
-      kind: "full-fallback";
-      intent: LocalCodexResumeIntentFact;
-      reason:
-        | "thread-link-missing"
-        | "source-mismatch"
-        | "role-mismatch"
-        | "legacy-thread-link"
-        | "context-mismatch"
-        | "rollout-unavailable";
-    };
-
-export function planLocalCodexRecovery(input: {
-  sourceMessageId: number;
-  role: string;
-  contextFingerprint: string;
-  intents: LocalCodexResumeIntentFact[];
-  consumedIntentIds: ReadonlySet<string>;
-  threadLinks: LocalCodexThreadLinkFact[];
-}): LocalCodexRecoveryPlan {
-  const intent = [...input.intents]
-    .reverse()
-    .find((candidate) =>
-      candidate.sourceMessageId === input.sourceMessageId
-      && !input.consumedIntentIds.has(candidate.intentId));
-  if (intent === undefined) {
-    return { kind: "full", intent: null, reason: "no-resume-intent" };
-  }
-  const link = input.threadLinks.find((candidate) => candidate.runId === intent.targetRunId);
-  if (link === undefined) {
-    return { kind: "full-fallback", intent, reason: "thread-link-missing" };
-  }
-  if (link.sourceMessageId !== intent.sourceMessageId && intent.reason !== "edit-resend") {
-    return { kind: "full-fallback", intent, reason: "source-mismatch" };
-  }
-  if (link.role !== intent.role || intent.role !== input.role) {
-    return { kind: "full-fallback", intent, reason: "role-mismatch" };
-  }
-  if (link.contextFingerprint == null) {
-    return { kind: "full-fallback", intent, reason: "legacy-thread-link" };
-  }
-  if (link.contextFingerprint !== input.contextFingerprint) {
-    return { kind: "full-fallback", intent, reason: "context-mismatch" };
-  }
-  return { kind: "resume", intent, threadId: link.threadId, reason: "compatible" };
 }
 
 export function buildLocalResumePrompt(input: {

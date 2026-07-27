@@ -22,6 +22,10 @@ describe("role thread state store", () => {
     const store = withRoleThreadState({}, "tranfu-labs/moebius#3", "product-manager", {
       threadId: "thread-1",
       lastSeenIndex: 4,
+      provider: "codex",
+      contextFingerprint: "context-1",
+      workspaceFingerprint: "workspace-1",
+      personaFingerprint: "persona-1",
     });
 
     await saveRoleThreadStateStore(store, filePath);
@@ -30,6 +34,10 @@ describe("role thread state store", () => {
     expect(getRoleThreadState(store, "tranfu-labs/moebius#3", "product-manager")).toEqual({
       threadId: "thread-1",
       lastSeenIndex: 4,
+      provider: "codex",
+      contextFingerprint: "context-1",
+      workspaceFingerprint: "workspace-1",
+      personaFingerprint: "persona-1",
     });
     expect(getRoleThreadState(store, "tranfu-labs/moebius#3", "hermes-user")).toBeNull();
   });

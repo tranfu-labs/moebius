@@ -48,6 +48,31 @@ export function createLocalExecutionRunner(input: {
   const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
     const engine = options.profile?.cli ?? "codex";
+    let observedExternalSessionId: string | null = null;
+    const observeSession = async (
+      observedEngine: LocalExecutionEngine,
+      externalSessionId: string,
+    ): Promise<void> => {
+      if (
+        options.mode.kind === "resume"
+        && externalSessionId !== options.mode.externalSessionId
+      ) {
+        throw new Error(
+          `provider-session-id-mismatch:${options.mode.externalSessionId}:${externalSessionId}`,
+        );
+      }
+      if (
+        observedExternalSessionId !== null
+        && observedExternalSessionId !== externalSessionId
+      ) {
+        throw new Error("provider-reported-conflicting-session-ids");
+      }
+      observedExternalSessionId = externalSessionId;
+      await options.onSessionStarted?.({
+        engine: observedEngine,
+        externalSessionId,
+      });
+    };
     if (engine === "kimi") {
       const profile = options.profile;
       if (profile === null || profile.cli !== "kimi") {
@@ -56,7 +81,7 @@ export function createLocalExecutionRunner(input: {
       if (!kimiReportsProcessStart) {
         await options.onProcessStarted?.();
       }
-      return kimi({
+      const result = await kimi({
         prompt: options.prompt,
         runDir: options.runDir,
         cwd: options.cwd,
@@ -69,18 +94,17 @@ export function createLocalExecutionRunner(input: {
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
-        onSessionStarted: async (sessionId) => options.onSessionStarted?.({
-          engine: "kimi",
-          externalSessionId: sessionId,
-        }),
+        onSessionStarted: async (sessionId) => observeSession("kimi", sessionId),
       });
+      assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
+      return result;
     }
 
     const profile = options.profile;
     if (!codexReportsProcessStart) {
       await options.onProcessStarted?.();
     }
-    return codex({
+    const result = await codex({
       prompt: options.prompt,
       runDir: options.runDir,
       cwd: options.cwd,
@@ -103,10 +127,35 @@ export function createLocalExecutionRunner(input: {
       onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
       onProcessStarted: options.onProcessStarted,
       onStructuredActivity: options.onStructuredActivity,
-      onThreadStarted: async (threadId) => options.onSessionStarted?.({
-        engine: "codex",
-        externalSessionId: threadId,
-      }),
+      onThreadStarted: async (threadId) => observeSession("codex", threadId),
     });
+    assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
+    return result;
   };
+}
+
+function assertSuccessfulSessionIdentity(
+  mode: LocalExecutionMode,
+  observedExternalSessionId: string | null,
+  result: CodexRunResult,
+): void {
+  if (!result.ok) return;
+  const resultExternalSessionId = result.threadId ?? observedExternalSessionId;
+  if (resultExternalSessionId === null) {
+    throw new Error("provider-session-id-missing");
+  }
+  if (
+    observedExternalSessionId !== null
+    && observedExternalSessionId !== resultExternalSessionId
+  ) {
+    throw new Error("provider-result-session-id-conflict");
+  }
+  if (
+    mode.kind === "resume"
+    && resultExternalSessionId !== mode.externalSessionId
+  ) {
+    throw new Error(
+      `provider-session-id-mismatch:${mode.externalSessionId}:${resultExternalSessionId}`,
+    );
+  }
 }

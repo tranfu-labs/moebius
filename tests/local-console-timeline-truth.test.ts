@@ -385,6 +385,7 @@ async function startHarness(runCodex: (options: CodexRunOptions) => Promise<Code
     loadAgentTeamSnapshot: async (binding) => loadAgentTeamSnapshot({ dataRoot: root, ownership: binding.ownership, teamId: binding.id }),
     resolveAgentTeamHealth: async (session) => resolveSessionAgentTeamHealth({ dataRoot: root, session }),
     runCodex,
+    isCodexThreadAvailable: async () => true,
     makeRunDir: (count) => path.join(root, "runs", String(count)),
     storeTimeoutMs: 2_000,
   });
@@ -469,7 +470,7 @@ function codexOk(options: CodexRunOptions, finalText: string): CodexRunResult {
   return {
     ok: true,
     finalText,
-    threadId: null,
+    threadId: options.mode?.kind === "resume" ? options.mode.threadId : "thread-timeline-truth",
     cachedInputTokens: null,
     runDir: options.runDir,
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -489,7 +490,10 @@ function waitForAbort(options: CodexRunOptions): Promise<CodexRunResult> {
 
 function roleFromPrompt(prompt: string): string {
   for (const role of ["manager", "dev"]) {
-    if (prompt.includes(`ROLE:${role}`)) {
+    if (
+      prompt.includes(`ROLE:${role}`)
+      || prompt.includes(`不是你自己 <${role}> 发出的消息`)
+    ) {
       return role;
     }
   }

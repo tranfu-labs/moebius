@@ -67,6 +67,7 @@ function link(
     engine: target.engine,
     externalSessionId: "external-a",
     profileFingerprint: target.profileFingerprint,
+    agentIdentityFingerprint: target.agentIdentityFingerprint,
     contextFingerprint: target.contextFingerprint,
     startedAt: "2026-07-25T00:00:02.000Z",
     ...overrides,
@@ -74,37 +75,31 @@ function link(
 }
 
 describe("local execution recovery planning", () => {
-  it("reruns an explicit Retry with the immutable old context instead of resuming", () => {
-    const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
-    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+  it("allows first creation only when the Agent identity has no provider evidence", () => {
+    const current = context({ runId: "run-new", cli: "codex", markdown: "team" });
     expect(planLocalExecutionRecovery({
       sourceMessageId: 7,
       role: "dev",
       currentContext: current,
-      intents: [{ ...intent, reason: "retry" }],
+      intents: [],
       consumedIntentIds: new Set(),
-      executionLinks: [link(old)],
+      executionLinks: [],
       legacyCodexLinks: [],
-      contexts: [old],
+      contexts: [],
     })).toMatchObject({
-      kind: "full-fallback",
-      reason: "explicit-retry",
-      context: {
-        engine: "kimi",
-        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
-        team: [{ agentMarkdown: "old team" }],
-      },
+      kind: "first",
+      reason: "no-provider-session",
     });
   });
 
-  it("resumes only the exact engine, profile and immutable run context", () => {
-    const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
-    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+  it("resumes an ordinary later turn with the unique compatible id", () => {
+    const old = context({ runId: "run-old", cli: "kimi", markdown: "team" });
+    const current = context({ runId: "run-new", cli: "kimi", markdown: "team" });
     expect(planLocalExecutionRecovery({
       sourceMessageId: 7,
       role: "dev",
       currentContext: current,
-      intents: [intent],
+      intents: [],
       consumedIntentIds: new Set(),
       executionLinks: [link(old)],
       legacyCodexLinks: [],
@@ -112,45 +107,33 @@ describe("local execution recovery planning", () => {
     })).toMatchObject({
       kind: "resume",
       externalSessionId: "external-a",
-      context: {
-        engine: "kimi",
-        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
-        team: [{ agentMarkdown: "old team" }],
-      },
+      canonicalLinkMissing: true,
     });
   });
 
-  it("uses the old Kimi context for full fallback and never adopts the current Codex team", () => {
+  it("treats a switched team snapshot as a new Agent identity", () => {
     const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
     const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
-    const plan = planLocalExecutionRecovery({
+    expect(planLocalExecutionRecovery({
       sourceMessageId: 7,
       role: "dev",
       currentContext: current,
-      intents: [intent],
+      intents: [],
       consumedIntentIds: new Set(),
-      executionLinks: [link(old, { profileFingerprint: "tampered" })],
+      executionLinks: [link(old)],
       legacyCodexLinks: [],
       contexts: [old],
-    });
-    expect(plan).toMatchObject({
-      kind: "full-fallback",
-      reason: "profile-mismatch",
-      context: {
-        engine: "kimi",
-        team: [{ agentMarkdown: "old team" }],
-      },
-    });
+    })).toMatchObject({ kind: "first" });
   });
 
-  it("keeps a legacy Codex link on the immutable legacy identity", () => {
+  it("migrates one compatible legacy Codex id without guessing by recency", () => {
     const old = context({ runId: "run-old", cli: "legacy", markdown: "legacy team" });
-    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+    const current = context({ runId: "run-new", cli: "legacy", markdown: "legacy team" });
     const plan = planLocalExecutionRecovery({
       sourceMessageId: 7,
       role: "dev",
       currentContext: current,
-      intents: [intent],
+      intents: [],
       consumedIntentIds: new Set(),
       executionLinks: [],
       legacyCodexLinks: [{
@@ -167,53 +150,68 @@ describe("local execution recovery planning", () => {
     expect(plan).toMatchObject({
       kind: "resume",
       externalSessionId: "thread-old",
+      canonicalLinkMissing: true,
       context: { engine: "codex", profile: null },
     });
   });
 
-  it.each([
-    {
-      name: "Kimi link with a current Codex team",
-      executionLinks: [{
-        ...link(context({ runId: "run-old", cli: "kimi", markdown: "old team" })),
-      }],
+  it("fails closed for conflicting ids and never selects the newest", () => {
+    const old = context({ runId: "run-old", cli: "codex", markdown: "team" });
+    const current = context({ runId: "run-new", cli: "codex", markdown: "team" });
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: current,
+      intents: [],
+      consumedIntentIds: new Set(),
+      executionLinks: [
+        link(old, { externalSessionId: "thread-a" }),
+        link({ ...old, runId: "run-other" }, {
+          runId: "run-other",
+          externalSessionId: "thread-b",
+        }),
+      ],
       legacyCodexLinks: [],
-    },
-    {
-      name: "missing session link",
-      executionLinks: [],
-      legacyCodexLinks: [],
-    },
-    {
-      name: "legacy link after switching teams",
-      executionLinks: [],
-      legacyCodexLinks: [{
-        sessionId: "session-a",
-        runId: "run-old",
-        sourceMessageId: 7,
-        role: "dev",
-        threadId: "thread-old",
-        startedAt: "2026-07-25T00:00:02.000Z",
-        contextFingerprint: legacyCodexContextFingerprint(
-          context({ runId: "run-new", cli: "legacy", markdown: "old team" }),
-        ),
-      }],
-    },
-  ])("fails closed when immutable old context is missing: $name", ({ executionLinks, legacyCodexLinks }) => {
-    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+      contexts: [old, { ...old, runId: "run-other" }],
+    })).toMatchObject({
+      kind: "unavailable",
+      reason: "session-link-conflict",
+    });
+  });
+
+  it("fails closed when a graceful target context or observed provider id is missing", () => {
+    const current = context({ runId: "run-new", cli: "codex", markdown: "team" });
     expect(planLocalExecutionRecovery({
       sourceMessageId: 7,
       role: "dev",
       currentContext: current,
       intents: [intent],
       consumedIntentIds: new Set(),
-      executionLinks,
-      legacyCodexLinks,
+      executionLinks: [],
+      legacyCodexLinks: [],
       contexts: [],
-    })).toEqual({
-      kind: "unsafe",
-      intent,
-      reason: "run-context-missing",
-    });
+    })).toMatchObject({ kind: "unavailable", reason: "run-context-missing" });
+
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: current,
+      intents: [],
+      consumedIntentIds: new Set(),
+      observations: [{
+        sessionId: "session-a",
+        runId: "run-old",
+        sourceMessageId: 7,
+        role: "dev",
+        engine: "codex",
+        agentIdentityFingerprint: current.agentIdentityFingerprint,
+        contextFingerprint: current.contextFingerprint,
+        externalSessionId: null,
+        observedAt: "2026-07-25T00:00:02.000Z",
+      }],
+      executionLinks: [],
+      legacyCodexLinks: [],
+      contexts: [],
+    })).toMatchObject({ kind: "unavailable", reason: "provider-id-missing" });
   });
 });

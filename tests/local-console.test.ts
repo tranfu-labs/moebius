@@ -15,6 +15,19 @@ import {
 import { LocalConsoleRuntime, type LocalConsoleAgentFile } from "../src/local-console/runtime.js";
 import { readLocalConsoleOutputTail } from "../src/local-console/output-tail.js";
 import { buildLocalAgentPrompt } from "../src/local-console/prompt.js";
+import type {
+  LocalAgentSessionLinkFact,
+  LocalAgentTimelineCursorFact,
+  LocalExecutionSessionLinkFact,
+  LocalProviderInvocationFact,
+  LocalProviderSessionObservedFact,
+  LocalRunExecutionContextFact,
+} from "../src/local-console/execution-context.js";
+import type {
+  LocalCodexResumeConsumedFact,
+  LocalCodexResumeIntentFact,
+  LocalCodexRunUsageFact,
+} from "../src/local-console/codex-resume.js";
 import {
   listLocalT5Facts,
   recordLocalDeadLetter,
@@ -39,6 +52,7 @@ async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}):
   const projectRoot = options.projectRoot ?? process.cwd();
   return startLocalConsoleServerImpl({
     ...options,
+    isCodexThreadAvailable: options.isCodexThreadAvailable ?? (async () => true),
     listAgentFiles: options.listAgentFiles ?? (async () => {
       const agentsDirectory = path.join(projectRoot, "agents");
       const entries = await fs.readdir(agentsDirectory, { withFileTypes: true });
@@ -705,9 +719,13 @@ describe("local console", { timeout: 15_000 }, () => {
       expect(restored.project.sessions.map((entry) => entry.sessionId)).toContain(session.sessionId);
       expect((await postSessionMessage(started.url, session.sessionId, "@dev 修复后继续")).status).toBe(202);
       const continued = await waitForState(started.url, session.sessionId, (state) =>
-        state.activeRun === null && state.messages.some((message) => message.speaker === "agent" && message.body === "项目修复后继续推进"),
+        state.activeRun === null && state.messages.some((message) =>
+          message.systemEventKind === "resume-unavailable"
+          && message.error === "resume-unavailable:context-mismatch"
+        ),
       );
       expect(continued.messages.some((message) => message.body === "修复前历史已记录")).toBe(true);
+      expect(runCount).toBe(1);
       await expect(createProjectSession(started.url, "restored", project.projectId)).resolves.toMatchObject({
         projectId: project.projectId,
       });
@@ -1380,7 +1398,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
       ok: true,
       finalText: "hello from fake codex",
-      threadId: null,
+      threadId: threadIdFor(options),
       cachedInputTokens: null,
       runDir: options.runDir,
       stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -1982,7 +2000,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
       ok: true,
       finalText: `reply for ${path.basename(options.runDir)}`,
-      threadId: null,
+      threadId: threadIdFor(options),
       cachedInputTokens: null,
       runDir: options.runDir,
       stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -2159,7 +2177,7 @@ describe("local console", { timeout: 15_000 }, () => {
       return {
         ok: true,
         finalText: "after interrupt",
-        threadId: null,
+        threadId: threadIdFor(options),
         cachedInputTokens: null,
         runDir: options.runDir,
         stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -2447,7 +2465,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
       ok: true,
       finalText: "after recovery",
-      threadId: null,
+      threadId: threadIdFor(options),
       cachedInputTokens: null,
       runDir: options.runDir,
       stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -2496,7 +2514,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
       ok: true,
       finalText: "after sqlite unlock",
-      threadId: null,
+      threadId: threadIdFor(options),
       cachedInputTokens: null,
       runDir: options.runDir,
       stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -2750,7 +2768,7 @@ describe("local console", { timeout: 15_000 }, () => {
       resolveCodex!({
         ok: true,
         finalText: "done",
-        threadId: null,
+        threadId: "thread-local-console",
         cachedInputTokens: null,
         runDir: path.join(root, "runs", "run-1"),
         stdoutPath: path.join(root, "runs", "run-1", "stdout.jsonl"),
@@ -3111,7 +3129,10 @@ exit 0
 
 function roleFromPrompt(prompt: string): string {
   for (const role of ["ceo", "dev-manager", "dev", "qa"]) {
-    if (prompt.includes(`ROLE:${role}`)) {
+    if (
+      prompt.includes(`ROLE:${role}`)
+      || prompt.includes(`不是你自己 <${role}> 发出的消息`)
+    ) {
       return role;
     }
   }
@@ -3122,12 +3143,18 @@ function codexOk(options: CodexRunOptions, finalText: string): CodexRunResult {
   return {
     ok: true,
     finalText,
-    threadId: null,
+    threadId: threadIdFor(options),
     cachedInputTokens: null,
     runDir: options.runDir,
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),
     stderrPath: path.join(options.runDir, "stderr.log"),
   };
+}
+
+function threadIdFor(options: CodexRunOptions): string {
+  return options.mode?.kind === "resume"
+    ? options.mode.threadId
+    : "thread-local-console";
 }
 
 function waitForAbortResult(options: CodexRunOptions): Promise<CodexRunResult> {
@@ -3341,6 +3368,22 @@ class FastFailAppendStore implements LocalConsoleStore {
   }
 }
 
+type RecoveryCapableLocalConsoleStore = LocalConsoleStore & {
+  getSessionFactLogPath(sessionId: string): string;
+  recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void>;
+  recordCodexResumeConsumed(input: LocalCodexResumeConsumedFact): Promise<void>;
+  recordCodexRunUsage(input: LocalCodexRunUsageFact): Promise<void>;
+  recordRunExecutionContext(input: LocalRunExecutionContextFact): Promise<void>;
+  recordExecutionSessionLink(input: LocalExecutionSessionLinkFact): Promise<void>;
+  recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void>;
+  recordProviderSessionObserved(input: LocalProviderSessionObservedFact): Promise<void>;
+  recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void>;
+  recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void>;
+  recordCodexThreadLink(
+    input: Parameters<NonNullable<LocalConsoleStore["recordCodexThreadLink"]>>[0],
+  ): Promise<void>;
+};
+
 class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
   readonly sqlitePath: string;
   private failNextRecord = true;
@@ -3355,6 +3398,56 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
 
   async close(): Promise<void> {
     await this.inner.close();
+  }
+
+  getSessionFactLogPath(sessionId: string): string {
+    return this.recoveryStore().getSessionFactLogPath(sessionId);
+  }
+
+  async recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void> {
+    await this.recoveryStore().recordCodexResumeIntent(input);
+  }
+
+  async recordCodexResumeConsumed(input: LocalCodexResumeConsumedFact): Promise<void> {
+    await this.recoveryStore().recordCodexResumeConsumed(input);
+  }
+
+  async recordCodexRunUsage(input: LocalCodexRunUsageFact): Promise<void> {
+    await this.recoveryStore().recordCodexRunUsage(input);
+  }
+
+  async recordRunExecutionContext(input: LocalRunExecutionContextFact): Promise<void> {
+    await this.recoveryStore().recordRunExecutionContext(input);
+  }
+
+  async recordExecutionSessionLink(input: LocalExecutionSessionLinkFact): Promise<void> {
+    await this.recoveryStore().recordExecutionSessionLink(input);
+  }
+
+  async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
+    await this.recoveryStore().recordAgentSessionLink(input);
+  }
+
+  async recordProviderSessionObserved(input: LocalProviderSessionObservedFact): Promise<void> {
+    await this.recoveryStore().recordProviderSessionObserved(input);
+  }
+
+  async recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void> {
+    await this.recoveryStore().recordAgentTimelineCursor(input);
+  }
+
+  async recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void> {
+    await this.recoveryStore().recordProviderInvocation(input);
+  }
+
+  async recordCodexThreadLink(
+    input: Parameters<NonNullable<LocalConsoleStore["recordCodexThreadLink"]>>[0],
+  ): Promise<void> {
+    await this.recoveryStore().recordCodexThreadLink(input);
+  }
+
+  private recoveryStore(): RecoveryCapableLocalConsoleStore {
+    return this.inner as RecoveryCapableLocalConsoleStore;
   }
 
   async createProject(input: { folderPath: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary> {
@@ -3838,7 +3931,11 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
 }
 
 class RecoveringAppendStore implements LocalConsoleStore {
-  readonly sqlitePath = "/tmp/recovering-local-console.sqlite";
+  readonly sqlitePath = path.join(
+    os.tmpdir(),
+    `recovering-local-console-${Math.random().toString(36).slice(2)}.sqlite`,
+  );
+  private readonly factLogPath = `${this.sqlitePath}.jsonl`;
 
   private messages: LocalConsoleMessage[] = [];
   private sessions = new Map<string, string>([[LOCAL_CONSOLE_DEFAULT_SESSION_ID, "默认会话"]]);
@@ -3847,7 +3944,61 @@ class RecoveringAppendStore implements LocalConsoleStore {
 
   async init(): Promise<void> {}
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    await fs.rm(this.factLogPath, { force: true });
+  }
+
+  getSessionFactLogPath(): string {
+    return this.factLogPath;
+  }
+
+  async recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void> {
+    await this.appendFact("codex_resume_intent", input, input.createdAt);
+  }
+
+  async recordCodexResumeConsumed(input: LocalCodexResumeConsumedFact): Promise<void> {
+    await this.appendFact("codex_resume_consumed", input, input.consumedAt);
+  }
+
+  async recordCodexRunUsage(input: LocalCodexRunUsageFact): Promise<void> {
+    await this.appendFact("codex_run_usage", input, input.recordedAt);
+  }
+
+  async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
+    await this.appendFact("agent_session_link", input, input.linkedAt);
+  }
+
+  async recordProviderSessionObserved(input: LocalProviderSessionObservedFact): Promise<void> {
+    await this.appendFact("provider_session_observed", input, input.observedAt);
+  }
+
+  async recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void> {
+    await this.appendFact("agent_timeline_cursor", input, input.recordedAt);
+  }
+
+  async recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void> {
+    await this.appendFact("provider_invocation", input, input.recordedAt);
+  }
+
+  private async appendFact(
+    type: string,
+    payload: { sessionId: string },
+    recordedAt: string,
+  ): Promise<void> {
+    await fs.appendFile(
+      this.factLogPath,
+      `${JSON.stringify({
+        version: 1,
+        eventId: `${type}:${recordedAt}`,
+        sessionId: payload.sessionId,
+        type,
+        recordedAt,
+        payload,
+        messageUpserts: [],
+      })}\n`,
+      "utf8",
+    );
+  }
 
   async createProject(input: { folderPath: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary> {
     void input.now;

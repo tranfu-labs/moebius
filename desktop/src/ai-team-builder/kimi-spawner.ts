@@ -30,7 +30,12 @@ export class AiTeamBuilderKimiSpawner implements AiTeamBuilderDriverPort {
   async execute(request: AiTeamBuilderDriverRequest): Promise<AiTeamBuilderDriverResult> {
     assertDraftId(request.draftId);
     if (request.profile.cli !== "kimi") {
-      return { ok: false, reason: "kimi-profile-required", resumeFailed: false };
+      return {
+        ok: false,
+        reason: "kimi-profile-required",
+        resumeFailed: false,
+        externalSessionId: request.externalSessionId,
+      };
     }
     const dataRoot = path.resolve(request.dataRoot);
     const runtimeRoot = path.join(
@@ -53,6 +58,7 @@ export class AiTeamBuilderKimiSpawner implements AiTeamBuilderDriverPort {
           kind: "resume" as const,
           externalSessionId: request.externalSessionId,
         };
+    let observedExternalSessionId: string | null = null;
     const result = await this.run({
       prompt: request.prompt,
       runDir,
@@ -69,20 +75,87 @@ export class AiTeamBuilderKimiSpawner implements AiTeamBuilderDriverPort {
       idleTimeoutMs: AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS,
       maxDurationMs: AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
       ...(request.signal === undefined ? {} : { signal: request.signal }),
+      onSessionStarted: async (sessionId) => {
+        assertExternalSessionIdentity(request.externalSessionId, sessionId);
+        observedExternalSessionId = sessionId;
+        await request.onExternalSessionStarted?.(sessionId);
+      },
     });
     if (!result.ok) {
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
+        mode: mode.kind,
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId,
+        outcome: "failed",
+      });
       return {
         ok: false,
         reason: result.reason,
         resumeFailed: request.externalSessionId !== null,
+        externalSessionId: observedExternalSessionId ?? request.externalSessionId,
       };
     }
-    const externalSessionId = result.threadId ?? request.externalSessionId;
+    const externalSessionId = result.threadId ?? observedExternalSessionId ?? request.externalSessionId;
     if (externalSessionId === null) {
-      return { ok: false, reason: "session-id-missing", resumeFailed: false };
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
+        mode: mode.kind,
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId,
+        outcome: "failed",
+      });
+      return {
+        ok: false,
+        reason: "session-id-missing",
+        resumeFailed: false,
+        externalSessionId: null,
+      };
     }
+    assertExternalSessionIdentity(request.externalSessionId, externalSessionId);
+    await writeInvocationManifest(runDir, {
+      version: 1,
+      identityType: "ai-team-builder-draft",
+      mode: mode.kind,
+      requestedExternalSessionId: request.externalSessionId,
+      observedExternalSessionId: externalSessionId,
+      outcome: "succeeded",
+    });
     return { ok: true, finalText: result.finalText, externalSessionId };
   }
+}
+
+function assertExternalSessionIdentity(
+  requestedExternalSessionId: string | null,
+  observedExternalSessionId: string,
+): void {
+  if (
+    requestedExternalSessionId !== null
+    && requestedExternalSessionId !== observedExternalSessionId
+  ) {
+    throw new AiTeamBuilderKimiError(
+      "Kimi returned a different session while resuming an AI team builder draft.",
+    );
+  }
+}
+
+async function writeInvocationManifest(
+  runDir: string,
+  manifest: {
+    version: 1;
+    identityType: "ai-team-builder-draft";
+    mode: "full" | "resume";
+    requestedExternalSessionId: string | null;
+    observedExternalSessionId: string | null;
+    outcome: "succeeded" | "failed";
+  },
+): Promise<void> {
+  await writeFileAtomically(
+    path.join(runDir, "invocation.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 function assertDraftId(draftId: string): void {

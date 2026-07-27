@@ -40,7 +40,7 @@ describe("AI team builder state machine", () => {
       { cli: "codex", model: "gpt", effort: "medium" },
     )).toBe(assigned);
     expect(assigned).toMatchObject({
-      version: 2,
+      version: 3,
       executionProfile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
       externalSessionId: null,
     });

@@ -312,7 +312,7 @@ describe("local console conversation workspace diff through HTTP", () => {
         await fs.writeFile(path.join(options.runDir, "stdout.jsonl"), "RUN_DIR_FALLBACK_MUST_NOT_APPEAR\n");
         await fs.writeFile(path.join(options.runDir, "stderr.log"), "RUN_DIR_STDERR_MUST_NOT_APPEAR\n");
         await options.onThreadStarted?.(threadId);
-        return successfulRun(options, "final reply must stay in the main timeline");
+        return successfulRun(options, "final reply must stay in the main timeline", threadId);
       });
       const project = await createProject(started.url, repository);
       const session = await createSession(started.url, project.projectId, "direct", "请检查实现");
@@ -445,11 +445,15 @@ async function startHarness(
   return started;
 }
 
-function successfulRun(options: CodexRunOptions, finalText: string): Extract<CodexRunResult, { ok: true }> {
+function successfulRun(
+  options: CodexRunOptions,
+  finalText: string,
+  threadId = options.mode?.kind === "resume" ? options.mode.threadId : "thread-evidence",
+): Extract<CodexRunResult, { ok: true }> {
   return {
     ok: true,
     finalText: `${finalText}\n\n<!-- moebius:stage=code-verified -->`,
-    threadId: "thread-evidence",
+    threadId,
     cachedInputTokens: 0,
     runDir: options.runDir,
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),

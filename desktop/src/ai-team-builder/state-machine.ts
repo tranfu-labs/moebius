@@ -30,7 +30,7 @@ export interface AiTeamBuilderInternalError {
 }
 
 export interface AiTeamBuilderDraft {
-  version: 2;
+  version: 3;
   draftId: string;
   phase: AiTeamBuilderPhase;
   messages: AiTeamBuilderMessage[];
@@ -40,7 +40,6 @@ export interface AiTeamBuilderDraft {
   externalSessionId: string | null;
   turnRevision: number;
   pendingPrompt: string | null;
-  threadRebuildUsed: boolean;
   error: AiTeamBuilderInternalError | null;
   failedFrom: "turn" | "commit" | null;
   selectedTeamId: string | null;
@@ -48,7 +47,7 @@ export interface AiTeamBuilderDraft {
 
 export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
   return {
-    version: 2,
+    version: 3,
     draftId,
     phase: "idle",
     messages: [
@@ -63,7 +62,6 @@ export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
     externalSessionId: null,
     turnRevision: 0,
     pendingPrompt: null,
-    threadRebuildUsed: false,
     error: null,
     failedFrom: null,
     selectedTeamId: null,
@@ -168,28 +166,6 @@ export function failAiTeamBuilderDraft(
     error,
     failedFrom,
     selectedTeamId: null,
-  };
-}
-
-export function resetAiTeamBuilderThreadForRebuild(draft: AiTeamBuilderDraft): AiTeamBuilderDraft {
-  if (draft.threadRebuildUsed) {
-    throw new AiTeamBuilderTransitionError("AI team builder thread was already rebuilt once.");
-  }
-  return {
-    ...draft,
-    phase: "running",
-    messages: [
-      ...draft.messages,
-      {
-        role: "assistant",
-        text: "原 AI 上下文已失效，已使用保存的对话重建。最后有效方案仍保留，请核对下一版方案。",
-      },
-    ],
-    proposalRevision: 0,
-    externalSessionId: null,
-    threadRebuildUsed: true,
-    error: null,
-    failedFrom: null,
   };
 }
 

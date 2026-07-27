@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Desktop Agent provider sessions after the change</title>
+  <desc id="desc">Local, AI team builder, and GitHub roles use stable identities, one canonical provider session, delta prompts, and fail closed resume.</desc>
+  <defs>
+    <style>
+      .bg{fill:#111318}.box{fill:#1b1f27;stroke:#596273;stroke-width:2}.good{fill:#173128;stroke:#62b58c;stroke-width:2}.warn{fill:#342d1c;stroke:#c9a854;stroke-width:2}.txt{fill:#f3f5f7;font:16px system-ui,sans-serif}.sub{fill:#aeb6c2;font:13px system-ui,sans-serif}.arrow{stroke:#8b95a5;stroke-width:2;fill:none;marker-end:url(#m)}.green{stroke:#62b58c;stroke-width:2;fill:none;marker-end:url(#g)}
+    </style>
+    <marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b95a5"/></marker>
+    <marker id="g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#62b58c"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="700"/>
+  <text class="txt" x="48" y="52">After: one state machine for every Desktop persistent Agent</text>
+  <rect class="box" x="48" y="92" width="310" height="106" rx="12"/>
+  <text class="txt" x="70" y="126">Stable identity</text><text class="sub" x="70" y="154">local: session + snapshot + role</text><text class="sub" x="70" y="178">builder: draft · GitHub: issue + role</text>
+  <rect class="good" x="452" y="82" width="320" height="126" rx="12"/>
+  <text class="txt" x="474" y="116">first</text><text class="sub" x="474" y="144">full / session-new once</text><text class="sub" x="474" y="170">observe ID → persist immediately</text><text class="sub" x="474" y="194">canonical link</text>
+  <path class="green" d="M358 145H452"/>
+  <rect class="good" x="842" y="82" width="310" height="126" rx="12"/>
+  <text class="txt" x="864" y="116">resume</text><text class="sub" x="864" y="144">same requested ID</text><text class="sub" x="864" y="170">one provider invocation</text><text class="sub" x="864" y="194">observed ID must match</text>
+  <path class="green" d="M772 145H842"/>
+  <rect class="box" x="48" y="274" width="310" height="132" rx="12"/>
+  <text class="txt" x="70" y="308">Public timeline</text><text class="sub" x="70" y="336">first: complete shared history</text><text class="sub" x="70" y="362">resume: unseen public delta</text><text class="sub" x="70" y="388">advance cursor after publish</text>
+  <rect class="box" x="452" y="274" width="320" height="132" rx="12"/>
+  <text class="txt" x="474" y="308">Persistent proof</text><text class="sub" x="474" y="336">canonical ID + ownership</text><text class="sub" x="474" y="362">cursor + initialization evidence</text><text class="sub" x="474" y="388">safe invocation audit</text>
+  <path class="arrow" d="M358 340H452"/>
+  <path class="arrow" d="M612 274V208"/>
+  <rect class="warn" x="842" y="274" width="310" height="132" rx="12"/>
+  <text class="txt" x="864" y="308">unavailable</text><text class="sub" x="864" y="336">missing / conflict / incompatible</text><text class="sub" x="864" y="362">resume failure or ID mismatch</text><text class="sub" x="864" y="388">explicit failure, no fallback</text>
+  <path class="arrow" d="M772 340H842"/>
+  <rect class="box" x="48" y="488" width="1104" height="132" rx="12"/>
+  <text class="txt" x="70" y="524">Boundaries</text>
+  <text class="sub" x="70" y="554">Persistent: local Agent · AI team builder draft · Desktop background GitHub mention role</text>
+  <text class="sub" x="70" y="582">Auxiliary full: local/GitHub no-mention routing · CEO guardrail</text>
+  <text class="sub" x="70" y="606">Renderer sees safe failure text only; provider IDs and manifests remain internal</text>
+  <path class="arrow" d="M203 406V488"/><path class="arrow" d="M612 406V488"/><path class="arrow" d="M997 406V488"/>
+</svg>

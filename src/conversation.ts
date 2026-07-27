@@ -27,6 +27,10 @@ export interface TimelineMessage {
 export interface RoleThreadState {
   threadId: string;
   lastSeenIndex: number;
+  provider?: "codex";
+  contextFingerprint?: string;
+  workspaceFingerprint?: string;
+  personaFingerprint?: string;
 }
 
 export type RolePromptPlan =
@@ -118,10 +122,6 @@ export function buildRolePromptPlan(input: {
     deltaMessages,
     prompt: buildDeltaPrompt(input.role, deltaMessages),
   };
-}
-
-export function buildFallbackFullPrompt(agentMarkdown: string, timeline: TimelineMessage[]): string {
-  return buildFullPrompt(agentMarkdown, timeline);
 }
 
 export function selectDeltaMessages(

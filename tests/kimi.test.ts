@@ -48,6 +48,7 @@ function fakeTransport(input: {
   sessionOptions?: unknown[];
   setResponses?: unknown[];
   waitForUpdate?: boolean;
+  sessionId?: string;
 } = {}): KimiAcpTransport & { requests: Array<{ method: string; params: unknown }> } {
   const requests: Array<{ method: string; params: unknown }> = [];
   const setResponses = [...(input.setResponses ?? [])];
@@ -64,7 +65,7 @@ function fakeTransport(input: {
       if (method === "authenticate") return {};
       if (method === "session/new" || method === "session/resume") {
         return {
-          sessionId: "kimi-session-1",
+          sessionId: input.sessionId ?? "kimi-session-1",
           configOptions: input.sessionOptions ?? configOptions(),
         };
       }
@@ -135,6 +136,22 @@ async function makeRuntimeHomes(root: string): Promise<KimiRuntimeHomePaths> {
 }
 
 describe("Kimi ACP driver", () => {
+  it("rejects a resume response with a different exact session id before prompting", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({ sessionId: "replacement-session" });
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "must not run",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "resume", externalSessionId: "original-session" },
+    })).rejects.toThrow("不一致");
+    expect(transport.requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "session/resume",
+    ]);
+  });
+
   it("advertises no write capability and confirms a non-auto mode for read-only sessions", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport({

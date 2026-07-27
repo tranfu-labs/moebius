@@ -230,6 +230,15 @@ export async function runKimiAcpWithTransport(
           },
     ));
     sessionId = readSessionId(sessionResult);
+    if (
+      options.mode.kind === "resume"
+      && sessionId !== options.mode.externalSessionId
+    ) {
+      throw new KimiAcpError(
+        "KIMI_ACP_SESSION_FAILED",
+        "Kimi 返回了与请求不一致的 session。",
+      );
+    }
     const guardedTransport = {
       request: (method: string, params: unknown) =>
         raceLifecycle(transport.request(method, params)),

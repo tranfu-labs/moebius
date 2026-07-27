@@ -120,8 +120,16 @@ function isRoleThreadState(value: unknown): value is RoleThreadState {
     state.threadId.length > 0 &&
     Number.isInteger(lastSeenIndex) &&
     lastSeenIndex !== undefined &&
-    lastSeenIndex >= 0
+    lastSeenIndex >= -1 &&
+    (state.provider === undefined || state.provider === "codex") &&
+    optionalNonEmptyString(state.contextFingerprint) &&
+    optionalNonEmptyString(state.workspaceFingerprint) &&
+    optionalNonEmptyString(state.personaFingerprint)
   );
+}
+
+function optionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.length > 0);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

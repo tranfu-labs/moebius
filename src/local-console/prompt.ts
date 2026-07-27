@@ -23,7 +23,26 @@ export function buildLocalAgentPrompt(input: {
 ${formatLocalTimeline(input.timeline)}`;
 }
 
-function formatLocalTimeline(messages: readonly TimelineMessage[]): string {
+export function selectLocalTimelineDelta(
+  timeline: readonly TimelineMessage[],
+  role: string,
+  lastSeenIndex: number,
+): TimelineMessage[] {
+  return timeline.filter((message) =>
+    message.index > lastSeenIndex && message.speaker !== role);
+}
+
+export function buildLocalAgentDeltaPrompt(input: {
+  role: string;
+  timeline: readonly TimelineMessage[];
+}): string {
+  return `以下是本地共享时间线中，你上次处理后新增、且不是你自己 <${input.role}> 发出的消息。请基于当前 provider session 的既有上下文继续回复。
+
+新增公开消息：
+${formatLocalTimeline(input.timeline)}`;
+}
+
+export function formatLocalTimeline(messages: readonly TimelineMessage[]): string {
   return messages
     .map((message) => `#${message.index} <${message.speaker}>:\n${message.body.trimEnd()}`)
     .join("\n\n");

@@ -21,6 +21,7 @@ describe("AiTeamBuilderKimiSpawner", () => {
     const calls: KimiAcpRunOptions[] = [];
     const run = vi.fn(async (options: KimiAcpRunOptions) => {
       calls.push(options);
+      await options.onSessionStarted?.("kimi-session-1");
       return {
         ok: true as const,
         finalText: JSON.stringify({ phase: "clarifying", question: "面向谁？" }),
@@ -35,6 +36,7 @@ describe("AiTeamBuilderKimiSpawner", () => {
     });
     const spawner = new AiTeamBuilderKimiSpawner({ run });
     const profile = { cli: "kimi", model: "kimi-for-coding", effort: "high" } as const;
+    const onExternalSessionStarted = vi.fn(async () => {});
 
     await expect(spawner.execute({
       dataRoot,
@@ -42,6 +44,7 @@ describe("AiTeamBuilderKimiSpawner", () => {
       prompt: "用户原始目标",
       profile,
       externalSessionId: null,
+      onExternalSessionStarted,
     })).resolves.toMatchObject({ ok: true, externalSessionId: "kimi-session-1" });
     await expect(spawner.execute({
       dataRoot,
@@ -49,6 +52,7 @@ describe("AiTeamBuilderKimiSpawner", () => {
       prompt: "继续调整",
       profile,
       externalSessionId: "kimi-session-1",
+      onExternalSessionStarted,
     })).resolves.toMatchObject({ ok: true, externalSessionId: "kimi-session-1" });
 
     expect(calls[0]).toMatchObject({
@@ -58,6 +62,8 @@ describe("AiTeamBuilderKimiSpawner", () => {
       workspaceAccess: "read-only",
       permissionMode: "default",
     });
+    expect(onExternalSessionStarted).toHaveBeenCalledTimes(2);
+    expect(onExternalSessionStarted).toHaveBeenNthCalledWith(1, "kimi-session-1");
     expect(calls[1]).toMatchObject({
       prompt: "继续调整",
       profile,
@@ -66,8 +72,24 @@ describe("AiTeamBuilderKimiSpawner", () => {
       permissionMode: "default",
     });
     expect(calls[0]?.cwd).toBe(calls[1]?.cwd);
+    await expect(readInvocation(calls[0]!.runDir)).resolves.toMatchObject({
+      mode: "full",
+      requestedExternalSessionId: null,
+      observedExternalSessionId: "kimi-session-1",
+      outcome: "succeeded",
+    });
+    await expect(readInvocation(calls[1]!.runDir)).resolves.toMatchObject({
+      mode: "resume",
+      requestedExternalSessionId: "kimi-session-1",
+      observedExternalSessionId: "kimi-session-1",
+      outcome: "succeeded",
+    });
     const instructions = await fs.readFile(path.join(calls[0]!.cwd, "AGENTS.md"), "utf8");
     expect(instructions).toContain("只负责把用户目标转成团队方案");
     expect(instructions).not.toContain("用户原始目标");
   });
 });
+
+async function readInvocation(runDir: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await fs.readFile(path.join(runDir, "invocation.json"), "utf8")) as Record<string, unknown>;
+}

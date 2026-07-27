@@ -161,12 +161,22 @@ describe("AiTeamBuilder service", () => {
     }));
   });
 
-  it("rebuilds a lost thread once from saved conversation, resets revision, and tells the user", async () => {
+  it("fails closed on a lost thread and retries the same external session", async () => {
     const dataRoot = await makeDataRoot();
     const codex = queueCodex([
       success(proposal, "thread-1"),
-      { ok: false, reason: "exit-code-1", resumeFailed: true },
-      success({ ...proposal, team: { ...proposal.team, name: "调整后的团队" } }, "thread-2"),
+      {
+        ok: false,
+        reason: "exit-code-1",
+        resumeFailed: true,
+        externalSessionId: "thread-1",
+      },
+      {
+        ok: false,
+        reason: "exit-code-1",
+        resumeFailed: true,
+        externalSessionId: "thread-1",
+      },
     ]);
     const builder = new AiTeamBuilder({
       dataRoot,
@@ -178,27 +188,63 @@ describe("AiTeamBuilder service", () => {
       phase: "proposal",
       proposalRevision: 1,
     });
-    const rebuilt = await builder.adjust("draft", "再精简一点");
+    const failed = await builder.adjust("draft", "再精简一点");
 
-    expect(rebuilt).toMatchObject({
-      phase: "proposal",
+    expect(failed).toMatchObject({
+      phase: "failed",
       proposalRevision: 1,
-      proposal: { team: { name: "调整后的团队" } },
-      messages: expect.arrayContaining([
-        {
-          role: "assistant",
-          text: expect.stringContaining("使用保存的对话重建"),
-        },
-      ]),
+      proposal: { team: { name: proposal.team.name } },
+      error: {
+        code: "context-lost",
+        humanMessage: "AI 上下文暂时无法继续，已保留对话和最后有效方案。",
+      },
+    });
+    await expect(builder.retry("draft")).resolves.toMatchObject({
+      phase: "failed",
+      error: { code: "context-lost" },
     });
     expect(codex.execute).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ externalSessionId: "thread-1" }),
     );
-    expect(codex.execute).toHaveBeenNthCalledWith(3, expect.objectContaining({
-      externalSessionId: null,
-      prompt: expect.stringContaining("保存的对话"),
-    }));
+    expect(codex.execute).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ externalSessionId: "thread-1" }),
+    );
+  });
+
+  it("persists a newly observed external session before the driver turn settles", async () => {
+    const dataRoot = await makeDataRoot();
+    const codex: AiTeamBuilderCodexPort = {
+      execute: vi.fn(async (input) => {
+        await input.onExternalSessionStarted?.("thread-observed-before-crash");
+        throw new Error("driver crashed after session creation");
+      }),
+    };
+    const builder = new AiTeamBuilder({
+      dataRoot,
+      codex,
+      resolveExecutionProfile: codexProfile,
+    });
+
+    await expect(builder.submit("draft-observed", "帮我做发布")).resolves.toMatchObject({
+      phase: "failed",
+      error: {
+        code: "temporarily-unavailable",
+        humanMessage: "AI 团队设计器暂时不可用，已保留当前内容。",
+      },
+    });
+    const stored = JSON.parse(await fs.readFile(
+      path.join(
+        dataRoot,
+        ".state",
+        "ai-team-builder-drafts",
+        "draft-observed.json",
+      ),
+      "utf8",
+    )) as { phase?: string; externalSessionId?: string | null };
+    expect(stored.phase).toBe("failed");
+    expect(stored.externalSessionId).toBe("thread-observed-before-crash");
   });
 
   it("restores an unconfirmed draft while DTO keys remain an exact safe whitelist", async () => {

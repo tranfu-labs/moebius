@@ -5,9 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import {
   buildLocalResumePrompt,
-  planLocalCodexRecovery,
   readLocalCodexRecoveryFacts,
-  type LocalCodexResumeIntentFact,
 } from "../src/local-console/codex-resume.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import type { LocalConsoleMessage } from "../src/local-console/types.js";
@@ -20,78 +18,7 @@ afterEach(async () => {
   await Promise.all(cleanupRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-describe("local Codex recovery planning", () => {
-  const intent: LocalCodexResumeIntentFact = {
-    sessionId: "session-a",
-    intentId: "intent-a",
-    targetRunId: "run-a",
-    sourceMessageId: 7,
-    role: "dev",
-    reason: "retry",
-    createdAt: "2026-07-23T00:00:00.000Z",
-  };
-
-  it("keeps ordinary turns full and resumes only the explicitly linked compatible run", () => {
-    expect(planLocalCodexRecovery({
-      sourceMessageId: 7,
-      role: "dev",
-      contextFingerprint: "context-a",
-      intents: [],
-      consumedIntentIds: new Set(),
-      threadLinks: [],
-    })).toEqual({ kind: "full", intent: null, reason: "no-resume-intent" });
-
-    expect(planLocalCodexRecovery({
-      sourceMessageId: 7,
-      role: "dev",
-      contextFingerprint: "context-a",
-      intents: [intent],
-      consumedIntentIds: new Set(),
-      threadLinks: [{
-        sessionId: "session-a",
-        runId: "run-a",
-        sourceMessageId: 7,
-        role: "dev",
-        threadId: "thread-a",
-        startedAt: "2026-07-23T00:00:01.000Z",
-        contextFingerprint: "context-a",
-      }],
-    })).toMatchObject({ kind: "resume", threadId: "thread-a", reason: "compatible" });
-  });
-
-  it("falls back to full for legacy links and changed context", () => {
-    const base = {
-      sourceMessageId: 7,
-      role: "dev",
-      contextFingerprint: "context-b",
-      intents: [intent],
-      consumedIntentIds: new Set<string>(),
-    };
-    expect(planLocalCodexRecovery({
-      ...base,
-      threadLinks: [{
-        sessionId: "session-a",
-        runId: "run-a",
-        sourceMessageId: 7,
-        role: "dev",
-        threadId: "thread-a",
-        startedAt: "2026-07-23T00:00:01.000Z",
-      }],
-    })).toMatchObject({ kind: "full-fallback", reason: "legacy-thread-link" });
-    expect(planLocalCodexRecovery({
-      ...base,
-      threadLinks: [{
-        sessionId: "session-a",
-        runId: "run-a",
-        sourceMessageId: 7,
-        role: "dev",
-        threadId: "thread-a",
-        startedAt: "2026-07-23T00:00:01.000Z",
-        contextFingerprint: "context-a",
-      }],
-    })).toMatchObject({ kind: "full-fallback", reason: "context-mismatch" });
-  });
-
+describe("local Codex recovery compatibility prompt", () => {
   it("renders edit-and-resend as an overriding correction delta", () => {
     const prompt = buildLocalResumePrompt({
       reason: "edit-resend",
@@ -103,7 +30,7 @@ describe("local Codex recovery planning", () => {
 });
 
 describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
-  it("creates a new full run for Retry and persists cached input usage", async () => {
+  it("resumes the same provider session for Retry and persists cached input usage", async () => {
     const root = await fixtureRoot();
     let call = 0;
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
@@ -138,10 +65,13 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
       messages.find((message) => message.speaker === "agent" && message.body === "resumed") ?? null);
 
     expect(runCodex).toHaveBeenCalledTimes(2);
-    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "full" });
+    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({
+      kind: "resume",
+      threadId: "thread-retry",
+    });
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
     expect(facts).toContain('"reason":"retry"');
-    expect(facts).toContain('"reason":"explicit-retry"');
+    expect(facts).toContain('"mode":"resume"');
     expect(facts).toContain('"cachedInputTokens":321');
   });
 
@@ -206,8 +136,17 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     const sameRunLifecycle = lifecycleFacts.filter((fact) =>
       fact.type === "run_lifecycle" && fact.payload?.runId === firstActiveRun.runId);
     expect(sameRunLifecycle.filter((fact) => fact.payload?.phase === "created")).toHaveLength(1);
-    expect(sameRunLifecycle.some((fact) => fact.payload?.phase === "paused")).toBe(true);
-    expect(sameRunLifecycle.some((fact) => fact.payload?.phase === "resumed")).toBe(true);
+    const invocationFacts = (await fs.readFile(
+      second.runtime.getSessionFactLogPath("default"),
+      "utf8",
+    )).split("\n").filter(Boolean).map((line) => JSON.parse(line) as {
+      type?: string;
+      payload?: { runId?: string; phase?: string; mode?: string };
+    }).filter((fact) =>
+      fact.type === "provider_invocation" && fact.payload?.runId === firstActiveRun.runId);
+    const startedInvocations = invocationFacts.filter((fact) => fact.payload?.phase === "started");
+    expect(startedInvocations.filter((fact) => fact.payload?.mode === "full")).toHaveLength(1);
+    expect(startedInvocations.filter((fact) => fact.payload?.mode === "resume")).toHaveLength(1);
   });
 
   it("does not rerun automatically when graceful recovery is unavailable", async () => {
@@ -251,10 +190,12 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
       second.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForState(second.url, (messages) =>
-      messages.find((message) => message.body === "restarted explicitly") ?? null);
-    expect(replacementRun).toHaveBeenCalledTimes(1);
-    expect(replacementRun.mock.calls[0]?.[0].mode).toEqual({ kind: "full" });
+    const retriedUnavailable = await waitForState(second.url, (messages) =>
+      messages.find((message) =>
+        message.runId !== unavailable.runId
+        && message.systemEventKind === "resume-unavailable") ?? null);
+    expect(retriedUnavailable.error).toContain("resume-unavailable");
+    expect(replacementRun).not.toHaveBeenCalled();
   });
 
   it("continues an interrupted thread with the edited resend as an overriding delta", async () => {
@@ -298,7 +239,7 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     expect(runCodex.mock.calls[1]?.[0].prompt).toContain("不要改配置，只更新测试");
   });
 
-  it("falls back to a full prompt when the linked rollout is unavailable", async () => {
+  it("fails closed without a full prompt when the linked rollout is unavailable", async () => {
     const root = await fixtureRoot();
     let call = 0;
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
@@ -332,13 +273,14 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     });
     expect(resend.status).toBe(202);
     await waitForState(server.url, (messages) =>
-      messages.find((message) => message.speaker === "agent" && message.body === "full fallback completed") ?? null);
+      messages.find((message) =>
+        message.runId !== stopped.runId
+        && message.systemEventKind === "resume-unavailable") ?? null);
 
-    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "full" });
-    expect(runCodex.mock.calls[1]?.[0].prompt).toContain("当前本地对话时间线");
+    expect(runCodex).toHaveBeenCalledTimes(1);
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
-    expect(facts).toContain('"mode":"full-fallback"');
     expect(facts).toContain('"reason":"rollout-unavailable"');
+    expect(facts).not.toContain('"mode":"full-fallback"');
   });
 });
 

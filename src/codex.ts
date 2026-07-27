@@ -98,6 +98,7 @@ export type CodexRunResult =
   | {
       ok: false;
       reason: string;
+      threadId?: string | null;
       runDir: string;
       stdoutPath: string;
       stderrPath: string;
@@ -338,9 +339,11 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
           try {
             threadStartedCallback = Promise.resolve(options.onThreadStarted(threadId)).catch((error: unknown) => {
               threadStartedCallbackError = formatUnknownError(error);
+              beginTermination();
             });
           } catch (error) {
             threadStartedCallbackError = formatUnknownError(error);
+            beginTermination();
           }
         }
       } else if (observedThreadId !== threadId) {
@@ -408,6 +411,14 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
       `[moebius] codex-thread-link-unavailable:${threadStartedCallbackError}\n`,
       "utf8",
     );
+    return {
+      ok: false,
+      reason: `thread-start-callback-failed:${threadStartedCallbackError}`,
+      threadId: observedThreadId,
+      runDir,
+      stdoutPath,
+      stderrPath,
+    };
   }
 
   if (abortReason !== null) {

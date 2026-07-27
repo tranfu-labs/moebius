@@ -410,6 +410,10 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       role TEXT NOT NULL,
       thread_id TEXT NOT NULL,
       last_seen_index INTEGER NOT NULL,
+      provider TEXT,
+      context_fingerprint TEXT,
+      workspace_fingerprint TEXT,
+      persona_fingerprint TEXT,
       updated_at TEXT NOT NULL,
       PRIMARY KEY(session_id, role)
     );
@@ -509,6 +513,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionsProjectId(database, now);
   ensureSessionAgentTeamColumns(database);
   ensureSessionAgentTeamProfileColumns(database);
+  ensureRoleThreadContextColumns(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
@@ -569,6 +574,21 @@ function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
     database.exec("ALTER TABLE session_agent_team_members ADD COLUMN execution_effort TEXT");
   }
   markSchemaMigration(database, "agent-runtime-profiles-session-snapshot");
+}
+
+function ensureRoleThreadContextColumns(database: SqliteDatabase): void {
+  for (const column of [
+    ["provider", "TEXT"],
+    ["context_fingerprint", "TEXT"],
+    ["workspace_fingerprint", "TEXT"],
+    ["persona_fingerprint", "TEXT"],
+  ] as const) {
+    if (!tableHasColumn(database, "session_role_threads", column[0])) {
+      database.exec(
+        `ALTER TABLE session_role_threads ADD COLUMN ${column[0]} ${column[1]}`,
+      );
+    }
+  }
 }
 
 function migrateSessionWorkspaceContext(database: SqliteDatabase): void {
@@ -919,6 +939,18 @@ function loadRoleThreads(database: SqliteDatabase): unknown {
       [role]: {
         threadId: readString(row.thread_id, "thread_id"),
         lastSeenIndex: readNumber(row.last_seen_index, "last_seen_index"),
+        ...readNullableString(row.provider, "provider") === null
+          ? {}
+          : { provider: readString(row.provider, "provider") },
+        ...readNullableString(row.context_fingerprint, "context_fingerprint") === null
+          ? {}
+          : { contextFingerprint: readString(row.context_fingerprint, "context_fingerprint") },
+        ...readNullableString(row.workspace_fingerprint, "workspace_fingerprint") === null
+          ? {}
+          : { workspaceFingerprint: readString(row.workspace_fingerprint, "workspace_fingerprint") },
+        ...readNullableString(row.persona_fingerprint, "persona_fingerprint") === null
+          ? {}
+          : { personaFingerprint: readString(row.persona_fingerprint, "persona_fingerprint") },
       },
     };
   }
@@ -961,12 +993,32 @@ function saveRoleThreadEntryRaw(database: SqliteDatabase, issueKey: string, role
   ensureSession(database, sessionId, now);
   database
     .prepare(
-      `INSERT INTO session_role_threads (session_id, role, thread_id, last_seen_index, updated_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO session_role_threads (
+         session_id, role, thread_id, last_seen_index, provider,
+         context_fingerprint, workspace_fingerprint, persona_fingerprint, updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id, role)
-       DO UPDATE SET thread_id = excluded.thread_id, last_seen_index = excluded.last_seen_index, updated_at = excluded.updated_at`,
+       DO UPDATE SET
+         thread_id = excluded.thread_id,
+         last_seen_index = excluded.last_seen_index,
+         provider = excluded.provider,
+         context_fingerprint = excluded.context_fingerprint,
+         workspace_fingerprint = excluded.workspace_fingerprint,
+         persona_fingerprint = excluded.persona_fingerprint,
+         updated_at = excluded.updated_at`,
     )
-    .run(sessionId, role, readString(state.threadId, "threadId"), readNumber(state.lastSeenIndex, "lastSeenIndex"), now);
+    .run(
+      sessionId,
+      role,
+      readString(state.threadId, "threadId"),
+      readNumber(state.lastSeenIndex, "lastSeenIndex"),
+      readOptionalString(state.provider),
+      readOptionalString(state.contextFingerprint),
+      readOptionalString(state.workspaceFingerprint),
+      readOptionalString(state.personaFingerprint),
+      now,
+    );
 }
 
 function importAgentContexts(database: SqliteDatabase, store: unknown, legacyDigest: string | null): null {
@@ -4037,6 +4089,10 @@ function readNullableString(value: unknown, field: string): string | null {
     return null;
   }
   return readString(value, field);
+}
+
+function readOptionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function readNumber(value: unknown, field: string): number {

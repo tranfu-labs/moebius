@@ -88,7 +88,7 @@
 - MUST 记录结构化日志：失败重试 `event = "issue-retry-scheduled"`（含 `issueKey`、`failureCount`、失败原因），死信发布成功 `event = "dead-letter-posted"`，死信发布失败 `event = "dead-letter-post-failed"`。
 - MUST 在收尾中断检查（codex 成功后的 conversation snapshot 复核）因 GitHub CLI 抛异常而失败时 fail-open：记录 `event = "agent-run-interrupt-check-failopen"`，视作未观察到新消息并照常执行后续发布流程，MUST NOT 因该次检查失败而丢弃已完成的 codex 产出或返回 `failed`。
 - MUST 让 `src/codex.ts` 的 `run()` 在每次 codex 运行内部独立计时两类看门狗，兜底 in-flight job 永不返回导致的 `skip-inflight` 死锁：空闲看门狗（主防线）在连续 `CODEX_RUN_IDLE_TIMEOUT_MS`（默认 10 分钟）无 stdout 输出时判定卡死，每收到一块 stdout 数据 MUST 重置空闲倒计时，stderr 输出 MUST NOT 算作活动；总时长硬上限（兜底）在单次 run 总时长达到 `CODEX_RUN_MAX_DURATION_MS`（默认 120 分钟）时终止，无视输出活动，防止持续输出的死循环 agent 永久占住 issue。
-- MUST 让 resume 尝试与 resume 失败后的 fallback 全量重跑各自作为独立 run 计时看门狗，MUST NOT 共享同一个看门狗预算。
+- MUST 让每次 Codex invocation 独立使用完整空闲与硬上限看门狗预算。已有 role thread 的 invocation 只能是一次 resume；resume 失败 MUST 直接进入既有 failed / retry / dead-letter 链路，MUST NOT 启动第二个 full invocation 或第二份看门狗预算。
 - 看门狗到期 MUST 在 `run()` 内部以分级方式终止子进程（SIGINT → SIGTERM → SIGKILL），MUST NOT 占用用户中断专用的 `AbortController`；返回 `ok: false` 且 reason 分别为 `idle-timeout:<ms>ms` / `max-duration-timeout:<ms>ms`；用户中断（signal abort）与看门狗竞争时先发生者决定 reason，两类超时 reason MUST NOT 以 `interrupted:` 开头。
 - 任一终止路径（看门狗或用户中断）触发后 MUST 保证 `run()` 的返回 promise 在有限时间内 settle：分级终止走完后即使子进程 `close` 事件不触发（如孙进程持有 stdio 管道），也 MUST 强制合成结果返回，避免 driver pool 名额与 issue job 被永久占住。
 - runner MUST 按 reason 前缀分流看门狗日志：`idle-timeout:*` 记 `event = "codex-idle-timeout"`，`max-duration-timeout:*` 记 `event = "codex-watchdog-timeout"`（语义收窄为仅硬上限超时），两者均含 `timeoutMs` 字段并将该次处理判为 `failed`，走既有失败重试链路（区别于收到新消息的 `interrupted`）。
@@ -167,7 +167,7 @@
 - MUST 通过 GitHub adapter 使用受控 target 与 argv 参数数组添加 reaction：issue body reaction MAY 使用 REST issue reactions endpoint；issue comment reaction MUST 使用 GitHub comment node id 调用 GraphQL `addReaction`。
 - MUST 在拉取 issue body/comments 时保留每条 comment 的 GitHub node `id`，用于 comment reaction target。
 - MUST 仅在真实 Codex driver 执行路径添加该 reaction；no-trigger、preScript 失败、prompt plan skip、Codex 不会启动的路径 MUST NOT 添加该 reaction。
-- MUST 在同一个 issue 处理周期中最多添加一次 Codex execution reaction；resume 失败后 fallback full run MUST NOT 再添加第二次 reaction。
+- MUST 在同一个 issue 处理周期中最多添加一次 Codex execution reaction。resume 失败后 MUST 直接结束 provider 执行并进入失败链路，MUST NOT 添加第二次 reaction，也 MUST NOT 发起 full invocation。
 - MUST 在 Codex execution reaction 添加成功时记录结构化日志，至少包含 `event = "codex-execution-reaction-added"`、`issueKey`、`agent`、`targetSource` 与 `targetIndex`。
 - MUST 在 Codex execution reaction 添加失败时记录结构化日志，至少包含 `event = "codex-execution-reaction-failed"`、`issueKey`、`agent`、`targetSource`、`targetIndex` 与错误原因，并继续执行 Codex；reaction 失败本身 MUST NOT 推进或阻断 role thread 状态。
 - MUST 在运行被 mention 的 Codex agent 前，从本轮 prompt 范围内的 GitHub issue body/comments 检测图片与视频引用。
@@ -178,7 +178,7 @@
 - MUST 按媒体类型、响应 content type 与有界大小校验已下载 issue media，再暴露给 Codex。
 - MUST 通过重复 `--image <file>` 参数把准备好的图片传给 `codex exec` 与 `codex exec resume`。
 - MUST 通过 prompt media manifest 暴露准备好的视频本地文件路径，因为当前 Codex CLI 图片参数不接收视频。
-- MUST 在首次 full run 与 fallback full run 中包含完整公开 timeline 的媒体；resume run 只包含新增外部 delta 消息中的媒体。
+- MUST 在真正首次 full run 中包含完整公开 timeline 的媒体；resume run 只包含新增外部 delta 消息中的媒体。系统 MUST NOT 构造 fallback full run 的媒体集合。
 - MUST 在 issue media 下载或校验失败时发布可见错误评论，MUST NOT 在媒体缺失时静默运行 Codex。
 - MUST 在 Codex 启动前的 issue media preparation 失败时保持 role thread 状态不变。
 - MUST 将确定性的 media-preparation 错误评论视为已处理本次触发 mention，避免同一个坏链接在 active poll 中重复刷错误评论。
@@ -356,7 +356,11 @@
 - MUST 仅在 Codex 成功且 GitHub 评论成功后更新 role thread 状态；失败时 MUST 保持旧状态，允许下一轮重试。
 - MUST terminate the Codex child process when an agent-run interrupt fires, and MUST treat the interrupted run as unsuccessful even if the process exits cleanly afterward.
 - MUST NOT post a GitHub comment or update `.state/role-threads.json` after an interrupted Codex run.
-- MUST 在 resume 失败或 thread id 不可用时允许回退到 full prompt 新建 Codex thread，并在 GitHub 评论成功后更新该 role 的 thread 映射。
+- MUST 以 `issueKey + role` 作为 Desktop 后台 GitHub 持久 Agent 身份。没有 role thread 创建证据时 MAY 首次 full；一旦观察到 thread ID，后续 trigger 和失败重试 MUST 只 resume 同一 ID。resume 失败、thread 不存在、thread ID 缺失/冲突或返回不同 ID 时，runner MUST 保留原 canonical ID，以 `resume-unavailable:<reason>` 进入既有 retry / dead-letter，且单次 issue processing MUST 只有一次 provider invocation。
+- MUST 在首次 full 观察到 `thread.started` 后立即固化当前 `issueKey + role` 的 canonical thread ID；即使随后的输出、编排副作用或评论发布失败，下一次也只能 resume 该 ID。
+- MUST 把 canonical thread ID 与公开时间线 cursor 作为两个提交点：`lastSeenIndex` 只有在 Agent 公开评论及本轮必要副作用成功后才可推进；失败或中断 MUST 保持旧 cursor 并在下一次 resume 时重新选择未确认 delta。
+- MUST 保存 role provider、workspace 与冻结 persona 的归属证明；旧 entry 只有唯一且归属兼容的 thread ID 才可迁移，缺失、冲突或不兼容 MUST fail closed。
+- MUST 记录结构化 `codex-invocation` 日志，至少包含 mode、requested/observed ID 一致性与 outcome，使测试可以直接断言失败轮只有一次 resume、没有 full fallback。
 
 ## T6 v0 roundtable topology
 - MUST support a v0 serialized roundtable topology as a CEO ordinary-agent workflow, not as a new moderator agent.
@@ -477,7 +481,7 @@ Given a message contains multiple legal agent mentions outside code regions
 When mention trigger evaluates the latest message
 Then v0 behavior still selects at most the first supported mention
 And no fan-out or join primitive is invoked
-- MUST 把本地脚本每次执行的 stdout / stderr 落到 `<TMP_ROOT>/moebius-<ISO>-c<count>-r<sequence>/` 下，并在日志中打印该路径，便于追溯；`<sequence>` 是 runner 进程内递增后缀，用于保证并发 runDir 唯一；resume fallback 可使用独立 fallback 目录。
+- MUST 把本地脚本每次执行的 stdout / stderr 落到 `<TMP_ROOT>/moebius-<ISO>-c<count>-r<sequence>/` 下，并在日志中打印该路径，便于追溯；`<sequence>` 是 runner 进程内递增后缀，用于保证并发 runDir 唯一。一次 issue processing 的 provider invocation 只使用这一份 runDir；MUST NOT 创建 `-fallback` 或其他 second-invocation runDir。
 - MUST 在本地脚本失败（非 0 退出 / 解析不出最终消息 / 无法取得必要 thread id）时只记日志、不发评论；下一轮若条件仍满足可再次尝试。
 - MUST 通过 `child_process.spawn(cmd, args[])` 调用 codex 与 gh，prompt 作为 argv 项、评论 body 通过 stdin（`gh ... --body-file -`）注入，issue reaction 通过 `gh api` argv 参数数组添加；artifact publisher 若调用外部命令也 MUST 使用受控 argv 数组；MUST NOT 通过 shell 拼接。
 - MUST 把 issue body / comment 内容当作不可信外部输入处理。
@@ -663,13 +667,16 @@ When 一次轮询取回该 issue
 Then mention trigger 选择 `dev`
 And 系统按 `dev` role thread 执行 Codex
 
-### 场景 10：对话型 — resume 失败时回退 full prompt
+### 场景 10：对话型 — resume 失败时 fail closed
 Given `.state/role-threads.json` 中已有 `hermes-user.threadId = stale-thread`
 And 最新消息包含 `@hermes-user`
 When `codex exec resume stale-thread` 失败
-Then 系统记录 `event:codex-resume-failed`
-And 使用该 role persona 与完整共享时间线再执行一次 full prompt
-And 只有 fallback Codex 成功且 GitHub 评论成功后才覆盖该 role 的 `threadId` 与 `lastSeenIndex`
+Then 系统记录一条 `codex-invocation mode=resume threadId=stale-thread`
+And processing outcome 为 `failed`
+And reason 以 `resume-unavailable:` 开头
+And 原 `threadId` 与 `lastSeenIndex` 均不被 replacement 值覆盖
+And 不存在 `-fallback` runDir 或同轮 `mode=full`
+And 达到既有失败预算后 dead-letter 的 Failure reason 保留同一 reason
 
 ### 场景 11：对话型 — 本地脚本失败保留可追溯信息
 Given codex 以非 0 退出码结束，或 stdout 中无可解析的最终 assistant 文本
@@ -738,7 +745,7 @@ Given `.state/agent-contexts.json` 中已有当前 issue workspace context
 And 该 context 的 worktreePath 可访问
 When 最新消息包含任一 workspace-capable role
 Then 系统不重复 clone，不重复创建 worktree
-And 以已记录 worktreePath 作为 Codex cwd 执行 resume 或 fallback full run
+And 以已记录 worktreePath 作为 Codex cwd；已有 canonical thread ID 时只执行 resume，真正首次且无任何 thread 创建证据时才执行 full
 
 ### 场景 16.1：Workspace capability — 已有 worktree 落后最新 main 时不重建
 Given `.state/agent-contexts.json` 中已有当前 issue workspace context
@@ -1062,11 +1069,12 @@ When runner 处理该 issue
 Then 系统不添加 `eyes` reaction
 And 不把该 reaction 当作处理成功条件
 
-### 场景 29：Codex 执行反馈 — resume fallback 不重复 reaction
+### 场景 29：Codex 执行反馈 — resume 失败不重复 reaction 或调用
 Given runner 已在本轮 resume Codex 前添加过 `eyes` reaction
 And `codex exec resume <threadId>` 失败
-When runner fallback 到 full prompt 再调用 Codex
+When runner 把本轮折叠为 `resume-unavailable`
 Then 系统不再添加第二次 `eyes` reaction
+And 不再调用 full Codex
 
 ### 场景 30：Codex 执行反馈 — comment reaction 失败不阻断 Codex
 Given runner 即将为最新 comment 添加 `eyes` reaction
@@ -1535,12 +1543,6 @@ Given 一次 codex run 持续产出 stdout 但总时长达到 `CODEX_RUN_MAX_DUR
 When 硬上限到期
 Then `run()` 返回 `ok: false, reason = "max-duration-timeout:<ms>ms"`
 And runner 记录 `event = "codex-watchdog-timeout"` 并判 `failed`
-
-### 场景 50.3：fallback 重跑拿到独立看门狗预算
-Given resume 尝试运行了任意时长后以非中断原因失败
-When runner 进入 fallback 全量重跑
-Then fallback 的 run 从零开始计时空闲与硬上限看门狗
-And 不继承 resume 尝试已消耗的预算
 
 ### 场景 50.4：孙进程持有 stdio 管道时 run 仍有限时间 settle
 Given 看门狗或用户中断已触发分级终止（SIGINT → SIGTERM → SIGKILL）
@@ -2145,6 +2147,23 @@ Given the latest comment is agent-authored with no legal mention
 And the issue does not resolve to any goal-ledger child task
 When the fallback route runs
 Then the agent-authored branch does not trigger and the skip behavior matches the current runner
+
+### Requirement: 持久 role 与辅助推理调用点边界可验证
+
+Source: docs/product/prd.md#desktop-持久-agent-的执行会话连续性
+
+生产 provider 调用点 inventory MUST 把 mention role 分类为持久 Agent，把 GitHub
+no-mention external route 与 CEO guardrail 分类为一次性辅助推理。辅助调用 MUST full
+且 MUST NOT 读写 role thread / cursor；新增直接 provider 调用点若未分类 MUST 使测试
+失败。
+
+#### Scenario: CEO guardrail 保持无状态
+
+- **GIVEN** mention role 已产生最终回复并进入发布前 guardrail
+- **WHEN** guardrail 调用 Codex
+- **THEN** guardrail 使用一次性 full
+- **AND** 不读取或更新 mention role thread
+- **AND** guardrail 失败仍按既有 fail-open 规则返回原回复。
 
 ## 可验证行为
 - `pnpm vitest run tests/runner.test.ts tests/format-ceo.test.ts tests/github-response-intake.test.ts tests/conversation.test.ts` MUST 通过，覆盖外部无 mention 兜底路由、route parser 负例、comment id ledger 防重、issue-body digest key 防重、目标 handoff 发布失败不推进、CEO 审阅 metadata 覆盖、旧 intake state 兼容与 speaker 归一化边界。

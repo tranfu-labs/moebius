@@ -606,6 +606,10 @@ export interface LocalConsoleStore {
   }): Promise<void>;
   recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
   recordExecutionSessionLink?(input: import("./execution-context.js").LocalExecutionSessionLinkFact): Promise<void>;
+  recordAgentSessionLink?(input: import("./execution-context.js").LocalAgentSessionLinkFact): Promise<void>;
+  recordProviderSessionObserved?(input: import("./execution-context.js").LocalProviderSessionObservedFact): Promise<void>;
+  recordAgentTimelineCursor?(input: import("./execution-context.js").LocalAgentTimelineCursorFact): Promise<void>;
+  recordProviderInvocation?(input: import("./execution-context.js").LocalProviderInvocationFact): Promise<void>;
   nextRunAttempt?(input: { sessionId: string; stepId: string }): Promise<number>;
   getRunTiming?(input: { sessionId: string; runId: string }): Promise<LocalConsoleRunTiming | null>;
   recordRunLifecycleEvent?(input: {

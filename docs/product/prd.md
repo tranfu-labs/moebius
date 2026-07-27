@@ -131,6 +131,25 @@ Agent 团队是一组围绕同类任务协作的 Agent，是产品中由用户�
 
 切换团队时保留当前会话及已有上下文，由新团队接管切换后的任务推进；系统不新建会话，也不重新执行已经完成的历史步骤。
 
+### Desktop 持久 Agent 的执行会话连续性
+
+Desktop 当前实际使用的持久 Agent 只有三类：主操作台中的 local 对话 Agent、首次引导
+或 Agent 团队页中的 AI 建队草稿，以及 Desktop 自动启动的后台 GitHub issue mention
+role。三类身份分别由 local 的「会话 + 团队快照 + 角色」、AI 建队的 draft、GitHub 的
+「issue + role」隔离。
+
+每个持久 Agent 身份第一次执行时允许创建一个 Codex thread 或 Kimi session；取得
+external ID 后，后续消息、接力、重试、修复和恢复都必须 resume 同一个 ID。ID 缺失、
+冲突、上下文不兼容、provider 会话不存在或 resume 失败时必须明确失败，不能静默清空
+ID、切换 provider，或用完整历史 full / `session/new` 重建。
+
+local Agent 首次接收完整共享时间线，后续接收自己尚未看到的公开时间线增量；这让成员
+保留 provider 内的工作记忆，同时仍能看到其他成员离开期间形成的公开结论。明确切换
+团队快照后，同名角色也属于新 Agent 身份。AI 建队跨 draft 不共享 provider session。
+
+local / GitHub 无 mention 路由与 CEO guardrail 是一次性辅助推理，没有持久 Agent 身份，
+不纳入上述连续性契约。readiness、版本检查、安装与 observer 不产生 Agent 推理会话。
+
 ## 视觉语言原则
 
 产品界面采用近黑底暗色优先的 dashboard 视觉语言，令牌级细节以 `packages/console-ui/DESIGN.md` 为包内事实源，本节只定义全局原则：

@@ -40,9 +40,14 @@ import type {
   LocalCodexRunUsageFact,
 } from "./codex-resume.js";
 import {
+  readAgentSessionLinks,
   readExecutionSessionLinks,
   readRunExecutionContexts,
+  type LocalAgentSessionLinkFact,
+  type LocalAgentTimelineCursorFact,
   type LocalExecutionSessionLinkFact,
+  type LocalProviderInvocationFact,
+  type LocalProviderSessionObservedFact,
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 
@@ -764,6 +769,71 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     });
   }
 
+  async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const links = await readAgentSessionLinks(
+        this.getSessionFactLogPath(input.sessionId),
+        input.sessionId,
+      );
+      const existing = links.find((link) =>
+        link.agentIdentityFingerprint === input.agentIdentityFingerprint);
+      if (existing !== undefined) {
+        if (
+          existing.externalSessionId !== input.externalSessionId
+          || existing.role !== input.role
+          || existing.engine !== input.engine
+          || existing.profileFingerprint !== input.profileFingerprint
+          || existing.contextFingerprint !== input.contextFingerprint
+        ) {
+          throw new Error(
+            `conflicting Agent session link for ${input.agentIdentityFingerprint}`,
+          );
+        }
+        return;
+      }
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "agent_session_link",
+        recordedAt: input.linkedAt,
+        payload: input,
+        messageUpserts: [],
+      });
+    });
+  }
+
+  async recordProviderSessionObserved(input: LocalProviderSessionObservedFact): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "provider_session_observed",
+      input.runId,
+      input.observedAt,
+      input,
+    );
+  }
+
+  async recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "agent_timeline_cursor",
+      input.runId,
+      input.recordedAt,
+      input,
+    );
+  }
+
+  async recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "provider_invocation",
+      `${input.invocationId}:${input.phase}`,
+      input.recordedAt,
+      input,
+    );
+  }
+
   async recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void> {
     await this.appendIdempotentSessionFact(
       input.sessionId,
@@ -1015,7 +1085,16 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       const existing = events.find((event) =>
         event.type === type
         && isRecord(event.payload)
-        && (event.payload.intentId === key || event.payload.runId === key));
+        && (
+          event.payload.intentId === key
+          || event.payload.runId === key
+          || event.payload.agentIdentityFingerprint === key
+          || (
+            typeof event.payload.invocationId === "string"
+            && typeof event.payload.phase === "string"
+            && `${event.payload.invocationId}:${event.payload.phase}` === key
+          )
+        ));
       if (existing !== undefined) {
         if (JSON.stringify(existing.payload) !== JSON.stringify(payload)) {
           throw new Error(`conflicting ${type} fact for ${key}`);

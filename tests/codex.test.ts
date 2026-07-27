@@ -424,7 +424,7 @@ process.stdout.write(JSON.stringify({ type: "item.completed", item: { type: "age
     }
   });
 
-  it("keeps the Agent run successful when only complete-output linking cannot persist", async () => {
+  it("fails the Agent run when thread.started cannot be persisted", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
     const binDir = path.join(tempDir, "bin");
     const runDir = path.join(tempDir, "run");
@@ -450,7 +450,11 @@ process.stdout.write(JSON.stringify({ type: "item.completed", item: { type: "age
           throw new Error("session fact unavailable");
         },
       });
-      expect(result).toMatchObject({ ok: true, finalText: "done" });
+      expect(result).toMatchObject({
+        ok: false,
+        reason: "thread-start-callback-failed:session fact unavailable",
+        threadId: "thread-live",
+      });
       expect(await fs.readFile(result.stderrPath, "utf8")).toContain(
         "codex-thread-link-unavailable:session fact unavailable",
       );

@@ -861,7 +861,7 @@ Dev persona`,
     expect(postComment).not.toHaveBeenCalled();
   });
 
-  it("does not add a second reaction when resume falls back to a full Codex run", async () => {
+  it("fails closed after one resume call and does not add a second reaction", async () => {
     const agent = await makeAgentFile("dev", "Dev persona");
     const addReaction = vi.fn(async () => {});
     const runCodex = vi.fn(async (options: Parameters<ProcessIssueSourceDependencies["runCodex"]>[0]) => {
@@ -892,21 +892,136 @@ Dev persona`,
       }),
     );
 
-    expect(outcome).toBe("triggered-success");
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      agent: "dev",
+      reason: "resume-unavailable:resume failed",
+    });
     expect(addReaction).toHaveBeenCalledTimes(1);
     expect(addReaction).toHaveBeenCalledWith({ kind: "issue-comment", source, commentId: "comment-node-1" }, "eyes");
-    expect(runCodex).toHaveBeenCalledTimes(2);
+    expect(runCodex).toHaveBeenCalledTimes(1);
     expect(runCodex.mock.calls[0]?.[0].mode).toEqual({ kind: "resume", threadId: "thread-1" });
-    expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "full" });
-    // 看门狗下沉到 codex.run() 内部后，resume 与 fallback 各自独立计时——两次调用都必须携带完整超时参数。
     expect(runCodex.mock.calls[0]?.[0]).toMatchObject({
       idleTimeoutMs: CODEX_RUN_IDLE_TIMEOUT_MS,
       maxDurationMs: CODEX_RUN_MAX_DURATION_MS,
     });
-    expect(runCodex.mock.calls[1]?.[0]).toMatchObject({
-      idleTimeoutMs: CODEX_RUN_IDLE_TIMEOUT_MS,
-      maxDurationMs: CODEX_RUN_MAX_DURATION_MS,
+  });
+
+  it("rejects an unavailable role thread before Codex can create a replacement", async () => {
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const addReaction = vi.fn(async () => {});
+    const runCodex = vi.fn(async (options: Parameters<ProcessIssueSourceDependencies["runCodex"]>[0]) =>
+      successfulCodexRunWithFinalText(options.runDir, "replacement output"),
+    );
+
+    const outcome = await processIssueSource(
+      {
+        source,
+        issue: makeIssue("initial", [{ id: "comment-node-1", body: "@dev continue" }]),
+        agentFiles: [agent],
+      },
+      makeDependencies({
+        addReaction,
+        runCodex,
+        resolveCodexThread: async () => ({ status: "unavailable", reason: "not-found" }),
+        loadRoleThreadStateStore: async () => ({
+          [source.issueKey]: {
+            dev: {
+              threadId: "missing-thread",
+              lastSeenIndex: 0,
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      agent: "dev",
+      reason: "resume-unavailable:not-found",
     });
+    expect(runCodex).not.toHaveBeenCalled();
+    expect(addReaction).not.toHaveBeenCalled();
+  });
+
+  it("fails the turn, retries thread-state persistence, and never starts full again", async () => {
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const postComment = vi.fn<ProcessIssueSourceDependencies["postComment"]>(async () => {});
+    let persistedState: Awaited<ReturnType<
+      ProcessIssueSourceDependencies["loadRoleThreadStateStore"]
+    >> = {};
+    let saveAttempts = 0;
+    const saveRoleThreadStateEntry = vi.fn<
+      ProcessIssueSourceDependencies["saveRoleThreadStateEntry"]
+    >(async (issueKey, role, state) => {
+      saveAttempts += 1;
+      if (saveAttempts === 1) {
+        throw new Error("role state temporarily unavailable");
+      }
+      persistedState = {
+        ...persistedState,
+        [issueKey]: {
+          ...persistedState[issueKey],
+          [role]: state,
+        },
+      };
+    });
+    const runCodex = vi.fn<
+      ProcessIssueSourceDependencies["runCodex"]
+    >(async (options) => {
+      try {
+        await options.onThreadStarted?.("thread-observed-before-failure");
+      } catch (error) {
+        return failedCodexRun(
+          options.runDir,
+          `thread-start-callback-failed:${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return failedCodexRun(options.runDir, "provider failed after thread start");
+    });
+    const dependencies = makeDependencies({
+      postComment,
+      runCodex,
+      saveRoleThreadStateEntry,
+      loadRoleThreadStateStore: async () => persistedState,
+    });
+
+    const first = await processIssueSource(
+      {
+        source,
+        issue: makeIssue("@dev first turn"),
+        agentFiles: [agent],
+      },
+      dependencies,
+    );
+    const second = await processIssueSource(
+      {
+        source,
+        issue: makeIssue("initial", [{ id: "comment-node-2", body: "@dev retry" }]),
+        agentFiles: [agent],
+      },
+      dependencies,
+    );
+
+    expect(first).toMatchObject({
+      kind: "failed",
+      reason: "thread-start-callback-failed:role state temporarily unavailable",
+    });
+    expect(second).toMatchObject({
+      kind: "failed",
+      reason: "resume-unavailable:provider failed after thread start",
+    });
+    expect(runCodex).toHaveBeenCalledTimes(2);
+    expect(runCodex.mock.calls.map(([options]) => options.mode)).toEqual([
+      { kind: "full" },
+      { kind: "resume", threadId: "thread-observed-before-failure" },
+    ]);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(3);
+    expect(persistedState[source.issueKey]?.dev).toMatchObject({
+      threadId: "thread-observed-before-failure",
+      lastSeenIndex: -1,
+    });
+    expect(postComment).not.toHaveBeenCalled();
   });
 
   it("does not post a stale Codex result when a new comment arrives before posting", async () => {
@@ -929,7 +1044,7 @@ Dev persona`,
 
     expect(outcome).toBe("interrupted");
     expect(postComment).not.toHaveBeenCalled();
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("passes prepared issue images and media manifest to Codex", async () => {
@@ -1113,7 +1228,7 @@ Dev persona`,
 
     expect(outcome).toBe("triggered-success");
     expect(formatCeoComment).not.toHaveBeenCalled();
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
     expect(postComment.mock.calls[0]?.[1]).toContain("无法发布生成产物");
     expect(postComment.mock.calls[0]?.[1]).toContain(
       "<!-- moebius:ceo-reviewed action=bypass reason=artifact-publishing-failed -->",
@@ -1143,7 +1258,7 @@ Dev persona`,
 
     expect(outcome).toBe("triggered-success");
     expect(postComment).toHaveBeenCalledTimes(1);
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("does not let manifest writer failures block artifact error comments", async () => {
@@ -1184,7 +1299,7 @@ Dev persona`,
     expect(postComment.mock.calls[0]?.[1]).toContain(
       "<!-- moebius:ceo-reviewed action=bypass reason=artifact-publishing-failed -->",
     );
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("returns a failed outcome with the pre script reason before any comment is posted", async () => {
@@ -1245,7 +1360,7 @@ Dev persona`,
 
     expect(outcome).toBe("triggered-success");
     expect(postComment).toHaveBeenCalledTimes(2);
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("fails open and still posts the Codex result when the final interrupt check hits a transient gh error", async () => {
@@ -1270,7 +1385,7 @@ Dev persona`,
 
     expect(outcome).toBe("triggered-success");
     expect(postComment).toHaveBeenCalledTimes(1);
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("does not add a reaction when no Codex driver will run", async () => {
@@ -1391,7 +1506,7 @@ CEO persona`,
     expect(postComment.mock.calls[0]?.[1]).toContain("CEO 编排路径 fail-closed");
     expect(postComment.mock.calls[0]?.[1]).toContain("missing script");
     expect(postComment.mock.calls[0]?.[1]).toContain("ceo-orchestration-failed");
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("runs CEO spawn orchestration through the GitHub adapter and writes a child ledger ref", async () => {
@@ -1447,7 +1562,7 @@ CEO persona`,
     expect(ledger.tasks["task-1"]?.childIssueRefs[0]?.note).toContain("moebius-orchestration-key:");
     expect(postComment.mock.calls[0]?.[1]).toContain("CEO 编排完成");
     expect(postComment.mock.calls[0]?.[1]).toContain("issues/101");
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("runs goal-intake propose by writing pending ledger and publishing a hidden proposal key", async () => {
@@ -1488,7 +1603,7 @@ CEO persona`,
     expect(postComment.mock.calls[0]?.[1]).toContain(proposalKey);
     expect(postComment.mock.calls[0]?.[1]).toContain("不承诺真实资金");
     expect(createIssue).not.toHaveBeenCalled();
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("routes a plain CEO bootstrap goal to the default plan chain without child issue or ledger writes", async () => {
@@ -1725,7 +1840,7 @@ CEO persona`,
     }
 
     expect(postComment.mock.calls[0]?.[1]).toContain("createIssue-timeout");
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("includes the created issue URL when ledger child ref saving times out", async () => {
@@ -1767,7 +1882,7 @@ CEO persona`,
 
     expect(postComment.mock.calls[0]?.[1]).toContain("saveGoalLedgerEntry-timeout");
     expect(postComment.mock.calls[0]?.[1]).toContain("https://github.com/tranfu-labs/moebius/issues/101");
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("returns failed when fail-closed comment publishing also fails and preserves created URLs in the reason", async () => {
@@ -1802,7 +1917,7 @@ CEO persona`,
       agent: "ceo",
       reason: expect.stringContaining("https://github.com/tranfu-labs/moebius/issues/101"),
     });
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("does not create a duplicate child issue when the ledger already has the orchestration key", async () => {
@@ -1957,7 +2072,7 @@ CEO persona`,
     expect(ledger.tasks["task-1"]?.childIssueRefs[0]?.note).toContain("moebius-roundtable-key:");
     expect(postComment.mock.calls[0]?.[1]).toContain("圆桌已启动");
     expect(postComment.mock.calls[0]?.[1]).toContain("issues/101");
-    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(2);
   });
 
   it("includes the roundtable child URL when ledger ref saving times out after creation", async () => {
@@ -2001,7 +2116,7 @@ CEO persona`,
     expect(postComment.mock.calls[0]?.[1]).toContain("saveGoalLedgerEntry-timeout");
     expect(postComment.mock.calls[0]?.[1]).toContain("https://github.com/tranfu-labs/moebius/issues/101");
     expect(postComment.mock.calls[0]?.[1]).toContain("moebius-roundtable-key:");
-    expect(saveRoleThreadStateEntry).not.toHaveBeenCalled();
+    expect(saveRoleThreadStateEntry).toHaveBeenCalledTimes(1);
   });
 
   it("bounds roundtable hidden-key lookup before creating a duplicate child issue", async () => {
@@ -3146,6 +3261,17 @@ function makeDependencies(overrides: Partial<ProcessIssueSourceDependencies> = {
     runIssueWorktreeCapability: async () => ({ ok: true }),
     runAgentPreScript: async () => ({ ok: true }),
     runCodex: async (options) => successfulCodexRun(options.runDir),
+    resolveCodexThread: async () => ({
+      status: "available",
+      filePath: "/tmp/codex-sessions/rollout-thread.jsonl",
+      sessionsRoot: "/tmp/codex-sessions",
+      identity: {
+        realPath: "/tmp/codex-sessions/rollout-thread.jsonl",
+        device: 1,
+        inode: 1,
+        size: 1,
+      },
+    }),
     addReaction: async () => {},
     createIssue: async () => ({ number: 101, url: "https://github.com/tranfu-labs/moebius/issues/101" }),
     fetchIssueState: async () => "OPEN",

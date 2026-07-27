@@ -25,7 +25,6 @@ import {
   assignAiTeamBuilderExecutionProfile,
   failAiTeamBuilderDraft,
   recoverInterruptedAiTeamBuilderDraft,
-  resetAiTeamBuilderThreadForRebuild,
   selectAiTeamBuilderTeam,
   type AiTeamBuilderDraft,
   type AiTeamBuilderInternalError,
@@ -157,26 +156,37 @@ export class AiTeamBuilder {
     let running = initial;
     const profile = requireExecutionProfile(running);
     const driver = this.drivers[profile.cli];
-    let result = await driver.execute({
-      dataRoot: this.dataRoot,
-      draftId: running.draftId,
-      prompt: running.pendingPrompt!,
-      profile,
-      externalSessionId: running.externalSessionId,
-    });
-
-    if (!result.ok && result.resumeFailed && !running.threadRebuildUsed) {
-      running = resetAiTeamBuilderThreadForRebuild(running);
-      await this.saveDraft(running);
+    const wasResume = running.externalSessionId !== null;
+    let result: Awaited<ReturnType<AiTeamBuilderDriverPort["execute"]>>;
+    try {
       result = await driver.execute({
         dataRoot: this.dataRoot,
         draftId: running.draftId,
-        prompt: buildReconstructionPrompt(running),
+        prompt: running.pendingPrompt!,
         profile,
-        externalSessionId: null,
+        externalSessionId: running.externalSessionId,
+        onExternalSessionStarted: async (externalSessionId) => {
+          running = await this.persistObservedExternalSessionId(
+            running,
+            externalSessionId,
+          );
+        },
       });
+    } catch (error) {
+      return this.finishFailedTurn(
+        running,
+        {
+          kind: wasResume ? "resume-failed" : "engine-failed",
+          internalReason: formatError(error),
+        },
+      );
     }
+
     if (!result.ok) {
+      running = await this.persistObservedExternalSessionId(
+        running,
+        result.externalSessionId,
+      );
       return this.finishFailedTurn(
         running,
         {
@@ -186,17 +196,42 @@ export class AiTeamBuilder {
       );
     }
 
+    running = await this.persistObservedExternalSessionId(
+      running,
+      result.externalSessionId,
+    );
     let externalSessionId = result.externalSessionId;
     let validation = parseAndValidateAiTeamBuilderOutput(result.finalText);
     if (!validation.ok) {
-      const repairResult = await driver.execute({
-        dataRoot: this.dataRoot,
-        draftId: running.draftId,
-        prompt: buildRepairPrompt(validation.issues),
-        profile,
-        externalSessionId,
-      });
+      let repairResult: Awaited<ReturnType<AiTeamBuilderDriverPort["execute"]>>;
+      try {
+        repairResult = await driver.execute({
+          dataRoot: this.dataRoot,
+          draftId: running.draftId,
+          prompt: buildRepairPrompt(validation.issues),
+          profile,
+          externalSessionId,
+          onExternalSessionStarted: async (observedExternalSessionId) => {
+            running = await this.persistObservedExternalSessionId(
+              running,
+              observedExternalSessionId,
+            );
+          },
+        });
+      } catch (error) {
+        return this.finishFailedTurn(
+          running,
+          {
+            kind: "resume-failed",
+            internalReason: formatError(error),
+          },
+        );
+      }
       if (!repairResult.ok) {
+        running = await this.persistObservedExternalSessionId(
+          running,
+          repairResult.externalSessionId,
+        );
         return this.finishFailedTurn(
           running,
           {
@@ -205,6 +240,10 @@ export class AiTeamBuilder {
           },
         );
       }
+      running = await this.persistObservedExternalSessionId(
+        running,
+        repairResult.externalSessionId,
+      );
       externalSessionId = repairResult.externalSessionId;
       validation = parseAndValidateAiTeamBuilderOutput(repairResult.finalText);
       if (!validation.ok) {
@@ -236,6 +275,25 @@ export class AiTeamBuilder {
     const failed = failAiTeamBuilderDraft(running, error, "turn");
     await this.saveDraft(failed);
     return toAiTeamBuilderState(failed);
+  }
+
+  private async persistObservedExternalSessionId(
+    draft: AiTeamBuilderDraft,
+    observedExternalSessionId: string | null,
+  ): Promise<AiTeamBuilderDraft> {
+    if (observedExternalSessionId === null) return draft;
+    if (
+      draft.externalSessionId !== null
+      && draft.externalSessionId !== observedExternalSessionId
+    ) {
+      throw new AiTeamBuilderRequestError(
+        "AI team builder provider returned a conflicting session id.",
+      );
+    }
+    if (draft.externalSessionId === observedExternalSessionId) return draft;
+    const linked = { ...draft, externalSessionId: observedExternalSessionId };
+    await this.saveDraft(linked);
+    return linked;
   }
 
   private async mutate(
@@ -324,25 +382,6 @@ function buildRepairPrompt(
     .join("\n")}`;
 }
 
-function buildReconstructionPrompt(draft: AiTeamBuilderDraft): string {
-  const conversation = draft.messages
-    .map((message) => `${message.role === "user" ? "用户" : "设计器"}：${message.text}`)
-    .join("\n");
-  const proposal = draft.proposal === null
-    ? "无"
-    : JSON.stringify({ phase: "proposal", ...draft.proposal });
-  return `原 thread 已丢失。根据应用保存的对话重建上下文并继续当前用户请求。
-
-保存的对话：
-${conversation}
-
-最后有效方案：
-${proposal}
-
-当前用户请求：
-${draft.pendingPrompt ?? ""}`;
-}
-
 function parseStoredDraft(
   source: string,
   expectedDraftId: string,
@@ -363,7 +402,7 @@ function parseStoredDraft(
       migrated: true,
       draft: {
         ...legacyDraft,
-        version: 2,
+        version: 3,
         executionProfile: {
           cli: "codex",
           model: CODEX_MODEL,
@@ -374,7 +413,24 @@ function parseStoredDraft(
       } as unknown as AiTeamBuilderDraft,
     };
   }
-  if (value.version !== 2) {
+  if (value.version === 2) {
+    const { threadRebuildUsed: _legacyThreadRebuildUsed, ...legacyDraft } = value;
+    const executionProfile = value.executionProfile === null
+      ? null
+      : normalizeExecutionProfile(value.executionProfile);
+    return {
+      migrated: true,
+      draft: {
+        ...legacyDraft,
+        version: 3,
+        executionProfile,
+        externalSessionId: typeof value.externalSessionId === "string"
+          ? value.externalSessionId
+          : null,
+      } as unknown as AiTeamBuilderDraft,
+    };
+  }
+  if (value.version !== 3) {
     throw new AiTeamBuilderRequestError("Stored AI team builder draft version is unsupported.");
   }
   const executionProfile = value.executionProfile === null

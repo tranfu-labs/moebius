@@ -12,6 +12,10 @@ import {
   type CodexRunOptions,
   type CodexRunResult,
 } from "../../../src/codex.js";
+import {
+  resolveCodexRollout,
+  type CodexRolloutResolution,
+} from "../../../src/codex-rollout.js";
 import { isValidPathSegment } from "../team-model.js";
 import type {
   AiTeamBuilderDriverPort,
@@ -23,19 +27,27 @@ import { serializeAiTeamBuilderOutputSchema } from "./output-schema.js";
 
 export interface AiTeamBuilderCodexSpawnerOptions {
   run?: (options: CodexRunOptions) => Promise<CodexRunResult>;
+  resolveThread?: (threadId: string) => Promise<CodexRolloutResolution>;
 }
 
 export class AiTeamBuilderCodexSpawner implements AiTeamBuilderDriverPort {
   private readonly run: (options: CodexRunOptions) => Promise<CodexRunResult>;
+  private readonly resolveThread: (threadId: string) => Promise<CodexRolloutResolution>;
 
   constructor(options: AiTeamBuilderCodexSpawnerOptions = {}) {
     this.run = options.run ?? runCodex;
+    this.resolveThread = options.resolveThread ?? resolveCodexRollout;
   }
 
   async execute(request: AiTeamBuilderDriverRequest): Promise<AiTeamBuilderDriverResult> {
     assertDraftId(request.draftId);
     if (request.profile.cli !== "codex") {
-      return { ok: false, reason: "codex-profile-required", resumeFailed: false };
+      return {
+        ok: false,
+        reason: "codex-profile-required",
+        resumeFailed: false,
+        externalSessionId: request.externalSessionId,
+      };
     }
     const runtimeRoot = path.join(
       path.resolve(request.dataRoot),
@@ -52,38 +64,185 @@ export class AiTeamBuilderCodexSpawner implements AiTeamBuilderDriverPort {
     const mode = request.externalSessionId === null
       ? { kind: "full" as const }
       : { kind: "resume" as const, threadId: request.externalSessionId };
-    const result = await this.run({
-      prompt: request.prompt,
-      runDir,
-      mode,
-      cwd: isolatedCwd,
-      execOptions: buildTeamBuilderExecOptions({
+    let observedExternalSessionId: string | null = null;
+    if (mode.kind === "resume") {
+      let resolution: CodexRolloutResolution;
+      try {
+        resolution = await this.resolveThread(mode.threadId);
+      } catch (error) {
+        await writeInvocationManifest(runDir, {
+          version: 1,
+          identityType: "ai-team-builder-draft",
+          mode: mode.kind,
+          requestedExternalSessionId: request.externalSessionId,
+          observedExternalSessionId,
+          outcome: "failed",
+        });
+        return {
+          ok: false,
+          reason: `resume-unavailable:preflight-failed:${formatError(error)}`,
+          resumeFailed: true,
+          externalSessionId: request.externalSessionId,
+        };
+      }
+      if (resolution.status === "unavailable") {
+        await writeInvocationManifest(runDir, {
+          version: 1,
+          identityType: "ai-team-builder-draft",
+          mode: mode.kind,
+          requestedExternalSessionId: request.externalSessionId,
+          observedExternalSessionId,
+          outcome: "failed",
+        });
+        return {
+          ok: false,
+          reason: `resume-unavailable:${resolution.reason}`,
+          resumeFailed: true,
+          externalSessionId: request.externalSessionId,
+        };
+      }
+    }
+
+    let result: CodexRunResult;
+    try {
+      result = await this.run({
+        prompt: request.prompt,
+        runDir,
+        mode,
+        cwd: isolatedCwd,
+        execOptions: buildTeamBuilderExecOptions({
+          mode: mode.kind,
+          schemaPath,
+          isolatedCwd,
+          developerInstructions: AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS,
+          providerConfig: CODEX_PROVIDER_CONFIG,
+          model: request.profile.model,
+          effort: request.profile.effort,
+        }),
+        idleTimeoutMs: AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS,
+        maxDurationMs: AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+        onThreadStarted: async (threadId) => {
+          observedExternalSessionId = threadId;
+          assertExternalSessionIdentity(request.externalSessionId, threadId);
+          await request.onExternalSessionStarted?.(threadId);
+        },
+      });
+    } catch (error) {
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
         mode: mode.kind,
-        schemaPath,
-        isolatedCwd,
-        developerInstructions: AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS,
-        providerConfig: CODEX_PROVIDER_CONFIG,
-        model: request.profile.model,
-        effort: request.profile.effort,
-      }),
-      idleTimeoutMs: AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS,
-      maxDurationMs: AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
-    });
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId,
+        outcome: "failed",
+      });
+      return {
+        ok: false,
+        reason: mode.kind === "resume"
+          ? `resume-unavailable:${formatError(error)}`
+          : `provider-run-failed:${formatError(error)}`,
+        resumeFailed: mode.kind === "resume",
+        externalSessionId: mode.kind === "resume"
+          ? request.externalSessionId
+          : observedExternalSessionId,
+      };
+    }
 
     if (!result.ok) {
+      const failedObservedExternalSessionId =
+        observedExternalSessionId ?? result.threadId ?? null;
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
+        mode: mode.kind,
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId: failedObservedExternalSessionId,
+        outcome: "failed",
+      });
       return {
         ok: false,
         reason: result.reason,
         resumeFailed: request.externalSessionId !== null,
+        externalSessionId: request.externalSessionId ?? failedObservedExternalSessionId,
       };
     }
-    const externalSessionId = result.threadId ?? request.externalSessionId;
+    const externalSessionId = result.threadId ?? observedExternalSessionId ?? request.externalSessionId;
     if (externalSessionId === null) {
-      return { ok: false, reason: "thread-id-missing", resumeFailed: false };
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
+        mode: mode.kind,
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId,
+        outcome: "failed",
+      });
+      return {
+        ok: false,
+        reason: "thread-id-missing",
+        resumeFailed: false,
+        externalSessionId: null,
+      };
     }
+    try {
+      assertExternalSessionIdentity(request.externalSessionId, externalSessionId);
+    } catch (error) {
+      await writeInvocationManifest(runDir, {
+        version: 1,
+        identityType: "ai-team-builder-draft",
+        mode: mode.kind,
+        requestedExternalSessionId: request.externalSessionId,
+        observedExternalSessionId: externalSessionId,
+        outcome: "failed",
+      });
+      return {
+        ok: false,
+        reason: `resume-unavailable:${formatError(error)}`,
+        resumeFailed: mode.kind === "resume",
+        externalSessionId: request.externalSessionId,
+      };
+    }
+    await writeInvocationManifest(runDir, {
+      version: 1,
+      identityType: "ai-team-builder-draft",
+      mode: mode.kind,
+      requestedExternalSessionId: request.externalSessionId,
+      observedExternalSessionId: externalSessionId,
+      outcome: "succeeded",
+    });
     return { ok: true, finalText: result.finalText, externalSessionId };
   }
+}
+
+function assertExternalSessionIdentity(
+  requestedExternalSessionId: string | null,
+  observedExternalSessionId: string,
+): void {
+  if (
+    requestedExternalSessionId !== null
+    && requestedExternalSessionId !== observedExternalSessionId
+  ) {
+    throw new AiTeamBuilderCodexError(
+      "Codex returned a different thread while resuming an AI team builder draft.",
+    );
+  }
+}
+
+async function writeInvocationManifest(
+  runDir: string,
+  manifest: {
+    version: 1;
+    identityType: "ai-team-builder-draft";
+    mode: "full" | "resume";
+    requestedExternalSessionId: string | null;
+    observedExternalSessionId: string | null;
+    outcome: "succeeded" | "failed";
+  },
+): Promise<void> {
+  await writeFileAtomically(
+    path.join(runDir, "invocation.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 function assertDraftId(draftId: string): void {
@@ -111,4 +270,8 @@ export class AiTeamBuilderCodexError extends Error {
     super(message);
     this.name = "AiTeamBuilderCodexError";
   }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

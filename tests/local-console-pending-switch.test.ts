@@ -88,7 +88,7 @@ describe("pending session context switches", () => {
       finishRun({
         ok: true,
         finalText: "done\n\n<!-- agent-stage: code-verified -->",
-        threadId: null,
+        threadId: "thread-pending-switch",
         cachedInputTokens: null,
         runDir: path.join(root, "run"),
         stdoutPath: path.join(root, "run", "stdout.jsonl"),
@@ -349,7 +349,7 @@ describe("pending session context switches", () => {
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
       ok: true,
       finalText: `finished ${options.cwd}\n\n<!-- agent-stage: code-verified -->`,
-      threadId: null,
+      threadId: "thread-pending-switch",
       cachedInputTokens: null,
       runDir: path.join(root, "run"),
       stdoutPath: path.join(root, "run", "stdout.jsonl"),
@@ -495,7 +495,7 @@ function successfulRun(root: string, suffix: string): Extract<CodexRunResult, { 
   return {
     ok: true,
     finalText: `done ${suffix}\n\n<!-- agent-stage: code-verified -->`,
-    threadId: null,
+    threadId: "thread-pending-switch",
     cachedInputTokens: null,
     runDir: path.join(root, `run-${suffix}`),
     stdoutPath: path.join(root, `run-${suffix}`, "stdout.jsonl"),

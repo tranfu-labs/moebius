@@ -9,6 +9,7 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import type {
   LocalConsoleAgentTeamSnapshot,
   LocalConsoleExecutionProfile,
@@ -30,11 +31,14 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     let kimiCall = 0;
     const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
       kimiCall += 1;
-      await options.onSessionStarted?.(`kimi-mixed-${String(kimiCall)}`);
+      const sessionId = options.mode.kind === "resume"
+        ? options.mode.externalSessionId
+        : `kimi-mixed-${String(kimiCall)}`;
+      await options.onSessionStarted?.(sessionId);
       return {
         ok: true,
         finalText: kimiCall === 1 ? "@dev implement the change" : "manager completed",
-        threadId: `kimi-mixed-${String(kimiCall)}`,
+        threadId: sessionId,
         cachedInputTokens: null,
         runDir: options.runDir,
         stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
@@ -79,6 +83,11 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(kimi.mock.calls[0]?.[0]).toMatchObject({
       profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
     });
+    expect(kimi.mock.calls[1]?.[0]).toMatchObject({
+      mode: { kind: "resume", externalSessionId: "kimi-mixed-1" },
+    });
+    expect(kimi.mock.calls[1]?.[0].prompt).toContain("dev completed");
+    expect(kimi.mock.calls[1]?.[0].prompt).not.toContain("当前本地对话时间线");
     expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
       "--disable",
       "multi_agent",
@@ -156,10 +165,12 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     await waitForCalls(codex, 1);
 
     expect(kimi).toHaveBeenCalledTimes(3);
-    for (const [options] of kimi.mock.calls) {
+    for (const [index, [options]] of kimi.mock.calls.entries()) {
       expect(options).toMatchObject({
         profile: kimiProfile,
-        mode: { kind: "full" },
+        mode: index === 0
+          ? { kind: "full" }
+          : { kind: "resume", externalSessionId: "kimi-session-a" },
       });
     }
     expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
@@ -271,7 +282,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
   it("keeps a NULL legacy snapshot on Codex without profile options", async () => {
     const root = await fixtureRoot();
     const codex = vi.fn(async (options: CodexRunOptions) => {
-      await options.onThreadStarted?.("legacy-thread");
+      await options.onThreadStarted?.("codex-thread");
       return success(options, "legacy completed");
     });
     const server = await startLocalConsoleServer({
@@ -298,6 +309,69 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(facts).toContain('"engine":"codex"');
   });
 
+  it("records an observed Codex thread before link failure and never starts full again", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    const originalRecordAgentSessionLink = store.recordAgentSessionLink.bind(store);
+    let failLink = true;
+    store.recordAgentSessionLink = async (input) => {
+      if (failLink) {
+        failLink = false;
+        throw new Error("canonical link temporarily unavailable");
+      }
+      await originalRecordAgentSessionLink(input);
+    };
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      try {
+        await options.onThreadStarted?.("codex-thread-observed");
+      } catch (error) {
+        return {
+          ok: false,
+          reason: `thread-start-callback-failed:${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          runDir: options.runDir,
+          stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+          stderrPath: path.join(options.runDir, "stderr.log"),
+        };
+      }
+      return success(options, "must not be published");
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      store,
+      listAgentFiles: async () => [{
+        name: "dev",
+        agentMarkdown: "# dev\n\npersist strictly",
+        executionProfile: null,
+      }],
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+    });
+    servers.push(server);
+
+    await post(server.url, "@dev first");
+    await waitForSystemEvent(server.url, "run-not-started");
+    await post(server.url, "@dev second");
+    await waitForSystemEvent(server.url, "resume-unavailable");
+
+    expect(codex).toHaveBeenCalledTimes(1);
+    expect(codex.mock.calls[0]?.[0].mode).toEqual({ kind: "full" });
+    const response = await fetch(new URL("/api/local-console/messages", server.url));
+    const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
+    expect(snapshot.messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ speaker: "agent", body: "must not be published" }),
+    ]));
+    const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
+    expect(facts).toContain('"type":"provider_session_observed"');
+    expect(facts).toContain('"externalSessionId":"codex-thread-observed"');
+    expect(facts).not.toContain('"type":"agent_session_link"');
+  });
+
   it("retries the original input with the old run snapshot after a team switch", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
@@ -316,7 +390,10 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     let call = 0;
     const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
       call += 1;
-      await options.onSessionStarted?.(`kimi-session-${String(call)}`);
+      const sessionId = options.mode.kind === "resume"
+        ? options.mode.externalSessionId
+        : `kimi-session-${String(call)}`;
+      await options.onSessionStarted?.(sessionId);
       if (call === 1) {
         return {
           ok: false,
@@ -329,7 +406,7 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       return {
         ok: true,
         finalText: "old Kimi fallback completed",
-        threadId: `kimi-session-${String(call)}`,
+        threadId: sessionId,
         cachedInputTokens: null,
         runDir: options.runDir,
         stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
@@ -362,20 +439,6 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       agentTeamOwnership: "user",
       agentTeamId: "next",
     });
-    const logPath = server.runtime.getSessionFactLogPath("default");
-    const lines = (await fs.readFile(logPath, "utf8")).trimEnd().split("\n");
-    const tampered = lines.map((line) => {
-      const event = JSON.parse(line) as {
-        type?: string;
-        payload?: { runId?: string; profileFingerprint?: string };
-      };
-      if (event.type === "execution_session_link" && event.payload?.runId === stopped.runId) {
-        event.payload.profileFingerprint = "tampered-profile";
-      }
-      return JSON.stringify(event);
-    }).join("\n");
-    await fs.writeFile(logPath, `${tampered}\n`, "utf8");
-
     const retry = await fetch(new URL(
       `/api/local-console/sessions/default/runs/${encodeURIComponent(stopped.runId!)}/retry`,
       server.url,
@@ -391,13 +454,13 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
         model: "kimi-for-coding",
         effort: "high",
       },
-      mode: { kind: "full" },
+      mode: { kind: "resume", externalSessionId: "kimi-session-1" },
     });
-    expect(kimi.mock.calls[1]?.[0].prompt).toContain("old Kimi rules");
+    expect(kimi.mock.calls[1]?.[0].prompt).toContain("继续");
     expect(kimi.mock.calls[1]?.[0].prompt).not.toContain("new Codex rules");
   });
 
-  it("does not require the old run context when explicit retry creates a new run", async () => {
+  it("fails closed when an explicit retry has lost its frozen old run context", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
       old: snapshot("old Kimi rules", {
@@ -469,11 +532,10 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForAgent(server.url, "new Codex retry completed");
+    await waitForSystemEvent(server.url, "resume-unavailable");
 
     expect(kimi).not.toHaveBeenCalled();
-    expect(codex).toHaveBeenCalledTimes(1);
-    expect(codex.mock.calls[0]?.[0]).toMatchObject({ mode: { kind: "full" } });
+    expect(codex).not.toHaveBeenCalled();
   });
 });
 

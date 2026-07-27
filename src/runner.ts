@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -55,7 +56,6 @@ import {
 } from "./ceo-orchestration.js";
 import { resolveCeoLedgerPromptContext } from "./agent-prescripts/ceo-ledger-context.js";
 import {
-  buildFallbackFullPrompt,
   buildRolePromptPlan,
   buildTimeline,
   countMessages,
@@ -64,6 +64,10 @@ import {
   type TimelineMessage,
 } from "./conversation.js";
 import { codexTimeoutKind, isInterruptedCodexRunResult, run as runCodex } from "./codex.js";
+import {
+  resolveCodexRollout,
+  type CodexRolloutResolution,
+} from "./codex-rollout.js";
 import { createDriverPool, type DriverPool } from "./driver-pool.js";
 import {
   createIssueDispatcher,
@@ -175,6 +179,7 @@ export interface ProcessIssueSourceDependencies {
   runIssueWorktreeCapability: typeof runIssueWorktreeCapability;
   runAgentPreScript: typeof runAgentPreScript;
   runCodex: typeof runCodex;
+  resolveCodexThread: (threadId: string) => Promise<CodexRolloutResolution>;
   addReaction: typeof addReaction;
   createIssue: typeof createIssue;
   fetchIssueState: typeof fetchIssueState;
@@ -198,6 +203,7 @@ const DEFAULT_PROCESS_ISSUE_SOURCE_DEPENDENCIES: ProcessIssueSourceDependencies 
   runIssueWorktreeCapability,
   runAgentPreScript,
   runCodex,
+  resolveCodexThread: resolveCodexRollout,
   addReaction,
   createIssue,
   fetchIssueState,
@@ -812,6 +818,43 @@ export async function processIssueSource(
       });
     }
     const agentPromptContext = promptContexts.length === 0 ? undefined : promptContexts.join("\n\n");
+    const roleContext = buildRoleThreadContextProof({
+      role: selectedAgent.name,
+      agentMarkdown: agentManifest.body,
+      cwd: codexCwd,
+    });
+    if (existingState !== null && !roleThreadContextCompatible(existingState, roleContext)) {
+      return failedIssueProcessingOutcome({
+        reason: "resume-unavailable:context-mismatch",
+        agent: selectedAgent.name,
+      });
+    }
+    if (plan.mode === "resume") {
+      let resolution: CodexRolloutResolution;
+      try {
+        resolution = await dependencies.resolveCodexThread(plan.threadId);
+      } catch (error) {
+        return failedIssueProcessingOutcome({
+          reason: `resume-unavailable:preflight-failed:${formatError(error)}`,
+          agent: selectedAgent.name,
+        });
+      }
+      if (resolution.status === "unavailable") {
+        log({
+          event: "codex-resume-unavailable",
+          count,
+          runDir,
+          agent: selectedAgent.name,
+          issueKey: input.source.issueKey,
+          threadId: plan.threadId,
+          reason: resolution.reason,
+        });
+        return failedIssueProcessingOutcome({
+          reason: `resume-unavailable:${resolution.reason}`,
+          agent: selectedAgent.name,
+        });
+      }
+    }
 
     const initialMedia = await prepareMediaForPrompt({
       messages: plan.mode === "resume" ? plan.deltaMessages : timeline,
@@ -834,7 +877,9 @@ export async function processIssueSource(
 
     const interruptController = new AbortController();
     let currentThreadId = plan.mode === "resume" ? plan.threadId : null;
-    let finalRunDir = runDir;
+    let threadStartedObserved = false;
+    let threadStatePersisted = false;
+    const finalRunDir = runDir;
     let finalCodexStartedAtMs = Date.now();
     await addCodexExecutionReaction({
       reaction: resolveCodexExecutionReactionTarget({
@@ -897,6 +942,15 @@ export async function processIssueSource(
     let result: Awaited<ReturnType<ProcessIssueSourceDependencies["runCodex"]>>;
     try {
       finalCodexStartedAtMs = Date.now();
+      log({
+        event: "codex-invocation",
+        count,
+        runDir,
+        agent: selectedAgent.name,
+        issueKey: input.source.issueKey,
+        mode: plan.mode,
+        threadId: plan.mode === "resume" ? plan.threadId : null,
+      });
       result = await dependencies.runCodex({
         prompt: appendMediaManifest(appendPromptContext(plan.prompt, agentPromptContext), initialMedia.prepared),
         runDir,
@@ -905,7 +959,42 @@ export async function processIssueSource(
         mode: plan.mode === "resume" ? { kind: "resume", threadId: plan.threadId } : { kind: "full" },
         imagePaths: initialMedia.imagePaths,
         ...codexRunTimeouts,
+        onThreadStarted: async (threadId) => {
+          if (plan.mode === "resume" && threadId !== plan.threadId) {
+            throw new Error(`resume-unavailable:thread-id-mismatch:${threadId}`);
+          }
+          threadStartedObserved = true;
+          currentThreadId = threadId;
+          await dependencies.saveRoleThreadStateEntry(
+            input.source.issueKey,
+            selectedAgent.name,
+            {
+              threadId,
+              lastSeenIndex: existingState?.lastSeenIndex ?? -1,
+              ...roleContext,
+            },
+          );
+          threadStatePersisted = true;
+        },
       });
+
+      if (
+        !result.ok
+        && threadStartedObserved
+        && !threadStatePersisted
+        && currentThreadId !== null
+      ) {
+        await dependencies.saveRoleThreadStateEntry(
+          input.source.issueKey,
+          selectedAgent.name,
+          {
+            threadId: currentThreadId,
+            lastSeenIndex: existingState?.lastSeenIndex ?? -1,
+            ...roleContext,
+          },
+        );
+        threadStatePersisted = true;
+      }
 
       if (isInterruptedCodexRunResult(result)) {
         return resolveInterruptedOutcome(result);
@@ -929,40 +1018,9 @@ export async function processIssueSource(
           agent: selectedAgent.name,
           threadId: plan.threadId,
         });
-
-        currentThreadId = null;
-        finalRunDir = `${runDir}-fallback`;
-        const fallbackMedia = await prepareMediaForPrompt({
-          messages: timeline,
-          runDir: finalRunDir,
-          count,
+        return failedIssueProcessingOutcome({
+          reason: `resume-unavailable:${result.reason}`,
           agent: selectedAgent.name,
-          issueKey: input.source.issueKey,
-          dependencies,
-        });
-        if (!fallbackMedia.ok) {
-          await postVisibleComment(
-            formatBypassedAgentComment(
-              selectedAgent.name,
-              formatMediaPreparationFailure(fallbackMedia.failures),
-              "media-preparation-failed",
-            ),
-          );
-          return "triggered-success";
-        }
-
-        finalCodexStartedAtMs = Date.now();
-        result = await dependencies.runCodex({
-          prompt: appendMediaManifest(
-            appendPromptContext(buildFallbackFullPrompt(agentManifest.body, timeline), agentPromptContext),
-            fallbackMedia.prepared,
-          ),
-          runDir: finalRunDir,
-          cwd: codexCwd,
-          signal: interruptController.signal,
-          mode: { kind: "full" },
-          imagePaths: fallbackMedia.imagePaths,
-          ...codexRunTimeouts,
         });
       }
     } finally {
@@ -981,6 +1039,25 @@ export async function processIssueSource(
 
       log({ event: "codex-failed", count, runDir: result.runDir, reason: result.reason, agent: selectedAgent.name });
       return failedIssueProcessingOutcome({ reason: result.reason, agent: selectedAgent.name });
+    }
+    if (plan.mode === "resume" && result.threadId !== null && result.threadId !== plan.threadId) {
+      return failedIssueProcessingOutcome({
+        reason: "resume-unavailable:thread-id-mismatch",
+        agent: selectedAgent.name,
+      });
+    }
+    const observedThreadId = result.threadId ?? currentThreadId;
+    if (observedThreadId !== null) {
+      currentThreadId = observedThreadId;
+      await dependencies.saveRoleThreadStateEntry(
+        input.source.issueKey,
+        selectedAgent.name,
+        {
+          threadId: observedThreadId,
+          lastSeenIndex: existingState?.lastSeenIndex ?? -1,
+          ...roleContext,
+        },
+      );
     }
 
     let finalInterrupt: ConversationInterrupt | null;
@@ -1022,6 +1099,7 @@ export async function processIssueSource(
       log({ event: "codex-failed", count, runDir: result.runDir, reason: "no-thread-id", agent: selectedAgent.name });
       return failedIssueProcessingOutcome({ reason: "no-thread-id", agent: selectedAgent.name });
     }
+    Object.assign(nextState, roleContext);
 
     if (selectedAgent.name === "ceo") {
       return await handleCeoAgentResult({
@@ -2050,6 +2128,67 @@ function formatCeoRoundtableFailureBody(input: { reason: string }): string {
 本轮不会继续推进圆桌，也不会更新 ceo role thread。若已有 child issue 或父 issue 可见结果，下一轮会先按 hidden key 查找并恢复，避免重复创建或重复回流。
 
 <!-- moebius:stage=in-progress -->`;
+}
+
+interface RoleThreadContextProof {
+  provider: "codex";
+  contextFingerprint: string;
+  workspaceFingerprint: string;
+  personaFingerprint: string;
+}
+
+function buildRoleThreadContextProof(input: {
+  role: string;
+  agentMarkdown: string;
+  cwd: string | undefined;
+}): RoleThreadContextProof {
+  const workspaceFingerprint = hashValue({
+    cwd: input.cwd ?? null,
+  });
+  const personaFingerprint = hashValue({
+    role: input.role,
+    agentMarkdown: input.agentMarkdown,
+  });
+  return {
+    provider: "codex",
+    workspaceFingerprint,
+    personaFingerprint,
+    contextFingerprint: hashValue({
+      provider: "codex",
+      workspaceFingerprint,
+      personaFingerprint,
+    }),
+  };
+}
+
+function roleThreadContextCompatible(
+  state: {
+    provider?: "codex";
+    contextFingerprint?: string;
+    workspaceFingerprint?: string;
+    personaFingerprint?: string;
+  },
+  proof: RoleThreadContextProof,
+): boolean {
+  return (
+    (state.provider === undefined || state.provider === proof.provider)
+    && (
+      state.contextFingerprint === undefined
+      || state.contextFingerprint === proof.contextFingerprint
+    )
+    && (
+      state.workspaceFingerprint === undefined
+      || state.workspaceFingerprint === proof.workspaceFingerprint
+    )
+    && (
+      state.personaFingerprint === undefined
+      || state.personaFingerprint === proof.personaFingerprint
+    )
+  );
+}
+
+function hashValue(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function appendPromptContext(prompt: string, promptContext: string | undefined): string {

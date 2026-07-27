@@ -675,22 +675,28 @@ Acceptance: onboarding#7
 - THEN 系统一次创建全部成员及其有效 `AGENT.md`，登记普通用户团队并返回 selected 状态
 
 ## Requirement: AI 建队使用并冻结当前可用 CLI
-Source: docs/product/pages/onboarding.md#AI-建队技术约束
+Source: docs/product/pages/onboarding.md#第-2-步-ai-建队
 Acceptance: onboarding#20
 
-系统 MUST 从引导 readiness service 最近一次完整能力结果中选择执行 CLI：Codex ready 时优先 Codex，仅 Kimi ready 时选择 Kimi，两者均不 ready 时拒绝启动。系统 MUST 在草稿生命周期内冻结所选 CLI、execution profile、隔离 cwd 与 provider session；submit、adjust、retry、恢复和唯一一次结构修复 MUST 继续使用同一 CLI，失败 MUST NOT 静默跨 CLI 降级。
+系统 MUST 继续按 readiness 选择并在 draft 生命周期内冻结 CLI、execution profile 与
+隔离 cwd。每个 AI 建队 draft MUST 独占一个冻结 CLI 的 provider session。draft 第一次执行 MAY
+创建 Codex thread 或 Kimi session；取得 external ID 后，submit、adjust、retry、恢复及
+唯一一次结构 repair MUST 只 resume 该 ID。团队创建成功并结束 draft 后，新建队 draft
+MUST 使用新身份，跨 draft MUST NOT 查找或复用 external ID。失败 MUST NOT 跨 CLI。
 
-### Scenario: Kimi-only AI 建队
-- GIVEN 第 1 步最近一次完整结果只有 Kimi ready
-- WHEN 用户打开 AI 建队并继续多轮调整
-- THEN 草稿冻结 Kimi execution profile 与 provider session
-- AND 后续轮次继续使用 Kimi。
+### Scenario: 同一 draft 连续调整
 
-### Scenario: Codex 优先且失败不降级
-- GIVEN Codex 与 Kimi 均 ready
-- WHEN 用户启动草稿后 Codex turn 失败
-- THEN 草稿保持 Codex execution profile 与已有对话
-- AND 系统不自动改用 Kimi。
+- **GIVEN** AI 建队 draft 首轮已经取得 external ID
+- **WHEN** 用户回答追问、调整方案并触发一次结构 repair
+- **THEN** 所有后续 provider invocation 都是 resume
+- **AND** requested external ID 始终相同。
+
+### Scenario: 跨 draft 隔离
+
+- **GIVEN** 一个 Agent 团队页 draft 已成功创建团队并结束
+- **WHEN** 用户再次进入 AI 建队并生成新 draft ID
+- **THEN** 新 draft 不读取旧 external ID
+- **AND** 新 draft 第一次执行可创建自己的 provider session。
 
 ## Requirement: AI 建队执行环境保持隔离只读
 Source: docs/product/pages/onboarding.md#AI-建队技术约束
@@ -711,15 +717,49 @@ Acceptance: onboarding#20
 - AND 草稿状态仍由应用自身持久化。
 
 ## Requirement: AI 建队失败有界并保留可恢复内容
-Source: docs/product/pages/onboarding.md#第-2-步--ai-建队子流程
+Source: docs/product/pages/onboarding.md#第-2-步-ai-建队
 Acceptance: onboarding#21
 
-系统 MUST 在非法输出时最多自动执行一次修复 turn，并在超时、resume 失败、二次非法输出或创建失败后进入可重试 failed 状态。系统 MUST NOT 无限自动重试、删除既有对话或最后有效方案、把失败当作已创建。
+系统 MUST 继续把非法输出修复限制为最多一次。AI 建队观察到 external ID 后 MUST 立即随 draft 保存，即使当轮随后失败。resume 失败、
+requested / observed ID 冲突或 provider 会话不存在时 MUST 只执行一次 resume，MUST
+保留 draft ID、external ID、对话和最后有效方案，MUST NOT reset thread、构造
+reconstruction prompt、执行 full / `session/new` 或跨 CLI。
 
-### Scenario: 修复一次后仍非法
-- GIVEN 当前草稿已有对话和一版有效方案
-- WHEN 新一轮所选 CLI 输出非法且唯一一次同 CLI 修复 turn 仍非法
-- THEN 状态变为 failed、原对话和有效方案仍可见、动作只允许用户显式重试或取消
+renderer MUST 显示
+`AI 上下文暂时无法继续，已保留对话和最后有效方案。` 并保留 `重试`，但 MUST NOT
+接收 provider ID。
+
+### Scenario: resume 失败后重试仍保留身份
+
+- **GIVEN** draft 已有 Kimi session ID 和最后有效方案
+- **WHEN** `session/resume` 返回 Session not found
+- **THEN** draft 进入可重试 failed
+- **AND** external ID 不清空
+- **AND** 本轮没有 `session/new`
+- **AND** 页面显示固定安全文案与 `重试`。
+
+### Scenario: started 后输出非法
+
+- **GIVEN** 首次 Codex 调用已报告 thread ID
+- **WHEN** 输出非法且 repair 失败
+- **THEN** failed draft 已保存该 thread ID
+- **AND** 下一次 retry resume 同一 thread。
+
+## Requirement: AI 建队 invocation manifest 仅供内部审计
+
+Source: docs/product/prd.md#desktop-持久-agent-的执行会话连续性
+
+AI 建队每个内部 runDir MUST 记录安全 invocation manifest，至少包含
+`full|resume`、requested / observed ID 一致性和 outcome，使测试可以断言失败轮只有
+一次 resume 且没有 reconstruction。manifest MUST NOT 包含 prompt、原始模型输出、
+provider 密钥或 token，且 MUST NOT 进入 renderer DTO。
+
+### Scenario: renderer 读取失败 draft
+
+- **GIVEN** resume 失败轮已写 invocation manifest
+- **WHEN** renderer 通过 IPC 读取 draft
+- **THEN** DTO 只含安全 error、canRetry、消息与最后有效方案
+- **AND** 不含 external ID、runDir 或 manifest 内容。
 
 ## Requirement: renderer 只接收白名单 AI 建队 DTO
 Source: docs/product/pages/onboarding.md#AI-建队技术约束

@@ -59,7 +59,12 @@ describe("AI team builder engine freeze", () => {
   it("does not cross-fallback to Codex when the frozen Kimi driver fails", async () => {
     const dataRoot = await makeDataRoot();
     const codex = driver([]);
-    const kimi = driver([{ ok: false, reason: "kimi-unavailable", resumeFailed: false }]);
+    const kimi = driver([{
+      ok: false,
+      reason: "kimi-unavailable",
+      resumeFailed: false,
+      externalSessionId: null,
+    }]);
     const builder = new AiTeamBuilder({
       dataRoot,
       codex,
@@ -129,7 +134,7 @@ describe("AI team builder engine freeze", () => {
       await fs.readFile(path.join(draftDirectory, "legacy.json"), "utf8"),
     ) as Record<string, unknown>;
     expect(stored).toMatchObject({
-      version: 2,
+      version: 3,
       executionProfile: { cli: "codex" },
       externalSessionId: "legacy-codex-thread",
     });

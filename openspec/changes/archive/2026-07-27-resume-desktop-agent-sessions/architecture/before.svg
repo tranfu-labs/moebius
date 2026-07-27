@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Desktop Agent provider sessions before the change</title>
+  <desc id="desc">Local runs create full sessions repeatedly, AI team builder and GitHub roles fall back to replacement sessions after resume failure.</desc>
+  <defs>
+    <style>
+      .bg{fill:#111318}.box{fill:#1b1f27;stroke:#596273;stroke-width:2}.bad{fill:#3a2023;stroke:#d46a73;stroke-width:2}.txt{fill:#f3f5f7;font:16px system-ui,sans-serif}.sub{fill:#aeb6c2;font:13px system-ui,sans-serif}.arrow{stroke:#8b95a5;stroke-width:2;fill:none;marker-end:url(#m)}.danger{stroke:#d46a73;stroke-width:2;fill:none;marker-end:url(#r)}
+    </style>
+    <marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b95a5"/></marker>
+    <marker id="r" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#d46a73"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="620"/>
+  <text class="txt" x="48" y="52">Before: three Desktop paths, inconsistent continuity</text>
+  <rect class="box" x="48" y="92" width="290" height="110" rx="12"/>
+  <text class="txt" x="70" y="126">Local Agent</text><text class="sub" x="70" y="154">ordinary runs: full every time</text><text class="sub" x="70" y="178">resume only unfinished run</text>
+  <rect class="bad" x="450" y="92" width="300" height="110" rx="12"/>
+  <text class="txt" x="472" y="126">many provider sessions</text><text class="sub" x="472" y="154">thread A1, A2, A3…</text><text class="sub" x="472" y="178">full shared timeline each run</text>
+  <path class="danger" d="M338 147H450"/>
+  <rect class="box" x="48" y="254" width="290" height="110" rx="12"/>
+  <text class="txt" x="70" y="288">AI team builder draft</text><text class="sub" x="70" y="316">new → resume</text><text class="sub" x="70" y="340">resume failure reconstructs</text>
+  <rect class="bad" x="450" y="254" width="300" height="110" rx="12"/>
+  <text class="txt" x="472" y="288">replacement session</text><text class="sub" x="472" y="316">clear ID + saved history</text><text class="sub" x="472" y="340">second provider invocation</text>
+  <path class="danger" d="M338 309H450"/>
+  <rect class="box" x="48" y="416" width="290" height="110" rx="12"/>
+  <text class="txt" x="70" y="450">GitHub issue + role</text><text class="sub" x="70" y="478">full → resume</text><text class="sub" x="70" y="502">resume failure falls back</text>
+  <rect class="bad" x="450" y="416" width="300" height="110" rx="12"/>
+  <text class="txt" x="472" y="450">-fallback runDir</text><text class="sub" x="472" y="478">second full invocation</text><text class="sub" x="472" y="502">replacement thread</text>
+  <path class="danger" d="M338 471H450"/>
+  <rect class="box" x="842" y="212" width="310" height="194" rx="12"/>
+  <text class="txt" x="864" y="248">Shared weaknesses</text>
+  <text class="sub" x="864" y="280">• ID may be saved too late</text>
+  <text class="sub" x="864" y="310">• fallback is invisible to user</text>
+  <text class="sub" x="864" y="340">• provider behavior differs</text>
+  <text class="sub" x="864" y="370">• no uniform invocation proof</text>
+  <path class="arrow" d="M750 147C810 147 800 260 842 278"/>
+  <path class="arrow" d="M750 309H842"/>
+  <path class="arrow" d="M750 471C810 471 800 360 842 344"/>
+</svg>
