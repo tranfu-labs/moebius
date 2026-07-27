@@ -13,7 +13,7 @@ import {
 } from "@/console/right-sidebar-tabs";
 
 const meta = {
-  title: "Console/RightSidebar",
+  title: "Block/Console/RightSidebar",
   component: RightSidebarStory,
   args: {
     isGitRepository: true,

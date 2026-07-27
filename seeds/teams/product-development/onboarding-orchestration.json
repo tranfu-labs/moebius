@@ -3,19 +3,19 @@
   "relayBeats": [
     {
       "speakerSlug": "product-delivery-lead",
-      "message": "我先和你聊清产品命题与关键旅程；确认后，后续原型、方案和验收会按两个明确人工阶段推进。"
+      "message": "我先和你聊清产品命题与关键旅程；确认后，成熟页面走 production Page Story，只有 Story 无法回答的设计问题才进入隔离原型。"
     },
     {
       "speakerSlug": "product-reviewer",
-      "message": "用户视角评审已完成：主路径成立，但失败恢复必须在本页 PRD 中补清后才能进入原型。"
+      "message": "用户视角评审已完成：主路径成立，但失败恢复必须在本页 PRD 中补清后才能进入 UI 评审与实现。"
     },
     {
       "speakerSlug": "ui-prototyper",
-      "message": "已按确认 PRD 生成可离线打开的交互原型，并完成宽窄视口、亮暗主题和键盘旅程验证。"
+      "message": "发现一个 production Story 无法回答的交互分叉；已按确认 PRD 用隔离原型回答，并将结论交回生产 UI 链路。"
     },
     {
       "speakerSlug": "implementation-lead",
-      "message": "OpenSpec 实施摘要和逐条验收清单已准备，等待 UI 与方案共同确认后即可自动落盘和开发。"
+      "message": "已用真实生产导出准备 fullscreen Page Story，并完成 OpenSpec 实施摘要和逐条验收清单；等待 UI 与方案共同确认。"
     },
     {
       "speakerSlug": "functional-qa",
@@ -31,7 +31,7 @@
     },
     {
       "speakerSlug": "product-delivery-lead",
-      "message": "收尾：PRD、原型、OpenSpec、实现及双重验收均已闭环，交付路径和剩余风险已汇总。"
+      "message": "收尾：PRD、UI 评审入口、OpenSpec、实现及双重验收均已闭环，交付路径和剩余风险已汇总。"
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,9 +11,8 @@ const prototypePath = resolve(
   repositoryRoot,
   "docs/product/pages/settings.prototype.html"
 );
-const artifactDir = resolve(
-  repositoryRoot,
-  "artifacts/acceptance/settings-prototype"
+const artifactDir = await mkdtemp(
+  resolve(tmpdir(), "moebius-settings-prototype-static-")
 );
 const evidencePath = resolve(artifactDir, "static-evidence.json");
 const html = await readFile(prototypePath, "utf8");
@@ -109,7 +109,6 @@ for (const forbiddenProductCoupling of [
 }
 checks.push("no-production-runtime-coupling");
 
-await mkdir(artifactDir, { recursive: true });
 await writeFile(
   evidencePath,
   `${JSON.stringify(

@@ -29,7 +29,7 @@ const projects: ConversationSidebarProject[] = [
 ];
 
 const meta = {
-  title: "Console/ConversationSidebar",
+  title: "Block/Console/ConversationSidebar",
   component: ConversationSidebar,
   args: {
     projects,

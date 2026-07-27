@@ -21,7 +21,8 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
     "storybook": "storybook dev -p 6006 --host 127.0.0.1",
-    "build-storybook": "storybook build",
+    "build-storybook": "node scripts/build-storybook-temp.mjs",
+    "check:storybook": "node ../../scripts/check-story-catalog.mjs && node scripts/build-storybook-temp.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

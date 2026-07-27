@@ -8,7 +8,7 @@ import {
 } from "@/console/process-tab";
 
 const meta = {
-  title: "Console/ProcessTab",
+  title: "Block/Console/ProcessTab",
   component: ProcessTabStory,
   parameters: { layout: "fullscreen" },
 } satisfies Meta<typeof ProcessTabStory>;

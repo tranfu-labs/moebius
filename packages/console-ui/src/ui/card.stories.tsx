@@ -4,7 +4,7 @@ import { Badge } from "@/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 
 const meta = {
-  title: "UI/Card",
+  title: "Component/UI/Card",
   component: Card
 } satisfies Meta<typeof Card>;
 

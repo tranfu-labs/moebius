@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { Input } from "@/ui/input";
 
 const meta = {
-  title: "UI/Input",
+  title: "Component/UI/Input",
   component: Input,
   args: {
     placeholder: "写下你判定的依据，方便回溯"

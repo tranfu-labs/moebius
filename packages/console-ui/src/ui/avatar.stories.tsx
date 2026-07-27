@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { Avatar, AvatarFallback } from "@/ui/avatar";
 
 const meta = {
-  title: "UI/Avatar",
+  title: "Component/UI/Avatar",
   component: Avatar
 } satisfies Meta<typeof Avatar>;
 

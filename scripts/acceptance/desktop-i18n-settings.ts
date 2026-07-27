@@ -7,6 +7,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "playwright";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface DesktopI18nEvidence {
   generatedAt: string;
@@ -20,9 +21,10 @@ interface DesktopI18nEvidence {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const desktopRoot = path.join(projectRoot, "desktop");
 const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-i18n-acceptance-"));
+const evidenceRoot = await createAcceptanceOutputDirectory("desktop-i18n-settings");
 const stateRoot = path.join(runtimeRoot, ".state");
 const preferencePath = path.join(stateRoot, "language-preference.json");
-const evidencePath = path.join(projectRoot, "artifacts", "acceptance", "desktop-i18n-settings-evidence.json");
+const evidencePath = path.join(evidenceRoot, "desktop-i18n-settings-evidence.json");
 const assertions: DesktopI18nEvidence["assertions"] = [];
 await fs.writeFile(
   path.join(runtimeRoot, ".onboarding-completed"),
@@ -320,12 +322,12 @@ try {
 } finally {
   await fs.chmod(stateRoot, 0o700).catch(() => undefined);
   await application.close().catch(() => undefined);
-  await fs.mkdir(path.dirname(evidencePath), { recursive: true });
   const evidence: DesktopI18nEvidence = {
     generatedAt: new Date().toISOString(),
     assertions,
   };
   await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+  process.stdout.write(`${JSON.stringify({ ok: true, evidence: evidencePath })}\n`);
   await fs.rm(runtimeRoot, { recursive: true, force: true });
 }
 

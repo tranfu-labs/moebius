@@ -34,7 +34,7 @@ const editorialTeam: OperatorAgentTeam = {
 };
 
 const meta = {
-  title: "Onboarding/OnboardingShell",
+  title: "Page/Onboarding/OnboardingShell",
   component: OnboardingShell,
   parameters: {
     layout: "fullscreen",

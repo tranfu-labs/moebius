@@ -2,7 +2,7 @@
 
 ## 定位
 
-本目录只承载可交互的高保真设计原型。原型用于产品采访、视觉评审和完整用户旅程验收，不是正式产品实现、组件库样例或运行时依赖。
+本目录只承载用于回答明确、未解决设计或交互问题的可交互高保真探索。只有 production Component / Block / Page Story 无法回答该问题时才进入本目录；成熟页面的默认浏览展示与确定状态评审属于 `packages/console-ui` Storybook。本目录不是正式产品实现、组件库样例、成熟页面默认预览或运行时依赖。
 
 每份原型的最终评审交付物是一个可离线直接打开的自包含 HTML；React、Motion、Vite 等只属于 authoring 与构建过程。
 
@@ -66,7 +66,7 @@
 ## 禁止事项
 
 - NEVER 为了复用方便把原型源码放进 `packages/console-ui` 或正式 renderer。
-- NEVER 把 Storybook Story 当作完整页面高保真原型；Storybook 只负责正式组件的开发展示。
+- NEVER 用隔离原型替代成熟页面的 production Page Story；探索问题解决后必须回到正式 UI 与 desktop 集成链路。
 - NEVER 让正式实现直接消费生成 HTML。
 - NEVER 在未更新 PRD 时用原型偷偷决定产品行为。
 - NEVER 提交 `prototypes/dist/` 临时目录。

@@ -42,8 +42,9 @@
 - 桌面构建：`pnpm --filter @moebius/desktop build`（构建门禁见 desktop-shell spec）
 - 桌面打包：`pnpm --filter @moebius/desktop dist`（只产 macOS arm64 DMG/ZIP；`desktop-v*` tag 触发发布 workflow，红线见 desktop-shell spec）
 - 组件库 Storybook：`pnpm --filter @moebius/console-ui storybook`（设计语言事实源是 `packages/console-ui/DESIGN.md`）
+- Storybook 门禁：`pnpm --filter @moebius/console-ui check:storybook`（检查 Component / Block / Page 分类并构建静态 Storybook）
 - 原型构建验证：`pnpm --filter @moebius/prototypes check`（沙盒规则见 `prototypes/AGENTS.md` 与 `openspec/specs/design-prototypes/spec.md`）
-- 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源，运行证据落在 `artifacts/acceptance/*-evidence.json`）
+- 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - 定向测试：`pnpm exec vitest run tests/local-console-codex-resume.test.ts`
 - 测试：`pnpm test`；类型检查：`pnpm typecheck`
 - lint/格式化：TODO: 尚未配置 ESLint / Prettier；改代码时至少跑测试与类型检查。
@@ -90,6 +91,7 @@
 - **本文件的更新闸门**：AGENTS.md 只在新增命令、新增顶层目录、新增红线或新增域指针时更新；行为细节（状态机、像素规格、流程语义等）一律进域 spec，NEVER 沉淀进本文件。
 
 ## 禁止事项
+- MUST NOT 把 `artifacts/` 当作事实源或长期交付目录；验收截图、evidence JSON、静态构建等临时证据必须写入系统临时目录并由运行结果报告路径，仓库内 `artifacts/` 不得提交。
 - MUST NOT 提交 GitHub token、个人访问令牌、本地绝对路径、执行日志中的敏感内容或 `.env` 文件。
 - MUST NOT 提交本机 `config.local.toml`；它用于本地 repository 白名单。
 - MUST NOT 把 issue title/body/author 等外部输入直接拼接到 shell 命令中执行；调用外部命令必须 `child_process.spawn(cmd, args[])`，不得使用 `exec` / `execSync` / `shell: true`。

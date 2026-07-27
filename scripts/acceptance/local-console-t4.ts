@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface Evidence {
   acceptance: Array<{
@@ -25,7 +26,7 @@ interface Evidence {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("local-console-t4");
 const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-t4-acceptance-"));
 const sqlitePath = path.join(runtimeRoot, ".state", "local-console.sqlite");
 const distPage = path.join(projectRoot, "desktop", "dist", "console-page", "index.html");
@@ -39,10 +40,10 @@ const staticServer = await startStaticServer(path.dirname(distPage));
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1360, height: 860 }, deviceScaleFactor: 1 });
 const artifacts = {
-  live: "artifacts/acceptance/t4-live.png",
-  interrupted: "artifacts/acceptance/t4-interrupted.png",
-  failed: "artifacts/acceptance/t4-failed.png",
-  evidence: "artifacts/acceptance/t4-evidence.json",
+  live: path.join(artifactDir, "t4-live.png"),
+  interrupted: path.join(artifactDir, "t4-interrupted.png"),
+  failed: path.join(artifactDir, "t4-failed.png"),
+  evidence: path.join(artifactDir, "t4-evidence.json"),
 };
 
 const evidence: Evidence = {
@@ -66,7 +67,7 @@ try {
   await page.getByRole("button", { name: "发送消息" }).click();
   await page.getByRole("button", { name: "中断开发运行" }).waitFor();
   await page.getByText("live tail from codex").waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.live), fullPage: true });
+  await page.screenshot({ path: artifacts.live, fullPage: true });
 
   const liveState = await waitForState("default", (state) => state.activeRun?.lastOutputSummary === "live tail from codex");
   const liveActiveRun = summarizeActiveRun(liveState.activeRun);
@@ -89,7 +90,7 @@ try {
     state.messages.some((message) => message.body === "after interrupt"),
   );
   const releasedMessages = summarizeMessages(releasedState.messages);
-  await page.screenshot({ path: path.join(projectRoot, artifacts.interrupted), fullPage: true });
+  await page.screenshot({ path: artifacts.interrupted, fullPage: true });
   evidence.interrupted = {
     interrupted: interruptedMessages,
     released: releasedMessages,
@@ -102,7 +103,7 @@ try {
   );
   await page.getByRole("button", { name: "failure visible", exact: true }).click();
   await page.getByText("运行失败").first().waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.failed), fullPage: true });
+  await page.screenshot({ path: artifacts.failed, fullPage: true });
   const failedSessionId = failureSession.sessionId;
   const failedState = await getState(failedSessionId);
   const failureMessages = summarizeMessages(failedState.messages);
@@ -243,7 +244,8 @@ try {
     },
   ];
 
-  await fs.writeFile(path.join(projectRoot, artifacts.evidence), JSON.stringify(evidence, null, 2), "utf8");
+  await fs.writeFile(artifacts.evidence, JSON.stringify(evidence, null, 2), "utf8");
+  process.stdout.write(`${JSON.stringify({ ok: true, artifacts })}\n`);
 } finally {
   await browser.close();
   await started.close();

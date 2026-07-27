@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
@@ -11,9 +12,8 @@ const prototypePath = resolve(
   repositoryRoot,
   "docs/product/pages/onboarding.prototype.html"
 );
-const artifactDir = resolve(
-  repositoryRoot,
-  "artifacts/acceptance/onboarding-prototype"
+const artifactDir = await mkdtemp(
+  resolve(tmpdir(), "moebius-onboarding-prototype-")
 );
 const evidencePath = resolve(artifactDir, "evidence.json");
 const html = await readFile(prototypePath, "utf8");
@@ -29,8 +29,6 @@ if (externalAttributes.length > 0) {
     `Published HTML has external resource attributes: ${externalAttributes.join(", ")}`
   );
 }
-
-await mkdir(artifactDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const externalRequests = new Set();

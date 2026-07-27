@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
@@ -11,9 +12,8 @@ const prototypePath = resolve(
   repositoryRoot,
   "docs/product/pages/agent-conversation.prototype.html"
 );
-const artifactDir = resolve(
-  repositoryRoot,
-  "artifacts/acceptance/agent-conversation-prototype"
+const artifactDir = await mkdtemp(
+  resolve(tmpdir(), "moebius-agent-conversation-prototype-")
 );
 const evidencePath = resolve(artifactDir, "evidence.json");
 const prototypeUrl = pathToFileURL(prototypePath).href;
@@ -34,7 +34,6 @@ if (externalAttributes.length > 0) {
 }
 checks.push("single-html-has-no-external-resource-attributes");
 
-await mkdir(artifactDir, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 
 function watchExternalRequests(page) {

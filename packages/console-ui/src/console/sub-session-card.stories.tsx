@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { SubSessionCard } from "@/console/sub-session-card";
 
 const meta = {
-  title: "Console/SubSessionCard",
+  title: "Component/Console/SubSessionCard",
   component: SubSessionCard,
   args: {
     items: [

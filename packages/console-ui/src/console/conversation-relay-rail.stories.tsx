@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
 
 const meta = {
-  title: "Console/ConversationRelayRail",
+  title: "Block/Console/ConversationRelayRail",
   component: ConversationRelayRail,
   decorators: [
     (Story) => (

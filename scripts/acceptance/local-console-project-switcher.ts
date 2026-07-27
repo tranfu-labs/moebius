@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
 import { startLocalConsoleServer } from "../../src/local-console/server.js";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("project-switcher");
 const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-project-switcher-"));
 const alphaFolder = path.join(runtimeRoot, "project-alpha");
 const betaFolder = path.join(runtimeRoot, "project-beta");
@@ -32,10 +33,10 @@ const pageErrors: string[] = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
 
 const artifacts = {
-  projectRowCreate: "artifacts/acceptance/new-session-project-row.png",
-  projectDropdown: "artifacts/acceptance/new-session-project-dropdown.png",
-  lockedContext: "artifacts/acceptance/new-session-project-locked.png",
-  evidence: "artifacts/acceptance/new-session-project-switcher-evidence.json",
+  projectRowCreate: path.join(artifactDir, "new-session-project-row.png"),
+  projectDropdown: path.join(artifactDir, "new-session-project-dropdown.png"),
+  lockedContext: path.join(artifactDir, "new-session-project-locked.png"),
+  evidence: path.join(artifactDir, "new-session-project-switcher-evidence.json"),
 };
 
 try {
@@ -61,14 +62,14 @@ try {
   await page.getByRole("button", { name: "在 project-beta 中新建会话" }).click();
   await page.getByRole("button", { name: "项目：project-beta，点击切换" }).waitFor();
   await page.getByRole("button", { name: "新会话，静止" }).waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.projectRowCreate), fullPage: true });
+  await page.screenshot({ path: artifacts.projectRowCreate, fullPage: true });
 
   const composer = page.getByLabel("消息内容");
   await composer.fill("未发送草稿保持不变");
   const projectTrigger = page.getByRole("button", { name: "项目：project-beta，点击切换" });
   await projectTrigger.click();
   await page.getByRole("menuitemcheckbox", { name: "project-alpha" }).waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.projectDropdown), fullPage: true });
+  await page.screenshot({ path: artifacts.projectDropdown, fullPage: true });
   await page.getByRole("menuitemcheckbox", { name: "project-alpha" }).click();
   await page.getByRole("button", { name: "项目：project-alpha，点击切换" }).waitFor();
   if ((await composer.inputValue()) !== "未发送草稿保持不变") {
@@ -79,14 +80,14 @@ try {
   await page.getByRole("button", { name: "发送消息" }).click();
   await page.getByText("project context locked", { exact: true }).waitFor();
   await page.getByLabel("项目：project-alpha，已锁定").waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.lockedContext), fullPage: true });
+  await page.screenshot({ path: artifacts.lockedContext, fullPage: true });
 
   const state = await getState(alpha.projectId, alphaSession.sessionId);
   const movedSession = state.projects
     .flatMap((project: any) => project.sessions)
     .find((session: any) => session.title === "新会话");
   await fs.writeFile(
-    path.join(projectRoot, artifacts.evidence),
+    artifacts.evidence,
     JSON.stringify({
       artifacts,
       projectIds: { alpha: alpha.projectId, beta: beta.projectId },
@@ -96,6 +97,7 @@ try {
     }, null, 2),
     "utf8",
   );
+  process.stdout.write(`${JSON.stringify({ ok: true, artifacts })}\n`);
 } finally {
   await page.close();
   await browser.close();

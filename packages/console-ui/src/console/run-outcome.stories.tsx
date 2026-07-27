@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { RunOutcome } from "@/console/run-outcome";
 
 const meta = {
-  title: "Console/RunOutcome",
+  title: "Component/Console/RunOutcome",
   component: RunOutcome,
   args: {
     role: "dev",

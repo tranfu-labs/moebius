@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`console-ui` 是桌面对话操作台的 React 组件库与开发期展示台。它提供可被 Electron renderer 消费的 shadcn 风格源码组件、Radix 无障碍原语封装、Tailwind 语义令牌（近黑底暗色优先 + 状态色相族）和项目专属复合组件；它不承载真实桌面对话操作台的数据流、IPC、runner 状态管理或 GitHub / Codex 调用。
+`console-ui` 是桌面对话操作台的生产 UI 层与开发期展示台。它提供可被 Electron renderer 消费的 shadcn 风格源码组件、Radix 无障碍原语封装、Tailwind 语义令牌（近黑底暗色优先 + 状态色相族），以及由 Component、Block 到 Page/Screen 的项目专属组合；它不承载真实桌面对话操作台的数据流、IPC、runner 状态管理或 GitHub / Codex 调用。
 
 ## Requirements
 
@@ -14,13 +14,15 @@ The `console-ui` package MUST expose React components and global styles so the d
 
 The `console-ui` package MUST use shadcn-style source components built on Tailwind CSS variables and Radix primitives, with component source checked into this repository rather than hidden behind a runtime UI package.
 
-The `console-ui` package MUST provide Storybook as the development-time browser showcase for console UI components.
+The `console-ui` package MUST provide Storybook as the only development-time browser showcase for production console UI. Its catalog MUST classify every Story under exactly one of `Component`, `Block`, or `Page`: Components are individually reusable controls or focused content units, Blocks compose components into a bounded product region, and Pages compose production exports into a complete screen state.
 
-The `console-ui` package MUST include at least one shadcn-style primitive sample and one project-specific composite sample so the token chain, Storybook setup, and renderer-consumable package shape are verified.
+The `console-ui` package MUST include at least one Story in each catalog layer. A mature production page MUST provide a deterministic Page Story by default, and every Page Story MUST use Storybook's fullscreen layout.
 
 The `console-ui` package MUST keep Storybook under `packages/console-ui` as the only shipped browser showcase for this domain.
 
-The `console-ui` package MUST NOT keep a parallel static Tailwind HTML component library as a second UI source of truth.
+The `console-ui` package MUST NOT keep a parallel static Tailwind HTML component library or editable/generated `*.ui.html` page as a second UI source of truth.
+
+Stories MUST render real exports from `packages/console-ui` with deterministic fixtures and MUST NOT connect to real IPC, runner, SQLite, Codex, GitHub, filesystem capabilities, or user data. Page Stories verify production composition and deterministic visual states; the desktop application remains responsible for real IPC, data flow, persistence, renderer integration, and final runtime verification.
 
 #### Scenario: Renderer can consume the component library
 
@@ -28,11 +30,19 @@ The `console-ui` package MUST NOT keep a parallel static Tailwind HTML component
 - **WHEN** it imports `@moebius/console-ui` and `@moebius/console-ui/globals.css`
 - **THEN** it can render React components with the package-local global styles.
 
-#### Scenario: Storybook shows package samples
+#### Scenario: Storybook shows all catalog layers
 
 - **GIVEN** a developer runs `pnpm --filter @moebius/console-ui storybook`
 - **WHEN** Storybook starts
-- **THEN** the browser showcase includes a primitive button story and a project-specific acceptance card story.
+- **THEN** the browser showcase includes Component, Block, and Page sections
+- **AND** every mature production page Story renders real production exports with deterministic fixtures and fullscreen layout.
+
+#### Scenario: Desktop owns runtime integration
+
+- **GIVEN** a Page Story demonstrates a complete production screen
+- **WHEN** its acceptance boundary is inspected
+- **THEN** it contains no real IPC, runner, database, filesystem, Codex, GitHub, or user-data integration
+- **AND** those integrations are verified in the desktop application.
 
 ### Requirement: Compiled global-style package boundary
 

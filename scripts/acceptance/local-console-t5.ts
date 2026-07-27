@@ -16,6 +16,7 @@ import {
 } from "../../src/local-console/t5-store.js";
 import { applyLocalWorkspaceDiff, rollbackLocalWorkspaceDiff } from "../../src/local-console/workspace-source.js";
 import { LOCAL_CONSOLE_PROJECT_ID, type LocalConsoleMessage, type LocalConsoleStore } from "../../src/local-console/types.js";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface EvidenceItem {
   id: number;
@@ -57,7 +58,7 @@ interface WorkspaceDiffFact {
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const changeDir = path.join(projectRoot, "openspec", "changes", "local-console-t5-full-parity");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("local-console-t5");
 const evidencePath = path.join(artifactDir, "t5-evidence.json");
 const prBodyDraftPath = path.join(artifactDir, "t5-pr-body.md");
 const selectedCase = readCaseArg(process.argv);
@@ -104,7 +105,7 @@ async function main(): Promise<void> {
     ok: true,
     selectedCase,
     acceptance,
-    artifacts: { evidence: "artifacts/acceptance/t5-evidence.json" },
+    artifacts: { evidence: evidencePath },
   };
   await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify({ ok: true, case: selectedCase, evidence: evidence.artifacts.evidence, acceptance: acceptance.length })}\n`);

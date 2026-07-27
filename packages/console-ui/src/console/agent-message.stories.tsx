@@ -17,7 +17,7 @@ const rawMarkdown = [
 ].join("\n");
 
 const meta = {
-  title: "Console/AgentMessage",
+  title: "Component/Console/AgentMessage",
   component: AgentMessage,
   args: {
     role: "dev",

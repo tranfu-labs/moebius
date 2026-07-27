@@ -69,7 +69,7 @@ const userTeam: OperatorAgentTeam = {
 };
 
 const meta = {
-  title: "Console/AgentTeamsPage",
+  title: "Page/Console/AgentTeamsPage",
   component: AgentTeamsPage,
   args: {
     state: { status: "ready", teams: [builtInTeam, userTeam] },

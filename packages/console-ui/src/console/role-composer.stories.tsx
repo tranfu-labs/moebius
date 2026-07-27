@@ -4,7 +4,7 @@ import { useState } from "react";
 import { RoleComposer } from "@/console/role-composer";
 
 const meta = {
-  title: "Console/RoleComposer",
+  title: "Component/Console/RoleComposer",
   component: RoleComposer,
   args: {
     value: "",

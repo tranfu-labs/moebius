@@ -5,21 +5,22 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium, type Page } from "playwright";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("console-ui-t6");
 const desktopDist = path.join(projectRoot, "desktop", "dist", "console-page");
 const storybookStatic = path.join(artifactDir, "t6-storybook-static");
 const execFileAsync = promisify(execFile);
 
 const artifacts = {
-  desktop: "artifacts/acceptance/t6-desktop-renderer.png",
-  gallery: "artifacts/acceptance/t6-component-gallery.png",
-  storybookCard: "artifacts/acceptance/t6-storybook-card.png",
-  storybookBadge: "artifacts/acceptance/t6-storybook-badge.png",
-  storybookOperatorConsole: "artifacts/acceptance/t6-storybook-operator-console.png",
-  storybookAcceptCard: "artifacts/acceptance/t6-storybook-accept-card.png",
-  evidence: "artifacts/acceptance/t6-evidence.json",
+  desktop: path.join(artifactDir, "t6-desktop-renderer.png"),
+  gallery: path.join(artifactDir, "t6-component-gallery.png"),
+  storybookCard: path.join(artifactDir, "t6-storybook-card.png"),
+  storybookBadge: path.join(artifactDir, "t6-storybook-badge.png"),
+  storybookOperatorConsole: path.join(artifactDir, "t6-storybook-operator-console.png"),
+  storybookAcceptCard: path.join(artifactDir, "t6-storybook-accept-card.png"),
+  evidence: path.join(artifactDir, "t6-evidence.json"),
 };
 
 await fs.mkdir(artifactDir, { recursive: true });
@@ -38,25 +39,25 @@ try {
   await page.getByText("运行直播").waitFor();
   await page.getByText("live tail from codex").waitFor();
   await page.getByText("普通时间线消息").waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifacts.desktop), fullPage: true });
+  await page.screenshot({ path: artifacts.desktop, fullPage: true });
 
   await galleryPage.goto(new URL("/gallery", server.url).toString());
   await galleryPage.getByText("Card / Badge / OperatorConsole / AcceptCard").waitFor();
-  await galleryPage.screenshot({ path: path.join(projectRoot, artifacts.gallery), fullPage: true });
+  await galleryPage.screenshot({ path: artifacts.gallery, fullPage: true });
 
-  await screenshotStory(storybookPage, server.url, "ui-card--console-panel", "运行记录", artifacts.storybookCard);
-  await screenshotStory(storybookPage, server.url, "ui-badge--console-states", "运行中", artifacts.storybookBadge);
+  await screenshotStory(storybookPage, server.url, "component-ui-card--console-panel", "运行记录", artifacts.storybookCard);
+  await screenshotStory(storybookPage, server.url, "component-ui-badge--console-states", "运行中", artifacts.storybookBadge);
   await screenshotStory(
     storybookPage,
     server.url,
-    "console-operatorconsole--running",
+    "page-console-operatorconsole--t-65-running",
     "运行直播",
     artifacts.storybookOperatorConsole,
   );
   await screenshotStory(
     storybookPage,
     server.url,
-    "console-acceptcard--mixed-decisions",
+    "component-console-acceptcard--mixed-decisions",
     "轮到你了",
     artifacts.storybookAcceptCard,
   );
@@ -91,7 +92,7 @@ try {
       covers: ["UI/Card", "UI/Badge", "Console/OperatorConsole", "Console/AcceptCard"],
     },
   };
-  await fs.writeFile(path.join(projectRoot, artifacts.evidence), JSON.stringify(evidence, null, 2), "utf8");
+  await fs.writeFile(artifacts.evidence, JSON.stringify(evidence, null, 2), "utf8");
   process.stdout.write(`${JSON.stringify({ ok: true, artifacts })}\n`);
 } finally {
   await browser.close();
@@ -103,7 +104,7 @@ async function buildStorybook(): Promise<void> {
   await fs.rm(storybookStatic, { recursive: true, force: true });
   await execFileAsync(
     "pnpm",
-    ["--filter", "@moebius/console-ui", "exec", "storybook", "build", "--output-dir", "../../artifacts/acceptance/t6-storybook-static"],
+    ["--filter", "@moebius/console-ui", "exec", "storybook", "build", "--output-dir", storybookStatic],
     { cwd: projectRoot, maxBuffer: 10 * 1024 * 1024 },
   );
 }
@@ -120,7 +121,7 @@ async function screenshotStory(
   storyUrl.searchParams.set("viewMode", "story");
   await page.goto(storyUrl.toString());
   await page.getByText(waitForText).first().waitFor();
-  await page.screenshot({ path: path.join(projectRoot, artifactPath), fullPage: true });
+  await page.screenshot({ path: artifactPath, fullPage: true });
 }
 
 async function startServer(): Promise<{ url: string; close(): Promise<void> }> {

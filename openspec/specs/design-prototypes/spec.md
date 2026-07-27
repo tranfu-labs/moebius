@@ -4,11 +4,20 @@
 
 The repository MUST keep high-fidelity prototype authoring isolated from product implementation code: prototype source MUST NOT import product runtime or UI packages, and product source MUST NOT import prototype source.
 
+An isolated prototype MUST be created only for a named, unresolved design or interaction question that cannot be answered by a production Component, Block, or Page Story. A prototype MUST NOT be the default preview or acceptance surface for a mature production page. Once the exploration question is resolved, production UI work MUST continue through `packages/console-ui` Stories and desktop integration; the prototype MAY remain as a historical design projection but MUST NOT become the implementation source of truth.
+
 #### Scenario: Production and prototype dependency graphs remain separate
 
 - **GIVEN** the prototype workspace and production workspaces are installed
 - **WHEN** source imports are scanned
 - **THEN** no import crosses between `prototypes/` and `src/`, `desktop/`, or `packages/`
+
+#### Scenario: Mature page uses the production catalog
+
+- **GIVEN** a requested UI change only composes or adjusts an established production page
+- **WHEN** the team chooses a browser review surface
+- **THEN** it uses the corresponding production Page Story
+- **AND** it does not create an isolated prototype without an unresolved exploration question.
 
 ### Requirement: Self-contained onboarding prototype
 

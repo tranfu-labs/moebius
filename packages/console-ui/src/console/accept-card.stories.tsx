@@ -25,7 +25,7 @@ const sampleItems: AcceptanceItem[] = [
 ];
 
 const meta = {
-  title: "Console/AcceptCard",
+  title: "Component/Console/AcceptCard",
   component: AcceptCard,
   args: {
     reviewerLabel: "用户代表",

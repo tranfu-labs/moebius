@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface Evidence {
   acceptance: Array<{ id: number; statement: string; evidence: unknown }>;
@@ -40,7 +41,7 @@ interface LocalState {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("local-console-t46");
 const evidencePath = path.join(artifactDir, "t46-evidence.json");
 
 async function main(): Promise<void> {
@@ -173,7 +174,7 @@ async function main(): Promise<void> {
 
   const evidence: Evidence = {
     acceptance,
-    artifacts: { evidence: "artifacts/acceptance/t46-evidence.json" },
+    artifacts: { evidence: evidencePath },
   };
   await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify({ ok: true, evidence: evidence.artifacts.evidence, acceptance: acceptance.length })}\n`);

@@ -149,7 +149,7 @@ const sample: OperatorConsoleProps = {
 };
 
 const meta = {
-  title: "Console/OperatorConsole",
+  title: "Page/Console/OperatorConsole",
   component: OperatorConsole,
   args: sample,
   parameters: {

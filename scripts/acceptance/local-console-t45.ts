@@ -12,6 +12,7 @@ import type {
   LocalConsoleSessionWorkspaceSource,
   LocalConsoleStore,
 } from "../../src/local-console/types.js";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface LocalStateResponse {
   selectedSessionId: string;
@@ -25,7 +26,7 @@ interface Evidence {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("local-console-t45");
 const evidencePath = path.join(artifactDir, "t45-evidence.json");
 
 async function main(): Promise<void> {
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
   const multiSession = await runMultiSessionScenario();
 
   const evidence: Evidence = {
-    artifacts: { evidence: "artifacts/acceptance/t45-evidence.json" },
+    artifacts: { evidence: evidencePath },
     acceptance: [
       {
         id: 1,
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
   };
 
   await fs.writeFile(evidencePath, JSON.stringify(evidence, null, 2), "utf8");
+  process.stdout.write(`${JSON.stringify({ ok: true, evidence: evidencePath })}\n`);
 }
 
 async function runHandoffChainScenario(): Promise<{ agentRoles: Array<string | null>; runRoles: string[]; runGapsMs: number[] }> {

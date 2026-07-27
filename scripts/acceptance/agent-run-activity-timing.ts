@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance", "agent-run-activity-timing");
+const artifactDir = await createAcceptanceOutputDirectory("agent-run-activity-evidence");
 const screenshotPath = path.join(artifactDir, "electron-wide-light.png");
 const narrowScreenshotPath = path.join(artifactDir, "electron-narrow-dark-reduced.png");
 const evidencePath = path.join(artifactDir, "evidence.json");
@@ -127,9 +128,10 @@ try {
     layout,
     narrowLayout,
     artifacts: {
-      screenshot: path.relative(projectRoot, screenshotPath),
-      narrowScreenshot: path.relative(projectRoot, narrowScreenshotPath),
+      screenshot: screenshotPath,
+      narrowScreenshot: narrowScreenshotPath,
     },
+    evidencePath,
   };
   await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify(evidence)}\n`);

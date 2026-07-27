@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 
 const meta = {
-  title: "Console/ConversationEmptyState",
+  title: "Block/Console/ConversationEmptyState",
   component: ConversationEmptyState,
   args: {
     projectName: "moebius",

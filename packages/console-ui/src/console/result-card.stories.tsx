@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { ResultCard } from "@/console/result-card";
 
 const meta = {
-  title: "Console/ResultCard",
+  title: "Component/Console/ResultCard",
   component: ResultCard,
   args: {
     fileCount: 2,

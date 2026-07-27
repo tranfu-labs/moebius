@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { SessionContextHeader } from "@/console/session-context-header";
 
 const meta = {
-  title: "Console/SessionContextHeader",
+  title: "Component/Console/SessionContextHeader",
   component: SessionContextHeader,
   args: {
     parentTitle: "目标 · 导出体验",

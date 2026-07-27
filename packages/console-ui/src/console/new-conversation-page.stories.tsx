@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { NewConversationPage } from "./new-conversation-page";
 
 const meta = {
-  title: "Console/NewConversationPage",
+  title: "Page/Console/NewConversationPage",
   component: NewConversationPage,
   parameters: { layout: "fullscreen" },
   args: {

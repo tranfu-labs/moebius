@@ -42,5 +42,8 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Check Storybook catalog
+        run: pnpm --filter @moebius/console-ui check:storybook
+
       - name: Build desktop sources
         run: pnpm --filter @moebius/desktop build

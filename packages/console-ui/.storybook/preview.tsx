@@ -4,15 +4,25 @@ import "../src/styles/globals.css";
 
 const withTheme: Decorator = (Story, context) => {
   const theme = context.globals.theme as "light" | "dark" | undefined;
+  const fullscreen =
+    context.title.startsWith("Page/") || context.parameters.layout === "fullscreen";
 
   return (
-    <ThemeFrame theme={theme ?? "light"}>
+    <ThemeFrame fullscreen={fullscreen} theme={theme ?? "light"}>
       <Story />
     </ThemeFrame>
   );
 };
 
-function ThemeFrame({ children, theme }: { children: ReactNode; theme: "light" | "dark" }): JSX.Element {
+function ThemeFrame({
+  children,
+  fullscreen,
+  theme,
+}: {
+  children: ReactNode;
+  fullscreen: boolean;
+  theme: "light" | "dark";
+}): JSX.Element {
   useEffect(() => {
     document.documentElement.classList.remove("light", "dark");
     document.documentElement.classList.add(theme);
@@ -22,7 +32,7 @@ function ThemeFrame({ children, theme }: { children: ReactNode; theme: "light" |
   }, [theme]);
 
   return (
-    <div className="min-h-screen bg-canvas p-6 text-ink">
+    <div className={`min-h-screen bg-canvas text-ink${fullscreen ? "" : " p-6"}`}>
       {children}
     </div>
   );
@@ -47,6 +57,11 @@ const preview: Preview = {
     theme: "light"
   },
   parameters: {
+    options: {
+      storySort: {
+        order: ["Component", "Block", "Page"],
+      },
+    },
     controls: {
       matchers: {
         color: /(background|color)$/i,

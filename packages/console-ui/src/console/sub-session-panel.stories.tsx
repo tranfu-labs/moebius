@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { SubSessionPanel } from "@/console/sub-session-panel";
 
 const meta = {
-  title: "Console/SubSessionPanel",
+  title: "Block/Console/SubSessionPanel",
   component: SubSessionPanel,
   args: {
     title: "空状态验收",

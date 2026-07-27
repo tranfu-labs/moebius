@@ -5,23 +5,24 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Page } from "playwright";
+import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const artifactDir = path.join(projectRoot, "artifacts", "acceptance");
+const artifactDir = await createAcceptanceOutputDirectory("local-console-t65");
 const desktopDist = path.join(projectRoot, "desktop", "dist", "console-page");
 const storybookStatic = path.join(artifactDir, "t65-storybook-static");
 
 const artifacts = {
-  agentMessage: "artifacts/acceptance/t65-agent-message.png",
-  runBlock: "artifacts/acceptance/t65-run-block.png",
-  runOutcomes: "artifacts/acceptance/t65-run-outcomes.png",
-  sidebar: "artifacts/acceptance/t65-sidebar.png",
-  roleComposer: "artifacts/acceptance/t65-role-composer.png",
-  storybook: "artifacts/acceptance/t65-storybook-operator-console.png",
-  visibleCopy: "artifacts/acceptance/t65-visible-copy.txt",
-  accessibilitySnapshot: "artifacts/acceptance/t65-accessibility-snapshot.yml",
-  evidence: "artifacts/acceptance/t65-evidence.json",
-  evidenceSha256: "artifacts/acceptance/t65-evidence.sha256",
+  agentMessage: path.join(artifactDir, "t65-agent-message.png"),
+  runBlock: path.join(artifactDir, "t65-run-block.png"),
+  runOutcomes: path.join(artifactDir, "t65-run-outcomes.png"),
+  sidebar: path.join(artifactDir, "t65-sidebar.png"),
+  roleComposer: path.join(artifactDir, "t65-role-composer.png"),
+  storybook: path.join(artifactDir, "t65-storybook-operator-console.png"),
+  visibleCopy: path.join(artifactDir, "t65-visible-copy.txt"),
+  accessibilitySnapshot: path.join(artifactDir, "t65-accessibility-snapshot.yml"),
+  evidence: path.join(artifactDir, "t65-evidence.json"),
+  evidenceSha256: path.join(artifactDir, "t65-evidence.sha256"),
 } as const;
 
 type Scenario = "running" | "outcomes" | "empty";
@@ -141,7 +142,7 @@ try {
     secondMentionPanelBlocked: secondPanelCount === 0,
   };
 
-  const storyId = await findStoryId("Console/OperatorConsole", "T 65 Running");
+  const storyId = await findStoryId("Page/Console/OperatorConsole", "T 65 Running");
   await screenshotStory(storybookPage, server.url, storyId, "正在整合复合组件", artifacts.storybook);
   scenarios.storybook = { storyId };
 
@@ -205,7 +206,7 @@ async function cleanupArtifacts(): Promise<void> {
 async function buildStorybook(): Promise<void> {
   await runProcess(
     "pnpm",
-    ["--filter", "@moebius/console-ui", "exec", "storybook", "build", "--output-dir", "../../artifacts/acceptance/t65-storybook-static"],
+    ["--filter", "@moebius/console-ui", "exec", "storybook", "build", "--output-dir", storybookStatic],
     180_000,
   );
 }
@@ -542,9 +543,7 @@ async function testedSourceManifest(baseHead: string): Promise<{ digest: string;
       filePath.startsWith("scripts/acceptance/") ||
       filePath.startsWith("openspec/changes/desktop-console-t65-integration-closeout/"),
     );
-  const files = [...new Set([...tracked, ...changed])]
-    .filter((filePath) => !filePath.startsWith("artifacts/acceptance/"))
-    .sort();
+  const files = [...new Set([...tracked, ...changed])].sort();
   const manifest = [];
   for (const filePath of files) {
     const absolutePath = path.join(projectRoot, filePath);
@@ -570,7 +569,7 @@ async function run(command: string, args: string[]): Promise<string> {
 }
 
 function absoluteArtifact(artifactPath: string): string {
-  return path.join(projectRoot, artifactPath);
+  return artifactPath;
 }
 
 function sha256(bytes: Buffer): string {

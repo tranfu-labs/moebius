@@ -61,7 +61,7 @@ const state: TeamBuilderViewState = {
 };
 
 const meta = {
-  title: "AI Team Builder/TeamBuilderView",
+  title: "Page/AI Team Builder/TeamBuilderView",
   component: TeamBuilderView,
   args: {
     state,

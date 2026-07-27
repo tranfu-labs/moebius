@@ -26,7 +26,7 @@ const steps: RunBlockStep[] = [
 ];
 
 const meta = {
-  title: "Console/RunBlock",
+  title: "Block/Console/RunBlock",
   component: RunBlock,
   args: {
     role: "dev",

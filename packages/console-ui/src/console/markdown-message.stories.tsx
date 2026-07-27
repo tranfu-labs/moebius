@@ -32,7 +32,7 @@ flowchart LR
 `;
 
 const meta = {
-  title: "Console/MarkdownMessage",
+  title: "Component/Console/MarkdownMessage",
   component: MarkdownMessage,
   parameters: { layout: "padded" },
   args: {

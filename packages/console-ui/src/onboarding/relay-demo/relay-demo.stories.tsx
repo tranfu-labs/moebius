@@ -33,7 +33,7 @@ const developmentTeam: OperatorAgentTeam = {
 };
 
 const meta = {
-  title: "Onboarding/RelayDemo",
+  title: "Block/Onboarding/RelayDemo",
   component: RelayDemo,
   decorators: [
     (Story) => (

@@ -149,13 +149,13 @@ docs/product/
 
 ### 可选的高保真交互原型
 
-需要在正式开发前评审完整视觉、动效和跨状态交互时，页面或流程 PRD 可以链接同目录的 `<page>.prototype.html` / `<flow>.prototype.html`。
+存在无法由 production Component / Block / Page Story 回答的明确、未解决设计或交互问题时，页面或流程 PRD 可以链接同目录的 `<page>.prototype.html` / `<flow>.prototype.html`。
 
 - 高保真原型是可离线直接打开的单 HTML 设计交付物，不是产品事实源或正式实现。
 - 产品决策仍然先写入 PRD；原型只投影已经确认的事实，冲突时以 PRD 为准。
 - authoring 源码、第三方动效组件、单文件构建、双向隔离与验证规则统一由仓库根 `prototypes/AGENTS.md` 管理。
 - 原型不得 import 正式产品代码，正式产品也不得复用原型源码；两者只共同读取 PRD。
-- Storybook 继续服务正式组件的开发展示，不承担完整页面高保真原型职责。
+- Storybook 是生产 UI 的浏览展示入口，并可通过 Page Story 展示完整成熟页面；隔离 prototype 只回答 Story 无法覆盖的探索问题，不替代生产 Page Story 或 desktop 集成验证。
 
 ## 流程 PRD 内容模板
 

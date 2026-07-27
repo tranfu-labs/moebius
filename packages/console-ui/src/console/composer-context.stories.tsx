@@ -55,7 +55,7 @@ const team = {
 };
 
 const meta = {
-  title: "Console/ComposerContext",
+  title: "Block/Console/ComposerContext",
   component: ComposerContext,
   args: {
     project,

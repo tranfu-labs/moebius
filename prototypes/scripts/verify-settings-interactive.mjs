@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
@@ -10,16 +11,13 @@ const prototypePath = resolve(
   repositoryRoot,
   "docs/product/pages/settings.prototype.html"
 );
-const artifactDir = resolve(
-  repositoryRoot,
-  "artifacts/acceptance/settings-prototype"
+const artifactDir = await mkdtemp(
+  resolve(tmpdir(), "moebius-settings-prototype-interactive-")
 );
 const evidencePath = resolve(artifactDir, "interactive-evidence.json");
 const prototypeUrl = pathToFileURL(prototypePath).href;
 const checks = [];
 const requests = [];
-
-await mkdir(artifactDir, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({

@@ -4,7 +4,7 @@ import { Send, Square } from "lucide-react";
 import { Button } from "@/ui/button";
 
 const meta = {
-  title: "UI/Button",
+  title: "Component/UI/Button",
   component: Button,
   args: {
     children: "提交验收结果",
