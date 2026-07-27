@@ -16,6 +16,7 @@ import {
   processOutputLocator,
   processOutputRunId,
   loadProjectFile,
+  loadFileReference,
   loadProjectFiles,
   loadWorkspaceDiff,
   refreshConsoleState,
@@ -308,6 +309,16 @@ describe("workspace file readers", () => {
         lines: [{ kind: "unchanged", oldLineNumber: 1, newLineNumber: 1, text: "# Project" }],
         reason: null,
       }),
+      jsonResponse({
+        available: true,
+        path: "/Users/wing/.codex/sessions/rollout.jsonl",
+        lines: [{ lineNumber: 292, text: "target" }],
+        reason: null,
+        targetLine: 292,
+        targetColumn: 7,
+        truncatedBefore: true,
+        truncatedAfter: true,
+      }),
     );
 
     await expect(loadWorkspaceDiff({
@@ -326,6 +337,14 @@ describe("workspace file readers", () => {
       filePath: "docs/中文 文件.md",
       fetch,
     })).resolves.toMatchObject({ available: true, path: "README.md" });
+    await expect(loadFileReference({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/a",
+      filePath: "/Users/wing/.codex/sessions/rollout.jsonl",
+      line: 292,
+      column: 7,
+      fetch,
+    })).resolves.toMatchObject({ available: true, targetLine: 292 });
 
     expect(String(fetch.mock.calls[0]?.[0])).toBe(
       "http://127.0.0.1:8787/api/local-console/sessions/session%2Fa/workspace-diff",
@@ -336,6 +355,10 @@ describe("workspace file readers", () => {
     expect(String(fetch.mock.calls[2]?.[0])).toContain(
       "/api/local-console/sessions/session%2Fa/files/content?path=docs%2F",
     );
+    expect(String(fetch.mock.calls[3]?.[0])).toContain(
+      "/api/local-console/sessions/session%2Fa/file-reference?path=%2FUsers%2Fwing",
+    );
+    expect(String(fetch.mock.calls[3]?.[0])).toContain("line=292&column=7");
   });
 });
 

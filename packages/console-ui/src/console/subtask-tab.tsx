@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { MarkdownMessage } from "@/console/markdown-message";
+import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import type {
   OperatorChildSessionSummary,
   OperatorMessage,
@@ -46,6 +47,8 @@ export interface SubtaskTabProps {
     fallbackOutput: string | null;
   }): void;
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenTeamMember?: (slug: string) => void;
   className?: string;
 }
 
@@ -66,6 +69,8 @@ export function SubtaskTab({
   onInterrupt,
   onOpenOutput,
   onOpenExternalLink,
+  onOpenFileReference,
+  onOpenTeamMember,
   className,
 }: SubtaskTabProps): JSX.Element {
   const view = state.status === "ready" ? state.view : null;
@@ -119,6 +124,8 @@ export function SubtaskTab({
                 onRetry={onRetry}
                 onOpenOutput={onOpenOutput}
                 onOpenExternalLink={onOpenExternalLink}
+                onOpenFileReference={onOpenFileReference}
+                onOpenTeamMember={onOpenTeamMember}
               />
             ))}
             {activeRun ? (
@@ -134,6 +141,8 @@ export function SubtaskTab({
                   liveMarkdown={activeRun.liveMarkdown}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
                   onOpenExternalLink={onOpenExternalLink}
+                  onOpenFileReference={onOpenFileReference}
+                  onOpenTeamMember={onOpenTeamMember}
                   onOpenOutput={onOpenOutput === undefined || activeRun.processOutputAvailable === false
                     ? undefined
                     : (fallbackOutput) => onOpenOutput({
@@ -190,6 +199,8 @@ function SubtaskTimelineEntry({
   onRetry,
   onOpenOutput,
   onOpenExternalLink,
+  onOpenFileReference,
+  onOpenTeamMember,
 }: {
   message: OperatorMessage;
   processRole: string | null;
@@ -197,6 +208,8 @@ function SubtaskTimelineEntry({
   onRetry(runId: string): void;
   onOpenOutput?: SubtaskTabProps["onOpenOutput"];
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenTeamMember?: (slug: string) => void;
 }): JSX.Element {
   const outcome = terminalOutcome(message);
   if (outcome !== null) {
@@ -238,7 +251,14 @@ function SubtaskTimelineEntry({
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
             {message.body.trim() === "" ? null : (
-              <MarkdownMessage content={message.body} mode="static" onOpenExternalLink={onOpenExternalLink} />
+              <MarkdownMessage
+                content={message.body}
+                mode="static"
+                onOpenExternalLink={onOpenExternalLink}
+                onOpenFileReference={onOpenFileReference}
+                memberIdentities={memberIdentities}
+                onOpenTeamMember={onOpenTeamMember}
+              />
             )}
             <StructuredAttachmentList
               attachments={message.attachments ?? []}
@@ -281,7 +301,14 @@ function SubtaskTimelineEntry({
       ) : (
         <>
           {message.body.trim() === "" ? null : (
-            <MarkdownMessage content={message.body} mode="static" onOpenExternalLink={onOpenExternalLink} />
+            <MarkdownMessage
+              content={message.body}
+              mode="static"
+              onOpenExternalLink={onOpenExternalLink}
+              onOpenFileReference={onOpenFileReference}
+              memberIdentities={memberIdentities}
+              onOpenTeamMember={onOpenTeamMember}
+            />
           )}
           <StructuredAttachmentList
             attachments={message.attachments ?? []}

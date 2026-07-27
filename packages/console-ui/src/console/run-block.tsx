@@ -3,6 +3,7 @@ import { FileText, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sanitizeMachineText } from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
+import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
 import {
@@ -36,6 +37,8 @@ export interface RunBlockProps {
   steps?: RunBlockStep[] | null;
   liveMarkdown?: string | null;
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenTeamMember?: (slug: string) => void;
   onOpenOutput?: (rawOutput: string | null) => void;
   onInterrupt?: () => void;
   interruptLabel?: string;
@@ -55,6 +58,8 @@ export function RunBlock({
   steps,
   liveMarkdown,
   onOpenExternalLink,
+  onOpenFileReference,
+  onOpenTeamMember,
   onOpenOutput,
   onInterrupt,
   interruptLabel,
@@ -129,10 +134,13 @@ export function RunBlock({
           <MarkdownMessage
             content={liveContent === null
               ? fallbackSummary
-              : sanitizeMachineText(liveContent, "正在推进这一步…")}
+              : liveContent}
             density="live"
             mode={liveContent === null ? "static" : "streaming"}
             onOpenExternalLink={onOpenExternalLink}
+            onOpenFileReference={onOpenFileReference}
+            memberIdentities={memberIdentities}
+            onOpenTeamMember={onOpenTeamMember}
           />
         </div>
       )}

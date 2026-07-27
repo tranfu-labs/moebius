@@ -52,6 +52,11 @@ import {
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
 import type { WorkspaceFileContent } from "@/console/file-diff-view";
+import {
+  FileReferenceTab,
+  type FileReferenceContent,
+} from "@/console/file-reference-tab";
+import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import { NewConversationPage } from "@/console/new-conversation-page";
 import { ProjectFilesTab, type ProjectFilesData } from "@/console/project-files-tab";
 import {
@@ -92,11 +97,13 @@ import {
   clampRightSidebarWidth,
 } from "@/console/right-sidebar";
 import {
+  createFileReferenceSourceKey,
   createRunOutputSourceKey,
   dedupeRunOutputTabsByStableStep,
   EMPTY_RIGHT_SIDEBAR_TABS,
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
+  parseFileReferenceSourceKey,
   updateRightSidebarProcessScroll,
   parseRunOutputSourceKey,
   type RightSidebarTabsState,
@@ -381,6 +388,12 @@ export interface OperatorConsoleProps {
   onLoadWorkspaceDiff?: (sessionId: string) => Promise<WorkspaceDiffData>;
   onLoadProjectFiles?: (sessionId: string) => Promise<ProjectFilesData>;
   onLoadProjectFile?: (sessionId: string, filePath: string) => Promise<WorkspaceFileContent>;
+  onLoadFileReference?: (
+    sessionId: string,
+    filePath: string,
+    line: number,
+    column: number | null,
+  ) => Promise<FileReferenceContent>;
   onChangeSessionProject?: (sessionId: string, projectId: string) => void;
   onShowProjectInFolder?: (folderPath: string) => void | Promise<void>;
   onRenameProject?: (projectId: string, title: string) => void | Promise<void>;
@@ -517,6 +530,7 @@ export function OperatorConsole({
   onLoadWorkspaceDiff = unavailableWorkspaceDiff,
   onLoadProjectFiles = unavailableProjectFiles,
   onLoadProjectFile = unavailableProjectFile,
+  onLoadFileReference = unavailableFileReference,
   onChangeSessionProject,
   onShowProjectInFolder,
   onRenameProject,
@@ -609,6 +623,7 @@ export function OperatorConsole({
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
+  const [fileReferenceContents, setFileReferenceContents] = useState<Record<string, FileReferenceContent>>({});
   const [pendingConversationRoute, setPendingConversationRoute] = useState<{
     run: ConversationRouteAction;
     cancel?: () => void;
@@ -685,6 +700,9 @@ export function OperatorConsole({
     rightSidebarWidth ?? uncontrolledRightSidebarWidth,
   );
   const effectiveRightSidebarTabs = rightSidebarTabs ?? uncontrolledRightSidebarTabs;
+  const latestRightSidebarTabsRef = useRef(effectiveRightSidebarTabs);
+  latestRightSidebarTabsRef.current = effectiveRightSidebarTabs;
+  const pendingFileReferenceOpensRef = useRef(0);
   const activeRightSidebarTab = effectiveRightSidebarTabs.tabs.find(
     (tab) => tab.id === effectiveRightSidebarTabs.activeTabId,
   ) ?? null;
@@ -703,7 +721,11 @@ export function OperatorConsole({
   }, []);
 
   useEffect(() => {
-    if (!effectiveRightSidebarOpen || effectiveRightSidebarTabs.tabs.length > 0) {
+    if (
+      !effectiveRightSidebarOpen
+      || effectiveRightSidebarTabs.tabs.length > 0
+      || pendingFileReferenceOpensRef.current > 0
+    ) {
       return;
     }
     const nextState = ensureRightSidebarTabsForOpen(effectiveRightSidebarTabs, {
@@ -834,6 +856,44 @@ export function OperatorConsole({
     onOpenSubSession?.(sessionId);
   };
 
+  const openFileReference = (sessionId: string, reference: MarkdownFileReference) => {
+    parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
+    pendingFileReferenceOpensRef.current += 1;
+    setRightSidebarOpen(true, { ensureTabs: false });
+    void onLoadFileReference(sessionId, reference.path, reference.line, reference.column)
+      .catch(() => unavailableFileReference(
+        sessionId,
+        reference.path,
+        reference.line,
+        reference.column,
+      ))
+      .then((content) => {
+        const canonicalReference = { ...reference, path: content.path };
+        const sourceKey = createFileReferenceSourceKey(sessionId, canonicalReference);
+        setFileReferenceContents((current) => ({ ...current, [sourceKey]: content }));
+        updateRightSidebarTabs((current) => openRightSidebarSourceTab(current, {
+          id: createRightSidebarTabId(nextRightSidebarTabIdRef),
+          type: "file-reference",
+          title: fileReferenceTabTitle(canonicalReference),
+          sourceKey,
+        }));
+      })
+      .finally(() => {
+        pendingFileReferenceOpensRef.current = Math.max(
+          0,
+          pendingFileReferenceOpensRef.current - 1,
+        );
+      });
+  };
+
+  const openMentionedTeamMember = (_slug: string) => {
+    if (conversationAgentTeamKey === null || onOpenAgentTeam === undefined) {
+      return;
+    }
+    setApplicationView("agent-teams");
+    onOpenAgentTeam(conversationAgentTeamKey);
+  };
+
   const openEvidence = (
     intent: OperatorEvidenceOpenIntent,
     identities: readonly OperatorMemberIdentity[] = memberIdentities,
@@ -913,7 +973,13 @@ export function OperatorConsole({
     onSidebarOpenChange?.(open);
   };
 
-  function updateRightSidebarTabs(nextState: RightSidebarTabsState): void {
+  function updateRightSidebarTabs(
+    update: RightSidebarTabsState | ((current: RightSidebarTabsState) => RightSidebarTabsState),
+  ): void {
+    const nextState = typeof update === "function"
+      ? update(latestRightSidebarTabsRef.current)
+      : update;
+    latestRightSidebarTabsRef.current = nextState;
     if (rightSidebarTabs === undefined) {
       setUncontrolledRightSidebarTabs(nextState);
     }
@@ -1444,6 +1510,8 @@ export function OperatorConsole({
                             onEditAndResend={onEditAndResend}
                             onOpenDiagnostics={onOpenDiagnostics}
                             onOpenExternalLink={onOpenExternalLink}
+                            onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
+                            onOpenTeamMember={openMentionedTeamMember}
                             onOpenEvidence={openEvidence}
                           />
                         </div>
@@ -1466,6 +1534,8 @@ export function OperatorConsole({
                             liveMarkdown={run.liveMarkdown}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
+                            onOpenFileReference={(reference) => openFileReference(run.sessionId, reference)}
+                            onOpenTeamMember={openMentionedTeamMember}
                             onOpenOutput={run.processOutputAvailable !== false
                               ? (fallbackOutput) => openEvidence({
                                   kind: "run-output",
@@ -1668,6 +1738,8 @@ export function OperatorConsole({
                   ? subSessionViews[sessionId].view.memberIdentities ?? []
                   : [])}
                 onOpenExternalLink={onOpenExternalLink}
+                onOpenFileReference={(reference) => openFileReference(sessionId, reference)}
+                onOpenTeamMember={openMentionedTeamMember}
               />
             );
           },
@@ -1691,6 +1763,19 @@ export function OperatorConsole({
                 onLoadPrevious={tab.sourceKey === null || onLoadProcessOutputPrevious === undefined
                   ? undefined
                   : (cursor) => onLoadProcessOutputPrevious(tab.sourceKey!, cursor)}
+              />
+            );
+          },
+          "file-reference": (tab) => {
+            const locator = parseFileReferenceSourceKey(tab.sourceKey);
+            return locator === null ? null : (
+              <FileReferenceTab
+                sessionId={locator.sessionId}
+                filePath={locator.path}
+                line={locator.line}
+                column={locator.column}
+                initialContent={tab.sourceKey === null ? undefined : fileReferenceContents[tab.sourceKey]}
+                loadReference={onLoadFileReference}
               />
             );
           },
@@ -2201,6 +2286,8 @@ function TimelineEntry({
   onEditAndResend,
   onOpenDiagnostics,
   onOpenExternalLink,
+  onOpenFileReference,
+  onOpenTeamMember,
   onOpenEvidence,
 }: {
   message: OperatorMessage;
@@ -2213,6 +2300,8 @@ function TimelineEntry({
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenTeamMember?: (slug: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
 }): JSX.Element {
   if (message.sourceKind === "local-child-session-card") {
@@ -2280,9 +2369,12 @@ function TimelineEntry({
           <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
             {message.body.trim() === "" ? null : (
               <MarkdownMessage
-                content={sanitizeMachineText(message.body)}
+                content={message.body}
                 mode="static"
                 onOpenExternalLink={onOpenExternalLink}
+                onOpenFileReference={onOpenFileReference}
+                memberIdentities={memberIdentities}
+                onOpenTeamMember={onOpenTeamMember}
               />
             )}
             <StructuredAttachmentList
@@ -2328,9 +2420,12 @@ function TimelineEntry({
         <>
           {message.body.trim() === "" ? null : (
             <MarkdownMessage
-              content={sanitizeMachineText(message.body)}
+              content={message.body}
               mode="static"
               onOpenExternalLink={onOpenExternalLink}
+              onOpenFileReference={onOpenFileReference}
+              memberIdentities={memberIdentities}
+              onOpenTeamMember={onOpenTeamMember}
             />
           )}
           <StructuredAttachmentList
@@ -2517,4 +2612,26 @@ async function unavailableProjectFile(_sessionId: string, filePath: string): Pro
     lines: [],
     reason: "workspace-unavailable",
   };
+}
+
+async function unavailableFileReference(
+  _sessionId: string,
+  filePath: string,
+  line: number,
+  column: number | null,
+): Promise<FileReferenceContent> {
+  return {
+    available: false,
+    path: filePath,
+    lines: [],
+    reason: "unavailable",
+    targetLine: line,
+    targetColumn: column,
+  };
+}
+
+function fileReferenceTabTitle(reference: MarkdownFileReference): string {
+  const name = reference.path.split("/").filter(Boolean).at(-1) ?? "文件引用";
+  const column = reference.column === null ? "" : `:${String(reference.column)}`;
+  return `${name}:${String(reference.line)}${column}`;
 }

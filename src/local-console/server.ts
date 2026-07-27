@@ -448,6 +448,31 @@ async function handleRequest(
       return;
     }
 
+    const sessionFileReferenceMatch = matchSessionRoute(url.pathname, "file-reference");
+    if (request.method === "GET" && sessionFileReferenceMatch !== null) {
+      const filePath = url.searchParams.get("path");
+      const line = readPositiveQueryInteger(url.searchParams.get("line"));
+      const rawColumn = url.searchParams.get("column");
+      const column = rawColumn === null ? null : readPositiveQueryInteger(rawColumn);
+      if (
+        filePath === null
+        || !filePath.startsWith("/")
+        || line === null
+        || (rawColumn !== null && column === null)
+      ) {
+        sendJson(response, 400, {
+          error: "Expected an absolute path, a positive line, and an optional positive column",
+        });
+        return;
+      }
+      sendJson(response, 200, await runtime.fileReference(sessionFileReferenceMatch.sessionId, {
+        filePath,
+        line,
+        column,
+      }));
+      return;
+    }
+
     const runOutputMatch = matchRunOutputRoute(url.pathname);
     if (request.method === "GET" && runOutputMatch !== null) {
       sendJson(response, 200, await runtime.runOutput(runOutputMatch.sessionId, runOutputMatch.runId));
@@ -970,6 +995,14 @@ function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+function readPositiveQueryInteger(value: string | null): number | null {
+  if (value === null || !/^[1-9]\d*$/u.test(value)) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function readOptionalWorkspaceMode(value: unknown): "direct" | "worktree" | undefined {
   if (value === undefined) {
     return undefined;
@@ -1082,6 +1115,7 @@ function matchSessionRoute(
     | "workspace-diff"
     | "files"
     | "files/content"
+    | "file-reference"
     | "team"
     | "archive"
     | "restore"

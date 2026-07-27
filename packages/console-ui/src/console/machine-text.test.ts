@@ -25,4 +25,9 @@ describe("machine text filtering", () => {
     expect(sanitizeMachineText(source)).toBe(source);
     expect(containsMachineText(source)).toBe(false);
   });
+
+  it("treats plain strings as visible text and hides every absolute path", () => {
+    const source = "原始文件还在 /Users/wing/private.txt。";
+    expect(sanitizeMachineText(source)).toBe("原始文件还在 [路径已隐藏]");
+  });
 });

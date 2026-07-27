@@ -46,6 +46,17 @@ describe("MarkdownMessage", () => {
     expect(container).toHaveTextContent("本地");
   });
 
+  it("hides bare machine paths across Markdown text, code, and raw HTML", () => {
+    const { container } = render(
+      <MarkdownMessage
+        content={"正文 /Users/wing/private.txt\n\n`/tmp/private-run`\n\n<span>/home/user/secret</span>"}
+      />,
+    );
+
+    expect(container).toHaveTextContent("[路径已隐藏]");
+    expect(container.textContent).not.toMatch(/\/(?:Users|tmp|home)\//u);
+  });
+
   it("confirms a safe external link and never calls window.open", () => {
     const onOpenExternalLink = vi.fn();
     const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
@@ -72,5 +83,86 @@ describe("MarkdownMessage", () => {
     expect(safeMarkdownUrlTransform("data:image/png;base64,x", "src")).toBeNull();
     expect(safeMarkdownUrlTransform("blob:https://example.com/id", "src")).toBeNull();
     expect(safeMarkdownUrlTransform("https://example.com", "poster")).toBeNull();
+  });
+
+  it("opens an absolute Markdown file target through the internal callback", () => {
+    const onOpenFileReference = vi.fn();
+    const onOpenExternalLink = vi.fn();
+    render(
+      <MarkdownMessage
+        content="[会话记录 (line 292)](/Users/wing/.codex/sessions/day/rollout.jsonl:292:7)"
+        onOpenFileReference={onOpenFileReference}
+        onOpenExternalLink={onOpenExternalLink}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "会话记录 (line 292)" }));
+
+    expect(onOpenFileReference).toHaveBeenCalledWith({
+      path: "/Users/wing/.codex/sessions/day/rollout.jsonl",
+      line: 292,
+      column: 7,
+    });
+    expect(onOpenExternalLink).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "确认打开外部链接" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["伪装文件", "https://file-reference.moebius.invalid/open?path=%2Ftmp%2Fa&line=1"],
+    ["伪装成员", "https://member-mention.moebius.invalid/open/implementer"],
+  ])("keeps user-authored internal-looking HTTPS links in the external flow: %s", (label, url) => {
+    const onOpenExternalLink = vi.fn();
+    const onOpenFileReference = vi.fn();
+    const onOpenTeamMember = vi.fn();
+    render(
+      <MarkdownMessage
+        content={`[${label}](${url})`}
+        onOpenExternalLink={onOpenExternalLink}
+        onOpenFileReference={onOpenFileReference}
+        memberIdentities={[{ slug: "implementer", displayName: "实现者" }]}
+        onOpenTeamMember={onOpenTeamMember}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: label }));
+
+    expect(screen.getByRole("dialog", { name: "确认打开外部链接" })).toHaveTextContent(url);
+    expect(onOpenFileReference).not.toHaveBeenCalled();
+    expect(onOpenTeamMember).not.toHaveBeenCalled();
+  });
+
+  it("renders known member mentions with display names and leaves unknown or code mentions alone", () => {
+    const onOpenTeamMember = vi.fn();
+    render(
+      <MarkdownMessage
+        content={"请 @implementer 接手，@unknown 保持原样，`@implementer` 不变。\n\n[已有链接 @implementer](https://example.com)"}
+        memberIdentities={[{ slug: "implementer", displayName: "实现者" }]}
+        onOpenTeamMember={onOpenTeamMember}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
+
+    expect(onOpenTeamMember).toHaveBeenCalledWith("implementer");
+    expect(screen.getByText((content) => content.includes("@unknown"))).toBeInTheDocument();
+    expect(screen.getByText("@implementer", { selector: "code" })).toBeInTheDocument();
+    expect(screen.getByText("已有链接 @implementer")).toBeInTheDocument();
+  });
+
+  it("uses the runtime ASCII mention boundary next to Chinese text", () => {
+    const onOpenTeamMember = vi.fn();
+    render(
+      <MarkdownMessage
+        content="请@implementer接手"
+        memberIdentities={[{ slug: "implementer", displayName: "实现者" }]}
+        onOpenTeamMember={onOpenTeamMember}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
+
+    expect(onOpenTeamMember).toHaveBeenCalledWith("implementer");
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P" && element.textContent === "请@实现者接手")).toBeInTheDocument();
   });
 });

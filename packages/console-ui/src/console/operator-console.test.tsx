@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -14,6 +15,8 @@ import {
   type OperatorRunSnapshot,
   type OperatorSession,
 } from "./operator-console";
+import type { FileReferenceContent } from "./file-reference-tab";
+import type { RightSidebarTabsState } from "./right-sidebar-tabs";
 
 const originalWindowWidth = window.innerWidth;
 
@@ -1277,6 +1280,194 @@ describe("OperatorConsole", () => {
     expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
   });
 
+  it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {
+    const loadReference = vi.fn().mockResolvedValue({
+      available: true,
+      path: "/Users/wing/.codex/sessions/day/rollout.jsonl",
+      lines: [
+        { lineNumber: 291, text: "before" },
+        { lineNumber: 292, text: "target evidence" },
+      ],
+      reason: null,
+      targetLine: 292,
+      targetColumn: null,
+      truncatedBefore: true,
+      truncatedAfter: true,
+    });
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "证据在[会话记录 (line 292)](/Users/wing/.codex/sessions/day/rollout.jsonl:292)，裸路径 /tmp/private.txt。",
+      })],
+      onLoadFileReference: loadReference,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "会话记录 (line 292)" }));
+
+    expect(await screen.findByRole("tab", { name: "rollout.jsonl:292" })).toBeVisible();
+    expect(await screen.findByTestId("file-reference-target-line")).toHaveTextContent("target evidence");
+    expect(loadReference).toHaveBeenCalledWith(
+      "session-a",
+      "/Users/wing/.codex/sessions/day/rollout.jsonl",
+      292,
+      null,
+    );
+    expect(screen.queryByText("/tmp/private.txt")).not.toBeInTheDocument();
+  });
+
+  it("preserves titled and reference-style Markdown file targets while hiding bare paths", () => {
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: [
+          '[带标题](/Users/wing/.codex/sessions/day/a.jsonl:12 "详情")',
+          "[引用式][evidence]",
+          "",
+          '[evidence]: /Users/wing/.codex/sessions/day/b.jsonl:13 "证据"',
+          "裸路径 /tmp/private.txt。",
+        ].join("\n"),
+      })],
+    });
+
+    expect(screen.getByRole("button", { name: "带标题" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "引用式" })).toBeVisible();
+    expect(screen.queryByText("/tmp/private.txt")).not.toBeInTheDocument();
+  });
+
+  it("deduplicates alias and real-path references after canonical resolution", async () => {
+    const canonicalPath = "/workspace/canonical.txt";
+    const loadReference = vi.fn(async (
+      _sessionId: string,
+      _filePath: string,
+      line: number,
+      column: number | null,
+    ) => ({
+      available: true as const,
+      path: canonicalPath,
+      lines: [{ lineNumber: line, text: "same target" }],
+      reason: null,
+      targetLine: line,
+      targetColumn: column,
+      truncatedBefore: false,
+      truncatedAfter: false,
+    }));
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "[别名](/workspace/alias.txt:12) [真实路径](/workspace/canonical.txt:12)",
+      })],
+      onLoadFileReference: loadReference,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "别名" }));
+    expect(await screen.findByTestId("file-reference-target-line")).toHaveTextContent("same target");
+    fireEvent.click(screen.getByRole("button", { name: "真实路径" }));
+
+    await waitFor(() => {
+      expect(loadReference).toHaveBeenCalledTimes(2);
+      expect(within(screen.getByRole("tablist", { name: "右侧栏标签" }))
+        .getAllByRole("tab")).toHaveLength(1);
+    });
+    expect(screen.getByRole("tab", { name: "canonical.txt:12" })).toBeVisible();
+    expect(loadReference).toHaveBeenCalledTimes(2);
+  });
+
+  it("deduplicates alias and real-path references for canonical unavailable results", async () => {
+    const canonicalPath = "/workspace/canonical.txt";
+    const loadReference = vi.fn(async (
+      _sessionId: string,
+      _filePath: string,
+      line: number,
+      column: number | null,
+    ): Promise<FileReferenceContent> => ({
+      available: false,
+      path: canonicalPath,
+      lines: [],
+      reason: "line-too-large",
+      targetLine: line,
+      targetColumn: column,
+    }));
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "[别名](/workspace/alias.txt:12) [真实路径](/workspace/canonical.txt:12)",
+      })],
+      onLoadFileReference: loadReference,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "别名" }));
+    expect(await screen.findByText("目标附近存在过长单行，无法安全显示。")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "真实路径" }));
+
+    await waitFor(() => {
+      expect(loadReference).toHaveBeenCalledTimes(2);
+      expect(within(screen.getByRole("tablist", { name: "右侧栏标签" }))
+        .getAllByRole("tab")).toHaveLength(1);
+    });
+  });
+
+  it("atomically retains two file tabs when deferred canonical reads complete out of order", async () => {
+    const first = deferred<FileReferenceContent>();
+    const second = deferred<FileReferenceContent>();
+    const loadReference = vi.fn((
+      _sessionId: string,
+      filePath: string,
+    ) => filePath.endsWith("/first.txt") ? first.promise : second.promise);
+    renderControlledConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "[第一个](/workspace/first.txt:1) [第二个](/workspace/second.txt:2)",
+      })],
+      onLoadFileReference: loadReference,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "第一个" }));
+    fireEvent.click(screen.getByRole("button", { name: "第二个" }));
+    await act(async () => {
+      second.resolve(availableReference("/workspace/second.txt", 2));
+      await second.promise;
+      first.resolve(availableReference("/workspace/first.txt", 1));
+      await first.promise;
+    });
+
+    await waitFor(() => {
+      const tabs = within(screen.getByRole("tablist", { name: "右侧栏标签" })).getAllByRole("tab");
+      expect(tabs).toHaveLength(2);
+      expect(screen.getByRole("tab", { name: "first.txt:1" })).toBeVisible();
+      expect(screen.getByRole("tab", { name: "second.txt:2" })).toBeVisible();
+    });
+  });
+
+  it("shows a known Markdown mention by display name and opens the existing team detail entry", () => {
+    const onOpenAgentTeam = vi.fn();
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "请 @implementer 接手，@unknown 保持原文。",
+      })],
+      memberIdentities: [{ slug: "implementer", displayName: "实现者" }],
+      conversationAgentTeamKey: "system:development",
+      onOpenAgentTeam,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
+
+    expect(onOpenAgentTeam).toHaveBeenCalledWith("system:development");
+    expect(screen.getByRole("region", { name: "Agent 团队" })).toBeVisible();
+  });
+
   it("routes a complete-output entry into the multi-tab right sidebar shell", () => {
     const onOpenEvidence = vi.fn();
     renderConsole({
@@ -2242,6 +2433,23 @@ function renderConsole(overrides: Partial<OperatorConsoleProps> = {}) {
   return render(<OperatorConsole {...baseProps(overrides)} />);
 }
 
+function renderControlledConsole(overrides: Partial<OperatorConsoleProps> = {}) {
+  function ControlledConsole(): JSX.Element {
+    const [rightSidebarTabs, setRightSidebarTabs] = useState<RightSidebarTabsState>({
+      tabs: [],
+      activeTabId: null,
+    });
+    return (
+      <OperatorConsole
+        {...baseProps(overrides)}
+        rightSidebarTabs={rightSidebarTabs}
+        onRightSidebarTabsChange={setRightSidebarTabs}
+      />
+    );
+  }
+  return render(<ControlledConsole />);
+}
+
 function setWindowWidth(width: number): void {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
   fireEvent(window, new Event("resize"));
@@ -2455,4 +2663,28 @@ function message(input: Partial<OperatorMessage> & { id: number; body: string })
     createdAt: input.createdAt ?? "2026-07-09T00:00:00.000Z",
     updatedAt: input.updatedAt ?? "2026-07-09T00:00:01.000Z",
   };
+}
+
+function availableReference(filePath: string, line: number): FileReferenceContent {
+  return {
+    available: true,
+    path: filePath,
+    lines: [{ lineNumber: line, text: filePath }],
+    reason: null,
+    targetLine: line,
+    targetColumn: null,
+    truncatedBefore: false,
+    truncatedAfter: false,
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }

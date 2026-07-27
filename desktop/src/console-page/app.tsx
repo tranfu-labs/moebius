@@ -99,6 +99,7 @@ import {
   loadProcessOutputUpdate,
   loadProcessDebugInvocation,
   mergeSettledProcessOutput,
+  loadFileReference,
   loadProjectFile,
   loadProjectFiles,
   loadSubSessionView,
@@ -2521,6 +2522,18 @@ export function OperatorConsoleApp({
     return loadProjectFile({ apiBase, sessionId, filePath, fetch });
   }, [apiBase]);
 
+  const readFileReference = useCallback((
+    sessionId: string,
+    filePath: string,
+    line: number,
+    column: number | null,
+  ) => {
+    if (apiBase === null) {
+      return Promise.reject(new Error("local console is unavailable"));
+    }
+    return loadFileReference({ apiBase, sessionId, filePath, line, column, fetch });
+  }, [apiBase]);
+
   const loadPreviousProcessOutput = useCallback((sourceKey: string, cursor: string) => {
     if (apiBase === null) {
       return;
@@ -2809,6 +2822,7 @@ export function OperatorConsoleApp({
       onLoadWorkspaceDiff={readWorkspaceDiff}
       onLoadProjectFiles={readProjectFiles}
       onLoadProjectFile={readProjectFile}
+      onLoadFileReference={readFileReference}
       onLoadProcessOutputPrevious={loadPreviousProcessOutput}
     />
   );

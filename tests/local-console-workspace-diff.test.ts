@@ -130,6 +130,50 @@ describe("local console conversation workspace diff through HTTP", () => {
     expect(state.workspaceDiff).toEqual({ available: true, fileCount: 0, reason: null });
   }, 20_000);
 
+  it("serves a session-scoped file-reference window and rejects targets outside trusted roots", async () => {
+    const root = await temporaryRoot();
+    const repository = path.join(root, "repository");
+    await initializeRepository(repository);
+    const evidencePath = path.join(repository, "evidence.txt");
+    await fs.writeFile(evidencePath, "one\ntwo\ntarget\nfour\n", "utf8");
+    const started = await startHarness(root, async (options) => successfulRun(options, "done"));
+    const project = await createProject(started.url, repository);
+    const session = await createSession(started.url, project.projectId, "direct", "read evidence");
+
+    const reference = new URL(
+      `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/file-reference`,
+      started.url,
+    );
+    reference.searchParams.set("path", evidencePath);
+    reference.searchParams.set("line", "3");
+    reference.searchParams.set("column", "2");
+    const response = await fetch(reference);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      available: true,
+      path: await fs.realpath(evidencePath),
+      targetLine: 3,
+      targetColumn: 2,
+      lines: expect.arrayContaining([{ lineNumber: 3, text: "target" }]),
+    });
+
+    const outside = new URL(reference);
+    outside.searchParams.set("path", path.join(root, "outside.txt"));
+    await fs.writeFile(path.join(root, "outside.txt"), "secret\n", "utf8");
+    const outsideResponse = await fetch(outside);
+    expect(outsideResponse.status).toBe(200);
+    await expect(outsideResponse.json()).resolves.toMatchObject({
+      available: false,
+      reason: "outside-trusted-roots",
+      lines: [],
+    });
+
+    const invalid = new URL(reference);
+    invalid.searchParams.set("line", "0");
+    expect((await fetch(invalid)).status).toBe(400);
+  }, 20_000);
+
   it("returns unavailable for non-Git projects and legacy sessions without a baseline", async () => {
     const root = await temporaryRoot();
     const nonGit = path.join(root, "plain-folder");

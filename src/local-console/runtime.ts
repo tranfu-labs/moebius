@@ -103,7 +103,11 @@ import {
   readLocalConversationWorkspaceDiff,
   readLocalConversationWorkspaceDiffDetail,
 } from "./workspace-diff.js";
-import { listLocalWorkspaceFiles, readLocalWorkspaceTextFile } from "./file-read.js";
+import {
+  listLocalWorkspaceFiles,
+  readLocalFileReferenceWindow,
+  readLocalWorkspaceTextFile,
+} from "./file-read.js";
 import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
 import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
 import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
@@ -123,7 +127,7 @@ import {
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
-import { resolveCodexRollout } from "./codex-rollout.js";
+import { resolveCodexRollout, resolveCodexSessionsRoot } from "./codex-rollout.js";
 
 export interface LocalConsoleAgentFile {
   name: string;
@@ -1150,6 +1154,37 @@ export class LocalConsoleRuntime {
         path: filePath,
         lines: [],
         reason: "workspace-unavailable",
+      };
+    }
+  }
+
+  async fileReference(
+    sessionId: string,
+    input: { filePath: string; line: number; column: number | null },
+  ): Promise<import("./types.js").LocalConsoleFileReferenceContent> {
+    try {
+      const context = await this.readConversationWorkspaceContext(sessionId);
+      return await readLocalFileReferenceWindow({
+        filePath: input.filePath,
+        line: input.line,
+        column: input.column,
+        trustedRoots: [context.workspacePath, resolveCodexSessionsRoot()],
+      });
+    } catch (error) {
+      log({
+        event: "local-console-file-reference-unavailable",
+        sessionId,
+        filePath: input.filePath,
+        line: input.line,
+        error: formatLocalError(error),
+      });
+      return {
+        available: false,
+        path: input.filePath,
+        lines: [],
+        reason: "unavailable",
+        targetLine: input.line,
+        targetColumn: input.column,
       };
     }
   }

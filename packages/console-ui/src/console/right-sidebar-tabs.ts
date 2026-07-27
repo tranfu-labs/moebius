@@ -1,6 +1,7 @@
 export const RIGHT_SIDEBAR_TAB_TYPES = [
   "workspace-diff",
   "project-files",
+  "file-reference",
   "run-output",
   "sub-session",
   "blank",
@@ -49,6 +50,48 @@ export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
 
 const RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v2:";
 const STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v3:";
+const FILE_REFERENCE_SOURCE_KEY_PREFIX = "file-reference-v1:";
+
+export interface FileReferenceSourceLocator {
+  sessionId: string;
+  path: string;
+  line: number;
+  column: number | null;
+}
+
+export function createFileReferenceSourceKey(
+  sessionId: string,
+  reference: Omit<FileReferenceSourceLocator, "sessionId">,
+): string {
+  const column = reference.column === null ? "" : String(reference.column);
+  return `${FILE_REFERENCE_SOURCE_KEY_PREFIX}${[
+    encodeURIComponent(sessionId),
+    encodeURIComponent(reference.path),
+    String(reference.line),
+    column,
+  ].join(":")}`;
+}
+
+export function parseFileReferenceSourceKey(sourceKey: string | null): FileReferenceSourceLocator | null {
+  if (sourceKey === null || !sourceKey.startsWith(FILE_REFERENCE_SOURCE_KEY_PREFIX)) {
+    return null;
+  }
+  const parts = sourceKey.slice(FILE_REFERENCE_SOURCE_KEY_PREFIX.length).split(":");
+  if (parts.length !== 4) {
+    return null;
+  }
+  try {
+    const sessionId = decodeURIComponent(parts[0]!);
+    const filePath = decodeURIComponent(parts[1]!);
+    const line = readPositiveInteger(parts[2]!);
+    const column = parts[3] === "" ? null : readPositiveInteger(parts[3]!);
+    return sessionId === "" || !filePath.startsWith("/") || line === null || (parts[3] !== "" && column === null)
+      ? null
+      : { sessionId, path: filePath, line, column };
+  } catch {
+    return null;
+  }
+}
 
 export function createRunOutputSourceKey(
   sessionId: string,
@@ -281,6 +324,14 @@ function sameRightSidebarSource(
 
 function isUnknownProcessTitle(title: string): boolean {
   return /^成员未知(?: [2-9]\d*)?$/u.test(title);
+}
+
+function readPositiveInteger(value: string): number | null {
+  if (!/^[1-9]\d*$/u.test(value)) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 export function selectRightSidebarTab(

@@ -230,6 +230,41 @@ export type LocalConsoleFileContent =
         | "workspace-unavailable";
     };
 
+export interface LocalConsoleFileReferenceLine {
+  lineNumber: number;
+  text: string;
+}
+
+export type LocalConsoleFileReferenceContent =
+  | {
+      available: true;
+      path: string;
+      lines: LocalConsoleFileReferenceLine[];
+      reason: null;
+      targetLine: number;
+      targetColumn: number | null;
+      truncatedBefore: boolean;
+      truncatedAfter: boolean;
+    }
+  | {
+      available: false;
+      path: string;
+      lines: [];
+      reason:
+        | "invalid-path"
+        | "outside-trusted-roots"
+        | "not-found"
+        | "not-file"
+        | "binary-file"
+        | "line-too-large"
+        | "response-too-large"
+        | "line-not-found"
+        | "scan-limit"
+        | "unavailable";
+      targetLine: number;
+      targetColumn: number | null;
+    };
+
 export interface LocalConsoleProjectFileEntry {
   path: string;
   additions: number | null;

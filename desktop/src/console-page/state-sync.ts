@@ -7,6 +7,7 @@ import {
   type OperatorProcessDebugInvocation,
   type OperatorProcessOutput,
   type OperatorSubSessionView,
+  type FileReferenceContent,
   type ProjectFilesData,
   type WorkspaceDiffData,
   type WorkspaceFileContent,
@@ -566,6 +567,32 @@ export async function loadProjectFile(options: {
     throw new Error("error" in body && body.error ? body.error : "project file request failed");
   }
   return body as WorkspaceFileContent;
+}
+
+export async function loadFileReference(options: {
+  apiBase: string;
+  sessionId: string;
+  filePath: string;
+  line: number;
+  column: number | null;
+  fetch: FetchLike;
+}): Promise<FileReferenceContent> {
+  const url = endpoint(
+    options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/file-reference`,
+  );
+  url.searchParams.set("path", options.filePath);
+  url.searchParams.set("line", String(options.line));
+  if (options.column !== null) {
+    url.searchParams.set("column", String(options.column));
+  }
+  const fetch = options.fetch;
+  const response = await fetch(url);
+  const body = await response.json() as FileReferenceContent | { error?: string };
+  if (!response.ok) {
+    throw new Error("error" in body && body.error ? body.error : "file reference request failed");
+  }
+  return body as FileReferenceContent;
 }
 
 async function loadWorkspaceJson<T>(

@@ -1,5 +1,6 @@
 import {
   FileDiff,
+  FileText,
   Files,
   ListTree,
   Plus,
@@ -267,6 +268,8 @@ function ContentSlotPlaceholder({ tab }: { tab: RightSidebarTab }): JSX.Element 
     ? "改动"
     : tab.type === "project-files"
       ? "项目文件"
+      : tab.type === "file-reference"
+        ? "文件引用"
       : tab.type === "run-output"
         ? "过程"
         : "子任务";
@@ -292,6 +295,8 @@ function TabIcon({
     ? FileDiff
     : type === "project-files"
       ? Files
+      : type === "file-reference"
+        ? FileText
       : type === "run-output"
         ? ScrollText
         : type === "sub-session"

@@ -4,17 +4,33 @@ import { createMathPlugin } from "@streamdown/math";
 import { createMermaidPlugin } from "@streamdown/mermaid";
 import { ExternalLink } from "lucide-react";
 import { harden } from "rehype-harden";
-import { useMemo, useState, type ComponentPropsWithoutRef } from "react";
-import { defaultRehypePlugins, Streamdown, type StreamdownProps } from "streamdown";
+import { useEffect, useMemo, useState, type ComponentPropsWithoutRef } from "react";
+import {
+  defaultRehypePlugins,
+  defaultRemarkPlugins,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import {
+  createMarkdownInternalReferencePlugin,
+  readMarkdownInternalIntent,
+  releaseMarkdownInternalIntentRegistry,
+  retainMarkdownInternalIntentRegistry,
+  type MarkdownFileReference,
+  type MarkdownMemberIdentity,
+} from "@/console/markdown-internal-reference";
 
 export interface MarkdownMessageProps {
   content: string;
   mode?: "static" | "streaming";
   density?: "conversation" | "live";
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  memberIdentities?: readonly MarkdownMemberIdentity[];
+  onOpenTeamMember?: (slug: string) => void;
   className?: string;
 }
 
@@ -38,11 +54,34 @@ export function MarkdownMessage({
   mode = "static",
   density = "conversation",
   onOpenExternalLink,
+  onOpenFileReference,
+  memberIdentities = [],
+  onOpenTeamMember,
   className,
 }: MarkdownMessageProps): JSX.Element {
+  const [intentKey] = useState(createMarkdownIntentKey);
+  useEffect(() => {
+    retainMarkdownInternalIntentRegistry(intentKey);
+    return () => releaseMarkdownInternalIntentRegistry(intentKey);
+  }, [intentKey]);
   const components = useMemo<NonNullable<StreamdownProps["components"]>>(() => ({
-    a: (props) => <SafeMarkdownLink {...props} onOpenExternalLink={onOpenExternalLink} />,
-  }), [onOpenExternalLink]);
+    a: (props) => (
+      <SafeMarkdownLink
+        {...props}
+        intentKey={intentKey}
+        onOpenExternalLink={onOpenExternalLink}
+        onOpenFileReference={onOpenFileReference}
+        onOpenTeamMember={onOpenTeamMember}
+      />
+    ),
+  }), [intentKey, onOpenExternalLink, onOpenFileReference, onOpenTeamMember]);
+  const remarkPlugins = useMemo<NonNullable<StreamdownProps["remarkPlugins"]>>(
+    () => [
+      ...Object.values(defaultRemarkPlugins),
+      createMarkdownInternalReferencePlugin(memberIdentities, intentKey),
+    ],
+    [intentKey, memberIdentities],
+  );
   const streaming = mode === "streaming";
 
   return (
@@ -70,6 +109,7 @@ export function MarkdownMessage({
       parseIncompleteMarkdown={false}
       plugins={markdownPlugins}
       rehypePlugins={secureRehypePlugins}
+      remarkPlugins={remarkPlugins}
       urlTransform={safeMarkdownUrlTransform}
     >
       {content}
@@ -79,18 +119,53 @@ export function MarkdownMessage({
 
 type SafeMarkdownLinkProps = ComponentPropsWithoutRef<"a"> & {
   node?: unknown;
+  intentKey: string;
   onOpenExternalLink?: (url: string) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenTeamMember?: (slug: string) => void;
 };
 
 function SafeMarkdownLink({
   children,
   href,
   node: _node,
+  intentKey,
   onOpenExternalLink,
+  onOpenFileReference,
+  onOpenTeamMember,
 }: SafeMarkdownLinkProps): JSX.Element {
   const [confirming, setConfirming] = useState(false);
+  const intent = readMarkdownInternalIntent(href, intentKey);
+  const fileReference = intent.fileReference;
+  const memberSlug = intent.memberSlug;
   const safeUrl = normalizeMarkdownUrl(href, "link");
 
+  if (fileReference !== null) {
+    return onOpenFileReference === undefined
+      ? <span className="break-words text-sub underline decoration-dotted">{children}</span>
+      : (
+          <button
+            type="button"
+            className="inline break-words text-left font-medium text-accent underline"
+            onClick={() => onOpenFileReference(fileReference)}
+          >
+            {children}
+          </button>
+        );
+  }
+  if (memberSlug !== null) {
+    return onOpenTeamMember === undefined
+      ? <span className="font-medium text-accent">{children}</span>
+      : (
+          <button
+            type="button"
+            className="inline rounded-sm font-medium text-accent underline decoration-dotted underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            onClick={() => onOpenTeamMember(memberSlug)}
+          >
+            {children}
+          </button>
+        );
+  }
   if (safeUrl?.startsWith("#")) {
     return <a className="font-medium text-accent underline" href={safeUrl}>{children}</a>;
   }
@@ -141,7 +216,16 @@ export function safeMarkdownUrlTransform(url: string, key: string): string | nul
   if (key === "href" && url.startsWith("#")) {
     return /^#[A-Za-z][\w:.-]*$/u.test(url) ? url : null;
   }
+  if (key === "href") {
+    return normalizeMarkdownUrl(url, "link");
+  }
   return normalizeMarkdownUrl(url, key === "src" ? "image" : key === "href" ? "link" : "unsupported");
+}
+
+function createMarkdownIntentKey(): string {
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `markdown-intent-${Math.random().toString(36).slice(2)}`;
 }
 
 function normalizeMarkdownUrl(

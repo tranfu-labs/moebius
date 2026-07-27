@@ -7,10 +7,12 @@ import {
   addBlankRightSidebarTab,
   closeRightSidebarTab,
   convertBlankRightSidebarTab,
+  createFileReferenceSourceKey,
   createRunOutputSourceKey,
   dedupeRunOutputTabsByStableStep,
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
+  parseFileReferenceSourceKey,
   parseRunOutputSourceKey,
   parseRightSidebarTabsState,
   selectRightSidebarTab,
@@ -24,6 +26,7 @@ describe("right sidebar tab model", () => {
     expect(RIGHT_SIDEBAR_TAB_TYPES).toEqual([
       "workspace-diff",
       "project-files",
+      "file-reference",
       "run-output",
       "sub-session",
       "blank",
@@ -31,6 +34,22 @@ describe("right sidebar tab model", () => {
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).toEqual(["workspace-diff", "project-files"]);
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("run-output");
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("sub-session");
+  });
+
+  it("round-trips a file reference source key without exposing it as a selectable type", () => {
+    const sourceKey = createFileReferenceSourceKey("session:a", {
+      path: "/Users/wing/My Project/spec.md",
+      line: 292,
+      column: 7,
+    });
+
+    expect(parseFileReferenceSourceKey(sourceKey)).toEqual({
+      sessionId: "session:a",
+      path: "/Users/wing/My Project/spec.md",
+      line: 292,
+      column: 7,
+    });
+    expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("file-reference");
   });
 
   it("deduplicates source tabs while never deduplicating plus-created blank tabs", () => {

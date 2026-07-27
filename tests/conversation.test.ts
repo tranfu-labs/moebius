@@ -28,6 +28,12 @@ describe("conversation", () => {
     expect(parseAgentMentions("a@product-manager @Product_Manager @bad_agent")).toEqual([]);
   });
 
+  it("uses ASCII mention boundaries next to Chinese text", () => {
+    expect(parseAgentMentions("请@implementer接手")).toEqual([
+      { name: "implementer", index: 1 },
+    ]);
+  });
+
   it("selects the first mentioned agent that exists", () => {
     expect(selectMentionedAgent("@unknown please ask @product-manager", ["product-manager"])).toBe("product-manager");
   });
