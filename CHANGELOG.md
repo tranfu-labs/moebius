@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-27
+
+### Added
+
+- Added a collapsible conversation relay rail with participant lanes, message previews, timeline navigation, and per-conversation reading-position restoration.
+- Added anchored expansion, path-drawing, preview-following motion, and an equivalent reduced-motion presentation for the relay rail.
+- Added attempt-scoped Codex debug invocation chains with recorded prompt layers, raw tool events, model metadata, precise timestamps, completion states, and token usage while continuing to exclude reasoning content.
+- Added persistent provider-session continuity for local desktop agents, AI team building, and the desktop GitHub runner, with fail-closed behavior when a prior session cannot be resumed safely.
+
+### Changed
+
+- Made team runtime profiles portable static configuration and deferred CLI, model, authentication, and execution validation to the actual agent run.
+- Kept existing runtime-readiness guidance informational so it no longer blocks conversation creation, team selection, or the first message.
+- Consolidated real-application evidence requirements into the bundled development-team roles.
+- Required AI-generated teams to assign expensive validation and publication methods to one responsible member and state the conditions that activate them.
+
+### Fixed
+
+- Preserved relay-rail keyboard focus while navigating between conversation events.
+
 ## [0.1.2] - 2026-07-26
 
 ### Added
@@ -47,7 +67,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/tranfu-labs/moebius/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/tranfu-labs/moebius/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/tranfu-labs/moebius/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/tranfu-labs/moebius/releases/tag/v0.1.0
