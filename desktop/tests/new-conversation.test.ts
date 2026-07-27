@@ -10,6 +10,7 @@ describe("new conversation draft state machine", () => {
   it("allows drafting without a project but requires project, team, text, and an idle submit state", () => {
     const draft = createNewConversationDraft({ teamKey: "system:development", draft: "目标" });
     expect(draft).toEqual({
+      isOpen: true,
       projectId: null,
       workspaceMode: "direct",
       teamKey: "system:development",
@@ -35,6 +36,7 @@ describe("new conversation draft state machine", () => {
     const failed = reduceNewConversationDraft(submitting, { type: "submit-failed", error: "请重试" });
 
     expect(failed).toEqual({
+      isOpen: true,
       projectId: "project-a",
       workspaceMode: "worktree",
       teamKey: "user:custom",
@@ -42,8 +44,36 @@ describe("new conversation draft state machine", () => {
       isSubmitting: false,
       error: "请重试",
     });
-    expect(reduceNewConversationDraft(failed, { type: "close" })).toBeNull();
+    const hidden = reduceNewConversationDraft(failed, { type: "hide" });
+    expect(hidden).toEqual({ ...failed, isOpen: false });
+    expect(reduceNewConversationDraft(hidden, { type: "show" })).toEqual(failed);
+    expect(reduceNewConversationDraft(failed, { type: "consume" })).toBeNull();
     expect(reduceNewConversationDraft(null, { type: "edit-draft", draft: "ignored" })).toBeNull();
+  });
+
+  it("keeps the isolated workspace draft while browsing a session and consumes it only after success", () => {
+    const isolated = createNewConversationDraft({
+      projectId: "project-a",
+      workspaceMode: "worktree",
+      teamKey: "system:development",
+      draft: "保留这段目标",
+    });
+
+    const hidden = reduceNewConversationDraft(isolated, { type: "hide" });
+    const restored = reduceNewConversationDraft(hidden, { type: "show" });
+    const submitting = reduceNewConversationDraft(restored, { type: "submit-started" });
+    const failed = reduceNewConversationDraft(submitting, { type: "submit-failed", error: "创建失败" });
+
+    expect(restored).toEqual(isolated);
+    expect(failed).toMatchObject({
+      isOpen: true,
+      projectId: "project-a",
+      workspaceMode: "worktree",
+      teamKey: "system:development",
+      draft: "保留这段目标",
+      isSubmitting: false,
+    });
+    expect(reduceNewConversationDraft(failed, { type: "consume" })).toBeNull();
   });
 
   it("does not update the last-used record when session creation fails", async () => {

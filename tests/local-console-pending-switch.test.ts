@@ -409,9 +409,14 @@ describe("pending session context switches", () => {
       const directState = await readState(started.url, directId);
       const isolatedState = await readState(started.url, isolatedId);
       expect(directState.selectedSession).toMatchObject({ workspaceMode: "direct", branchName: "main" });
+      const isolatedWorktreePath = localSessionWorktreePath(
+        path.join(root, "workdir"),
+        "local",
+        isolatedId,
+      );
       expect(isolatedState.selectedSession).toMatchObject({
         workspaceMode: "worktree",
-        branchName: `agent/local-local-${isolatedId.replace(/[^A-Za-z0-9._-]/gu, "_")}`,
+        branchName: `moebius/${path.basename(isolatedWorktreePath)}`,
       });
     } finally {
       await started.close();

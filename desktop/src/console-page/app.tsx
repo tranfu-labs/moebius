@@ -541,7 +541,7 @@ export function OperatorConsoleApp({
   const activeSubSessionId = activeRightSidebarTab?.type === "sub-session"
     ? subSessionIdFromSourceKey(activeRightSidebarTab.sourceKey)
     : null;
-  const currentAttachmentDraftKey = newConversation === null
+  const currentAttachmentDraftKey = newConversation?.isOpen !== true
     ? sessionDraftKey(selection.sessionId)
     : NEW_CONVERSATION_DRAFT_KEY;
   const activeSubSessionDraftKey = sessionDraftKey(activeSubSessionId ?? "__inactive-sub-session__");
@@ -2009,10 +2009,10 @@ export function OperatorConsoleApp({
   }, [refresh]);
 
   useEffect(() => {
-    if (newConversation === null) {
+    if (newConversation?.isOpen !== true) {
       setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(selection.sessionId)));
     }
-  }, [newConversation, selection.sessionId]);
+  }, [newConversation?.isOpen, selection.sessionId]);
 
   useEffect(() => {
     if (apiBase === null || state === null || state.selectedSession === null || state.selectedSession.unreadSince === null) {
@@ -2153,6 +2153,7 @@ export function OperatorConsoleApp({
     if (
       pendingAgentTeamKey === null
       || newConversation === null
+      || !newConversation.isOpen
       || agentTeamsState.status !== "ready"
     ) {
       return;
@@ -2169,7 +2170,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, lastUsedAgentTeamKey, newConversation, pendingAgentTeamKey]);
 
   useEffect(() => {
-    if (newConversation === null || agentTeamsState.status !== "ready") {
+    if (newConversation === null || !newConversation.isOpen || agentTeamsState.status !== "ready") {
       return;
     }
     const selectionIsUsable = agentTeamsState.teams.some(
@@ -2187,6 +2188,25 @@ export function OperatorConsoleApp({
         && candidate.directoryAvailable !== false
         && candidate.newConversationDisabledReason == null);
     setClientError(null);
+    if (newConversation !== null) {
+      const draftProjectIsAvailable = newConversation.projectId === null
+        || projects.some((candidate) => candidate.projectId === newConversation.projectId
+          && candidate.directoryAvailable !== false
+          && candidate.newConversationDisabledReason == null);
+      const nextProject = selectedProject
+        ?? (draftProjectIsAvailable
+          ? projects.find((candidate) => candidate.projectId === newConversation.projectId)
+          : undefined);
+      if (newConversation.projectId !== (nextProject?.projectId ?? null)) {
+        dispatchNewConversation({ type: "select-project", projectId: nextProject?.projectId ?? null });
+        dispatchNewConversation({
+          type: "select-workspace",
+          workspaceMode: nextProject?.worktreeMode === true ? "worktree" : "direct",
+        });
+      }
+      dispatchNewConversation({ type: "show" });
+      return;
+    }
     dispatchNewConversation({
       type: "open",
       draft: createNewConversationDraft({
@@ -2196,10 +2216,10 @@ export function OperatorConsoleApp({
         draft: conversationDraftStoreRef.current.read(NEW_CONVERSATION_DRAFT_KEY),
       }),
     });
-  }, [preferredNewConversationTeamKey, projects]);
+  }, [newConversation, preferredNewConversationTeamKey, projects]);
 
   const createConversation = useCallback(async (): Promise<void> => {
-    if (newConversation === null || !canSubmitNewConversation({
+    if (newConversation === null || !newConversation.isOpen || !canSubmitNewConversation({
       projectId: newConversation.projectId,
       workspaceMode: newConversation.workspaceMode,
       teamKey: newConversation.teamKey,
@@ -2251,7 +2271,7 @@ export function OperatorConsoleApp({
     conversationDraftStoreRef.current.clear(NEW_CONVERSATION_DRAFT_KEY);
     managedAttachments.clearDraft(NEW_CONVERSATION_DRAFT_KEY);
     setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(result.sessionId)));
-    dispatchNewConversation({ type: "close" });
+    dispatchNewConversation({ type: "consume" });
     if (result.preferenceRecorded) {
       setLastUsedAgentTeamKey(team.teamKey);
       setClientError(null);
@@ -2642,7 +2662,7 @@ export function OperatorConsoleApp({
         onRetry: retryAgentTeamBuilder,
         onCommit: commitAgentTeamBuilder,
       }}
-      newConversation={newConversation === null ? null : {
+      newConversation={newConversation?.isOpen !== true ? null : {
         selectedProjectId: newConversation.projectId,
         selectedWorkspaceMode: newConversation.workspaceMode,
         selectedTeamKey: newConversation.teamKey,
@@ -2714,7 +2734,7 @@ export function OperatorConsoleApp({
       })}
       onSelectSession={(nextSelection) => {
         selectionPersistenceEnabledRef.current = true;
-        dispatchNewConversation({ type: "close" });
+        dispatchNewConversation({ type: "hide" });
         setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(nextSelection.sessionId)));
         setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(nextSelection.sessionId));
         actions.selectSession(nextSelection);

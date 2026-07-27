@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { WORKTREE_GIT_TIMEOUT_MS } from "../config.js";
@@ -120,19 +122,26 @@ export async function resolveLocalWorkspaceSource(
     };
   }
 
-  await runBoundedGit(
-    ["-C", repoRoot, "worktree", "add", "-B", branchName, worktreePath, "HEAD"],
-    "worktree-add",
-    input.signal,
-    effectiveDependencies,
-  );
+  try {
+    await runBoundedGit(
+      ["-C", repoRoot, "worktree", "add", "-B", branchName, worktreePath, "HEAD"],
+      "worktree-add",
+      input.signal,
+      effectiveDependencies,
+    );
+  } catch (error) {
+    if (!(await effectiveDependencies.pathExists(worktreePath))) {
+      throw error;
+    }
+    await assertUsableGitWorktree(worktreePath, input.signal, effectiveDependencies);
+  }
 
   return {
     cwd: worktreePath,
     mode: "worktree",
     worktreePath,
     worktreeUnavailableReason: null,
-    branchName,
+    branchName: await readCurrentBranch(worktreePath, input.signal, effectiveDependencies),
     baseRef: await readHeadRef(worktreePath, input.signal, effectiveDependencies),
     originalRepoRoot: repoRoot,
   };
@@ -377,11 +386,28 @@ async function runBoundedGit(
 }
 
 function localWorktreePath(workdirRoot: string, projectId: string, sessionId: string): string {
-  return path.join(workdirRoot, "local-worktrees", safePathSegment(projectId), safePathSegment(sessionId));
+  const legacyPath = legacyLocalWorktreePath(workdirRoot, projectId, sessionId);
+  return existsSync(legacyPath)
+    ? legacyPath
+    : path.join(workdirRoot, "worktrees", localWorktreeId(projectId, sessionId));
 }
 
 function localWorktreeBranch(projectId: string, sessionId: string): string {
-  return `agent/local-${safePathSegment(projectId)}-${safePathSegment(sessionId)}`.slice(0, 240);
+  return `moebius/${localWorktreeId(projectId, sessionId)}`;
+}
+
+function legacyLocalWorktreePath(workdirRoot: string, projectId: string, sessionId: string): string {
+  return path.join(workdirRoot, "local-worktrees", safePathSegment(projectId), safePathSegment(sessionId));
+}
+
+function localWorktreeId(projectId: string, sessionId: string): string {
+  return createHash("sha256")
+    .update("moebius-local-worktree\0")
+    .update(projectId)
+    .update("\0")
+    .update(sessionId)
+    .digest("base64url")
+    .slice(0, 12);
 }
 
 function safePathSegment(value: string): string {

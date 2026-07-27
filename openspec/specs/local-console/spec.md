@@ -63,6 +63,45 @@ Source: docs/product/pages/main-left-sidebar.md#入口与去向
 - **THEN** 记忆仍然是项目 B 的根会话 B2
 - **AND** 下一次启动不会恢复到未成功展示的 C1。
 
+### Requirement: 新对话草稿跨导航保持同一上下文
+
+Source: docs/product/pages/main-conversation.md#新对话草稿的生命周期
+
+- 没有待恢复的新对话草稿时，桌面操作台 MUST 让从侧边栏顶部进入的新对话保持项目未选定；上一份草稿随 session 与首条消息成功创建而消费后，下一次顶部进入 MUST 重新满足该规则。
+- 桌面操作台 MUST 将“当前展示新对话页”与未发送的新对话草稿分开管理；用户切到已有会话或其他页面时 MUST 只隐藏草稿，再次进入「新建对话」时 MUST 恢复仍可用的项目、会话级工作空间、团队、正文与附件。
+- 隐藏或恢复新对话草稿 MUST NOT 创建侧边栏会话，MUST NOT 改写正在浏览的已有会话上下文。
+- 用户在新对话中明确改选项目时，工作空间 MUST 按目标项目当前缺省模式重新选择；恢复的工作空间 MUST NOT 提升为全局或项目级偏好。
+- 只有 session 与首条消息成功创建后，桌面操作台才可消费新对话草稿；创建或提交失败 MUST 保留项目、工作空间、团队、正文与附件以供重试。
+- session 与首条消息已经创建后发生的 Agent 启动失败 MUST NOT 恢复已消费的新对话草稿。
+
+#### Scenario: 浏览已有会话后恢复独立工作空间草稿
+
+- **GIVEN** 新对话已选择项目 A、独立工作空间和团队 T，并包含未发送正文与附件
+- **WHEN** 用户切到已有会话后重新进入「新建对话」
+- **THEN** 项目 A、独立工作空间、团队 T、正文与附件保持不变
+- **AND** 导航期间没有创建侧边栏会话，已有会话的工作空间没有被改写。
+
+#### Scenario: 首条消息创建失败不消费草稿
+
+- **GIVEN** 新对话已包含可发送的上下文、正文与附件
+- **WHEN** session 与首条消息未能成功创建
+- **THEN** 项目、工作空间、团队、正文与附件保持可重试
+- **AND** 只有后续一次创建成功才消费该草稿。
+
+#### Scenario: 成功消费后下一次顶部进入恢复空白基线
+
+- **GIVEN** 一份新对话草稿已经成功创建 session 与首条消息
+- **WHEN** 用户再次从侧边栏顶部进入「新建对话」
+- **THEN** 页面展示一份项目未选定的新草稿
+- **AND** 不恢复上一段对话已经消费的项目、工作空间、正文或附件。
+
+#### Scenario: Agent 启动失败不撤销已创建对话
+
+- **GIVEN** session 与首条消息已经成功创建且新对话草稿已经消费
+- **WHEN** 随后的主 Agent 启动失败
+- **THEN** 失败作为已创建会话的可见运行事实保留
+- **AND** 系统不把已消费内容恢复成新对话草稿。
+
 ### Session agent team binding
 - MUST persist, on each local session, the ownership and id of the agent team chosen when that conversation was created.
 - MUST write the binding as part of creating the session, so a created session is never left unbound by a later failing step.
@@ -129,11 +168,28 @@ Source: docs/product/pages/main-left-sidebar.md#入口与去向
 ### Git folder worktree mode
 - MUST detect whether a local project folder is inside a git repository using bounded local `git` commands.
 - MUST, when the folder is a git repository and worktree mode is enabled, create or reuse a temporary local worktree based on the repository's current `HEAD` and run Codex there.
+- MUST derive one deterministic 12-character Git-safe short id from the full project/session identity, use `moebius/<short-id>` for newly created local branches, and place newly created worktrees at `<workdirRoot>/worktrees/<short-id>`.
+- MUST probe the legacy `<workdirRoot>/local-worktrees/<safe-project-id>/<safe-session-id>` path first and, when it exists, reuse it in place with its current real branch; existing worktrees MUST NOT be moved, renamed, pruned, or recreated merely to adopt the short layout.
+- MUST make repeated or concurrent preparation for the same project/session converge on the same short path and validate an already-created path with bounded Git operations before reuse.
 - MUST keep changes made by Codex in the temporary worktree from dirtying the original repository directory.
 - MUST use bounded git operations and surface deterministic local errors when worktree preparation fails.
 - MUST release the local session after a bounded git failure, timeout, or missing folder error so later local messages can be processed.
 - MUST preserve the project row and existing session timeline when folder workspace resolution fails.
 - MUST NOT fetch, merge, rebase, delete the original directory, or modify GitHub issue worktree state while resolving a local folder worktree.
+
+#### Scenario: 新独立工作空间使用稳定短标识
+
+- **GIVEN** 同一项目下有两个不同 session 首次选择独立工作空间
+- **WHEN** 系统分别准备并再次解析它们的本地 worktree
+- **THEN** 每个 session 的路径和分支在重复解析时保持稳定
+- **AND** 两个 session 使用不同的 12 字符短标识、短路径和 `moebius/` 分支。
+
+#### Scenario: legacy worktree 原位优先复用
+
+- **GIVEN** 某 session 的 legacy worktree 路径已存在且当前分支曾被用户保留或改名
+- **WHEN** 系统再次解析该 session 的独立工作空间
+- **THEN** cwd 仍是原 legacy 路径且状态返回该路径的真实当前分支
+- **AND** 系统不创建对应短路径、不移动旧目录、不改名分支。
 
 ### Direct folder mode and non-git folders
 - MUST, when the folder is a git repository and worktree mode is disabled, run Codex directly in the original repository directory.

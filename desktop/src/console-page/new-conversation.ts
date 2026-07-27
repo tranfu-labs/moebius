@@ -7,6 +7,7 @@ export interface ConversationAgentTeamIdentity {
 }
 
 export interface NewConversationDraftState {
+  isOpen: boolean;
   projectId: string | null;
   workspaceMode: "direct" | "worktree";
   teamKey: string | null;
@@ -15,14 +16,16 @@ export interface NewConversationDraftState {
   error: string | null;
 }
 
-export interface NewConversationSubmissionState extends NewConversationDraftState {
+export interface NewConversationSubmissionState extends Omit<NewConversationDraftState, "isOpen"> {
   readyAttachmentCount?: number;
   hasBlockingAttachments?: boolean;
 }
 
 export type NewConversationDraftEvent =
   | { type: "open"; draft: NewConversationDraftState }
-  | { type: "close" }
+  | { type: "show" }
+  | { type: "hide" }
+  | { type: "consume" }
   | { type: "select-project"; projectId: string | null }
   | { type: "select-workspace"; workspaceMode: "direct" | "worktree" }
   | { type: "select-team"; teamKey: string | null }
@@ -42,6 +45,7 @@ export function createNewConversationDraft(input: {
   draft: string;
 }): NewConversationDraftState {
   return {
+    isOpen: true,
     projectId: input.projectId ?? null,
     workspaceMode: input.workspaceMode ?? "direct",
     teamKey: input.teamKey,
@@ -66,7 +70,7 @@ export function reduceNewConversationDraft(
   if (event.type === "open") {
     return event.draft;
   }
-  if (event.type === "close") {
+  if (event.type === "consume") {
     return null;
   }
   if (state === null) {
@@ -74,6 +78,10 @@ export function reduceNewConversationDraft(
   }
 
   switch (event.type) {
+    case "show":
+      return { ...state, isOpen: true };
+    case "hide":
+      return { ...state, isOpen: false };
     case "select-project":
       return { ...state, projectId: event.projectId, error: null };
     case "select-workspace":
