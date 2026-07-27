@@ -348,7 +348,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       run_dir TEXT,
       error TEXT,
       system_event_kind TEXT NOT NULL DEFAULT 'other' CHECK (
-        system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'retry-exhausted', 'other')
+        system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'resume-unavailable', 'retry-exhausted', 'other')
       ),
       failure_count INTEGER NOT NULL DEFAULT 0,
       last_failure_reason TEXT,
@@ -538,12 +538,110 @@ function preserveLegacyLocalSessionTeamBindings(database: SqliteDatabase): void 
 function migrateSystemEventKinds(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "session_messages", "system_event_kind")) {
     database.exec(
-      "ALTER TABLE session_messages ADD COLUMN system_event_kind TEXT NOT NULL DEFAULT 'other' CHECK (system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'retry-exhausted', 'other'))",
+      "ALTER TABLE session_messages ADD COLUMN system_event_kind TEXT NOT NULL DEFAULT 'other' CHECK (system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'resume-unavailable', 'retry-exhausted', 'other'))",
     );
   }
+  migrateResumeUnavailableSystemEventKind(database);
   database.exec("UPDATE session_messages SET system_event_kind = 'other' WHERE system_event_kind IS NULL");
   database.exec("UPDATE sessions SET awaits_human_reason = NULL WHERE source_type = 'local'");
   markSchemaMigration(database, "main-conversation-timeline-system-events");
+}
+
+function migrateResumeUnavailableSystemEventKind(database: SqliteDatabase): void {
+  const migrationVersion = "local-console-system-event-resume-unavailable";
+  const row = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'session_messages'")
+    .get();
+  if (!isRecord(row)) {
+    throw new Error("Missing session_messages schema during system event migration");
+  }
+  const tableSql = readString(row.sql, "session_messages.sql");
+  if (tableSql.includes("'resume-unavailable'")) {
+    markSchemaMigration(database, migrationVersion);
+    return;
+  }
+
+  database.exec("PRAGMA foreign_keys = OFF");
+  try {
+    transaction(database, () => {
+      if (tableExists(database, "session_messages_resume_unavailable_migration")) {
+        throw new Error("Unexpected leftover system event migration table");
+      }
+      database.exec(`
+        CREATE TABLE session_messages_resume_unavailable_migration (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          speaker TEXT NOT NULL,
+          role TEXT,
+          body TEXT NOT NULL,
+          status TEXT NOT NULL,
+          run_id TEXT,
+          run_dir TEXT,
+          error TEXT,
+          system_event_kind TEXT NOT NULL DEFAULT 'other' CHECK (
+            system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'resume-unavailable', 'retry-exhausted', 'other')
+          ),
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_failure_reason TEXT,
+          source_kind TEXT,
+          source_id TEXT,
+          activated_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO session_messages_resume_unavailable_migration (
+          id,
+          session_id,
+          speaker,
+          role,
+          body,
+          status,
+          run_id,
+          run_dir,
+          error,
+          system_event_kind,
+          failure_count,
+          last_failure_reason,
+          source_kind,
+          source_id,
+          activated_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          id,
+          session_id,
+          speaker,
+          role,
+          body,
+          status,
+          run_id,
+          run_dir,
+          error,
+          system_event_kind,
+          failure_count,
+          last_failure_reason,
+          source_kind,
+          source_id,
+          activated_at,
+          created_at,
+          updated_at
+        FROM session_messages;
+        DROP TABLE session_messages;
+        ALTER TABLE session_messages_resume_unavailable_migration RENAME TO session_messages;
+        CREATE INDEX idx_session_messages_session_id_id ON session_messages(session_id, id);
+        CREATE INDEX idx_session_messages_session_status_id ON session_messages(session_id, status, id);
+      `);
+      const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all();
+      if (foreignKeyViolations.length > 0) {
+        throw new Error("Foreign key check failed during system event migration");
+      }
+      markSchemaMigration(database, migrationVersion);
+      return null;
+    });
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 function ensureSessionAgentTeamColumns(database: SqliteDatabase): void {
