@@ -272,7 +272,41 @@ describe("local console conversation workspace diff through HTTP", () => {
     try {
       await initializeRepository(repository);
       await fs.mkdir(path.dirname(rolloutPath), { recursive: true });
-      await fs.writeFile(rolloutPath, `${JSON.stringify(rolloutAssistant("开始检查"))}\n`, "utf8");
+      await fs.writeFile(rolloutPath, [
+        JSON.stringify({
+          timestamp: "2026-07-23T01:00:00.000Z",
+          type: "session_meta",
+          payload: {
+            base_instructions: { text: "SYSTEM-HTTP-EXACT" },
+            model_provider: "openai",
+            cli_version: "1.2.3",
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-07-23T01:00:00.100Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "developer",
+            content: [{ type: "input_text", text: "DEVELOPER-HTTP-EXACT" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-07-23T01:00:00.200Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "USER-HTTP-UNIQUE" }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-07-23T01:00:00.300Z",
+          type: "turn_context",
+          payload: { model: "gpt-5-http", reasoning_effort: "high", cwd: repository },
+        }),
+        JSON.stringify(rolloutAssistant("开始检查")),
+      ].join("\n") + "\n", "utf8");
       const started = await startHarness(root, async (options) => {
         await fs.mkdir(options.runDir, { recursive: true });
         await fs.writeFile(path.join(options.runDir, "stdout.jsonl"), "RUN_DIR_FALLBACK_MUST_NOT_APPEAR\n");
@@ -301,12 +335,34 @@ describe("local console conversation workspace diff through HTTP", () => {
       };
       expect(initial.status).toBe("settled");
       expect(initial.events).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: "public-message", markdown: "请检查实现" }),
-        expect.objectContaining({ kind: "agent-markdown", markdown: "开始检查" }),
+        expect.objectContaining({ kind: "agent-output", output: "开始检查" }),
       ]));
       expect(JSON.stringify(initial)).not.toContain("RUN_DIR_");
       expect(JSON.stringify(initial)).not.toContain("final reply must stay");
       expect(initial.appendCursor).not.toBeNull();
+
+      const invocationResponse = await fetch(new URL(
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(runId!)}/process-debug-invocation`,
+        started.url,
+      ));
+      expect(invocationResponse.status).toBe(200);
+      await expect(invocationResponse.json()).resolves.toMatchObject({
+        status: "available",
+        prompts: {
+          system: { contents: ["SYSTEM-HTTP-EXACT"] },
+          developer: { contents: ["DEVELOPER-HTTP-EXACT"] },
+          user: { contents: ["USER-HTTP-UNIQUE"] },
+        },
+        metadata: {
+          model: "gpt-5-http",
+          effort: "high",
+          provider: "openai",
+          cliVersion: "1.2.3",
+          cwd: repository,
+          threadId,
+          metadataSource: "rollout",
+        },
+      });
 
       await fs.appendFile(rolloutPath, `${JSON.stringify(rolloutAssistant("新增过程"))}\n`, "utf8");
       const appendEndpoint = new URL(endpoint);
@@ -314,7 +370,7 @@ describe("local console conversation workspace diff through HTTP", () => {
       const appendResponse = await fetch(appendEndpoint);
       expect(appendResponse.status).toBe(200);
       await expect(appendResponse.json()).resolves.toMatchObject({
-        events: [expect.objectContaining({ kind: "agent-markdown", markdown: "新增过程" })],
+        events: [expect.objectContaining({ kind: "agent-output", output: "新增过程" })],
       });
 
       await fs.rename(rolloutPath, `${rolloutPath}.bak`);

@@ -1,74 +1,61 @@
+export interface LocalConsoleProcessEventBase {
+  key: string;
+  timestamp: string | null;
+  protocolType: string;
+  rawPayload: string;
+}
+
 export type LocalConsoleProcessEvent =
-  | {
-      key: string;
-      kind: "agent-markdown";
-      timestamp: string | null;
-      markdown: string;
-    }
-  | {
-      key: string;
+  | (LocalConsoleProcessEventBase & {
+      kind: "agent-output";
+      output: string;
+    })
+  | (LocalConsoleProcessEventBase & {
       kind: "command";
-      timestamp: string | null;
-      phase: "started" | "completed";
-      command: string;
-      output: string | null;
-      exitCode: number | null;
-    }
-  | {
-      key: string;
-      kind: "tool";
-      timestamp: string | null;
       phase: "started" | "completed";
       name: string;
+      callId: string | null;
+      status: string | null;
       input: string | null;
       output: string | null;
+      exitCode: number | null;
+    })
+  | (LocalConsoleProcessEventBase & {
+      kind: "tool";
+      phase: "started" | "completed";
+      name: string;
+      callId: string | null;
       status: string | null;
-    }
-  | {
-      key: string;
+      input: string | null;
+      output: string | null;
+    })
+  | (LocalConsoleProcessEventBase & {
       kind: "file";
-      timestamp: string | null;
       action: string;
       path: string | null;
       detail: string | null;
-    }
-  | {
-      key: string;
+    })
+  | (LocalConsoleProcessEventBase & {
       kind: "error";
-      timestamp: string | null;
       message: string;
       detail: string | null;
-    }
-  | {
-      key: string;
-      kind: "unsupported";
-      timestamp: string | null;
-    };
+    })
+  | (LocalConsoleProcessEventBase & {
+      kind: "usage";
+      usage: string;
+    })
+  | (LocalConsoleProcessEventBase & {
+      kind: "unsupported-debug";
+    });
 
 export interface ProjectCodexRolloutContext {
   runId: string;
   lineOffset: number;
 }
 
-const HIDDEN_TOP_LEVEL_TYPES = new Set([
-  "compacted",
-  "inter_agent_communication_metadata",
-  "session_meta",
-  "turn_context",
-  "world_state",
-]);
-
-const HIDDEN_PAYLOAD_TYPES = new Set([
-  "agent_reasoning",
-  "context_compacted",
-  "reasoning",
-  "sub_agent_activity",
-  "token_count",
-  "task_started",
-  "task_complete",
-  "thread_settings_applied",
-  "user_message",
-]);
+const INVOCATION_TOP_LEVEL_TYPES = new Set(["session_meta", "turn_context"]);
+const REASONING_PAYLOAD_TYPES = new Set(["reasoning", "agent_reasoning"]);
+const PROMPT_ROLES = new Set(["developer", "system", "user"]);
 
 export function projectCodexRolloutRecord(
   value: unknown,
@@ -76,26 +63,55 @@ export function projectCodexRolloutRecord(
 ): LocalConsoleProcessEvent[] {
   const keyPrefix = `${context.runId}:rollout:${String(context.lineOffset)}`;
   if (!isRecord(value)) {
-    return [unsupported(keyPrefix, null)];
-  }
-  const timestamp = typeof value.timestamp === "string" ? value.timestamp : null;
-  const topLevelType = typeof value.type === "string" ? value.type : "unknown";
-  if (HIDDEN_TOP_LEVEL_TYPES.has(topLevelType)) {
-    return [];
-  }
-  const payload = isRecord(value.payload) ? value.payload : null;
-  const payloadType = payload !== null && typeof payload.type === "string" ? payload.type : null;
-  if (payloadType !== null && HIDDEN_PAYLOAD_TYPES.has(payloadType)) {
-    return [];
+    return [unsupportedDebug(keyPrefix, null, "unknown", value)];
   }
 
-  if (topLevelType === "event_msg" && payload !== null) {
-    return projectEventMessage(payload, keyPrefix, timestamp);
+  const timestamp = typeof value.timestamp === "string" ? value.timestamp : null;
+  const topLevelType = typeof value.type === "string" ? value.type : "unknown";
+  const payload = isRecord(value.payload) ? value.payload : null;
+  const payloadType = payload !== null && typeof payload.type === "string"
+    ? payload.type
+    : null;
+  const protocolType = payloadType === null
+    ? topLevelType
+    : `${topLevelType} · ${payloadType}`;
+
+  if (INVOCATION_TOP_LEVEL_TYPES.has(topLevelType)) {
+    return [];
   }
-  if (topLevelType === "response_item" && payload !== null) {
-    return projectResponseItem(payload, keyPrefix, timestamp);
+  if (
+    payloadType !== null
+    && (
+      REASONING_PAYLOAD_TYPES.has(payloadType)
+      || (payloadType === "message" && PROMPT_ROLES.has(readString(payload?.role) ?? ""))
+      || payloadType === "user_message"
+    )
+  ) {
+    return [];
   }
-  return [unsupported(keyPrefix, timestamp)];
+  if (containsEncryptedReasoning(value)) {
+    return [];
+  }
+  if (payload === null) {
+    return [unsupportedDebug(keyPrefix, timestamp, protocolType, value)];
+  }
+
+  if (payloadType === "token_count" || payloadType === "usage") {
+    const usage = payload.info ?? payload.usage ?? payload;
+    return [{
+      ...baseEvent(keyPrefix, timestamp, protocolType, payload),
+      kind: "usage",
+      usage: serializeRaw(usage),
+    }];
+  }
+
+  if (topLevelType === "event_msg") {
+    return projectEventMessage(payload, keyPrefix, timestamp, protocolType);
+  }
+  if (topLevelType === "response_item") {
+    return projectResponseItem(payload, keyPrefix, timestamp, protocolType);
+  }
+  return [unsupportedDebug(keyPrefix, timestamp, protocolType, payload)];
 }
 
 export function malformedCodexRolloutEvent(
@@ -104,9 +120,13 @@ export function malformedCodexRolloutEvent(
   detail = "这一条 Codex 过程记录无法解析。",
 ): LocalConsoleProcessEvent {
   return {
-    key: `${runId}:rollout:${String(lineOffset)}:malformed`,
+    ...baseEvent(
+      `${runId}:rollout:${String(lineOffset)}:malformed`,
+      null,
+      "malformed-jsonl",
+      detail,
+    ),
     kind: "error",
-    timestamp: null,
     message: "过程记录读取异常",
     detail,
   };
@@ -116,215 +136,194 @@ function projectEventMessage(
   payload: Record<string, unknown>,
   keyPrefix: string,
   timestamp: string | null,
+  protocolType: string,
 ): LocalConsoleProcessEvent[] {
-  const type = typeof payload.type === "string" ? payload.type : "unknown";
+  const type = readString(payload.type) ?? "unknown";
+  const base = baseEvent(keyPrefix, timestamp, protocolType, payload);
   if (type === "agent_message") {
-    const markdown = readText(payload.message);
-    return markdown === null
-      ? []
-      : [{
-          key: agentMessageKey(keyPrefix, "event", markdown),
-          kind: "agent-markdown",
-          timestamp,
-          markdown,
-        }];
+    const output = readText(payload.message);
+    return output === null ? [] : [{ ...base, kind: "agent-output", output }];
   }
   if (type === "mcp_tool_call_end") {
     const invocation = isRecord(payload.invocation) ? payload.invocation : {};
-    const server = typeof invocation.server === "string" ? invocation.server : "MCP";
-    const tool = typeof invocation.tool === "string" ? invocation.tool : "工具";
+    const server = readString(invocation.server) ?? "MCP";
+    const tool = readString(invocation.tool) ?? "tool";
     return [{
-      key: `${keyPrefix}:mcp`,
+      ...base,
       kind: "tool",
-      timestamp,
       phase: "completed",
       name: `${server} · ${tool}`,
-      input: displayValue(invocation.arguments),
-      output: displayToolOutput(payload.result),
-      status: readStatus(payload.result),
+      callId: readCallId(payload) ?? readCallId(invocation),
+      status: readStatus(payload.result) ?? readString(payload.status),
+      input: rawField(invocation.arguments),
+      output: rawField(payload.result),
     }];
   }
   if (type === "patch_apply_end") {
     const changes = isRecord(payload.changes) ? Object.entries(payload.changes) : [];
     if (changes.length > 0) {
       return changes.map(([filePath, change], index) => ({
-        key: `${keyPrefix}:patch:${String(index)}`,
+        ...baseEvent(`${keyPrefix}:patch:${String(index)}`, timestamp, protocolType, payload),
         kind: "file",
-        timestamp,
         action: fileAction(change),
-        path: safeDisplayPath(filePath),
-        detail: null,
+        path: filePath,
+        detail: rawField(change),
       }));
     }
     if (payload.success === false) {
       return [{
-        key: `${keyPrefix}:patch-error`,
+        ...base,
         kind: "error",
-        timestamp,
         message: "文件修改失败",
-        detail: displayText(payload.stderr) ?? displayText(payload.stdout),
+        detail: rawField(payload.stderr) ?? rawField(payload.stdout),
       }];
     }
     return [{
-      key: `${keyPrefix}:patch`,
+      ...base,
       kind: "file",
-      timestamp,
       action: "应用文件修改",
       path: null,
-      detail: displayText(payload.stdout),
+      detail: rawField(payload.stdout),
     }];
   }
   if (type === "web_search_end") {
     return [{
-      key: `${keyPrefix}:web-search`,
+      ...base,
       kind: "tool",
-      timestamp,
       phase: "completed",
-      name: "网页搜索",
-      input: readText(payload.query),
-      output: displaySearchResults(payload.results),
-      status: "completed",
+      name: "web_search",
+      callId: readCallId(payload),
+      status: readString(payload.status) ?? "completed",
+      input: rawField(payload.query),
+      output: rawField(payload.results),
     }];
   }
-  if (type === "turn_aborted") {
+  if (type === "turn_aborted" || type === "thread_rolled_back") {
     return [{
-      key: `${keyPrefix}:turn-aborted`,
+      ...base,
       kind: "error",
-      timestamp,
-      message: "本轮执行已中止",
-      detail: readText(payload.reason),
-    }];
-  }
-  if (type === "thread_rolled_back") {
-    return [{
-      key: `${keyPrefix}:thread-rolled-back`,
-      kind: "error",
-      timestamp,
-      message: "Codex 已回退会话",
-      detail: typeof payload.num_turns === "number"
-        ? `回退 ${String(payload.num_turns)} 轮`
-        : null,
+      message: type,
+      detail: rawField(payload.reason) ?? rawField(payload.num_turns),
     }];
   }
   if (type.includes("error") || type === "stream_failure") {
     return [{
-      key: `${keyPrefix}:error`,
+      ...base,
       kind: "error",
-      timestamp,
-      message: displayText(payload.message) ?? displayText(payload.error) ?? "Codex 执行异常",
-      detail: displayText(payload.details),
+      message: readText(payload.message) ?? readText(payload.error) ?? type,
+      detail: rawField(payload.details),
     }];
   }
-  return [unsupported(`${keyPrefix}:event`, timestamp)];
+  return [unsupportedDebug(`${keyPrefix}:event`, timestamp, protocolType, payload)];
 }
 
 function projectResponseItem(
   payload: Record<string, unknown>,
   keyPrefix: string,
   timestamp: string | null,
+  protocolType: string,
 ): LocalConsoleProcessEvent[] {
-  const type = typeof payload.type === "string" ? payload.type : "unknown";
-  if (type === "reasoning") {
-    return [];
-  }
+  const type = readString(payload.type) ?? "unknown";
+  const base = baseEvent(keyPrefix, timestamp, protocolType, payload);
   if (type === "message" || type === "agent_message") {
     if (type === "message" && payload.role !== "assistant") {
       return [];
     }
-    const markdown = readContentText(payload.content);
-    return markdown === null
-      ? []
-      : [{
-          key: agentMessageKey(keyPrefix, "response", markdown),
-          kind: "agent-markdown",
-          timestamp,
-          markdown,
-        }];
+    const output = readContentText(payload.content);
+    return output === null ? [] : [{ ...base, kind: "agent-output", output }];
   }
   if (type === "function_call") {
-    return [toolEvent(payload, `${keyPrefix}:function`, timestamp, "started")];
+    return [{
+      ...base,
+      kind: isCommandName(readString(payload.name)) ? "command" : "tool",
+      phase: "started",
+      name: readString(payload.name) ?? "function_call",
+      callId: readCallId(payload),
+      status: readString(payload.status),
+      input: rawField(payload.arguments),
+      output: null,
+      ...(isCommandName(readString(payload.name)) ? { exitCode: null } : {}),
+    } as LocalConsoleProcessEvent];
   }
   if (type === "function_call_output") {
-    return [toolEvent(payload, `${keyPrefix}:function-output`, timestamp, "completed")];
+    return [{
+      ...base,
+      kind: "tool",
+      phase: "completed",
+      name: readString(payload.name) ?? "function_call_output",
+      callId: readCallId(payload),
+      status: readString(payload.status),
+      input: null,
+      output: rawField(payload.output),
+    }];
   }
   if (type === "custom_tool_call" || type === "tool_search_call") {
-    const name = typeof payload.name === "string"
-      ? payload.name
-      : type === "tool_search_call"
-        ? "搜索可用工具"
-        : "工具调用";
-    if (name === "exec_command" || name === "shell" || name === "command") {
-      return [{
-        key: `${keyPrefix}:command`,
-        kind: "command",
-        timestamp,
-        phase: "started",
-        command: displayInput(payload.input) ?? displayInput(payload.arguments) ?? name,
-        output: null,
-        exitCode: null,
-      }];
-    }
+    const name = readString(payload.name) ?? type;
+    const command = isCommandName(name);
     return [{
-      key: `${keyPrefix}:custom`,
-      kind: "tool",
-      timestamp,
+      ...base,
+      kind: command ? "command" : "tool",
       phase: "started",
       name,
-      input: displayInput(payload.input) ?? displayValue(payload.arguments),
+      callId: readCallId(payload),
+      status: readString(payload.status),
+      input: rawField(payload.input) ?? rawField(payload.arguments),
       output: null,
-      status: typeof payload.status === "string" ? payload.status : null,
-    }];
+      ...(command ? { exitCode: null } : {}),
+    } as LocalConsoleProcessEvent];
   }
   if (type === "custom_tool_call_output" || type === "tool_search_output") {
     return [{
-      key: `${keyPrefix}:custom-output`,
+      ...base,
       kind: "tool",
-      timestamp,
       phase: "completed",
-      name: type === "tool_search_output" ? "搜索可用工具" : "工具调用",
+      name: readString(payload.name) ?? type,
+      callId: readCallId(payload),
+      status: readString(payload.status),
       input: null,
-      output: displayToolOutput(payload.output) ?? displayToolOutput(payload.tools),
-      status: typeof payload.status === "string" ? payload.status : null,
+      output: rawField(payload.output) ?? rawField(payload.tools),
     }];
   }
   if (type === "command_execution") {
-    const phase = payload.status === "completed" ? "completed" : "started";
     return [{
-      key: `${keyPrefix}:command`,
+      ...base,
       kind: "command",
-      timestamp,
-      phase,
-      command: displayText(payload.command) ?? displayText(payload.text) ?? "运行命令",
-      output: displayText(payload.output),
+      phase: payload.status === "completed" ? "completed" : "started",
+      name: "command_execution",
+      callId: readCallId(payload),
+      status: readString(payload.status),
+      input: rawField(payload.command) ?? rawField(payload.text),
+      output: rawField(payload.output),
       exitCode: typeof payload.exit_code === "number" ? payload.exit_code : null,
     }];
   }
-  return [unsupported(`${keyPrefix}:response`, timestamp)];
+  return [unsupportedDebug(`${keyPrefix}:response`, timestamp, protocolType, payload)];
 }
 
-function toolEvent(
-  payload: Record<string, unknown>,
+function baseEvent(
   key: string,
   timestamp: string | null,
-  phase: "started" | "completed",
-): LocalConsoleProcessEvent {
+  protocolType: string,
+  payload: unknown,
+): LocalConsoleProcessEventBase {
   return {
     key,
-    kind: "tool",
     timestamp,
-    phase,
-    name: typeof payload.name === "string" ? payload.name : "函数调用",
-    input: phase === "started" ? displayInput(payload.arguments) : null,
-    output: phase === "completed" ? displayValue(payload.output) : null,
-    status: typeof payload.status === "string" ? payload.status : null,
+    protocolType,
+    rawPayload: serializeRaw(payload),
   };
 }
 
-function unsupported(
+function unsupportedDebug(
   key: string,
   timestamp: string | null,
+  protocolType: string,
+  payload: unknown,
 ): LocalConsoleProcessEvent {
-  return { key, kind: "unsupported", timestamp };
+  return {
+    ...baseEvent(key, timestamp, protocolType, payload),
+    kind: "unsupported-debug",
+  };
 }
 
 function readContentText(value: unknown): string | null {
@@ -335,8 +334,8 @@ function readContentText(value: unknown): string | null {
     if (!isRecord(part)) {
       return [];
     }
-    const type = typeof part.type === "string" ? part.type : "";
-    if (type !== "output_text" && type !== "text") {
+    const type = readString(part.type) ?? "";
+    if (type !== "output_text" && type !== "input_text" && type !== "text") {
       return [];
     }
     const text = readText(part.text);
@@ -345,214 +344,72 @@ function readContentText(value: unknown): string | null {
   return parts.length === 0 ? null : parts.join("");
 }
 
-function readText(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function displayValue(value: unknown): string | null {
+function rawField(value: unknown): string | null {
   if (value === undefined || value === null) {
     return null;
   }
+  return typeof value === "string" ? value : serializeRaw(value);
+}
+
+function serializeRaw(value: unknown): string {
   if (typeof value === "string") {
-    return friendlyProcessText(value);
+    return value;
   }
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function containsEncryptedReasoning(value: unknown): boolean {
   if (Array.isArray(value)) {
-    const items = value.flatMap((item): string[] => {
-      const displayed = displayValue(item);
-      return displayed === null ? [] : [indentMultiline(`• ${displayed}`, "  ")];
-    });
-    return items.length === 0 ? null : items.join("\n");
+    return value.some(containsEncryptedReasoning);
   }
-  if (isRecord(value)) {
-    const entries = Object.entries(value).flatMap(([key, item]): string[] => {
-      if (isMachineOnlyField(key)) {
-        return [];
-      }
-      const displayed = displayValue(item);
-      return displayed === null
-        ? []
-        : [`${friendlyFieldLabel(key)}: ${indentMultiline(displayed, "  ")}`];
-    });
-    return entries.length === 0 ? null : entries.join("\n");
+  if (!isRecord(value)) {
+    return false;
   }
-  return friendlyProcessText(String(value));
+  return Object.entries(value).some(([key, child]) =>
+    key === "encrypted_content" || containsEncryptedReasoning(child));
 }
 
-function displayToolOutput(value: unknown): string | null {
-  if (typeof value === "string") {
-    return friendlyProcessText(value);
-  }
-  if (Array.isArray(value)) {
-    const parts = value.flatMap((part): string[] => {
-      if (!isRecord(part)) {
-        return [];
-      }
-      const text = readText(part.text);
-      if (text !== null) {
-        return [friendlyProcessText(text)];
-      }
-      return typeof part.image_url === "string" ? ["[图片结果]"] : [];
-    });
-    return parts.length > 0 ? parts.join("\n") : null;
-  }
-  if (isRecord(value)) {
-    if ("Ok" in value) {
-      return displayToolOutput(value.Ok);
-    }
-    if ("Err" in value) {
-      return displayToolOutput(value.Err) ?? "工具执行失败";
-    }
-    if (Array.isArray(value.content)) {
-      return displayToolOutput(value.content);
-    }
-    if (typeof value.message === "string") {
-      return friendlyProcessText(value.message);
-    }
-  }
-  return null;
-}
-
-function displaySearchResults(value: unknown): string | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const results = value.flatMap((entry): string[] => {
-    if (!isRecord(entry)) {
-      return [];
-    }
-    const title = readText(entry.title);
-    const url = readText(entry.url);
-    return title === null && url === null
-      ? []
-      : [`${title ?? "搜索结果"}${url === null ? "" : `\n${url}`}`];
-  });
-  return results.length > 0 ? results.join("\n\n") : null;
-}
-
-function fileAction(value: unknown): string {
-  if (!isRecord(value) || typeof value.type !== "string") {
-    return "修改文件";
-  }
-  const labels: Record<string, string> = {
-    add: "新增文件",
-    create: "新增文件",
-    delete: "删除文件",
-    move: "移动文件",
-    update: "修改文件",
-  };
-  return labels[value.type.toLowerCase()] ?? "修改文件";
-}
-
-function safeDisplayPath(value: string): string {
-  const normalized = value.replaceAll("\\", "/");
-  if (!normalized.startsWith("/") && !/^[A-Za-z]:\//u.test(normalized) && !normalized.startsWith("../")) {
-    return normalized;
-  }
-  return normalized.split("/").filter(Boolean).at(-1) ?? "文件";
+function readCallId(value: Record<string, unknown>): string | null {
+  return readString(value.call_id) ?? readString(value.callId) ?? readString(value.id);
 }
 
 function readStatus(value: unknown): string | null {
   if (!isRecord(value)) {
     return null;
   }
-  return typeof value.status === "string"
-    ? value.status
-    : "Ok" in value
-      ? "completed"
-      : "Err" in value
-        ? "failed"
-        : null;
+  return readString(value.status);
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function isCommandName(value: string | null): boolean {
+  return value === "exec_command" || value === "shell" || value === "command";
+}
+
+function fileAction(value: unknown): string {
+  if (!isRecord(value)) {
+    return "文件变更";
+  }
+  const type = readString(value.type) ?? readString(value.kind);
+  if (type === "add" || type === "create") {
+    return "新增文件";
+  }
+  if (type === "delete" || type === "remove") {
+    return "删除文件";
+  }
+  return type === null ? "修改文件" : type;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function agentMessageKey(
-  keyPrefix: string,
-  origin: "event" | "response",
-  markdown: string,
-): string {
-  let hash = 2_166_136_261;
-  for (let index = 0; index < markdown.length; index += 1) {
-    hash ^= markdown.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return `${keyPrefix}:agent:${origin}:${(hash >>> 0).toString(16)}`;
-}
-
-function displayInput(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return displayValue(value);
-  }
-  const trimmed = value.trim();
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}"))
-    || (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
-    try {
-      return displayValue(JSON.parse(trimmed));
-    } catch {
-      // Treat non-JSON tool input as ordinary user-visible text.
-    }
-  }
-  return friendlyProcessText(value);
-}
-
-function displayText(value: unknown): string | null {
-  return typeof value === "string" && value !== ""
-    ? friendlyProcessText(value)
-    : null;
-}
-
-function friendlyProcessText(value: string): string {
-  return value
-    .replace(
-      /(?:\/Users|\/home|\/private\/tmp|\/tmp|\/var\/folders)\/[^\s"'`<>]+/gu,
-      (match) => `…/${displayPathBasename(match)}`,
-    )
-    .replace(
-      /\b(?:sessionId|runId|threadId|messageId|sourceMessageId)\s*[:=]\s*[^\s,;]+/giu,
-      "内部标识已隐藏",
-    );
-}
-
-function displayPathBasename(value: string): string {
-  const normalized = value.replaceAll("\\", "/").replace(/[),.;:]+$/u, "");
-  return normalized.split("/").filter(Boolean).at(-1) ?? "本地文件";
-}
-
-function isMachineOnlyField(key: string): boolean {
-  const normalized = key
-    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
-    .replaceAll("-", "_")
-    .toLowerCase();
-  return normalized === "id"
-    || normalized === "cwd"
-    || normalized === "workdir"
-    || normalized === "run_dir"
-    || normalized === "session_id"
-    || normalized === "run_id"
-    || normalized === "thread_id"
-    || normalized === "turn_id"
-    || normalized === "message_id"
-    || normalized === "source_message_id"
-    || normalized === "call_id";
-}
-
-function friendlyFieldLabel(key: string): string {
-  const labels: Record<string, string> = {
-    cmd: "命令",
-    command: "命令",
-    query: "查询",
-    prompt: "输入",
-    path: "文件",
-    file: "文件",
-    status: "状态",
-  };
-  return labels[key.toLowerCase()] ?? key.replaceAll("_", " ");
-}
-
-function indentMultiline(value: string, indent: string): string {
-  return value.replaceAll("\n", `\n${indent}`);
 }

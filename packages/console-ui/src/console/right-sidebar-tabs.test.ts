@@ -8,6 +8,7 @@ import {
   closeRightSidebarTab,
   convertBlankRightSidebarTab,
   createRunOutputSourceKey,
+  dedupeRunOutputTabsByStableStep,
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
   parseRunOutputSourceKey,
@@ -196,10 +197,110 @@ describe("right sidebar tab model", () => {
     expect(parseRunOutputSourceKey(sourceKey)).toEqual({
       sessionId: "local:project/child-session",
       runId: "local-2026-07-23T02:03:04.000Z-run",
+      stepId: null,
     });
     expect(parseRunOutputSourceKey("run-output:session-a:run:1", "session-a")).toEqual({
       sessionId: "session-a",
       runId: "run:1",
+      stepId: null,
+    });
+  });
+
+  it("deduplicates retry runs by the stable session and step identity", () => {
+    const first = openRightSidebarSourceTab(EMPTY_RIGHT_SIDEBAR_TABS, {
+      id: "run-tab-1",
+      type: "run-output",
+      title: "成员未知",
+      sourceKey: createRunOutputSourceKey("session:a", "run:1", "message:42"),
+    });
+    const retried = openRightSidebarSourceTab(first, {
+      id: "run-tab-2",
+      type: "run-output",
+      title: "开发",
+      sourceKey: createRunOutputSourceKey("session:a", "run:2", "message:42"),
+    });
+
+    expect(retried.tabs).toHaveLength(1);
+    expect(retried.tabs[0]).toMatchObject({
+      id: "run-tab-1",
+      title: "开发",
+      sourceKey: createRunOutputSourceKey("session:a", "run:1", "message:42"),
+    });
+    expect(parseRunOutputSourceKey(retried.tabs[0]?.sourceKey ?? null)).toEqual({
+      sessionId: "session:a",
+      runId: "run:1",
+      stepId: "message:42",
+    });
+  });
+
+  it("upgrades a persisted run-key tab before a later retry is opened", () => {
+    const restored = openRightSidebarSourceTab(EMPTY_RIGHT_SIDEBAR_TABS, {
+      id: "restored-run-tab",
+      type: "run-output",
+      title: "成员未知",
+      sourceKey: "run-output:session-a:run-1",
+    });
+    const upgraded = openRightSidebarSourceTab(restored, {
+      id: "same-run-after-upgrade",
+      type: "run-output",
+      title: "开发",
+      sourceKey: createRunOutputSourceKey("session-a", "run-1", "message:42"),
+    });
+    const retried = openRightSidebarSourceTab(upgraded, {
+      id: "retry-run-tab",
+      type: "run-output",
+      title: "开发 2",
+      sourceKey: createRunOutputSourceKey("session-a", "run-2", "message:42"),
+    });
+
+    expect(retried.tabs).toHaveLength(1);
+    expect(retried.tabs[0]).toMatchObject({
+      id: "restored-run-tab",
+      title: "开发",
+      sourceKey: createRunOutputSourceKey("session-a", "run-1", "message:42"),
+    });
+  });
+
+  it("repairs already-persisted duplicate retry tabs and preserves the active reading state", () => {
+    const repaired = dedupeRunOutputTabsByStableStep({
+      tabs: [
+        {
+          id: "attempt-1-tab",
+          type: "run-output",
+          title: "成员未知",
+          sourceKey: createRunOutputSourceKey("session-a", "run-1", "message:42"),
+          closable: true,
+        },
+        {
+          id: "attempt-2-tab",
+          type: "run-output",
+          title: "开发",
+          sourceKey: createRunOutputSourceKey("session-a", "run-2", "message:42"),
+          closable: true,
+          processScroll: {
+            anchorEventKey: "run-2:event-9",
+            offsetPx: 12,
+            followLatest: false,
+          },
+        },
+      ],
+      activeTabId: "attempt-2-tab",
+    });
+
+    expect(repaired).toEqual({
+      tabs: [{
+        id: "attempt-1-tab",
+        type: "run-output",
+        title: "开发",
+        sourceKey: createRunOutputSourceKey("session-a", "run-1", "message:42"),
+        closable: true,
+        processScroll: {
+          anchorEventKey: "run-2:event-9",
+          offsetPx: 12,
+          followLatest: false,
+        },
+      }],
+      activeTabId: "attempt-1-tab",
     });
   });
 });

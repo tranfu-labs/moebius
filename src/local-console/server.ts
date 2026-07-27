@@ -484,6 +484,19 @@ async function handleRequest(
       return;
     }
 
+    const processInvocationMatch = matchProcessDebugInvocationRoute(url.pathname);
+    if (request.method === "GET" && processInvocationMatch !== null) {
+      sendJson(
+        response,
+        200,
+        await runtime.processDebugInvocation(
+          processInvocationMatch.sessionId,
+          processInvocationMatch.runId,
+        ),
+      );
+      return;
+    }
+
     const sessionProjectMatch = matchSessionRoute(url.pathname, "project");
     if (request.method === "PATCH" && sessionProjectMatch !== null) {
       let payload: unknown;
@@ -1106,6 +1119,19 @@ function matchRunRetryRoute(pathname: string): { sessionId: string; runId: strin
 
 function matchProcessOutputRoute(pathname: string): { sessionId: string; runId: string } | null {
   const match = /^\/api\/local-console\/sessions\/([^/]+)\/runs\/([^/]+)\/process-output$/u.exec(pathname);
+  if (match === null) {
+    return null;
+  }
+  return {
+    sessionId: decodeURIComponent(match[1] ?? ""),
+    runId: decodeURIComponent(match[2] ?? ""),
+  };
+}
+
+function matchProcessDebugInvocationRoute(
+  pathname: string,
+): { sessionId: string; runId: string } | null {
+  const match = /^\/api\/local-console\/sessions\/([^/]+)\/runs\/([^/]+)\/process-debug-invocation$/u.exec(pathname);
   if (match === null) {
     return null;
   }

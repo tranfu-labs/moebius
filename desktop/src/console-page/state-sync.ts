@@ -4,6 +4,7 @@ import {
   type OperatorEvidenceOpenIntent,
   type OperatorEvidenceView,
   type OperatorProcessAppendOutput,
+  type OperatorProcessDebugInvocation,
   type OperatorProcessOutput,
   type OperatorSubSessionView,
   type ProjectFilesData,
@@ -14,6 +15,36 @@ import {
 export interface ConsoleSelection {
   projectId: string;
   sessionId: string;
+}
+
+export class ProcessInvocationRequestCoordinator {
+  private readonly controllers = new Map<string, AbortController>();
+
+  begin(key: string): AbortController {
+    this.controllers.get(key)?.abort();
+    const controller = new AbortController();
+    this.controllers.set(key, controller);
+    return controller;
+  }
+
+  isCurrent(key: string, controller: AbortController): boolean {
+    return !controller.signal.aborted && this.controllers.get(key) === controller;
+  }
+
+  finish(key: string, controller: AbortController): boolean {
+    if (!this.isCurrent(key, controller)) {
+      return false;
+    }
+    this.controllers.delete(key);
+    return true;
+  }
+
+  abortAll(): void {
+    for (const controller of this.controllers.values()) {
+      controller.abort();
+    }
+    this.controllers.clear();
+  }
 }
 
 export type SelectionMutationKind = "create-session" | "open-project" | "rebind-session" | "archive-session";
@@ -263,6 +294,33 @@ export async function loadProcessOutput(options: {
   return body as OperatorProcessOutput;
 }
 
+export async function loadProcessDebugInvocation(options: {
+  apiBase: string;
+  sessionId: string;
+  runId: string;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<OperatorProcessDebugInvocation> {
+  const url = endpoint(
+    options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/runs/${encodeURIComponent(options.runId)}/process-debug-invocation`,
+  );
+  const fetch = options.fetch;
+  const response = await fetch(
+    url,
+    options.signal === undefined ? undefined : { signal: options.signal },
+  );
+  const body = await response.json() as OperatorProcessDebugInvocation | { error?: string };
+  if (!response.ok) {
+    throw new Error(
+      "error" in body && typeof body.error === "string"
+        ? body.error
+        : "process debug invocation request failed",
+    );
+  }
+  return body as OperatorProcessDebugInvocation;
+}
+
 export async function loadProcessOutputAppend(options: {
   apiBase: string;
   sessionId: string;
@@ -290,6 +348,74 @@ export async function loadProcessOutputAppend(options: {
     );
   }
   return body as OperatorProcessAppendOutput;
+}
+
+export type ProcessOutputUpdate =
+  | {
+      kind: "append";
+      append: OperatorProcessAppendOutput;
+    }
+  | {
+      kind: "reload";
+      reason: "settled" | "cursor-invalid";
+      output: OperatorProcessOutput;
+    };
+
+export async function loadProcessOutputUpdate(options: {
+  apiBase: string;
+  sessionId: string;
+  runId: string;
+  appendCursor: string;
+  currentStatus: "running" | "settled";
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<ProcessOutputUpdate> {
+  try {
+    const append = await loadProcessOutputAppend(options);
+    if (append.status === "running" || options.currentStatus === "settled") {
+      return { kind: "append", append };
+    }
+    return {
+      kind: "reload",
+      reason: "settled",
+      output: await loadProcessOutput(options),
+    };
+  } catch (error) {
+    if (
+      !(error instanceof ProcessOutputRequestError)
+      || error.code !== "PROCESS_CURSOR_INVALID"
+    ) {
+      throw error;
+    }
+    return {
+      kind: "reload",
+      reason: "cursor-invalid",
+      output: await loadProcessOutput(options),
+    };
+  }
+}
+
+export function mergeSettledProcessOutput(
+  current: OperatorProcessOutput,
+  incoming: OperatorProcessOutput,
+): OperatorProcessOutput {
+  const replacements = new Map(incoming.events.map((event) => [event.key, event]));
+  const seen = new Set<string>();
+  const events = [
+    ...current.events.map((event) => replacements.get(event.key) ?? event),
+    ...incoming.events,
+  ].filter((event) => {
+    if (seen.has(event.key)) {
+      return false;
+    }
+    seen.add(event.key);
+    return true;
+  });
+  return {
+    ...incoming,
+    events,
+    previousCursor: current.previousCursor,
+  };
 }
 
 export class ProcessOutputRequestError extends Error {

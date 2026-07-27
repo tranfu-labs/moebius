@@ -48,17 +48,47 @@ export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
 };
 
 const RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v2:";
+const STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v3:";
 
-export function createRunOutputSourceKey(sessionId: string, runId: string): string {
+export function createRunOutputSourceKey(
+  sessionId: string,
+  runId: string,
+  stepId: string | null = null,
+): string {
+  if (stepId !== null && stepId !== "") {
+    return `${STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX}${encodeURIComponent(sessionId)}:${encodeURIComponent(stepId)}:${encodeURIComponent(runId)}`;
+  }
   return `${RUN_OUTPUT_SOURCE_KEY_PREFIX}${encodeURIComponent(sessionId)}:${encodeURIComponent(runId)}`;
 }
 
 export function parseRunOutputSourceKey(
   sourceKey: string | null,
   legacySessionId?: string,
-): { sessionId: string; runId: string } | null {
+): { sessionId: string; runId: string; stepId: string | null } | null {
   if (sourceKey === null) {
     return null;
+  }
+  if (sourceKey.startsWith(STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX)) {
+    const encoded = sourceKey.slice(STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX.length);
+    const firstSeparator = encoded.indexOf(":");
+    const secondSeparator = encoded.indexOf(":", firstSeparator + 1);
+    if (
+      firstSeparator <= 0
+      || secondSeparator <= firstSeparator + 1
+      || secondSeparator >= encoded.length - 1
+    ) {
+      return null;
+    }
+    try {
+      const sessionId = decodeURIComponent(encoded.slice(0, firstSeparator));
+      const stepId = decodeURIComponent(encoded.slice(firstSeparator + 1, secondSeparator));
+      const runId = decodeURIComponent(encoded.slice(secondSeparator + 1));
+      return sessionId === "" || stepId === "" || runId === ""
+        ? null
+        : { sessionId, runId, stepId };
+    } catch {
+      return null;
+    }
   }
   if (sourceKey.startsWith(RUN_OUTPUT_SOURCE_KEY_PREFIX)) {
     const encoded = sourceKey.slice(RUN_OUTPUT_SOURCE_KEY_PREFIX.length);
@@ -69,7 +99,7 @@ export function parseRunOutputSourceKey(
     try {
       const sessionId = decodeURIComponent(encoded.slice(0, separator));
       const runId = decodeURIComponent(encoded.slice(separator + 1));
-      return sessionId === "" || runId === "" ? null : { sessionId, runId };
+      return sessionId === "" || runId === "" ? null : { sessionId, runId, stepId: null };
     } catch {
       return null;
     }
@@ -81,7 +111,7 @@ export function parseRunOutputSourceKey(
   const runId = sourceKey.startsWith(legacyPrefix)
     ? sourceKey.slice(legacyPrefix.length)
     : "";
-  return runId === "" ? null : { sessionId: legacySessionId, runId };
+  return runId === "" ? null : { sessionId: legacySessionId, runId, stepId: null };
 }
 
 export function createBlankRightSidebarTab(id: string): RightSidebarTab {
@@ -136,11 +166,40 @@ export function openRightSidebarSourceTab(
   state: RightSidebarTabsState,
   source: RightSidebarSourceTab,
 ): RightSidebarTabsState {
-  const existing = state.tabs.find((tab) => tab.sourceKey === source.sourceKey);
+  const existing = state.tabs.find((tab) => sameRightSidebarSource(tab, source));
   if (existing !== undefined) {
-    return state.activeTabId === existing.id
-      ? state
-      : { ...state, activeTabId: existing.id };
+    const sourceLocator = source.type === "run-output"
+      ? parseRunOutputSourceKey(source.sourceKey)
+      : null;
+    const existingLocator = existing.type === "run-output"
+      ? parseRunOutputSourceKey(existing.sourceKey, sourceLocator?.sessionId)
+      : null;
+    const shouldUpgradeRunSource = existingLocator?.stepId === null
+      && sourceLocator?.stepId !== null
+      && sourceLocator?.stepId !== undefined;
+    const shouldCorrectUnknownTitle = existing.type === "run-output"
+      && isUnknownProcessTitle(existing.title)
+      && !isUnknownProcessTitle(source.title);
+    if (
+      state.activeTabId === existing.id
+      && !shouldUpgradeRunSource
+      && !shouldCorrectUnknownTitle
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      tabs: shouldUpgradeRunSource || shouldCorrectUnknownTitle
+        ? state.tabs.map((tab) => tab.id === existing.id
+            ? {
+                ...tab,
+                sourceKey: shouldUpgradeRunSource ? source.sourceKey : tab.sourceKey,
+                title: shouldCorrectUnknownTitle ? source.title : tab.title,
+              }
+            : tab)
+        : state.tabs,
+      activeTabId: existing.id,
+    };
   }
   const tab: RightSidebarTab = {
     ...source,
@@ -151,6 +210,77 @@ export function openRightSidebarSourceTab(
     tabs: [...state.tabs, tab],
     activeTabId: tab.id,
   };
+}
+
+export function dedupeRunOutputTabsByStableStep(
+  state: RightSidebarTabsState,
+): RightSidebarTabsState {
+  const canonicalIndexByStep = new Map<string, number>();
+  const tabs: RightSidebarTab[] = [];
+  let activeTabId = state.activeTabId;
+  let changed = false;
+  for (const tab of state.tabs) {
+    const locator = tab.type === "run-output"
+      ? parseRunOutputSourceKey(tab.sourceKey)
+      : null;
+    if (locator?.stepId === null || locator === null) {
+      tabs.push(tab);
+      continue;
+    }
+    const identity = `${encodeURIComponent(locator.sessionId)}:${encodeURIComponent(locator.stepId)}`;
+    const canonicalIndex = canonicalIndexByStep.get(identity);
+    if (canonicalIndex === undefined) {
+      canonicalIndexByStep.set(identity, tabs.length);
+      tabs.push(tab);
+      continue;
+    }
+    changed = true;
+    const canonical = tabs[canonicalIndex]!;
+    const duplicateIsActive = state.activeTabId === tab.id;
+    tabs[canonicalIndex] = {
+      ...canonical,
+      title: isUnknownProcessTitle(canonical.title) && !isUnknownProcessTitle(tab.title)
+        ? tab.title
+        : canonical.title,
+      processScroll: duplicateIsActive
+        ? tab.processScroll ?? canonical.processScroll
+        : canonical.processScroll,
+    };
+    if (duplicateIsActive) {
+      activeTabId = canonical.id;
+    }
+  }
+  return changed ? { tabs, activeTabId } : state;
+}
+
+function sameRightSidebarSource(
+  tab: RightSidebarTab,
+  source: RightSidebarSourceTab,
+): boolean {
+  if (tab.type !== source.type) {
+    return false;
+  }
+  if (tab.sourceKey === source.sourceKey) {
+    return true;
+  }
+  if (tab.type !== "run-output") {
+    return false;
+  }
+  const incoming = parseRunOutputSourceKey(source.sourceKey);
+  const existing = parseRunOutputSourceKey(tab.sourceKey, incoming?.sessionId);
+  if (existing === null || incoming === null || existing.sessionId !== incoming.sessionId) {
+    return false;
+  }
+  if (existing.runId === incoming.runId) {
+    return true;
+  }
+  return existing.stepId !== null
+    && incoming.stepId !== null
+    && existing.stepId === incoming.stepId;
+}
+
+function isUnknownProcessTitle(title: string): boolean {
+  return /^成员未知(?: [2-9]\d*)?$/u.test(title);
 }
 
 export function selectRightSidebarTab(

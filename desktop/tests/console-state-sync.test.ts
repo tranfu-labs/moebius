@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import type { OperatorProcessOutput } from "@moebius/console-ui";
 import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
   ConsoleStateCoordinator,
   loadEvidenceView,
+  loadProcessDebugInvocation,
   loadProcessOutput,
   loadProcessOutputAppend,
+  loadProcessOutputUpdate,
+  mergeSettledProcessOutput,
   loadSubSessionView,
   ProcessOutputRequestError,
+  ProcessInvocationRequestCoordinator,
   processOutputLocator,
   processOutputRunId,
   loadProjectFile,
@@ -25,6 +30,27 @@ interface TestState {
   selectedProjectId: string;
   selectedSessionId: string;
 }
+
+describe("ProcessInvocationRequestCoordinator", () => {
+  it("isolates run keys, rejects stale slow responses, and aborts all work on session change", () => {
+    const coordinator = new ProcessInvocationRequestCoordinator();
+    const slowA = coordinator.begin("session-a:run-a");
+    const requestB = coordinator.begin("session-b:run-b");
+    expect(coordinator.isCurrent("session-a:run-a", slowA)).toBe(true);
+    expect(coordinator.isCurrent("session-b:run-b", requestB)).toBe(true);
+
+    const retryA = coordinator.begin("session-a:run-a");
+    expect(slowA.signal.aborted).toBe(true);
+    expect(coordinator.finish("session-a:run-a", slowA)).toBe(false);
+    expect(coordinator.finish("session-a:run-a", retryA)).toBe(true);
+    expect(coordinator.finish("session-b:run-b", requestB)).toBe(true);
+
+    const requestC = coordinator.begin("session-c:run-c");
+    coordinator.abortAll();
+    expect(requestC.signal.aborted).toBe(true);
+    expect(coordinator.isCurrent("session-c:run-c", requestC)).toBe(false);
+  });
+});
 
 describe("refreshConsoleState", () => {
   it("keeps a slow periodic refresh single-flight and eventually commits it", async () => {
@@ -201,6 +227,7 @@ describe("loadEvidenceView", () => {
         kind: "run-output",
         sessionId: "session-a",
         runId: "run-1",
+        stepId: null,
         role: "dev",
         fallbackOutput: null,
       },
@@ -313,6 +340,38 @@ describe("workspace file readers", () => {
 });
 
 describe("process output reads", () => {
+  it("loads the run-scoped prompt stack through the narrow invocation endpoint", async () => {
+    const invocation = {
+      status: "available" as const,
+      sessionId: "session/a",
+      runId: "run/1",
+      prompts: {
+        system: { status: "recorded" as const, contents: ["SYSTEM"] },
+        developer: { status: "not-recorded" as const, contents: [] },
+        user: { status: "recorded" as const, contents: ["USER"] },
+      },
+      metadata: {
+        model: "gpt-5",
+        effort: "high",
+        provider: "openai",
+        cliVersion: "1.2.3",
+        cwd: "/Users/person/project",
+        threadId: "thread-1",
+        metadataSource: "rollout" as const,
+      },
+    };
+    const fetch = receiverSensitiveFetch(jsonResponse(invocation));
+    await expect(loadProcessDebugInvocation({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: invocation.sessionId,
+      runId: invocation.runId,
+      fetch,
+    })).resolves.toEqual(invocation);
+    expect(String(fetch.mock.calls[0]?.[0])).toContain(
+      "sessions/session%2Fa/runs/run%2F1/process-debug-invocation",
+    );
+  });
+
   it("loads the structured Codex projection with opaque backward and append cursors", async () => {
     const initial = processOutputFixture();
     const fetch = receiverSensitiveFetch(
@@ -364,6 +423,162 @@ describe("process output reads", () => {
     } satisfies Partial<ProcessOutputRequestError>);
   });
 
+  it.each(["completed", "failed", "interrupted"] as const)(
+    "reloads authoritative attempt metadata when an append settles as %s",
+    async (status) => {
+      const initial = processOutputFixture();
+      const settled = {
+        ...initial,
+        status: "settled" as const,
+        attempts: [{
+          ...initial.attempts[0]!,
+          status,
+          elapsedMs: 2_000,
+          completedAt: "2026-07-23T00:00:02.000Z",
+        }],
+      };
+      const fetch = receiverSensitiveFetch(
+        jsonResponse({
+          events: [],
+          appendCursor: "append-settled",
+          atLatest: true,
+          status: "settled",
+        }),
+        jsonResponse(settled),
+      );
+
+      await expect(loadProcessOutputUpdate({
+        apiBase: "http://127.0.0.1:8787/",
+        sessionId: "session/a",
+        runId: "run/1",
+        appendCursor: "append-current",
+        currentStatus: "running",
+        fetch,
+      })).resolves.toEqual({
+        kind: "reload",
+        reason: "settled",
+        output: settled,
+      });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(String(fetch.mock.calls[0]?.[0])).toContain("appendCursor=append-current");
+      expect(String(fetch.mock.calls[1]?.[0])).not.toContain("appendCursor=");
+    },
+  );
+
+  it("falls back to a full process reload when the append cursor becomes invalid", async () => {
+    const reloaded = processOutputFixture();
+    const fetch = receiverSensitiveFetch(
+      jsonResponse({
+        error: "process output cursor is no longer valid",
+        code: "PROCESS_CURSOR_INVALID",
+      }, 409),
+      jsonResponse(reloaded),
+    );
+
+    await expect(loadProcessOutputUpdate({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/a",
+      runId: "run/1",
+      appendCursor: "stale",
+      currentStatus: "running",
+      fetch,
+    })).resolves.toEqual({
+      kind: "reload",
+      reason: "cursor-invalid",
+      output: reloaded,
+    });
+  });
+
+  it("does not repeat the metadata reload after the process is already settled", async () => {
+    const append = {
+      events: [],
+      appendCursor: "append-next",
+      atLatest: true,
+      status: "settled" as const,
+    };
+    const fetch = receiverSensitiveFetch(jsonResponse(append));
+
+    await expect(loadProcessOutputUpdate({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/a",
+      runId: "run/1",
+      appendCursor: "append-current",
+      currentStatus: "settled",
+      fetch,
+    })).resolves.toEqual({ kind: "append", append });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps paged history while replacing stale attempt headers after settlement", () => {
+    const current = processOutputFixture();
+    const staleHeader = {
+      key: "run/1:attempt",
+      kind: "attempt-header" as const,
+      ...current.attempts[0]!,
+      engine: "codex" as const,
+      model: null,
+      effort: null,
+      provider: null,
+      cliVersion: null,
+      metadataSource: "not-recorded" as const,
+      threadId: "thread-1",
+      elapsedMs: 500,
+      completedAt: null,
+    };
+    current.events = [
+      {
+        key: "run/1:older",
+        kind: "agent-output" as const,
+        timestamp: "2026-07-22T23:59:59.000Z",
+        protocolType: "response_item · message",
+        rawPayload: "{}",
+        output: "older page",
+      },
+      staleHeader,
+    ];
+    const completedHeader = {
+      ...staleHeader,
+      status: "completed" as const,
+      elapsedMs: 2_000,
+      completedAt: "2026-07-23T00:00:02.000Z",
+    };
+    const incoming = {
+      ...current,
+      status: "settled" as const,
+      attempts: [{
+        ...current.attempts[0]!,
+        status: "completed" as const,
+        elapsedMs: 2_000,
+        completedAt: "2026-07-23T00:00:02.000Z",
+      }],
+      events: [
+        completedHeader,
+        {
+          key: "run/1:newest",
+          kind: "agent-output" as const,
+          timestamp: "2026-07-23T00:00:02.000Z",
+          protocolType: "response_item · message",
+          rawPayload: "{}",
+          output: "newest page",
+        },
+      ],
+      previousCursor: "incoming-previous",
+    };
+
+    const merged = mergeSettledProcessOutput(current, incoming);
+    expect(merged.previousCursor).toBe("previous-page");
+    expect(merged.events.map((event) => event.key)).toEqual([
+      "run/1:older",
+      "run/1:attempt",
+      "run/1:newest",
+    ]);
+    expect(merged.events[1]).toMatchObject({
+      kind: "attempt-header",
+      status: "completed",
+      completedAt: "2026-07-23T00:00:02.000Z",
+    });
+  });
+
   it("extracts only a run locator belonging to the selected session", () => {
     expect(processOutputRunId("run-output:session-a:run-1", "session-a")).toBe("run-1");
     expect(processOutputRunId("run-output:session-b:run-1", "session-a")).toBeNull();
@@ -377,6 +592,15 @@ describe("process output reads", () => {
     )).toEqual({
       sessionId: "child:session/1",
       runId: "run:2026-07-23T02:03:04Z",
+      stepId: null,
+    });
+    expect(processOutputLocator(
+      "run-output-v3:child%3Asession%2F1:message%3A42:run%3Aretry-2",
+      "parent-session",
+    )).toEqual({
+      sessionId: "child:session/1",
+      runId: "run:retry-2",
+      stepId: "message:42",
     });
   });
 });
@@ -834,7 +1058,7 @@ describe("ConsoleStateActions", () => {
   });
 });
 
-function processOutputFixture() {
+function processOutputFixture(): OperatorProcessOutput {
   return {
     sessionId: "session/a",
     requestedRunId: "run/1",
@@ -845,14 +1069,25 @@ function processOutputFixture() {
       runId: "run/1",
       attempt: 1,
       role: "dev",
+      engine: "codex",
+      model: null,
+      effort: null,
+      provider: null,
+      cliVersion: null,
+      metadataSource: "not-recorded",
+      threadId: "thread-1",
       startedAt: "2026-07-23T00:00:00.000Z",
       status: "running" as const,
+      elapsedMs: 0,
+      completedAt: null,
     }],
     events: [{
       key: "run/1:agent",
-      kind: "agent-markdown" as const,
+      kind: "agent-output",
       timestamp: "2026-07-23T00:00:01.000Z",
-      markdown: "正在检查。",
+      protocolType: "response_item · message",
+      rawPayload: "{}",
+      output: "正在检查。",
     }],
     previousCursor: "previous-page",
     appendCursor: "append-current",

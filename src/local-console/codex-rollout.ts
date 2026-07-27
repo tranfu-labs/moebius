@@ -61,6 +61,40 @@ export interface ReadCodexRolloutAppendOptions {
   maxEvents?: number;
 }
 
+export interface ReadCodexRolloutInvocationOptions {
+  resolution: Extract<CodexRolloutResolution, { status: "available" }>;
+  expectedIdentity?: Pick<CodexRolloutIdentity, "realPath" | "device" | "inode">;
+  minimumSize?: number;
+  maxBytes?: number;
+}
+
+export interface CodexRolloutPromptLayer {
+  status: "recorded" | "not-recorded";
+  contents: string[];
+}
+
+export interface CodexRolloutInvocation {
+  status: "available";
+  prompts: {
+    system: CodexRolloutPromptLayer;
+    developer: CodexRolloutPromptLayer;
+    user: CodexRolloutPromptLayer;
+  };
+  metadata: {
+    model: string | null;
+    effort: string | null;
+    provider: string | null;
+    cliVersion: string | null;
+    cwd: string | null;
+  };
+  identity: CodexRolloutIdentity;
+}
+
+export interface CodexRolloutMalformedInvocation {
+  status: "malformed";
+  reason: "too-large" | "no-complete-records" | "records-unreadable";
+}
+
 export interface CodexRolloutEventSlice {
   events: LocalConsoleProcessEvent[];
   rawBytes: number;
@@ -83,6 +117,7 @@ const THREAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u;
 const DEFAULT_PAGE_BYTES = 256 * 1024;
 const DEFAULT_PAGE_EVENTS = 80;
 const READ_CHUNK_BYTES = 64 * 1024;
+const DEFAULT_INVOCATION_MAX_BYTES = 64 * 1024 * 1024;
 const RESOLUTION_CACHE_TTL_MS = 30_000;
 
 interface CachedRolloutResolution {
@@ -222,6 +257,125 @@ export function sameCodexRolloutFile(
   return expected.realPath === actual.realPath
     && expected.device === actual.device
     && expected.inode === actual.inode;
+}
+
+export async function readCodexRolloutInvocation(
+  options: ReadCodexRolloutInvocationOptions,
+): Promise<CodexRolloutInvocation | CodexRolloutMalformedInvocation> {
+  const maxBytes = positiveInteger(
+    options.maxBytes ?? DEFAULT_INVOCATION_MAX_BYTES,
+    "maxBytes",
+  );
+  const opened = await openValidatedRollout(
+    options.resolution,
+    options.expectedIdentity,
+    options.minimumSize,
+  );
+  try {
+    const completeEndOffset = await findCompleteJsonlEnd(opened.handle, opened.identity.size);
+    if (completeEndOffset === 0) {
+      return { status: "malformed", reason: "no-complete-records" };
+    }
+    if (completeEndOffset > maxBytes) {
+      return { status: "malformed", reason: "too-large" };
+    }
+    const buffer = await readRange(opened.handle, 0, completeEndOffset);
+    const system: string[] = [];
+    const developer: string[] = [];
+    const user: string[] = [];
+    let model: string | null = null;
+    let effort: string | null = null;
+    let provider: string | null = null;
+    let cliVersion: string | null = null;
+    let cwd: string | null = null;
+    let readableRecords = 0;
+
+    for (const rawLine of buffer.toString("utf8").split("\n")) {
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      if (line === "") {
+        continue;
+      }
+      let record: unknown;
+      try {
+        record = JSON.parse(line) as unknown;
+      } catch {
+        continue;
+      }
+      if (!isRecord(record)) {
+        continue;
+      }
+      readableRecords += 1;
+      const topLevelType = readString(record.type);
+      const payload = isRecord(record.payload) ? record.payload : null;
+      if (payload === null) {
+        continue;
+      }
+      if (topLevelType === "session_meta") {
+        const instructions = isRecord(payload.base_instructions)
+          ? readString(payload.base_instructions.text)
+          : readString(payload.base_instructions);
+        pushDistinct(system, instructions);
+        provider = readString(payload.model_provider)
+          ?? readString(payload.provider)
+          ?? provider;
+        cliVersion = readString(payload.cli_version)
+          ?? readString(payload.codex_version)
+          ?? cliVersion;
+        cwd = readString(payload.cwd) ?? cwd;
+        continue;
+      }
+      if (topLevelType === "turn_context") {
+        model = readString(payload.model) ?? model;
+        effort = readString(payload.effort)
+          ?? readString(payload.reasoning_effort)
+          ?? effort;
+        provider = readString(payload.model_provider)
+          ?? readString(payload.provider)
+          ?? provider;
+        cwd = readString(payload.cwd) ?? cwd;
+        continue;
+      }
+      if (topLevelType !== "response_item" || payload.type !== "message") {
+        continue;
+      }
+      const content = readPromptContent(payload.content);
+      if (payload.role === "developer") {
+        pushDistinct(developer, content);
+      } else if (payload.role === "user") {
+        pushDistinct(user, content);
+      }
+    }
+
+    if (readableRecords === 0) {
+      return { status: "malformed", reason: "records-unreadable" };
+    }
+    const finalStat = await opened.handle.stat();
+    const finalIdentity = {
+      realPath: opened.identity.realPath,
+      device: finalStat.dev,
+      inode: finalStat.ino,
+      size: finalStat.size,
+    };
+    if (
+      !finalStat.isFile()
+      || !sameCodexRolloutFile(opened.identity, finalIdentity)
+      || finalIdentity.size < completeEndOffset
+    ) {
+      throw new CodexRolloutCursorInvalidError("Codex rollout changed while reading invocation");
+    }
+    return {
+      status: "available",
+      prompts: {
+        system: promptLayer(system),
+        developer: promptLayer(developer),
+        user: promptLayer(user),
+      },
+      metadata: { model, effort, provider, cliVersion, cwd },
+      identity: finalIdentity,
+    };
+  } finally {
+    await opened.handle.close();
+  }
 }
 
 export async function readCodexRolloutPage(
@@ -542,15 +696,11 @@ function isMirroredAgentMessage(
   right: LocalConsoleProcessEvent,
 ): boolean {
   if (
-    left.kind !== "agent-markdown"
-    || right.kind !== "agent-markdown"
-    || left.markdown !== right.markdown
+    left.kind !== "agent-output"
+    || right.kind !== "agent-output"
+    || left.output !== right.output
+    || left.protocolType === right.protocolType
   ) {
-    return false;
-  }
-  const leftOrigin = agentMessageOrigin(left.key);
-  const rightOrigin = agentMessageOrigin(right.key);
-  if (leftOrigin === null || rightOrigin === null || leftOrigin === rightOrigin) {
     return false;
   }
   if (left.timestamp === null || right.timestamp === null) {
@@ -563,18 +713,53 @@ function isMirroredAgentMessage(
     && Math.abs(leftTime - rightTime) <= 1_000;
 }
 
-function agentMessageOrigin(key: string): "event" | "response" | null {
-  if (key.includes(":agent:event:")) {
-    return "event";
-  }
-  return key.includes(":agent:response:") ? "response" : null;
-}
-
 function positiveInteger(value: number, field: string): number {
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error(`${field} must be a positive integer`);
   }
   return value;
+}
+
+function promptLayer(contents: string[]): CodexRolloutPromptLayer {
+  return {
+    status: contents.length === 0 ? "not-recorded" : "recorded",
+    contents,
+  };
+}
+
+function pushDistinct(target: string[], value: string | null): void {
+  if (value !== null && target.at(-1) !== value) {
+    target.push(value);
+  }
+}
+
+function readPromptContent(value: unknown): string | null {
+  if (typeof value === "string" && value !== "") {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const parts = value.flatMap((item): string[] => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const type = readString(item.type);
+    if (type !== "input_text" && type !== "text") {
+      return [];
+    }
+    const text = readString(item.text);
+    return text === null ? [] : [text];
+  });
+  return parts.length === 0 ? null : parts.join("");
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPathInside(root: string, candidate: string): boolean {

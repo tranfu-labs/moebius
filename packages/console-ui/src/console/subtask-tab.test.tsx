@@ -85,6 +85,7 @@ describe("SubtaskTab", () => {
     expect(onOpenOutput).toHaveBeenLastCalledWith({
       sessionId: "child-a",
       runId: "run-1",
+      stepId: null,
       role: "qa",
       fallbackOutput: "正在核对空状态的验收语句…",
     });
@@ -106,6 +107,7 @@ describe("SubtaskTab", () => {
     expect(onOpenOutput).toHaveBeenLastCalledWith({
       sessionId: "child-a",
       runId: "run-active",
+      stepId: null,
       role: "qa",
       fallbackOutput: "running",
     });

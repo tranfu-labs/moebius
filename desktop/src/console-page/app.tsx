@@ -17,6 +17,7 @@ import {
   type OperatorProject,
   type OperatorProcessOutput,
   type OperatorProcessOutputState,
+  type OperatorProcessInvocationState,
   type OperatorProcessTimelineEvent,
   type OperatorRunSnapshot,
   type OperatorRunnerStatus,
@@ -26,6 +27,7 @@ import {
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
   type OperatorWorkspaceDiffSummary,
+  processInvocationKey,
 } from "@moebius/console-ui";
 import type {
   AgentTeamDuplicateBuiltInRequest,
@@ -94,12 +96,14 @@ import {
   ConsoleStateActions,
   ConsoleStateCoordinator,
   loadProcessOutput,
-  loadProcessOutputAppend,
+  loadProcessOutputUpdate,
+  loadProcessDebugInvocation,
+  mergeSettledProcessOutput,
   loadProjectFile,
   loadProjectFiles,
   loadSubSessionView,
   loadWorkspaceDiff,
-  ProcessOutputRequestError,
+  ProcessInvocationRequestCoordinator,
   processOutputLocator,
   refreshConsoleState,
   subSessionIdFromSourceKey,
@@ -479,6 +483,11 @@ export function OperatorConsoleApp({
   );
   const [processOutputs, setProcessOutputs] = useState<Record<string, OperatorProcessOutputState>>({});
   const processOutputsRef = useRef(processOutputs);
+  const [processInvocationStates, setProcessInvocationStates] = useState<
+    Record<string, OperatorProcessInvocationState>
+  >({});
+  const processInvocationStatesRef = useRef(processInvocationStates);
+  const processInvocationRequestsRef = useRef(new ProcessInvocationRequestCoordinator());
   const [subSessionViews, setSubSessionViews] = useState<Record<string, OperatorSubSessionViewState>>({});
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [subSessionSendingId, setSubSessionSendingId] = useState<string | null>(null);
@@ -1720,9 +1729,12 @@ export function OperatorConsoleApp({
   }, [forgetPersistedSelection, rememberConfirmedSelection]);
 
   useEffect(() => {
+    processInvocationRequestsRef.current.abortAll();
     setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(selection.sessionId));
     processOutputsRef.current = {};
     setProcessOutputs({});
+    processInvocationStatesRef.current = {};
+    setProcessInvocationStates({});
     setSubSessionViews({});
   }, [selection.sessionId]);
 
@@ -1739,6 +1751,57 @@ export function OperatorConsoleApp({
       return next;
     });
   }, []);
+
+  const commitProcessInvocationStates = useCallback((
+    update: (
+      current: Record<string, OperatorProcessInvocationState>,
+    ) => Record<string, OperatorProcessInvocationState>,
+  ) => {
+    setProcessInvocationStates((current) => {
+      const next = update(current);
+      processInvocationStatesRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const readProcessDebugInvocation = useCallback((sessionId: string, runId: string) => {
+    if (apiBase === null) {
+      return;
+    }
+    const key = processInvocationKey(sessionId, runId);
+    const current = processInvocationStatesRef.current[key];
+    if (current?.status === "loading" || current?.status === "ready") {
+      return;
+    }
+    const controller = processInvocationRequestsRef.current.begin(key);
+    commitProcessInvocationStates((states) => ({
+      ...states,
+      [key]: { status: "loading" },
+    }));
+    void loadProcessDebugInvocation({
+      apiBase,
+      sessionId,
+      runId,
+      fetch,
+      signal: controller.signal,
+    }).then((invocation) => {
+      if (!processInvocationRequestsRef.current.finish(key, controller)) {
+        return;
+      }
+      commitProcessInvocationStates((states) => ({
+        ...states,
+        [key]: { status: "ready", invocation },
+      }));
+    }).catch((error: unknown) => {
+      if (!processInvocationRequestsRef.current.finish(key, controller)) {
+        return;
+      }
+      commitProcessInvocationStates((states) => ({
+        ...states,
+        [key]: { status: "error", message: formatError(error) },
+      }));
+    });
+  }, [apiBase, commitProcessInvocationStates]);
 
   useEffect(() => {
     if (apiBase === null || activeProcessSourceKey === null) {
@@ -1771,44 +1834,42 @@ export function OperatorConsoleApp({
           && current.output.status !== "unavailable"
           && current.output.appendCursor !== null
         ) {
-          try {
-            const append = await loadProcessOutputAppend({
-              apiBase,
-              sessionId: processSessionId,
-              runId,
-              appendCursor: current.output.appendCursor,
-              fetch,
-              signal: controller.signal,
+          const update = await loadProcessOutputUpdate({
+            apiBase,
+            sessionId: processSessionId,
+            runId,
+            appendCursor: current.output.appendCursor,
+            currentStatus: current.output.status,
+            fetch,
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted) {
+            commitProcessOutputs((latest) => {
+              const ready = latest[activeProcessSourceKey];
+              if (ready?.status !== "ready") {
+                return latest;
+              }
+              const output = update.kind === "append"
+                ? {
+                    ...ready.output,
+                    events: mergeProcessEvents(ready.output.events, update.append.events),
+                    appendCursor: update.append.appendCursor,
+                    atLatest: update.append.atLatest,
+                    status: update.append.status,
+                  }
+                : update.reason === "settled"
+                  ? mergeSettledProcessOutput(ready.output, update.output)
+                  : mergeRefreshedProcessOutput(ready.output, update.output);
+              return {
+                ...latest,
+                [activeProcessSourceKey]: {
+                  ...ready,
+                  output,
+                },
+              };
             });
-            if (!controller.signal.aborted) {
-              commitProcessOutputs((latest) => {
-                const ready = latest[activeProcessSourceKey];
-                return ready?.status !== "ready"
-                  ? latest
-                  : {
-                      ...latest,
-                      [activeProcessSourceKey]: {
-                        ...ready,
-                        output: {
-                          ...ready.output,
-                          events: mergeProcessEvents(ready.output.events, append.events),
-                          appendCursor: append.appendCursor,
-                          atLatest: append.atLatest,
-                          status: append.status,
-                        },
-                      },
-                    };
-              });
-            }
-            return;
-          } catch (error) {
-            if (
-              !(error instanceof ProcessOutputRequestError)
-              || error.code !== "PROCESS_CURSOR_INVALID"
-            ) {
-              throw error;
-            }
           }
+          return;
         }
         const output = await loadProcessOutput({
           apiBase,
@@ -2740,6 +2801,8 @@ export function OperatorConsoleApp({
       rightSidebarWidth={rightSidebarWidth}
       rightSidebarTabs={rightSidebarTabs}
       processOutputs={processOutputs}
+      processInvocationStates={processInvocationStates}
+      onLoadProcessInvocation={readProcessDebugInvocation}
       onRightSidebarOpenChange={setRightSidebarOpen}
       onRightSidebarWidthChange={changeRightSidebarWidth}
       onRightSidebarTabsChange={changeRightSidebarTabs}

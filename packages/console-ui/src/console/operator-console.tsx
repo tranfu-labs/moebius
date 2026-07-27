@@ -59,6 +59,7 @@ import {
   nextProcessTabTitle,
   type OperatorProcessOutputState,
 } from "@/console/process-tab";
+import type { OperatorProcessInvocationState } from "@/console/process-event";
 import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
@@ -92,6 +93,7 @@ import {
 } from "@/console/right-sidebar";
 import {
   createRunOutputSourceKey,
+  dedupeRunOutputTabsByStableStep,
   EMPTY_RIGHT_SIDEBAR_TABS,
   ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
@@ -251,6 +253,7 @@ export type OperatorEvidenceOpenIntent =
       kind: "run-output";
       sessionId: string;
       runId: string;
+      stepId: string | null;
       role: string | null;
       fallbackOutput: string | null;
     };
@@ -443,6 +446,8 @@ export interface OperatorConsoleProps {
   rightSidebarWidth?: number;
   rightSidebarTabs?: RightSidebarTabsState;
   processOutputs?: Readonly<Record<string, OperatorProcessOutputState>>;
+  processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
+  onLoadProcessInvocation?: (sessionId: string, runId: string) => void;
   onRightSidebarOpenChange?: (open: boolean) => void;
   onRightSidebarWidthChange?: (width: number) => void;
   onRightSidebarTabsChange?: (state: RightSidebarTabsState) => void;
@@ -568,6 +573,8 @@ export function OperatorConsole({
   rightSidebarWidth,
   rightSidebarTabs,
   processOutputs = {},
+  processInvocationStates = {},
+  onLoadProcessInvocation,
   onRightSidebarOpenChange,
   onRightSidebarWidthChange,
   onRightSidebarTabsChange,
@@ -844,10 +851,60 @@ export function OperatorConsole({
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
           type: "run-output",
           title: nextProcessTabTitle(effectiveRightSidebarTabs, intent.role, identities),
-          sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId),
+          sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId, intent.stepId),
         }));
     onOpenEvidence?.(intent);
   };
+
+  useEffect(() => {
+    let nextState = effectiveRightSidebarTabs;
+    for (const tab of effectiveRightSidebarTabs.tabs) {
+      if (tab.type !== "run-output") continue;
+      const locator = parseRunOutputSourceKey(tab.sourceKey);
+      if (locator === null) continue;
+      const subSessionState = subSessionViews[locator.sessionId];
+      const sessionMessages = locator.sessionId === selectedSessionId
+        ? messages
+        : subSessionState?.status === "ready"
+          ? subSessionState.view.messages
+          : [];
+      const matchingMessage = sessionMessages.find((message) => message.runId === locator.runId);
+      const stepId = locator.stepId ?? matchingMessage?.runTiming?.stepId ?? null;
+      const ready = tab.sourceKey === null ? undefined : processOutputs[tab.sourceKey];
+      const responseRole = ready?.status === "ready" ? ready.output.role : null;
+      const role = resolveMessageProcessRole(matchingMessage ?? null, sessionMessages) ?? responseRole;
+      const identities = subSessionState?.status === "ready"
+        ? subSessionState.view.memberIdentities ?? []
+        : memberIdentities;
+      const sourceKey = stepId === null
+        ? tab.sourceKey
+        : createRunOutputSourceKey(locator.sessionId, locator.runId, stepId);
+      const shouldCorrectTitle = isUnknownProcessTabTitle(tab.title) && role !== null;
+      if (sourceKey === tab.sourceKey && !shouldCorrectTitle) continue;
+      const title = shouldCorrectTitle
+        ? nextProcessTabTitle({
+            tabs: nextState.tabs.filter((candidate) => candidate.id !== tab.id),
+          }, role, identities)
+        : tab.title;
+      nextState = {
+        ...nextState,
+        tabs: nextState.tabs.map((candidate) => candidate.id === tab.id
+          ? { ...candidate, sourceKey, title }
+          : candidate),
+      };
+    }
+    nextState = dedupeRunOutputTabsByStableStep(nextState);
+    if (nextState !== effectiveRightSidebarTabs) {
+      updateRightSidebarTabs(nextState);
+    }
+  }, [
+    effectiveRightSidebarTabs,
+    memberIdentities,
+    messages,
+    processOutputs,
+    selectedSessionId,
+    subSessionViews,
+  ]);
 
   const setSidebarOpen = (open: boolean) => {
     if (sidebarOpen === undefined) {
@@ -1378,6 +1435,7 @@ export function OperatorConsole({
                         >
                           <TimelineEntry
                             message={message}
+                            processRole={resolveMessageProcessRole(message, messages)}
                             memberIdentities={memberIdentities}
                             childSessions={childSessions}
                             openedSubSessionId={openedSubSessionId}
@@ -1413,6 +1471,7 @@ export function OperatorConsole({
                                   kind: "run-output",
                                   sessionId: run.sessionId,
                                   runId: run.runId,
+                                  stepId: run.stepId ?? null,
                                   role: run.role,
                                   fallbackOutput,
                                 })
@@ -1613,22 +1672,14 @@ export function OperatorConsole({
             );
           },
           "run-output": (tab) => {
-            const locator = parseRunOutputSourceKey(tab.sourceKey, selectedSessionId);
-            const subSessionState = locator === null
-              ? undefined
-              : subSessionViews[locator.sessionId];
-            const processMemberIdentities = locator === null || locator.sessionId === selectedSessionId
-              ? memberIdentities
-              : subSessionState?.status === "ready"
-                ? subSessionState.view.memberIdentities ?? []
-                : [];
             return (
               <ProcessTab
                 title={tab.title}
                 state={tab.sourceKey === null
                   ? { status: "idle" }
                   : processOutputs[tab.sourceKey] ?? { status: "idle" }}
-                memberIdentities={processMemberIdentities}
+                invocationStates={processInvocationStates}
+                onLoadInvocation={onLoadProcessInvocation}
                 scrollSnapshot={tab.processScroll}
                 onScrollSnapshotChange={(snapshot) => {
                   updateRightSidebarTabs(updateRightSidebarProcessScroll(
@@ -1640,7 +1691,6 @@ export function OperatorConsole({
                 onLoadPrevious={tab.sourceKey === null || onLoadProcessOutputPrevious === undefined
                   ? undefined
                   : (cursor) => onLoadProcessOutputPrevious(tab.sourceKey!, cursor)}
-                onOpenExternalLink={onOpenExternalLink}
               />
             );
           },
@@ -2121,8 +2171,28 @@ function roleCompletionsForTeam(team: OperatorAgentTeam | undefined): RoleComple
     })) ?? [];
 }
 
+function resolveMessageProcessRole(
+  message: OperatorMessage | null,
+  messages: readonly OperatorMessage[],
+): string | null {
+  if (message?.role !== null && message?.role !== undefined) {
+    return message.role;
+  }
+  const stepId = message?.runTiming?.stepId;
+  if (stepId === undefined) {
+    return null;
+  }
+  return messages.find((candidate) =>
+    candidate.role !== null && candidate.runTiming?.stepId === stepId)?.role ?? null;
+}
+
+function isUnknownProcessTabTitle(title: string): boolean {
+  return /^成员未知(?: [2-9]\d*)?$/u.test(title);
+}
+
 function TimelineEntry({
   message,
+  processRole,
   memberIdentities,
   childSessions = [],
   openedSubSessionId = null,
@@ -2134,6 +2204,7 @@ function TimelineEntry({
   onOpenEvidence,
 }: {
   message: OperatorMessage;
+  processRole: string | null;
   memberIdentities: readonly OperatorMemberIdentity[];
   childSessions?: readonly OperatorChildSessionSummary[];
   openedSubSessionId?: string | null;
@@ -2158,34 +2229,41 @@ function TimelineEntry({
   const outcome = terminalOutcome(message);
   if (outcome) {
     return (
-      <RunOutcome
-        status={outcome}
-        role={message.role}
-        memberIdentities={memberIdentities}
-        rawReason={message.error ?? message.body}
-        rawOutput={message.error ?? message.body}
-        elapsedMs={message.runTiming?.elapsedMs}
-        completedAt={message.runTiming?.completedAt}
-        onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
-          ? () => onRetryRun?.(message.sessionId, message.runId!)
-          : undefined}
-        onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
-          ? () => onEditAndResend({
-              stoppedMessageId: message.id,
-              sessionId: message.sessionId,
-              runId: message.runId,
-            })
-          : undefined}
-        onOpenDiagnostics={onOpenDiagnostics}
-        onOpenOutput={message.runId === null || message.runTiming?.processOutputAvailable === false ? undefined : (fallbackOutput) => onOpenEvidence?.({
-          kind: "run-output",
-          sessionId: message.sessionId,
-          runId: message.runId!,
-          role: message.role,
-          fallbackOutput,
-        })}
-        className="my-4"
-      />
+      <div className="my-4">
+        <RunOutcome
+          status={outcome}
+          role={processRole}
+          memberIdentities={memberIdentities}
+          rawReason={message.error ?? message.body}
+          rawOutput={message.error ?? message.body}
+          elapsedMs={message.runTiming?.elapsedMs}
+          completedAt={message.runTiming?.completedAt}
+          onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
+            ? () => onRetryRun?.(message.sessionId, message.runId!)
+            : undefined}
+          onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
+            ? () => onEditAndResend({
+                stoppedMessageId: message.id,
+                sessionId: message.sessionId,
+                runId: message.runId,
+              })
+            : undefined}
+          onOpenDiagnostics={onOpenDiagnostics}
+          onOpenOutput={message.runId === null || message.runTiming?.processOutputAvailable === false ? undefined : (fallbackOutput) => onOpenEvidence?.({
+            kind: "run-output",
+            sessionId: message.sessionId,
+            runId: message.runId!,
+            stepId: message.runTiming?.stepId ?? null,
+            role: processRole,
+            fallbackOutput,
+          })}
+        />
+        {message.runTiming?.processOutputAvailable === false ? (
+          <p className="mt-2 pl-7 text-xs text-hint">
+            完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -2274,6 +2352,7 @@ function TimelineEntry({
             kind: "run-output",
             sessionId: message.sessionId,
             runId: message.runId!,
+            stepId: message.runTiming?.stepId ?? null,
             role: message.role,
             fallbackOutput: message.body,
           })}

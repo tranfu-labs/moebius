@@ -41,6 +41,7 @@ export interface SubtaskTabProps {
   onOpenOutput?(input: {
     sessionId: string;
     runId: string;
+    stepId: string | null;
     role: string | null;
     fallbackOutput: string | null;
   }): void;
@@ -113,6 +114,7 @@ export function SubtaskTab({
               <SubtaskTimelineEntry
                 key={message.id}
                 message={message}
+                processRole={resolveMessageProcessRole(message, view.messages)}
                 memberIdentities={memberIdentities}
                 onRetry={onRetry}
                 onOpenOutput={onOpenOutput}
@@ -137,6 +139,7 @@ export function SubtaskTab({
                     : (fallbackOutput) => onOpenOutput({
                         sessionId: activeRun.sessionId,
                         runId: activeRun.runId,
+                        stepId: activeRun.stepId ?? null,
                         role: activeRun.role,
                         fallbackOutput,
                       })}
@@ -182,12 +185,14 @@ export function SubtaskTab({
 
 function SubtaskTimelineEntry({
   message,
+  processRole,
   memberIdentities,
   onRetry,
   onOpenOutput,
   onOpenExternalLink,
 }: {
   message: OperatorMessage;
+  processRole: string | null;
   memberIdentities: NonNullable<OperatorSubSessionView["memberIdentities"]>;
   onRetry(runId: string): void;
   onOpenOutput?: SubtaskTabProps["onOpenOutput"];
@@ -198,7 +203,7 @@ function SubtaskTimelineEntry({
     return (
       <RunOutcome
         status={outcome}
-        role={message.role}
+        role={processRole}
         memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
@@ -214,7 +219,8 @@ function SubtaskTimelineEntry({
           : (fallbackOutput) => onOpenOutput({
               sessionId: message.sessionId,
               runId: message.runId!,
-              role: message.role,
+              stepId: message.runTiming?.stepId ?? null,
+              role: processRole,
               fallbackOutput,
             })}
         className="py-4"
@@ -294,6 +300,7 @@ function SubtaskTimelineEntry({
               onClick={() => onOpenOutput({
                 sessionId: message.sessionId,
                 runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
                 role: message.role,
                 fallbackOutput: message.body,
               })}
@@ -311,6 +318,21 @@ function SubtaskTimelineEntry({
       </div>
     </article>
   );
+}
+
+function resolveMessageProcessRole(
+  message: OperatorMessage,
+  messages: readonly OperatorMessage[],
+): string | null {
+  if (message.role !== null) {
+    return message.role;
+  }
+  const stepId = message.runTiming?.stepId;
+  if (stepId === undefined) {
+    return null;
+  }
+  return messages.find((candidate) =>
+    candidate.role !== null && candidate.runTiming?.stepId === stepId)?.role ?? null;
 }
 
 function SubtaskStateMessage({

@@ -59,6 +59,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **用户消息右泳道**：`operator-console.tsx` 的 `TimelineEntry` 与子任务标签的 `SubtaskTimelineEntry`——「你」的消息 who 行右对齐（时间戳 · 你 · 彩色头像），正文包在右侧 `rounded-[14px] border bg-card` 气泡内（max-w 85%）；Agent 与系统消息保持左正文列。
 - **主会话目录轨**：`src/console/conversation-relay-rail.tsx` + `conversation-relay-rail-model.ts`——只固定在当前根会话正文左侧；收起为共同左端对齐的身份色短横线，展开时面板向右打开、横线从左端收束、用户菱形与 Agent 圆点横向进入泳道，相邻行三次贝塞尔 Git graph 曲线逐段绘入。展开后的整条事件行是唯一节点命中区，预览 Popover 相对面板边缘保持固定间距并沿事件行纵向跟随；Agent 预览只显示可读成员名、时间与回复开头。目录滚轮 / 方向键只浏览，明确激活后才定位主时间线；连接不得跨省略区。不得使用居中膨胀或邻近项金字塔，reduced-motion 必须即时呈现等价静态信息。
 - **历史消息轻操作**：`operator-console.tsx` 的成功 Agent 历史消息——完整输出入口保持在正文下方原有左边界，使用 24px `FileText` 图标按钮；按钮绝对定位在消息间隙中，默认透明，整条消息 hover / focus-within 或按钮 focus-visible 时显示，不占常驻操作行、不移动到 who 行右侧，也不使用 `ghost` 文字按钮。
+- **本地调试披露组**：`src/console/process-tab.tsx` + `process-event.tsx`——每次 attempt 以状态、计时、模型元数据和原始 run/thread 标识开头，常驻本地敏感信息提示，再用三个独立的 `SYSTEM_PROMPT` / `DEVELOPER_PROMPT` / `USER_INPUT` disclosure 与逐事件原文 disclosure 展示调用链。披露面只组合 `bg-card` / `bg-sunken` / `border-line`，原文使用可选择的等宽 `<pre>`；长内容默认折叠，HTML / Markdown / 终端控制字符只以转义文本呈现。token usage 使用中性 `Cpu` 图标，reasoning 不进入该模式。
 - **Agent 运行活动与时间**：`src/console/run-block.tsx` + `src/console/run-time.tsx`——who 行右侧常驻语义明确的「已进行」时长，下一行只保留最新一条安全活动并截断对象；终态改为「耗时」，完成时刻通过 title、键盘焦点与可访问名称提供。活动记录不显示百分比、不轮播旧工具、不堆积工具日志；无稳定过程能力的执行引擎原位显示不可用说明，不渲染空入口。
 - **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px 510 + 14px 图标）在下。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。

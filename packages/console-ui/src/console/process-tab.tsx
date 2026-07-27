@@ -10,6 +10,7 @@ import {
 
 import {
   ProcessEvent,
+  type OperatorProcessInvocationState,
   type OperatorProcessTimelineEvent,
 } from "@/console/process-event";
 import {
@@ -24,13 +25,19 @@ import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
-
 export interface OperatorProcessAttemptMeta {
   runId: string;
   attempt: number;
   role: string;
+  engine: "codex";
+  model: string | null;
+  effort: string | null;
+  provider: string | null;
+  cliVersion: string | null;
+  metadataSource: "rollout" | "immutable-context" | "not-recorded";
+  threadId: string;
   startedAt: string;
-  status: "running" | "settled";
+  status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
   elapsedMs?: number | null;
   completedAt?: string | null;
 }
@@ -68,7 +75,8 @@ export type OperatorProcessOutputState =
 export interface ProcessTabProps {
   title: string;
   state: OperatorProcessOutputState;
-  memberIdentities?: readonly OperatorMemberIdentity[];
+  invocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
+  onLoadInvocation?: (sessionId: string, runId: string) => void;
   scrollSnapshot?: RightSidebarProcessScrollSnapshot;
   onScrollSnapshotChange?: (snapshot: RightSidebarProcessScrollSnapshot) => void;
   onLoadPrevious?: (cursor: string) => void;
@@ -79,11 +87,11 @@ export interface ProcessTabProps {
 export function ProcessTab({
   title,
   state,
-  memberIdentities = [],
+  invocationStates = {},
+  onLoadInvocation,
   scrollSnapshot,
   onScrollSnapshotChange,
   onLoadPrevious,
-  onOpenExternalLink,
   className,
 }: ProcessTabProps): JSX.Element {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -102,6 +110,10 @@ export function ProcessTab({
   );
   const output = state.status === "ready" ? state.output : null;
   const events = output?.events ?? [];
+  const attemptByRunId = useMemo(
+    () => new Map(output?.attempts.map((attempt) => [attempt.runId, attempt]) ?? []),
+    [output?.attempts],
+  );
   const eventKeys = useMemo(() => events.map((event) => event.key), [events]);
   const virtualizer = useVirtualizer({
     count: events.length,
@@ -114,12 +126,6 @@ export function ProcessTab({
     scrollMargin: listRef.current?.offsetTop ?? 0,
   });
   const virtualItems = virtualizer.getVirtualItems();
-  const memberName = resolveOperatorMemberName(
-    output?.role ?? null,
-    memberIdentities,
-    title.replace(/\s+\d+$/u, ""),
-  );
-
   useEffect(() => {
     snapshotRef.current = scrollSnapshot;
   }, [scrollSnapshot]);
@@ -263,7 +269,7 @@ export function ProcessTab({
       <header className="sticky top-0 z-10 -mx-5 flex items-start justify-between gap-3 border-b border-line bg-canvas px-5 py-4">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-ink" title={title}>
-            {title} · 这一步的完整输出
+            {title} · 这一步的调试调用链
           </h2>
           <p className="mt-1 text-xs text-sub">
             {scrollModel.mode === "reading"
@@ -303,6 +309,10 @@ export function ProcessTab({
               if (event === undefined) {
                 return null;
               }
+              const renderedEvent = processEventWithLatestAttempt(
+                event,
+                event.kind === "attempt-header" ? attemptByRunId.get(event.runId) : undefined,
+              );
               return (
                 <div
                   key={event.key}
@@ -314,10 +324,12 @@ export function ProcessTab({
                   }}
                 >
                   <ProcessEvent
-                    event={event}
-                    memberName={memberName}
-                    memberIdentities={memberIdentities}
-                    onOpenExternalLink={onOpenExternalLink}
+                    event={renderedEvent}
+                    sessionId={state.output.sessionId}
+                    invocationState={renderedEvent.kind === "attempt-header"
+                      ? invocationStates[processInvocationKey(state.output.sessionId, renderedEvent.runId)]
+                      : undefined}
+                    onLoadInvocation={onLoadInvocation}
                   />
                 </div>
               );
@@ -362,6 +374,19 @@ export function nextProcessTabTitle(
     nextOrdinal += 1;
   }
   return nextOrdinal === 1 ? memberName : `${memberName} ${String(nextOrdinal)}`;
+}
+
+export function processInvocationKey(sessionId: string, runId: string): string {
+  return `${encodeURIComponent(sessionId)}:${encodeURIComponent(runId)}`;
+}
+
+export function processEventWithLatestAttempt(
+  event: OperatorProcessTimelineEvent,
+  attempt: OperatorProcessAttemptMeta | undefined,
+): OperatorProcessTimelineEvent {
+  return event.kind === "attempt-header" && attempt !== undefined
+    ? { ...event, ...attempt }
+    : event;
 }
 
 export { resolveOperatorMemberName };

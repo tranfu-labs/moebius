@@ -105,7 +105,9 @@ import {
 } from "./codex-resume.js";
 import {
   loadLocalProcessAppendPage,
+  loadLocalProcessDebugInvocation,
   loadLocalProcessHistoryPage,
+  type LocalConsoleProcessDebugInvocation,
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
@@ -1171,6 +1173,17 @@ export class LocalConsoleRuntime {
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
       activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
       appendCursor,
+    });
+  }
+
+  async processDebugInvocation(
+    sessionId: string,
+    runId: string,
+  ): Promise<LocalConsoleProcessDebugInvocation> {
+    return await loadLocalProcessDebugInvocation({
+      sessionId,
+      runId,
+      sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
     });
   }
 

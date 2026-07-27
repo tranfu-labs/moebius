@@ -100,29 +100,28 @@ h2{font-size:15px;font-weight:500;margin:2.5rem 0 2px}
 </div>
 
 <h2>3 · 过程标签</h2>
-<p class="note">首次打开位于底部；上滚加载更早过程，离底后暂停跟随。公开输入还原为对话，Codex 事件转成可读过程，不显示原始 JSON。</p>
+<p class="note">首次打开位于底部；上滚加载更早过程，离底后暂停跟随。每次执行显示 rollout 的 prompt stack、模型元数据、原始调用与 token usage；reasoning 过滤。</p>
 <div class="win narrow">
   <div class="right">
     <div class="tabs"><div class="tab">改动 <span class="x">×</span></div><div class="tab on">开发 <span class="x">×</span></div><div class="tab">＋</div></div>
-    <div class="hd"><span>开发 · 这一步的完整输出</span><span>跟随最新</span></div>
+    <div class="hd"><span>开发 · 这一步的调试调用链</span><span>跟随最新</span></div>
     <div class="pad">
       <div class="sub" style="text-align:center">↑ 向上滚动加载更早过程</div>
-      <div style="border-top:.5px solid var(--line);margin-top:7px;padding-top:6px;color:var(--fg2)">第 1 次执行 · 本轮输入</div>
-      <div class="dim" style="margin-top:6px">你</div>
-      <div>请检查落地页空状态。</div>
-      <div class="dim" style="margin-top:6px">开发经理</div>
-      <div>先核对现有实现和验收口径。@dev</div>
-      <div style="border-top:.5px solid var(--line);margin-top:8px;padding-top:6px;color:var(--fg2)">本轮执行过程</div>
-      <div class="dim" style="margin-top:6px">开发</div>
-      <div>我先检查相关实现和测试。</div>
+      <div style="border-top:.5px solid var(--line);margin-top:7px;padding-top:6px;color:var(--fg2)">第 1 次执行 · completed · 02:18</div>
+      <div class="mono dim" style="margin-top:6px">model gpt-5 · effort high · provider openai<br>CLI 1.2.3 · run run_01 · thread thread_01<br>2026-07-26T14:30:02.114+08:00 → 2026-07-26T14:32:20.602+08:00</div>
+      <div style="margin-top:7px;background:var(--surface);border:.5px solid var(--line);border-radius:4px;padding:5px 7px">⚠ 本地原始调试信息，可能包含提示词、路径与内部标识</div>
+      <div class="mono" style="margin-top:7px">▸ SYSTEM_PROMPT</div>
+      <div class="mono" style="margin-top:5px">▸ DEVELOPER_PROMPT</div>
+      <div class="mono" style="margin-top:5px">▸ USER_INPUT</div>
+      <div style="border-top:.5px solid var(--line);margin-top:8px;padding-top:6px;color:var(--fg2)">调用与输出</div>
       <div class="mono" style="margin-top:7px;background:var(--surface);border-radius:4px;padding:5px 7px">
-        <div class="dim">⌘ 读取文件</div>
-        <div>sites/marketeam/index.html</div>
+        <div class="dim">2026-07-26T14:30:05.031+08:00 · response_item · function_call</div>
+        <div>call_id: call_01 · exec_command · started</div>
+        <div>▸ arguments（原文）</div>
       </div>
       <div class="mono" style="margin-top:6px;background:var(--surface);border-radius:4px;padding:5px 7px">
-        <div class="dim">⌘ 运行命令</div>
-        <div>pnpm test -- landing</div>
-        <div class="add">PASS tests/landing.test.ts</div>
+        <div class="dim">2026-07-26T14:30:06.408+08:00 · event_msg · token_count</div>
+        <div>▸ usage（input / cached input / output / total）</div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px"><span class="btn">↓ 3 条新内容 / 到最新</span></div>
     </div>
@@ -215,7 +214,7 @@ h2{font-size:15px;font-weight:500;margin:2.5rem 0 2px}
 <div class="win narrow">
   <div class="right">
     <div class="tabs"><div class="tab">改动 <span class="x">×</span></div><div class="tab on">开发 <span class="x">×</span></div><div class="tab">＋</div></div>
-    <div class="hd"><span>开发 · 这一步的完整输出</span></div>
+    <div class="hd"><span>开发 · 这一步的调试调用链</span></div>
     <div class="mid">
       <div>Codex 过程记录文件已不可用</div>
       <div class="sub" style="margin-top:4px">这一步的最终回复仍保留在主对话区。</div>

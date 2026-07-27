@@ -1048,6 +1048,7 @@ describe("OperatorConsole", () => {
       kind: "run-output",
       sessionId: "session-a",
       runId: "run-1",
+      stepId: null,
       role: "dev",
       fallbackOutput: "live tail from codex",
     });
@@ -1160,6 +1161,7 @@ describe("OperatorConsole", () => {
       kind: "run-output",
       sessionId: "session-a",
       runId: "run-finished",
+      stepId: null,
       role: "dev",
       fallbackOutput: "完成实现",
     });
@@ -1300,12 +1302,133 @@ describe("OperatorConsole", () => {
       kind: "run-output",
       sessionId: "session-a",
       runId: "run-finished",
+      stepId: null,
       role: "dev",
       fallbackOutput: "完成实现",
     });
   });
 
-  it("renders the friendly Codex timeline without raw JSON or fallback output", () => {
+  it("keeps interrupted and retried attempts in one correctly named process tab", () => {
+    const onOpenEvidence = vi.fn();
+    renderConsole({
+      onOpenEvidence,
+      messages: [
+        message({
+          id: 2,
+          speaker: "system",
+          role: null,
+          runId: "run-retry-1",
+          status: "interrupted",
+          systemEventKind: "user-stopped",
+          body: "你让这一步停下了",
+          runTiming: {
+            stepId: "message:1",
+            attempt: 1,
+            createdAt: "2026-07-09T00:00:00.000Z",
+            startedAt: "2026-07-09T00:00:00.000Z",
+            elapsedMs: 1_000,
+            completedAt: "2026-07-09T00:00:01.000Z",
+            status: "interrupted",
+            engine: "codex",
+            processOutputAvailable: true,
+          },
+        }),
+        message({
+          id: 3,
+          speaker: "agent",
+          role: "dev",
+          runId: "run-retry-2",
+          body: "第二次执行完成",
+          runTiming: {
+            stepId: "message:1",
+            attempt: 2,
+            createdAt: "2026-07-09T00:01:00.000Z",
+            startedAt: "2026-07-09T00:01:00.000Z",
+            elapsedMs: 2_000,
+            completedAt: "2026-07-09T00:01:02.000Z",
+            status: "completed",
+            engine: "codex",
+            processOutputAvailable: true,
+          },
+        }),
+      ],
+    });
+
+    const outputButtons = screen.getAllByRole("button", { name: "完整输出" });
+    fireEvent.click(outputButtons[0]!);
+    fireEvent.click(outputButtons[1]!);
+
+    const panel = screen.getByTestId("right-sidebar");
+    expect(within(panel).getAllByRole("tab", { name: "开发" })).toHaveLength(1);
+    expect(within(panel).queryByRole("tab", { name: "成员未知" })).not.toBeInTheDocument();
+    expect(onOpenEvidence).toHaveBeenNthCalledWith(1, {
+      kind: "run-output",
+      sessionId: "session-a",
+      runId: "run-retry-1",
+      stepId: "message:1",
+      role: "dev",
+      fallbackOutput: "你让这一步停下了",
+    });
+    expect(onOpenEvidence).toHaveBeenNthCalledWith(2, {
+      kind: "run-output",
+      sessionId: "session-a",
+      runId: "run-retry-2",
+      stepId: "message:1",
+      role: "dev",
+      fallbackOutput: "第二次执行完成",
+    });
+  });
+
+  it("repairs an unknown terminal process title from the aggregate response role", async () => {
+    const sourceKey = "run-output-v3:session-a:message%3A1:run-stop";
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "system",
+        role: null,
+        runId: "run-stop",
+        status: "interrupted",
+        systemEventKind: "user-stopped",
+        body: "你让这一步停下了",
+        runTiming: {
+          stepId: "message:1",
+          attempt: 1,
+          createdAt: "2026-07-09T00:00:00.000Z",
+          startedAt: "2026-07-09T00:00:00.000Z",
+          elapsedMs: 1_000,
+          completedAt: "2026-07-09T00:00:01.000Z",
+          status: "interrupted",
+          engine: "codex",
+          processOutputAvailable: true,
+        },
+      })],
+      processOutputs: {
+        [sourceKey]: {
+          status: "ready",
+          output: {
+            sessionId: "session-a",
+            requestedRunId: "run-stop",
+            role: "dev",
+            status: "settled",
+            unavailableReason: null,
+            attempts: [],
+            events: [],
+            previousCursor: null,
+            appendCursor: null,
+            atLatest: true,
+          },
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("right-sidebar")).getByRole("tab", { name: "开发" })).toBeVisible();
+    });
+  });
+
+  it("renders the Codex debug chain without fallback output", () => {
     renderConsole({
       messages: [message({
         id: 2,
@@ -1328,15 +1451,29 @@ describe("OperatorConsole", () => {
                 runId: "run-retry-1",
                 attempt: 1,
                 role: "dev",
+                engine: "codex",
+                model: "gpt-5",
+                effort: "high",
+                provider: null,
+                cliVersion: null,
+                metadataSource: "immutable-context",
+                threadId: "thread-1",
                 startedAt: "2026-07-09T00:00:00.000Z",
-                status: "settled",
+                status: "failed",
               },
               {
                 runId: "run-retry-2",
                 attempt: 2,
                 role: "dev",
+                engine: "codex",
+                model: "gpt-5",
+                effort: "high",
+                provider: null,
+                cliVersion: null,
+                metadataSource: "immutable-context",
+                threadId: "thread-2",
                 startedAt: "2026-07-09T00:01:00.000Z",
-                status: "settled",
+                status: "completed",
               },
             ],
             events: [
@@ -1345,18 +1482,16 @@ describe("OperatorConsole", () => {
                 kind: "attempt-header",
                 runId: "run-retry-1",
                 attempt: 1,
+                role: "dev",
+                engine: "codex",
+                model: "gpt-5",
+                effort: "high",
+                provider: null,
+                cliVersion: null,
+                metadataSource: "immutable-context",
+                threadId: "thread-1",
                 startedAt: "2026-07-09T00:00:00.000Z",
-                status: "settled",
-              },
-              {
-                key: "public-1",
-                kind: "public-message",
-                messageId: 1,
-                speaker: "user",
-                role: null,
-                markdown: "请检查实现",
-                attachments: [],
-                timestamp: "2026-07-09T00:00:00.000Z",
+                status: "failed",
               },
               {
                 key: "execution-1",
@@ -1368,6 +1503,8 @@ describe("OperatorConsole", () => {
                 key: "error-1",
                 kind: "error",
                 timestamp: "2026-07-09T00:00:01.000Z",
+                protocolType: "event_msg · stream_failure",
+                rawPayload: "{\"message\":\"第一次失败\"}",
                 message: "第一次失败",
                 detail: "命令退出码为 1",
               },
@@ -1376,8 +1513,16 @@ describe("OperatorConsole", () => {
                 kind: "attempt-header",
                 runId: "run-retry-2",
                 attempt: 2,
+                role: "dev",
+                engine: "codex",
+                model: "gpt-5",
+                effort: "high",
+                provider: null,
+                cliVersion: null,
+                metadataSource: "immutable-context",
+                threadId: "thread-2",
                 startedAt: "2026-07-09T00:01:00.000Z",
-                status: "settled",
+                status: "completed",
               },
               {
                 key: "execution-2",
@@ -1387,9 +1532,11 @@ describe("OperatorConsole", () => {
               },
               {
                 key: "agent-2",
-                kind: "agent-markdown",
+                kind: "agent-output",
                 timestamp: "2026-07-09T00:01:01.000Z",
-                markdown: "第二次执行完成",
+                protocolType: "response_item · message",
+                rawPayload: "{}",
+                output: "第二次执行完成",
               },
             ],
             previousCursor: null,
@@ -1403,7 +1550,7 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
 
     const content = screen.getByTestId("right-sidebar-content");
-    expect(within(content).getByText("开发 · 这一步的完整输出")).toBeVisible();
+    expect(within(content).getByText("开发 · 这一步的调试调用链")).toBeVisible();
     expect(content).not.toHaveTextContent("stdout");
     expect(content).not.toHaveTextContent("fallback");
     expect(within(content).queryByRole("textbox")).not.toBeInTheDocument();
@@ -1527,6 +1674,37 @@ describe("OperatorConsole", () => {
     fireEvent.click(retryButtons[1]!);
     expect(onRetryRun).toHaveBeenNthCalledWith(1, "session-a", "run-fail");
     expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-stuck");
+  });
+
+  it("explains Kimi process-output unavailability on a terminal outcome without an empty outlet", () => {
+    renderConsole({
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          runId: "run-kimi-fail",
+          status: "failed",
+          systemEventKind: "run-not-started",
+          body: "这一步没跑起来",
+          error: "Kimi ACP 已关闭。",
+          runTiming: {
+            stepId: "step-kimi-fail",
+            attempt: 1,
+            createdAt: "2026-07-26T16:07:39.136Z",
+            startedAt: "2026-07-26T16:07:39.137Z",
+            completedAt: "2026-07-26T16:07:39.138Z",
+            elapsedMs: 1,
+            status: "failed",
+            engine: "kimi",
+            processOutputAvailable: false,
+          },
+        }),
+      ],
+    });
+
+    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
   });
 
   it("keeps derived sessions out of the sidebar and opens them from a timeline card", () => {
@@ -2268,6 +2446,7 @@ function message(input: Partial<OperatorMessage> & { id: number; body: string })
     status: input.status ?? "completed",
     runId: input.runId ?? null,
     runDir: input.runDir ?? null,
+    runTiming: input.runTiming,
     error: input.error ?? null,
     systemEventKind: input.systemEventKind ?? "other",
     createdAt: input.createdAt ?? "2026-07-09T00:00:00.000Z",

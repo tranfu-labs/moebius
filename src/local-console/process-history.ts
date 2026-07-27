@@ -1,41 +1,59 @@
 import {
   readCodexThreadLinks,
-  restorePublicInput,
   type LocalCodexThreadLinkFact,
-  type LocalProcessPublicMessage,
 } from "./codex-thread-link.js";
 import {
   CodexRolloutCursorInvalidError,
   readCodexRolloutAppend,
+  readCodexRolloutInvocation,
   readCodexRolloutPage,
   resolveCodexRollout,
+  type CodexRolloutPromptLayer,
   type CodexRolloutIdentity,
   type CodexRolloutUnavailableReason,
   type ResolveCodexRolloutOptions,
 } from "./codex-rollout.js";
+import {
+  readRunExecutionContexts,
+  type LocalRunExecutionContextFact,
+} from "./execution-context.js";
 import type { LocalConsoleProcessEvent } from "./process-event-projector.js";
-import type { LocalConsoleMessage } from "./types.js";
+import type { LocalConsoleMessage, LocalConsoleRunTiming } from "./types.js";
 
 export interface LocalConsoleProcessAttemptMeta {
   runId: string;
   attempt: number;
   role: string;
+  engine: "codex";
+  model: string | null;
+  effort: string | null;
+  provider: string | null;
+  cliVersion: string | null;
+  metadataSource: "rollout" | "immutable-context" | "not-recorded";
+  threadId: string;
   startedAt: string;
-  status: "running" | "settled";
+  status: LocalConsoleRunTiming["status"];
   elapsedMs: number | null;
   completedAt: string | null;
 }
 
 export type LocalConsoleProcessTimelineEvent =
-  | LocalProcessPublicMessage
   | LocalConsoleProcessEvent
   | {
       key: string;
       kind: "attempt-header";
       runId: string;
       attempt: number;
+      role: string;
+      engine: "codex";
+      model: string | null;
+      effort: string | null;
+      provider: string | null;
+      cliVersion: string | null;
+      metadataSource: "rollout" | "immutable-context" | "not-recorded";
+      threadId: string;
       startedAt: string;
-      status: "running" | "settled";
+      status: LocalConsoleRunTiming["status"];
       elapsedMs: number | null;
       completedAt: string | null;
     }
@@ -72,6 +90,33 @@ export interface LocalConsoleProcessAppendPage {
   status: "running" | "settled";
 }
 
+export type LocalConsoleProcessDebugInvocation =
+  | {
+      status: "available";
+      sessionId: string;
+      runId: string;
+      prompts: {
+        system: CodexRolloutPromptLayer;
+        developer: CodexRolloutPromptLayer;
+        user: CodexRolloutPromptLayer;
+      };
+      metadata: {
+        model: string | null;
+        effort: string | null;
+        provider: string | null;
+        cliVersion: string | null;
+        cwd: string | null;
+        threadId: string;
+        metadataSource: "rollout" | "immutable-context" | "not-recorded";
+      };
+    }
+  | {
+      status: "unavailable" | "malformed";
+      sessionId: string;
+      runId: string;
+      reason: string;
+    };
+
 export interface LoadLocalProcessHistoryOptions {
   sessionId: string;
   requestedRunId: string;
@@ -98,7 +143,6 @@ export interface LoadLocalProcessAppendOptions {
 interface ResolvedAttempt {
   link: LocalCodexThreadLinkFact;
   meta: LocalConsoleProcessAttemptMeta;
-  publicInput: LocalProcessPublicMessage[];
   resolution: Awaited<ReturnType<typeof resolveCodexRollout>>;
 }
 
@@ -145,6 +189,74 @@ interface CursorIdentity {
 
 const DEFAULT_PAGE_BYTES = 256 * 1024;
 const DEFAULT_PAGE_EVENTS = 80;
+
+export async function loadLocalProcessDebugInvocation(options: {
+  sessionId: string;
+  runId: string;
+  sessionFactLogPath: string;
+  rollout?: ResolveCodexRolloutOptions;
+}): Promise<LocalConsoleProcessDebugInvocation> {
+  let links: LocalCodexThreadLinkFact[];
+  let contexts: LocalRunExecutionContextFact[];
+  try {
+    [links, contexts] = await Promise.all([
+      readCodexThreadLinks(options.sessionFactLogPath, options.sessionId),
+      readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
+    ]);
+  } catch {
+    return unavailableInvocation(options, "link-invalid");
+  }
+  const link = links.find((candidate) => candidate.runId === options.runId);
+  if (link === undefined) {
+    return unavailableInvocation(options, "link-missing");
+  }
+  const resolution = await resolveCodexRollout(link.threadId, options.rollout);
+  if (resolution.status !== "available") {
+    return unavailableInvocation(options, resolution.reason);
+  }
+  let invocation;
+  try {
+    invocation = await readCodexRolloutInvocation({ resolution });
+  } catch (error) {
+    if (error instanceof CodexRolloutCursorInvalidError) {
+      return unavailableInvocation(options, "cursor-invalid");
+    }
+    throw error;
+  }
+  if (invocation.status === "malformed") {
+    return {
+      status: "malformed",
+      sessionId: options.sessionId,
+      runId: options.runId,
+      reason: invocation.reason,
+    };
+  }
+  const context = contexts.find((candidate) => candidate.runId === options.runId);
+  const fallbackModel = context?.profile?.model ?? null;
+  const fallbackEffort = context?.profile?.effort ?? null;
+  const usedRolloutMetadata = Object.values(invocation.metadata).some((value) => value !== null);
+  const usedContextMetadata = !usedRolloutMetadata
+    && (fallbackModel !== null || fallbackEffort !== null || context?.workspace.cwd !== undefined);
+  return {
+    status: "available",
+    sessionId: options.sessionId,
+    runId: options.runId,
+    prompts: invocation.prompts,
+    metadata: {
+      model: invocation.metadata.model ?? fallbackModel,
+      effort: invocation.metadata.effort ?? fallbackEffort,
+      provider: invocation.metadata.provider,
+      cliVersion: invocation.metadata.cliVersion,
+      cwd: invocation.metadata.cwd ?? context?.workspace.cwd ?? null,
+      threadId: link.threadId,
+      metadataSource: usedRolloutMetadata
+        ? "rollout"
+        : usedContextMetadata
+          ? "immutable-context"
+          : "not-recorded",
+    },
+  };
+}
 
 export async function loadLocalProcessHistoryPage(
   options: LoadLocalProcessHistoryOptions,
@@ -346,8 +458,12 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
   | { unavailableReason: LocalConsoleProcessUnavailableReason }
 > {
   let links: LocalCodexThreadLinkFact[];
+  let contexts: LocalRunExecutionContextFact[];
   try {
-    links = await readCodexThreadLinks(options.sessionFactLogPath, options.sessionId);
+    [links, contexts] = await Promise.all([
+      readCodexThreadLinks(options.sessionFactLogPath, options.sessionId),
+      readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
+    ]);
   } catch {
     return { unavailableReason: "link-invalid" };
   }
@@ -358,12 +474,25 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
   const grouped = groupLinks(links, anchor.sourceMessageId);
   const meta = grouped.map((link, index) => {
     const timing = options.messages.find((message) => message.runId === link.runId)?.runTiming;
+    const context = contexts.find((candidate) => candidate.runId === link.runId);
+    const model = context?.profile?.model ?? null;
+    const effort = context?.profile?.effort ?? null;
     return {
       runId: link.runId,
       attempt: timing?.attempt ?? index + 1,
       role: link.role,
+      engine: "codex" as const,
+      model,
+      effort,
+      provider: null,
+      cliVersion: null,
+      metadataSource: model !== null || effort !== null
+        ? "immutable-context" as const
+        : "not-recorded" as const,
+      threadId: link.threadId,
       startedAt: timing?.startedAt ?? link.startedAt,
-      status: options.activeRunIds.has(link.runId) ? "running" as const : "settled" as const,
+      status: timing?.status
+        ?? (options.activeRunIds.has(link.runId) ? "running" as const : "completed" as const),
       elapsedMs: timing?.elapsedMs ?? null,
       completedAt: timing?.completedAt ?? null,
     };
@@ -371,13 +500,7 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
   const attempts: ResolvedAttempt[] = [];
   for (const [index, link] of grouped.entries()) {
     const resolution = await resolveCodexRollout(link.threadId, options.rollout);
-    let publicInput: LocalProcessPublicMessage[];
-    try {
-      publicInput = restorePublicInput(options.messages, link.sourceMessageId, link.runId);
-    } catch {
-      return { unavailableReason: "source-message-missing" };
-    }
-    attempts.push({ link, meta: meta[index]!, publicInput, resolution });
+    attempts.push({ link, meta: meta[index]!, resolution });
   }
   return { attempts, meta, anchor, sourceMessageId: anchor.sourceMessageId };
 }
@@ -395,18 +518,27 @@ function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent
       kind: "attempt-header",
       runId: attempt.link.runId,
       attempt: attempt.meta.attempt,
+      role: attempt.meta.role,
+      engine: attempt.meta.engine,
+      model: attempt.meta.model,
+      effort: attempt.meta.effort,
+      provider: attempt.meta.provider,
+      cliVersion: attempt.meta.cliVersion,
+      metadataSource: attempt.meta.metadataSource,
+      threadId: attempt.meta.threadId,
       startedAt: attempt.meta.startedAt,
       status: attempt.meta.status,
       elapsedMs: attempt.meta.elapsedMs,
       completedAt: attempt.meta.completedAt,
     },
-    ...attempt.publicInput,
     ...(attempt.resolution.status === "available"
       ? []
       : [{
           key: `${attempt.link.runId}:unavailable`,
           kind: "error" as const,
           timestamp: attempt.meta.completedAt,
+          protocolType: "moebius · rollout_unavailable",
+          rawPayload: "",
           message: "这次执行的过程记录不可用",
           detail: null,
         }]),
@@ -417,6 +549,18 @@ function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent
       attempt: attempt.meta.attempt,
     },
   ];
+}
+
+function unavailableInvocation(
+  options: { sessionId: string; runId: string },
+  reason: string,
+): LocalConsoleProcessDebugInvocation {
+  return {
+    status: "unavailable",
+    sessionId: options.sessionId,
+    runId: options.runId,
+    reason,
+  };
 }
 
 function unavailablePage(

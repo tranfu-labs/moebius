@@ -9,6 +9,7 @@ import {
 import {
   CodexRolloutCursorInvalidError,
   readCodexRolloutAppend,
+  readCodexRolloutInvocation,
   readCodexRolloutPage,
   resolveCodexRollout,
   resolveCodexSessionsRoot,
@@ -118,7 +119,7 @@ describe("Codex rollout paging", () => {
         maxEvents: 1,
       });
       expect(latest.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "最后一段" }),
+        expect.objectContaining({ kind: "agent-output", output: "最后一段" }),
       ]);
       expect(latest.completeEndOffset).toBeLessThan(resolution.identity.size);
       expect(latest.previousOffset).not.toBeNull();
@@ -139,9 +140,9 @@ describe("Codex rollout paging", () => {
         previousOffset = page.previousOffset;
       }
       expect(collected).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "第一段" }),
+        expect.objectContaining({ kind: "agent-output", output: "第一段" }),
         expect.objectContaining({ kind: "tool" }),
-        expect.objectContaining({ kind: "agent-markdown", markdown: "最后一段" }),
+        expect.objectContaining({ kind: "agent-output", output: "最后一段" }),
       ]);
     } finally {
       await fixture.cleanup();
@@ -168,8 +169,76 @@ describe("Codex rollout paging", () => {
       });
       expect(page.rawBytes).toBeGreaterThan(64);
       expect(page.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown }),
+        expect.objectContaining({ kind: "agent-output", output: markdown }),
       ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("reads the exact prompt layers and actual rollout metadata without truncating a large prompt", async () => {
+    const systemPrompt = `SYSTEM-${"x".repeat(300_000)}-END`;
+    const fixture = await createRolloutFixture([
+      {
+        timestamp: "2026-07-23T01:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          base_instructions: { text: systemPrompt },
+          model_provider: "openai",
+          cli_version: "1.2.3",
+        },
+      },
+      {
+        timestamp: "2026-07-23T01:00:00.100Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: "DEVELOPER-EXACT" }],
+        },
+      },
+      {
+        timestamp: "2026-07-23T01:00:00.200Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "USER-UNIQUE-MARKER" }],
+        },
+      },
+      {
+        timestamp: "2026-07-23T01:00:00.300Z",
+        type: "turn_context",
+        payload: {
+          model: "gpt-5-debug",
+          reasoning_effort: "high",
+          cwd: "/Users/person/project",
+        },
+      },
+    ]);
+    try {
+      const resolution = await resolveCodexRollout(fixture.threadId, {
+        sessionsRoot: fixture.sessionsRoot,
+      });
+      if (resolution.status !== "available") {
+        throw new Error("fixture rollout unavailable");
+      }
+      const invocation = await readCodexRolloutInvocation({ resolution });
+      expect(invocation).toMatchObject({
+        status: "available",
+        prompts: {
+          system: { status: "recorded", contents: [systemPrompt] },
+          developer: { status: "recorded", contents: ["DEVELOPER-EXACT"] },
+          user: { status: "recorded", contents: ["USER-UNIQUE-MARKER"] },
+        },
+        metadata: {
+          model: "gpt-5-debug",
+          effort: "high",
+          provider: "openai",
+          cliVersion: "1.2.3",
+          cwd: "/Users/person/project",
+        },
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -199,7 +268,7 @@ describe("Codex rollout paging", () => {
         minimumSize: initial.identity.size,
       });
       expect(appended.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "新增" }),
+        expect.objectContaining({ kind: "agent-output", output: "新增" }),
       ]);
       expect(appended.completeEndOffset).toBeLessThan(appended.identity.size);
 
@@ -426,8 +495,8 @@ describe("local process history aggregation", () => {
       expect(page.attempts).toHaveLength(2);
       expect(page.atLatest).toBe(true);
       expect(page.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "第二次开始" }),
-        expect.objectContaining({ kind: "agent-markdown", markdown: "第二次完成" }),
+        expect.objectContaining({ kind: "agent-output", output: "第二次开始" }),
+        expect.objectContaining({ kind: "agent-output", output: "第二次完成" }),
       ]);
 
       const allEvents = [...page.events];
@@ -450,12 +519,8 @@ describe("local process history aggregation", () => {
         expect.objectContaining({ attempt: 1, runId: "run-1" }),
         expect.objectContaining({ attempt: 2, runId: "run-2" }),
       ]);
-      expect(allEvents.filter((event) => event.kind === "public-message")).toEqual([
-        expect.objectContaining({ messageId: 1, markdown: "检查测试" }),
-        expect.objectContaining({ messageId: 2, markdown: "交给 @dev" }),
-        expect.objectContaining({ messageId: 1, markdown: "检查测试" }),
-        expect.objectContaining({ messageId: 2, markdown: "交给 @dev" }),
-      ]);
+      expect(JSON.stringify(allEvents)).not.toContain("检查测试");
+      expect(JSON.stringify(allEvents)).not.toContain("交给 @dev");
       expect(JSON.stringify(allEvents)).not.toContain("运行后才出现");
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -525,7 +590,7 @@ describe("local process history aggregation", () => {
         rollout: { sessionsRoot },
       });
       expect(appended.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "新增" }),
+        expect.objectContaining({ kind: "agent-output", output: "新增" }),
       ]);
       expect(appended.atLatest).toBe(true);
       expect(appended.status).toBe("running");
@@ -546,7 +611,7 @@ describe("Codex rollout projection", () => {
         content: [{ type: "output_text", text: "我先检查实现。" }],
       },
     }, { runId: "run-a", lineOffset: 12 })).toEqual([
-      expect.objectContaining({ kind: "agent-markdown", markdown: "我先检查实现。" }),
+      expect.objectContaining({ kind: "agent-output", output: "我先检查实现。" }),
     ]);
 
     expect(projectCodexRolloutRecord({
@@ -562,7 +627,7 @@ describe("Codex rollout projection", () => {
       expect.objectContaining({ kind: "tool", name: "exec", input: "pnpm test" }),
     ]);
 
-    const friendlyTool = projectCodexRolloutRecord({
+    const debugTool = projectCodexRolloutRecord({
       timestamp: "2026-07-23T01:00:01.500Z",
       type: "response_item",
       payload: {
@@ -576,16 +641,15 @@ describe("Codex rollout projection", () => {
         }),
       },
     }, { runId: "run-a", lineOffset: 81 });
-    expect(friendlyTool).toEqual([
+    expect(debugTool).toEqual([
       expect.objectContaining({
         kind: "tool",
-        input: expect.stringContaining("查询: 检查实现"),
+        callId: null,
+        input: expect.stringContaining("/Users/person/private/source.ts"),
       }),
     ]);
-    expect(JSON.stringify(friendlyTool)).toContain("source.ts");
-    expect(JSON.stringify(friendlyTool)).not.toMatch(
-      /internal-session|internal-run|\/Users\/person/u,
-    );
+    expect(JSON.stringify(debugTool)).toContain("internal-session");
+    expect(JSON.stringify(debugTool)).toContain("internal-run");
 
     expect(projectCodexRolloutRecord({
       timestamp: "2026-07-23T01:00:02.000Z",
@@ -599,37 +663,51 @@ describe("Codex rollout projection", () => {
     ]);
   });
 
-  it("filters internal prompt/reasoning/token records and exposes unknown types without raw payload", () => {
+  it("separates prompts, filters reasoning, exposes token usage, and preserves unknown payload", () => {
     const hidden = [
       { type: "session_meta", payload: { base_instructions: { text: "secret" } } },
-      { type: "compacted", payload: { message: "secret" } },
-      { type: "inter_agent_communication_metadata", payload: { recipient: "secret" } },
       { type: "response_item", payload: { type: "reasoning", encrypted_content: "secret" } },
       { type: "event_msg", payload: { type: "agent_reasoning", text: "secret" } },
-      { type: "event_msg", payload: { type: "context_compacted" } },
-      { type: "event_msg", payload: { type: "token_count", info: { total: 99 } } },
       { type: "response_item", payload: { type: "message", role: "developer", content: [{ type: "input_text", text: "secret" }] } },
     ];
     for (const record of hidden) {
       expect(projectCodexRolloutRecord(record, { runId: "run-a", lineOffset: 0 })).toEqual([]);
     }
 
+    const usage = projectCodexRolloutRecord({
+      timestamp: "2026-07-23T01:00:02.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: { input_tokens: 40, cached_input_tokens: 12, output_tokens: 7, total_tokens: 47 },
+      },
+    }, { runId: "run-a", lineOffset: 1 });
+    expect(usage).toEqual([
+      expect.objectContaining({
+        kind: "usage",
+        protocolType: "event_msg · token_count",
+        usage: expect.stringContaining('"cached_input_tokens": 12'),
+      }),
+    ]);
+
     const projected = projectCodexRolloutRecord({
       type: "event_msg",
       payload: { type: "future_event", secret: "must-not-leak" },
     }, { runId: "run-a", lineOffset: 1 });
     expect(projected).toEqual([
-      expect.objectContaining({ kind: "unsupported" }),
+      expect.objectContaining({
+        kind: "unsupported-debug",
+        protocolType: "event_msg · future_event",
+        rawPayload: expect.stringContaining("must-not-leak"),
+      }),
     ]);
-    expect(projected[0]).not.toHaveProperty("eventType");
-    expect(JSON.stringify(projected)).not.toContain("must-not-leak");
     expect(malformedCodexRolloutEvent("run-a", 42)).toMatchObject({
       kind: "error",
       message: "过程记录读取异常",
     });
   });
 
-  it("projects current Codex Agent, file, search, and abort event shapes without leaking absolute paths", () => {
+  it("projects current Codex Agent, file, search, and abort event shapes without redaction", () => {
     expect(projectCodexRolloutRecord({
       timestamp: "2026-07-23T01:00:00.000Z",
       type: "response_item",
@@ -640,7 +718,7 @@ describe("Codex rollout projection", () => {
         content: [{ type: "output_text", text: "子 Agent 已完成检查。" }],
       },
     }, { runId: "run-a", lineOffset: 1 })).toEqual([
-      expect.objectContaining({ kind: "agent-markdown", markdown: "子 Agent 已完成检查。" }),
+      expect.objectContaining({ kind: "agent-output", output: "子 Agent 已完成检查。" }),
     ]);
 
     const files = projectCodexRolloutRecord({
@@ -656,10 +734,10 @@ describe("Codex rollout projection", () => {
       },
     }, { runId: "run-a", lineOffset: 2 });
     expect(files).toEqual([
-      expect.objectContaining({ kind: "file", action: "修改文件", path: "app.ts" }),
+      expect.objectContaining({ kind: "file", action: "update", path: "/Users/person/private/project/src/app.ts" }),
       expect.objectContaining({ kind: "file", action: "新增文件", path: "docs/readme.md" }),
     ]);
-    expect(JSON.stringify(files)).not.toContain("/Users/person");
+    expect(JSON.stringify(files)).toContain("/Users/person");
 
     expect(projectCodexRolloutRecord({
       type: "event_msg",
@@ -671,9 +749,9 @@ describe("Codex rollout projection", () => {
     }, { runId: "run-a", lineOffset: 3 })).toEqual([
       expect.objectContaining({
         kind: "tool",
-        name: "网页搜索",
+        name: "web_search",
         input: "Codex docs",
-        output: "Docs\nhttps://example.com/docs",
+        output: expect.stringContaining('"internal_id": "hidden"'),
       }),
     ]);
 
@@ -681,7 +759,7 @@ describe("Codex rollout projection", () => {
       type: "event_msg",
       payload: { type: "turn_aborted", reason: "user interrupted", turn_id: "hidden" },
     }, { runId: "run-a", lineOffset: 4 })).toEqual([
-      expect.objectContaining({ kind: "error", message: "本轮执行已中止", detail: "user interrupted" }),
+      expect.objectContaining({ kind: "error", message: "turn_aborted", detail: "user interrupted" }),
     ]);
   });
 
@@ -703,7 +781,7 @@ describe("Codex rollout projection", () => {
       }
       const page = await readCodexRolloutPage({ resolution, runId: "run-a" });
       expect(page.events).toEqual([
-        expect.objectContaining({ kind: "agent-markdown", markdown: "同一条回复" }),
+        expect.objectContaining({ kind: "agent-output", output: "同一条回复" }),
       ]);
     } finally {
       await fixture.cleanup();
@@ -723,7 +801,7 @@ describe("Codex rollout projection", () => {
         throw new Error("fixture rollout unavailable");
       }
       const page = await readCodexRolloutPage({ resolution, runId: "run-a" });
-      expect(page.events.filter((event) => event.kind === "agent-markdown")).toHaveLength(2);
+      expect(page.events.filter((event) => event.kind === "agent-output")).toHaveLength(2);
     } finally {
       await fixture.cleanup();
     }
@@ -742,7 +820,7 @@ describe("Codex rollout projection", () => {
         throw new Error("fixture rollout unavailable");
       }
       const page = await readCodexRolloutPage({ resolution, runId: "run-a" });
-      expect(page.events.filter((event) => event.kind === "agent-markdown")).toHaveLength(2);
+      expect(page.events.filter((event) => event.kind === "agent-output")).toHaveLength(2);
     } finally {
       await fixture.cleanup();
     }

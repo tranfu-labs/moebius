@@ -907,7 +907,8 @@ Source: docs/product/pages/agent-conversation.md#页面结构
 ### Scenario: 历史图标仍打开原步骤过程
 - GIVEN 主时间线成功历史消息的完整输出图标已经显示
 - WHEN 用户激活该图标
-- THEN 系统使用该消息所属 session id 与 run id 打开或聚焦对应过程标签
+- THEN 系统使用该消息所属 session id 与稳定 step id 打开或聚焦对应过程标签
+- AND run id 只作为读取该步骤聚合过程的 attempt 锚点
 
 ### Scenario: 有稳定过程能力的没跑起来记录也能调出完整输出
 - GIVEN 一个能提供稳定过程记录的步骤留下了「这一步没跑起来」记录
@@ -923,7 +924,8 @@ Source: docs/product/pages/agent-conversation.md#页面结构
 ### Scenario: 从子任务打开完整输出
 - GIVEN 子任务标签中存在带 run id 的历史 Agent 回复或活动运行
 - WHEN 用户点击该记录的「完整输出」
-- THEN 系统使用该子会话 id 与 run id 打开对应的过程标签
+- THEN 系统使用该子会话 id 与稳定 step id 打开或聚焦对应的过程标签
+- AND run id 只作为读取该步骤聚合过程的 attempt 锚点
 - AND 不会错误读取父会话中同名或同时运行的步骤
 
 ## Requirement: 终态只显示一次耗时并按需说明完成时刻
@@ -1453,44 +1455,112 @@ Source: docs/product/pages/main-right-sidebar.md#窄窗口
 - WHEN 用户打开右侧栏并使用覆盖层内的关闭操作
 - THEN 右侧栏消失且会话区滚动位置仍为 320 像素
 
-## Requirement: 过程标签以友好时间线呈现公开输入与执行事件
+## Requirement: 过程标签以分层调试调用链呈现一次 Agent 执行
 Source: docs/product/pages/main-right-sidebar.md#过程标签
 
-系统 MUST 把每次执行的公开输入呈现为用户与 Agent 按顺序一来一回的安全 Markdown，并在其后呈现 Agent Markdown、命令、工具 / 函数 / MCP、文件、错误与 unsupported 等结构化过程事件；多次执行 MUST 各自显示「第 N 次执行 / 本轮输入 / 本轮执行过程」。系统 MUST NOT 显示原始 JSON、拼接 prompt、系统指令、persona、团队规则、token 统计或原始 reasoning。
+系统 MUST 为每个 attempt 先显示完整运行状态、独立计时、开始 / 完成时间、model / effort / provider / CLI 和原始 run / thread 标识，再提供 `SYSTEM_PROMPT`、`DEVELOPER_PROMPT`、`USER_INPUT` 三个分层 disclosure，最后按时间顺序显示调用与输出事件。系统 MUST 常驻提示该本地调试视图可能包含提示词、路径与内部标识。系统 MUST NOT 把三层 prompt 拼成一个无来源文本块。
 
-### Scenario: 用户消息经开发经理交给开发
-- GIVEN 某次开发 run 启动时公开时间线依次包含用户消息与开发经理交棒
-- WHEN 用户打开开发的完整输出
-- THEN 本轮输入先按角色显示用户与开发经理消息
-- AND 本轮执行过程随后显示开发的 Agent Markdown 与工具事件
-- AND 页面不出现开发 persona 或本地团队规则
+### Scenario: 用户展开一次 completed run
+- GIVEN 过程响应包含完整 attempt 元数据和三层 prompt
+- WHEN 用户打开该成员的完整输出并展开三层
+- THEN 页面显示模型、精确开始 / 完成时间和 completed
+- AND 三层分别显示自己的原文
+- AND 页面常驻显示本地原始调试信息提示
+
+## Requirement: 调试事件显示原始字段且安全只读
+Source: docs/product/pages/main-right-sidebar.md#过程标签
+
+系统 MUST 为调用与输出事件显示精确 ISO 时间戳、原始协议类型、call id、name 和 status，并让原始参数、结果、Agent 输出与 raw payload 可展开查看。绝对路径和内部标识 MUST 保持原值；终端控制字符 MUST 转为可见转义；所有原始内容 MUST 作为只读文本渲染，MUST NOT 作为 Markdown、HTML、脚本或终端控制序列执行。
+
+### Scenario: 原始工具输出含 HTML、控制字符和内部路径
+- GIVEN 工具输出包含 `<script>bad()</script>`、ESC 控制字符与完整绝对路径
+- WHEN 用户展开原始输出
+- THEN script 以文本可见且没有执行
+- AND ESC 以可见转义显示
+- AND 绝对路径未被省略或替换
+
+## Requirement: token 统计进入调试链但 reasoning 不显示
+Source: docs/product/pages/main-right-sidebar.md#过程标签
+
+系统 MUST 将 token usage 作为独立调试事件显示原始协议类型与实际存在的 input / cached input / output / reasoning output / total 统计，MUST NOT 显示 reasoning 文本或 encrypted reasoning payload。
+
+### Scenario: token 与 reasoning 同时存在
+- GIVEN 一次执行的 rollout 同时记录 token usage 与 reasoning
+- WHEN 用户查看该次执行的调用链
+- THEN 页面显示 token 统计
+- AND 页面中找不到 reasoning 文本或 encrypted payload
+
+## Requirement: 长调试内容默认折叠且不截断
+Source: docs/product/pages/main-right-sidebar.md#过程标签
+
+系统 MUST 让长 prompt、参数、结果、raw payload 与 Agent 原始输出默认折叠；展开后 MUST 能从首行读到末行并允许选择复制。系统 MUST 继续以虚拟列表保持大型事件流的有界 DOM，MUST NOT 因 disclosure 把全部历史事件同时挂载。
+
+### Scenario: 一千条事件包含超长输出
+- GIVEN 一个 attempt 有 1,000 条事件且其中一条输出超过 20 行
+- WHEN 过程标签首次渲染
+- THEN 长输出正文默认不可见
+- AND 事件 DOM 数量保持有界
+- WHEN 用户展开长输出
+- THEN 首行、中间行和末行均可见
+
+## Requirement: prompt 惰性加载抵抗重渲染、慢返回与失败
+Source: docs/product/pages/main-right-sidebar.md#内容更新
+
+系统 MUST 按 `sessionId + runId` 隔离 prompt stack 的 idle / loading / ready / unavailable / error 状态。父级重渲染或 load callback 身份变化 MUST NOT 清空已经加载的 prompt；切换 attempt、tab 或 session 后迟到的旧响应 MUST NOT 覆盖当前目标；加载失败 MUST 提供局部重试且过程事件仍可阅读。
+
+### Scenario: 慢请求期间切换到另一会话
+- GIVEN attempt A 的 prompt 请求尚未返回
+- WHEN 用户切换到会话 B 并展开 attempt B
+- AND attempt A 的响应随后到达
+- THEN 页面仍显示 attempt B 的状态与内容
+- AND attempt A 的内容没有写入 B
+
+### Scenario: 父级回调身份变化后请求成功
+- GIVEN prompt 正在加载且父级重渲染产生新的 load callback 身份
+- WHEN 原请求成功返回
+- THEN 目标 attempt 进入 ready 且内容只保存一次
+- AND 不因 callback 变化重新进入 loading 或重复请求
+
+### Scenario: prompt 加载失败后重试
+- GIVEN prompt 请求失败但过程事件已成功加载
+- WHEN 页面显示局部错误
+- THEN 调用与输出事件仍可阅读
+- WHEN 用户点击重试且下一次请求成功
+- THEN 三层 prompt 正常显示且事件阅读位置不变
 
 ## Requirement: 验收 #13 — 过程标签标题只由成员名和同成员序号组成
 Source: docs/product/pages/main-right-sidebar.md#标签条
 
-系统 MUST 使用步骤意图的 role 到成员名映射作为过程标签标题，同一会话内同时打开的同成员第二个及以后过程标签 MUST 依次命名为「成员名 2」「成员名 3」；无法映射 role 时 MUST 使用「成员未知」，标签文字溢出时 MUST 截断显示并由 `title` 提供完整标题。系统 MUST NOT 从步骤正文、摘要或实时输出生成描述性标题。
+系统 MUST 使用步骤意图的 role 到成员名映射作为过程标签标题，同一会话内同时打开的同成员第二个及以后不同步骤的过程标签 MUST 依次命名为「成员名 2」「成员名 3」；同一步骤的初次执行与重试 MUST 以稳定 step id 复用唯一标签。终态 system 记录没有 role 时，系统 MUST 使用同一步消息或聚合过程响应中的 role 修正标题；确实无法映射 role 时 MUST 使用「成员未知」。标签文字溢出时 MUST 截断显示并由 `title` 提供完整标题。系统 MUST NOT 从步骤正文、摘要或实时输出生成描述性标题。
 
 ### Scenario: 同一成员打开两个不同步骤
-- GIVEN 同一会话中开发成员有两个不同 run 输出入口
+- GIVEN 同一会话中开发成员有两个不同 step 的输出入口
 - WHEN 用户依次点击两个入口的「完整输出」
 - THEN 标签条同时出现「开发」与「开发 2」，且二者标题均不包含步骤正文
 
-## Requirement: 验收 #14 — 同一步骤的每次执行在一个过程标签内按序保留
+### Scenario: 从中断事实与重试回复打开同一步
+- GIVEN 同一步第 1 次执行留下无 role 的中断 system 事实，第 2 次执行留下开发成员的成功回复
+- WHEN 用户分别点击两条记录的「完整输出」
+- THEN 标签条只保留一个标题为「开发」的过程标签
+- AND 标签内聚合显示两次 attempt
+
+## Requirement: 同一步多 attempt 各自保留调试事实
 Source: docs/product/pages/main-right-sidebar.md#过程标签
 
-系统 MUST 在同一过程标签内按开始时间显示同一步骤的全部执行，并以「第 1 次执行」「第 2 次执行」连续编号；每次执行 MUST 保留自己启动时的公开输入、独立耗时、完成时刻和后续过程，活动过程标签 MUST 持续轮询，因此某次执行已 settled、下一次 retry 尚未开始的间隙也不得停止更新。单次过程记录缺失 MUST 只在该次执行内显示不可用，MUST NOT 让其他尝试或整个标签一并失效。系统 MUST NOT 用后一次执行覆盖前一次执行。
+系统 MUST 在同一过程标签内按开始顺序显示全部 attempts，并让每个 attempt 使用自己的 prompt stack、模型元数据、状态、时间和事件。单次 rollout 或 prompt stack 不可用 MUST 只降级该 attempt，MUST NOT 清空同一步其他 attempts。活动过程标签 MUST 持续轮询，因此某次执行已 settled、下一次 retry 尚未开始的间隙也不得停止更新。
 
 ### Scenario: 失败后重试同一步骤
 - GIVEN 某步骤第一次执行失败并产生原始错误，第二次执行随后成功
 - WHEN 用户查看该步骤的过程标签
 - THEN 标签内先显示含原始错误的「第 1 次执行」，再显示「第 2 次执行」
-- AND 两次执行分别显示自己的耗时与完成时刻
+- AND 两次执行分别显示自己的 prompt、模型、状态、耗时与完成时刻
 
-### Scenario: 第二次执行记录缺失
-- GIVEN 同一步骤有三次执行且仅第二次 Codex 记录已缺失
+### Scenario: 三次执行中第二次记录不可用
+- GIVEN 同一步有 failed、unavailable、completed 三次执行
 - WHEN 用户查看该步骤的过程标签
-- THEN 第二次执行原位显示记录不可用
-- AND 第一次与第三次执行仍完整可读
+- THEN 第一次与第三次分别显示自己的 prompt、模型、状态和事件
+- AND 第二次原位显示记录不可用
+- AND 标签整体不降级为空
 
 ## Requirement: Codex 记录不可用时只显示明确空态
 Source: docs/product/pages/main-right-sidebar.md#过程标签
