@@ -92,6 +92,7 @@ function cloneProposal(proposal: AiTeamBuilderProposal): AiTeamBuilderProposal {
     members: proposal.members.map((member) => ({
       ...member,
       responsibilities: [...member.responsibilities],
+      constraints: [...member.constraints],
       handoffs: [...member.handoffs],
     })),
     primaryAgentSlug: proposal.primaryAgentSlug,

@@ -16,6 +16,7 @@ const validProposal: AiTeamBuilderProposalOutput = {
       name: "发布负责人",
       role: "统筹发布目标并最终收尾",
       responsibilities: ["拆解工作", "核对交付证据"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["content-planner"],
     },
     {
@@ -23,6 +24,7 @@ const validProposal: AiTeamBuilderProposalOutput = {
       name: "内容策划",
       role: "产出发布内容",
       responsibilities: ["提炼叙事", "准备渠道素材"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["launch-lead"],
     },
   ],

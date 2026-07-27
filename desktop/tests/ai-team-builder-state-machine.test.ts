@@ -15,6 +15,7 @@ const proposal = {
       name: "负责人",
       role: "负责收尾",
       responsibilities: ["拆解"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["writer"],
     },
     {
@@ -22,6 +23,7 @@ const proposal = {
       name: "作者",
       role: "负责内容",
       responsibilities: ["写作"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["lead"],
     },
   ],

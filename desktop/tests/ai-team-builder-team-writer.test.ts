@@ -17,6 +17,7 @@ const proposal: AiTeamBuilderProposal = {
       name: "发布负责人",
       role: "统筹发布并收尾",
       responsibilities: ["拆解工作", "复核证据"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["content-planner"],
     },
     {
@@ -24,6 +25,7 @@ const proposal: AiTeamBuilderProposal = {
       name: "内容策划",
       role: "准备发布内容",
       responsibilities: ["提炼叙事", "准备渠道素材"],
+      constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["launch-lead"],
     },
   ],

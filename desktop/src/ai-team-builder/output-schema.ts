@@ -23,13 +23,18 @@ export const AI_TEAM_BUILDER_OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["slug", "name", "role", "responsibilities", "handoffs"],
+        required: ["slug", "name", "role", "responsibilities", "constraints", "handoffs"],
         properties: {
           slug: { type: "string", minLength: 1 },
           name: { type: "string", minLength: 1 },
           role: { type: "string", minLength: 1 },
           responsibilities: {
             type: "array",
+            items: { type: "string", minLength: 1 },
+          },
+          constraints: {
+            type: "array",
+            description: "Abstention and activation rules: what this member must not do, and under which conditions expensive methods may run; at least one entry.",
             items: { type: "string", minLength: 1 },
           },
           handoffs: {

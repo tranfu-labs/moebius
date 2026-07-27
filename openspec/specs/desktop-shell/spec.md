@@ -667,7 +667,7 @@ Acceptance: onboarding#6
 Source: docs/product/pages/onboarding.md#第-2-步--ai-建队子流程
 Acceptance: onboarding#7
 
-系统 MUST 只接受含 2–6 名成员、唯一稳定 slug、唯一主 Agent、结构化职责与交棒引用、有效接力示例的方案。系统 MUST NOT 提交过期 proposal revision 或未经验证的方案。
+系统 MUST 只接受含 2–6 名成员、唯一稳定 slug、唯一主 Agent、结构化职责、至少一条克制与启用条件、交棒引用、有效接力示例的方案。系统 MUST NOT 提交过期 proposal revision 或未经验证的方案。
 
 ### Scenario: 当前有效方案创建并选中
 - GIVEN 当前显示方案已通过业务校验且 proposal revision 为 N

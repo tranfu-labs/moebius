@@ -172,6 +172,7 @@ function proposal() {
         name: "负责人",
         role: "统筹并收尾",
         responsibilities: ["拆解", "复核"],
+        constraints: ["不修改其他成员负责的交付物"],
         handoffs: ["writer"],
       },
       {
@@ -179,6 +180,7 @@ function proposal() {
         name: "作者",
         role: "准备内容",
         responsibilities: ["写作"],
+        constraints: ["不修改其他成员负责的交付物"],
         handoffs: ["lead"],
       },
     ],

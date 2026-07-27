@@ -25,6 +25,7 @@ export interface AiTeamBuilderMember {
   name: string;
   role: string;
   responsibilities: string[];
+  constraints: string[];
   handoffs: string[];
 }
 
@@ -188,6 +189,9 @@ export function renderAiTeamMemberMarkdown(member: AiTeamBuilderMember): string 
   const responsibilityLines = member.responsibilities
     .map((responsibility) => `- ${responsibility}`)
     .join("\n");
+  const constraintLines = member.constraints
+    .map((constraint) => `- ${constraint}`)
+    .join("\n");
   const handoffLines = member.handoffs.length === 0
     ? "- 完成工作后把结论交回主 Agent。"
     : member.handoffs.map((slug) => `- 需要下一步协作时交给 @${slug}。`).join("\n");
@@ -203,6 +207,10 @@ ${member.role}
 ## 职责
 
 ${responsibilityLines}
+
+## 克制与启用条件
+
+${constraintLines}
 
 ## 协作与交棒
 
@@ -245,7 +253,7 @@ function parseMembers(
   for (const [index, candidate] of value.entries()) {
     const base = `$.members[${String(index)}]`;
     if (!isPlainObject(candidate)
-      || !hasOnlyKeys(candidate, ["slug", "name", "role", "responsibilities", "handoffs"])) {
+      || !hasOnlyKeys(candidate, ["slug", "name", "role", "responsibilities", "constraints", "handoffs"])) {
       issues.push(issue("invalid-shape", base, "member has an invalid shape."));
       continue;
     }
@@ -253,9 +261,10 @@ function parseMembers(
     const name = parseSingleLineText(candidate.name, `${base}.name`, issues);
     const role = parseSingleLineText(candidate.role, `${base}.role`, issues);
     const responsibilities = parseTextArray(candidate.responsibilities, `${base}.responsibilities`, issues, true);
+    const constraints = parseTextArray(candidate.constraints, `${base}.constraints`, issues, true);
     const handoffs = parseTextArray(candidate.handoffs, `${base}.handoffs`, issues, false);
-    if (slug !== null && name !== null && role !== null && responsibilities !== null && handoffs !== null) {
-      members.push({ slug, name, role, responsibilities, handoffs });
+    if (slug !== null && name !== null && role !== null && responsibilities !== null && constraints !== null && handoffs !== null) {
+      members.push({ slug, name, role, responsibilities, constraints, handoffs });
     }
   }
   return members;
