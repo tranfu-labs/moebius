@@ -1911,7 +1911,10 @@ the first message, later messages, member handoffs and retries, without a separa
 authentication, model or effort preflight. Spawn, authentication, configuration-application or
 driver failure MUST become an explicit failed attempt and visible “这一步没跑起来” fact. The
 system MUST preserve the session, user message and immutable snapshot and MUST NOT invoke another
-CLI as fallback.
+CLI as fallback. When the selected driver emits a recognized structured terminal error, the
+adapter MUST reduce it to a stable safe failure code and an actionable user-facing explanation;
+raw provider payloads and machine-only reasons MUST remain outside the normal timeline. Unknown
+failures MUST keep the existing generic failed-attempt presentation and local diagnostic evidence.
 
 #### Scenario: First-message bound CLI is missing
 
@@ -1930,6 +1933,19 @@ CLI as fallback.
 - **THEN** the submitted user message is not returned to draft state or deleted
 - **AND** the run exposes a retryable failed fact using the same immutable snapshot
 - **AND** neither the team binding nor snapshot is silently rewritten.
+
+#### Scenario: Installed Codex is too old for the selected model
+
+- **GIVEN** a session snapshot binds its primary Agent to a Codex model
+- **AND** Codex starts a canonical thread but emits a structured error that the model requires a
+  newer Codex version
+- **WHEN** the first run fails
+- **THEN** the run records the stable `codex-cli-upgrade-required` failure code
+- **AND** the visible failed-attempt fact identifies the selected model and tells the user to
+  upgrade the current Codex installation
+- **AND** the raw provider payload is not copied into the normal timeline
+- **AND** retry resumes the same canonical Codex thread with the same immutable run snapshot
+- **AND** no alternate CLI or replacement Codex thread is started.
 
 #### Scenario: Later messages do not repeat capability preflight
 

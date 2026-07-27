@@ -2948,7 +2948,14 @@ export class LocalConsoleRuntime {
       );
       return;
     }
-    await this.recordTerminalFailureBestEffort(message, sessionId, runId, result.runDir, result.reason);
+    await this.recordTerminalFailureBestEffort(
+      message,
+      sessionId,
+      runId,
+      result.runDir,
+      result.reason,
+      result.failure?.message,
+    );
   }
 
   private async recordDetachedWorkerResult(
@@ -3019,7 +3026,8 @@ export class LocalConsoleRuntime {
     await this.storeCall("local-console-store-record-detached-worker-failed", () =>
       this.recordDetachedRunTerminal({
         sessionId,
-        body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+        body: result.failure?.message
+          ?? "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
         systemEventKind: "run-not-started",
         runId,
         runDir: result.runDir,
@@ -3317,6 +3325,7 @@ export class LocalConsoleRuntime {
     runId: string | null,
     runDir: string | null,
     error: string,
+    body?: string,
   ): Promise<void> {
     try {
       await this.storeCall("local-console-store-record-failure", () =>
@@ -3327,6 +3336,7 @@ export class LocalConsoleRuntime {
           runId,
           runDir,
           now: this.nowIso(),
+          ...(body === undefined ? {} : { body }),
         }),
       );
     } catch (recordError) {

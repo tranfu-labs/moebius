@@ -496,6 +496,51 @@ process.exitCode = 7;
       process.env.PATH = previousPath;
     }
   });
+
+  it("classifies a Codex upgrade requirement without persisting the raw provider error as the reason", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const providerError = JSON.stringify({
+  type: "error",
+  status: 400,
+  error: {
+    type: "invalid_request_error",
+    message: "The 'gpt-5.6-sol' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."
+  }
+});
+process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "thread-upgrade-required" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "error", message: providerError }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "turn.failed", error: { message: providerError } }) + "\\n");
+process.exitCode = 1;
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await run({ prompt: "hello", runDir });
+      expect(result).toMatchObject({
+        ok: false,
+        reason: "codex-cli-upgrade-required",
+        failure: {
+          code: "codex-cli-upgrade-required",
+          message: "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+        },
+      });
+      if (result.ok) throw new Error("expected a classified Codex failure");
+      expect(result.reason).not.toContain("invalid_request_error");
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
 });
 
 describe("codex provider override", () => {

@@ -2236,6 +2236,7 @@ function TimelineEntry({
           memberIdentities={memberIdentities}
           rawReason={message.error ?? message.body}
           rawOutput={message.error ?? message.body}
+          description={terminalOutcomeDescription(message)}
           elapsedMs={message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
           onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
@@ -2443,6 +2444,12 @@ function sessionSummary(session: OperatorSession): string | undefined {
 function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
   return message.speaker === "system" && message.systemEventKind !== undefined && message.systemEventKind !== "other"
     ? message.systemEventKind
+    : null;
+}
+
+function terminalOutcomeDescription(message: OperatorMessage): string | null {
+  return message.error === "codex-cli-upgrade-required"
+    ? sanitizeMachineText(message.body)
     : null;
 }
 

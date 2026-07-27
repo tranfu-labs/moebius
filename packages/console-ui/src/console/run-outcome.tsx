@@ -21,6 +21,7 @@ export interface RunOutcomeProps {
   memberIdentities?: readonly OperatorMemberIdentity[];
   rawReason?: string | null;
   rawOutput?: string | null;
+  description?: string | null;
   elapsedMs?: number | null;
   completedAt?: string | null;
   defaultOpen?: boolean;
@@ -53,6 +54,7 @@ export function RunOutcome({
   memberIdentities = [],
   rawReason: _rawReason,
   rawOutput,
+  description,
   elapsedMs,
   completedAt,
   defaultOpen: _defaultOpen,
@@ -84,7 +86,9 @@ export function RunOutcome({
             <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
           ) : null}
         </span>
-        <span className="mt-0.5 block text-xs text-sub">{outcomeDescriptions[status]}</span>
+        <span className="mt-0.5 block text-xs text-sub">
+          {description?.trim() || outcomeDescriptions[status]}
+        </span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {status === "run-not-started" || status === "run-stuck" || status === "resume-unavailable" ? (

@@ -279,6 +279,95 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     }
   });
 
+  it("persists an actionable Codex upgrade failure and resumes the same thread after retry", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    let call = 0;
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      call += 1;
+      await options.onThreadStarted?.("codex-upgrade-thread");
+      if (call === 1) {
+        return {
+          ok: false,
+          reason: "codex-cli-upgrade-required",
+          failure: {
+            code: "codex-cli-upgrade-required",
+            message: "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+          },
+          runDir: options.runDir,
+          stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+          stderrPath: path.join(options.runDir, "stderr.log"),
+        };
+      }
+      return {
+        ok: true,
+        finalText: "retry completed",
+        threadId: "codex-upgrade-thread",
+        cachedInputTokens: 0,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+        stderrPath: path.join(options.runDir, "stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Codex primary", {
+        cli: "codex",
+        model: "gpt-5.6-sol",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    const response = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "first message",
+        agentTeamOwnership: "user",
+        agentTeamId: "development",
+      }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json() as { session: { sessionId: string } };
+    const failed = await waitForSessionSystemEvent(
+      server,
+      created.session.sessionId,
+      "run-not-started",
+    );
+    expect(failed).toMatchObject({
+      body: "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+      error: "codex-cli-upgrade-required",
+    });
+    expect(failed.runId).not.toBeNull();
+
+    const facts = await fs.readFile(server.runtime.getSessionFactLogPath(created.session.sessionId), "utf8");
+    expect(facts).toContain('"error":"codex-cli-upgrade-required"');
+    expect(facts).toContain("Codex 版本过旧");
+    expect(facts).not.toContain("invalid_request_error");
+
+    const retry = await fetch(new URL(
+      `/api/local-console/sessions/${encodeURIComponent(created.session.sessionId)}/runs/${encodeURIComponent(failed.runId!)}/retry`,
+      server.url,
+    ), { method: "POST" });
+    expect(retry.status).toBe(202);
+    await waitForSessionAgent(server, created.session.sessionId, "retry completed");
+    expect(codex).toHaveBeenCalledTimes(2);
+    expect(codex.mock.calls[0]?.[0].mode).toEqual({ kind: "full" });
+    expect(codex.mock.calls[1]?.[0].mode).toEqual({
+      kind: "resume",
+      threadId: "codex-upgrade-thread",
+    });
+  });
+
   it("keeps a NULL legacy snapshot on Codex without profile options", async () => {
     const root = await fixtureRoot();
     const codex = vi.fn(async (options: CodexRunOptions) => {
@@ -622,6 +711,40 @@ async function waitForSystemEvent(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`timed out waiting for ${systemEventKind}`);
+}
+
+async function waitForSessionSystemEvent(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  systemEventKind: LocalConsoleMessage["systemEventKind"],
+): Promise<LocalConsoleMessage> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const snapshot = await server.runtime.snapshot(sessionId);
+    const matching = snapshot.messages.find((message) =>
+      message.speaker === "system" && message.systemEventKind === systemEventKind);
+    if (matching !== undefined) {
+      return matching;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${systemEventKind} in ${sessionId}`);
+}
+
+async function waitForSessionAgent(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  body: string,
+): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const snapshot = await server.runtime.snapshot(sessionId);
+    if (snapshot.messages.some((message) => message.speaker === "agent" && message.body === body)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${body} in ${sessionId}`);
 }
 
 function success(options: CodexRunOptions, finalText: string): CodexRunResult {

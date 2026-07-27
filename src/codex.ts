@@ -32,6 +32,11 @@ export interface CodexRunWatchdogs {
   clear(): void;
 }
 
+export interface CodexRunFailure {
+  code: "codex-cli-upgrade-required";
+  message: string;
+}
+
 // 单次 codex run 的双看门狗：空闲（stdout 无输出即倒计时，主防线）与总时长硬上限
 // （无视输出活动，兜底持续输出的死循环）。至多触发一次回调；clear 后不再触发。
 export function createRunWatchdogs(options: {
@@ -98,6 +103,7 @@ export type CodexRunResult =
   | {
       ok: false;
       reason: string;
+      failure?: CodexRunFailure;
       threadId?: string | null;
       runDir: string;
       stdoutPath: string;
@@ -256,6 +262,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   let processStartedCallback: Promise<void> = Promise.resolve();
   let threadStartedCallbackError: string | null = null;
   let threadIdentityError: string | null = null;
+  const failureState: { classified: CodexRunFailure | null } = { classified: null };
   const terminationDelayMs = options.interruptTerminationDelayMs ?? INTERRUPT_TERMINATION_DELAY_MS;
   const killDelayMs = options.interruptKillDelayMs ?? INTERRUPT_KILL_DELAY_MS;
 
@@ -326,6 +333,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     watchdogs.recordActivity();
   };
   const handleStreamEvent = (event: unknown) => {
+    failureState.classified = classifyCodexFailure(event) ?? failureState.classified;
     try {
       options.onStructuredActivity?.(event);
     } catch (error) {
@@ -464,6 +472,16 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
 
   if (exit.code !== 0) {
     const detail = exit.signal ? `signal-${exit.signal}` : `exit-code-${exit.code}`;
+    if (failureState.classified !== null) {
+      return {
+        ok: false,
+        reason: failureState.classified.code,
+        failure: failureState.classified,
+        runDir,
+        stdoutPath,
+        stderrPath,
+      };
+    }
     return {
       ok: false,
       reason: detail,
@@ -549,6 +567,41 @@ export function extractCodexOutput(lines: string[]): CodexOutputSummary {
     threadId,
     cachedInputTokens,
   };
+}
+
+function classifyCodexFailure(event: unknown): CodexRunFailure | null {
+  const message = readCodexFailureMessage(event);
+  if (message === null || !message.includes("requires a newer version of Codex")) {
+    return null;
+  }
+  const match = message.match(/The '([^']+)' model requires a newer version of Codex/u);
+  const model = match?.[1]?.trim();
+  const safeModel = model !== undefined && /^[A-Za-z0-9._:/-]{1,120}$/u.test(model)
+    ? model
+    : null;
+  return {
+    code: "codex-cli-upgrade-required",
+    message: safeModel === null
+      ? "Codex 版本过旧，无法运行当前模型。请升级当前 Codex 后再重试。"
+      : `Codex 版本过旧，无法运行模型 ${safeModel}。请升级当前 Codex 后再重试。`,
+  };
+}
+
+function readCodexFailureMessage(event: unknown): string | null {
+  if (!isRecord(event)) {
+    return null;
+  }
+  if (event.type === "error" && typeof event.message === "string") {
+    return event.message;
+  }
+  if (
+    event.type === "turn.failed"
+    && isRecord(event.error)
+    && typeof event.error.message === "string"
+  ) {
+    return event.error.message;
+  }
+  return null;
 }
 
 export function buildCodexArgs(

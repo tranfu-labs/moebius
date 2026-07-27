@@ -1646,7 +1646,7 @@ describe("OperatorConsole", () => {
       onRetryRun,
       messages: [
         message({ id: 1, speaker: "system", runId: "run-stop", status: "interrupted", systemEventKind: "user-stopped", body: "你让这一步停下了", error: "interrupted:user-interrupted" }),
-        message({ id: 2, speaker: "system", runId: "run-fail", status: "failed", systemEventKind: "run-not-started", body: "这一步没跑起来", error: "exit:42" }),
+        message({ id: 2, speaker: "system", runId: "run-fail", status: "failed", systemEventKind: "run-not-started", body: "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。", error: "codex-cli-upgrade-required" }),
         message({ id: 3, speaker: "system", runId: "run-stuck", status: "stuck", systemEventKind: "run-stuck", body: "这一步卡住了", error: "idle-timeout:10ms" }),
         message({ id: 4, speaker: "system", runId: "run-dead", status: "failed", systemEventKind: "retry-exhausted", body: "这一步反复没跑起来，已经不再重试", error: "retry-limit" }),
       ],
@@ -1654,6 +1654,9 @@ describe("OperatorConsole", () => {
 
     expect(screen.getByText("你让这一步停下了")).toBeVisible();
     expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText(
+      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+    )).toBeVisible();
     expect(screen.getByText("这一步卡住了")).toBeVisible();
     expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
     expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();

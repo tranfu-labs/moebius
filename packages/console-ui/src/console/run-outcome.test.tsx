@@ -42,6 +42,21 @@ describe("RunOutcome", () => {
     expect(screen.queryByText("exit:42")).not.toBeInTheDocument();
   });
 
+  it("shows an actionable safe description without exposing the machine reason", () => {
+    render(
+      <RunOutcome
+        status="run-not-started"
+        rawReason="codex-cli-upgrade-required"
+        description="Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。"
+      />,
+    );
+
+    expect(screen.getByText(
+      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+    )).toBeVisible();
+    expect(screen.queryByText("codex-cli-upgrade-required")).not.toBeInTheDocument();
+  });
+
   it("keeps the accessible edit-and-resend and complete-output actions for a user interruption", () => {
     const onEditAndResend = vi.fn();
     const onOpenOutput = vi.fn();
