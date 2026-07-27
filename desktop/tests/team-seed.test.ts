@@ -146,6 +146,75 @@ describe("built-in team seed", () => {
     ]);
   });
 
+  it("packages a valid feedback-driven engineering team with four skill-routed members", async () => {
+    const root = await makeTemporaryRoot();
+    const dataRoot = path.join(root, "data");
+
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot })).resolves.toMatchObject({
+      status: "seeded",
+    });
+
+    const snapshot = await readTeamSnapshot(
+      resolveTeamLocation({ dataRoot, teamId: "feedback-driven-engineering", ownership: "system" }),
+    );
+    expect(snapshot).toMatchObject({
+      status: "usable",
+      canCreateConversation: true,
+      definition: {
+        name: "反馈驱动工程团队",
+        description: "以最短反馈循环推进软件目标，并在明确收尾时通过独立审查和风险匹配的运行验收形成可提交的交付闭环。",
+        primaryAgentSlug: "delivery-lead",
+        memberOrder: [
+          "delivery-lead",
+          "investigator",
+          "implementer",
+          "delivery-reviewer",
+        ],
+      },
+    });
+    await expect(readTeamOnboardingOrchestration({
+      directory: snapshot.location.directory,
+      memberOrder: snapshot.definition?.memberOrder ?? [],
+    })).resolves.toMatchObject({
+      status: "ready",
+      source: "independent",
+      orchestration: {
+        version: 1,
+        relayBeats: [
+          { speakerSlug: "delivery-lead" },
+          { speakerSlug: "investigator" },
+          { speakerSlug: "implementer" },
+          { speakerSlug: "delivery-reviewer" },
+          { speakerSlug: "implementer" },
+          { speakerSlug: "delivery-reviewer" },
+          { speakerSlug: "delivery-lead" },
+        ],
+      },
+    });
+    expect(snapshot.members.map(({ slug, displayName, description }) => ({ slug, displayName, description }))).toEqual([
+      {
+        slug: "delivery-lead",
+        displayName: "交付主理人",
+        description: "负责目标澄清、流程选择、成员调度、提交决策和最终交付。",
+      },
+      {
+        slug: "investigator",
+        displayName: "调查员",
+        description: "负责把事实、根因或设计不确定性收束成可交接的调查结论。",
+      },
+      {
+        slug: "implementer",
+        displayName: "实现者",
+        description: "负责把已明确目标落实为最小、可维护且具有开发反馈证据的代码变更。",
+      },
+      {
+        slug: "delivery-reviewer",
+        displayName: "交付审查员",
+        description: "负责静态审查、风险匹配的运行验收和唯一独立交付结论。",
+      },
+    ]);
+  });
+
   it("skips the entire seed flow when the packaged fingerprint matches", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
