@@ -119,10 +119,6 @@ export function buildCodexExecOptionsForProfile(model: string, effort: string): 
     "--json",
     "--disable",
     "multi_agent",
-    // Current Codex releases gate collaboration tools through [agents], independently
-    // of the legacy multi_agent feature flag. Role handoffs belong to Moebius.
-    "-c",
-    "agents.enabled=false",
     "-m",
     model,
     "-c",

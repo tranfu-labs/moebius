@@ -91,13 +91,12 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
       "--disable",
       "multi_agent",
-      "-c",
-      "agents.enabled=false",
       "-m",
       "gpt-5.6-sol",
       "-c",
       'model_reasoning_effort="medium"',
     ]));
+    expect(codex.mock.calls[0]?.[0].execOptions).not.toContain("agents.enabled=false");
   });
 
   it("freezes the selected member profile and hard-routes Kimi without invoking Codex", async () => {
