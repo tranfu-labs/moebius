@@ -1,6 +1,6 @@
 {
   "name": "反馈驱动工程团队",
-  "description": "以最短反馈循环推进软件目标，并在明确收尾时通过独立审查和风险匹配的运行验收形成可提交的交付闭环。",
+  "description": "以最短反馈循环推进软件目标；明确实现默认自动经过独立审查形成 merge-ready，提交、合并与外发仍由用户单独授权。",
   "primaryAgentSlug": "delivery-lead",
   "memberOrder": [
     "delivery-lead",

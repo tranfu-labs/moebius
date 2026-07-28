@@ -11,7 +11,7 @@
     },
     {
       "speakerSlug": "implementer",
-      "message": "已在约定 seam 上完成一个 red→green 纵向切片，定向测试和类型检查通过，请在明确收尾链中独立审查。"
+      "message": "已在约定 seam 上完成一个 red→green 纵向切片，定向测试和类型检查通过；本轮目标是 merge-ready，现交主 Agent继续独立审查。"
     },
     {
       "speakerSlug": "delivery-reviewer",
@@ -23,11 +23,11 @@
     },
     {
       "speakerSlug": "delivery-reviewer",
-      "message": "复审及风险匹配的运行验收通过；真实运行、全量回归和截图均只按本次目标需要启用。"
+      "message": "复审及风险匹配的运行验收通过；真实运行、全量回归和截图均只按本次目标需要启用，现已形成带比较基线与变更指纹的 merge-ready 检查点。"
     },
     {
       "speakerSlug": "delivery-lead",
-      "message": "收尾完成：调查、实现、独立审查与验收证据已各自由唯一成员产出，我将据此提交并向用户汇总结果。"
+      "message": "实现与独立审查均已完成，当前状态为 merge-ready；我会先向用户汇总，等待其单独授权 commit、squash merge 或其他外部动作。"
     }
   ]
 }

@@ -484,6 +484,34 @@ Source: docs/product/pages/agent-teams.md#软件内置团队
 - **AND** 五名成员身份均可从各自 `AGENT.md` 读取
 - **AND** 独立 onboarding 编排只引用当前团队成员。
 
+### Requirement: 反馈驱动工程团队把完整实现收束为可合并检查点
+
+仓库内的 `feedback-driven-engineering` 团队种子 MUST 让明确、已授权且不存在待决策分叉的实现默认从实现者继续进入独立审查，并在不推导 Git 或外部动作授权的前提下形成可复用的 `merge-ready` 检查点。只有用户明确要求草稿、局部试做、先看效果或暂不审查时，主 Agent 才可把当前实现标记为 `provisional-feedback` 并在开发反馈后暂停。检查点 MUST 识别比较基线、适用时的目标分支头、覆盖 tracked 与未跟踪交付文件的变更指纹、审查范围和验证摘要。
+
+后续本地 commit、rebase 或 squash merge MUST 继续要求用户对该 Git 动作的明确授权。若检查点仍覆盖当前变更且目标分支变化不影响已审查范围，主 Agent MUST 复用原结论并只执行必要的 Git 安全检查与获授权动作；若变化只影响部分证据，MUST 只复核受影响半径。Git-only 授权 MUST NOT 被扩张为修改代码、改变产品行为或扩大实现范围的授权。
+
+#### Scenario: 明确实现自动进入独立审查
+
+- **GIVEN** 用户已经授权一个目标明确且没有待决策分叉的实现
+- **WHEN** 实现者完成代码和与风险相称的开发反馈
+- **THEN** 主 Agent 无需用户再次要求“审查”“收尾”或“继续”就把结果交给独立审查者
+- **AND** 审查通过后向用户报告 `merge-ready` 检查点
+- **AND** 未获得 Git 动作授权时不创建 commit、不 merge。
+
+#### Scenario: 有效检查点下只执行获授权的 Git 收尾
+
+- **GIVEN** 当前变更和集成影响仍与已通过的 `merge-ready` 检查点一致
+- **WHEN** 用户明确要求本地 commit、rebase 或 squash merge
+- **THEN** 主 Agent 不重新启动代码审查或机械重跑测试
+- **AND** 只执行必要的 Git 安全检查和用户授权的 Git 动作。
+
+#### Scenario: Git 收尾不能隐式重开实现
+
+- **GIVEN** Git 收尾前的检查发现基线或工作树变化使检查点部分或全部失效
+- **WHEN** 恢复有效检查点需要修改代码、扩大范围或重新决定产品行为
+- **THEN** 主 Agent 报告失效原因和影响范围
+- **AND** 不从 Git-only 授权推导新一轮实现授权。
+
 ### Requirement: Team structural readiness
 
 - MUST treat a team as usable for creating a new conversation only when it has exactly one primary agent, that primary agent is a current member, every member has a team-unique slug, and every member's `AGENT.md` is readable with a valid canonical or legacy identity.
