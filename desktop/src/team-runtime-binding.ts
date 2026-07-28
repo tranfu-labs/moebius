@@ -12,6 +12,7 @@ import {
   readTeamExecutionBindings,
 } from "./team-management-store.js";
 import {
+  DEFAULT_TEAM_EXECUTION_PROFILE,
   resolveEffectiveExecutionProfile,
   type ExecutionProfile,
   type ExecutionProfileBinding,
@@ -144,7 +145,7 @@ async function loadEffectiveProfiles(input: {
       recommendations[slug] === undefined
         ? {
             source: "explicit",
-            profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+            profile: DEFAULT_TEAM_EXECUTION_PROFILE,
           }
         : { source: "recommended" }
     );

@@ -1,0 +1,106 @@
+export type ExecutionProfileCli = "codex" | "kimi";
+
+export interface RegistryExecutionProfile {
+  cli: ExecutionProfileCli;
+  model: string;
+  effort: string;
+}
+
+export interface ExecutionModelRegistryEntry {
+  value: string;
+  label: string;
+  efforts: readonly string[];
+  defaultEffort: string;
+  membershipRestricted: boolean;
+}
+
+export const EXECUTION_MODEL_REGISTRY = {
+  codex: [
+    codexModel("gpt-5.6-sol", ["low", "medium", "high", "xhigh", "max"]),
+    codexModel("gpt-5.6-terra", ["low", "medium", "high", "xhigh", "max"]),
+    codexModel("gpt-5.6-luna", ["low", "medium", "high", "xhigh", "max"]),
+    codexModel("gpt-5.5", ["low", "medium", "high", "xhigh"]),
+    codexModel("gpt-5.4", ["low", "medium", "high", "xhigh"]),
+    codexModel("gpt-5.4-mini", ["low", "medium", "high", "xhigh"]),
+  ],
+  kimi: [
+    kimiModel("kimi-code/kimi-for-coding", "kimi-for-coding", ["on"], "on", false),
+    kimiModel("kimi-code/k3", "k3", ["low", "high", "max"], "high", true),
+    kimiModel("kimi-code/k3-256k", "k3-256k", ["low", "high", "max"], "high", true),
+    kimiModel(
+      "kimi-code/kimi-for-coding-highspeed",
+      "kimi-for-coding-highspeed",
+      ["on"],
+      "on",
+      true,
+    ),
+  ],
+} as const satisfies Record<ExecutionProfileCli, readonly ExecutionModelRegistryEntry[]>;
+
+export const DEFAULT_EXECUTION_PROFILES = {
+  codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+  kimi: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
+} as const satisfies Record<ExecutionProfileCli, RegistryExecutionProfile>;
+
+export function listExecutionModels(cli: ExecutionProfileCli): readonly ExecutionModelRegistryEntry[] {
+  return EXECUTION_MODEL_REGISTRY[cli];
+}
+
+export function findExecutionModel(
+  cli: ExecutionProfileCli,
+  model: string,
+): ExecutionModelRegistryEntry | null {
+  return listExecutionModels(cli).find((candidate) => candidate.value === model) ?? null;
+}
+
+export function resolveProfileForCli(cli: ExecutionProfileCli): RegistryExecutionProfile {
+  return { ...DEFAULT_EXECUTION_PROFILES[cli] };
+}
+
+export function resolveProfileForModel(
+  profile: RegistryExecutionProfile,
+  model: string,
+): RegistryExecutionProfile {
+  const definition = findExecutionModel(profile.cli, model);
+  if (definition === null) {
+    return { ...profile };
+  }
+  return {
+    ...profile,
+    model,
+    effort: definition.efforts.includes(profile.effort)
+      ? profile.effort
+      : definition.defaultEffort,
+  };
+}
+
+export function isRegisteredExecutionEffort(
+  cli: ExecutionProfileCli,
+  model: string,
+  effort: string,
+): boolean {
+  return findExecutionModel(cli, model)?.efforts.includes(effort) ?? false;
+}
+
+function codexModel(
+  value: string,
+  efforts: readonly string[],
+): ExecutionModelRegistryEntry {
+  return {
+    value,
+    label: value,
+    efforts,
+    defaultEffort: "high",
+    membershipRestricted: false,
+  };
+}
+
+function kimiModel(
+  value: string,
+  label: string,
+  efforts: readonly string[],
+  defaultEffort: string,
+  membershipRestricted: boolean,
+): ExecutionModelRegistryEntry {
+  return { value, label, efforts, defaultEffort, membershipRestricted };
+}

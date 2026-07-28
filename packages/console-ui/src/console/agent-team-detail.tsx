@@ -16,6 +16,13 @@ import {
   AgentMarkdownMentionEditor,
   CopyableAgentSlug,
 } from "@/console/agent-markdown-mention-editor";
+import {
+  findExecutionModel,
+  isRegisteredExecutionEffort,
+  listExecutionModels,
+  resolveProfileForCli,
+  resolveProfileForModel,
+} from "@/console/execution-profile-registry";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
@@ -267,6 +274,12 @@ export function AgentTeamDetail({
   const profileDraftValid = profileDraft !== null
     && profileModelError === null
     && profileEffortError === null;
+  const profileModelDefinition = profileDraft === null
+    ? null
+    : findExecutionModel(profileDraft.cli, profileDraft.model);
+  const profileModelUnsupported = profileDraft !== null && profileModelDefinition === null;
+  const profileEffortUnsupported = profileDraft !== null
+    && !isRegisteredExecutionEffort(profileDraft.cli, profileDraft.model, profileDraft.effort);
 
   useEffect(() => {
     const teamChanged = profileEditorsTeamKeyRef.current !== team.teamKey;
@@ -982,10 +995,10 @@ export function AgentTeamDetail({
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...profileDraft,
-                          cli: event.currentTarget.value as "codex" | "kimi",
-                        } })}
+                        onChange={(event) => updateProfileEditor(selectedMember.slug, {
+                          draft: resolveProfileForCli(event.currentTarget.value as "codex" | "kimi"),
+                          error: null,
+                        })}
                       >
                         <option value="codex">Codex</option>
                         <option value="kimi">Kimi</option>
@@ -993,22 +1006,34 @@ export function AgentTeamDetail({
                     </label>
                     <label className="grid gap-1.5 text-xs text-hint">
                       Model
-                      <input
+                      <select
                         aria-label="Model"
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.model}
                         disabled={readOnly || profileStatus === "saving"}
                         aria-invalid={profileModelError !== null}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...profileDraft,
-                          model: event.currentTarget.value,
+                          ...resolveProfileForModel(profileDraft, event.currentTarget.value),
                         }, error: null })}
-                      />
+                      >
+                        {profileModelUnsupported ? (
+                          <option value={profileDraft.model}>
+                            {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
+                          </option>
+                        ) : null}
+                        {listExecutionModels(profileDraft.cli).map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.membershipRestricted
+                              ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
+                              : model.label}
+                          </option>
+                        ))}
+                      </select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
                     <label className="grid gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
-                      <input
+                      <select
                         aria-label={t("console.agentTeamDetail.effort")}
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.effort}
@@ -1018,10 +1043,24 @@ export function AgentTeamDetail({
                           ...profileDraft,
                           effort: event.currentTarget.value,
                         }, error: null })}
-                      />
+                      >
+                        {profileEffortUnsupported ? (
+                          <option value={profileDraft.effort}>
+                            {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
+                          </option>
+                        ) : null}
+                        {profileModelDefinition?.efforts.map((effort) => (
+                          <option key={effort} value={effort}>{effort}</option>
+                        ))}
+                      </select>
                       {profileEffortError !== null ? <span className="text-danger">{profileEffortError}</span> : null}
                     </label>
                   </div>
+                  {profileModelUnsupported || profileEffortUnsupported ? (
+                    <p className="mt-3 text-sm text-sub" role="status">
+                      {t("console.agentTeamDetail.legacyProfileNotice")}
+                    </p>
+                  ) : null}
                   <p className="mt-3 text-sm text-sub">
                     {t("console.agentTeamDetail.runtimeValidationNotice")}
                   </p>

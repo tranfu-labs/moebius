@@ -11,6 +11,9 @@ import {
   writeOfficialTeamStateDocument,
 } from "./team-management-store.js";
 import {
+  DEFAULT_TEAM_EXECUTION_PROFILE,
+} from "./team-execution-profile.js";
+import {
   computeOfficialTeamContentFingerprint,
   readPackagedOfficialTeamManifest,
   recommendationFingerprint,
@@ -22,12 +25,6 @@ import { getSystemTeamsRoot, resolveTeamLocation } from "./team-store.js";
 export const TEAMS_SEED_MARKER_FILE = ".teams-seed.marker";
 
 const FINGERPRINT_VERSION = "moebius-team-seed-v1";
-const DEFAULT_LEGACY_PROFILE = {
-  cli: "codex" as const,
-  model: "gpt-5.6-sol",
-  effort: "high",
-};
-
 export interface BuiltInTeamSeedResult {
   fingerprint: string;
   status: "seeded" | "skipped";
@@ -97,7 +94,7 @@ export async function seedBuiltInTeams(input: {
           slug,
           Object.hasOwn(recommendations, slug)
             ? { source: "recommended" as const }
-            : { source: "explicit" as const, profile: DEFAULT_LEGACY_PROFILE },
+            : { source: "explicit" as const, profile: DEFAULT_TEAM_EXECUTION_PROFILE },
         ])),
       };
     }

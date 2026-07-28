@@ -262,7 +262,7 @@ describe("AgentTeamDetail", () => {
     expect(screen.queryByRole("button", { name: "用当前内容覆盖" })).not.toBeInTheDocument();
   });
 
-  it("edits CLI, model, and effort independently from AGENT.md", async () => {
+  it("links model and effort dropdowns for the selected CLI", async () => {
     const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) => ({
       binding: { source: "explicit", profile },
       recommendation: null,
@@ -272,44 +272,68 @@ describe("AgentTeamDetail", () => {
 
     expect(screen.getByTestId("agent-execution-profile-editor")).toBeVisible();
     expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.6-sol");
+    expect(within(screen.getByRole("combobox", { name: "Model" })).getAllByRole("option"))
+      .toHaveLength(6);
+    expect(within(screen.getByRole("combobox", { name: "思考程度" })).getAllByRole("option")
+      .map((option) => option.getAttribute("value"))).toEqual(["low", "medium", "high", "xhigh", "max"]);
+
     fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
-      target: { value: "kimi-for-coding" },
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("kimi-code/kimi-for-coding");
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("on");
+    expect(screen.getByRole("option", { name: "k3（需相应会员权限）" })).toBeVisible();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "kimi-code/k3" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "思考程度" }), { target: { value: "medium" } });
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
+    fireEvent.change(screen.getByRole("combobox", { name: "思考程度" }), { target: { value: "max" } });
     fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
-      { cli: "kimi", model: "kimi-for-coding", effort: "medium" },
+      { cli: "kimi", model: "kimi-code/k3", effort: "max" },
     ));
   });
 
-  it("rejects blank static values and accepts an unknown non-empty profile", async () => {
+  it("preserves an unsupported historical profile until a supported model is selected", async () => {
     const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile: AgentExecutionProfile) =>
-      executionProfileDocument({
-        ...profile,
-        model: profile.model.trim(),
-        effort: profile.effort.trim(),
-      }));
-    renderDetail({ onSaveExecutionProfile });
-    const model = screen.getByRole("textbox", { name: "Model" });
-    const effort = screen.getByRole("textbox", { name: "思考程度" });
+      executionProfileDocument(profile));
+    const base = detailProps();
+    renderDetail({
+      onSaveExecutionProfile,
+      team: {
+        ...base.team,
+        members: base.team.members.map((member) => member.slug === "manager"
+          ? {
+              ...member,
+              executionProfile: executionProfileDocument({
+                cli: "kimi",
+                model: "future-model",
+                effort: "future-effort",
+              }),
+            }
+          : member),
+      },
+    });
+    const model = screen.getByRole("combobox", { name: "Model" });
+    const effort = screen.getByRole("combobox", { name: "思考程度" });
 
-    fireEvent.change(model, { target: { value: "   " } });
-    expect(screen.getByText("请输入 model")).toBeVisible();
-    expect(screen.getByText("已保存配置没有改变。")).toBeVisible();
+    expect(model).toHaveValue("future-model");
+    expect(effort).toHaveValue("future-effort");
+    expect(screen.getByRole("option", { name: "future-model（旧版自定义配置）" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "future-effort（当前列表不支持）" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("旧版自定义配置会保留");
     expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(onSaveExecutionProfile).not.toHaveBeenCalled();
 
-    fireEvent.change(model, { target: { value: "  future-model  " } });
-    fireEvent.change(effort, { target: { value: "  future-effort  " } });
+    fireEvent.change(model, { target: { value: "kimi-code/k3-256k" } });
+    expect(effort).toHaveValue("high");
     fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
 
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
-      { cli: "codex", model: "  future-model  ", effort: "  future-effort  " },
+      { cli: "kimi", model: "kimi-code/k3-256k", effort: "high" },
     ));
-    await waitFor(() => expect(model).toHaveValue("future-model"));
-    expect(effort).toHaveValue("future-effort");
   });
 
   it("keeps per-member profile drafts across member switches and saves them before leaving", async () => {
@@ -345,7 +369,7 @@ describe("AgentTeamDetail", () => {
 
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
-      { cli: "kimi", model: "gpt-5.6-sol", effort: "high" },
+      { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
     ));
     await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
   });
@@ -412,13 +436,13 @@ describe("AgentTeamDetail", () => {
   it("keeps a static profile draft across parent rerenders without runtime-health UI", () => {
     const base = detailProps({ state: stateWith(managerEditor({ isDirty: false })) });
     const { rerender } = render(<AgentTeamDetail {...base} onSaveExecutionProfile={vi.fn()} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
-      target: { value: "future-model" },
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "gpt-5.4-mini" },
     });
 
     rerender(<AgentTeamDetail {...base} onSaveExecutionProfile={vi.fn()} />);
 
-    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("future-model");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.4-mini");
     expect(screen.queryByText("正在读取运行配置…")).not.toBeInTheDocument();
     expect(screen.queryByText(/无法验证|需要调整|重新检查运行能力/u)).not.toBeInTheDocument();
   });

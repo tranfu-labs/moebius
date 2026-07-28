@@ -56,12 +56,16 @@ export interface KimiAcpTransport {
     optionId: string,
     expectedValue: string,
     timeoutMs: number,
-  ): Promise<boolean>;
+  ): Promise<KimiConfigUpdateConfirmation | null>;
   onSessionUpdate(listener: (update: unknown) => void): () => void;
   close(): Promise<void>;
   interrupt(): void;
   terminate(): void;
   kill(): void;
+}
+
+interface KimiConfigUpdateConfirmation {
+  configOptions: readonly unknown[] | null;
 }
 
 export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunResult> {
@@ -307,16 +311,39 @@ export async function confirmRuntimeConfig(
   expectedEffort: string,
   expectedPermissionMode = "auto",
 ): Promise<void> {
-  const model = findConfigOption(configOptions, "model");
-  const effort = findConfigOption(configOptions, "effort");
-  const mode = findConfigOption(configOptions, "mode");
-  if (model === null || effort === null || mode === null) {
+  let activeOptions = configOptions;
+  const model = findConfigOption(activeOptions, "model");
+  if (model === null) {
     throw new KimiAcpError(
       "KIMI_ACP_CONFIG_UNCONFIRMED",
       "Kimi 没有提供可核验的模型、思考程度与权限模式配置。",
     );
   }
-  await setAndConfirm(model, expectedModel, "模型");
+  const modelChanged = model.currentValue !== expectedModel;
+  const modelConfirmation = await setAndConfirm(
+    model,
+    expectedModel,
+    "模型",
+    modelChanged,
+  );
+  if (modelChanged) {
+    const refreshedOptions = modelConfirmation?.configOptions;
+    if (refreshedOptions === null || refreshedOptions === undefined) {
+      throw new KimiAcpError(
+        "KIMI_ACP_CONFIG_UNCONFIRMED",
+        "Kimi 没有提供切换模型后的可核验配置。",
+      );
+    }
+    activeOptions = refreshedOptions;
+  }
+  const effort = findConfigOption(activeOptions, "effort");
+  const mode = findConfigOption(activeOptions, "mode");
+  if (effort === null || mode === null) {
+    throw new KimiAcpError(
+      "KIMI_ACP_CONFIG_UNCONFIRMED",
+      "Kimi 没有提供可核验的模型、思考程度与权限模式配置。",
+    );
+  }
   await setAndConfirm(effort, expectedEffort, "思考程度");
   await setAndConfirm(mode, expectedPermissionMode, "权限模式");
 
@@ -324,7 +351,8 @@ export async function confirmRuntimeConfig(
     option: { id: string; currentValue: string | null; values: string[] },
     expectedValue: string,
     label: string,
-  ): Promise<void> {
+    requireConfigOptions = false,
+  ): Promise<KimiConfigUpdateConfirmation | null> {
     if (!option.values.includes(expectedValue)) {
       throw new KimiAcpError(
         "KIMI_ACP_CONFIG_MISMATCH",
@@ -332,18 +360,29 @@ export async function confirmRuntimeConfig(
       );
     }
     if (option.currentValue === expectedValue) {
-      return;
+      return null;
     }
     const response = await transport.request("session/set_config_option", {
       sessionId,
       configId: option.id,
       value: expectedValue,
     });
-    if (responseConfirmsConfig(response, option.id, expectedValue)) {
-      return;
+    const responseOptions = readConfigOptions(response);
+    const responseConfirmed = responseConfirmsConfig(response, option.id, expectedValue);
+    if (responseConfirmed && (!requireConfigOptions || responseOptions.length > 0)) {
+      return { configOptions: responseOptions.length > 0 ? responseOptions : null };
     }
-    if (await transport.waitForConfigUpdate(sessionId, option.id, expectedValue, 2_000)) {
-      return;
+    const update = await transport.waitForConfigUpdate(
+      sessionId,
+      option.id,
+      expectedValue,
+      2_000,
+    );
+    if (update !== null) {
+      return update;
+    }
+    if (responseConfirmed) {
+      return { configOptions: null };
     }
     throw new KimiAcpError(
       "KIMI_ACP_CONFIG_UNCONFIRMED",
@@ -423,8 +462,9 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
     sessionId: string;
     optionId: string;
     expectedValue: string;
-    resolve(value: boolean): void;
+    resolve(value: KimiConfigUpdateConfirmation | null): void;
   }>();
+  private readonly latestConfigOptions = new Map<string, readonly unknown[]>();
   private nextId = 1;
   private buffer = "";
   private closed = false;
@@ -472,12 +512,19 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
     optionId: string,
     expectedValue: string,
     timeoutMs: number,
-  ): Promise<boolean> {
+  ): Promise<KimiConfigUpdateConfirmation | null> {
+    const latest = this.latestConfigOptions.get(sessionId);
+    if (
+      latest !== undefined
+      && responseConfirmsConfig({ configOptions: latest }, optionId, expectedValue)
+    ) {
+      return Promise.resolve({ configOptions: latest });
+    }
     return new Promise((resolve) => {
       const waiter = { sessionId, optionId, expectedValue, resolve };
       this.configWaiters.add(waiter);
       setTimeout(() => {
-        if (this.configWaiters.delete(waiter)) resolve(false);
+        if (this.configWaiters.delete(waiter)) resolve(null);
       }, timeoutMs);
     });
   }
@@ -556,17 +603,29 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
     if (value.method === "session/update") {
       const update = isRecord(value.params) ? value.params : value;
       for (const listener of this.updateListeners) listener(update);
+      const updateSessionId = readConfigUpdateSessionId(update);
+      const configOptions = readConfigOptionsFromUpdate(update);
+      if (updateSessionId !== null && configOptions.length > 0) {
+        this.latestConfigOptions.set(updateSessionId, configOptions);
+      }
       const confirmation = readConfigConfirmation(update);
-      if (confirmation !== null) {
-        for (const waiter of this.configWaiters) {
-          if (
-            waiter.sessionId === confirmation.sessionId
-            && waiter.optionId === confirmation.optionId
-            && waiter.expectedValue === confirmation.value
-          ) {
-            this.configWaiters.delete(waiter);
-            waiter.resolve(true);
-          }
+      for (const waiter of this.configWaiters) {
+        const fullOptionsConfirm = updateSessionId === waiter.sessionId
+          && configOptions.length > 0
+          && responseConfirmsConfig(
+            { configOptions },
+            waiter.optionId,
+            waiter.expectedValue,
+          );
+        const directUpdateConfirms = confirmation !== null
+          && waiter.sessionId === confirmation.sessionId
+          && waiter.optionId === confirmation.optionId
+          && waiter.expectedValue === confirmation.value;
+        if (fullOptionsConfirm || directUpdateConfirms) {
+          this.configWaiters.delete(waiter);
+          waiter.resolve({
+            configOptions: configOptions.length > 0 ? configOptions : null,
+          });
         }
       }
     }
@@ -631,7 +690,7 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
   private failAll(error: Error): void {
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
-    for (const waiter of this.configWaiters) waiter.resolve(false);
+    for (const waiter of this.configWaiters) waiter.resolve(null);
     this.configWaiters.clear();
   }
 
@@ -743,6 +802,18 @@ function readConfigConfirmation(value: unknown): {
   return sessionId === null || optionId === null || selected === null
     ? null
     : { sessionId, optionId, value: selected };
+}
+
+function readConfigUpdateSessionId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const update = isRecord(value.update) ? value.update : value;
+  return firstString(value.sessionId, value.session_id, update.sessionId, update.session_id);
+}
+
+function readConfigOptionsFromUpdate(value: unknown): unknown[] {
+  if (!isRecord(value)) return [];
+  const update = isRecord(value.update) ? value.update : value;
+  return readConfigOptions(update);
 }
 
 function readAgentTextChunk(value: unknown): string | null {

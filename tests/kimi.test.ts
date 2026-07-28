@@ -45,6 +45,7 @@ function configOptions(model = "kimi-for-coding", effort = "high", mode = "auto"
 
 function fakeTransport(input: {
   authMethods?: unknown[];
+  configUpdateOptions?: unknown[];
   sessionOptions?: unknown[];
   setResponses?: unknown[];
   waitForUpdate?: boolean;
@@ -74,7 +75,13 @@ function fakeTransport(input: {
       throw new Error(`unexpected ${method}`);
     },
     notify: vi.fn(),
-    waitForConfigUpdate: vi.fn().mockResolvedValue(input.waitForUpdate ?? false),
+    waitForConfigUpdate: vi.fn().mockResolvedValue(
+      input.configUpdateOptions !== undefined
+        ? { configOptions: input.configUpdateOptions }
+        : input.waitForUpdate === true
+          ? { configOptions: input.sessionOptions ?? null }
+        : null,
+    ),
     onSessionUpdate: () => () => undefined,
     close: vi.fn().mockResolvedValue(undefined),
     interrupt: vi.fn(),
@@ -298,7 +305,7 @@ describe("Kimi ACP driver", () => {
     const transport = fakeTransport({
       sessionOptions: configOptions("kimi-k2", "medium"),
       setResponses: [
-        { id: "model", currentValue: "kimi-for-coding" },
+        { configOptions: configOptions("kimi-for-coding", "medium") },
         { id: "thinking", currentValue: "high" },
       ],
     });
@@ -317,6 +324,146 @@ describe("Kimi ACP driver", () => {
       "session/set_config_option",
       "session/prompt",
     ]);
+  });
+
+  it("applies the full Kimi CLI alias and its model-specific effort before prompting", async () => {
+    const root = await makeRunRoot();
+    const refreshedOptions = [
+      {
+        id: "model",
+        currentValue: "kimi-code/kimi-for-coding",
+        options: [
+          { value: "kimi-code/k3" },
+          { value: "kimi-code/kimi-for-coding" },
+        ],
+      },
+      {
+        id: "thinking",
+        currentValue: "on",
+        options: [{ value: "on" }],
+      },
+      {
+        id: "mode",
+        currentValue: "auto",
+        options: [{ value: "auto" }, { value: "default" }],
+      },
+    ];
+    const transport = fakeTransport({
+      sessionOptions: [
+        {
+          id: "model",
+          currentValue: "kimi-code/k3",
+          options: [
+            { value: "kimi-code/k3" },
+            { value: "kimi-code/kimi-for-coding" },
+          ],
+        },
+        {
+          id: "thinking",
+          currentValue: "high",
+          options: [{ value: "low" }, { value: "high" }, { value: "max" }],
+        },
+        {
+          id: "mode",
+          currentValue: "auto",
+          options: [{ value: "auto" }, { value: "default" }],
+        },
+      ],
+      setResponses: [
+        { configOptions: refreshedOptions },
+      ],
+    });
+    const result = await runKimiAcpWithTransport(transport, {
+      prompt: "identify the selected runtime",
+      runDir: root,
+      cwd: root,
+      profile: {
+        cli: "kimi",
+        model: "kimi-code/kimi-for-coding",
+        effort: "on",
+      },
+      mode: { kind: "full" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(transport.requests.slice(2)).toEqual([
+      {
+        method: "session/set_config_option",
+        params: {
+          sessionId: "kimi-session-1",
+          configId: "model",
+          value: "kimi-code/kimi-for-coding",
+        },
+      },
+      expect.objectContaining({ method: "session/prompt" }),
+    ]);
+    expect(transport.requests.at(-1)?.method).toBe("session/prompt");
+  });
+
+  it("uses a model config update when the setting response has no refreshed effort list", async () => {
+    const root = await makeRunRoot();
+    const refreshedOptions = [
+      {
+        id: "model",
+        currentValue: "kimi-code/kimi-for-coding",
+        options: [{ value: "kimi-code/kimi-for-coding" }],
+      },
+      {
+        id: "thinking",
+        currentValue: "on",
+        options: [{ value: "on" }],
+      },
+      {
+        id: "mode",
+        currentValue: "auto",
+        options: [{ value: "auto" }],
+      },
+    ];
+    const transport = fakeTransport({
+      sessionOptions: [
+        {
+          id: "model",
+          currentValue: "kimi-code/k3",
+          options: [
+            { value: "kimi-code/k3" },
+            { value: "kimi-code/kimi-for-coding" },
+          ],
+        },
+        {
+          id: "thinking",
+          currentValue: "high",
+          options: [{ value: "low" }, { value: "high" }, { value: "max" }],
+        },
+        {
+          id: "mode",
+          currentValue: "auto",
+          options: [{ value: "auto" }],
+        },
+      ],
+      setResponses: [
+        { id: "model", currentValue: "kimi-code/kimi-for-coding" },
+      ],
+      configUpdateOptions: refreshedOptions,
+    });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "run after linked config confirmation",
+      runDir: root,
+      cwd: root,
+      profile: {
+        cli: "kimi",
+        model: "kimi-code/kimi-for-coding",
+        effort: "on",
+      },
+      mode: { kind: "full" },
+    })).resolves.toMatchObject({ ok: true });
+    expect(transport.waitForConfigUpdate).toHaveBeenCalledWith(
+      "kimi-session-1",
+      "model",
+      "kimi-code/kimi-for-coding",
+      2_000,
+    );
+    expect(transport.requests.at(-1)?.method).toBe("session/prompt");
   });
 
   it.each([

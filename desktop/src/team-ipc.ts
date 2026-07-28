@@ -26,10 +26,10 @@ import {
   saveTeamExecutionBinding,
 } from "./team-management-store.js";
 import {
+  DEFAULT_TEAM_EXECUTION_PROFILE,
   materializeExplicitBindings,
   normalizeExecutionProfile,
   resolveEffectiveExecutionProfile,
-  type ExecutionProfile,
   type ExecutionProfileBinding,
 } from "./team-execution-profile.js";
 import {
@@ -65,12 +65,6 @@ import {
 } from "./team-store.js";
 
 export * from "./team-ipc-contract.js";
-
-const LEGACY_EXPLICIT_PROFILE: ExecutionProfile = {
-  cli: "codex",
-  model: "gpt-5.6-sol",
-  effort: "high",
-};
 
 export async function listAgentTeams(input: {
   dataRoot: string;
@@ -144,7 +138,7 @@ export async function addAgentTeamMember(
     ownership: location.ownership,
     teamId: location.id,
     memberSlug: result.member.slug,
-    binding: { source: "explicit", profile: LEGACY_EXPLICIT_PROFILE },
+    binding: { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE },
   });
   await refreshUserTeamRecord(result.team);
   return {
@@ -432,7 +426,7 @@ async function toManagedListItemWithOnboardingOrchestration(
     let binding = bindings[member.slug];
     if (binding === undefined) {
       binding = recommendation === null
-        ? { source: "explicit", profile: LEGACY_EXPLICIT_PROFILE }
+        ? { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE }
         : { source: "recommended" };
     }
     return {
@@ -488,7 +482,7 @@ async function initializeExplicitBindings(snapshot: TeamSnapshot): Promise<void>
     teamId: snapshot.location.id,
     bindings: Object.fromEntries(snapshot.members.map((member) => [
       member.slug,
-      { source: "explicit", profile: LEGACY_EXPLICIT_PROFILE },
+      { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE },
     ])),
   });
 }
@@ -513,7 +507,7 @@ async function copyTeamBindingsAsExplicit(input: {
     slug,
     bindings[slug] ?? (
       official?.appliedRecommendations[slug] === undefined
-        ? { source: "explicit" as const, profile: LEGACY_EXPLICIT_PROFILE }
+        ? { source: "explicit" as const, profile: DEFAULT_TEAM_EXECUTION_PROFILE }
         : { source: "recommended" as const }
     ),
   ]));
@@ -546,7 +540,7 @@ async function resolveStoredMemberProfile(input: {
   const recommendation = official?.appliedRecommendations[input.memberSlug] ?? null;
   if (binding === undefined) {
     binding = recommendation === null
-      ? { source: "explicit", profile: LEGACY_EXPLICIT_PROFILE }
+      ? { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE }
       : { source: "recommended" };
     await saveTeamExecutionBinding({
       ...input,

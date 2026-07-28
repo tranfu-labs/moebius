@@ -8,6 +8,12 @@ export interface ExecutionProfile {
   effort: string;
 }
 
+export const DEFAULT_TEAM_EXECUTION_PROFILE = Object.freeze<ExecutionProfile>({
+  cli: "codex",
+  model: "gpt-5.6-sol",
+  effort: "high",
+});
+
 export type ExecutionProfileBinding =
   | { source: "recommended" }
   | { source: "override" | "explicit"; profile: ExecutionProfile };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_TEAM_EXECUTION_PROFILE,
   capabilitySnapshotId,
   evaluateExecutionProfile,
   materializeExplicitBindings,
@@ -49,6 +50,10 @@ function capability(
 }
 
 describe("team execution profiles", () => {
+  it("uses Codex gpt-5.6-sol at high effort when no member settings exist", () => {
+    expect(DEFAULT_TEAM_EXECUTION_PROFILE).toEqual(codexProfile);
+  });
+
   it("normalizes complete profiles and rejects implicit values", () => {
     expect(normalizeExecutionProfile({
       cli: " codex ",
