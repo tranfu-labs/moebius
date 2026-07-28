@@ -75,6 +75,12 @@ import {
   LANGUAGE_PREFERENCE_IPC_CHANNELS,
   type DesktopLocale,
 } from "./language-preference-contract.js";
+import {
+  SETTINGS_IPC_CHANNELS,
+  type SettingsApplicationInfo,
+  type SettingsUpdateCheckResult,
+  type SettingsVersionCopyResult,
+} from "./settings-contract.js";
 
 export interface MoebiusDesktopApi {
   readLanguagePreference(): Promise<DesktopLocale>;
@@ -87,7 +93,9 @@ export interface MoebiusDesktopApi {
   openObserver(): Promise<void>;
   openStatusPage(): Promise<void>;
   openDataRoot(): Promise<void>;
-  checkUpdates(): Promise<void>;
+  readApplicationInfo(): Promise<SettingsApplicationInfo>;
+  checkForUpdates(): Promise<SettingsUpdateCheckResult>;
+  copyVersionInfo(): Promise<SettingsVersionCopyResult>;
   selectProjectFolder(): Promise<string | null>;
   selectFolderForRepair(projectId: string): Promise<string | null>;
   showInFolder(folderPath: string): Promise<void>;
@@ -196,8 +204,14 @@ const api: MoebiusDesktopApi = {
   openDataRoot() {
     return ipcRenderer.invoke("action:open-data-root") as Promise<void>;
   },
-  checkUpdates() {
-    return ipcRenderer.invoke("action:check-updates") as Promise<void>;
+  readApplicationInfo() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.readApplicationInfo) as Promise<SettingsApplicationInfo>;
+  },
+  checkForUpdates() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.checkForUpdates) as Promise<SettingsUpdateCheckResult>;
+  },
+  copyVersionInfo() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.copyVersionInfo) as Promise<SettingsVersionCopyResult>;
   },
   selectProjectFolder() {
     return ipcRenderer.invoke("project:select-folder") as Promise<string | null>;

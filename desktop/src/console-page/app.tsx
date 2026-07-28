@@ -196,10 +196,23 @@ import { refillStoppedRunDraft } from "./edit-resend.js";
 import type { CopySessionLogPathResult } from "../session-log-clipboard.js";
 import type { DesktopLocale } from "../language-preference-contract.js";
 import {
+  SETTINGS_RELEASES_URL,
+  SETTINGS_REPOSITORY_URL,
+  createSettingsFeedbackUrl,
+  type SettingsApplicationInfo,
+  type SettingsUpdateCheckResult,
+  type SettingsVersionCopyResult,
+} from "../settings-contract.js";
+import {
   createLanguageState,
   reduceLanguageState,
   type LanguageState,
 } from "./language-state.js";
+import {
+  INITIAL_DESKTOP_SETTINGS_STATE,
+  SingleInFlightSettingsRequest,
+  reduceDesktopSettings,
+} from "./settings-state.js";
 import {
   createContext,
   useContext,
@@ -214,6 +227,9 @@ export interface DesktopApi {
   getLocalConsoleUrl?: () => Promise<string | null>;
   getLocalConsoleAttachmentCapability?: () => Promise<string | null>;
   copySessionLogPath?: (sessionId: string) => Promise<CopySessionLogPathResult>;
+  readApplicationInfo?: () => Promise<SettingsApplicationInfo>;
+  checkForUpdates?: () => Promise<SettingsUpdateCheckResult>;
+  copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   onStatus?: (listener: (snapshot: DesktopStatusSnapshot) => void) => () => void;
   openStatusPage?: () => Promise<void>;
   selectProjectFolder?: () => Promise<string | null>;
@@ -603,6 +619,13 @@ export function OperatorConsoleApp({
   const [isSending, setIsSending] = useState(false);
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [desktopSettings, dispatchDesktopSettings] = useReducer(
+    reduceDesktopSettings,
+    INITIAL_DESKTOP_SETTINGS_STATE,
+  );
+  const settingsUpdateRequestRef = useRef(new SingleInFlightSettingsRequest());
+  const settingsCopyRequestRef = useRef(new SingleInFlightSettingsRequest());
+  const nextSettingsRequestIdRef = useRef(1);
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const [agentTeamsState, setAgentTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
@@ -662,6 +685,59 @@ export function OperatorConsoleApp({
     currentDraftKey: activeSubSessionDraftKey,
     onError: reportAttachmentError,
   });
+
+  useEffect(() => {
+    let active = true;
+    void window.moebius?.readApplicationInfo?.().then((info) => {
+      if (active) {
+        dispatchDesktopSettings({ type: "application-info-loaded", info });
+      }
+    }).catch(() => {
+      // The About page remains available with a neutral version placeholder.
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const checkSettingsUpdates = useCallback(() => {
+    if (settingsUpdateRequestRef.current.isRunning) {
+      return;
+    }
+    const requestId = nextSettingsRequestIdRef.current++;
+    const currentVersion = desktopSettings.applicationInfo?.version ?? "—";
+    settingsUpdateRequestRef.current.start(async () => {
+      const result = await (window.moebius?.checkForUpdates?.() ?? Promise.resolve({
+        status: "failed",
+        currentVersion,
+        reason: "unavailable",
+      } satisfies SettingsUpdateCheckResult)).catch((): SettingsUpdateCheckResult => ({
+          status: "failed",
+          currentVersion,
+          reason: "unavailable",
+        }));
+      dispatchDesktopSettings({ type: "update-finished", requestId, result });
+    });
+    dispatchDesktopSettings({ type: "update-started", requestId });
+  }, [desktopSettings.applicationInfo?.version]);
+
+  const copySettingsVersion = useCallback(() => {
+    if (settingsCopyRequestRef.current.isRunning) {
+      return;
+    }
+    const requestId = nextSettingsRequestIdRef.current++;
+    settingsCopyRequestRef.current.start(async () => {
+      const result = await (window.moebius?.copyVersionInfo?.() ?? Promise.resolve({
+        ok: false,
+        reason: "clipboard-unavailable",
+      } satisfies SettingsVersionCopyResult)).catch((): SettingsVersionCopyResult => ({
+          ok: false,
+          reason: "clipboard-unavailable",
+        }));
+      dispatchDesktopSettings({ type: "copy-finished", requestId, result });
+    });
+    dispatchDesktopSettings({ type: "copy-started", requestId });
+  }, []);
 
   useEffect(() => {
     if (state === null) return;
@@ -2732,8 +2808,31 @@ export function OperatorConsoleApp({
       activeLocale={language.activeLocale}
       pendingLocale={language.pendingLocale}
       languageSaveStatus={language.status}
+      settingsAbout={{
+        currentVersion: desktopSettings.applicationInfo?.version ?? "—",
+        updateStatus: desktopSettings.updateStatus,
+        latestVersion: desktopSettings.latestVersion,
+        downloadUrl: desktopSettings.downloadUrl,
+        copyStatus: desktopSettings.copyStatus,
+      }}
+      settingsExternalLinks={{
+        releaseNotes: SETTINGS_RELEASES_URL,
+        feedback: desktopSettings.applicationInfo === null
+          ? "https://github.com/tranfu-labs/moebius/issues/new"
+          : createSettingsFeedbackUrl(desktopSettings.applicationInfo),
+        repository: SETTINGS_REPOSITORY_URL,
+      }}
       onSelectLocale={language.selectLocale}
       onRetryLocaleSave={language.retry}
+      onCheckSettingsUpdates={checkSettingsUpdates}
+      onCopySettingsVersion={copySettingsVersion}
+      onOpenSettingsExternalLink={async (url) => {
+        const openExternalLink = window.moebius?.openExternalLink;
+        if (openExternalLink === undefined) {
+          throw new Error("external link service unavailable");
+        }
+        await openExternalLink(url);
+      }}
       project={project}
       projects={projects}
       selectedProjectId={selection.projectId}

@@ -17,7 +17,6 @@ const elements = {
   configStatus: document.getElementById("config-status"),
   dataRoot: document.getElementById("data-root"),
   openDataRoot: document.getElementById("open-data-root"),
-  checkUpdates: document.getElementById("check-updates"),
 };
 
 let locale = resolveStatusPageLocale(new URLSearchParams(window.location.search).get("locale"));
@@ -48,9 +47,6 @@ elements.openObserver.addEventListener("click", () => {
 });
 elements.openDataRoot.addEventListener("click", () => {
   void window.moebius.openDataRoot();
-});
-elements.checkUpdates.addEventListener("click", () => {
-  void window.moebius.checkUpdates();
 });
 
 window.moebius.onStatus((snapshot) => {

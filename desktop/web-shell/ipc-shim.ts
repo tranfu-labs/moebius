@@ -9,7 +9,6 @@ interface FakeApi {
   openObserver(): Promise<void>;
   openStatusPage(): Promise<void>;
   openDataRoot(): Promise<void>;
-  checkUpdates(): Promise<void>;
   selectProjectFolder(): Promise<string | null>;
   showInFolder(folderPath: string): Promise<void>;
 }
@@ -37,9 +36,6 @@ const api: FakeApi = {
   },
   async openDataRoot() {
     console.info("[web-shell] openDataRoot: no-op in browser");
-  },
-  async checkUpdates() {
-    console.info("[web-shell] checkUpdates: no-op in browser");
   },
   async selectProjectFolder() {
     const value = window.prompt("Web-shell: 贴项目文件夹绝对路径") ?? "";

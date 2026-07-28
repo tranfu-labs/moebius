@@ -78,7 +78,12 @@ import {
 } from "@/console/conversation-sidebar";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
-import { SettingsDialog, type LanguageSaveStatus } from "@/console/settings-dialog";
+import {
+  SettingsDialog,
+  type LanguageSaveStatus,
+  type SettingsAboutState,
+  type SettingsSection,
+} from "@/console/settings-dialog";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -367,8 +372,17 @@ export interface OperatorConsoleProps {
   activeLocale?: Locale;
   pendingLocale?: Locale | null;
   languageSaveStatus?: LanguageSaveStatus;
+  settingsAbout?: SettingsAboutState;
+  settingsExternalLinks?: {
+    releaseNotes: string;
+    feedback: string;
+    repository: string;
+  };
   onSelectLocale?: (locale: Locale) => void;
   onRetryLocaleSave?: () => void;
+  onCheckSettingsUpdates?: () => void;
+  onCopySettingsVersion?: () => void;
+  onOpenSettingsExternalLink?: (url: string) => Promise<void>;
   onComposerChange(value: string): void;
   onComposerFilesAdded?: (files: File[]) => void;
   onComposerAttachmentRemove?: (clientId: string) => void;
@@ -514,8 +528,13 @@ export function OperatorConsole({
   activeLocale = "zh-CN",
   pendingLocale = null,
   languageSaveStatus = "idle",
+  settingsAbout,
+  settingsExternalLinks,
   onSelectLocale,
   onRetryLocaleSave,
+  onCheckSettingsUpdates,
+  onCopySettingsVersion,
+  onOpenSettingsExternalLink,
   onComposerChange,
   onComposerFilesAdded,
   onComposerAttachmentRemove,
@@ -635,6 +654,10 @@ export function OperatorConsole({
   const conversationFocusFrameRef = useRef<number | null>(null);
   const conversationHighlightTimerRef = useRef<number | null>(null);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const settingsOpenRef = useRef(false);
+  const previousLanguageSaveStatusRef = useRef(languageSaveStatus);
+  const previousUpdateStatusRef = useRef(settingsAbout?.updateStatus ?? "idle");
+  const nextSettingsNotificationIdRef = useRef(1);
   const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
   const [currentRelayEventId, setCurrentRelayEventId] = useState<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
@@ -649,6 +672,13 @@ export function OperatorConsole({
   } | null>(null);
   const [conversationRouteConflictOpen, setConversationRouteConflictOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [settingsExternalLinkStatus, setSettingsExternalLinkStatus] = useState<"idle" | "failed">("idle");
+  const [settingsNotifications, setSettingsNotifications] = useState<Array<{
+    id: number;
+    section: SettingsSection;
+    message: string;
+  }>>([]);
   const [savingConversationRouteDrafts, setSavingConversationRouteDrafts] = useState(false);
   const [renameTarget, setRenameTarget] = useState<OperatorProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -663,6 +693,52 @@ export function OperatorConsole({
   const activeProjectUnavailable = activeProject.directoryAvailable === false;
   const projectListUnavailable = projectListState !== "ready";
   const projectConfigurationPending = isProjectMutationPending;
+
+  useEffect(() => {
+    const previousStatus = previousLanguageSaveStatusRef.current;
+    previousLanguageSaveStatusRef.current = languageSaveStatus;
+    if (previousStatus !== "saving" || languageSaveStatus === "saving" || settingsOpenRef.current) {
+      return;
+    }
+    const message = languageSaveStatus === "failed"
+      ? t("settings.notification.languageFailed")
+      : t("settings.notification.languageSaved");
+    setSettingsNotifications((current) => [...current, {
+      id: nextSettingsNotificationIdRef.current++,
+      section: "general",
+      message,
+    }]);
+  }, [activeLocale, languageSaveStatus]);
+
+  useEffect(() => {
+    const currentStatus = settingsAbout?.updateStatus ?? "idle";
+    const previousStatus = previousUpdateStatusRef.current;
+    previousUpdateStatusRef.current = currentStatus;
+    if (previousStatus !== "checking" || currentStatus === "checking" || settingsOpenRef.current) {
+      return;
+    }
+    const message = currentStatus === "available"
+      ? t("settings.notification.updateAvailable", { version: settingsAbout?.latestVersion ?? "" })
+      : currentStatus === "latest"
+        ? t("settings.notification.updateLatest")
+        : t("settings.notification.updateFailed");
+    setSettingsNotifications((current) => [...current, {
+      id: nextSettingsNotificationIdRef.current++,
+      section: "about",
+      message,
+    }]);
+  }, [activeLocale, settingsAbout?.latestVersion, settingsAbout?.updateStatus]);
+
+  const openSettingsExternalLink = (url: string | undefined): void => {
+    if (url === undefined || onOpenSettingsExternalLink === undefined) {
+      setSettingsExternalLinkStatus("failed");
+      return;
+    }
+    setSettingsExternalLinkStatus("idle");
+    void onOpenSettingsExternalLink(url).catch(() => {
+      setSettingsExternalLinkStatus("failed");
+    });
+  };
   const sidebarProjects = visibleProjects.map((item) => toSidebarProject(item, t));
   const hasAgentTeamNeedingRepair = agentTeamsState.status === "ready"
     && agentTeamsState.teams.some((team) => team.status === "needs-repair");
@@ -1280,7 +1356,14 @@ export function OperatorConsole({
             icon={Settings}
             label={translate(activeLocale, "sidebar.settings")}
             buttonRef={settingsTriggerRef}
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              settingsOpenRef.current = true;
+              setSettingsSection(
+                settingsAbout?.updateStatus === "checking" ? "about" : "general",
+              );
+              setSettingsExternalLinkStatus("idle");
+              setSettingsOpen(true);
+            }}
           />
         </footer>
 
@@ -1855,15 +1938,69 @@ export function OperatorConsole({
           activeLocale={activeLocale}
           pendingLocale={pendingLocale}
           saveStatus={languageSaveStatus}
+          activeSection={settingsSection}
+          about={settingsAbout}
+          externalLinkStatus={settingsExternalLinkStatus}
           onOpenChange={(open) => {
+            settingsOpenRef.current = open;
             setSettingsOpen(open);
             if (!open) {
               window.requestAnimationFrame(() => settingsTriggerRef.current?.focus());
             }
           }}
+          onSectionChange={setSettingsSection}
           onSelectLocale={(locale) => onSelectLocale?.(locale)}
           onRetry={() => onRetryLocaleSave?.()}
+          onCheckForUpdates={() => onCheckSettingsUpdates?.()}
+          onCopyVersion={() => onCopySettingsVersion?.()}
+          onDownloadUpdate={() => openSettingsExternalLink(settingsAbout?.downloadUrl)}
+          onOpenReleaseNotes={() => openSettingsExternalLink(settingsExternalLinks?.releaseNotes)}
+          onOpenFeedback={() => openSettingsExternalLink(settingsExternalLinks?.feedback)}
+          onOpenRepository={() => openSettingsExternalLink(settingsExternalLinks?.repository)}
         />
+
+        {settingsNotifications.length > 0 ? (
+          <div
+            className="fixed bottom-4 right-4 z-[90] grid w-[min(360px,calc(100vw-32px))] gap-2"
+            aria-label={t("settings.title")}
+            data-testid="settings-notifications"
+          >
+            {settingsNotifications.map((notification) => (
+              <div
+                key={notification.id}
+                className="rounded-sm border border-line bg-card p-3 text-sm text-ink shadow-lg"
+                role="status"
+              >
+                <p>{notification.message}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setSettingsNotifications((current) =>
+                        current.filter((candidate) => candidate.id !== notification.id));
+                      setSettingsSection(notification.section);
+                      setSettingsExternalLinkStatus("idle");
+                      settingsOpenRef.current = true;
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    {t("settings.notification.open")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSettingsNotifications((current) =>
+                      current.filter((candidate) => candidate.id !== notification.id))}
+                  >
+                    {t("settings.notification.dismiss")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </I18nProvider>
 
       {renameTarget ? (

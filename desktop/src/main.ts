@@ -13,7 +13,6 @@ import {
   type OpenDialogOptions,
   type UtilityProcess,
 } from "electron";
-import electronUpdater from "electron-updater";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { startObserverServer, type StartedObserverServer } from "../../src/observer/server.js";
@@ -76,7 +75,8 @@ import {
   readLastUsedAgentTeam,
   recordSuccessfulConversationAgentTeam,
 } from "./team-conversation-preference.js";
-import { decideUpdate, type ReleaseMetadata } from "./updater.js";
+import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
+import { registerSettingsIpc } from "./settings-ipc.js";
 import {
   installExternalNavigationGuards,
   OPEN_EXTERNAL_LINK_IPC_CHANNEL,
@@ -101,7 +101,6 @@ import { translateDesktop } from "./i18n/index.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(dirname, "..", "..");
-const { autoUpdater } = electronUpdater;
 const dataRoot = resolveDesktopDataRoot({
   env: process.env,
   isPackaged: app.isPackaged,
@@ -258,7 +257,7 @@ function createWindow(): void {
     width: 1180,
     height: 760,
     minWidth: 520,
-    minHeight: 560,
+    minHeight: 480,
     title: "Moebius",
     ...integratedMainWindowOptions(process.platform),
     webPreferences: {
@@ -594,28 +593,16 @@ ipcMain.handle("action:open-data-root", async () => {
   await shell.openPath(status.dataRoot);
 });
 
-ipcMain.handle("action:check-updates", async () => {
-  if (process.platform === "darwin") {
-    const latestRelease = await fetchLatestDesktopRelease();
-    const decision = decideUpdate({
-      platform: process.platform,
-      currentVersion: app.getVersion(),
-      latestVersion: latestRelease?.version,
-      downloadUrl: latestRelease?.url ?? "https://github.com/tranfu-labs/moebius/releases/latest",
-    });
-    status.update = decision;
-    publishStatus();
-    if (decision.action === "open-download-page") {
-      await shell.openExternal(
-        decision.downloadUrl ?? "https://github.com/tranfu-labs/moebius/releases/latest",
-      );
-    }
-    return;
-  }
+const runSettingsUpdateCheck = () => checkDesktopUpdates({
+  currentVersion: app.getVersion(),
+  fetchLatestRelease: fetchLatestDesktopRelease,
+});
 
-  status.update = decideUpdate({ platform: process.platform, currentVersion: app.getVersion(), latestVersion: app.getVersion() });
-  publishStatus();
-  await autoUpdater.checkForUpdatesAndNotify();
+registerSettingsIpc({
+  ipcMain,
+  getVersion: () => app.getVersion(),
+  checkForUpdates: runSettingsUpdateCheck,
+  clipboard,
 });
 
 async function shutdownAndQuit(): Promise<void> {
@@ -751,36 +738,4 @@ function resolveSeedRoot(): string {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function fetchLatestDesktopRelease(): Promise<ReleaseMetadata | null> {
-  try {
-    const response = await fetch("https://api.github.com/repos/tranfu-labs/moebius/releases/latest", {
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "moebius-desktop",
-      },
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const raw = await response.json() as unknown;
-    if (!isReleaseResponse(raw)) {
-      return null;
-    }
-    return {
-      version: raw.tag_name.replace(/^desktop-/u, ""),
-      url: raw.html_url,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function isReleaseResponse(value: unknown): value is { tag_name: string; html_url: string } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const release = value as Partial<{ tag_name: unknown; html_url: unknown }>;
-  return typeof release.tag_name === "string" && typeof release.html_url === "string";
 }

@@ -68,6 +68,26 @@ async function readLocale(page: Page): Promise<string> {
   return page.evaluate(() => document.documentElement.lang);
 }
 
+async function waitForUpdateFetchRevision(
+  application: ElectronApplication,
+  expectedRevision: number,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const revision = await application.evaluate(() => {
+      const state = globalThis as typeof globalThis & {
+        __moebiusUpdateFetchRevision?: number;
+      };
+      return state.__moebiusUpdateFetchRevision ?? 0;
+    });
+    if (revision >= expectedRevision) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`update fetch revision ${expectedRevision} was not reached`);
+}
+
 let application = await launch();
 try {
   console.log("[desktop-i18n-settings] launched first application");
@@ -107,6 +127,16 @@ try {
       runtimeHeading: await statusPage.locator("[data-i18n='section.runtime']").textContent(),
     },
   );
+  const legacyUpdateEntry = {
+    statusButtonCount: await statusPage.locator("#check-updates").count(),
+    preloadCapability: await page.evaluate(() =>
+      window.moebius !== undefined && "checkUpdates" in window.moebius),
+  };
+  record(
+    "status-page-removes-migrated-update-entry",
+    legacyUpdateEntry.statusButtonCount === 0 && !legacyUpdateEntry.preloadCapability,
+    legacyUpdateEntry,
+  );
 
   await page.evaluate(() => {
     document.documentElement.removeAttribute("data-locale-commit-at");
@@ -129,6 +159,9 @@ try {
   await page.keyboard.press("Space");
   const failureAlert = page.getByRole("alert");
   await failureAlert.waitFor();
+  const failedLanguageFocus = await englishOption.evaluate(
+    (option) => document.activeElement === option,
+  );
   let preferenceExistsAfterFailure = true;
   try {
     await fs.access(preferencePath);
@@ -149,6 +182,17 @@ try {
       locales: failureLocales,
       failureMessage: await failureAlert.textContent(),
       retryVisible: await page.getByRole("button", { name: "重试" }).isVisible(),
+      focusStayedOnLanguage: failedLanguageFocus,
+    },
+  );
+  record(
+    "language-control-retains-focus-through-failure",
+    failedLanguageFocus,
+    {
+      activeElement: await page.evaluate(() =>
+        document.activeElement?.getAttribute("value")
+          ?? document.activeElement?.tagName
+          ?? null),
     },
   );
 
@@ -189,10 +233,32 @@ try {
     },
   );
 
+  const chineseOption = page.getByRole("radio", { name: "简体中文" });
+  await chineseOption.focus();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
+  const chineseFocusAfterSuccess = await chineseOption.evaluate(
+    (option) => document.activeElement === option,
+  );
+  const englishOptionAgain = page.getByRole("radio", { name: "English" });
+  await englishOptionAgain.focus();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.documentElement.lang === "en");
+  const englishFocusAfterSuccess = await englishOptionAgain.evaluate(
+    (option) => document.activeElement === option,
+  );
+  record(
+    "language-control-retains-focus-through-success",
+    chineseFocusAfterSuccess && englishFocusAfterSuccess,
+    { chineseFocusAfterSuccess, englishFocusAfterSuccess },
+  );
+
   const dialogEn = page.getByRole("dialog", { name: "Settings" });
   await page.keyboard.press("Escape");
   await dialogEn.waitFor({ state: "hidden" });
   const settingsTriggerEn = page.getByRole("button", { name: "Settings" });
+  await page.waitForFunction(() =>
+    document.activeElement?.getAttribute("aria-label") === "Settings");
   record(
     "escape-closes-and-restores-trigger-focus",
     await settingsTriggerEn.evaluate((button) => document.activeElement === button),
@@ -207,27 +273,233 @@ try {
   await page.keyboard.press("Enter");
   await dialogEn.waitFor();
 
+  await page.getByRole("button", { name: "About" }).click();
+  const aboutVersion = await page.getByText("0.1.4", { exact: true }).textContent();
+  const platformAlignment = await page.getByText("Apple Silicon Mac", { exact: true }).evaluate(
+    (element) => getComputedStyle(element).textAlign,
+  );
+  record(
+    "about-reads-production-version-and-right-aligns-platform",
+    aboutVersion === "0.1.4" && platformAlignment === "right",
+    { aboutVersion, platformAlignment },
+  );
+
+  await page.getByRole("button", { name: "Copy version info" }).click();
+  const copiedVersion = await application.evaluate(({ clipboard }) => clipboard.readText());
+  record(
+    "copy-version-uses-fixed-main-process-format",
+    copiedVersion === "Moebius 0.1.4 · Apple Silicon Mac",
+    { copiedVersion },
+  );
+
+  await application.evaluate(({ shell }) => {
+    const state = globalThis as typeof globalThis & {
+      __moebiusExternalLinks?: string[];
+      __moebiusOriginalOpenExternal?: typeof shell.openExternal;
+    };
+    state.__moebiusExternalLinks = [];
+    state.__moebiusOriginalOpenExternal = shell.openExternal.bind(shell);
+    shell.openExternal = (async (url: string) => {
+      state.__moebiusExternalLinks?.push(url);
+    }) as typeof shell.openExternal;
+  });
+  await page.getByRole("button", { name: "Release notes" }).click();
+  await page.getByRole("button", { name: "Report an issue" }).click();
+  await page.getByRole("button", { name: "Open-source repository" }).click();
+  const publicLinks = await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & { __moebiusExternalLinks?: string[] };
+    return state.__moebiusExternalLinks ?? [];
+  });
+  const feedbackUrl = new URL(publicLinks[1] ?? "https://invalid.local");
+  record(
+    "public-links-use-safe-system-browser-contract",
+    publicLinks[0] === "https://github.com/tranfu-labs/moebius/releases"
+      && feedbackUrl.origin === "https://github.com"
+      && feedbackUrl.pathname === "/tranfu-labs/moebius/issues/new"
+      && feedbackUrl.searchParams.get("body") === "Moebius 0.1.4 · Apple Silicon Mac"
+      && publicLinks[2] === "https://github.com/tranfu-labs/moebius",
+    { publicLinks },
+  );
+
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & {
+      fetch: typeof fetch;
+      __moebiusOriginalFetch?: typeof fetch;
+      __moebiusResolveUpdateFetch?: () => void;
+      __moebiusUpdateFetchRevision?: number;
+    };
+    state.__moebiusOriginalFetch = state.fetch;
+    state.__moebiusUpdateFetchRevision = 0;
+    state.fetch = (() => {
+      state.__moebiusUpdateFetchRevision = (state.__moebiusUpdateFetchRevision ?? 0) + 1;
+      return new Promise<Response>((resolve) => {
+      state.__moebiusResolveUpdateFetch = () => {
+        resolve(new Response(JSON.stringify({
+          tag_name: "desktop-v99.0.0",
+          html_url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v99.0.0",
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }));
+      };
+      });
+    }) as typeof fetch;
+  });
+  const checkButton = page.getByRole("button", { name: "Check for updates" });
+  await checkButton.focus();
+  await page.keyboard.press("Enter");
+  const checkingButton = page.getByRole("button", { name: "Checking…" });
+  await checkingButton.waitFor();
+  await waitForUpdateFetchRevision(application, 1);
+  const updateFocusWhileChecking = await checkingButton.evaluate(
+    (button) => document.activeElement === button,
+  );
+  record(
+    "update-control-retains-focus-while-checking",
+    updateFocusWhileChecking,
+    {
+      activeElement: await page.evaluate(() =>
+        document.activeElement?.textContent?.trim()
+          ?? document.activeElement?.tagName
+          ?? null),
+      ariaDisabled: await checkingButton.getAttribute("aria-disabled"),
+    },
+  );
+  await page.getByRole("button", { name: "Close" }).click();
+  await settingsTriggerEn.click();
+  await dialogEn.waitFor();
+  const reopenedCheckingState = {
+    aboutCurrent: await page.getByRole("button", { name: "About" }).getAttribute("aria-current"),
+    checkingVisible: await page.getByRole("button", { name: "Checking…" }).isVisible(),
+  };
+  record(
+    "settings-entry-restores-in-progress-update-section",
+    reopenedCheckingState.aboutCurrent === "page" && reopenedCheckingState.checkingVisible,
+    reopenedCheckingState,
+  );
+  await page.getByRole("button", { name: "Close" }).click();
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & {
+      __moebiusResolveUpdateFetch?: () => void;
+    };
+    state.__moebiusResolveUpdateFetch?.();
+  });
+  await page.getByText("Version 99.0.0 is available.").waitFor();
+  const workspaceNotification = page.getByTestId("settings-notifications");
+  record(
+    "closed-update-completes-with-workspace-notification",
+    await workspaceNotification.isVisible(),
+    { text: await workspaceNotification.textContent() },
+  );
+  await page.getByRole("button", { name: "Open settings" }).click();
+  await page.getByText("Version 99.0.0 is available").waitFor();
+
+  const checkAgainButton = page.getByRole("button", { name: "Check again" });
+  await checkAgainButton.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Checking…" }).waitFor();
+  await waitForUpdateFetchRevision(application, 2);
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & {
+      __moebiusResolveUpdateFetch?: () => void;
+    };
+    state.__moebiusResolveUpdateFetch?.();
+  });
+  await page.getByText("Version 99.0.0 is available").waitFor();
+  const terminalCheckButton = page.getByRole("button", { name: "Check again" });
+  const updateFocusAtTerminal = await terminalCheckButton.evaluate(
+    (button) => document.activeElement === button,
+  );
+  record(
+    "update-control-retains-focus-at-terminal-result",
+    updateFocusAtTerminal,
+    {
+      activeElement: await page.evaluate(() =>
+        document.activeElement?.textContent?.trim()
+          ?? document.activeElement?.tagName
+          ?? null),
+    },
+  );
+  await page.getByRole("button", { name: "Download update" }).click();
+  const linksAfterDownload = await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & { __moebiusExternalLinks?: string[] };
+    return state.__moebiusExternalLinks ?? [];
+  });
+  record(
+    "download-opens-only-after-explicit-activation",
+    linksAfterDownload.length === 4
+      && linksAfterDownload[3]
+        === "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v99.0.0",
+    { linksAfterDownload },
+  );
+
+  await application.evaluate(({ shell }) => {
+    const state = globalThis as typeof globalThis & {
+      fetch: typeof fetch;
+      __moebiusOriginalFetch?: typeof fetch;
+      __moebiusResolveUpdateFetch?: () => void;
+      __moebiusUpdateFetchRevision?: number;
+      __moebiusOriginalOpenExternal?: typeof shell.openExternal;
+    };
+    if (state.__moebiusOriginalFetch !== undefined) {
+      state.fetch = state.__moebiusOriginalFetch;
+      delete state.__moebiusOriginalFetch;
+    }
+    delete state.__moebiusResolveUpdateFetch;
+    delete state.__moebiusUpdateFetchRevision;
+    if (state.__moebiusOriginalOpenExternal !== undefined) {
+      shell.openExternal = state.__moebiusOriginalOpenExternal;
+      delete state.__moebiusOriginalOpenExternal;
+    }
+  });
+
   await application.evaluate(({ BrowserWindow }) => {
     const target = BrowserWindow.getAllWindows().find((window) =>
       window.webContents.getURL().includes("/console-page/index.html"));
-    target?.setSize(560, 700);
+    target?.setContentSize(900, 640);
   });
-  await page.waitForFunction(() => window.innerWidth <= 560);
+  await page.waitForFunction(() => window.innerWidth === 900 && window.innerHeight === 640);
+  const regularLayout = await dialogEn.evaluate((dialog) => {
+    const navigation = dialog.querySelector("nav");
+    const content = navigation?.nextElementSibling;
+    if (navigation === null || navigation === undefined || content === null || content === undefined) {
+      return null;
+    }
+    const navigationRect = navigation.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    return {
+      navigationAtLeft: contentRect.left >= navigationRect.right - 1,
+      noHorizontalOverflow: dialog.scrollWidth <= dialog.clientWidth,
+    };
+  });
+  record(
+    "regular-window-keeps-side-navigation",
+    regularLayout?.navigationAtLeft === true && regularLayout.noHorizontalOverflow,
+    regularLayout,
+  );
+
+  await application.evaluate(({ BrowserWindow }) => {
+    const target = BrowserWindow.getAllWindows().find((window) =>
+      window.webContents.getURL().includes("/console-page/index.html"));
+    target?.setContentSize(560, 640);
+  });
+  await page.waitForFunction(() => window.innerWidth <= 560 && window.innerHeight === 640);
   const narrowLayout = await dialogEn.evaluate((dialog) => {
-    const aside = dialog.querySelector("aside");
-    const section = dialog.querySelector("section");
+    const navigation = dialog.querySelector("nav");
+    const content = navigation?.nextElementSibling;
     const close = dialog.querySelector("button[aria-label='Close']");
-    if (aside === null || section === null || close === null) {
+    if (navigation === null || navigation === undefined
+      || content === null || content === undefined || close === null) {
       return null;
     }
     const dialogRect = dialog.getBoundingClientRect();
-    const asideRect = aside.getBoundingClientRect();
-    const sectionRect = section.getBoundingClientRect();
+    const navigationRect = navigation.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
     const closeRect = close.getBoundingClientRect();
     return {
       viewportWidth: window.innerWidth,
       gridTemplateColumns: getComputedStyle(dialog).gridTemplateColumns,
-      stacked: sectionRect.top >= asideRect.bottom - 1,
+      stacked: contentRect.top >= navigationRect.bottom - 1,
       noHorizontalOverflow: dialog.scrollWidth <= dialog.clientWidth,
       dialogWithinViewport: dialogRect.left >= 0 && dialogRect.right <= window.innerWidth,
       closeWithinViewport: closeRect.left >= 0 && closeRect.right <= window.innerWidth,
@@ -247,6 +519,44 @@ try {
   record("backdrop-does-not-close-settings", await dialogEn.isVisible(), {
     dialogVisible: await dialogEn.isVisible(),
   });
+
+  await application.evaluate(({ BrowserWindow }) => {
+    const target = BrowserWindow.getAllWindows().find((window) =>
+      window.webContents.getURL().includes("/console-page/index.html"));
+    target?.setContentSize(900, 480);
+  });
+  await page.waitForFunction(() => window.innerWidth === 900 && window.innerHeight === 480);
+  await page.getByRole("button", { name: "Check again" }).focus();
+  const shortLayout = await dialogEn.evaluate((dialog) => {
+    const header = dialog.querySelector("header");
+    const navigation = dialog.querySelector("nav");
+    const content = navigation?.nextElementSibling as HTMLElement | null | undefined;
+    const close = dialog.querySelector("button[aria-label='Close']");
+    if (header === null || content === null || content === undefined || close === null) {
+      return null;
+    }
+    const focusedBefore = document.activeElement;
+    content.scrollTop = content.scrollHeight;
+    const dialogRect = dialog.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const closeRect = close.getBoundingClientRect();
+    return {
+      headerVisible: headerRect.top >= dialogRect.top && headerRect.bottom <= dialogRect.bottom,
+      closeVisible: closeRect.top >= dialogRect.top && closeRect.bottom <= dialogRect.bottom,
+      contentOwnsScrolling: getComputedStyle(content).overflowY === "auto",
+      focusPreserved: document.activeElement === focusedBefore,
+      noHorizontalOverflow: dialog.scrollWidth <= dialog.clientWidth,
+    };
+  });
+  record(
+    "short-window-keeps-header-and-focus-while-content-scrolls",
+    shortLayout?.headerVisible === true
+      && shortLayout.closeVisible
+      && shortLayout.contentOwnsScrolling
+      && shortLayout.focusPreserved
+      && shortLayout.noHorizontalOverflow,
+    shortLayout,
+  );
 
   await application.evaluate(({ dialog }) => {
     const state = globalThis as typeof globalThis & {
@@ -293,7 +603,7 @@ try {
   await application.evaluate(({ BrowserWindow }) => {
     const target = BrowserWindow.getAllWindows().find((window) =>
       window.webContents.getURL().includes("/console-page/index.html"));
-    target?.setSize(1180, 760);
+    target?.setContentSize(1180, 760);
   });
   await page.waitForFunction(() => window.innerWidth >= 1180);
 

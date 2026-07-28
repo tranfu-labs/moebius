@@ -4,7 +4,6 @@ export const en = Object.freeze({
   "section.environment": "Environment checks",
   "action.openObserver": "Open observer",
   "action.openDataRoot": "Open data folder",
-  "action.checkUpdates": "Check for updates",
   "label.repositoryAllowlist": "Repository allowlist",
   running: "Running",
   starting: "Starting",

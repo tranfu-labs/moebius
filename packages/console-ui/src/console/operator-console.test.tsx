@@ -154,6 +154,77 @@ describe("OperatorConsole", () => {
     expect(screen.getByText("Choose the language used by the Moebius interface.")).toBeVisible();
   });
 
+  it("keeps a slow update result across close and parent callback identity changes", () => {
+    const initial = baseProps({
+      settingsAbout: { currentVersion: "0.1.4", updateStatus: "checking" },
+      onCheckSettingsUpdates: vi.fn(),
+    });
+    const view = render(<OperatorConsole {...initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByText("正在检查…")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByText("正在检查…")).toBeVisible();
+    expect(screen.getByRole("button", { name: "关于" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    view.rerender(<OperatorConsole
+      {...initial}
+      onCheckSettingsUpdates={vi.fn()}
+      settingsAbout={{
+        currentVersion: "0.1.4",
+        latestVersion: "0.1.5",
+        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        updateStatus: "available",
+      }}
+    />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("发现新版本 0.1.5");
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(screen.getByText("新版 0.1.5")).toBeVisible();
+    expect(screen.getByRole("button", { name: "下载新版本" })).toBeEnabled();
+  });
+
+  it("reports an external browser failure in About without leaving the workspace", async () => {
+    const onOpenSettingsExternalLink = vi.fn(async () => {
+      throw new Error("browser unavailable");
+    });
+    renderConsole({
+      settingsAbout: { currentVersion: "0.1.4", updateStatus: "idle" },
+      settingsExternalLinks: {
+        releaseNotes: "https://github.com/tranfu-labs/moebius/releases",
+        feedback: "https://github.com/tranfu-labs/moebius/issues/new",
+        repository: "https://github.com/tranfu-labs/moebius",
+      },
+      onOpenSettingsExternalLink,
+    });
+    const workspace = screen.getByTestId("operator-sidebar").parentElement;
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "关于" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看发布记录" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("无法打开系统浏览器"));
+    expect(onOpenSettingsExternalLink).toHaveBeenCalledWith(
+      "https://github.com/tranfu-labs/moebius/releases",
+    );
+    expect(screen.getByTestId("operator-sidebar").parentElement).toBe(workspace);
+  });
+
+  it("notifies a language save result completed after the dialog closes", () => {
+    const initial = baseProps({ languageSaveStatus: "saving" });
+    const view = render(<OperatorConsole {...initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    view.rerender(<OperatorConsole {...initial} languageSaveStatus="failed" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("语言设置保存失败");
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(screen.getByText(/无法保存语言设置/u)).toBeVisible();
+  });
+
   it("preserves user content and the mounted workspace when the active locale changes", () => {
     const props = baseProps({
       composerValue: "用户草稿 must stay byte-for-byte",

@@ -4,7 +4,6 @@ export const zhCN = Object.freeze({
   "section.environment": "环境自检",
   "action.openObserver": "打开观察页",
   "action.openDataRoot": "打开数据目录",
-  "action.checkUpdates": "检查更新",
   "label.repositoryAllowlist": "仓库白名单",
   running: "运行中",
   starting: "启动中",
