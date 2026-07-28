@@ -5,7 +5,7 @@ description: Publish the Moebius repository's current main branch as a versioned
 
 # Release Moebius
 
-Publish one production version of `tranfu-labs/moebius`. The required input is a semantic version without the `v` prefix. The named output is a verified, non-draft GitHub Release `v<VERSION>`.
+Publish one production version of `tranfu-labs/moebius`. Accept either a semantic version without the `v` prefix or the user's explicit confirmation of a version recommended by this skill. The named output is a verified, non-draft GitHub Release `v<VERSION>`.
 
 Ownership is **edit file + external publish**: the user's release request authorizes release-metadata edits, commit, annotated tag, push, and GitHub Release creation. NEVER modify product behavior or unrelated files.
 
@@ -14,7 +14,10 @@ Ownership is **edit file + external publish**: the user's release request author
 CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
 
 1. Validate the input and environment.
-   - If the version is missing or invalid → ask for it and exit.
+   - If the version is missing, read the latest non-draft, non-prerelease `v*` GitHub Release and inspect the real commit diff through current `main`.
+   - Recommend one exact next version with a short rationale: patch for backward-compatible fixes or internal-only changes, minor for backward-compatible user-facing capabilities, and major for breaking changes.
+   - Ask the user to explicitly confirm the recommended version, then exit without editing files or mutating git/GitHub state. Treat a later explicit confirmation as the required input.
+   - If an explicit version or confirmation is invalid → ask for a valid semantic version and exit.
    - If the repository is not Moebius → report the mismatch and exit.
    - Load nvm with `export NVM_DIR="${NVM_DIR:-$HOME/.nvm}" && source "$NVM_DIR/nvm.sh"`, then run `nvm use`.
    - Assert Node major `24` and pnpm `9.15.4`; keep this environment for every pnpm command.
@@ -65,7 +68,8 @@ CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
 
 ## Failure paths
 
-- Missing tools, credentials, version, files, or signing identity → stop before external mutation and name the missing requirement.
+- Missing tools, credentials, files, or signing identity → stop before external mutation and name the missing requirement.
+- Unconfirmed recommended version → stop before file edits or external mutation and ask for explicit confirmation.
 - Dirty worktree with unrelated changes → stop; NEVER stash, overwrite, or delete them.
 - CI failure after pushing the release commit → leave `main` at the untagged release commit, report the exact run, and stop. On resume, reuse that commit after its exact CI run succeeds; NEVER create a duplicate release-preparation commit.
 - Failure after Draft creation → leave the Draft intact, list uploaded/missing assets, and give the exact resume step.
@@ -75,6 +79,10 @@ CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
 User: “把当前 main 发布为 0.1.2。”
 
 Result: activate Node 24, derive notes from the previous tag, update versions and CHANGELOG, pass all gates, build and verify signed arm64 DMG/ZIP, atomically push `main` plus `v0.1.2`, publish a digest-verified GitHub Release, and return its URL.
+
+User: “发布新版。”
+
+Result: inspect the latest stable release and current diff, recommend one exact semantic version with a short rationale, and wait for explicit confirmation without editing or publishing.
 </example>
 
 <bad-example>
