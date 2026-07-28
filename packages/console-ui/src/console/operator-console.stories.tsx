@@ -266,3 +266,68 @@ export const T65EmptyComposer: Story = {
     composerValue: "@",
   },
 };
+
+export const ConversationRelayReference: Story = {
+  args: {
+    activeRun: null,
+    memberIdentities: [
+      { slug: "dev-manager", displayName: "主理人" },
+      { slug: "dev", displayName: "开发" },
+      { slug: "qa", displayName: "测试" },
+    ],
+    messages: [
+      {
+        ...sample.messages[0]!,
+        id: 31,
+        body: "请把主会话目录轨对齐 dashboard 参考稿。",
+      },
+      {
+        ...sample.messages[1]!,
+        id: 32,
+        role: "dev-manager",
+        body: "先确认产品事实与实现边界。",
+      },
+      {
+        ...sample.messages[1]!,
+        id: 33,
+        role: "dev",
+        body: "已经完成成员泳道与分支模型。",
+      },
+      {
+        ...sample.messages[1]!,
+        id: 34,
+        role: "dev-manager",
+        body: "继续补齐自动验证。",
+      },
+      {
+        ...sample.messages[1]!,
+        id: 35,
+        role: "qa",
+        body: "等待独立桌面视觉复核。",
+      },
+      {
+        ...sample.messages[1]!,
+        id: 36,
+        role: "dev",
+        body: "自动证据已经准备完成。",
+      },
+    ],
+    selectedSession: { ...sessions[1]!, status: "idle", runningCount: 0 },
+  },
+};
+
+export const ConversationRelayRightSidebarOpen: Story = {
+  args: {
+    ...ConversationRelayReference.args,
+    rightSidebarOpen: true,
+    sidebarOpen: true,
+  },
+};
+
+export const ConversationRelayProjectSidebarClosed: Story = {
+  args: {
+    ...ConversationRelayReference.args,
+    rightSidebarOpen: false,
+    sidebarOpen: false,
+  },
+};

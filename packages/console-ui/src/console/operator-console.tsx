@@ -1439,11 +1439,10 @@ export function OperatorConsole({
             {selectedSession !== null && conversationRelayEvents.length > 0 ? (
               <div
                 className={cn(
-                  "pointer-events-none absolute top-[calc(var(--window-header-height)+12px)] z-20 w-11",
+                  "pointer-events-none absolute left-3 top-[var(--window-header-height)] z-20 w-11",
                   pendingPrimaryMessages.length > 0 ? "bottom-72" : "bottom-40",
                 )}
                 data-testid="main-conversation-relay-slot"
-                style={{ left: "max(8px, calc(50% - 424px))" }}
               >
                 <ConversationRelayRail
                   containerWidth={conversationPaneWidth}

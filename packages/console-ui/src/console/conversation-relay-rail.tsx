@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  Fragment,
   type KeyboardEvent,
   useCallback,
   useEffect,
@@ -10,16 +11,15 @@ import {
 } from "react";
 
 import {
+  CONVERSATION_RELAY_COLLAPSED_ROW_HEIGHT,
   CONVERSATION_RELAY_COLLAPSED_WIDTH,
-  CONVERSATION_RELAY_ROW_HEIGHT,
   adjacentConversationRelayEventId,
   computeConversationRelayRows,
-  conversationRelayExpandedWidth,
-  conversationRelayLanePositions,
-  createConversationRelayCurvePath,
   deriveConversationRelayCapacity,
+  deriveConversationRelayExpandedRowHeight,
+  deriveConversationRelayLayout,
+  deriveConversationRelayPaths,
   type ConversationRelayEvent,
-  type ConversationRelayRow,
 } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 import { cn } from "@/lib/utils";
@@ -86,14 +86,24 @@ export function ConversationRelayRail({
     () => computeConversationRelayRows(events, focusId, capacity),
     [capacity, events, focusId],
   );
-  const expandedWidth = conversationRelayExpandedWidth(containerWidth);
-  const lanes = useMemo(
-    () => conversationRelayLanePositions(events, expandedWidth),
-    [events, expandedWidth],
+  const layout = useMemo(
+    () => deriveConversationRelayLayout(events, containerWidth),
+    [containerWidth, events],
   );
-  const railHeight = rows.length * CONVERSATION_RELAY_ROW_HEIGHT;
+  const expandedRowHeight = deriveConversationRelayExpandedRowHeight(
+    viewportHeight,
+    rows.length,
+  );
+  const rowHeight = expanded
+    ? expandedRowHeight
+    : CONVERSATION_RELAY_COLLAPSED_ROW_HEIGHT;
+  const railHeight = rows.length * rowHeight;
+  const expandedRailHeight = rows.length * expandedRowHeight;
   const stageTop = Math.max(0, (viewportHeight - railHeight) / 2);
-  const paths = createConnectionPaths(rows, lanes);
+  const paths = useMemo(
+    () => deriveConversationRelayPaths(events, rows, layout, expandedRowHeight),
+    [events, expandedRowHeight, layout, rows],
+  );
   const browse = useCallback((eventId: string, direction: -1 | 1) => {
     const nextId = adjacentConversationRelayEventId(events, eventId, direction);
     const nextEvent = events.find((event) => event.id === nextId);
@@ -141,8 +151,9 @@ export function ConversationRelayRail({
     }, 120);
   };
   const style = {
-    "--relay-expanded-width": `${String(expandedWidth)}px`,
+    "--relay-expanded-width": `${String(layout.expandedWidth)}px`,
     "--relay-height": `${String(railHeight)}px`,
+    "--relay-row-height": `${String(rowHeight)}px`,
   } as CSSProperties;
   const inspectedEvent = events.find((event) => event.id === inspectedId);
   const inspectedRowIndex = rows.findIndex(
@@ -150,79 +161,88 @@ export function ConversationRelayRail({
   );
   const inspectedEventColor = inspectedEvent === undefined
     ? "var(--hint)"
-    : `var(${identityToken(inspectedEvent.actorKey)})`;
+    : conversationRelayEventColor(inspectedEvent);
 
   return (
     <Popover open={inspectedEvent !== undefined && inspectedRowIndex >= 0}>
-    <div
-      ref={viewportRef}
-      className={cn(
-        "pointer-events-none relative h-full w-11",
-        className,
-      )}
-      data-capacity={capacity}
-      data-container-width={containerWidth}
-      data-expanded={expanded ? "true" : "false"}
-      data-testid="conversation-relay-rail"
-      onMouseEnter={() => {
-        cancelClose();
-        setExpanded(true);
-      }}
-      onMouseLeave={scheduleClose}
-      style={style}
-    >
-      <nav
-        ref={stageRef}
-        aria-label={t("console.relayRail.label")}
+      <div
+        ref={viewportRef}
         className={cn(
-          "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
-          expanded
-            ? "border-line bg-sunken"
-            : "border-transparent bg-transparent",
+          "pointer-events-none relative h-full w-11",
+          className,
         )}
-        data-motion-origin="left"
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
-        }}
-        onFocus={() => {
+        data-capacity={capacity}
+        data-container-width={containerWidth}
+        data-expanded={expanded ? "true" : "false"}
+        data-expanded-width={layout.expandedWidth}
+        data-row-height={rowHeight}
+        data-testid="conversation-relay-rail"
+        onMouseEnter={() => {
           cancelClose();
           setExpanded(true);
         }}
-        style={{
-          height: railHeight,
-          top: stageTop,
-          transformOrigin: "left center",
-          width: expanded ? expandedWidth : CONVERSATION_RELAY_COLLAPSED_WIDTH,
-        }}
+        onMouseLeave={scheduleClose}
+        style={style}
       >
-        <svg
-          aria-hidden="true"
+        <nav
+          ref={stageRef}
+          aria-label={t("console.relayRail.label")}
           className={cn(
-            "pointer-events-none absolute left-0 top-0 overflow-visible text-line-strong transition-opacity duration-150 motion-reduce:transition-none",
-            expanded ? "opacity-100" : "opacity-0",
+            "pointer-events-auto absolute left-0 overflow-visible rounded-[8px] border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+            expanded
+              ? "border-line bg-sunken"
+              : "border-transparent bg-transparent",
           )}
-          height={railHeight}
-          viewBox={`0 0 ${String(expandedWidth)} ${String(railHeight)}`}
-          width={expandedWidth}
+          data-motion-origin="left"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
+          }}
+          onFocus={() => {
+            cancelClose();
+            setExpanded(true);
+          }}
+          style={{
+            height: railHeight,
+            top: stageTop,
+            transformOrigin: "left center",
+            width: expanded
+              ? layout.expandedWidth
+              : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+          }}
         >
+          <svg
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute left-0 top-0 z-[2] overflow-visible text-sub transition-[height,opacity] duration-150 motion-reduce:transition-none",
+              expanded ? "opacity-100" : "opacity-0",
+            )}
+            height={expandedRailHeight}
+            viewBox={`0 0 ${String(layout.expandedWidth)} ${String(expandedRailHeight)}`}
+            width={layout.expandedWidth}
+          >
           {paths.map((path, pathIndex) => {
-            const emphasized = inspectedId === path.from || inspectedId === path.to;
+            const emphasized = inspectedId !== null
+              && path.eventIds.includes(inspectedId);
             return (
               <path
                 key={path.key}
                 className="relay-motion-inline"
                 d={path.d}
-                data-relay-from={path.from}
-                data-relay-to={path.to}
-                data-testid="relay-connector"
+                data-relay-actor={path.actorKey ?? "user"}
+                data-relay-emphasized={emphasized ? "true" : "false"}
+                data-relay-event-ids={path.eventIds.join(" ")}
+                data-relay-path-kind={path.kind}
+                data-testid={path.kind === "spine" ? "relay-spine" : "relay-branch"}
                 fill="none"
                 pathLength={1}
-                stroke="currentColor"
+                stroke={path.actorKey === null
+                  ? "currentColor"
+                  : `var(${identityToken(path.actorKey)})`}
                 strokeDasharray={1}
                 strokeLinecap="round"
                 strokeWidth={emphasized ? 2 : 1.5}
                 style={{
-                  opacity: expanded ? (emphasized ? 1 : 0.72) : 0,
+                  opacity: expanded ? (emphasized ? 1 : 0.85) : 0,
                   strokeDashoffset: expanded ? 0 : 1,
                   transition: [
                     "stroke-dashoffset 260ms var(--ease-enter)",
@@ -237,7 +257,7 @@ export function ConversationRelayRail({
               />
             );
           })}
-        </svg>
+          </svg>
 
         {rows.map((row, rowIndex) => {
           if (row.type === "omission") {
@@ -246,13 +266,16 @@ export function ConversationRelayRail({
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
                 aria-label={t("console.relayRail.omitted", { count: row.count })}
                 className={cn(
-                  "absolute left-0 flex h-5 items-center text-[8px] tracking-[1px] text-hint transition-[width,opacity] duration-150 motion-reduce:transition-none",
+                  "absolute left-0 z-[1] flex items-center text-[8px] tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",
                 )}
                 data-testid="relay-omission"
                 style={{
-                  top: rowIndex * CONVERSATION_RELAY_ROW_HEIGHT,
-                  width: expanded ? expandedWidth : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+                  height: rowHeight,
+                  top: rowIndex * rowHeight,
+                  width: expanded
+                    ? layout.expandedWidth
+                    : CONVERSATION_RELAY_COLLAPSED_WIDTH,
                 }}
               >
                 <span aria-hidden="true">•••</span>
@@ -263,152 +286,167 @@ export function ConversationRelayRail({
           const event = row.event;
           const current = event.id === currentEventId;
           const inspected = event.id === inspectedId;
-          const laneX = lanes.get(event.actorKey) ?? 18;
-          const eventColor = `var(${identityToken(event.actorKey)})`;
+          const laneX = layout.lanes.get(event.actorKey) ?? layout.spineX;
+          const eventColor = conversationRelayEventColor(event);
           return (
-            <button
-              key={event.id}
-              type="button"
-              aria-current={current ? "location" : undefined}
-              aria-label={`${event.actorName}，${event.body}`}
-              className="absolute left-0 z-[2] flex h-5 items-center border-0 bg-transparent p-0 outline-none transition-[width,background-color] duration-200 ease-enter hover:bg-hover focus-visible:bg-hover motion-reduce:transition-none"
-              data-hit-target={expanded ? "row" : "collapsed-row"}
-              data-relay-event={event.id}
-              data-testid={`relay-event-${event.id}`}
-              onClick={() => onActivate(event)}
-              onFocus={() => {
-                cancelClose();
-                setExpanded(true);
-                setInspectedId(event.id);
-              }}
-              onKeyDown={(keyboardEvent) => handleEventKeyDown(
-                keyboardEvent,
-                event,
-                browse,
-                onActivate,
-              )}
-              onMouseEnter={() => {
-                cancelClose();
-                setInspectedId(event.id);
-              }}
-              onPointerEnter={() => {
-                cancelClose();
-                setInspectedId(event.id);
-              }}
-              onPointerMove={() => {
-                cancelClose();
-                setInspectedId(event.id);
-              }}
-              onMouseLeave={scheduleClose}
-              style={{
-                top: rowIndex * CONVERSATION_RELAY_ROW_HEIGHT,
-                width: expanded
-                  ? expandedWidth
-                  : CONVERSATION_RELAY_COLLAPSED_WIDTH,
-              }}
-            >
-              <span
-                aria-hidden="true"
-                className="relay-motion-inline absolute left-2 block rounded-full motion-reduce:transition-none"
-                data-relay-collapsed-tick={event.id}
-                style={{
-                  backgroundColor: eventColor,
-                  height: current ? 3 : 2,
-                  opacity: expanded ? 0 : current ? 1 : 0.7,
-                  transform: `scaleX(${expanded ? "0.18" : "1"})`,
-                  transformOrigin: "left center",
-                  transition: [
-                    "width 160ms var(--ease-enter)",
-                    "opacity 100ms var(--ease)",
-                    "transform 180ms var(--ease-enter)",
-                  ].join(", "),
-                  width: current ? 24 : inspected ? 19 : 13,
-                }}
-              />
+            <Fragment key={event.id}>
               <span
                 aria-hidden="true"
                 className={cn(
-                  "relay-motion-inline absolute block border-2 border-sunken motion-reduce:transition-none",
-                  event.kind === "user" ? "rounded-[2px]" : "rounded-full",
-                  current
-                    ? "h-3 w-3 bg-sunken outline outline-2 outline-sunken"
-                    : "h-[9px] w-[9px]",
+                  "pointer-events-none absolute left-0 z-[1] rounded-md transition-[width,height,top,background-color] duration-150 motion-reduce:transition-none",
+                  inspected ? "bg-hover" : "bg-transparent",
                 )}
-                data-relay-expanded-node={event.id}
+                data-testid={`relay-band-${event.id}`}
                 style={{
-                  backgroundColor: current ? "var(--sunken)" : eventColor,
-                  borderColor: current ? eventColor : "var(--sunken)",
-                  left: expanded
-                    ? laneX - (current ? 6 : 4.5)
-                    : 8,
-                  opacity: expanded ? 1 : 0,
-                  transform: [
-                    event.kind === "user" ? "rotate(45deg)" : "",
-                    `scale(${expanded ? (inspected ? "1.16" : "1") : "0.45"})`,
-                  ].filter(Boolean).join(" "),
-                  transition: [
-                    "left 240ms var(--ease-enter)",
-                    "opacity 120ms var(--ease)",
-                    "transform 180ms var(--ease-enter)",
-                  ].join(", "),
-                  transitionDelay: expanded
-                    ? `${String(Math.min(rowIndex * 12, 96))}ms`
-                    : "0ms",
+                  height: rowHeight,
+                  top: rowIndex * rowHeight,
+                  width: expanded
+                    ? layout.expandedWidth
+                    : CONVERSATION_RELAY_COLLAPSED_WIDTH,
                 }}
               />
-            </button>
+              <button
+                type="button"
+                aria-current={current ? "location" : undefined}
+                aria-label={`${event.actorName}，${event.body}`}
+                className="absolute left-0 z-[3] flex items-center border-0 bg-transparent p-0 outline-none transition-[width,height,top] duration-200 ease-enter motion-reduce:transition-none"
+                data-hit-target={expanded ? "row" : "collapsed-row"}
+                data-relay-event={event.id}
+                data-testid={`relay-event-${event.id}`}
+                onClick={() => onActivate(event)}
+                onFocus={() => {
+                  cancelClose();
+                  setExpanded(true);
+                  setInspectedId(event.id);
+                }}
+                onKeyDown={(keyboardEvent) => handleEventKeyDown(
+                  keyboardEvent,
+                  event,
+                  browse,
+                  onActivate,
+                )}
+                onMouseEnter={() => {
+                  cancelClose();
+                  setInspectedId(event.id);
+                }}
+                onPointerEnter={() => {
+                  cancelClose();
+                  setInspectedId(event.id);
+                }}
+                onPointerMove={() => {
+                  cancelClose();
+                  setInspectedId(event.id);
+                }}
+                onMouseLeave={scheduleClose}
+                style={{
+                  height: rowHeight,
+                  top: rowIndex * rowHeight,
+                  width: expanded
+                    ? layout.expandedWidth
+                    : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="relay-motion-inline absolute left-2 block rounded-full motion-reduce:transition-none"
+                  data-relay-collapsed-tick={event.id}
+                  style={{
+                    backgroundColor: eventColor,
+                    height: current ? 3 : 2,
+                    opacity: expanded ? 0 : current ? 1 : 0.7,
+                    transform: `scaleX(${expanded ? "0.18" : "1"})`,
+                    transformOrigin: "left center",
+                    transition: [
+                      "width 160ms var(--ease-enter)",
+                      "opacity 100ms var(--ease)",
+                      "transform 180ms var(--ease-enter)",
+                    ].join(", "),
+                    width: current ? 24 : 13,
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "relay-motion-inline absolute block rounded-full border-2 border-sunken motion-reduce:transition-none",
+                    current ? "h-3 w-3 bg-sunken" : "h-[9px] w-[9px]",
+                  )}
+                  data-relay-expanded-node={event.id}
+                  style={{
+                    backgroundColor: current ? "var(--sunken)" : eventColor,
+                    borderColor: current ? eventColor : "var(--sunken)",
+                    left: expanded
+                      ? laneX - (current ? 6 : 4.5)
+                      : 8,
+                    opacity: expanded ? 1 : 0,
+                    top: "50%",
+                    marginTop: current ? -6 : -4.5,
+                    transform: `scale(${expanded ? (inspected ? "1.16" : "1") : "0.45"})`,
+                    transition: [
+                      "left 240ms var(--ease-enter)",
+                      "opacity 120ms var(--ease)",
+                      "transform 180ms var(--ease-enter)",
+                    ].join(", "),
+                    transitionDelay: expanded
+                      ? `${String(Math.min(rowIndex * 12, 96))}ms`
+                      : "0ms",
+                  }}
+                />
+              </button>
+            </Fragment>
           );
         })}
         {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
           <PopoverAnchor asChild>
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-0 h-5 transition-[top] duration-200 ease-enter motion-reduce:transition-none"
+              className="pointer-events-none absolute left-0 transition-[top,height] duration-200 ease-enter motion-reduce:transition-none"
               data-testid="relay-preview-anchor"
               style={{
-                top: inspectedRowIndex * CONVERSATION_RELAY_ROW_HEIGHT,
-                width: expandedWidth,
+                height: rowHeight,
+                top: inspectedRowIndex * rowHeight,
+                width: layout.expandedWidth,
               }}
             />
           </PopoverAnchor>
         ) : null}
-      </nav>
-    </div>
-    {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
-      <PopoverContent
-        align="center"
-        className="w-[296px] max-w-[calc(100vw-24px)]"
-        collisionPadding={12}
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onEscapeKeyDown={() => setInspectedId(null)}
-        onMouseEnter={cancelClose}
-        onMouseLeave={scheduleClose}
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        side="right"
-        sideOffset={12}
-        data-testid="relay-event-preview"
-      >
-        <div
-          key={inspectedEvent.id}
-          className="motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]"
-          data-testid="relay-preview-content"
+        </nav>
+      </div>
+      {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
+        <PopoverContent
+          align="center"
+          className="w-[240px] max-w-[calc(100vw-24px)] rounded-sm px-3 py-2.5"
+          collisionPadding={12}
+          data-relay-side-offset="12"
+          data-testid="relay-event-preview"
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={() => setInspectedId(null)}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          side="right"
+          sideOffset={12}
         >
-          <p className="flex items-center gap-1.5 text-[11px] text-hint">
-            <span
-              aria-hidden="true"
-              className="h-[7px] w-[7px] rounded-full"
-              style={{ backgroundColor: inspectedEventColor }}
-            />
-            <span>{inspectedEvent.actorName}</span>
-            <span aria-hidden="true">·</span>
-            <time className="tnum">{formatRelayTime(inspectedEvent.updatedAt)}</time>
-          </p>
-          <p className="mt-1.5 line-clamp-3 text-xs leading-[1.55] text-ink">
-            {inspectedEvent.body}
-          </p>
-        </div>
-      </PopoverContent>
-    ) : null}
+          <div
+            key={inspectedEvent.id}
+            className="motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]"
+            data-testid="relay-preview-content"
+          >
+            <p className="flex items-center gap-1.5 text-[11px] text-hint">
+              <span
+                aria-hidden="true"
+                className="h-[7px] w-[7px] rounded-full"
+                style={{ backgroundColor: inspectedEventColor }}
+              />
+              <span>{inspectedEvent.actorName}</span>
+              <span aria-hidden="true">·</span>
+              <time className="tnum">{formatRelayTime(inspectedEvent.updatedAt)}</time>
+            </p>
+            <p className="mt-1.5 line-clamp-3 text-xs leading-[1.55] text-ink">
+              {inspectedEvent.body}
+            </p>
+          </div>
+        </PopoverContent>
+      ) : null}
     </Popover>
   );
 }
@@ -430,31 +468,6 @@ function handleEventKeyDown(
   }
 }
 
-function createConnectionPaths(
-  rows: readonly ConversationRelayRow[],
-  lanes: ReadonlyMap<string, number>,
-): Array<{ d: string; from: string; key: string; to: string }> {
-  const paths: Array<{ d: string; from: string; key: string; to: string }> = [];
-  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
-    const previous = rows[rowIndex - 1];
-    const current = rows[rowIndex];
-    if (previous?.type !== "event" || current?.type !== "event") continue;
-    const previousX = lanes.get(previous.event.actorKey) ?? 18;
-    const currentX = lanes.get(current.event.actorKey) ?? 18;
-    const previousY = (rowIndex - 1) * CONVERSATION_RELAY_ROW_HEIGHT
-      + CONVERSATION_RELAY_ROW_HEIGHT / 2;
-    const currentY = rowIndex * CONVERSATION_RELAY_ROW_HEIGHT
-      + CONVERSATION_RELAY_ROW_HEIGHT / 2;
-    paths.push({
-      key: `${previous.event.id}-${current.event.id}`,
-      from: previous.event.id,
-      to: current.event.id,
-      d: createConversationRelayCurvePath(previousX, previousY, currentX, currentY),
-    });
-  }
-  return paths;
-}
-
 function formatRelayTime(value: string): string {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return value;
@@ -463,4 +476,10 @@ function formatRelayTime(value: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(timestamp);
+}
+
+function conversationRelayEventColor(event: ConversationRelayEvent): string {
+  return event.kind === "user"
+    ? "var(--ink)"
+    : `var(${identityToken(event.actorKey)})`;
 }

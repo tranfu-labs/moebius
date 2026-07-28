@@ -2105,17 +2105,30 @@ describe("OperatorConsole", () => {
   });
 
   it("owns one relay rail in the main conversation and keeps it out of the session sidebar", () => {
-    renderConsole({
+    const relayProps = {
       messages: [
         message({ id: 1, speaker: "user", role: null, body: "请开始" }),
         message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
       ],
       memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
-    });
+    } satisfies Partial<OperatorConsoleProps>;
+    const { rerender } = renderConsole(relayProps);
 
     const slot = screen.getByTestId("main-conversation-relay-slot");
     const rail = within(slot).getByTestId("conversation-relay-rail");
+    const pane = screen.getByTestId("parent-conversation-pane");
+    const timeline = screen.getByRole("region", { name: "会话时间线" });
+    Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1_000 });
+    timeline.scrollTop = 137;
+    fireEvent.scroll(timeline);
     expect(rail).toBeInTheDocument();
+    expect(slot).toHaveClass(
+      "left-3",
+      "top-[var(--window-header-height)]",
+      "pointer-events-none",
+    );
+    expect(slot.parentElement).toBe(screen.getByTestId("parent-conversation-pane"));
     expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
       "conversation-relay-rail",
     )).not.toBeInTheDocument();
@@ -2125,7 +2138,21 @@ describe("OperatorConsole", () => {
       "data-hit-target",
       "row",
     );
-    expect(screen.getByTestId("relay-connector").getAttribute("d")).toContain(" C ");
+    expect(screen.getByTestId("relay-branch").getAttribute("d")).toContain(" C ");
+
+    rerender(<OperatorConsole {...baseProps({
+      ...relayProps,
+      rightSidebarOpen: true,
+      rightSidebarTabs: { activeTabId: null, tabs: [] },
+      sidebarOpen: false,
+    })} />);
+    expect(screen.getByTestId("parent-conversation-pane")).toBe(pane);
+    expect(screen.getByRole("region", { name: "会话时间线" })).toBe(timeline);
+    expect(timeline.scrollTop).toBe(137);
+    expect(screen.getByTestId("main-conversation-relay-slot").parentElement).toBe(pane);
+    expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
+      "conversation-relay-rail",
+    )).not.toBeInTheDocument();
   });
 
   it("keeps the timeline position unchanged when a relay target disappears", () => {
