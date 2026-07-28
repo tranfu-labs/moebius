@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moebius — 把整个开发团队,装进一次对话</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ============ Tokens — brand-spec.md v1.0 (dark) ============ */
+  :root{
+    --bg:      #101010;
+    --surface: #171717;
+    --raised:  #1c1c1c;
+    --fg:      #f4f4f4;
+    --muted:   #a1a1a1;
+    --faint:   #6e6e6e;
+    --border:  #262626;
+    --hover:   #242424;
+    --active:  #2d2d2d;
+    --accent:  #c090ff;
+    --success: #2ee03a;
+    --info:    #5fb3ff;
+    --amber:   #f0d050;
+    --orange:  #f77342;
+    --danger:  #f72332;
+    --tint-green: #172c19;
+    --tint-amber: #2b2612;
+    --tint-blue:  #19232d;
+    --tint-red:   #321c1e;
+    --font-display: "Inter Tight","Inter",-apple-system,"PingFang SC",sans-serif;
+    --font-body:    "Inter",-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+    --font-mono:    "SF Mono","SFMono-Regular","JetBrains Mono","Menlo","Consolas","DejaVu Sans Mono","Liberation Mono",ui-monospace,monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{
+    background:var(--bg); color:var(--fg);
+    font:16px/1.6 var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+  ::selection{ background:var(--active); }
+  a{ color:inherit; text-decoration:none; }
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 32px; }
+
+  /* ============ Container guide lines ============ */
+  .vl{
+    position:fixed; top:0; bottom:0; width:1px; left:50%;
+    background:rgba(255,255,255,0.06);
+    pointer-events:none; z-index:0;
+  }
+  .vl-l{ transform:translateX(-560px); }
+  .vl-r{ transform:translateX(560px); }
+  .hero,.trust,.features,.manifesto,.cta,.footer{ position:relative; z-index:1; }
+
+  /* ============ Liquid glass ============ */
+  .liquid-glass{
+    background:rgba(255,255,255,0.01);
+    background-blend-mode:luminosity;
+    backdrop-filter:blur(4px);
+    position:relative; overflow:hidden;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);
+  }
+  .liquid-glass::before{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    padding:1.4px;
+    background:linear-gradient(180deg,
+      rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
+      rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    pointer-events:none;
+  }
+  .liquid-glass::after{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),
+      rgba(255,255,255,0.06), transparent 70%);
+    opacity:0; transition:opacity .3s;
+    pointer-events:none;
+  }
+  .liquid-glass:hover::after{ opacity:1; }
+
+  /* ============ Scroll reveal ============ */
+  .js .reveal{ opacity:0; transform:translateY(20px); transition:opacity .7s ease, transform .7s cubic-bezier(.2,.6,.2,1); }
+  .js .reveal.in{ opacity:1; transform:none; }
+
+  /* ============ Nav ============ */
+  .nav{
+    position:absolute; top:0; left:0; right:0; z-index:50;
+    border-bottom:1px solid transparent;
+  }
+  .nav-in{ display:flex; align-items:center; height:64px; gap:32px; }
+  .brand{ display:flex; align-items:center; gap:10px; font:600 15px var(--font-display); letter-spacing:-0.01em; }
+  .brand svg{ display:block; }
+  .nav-links{ display:flex; gap:4px; margin-left:8px; }
+  .nav-links a{
+    font-size:13.5px; font-weight:500; color:var(--muted);
+    padding:7px 12px; border-radius:8px; transition:color .15s, background .15s;
+  }
+  .nav-links a:hover{ color:var(--fg); background:var(--hover); }
+  .nav-cta{ margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .nav-cta .ghost{ font-size:13.5px; font-weight:500; color:var(--muted); padding:7px 12px; border-radius:8px; }
+  .nav-cta .ghost:hover{ color:var(--fg); background:var(--hover); }
+
+  @keyframes navIn{ from{ opacity:0; transform:translateY(-8px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .nav-links a{ animation:navIn .5s cubic-bezier(.2,.6,.2,1) both; }
+    .nav-links a:nth-child(1){ animation-delay:.10s; }
+    .nav-links a:nth-child(2){ animation-delay:.15s; }
+    .nav-links a:nth-child(3){ animation-delay:.20s; }
+    .nav-links a:nth-child(4){ animation-delay:.25s; }
+  }
+
+  /* ============ Buttons ============ */
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    height:44px; padding:0 22px; border-radius:12px;
+    font:500 14.5px var(--font-body); letter-spacing:0.01em;
+    border:1px solid transparent; cursor:pointer;
+    transition:background .15s, border-color .15s, transform .15s, filter .15s;
+  }
+  .btn:hover{ transform:translateY(-1px); }
+  .btn:active{ transform:scale(.98); }
+  .btn-primary{ background:var(--fg); color:var(--bg); }
+  .btn-primary:hover{ background:#ffffff; filter:brightness(1.03); }
+  .btn-secondary{ background:var(--surface); color:var(--fg); border-color:var(--border); }
+  .btn-secondary:hover{ background:var(--raised); border-color:#333333; }
+  .btn-sm{ height:36px; padding:0 16px; border-radius:10px; font-size:13.5px; }
+
+  /* ============ Hero ============ */
+  .hero{
+    padding:132px 0 0; text-align:center;
+    background:
+      linear-gradient(180deg, rgba(16,16,16,0.68) 0%, rgba(16,16,16,0.52) 26%, rgba(16,16,16,0.88) 58%, var(--bg) 84%),
+      url("assets/manifesto-ribbon.jpg") center 32%/cover no-repeat;
+  }
+  .hero > *{ position:relative; }
+  .hero-eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    height:30px; padding:0 14px; border-radius:999px;
+    border:1px solid var(--border); background:var(--surface);
+    font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:0.02em;
+  }
+  .hero-eyebrow .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); }
+  .hero h1{
+    margin:28px auto 0; max-width:840px;
+    font:600 clamp(44px, 6.4vw, 84px)/1.06 var(--font-display);
+    letter-spacing:-0.03em;
+  }
+  /* metallic silver shimmer — second headline line */
+  .shimmer{
+    background-image:linear-gradient(110deg, #55555c 0%, #e8e8ec 30%, #ffffff 50%, #e8e8ec 70%, #55555c 100%);
+    background-size:200% auto;
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+    filter:url(#c3-noise);
+    animation:shimmerSlide 6s linear infinite;
+  }
+  @keyframes shimmerSlide{ from{ background-position:-200% center; } to{ background-position:200% center; } }
+  .hero .sub{
+    margin:24px auto 0; max-width:560px;
+    font-size:18px; line-height:1.6; color:var(--muted);
+  }
+  .hero-ctas{ margin-top:36px; display:flex; justify-content:center; gap:12px; }
+  .hero-shot{ margin:72px auto 0; max-width:1200px; padding:0 32px; }
+
+  @keyframes riseIn{ from{ opacity:0; transform:translateY(18px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .hero-eyebrow{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) both; }
+    .hero h1{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .08s both; }
+    .hero .sub{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .16s both; }
+    .hero .hero-ctas{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .24s both; }
+    .hero-shot{ animation:riseIn .8s cubic-bezier(.2,.6,.2,1) .34s both; }
+  }
+
+  /* macOS window chrome around the hero screenshot */
+  .hero-shot-frame{
+    border:1px solid var(--border); border-bottom:0;
+    border-radius:18px 18px 0 0; overflow:hidden;
+    background:rgba(255,255,255,0.02);
+    backdrop-filter:blur(8px);
+  }
+  .hero-shot-bar{
+    display:flex; align-items:center; height:40px; padding:0 16px;
+    background:rgba(0,0,0,0.4); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+    position:relative;
+  }
+  .hero-shot-bar .tl{ flex:none; width:12px; height:12px; border-radius:50%; margin-right:8px; }
+  .hero-shot-bar .tl:nth-child(1){ background:#ff5f57; }
+  .hero-shot-bar .tl:nth-child(2){ background:#febc2e; }
+  .hero-shot-bar .tl:nth-child(3){ background:#28c840; }
+  .hero-shot-title{
+    position:absolute; left:50%; transform:translateX(-50%);
+    font-size:12px; font-weight:500; color:var(--muted); letter-spacing:0.01em;
+  }
+  .hero-shot-frame img{ display:block; width:100%; height:auto; }
+
+  /* ============ Trust strip ============ */
+  .trust{ padding:88px 0 0; text-align:center; }
+  .trust p{
+    font-size:12px; font-weight:500; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--faint);
+  }
+  .trust-row{
+    margin-top:28px; display:flex; justify-content:center; align-items:center;
+    gap:56px; flex-wrap:wrap;
+  }
+  .trust-row span{
+    font:600 17px var(--font-display); letter-spacing:-0.01em; color:var(--faint);
+    display:inline-flex; align-items:center; gap:9px;
+  }
+  .trust-row svg{ opacity:.55; }
+
+  /* ============ Sticky narrative features ============ */
+  .features{ padding:120px 0 0; }
+  .fs-grid{
+    display:grid;
+    grid-template-columns:minmax(0,7fr) minmax(0,5fr);
+    column-gap:72px;
+  }
+  .fs-grid > .f-visual{
+    grid-column:1; grid-row:1 / -1;
+    position:sticky; top:15vh; height:70vh;
+    align-self:start;
+    display:flex; flex-direction:column;
+    opacity:0; transform:scale(.985) translateY(10px);
+    transition:opacity .5s ease, transform .5s ease;
+    pointer-events:none;
+  }
+  .fs-grid > .f-visual.active{ opacity:1; transform:none; pointer-events:auto; z-index:2; }
+  .fs-block{
+    grid-column:2;
+    min-height:85vh;
+    display:flex; flex-direction:column; justify-content:center;
+    opacity:.4; transition:opacity .4s ease;
+  }
+  .fs-block.active{ opacity:1; }
+
+  .f-index{
+    font:500 12px var(--font-mono); letter-spacing:0.14em; color:var(--faint);
+  }
+  .f-text h2{
+    margin-top:16px;
+    font:600 clamp(28px, 3vw, 40px)/1.15 var(--font-display);
+    letter-spacing:-0.02em;
+  }
+  .f-text p{ margin-top:18px; font-size:16.5px; line-height:1.65; color:var(--muted); max-width:46ch; }
+  .f-points{ margin-top:26px; display:flex; flex-direction:column; gap:12px; }
+  .f-points li{
+    list-style:none; display:flex; gap:10px; align-items:baseline;
+    font-size:14.5px; color:var(--muted);
+  }
+  .f-points li::before{
+    content:""; flex:none; width:5px; height:5px; border-radius:50%;
+    background:var(--faint); transform:translateY(-2px);
+  }
+  .f-points li strong{ color:var(--fg); font-weight:500; }
+
+  .f-visual{
+    border-radius:16px;
+    background:var(--surface); overflow:hidden;
+  }
+  .f-visual-head{
+    flex:none;
+    display:flex; align-items:center; gap:6px;
+    height:40px; padding:0 16px; border-bottom:1px solid var(--border);
+  }
+  .f-visual-head i{ width:9px; height:9px; border-radius:50%; background:var(--active); }
+  .f-visual-head span{
+    margin-left:8px; font:500 12px var(--font-mono); color:var(--faint); letter-spacing:0.02em;
+  }
+  .f-visual-body{ flex:1; padding:20px; overflow:hidden; }
+
+  /* --- mock: conversation --- */
+  .mk-msg{ display:flex; gap:10px; margin-bottom:16px; }
+  .mk-msg.user{ justify-content:flex-end; }
+  .mk-ava{
+    flex:none; width:24px; height:24px; border-radius:50%;
+    display:grid; place-items:center;
+    font:600 12px var(--font-body); color:#101010;
+  }
+  /* 角色头像与 dashboard 同一套 6 色粉彩身份色板,FNV-1a(角色名) mod 6 取色(见 brand-spec) */
+  .mk-ava.mgr{ background:#F0C9A0; } /* 开发经理 → tone-1 杏 */
+  .mk-ava.dev{ background:#D9C2F0; } /* 开发 → tone-4 紫 */
+  .mk-ava.qa{ background:#B8E3D2; }  /* 测试 → tone-3 绿 */
+  .mk-ava.you{ background:var(--fg); color:var(--bg); }
+  .mk-bubble{ max-width:78%; }
+  .mk-name{ font-size:12px; font-weight:500; color:var(--muted); margin-bottom:4px; }
+  .mk-msg.user .mk-name{ text-align:right; }
+  .mk-text{
+    font-size:13.5px; line-height:1.55; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:9px 13px;
+  }
+  .mk-text .mention{ color:var(--accent); font-weight:500; }
+  .mk-subtasks{ margin-top:10px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .mk-sub{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 13px; font-size:13px;
+    border-bottom:1px solid var(--border); background:var(--surface);
+  }
+  .mk-sub:last-child{ border-bottom:0; }
+  .mk-sub .t{ flex:1; color:var(--fg); }
+  .mk-pill{
+    display:inline-flex; align-items:center; gap:5px;
+    height:22px; padding:0 9px; border-radius:999px;
+    font-size:11.5px; font-weight:500;
+  }
+  .mk-pill.doing{ color:var(--amber); background:var(--tint-amber); animation:pillPulse 1.8s ease-in-out infinite; }
+  .mk-pill.done{ color:var(--success); background:var(--tint-green); }
+  .mk-pill.fail{ color:var(--danger); background:var(--tint-red); }
+  @keyframes pillPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+
+  /* --- mock: agents --- */
+  .mk-agent{
+    border:1px solid var(--border); border-radius:14px;
+    background:var(--raised); padding:16px; margin-bottom:12px;
+  }
+  .mk-agent:last-child{ margin-bottom:0; }
+  .mk-agent-top{ display:flex; align-items:center; gap:10px; }
+  .mk-agent-top .n{ font-size:14px; font-weight:500; }
+  .mk-agent-top .r{ font-size:12px; color:var(--faint); }
+  .mk-agent-top .mk-pill{ margin-left:auto; }
+  .mk-task{
+    margin-top:10px; display:inline-flex; align-items:center; gap:7px;
+    height:26px; padding:0 11px; border-radius:999px;
+    border:1px solid var(--border); font-size:12px; color:var(--muted);
+  }
+  .mk-load{ margin-top:12px; height:4px; border-radius:2px; background:var(--active); overflow:hidden; }
+  .mk-load i{ display:block; height:100%; border-radius:2px; }
+
+  /* --- mock: diff --- */
+  .mk-diff{ font:12.5px/1.7 var(--font-mono); }
+  .mk-diff-file{
+    display:flex; align-items:center; gap:8px;
+    padding:8px 12px; border:1px solid var(--border); border-radius:10px 10px 0 0;
+    background:var(--raised); color:var(--fg); font-size:12.5px;
+  }
+  .mk-diff-file .plus{ margin-left:auto; color:var(--success); }
+  .mk-diff-file .minus{ color:var(--danger); }
+  .mk-diff-lines{ border:1px solid var(--border); border-top:0; border-radius:0 0 10px 10px; overflow:hidden; }
+  .mk-ln{ display:flex; }
+  .mk-ln .no{
+    flex:none; width:38px; text-align:right; padding-right:12px;
+    color:var(--faint); user-select:none;
+  }
+  .mk-ln .code{ flex:1; white-space:pre; color:var(--muted); }
+  .mk-ln.add{ background:rgba(46,224,58,.07); }
+  .mk-ln.add .code{ color:#9ee8a5; }
+  .mk-ln.del{ background:rgba(247,35,50,.07); }
+  .mk-ln.del .code{ color:#e89a9e; }
+
+  /* ============ Manifesto band ============ */
+  .manifesto{
+    margin-top:140px;
+    border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+  }
+  .manifesto-in{ padding:128px 0 136px; text-align:center; }
+  .manifesto .eyebrow{
+    font:500 12px/1.5 var(--font-mono);
+    letter-spacing:0.14em; text-transform:uppercase;
+    color:rgba(244,244,244,.5);
+  }
+  .manifesto h2{
+    margin-top:26px;
+    font:600 clamp(38px, 5vw, 64px)/1.14 var(--font-display);
+    letter-spacing:-0.028em;
+  }
+  .manifesto h2 .dim{ display:block; color:rgba(244,244,244,.42); }
+  .manifesto h2 .lit{ display:block; color:var(--fg); }
+
+  /* ============ CTA band ============ */
+  .cta{ margin-top:140px; border-top:1px solid var(--border); }
+  .cta-in{ padding:120px 0; text-align:center; }
+  .cta h2{
+    font:600 clamp(32px, 4vw, 52px)/1.12 var(--font-display);
+    letter-spacing:-0.025em;
+  }
+  .cta p{ margin:18px auto 0; max-width:440px; color:var(--muted); font-size:16.5px; }
+  .cta .hero-ctas{ margin-top:32px; }
+
+  /* ============ Footer ============ */
+  .footer{ border-top:1px solid var(--border); }
+  .footer-in{
+    padding:56px 0 64px;
+    display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:32px;
+  }
+  .footer .brand{ margin-bottom:14px; }
+  .footer .tag{ font-size:13px; color:var(--faint); max-width:26ch; line-height:1.6; }
+  .fcol h4{
+    font-size:12px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:14px;
+  }
+  .fcol a{ display:block; font-size:13.5px; color:var(--muted); padding:5px 0; }
+  .fcol a:hover{ color:var(--fg); }
+  .footer-base{
+    border-top:1px solid var(--border); padding:20px 0;
+    display:flex; justify-content:space-between;
+    font-size:12.5px; color:var(--faint);
+  }
+
+  @media (max-width: 900px){
+    .fs-grid{ grid-template-columns:1fr; row-gap:28px; }
+    .fs-grid > .f-visual{
+      grid-column:auto; grid-row:auto;
+      position:static; height:auto; align-self:auto;
+      opacity:1; transform:none; pointer-events:auto;
+      margin-top:64px;
+    }
+    .fs-grid > .f-visual:first-child{ margin-top:0; }
+    .fs-block{ grid-column:auto; min-height:0; opacity:1; }
+    .fs-block:not(:last-child){ margin-bottom:36px; }
+    .nav-links{ display:none; }
+    .footer-in{ grid-template-columns:1fr 1fr; }
+    .hero{ padding-top:80px; }
+  }
+  @media (max-width: 768px){
+    .vl{ display:none; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+    .shimmer{ animation:none; background-position:50% center; }
+    .js .reveal{ opacity:1; transform:none; }
+    .fs-block{ opacity:1; }
+    .fs-grid > .f-visual{ opacity:0; }
+    .fs-grid > .f-visual.active{ opacity:1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- grain filter for the shimmer headline -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="c3-noise">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+    <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.35 0"/>
+    <feComposite in2="SourceGraphic" operator="in"/>
+    <feBlend in2="SourceGraphic" mode="multiply"/>
+  </filter>
+</svg>
+
+<!-- container guide lines -->
+<div class="vl vl-l" aria-hidden="true"></div>
+<div class="vl vl-r" aria-hidden="true"></div>
+
+<!-- ================= Nav ================= -->
+<nav class="nav" data-od-id="site-nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#" data-od-id="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 18V6l8 12V6" stroke="#f4f4f4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M14 6h6M14 18h6" stroke="#f4f4f4" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      Moebius
+    </a>
+    <div class="nav-links" data-od-id="nav-links">
+      <a href="#f-conversation">产品</a>
+      <a href="#f-agents">团队</a>
+      <a href="#f-diff">改动</a>
+      <a href="#">更新日志</a>
+    </div>
+    <div class="nav-cta">
+      <a class="ghost" href="#">登录</a>
+      <a class="btn btn-primary btn-sm" href="#" data-od-id="nav-download">下载 macOS 版</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= Hero ================= -->
+<header class="hero" data-od-id="hero">
+  <div class="wrap">
+    <span class="hero-eyebrow"><i class="dot"></i>桌面端公测中</span>
+    <h1>把整个开发团队,<br><span class="shimmer">装进一次对话。</span></h1>
+    <p class="sub">Moebius 是桌面上的智能体指挥中心:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程可见、可回退。</p>
+    <div class="hero-ctas" data-od-id="hero-ctas">
+      <a class="btn btn-primary" href="#">下载 macOS 版</a>
+      <a class="btn btn-secondary" href="#">查看产品文档</a>
+    </div>
+  </div>
+  <div class="hero-shot" data-od-id="hero-shot">
+    <div class="hero-shot-frame">
+      <div class="hero-shot-bar">
+        <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+        <span class="hero-shot-title">Moebius — 主对话</span>
+      </div>
+      <img src="preview-center.png" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
+    </div>
+  </div>
+</header>
+
+<!-- ================= Trust ================= -->
+<section class="trust wrap reveal" data-od-id="trust">
+  <p>正在这些团队的工作流里运行</p>
+  <div class="trust-row">
+    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="3.5" stroke="currentColor" stroke-width="1.6"/></svg>LumenForge</span>
+    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.6"/></svg>NebulaCart</span>
+    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2l6 12H2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Marketeam</span>
+    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Northfield</span>
+  </div>
+</section>
+
+<!-- ================= Sticky narrative features ================= -->
+<section class="features wrap" data-od-id="features">
+  <div class="fs-grid">
+
+    <div class="f-visual liquid-glass active" data-od-id="mock-conversation">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页验收</span></div>
+      <div class="f-visual-body">
+        <div class="mk-msg user">
+          <div class="mk-bubble">
+            <div class="mk-name">你</div>
+            <div class="mk-text">帮我把落地页的空状态补上验收语句</div>
+          </div>
+          <div class="mk-ava you">你</div>
+        </div>
+        <div class="mk-msg">
+          <div class="mk-ava mgr">经</div>
+          <div class="mk-bubble">
+            <div class="mk-name">开发经理</div>
+            <div class="mk-text">这个改动只碰落地页,<span class="mention">@开发</span> 来做。</div>
+            <div class="mk-subtasks">
+              <div class="mk-sub"><span class="t">落地页文案</span><span class="mk-pill doing">进行中</span></div>
+              <div class="mk-sub"><span class="t">空状态验收</span><span class="mk-pill fail">没跑起来</span></div>
+              <div class="mk-sub"><span class="t">构建脚本</span><span class="mk-pill done">已结束</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="f-text fs-block active" id="f-conversation" data-od-id="feature-conversation">
+      <span class="f-index">01</span>
+      <h2>对话,就是指挥中心</h2>
+      <p>不用在群聊、任务看板和 IDE 之间来回切。你说一句目标,开发经理把它拆成并行子任务,@到具体的成员,每一步的状态就长在会话里。</p>
+      <ul class="f-points">
+        <li><strong>@提及即派活</strong>——@开发、@测试,谁接谁做一目了然</li>
+        <li><strong>子任务内联呈现</strong>——进行中、没跑起来、已结束,状态实时更新</li>
+        <li><strong>卡住了能重试</strong>——失败的一步可以改一改指令,原地重发</li>
+      </ul>
+    </div>
+
+    <div class="f-visual liquid-glass" data-od-id="mock-agents">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>Agent 团队 · 开发团队</span></div>
+      <div class="f-visual-body">
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava mgr">经</div>
+            <div><div class="n">开发经理</div><div class="r">拆解与分派</div></div>
+            <span class="mk-pill doing">进行中</span>
+          </div>
+          <div class="mk-task">官网落地页验收 · 拆解子任务</div>
+          <div class="mk-load"><i style="width:62%; background:var(--orange);"></i></div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava dev">开</div>
+            <div><div class="n">开发</div><div class="r">前端与脚本</div></div>
+            <span class="mk-pill doing">进行中</span>
+          </div>
+          <div class="mk-task">落地页文案 · sites/marketeam</div>
+          <div class="mk-load"><i style="width:88%; background:var(--success);"></i></div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava qa">测</div>
+            <div><div class="n">测试</div><div class="r">验收与回归</div></div>
+            <span class="mk-pill fail">没跑起来</span>
+          </div>
+          <div class="mk-task">空状态验收 · landing.test.ts</div>
+          <div class="mk-load"><i style="width:34%; background:var(--orange);"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-agents" data-od-id="feature-agents">
+      <span class="f-index">02</span>
+      <h2>一支团队,并行推进</h2>
+      <p>每个成员都有自己的专长和负载。开发经理负责拆解,开发、文案、测试同时开工——原来要排期一周的事,一条对话里跑完。</p>
+      <ul class="f-points">
+        <li><strong>团队按项目组装</strong>——为这个项目选一支队,快照随对话锁定</li>
+        <li><strong>负载实时可见</strong>——谁在满负荷、谁有空档,一眼看清</li>
+        <li><strong>独立工作空间</strong>——改动隔离在副本里,合不合并你说了算</li>
+      </ul>
+    </div>
+
+    <div class="f-visual liquid-glass" data-od-id="mock-diff">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>改动 · 项目文件夹</span></div>
+      <div class="f-visual-body">
+        <div class="mk-diff">
+          <div class="mk-diff-file">sites/marketeam/index.html<span class="plus">+12</span><span class="minus">−3</span></div>
+          <div class="mk-diff-lines">
+<div class="mk-ln"><span class="no">43</span><span class="code">  &lt;h1&gt;让团队自己推进&lt;/h1&gt;</span></div>
+<div class="mk-ln del"><span class="no">44</span><span class="code">- &lt;div class="empty"&gt;&lt;/div&gt;</span></div>
+<div class="mk-ln add"><span class="no">44</span><span class="code">+ &lt;div class="empty-state" role="status"&gt;</span></div>
+<div class="mk-ln add"><span class="no">45</span><span class="code">+   &lt;p class="empty-title"&gt;这里还没有内容&lt;/p&gt;</span></div>
+<div class="mk-ln add"><span class="no">46</span><span class="code">+   &lt;p class="empty-accept"&gt;空状态已给出验收&lt;/p&gt;</span></div>
+<div class="mk-ln"><span class="no">47</span><span class="code">  &lt;/div&gt;</span></div>
+<div class="mk-ln"><span class="no">48</span><span class="code">&lt;/section&gt;</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-diff" data-od-id="feature-diff">
+      <span class="f-index">03</span>
+      <h2>每一处改动,全程可见</h2>
+      <p>对话进行的同一刻,项目文件夹里的每一次增删都在右栏实时展开。改了哪个文件、动了哪几行,不用猜,不用等汇报。</p>
+      <ul class="f-points">
+        <li><strong>按文件聚合</strong>——这段对话期间碰过的文件,全部列出来</li>
+        <li><strong>行级 diff</strong>——新增与删除分行着色,改动即证据</li>
+        <li><strong>随时停下</strong>——任何一步不对,一键叫停,现场保留</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- ================= Manifesto band ================= -->
+<section class="manifesto" id="manifesto" data-od-id="manifesto">
+  <div class="wrap manifesto-in reveal">
+    <p class="eyebrow">Moebius 的方式</p>
+    <h2>
+      <span class="dim">你负责决定方向。</span>
+      <span class="lit">团队负责把它做完。</span>
+    </h2>
+  </div>
+</section>
+
+<!-- ================= CTA ================= -->
+<section class="cta" data-od-id="cta">
+  <div class="wrap cta-in reveal">
+    <h2>让团队自己推进。</h2>
+    <p>下载 Moebius 桌面端,把你的第一个目标交给一支智能体团队。</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="#">下载 macOS 版</a>
+      <a class="btn btn-secondary" href="#">预约团队演示</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Footer ================= -->
+<footer class="footer" data-od-id="footer">
+  <div class="wrap footer-in">
+    <div>
+      <a class="brand" href="#">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 18V6l8 12V6" stroke="#f4f4f4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 6h6M14 18h6" stroke="#f4f4f4" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        Moebius
+      </a>
+      <p class="tag">桌面上的智能体指挥中心,让开发团队并行推进每一个目标。</p>
+    </div>
+    <div class="fcol">
+      <h4>产品</h4>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-agents">Agent 团队</a>
+      <a href="#f-diff">改动追踪</a>
+      <a href="#">更新日志</a>
+    </div>
+    <div class="fcol">
+      <h4>资源</h4>
+      <a href="#">产品文档</a>
+      <a href="#">快捷键</a>
+      <a href="#">常见问题</a>
+    </div>
+    <div class="fcol">
+      <h4>公司</h4>
+      <a href="#">关于</a>
+      <a href="#">联系</a>
+      <a href="#">隐私条款</a>
+    </div>
+  </div>
+  <div class="footer-base">
+    <div class="wrap" style="display:flex; justify-content:space-between; width:100%;">
+      <span>© 2026 Moebius</span>
+      <span>macOS 14+</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- scroll reveals ---- */
+  var reveals = [].slice.call(document.querySelectorAll('.reveal'));
+  if (!reduced && 'IntersectionObserver' in window) {
+    var ro = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('in'); ro.unobserve(e.target); }
+      });
+    }, { threshold: .12 });
+    reveals.forEach(function(el){
+      if (el.getBoundingClientRect().top < innerHeight * .92) el.classList.add('in');
+      else ro.observe(el);
+    });
+    /* safety net: never leave content hidden (e.g. full-page exports) */
+    setTimeout(function(){ reveals.forEach(function(el){ el.classList.add('in'); }); }, 1600);
+  } else {
+    reveals.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  /* ---- sticky narrative features ---- */
+  var blocks  = [].slice.call(document.querySelectorAll('.fs-block'));
+  var visuals = [].slice.call(document.querySelectorAll('.fs-grid > .f-visual'));
+  function setActive(i){
+    blocks.forEach(function(b,j){ b.classList.toggle('active', j === i); });
+    visuals.forEach(function(v,j){ v.classList.toggle('active', j === i); });
+  }
+  var ticking = false;
+  function update(){
+    ticking = false;
+    if (innerWidth <= 900) return;
+    var mid = innerHeight / 2, best = 0, bd = Infinity;
+    blocks.forEach(function(b,i){
+      var r = b.getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - mid);
+      if (d < bd) { bd = d; best = i; }
+    });
+    setActive(best);
+  }
+  function onScroll(){ if (!ticking) { ticking = true; requestAnimationFrame(update); } }
+  addEventListener('scroll', onScroll, { passive:true });
+  addEventListener('resize', onScroll);
+
+  /* ---- pointer-follow highlight on glass cards ---- */
+  if (matchMedia('(pointer: fine)').matches) {
+    [].slice.call(document.querySelectorAll('.liquid-glass')).forEach(function(card){
+      card.addEventListener('mousemove', function(e){
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

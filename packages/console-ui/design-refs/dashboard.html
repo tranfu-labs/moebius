@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moebius</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;510;590&family=Inter+Tight:wght@510;590&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============ 左侧边栏 ============ -->
+  <aside class="sidebar" data-od-id="sidebar">
+    <!-- 首行:macOS 红绿灯安全区(左 78px 让位)+ 关闭按钮,46px 统一 header -->
+    <div class="sidebar-top">
+      <button class="icon-btn" id="btn-close-sidebar" data-od-id="close-sidebar" title="关闭侧边栏" aria-label="关闭侧边栏">
+        <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
+      </button>
+    </div>
+    <!-- 次行:独立品牌行 -->
+    <div class="brand" data-od-id="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 12c-1.4-1.9-2.8-3-4.4-3a3.6 3.6 0 1 0 0 7.2c1.6 0 3-1.1 4.4-3z"/>
+        <path d="M12 12c1.4 1.9 2.8 3 4.4 3a3.6 3.6 0 1 0 0-7.2c-1.6 0-3 1.1-4.4 3z"/>
+      </svg>
+      <span class="brand-name">Moebius</span>
+    </div>
+
+    <!-- 应用级入口:同层级、同导航行样式 -->
+    <nav class="app-nav" data-od-id="app-nav">
+      <button class="nav-row" id="nav-new" data-od-id="nav-new-conversation">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
+        新建对话
+      </button>
+      <button class="nav-row" data-od-id="nav-search" title="搜索">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        搜索
+      </button>
+      <button class="nav-row" data-od-id="nav-teams" title="Agent 团队">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        Agent 团队
+      </button>
+    </nav>
+
+    <div class="projects-head">项目</div>
+
+    <div class="projects-scroll" data-od-id="project-list">
+      <div class="project" id="project-a">
+        <button class="project-row" id="project-a-row" data-od-id="project-a" aria-expanded="true">
+          <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          <span class="name">项目 A</span>
+          <span class="dot dot-red agg-dot" title="需要你处理" aria-label="需要你处理"></span>
+          <span class="row-actions">
+            <span class="icon-btn" role="button" tabindex="0" title="在项目 A 中新建对话" aria-label="在项目 A 中新建对话" data-od-id="project-a-new">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            </span>
+            <span class="icon-btn" role="button" tabindex="0" title="项目 A 更多" aria-label="项目 A 更多">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            </span>
+          </span>
+        </button>
+        <div class="conv-list" id="project-a-convs">
+          <button class="conv-row is-selected" id="conv-landing" data-od-id="conv-landing" title="官网落地页验收">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">官网落地页验收</span>
+            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
+          <button class="conv-row" data-od-id="conv-build" title="构建脚本">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">构建脚本</span>
+            <span class="dot dot-blue" title="有新结果" aria-label="有新结果"></span>
+          </button>
+          <button class="conv-row" id="conv-copy" data-od-id="conv-copy" title="文案打磨">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">文案打磨</span>
+            <span class="dot dot-run" title="正在运行" aria-label="正在运行"></span>
+          </button>
+          <button class="conv-row" data-od-id="conv-req" title="需求梳理">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">需求梳理</span>
+          </button>
+          <!-- 三种不可继续状态的演示会话:红点叫回,打开后历史只读、输入区被说明替换 -->
+          <button class="conv-row" id="conv-broken-project" data-od-id="conv-broken-project" title="官网改版（项目文件夹不可用）">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">官网改版</span>
+            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
+          <button class="conv-row" id="conv-broken-team-deleted" data-od-id="conv-broken-team-deleted" title="季度活动（团队已删除）">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">季度活动</span>
+            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
+          <button class="conv-row" id="conv-broken-team-repair" data-od-id="conv-broken-team-repair" title="内容排期（团队需要修复）">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">内容排期</span>
+            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="project collapsed" id="project-b">
+        <button class="project-row" data-od-id="project-b" aria-expanded="false" title="项目 B">
+          <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+          <span class="name">项目 B</span>
+          <span class="dot dot-red agg-dot" title="需要你处理" aria-label="需要你处理"></span>
+          <span class="row-actions stay">
+            <span class="icon-btn" role="button" tabindex="0" title="项目 B 更多" aria-label="项目 B 更多">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-foot">
+      <button class="nav-row" data-od-id="nav-settings" title="设置">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1 1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        设置
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============ 会话区 ============ -->
+  <main class="conv" data-od-id="conversation">
+    <!-- 窗口控制行:46px;侧栏关闭时恢复按钮让位红绿灯安全区 -->
+    <header class="conv-head">
+      <button class="open-sidebar" id="btn-open-sidebar" data-od-id="open-sidebar">
+        <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m13 9 3 3-3 3"/></svg>
+        打开侧边栏
+      </button>
+      <span style="flex:1"></span>
+      <button class="icon-btn" id="btn-toggle-rbar" data-od-id="toggle-rbar" title="显示/隐藏右侧栏" aria-label="显示或隐藏右侧栏">
+        <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
+      </button>
+    </header>
+
+    <!-- 消息目录轨:会话区左缘吸附,默认刻度 / 悬浮展开车道图;JS 按当前会话渲染 -->
+    <div id="relay-viewport" data-od-id="relay-rail" hidden></div>
+
+    <!-- 时间线:官网落地页验收;标题 sticky 吸附,与消息同一左边界 -->
+    <div class="timeline" id="timeline-landing" data-od-id="timeline">
+      <h1 class="tl-title" data-od-id="conv-title" title="官网落地页验收"><span>官网落地页验收</span></h1>
+
+      <div class="msg is-user" data-od-id="msg-user">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">10:21</span></div>
+        <div class="msg-body">帮我把落地页的空状态补上验收语句</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-manager">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="msg-time">10:22</span></div>
+        <div class="msg-body">这个改动只碰落地页，<span class="mention" data-od-id="mention-dev">@开发</span> 来做。</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-dev-step">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="msg-time">10:23</span></div>
+        <div class="msg-body">运行 <span class="mono-cmd">pnpm test -- landing</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">已进行 42 秒</span>
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="msg-time">10:24</span></div>
+        <div class="msg-body">这个目标要动三个模块，我拆成三段并行推进。</div>
+        <div class="subcard" data-od-id="subcard">
+          <button class="subcard-row" data-subtask="落地页文案" data-od-id="subtask-copy" title="在右侧栏打开「落地页文案」">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="t">落地页文案</span>
+            <span class="who">开发</span>
+            <span class="pill pill-amber"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>进行中</span>
+          </button>
+          <button class="subcard-row" data-subtask="空状态验收" data-od-id="subtask-accept" title="在右侧栏打开「空状态验收」">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="t">空状态验收</span>
+            <span class="who">测试</span>
+            <span class="pill pill-red"><svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>没跑起来</span>
+          </button>
+          <button class="subcard-row" data-subtask="构建脚本" data-od-id="subtask-build" title="在右侧栏打开「构建脚本」">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="t">构建脚本</span>
+            <span class="who">开发</span>
+            <span class="pill pill-green"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>已结束</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="msg-time">10:26</span></div>
+        <div class="msg-body">已补上空状态验收语句。</div>
+        <div class="result-card" data-od-id="result-card">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <span class="txt"><b>已结束</b> · 2 个文件有改动</span>
+          <button class="btn btn-ghost" id="btn-view-changes" data-od-id="view-changes">查看</button>
+        </div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">耗时 2 分 14 秒</span>
+        </div>
+      </div>
+
+      <!-- 四种事实:内容由对话表达不了的才升格为系统记录 -->
+      <div class="sys-rec warn" data-od-id="sys-failed">
+        <svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <span class="txt">这一步没跑起来（退出码 1）</span>
+        <button class="btn btn-ghost">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          重试
+        </button>
+      </div>
+
+      <div class="sys-rec warn" data-od-id="sys-stuck">
+        <svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <span class="txt">这一步卡住了</span>
+        <button class="btn btn-ghost">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          重试
+        </button>
+      </div>
+
+      <div class="sys-rec stop" data-od-id="sys-stopped">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>
+        <span class="txt">你让这一步停下了</span>
+        <button class="btn btn-ghost" id="btn-edit-resend" data-od-id="edit-resend" title="把引发这一步的消息回填到输入框，改完重发">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
+          改一改重发
+        </button>
+      </div>
+
+      <div class="sys-rec halt" data-od-id="sys-gave-up">
+        <svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <span class="txt">这一步反复没跑起来，已经不再重试<span class="sub">你可以说点什么，或换一个成员接手</span></span>
+      </div>
+    </div>
+
+    <!-- 新对话·项目未选定:同一页面的另一种状态 -->
+    <div class="timeline" id="timeline-new" hidden>
+      <h1 class="tl-title" title="新对话"><span>新对话</span></h1>
+      <div class="new-guide">描述你的目标，团队会开始推进</div>
+    </div>
+
+    <!-- 文案打磨:有成员正在工作的会话,演示停下/发送合一与运行中改选团队 -->
+    <div class="timeline" id="timeline-copy" hidden>
+      <h1 class="tl-title" title="文案打磨"><span>文案打磨</span></h1>
+
+      <div class="msg is-user" data-od-id="msg-user">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">11:02</span></div>
+        <div class="msg-body">帮我把落地页的主文案再打磨一版，语气再克制一点</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-copy-step">
+        <div class="msg-who"><span class="role-tag tone-2">文</span>文案 <span class="msg-time">11:03</span></div>
+        <div class="msg-body">正在逐句打磨第二版，先收紧标题…</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="文案" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">已进行 18 秒</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="composer" data-od-id="composer">
+      <div class="composer-box">
+        <div class="ctx-chips" id="ctx-chips" data-od-id="ctx-chips">
+          <span class="chips-set" id="chips-landing">
+            <span class="chip locked chip-project"><svg class="icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>项目 A</span>
+            <span class="chip-sep s1">·</span>
+            <span class="chip locked chip-workspace"><svg class="icon" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>默认工作空间</span>
+            <span class="chip-sep s2">·</span>
+            <span class="chip locked chip-branch"><svg class="icon" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span class="branch-name">main</span></span>
+            <button class="chip chip-team" id="chip-team-landing" data-od-id="chip-team" title="改选团队">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+              <span class="team-name">开发团队</span>
+              <svg class="icon chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
+          <span class="chips-set" id="chips-new" hidden>
+            <!-- 项目未选定:只给项目与团队,工作空间与分支不显示 -->
+            <span class="chips-set" id="chips-new-empty">
+              <button class="chip chip-project" id="chip-project-new" data-od-id="chip-project" title="选择项目">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                选择项目
+                <svg class="icon chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="chip chip-team" id="chip-team-new-empty" data-od-id="chip-team-new" title="改选团队">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                <span class="team-name">开发团队</span>
+                <svg class="icon chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </span>
+            <!-- 项目已选定(发出第一条消息前):项目/工作空间可改,分支只读 -->
+            <span class="chips-set" id="chips-new-project" hidden>
+              <button class="chip chip-project" id="chip-project-picked" data-od-id="chip-project-picked" title="改选项目">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                <span id="new-project-name">项目 A</span>
+                <svg class="icon chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="chip chip-workspace" id="chip-workspace-new" data-od-id="chip-workspace" title="切换工作空间">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
+                <span id="new-workspace-name">默认工作空间</span>
+                <svg class="icon chev" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+              </button>
+              <span class="chip chip-branch" data-od-id="chip-branch" title="分支只读">
+                <svg class="icon" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                <span class="branch-name">main</span>
+              </span>
+              <button class="chip chip-team" id="chip-team-new" title="改选团队">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                <span class="team-name">开发团队</span>
+                <svg class="icon chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </span>
+          </span>
+        </div>
+        <!-- 运行中改选团队:当前这一步跑完后生效,提示行贴在输入框上方 -->
+        <div class="composer-hint" id="team-switch-hint" data-od-id="team-switch-hint" hidden></div>
+        <div class="attach-row" id="attach-row" data-od-id="attach-drafts" hidden></div>
+        <div class="composer-input">
+          <textarea id="composer-text" rows="1" placeholder="说点什么，或 @ 一个成员…" data-od-id="composer-input"></textarea>
+          <button class="attach-btn" id="btn-attach" data-od-id="attach" title="添加附件" aria-label="添加附件">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          </button>
+          <button class="send-btn" id="send-btn" data-od-id="send" title="发送" aria-label="发送">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+          </button>
+        </div>
+        <!-- 不可继续状态:输入区被说明文案替换,恢复入口随状态给 -->
+        <div class="composer-blocked" id="composer-blocked" data-od-id="composer-blocked" hidden>
+          <span class="txt" id="blocked-text"></span>
+          <button class="btn btn-ghost" id="blocked-action" data-od-id="blocked-action" hidden></button>
+        </div>
+      </div>
+      <div class="composer-reason" id="composer-reason" data-od-id="composer-reason" hidden>选择一个项目后才能发送</div>
+    </footer>
+  </main>
+
+  <!-- ============ 右侧栏 ============ -->
+  <aside class="rbar" id="rbar" data-od-id="right-sidebar">
+    <div class="rtabs" data-od-id="rbar-tabs">
+      <div class="rtabs-scroll" id="rtabs-scroll">
+        <div class="rtab is-active" role="tab" tabindex="0" data-id="t1" title="改动">
+          <span class="t">改动</span>
+          <button class="x" title="关闭标签" aria-label="关闭标签 改动"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div>
+        <div class="rtab" role="tab" tabindex="0" data-id="t2" title="开发">
+          <span class="t">开发</span>
+          <button class="x" title="关闭标签" aria-label="关闭标签 开发"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div>
+        <div class="rtab" role="tab" tabindex="0" data-id="t3" title="空状态验收">
+          <span class="t">空状态验收</span>
+          <button class="x" title="关闭标签" aria-label="关闭标签 空状态验收"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div>
+      </div>
+      <button class="icon-btn rtab-add" id="rtab-add" data-od-id="rbar-add-tab" title="新开一个标签" aria-label="新开一个标签">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      </button>
+    </div>
+
+    <div class="rbody" id="rbody">
+      <!-- 改动标签(静态):文件树 + 行级 diff,两份文件内容都直写 -->
+      <div class="rpane" data-pane="t1" data-od-id="pane-diff">
+        <div class="rpane-head">这段对话期间，项目发生了这些改动（项目文件夹）</div>
+        <div class="rpane-scroll">
+          <div class="ftree">
+            <button class="ftree-dir"><svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>sites/marketeam</button>
+            <button class="ftree-file is-selected" data-file="sites/marketeam/index.html" title="sites/marketeam/index.html"><span class="fname">index.html</span><span class="delta"><span class="add">+12</span><span class="del">-3</span></span></button>
+            <button class="ftree-dir"><svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>tests</button>
+            <button class="ftree-file" data-file="tests/landing.test.ts" title="tests/landing.test.ts"><span class="fname">landing.test.ts</span><span class="delta"><span class="add">+40</span></span></button>
+          </div>
+        </div>
+        <div class="diff-wrap" data-diff="sites/marketeam/index.html">
+          <div class="diff-file-name">sites/marketeam/index.html</div>
+          <div class="diff-code">
+            <div class="diff-line ctx"><span class="gutter">41</span><span class="sign"></span><span class="code">&lt;main class="landing"&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">42</span><span class="sign"></span><span class="code">  &lt;section class="hero"&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">43</span><span class="sign"></span><span class="code">    &lt;h1&gt;让团队自己推进&lt;/h1&gt;</span></div>
+            <div class="diff-line del"><span class="gutter">44</span><span class="sign">-</span><span class="code">    &lt;div class="empty"&gt;&lt;/div&gt;</span></div>
+            <div class="diff-line del"><span class="gutter">45</span><span class="sign">-</span><span class="code">    &lt;!-- 空状态待补 --&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">44</span><span class="sign">+</span><span class="code">    &lt;div class="empty-state" data-accept="ready"&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">45</span><span class="sign">+</span><span class="code">      &lt;p class="empty-title"&gt;这里还没有内容&lt;/p&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">46</span><span class="sign">+</span><span class="code">      &lt;p class="empty-accept" role="status"&gt;空状态已给出验收语句，可以进入验收&lt;/p&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">47</span><span class="sign">+</span><span class="code">      &lt;button class="empty-action" type="button"&gt;添加第一条内容&lt;/button&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">48</span><span class="sign">+</span><span class="code">    &lt;/div&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">49</span><span class="sign"></span><span class="code">  &lt;/section&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">50</span><span class="sign"></span><span class="code">  &lt;section class="features"&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">51</span><span class="sign"></span><span class="code">    &lt;article class="feature"&gt;…&lt;/article&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">52</span><span class="sign"></span><span class="code">  &lt;/section&gt;</span></div>
+            <div class="diff-line del"><span class="gutter">53</span><span class="sign">-</span><span class="code">  &lt;footer&gt;&lt;/footer&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">53</span><span class="sign">+</span><span class="code">  &lt;footer class="site-footer"&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">54</span><span class="sign">+</span><span class="code">    &lt;span&gt;© Moebius 市场团队&lt;/span&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">55</span><span class="sign">+</span><span class="code">    &lt;a href="/acceptance" aria-label="查看落地页空状态的验收语句与验收标准说明"&gt;验收说明&lt;/a&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">56</span><span class="sign">+</span><span class="code">  &lt;/footer&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">57</span><span class="sign">+</span><span class="code">  &lt;script type="module" src="./landing.js"&gt;&lt;/script&gt;</span></div>
+            <div class="diff-line add"><span class="gutter">58</span><span class="sign">+</span><span class="code">  &lt;link rel="stylesheet" href="./landing.empty-state.css"&gt;</span></div>
+            <div class="diff-line ctx"><span class="gutter">59</span><span class="sign"></span><span class="code">&lt;/main&gt;</span></div>
+          </div>
+        </div>
+        <div class="diff-wrap" data-diff="tests/landing.test.ts" hidden>
+          <div class="diff-file-name">tests/landing.test.ts</div>
+          <div class="diff-code">
+            <div class="diff-line ctx"><span class="gutter">1</span><span class="sign"></span><span class="code">import { describe, expect, it } from "vitest";</span></div>
+            <div class="diff-line ctx"><span class="gutter">2</span><span class="sign"></span><span class="code">import { renderLanding } from "./helpers";</span></div>
+            <div class="diff-line ctx"><span class="gutter">3</span><span class="sign"></span><span class="code"></span></div>
+            <div class="diff-line add"><span class="gutter">4</span><span class="sign">+</span><span class="code">describe("空状态", () =&gt; {</span></div>
+            <div class="diff-line add"><span class="gutter">5</span><span class="sign">+</span><span class="code">  it("应给出验收语句", () =&gt; {</span></div>
+            <div class="diff-line add"><span class="gutter">6</span><span class="sign">+</span><span class="code">    const { container } = renderLanding({ entries: [] });</span></div>
+            <div class="diff-line add"><span class="gutter">7</span><span class="sign">+</span><span class="code">    const empty = container.querySelector(".empty-state");</span></div>
+            <div class="diff-line add"><span class="gutter">8</span><span class="sign">+</span><span class="code">    expect(empty).not.toBeNull();</span></div>
+            <div class="diff-line add"><span class="gutter">9</span><span class="sign">+</span><span class="code">    expect(empty.textContent).toContain("验收");</span></div>
+            <div class="diff-line add"><span class="gutter">10</span><span class="sign">+</span><span class="code">  });</span></div>
+            <div class="diff-line add"><span class="gutter">11</span><span class="sign">+</span><span class="code">  it("验收语句可被屏幕阅读器朗读", () =&gt; {</span></div>
+            <div class="diff-line add"><span class="gutter">12</span><span class="sign">+</span><span class="code">    const { container } = renderLanding({ entries: [] });</span></div>
+            <div class="diff-line add"><span class="gutter">13</span><span class="sign">+</span><span class="code">    const accept = container.querySelector(".empty-accept");</span></div>
+            <div class="diff-line add"><span class="gutter">14</span><span class="sign">+</span><span class="code">    expect(accept.getAttribute("role")).toBe("status");</span></div>
+            <div class="diff-line add"><span class="gutter">15</span><span class="sign">+</span><span class="code">    expect(accept.textContent).toMatch(/空状态已给出验收语句，可以进入验收/);</span></div>
+            <div class="diff-line add"><span class="gutter">16</span><span class="sign">+</span><span class="code">  });</span></div>
+            <div class="diff-line add"><span class="gutter">17</span><span class="sign">+</span><span class="code">  it("没有内容时不渲染列表", () =&gt; {</span></div>
+            <div class="diff-line add"><span class="gutter">18</span><span class="sign">+</span><span class="code">    const { container } = renderLanding({ entries: [] });</span></div>
+            <div class="diff-line add"><span class="gutter">19</span><span class="sign">+</span><span class="code">    expect(container.querySelector(".entry-list")).toBeNull();</span></div>
+            <div class="diff-line add"><span class="gutter">20</span><span class="sign">+</span><span class="code">  });</span></div>
+            <div class="diff-line ctx"><span class="gutter"></span><span class="sign"></span><span class="code">⋮ 其余新增断言共 20 行</span></div>
+            <div class="diff-line add"><span class="gutter">43</span><span class="sign">+</span><span class="code">});</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 过程标签(静态):开发的完整输出,重试在同一标签内分段追加 -->
+      <div class="rpane" data-pane="t2" data-od-id="pane-process" hidden>
+        <div class="rpane-head"><b>开发</b> · 这一步的完整输出</div>
+        <div class="proc-out"><span class="p-dim">读取 sites/marketeam/index.html</span>
+<span class="p-run">运行 pnpm test -- landing</span>
+
+<span class="p-fail"> FAIL  tests/landing.test.ts</span>
+  ● 空状态 › 应给出验收语句
+
+    expect(received).toContain(expected)
+
+    期望包含: "验收"
+    收到:     ""
+
+<span class="p-dim">      7 |       const empty = container.querySelector(".empty-state");
+      8 |       expect(empty).not.toBeNull();
+    &gt; 9 |       expect(empty.textContent).toContain("验收");
+        |                                 ^</span>
+
+<span class="p-dim"> Tests  1 failed | 3 passed (4)</span>
+<div class="proc-seg">第 2 次执行</div>
+<span class="p-run">运行 pnpm test -- landing</span>
+
+<span class="p-pass"> PASS  tests/landing.test.ts</span>
+  ✓ 空状态 › 应给出验收语句 (12 ms)
+  ✓ 空状态 › 验收语句可被屏幕阅读器朗读 (8 ms)
+
+<span class="p-dim"> Tests  4 passed (4)</span></div>
+      </div>
+
+      <!-- 子任务标签(静态):空状态验收 · 测试 · 没跑起来,带自己的输入框 -->
+      <div class="rpane" data-pane="t3" data-od-id="pane-subtask" hidden>
+        <div class="sub-status">
+          空状态验收
+          <span class="who">· 测试</span>
+          <span class="pill pill-red"><svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>没跑起来</span>
+        </div>
+        <div class="sub-timeline">
+          <div class="msg">
+            <div class="msg-who"><span class="role-tag tone-3">测</span>测试</div>
+            <div class="msg-body">正在核对空状态的验收语句…</div>
+          </div>
+          <div class="sys-rec warn">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            <span class="txt">这一步没跑起来（退出码 1）</span>
+            <button class="btn btn-ghost">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              重试
+            </button>
+          </div>
+        </div>
+        <div class="sub-composer">
+          <div class="composer-box">
+            <div class="composer-input">
+              <textarea rows="1" placeholder="说点什么，或 @ 一个成员…"></textarea>
+              <button class="send-btn" title="发送" aria-label="发送">
+                <svg class="icon" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 动态标签(空白/项目文件/其他子任务)挂载点 -->
+      <div class="rpane" id="rbody-dyn" hidden></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+
+  var ICON_X = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var ICON_SWAP = '<svg class="icon" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>';
+  var ICON_FOLDER = '<svg class="icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+  var ICON_CHEV = '<svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
+  var ICON_SEND = '<svg class="icon" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>';
+  var ICON_WARN = '<svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+  var ICON_RETRY = '<svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
+  var ICON_HALF = '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>';
+  var ICON_CHECK = '<svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+  var ICON_STOP = '<svg class="icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  var ICON_STOPPED = '<svg class="icon" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>';
+
+  /* 某些渲染/导出环境里 localStorage 不可用(opaque origin 抛 SecurityError),
+     所有存取都走安全包装,降级为内存态,绝不因存储失败中断渲染 */
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 降级为内存态 */ } }
+  };
+  function safe(fn) { try { fn(); } catch (e) { if (window.console && console.error) console.error(e); } }
+  function on(sel, ev, fn) { var el = $(sel); if (el) el.addEventListener(ev, fn); }
+
+  var LS = {
+    sidebar: 'moebius.sidebar.open',
+    rbar: 'moebius.rbar.open',
+    conv: 'moebius.conv',
+    collapsed: 'moebius.projects.collapsed',
+    drafts: 'moebius.drafts',
+    tabs: 'moebius.rtabs'
+  };
+
+  /* ================= 侧栏 / 右栏开合 ================= */
+
+  var app = $('#app');
+  var sidebarOpen = store.get(LS.sidebar) !== '0';
+  var rbarOpen = store.get(LS.rbar) !== '0';
+
+  function applyChrome() {
+    app.classList.toggle('no-sidebar', !sidebarOpen);
+    app.classList.toggle('no-rbar', !rbarOpen);
+  }
+  on('#btn-close-sidebar', 'click', function () {
+    sidebarOpen = false; store.set(LS.sidebar, '0'); applyChrome();
+  });
+  on('#btn-open-sidebar', 'click', function () {
+    sidebarOpen = true; store.set(LS.sidebar, '1'); applyChrome();
+  });
+  on('#btn-toggle-rbar', 'click', function () {
+    rbarOpen = !rbarOpen; store.set(LS.rbar, rbarOpen ? '1' : '0'); applyChrome();
+  });
+
+  /* ================= 项目折叠(展开时由对话行自行显示状态点) ================= */
+
+  var collapsedMap = {};
+  try { collapsedMap = JSON.parse(store.get(LS.collapsed) || '{}'); } catch (e) { collapsedMap = {}; }
+
+  function applyProjectA() {
+    var p = $('#project-a');
+    if (!p) return;
+    var collapsed = !!collapsedMap.a;
+    p.classList.toggle('collapsed', collapsed);
+    $('#project-a-convs').hidden = collapsed;
+    $('#project-a-row').setAttribute('aria-expanded', String(!collapsed));
+  }
+  on('#project-a-row', 'click', function (e) {
+    if (e.target.closest('.row-actions')) return;
+    collapsedMap.a = !collapsedMap.a;
+    store.set(LS.collapsed, JSON.stringify(collapsedMap));
+    applyProjectA();
+  });
+
+  /* ================= 会话切换 + 草稿独立保留 =================
+
+     演示会话:文案打磨=有成员正在工作(停下/发送合一、运行中改选团队);
+     官网改版/季度活动/内容排期=三种不可继续状态,共用同一套骨架:
+     历史只读、输入区被说明文案替换、对应的上下文按钮标红 */
+
+  var BLOCKED_CONVS = {
+    'broken-project': { title: '官网改版', kind: 'project' },
+    'broken-team-deleted': { title: '季度活动', kind: 'team-deleted' },
+    'broken-team-repair': { title: '内容排期', kind: 'team-repair' }
+  };
+  var BLOCKED_COPY = {
+    'project': { text: '项目文件夹找不到了，修复后才能继续', action: '修复…' },
+    'team-deleted': { text: '这支团队已经被删除，改选一支团队后可以继续', action: null },
+    'team-repair': { text: '这支团队需要修复', action: '去修复' }
+  };
+  var recovered = {};
+  var copyRunning = true, copyTeam = '开发团队';
+
+  var drafts = {};
+  try { drafts = JSON.parse(store.get(LS.drafts) || '{}'); } catch (e) { drafts = {}; }
+  var savedConv = store.get(LS.conv);
+  var currentConv = (savedConv === 'new' || savedConv === 'copy' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
+  var composerText = $('#composer-text');
+  var sendBtn = $('#send-btn');
+
+  function setConversation(name) {
+    if (!composerText || !sendBtn) return;
+    drafts[currentConv] = composerText.value;
+    currentConv = name;
+    store.set(LS.conv, name);
+    var blocked = !recovered[name] && BLOCKED_CONVS[name] ? BLOCKED_CONVS[name] : null;
+    var isNew = name === 'new', isCopy = name === 'copy';
+    var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), reason = $('#composer-reason');
+    if (tl) tl.hidden = isNew || isCopy;
+    if (tn) tn.hidden = !isNew;
+    if (tc) tc.hidden = !isCopy;
+    if (reason) reason.hidden = !isNew || !!newCtx.project;
+    sendBtn.disabled = isNew && !newCtx.project;
+    composerText.placeholder = isNew ? '描述你的目标…' : '说点什么，或 @ 一个成员…';
+    var l = $('#chips-landing'), n = $('#chips-new');
+    if (l) l.hidden = isNew;
+    if (n) n.hidden = !isNew;
+    /* 不可继续演示共用落地页历史(历史只读),只换标题与输入区 */
+    var title = $('#timeline-landing .tl-title');
+    if (title) {
+      var t = blocked ? blocked.title : '官网落地页验收';
+      title.title = t;
+      var ts = title.querySelector('span');
+      if (ts) ts.textContent = t;
+    }
+    applyBlocked(blocked);
+    var navNew = $('#nav-new');
+    if (navNew) navNew.classList.toggle('is-active', isNew);
+    $$('.conv-row').forEach(function (row) {
+      row.classList.toggle('is-selected', row.id === 'conv-' + name);
+    });
+    composerText.value = drafts[name] || '';
+    autoGrow();
+    refreshTeamHint();
+    updateSendStop();
+    try { history.replaceState(null, '', '#state=' + stateFromConv()); } catch (e) {}
+    refreshRelay();
+    syncDevBar(stateFromConv());
+  }
+
+  /* 停下/发送合一:成员正在工作且输入框为空时,右下角按钮为停下 */
+  function updateSendStop() {
+    if (!sendBtn || !composerText) return;
+    var stop = currentConv === 'copy' && copyRunning && composerText.value === '';
+    sendBtn.classList.toggle('is-stop', stop);
+    sendBtn.innerHTML = stop ? ICON_STOP : ICON_SEND;
+    sendBtn.title = stop ? '停下' : '发送';
+    sendBtn.setAttribute('aria-label', stop ? '停下' : '发送');
+  }
+
+  /* 运行中改选团队:按钮立即显示目标值,当前这一步跑完后才生效 */
+  function refreshTeamHint() {
+    var hint = $('#team-switch-hint');
+    if (!hint) return;
+    if (currentConv === 'copy' && copyRunning && newCtx.team !== copyTeam) {
+      hint.textContent = '当前这一步跑完后换成' + newCtx.team;
+      hint.hidden = false;
+    } else {
+      hint.hidden = true;
+    }
+  }
+
+  /* 三种不可继续状态:输入区换为说明文案与恢复入口,对应上下文按钮标红 */
+  function applyBlocked(blocked) {
+    var input = $('.composer-input'), bar = $('#composer-blocked');
+    if (!input || !bar) return;
+    clearChipError();
+    if (!blocked) { input.hidden = false; bar.hidden = true; return; }
+    input.hidden = true; bar.hidden = false;
+    var copy = BLOCKED_COPY[blocked.kind];
+    var txt = $('#blocked-text'), act = $('#blocked-action');
+    if (txt) txt.textContent = copy.text;
+    if (act) {
+      act.hidden = !copy.action;
+      act.textContent = copy.action || '';
+    }
+    markChipError(blocked.kind === 'project' ? '.chip-project' : '.chip-team');
+  }
+
+  function markChipError(sel) {
+    var chip = $(sel, $('#chips-landing'));
+    if (!chip) return;
+    chip.classList.add('chip-error');
+    var w = document.createElement('span');
+    w.className = 'chip-warn';
+    w.innerHTML = ICON_WARN;
+    chip.insertBefore(w, chip.querySelector('.chev') || null);
+  }
+  function clearChipError() {
+    $$('.chip-error').forEach(function (c) { c.classList.remove('chip-error'); });
+    $$('.chip-warn').forEach(function (w) { w.remove(); });
+  }
+  /* 原型:修复/改选立即完成,对话恢复输入、发送与推进能力 */
+  function recoverConv() {
+    recovered[currentConv] = true;
+    var dot = $('#conv-' + currentConv + ' .dot');
+    if (dot) dot.remove();
+    setConversation(currentConv);
+  }
+
+  function autoGrow() {
+    if (!composerText) return;
+    composerText.style.height = 'auto';
+    composerText.style.height = Math.min(composerText.scrollHeight, 120) + 'px';
+  }
+  if (composerText) composerText.addEventListener('input', function () {
+    drafts[currentConv] = composerText.value;
+    store.set(LS.drafts, JSON.stringify(drafts));
+    autoGrow();
+    updateSendStop();
+  });
+
+  on('#nav-new', 'click', function () { setConversation('new'); });
+  on('#conv-landing', 'click', function () { setConversation('landing'); });
+  on('#conv-copy', 'click', function () { setConversation('copy'); });
+  on('#conv-broken-project', 'click', function () { setConversation('broken-project'); });
+  on('#conv-broken-team-deleted', 'click', function () { setConversation('broken-team-deleted'); });
+  on('#conv-broken-team-repair', 'click', function () { setConversation('broken-team-repair'); });
+
+  on('#blocked-action', 'click', function () { recoverConv(); });
+
+  /* 停下:中止当前这一步,留下中性系统记录;运行中改选的团队在这一步结束后生效 */
+  on('#send-btn', 'click', function () {
+    if (!sendBtn.classList.contains('is-stop')) return; /* 原型不真正发送 */
+    copyRunning = false;
+    copyTeam = newCtx.team;
+    var tl = $('#timeline-copy');
+    if (tl) {
+      var rec = document.createElement('div');
+      rec.className = 'sys-rec stop';
+      rec.setAttribute('data-od-id', 'sys-stopped');
+      rec.innerHTML = ICON_STOPPED + '<span class="txt">你让这一步停下了</span>';
+      tl.appendChild(rec);
+      tl.scrollTop = tl.scrollHeight;
+    }
+    var dot = $('#conv-copy .dot');
+    if (dot) dot.remove();
+    refreshTeamHint();
+    updateSendStop();
+  });
+
+  /* ================= 上下文菜单:项目 / 工作空间 / 团队 =================
+     PRD 主页面会话区:发出第一条消息前,项目与工作空间可改选,分支只读;
+     选独立工作空间必须确认后果,切回默认也要说明改动直接落在项目文件夹;
+     团队随时可改,但对话用的是创建时载入的那份团队内容(菜单内说明) */
+
+  var newCtx = { project: null, workspace: 'default', team: '开发团队' };
+  var PROJECTS = ['项目 A', '项目 B'];
+  /* 非 git 项目:无法隔离改动,「独立工作空间」在菜单内禁用并解释 */
+  var NON_GIT = { '项目 B': true };
+  var TEAMS = ['开发团队', '营销团队'];
+  var WS_LABEL = { default: '默认工作空间', isolated: '独立工作空间' };
+
+  var TICK = '<span class="tick">' + ICON_CHECK + '</span>';
+  var NOTICK = '<span class="tick"></span>';
+  var ICON_IMAGE = '<svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+  var ICON_FILE = '<svg class="icon" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
+
+  var composerEl = $('.composer');
+  var menuEl = document.createElement('div');
+  menuEl.className = 'ctx-menu';
+  menuEl.hidden = true;
+  if (composerEl) composerEl.appendChild(menuEl);
+  var menuAnchor = null;
+
+  function closeMenu() { menuEl.hidden = true; menuAnchor = null; }
+
+  function openMenu(anchor, html) {
+    if (!composerEl) return;
+    if (menuAnchor === anchor && !menuEl.hidden) { closeMenu(); return; }
+    menuAnchor = anchor;
+    menuEl.innerHTML = html;
+    var r = anchor.getBoundingClientRect();
+    var c = composerEl.getBoundingClientRect();
+    menuEl.style.left = Math.max(0, r.left - c.left) + 'px';
+    menuEl.style.bottom = (c.bottom - r.top + 6) + 'px';
+    menuEl.hidden = false;
+  }
+
+  document.addEventListener('mousedown', function (e) {
+    if (menuEl.hidden || !menuAnchor) return;
+    if (!e.target.closest('.ctx-menu') && !menuAnchor.contains(e.target)) closeMenu();
+  });
+
+  /* 确认弹层:工作空间切换专用,一次一个 */
+  var dialogOverlay = document.createElement('div');
+  dialogOverlay.className = 'dialog-overlay';
+  dialogOverlay.hidden = true;
+  dialogOverlay.innerHTML =
+    '<div class="dialog" role="dialog" aria-modal="true" data-od-id="workspace-confirm">' +
+    '<div class="dialog-title"></div><div class="dialog-body"></div>' +
+    '<div class="dialog-actions">' +
+    '<button class="btn btn-ghost" data-x="cancel">取消</button>' +
+    '<button class="btn btn-primary" data-x="ok">换过去</button>' +
+    '</div></div>';
+  document.body.appendChild(dialogOverlay);
+  var dialogOk = null;
+
+  function openConfirm(title, body, onOk) {
+    $('.dialog-title', dialogOverlay).textContent = title;
+    $('.dialog-body', dialogOverlay).textContent = body;
+    dialogOk = onOk;
+    dialogOverlay.hidden = false;
+  }
+  function closeDialog() { dialogOverlay.hidden = true; dialogOk = null; }
+  dialogOverlay.addEventListener('click', function (e) {
+    if (e.target === dialogOverlay || e.target.closest('[data-x="cancel"]')) { closeDialog(); return; }
+    if (e.target.closest('[data-x="ok"]')) { var fn = dialogOk; closeDialog(); if (fn) fn(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeMenu(); closeDialog(); }
+  });
+
+  function projectMenuHtml() {
+    var h = PROJECTS.map(function (p) {
+      return '<button class="menu-item" data-kind="project" data-val="' + esc(p) + '">' +
+        (newCtx.project === p ? TICK : NOTICK) +
+        '<span class="mi-t">' + esc(p) + '</span></button>';
+    }).join('');
+    return h + '<div class="menu-sep"></div>' +
+      '<button class="menu-item" data-kind="add-project">' + NOTICK +
+      '<span class="mi-t">＋ 添加项目…</span></button>';
+  }
+
+  function workspaceMenuHtml() {
+    function item(key, desc, disabled) {
+      return '<button class="menu-item" data-kind="workspace" data-val="' + key + '"' + (disabled ? ' disabled' : '') + '>' +
+        (newCtx.workspace === key ? TICK : NOTICK) +
+        '<span class="mi-t">' + WS_LABEL[key] +
+        '<span class="mi-d">' + desc + '</span></span></button>';
+    }
+    var nonGit = !!(newCtx.project && NON_GIT[newCtx.project]);
+    return item('default', '直接改项目文件夹里的文件') +
+      item('isolated', nonGit ? '这个项目文件夹不是 git 仓库，无法隔离改动' : '把改动隔离在一份副本里', nonGit);
+  }
+
+  function teamMenuHtml() {
+    var h = TEAMS.map(function (t) {
+      return '<button class="menu-item" data-kind="team" data-val="' + esc(t) + '">' +
+        (newCtx.team === t ? TICK : NOTICK) +
+        '<span class="mi-t">' + esc(t) + '</span></button>';
+    }).join('');
+    return h + '<div class="menu-sep"></div>' +
+      '<div class="menu-note">这段对话用的是开始时载入的那份团队内容，之后在团队页的修改不影响它</div>';
+  }
+
+  menuEl.addEventListener('click', function (e) {
+    var it = e.target.closest('.menu-item');
+    if (!it || it.disabled) return;
+    var kind = it.dataset.kind;
+    if (kind === 'project') {
+      newCtx.project = it.dataset.val;
+      closeMenu(); applyNewContext();
+    } else if (kind === 'add-project') {
+      /* 原型以「新项目」代替系统文件夹选择器的返回结果 */
+      PROJECTS.push('新项目');
+      newCtx.project = '新项目';
+      closeMenu(); applyNewContext();
+    } else if (kind === 'team') {
+      newCtx.team = it.dataset.val;
+      closeMenu(); applyTeam();
+      /* 团队已删除:改选一支可用团队即恢复;运行中改选则等当前步跑完 */
+      if (!recovered[currentConv] && BLOCKED_CONVS[currentConv] && BLOCKED_CONVS[currentConv].kind === 'team-deleted') recoverConv();
+      else refreshTeamHint();
+    } else if (kind === 'workspace') {
+      var val = it.dataset.val;
+      closeMenu();
+      if (val === newCtx.workspace) return;
+      if (val === 'isolated') {
+        openConfirm('换成独立工作空间', '副本基于项目当前所在的提交，不包含你还没提交的改动。', function () {
+          newCtx.workspace = 'isolated'; applyNewContext();
+        });
+      } else {
+        openConfirm('换回默认工作空间', '之后的改动会直接落在项目文件夹里。', function () {
+          newCtx.workspace = 'default'; applyNewContext();
+        });
+      }
+    }
+  });
+
+  function applyTeam() {
+    $$('.team-name').forEach(function (el) { el.textContent = newCtx.team; });
+  }
+
+  function applyNewContext() {
+    var has = !!newCtx.project;
+    var empty = $('#chips-new-empty'), picked = $('#chips-new-project');
+    if (empty) empty.hidden = has;
+    if (picked) picked.hidden = !has;
+    if (has) {
+      var pn = $('#new-project-name'); if (pn) pn.textContent = newCtx.project;
+      var wn = $('#new-workspace-name'); if (wn) wn.textContent = WS_LABEL[newCtx.workspace];
+    }
+    if (currentConv === 'new') {
+      if (sendBtn) sendBtn.disabled = !has;
+      var reason = $('#composer-reason');
+      if (reason) reason.hidden = has;
+    }
+  }
+
+  on('#chip-project-new', 'click', function () { openMenu(this, projectMenuHtml()); });
+  on('#chip-project-picked', 'click', function () { openMenu(this, projectMenuHtml()); });
+  on('#chip-workspace-new', 'click', function () { openMenu(this, workspaceMenuHtml()); });
+  on('#chip-team-new', 'click', function () { openMenu(this, teamMenuHtml()); });
+  on('#chip-team-new-empty', 'click', function () { openMenu(this, teamMenuHtml()); });
+  on('#chip-team-landing', 'click', function () { openMenu(this, teamMenuHtml()); });
+
+  /* 从项目行的新建入口进入:携带该项目作为预选 */
+  on('[data-od-id="project-a-new"]', 'click', function () {
+    newCtx.project = '项目 A';
+    setConversation('new');
+  });
+
+  /* 改一改重发:把引发这一步的用户消息回填到输入框 */
+  on('#btn-edit-resend', 'click', function () {
+    if (!composerText) return;
+    composerText.value = '帮我把落地页的空状态补上验收语句';
+    drafts[currentConv] = composerText.value;
+    store.set(LS.drafts, JSON.stringify(drafts));
+    autoGrow();
+    composerText.focus();
+  });
+
+  /* 「＋」附件:原型以示例文件演示草稿卡片,逐个可移除 */
+  var DEMO_ATTACH = [
+    { name: '页面截图.png', meta: '', img: true },
+    { name: '需求说明.pdf', meta: 'PDF · 2.4 MB', img: false }
+  ];
+  var attachSeq = 0;
+  on('#btn-attach', 'click', function () {
+    var row = $('#attach-row');
+    if (!row) return;
+    var d = DEMO_ATTACH[attachSeq % DEMO_ATTACH.length];
+    attachSeq++;
+    var card = document.createElement('span');
+    card.className = 'attach-card';
+    card.innerHTML = '<span class="thumb">' + (d.img ? ICON_IMAGE : ICON_FILE) + '</span>' +
+      '<span class="a-name">' + esc(d.name) + '</span>' +
+      (d.meta ? '<span class="a-meta">' + esc(d.meta) + '</span>' : '') +
+      '<button class="x" title="移除附件" aria-label="移除附件 ' + esc(d.name) + '">' + ICON_X + '</button>';
+    row.appendChild(card);
+    row.hidden = false;
+  });
+  on('#attach-row', 'click', function (e) {
+    var x = e.target.closest('.x');
+    if (!x) return;
+    var row = $('#attach-row');
+    var card = x.closest('.attach-card');
+    if (card) card.remove();
+    if (row && !row.querySelector('.attach-card')) row.hidden = true;
+  });
+
+  /* ================= 右侧栏标签 ================= */
+
+  var DEFAULT_TABS = [
+    { id: 't1', type: 'diff', title: '改动', source: 'diff:default' },
+    { id: 't2', type: 'process', title: '开发', source: 'process:开发' },
+    { id: 't3', type: 'subtask', title: '空状态验收', source: 'subtask:空状态验收', subtask: '空状态验收' }
+  ];
+  var tabs, activeTabId = 't1', tabSeq = 4;
+  try {
+    var saved = JSON.parse(store.get(LS.tabs) || 'null');
+    if (saved && saved.tabs && saved.tabs.length) { tabs = saved.tabs; activeTabId = saved.active || saved.tabs[0].id; }
+  } catch (e) { tabs = null; }
+  if (!tabs) tabs = JSON.parse(JSON.stringify(DEFAULT_TABS));
+  tabSeq += tabs.length;
+
+  function persistTabs() {
+    store.set(LS.tabs, JSON.stringify({ tabs: tabs, active: activeTabId }));
+  }
+  function activeTab() {
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].id === activeTabId) return tabs[i];
+    return null;
+  }
+
+  function renderTabs() {
+    var wrap = $('#rtabs-scroll');
+    if (!wrap) return;
+    wrap.innerHTML = tabs.map(function (t) {
+      return '<div class="rtab' + (t.id === activeTabId ? ' is-active' : '') + '" role="tab" tabindex="0" data-id="' + t.id + '" title="' + esc(t.title) + '">' +
+        '<span class="t">' + esc(t.title) + '</span>' +
+        '<button class="x" title="关闭标签" aria-label="关闭标签 ' + esc(t.title) + '">' + ICON_X + '</button>' +
+        '</div>';
+    }).join('');
+    updateViewingMarks();
+  }
+
+  function updateViewingMarks() {
+    var t = activeTab();
+    $$('.subcard-row').forEach(function (row) {
+      row.classList.toggle('is-viewing', !!(t && t.type === 'subtask' && t.subtask === row.dataset.subtask));
+    });
+  }
+
+  /* 主对话区入口:同源去重,重复点击聚焦已有标签 */
+  function openFromSource(source, factory) {
+    if (!rbarOpen) { rbarOpen = true; store.set(LS.rbar, '1'); applyChrome(); }
+    var t = null;
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].source === source) { t = tabs[i]; break; }
+    if (!t) { t = factory(); tabs.push(t); }
+    activeTabId = t.id;
+    persistTabs(); renderTabs(); renderBody();
+  }
+
+  // 消息功能区:完整输出入口(运行中与历史记录同一样式,按成员开过程标签)
+  $$('.js-full-output').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var member = btn.getAttribute('data-member') || '开发';
+      openFromSource('process:' + member, function () {
+        return { id: 't' + (tabSeq++), type: 'process', title: member, source: 'process:' + member };
+      });
+    });
+  });
+  // 复制这条消息:成功后图标短暂变为对勾
+  $$('.js-copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var msg = btn.closest('.msg');
+      var body = msg && msg.querySelector('.msg-body');
+      var text = body ? body.innerText : '';
+      var original = btn.innerHTML;
+      function done() {
+        btn.classList.add('copied');
+        btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+        setTimeout(function () { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+      } else { done(); }
+    });
+  });
+  on('#btn-view-changes', 'click', function () {
+    openFromSource('diff:default', function () {
+      return { id: 't' + (tabSeq++), type: 'diff', title: '改动', source: 'diff:default' };
+    });
+  });
+  $$('.subcard-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var name = row.dataset.subtask;
+      openFromSource('subtask:' + name, function () {
+        return { id: 't' + (tabSeq++), type: 'subtask', title: name, source: 'subtask:' + name, subtask: name };
+      });
+    });
+  });
+
+  /* 加号:空白标签不去重 */
+  on('#rtab-add', 'click', function () {
+    if (!rbarOpen) { rbarOpen = true; store.set(LS.rbar, '1'); applyChrome(); }
+    var t = { id: 't' + (tabSeq++), type: 'blank', title: '新标签', source: null };
+    tabs.push(t); activeTabId = t.id;
+    persistTabs(); renderTabs(); renderBody();
+  });
+
+  on('#rtabs-scroll', 'click', function (e) {
+    var tabEl = e.target.closest('.rtab');
+    if (!tabEl) return;
+    var id = tabEl.dataset.id;
+    if (e.target.closest('.x')) { closeTab(id); return; }
+    activeTabId = id; persistTabs(); renderTabs(); renderBody();
+  });
+  on('#rtabs-scroll', 'keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var tabEl = e.target.closest('.rtab');
+    if (!tabEl) return;
+    e.preventDefault();
+    activeTabId = tabEl.dataset.id; persistTabs(); renderTabs(); renderBody();
+  });
+
+  /* 关掉最后一个标签不收起右栏,留下一个空白标签 */
+  function closeTab(id) {
+    var idx = -1;
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].id === id) { idx = i; break; }
+    if (idx < 0) return;
+    tabs.splice(idx, 1);
+    if (tabs.length === 0) {
+      tabs.push({ id: 't' + (tabSeq++), type: 'blank', title: '新标签', source: null });
+    }
+    if (activeTabId === id) activeTabId = tabs[Math.min(idx, tabs.length - 1)].id;
+    persistTabs(); renderTabs(); renderBody();
+  }
+
+  /* ================= 动态标签内容(空白/项目文件/其余子任务) ================= */
+
+  var SUBTASKS_DYN = {
+    '落地页文案': { member: '开发', tag: '开', pill: ['pill-amber', ICON_HALF, '进行中'],
+      msgs: [{ tag: '开', who: '开发', text: '正在把空状态文案改成验收口径…' }], sys: null },
+    '构建脚本': { member: '开发', tag: '开', pill: ['pill-green', ICON_CHECK, '已结束'],
+      msgs: [{ tag: '开', who: '开发', text: '已把构建脚本拆成安装与打包两步。' }], sys: null }
+  };
+  var FULL_TREE = [
+    { dir: 'sites', files: [] },
+    { dir: 'sites/marketeam', files: ['index.html', 'landing.js', 'styles.css'], indent: true },
+    { dir: 'tests', files: ['landing.test.ts', 'helpers.ts'] },
+    { dir: null, files: ['package.json', 'README.md'] }
+  ];
+  var DIFF_DELTA = { 'index.html': [12, 3], 'landing.test.ts': [40, 0] };
+
+  function blankPane() {
+    return '<div class="blank-pane" data-od-id="pane-blank">' +
+      '<div class="blank-q">这个标签要看什么</div>' +
+      '<div class="blank-cards">' +
+      '<button class="type-card" data-type="diff">' + ICON_SWAP + '<span><span class="tc-t">改动</span><span class="tc-d">这段对话期间变了什么</span></span></button>' +
+      '<button class="type-card" data-type="files">' + ICON_FOLDER + '<span><span class="tc-t">项目文件</span><span class="tc-d">浏览完整项目树</span></span></button>' +
+      '</div>' +
+      '<div class="blank-note">成员的完整输出和子任务<br>从左边对话里点开</div>' +
+      '</div>';
+  }
+
+  function filesPane() {
+    var h = '<div class="files-note">项目文件夹 · 完整项目树（包含未改动文件）</div>' +
+      '<div class="rpane-scroll"><div class="ftree">';
+    FULL_TREE.forEach(function (node) {
+      if (node.dir) {
+        h += '<button class="ftree-dir"' + (node.indent ? ' style="padding-left:26px"' : '') + '>' + ICON_CHEV + esc(node.dir.split('/').pop()) + '</button>';
+      }
+      node.files.forEach(function (f) {
+        var d = DIFF_DELTA[f];
+        var pad = node.dir ? (node.indent ? 44 : 28) : 8;
+        h += '<button class="ftree-file" style="padding-left:' + pad + 'px" title="' + esc(f) + '">' +
+          '<span class="fname">' + esc(f) + '</span>' +
+          (d ? '<span class="delta"><span class="add">+' + d[0] + '</span>' + (d[1] ? '<span class="del">-' + d[1] + '</span>' : '') + '</span>' : '') +
+          '</button>';
+      });
+    });
+    return h + '</div></div>';
+  }
+
+  /* 角色身份色:FNV-1a(角色名) mod 6 → tone-*,与 app.css 的 6 色粉彩身份色板对应 */
+  function toneFor(key) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return 'tone-' + (h % 6);
+  }
+
+  function subtaskDynPane(t) {
+    var d = SUBTASKS_DYN[t.subtask];
+    if (!d) return blankPane();
+    var h = '<div class="sub-status">' + esc(t.subtask) + '<span class="who">· ' + esc(d.member) + '</span>' +
+      '<span class="pill ' + d.pill[0] + '">' + d.pill[1] + d.pill[2] + '</span></div>' +
+      '<div class="sub-timeline">';
+    d.msgs.forEach(function (m) {
+      h += '<div class="msg"><div class="msg-who"><span class="role-tag ' + toneFor(m.who || m.tag) + '">' + m.tag + '</span>' + esc(m.who) + '</div>' +
+        '<div class="msg-body">' + esc(m.text) + '</div></div>';
+    });
+    h += '</div>' +
+      '<div class="sub-composer"><div class="composer-box"><div class="composer-input">' +
+      '<textarea rows="1" placeholder="说点什么，或 @ 一个成员…"></textarea>' +
+      '<button class="send-btn" title="发送" aria-label="发送">' + ICON_SEND + '</button>' +
+      '</div></div></div>';
+    return h;
+  }
+
+  /* 静态三面板(data-pane=t1/t2/t3)直接显隐;动态内容进 #rbody-dyn */
+  function renderBody() {
+    var t = activeTab();
+    var dyn = $('#rbody-dyn');
+    $$('.rpane[data-pane]').forEach(function (p) { p.hidden = true; });
+    if (dyn) { dyn.hidden = true; dyn.innerHTML = ''; }
+    if (!t) return;
+    safe(function () {
+      var staticPane = $('.rpane[data-pane="' + t.id + '"]');
+      if (staticPane) { staticPane.hidden = false; return; }
+      if (!dyn) return;
+      if (t.type === 'files') dyn.innerHTML = filesPane();
+      else if (t.type === 'subtask') dyn.innerHTML = subtaskDynPane(t);
+      else dyn.innerHTML = blankPane();
+      dyn.hidden = false;
+    });
+  }
+
+  on('#rbody', 'click', function (e) {
+    /* 改动标签内的文件切换:静态两块 diff 显隐,不新建标签 */
+    var fileBtn = e.target.closest('.ftree-file[data-file]');
+    if (fileBtn) {
+      var pane = fileBtn.closest('.rpane');
+      $$('.ftree-file', pane).forEach(function (f) { f.classList.toggle('is-selected', f === fileBtn); });
+      $$('.diff-wrap[data-diff]', pane).forEach(function (d) { d.hidden = d.dataset.diff !== fileBtn.dataset.file; });
+      return;
+    }
+    /* 空白标签选类型:标签变为对应类型,标题随之更新 */
+    var typeCard = e.target.closest('.type-card');
+    if (typeCard) {
+      var tab = activeTab();
+      if (!tab || tab.type !== 'blank') return;
+      if (typeCard.dataset.type === 'diff') { tab.type = 'diff'; tab.title = '改动'; }
+      else { tab.type = 'files'; tab.title = '项目文件'; }
+      persistTabs(); renderTabs(); renderBody();
+    }
+  });
+
+  /* ================= 消息目录轨 =================
+     参照 console-ui 的 conversation-relay-rail:会话区左缘 44px 视口。
+     默认态:按角色身份色着色的小刻度(当前消息加粗加长);
+     悬浮态:展开为 git-graph 式车道图——「你」为主干竖线贯穿全程,
+     每个成员的线从主干分叉、竖直穿过自己的圆点、再并回主干
+     (参照 git log --graph 的点线语言),点击节点平滑滚动定位并短暂高亮。
+     原型简化:不做键盘/滚轮浏览,省略行逻辑保留但演示数据不会触发。 */
+
+  var RELAY_ROW_H = 20, RELAY_MIN_CAP = 7, RELAY_SPINE_X = 14;
+  var TONE_HEX = ['#E8B4C8', '#F0C9A0', '#BCD9F7', '#B8E3D2', '#D9C2F0', '#E8D1A8'];
+  var relay = { events: [], rows: [], currentId: null, expandedW: 148, closeTimer: null };
+  var relayRO = null;
+  /* 评审/导出钩子:?relay=open 或 #relay=open 强制保持展开态(截图/评审用) */
+  var relayForceOpen = /relay=open/.test(location.search) || /relay=open/.test(location.hash);
+
+  function relayColor(actorKey, kind) {
+    if (kind === 'user') return 'var(--fg)';
+    return TONE_HEX[parseInt(toneFor(actorKey).slice(5), 10) % 6];
+  }
+
+  /* 从当前时间线的 .msg 直接子元素收集目录事件 */
+  function relayCollect(tl) {
+    var out = [];
+    if (!tl) return out;
+    tl.querySelectorAll(':scope > .msg').forEach(function (el, i) {
+      var isUser = el.classList.contains('is-user');
+      var name = '你';
+      if (!isUser) {
+        var who = el.querySelector('.msg-who');
+        name = '';
+        if (who) who.childNodes.forEach(function (n) {
+          if (n.nodeType === 3) name += n.textContent;
+        });
+        name = name.trim() || '成员';
+      }
+      var bodyEl = el.querySelector('.msg-body');
+      var timeEl = el.querySelector('.msg-time');
+      out.push({
+        id: 'm' + i, el: el,
+        kind: isUser ? 'user' : 'agent',
+        actorKey: name, actorName: name,
+        body: bodyEl ? bodyEl.textContent.trim() : '',
+        time: timeEl ? timeEl.textContent.trim() : ''
+      });
+    });
+    return out;
+  }
+
+  /* 视口放不下时以焦点消息为中心开窗,首尾锚定,缺口折叠为省略行(移植自 relay-rail-model) */
+  function relayRowsCompute(events, focusId, capacity) {
+    if (!events.length) return [];
+    var cap = Math.max(RELAY_MIN_CAP, capacity);
+    if (events.length <= cap) {
+      return events.map(function (e, i) { return { type: 'event', event: e, eventIndex: i }; });
+    }
+    var focusIdx = -1, i, j, k;
+    if (focusId) events.forEach(function (e, idx) { if (e.id === focusId) focusIdx = idx; });
+    if (focusIdx < 0) focusIdx = events.length - 1;
+    var edge = cap - 2, idxs = [];
+    if (focusIdx < edge) {
+      for (i = 0; i <= edge - 1; i++) idxs.push(i);
+      idxs.push(events.length - 1);
+    } else if (focusIdx >= events.length - edge) {
+      idxs.push(0);
+      for (j = events.length - edge; j <= events.length - 1; j++) idxs.push(j);
+    } else {
+      var mid = cap - 4, start = focusIdx - Math.floor((mid - 1) / 2);
+      idxs.push(0);
+      for (k = start; k <= start + mid - 1; k++) idxs.push(k);
+      idxs.push(events.length - 1);
+    }
+    idxs = idxs.filter(function (v, p) { return v >= 0 && v < events.length && idxs.indexOf(v) === p; })
+      .sort(function (a, b) { return a - b; });
+    var rows = [];
+    idxs.forEach(function (eventIdx, pos) {
+      var prev = idxs[pos - 1];
+      if (prev !== undefined && eventIdx - prev > 1) rows.push({ type: 'omission', count: eventIdx - prev - 1 });
+      rows.push({ type: 'event', event: events[eventIdx], eventIndex: eventIdx });
+    });
+    return rows;
+  }
+
+  /* git-graph 式布局:「你」为主干(x=14),成员泳道按首次出现顺序向右排开,
+     间距 18px(面板窄时收敛)。列左排、右侧留白,与 git log --graph 一致 */
+  /* 泳道布局 + 展开宽度:宽度由内容(泳道数)决定,不随会话列宽插值——
+     主干 x=14 + 每泳道 18px + 右侧对称留白 14px;泳道极多时压缩间距,
+     封顶 224px(与预览卡的留白预算一致)。 */
+  function relayLanes(events) {
+    var keys = [], seen = {};
+    events.forEach(function (e) {
+      if (e.kind === 'user' || seen[e.actorKey]) return;
+      seen[e.actorKey] = 1; keys.push(e.actorKey);
+    });
+    var step = keys.length ? Math.min(18, (224 - RELAY_SPINE_X - 14) / keys.length) : 0;
+    var m = { '你': RELAY_SPINE_X };
+    keys.forEach(function (k2, idx) { m[k2] = RELAY_SPINE_X + step * (idx + 1); });
+    return { lanes: m, width: keys.length ? Math.round(RELAY_SPINE_X + step * keys.length + 14) : 44 };
+  }
+
+  function refreshRelay() {
+    var vp = $('#relay-viewport');
+    if (!vp) return;
+    var tl = currentConv === 'new' ? null : (currentConv === 'copy' ? $('#timeline-copy') : $('#timeline-landing'));
+    relay.events = relayCollect(tl);
+    relay.currentId = relay.events.length ? relay.events[relay.events.length - 1].id : null;
+    clearTimeout(relay.closeTimer);
+    vp.classList.remove('is-expanded');
+    if (!relay.events.length) { vp.hidden = true; vp.innerHTML = ''; return; }
+    vp.hidden = false;
+    buildRelay(vp);
+    watchRelay(vp);
+    if (relayForceOpen) vp.classList.add('is-expanded');
+  }
+
+  function buildRelay(vp) {
+    var vh = vp.clientHeight || 400;
+    var capacity = Math.max(RELAY_MIN_CAP, Math.floor(Math.max(0, vh - RELAY_ROW_H) / RELAY_ROW_H));
+    var rows = relayRowsCompute(relay.events, relay.currentId, capacity);
+    relay.rows = rows;
+    var lay = relayLanes(relay.events);
+    var expandedW = lay.width;
+    relay.expandedW = expandedW;
+    var lanes = lay.lanes;
+    /* 行高走 CSS 变量:收起 20px,展开 32px(--relay-row-h,见 app.css)。
+       SVG 坐标固定在 20px 单位,展开时靠 preserveAspectRatio="none" 纵向
+       拉伸 1.6 倍——贝塞尔经仿射拉伸仍是贝塞尔,曲线形态不变、纵向更舒展;
+       vector-effect 保持线宽不被拉粗。行/nav 的 top/height 用 calc() 引用
+       变量,CSS transition 在变量切换时自动补间,无需重建 DOM。 */
+    var railUnits = rows.length * RELAY_ROW_H;
+    vp.style.setProperty('--relay-w', expandedW + 'px');
+
+    var h = '<nav class="relay-nav" aria-label="当前会话消息目录" style="top:max(0px,calc((100% - ' + rows.length + ' * var(--relay-row-h)) / 2));height:calc(' + rows.length + ' * var(--relay-row-h))">';
+    h += '<svg class="relay-svg" width="' + expandedW + '" height="' + railUnits + '" viewBox="0 0 ' + expandedW + ' ' + railUnits + '" preserveAspectRatio="none" style="width:' + expandedW + 'px;height:calc(' + rows.length + ' * var(--relay-row-h))" aria-hidden="true">';
+    /* git-graph 式连线:主干竖线贯穿全程;每个成员一条分支线,跟随接力棒
+       分叉与并回——从他第一条消息的前一条消息节点叉出(谁递的话,就从谁
+       的节点分叉;如开发经理 @开发,开发的分支自开发经理的节点叉出),
+       并回他最后一条消息的后一条消息节点;若他的消息就是会话结尾,线头
+       停在节点上(分支尖端)。长直竖线是视觉主体,弯曲只在分叉/并回处。 */
+    function relayRowY(ri) { return ri * RELAY_ROW_H + RELAY_ROW_H / 2; }
+    var eventRis = [];
+    rows.forEach(function (r, ri) { if (r.type === 'event') eventRis.push(ri); });
+    var spineIds = [];
+    rows.forEach(function (r) { if (r.type === 'event' && r.event.kind === 'user') spineIds.push(r.event.id); });
+    if (eventRis.length > 1) {
+      h += '<path class="relay-path relay-spine" data-ids="' + spineIds.join(' ') + '" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" vector-effect="non-scaling-stroke" d="M ' + RELAY_SPINE_X + ' ' + relayRowY(eventRis[0]) + ' L ' + RELAY_SPINE_X + ' ' + relayRowY(eventRis[eventRis.length - 1]) + '"/>';
+    }
+    var rowOfEv = {};
+    rows.forEach(function (r, ri) { if (r.type === 'event') rowOfEv[r.event.id] = ri; });
+    var evPos = {};
+    relay.events.forEach(function (e, i) { evPos[e.id] = i; });
+    function laneOfEv(e) { return e.kind === 'user' ? RELAY_SPINE_X : lanes[e.actorKey]; }
+    var memberKeys = [], seenKey = {};
+    relay.events.forEach(function (e) {
+      if (e.kind === 'user' || seenKey[e.actorKey]) return;
+      seenKey[e.actorKey] = 1; memberKeys.push(e.actorKey);
+    });
+    memberKeys.forEach(function (key) {
+      var ris = [], ids = [];
+      rows.forEach(function (r, ri) {
+        if (r.type === 'event' && r.event.kind !== 'user' && r.event.actorKey === key) { ris.push(ri); ids.push(r.event.id); }
+      });
+      if (!ris.length) return;
+      var x = lanes[key];
+      var prevEv = relay.events[evPos[ids[0]] - 1] || null;
+      var nextEv = relay.events[evPos[ids[ids.length - 1]] + 1] || null;
+      var y1 = relayRowY(ris[0]);
+      var d;
+      /* 分叉:从前一条消息的节点弯进泳道;前一条被窗口折叠时从顶缘进入;
+         没有前一条(他先说)则直接从首个节点起笔 */
+      if (prevEv && rowOfEv[prevEv.id] != null) {
+        var xF = laneOfEv(prevEv), yF = relayRowY(rowOfEv[prevEv.id]);
+        var b1 = Math.max(4, (y1 - yF) * 0.5);
+        d = 'M ' + xF + ' ' + yF + ' C ' + xF + ' ' + (yF + b1) + ', ' + x + ' ' + (y1 - b1) + ', ' + x + ' ' + y1;
+      } else if (prevEv) {
+        d = 'M ' + x + ' 0 L ' + x + ' ' + y1;
+      } else {
+        d = 'M ' + x + ' ' + y1;
+      }
+      for (var j = 1; j < ris.length; j++) d += ' L ' + x + ' ' + relayRowY(ris[j]);
+      /* 并回:弯进后一条消息的节点;后一条被折叠时沿泳道伸到底缘;
+         没有后一条(会话在他这里结束)则以节点收尾,即分支尖端 */
+      var yLast = relayRowY(ris[ris.length - 1]);
+      if (nextEv && rowOfEv[nextEv.id] != null) {
+        var xM = laneOfEv(nextEv), yM = relayRowY(rowOfEv[nextEv.id]);
+        var b2 = Math.max(4, (yM - yLast) * 0.5);
+        d += ' C ' + x + ' ' + (yLast + b2) + ', ' + xM + ' ' + (yM - b2) + ', ' + xM + ' ' + yM;
+      } else if (nextEv) {
+        d += ' L ' + x + ' ' + railUnits;
+      }
+      h += '<path class="relay-path" data-ids="' + ids.join(' ') + '" fill="none" stroke="' + relayColor(key, 'agent') + '" stroke-width="1.5" stroke-linecap="round" vector-effect="non-scaling-stroke" d="' + d + '"/>';
+    });
+    h += '</svg>';
+    rows.forEach(function (row, ri) {
+      if (row.type === 'omission') {
+        h += '<div class="relay-omission" style="top:calc(' + ri + ' * var(--relay-row-h))" aria-label="暂时收起 ' + row.count + ' 条消息"><span>•••</span></div>';
+        return;
+      }
+      var e = row.event;
+      var color = relayColor(e.actorKey, e.kind);
+      var isCur = e.id === relay.currentId;
+      h += '<button type="button" class="relay-row" data-relay-id="' + e.id + '" style="top:calc(' + ri + ' * var(--relay-row-h))" aria-label="' + esc(e.actorName + '，' + e.body) + '">' +
+        '<span class="relay-tick' + (isCur ? ' is-current' : '') + '" style="background:' + color + '"></span>' +
+        '<span class="relay-node' + (e.kind === 'user' ? ' is-user' : '') + (isCur ? ' is-current' : '') + '" style="left:' + (lanes[e.actorKey] - (isCur ? 6 : 4.5)) + 'px;background:' + (isCur ? 'var(--raised)' : color) + (isCur ? ';border-color:' + color : '') + '"></span>' +
+        '</button>' +
+        '<div class="relay-band" style="top:calc(' + ri + ' * var(--relay-row-h))" aria-hidden="true"></div>';
+    });
+    h += '</nav><div class="relay-preview" hidden></div>';
+    vp.innerHTML = h;
+    bindRelay(vp);
+  }
+
+  function bindRelay(vp) {
+    var nav = vp.querySelector('.relay-nav');
+    var preview = vp.querySelector('.relay-preview');
+    function open() {
+      clearTimeout(relay.closeTimer);
+      vp.classList.add('is-expanded');
+    }
+    function scheduleClose() {
+      clearTimeout(relay.closeTimer);
+      relay.closeTimer = setTimeout(function () {
+        vp.classList.remove('is-expanded');
+        if (preview) preview.hidden = true;
+      }, 120);
+    }
+    nav.addEventListener('mouseenter', open);
+    nav.addEventListener('mouseleave', scheduleClose);
+    if (preview) {
+      preview.addEventListener('mouseenter', function () { clearTimeout(relay.closeTimer); });
+      preview.addEventListener('mouseleave', scheduleClose);
+    }
+    nav.addEventListener('mouseover', function (ev) {
+      var row = ev.target.closest('.relay-row');
+      if (row) showRelayPreview(vp, row.getAttribute('data-relay-id'));
+    });
+    nav.addEventListener('click', function (ev) {
+      var row = ev.target.closest('.relay-row');
+      if (row) activateRelayEvent(vp, row.getAttribute('data-relay-id'));
+    });
+  }
+
+  /* 悬浮节点:右侧预览卡(角色·时间·前三行正文),相关连线加重 */
+  function showRelayPreview(vp, id) {
+    var preview = vp.querySelector('.relay-preview');
+    if (!preview) return;
+    var idx = -1, e = null;
+    relay.rows.forEach(function (r, i) {
+      if (r.type === 'event' && r.event.id === id) { idx = i; e = r.event; }
+    });
+    if (!e) { preview.hidden = true; return; }
+    preview.innerHTML = '<p class="rp-head"><span class="rp-dot" style="background:' + relayColor(e.actorKey, e.kind) + '"></span>' +
+      esc(e.actorName) + '<span class="rp-sep">·</span><span class="rp-time">' + esc(e.time) + '</span></p>' +
+      '<p class="rp-body">' + esc(e.body) + '</p>';
+    var nav = vp.querySelector('.relay-nav');
+    var rowEl = vp.querySelector('.relay-row[data-relay-id="' + id + '"]');
+    preview.style.top = ((nav ? nav.offsetTop : 0) + (rowEl ? rowEl.offsetTop : idx * RELAY_ROW_H)) + 'px';
+    preview.style.left = (relay.expandedW + 12) + 'px';
+    preview.hidden = false;
+    vp.querySelectorAll('.relay-path').forEach(function (p2) {
+      var ids = (p2.getAttribute('data-ids') || '').split(' ');
+      p2.classList.toggle('is-em', ids.indexOf(id) >= 0);
+    });
+  }
+
+  /* 点击节点:设为当前,平滑滚动到对应消息并短暂高亮 */
+  function activateRelayEvent(vp, id) {
+    var e = null;
+    relay.events.forEach(function (x) { if (x.id === id) e = x; });
+    if (!e) return;
+    relay.currentId = id;
+    buildRelay(vp);
+    e.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    e.el.classList.remove('relay-flash');
+    void e.el.offsetWidth;
+    e.el.classList.add('relay-flash');
+  }
+
+  /* 窗口或会话区尺寸变化时按新视口高度重建 */
+  function watchRelay(vp) {
+    if (typeof ResizeObserver === 'undefined') return;
+    if (relayRO) relayRO.disconnect();
+    relayRO = new ResizeObserver(function () {
+      if (!vp.hidden && relay.events.length) buildRelay(vp);
+    });
+    relayRO.observe(vp);
+    if (vp.parentElement) relayRO.observe(vp.parentElement);
+  }
+
+  /* ================= 多状态:开发工具条 + hash 深链 =================
+     状态即会话:dev-bar 列出演示全状态,点击直达;
+     #state=<id> 深链可分享指定状态(加载时 hash 优先于本地记忆)。 */
+
+  var DEV_STATES = [
+    { id: 'landing', label: '对话·落地页验收' },
+    { id: 'copy', label: '对话·文案打磨' },
+    { id: 'relay-open', label: '会话目录展开' },
+    { id: 'new', label: '新对话' },
+    { id: 'broken-project', label: '阻断·项目不可用' },
+    { id: 'broken-team-deleted', label: '阻断·团队已删除' },
+    { id: 'broken-team-repair', label: '阻断·团队需修复' }
+  ];
+
+  function stateFromConv() { return relayForceOpen ? 'relay-open' : currentConv; }
+
+  /* dev-bar 状态入口:relay-open 不是会话,是目录轨的强制展开态 */
+  function applyDevState(id) {
+    if (id === 'relay-open') {
+      relayForceOpen = true;
+      /* 目录轨依赖消息数据,新对话无消息,先切回落地页验收 */
+      setConversation(currentConv === 'new' ? 'landing' : currentConv);
+      return;
+    }
+    relayForceOpen = false;
+    setConversation(id);
+  }
+
+  function syncDevBar(state) {
+    var bar = $('#dev-bar');
+    if (!bar) return;
+    bar.querySelectorAll('button[data-state]').forEach(function (b) {
+      b.classList.toggle('is-active', b.getAttribute('data-state') === state);
+    });
+  }
+
+  function buildDevBar() {
+    if ($('#dev-bar')) return;
+    var bar = document.createElement('div');
+    bar.id = 'dev-bar';
+    bar.setAttribute('data-od-id', 'dev-bar');
+    bar.innerHTML = '<span class="dev-tag">DEV</span>' + DEV_STATES.map(function (s) {
+      return '<button type="button" data-state="' + s.id + '">' + esc(s.label) + '</button>';
+    }).join('');
+    document.body.appendChild(bar);
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-state]');
+      if (b) applyDevState(b.getAttribute('data-state'));
+    });
+    syncDevBar(stateFromConv());
+  }
+
+  function applyHashState(hash) {
+    /* 同时接受 #state=x、?state=x 两种深链形式 */
+    var m = /[#&?]state=([\w-]+)/.exec(hash !== undefined ? hash : (location.hash || ''));
+    if (!m) return;
+    var id = m[1];
+    if (DEV_STATES.some(function (s) { return s.id === id; })) applyDevState(id);
+  }
+
+  /* ================= 初始化:每步独立 try/catch,静态 HTML 自带首屏 ================= */
+
+  function init() {
+    var initialHash = location.hash;  /* setConversation 会 replaceState,先留住入站 hash */
+    safe(applyChrome);
+    safe(applyProjectA);
+    safe(buildDevBar);
+    safe(function () { setConversation(currentConv); });
+    safe(function () { applyHashState(initialHash); applyHashState(location.search); });
+    safe(applyNewContext);
+    safe(renderTabs);
+    safe(renderBody);
+  }
+  window.addEventListener('hashchange', function () { safe(applyHashState); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
