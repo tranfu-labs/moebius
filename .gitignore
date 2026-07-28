@@ -43,3 +43,5 @@ prototypes/dist/
 
 .env
 sessions
+workdir
+.onboarding-completed
