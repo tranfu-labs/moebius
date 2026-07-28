@@ -74,7 +74,7 @@ describe("Kimi managed runtime home", () => {
       .toContain('disabled = ["Bash"]');
   });
 
-  it("shares authentication and session state without sharing the user config", async () => {
+  it("shares authentication and session state without sharing config or workspace state", async () => {
     const { sourceHome, managedHome } = await fixture();
     await fs.writeFile(path.join(sourceHome, "config.toml"), "");
     await Promise.all([
@@ -94,7 +94,6 @@ describe("Kimi managed runtime home", () => {
       "device_id",
       "sessions",
       "session_index.jsonl",
-      "workspaces.json",
     ]) {
       const targetPath = path.join(managedHome, entry);
       expect((await fs.lstat(targetPath)).isSymbolicLink()).toBe(true);
@@ -102,6 +101,27 @@ describe("Kimi managed runtime home", () => {
         .toBe(path.join(sourceHome, entry));
     }
     expect((await fs.lstat(path.join(managedHome, "config.toml"))).isSymbolicLink()).toBe(false);
+    await expect(fs.lstat(path.join(managedHome, "workspaces.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.readFile(path.join(sourceHome, "workspaces.json"), "utf8")).toBe("{}");
+  });
+
+  it("accepts Kimi atomically replacing its managed workspace state", async () => {
+    const { sourceHome, managedHome } = await fixture();
+    await fs.writeFile(path.join(sourceHome, "config.toml"), "");
+    await fs.writeFile(path.join(sourceHome, "workspaces.json"), '{"scope":"user"}');
+
+    await prepareKimiRuntimeHome({ sourceHome, managedHome });
+    const managedWorkspacePath = path.join(managedHome, "workspaces.json");
+    const temporaryWorkspacePath = `${managedWorkspacePath}.tmp`;
+    await fs.writeFile(temporaryWorkspacePath, '{"scope":"managed"}');
+    await fs.rename(temporaryWorkspacePath, managedWorkspacePath);
+
+    await expect(prepareKimiRuntimeHome({ sourceHome, managedHome })).resolves.toBeUndefined();
+    expect((await fs.lstat(managedWorkspacePath)).isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(managedWorkspacePath, "utf8")).toBe('{"scope":"managed"}');
+    expect(await fs.readFile(path.join(sourceHome, "workspaces.json"), "utf8"))
+      .toBe('{"scope":"user"}');
   });
 
   it("is idempotent and does not duplicate disabled tools", async () => {

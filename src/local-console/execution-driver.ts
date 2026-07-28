@@ -8,6 +8,7 @@ import {
   type CodexRunResult,
 } from "../codex.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
+import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
 export type LocalExecutionEngine = "codex" | "kimi";
@@ -39,11 +40,18 @@ export type LocalExecutionRunner = (
 ) => Promise<CodexRunResult>;
 
 export function createLocalExecutionRunner(input: {
+  dataRoot?: string;
   runCodex?: (options: CodexRunOptions) => Promise<CodexRunResult>;
   runKimi?: (options: KimiAcpRunOptions) => Promise<CodexRunResult>;
 } = {}): LocalExecutionRunner {
   const codex = input.runCodex ?? runCodex;
   const kimi = input.runKimi ?? runKimiAcp;
+  const kimiRuntimeHomePaths = input.dataRoot === undefined
+    ? undefined
+    : resolveKimiRuntimeHomePaths({
+        dataRoot: input.dataRoot,
+        env: process.env,
+      });
   const codexReportsProcessStart = input.runCodex === undefined;
   const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
@@ -91,6 +99,7 @@ export function createLocalExecutionRunner(input: {
         imagePaths: options.imagePaths,
         idleTimeoutMs: options.idleTimeoutMs,
         maxDurationMs: options.maxDurationMs,
+        runtimeHomePaths: kimiRuntimeHomePaths,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,

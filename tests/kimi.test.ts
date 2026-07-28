@@ -49,7 +49,7 @@ function fakeTransport(input: {
   sessionOptions?: unknown[];
   setResponses?: unknown[];
   waitForUpdate?: boolean;
-  sessionId?: string;
+  sessionId?: string | null;
 } = {}): KimiAcpTransport & { requests: Array<{ method: string; params: unknown }> } {
   const requests: Array<{ method: string; params: unknown }> = [];
   const setResponses = [...(input.setResponses ?? [])];
@@ -64,9 +64,17 @@ function fakeTransport(input: {
         };
       }
       if (method === "authenticate") return {};
-      if (method === "session/new" || method === "session/resume") {
+      if (method === "session/new") {
         return {
-          sessionId: input.sessionId ?? "kimi-session-1",
+          ...(input.sessionId === null
+            ? {}
+            : { sessionId: input.sessionId ?? "kimi-session-1" }),
+          configOptions: input.sessionOptions ?? configOptions(),
+        };
+      }
+      if (method === "session/resume") {
+        return {
+          ...(typeof input.sessionId === "string" ? { sessionId: input.sessionId } : {}),
           configOptions: input.sessionOptions ?? configOptions(),
         };
       }
@@ -143,6 +151,54 @@ async function makeRuntimeHomes(root: string): Promise<KimiRuntimeHomePaths> {
 }
 
 describe("Kimi ACP driver", () => {
+  it("keeps the requested canonical id when resume does not echo a session id", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport();
+    const onSessionStarted = vi.fn();
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "continue",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "resume", externalSessionId: "canonical-session" },
+      onSessionStarted,
+    })).resolves.toMatchObject({
+      ok: true,
+      threadId: "canonical-session",
+      finalText: "Kimi 完成",
+    });
+    expect(onSessionStarted).toHaveBeenCalledWith("canonical-session");
+    expect(transport.requests).toEqual(expect.arrayContaining([
+      {
+        method: "session/resume",
+        params: expect.objectContaining({ sessionId: "canonical-session" }),
+      },
+      {
+        method: "session/prompt",
+        params: expect.objectContaining({ sessionId: "canonical-session" }),
+      },
+    ]));
+    expect(transport.requests.some((request) => request.method === "session/new")).toBe(false);
+  });
+
+  it("still requires session/new to return a session id", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({ sessionId: null });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "must not run",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).rejects.toThrow("没有返回 session id");
+    expect(transport.requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "session/new",
+    ]);
+  });
+
   it("rejects a resume response with a different exact session id before prompting", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport({ sessionId: "replacement-session" });
@@ -530,6 +586,35 @@ describe("Kimi ACP driver", () => {
     });
     expect(result.ok).toBe(false);
     expect(kimi).toHaveBeenCalledTimes(1);
+    expect(codex).not.toHaveBeenCalled();
+  });
+
+  it("derives the managed Kimi home from the injected local-console data root", async () => {
+    const root = await makeRunRoot();
+    const dataRoot = path.join(root, "desktop-data");
+    const codex = vi.fn();
+    const kimi = vi.fn(async (options: Parameters<typeof runKimiAcp>[0]) => ({
+      ok: false as const,
+      reason: "expected test stop",
+      runDir: options.runDir,
+      stdoutPath: path.join(options.runDir, "out"),
+      stderrPath: path.join(options.runDir, "err"),
+    }));
+    const runner = createLocalExecutionRunner({ dataRoot, runCodex: codex, runKimi: kimi });
+
+    await runner({
+      prompt: "implement",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    });
+
+    expect(kimi).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeHomePaths: expect.objectContaining({
+        managedHome: path.join(dataRoot, ".state", "kimi-runtime-home"),
+      }),
+    }));
     expect(codex).not.toHaveBeenCalled();
   });
 

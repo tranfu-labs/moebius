@@ -2036,11 +2036,13 @@ link MAY continue to identify process output, but MUST NOT be the only source of
 continuity.
 
 Only an identity with no provider-session creation evidence MAY use first-run `full` /
-`session/new`. After Codex `thread.started` or Kimi `session/new|resume` reports an external id,
-the system MUST synchronously append an idempotent canonical link before it can commit a successful
-Agent reply. Every later ordinary message, handoff return, retry, edit-resend, rerun or restart for
-that identity MUST resume that same id. A successful resume MUST report the requested id; a
-different observed id is an identity conflict.
+`session/new`. After Codex `thread.started` or Kimi `session/new` reports an external id, the system
+MUST synchronously append an idempotent canonical link before it can commit a successful Agent reply.
+Every later ordinary message, handoff return, retry, edit-resend, rerun or restart for that identity
+MUST resume that same id. A successful resume MUST continue using the requested canonical id. When
+the provider response reports an id it MUST equal the requested id; a different observed id is an
+identity conflict. A provider protocol MAY omit the id from a successful resume response when the
+request already names the canonical id, and that omission MUST NOT be treated as a new identity.
 
 Missing or conflicting ids, incompatible identity/engine/profile/workspace ownership, an
 unavailable provider session, or a requested/observed id conflict MUST produce
@@ -2104,12 +2106,14 @@ the system MUST NOT choose by time or success status.
 
 Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
 
-The Kimi driver MUST obtain a specific session id from ACP session/new or session/resume. Before
-prompt it MUST treat that response's configOptions and the subsequent config_option_update/setting
-responses as authoritative, set the snapshotted model and thinking effort, and verify that both
-effective values exactly match the snapshot. Missing options, rejected settings, silent CLI
-fallback, unconfirmed effective values or any mismatch MUST fail the attempt before prompt. Such a
-failure MUST NOT modify the snapshot, silently substitute a value or invoke another driver.
+The Kimi driver MUST obtain a specific session id from ACP session/new. For ACP session/resume it
+MUST send the requested canonical id, continue using that id when a successful response omits it,
+and fail closed when a response reports a different id. Before prompt it MUST treat that response's
+configOptions and the subsequent config_option_update/setting responses as authoritative, set the
+snapshotted model and thinking effort, and verify that both effective values exactly match the
+snapshot. Missing options, rejected settings, silent CLI fallback, unconfirmed effective values or
+any mismatch MUST fail the attempt before prompt. Such a failure MUST NOT modify the snapshot,
+silently substitute a value or invoke another driver.
 After successful verification the driver MUST stream visible Agent Markdown and support cancellation.
 Supported images MUST use ACP image blocks. Ordinary files MUST continue through the managed safe
 copy and prompt manifest contract rather than being represented as native Kimi file attachments.
@@ -2124,6 +2128,8 @@ selection.
 - **GIVEN** a recovery intent names Kimi session S
 - **WHEN** the Kimi driver resumes
 - **THEN** it sends ACP session/resume for S and applies the saved model/effort before prompt
+- **AND** a successful response without a session id continues using S
+- **AND** a response that reports an id other than S fails before prompt
 - **AND** it does not inspect or continue any other recent session.
 
 #### Scenario: Kimi falls back from the saved effort

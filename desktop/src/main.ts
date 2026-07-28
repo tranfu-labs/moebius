@@ -335,6 +335,7 @@ async function startLocalConsole(): Promise<void> {
     localConsoleServer = await startLocalConsoleServer({
       host: "127.0.0.1",
       port: 0,
+      dataRoot: status.dataRoot,
       projectRoot: status.dataRoot,
       workdirRoot: path.join(status.dataRoot, "workdir"),
       store,

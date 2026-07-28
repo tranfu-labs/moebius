@@ -13,7 +13,6 @@ const KIMI_SHARED_RUNTIME_ENTRIES = [
   "device_id",
   "sessions",
   "session_index.jsonl",
-  "workspaces.json",
 ] as const;
 
 export interface KimiRuntimeHomePaths {

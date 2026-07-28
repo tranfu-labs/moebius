@@ -233,15 +233,26 @@ export async function runKimiAcpWithTransport(
             mcpServers: [],
           },
     ));
-    sessionId = readSessionId(sessionResult);
-    if (
-      options.mode.kind === "resume"
-      && sessionId !== options.mode.externalSessionId
-    ) {
-      throw new KimiAcpError(
-        "KIMI_ACP_SESSION_FAILED",
-        "Kimi 返回了与请求不一致的 session。",
-      );
+    const reportedSessionId = readOptionalSessionId(sessionResult);
+    if (options.mode.kind === "resume") {
+      if (
+        reportedSessionId !== null
+        && reportedSessionId !== options.mode.externalSessionId
+      ) {
+        throw new KimiAcpError(
+          "KIMI_ACP_SESSION_FAILED",
+          "Kimi 返回了与请求不一致的 session。",
+        );
+      }
+      sessionId = options.mode.externalSessionId;
+    } else {
+      if (reportedSessionId === null) {
+        throw new KimiAcpError(
+          "KIMI_ACP_SESSION_FAILED",
+          "Kimi 没有返回 session id。",
+        );
+      }
+      sessionId = reportedSessionId;
     }
     const guardedTransport = {
       request: (method: string, params: unknown) =>
@@ -701,7 +712,7 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
   }
 }
 
-function readSessionId(value: unknown): string {
+function readOptionalSessionId(value: unknown): string | null {
   if (!isRecord(value)) {
     throw new KimiAcpError("KIMI_ACP_SESSION_FAILED", "Kimi session 创建失败。");
   }
@@ -710,7 +721,7 @@ function readSessionId(value: unknown): string {
     : typeof value.session_id === "string"
       ? value.session_id
       : null;
-  if (sessionId === null || sessionId.trim().length === 0) {
+  if (sessionId !== null && sessionId.trim().length === 0) {
     throw new KimiAcpError("KIMI_ACP_SESSION_FAILED", "Kimi 没有返回 session id。");
   }
   return sessionId;

@@ -148,6 +148,7 @@ export interface LocalConsoleRuntimeOptions {
   runCodex: (options: CodexRunOptions) => Promise<CodexRunResult>;
   runExecution?: LocalExecutionRunner;
   makeRunDir: (count: number, now?: Date) => string;
+  dataRoot?: string;
   projectRoot: string;
   workdirRoot: string;
   sessionId?: string;
@@ -306,6 +307,7 @@ export class LocalConsoleRuntime {
     this.staleRunningGraceMs = options.staleRunningGraceMs ?? 5_000;
     this.now = options.now ?? (() => new Date());
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
+      dataRoot: options.dataRoot ?? options.projectRoot,
       runCodex: options.runCodex,
     });
   }

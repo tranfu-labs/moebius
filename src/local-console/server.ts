@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   CODEX_RUN_IDLE_TIMEOUT_MS,
   CODEX_RUN_MAX_DURATION_MS,
+  DATA_ROOT,
   LOCAL_CONSOLE_HOST,
   LOCAL_CONSOLE_PORT,
   LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS,
@@ -44,6 +45,7 @@ import {
 export interface LocalConsoleServerOptions {
   host?: string;
   port?: number;
+  dataRoot?: string;
   projectRoot?: string;
   workdirRoot?: string;
   store?: LocalConsoleStore;
@@ -80,6 +82,8 @@ export async function startLocalConsoleServer(options: LocalConsoleServerOptions
   const host = options.host ?? LOCAL_CONSOLE_HOST;
   const requestedPort = options.port ?? LOCAL_CONSOLE_PORT;
   const projectRoot = options.projectRoot ?? PROJECT_ROOT;
+  const dataRoot = options.dataRoot
+    ?? (options.projectRoot === undefined ? DATA_ROOT : projectRoot);
   const workdirRoot = options.workdirRoot ?? path.join(projectRoot, "workdir");
   const sqlitePath = options.sqlitePath ?? (options.projectRoot === undefined ? LOCAL_CONSOLE_SQLITE_PATH : path.join(projectRoot, ".state", "local-console.sqlite"));
   const store =
@@ -107,6 +111,7 @@ export async function startLocalConsoleServer(options: LocalConsoleServerOptions
     runCodex: options.runCodex ?? runCodex,
     runExecution: options.runExecution,
     makeRunDir: options.makeRunDir ?? makeLocalConsoleRunDir,
+    dataRoot,
     projectRoot,
     workdirRoot,
     storeTimeoutMs: options.storeTimeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS,

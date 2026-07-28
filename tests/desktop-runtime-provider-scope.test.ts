@@ -60,6 +60,20 @@ describe("Desktop runtime provider call-site inventory", () => {
     ]);
   });
 
+  it("injects the active desktop data root into the local console provider runtime", async () => {
+    const main = await read("desktop/src/main.ts");
+    const callStart = main.indexOf("localConsoleServer = await startLocalConsoleServer({");
+    const callEnd = main.indexOf("\n    });", callStart);
+
+    expect(callStart).toBeGreaterThan(-1);
+    expect(callEnd).toBeGreaterThan(callStart);
+    expect(main.slice(callStart, callEnd)).toContain([
+      "port: 0,",
+      "      dataRoot: status.dataRoot,",
+      "      projectRoot: status.dataRoot,",
+    ].join("\n"));
+  });
+
   it("keeps each persistent Agent call site fail-closed on its own provider identity", async () => {
     const localDriver = await read("src/local-console/execution-driver.ts");
     expect(localDriver).toContain('kind: "resume"');
