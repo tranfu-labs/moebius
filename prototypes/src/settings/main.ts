@@ -242,7 +242,7 @@ function openSettings(
   settingsLayer.hidden = false;
   workspace.inert = true;
   document.body.classList.add("has-modal");
-  window.setTimeout(() => closeButton.focus(), 0);
+  closeButton.focus();
 }
 
 function closeSettings(): void {
@@ -251,7 +251,7 @@ function closeSettings(): void {
   settingsLayer.hidden = true;
   workspace.inert = false;
   document.body.classList.remove("has-modal");
-  window.setTimeout(() => focusReturnTarget.focus(), 0);
+  focusReturnTarget.focus();
 }
 
 function readSavedLocale(): Locale | undefined {

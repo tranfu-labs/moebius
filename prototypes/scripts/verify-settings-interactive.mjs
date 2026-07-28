@@ -146,7 +146,14 @@ try {
   );
   await page.getByRole("button", { name: "设置", exact: true }).press("Enter");
   await dialog.waitFor();
-  await page.getByRole("button", { name: "关闭设置" }).press("Tab");
+  const closeSettingsButton = page.getByRole("button", { name: "关闭设置" });
+  assert(
+    await closeSettingsButton.evaluate(
+      (element) => element === document.activeElement
+    ),
+    "opening settings must move focus into the dialog"
+  );
+  await closeSettingsButton.press("Tab");
   assert(
     (await page.locator(":focus").getAttribute("aria-current")) === "page",
     "Tab must enter the category navigation"
