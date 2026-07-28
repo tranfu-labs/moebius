@@ -317,9 +317,11 @@ export class LocalConsoleRuntime {
   }
 
   async init(): Promise<void> {
-    await this.storeCall("local-console-store-init", () => this.options.store.init());
+    await this.options.store.init();
     const sessions = await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions());
-    const sessionIds = sessions.length === 0 ? [this.sessionId] : sessions.map((session) => session.sessionId);
+    const sessionIds = sessions.length === 0
+      ? [this.sessionId]
+      : sessions.filter(hasPendingStartupControlWork).map((session) => session.sessionId);
     await Promise.all(sessionIds.map(async (sessionId) => {
       try {
         await this.claimOrphanRuns(sessionId);
@@ -1968,7 +1970,9 @@ export class LocalConsoleRuntime {
 
   async processAllPending(): Promise<void> {
     const sessions = await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions());
-    const sessionIds = sessions.length === 0 ? [this.sessionId] : sessions.map((session) => session.sessionId);
+    const sessionIds = sessions
+      .filter(hasPendingStartupControlWork)
+      .map((session) => session.sessionId);
     for (const sessionId of sessionIds) {
       await this.processPending(sessionId);
     }
@@ -3886,6 +3890,10 @@ function workerLaneKey(sessionId: string, role: string): string {
 
 function isPendingPrimaryMessage(message: LocalConsoleMessage): boolean {
   return message.speaker === "user" && message.status === "pending";
+}
+
+function hasPendingStartupControlWork(session: LocalConsoleSessionSummary): boolean {
+  return session.hasPendingControlWork === true || session.runningCount > 0;
 }
 
 function isWorkerRunPlaceholder(message: LocalConsoleMessage): boolean {
