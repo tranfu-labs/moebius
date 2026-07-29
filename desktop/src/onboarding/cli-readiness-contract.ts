@@ -12,6 +12,7 @@ export type OnboardingCliReadinessCode =
   | "ready"
   | "cli-missing"
   | "version-unavailable"
+  | "version-unsupported"
   | "authentication-required"
   | "capability-unavailable";
 

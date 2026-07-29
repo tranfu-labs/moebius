@@ -1,3 +1,7 @@
+import {
+  isSupportedCodexCliVersion,
+  MINIMUM_CODEX_CLI_VERSION,
+} from "../../src/codex-cli-version.js";
 import type { CommandRunner } from "./shell-path.js";
 import { runCommand } from "./shell-path.js";
 
@@ -18,6 +22,13 @@ export async function checkCodex(input: {
     if (result.exitCode === 0) {
       const detail = firstLine(result.stdout);
       if (detail !== undefined) {
+        if (!isSupportedCodexCliVersion(detail)) {
+          return {
+            status: "error",
+            message: `Codex 需要升级到 ${MINIMUM_CODEX_CLI_VERSION} 或更高版本`,
+            detail,
+          };
+        }
         return { status: "ok", message: "已找到", detail };
       }
     }

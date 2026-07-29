@@ -39,6 +39,7 @@ export interface ExecutionCapabilitySnapshot {
 export type ExecutionCapabilityFailureCode =
   | "CLI_MISSING"
   | "CLI_UNAVAILABLE"
+  | "CLI_VERSION_UNSUPPORTED"
   | "AUTHENTICATION_REQUIRED"
   | "CAPABILITY_TIMEOUT"
   | "CAPABILITY_PROTOCOL_UNAVAILABLE";

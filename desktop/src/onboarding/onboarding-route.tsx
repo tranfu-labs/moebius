@@ -496,6 +496,7 @@ function toViewReadiness(
   return {
     status: snapshot.status,
     revision: snapshot.revision,
+    code: snapshot.code,
     ...(snapshot.version === null ? {} : { version: snapshot.version }),
   };
 }

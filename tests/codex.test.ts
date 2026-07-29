@@ -110,8 +110,8 @@ describe("extractFinalAssistant", () => {
       expect.arrayContaining([
         "exec",
         "--json",
-        "--disable",
-        "multi_agent",
+        "-c",
+        "agents.enabled=false",
         "-m",
         "gpt-5.6-sol",
         "hello",
@@ -128,8 +128,8 @@ describe("extractFinalAssistant", () => {
       "thread-1",
       "delta",
     ]);
-    expect(resumeArgs).toEqual(expect.arrayContaining(["--disable", "multi_agent"]));
-    expect(resumeArgs).not.toContain("agents.enabled=false");
+    expect(resumeArgs).toEqual(expect.arrayContaining(["-c", "agents.enabled=false"]));
+    expect(resumeArgs).not.toContain("multi_agent");
     expect(resumeArgs).not.toContain("--ephemeral");
   });
 
@@ -594,8 +594,8 @@ describe("codex provider override", () => {
     const baseline = [
       "--yolo",
       "--json",
-      "--disable",
-      "multi_agent",
+      "-c",
+      "agents.enabled=false",
       "-m",
       "gpt-5.6-sol",
       "-c",

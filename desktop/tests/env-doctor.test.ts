@@ -8,7 +8,7 @@ describe("desktop env doctor", () => {
     const runCommand: CommandRunner = async (command, args) => {
       calls.push({ command, args });
       if (command === "codex" && args[0] === "--version") {
-        return { exitCode: 0, stdout: "codex 1.0.0\n", stderr: "" };
+        return { exitCode: 0, stdout: "codex 0.145.0\n", stderr: "" };
       }
       throw new Error("unexpected command");
     };
@@ -16,9 +16,23 @@ describe("desktop env doctor", () => {
     await expect(checkCodex({ runCommand })).resolves.toMatchObject({
       status: "ok",
       message: "已找到",
-      detail: "codex 1.0.0",
+      detail: "codex 0.145.0",
     });
     expect(calls).toEqual([{ command: "codex", args: ["--version"] }]);
+  });
+
+  it("requires Codex 0.145.0 or newer", async () => {
+    await expect(checkCodex({
+      runCommand: async () => ({
+        exitCode: 0,
+        stdout: "codex-cli 0.144.1\n",
+        stderr: "",
+      }),
+    })).resolves.toEqual({
+      status: "error",
+      message: "Codex 需要升级到 0.145.0 或更高版本",
+      detail: "codex-cli 0.144.1",
+    });
   });
 
   it.each(["ENOENT", "ENOTDIR"])(

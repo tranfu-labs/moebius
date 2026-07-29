@@ -117,8 +117,8 @@ export function buildCodexExecOptionsForProfile(model: string, effort: string): 
   return [
     "--yolo",
     "--json",
-    "--disable",
-    "multi_agent",
+    "-c",
+    "agents.enabled=false",
     "-m",
     model,
     "-c",

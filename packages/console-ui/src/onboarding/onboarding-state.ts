@@ -15,6 +15,7 @@ export interface OnboardingCliReadiness {
   status: OnboardingCliReadinessStatus;
   revision: number;
   version?: string;
+  code?: string;
   lastKnownReady?: boolean;
 }
 

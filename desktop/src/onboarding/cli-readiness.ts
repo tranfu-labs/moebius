@@ -171,6 +171,18 @@ export class OnboardingCliReadinessService {
         capability,
       };
     }
+    if (capability.failureCode === "CLI_VERSION_UNSUPPORTED") {
+      return {
+        snapshot: this.terminal(
+          cli,
+          revision,
+          "unavailable",
+          "version-unsupported",
+          version,
+        ),
+        capability,
+      };
+    }
     if (capability.failureCode === "AUTHENTICATION_REQUIRED") {
       return {
         snapshot: this.terminal(

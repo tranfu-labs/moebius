@@ -908,7 +908,17 @@ Acceptance ID: `onboarding#3`, `onboarding#4`
 
 桌面引导 MUST 分别检查 Codex 与 Kimi 的真实版本、认证 / provider 配置及至少一个真实可用模型，且 MUST NOT 为检查发送真实推理请求、打开交互登录、修改项目文件或产生测试会话。只有版本和能力检查都成功的 CLI 才为 ready；任一 CLI ready 时 MUST 放行，两者都不 ready 时 MUST 阻断。`ENOENT` / `ENOTDIR` MUST 分类为 missing；未认证 MUST 分类为 needs-login；非零退出、不可执行、空版本或能力协议异常 MUST 分类为 unavailable。
 
+Codex CLI 只有在真实版本不低于 `0.145.0` 时才可继续能力检查并成为 ready。低于最低版本或无法解析版本时 MUST NOT 启动 Codex app-server 或模型能力枚举；旧版本 MUST 返回稳定的升级所需 code、保留真实版本文本并向用户显示最低版本升级指引，MUST NOT 把它误分类为 missing 或 needs-login。
+
 每套 CLI MUST 独立维护检查 revision。首次检查、shell PATH 自动复检、安装成功复检和手动复检 MUST 以同一 CLI 的 `(revision, phase)` 单调收敛：较旧 revision 不得覆盖较新结果；同一 revision 允许 checking 收敛到终态但不得从终态倒退。ready 行 MUST 展示当次真实版本；静态表面没有真实输入时 MUST NOT 伪造版本。结果 DTO MUST NOT 包含原始 stderr、异常文本、本地路径、PID、provider 密钥、token 或 session id。
+
+#### Scenario: Codex 版本过旧
+
+- **GIVEN** `codex --version` 成功返回 `codex-cli 0.144.1`
+- **WHEN** 引导执行 Codex readiness 检查
+- **THEN** Codex 行为 unavailable 且显示需要 `0.145.0` 或更高版本
+- **AND** 保留 `codex-cli 0.144.1` 作为本次真实版本
+- **AND** 不启动 app-server、模型能力枚举或真实推理。
 
 #### Scenario: Kimi-only 放行
 

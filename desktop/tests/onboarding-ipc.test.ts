@@ -116,7 +116,7 @@ describe("onboarding IPC boundary", () => {
       checkCodex: () => checkCodex({
         runCommand: async () => {
           if (outcome === "ready") {
-            return { exitCode: 0, stdout: "codex-cli 0.144.1\n", stderr: "" };
+            return { exitCode: 0, stdout: "codex-cli 0.145.0\n", stderr: "" };
           }
           throw Object.assign(
             new Error("raw failure at /Users/example/bin/codex"),
@@ -130,7 +130,7 @@ describe("onboarding IPC boundary", () => {
     await expect(invoke(handlers, ONBOARDING_IPC_CHANNELS.checkCodex)).resolves.toEqual({
       status: "ok",
       message: "已找到",
-      detail: "codex-cli 0.144.1",
+      detail: "codex-cli 0.145.0",
     });
 
     outcome = "missing";

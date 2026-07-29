@@ -100,7 +100,7 @@ describe("execution capability discovery", () => {
   it("returns unavailable instead of a hard-coded Codex fallback", async () => {
     const result = await probeCodexCapabilities({
       now: () => new Date("2026-07-25T00:00:00.000Z"),
-      runCommand: vi.fn<SafeCommandRunner>().mockResolvedValue({ stdout: "codex 1" }),
+      runCommand: vi.fn<SafeCommandRunner>().mockResolvedValue({ stdout: "codex 0.145.0" }),
       requestCodexModels: async () => ({ result: { data: [] } }),
     });
     expect(result).toMatchObject({
@@ -109,6 +109,26 @@ describe("execution capability discovery", () => {
       models: [],
       reason: "Codex 没有返回可用模型。",
     });
+  });
+
+  it("rejects Codex below 0.145.0 before starting the model capability protocol", async () => {
+    const requestCodexModels = vi.fn();
+    const result = await probeCodexCapabilities({
+      now: () => new Date("2026-07-25T00:00:00.000Z"),
+      runCommand: vi.fn<SafeCommandRunner>().mockResolvedValue({
+        stdout: "codex-cli 0.144.1\n",
+      }),
+      requestCodexModels,
+    });
+
+    expect(result).toMatchObject({
+      cli: "codex",
+      cliVersion: "codex-cli 0.144.1",
+      status: "unavailable",
+      failureCode: "CLI_VERSION_UNSUPPORTED",
+      reason: "Codex CLI 版本过旧，需要 0.145.0 或更高版本。",
+    });
+    expect(requestCodexModels).not.toHaveBeenCalled();
   });
 
   it("distinguishes a missing Kimi CLI without exposing stderr", async () => {

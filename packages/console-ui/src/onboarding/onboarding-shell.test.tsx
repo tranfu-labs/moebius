@@ -146,6 +146,26 @@ describe("OnboardingShell", () => {
     expect(screen.queryByRole("button", { name: /安装 (?:Codex|Kimi) CLI/ })).not.toBeInTheDocument();
   });
 
+  it("shows the installed Codex version and explicit minimum when an upgrade is required", () => {
+    renderShell({
+      environment: createEnvironment({
+        codex: {
+          status: "unavailable",
+          code: "version-unsupported",
+          revision: 1,
+          version: "codex-cli 0.144.1",
+        },
+        kimi: { status: "missing", revision: 1 },
+      }),
+    });
+
+    expect(screen.getByText("Codex CLI 需要升级")).toBeVisible();
+    expect(screen.getByText(
+      "当前版本：codex-cli 0.144.1。请升级到 0.145.0 或更高版本后重新检查。",
+    )).toBeVisible();
+    expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
+  });
+
   it("allows Kimi-only continuation and keeps Codex recovery visible", () => {
     renderShell({
       environment: createEnvironment({

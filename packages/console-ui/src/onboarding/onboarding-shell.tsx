@@ -544,6 +544,16 @@ function getCliVisual(
           : t("onboarding.kimiLoginDetail"),
       };
     case "unavailable":
+      if (readiness.code === "version-unsupported") {
+        return {
+          icon: <CircleAlert className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
+          tone: "neutral",
+          title: t("onboarding.codexUpgradeTitle"),
+          detail: t("onboarding.codexUpgradeDetail", {
+            version: readiness.version ?? t("onboarding.versionUnknown"),
+          }),
+        };
+      }
       return {
         icon: <CircleAlert className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
         tone: "neutral",

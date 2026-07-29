@@ -11,7 +11,7 @@ describe("onboarding CLI readiness service", () => {
       now: () => new Date("2026-07-26T00:00:00.000Z"),
       runCommand: async (command, args) => {
         calls.push(`${command} ${args.join(" ")}`);
-        return { stdout: `${command}-cli 1.2.3\n` };
+        return { stdout: `${command}-cli ${command === "codex" ? "0.145.0" : "1.2.3"}\n` };
       },
       probeCapabilities: async (input) => {
         calls.push(`${input.cli} capabilities ${input.knownCliVersion}`);
@@ -22,7 +22,7 @@ describe("onboarding CLI readiness service", () => {
     await expect(service.checkAll()).resolves.toMatchObject({
       codex: {
         status: "ready",
-        version: "codex-cli 1.2.3",
+        version: "codex-cli 0.145.0",
         revision: 1,
         checkedAt: "2026-07-26T00:00:00.000Z",
       },
@@ -33,11 +33,31 @@ describe("onboarding CLI readiness service", () => {
       },
     });
     expect(calls.indexOf("codex --version")).toBeLessThan(
-      calls.indexOf("codex capabilities codex-cli 1.2.3"),
+      calls.indexOf("codex capabilities codex-cli 0.145.0"),
     );
     expect(calls.indexOf("kimi --version")).toBeLessThan(
       calls.indexOf("kimi capabilities kimi-cli 1.2.3"),
     );
+  });
+
+  it("rejects an old Codex version before probing capabilities", async () => {
+    const probeCapabilities = vi.fn(async ({ cli, knownCliVersion }) => capability(
+      cli,
+      "unavailable",
+      knownCliVersion,
+      "CLI_VERSION_UNSUPPORTED",
+    ));
+    const service = new OnboardingCliReadinessService({
+      runCommand: async () => ({ stdout: "codex-cli 0.144.1\n" }),
+      probeCapabilities,
+    });
+
+    await expect(service.check("codex")).resolves.toMatchObject({
+      status: "unavailable",
+      code: "version-unsupported",
+      version: "codex-cli 0.144.1",
+    });
+    expect(probeCapabilities).toHaveBeenCalledOnce();
   });
 
   it("classifies missing, empty version, login-required and capability failures safely", async () => {

@@ -2,6 +2,10 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
 import {
+  isSupportedCodexCliVersion,
+  MINIMUM_CODEX_CLI_VERSION,
+} from "../../src/codex-cli-version.js";
+import {
   capabilitySnapshotId,
   type ExecutionCapabilityModel,
   type ExecutionCapabilitySnapshot,
@@ -41,11 +45,18 @@ export async function probeCodexCapabilities(input: {
 } = {}): Promise<ExecutionCapabilitySnapshot> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const run = input.runCommand ?? runCommandSafely;
+  let version: string | null = null;
   try {
-    const version = input.knownCliVersion
+    version = input.knownCliVersion
       ?? ((await run("codex", ["--version"], timeoutMs)).stdout.trim() || null);
     if (version === null) {
       throw new CapabilityProbeError("CLI_UNAVAILABLE", "Codex 没有返回版本信息。");
+    }
+    if (!isSupportedCodexCliVersion(version)) {
+      throw new CapabilityProbeError(
+        "CLI_VERSION_UNSUPPORTED",
+        `Codex CLI 版本过旧，需要 ${MINIMUM_CODEX_CLI_VERSION} 或更高版本。`,
+      );
     }
     const result = await (input.requestCodexModels ?? requestCodexModelList)(timeoutMs);
     return makeSnapshot({
@@ -56,7 +67,7 @@ export async function probeCodexCapabilities(input: {
       checkedAt: (input.now ?? (() => new Date()))().toISOString(),
     });
   } catch (error) {
-    return failedSnapshot("codex", error, input.now);
+    return failedSnapshot("codex", error, input.now, version);
   }
 }
 
@@ -341,11 +352,12 @@ function failedSnapshot(
   cli: "codex" | "kimi",
   error: unknown,
   now?: () => Date,
+  cliVersion: string | null = null,
 ): ExecutionCapabilitySnapshot {
   const missing = error instanceof CapabilityProbeError && error.code === "CLI_MISSING";
   return makeSnapshot({
     cli,
-    cliVersion: null,
+    cliVersion,
     status: missing ? "missing" : "unavailable",
     models: [],
     checkedAt: (now ?? (() => new Date()))().toISOString(),
@@ -458,6 +470,7 @@ export class CapabilityProbeError extends Error {
     readonly code:
       | "CLI_MISSING"
       | "CLI_UNAVAILABLE"
+      | "CLI_VERSION_UNSUPPORTED"
       | "AUTHENTICATION_REQUIRED"
       | "CAPABILITY_TIMEOUT"
       | "CAPABILITY_PROTOCOL_UNAVAILABLE",
