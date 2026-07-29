@@ -166,6 +166,12 @@
     filter:url(#c3-noise);
     animation:shimmerSlide 6s linear infinite;
   }
+  /* selection would paint --active over the transparent gradient glyphs —
+     restore a solid fill while selected so the text stays readable */
+  .shimmer::selection{
+    -webkit-text-fill-color:var(--fg); color:var(--fg);
+    background:var(--active);
+  }
   @keyframes shimmerSlide{ from{ background-position:-200% center; } to{ background-position:200% center; } }
   .hero .sub{
     margin:24px auto 0; max-width:560px;
