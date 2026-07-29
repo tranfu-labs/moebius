@@ -2004,7 +2004,35 @@ describe("OperatorConsole", () => {
 
     expect(screen.getByText("这一步没跑起来")).toBeVisible();
     expect(screen.getByText("完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录")).toBeVisible();
+    expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["kimi-cli-not-found", "没有找到 Kimi CLI。请先安装 Kimi，然后重试。"],
+    ["kimi-cli-not-executable", "找到 Kimi CLI，但它不可执行。请修复文件执行权限后重试。"],
+    ["kimi-cli-spawn-failed", "Kimi CLI 启动失败。请确认安装完整后重试。"],
+    ["kimi-cli-exited", "Kimi CLI 启动后提前退出。请先在终端运行 Kimi 检查登录或配置，然后重试。"],
+    ["kimi-acp-timeout", "Kimi CLI 启动后没有及时响应。请检查 Kimi 状态后重试。"],
+  ])("shows the safe Kimi failure explanation for %s", (error, body) => {
+    renderConsole({
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          runId: "run-kimi-safe-failure",
+          status: "failed",
+          systemEventKind: "run-not-started",
+          body,
+          error,
+        }),
+      ],
+    });
+
+    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText(body)).toBeVisible();
+    expect(screen.queryByText("/Users/private/.kimi-code/bin/kimi")).not.toBeInTheDocument();
+    expect(screen.queryByText("spawn ENOENT raw provider payload")).not.toBeInTheDocument();
   });
 
   it("keeps derived sessions out of the sidebar and opens them from a timeline card", () => {

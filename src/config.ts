@@ -76,6 +76,7 @@ export const GITHUB_CLI_RETRY_POLICY = {
   factor: 2,
 } as const;
 export const CODEX_RUN_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+export const KIMI_CLI_SPAWN_TIMEOUT_MS = 5_000;
 export const CODEX_RUN_MAX_DURATION_MS = 120 * 60 * 1000;
 export const AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 export const AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS = 10 * 60 * 1000;

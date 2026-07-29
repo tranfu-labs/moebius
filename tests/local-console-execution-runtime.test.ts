@@ -207,7 +207,11 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     const codex = vi.fn(async (options: CodexRunOptions) => success(options, "unexpected Codex"));
     const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => ({
       ok: false,
-      reason: "Kimi CLI 未安装",
+      reason: "kimi-cli-not-found",
+      failure: {
+        code: "kimi-cli-not-found",
+        message: "没有找到 Kimi CLI。请先安装 Kimi，然后重试。",
+      },
       runDir: options.runDir,
       stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
       stderrPath: path.join(options.runDir, "kimi-stderr.log"),
@@ -252,8 +256,8 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
         params: [created.session.sessionId],
       });
       expect(failed).toMatchObject({
-        body: expect.stringContaining("这一步没跑起来"),
-        error: expect.stringContaining("Kimi CLI 未安装"),
+        body: "没有找到 Kimi CLI。请先安装 Kimi，然后重试。",
+        error: "kimi-cli-not-found",
         status: "displayed",
         system_event_kind: "run-not-started",
       });

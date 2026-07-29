@@ -1,17 +1,24 @@
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createKimiProcessTransport,
   confirmRuntimeConfig,
+  KimiAcpError,
   kimiClientFsCapabilities,
   resolveKimiFileRequestPath,
   runKimiAcp,
   runKimiAcpWithTransport,
+  waitForKimiSpawn,
   type KimiAcpTransport,
 } from "../src/kimi.js";
+import { KimiExecutableError } from "../src/kimi-executable.js";
 import type { KimiRuntimeHomePaths } from "../src/kimi-runtime-home.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
 
@@ -98,6 +105,22 @@ function fakeTransport(input: {
   };
 }
 
+function fakeChildProcess(): ChildProcessWithoutNullStreams {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: PassThrough;
+    stdout: PassThrough;
+    stderr: PassThrough;
+    exitCode: number | null;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.exitCode = null;
+  child.kill = vi.fn(() => true);
+  return child as unknown as ChildProcessWithoutNullStreams;
+}
+
 function signalRecordingTransport(events: string[]): ReturnType<typeof fakeTransport> {
   const transport = fakeTransport();
   let shutdownStage: "none" | "interrupt" | "terminate" | "kill" = "none";
@@ -150,7 +173,335 @@ async function makeRuntimeHomes(root: string): Promise<KimiRuntimeHomePaths> {
   };
 }
 
+async function writeAcpExecutable(
+  filePath: string,
+  marker: string,
+  auditPath: string,
+): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, [
+    `#!${process.execPath}`,
+    'const fs = require("node:fs");',
+    'const readline = require("node:readline");',
+    `fs.writeFileSync(${JSON.stringify(auditPath)}, process.argv[1], "utf8");`,
+    `const marker = ${JSON.stringify(marker)};`,
+    "const configOptions = [",
+    '  { id: "model", currentValue: "kimi-for-coding", options: [{ value: "kimi-for-coding" }] },',
+    '  { id: "thinking", currentValue: "high", options: [{ value: "high" }] },',
+    '  { id: "mode", currentValue: "auto", options: [{ value: "auto" }] },',
+    "];",
+    "const lines = readline.createInterface({ input: process.stdin });",
+    'const reply = (id, result) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\\n`);',
+    'lines.on("line", (line) => {',
+    "  const request = JSON.parse(line);",
+    '  if (request.method === "initialize") reply(request.id, { protocolVersion: 1 });',
+    '  else if (request.method === "session/new") reply(request.id, { sessionId: "fixture-session", configOptions });',
+    '  else if (request.method === "session/prompt") reply(request.id, { finalText: marker });',
+    '  else reply(request.id, {});',
+    "});",
+    "",
+  ].join("\n"), "utf8");
+  await fs.chmod(filePath, 0o755);
+}
+
 describe("Kimi ACP driver", () => {
+  it("does not expose the process transport before spawn and preserves an early exit", async () => {
+    const root = await makeRunRoot();
+    const binDir = path.join(root, "bin");
+    const executable = path.join(binDir, "kimi");
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await fs.chmod(executable, 0o755);
+    const child = fakeChildProcess();
+    const spawnProcess = vi.fn(() => child) as unknown as typeof import("node:child_process").spawn;
+    let settled = false;
+    const factory = createKimiProcessTransport({
+      cwd: root,
+      readRoots: [root],
+      stdoutPath: path.join(root, "stdout.jsonl"),
+      stderrPath: path.join(root, "stderr.log"),
+      env: { PATH: binDir },
+      allowWrites: true,
+      homeDir: path.join(root, "home"),
+      spawnProcess,
+    }).finally(() => {
+      settled = true;
+    });
+
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(1));
+    expect(settled).toBe(false);
+    expect(spawnProcess).toHaveBeenCalledWith(
+      path.resolve(executable),
+      ["acp"],
+      expect.objectContaining({ shell: false }),
+    );
+
+    child.emit("spawn");
+    const transport = await factory;
+    const writes: string[] = [];
+    child.stdin.on("data", (chunk: Buffer) => writes.push(chunk.toString("utf8")));
+    const request = transport.request("initialize", { protocolVersion: 1 });
+    expect(writes.join("")).toContain('"method":"initialize"');
+
+    (child as unknown as { exitCode: number | null }).exitCode = 42;
+    child.emit("exit", 42, null);
+    await expect(request).rejects.toMatchObject({
+      code: "KIMI_CLI_EXITED",
+      safeMessage: expect.stringContaining("启动后提前退出"),
+    });
+    expect(writes.join("")).not.toContain("KIMI_ACP_CLOSED");
+    await transport.close();
+  });
+
+  it("preserves a spawn error instead of exposing a closed ACP transport", async () => {
+    const root = await makeRunRoot();
+    const binDir = path.join(root, "bin");
+    const executable = path.join(binDir, "kimi");
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await fs.chmod(executable, 0o755);
+    const child = fakeChildProcess();
+    const spawnProcess = vi.fn(() => child) as unknown as typeof import("node:child_process").spawn;
+    const factory = createKimiProcessTransport({
+      cwd: root,
+      readRoots: [root],
+      stdoutPath: path.join(root, "stdout.jsonl"),
+      stderrPath: path.join(root, "stderr.log"),
+      env: { PATH: binDir },
+      allowWrites: true,
+      homeDir: path.join(root, "home"),
+      spawnProcess,
+    });
+
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(1));
+    child.emit("error", Object.assign(new Error("raw ENOENT path"), { code: "ENOENT" }));
+
+    await expect(factory).rejects.toMatchObject({
+      code: "KIMI_CLI_SPAWN_FAILED",
+      safeMessage: expect.stringContaining("启动失败"),
+    });
+  });
+
+  it("bounds a spawn handshake that emits no authoritative event", async () => {
+    vi.useFakeTimers();
+    const child = fakeChildProcess();
+    const pending = waitForKimiSpawn(child, 5_000).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(child.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toMatchObject({
+      code: "KIMI_CLI_SPAWN_FAILED",
+    });
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("runs a real ACP fixture from the default Kimi location by absolute path", async () => {
+    const root = await makeRunRoot();
+    const homeDir = path.join(root, "host-home");
+    const executable = path.join(homeDir, ".kimi-code", "bin", "kimi");
+    const auditPath = path.join(root, "default-audit.txt");
+    await writeAcpExecutable(executable, "DEFAULT_KIMI_SELECTED", auditPath);
+    const transport = await createKimiProcessTransport({
+      cwd: root,
+      readRoots: [root],
+      stdoutPath: path.join(root, "stdout.jsonl"),
+      stderrPath: path.join(root, "stderr.log"),
+      env: { ...process.env, PATH: path.join(root, "empty-bin") },
+      allowWrites: true,
+      homeDir,
+    });
+    try {
+      await expect(runKimiAcpWithTransport(transport, {
+        prompt: "run fixture",
+        runDir: root,
+        cwd: root,
+        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        mode: { kind: "full" },
+      })).resolves.toMatchObject({
+        ok: true,
+        finalText: "DEFAULT_KIMI_SELECTED",
+      });
+      await expect(fs.readFile(auditPath, "utf8")).resolves.toBe(path.resolve(executable));
+    } finally {
+      await transport.close();
+    }
+  });
+
+  it("runs the PATH Kimi fixture instead of an available default fixture", async () => {
+    const root = await makeRunRoot();
+    const binDir = path.join(root, "path-bin");
+    const homeDir = path.join(root, "host-home");
+    const pathExecutable = path.join(binDir, "kimi");
+    const defaultExecutable = path.join(homeDir, ".kimi-code", "bin", "kimi");
+    const pathAudit = path.join(root, "path-audit.txt");
+    const defaultAudit = path.join(root, "default-audit.txt");
+    await writeAcpExecutable(pathExecutable, "PATH_KIMI_SELECTED", pathAudit);
+    await writeAcpExecutable(defaultExecutable, "DEFAULT_KIMI_SELECTED", defaultAudit);
+    const transport = await createKimiProcessTransport({
+      cwd: root,
+      readRoots: [root],
+      stdoutPath: path.join(root, "stdout.jsonl"),
+      stderrPath: path.join(root, "stderr.log"),
+      env: { ...process.env, PATH: binDir },
+      allowWrites: true,
+      homeDir,
+    });
+    try {
+      await expect(runKimiAcpWithTransport(transport, {
+        prompt: "run fixture",
+        runDir: root,
+        cwd: root,
+        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        mode: { kind: "full" },
+      })).resolves.toMatchObject({
+        ok: true,
+        finalText: "PATH_KIMI_SELECTED",
+      });
+      await expect(fs.readFile(pathAudit, "utf8")).resolves.toBe(path.resolve(pathExecutable));
+      await expect(fs.access(defaultAudit)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await transport.close();
+    }
+  });
+
+  it.each([
+    {
+      error: new KimiExecutableError(
+        "kimi-cli-not-found",
+        "没有找到 Kimi CLI。请先安装 Kimi，然后重试。",
+      ),
+      code: "kimi-cli-not-found",
+    },
+    {
+      error: new KimiExecutableError(
+        "kimi-cli-not-executable",
+        "找到 Kimi CLI，但它不可执行。请修复文件执行权限后重试。",
+      ),
+      code: "kimi-cli-not-executable",
+    },
+    {
+      error: new KimiAcpError(
+        "KIMI_CLI_SPAWN_FAILED",
+        "Kimi CLI 启动失败。请确认安装完整后重试。",
+      ),
+      code: "kimi-cli-spawn-failed",
+    },
+    {
+      error: new KimiAcpError(
+        "KIMI_CLI_EXITED",
+        "Kimi CLI 启动后提前退出。请先在终端运行 Kimi 检查登录或配置，然后重试。",
+      ),
+      code: "kimi-cli-exited",
+    },
+  ])("returns stable failure $code without raw machine text", async ({ error, code }) => {
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const result = await runKimiAcp({
+      prompt: "must not run",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      runtimeHomePaths,
+      transportFactory: async () => {
+        throw error;
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: code,
+      failure: {
+        code,
+        message: error.message,
+      },
+    });
+    if (result.ok) {
+      throw new Error("expected a classified Kimi failure");
+    }
+    expect(result.reason).not.toContain(root);
+  });
+
+  it("keeps raw spawn diagnostics in the local stderr log but outside the result", async () => {
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const rawMessage = `spawn ENOENT at ${path.join(root, "private-kimi")}`;
+    const result = await runKimiAcp({
+      prompt: "must not run",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      runtimeHomePaths,
+      transportFactory: async () => {
+        throw new KimiAcpError(
+          "KIMI_CLI_SPAWN_FAILED",
+          "Kimi CLI 启动失败。请确认安装完整后重试。",
+          { errorCode: "ENOENT", errorMessage: rawMessage },
+        );
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "kimi-cli-spawn-failed",
+      failure: {
+        code: "kimi-cli-spawn-failed",
+        message: "Kimi CLI 启动失败。请确认安装完整后重试。",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(rawMessage);
+    await expect(fs.readFile(path.join(root, "kimi-stderr.log"), "utf8"))
+      .resolves.toContain(rawMessage);
+  });
+
+  it("returns a stable ACP timeout failure and completes bounded cleanup", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const transport = fakeTransport();
+    let initializeStarted!: () => void;
+    const initializeReady = new Promise<void>((resolve) => {
+      initializeStarted = resolve;
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") {
+        initializeStarted();
+        return await new Promise(() => undefined);
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcp({
+      prompt: "must time out",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      idleTimeoutMs: 100,
+      runtimeHomePaths,
+      transportFactory: vi.fn().mockResolvedValue(transport),
+    });
+
+    await initializeReady;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(transport.interrupt).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(run).resolves.toMatchObject({
+      ok: false,
+      reason: "kimi-acp-timeout",
+      failure: {
+        code: "kimi-acp-timeout",
+        message: expect.stringContaining("没有及时响应"),
+      },
+    });
+    expect(transport.terminate).toHaveBeenCalledTimes(1);
+    expect(transport.kill).toHaveBeenCalledTimes(1);
+    expect(transport.close).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the requested canonical id when resume does not echo a session id", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport();
@@ -566,12 +917,19 @@ describe("Kimi ACP driver", () => {
     expect(transport.requests.some((request) => request.method === "session/prompt")).toBe(false);
   });
 
-  it("does not invoke Codex when Kimi fails", async () => {
+  it.each([
+    "kimi-cli-not-found",
+    "kimi-cli-not-executable",
+    "kimi-cli-spawn-failed",
+    "kimi-cli-exited",
+    "kimi-acp-timeout",
+  ] as const)("does not invoke Codex when Kimi fails with %s", async (reason) => {
     const root = await makeRunRoot();
     const codex = vi.fn();
     const kimi = vi.fn().mockResolvedValue({
       ok: false,
-      reason: "Kimi unavailable",
+      reason,
+      failure: { code: reason, message: "safe Kimi failure" },
       runDir: root,
       stdoutPath: path.join(root, "out"),
       stderrPath: path.join(root, "err"),
@@ -906,7 +1264,9 @@ describe("Kimi ACP driver", () => {
     expect(transport.kill).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(await settled).toEqual(expect.objectContaining({
-      message: trigger === "abort" ? "Kimi 执行已中止。" : "Kimi 执行超时。",
+      message: trigger === "abort"
+        ? "Kimi 执行已中止。"
+        : "Kimi CLI 启动后没有及时响应。请检查 Kimi 状态后重试。",
     }));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(transport.interrupt).toHaveBeenCalledTimes(1);

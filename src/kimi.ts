@@ -1,10 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
-import { DATA_ROOT } from "./config.js";
-import type { CodexRunResult } from "./codex.js";
+import { DATA_ROOT, KIMI_CLI_SPAWN_TIMEOUT_MS } from "./config.js";
+import type { CodexRunFailure, CodexRunResult } from "./codex.js";
+import {
+  KimiExecutableError,
+  resolveKimiExecutable,
+} from "./kimi-executable.js";
 import {
   KimiRuntimeIsolationError,
   prepareKimiRuntimeHome,
@@ -20,6 +25,10 @@ import type { LocalExecutionMode } from "./local-console/execution-driver.js";
 const ACP_PROTOCOL_VERSION = 1;
 const MAX_ACP_LINE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_SIGNAL_GRACE_MS = 1_000;
+const KIMI_SPAWN_FAILED_MESSAGE = "Kimi CLI 启动失败。请确认安装完整后重试。";
+const KIMI_EXITED_MESSAGE =
+  "Kimi CLI 启动后提前退出。请先在终端运行 Kimi 检查登录或配置，然后重试。";
+const KIMI_TIMEOUT_MESSAGE = "Kimi CLI 启动后没有及时响应。请检查 Kimi 状态后重试。";
 
 export interface KimiAcpRunOptions {
   prompt: string;
@@ -96,9 +105,12 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
       stderrPath,
     });
   } catch (error) {
+    await appendKimiFailureDiagnostic(stderrPath, error).catch(() => undefined);
+    const failure = classifyKimiFailure(error);
     return {
       ok: false,
-      reason: safeKimiError(error),
+      reason: failure?.code ?? safeKimiError(error),
+      ...(failure === null ? {} : { failure }),
       runDir,
       stdoutPath,
       stderrPath,
@@ -163,10 +175,12 @@ export async function runKimiAcpWithTransport(
         }, DEFAULT_SIGNAL_GRACE_MS);
       }, DEFAULT_SIGNAL_GRACE_MS);
     });
-    stopLifecycle(new KimiAcpError(
-      "KIMI_ACP_INTERRUPTED",
-      reason === "abort" ? "Kimi 执行已中止。" : "Kimi 执行超时。",
-    ));
+    stopLifecycle(reason === "abort"
+      ? new KimiAcpError("KIMI_ACP_INTERRUPTED", "Kimi 执行已中止。")
+      : new KimiAcpError(
+        "KIMI_ACP_TIMEOUT",
+        KIMI_TIMEOUT_MESSAGE,
+      ));
   };
   let idleTimer: NodeJS.Timeout | null = null;
   let maxTimer: NodeJS.Timeout | null = null;
@@ -436,15 +450,24 @@ async function buildPromptContent(prompt: string, imagePaths: readonly string[])
   return content;
 }
 
-async function createKimiProcessTransport(input: {
+export async function createKimiProcessTransport(input: {
   cwd: string;
   readRoots: string[];
   stdoutPath: string;
   stderrPath: string;
   env: NodeJS.ProcessEnv;
   allowWrites: boolean;
+  homeDir?: string;
+  spawnTimeoutMs?: number;
+  spawnProcess?: typeof spawn;
 }): Promise<KimiAcpTransport> {
-  const child = spawn("kimi", ["acp"], {
+  const executable = await resolveKimiExecutable({
+    pathValue: input.env.PATH,
+    cwd: input.cwd,
+    homeDir: input.homeDir ?? os.homedir(),
+  });
+  const spawnProcess = input.spawnProcess ?? spawn;
+  const child = spawnProcess(executable, ["acp"], {
     cwd: input.cwd,
     env: input.env,
     shell: false,
@@ -453,7 +476,7 @@ async function createKimiProcessTransport(input: {
   const stdoutLog = createWriteStream(input.stdoutPath, { flags: "a" });
   const stderrLog = createWriteStream(input.stderrPath, { flags: "a" });
   child.stderr.pipe(stderrLog);
-  return new ProcessKimiAcpTransport(
+  const transport = new ProcessKimiAcpTransport(
     child,
     input.cwd,
     input.readRoots,
@@ -461,6 +484,16 @@ async function createKimiProcessTransport(input: {
     stdoutLog,
     stderrLog,
   );
+  try {
+    await waitForKimiSpawn(
+      child,
+      input.spawnTimeoutMs ?? KIMI_CLI_SPAWN_TIMEOUT_MS,
+    );
+    return transport;
+  } catch (error) {
+    await transport.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 class ProcessKimiAcpTransport implements KimiAcpTransport {
@@ -479,6 +512,7 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
   private nextId = 1;
   private buffer = "";
   private closed = false;
+  private terminalError: Error | null = null;
   private shutdownStage: "none" | "interrupt" | "terminate" | "kill" = "none";
 
   constructor(
@@ -498,10 +532,17 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
       }
       this.drainLines();
     });
-    child.on("error", (error) => this.failAll(error));
+    child.on("error", () => this.failAll(new KimiAcpError(
+      "KIMI_CLI_SPAWN_FAILED",
+      KIMI_SPAWN_FAILED_MESSAGE,
+    )));
     child.on("exit", (code, signal) => {
       if (!this.closed) {
-        this.failAll(new Error(`kimi acp exited (${String(code ?? signal ?? "unknown")})`));
+        this.failAll(new KimiAcpError(
+          "KIMI_CLI_EXITED",
+          KIMI_EXITED_MESSAGE,
+          { exitCode: code, signal },
+        ));
       }
     });
   }
@@ -693,12 +734,14 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
 
   private write(message: unknown): void {
     if (this.closed || !this.child.stdin.writable) {
-      throw new KimiAcpError("KIMI_ACP_CLOSED", "Kimi ACP 已关闭。");
+      throw this.terminalError
+        ?? new KimiAcpError("KIMI_ACP_CLOSED", "Kimi ACP 已关闭。");
     }
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private failAll(error: Error): void {
+    this.terminalError ??= error;
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
     for (const waiter of this.configWaiters) waiter.resolve(null);
@@ -861,6 +904,57 @@ function safeKimiError(error: unknown): string {
     : "Kimi 执行失败；未改用其他执行引擎。";
 }
 
+function classifyKimiFailure(error: unknown): CodexRunFailure | null {
+  if (error instanceof KimiExecutableError) {
+    return {
+      code: error.code,
+      message: error.safeMessage,
+    };
+  }
+  if (!(error instanceof KimiAcpError)) {
+    return null;
+  }
+  switch (error.code) {
+    case "KIMI_CLI_SPAWN_FAILED":
+      return {
+        code: "kimi-cli-spawn-failed",
+        message: error.safeMessage,
+      };
+    case "KIMI_CLI_EXITED":
+      return {
+        code: "kimi-cli-exited",
+        message: error.safeMessage,
+      };
+    case "KIMI_ACP_TIMEOUT":
+      return {
+        code: "kimi-acp-timeout",
+        message: error.safeMessage,
+      };
+    default:
+      return null;
+  }
+}
+
+async function appendKimiFailureDiagnostic(
+  stderrPath: string,
+  error: unknown,
+): Promise<void> {
+  const diagnostic = error instanceof Error
+    ? {
+        name: error.name,
+        message: error.message,
+        ...("code" in error && typeof error.code === "string" ? { code: error.code } : {}),
+        ...(error instanceof KimiAcpError && error.diagnostics !== undefined
+          ? { diagnostics: error.diagnostics }
+          : {}),
+      }
+    : { value: String(error) };
+  await fs.appendFile(stderrPath, `${JSON.stringify({
+    event: "kimi-run-failed",
+    error: diagnostic,
+  })}\n`, "utf8");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -876,12 +970,71 @@ export class KimiAcpError extends Error {
       | "KIMI_ACP_CLOSED"
       | "KIMI_ACP_PROTOCOL_FAILED"
       | "KIMI_ACP_INTERRUPTED"
+      | "KIMI_ACP_TIMEOUT"
+      | "KIMI_CLI_SPAWN_FAILED"
+      | "KIMI_CLI_EXITED"
       | "KIMI_IMAGE_UNSUPPORTED",
     readonly safeMessage: string,
+    readonly diagnostics?: Readonly<Record<string, unknown>>,
   ) {
     super(safeMessage);
     this.name = "KimiAcpError";
   }
+}
+
+export function waitForKimiSpawn(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.removeListener("spawn", onSpawn);
+      child.removeListener("error", onError);
+      child.removeListener("exit", onExit);
+      if (error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    };
+    const onSpawn = (): void => finish();
+    const onError = (error: Error): void => finish(new KimiAcpError(
+      "KIMI_CLI_SPAWN_FAILED",
+      KIMI_SPAWN_FAILED_MESSAGE,
+      {
+        errorName: error.name,
+        errorMessage: error.message,
+        ...("code" in error && typeof error.code === "string" ? { errorCode: error.code } : {}),
+      },
+    ));
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => finish(
+      new KimiAcpError(
+        "KIMI_CLI_EXITED",
+        KIMI_EXITED_MESSAGE,
+        { exitCode: code, signal },
+      ),
+    );
+    const timeout = setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // The bounded failure remains authoritative when the process cannot be signalled.
+      }
+      finish(new KimiAcpError(
+        "KIMI_CLI_SPAWN_FAILED",
+        KIMI_SPAWN_FAILED_MESSAGE,
+        { timeoutMs },
+      ));
+    }, timeoutMs);
+    timeout.unref();
+    child.once("spawn", onSpawn);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
 }
 
 function pathWithin(root: string, candidate: string): boolean {

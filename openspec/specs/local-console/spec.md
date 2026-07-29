@@ -1947,12 +1947,49 @@ MUST pass that snapshot's model and effort to full and resume attempts. Missing 
 configuration or driver failure MUST become an explicit failed attempt. The system MUST NOT invoke
 another CLI as fallback.
 
+For a Kimi-bound run, executable discovery MUST preserve the current process `PATH` order and use
+the first existing `kimi` candidate as authoritative. Only when `PATH` contains no candidate MAY it
+inspect the host user's `~/.kimi-code/bin/kimi`; the managed Kimi runtime `HOME` MUST NOT replace
+that host location. The selected candidate MUST resolve to an executable regular file and MUST be
+spawned by absolute path with `shell: false`. An existing but invalid authoritative candidate MUST
+fail explicitly rather than silently selecting another Kimi version.
+
+The Kimi driver MUST wait for the child process `spawn` success event within a bounded interval
+before writing ACP `initialize`. Missing, non-executable, spawn-rejected, exited-after-spawn and
+ACP-timeout failures MUST retain distinct stable safe reasons. Raw paths, OS errors, stderr and
+provider payloads MUST remain outside the normal timeline. Every such failure MUST terminate the
+Kimi attempt and MUST NOT invoke Codex.
+
 #### Scenario: Bound Kimi is missing
 
 - **GIVEN** the selected member snapshot is bound to Kimi
 - **AND** the Kimi executable cannot be started
 - **WHEN** the member run begins
 - **THEN** the run fails with a safe Kimi-specific reason
+- **AND** the Codex driver is never called.
+
+#### Scenario: Kimi is installed only at its default location
+
+- **GIVEN** `PATH` contains no `kimi`
+- **AND** the host user's `~/.kimi-code/bin/kimi` is an executable regular file
+- **WHEN** a Kimi-bound run begins
+- **THEN** the runtime spawns that absolute path without a shell
+- **AND** it writes ACP `initialize` only after spawn succeeds.
+
+#### Scenario: PATH candidate takes precedence
+
+- **GIVEN** `PATH` contains a Kimi candidate
+- **AND** the default Kimi location also exists
+- **WHEN** a Kimi-bound run begins
+- **THEN** the first existing `PATH` candidate is authoritative
+- **AND** the default location is not started.
+
+#### Scenario: Kimi startup failure remains actionable
+
+- **GIVEN** a run is bound to Kimi
+- **WHEN** Kimi is invalid, rejected by spawn, exits after spawn or times out in ACP
+- **THEN** the run records the matching stable safe reason
+- **AND** raw machine details do not appear in the normal timeline
 - **AND** the Codex driver is never called.
 
 ### Requirement: Moebius 角色运行禁用 Codex 内部 Agent 工具

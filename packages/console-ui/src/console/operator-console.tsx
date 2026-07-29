@@ -2743,13 +2743,22 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
 }
 
 function terminalOutcomeDescription(message: OperatorMessage, t: Translate): string | null {
-  return message.error === "codex-cli-upgrade-required"
+  return isSafeTerminalFailureCode(message.error)
     ? sanitizeMachineText(
         message.body,
         machineTextPlaceholders(t).machine,
         machineTextPlaceholders(t),
       )
     : null;
+}
+
+function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
+  return error === "codex-cli-upgrade-required"
+    || error === "kimi-cli-not-found"
+    || error === "kimi-cli-not-executable"
+    || error === "kimi-cli-spawn-failed"
+    || error === "kimi-cli-exited"
+    || error === "kimi-acp-timeout";
 }
 
 function systemSummary(message: OperatorMessage, t: Translate): string {

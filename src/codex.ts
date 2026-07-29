@@ -33,7 +33,13 @@ export interface CodexRunWatchdogs {
 }
 
 export interface CodexRunFailure {
-  code: "codex-cli-upgrade-required";
+  code:
+    | "codex-cli-upgrade-required"
+    | "kimi-cli-not-found"
+    | "kimi-cli-not-executable"
+    | "kimi-cli-spawn-failed"
+    | "kimi-cli-exited"
+    | "kimi-acp-timeout";
   message: string;
 }
 
