@@ -24,9 +24,20 @@ describe("marketing site brand", () => {
   it("states the Apple Silicon-only platform scope at each purchase-facing entry", async () => {
     const html = await readFile(path.join(siteRoot, "index.html"), "utf8");
 
-    expect(html).toContain("开源 · macOS · Apple Silicon");
-    expect(html).toContain("免费开源的 macOS · Apple Silicon 应用");
-    expect(html).toContain("macOS Apple Silicon 版即将开放");
-    expect(html).toContain("正式版本仅面向 Apple Silicon Mac");
+    expect(html).toContain("macOS · Apple Silicon 公测中");
+    expect(html).toContain("macOS Apple Silicon 桌面端");
+    expect(html).toContain("macOS 14+ · Apple Silicon");
+  });
+
+  it("links source, releases, and every download entry to the public GitHub repository", async () => {
+    const html = await readFile(path.join(siteRoot, "index.html"), "utf8");
+
+    expect(html).toContain('href="https://github.com/tranfu-labs/moebius"');
+    expect(html).toContain('href="https://github.com/tranfu-labs/moebius/releases"');
+    expect(html.match(/href="https:\/\/github\.com\/tranfu-labs\/moebius\/releases\/latest"[^>]*data-download/g)).toHaveLength(
+      3,
+    );
+    expect(html).toContain("https://api.github.com/repos/tranfu-labs/moebius/releases/latest");
+    expect(html).toContain("/-mac-arm64\\.dmg$/i");
   });
 });

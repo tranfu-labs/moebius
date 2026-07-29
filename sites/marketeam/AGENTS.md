@@ -4,13 +4,13 @@
 
 ## 正式文件
 
-- `index.html`：当前正式营销页；2026-07-18 经用户明确确认，由 `index-field-atlas-a31f.html` 提升为 Relay Atlas 正式入口。后续实验仍不得在未明确收敛时直接覆盖它。
+- `index.html`：当前正式营销页；2026-07-29 经用户明确确认，由 `packages/console-ui/design-refs/home-page.html` 提升为深色工作台首页，并接入公开 GitHub 仓库与 Releases 下载。
 - `index-pre-atlas.html`：Atlas 提升前的正式营销页归档，只用于回看和差异比较，不作为部署入口。
 - `DEPLOY.md`：静态站点部署说明。
 
-### Relay Atlas 正式收敛（2026-07-18）
+### 深色工作台首页正式收敛（2026-07-29）
 
-`index-field-atlas-a31f.html` 继续保留为已采用候选和 `style-atlas-a31f.html` 的来源锚点；正式 `index.html` 与它保持内容一致。下方各实验章节中的“收敛前不得覆盖 `index.html`”是实验期间的保护规则，本次提升由用户明确授权，不代表其他候选可自动进入正式入口。
+设计参考 HTML 继续留在 `packages/console-ui/design-refs/` 作为来源锚点；正式 `index.html` 在其基础上接入生产品牌资产、GitHub 仓库、Releases 与可降级的最新 Apple Silicon DMG 解析。`index-field-atlas-a31f.html` 和 `style-atlas-a31f.html` 只保留为历史设计参考，不再代表正式入口。
 
 ## 去框实验（2026-07-18）
 
