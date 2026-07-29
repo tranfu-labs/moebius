@@ -4,6 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Moebius — 把整个开发团队,装进一次对话</title>
+<meta name="description" content="Moebius 是桌面上的智能体指挥中心:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程可见、可回退。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Moebius — 把整个开发团队,装进一次对话">
+<meta property="og:description" content="桌面上的智能体指挥中心:一支智能体团队在同一条会话里并行推进你的目标,全程可见、可回退。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -101,6 +105,10 @@
     padding:7px 12px; border-radius:8px; transition:color .15s, background .15s;
   }
   .nav-links a:hover{ color:var(--fg); background:var(--hover); }
+  .nav-links a.active{ color:var(--fg); background:var(--hover); }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--accent); outline-offset:3px;
+  }
   .nav-cta{ margin-left:auto; display:flex; align-items:center; gap:12px; }
   .nav-cta .ghost{ font-size:13.5px; font-weight:500; color:var(--muted); padding:7px 12px; border-radius:8px; }
   .nav-cta .ghost:hover{ color:var(--fg); background:var(--hover); }
@@ -137,7 +145,6 @@
       linear-gradient(180deg, rgba(16,16,16,0.68) 0%, rgba(16,16,16,0.52) 26%, rgba(16,16,16,0.88) 58%, var(--bg) 84%),
       url("assets/manifesto-ribbon.jpg") center 32%/cover no-repeat;
   }
-  .hero > *{ position:relative; }
   .hero-eyebrow{
     display:inline-flex; align-items:center; gap:8px;
     height:30px; padding:0 14px; border-radius:999px;
@@ -243,6 +250,13 @@
   .f-visual{
     border-radius:16px;
     background:var(--surface); overflow:hidden;
+  }
+  /* shader border: animated mesh peeks out ~2px around the solid inner panel */
+  .f-shader{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .f-inner{
+    position:relative; z-index:1; flex:1; min-height:0; margin:2px;
+    display:flex; flex-direction:column; overflow:hidden;
+    border-radius:14px; background:var(--surface);
   }
   .f-visual-head{
     flex:none;
@@ -447,11 +461,65 @@
     font-size:12.5px; color:var(--faint);
   }
 
+  /* ============ Text reveal (word stagger, blur + rise) ============ */
+  .js .tr-w{
+    display:inline-block; opacity:0;
+    transform:translateY(45%); filter:blur(10px);
+    transition:opacity .7s cubic-bezier(.2,.6,.2,1),
+               transform .7s cubic-bezier(.2,.6,.2,1),
+               filter .7s ease;
+  }
+  .js .tr-in .tr-w{ opacity:1; transform:none; filter:blur(0); }
+
+  /* ============ Expanding arrow button (beui) ============
+     accent tile expands to cover the whole button on hover/focus;
+     label fades out, a trail of fading dotted chevrons staggers in */
+  .btn-exp{ position:relative; overflow:hidden; padding:0 20px 0 0; }
+  .exp-tile{
+    position:absolute; top:5px; bottom:5px; left:5px; z-index:1;
+    width:36px; border-radius:9px; overflow:hidden;
+    background:var(--bg); color:var(--fg);
+    transition:width .5s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-tile{ width:calc(100% - 10px); }
+  .exp-chev{ display:block; height:16px; width:auto; }
+  .exp-idle{
+    position:absolute; inset:0; display:grid; place-items:center;
+    transition:opacity .1s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-idle{ opacity:0; }
+  .exp-trail{
+    position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:space-around; padding:0 14px;
+  }
+  .exp-trail .exp-chev{
+    opacity:0; transform:translateX(-6px);
+    transition:opacity .18s cubic-bezier(.16,1,.3,1), transform .18s cubic-bezier(.16,1,.3,1);
+  }
+  .exp-trail .exp-chev:nth-child(1){ color:rgba(244,244,244,1); }
+  .exp-trail .exp-chev:nth-child(2){ color:rgba(244,244,244,.78); }
+  .exp-trail .exp-chev:nth-child(3){ color:rgba(244,244,244,.54); }
+  .exp-trail .exp-chev:nth-child(4){ color:rgba(244,244,244,.32); }
+  .exp-trail .exp-chev:nth-child(5){ color:rgba(244,244,244,.16); }
+  .btn-exp:hover .exp-trail .exp-chev{
+    opacity:1; transform:none;
+  }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(1){ transition-delay:.04s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(2){ transition-delay:.065s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(3){ transition-delay:.09s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(4){ transition-delay:.115s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(5){ transition-delay:.14s; }
+  .exp-label{
+    position:relative; z-index:0; margin-left:55px; white-space:nowrap;
+    transition:opacity .12s cubic-bezier(.16,1,.3,1), transform .12s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-label{ opacity:0; transform:translateX(6px); }
+
   @media (max-width: 900px){
     .fs-grid{ grid-template-columns:1fr; row-gap:28px; }
     .fs-grid > .f-visual{
       grid-column:auto; grid-row:auto;
-      position:static; height:auto; align-self:auto;
+      position:relative; height:auto; align-self:auto;
       opacity:1; transform:none; pointer-events:auto;
       margin-top:64px;
     }
@@ -511,9 +579,9 @@
       Moebius
     </a>
     <div class="nav-links" data-od-id="nav-links">
-      <a href="#f-conversation">产品</a>
       <a href="#f-agents">团队</a>
-      <a href="#f-diff">改动</a>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-diff">分析</a>
       <a href="#">更新日志</a>
     </div>
     <div class="nav-cta">
@@ -527,10 +595,16 @@
 <header class="hero" data-od-id="hero">
   <div class="wrap">
     <span class="hero-eyebrow"><i class="dot"></i>桌面端公测中</span>
-    <h1>把整个开发团队,<br><span class="shimmer">装进一次对话。</span></h1>
+    <h1 data-text-reveal>把整个开发团队,<br><span class="shimmer">装进一次对话。</span></h1>
     <p class="sub">Moebius 是桌面上的智能体指挥中心:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程可见、可回退。</p>
     <div class="hero-ctas" data-od-id="hero-ctas">
-      <a class="btn btn-primary" href="#">下载 macOS 版</a>
+      <a class="btn btn-primary btn-exp" href="#" data-od-id="hero-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
       <a class="btn btn-secondary" href="#">查看产品文档</a>
     </div>
   </div>
@@ -539,7 +613,7 @@
       <div class="hero-shot-bar">
         <span class="tl"></span><span class="tl"></span><span class="tl"></span>
       </div>
-      <img src="preview-center.png" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
+      <img src="preview-center.png" width="2880" height="2000" fetchpriority="high" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
     </div>
   </div>
 </header>
@@ -548,7 +622,7 @@
 <section class="manifesto" id="manifesto" data-od-id="manifesto">
   <div class="wrap manifesto-in reveal">
     <p class="eyebrow">Moebius 的方式</p>
-    <h2>不要一个个<br>管理 Agent。</h2>
+    <h2 data-text-reveal="view">不要一个个<br>管理 Agent。</h2>
     <p class="m-sub">只需要和 <em class="m-hl">Leader Agent</em> 聊清楚就可以了。</p>
   </div>
 </section>
@@ -560,6 +634,8 @@
   <div class="fs-grid">
 
     <div class="f-visual liquid-glass active" data-od-id="mock-team">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
       <div class="f-visual-head"><i></i><i></i><i></i><span>新对话 · 选择团队</span></div>
       <div class="f-visual-body">
         <div class="mk-req"><span class="mk-req-label">需求</span>帮我把落地页的空状态补上验收语句</div>
@@ -586,6 +662,7 @@
           <div class="mk-task">擅长:活动页、A/B 实验</div>
         </div>
       </div>
+      </div>
     </div>
     <div class="f-text fs-block active" id="f-agents" data-od-id="feature-team">
       <span class="f-index">01</span>
@@ -599,6 +676,8 @@
     </div>
 
     <div class="f-visual liquid-glass" data-od-id="mock-conversation">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
       <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化</span></div>
       <div class="f-visual-body">
         <div class="mk-msg user">
@@ -627,6 +706,7 @@
           </div>
         </div>
       </div>
+      </div>
     </div>
     <div class="f-text fs-block" id="f-conversation" data-od-id="feature-conversation">
       <span class="f-index">02</span>
@@ -640,6 +720,8 @@
     </div>
 
     <div class="f-visual liquid-glass" data-od-id="mock-analysis">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
       <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化 · 分析</span></div>
       <div class="f-visual-body">
         <div class="mk-split">
@@ -674,6 +756,7 @@
           </aside>
         </div>
       </div>
+      </div>
     </div>
     <div class="f-text fs-block" id="f-diff" data-od-id="feature-analysis">
       <span class="f-index">03</span>
@@ -692,10 +775,16 @@
 <!-- ================= CTA ================= -->
 <section class="cta" data-od-id="cta">
   <div class="wrap cta-in reveal">
-    <h2>让团队自己推进。</h2>
+    <h2 data-text-reveal="view">让团队自己推进。</h2>
     <p>下载 Moebius 桌面端,把你的第一个目标交给一支智能体团队。</p>
     <div class="hero-ctas">
-      <a class="btn btn-primary" href="#">下载 macOS 版</a>
+      <a class="btn btn-primary btn-exp" href="#" data-od-id="cta-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
       <a class="btn btn-secondary" href="#">预约团队演示</a>
     </div>
   </div>
@@ -760,7 +849,10 @@
       else ro.observe(el);
     });
     /* safety net: never leave content hidden (e.g. full-page exports) */
-    setTimeout(function(){ reveals.forEach(function(el){ el.classList.add('in'); }); }, 1600);
+    setTimeout(function(){
+      reveals.forEach(function(el){ el.classList.add('in'); });
+      [].slice.call(document.querySelectorAll('[data-text-reveal]')).forEach(function(el){ el.classList.add('tr-in'); });
+    }, 1600);
   } else {
     reveals.forEach(function(el){ el.classList.add('in'); });
   }
@@ -768,9 +860,19 @@
   /* ---- sticky narrative features ---- */
   var blocks  = [].slice.call(document.querySelectorAll('.fs-block'));
   var visuals = [].slice.call(document.querySelectorAll('.fs-grid > .f-visual'));
+  var navMap = {};
+  [].slice.call(document.querySelectorAll('.nav-links a[href^="#f-"]')).forEach(function(a){
+    navMap[a.getAttribute('href').slice(1)] = a;
+  });
   function setActive(i){
     blocks.forEach(function(b,j){ b.classList.toggle('active', j === i); });
     visuals.forEach(function(v,j){ v.classList.toggle('active', j === i); });
+    Object.keys(navMap).forEach(function(id){
+      var on = id === blocks[i].id;
+      navMap[id].classList.toggle('active', on);
+      if (on) navMap[id].setAttribute('aria-current', 'true');
+      else navMap[id].removeAttribute('aria-current');
+    });
   }
   var ticking = false;
   function update(){
@@ -783,10 +885,18 @@
       if (d < bd) { bd = d; best = i; }
     });
     setActive(best);
+    /* outside the features narrative (hero / manifesto / cta) no nav item stays lit */
+    var inRange = blocks[0].getBoundingClientRect().top <= mid &&
+                  blocks[blocks.length - 1].getBoundingClientRect().bottom >= mid;
+    if (!inRange) Object.keys(navMap).forEach(function(id){
+      navMap[id].classList.remove('active');
+      navMap[id].removeAttribute('aria-current');
+    });
   }
   function onScroll(){ if (!ticking) { ticking = true; requestAnimationFrame(update); } }
   addEventListener('scroll', onScroll, { passive:true });
   addEventListener('resize', onScroll);
+  update();
 
   /* ---- pointer-follow highlight on glass cards ---- */
   if (matchMedia('(pointer: fine)').matches) {
@@ -798,6 +908,126 @@
       });
     });
   }
+
+  /* ---- text reveal: word/segment split with blur + rise ---- */
+  var revealEls = [].slice.call(document.querySelectorAll('[data-text-reveal]'));
+  if (!reduced && revealEls.length) {
+    var segmenter = ('Segmenter' in Intl) ? new Intl.Segmenter('zh', { granularity:'word' }) : null;
+    revealEls.forEach(function(el){
+      var nodes = [].slice.call(el.childNodes), idx = 0;
+      el.textContent = '';
+      nodes.forEach(function(node){
+        if (node.nodeType === 3) {
+          var parts = segmenter
+            ? Array.from(segmenter.segment(node.textContent)).map(function(s){ return s.segment; }).filter(function(s){ return s.trim(); })
+            : node.textContent.replace(/\s+/g,'').split('');
+          parts.forEach(function(p){
+            var s = document.createElement('span');
+            s.className = 'tr-w'; s.textContent = p;
+            s.style.transitionDelay = (idx++ * 55) + 'ms';
+            el.appendChild(s);
+          });
+        } else if (node.nodeName === 'BR') {
+          el.appendChild(node);
+        } else {
+          /* wrap (not re-class) so inner effects like .shimmer's grain filter survive */
+          var wrap = document.createElement('span');
+          wrap.className = 'tr-w';
+          wrap.style.transitionDelay = (idx++ * 55) + 'ms';
+          wrap.appendChild(node);
+          el.appendChild(wrap);
+        }
+      });
+      if (el.getAttribute('data-text-reveal') === 'view') {
+        if ('IntersectionObserver' in window) {
+          var to = new IntersectionObserver(function(entries){
+            entries.forEach(function(e){
+              if (e.isIntersecting) { el.classList.add('tr-in'); to.unobserve(el); }
+            });
+          }, { threshold:.35 });
+          to.observe(el);
+        } else { el.classList.add('tr-in'); }
+      } else {
+        el.style.animation = 'none'; /* word stagger replaces the block riseIn */
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.classList.add('tr-in'); }); });
+      }
+    });
+  }
+
+  /* ---- WebGL shader border on feature visuals (domain-warped fbm mesh) ---- */
+  (function initShaders(){
+    var canvases = [].slice.call(document.querySelectorAll('.f-shader'));
+    if (!canvases.length) return;
+    var VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+    var FS = [
+      'precision highp float;',
+      'uniform vec2 u_res;uniform float u_time;',
+      'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}',
+      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+      ' return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}',
+      'float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/u_res;',
+      ' vec2 p=uv*vec2(u_res.x/u_res.y,1.)*1.7;',
+      ' float t=u_time*.05;',
+      ' vec2 q=vec2(fbm(p+t),fbm(p+vec2(5.2,1.3)-t*.7));',
+      ' vec2 r=vec2(fbm(p+2.4*q+vec2(1.7,9.2)+t*.4),fbm(p+2.4*q+vec2(8.3,2.8)-t*.3));',
+      ' float f=fbm(p+2.6*r);',
+      ' vec3 base=vec3(.063,.063,.063);',
+      ' vec3 purple=vec3(.753,.565,1.)*.32;',
+      ' vec3 blue=vec3(.373,.702,1.)*.22;',
+      ' vec3 col=base;',
+      ' col=mix(col,purple,smoothstep(.42,.95,f));',
+      ' col=mix(col,blue,smoothstep(.55,1.15,length(q)));',
+      ' col+=(hash(gl_FragCoord.xy)-.5)/255.;',        /* dither against banding */
+      ' gl_FragColor=vec4(col,1.);',
+      '}'
+    ].join('\n');
+    canvases.forEach(function(canvas, seed){
+      var gl = canvas.getContext('webgl', { antialias:false, alpha:false, powerPreference:'low-power' });
+      if (!gl) { canvas.remove(); return; } /* solid --surface ring remains as fallback */
+      function compile(type, src){
+        var sh = gl.createShader(type);
+        gl.shaderSource(sh, src); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { return null; }
+        return sh;
+      }
+      var vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, FS);
+      if (!vs || !fs) { canvas.remove(); return; }
+      var prog = gl.createProgram();
+      gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+      gl.useProgram(prog);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      var uRes = gl.getUniformLocation(prog, 'u_res');
+      var uTime = gl.getUniformLocation(prog, 'u_time');
+      var dpr = Math.min(devicePixelRatio || 1, 1.75);
+      function resize(){
+        var w = canvas.clientWidth, h = canvas.clientHeight;
+        if (!w || !h) return;
+        canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+      }
+      resize();
+      addEventListener('resize', resize);
+      function draw(t){ gl.uniform1f(uTime, t); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+      if (reduced) { draw(14.0 + seed * 40); return; } /* single frozen frame */
+      var visible = true, start = performance.now() - seed * 4000; /* desync the three meshes */
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function(entries){ visible = entries[0].isIntersecting; }).observe(canvas);
+      }
+      (function loop(now){
+        requestAnimationFrame(loop);
+        if (visible) draw((now - start) / 1000);
+      })(start);
+    });
+  })();
 })();
 </script>
 
