@@ -1,4 +1,4 @@
-export type OnboardingCli = "codex" | "kimi";
+export type OnboardingCli = "codex" | "claude" | "kimi";
 
 export type OnboardingCliReadinessStatus =
   | "checking"
@@ -27,16 +27,18 @@ export interface OnboardingCliReadinessSnapshot {
 
 export interface OnboardingCliReadinessState {
   codex: OnboardingCliReadinessSnapshot;
+  claude: OnboardingCliReadinessSnapshot;
   kimi: OnboardingCliReadinessSnapshot;
 }
 
 export function isOnboardingCli(value: unknown): value is OnboardingCli {
-  return value === "codex" || value === "kimi";
+  return value === "codex" || value === "claude" || value === "kimi";
 }
 
 export function createInitialOnboardingCliReadinessState(): OnboardingCliReadinessState {
   return {
     codex: initialSnapshot("codex"),
+    claude: initialSnapshot("claude"),
     kimi: initialSnapshot("kimi"),
   };
 }

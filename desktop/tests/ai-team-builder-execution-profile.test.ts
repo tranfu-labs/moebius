@@ -13,18 +13,25 @@ describe("AI team builder execution profile selection", () => {
 
     expect(selectAiTeamBuilderProfileFromSnapshots({
       codex,
+      claude: unavailable("claude"),
       kimi,
       preferredCodexModel: "gpt-preferred",
     })).toEqual({ cli: "codex", model: "gpt-preferred", effort: "medium" });
     expect(selectAiTeamBuilderProfileFromSnapshots({
       codex: unavailable("codex"),
+      claude: unavailable("claude"),
       kimi,
     })).toEqual({ cli: "kimi", model: "kimi-for-coding", effort: "high" });
+    expect(selectAiTeamBuilderProfileFromSnapshots({
+      codex: unavailable("codex"),
+      kimi: unavailable("kimi"),
+      claude: available("claude", "sonnet", ["low", "high"], "high"),
+    })).toEqual({ cli: "claude", model: "sonnet", effort: "high" });
   });
 });
 
 function available(
-  cli: "codex" | "kimi",
+  cli: "codex" | "claude" | "kimi",
   model: string,
   efforts: string[],
   defaultEffort: string,
@@ -42,7 +49,7 @@ function available(
   };
 }
 
-function unavailable(cli: "codex" | "kimi"): ExecutionCapabilitySnapshot {
+function unavailable(cli: "codex" | "claude" | "kimi"): ExecutionCapabilitySnapshot {
   const input = {
     cli,
     cliVersion: null,

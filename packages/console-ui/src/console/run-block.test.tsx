@@ -138,7 +138,7 @@ describe("RunBlock", () => {
         elapsedMs={84_000}
         activity={{ action: "正在运行命令", object: "pnpm test" }}
         processOutputAvailable={false}
-        outputUnavailableMessage="完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录"
+        outputUnavailableMessage="完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录"
         onOpenOutput={onOpenOutput}
         onInterrupt={vi.fn()}
       />,
@@ -146,7 +146,7 @@ describe("RunBlock", () => {
 
     expect(screen.getByText("已进行 01:24")).toBeVisible();
     expect(screen.getByTestId("run-activity")).toHaveTextContent("正在运行命令·pnpm test");
-    expect(screen.getByText(/当前 Kimi 执行不提供可恢复/u)).toBeVisible();
+    expect(screen.getByText(/当前执行引擎不提供可恢复/u)).toBeVisible();
     expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停下开发" })).toBeVisible();
   });

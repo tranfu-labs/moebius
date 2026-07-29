@@ -34,11 +34,25 @@ describe("Agent Team execution profile registry", () => {
     ]);
   });
 
+  it("publishes Claude aliases with their exact effort matrices", () => {
+    expect(EXECUTION_MODEL_REGISTRY.claude.map((model) => [
+      model.value,
+      model.efforts,
+      model.defaultEffort,
+    ])).toEqual([
+      ["fable", ["low", "medium", "high", "xhigh", "max"], "high"],
+      ["sonnet", ["low", "medium", "high", "max"], "high"],
+      ["opus", ["low", "medium", "high", "max"], "high"],
+    ]);
+  });
+
   it("uses compatibility defaults and keeps a supported effort across model changes", () => {
     expect(DEFAULT_EXECUTION_PROFILES).toEqual({
       codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      claude: { cli: "claude", model: "sonnet", effort: "high" },
       kimi: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
     });
+    expect(resolveProfileForCli("claude")).toEqual(DEFAULT_EXECUTION_PROFILES.claude);
     expect(resolveProfileForCli("kimi")).toEqual(DEFAULT_EXECUTION_PROFILES.kimi);
     expect(resolveProfileForModel(
       { cli: "codex", model: "gpt-5.6-sol", effort: "xhigh" },

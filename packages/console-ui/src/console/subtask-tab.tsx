@@ -139,7 +139,7 @@ export function SubtaskTab({
                   elapsedMs={activeRun.elapsedMs}
                   activity={activeRun.activity}
                   processOutputAvailable={activeRun.processOutputAvailable}
-                  outputUnavailableMessage={t("console.common.kimiOutputUnavailable")}
+                  outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
@@ -348,7 +348,7 @@ function SubtaskTimelineEntry({
           ) : null}
           {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
             <p className="mt-2 text-xs text-hint">
-              {t("console.common.kimiOutputUnavailable")}
+              {t("console.common.providerOutputUnavailable")}
             </p>
           ) : null}
         </>

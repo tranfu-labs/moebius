@@ -332,7 +332,7 @@ function normalizeManifestProfile(value: unknown): ExecutionProfile {
   const model = value.model;
   const effort = value.effort;
   if (
-    (cli !== "codex" && cli !== "kimi")
+    (cli !== "codex" && cli !== "claude" && cli !== "kimi")
     || typeof model !== "string"
     || model.trim().length === 0
     || typeof effort !== "string"

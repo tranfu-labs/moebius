@@ -754,7 +754,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "kimi";
+    engine: "codex" | "claude" | "kimi";
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;
@@ -1233,7 +1233,13 @@ function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types
     const runId = typeof payload.runId === "string" ? payload.runId : null;
     const stepId = typeof payload.stepId === "string" ? payload.stepId : null;
     const attempt = typeof payload.attempt === "number" ? payload.attempt : null;
-    const engine = payload.engine === "kimi" ? "kimi" : payload.engine === "codex" ? "codex" : null;
+    const engine = payload.engine === "kimi"
+      ? "kimi"
+      : payload.engine === "claude"
+        ? "claude"
+        : payload.engine === "codex"
+          ? "codex"
+          : null;
     if (runId === null || stepId === null || attempt === null || engine === null) continue;
     timings.set(runId, {
       stepId,

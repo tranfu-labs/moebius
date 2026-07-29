@@ -87,7 +87,10 @@ import { registerOnboardingIpc } from "./onboarding/ipc.js";
 import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
-import { installerCleanupBlockedDialogOptions } from "./onboarding/shutdown-coordination.js";
+import {
+  installerCleanupBlockedDialogOptions,
+  installerQuitDialogOptions,
+} from "./onboarding/shutdown-coordination.js";
 import {
   LANGUAGE_PREFERENCE_IPC_CHANNELS,
   type DesktopLocale,
@@ -653,23 +656,7 @@ async function requestShutdown(): Promise<void> {
   quitCoordinationPromise = (async () => {
     const running = onboardingCliInstaller?.getRunningClis() ?? [];
     if (running.length > 0) {
-      const options = {
-        type: "warning" as const,
-        buttons: [
-          translateDesktop(activeLocale, "dialog.quit.stay"),
-          translateDesktop(activeLocale, "dialog.quit.cancelInstall"),
-        ],
-        defaultId: 0,
-        cancelId: 0,
-        title: translateDesktop(activeLocale, "dialog.quit.title"),
-        message: running.length === 1
-          ? translateDesktop(activeLocale, "dialog.quit.oneInstalling", {
-              cli: running[0] === "codex" ? "Codex" : "Kimi",
-            })
-          : translateDesktop(activeLocale, "dialog.quit.bothInstalling"),
-        detail: translateDesktop(activeLocale, "dialog.quit.detail"),
-        noLink: true,
-      };
+      const options = installerQuitDialogOptions(running, activeLocale);
       const result = mainWindow === null
         ? await dialog.showMessageBox(options)
         : await dialog.showMessageBox(mainWindow, options);

@@ -138,7 +138,8 @@ Desktop 当前实际使用的持久 Agent 只有三类：主操作台中的 loca
 role。三类身份分别由 local 的「会话 + 团队快照 + 角色」、AI 建队的 draft、GitHub 的
 「issue + role」隔离。
 
-每个持久 Agent 身份第一次执行时允许创建一个 Codex thread 或 Kimi session；取得
+每个持久 Agent 身份第一次执行时允许创建一个 Codex thread、Claude Code session
+或 Kimi session；取得
 external ID 后，后续消息、接力、重试、修复和恢复都必须 resume 同一个 ID。ID 缺失、
 冲突、上下文不兼容、provider 会话不存在或 resume 失败时必须明确失败，不能静默清空
 ID、切换 provider，或用完整历史 full / `session/new` 重建。

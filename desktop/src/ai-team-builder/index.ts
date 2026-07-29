@@ -9,6 +9,7 @@ import {
   type ExecutionProfile,
 } from "../team-execution-profile.js";
 import { AiTeamBuilderCodexSpawner } from "./codex-spawner.js";
+import { AiTeamBuilderClaudeSpawner } from "./claude-spawner.js";
 import type { AiTeamBuilderDriverPort } from "./driver.js";
 import { toAiTeamBuilderState, type AiTeamBuilderState } from "./dto.js";
 import {
@@ -45,6 +46,7 @@ export interface AiTeamBuilderWriterPort {
 export interface AiTeamBuilderOptions {
   dataRoot: string;
   codex?: AiTeamBuilderDriverPort;
+  claude?: AiTeamBuilderDriverPort;
   kimi?: AiTeamBuilderDriverPort;
   resolveExecutionProfile?: AiTeamBuilderExecutionProfileResolver;
   writer?: AiTeamBuilderWriterPort;
@@ -61,6 +63,7 @@ export class AiTeamBuilder {
     this.dataRoot = path.resolve(options.dataRoot);
     this.drivers = {
       codex: options.codex ?? new AiTeamBuilderCodexSpawner(),
+      claude: options.claude ?? new AiTeamBuilderClaudeSpawner(),
       kimi: options.kimi ?? new AiTeamBuilderKimiSpawner(),
     };
     this.resolveExecutionProfile =

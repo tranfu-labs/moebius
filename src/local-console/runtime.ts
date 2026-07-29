@@ -195,7 +195,7 @@ interface RunLifecycleFactStore extends LocalConsoleStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "kimi";
+    engine: "codex" | "claude" | "kimi";
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;
@@ -290,7 +290,7 @@ interface ActiveLocalRun {
   resuming: boolean;
   stepId: string;
   attempt: number;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   processOutputAvailable: boolean;
   terminalRecorded: boolean;
   controller: AbortController;
@@ -4296,7 +4296,7 @@ export class LocalConsoleRuntime {
     sourceMessage: LocalConsoleMessage;
     intent: LocalCodexResumeIntentFact | null;
     role: string;
-    engine: "codex" | "kimi";
+    engine: "codex" | "claude" | "kimi";
     reason: string;
     runDir: string | null;
   }): Promise<void> {

@@ -39,8 +39,23 @@ export interface CodexRunFailure {
     | "kimi-cli-not-executable"
     | "kimi-cli-spawn-failed"
     | "kimi-cli-exited"
-    | "kimi-acp-timeout";
+    | "kimi-acp-timeout"
+    | "claude-cli-not-found"
+    | "claude-cli-not-executable"
+    | "claude-cli-unsupported-version"
+    | "claude-cli-spawn-failed"
+    | "claude-auth-required"
+    | "claude-profile-invalid"
+    | "claude-permission-denied"
+    | "claude-rate-limited"
+    | "claude-billing-unavailable"
+    | "claude-service-unavailable"
+    | "claude-resume-unavailable"
+    | "claude-protocol-invalid"
+    | "claude-timeout"
+    | "claude-cancelled";
   message: string;
+  action?: "update-claude";
 }
 
 // 单次 codex run 的双看门狗：空闲（stdout 无输出即倒计时，主防线）与总时长硬上限
@@ -664,6 +679,9 @@ function splitResumeParentOptions(execOptions: readonly string[]): {
 }
 
 export function codexTimeoutKind(reason: string): CodexWatchdogKind | null {
+  if (reason === "claude-timeout") {
+    return "idle";
+  }
   if (reason.startsWith("idle-timeout:")) {
     return "idle";
   }
@@ -677,8 +695,11 @@ export function codexTimeoutKind(reason: string): CodexWatchdogKind | null {
 
 export function isInterruptedCodexRunResult(
   result: CodexRunResult,
-): result is Extract<CodexRunResult, { ok: false }> & { reason: `interrupted:${string}` } {
-  return !result.ok && result.reason.startsWith("interrupted:");
+): result is Extract<CodexRunResult, { ok: false }> & {
+  reason: `interrupted:${string}` | "claude-cancelled";
+} {
+  return !result.ok
+    && (result.reason.startsWith("interrupted:") || result.reason === "claude-cancelled");
 }
 
 function parseJsonLine(line: string): unknown | null {

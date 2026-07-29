@@ -66,7 +66,7 @@ export type SqliteStateCommand =
         members: Array<{
           name: string;
           agentMarkdown: string;
-          executionProfile?: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+          executionProfile?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
         }>;
       };
       now: string;
@@ -93,7 +93,7 @@ export type SqliteStateCommand =
         members: Array<{
           name: string;
           agentMarkdown: string;
-          executionProfile?: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+          executionProfile?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
         }>;
       };
       workspaceMode?: "direct" | "worktree";

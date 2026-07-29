@@ -8,7 +8,7 @@ export const zhCN = {
   "dialog.quit.cancelInstall": "取消安装并退出",
   "dialog.quit.title": "CLI 仍在安装",
   "dialog.quit.oneInstalling": "{cli} CLI 仍在安装。",
-  "dialog.quit.bothInstalling": "Codex 与 Kimi CLI 仍在安装。",
+  "dialog.quit.manyInstalling": "{clis} CLI 仍在安装。",
   "dialog.quit.detail": "可以留在 Moebius 等待安装完成，或取消全部安装后退出。",
   "dialog.cleanup.title": "安装进程仍在回收",
   "dialog.cleanup.message": "尚未确认 CLI 安装进程已经安全退出。",

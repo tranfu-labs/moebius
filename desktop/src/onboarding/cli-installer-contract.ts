@@ -26,5 +26,6 @@ export interface OnboardingCliInstallSnapshot {
 
 export interface OnboardingCliInstallState {
   codex: OnboardingCliInstallSnapshot;
+  claude: OnboardingCliInstallSnapshot;
   kimi: OnboardingCliInstallSnapshot;
 }

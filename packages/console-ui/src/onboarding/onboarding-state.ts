@@ -2,7 +2,7 @@ import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import type { Translate } from "@/i18n";
 
 export type OnboardingStep = 1 | 2 | 3 | 4;
-export type OnboardingCli = "codex" | "kimi";
+export type OnboardingCli = "codex" | "claude" | "kimi";
 
 export type OnboardingCliReadinessStatus =
   | "checking"
@@ -75,6 +75,7 @@ export function canContinueOnboardingEnvironment(
   environment: OnboardingEnvironmentState,
 ): boolean {
   return isOnboardingCliReady(environment.codex)
+    || isOnboardingCliReady(environment.claude)
     || isOnboardingCliReady(environment.kimi);
 }
 
@@ -84,7 +85,10 @@ export function chooseOnboardingBuilderCli(
   if (isOnboardingCliReady(environment.codex)) {
     return "codex";
   }
-  return isOnboardingCliReady(environment.kimi) ? "kimi" : null;
+  if (isOnboardingCliReady(environment.kimi)) {
+    return "kimi";
+  }
+  return isOnboardingCliReady(environment.claude) ? "claude" : null;
 }
 
 export interface OnboardingTeamCompatibility {
@@ -103,7 +107,8 @@ export function getOnboardingTeamCompatibility(
   }
   const missing = team.members.flatMap((member): OnboardingCli[] => {
     const cli = member.executionProfile?.effectiveProfile.cli;
-    return (cli === "codex" || cli === "kimi") && !isOnboardingCliReady(environment[cli])
+    return (cli === "codex" || cli === "claude" || cli === "kimi")
+      && !isOnboardingCliReady(environment[cli])
       ? [cli]
       : [];
   });
@@ -116,7 +121,7 @@ export function getOnboardingTeamCompatibility(
       : t("onboarding.teamCompatibility", {
           count: missing.length,
           clis: clis
-            .map((cli) => cli === "codex" ? "Codex" : "Kimi")
+            .map(onboardingCliLabel)
             .join(" / "),
         }),
   };
@@ -125,9 +130,13 @@ export function getOnboardingTeamCompatibility(
 export function runningOnboardingInstallations(
   installations: OnboardingInstallationState,
 ): OnboardingCliInstallation[] {
-  return (["codex", "kimi"] as const)
+  return (["codex", "claude", "kimi"] as const)
     .map((cli) => installations[cli])
     .filter((installation) => installation.status === "running");
+}
+
+export function onboardingCliLabel(cli: OnboardingCli): string {
+  return cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi";
 }
 
 export function reduceOnboardingShell(

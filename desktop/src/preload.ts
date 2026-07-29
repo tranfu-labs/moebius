@@ -154,6 +154,7 @@ export interface MoebiusDesktopApi {
     listener: (snapshot: OnboardingCliInstallSnapshot) => void,
   ): () => void;
   startOnboardingCliInstall(cli: OnboardingCli): Promise<OnboardingCliInstallSnapshot>;
+  startOnboardingClaudeUpdate(): Promise<OnboardingCliInstallSnapshot>;
   cancelOnboardingCliInstall(cli: OnboardingCli): Promise<OnboardingCliInstallSnapshot>;
   startOnboardingTeamBuilder(request: AiTeamBuilderDraftRequest): Promise<AiTeamBuilderIpcResponse>;
   submitOnboardingTeamBuilder(request: AiTeamBuilderTurnRequest): Promise<AiTeamBuilderIpcResponse>;
@@ -404,6 +405,11 @@ const api: MoebiusDesktopApi = {
     return ipcRenderer.invoke(
       ONBOARDING_IPC_CHANNELS.cliInstallStart,
       { cli },
+    ) as Promise<OnboardingCliInstallSnapshot>;
+  },
+  startOnboardingClaudeUpdate() {
+    return ipcRenderer.invoke(
+      ONBOARDING_IPC_CHANNELS.claudeUpdateStart,
     ) as Promise<OnboardingCliInstallSnapshot>;
   },
   cancelOnboardingCliInstall(cli) {

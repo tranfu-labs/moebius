@@ -1,9 +1,20 @@
+import os from "node:os";
+import path from "node:path";
 import {
   CapabilityProbeError,
   probeExecutionCapabilities,
   runCommandSafely,
   type SafeCommandRunner,
 } from "../execution-capabilities.js";
+import { isSupportedClaudeCliVersion } from "../../../src/claude-cli-version.js";
+import {
+  ClaudeExecutableError,
+  resolveClaudeExecutable,
+} from "../../../src/claude-executable.js";
+import {
+  KimiExecutableError,
+  resolveKimiExecutable,
+} from "../../../src/kimi-executable.js";
 import type { ExecutionCapabilitySnapshot } from "../team-execution-profile.js";
 import type { ExecutionProfile } from "../team-execution-profile.js";
 import { selectAiTeamBuilderProfileFromSnapshot } from "../ai-team-builder/execution-profile.js";
@@ -28,6 +39,11 @@ export interface OnboardingCliReadinessServiceOptions {
   probeCapabilities?: OnboardingCapabilityProbe;
   now?: () => Date;
   timeoutMs?: number;
+  resolveClaudeExecutable?: typeof resolveClaudeExecutable;
+  resolveKimiExecutable?: typeof resolveKimiExecutable;
+  pathValue?: string;
+  cwd?: string;
+  homeDir?: string;
 }
 
 export class OnboardingCliReadinessService {
@@ -35,10 +51,17 @@ export class OnboardingCliReadinessService {
   private readonly probeCapabilities: OnboardingCapabilityProbe;
   private readonly now: () => Date;
   private readonly timeoutMs: number;
+  private readonly resolveClaude: typeof resolveClaudeExecutable;
+  private readonly resolveKimi: typeof resolveKimiExecutable;
+  private readonly pathValue: string | undefined;
+  private readonly cwd: string;
+  private readonly homeDir: string;
+  private claudeExecutablePath: string | null = null;
   private readonly listeners = new Set<(snapshot: OnboardingCliReadinessSnapshot) => void>();
   private state: OnboardingCliReadinessState = createInitialOnboardingCliReadinessState();
   private readonly capabilities: Record<OnboardingCli, ExecutionCapabilitySnapshot | null> = {
     codex: null,
+    claude: null,
     kimi: null,
   };
 
@@ -48,6 +71,11 @@ export class OnboardingCliReadinessService {
       probeExecutionCapabilities(input));
     this.now = options.now ?? (() => new Date());
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.resolveClaude = options.resolveClaudeExecutable ?? resolveClaudeExecutable;
+    this.resolveKimi = options.resolveKimiExecutable ?? resolveKimiExecutable;
+    this.pathValue = options.pathValue;
+    this.cwd = options.cwd ?? process.cwd();
+    this.homeDir = options.homeDir ?? os.homedir();
   }
 
   getSnapshot(cli: OnboardingCli): OnboardingCliReadinessSnapshot {
@@ -57,6 +85,7 @@ export class OnboardingCliReadinessService {
   getState(): OnboardingCliReadinessState {
     return {
       codex: this.getSnapshot("codex"),
+      claude: this.getSnapshot("claude"),
       kimi: this.getSnapshot("kimi"),
     };
   }
@@ -69,7 +98,7 @@ export class OnboardingCliReadinessService {
   }
 
   async checkAll(): Promise<OnboardingCliReadinessState> {
-    await Promise.all([this.check("codex"), this.check("kimi")]);
+    await Promise.all([this.check("codex"), this.check("claude"), this.check("kimi")]);
     return this.getState();
   }
 
@@ -87,9 +116,32 @@ export class OnboardingCliReadinessService {
     const result = await this.performCheck(cli, revision);
     if (this.state[cli].revision === revision) {
       this.capabilities[cli] = result.capability;
+      if (cli === "claude") {
+        this.claudeExecutablePath = result.executablePath;
+      }
       this.publish(result.snapshot);
     }
     return { ...result.snapshot };
+  }
+
+  getTrustedClaudeExecutable(): string {
+    if (this.claudeExecutablePath === null) {
+      throw new OnboardingReadinessUnavailableError();
+    }
+    return this.claudeExecutablePath;
+  }
+
+  async getOrResolveTrustedClaudeExecutable(): Promise<string> {
+    if (this.claudeExecutablePath !== null) {
+      return this.claudeExecutablePath;
+    }
+    const executablePath = await this.resolveClaude({
+      pathValue: this.pathValue ?? process.env.PATH,
+      cwd: this.cwd,
+      homeDir: this.homeDir,
+    });
+    this.claudeExecutablePath = path.resolve(executablePath);
+    return this.claudeExecutablePath;
   }
 
   resolveBuilderExecutionProfile(): ExecutionProfile {
@@ -109,6 +161,14 @@ export class OnboardingCliReadinessService {
     ) {
       return selectAiTeamBuilderProfileFromSnapshot(kimi);
     }
+    const claude = this.capabilities.claude;
+    if (
+      (this.state.claude.status === "ready" || this.state.claude.status === "checking")
+      && claude !== null
+      && claude.status === "available"
+    ) {
+      return selectAiTeamBuilderProfileFromSnapshot(claude);
+    }
     throw new OnboardingReadinessUnavailableError();
   }
 
@@ -118,15 +178,38 @@ export class OnboardingCliReadinessService {
   ): Promise<{
     snapshot: OnboardingCliReadinessSnapshot;
     capability: ExecutionCapabilitySnapshot | null;
+    executablePath: string | null;
   }> {
+    let command: string = cli;
+    let executablePath: string | null = null;
+    if (cli === "claude" || cli === "kimi") {
+      try {
+        const resolver = cli === "claude" ? this.resolveClaude : this.resolveKimi;
+        executablePath = path.resolve(await resolver({
+          pathValue: this.pathValue ?? process.env.PATH,
+          cwd: this.cwd,
+          homeDir: this.homeDir,
+        }));
+        command = executablePath;
+      } catch (error) {
+        return {
+          snapshot: isMissingCliError(error)
+            ? this.terminal(cli, revision, "missing", "cli-missing", null)
+            : this.terminal(cli, revision, "unavailable", "version-unavailable", null),
+          capability: null,
+          executablePath: null,
+        };
+      }
+    }
     let version: string;
     try {
-      const result = await this.runCommand(cli, ["--version"], this.timeoutMs);
+      const result = await this.runCommand(command, ["--version"], this.timeoutMs);
       version = firstNonEmptyLine(result.stdout) ?? "";
       if (version.length === 0) {
         return {
           snapshot: this.terminal(cli, revision, "unavailable", "version-unavailable", null),
           capability: null,
+          executablePath,
         };
       }
     } catch (error) {
@@ -135,6 +218,21 @@ export class OnboardingCliReadinessService {
           ? this.terminal(cli, revision, "missing", "cli-missing", null)
           : this.terminal(cli, revision, "unavailable", "version-unavailable", null),
         capability: null,
+        executablePath,
+      };
+    }
+
+    if (cli === "claude" && !isSupportedClaudeCliVersion(version)) {
+      return {
+        snapshot: this.terminal(
+          cli,
+          revision,
+          "unavailable",
+          "version-unsupported",
+          version,
+        ),
+        capability: null,
+        executablePath,
       };
     }
 
@@ -144,7 +242,10 @@ export class OnboardingCliReadinessService {
         cli,
         knownCliVersion: version,
         timeoutMs: this.timeoutMs,
-        runCommand: this.runCommand,
+        runCommand: executablePath !== null
+          ? (_command, args, timeoutMs) =>
+              this.runCommand(executablePath!, args, timeoutMs)
+          : this.runCommand,
       });
     } catch {
       return {
@@ -156,6 +257,7 @@ export class OnboardingCliReadinessService {
           version,
         ),
         capability: null,
+        executablePath,
       };
     }
 
@@ -163,12 +265,14 @@ export class OnboardingCliReadinessService {
       return {
         snapshot: this.terminal(cli, revision, "ready", "ready", version),
         capability,
+        executablePath,
       };
     }
     if (capability.status === "missing") {
       return {
         snapshot: this.terminal(cli, revision, "missing", "cli-missing", null),
         capability,
+        executablePath,
       };
     }
     if (capability.failureCode === "CLI_VERSION_UNSUPPORTED") {
@@ -181,6 +285,7 @@ export class OnboardingCliReadinessService {
           version,
         ),
         capability,
+        executablePath,
       };
     }
     if (capability.failureCode === "AUTHENTICATION_REQUIRED") {
@@ -193,6 +298,7 @@ export class OnboardingCliReadinessService {
           version,
         ),
         capability,
+        executablePath,
       };
     }
     return {
@@ -204,6 +310,7 @@ export class OnboardingCliReadinessService {
         version,
       ),
       capability,
+      executablePath,
     };
   }
 
@@ -249,6 +356,12 @@ function firstNonEmptyLine(value: string): string | null {
 }
 
 function isMissingCliError(error: unknown): boolean {
+  if (error instanceof ClaudeExecutableError) {
+    return error.code === "claude-cli-not-found";
+  }
+  if (error instanceof KimiExecutableError) {
+    return error.code === "kimi-cli-not-found";
+  }
   if (error instanceof CapabilityProbeError) {
     return error.code === "CLI_MISSING";
   }

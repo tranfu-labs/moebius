@@ -1,7 +1,7 @@
 # desktop-shell 规格
 
 ## 域定位
-`desktop-shell` 负责把 runner 与 observer 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex 或 Kimi CLI。壳层只做装配、子进程监管、环境自检与更新提示，不承载任何业务规则；runner 行为事实源在 `github-issue-runner`，本地操作台与 observer 呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start` / `pnpm observer`）继续有效且行为不变。
+`desktop-shell` 负责把 runner 与 observer 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex、Claude Code 或 Kimi CLI。壳层只做装配、子进程监管、环境自检与更新提示，不承载任何业务规则；runner 行为事实源在 `github-issue-runner`，本地操作台与 observer 呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start` / `pnpm observer`）继续有效且行为不变。
 
 ## 业务规则
 
@@ -348,64 +348,42 @@ Source: docs/product/pages/agent-teams.md#更新官方来源团队
 Source: docs/product/pages/agent-teams.md#Agent-运行配置
 
 The desktop MUST save a complete CLI/model/effort profile for each stable team id and member slug.
-Team list, detail, save and recommendation-restore operations MUST resolve only persisted bindings,
-current applied recommendations and static profile rules. They MUST NOT spawn, probe, authenticate or
-enumerate Codex or Kimi. Official members MUST distinguish recommendation from user override; user
-teams and user-added members MUST use explicit profiles. Bindings MUST survive team relocation and
-MUST NOT enter team content fingerprints.
+CLI MUST be `codex | claude | kimi`. Team list, detail, save and recommendation-restore operations
+MUST resolve only persisted bindings, current applied recommendations and static profile rules.
+They MUST NOT spawn, probe, authenticate or enumerate any CLI. Official members MUST distinguish
+recommendation from user override; user teams and user-added members MUST use explicit profiles.
 
-The desktop MUST expose a product-bundled model registry for new Agent Team profile selections. The
-registry MUST map each selectable CLI model to that model's own effort list. A member without a
-persisted binding or applied official recommendation MUST resolve to `Codex / gpt-5.6-sol / high`.
-The UI MUST preserve a previously saved model or effort absent from the current registry as an
-explicitly unsupported legacy custom value until the user selects a supported combination.
-Persistence, copy, official-update and runtime snapshot boundaries MUST continue accepting and
-preserving those legacy values.
+The product-bundled Claude registry MUST offer `fable` with
+`low | medium | high | xhigh | max`, plus `sonnet` and `opus` with
+`low | medium | high | max`. Each model's fallback effort MUST be `high`; switching the CLI to Claude
+MUST choose `sonnet/high`. The registry MUST NOT offer dynamic `default`, `best`, `opusplan`, full
+version ids, 1M aliases or `haiku`. Previously saved values absent from the current registry MUST
+remain an unsupported legacy custom value until the user explicitly selects and saves a supported
+combination. A missing binding MUST continue resolving to `Codex / gpt-5.6-sol / high`.
 
-The Codex selection registry MUST include `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`,
-`gpt-5.4` and `gpt-5.4-mini`; it MUST NOT offer `ultra` or `gpt-5.3-codex-spark`. The Kimi registry
-MUST save the full aliases `kimi-code/k3`, `kimi-code/k3-256k`, `kimi-code/kimi-for-coding` and
-`kimi-code/kimi-for-coding-highspeed`, and MUST label membership-restricted choices.
+The local-console schema migration MUST widen the persisted execution CLI constraint to
+`codex | claude | kimi` without changing existing rows, NULL legacy profiles, member order, primary
+keys or foreign keys. Migration MUST be transactional, idempotent and pass foreign-key validation.
 
-#### Scenario: Same slug in two teams remains independent
+#### Scenario: Claude model exposes only its own efforts
 
-- **GIVEN** `@dev` exists in two stable teams
-- **WHEN** one member is saved as Kimi/k3/high and the other as Codex/medium
-- **THEN** each team detail returns its own saved value
-- **AND** changing either profile does not modify the other team or either `AGENT.md`.
+- **GIVEN** a member profile editor selects Claude Code
+- **THEN** its compatibility default is `sonnet/high`
+- **WHEN** the user selects `fable`
+- **THEN** effort offers low, medium, high, xhigh and max
+- **WHEN** the user selects `sonnet`
+- **THEN** effort offers low, medium, high and max but not xhigh
+- **WHEN** the user selects `opus`
+- **THEN** effort also offers low, medium, high and max but not xhigh
+- **AND** neither action starts Claude Code.
 
-#### Scenario: Model selection exposes only its supported efforts
+#### Scenario: Existing database widens without changing facts
 
-- **GIVEN** the user edits an Agent Team member runtime profile
-- **WHEN** the user selects a CLI and model
-- **THEN** model is a dropdown containing that CLI's bundled models
-- **AND** effort is a dropdown containing only the selected model's supported efforts
-- **AND** changing model preserves the effort only when the new model supports it
-- **AND** no Codex or Kimi process is started.
-
-#### Scenario: Missing binding uses the Codex default
-
-- **GIVEN** a team member has neither a persisted binding nor an applied official recommendation
-- **WHEN** the team detail or a new conversation snapshot resolves the member
-- **THEN** its effective profile is `Codex / gpt-5.6-sol / high`
-- **AND** no prior settings save is required.
-
-#### Scenario: Unsupported historical value is preserved
-
-- **GIVEN** a member already stores a model or effort absent from the bundled registry
-- **WHEN** the team detail opens or the user switches between members
-- **THEN** the original values remain selected and are labelled as an unsupported legacy custom profile
-- **AND** the values are not silently replaced or persisted
-- **WHEN** the user selects a supported model
-- **THEN** the draft changes to a supported model/effort combination that can be saved.
-
-#### Scenario: Static profile is invalid at the persistence boundary
-
-- **GIVEN** a persisted, imported or IPC profile contains only whitespace for model or effort
-- **WHEN** the desktop validates the profile
-- **THEN** save is rejected with a field-safe reason
-- **AND** the previous binding remains effective
-- **AND** no CLI capability result is consulted.
+- **GIVEN** a pre-change database contains Codex, Kimi and NULL legacy member profiles
+- **WHEN** desktop applies the Claude schema migration twice
+- **THEN** each original row and relationship remains unchanged
+- **AND** a new Claude profile can be persisted
+- **AND** foreign-key validation succeeds.
 
 ### Requirement: Environment capability probing remains outside team management
 
@@ -417,14 +395,14 @@ Execution capability probing MAY serve onboarding, AI team building or an explic
 diagnostics surface. The Agent Teams list/detail and profile mutation IPC MUST NOT expose capability
 snapshots, refresh actions, unable-to-verify state or needs-adjustment state. Removing team-management
 probing MUST NOT weaken onboarding's existing readiness, installation, revision or redaction contract.
-The normal operator console MUST NOT start Codex/Kimi readiness checks on mount, shell-ready, team
+The normal operator console MUST NOT start Codex/Claude/Kimi readiness checks on mount, shell-ready, team
 navigation or message submission. It MUST NOT consume onboarding readiness for new-conversation member
 preparation or compatibility presentation. It MUST preserve onboarding's post-install recheck while an
 installation initiated there is still completing.
 
-#### Scenario: Opening a team while both CLIs are missing
+#### Scenario: Opening a team while all CLIs are missing
 
-- **GIVEN** neither Codex nor Kimi can be resolved on PATH
+- **GIVEN** neither Codex, Claude nor Kimi can be resolved on PATH
 - **WHEN** the user opens a valid team and switches between members
 - **THEN** every saved static profile remains readable and editable
 - **AND** team management exposes no runtime-health state
@@ -434,7 +412,7 @@ installation initiated there is still completing.
 
 - **GIVEN** onboarding is not active and readiness is checking, ready, missing, needs-login or unavailable
 - **WHEN** the normal operator console mounts, receives shell-ready, opens Agent Teams and enters new conversation
-- **THEN** neither Codex nor Kimi readiness check is started for normal-console presentation
+- **THEN** no Codex, Claude or Kimi readiness check is started for normal-console presentation
 - **AND** no readiness snapshot drives member preparation or compatibility copy in new conversation.
 
 #### Scenario: Onboarding installation finishes after entering the console
@@ -777,43 +755,52 @@ Acceptance: onboarding#7
 Source: docs/product/pages/onboarding.md#第-2-步-ai-建队
 Acceptance: onboarding#20
 
-系统 MUST 继续按 readiness 选择并在 draft 生命周期内冻结 CLI、execution profile 与
-隔离 cwd。每个 AI 建队 draft MUST 独占一个冻结 CLI 的 provider session。draft 第一次执行 MAY
-创建 Codex thread 或 Kimi session；取得 external ID 后，submit、adjust、retry、恢复及
-唯一一次结构 repair MUST 只 resume 该 ID。团队创建成功并结束 draft 后，新建队 draft
-MUST 使用新身份，跨 draft MUST NOT 查找或复用 external ID。失败 MUST NOT 跨 CLI。
+AI 建队创建 draft 时 MUST 按 `Codex → Kimi → Claude Code` 选择第一套 ready CLI，
+保持已有 Codex/Kimi 顺序不变。三者都不 ready 时 MUST 拒绝启动。选定 CLI、
+execution profile、隔离 cwd 与 provider session MUST 在 draft 生命周期内冻结。
+draft 第一次执行 MAY 创建 Codex thread、Claude Code session 或 Kimi session；取得
+external ID 后，submit、adjust、retry、恢复与唯一一次结构 repair MUST 只 resume
+该 ID。失败 MUST NOT 跨 CLI。
 
-### Scenario: 同一 draft 连续调整
+#### Scenario: Claude-only AI 建队
 
-- **GIVEN** AI 建队 draft 首轮已经取得 external ID
-- **WHEN** 用户回答追问、调整方案并触发一次结构 repair
-- **THEN** 所有后续 provider invocation 都是 resume
-- **AND** requested external ID 始终相同。
+- **GIVEN** 只有 Claude Code ready
+- **WHEN** 用户打开 AI 建队
+- **THEN** draft 冻结 Claude profile 与独立 session identity
+- **AND** 后续轮次只 resume 同一 Claude session。
 
-### Scenario: 跨 draft 隔离
+#### Scenario: Codex 保持第一优先
 
-- **GIVEN** 一个 Agent 团队页 draft 已成功创建团队并结束
-- **WHEN** 用户再次进入 AI 建队并生成新 draft ID
-- **THEN** 新 draft 不读取旧 external ID
-- **AND** 新 draft 第一次执行可创建自己的 provider session。
+- **GIVEN** 三套 CLI 都 ready
+- **WHEN** 用户创建 draft
+- **THEN** draft 选择 Codex
+
+#### Scenario: Kimi 保持在 Claude 之前
+
+- **GIVEN** Codex 不 ready 且 Kimi、Claude Code 都 ready
+- **WHEN** 用户创建 draft
+- **THEN** draft 选择 Kimi。
 
 ## Requirement: AI 建队执行环境保持隔离只读
 Source: docs/product/pages/onboarding.md#AI-建队技术约束
 Acceptance: onboarding#20
 
-系统 MUST 为每个草稿使用固定 developer instructions、output schema、只读文件系统边界、隔离 cwd、2 分钟 idle timeout 与 10 分钟 max-duration timeout。Codex 首轮与续轮 MUST 显式声明只读 sandbox 与隔离 cwd；Kimi ACP MUST NOT 宣告写能力，传输层 MUST 拒绝文件写入。两套驱动 MUST NOT 使用普通 Agent 的放权参数、项目 `AGENTS.md`、用户 MCP 或个人指令。
+系统 MUST 为每个草稿使用固定 developer instructions、output schema、只读文件系统
+边界、隔离 cwd、2 分钟 idle timeout 与 10 分钟 max-duration timeout。Codex MUST
+声明只读 sandbox；Kimi ACP MUST 不宣告写能力；Claude MUST 使用 `--safe-mode`、
+结构化 schema、`dontAsk`、`--tools Read,Glob,Grep`、`--strict-mcp-config` 与
+`--disable-slash-commands`，并应用普通 Claude 运行相同的内部 Agent/team deny 与环境
+清理。Claude builder MUST NOT 读取 `CLAUDE.md`、settings、hooks、MCP、skills、
+plugins、custom commands、custom agents 或项目 `AGENTS.md`。三套驱动 MUST NOT 使用
+普通 Agent 的放权参数。
 
-### Scenario: Codex 续轮声明只读 sandbox 与隔离 cwd
-- GIVEN AI 建队草稿已有 Codex thread id 与独立 isolated cwd
-- WHEN 系统为下一轮构造 `codex exec resume <threadId>` 命令
-- THEN 参数包含 `--sandbox read-only` 与 `--cd <isolatedCwd>`
-- AND 参数不包含 `--yolo` 或其他绕过 sandbox 的选项
+#### Scenario: Claude 建队不能写入
 
-### Scenario: Kimi 不获得文件写能力
-- GIVEN AI 建队草稿已冻结 Kimi profile
-- WHEN Kimi 会话尝试请求文件写入
-- THEN ACP capability 不宣告写权限且传输层拒绝该请求
-- AND 草稿状态仍由应用自身持久化。
+- **GIVEN** AI 建队 draft 已冻结 Claude
+- **WHEN** Claude 输出生成方案并尝试调用写工具或内部 Agent
+- **THEN** 工具策略拒绝该调用
+- **AND** 应用状态与团队目录保持不变
+- **AND** 失败不改用 Codex 或 Kimi。
 
 ## Requirement: AI 建队失败有界并保留可恢复内容
 Source: docs/product/pages/onboarding.md#第-2-步-ai-建队
@@ -942,89 +929,131 @@ Source: docs/product/pages/onboarding.md#重新查看引导
 - **THEN** renderer 按原有效 marker 进入主页面
 - **AND** 不恢复或强制继续回看。
 
-### Requirement: 引导环境检查验证 Codex 与 Kimi 真实就绪
+### Requirement: 引导环境检查验证 Codex、Claude Code 与 Kimi 真实就绪
 
 Source: docs/product/pages/onboarding.md#第-1-步-环境就绪至少一个-cli-可用
 Acceptance ID: `onboarding#3`, `onboarding#4`
 
-桌面引导 MUST 分别检查 Codex 与 Kimi 的真实版本、认证 / provider 配置及至少一个真实可用模型，且 MUST NOT 为检查发送真实推理请求、打开交互登录、修改项目文件或产生测试会话。只有版本和能力检查都成功的 CLI 才为 ready；任一 CLI ready 时 MUST 放行，两者都不 ready 时 MUST 阻断。`ENOENT` / `ENOTDIR` MUST 分类为 missing；未认证 MUST 分类为 needs-login；非零退出、不可执行、空版本或能力协议异常 MUST 分类为 unavailable。
+桌面引导 MUST 分别检查 Codex、Claude Code 与 Kimi 的真实版本和各自只读 readiness。
+Codex/Kimi MUST 沿用登录/provider 与真实模型能力检查；Claude MUST 在版本检查后执行
+`claude auth status --json`，MUST NOT 发送推理请求或动态枚举模型。只有版本和对应
+能力检查都成功的 CLI 才为 ready；任一 CLI ready 时 MUST 放行，三者都不 ready 时
+MUST 阻断。
 
-Codex CLI 只有在真实版本不低于 `0.145.0` 时才可继续能力检查并成为 ready。低于最低版本或无法解析版本时 MUST NOT 启动 Codex app-server 或模型能力枚举；旧版本 MUST 返回稳定的升级所需 code、保留真实版本文本并向用户显示最低版本升级指引，MUST NOT 把它误分类为 missing 或 needs-login。
+Codex 最低版本 MUST 继续为 `0.145.0`；Claude Code 最低版本 MUST 为 `2.1.170`。低于
+最低版本或无法解析版本时 MUST NOT 启动后续能力探针，并 MUST 返回真实版本与稳定升级
+原因。每套 CLI MUST 独立维护 revision；较旧 revision 不得覆盖较新结果。DTO MUST
+NOT 包含 stderr、异常文本、本地路径、PID、provider 密钥、token 或 session id。
+Claude 低版本结果 MUST 同时提供结构化、受信任的 `update-claude` action。
 
-每套 CLI MUST 独立维护检查 revision。首次检查、shell PATH 自动复检、安装成功复检和手动复检 MUST 以同一 CLI 的 `(revision, phase)` 单调收敛：较旧 revision 不得覆盖较新结果；同一 revision 允许 checking 收敛到终态但不得从终态倒退。ready 行 MUST 展示当次真实版本；静态表面没有真实输入时 MUST NOT 伪造版本。结果 DTO MUST NOT 包含原始 stderr、异常文本、本地路径、PID、provider 密钥、token 或 session id。
+Kimi readiness MUST 与 local runtime 共用同一个 PATH-first/default-location executable
+resolver。PATH 的首个现有 candidate MUST 为权威候选；PATH 完全没有 candidate 时才可
+检查 host home 下的 `~/.kimi-code/bin/kimi`。权威候选不可执行时 MUST unavailable 且
+不得 fallback。`--version` 与后续 `provider list --json` MUST 都 spawn 同一解析出的
+absolute path，capability probe MUST NOT 退回命令名 `kimi` 或重新选择 executable。
 
-#### Scenario: Codex 版本过旧
+#### Scenario: GUI PATH 缺少 Kimi 但默认位置存在
 
-- **GIVEN** `codex --version` 成功返回 `codex-cli 0.144.1`
-- **WHEN** 引导执行 Codex readiness 检查
-- **THEN** Codex 行为 unavailable 且显示需要 `0.145.0` 或更高版本
-- **AND** 保留 `codex-cli 0.144.1` 作为本次真实版本
-- **AND** 不启动 app-server、模型能力枚举或真实推理。
+- **GIVEN** Electron GUI PATH 不含 `kimi`
+- **AND** host `~/.kimi-code/bin/kimi` 是可执行普通文件
+- **WHEN** onboarding 检查 Kimi
+- **THEN** version 与 provider list 都调用该 absolute path
+- **AND** 成功结果可使 Kimi 行 ready、团队兼容提示消失并参与 AI 建队选择。
 
-#### Scenario: Kimi-only 放行
+#### Scenario: PATH 权威候选不可执行
 
-- **GIVEN** Codex missing 且 Kimi 的版本与模型能力检查成功
-- **WHEN** 双 CLI 检查收敛
-- **THEN** Kimi 行展示当次真实版本和 ready
-- **AND** 第 1 步允许继续
-- **AND** Codex 行保留独立安装入口。
+- **GIVEN** PATH 首个现有 Kimi candidate 不可执行
+- **AND** 默认位置另有可执行 Kimi
+- **WHEN** onboarding 检查 Kimi
+- **THEN** Kimi 行 unavailable
+- **AND** 默认位置、版本探针与 provider probe 均不启动。
 
-#### Scenario: 同一 revision 从 checking 收敛
+#### Scenario: Claude 已安装但未登录
 
-- **GIVEN** renderer 已收到 Kimi `checking revision=4`
-- **WHEN** 同一次检查随后返回 Kimi `ready revision=4`
-- **THEN** 页面收敛为 ready
-- **AND** 之后迟到的同 revision checking 不得使页面倒退。
+- **GIVEN** `claude --version` 返回受支持版本
+- **AND** `claude auth status --json` 表示未登录并退出 1
+- **WHEN** readiness 收敛
+- **THEN** Claude 行是 needs-login 且保留真实版本
+- **AND** 不创建 Claude session 或发送推理。
 
-#### Scenario: 检查不产生推理
+#### Scenario: Claude 版本过旧
 
-- **GIVEN** 用户进入第 1 步或触发重新检查
-- **WHEN** 主进程检查两套 CLI
-- **THEN** 只调用版本与 machine-readable 能力枚举
-- **AND** 不发送真实对话、不产生推理费用、不创建测试 session
-- **AND** 不检查 gh / GitHub、Claude Code、Node 或其他 CLI。
+- **GIVEN** Claude Code 版本低于 `2.1.170`
+- **WHEN** readiness 检查运行
+- **THEN** Claude 行显示最低版本升级原因
+- **AND** 提供受信任的更新动作
+- **AND** auth probe 调用次数为零。
+
+#### Scenario: Claude-only 放行
+
+- **GIVEN** Codex 与 Kimi 都不 ready 且 Claude 版本和认证检查成功
+- **WHEN** 三 CLI 检查收敛
+- **THEN** 第 1 步允许继续
+- **AND** Codex 与 Kimi 保留各自独立修复状态。
 
 ### Requirement: 引导安装仅执行内置受信任动作
 
 Source: docs/product/pages/onboarding.md#第-1-步-cli-缺失与安装中
 
-主进程 MUST 以随应用发布的 registry 执行 Codex 或 Kimi 安装。renderer MUST 只能提交 `codex | kimi` 枚举，MUST NOT 提交或影响 command、URL、args 或脚本文本。Codex 安装 MUST 参数化 spawn npm；Kimi 安装 MUST 以独立 curl 和 bash 进程通过 Node stream 连接，MUST NOT 使用 `exec`、`execSync`、`shell:true` 或 `bash -c`。
+主进程 MUST 以随应用发布的 registry 执行 Codex、Claude Code 或 Kimi 安装。renderer
+MUST 只能提交 `codex | claude | kimi`，MUST NOT 提交或影响 command、URL、args 或脚本。
+Codex MUST 参数化 spawn npm；Claude 和 Kimi MUST 各以独立 curl 与 bash 进程通过
+Node stream 连接。所有进程 MUST 使用 `shell:false`，MUST NOT 使用 `exec`、
+`execSync`、`bash -c` 或拼接外部输入。
 
-同一 CLI MUST 去重，Codex 与 Kimi MUST 可并发。点击安装后 renderer MUST 立即显示不可重复触发的 starting 状态；任务 MUST 提供 downloading、installing、verifying 等安全阶段、活动反馈、确认取消、超时和进程回收。成功 MUST 只自动复检对应 CLI；失败、取消和超时 MUST 保留独立重试且不得泄露底层输出。
+同一 CLI MUST 去重，三套 CLI MUST 可并发。成功 MUST 只复检对应 CLI；失败、取消、
+超时 MUST 保留独立重试，且所有状态和错误保持脱敏。
 
-#### Scenario: renderer 不能注入命令
+#### Scenario: Claude 安装管道
 
-- **GIVEN** 恶意 renderer 调用 onboarding install IPC
-- **WHEN** 请求包含非白名单值或额外 command、URL、args
-- **THEN** 主进程拒绝请求
-- **AND** 不启动任何子进程。
-
-#### Scenario: Kimi 安装管道
-
-- **GIVEN** 用户启动 Kimi 安装
+- **GIVEN** 用户启动 Claude Code 安装
 - **WHEN** 主进程创建安装任务
-- **THEN** curl 与 bash 分别以参数数组和 `shell:false` 启动
-- **AND** 下载输出只通过 Node stream 输入 bash stdin。
+- **THEN** curl 只请求固定 `https://claude.ai/install.sh`
+- **AND** curl 与 bash 分别以参数数组和 `shell:false` 启动
+- **AND** 下载内容只通过 Node stream 输入 bash stdin。
+
+#### Scenario: 三套安装并发
+
+- **GIVEN** 三套 CLI 都 missing
+- **WHEN** 用户依次启动三套安装
+- **THEN** 主进程存在三个独立任务
+- **AND** 再次启动任一运行中的 CLI 不会创建重复进程。
+
+### Requirement: Claude 更新仅执行权威 executable 的受信任动作
+
+Source: docs/product/pages/onboarding.md#第-1-步-cli-已安装但未就绪
+Acceptance ID: `onboarding#4`
+
+Claude Code 版本低于 `2.1.170` 时，renderer MUST 只能请求结构化 `update-claude`
+action，MUST NOT 提交或影响 executable path、command 或 args。主进程 MUST 使用本次
+readiness 或 runtime gate 已解析并仅在 backend 保存的权威 Claude 绝对路径，以
+`spawn(absoluteClaude, ["update"], {shell:false})` 执行更新。完成后 MUST 只重新检查
+Claude；失败、取消或超时 MUST 保留旧版本、脱敏原因和独立重试入口。
+
+#### Scenario: Claude 旧版本安全更新
+
+- **GIVEN** readiness 从权威绝对路径解析出 Claude Code `2.1.169`
+- **WHEN** 用户触发「更新 Claude Code」
+- **THEN** 主进程只对该路径执行参数数组 `["update"]`
+- **AND** renderer 提交的数据不能改变 path 或 args
+- **AND** 成功后只复检 Claude。
 
 ### Requirement: 引导后台安装受退出协调
 
 Source: docs/product/pages/onboarding.md#操作与反馈
 
-安装 MUST 在用户离开第 1 步后继续，并通过主进程到 renderer 的安全 snapshot subscription 提供单项或双项聚合状态。已挂载且初始没有任务的操作台 MUST 能被后续回看引导启动的安装事件唤醒，并在任务成功后刷新 readiness。应用关闭且仍有运行任务时 MUST 阻止本次退出，允许用户留在应用或取消全部并退出；取消退出 MUST 等待所有已启动子进程实际 `close` 后才继续，MUST NOT 遗留孤儿安装进程。无法确认回收时 MUST 阻止退出并显示脱敏提示，MUST NOT 伪报取消成功。
+安装 MUST 在用户离开第 1 步后继续，并通过安全 snapshot subscription 提供 1–3 项聚合
+状态。应用关闭且仍有任务运行时 MUST 阻止本次退出，逐项列出任务并允许留在应用或取消
+全部后退出。取消退出 MUST 等待所有已启动子进程实际 close；无法确认回收时 MUST 保持
+应用打开并显示脱敏原因。
 
-#### Scenario: 取消双安装并退出
+#### Scenario: 取消三套安装并退出
 
-- **GIVEN** Codex 与 Kimi 安装都在运行
-- **WHEN** 用户选择取消全部安装并退出
-- **THEN** 主进程等待两套任务及 Kimi 管道全部子进程实际关闭
-- **AND** 确认回收后才退出。
-
-#### Scenario: 无法确认回收
-
-- **GIVEN** 安装子进程在 SIGTERM 与 SIGKILL 后仍未报告关闭
-- **WHEN** 回收期限到达
-- **THEN** 取消 Promise 以安全错误拒绝且任务保持 running
-- **AND** 应用保持打开并显示不含 PID、路径或底层输出的提示。
+- **GIVEN** Codex、Claude Code 与 Kimi 安装都在运行
+- **WHEN** 用户选择取消全部并退出
+- **THEN** 主进程等待三项任务和所有管道子进程实际关闭
+- **AND** 确认回收后才退出
+- **AND** 不遗留孤儿进程。
 
 ### Requirement: 第 2 步默认选择内置开发团队
 

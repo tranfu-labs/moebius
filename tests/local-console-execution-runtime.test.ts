@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ClaudeRunOptions } from "../src/claude.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
@@ -199,6 +200,86 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     } finally {
       database.close();
     }
+  });
+
+  it("freezes a Claude profile and resumes only its canonical Claude session", async () => {
+    const root = await fixtureRoot();
+    const claudeProfile: LocalConsoleExecutionProfile = {
+      cli: "claude",
+      model: "fable",
+      effort: "xhigh",
+    };
+    const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {
+      development: snapshot("Claude rules", claudeProfile),
+    };
+    const codex = vi.fn();
+    const kimi = vi.fn();
+    const claude = vi.fn(async (options: ClaudeRunOptions): Promise<CodexRunResult> => {
+      const sessionId = options.mode.kind === "resume"
+        ? options.mode.externalSessionId
+        : "11111111-1111-4111-8111-111111111111";
+      await options.onSessionStarted?.(sessionId);
+      return {
+        ok: true,
+        finalText: options.mode.kind === "full" ? "Claude first" : "Claude resumed",
+        threadId: sessionId,
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "claude-stream.jsonl"),
+        stderrPath: path.join(options.runDir, "claude-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async ({ id }) => snapshots[id]!,
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({
+        runCodex: codex,
+        runClaude: claude,
+        runKimi: kimi,
+      }),
+    });
+    servers.push(server);
+
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "development",
+    });
+    snapshots.development = snapshot("replacement Kimi rules", {
+      cli: "kimi",
+      model: "kimi-for-coding",
+      effort: "high",
+    });
+
+    await post(server.url, "@dev first");
+    await waitForAgent(server.url, "Claude first");
+    await post(server.url, "second");
+    await waitForAgent(server.url, "Claude resumed");
+
+    expect(claude).toHaveBeenCalledTimes(2);
+    expect(claude.mock.calls[0]?.[0]).toMatchObject({
+      profile: claudeProfile,
+      mode: { kind: "full" },
+    });
+    expect(claude.mock.calls[1]?.[0]).toMatchObject({
+      profile: claudeProfile,
+      mode: {
+        kind: "resume",
+        externalSessionId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+    expect(codex).not.toHaveBeenCalled();
+    expect(kimi).not.toHaveBeenCalled();
+    const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
+    expect(facts).toContain('"engine":"claude"');
+    expect(facts).toContain('"externalSessionId":"11111111-1111-4111-8111-111111111111"');
+    expect(facts).toContain("Claude rules");
+    expect(facts).not.toContain("replacement Kimi rules");
   });
 
   it("persists a new session, first message, and bound snapshot before a missing driver fails", async () => {

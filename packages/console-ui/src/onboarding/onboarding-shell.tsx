@@ -40,6 +40,7 @@ import {
   chooseOnboardingBuilderCli,
   getOnboardingTeamCompatibility,
   isOnboardingCliReady,
+  onboardingCliLabel,
   reduceOnboardingShell,
   resolveDefaultOnboardingTeamKey,
   runningOnboardingInstallations,
@@ -62,6 +63,7 @@ export interface OnboardingShellProps {
   createdTeamKey?: string | null;
   onRecheckEnvironment: () => void | Promise<void>;
   onInstallCli: (cli: OnboardingCli) => void | Promise<void>;
+  onUpdateClaude?: () => void | Promise<void>;
   onCancelCliInstallation: (cli: OnboardingCli) => void | Promise<void>;
   onRetryTeams?: () => void | Promise<void>;
   onOpenTeamBuilder: () => void | Promise<void>;
@@ -83,6 +85,7 @@ export function OnboardingShell({
   createdTeamKey = null,
   onRecheckEnvironment,
   onInstallCli,
+  onUpdateClaude,
   onCancelCliInstallation,
   onRetryTeams,
   onOpenTeamBuilder,
@@ -248,11 +251,12 @@ export function OnboardingShell({
             data-testid="onboarding-content-column"
           >
             {state.step === 1 ? (
-              <EnvironmentStep
-                environment={environment}
-                installations={installations}
-                onInstall={onInstallCli}
-                onCancel={onCancelCliInstallation}
+            <EnvironmentStep
+              environment={environment}
+              installations={installations}
+              onInstall={onInstallCli}
+              onUpdateClaude={onUpdateClaude}
+              onCancel={onCancelCliInstallation}
               />
             ) : null}
             {state.step === 2 ? (
@@ -262,9 +266,7 @@ export function OnboardingShell({
                   contextLabel={(teamBuilderState.builderCli ?? builderCli) === null
                     ? t("onboarding.builderContext")
                     : t("onboarding.builderContextCli", {
-                        cli: (teamBuilderState.builderCli ?? builderCli) === "codex"
-                          ? "Codex"
-                          : "Kimi",
+                        cli: onboardingCliLabel(teamBuilderState.builderCli ?? builderCli!),
                       })}
                   onBack={() => dispatch({ type: "close-team-builder" })}
                   onSubmit={onTeamBuilderSubmit}
@@ -335,6 +337,7 @@ export function OnboardingShell({
                 className={cn(
                   "h-3.5 w-3.5",
                   environment.codex.status === "checking"
+                    && environment.claude.status === "checking"
                     && environment.kimi.status === "checking"
                     && "motion-safe:animate-spin",
                 )}
@@ -355,11 +358,13 @@ function EnvironmentStep({
   environment,
   installations,
   onInstall,
+  onUpdateClaude,
   onCancel,
 }: {
   environment: OnboardingEnvironmentState;
   installations: OnboardingInstallationState;
   onInstall: (cli: OnboardingCli) => void | Promise<void>;
+  onUpdateClaude?: () => void | Promise<void>;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
 }): JSX.Element {
   const { t } = useI18n();
@@ -369,13 +374,14 @@ function EnvironmentStep({
       aria-label={t("onboarding.environmentLabel")}
       aria-live="polite"
     >
-      {(["codex", "kimi"] as const).map((cli) => (
+      {(["codex", "claude", "kimi"] as const).map((cli) => (
         <CliReadinessRow
           key={cli}
           cli={cli}
           readiness={environment[cli]}
           installation={installations[cli]}
           onInstall={onInstall}
+          onUpdateClaude={onUpdateClaude}
           onCancel={onCancel}
         />
       ))}
@@ -392,16 +398,18 @@ function CliReadinessRow({
   readiness,
   installation,
   onInstall,
+  onUpdateClaude,
   onCancel,
 }: {
   cli: OnboardingCli;
   readiness: OnboardingEnvironmentState[OnboardingCli];
   installation: OnboardingCliInstallation;
   onInstall: (cli: OnboardingCli) => void | Promise<void>;
+  onUpdateClaude?: () => void | Promise<void>;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
 }): JSX.Element {
   const { t } = useI18n();
-  const name = cli === "codex" ? "Codex CLI" : "Kimi CLI";
+  const name = onboardingCliFullName(cli);
   const installing = installation.status === "running";
   const recoverableInstall = installation.status === "failed"
     || installation.status === "cancelled"
@@ -435,7 +443,9 @@ function CliReadinessRow({
             <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">
               {cli === "codex"
                 ? "npm install -g @openai/codex"
-                : "curl -LsSf https://code.kimi.com/install.sh | bash"}
+                : cli === "claude"
+                  ? "curl -fsSL https://claude.ai/install.sh | bash"
+                  : "curl -LsSf https://code.kimi.com/install.sh | bash"}
             </code>
             <Button
               type="button"
@@ -450,6 +460,23 @@ function CliReadinessRow({
             </Button>
           </span>
         ) : null}
+        {cli === "claude"
+          && readiness.code === "version-unsupported"
+          && !installing
+          && !recoverableInstall
+          && onUpdateClaude !== undefined ? (
+            <Button
+              className="mt-2"
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label={t("onboarding.updateClaude")}
+              onClick={() => void onUpdateClaude()}
+            >
+              <RefreshCw className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+              {t("onboarding.updateClaude")}
+            </Button>
+          ) : null}
         {installing ? (
           <span className="mt-2 flex items-center justify-between gap-3 text-xs text-sub">
             <span>{t("onboarding.keepOpen")}</span>
@@ -471,11 +498,25 @@ function CliReadinessRow({
             type="button"
             size="sm"
             variant="outline"
-            aria-label={t("onboarding.retryInstall", { cli: name })}
-            onClick={() => void onInstall(cli)}
+            aria-label={cli === "claude" && readiness.code === "version-unsupported"
+              ? t("onboarding.updateClaude")
+              : t("onboarding.retryInstall", { cli: name })}
+            onClick={() => {
+              if (
+                cli === "claude"
+                && readiness.code === "version-unsupported"
+                && onUpdateClaude !== undefined
+              ) {
+                void onUpdateClaude();
+                return;
+              }
+              void onInstall(cli);
+            }}
           >
             <RefreshCw className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-            {t("onboarding.retryInstall", { cli: name })}
+            {cli === "claude" && readiness.code === "version-unsupported"
+              ? t("onboarding.updateClaude")
+              : t("onboarding.retryInstall", { cli: name })}
           </Button>
         ) : null}
       </span>
@@ -489,7 +530,7 @@ function getCliVisual(
   readiness: OnboardingEnvironmentState[OnboardingCli],
   installation: OnboardingCliInstallation,
 ): { icon: ReactNode; tone: "pass" | "danger" | "neutral"; title: string; detail: string } {
-  const name = cli === "codex" ? "Codex CLI" : "Kimi CLI";
+  const name = onboardingCliFullName(cli);
   if (installation.status === "running") {
     return {
       icon: <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" strokeWidth={1.6} aria-hidden="true" />,
@@ -541,15 +582,21 @@ function getCliVisual(
         title: t("onboarding.cliNeedsLoginTitle", { cli: name }),
         detail: cli === "codex"
           ? t("onboarding.codexLoginDetail")
-          : t("onboarding.kimiLoginDetail"),
+          : cli === "claude"
+            ? t("onboarding.claudeLoginDetail")
+            : t("onboarding.kimiLoginDetail"),
       };
     case "unavailable":
       if (readiness.code === "version-unsupported") {
         return {
           icon: <CircleAlert className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />,
           tone: "neutral",
-          title: t("onboarding.codexUpgradeTitle"),
-          detail: t("onboarding.codexUpgradeDetail", {
+          title: cli === "claude"
+            ? t("onboarding.claudeUpgradeTitle")
+            : t("onboarding.codexUpgradeTitle"),
+          detail: t(cli === "claude"
+            ? "onboarding.claudeUpgradeDetail"
+            : "onboarding.codexUpgradeDetail", {
             version: readiness.version ?? t("onboarding.versionUnknown"),
           }),
         };
@@ -644,7 +691,7 @@ function TeamSelectionStep({
             {builderCli === null
               ? t("onboarding.buildTeamWaiting")
               : t("onboarding.buildTeamWithCli", {
-                  cli: builderCli === "codex" ? "Codex" : "Kimi",
+                  cli: onboardingCliLabel(builderCli),
                 })}
           </small>
         </span>
@@ -757,7 +804,6 @@ function ReadyStep({
 }: {
   compatibility: ReturnType<typeof getOnboardingTeamCompatibility>;
 }): JSX.Element {
-  const { t } = useI18n();
   const partial = compatibility.affectedCount > 0;
   return (
     <div className="flex flex-col items-center py-4 text-center">
@@ -771,11 +817,6 @@ function ReadyStep({
           <Check className="h-10 w-10" strokeWidth={1.5} aria-hidden="true" />
         )}
       </span>
-      {partial ? (
-        <p className="mt-4 max-w-md text-sm leading-6 text-sub" data-testid="ready-compatibility">
-          {t("onboarding.readyCompatibility")}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -795,7 +836,7 @@ function InstallationAggregate({
   }
   const label = running.length === 1
     ? t("onboarding.installingOne", {
-        cli: running[0]!.cli === "codex" ? "Codex" : "Kimi",
+        cli: onboardingCliLabel(running[0]!.cli),
       })
     : t("onboarding.installingMany", { count: running.length });
   return (
@@ -826,7 +867,7 @@ function InstallationAggregate({
             </small>
           </span>
           {running.map((installation) => {
-            const name = installation.cli === "codex" ? "Codex CLI" : "Kimi CLI";
+            const name = onboardingCliFullName(installation.cli);
             return (
               <span
                 className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2"
@@ -930,7 +971,11 @@ function compatibilityCopy(
   return t("onboarding.teamCompatibility", {
     count: compatibility.affectedCount,
     clis: compatibility.clis
-      .map((cli) => cli === "codex" ? "Codex" : "Kimi")
+      .map(onboardingCliLabel)
       .join(" / "),
   });
+}
+
+function onboardingCliFullName(cli: OnboardingCli): string {
+  return cli === "claude" ? "Claude Code" : `${onboardingCliLabel(cli)} CLI`;
 }

@@ -7,6 +7,7 @@ export const ONBOARDING_IPC_CHANNELS = {
   cliReadinessCheck: "onboarding:cli-readiness:check",
   cliInstallState: "onboarding:cli-install:state",
   cliInstallStart: "onboarding:cli-install:start",
+  claudeUpdateStart: "onboarding:claude-update:start",
   cliInstallCancel: "onboarding:cli-install:cancel",
   cliInstallSnapshot: "onboarding:cli-install:snapshot",
   teamBuilderState: "onboarding:team-builder:state",

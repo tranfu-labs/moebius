@@ -3,7 +3,7 @@ export const consoleEn = {
   "console.common.cancel": "Cancel",
   "console.common.collaborator": "Collaborator",
   "console.common.fullOutput": "Full output",
-  "console.common.kimiOutputUnavailable": "Full output unavailable · Kimi does not provide a recoverable process record",
+  "console.common.providerOutputUnavailable": "Full output unavailable · This execution engine does not provide a recoverable process record",
   "console.common.outputUnavailable": "Full output unavailable",
   "console.common.systemNotice": "System notice",
   "console.common.unknownMember": "Unknown member",

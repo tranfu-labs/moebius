@@ -7,11 +7,12 @@ import {
   type CodexRunOptions,
   type CodexRunResult,
 } from "../codex.js";
+import { runClaude, type ClaudeRunOptions } from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
-export type LocalExecutionEngine = "codex" | "kimi";
+export type LocalExecutionEngine = "codex" | "claude" | "kimi";
 export type LocalExecutionMode =
   | { kind: "full" }
   | { kind: "resume"; externalSessionId: string };
@@ -43,9 +44,11 @@ export type LocalExecutionRunner = (
 export function createLocalExecutionRunner(input: {
   dataRoot?: string;
   runCodex?: (options: CodexRunOptions) => Promise<CodexRunResult>;
+  runClaude?: (options: ClaudeRunOptions) => Promise<CodexRunResult>;
   runKimi?: (options: KimiAcpRunOptions) => Promise<CodexRunResult>;
 } = {}): LocalExecutionRunner {
   const codex = input.runCodex ?? runCodex;
+  const claude = input.runClaude ?? runClaude;
   const kimi = input.runKimi ?? runKimiAcp;
   const kimiRuntimeHomePaths = input.dataRoot === undefined
     ? undefined
@@ -54,6 +57,7 @@ export function createLocalExecutionRunner(input: {
         env: process.env,
       });
   const codexReportsProcessStart = input.runCodex === undefined;
+  const claudeReportsProcessStart = input.runClaude === undefined;
   const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
     const engine = options.profile?.cli ?? "codex";
@@ -82,6 +86,31 @@ export function createLocalExecutionRunner(input: {
         externalSessionId,
       });
     };
+    if (engine === "claude") {
+      const profile = options.profile;
+      if (profile === null || profile.cli !== "claude") {
+        throw new Error("Claude execution requires a complete Claude profile");
+      }
+      if (!claudeReportsProcessStart) {
+        await options.onProcessStarted?.();
+      }
+      const result = await claude({
+        prompt: options.prompt,
+        runDir: options.runDir,
+        cwd: options.cwd,
+        profile: { ...profile, cli: "claude" },
+        mode: options.mode,
+        signal: options.signal,
+        idleTimeoutMs: options.idleTimeoutMs,
+        maxDurationMs: options.maxDurationMs,
+        onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
+        onProcessStarted: options.onProcessStarted,
+        onStructuredActivity: options.onStructuredActivity,
+        onSessionStarted: async (sessionId) => observeSession("claude", sessionId),
+      });
+      assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
+      return result;
+    }
     if (engine === "kimi") {
       const profile = options.profile;
       if (profile === null || profile.cli !== "kimi") {

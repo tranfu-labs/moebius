@@ -49,10 +49,12 @@ const meta = {
   args: {
     environment: {
       codex: { status: "ready", revision: 1 },
+      claude: { status: "missing", revision: 1 },
       kimi: { status: "missing", revision: 1 },
     },
     installations: {
       codex: { cli: "codex", status: "idle", revision: 0 },
+      claude: { cli: "claude", status: "idle", revision: 0 },
       kimi: { cli: "kimi", status: "idle", revision: 0 },
     },
     teamsState: { status: "ready", teams: [editorialTeam] },

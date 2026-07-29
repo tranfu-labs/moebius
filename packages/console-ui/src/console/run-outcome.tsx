@@ -30,6 +30,7 @@ export interface RunOutcomeProps {
   onOpenDiagnostics?: () => void;
   onRetry?: () => void;
   onEditAndResend?: () => void;
+  maintenanceAction?: { label: string; onClick: () => void };
   className?: string;
 }
 
@@ -63,6 +64,7 @@ export function RunOutcome({
   onOpenDiagnostics: _onOpenDiagnostics,
   onRetry,
   onEditAndResend,
+  maintenanceAction,
   className,
 }: RunOutcomeProps): JSX.Element {
   const { t } = useI18n();
@@ -93,6 +95,16 @@ export function RunOutcome({
         </span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
+        {maintenanceAction !== undefined ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={maintenanceAction.onClick}
+          >
+            {maintenanceAction.label}
+          </Button>
+        ) : null}
         {status === "run-not-started" || status === "run-stuck" || status === "resume-unavailable" ? (
           <Button type="button" variant="outline" size="sm" onClick={onRetry}>
             {t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}

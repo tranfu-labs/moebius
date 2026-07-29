@@ -322,6 +322,7 @@ export interface DesktopApi {
     listener: (snapshot: OnboardingCliInstallSnapshot) => void,
   ) => () => void;
   startOnboardingCliInstall?: (cli: OnboardingCli) => Promise<OnboardingCliInstallSnapshot>;
+  startOnboardingClaudeUpdate?: () => Promise<OnboardingCliInstallSnapshot>;
   cancelOnboardingCliInstall?: (cli: OnboardingCli) => Promise<OnboardingCliInstallSnapshot>;
   startOnboardingTeamBuilder?: (request: AiTeamBuilderDraftRequest) => Promise<AiTeamBuilderIpcResponse>;
   submitOnboardingTeamBuilder?: (request: AiTeamBuilderTurnRequest) => Promise<AiTeamBuilderIpcResponse>;
@@ -688,9 +689,14 @@ export function OperatorConsoleApp({
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const [agentTeamsState, setAgentTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [activeCliInstallations, setActiveCliInstallations] = useState<OnboardingCli[]>([]);
-  const cliInstallRevisionRef = useRef<Record<OnboardingCli, number>>({ codex: -1, kimi: -1 });
+  const cliInstallRevisionRef = useRef<Record<OnboardingCli, number>>({
+    codex: -1,
+    claude: -1,
+    kimi: -1,
+  });
   const cliInstallStatusRef = useRef<Record<OnboardingCli, OnboardingCliInstallSnapshot["status"]>>({
     codex: "idle",
+    claude: "idle",
     kimi: "idle",
   });
   const [lastUsedAgentTeamKey, setLastUsedAgentTeamKey] = useState<string | null>(null);
@@ -902,7 +908,7 @@ export function OperatorConsoleApp({
       }
       cliInstallRevisionRef.current[snapshot.cli] = snapshot.revision;
       cliInstallStatusRef.current[snapshot.cli] = snapshot.status;
-      setActiveCliInstallations((["codex", "kimi"] as const).filter(
+      setActiveCliInstallations((["codex", "claude", "kimi"] as const).filter(
         (cli) => cliInstallStatusRef.current[cli] === "running",
       ));
       return true;
@@ -913,13 +919,14 @@ export function OperatorConsoleApp({
       if (cancelled || next === undefined) {
         return;
       }
-      const completed = (["codex", "kimi"] as const).filter(
+      const completed = (["codex", "claude", "kimi"] as const).filter(
         (cli) => cliInstallStatusRef.current[cli] === "running" && next[cli].status !== "running",
       );
       applyInstallSnapshot(next.codex);
+      applyInstallSnapshot(next.claude);
       applyInstallSnapshot(next.kimi);
       await Promise.all(completed.map(recheckAfterInstall));
-      const active = (["codex", "kimi"] as const).filter(
+      const active = (["codex", "claude", "kimi"] as const).filter(
         (cli) => cliInstallStatusRef.current[cli] === "running",
       );
       if (active.length > 0) {
@@ -1267,7 +1274,7 @@ export function OperatorConsoleApp({
   const saveAgentExecutionProfile = useCallback(async (
     teamKey: string,
     memberSlug: string,
-    profile: { cli: "codex" | "kimi"; model: string; effort: string },
+    profile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
   ) => {
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
     const saveProfile = window.moebius?.saveAgentTeamExecutionProfile;
@@ -3752,6 +3759,16 @@ export function OperatorConsoleApp({
             }}
           />
         );
+      }}
+      onUpdateClaude={() => {
+        const update = window.moebius?.startOnboardingClaudeUpdate;
+        if (update === undefined) {
+          setClientError(t("desktop.error.builderUnavailable"));
+          return;
+        }
+        void update().catch((error) => {
+          setClientError(formatError(error));
+        });
       }}
       project={project}
       projects={projects}

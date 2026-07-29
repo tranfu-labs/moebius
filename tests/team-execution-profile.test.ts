@@ -60,6 +60,11 @@ describe("team execution profiles", () => {
       model: " gpt-5.6-sol ",
       effort: " high ",
     })).toEqual(codexProfile);
+    expect(normalizeExecutionProfile({
+      cli: "claude",
+      model: "fable",
+      effort: "xhigh",
+    })).toEqual({ cli: "claude", model: "fable", effort: "xhigh" });
     expect(() => normalizeExecutionProfile({
       cli: "codex",
       model: "",

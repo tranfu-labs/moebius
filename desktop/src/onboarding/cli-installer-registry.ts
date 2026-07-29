@@ -7,13 +7,13 @@ export interface TrustedInstallerCommand {
 
 export type TrustedCliInstaller =
   | {
-      cli: "codex";
+      cli: OnboardingCli;
       kind: "command";
       displayCommand: string;
       command: TrustedInstallerCommand;
     }
   | {
-      cli: "kimi";
+      cli: OnboardingCli;
       kind: "pipeline";
       displayCommand: string;
       source: TrustedInstallerCommand;
@@ -28,6 +28,19 @@ const INSTALLERS: Readonly<Record<OnboardingCli, TrustedCliInstaller>> = Object.
     command: Object.freeze({
       command: "npm",
       args: Object.freeze(["install", "-g", "@openai/codex"]),
+    }),
+  }),
+  claude: Object.freeze({
+    cli: "claude",
+    kind: "pipeline",
+    displayCommand: "curl -fsSL https://claude.ai/install.sh | bash",
+    source: Object.freeze({
+      command: "curl",
+      args: Object.freeze(["-fsSL", "https://claude.ai/install.sh"]),
+    }),
+    destination: Object.freeze({
+      command: "bash",
+      args: Object.freeze(["-s", "--"]),
     }),
   }),
   kimi: Object.freeze({

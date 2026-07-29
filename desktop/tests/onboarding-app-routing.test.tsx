@@ -95,10 +95,11 @@ describe("desktop onboarding routing", () => {
     "needs-login",
     "unavailable",
   ] as const)("does not consume %s readiness when the normal console mounts or navigates", async (readinessStatus) => {
-    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") =>
+    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "claude" | "kimi") =>
       readinessSnapshot(cli, readinessStatus, 1));
     const getOnboardingCliReadinessState = vi.fn(async () => ({
       codex: readinessSnapshot("codex", readinessStatus, 1),
+      claude: readinessSnapshot("claude", readinessStatus, 1),
       kimi: readinessSnapshot("kimi", readinessStatus, 1),
     }));
     let statusListener: Parameters<NonNullable<DesktopApi["onStatus"]>>[0] | null = null;
@@ -111,6 +112,7 @@ describe("desktop onboarding routing", () => {
       getOnboardingCliReadinessState,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
       }),
       onStatus(listener) {
@@ -136,7 +138,9 @@ describe("desktop onboarding routing", () => {
     expect(checkOnboardingCliReadiness).not.toHaveBeenCalled();
     expect(getOnboardingCliReadinessState).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
-    expect(document.body.textContent).not.toMatch(/名成员仍需|Codex 准备|Kimi 准备|可在 Agent 团队页调整/u);
+    expect(document.body.textContent).not.toMatch(
+      /名成员仍需|Codex 准备|Claude Code 准备|Kimi 准备|可在 Agent 团队页调整/u,
+    );
   });
 
   it.each(["deferred", "rejected"] as const)(
@@ -158,6 +162,7 @@ describe("desktop onboarding routing", () => {
         getOnboardingCliReadinessState,
         getOnboardingCliInstallState: async () => ({
           codex: installSnapshot("codex", "idle", 0),
+          claude: installSnapshot("claude", "idle", 0),
           kimi: installSnapshot("kimi", "idle", 0),
         }),
       });
@@ -289,8 +294,8 @@ describe("desktop onboarding routing", () => {
     expect(document.body.textContent).toContain("codex-cli 1.0");
   });
 
-  it("uses the dual CLI readiness boundary and allows a Kimi-only machine", async () => {
-    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") => (
+  it("uses the three-CLI readiness boundary and allows a Kimi-only machine", async () => {
+    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "claude" | "kimi") => (
       cli === "codex"
         ? {
             cli,
@@ -300,7 +305,7 @@ describe("desktop onboarding routing", () => {
             version: null,
             checkedAt: "2026-07-26T00:00:00.000Z",
           }
-        : {
+        : cli === "kimi" ? {
             cli,
             status: "ready" as const,
             code: "ready" as const,
@@ -308,6 +313,7 @@ describe("desktop onboarding routing", () => {
             version: "kimi 1.2.3",
             checkedAt: "2026-07-26T00:00:00.000Z",
           }
+          : readinessSnapshot("claude", "missing", 1)
     ));
     installApi({
       getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
@@ -319,6 +325,7 @@ describe("desktop onboarding routing", () => {
     await waitFor(() => document.body.textContent?.includes("kimi 1.2.3") === true);
 
     expect(checkOnboardingCliReadiness.mock.calls.map(([cli]) => cli).sort()).toEqual([
+      "claude",
       "codex",
       "kimi",
     ]);
@@ -340,7 +347,9 @@ describe("desktop onboarding routing", () => {
       getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
       checkOnboardingCliReadiness: async (cli) => cli === "codex"
         ? readinessSnapshot("codex", "missing", 2)
-        : readinessSnapshot("kimi", "ready", 2, "kimi 1.2.3"),
+        : cli === "kimi"
+          ? readinessSnapshot("kimi", "ready", 2, "kimi 1.2.3")
+          : readinessSnapshot("claude", "missing", 2),
       getOnboardingCliInstallState: () => initialState.promise,
       startOnboardingCliInstall,
     });
@@ -370,6 +379,7 @@ describe("desktop onboarding routing", () => {
 
     await act(async () => initialState.resolve({
       codex: installSnapshot("codex", "idle", 1),
+      claude: installSnapshot("claude", "idle", 1),
       kimi: installSnapshot("kimi", "idle", 1),
     }));
     await act(async () => Promise.resolve());
@@ -388,10 +398,13 @@ describe("desktop onboarding routing", () => {
       getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
       checkOnboardingCliReadiness: async (cli) => cli === "codex"
         ? readinessSnapshot("codex", "missing", 3)
-        : readinessSnapshot("kimi", "ready", 3, "kimi latest"),
+        : cli === "kimi"
+          ? readinessSnapshot("kimi", "ready", 3, "kimi latest")
+          : readinessSnapshot("claude", "missing", 3),
       getOnboardingCliReadinessState: () => oldState.promise,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
       }),
       onOnboardingCliInstallSnapshot(listener) {
@@ -410,6 +423,7 @@ describe("desktop onboarding routing", () => {
     });
     await act(async () => oldState.resolve({
       codex: readinessSnapshot("codex", "ready", 1, "codex stale"),
+      claude: readinessSnapshot("claude", "missing", 1),
       kimi: readinessSnapshot("kimi", "missing", 1),
     }));
     await act(async () => Promise.resolve());
@@ -428,6 +442,7 @@ describe("desktop onboarding routing", () => {
     ) => void) | null = null;
     const getOnboardingCliReadinessState = vi.fn(async () => ({
       codex: readinessSnapshot("codex", "missing", 4),
+      claude: readinessSnapshot("claude", "missing", 4),
       kimi: {
         cli: "kimi" as const,
         status: "checking" as const,
@@ -441,10 +456,11 @@ describe("desktop onboarding routing", () => {
       getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
       checkOnboardingCliReadiness: (cli) => cli === "kimi"
         ? kimiCheck.promise
-        : Promise.resolve(readinessSnapshot("codex", "missing", 4)),
+        : Promise.resolve(readinessSnapshot(cli, "missing", 4)),
       getOnboardingCliReadinessState,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
       }),
       onOnboardingCliInstallSnapshot(listener) {
@@ -486,9 +502,12 @@ describe("desktop onboarding routing", () => {
       getOnboardingStatus: async () => ({ completed: false, completedAt: null }),
       checkOnboardingCliReadiness: async (cli) => cli === "codex"
         ? readinessSnapshot("codex", "missing", 1)
-        : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
+        : cli === "kimi"
+          ? readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3")
+          : readinessSnapshot("claude", "missing", 1),
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
       }),
       startOnboardingCliInstall: async () => {
@@ -517,6 +536,7 @@ describe("desktop onboarding routing", () => {
         readinessSnapshot(cli, cli === "codex" ? "ready" : "missing", 1),
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "running", 1, "installing"),
       }),
       cancelOnboardingCliInstall,
@@ -635,11 +655,16 @@ describe("desktop onboarding routing", () => {
     ) => void>();
     const getOnboardingCliReadinessState = vi.fn(async () => ({
       codex: readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1),
+      claude: readinessSnapshot("claude", "missing", 1),
       kimi: readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
     }));
-    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") => cli === "codex"
-      ? readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1)
-      : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"));
+    const checkOnboardingCliReadiness = vi.fn(
+      async (cli: "codex" | "claude" | "kimi") => cli === "codex"
+        ? readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1)
+        : cli === "kimi"
+          ? readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3")
+          : readinessSnapshot("claude", "missing", 1),
+    );
     installApi({
       getOnboardingStatus: async () => ({
         completed: true,
@@ -649,6 +674,7 @@ describe("desktop onboarding routing", () => {
       getOnboardingCliReadinessState,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
+        claude: installSnapshot("claude", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
       }),
       onOnboardingCliInstallSnapshot(listener) {
@@ -875,7 +901,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function readinessSnapshot(
-  cli: "codex" | "kimi",
+  cli: "codex" | "claude" | "kimi",
   status: "checking" | "ready" | "missing" | "needs-login" | "unavailable",
   revision: number,
   version: string | null = null,
@@ -898,7 +924,7 @@ function readinessSnapshot(
 }
 
 function installSnapshot(
-  cli: "codex" | "kimi",
+  cli: "codex" | "claude" | "kimi",
   status: "idle" | "running" | "succeeded" | "failed" | "cancelled" | "timed-out",
   revision: number,
   stage: "starting" | "downloading" | "installing" | "verifying" | null = null,
@@ -910,7 +936,9 @@ function installSnapshot(
     stage,
     displayCommand: cli === "codex"
       ? "npm install -g @openai/codex"
-      : "curl -LsSf https://code.kimi.com/install.sh | bash",
+      : cli === "claude"
+        ? "curl -fsSL https://claude.ai/install.sh | bash"
+        : "curl -LsSf https://code.kimi.com/install.sh | bash",
     startedAt: status === "idle" ? null : "2026-07-26T00:00:00.000Z",
     updatedAt: "2026-07-26T00:00:00.000Z",
   };

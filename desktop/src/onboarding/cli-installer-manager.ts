@@ -3,6 +3,7 @@ import {
   type ChildProcess,
   type SpawnOptions,
 } from "node:child_process";
+import path from "node:path";
 
 import type {
   OnboardingCliInstallSnapshot,
@@ -59,6 +60,7 @@ interface RunningInstall {
   terminalIntent: Exclude<OnboardingCliInstallStatus, "idle" | "running" | "succeeded"> | null;
   settled: boolean;
   completionRejected: boolean;
+  installer: TrustedCliInstaller;
 }
 
 export class OnboardingCliInstallManager {
@@ -88,6 +90,7 @@ export class OnboardingCliInstallManager {
     this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
     this.state = {
       codex: this.initialSnapshot("codex"),
+      claude: this.initialSnapshot("claude"),
       kimi: this.initialSnapshot("kimi"),
     };
   }
@@ -99,12 +102,13 @@ export class OnboardingCliInstallManager {
   getState(): OnboardingCliInstallState {
     return {
       codex: this.getSnapshot("codex"),
+      claude: this.getSnapshot("claude"),
       kimi: this.getSnapshot("kimi"),
     };
   }
 
   getRunningClis(): OnboardingCli[] {
-    return (["codex", "kimi"] as const).filter((cli) => this.running.has(cli));
+    return (["codex", "claude", "kimi"] as const).filter((cli) => this.running.has(cli));
   }
 
   subscribe(listener: (snapshot: OnboardingCliInstallSnapshot) => void): () => void {
@@ -115,6 +119,26 @@ export class OnboardingCliInstallManager {
   }
 
   start(cli: OnboardingCli): OnboardingCliInstallSnapshot {
+    return this.startTrusted(this.installerForCli(cli));
+  }
+
+  startClaudeUpdate(executablePath: string): OnboardingCliInstallSnapshot {
+    if (!path.isAbsolute(executablePath) || path.basename(executablePath) !== "claude") {
+      throw new Error("Trusted Claude executable path is invalid.");
+    }
+    return this.startTrusted({
+      cli: "claude",
+      kind: "command",
+      displayCommand: "claude update",
+      command: {
+        command: executablePath,
+        args: ["update"],
+      },
+    });
+  }
+
+  private startTrusted(installer: TrustedCliInstaller): OnboardingCliInstallSnapshot {
+    const cli = installer.cli;
     if (this.running.has(cli)) {
       return this.getSnapshot(cli);
     }
@@ -143,6 +167,7 @@ export class OnboardingCliInstallManager {
       terminalIntent: null,
       settled: false,
       completionRejected: false,
+      installer,
     };
     this.running.set(cli, task);
     this.publish(cli, "running", "starting", startedAt);
@@ -177,7 +202,7 @@ export class OnboardingCliInstallManager {
 
   private async execute(task: RunningInstall): Promise<void> {
     try {
-      const installer = this.installerForCli(task.cli);
+      const installer = task.installer;
       if (installer.cli !== task.cli) {
         throw new Error("trusted installer registry returned the wrong CLI");
       }
@@ -308,7 +333,13 @@ export class OnboardingCliInstallManager {
       throw new Error("Cannot finish an installer task before every child process closes.");
     }
     this.running.delete(task.cli);
-    const snapshot = this.publish(task.cli, status, null, task.startedAt);
+    const snapshot = this.publish(
+      task.cli,
+      status,
+      null,
+      task.startedAt,
+      task.installer.displayCommand,
+    );
     task.resolveCompletion(snapshot);
   }
 
@@ -337,13 +368,16 @@ export class OnboardingCliInstallManager {
     status: OnboardingCliInstallStatus,
     stage: OnboardingCliInstallStage | null,
     startedAt: string | null,
+    displayCommand?: string,
   ): OnboardingCliInstallSnapshot {
     const snapshot: OnboardingCliInstallSnapshot = {
       cli,
       status,
       stage,
       revision: this.state[cli].revision + 1,
-      displayCommand: this.installerForCli(cli).displayCommand,
+      displayCommand: displayCommand
+        ?? this.running.get(cli)?.installer.displayCommand
+        ?? this.installerForCli(cli).displayCommand,
       startedAt,
       updatedAt: this.now().toISOString(),
     };

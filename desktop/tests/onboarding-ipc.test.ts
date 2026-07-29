@@ -67,6 +67,7 @@ describe("onboarding IPC boundary", () => {
       ONBOARDING_IPC_CHANNELS.cliReadinessState,
     )).resolves.toMatchObject({
       codex: { cli: "codex", status: "checking", revision: 0 },
+      claude: { cli: "claude", status: "checking", revision: 0 },
       kimi: { cli: "kimi", status: "checking", revision: 0 },
     });
     await expect(invoke(
@@ -74,6 +75,7 @@ describe("onboarding IPC boundary", () => {
       ONBOARDING_IPC_CHANNELS.cliInstallState,
     )).resolves.toMatchObject({
       codex: { cli: "codex", status: "idle", revision: 0 },
+      claude: { cli: "claude", status: "idle", revision: 0 },
       kimi: { cli: "kimi", status: "idle", revision: 0 },
     });
     await invoke(handlers, ONBOARDING_IPC_CHANNELS.cliReadinessCheck, { cli: "codex" });
@@ -195,7 +197,7 @@ function invoke(
 }
 
 function availableCapability(
-  cli: "codex" | "kimi",
+  cli: "codex" | "claude" | "kimi",
   cliVersion: string,
 ): ExecutionCapabilitySnapshot {
   const input = {

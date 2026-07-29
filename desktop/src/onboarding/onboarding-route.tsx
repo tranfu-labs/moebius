@@ -31,10 +31,12 @@ import type {
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
 const INITIAL_ENVIRONMENT: OnboardingEnvironmentState = {
   codex: { status: "checking", revision: 0 },
+  claude: { status: "checking", revision: 0 },
   kimi: { status: "checking", revision: 0 },
 };
 const INITIAL_INSTALLATIONS: OnboardingInstallationState = {
   codex: { cli: "codex", status: "idle", revision: 0 },
+  claude: { cli: "claude", status: "idle", revision: 0 },
   kimi: { cli: "kimi", status: "idle", revision: 0 },
 };
 
@@ -58,16 +60,25 @@ export function OnboardingRoute({
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
-  const checkSequenceRef = useRef<Record<OnboardingCli, number>>({ codex: 0, kimi: 0 });
+  const checkSequenceRef = useRef<Record<OnboardingCli, number>>({
+    codex: 0,
+    claude: 0,
+    kimi: 0,
+  });
   const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
   const readinessMergeRef = useRef<Record<
     OnboardingCli,
     { revision: number; status: OnboardingCliReadinessSnapshot["status"] }
   >>({
     codex: { revision: -1, status: "checking" },
+    claude: { revision: -1, status: "checking" },
     kimi: { revision: -1, status: "checking" },
   });
-  const installationRevisionRef = useRef<Record<OnboardingCli, number>>({ codex: -1, kimi: -1 });
+  const installationRevisionRef = useRef<Record<OnboardingCli, number>>({
+    codex: -1,
+    claude: -1,
+    kimi: -1,
+  });
   const installMutationPendingRef = useRef(new Set<OnboardingCli>());
 
   const mergeReadinessSnapshot = useCallback((
@@ -146,10 +157,10 @@ export function OnboardingRoute({
         mergeReadinessSnapshot(result);
         return;
       }
-      if (cli === "kimi") {
+      if (cli !== "codex") {
         setEnvironment((current) => ({
           ...current,
-          kimi: { status: "missing", revision: current.kimi.revision },
+          [cli]: { status: "missing", revision: current[cli].revision },
         }));
         return;
       }
@@ -182,7 +193,7 @@ export function OnboardingRoute({
   }, [api, mergeReadinessSnapshot]);
 
   const checkEnvironment = useCallback(async () => {
-    await Promise.all([checkCli("codex"), checkCli("kimi")]);
+    await Promise.all([checkCli("codex"), checkCli("claude"), checkCli("kimi")]);
   }, [checkCli]);
 
   const loadReadinessState = useCallback(async () => {
@@ -192,6 +203,7 @@ export function OnboardingRoute({
     try {
       const next = await api.getOnboardingCliReadinessState();
       mergeReadinessSnapshot(next.codex);
+      mergeReadinessSnapshot(next.claude);
       mergeReadinessSnapshot(next.kimi);
     } catch {
       // Keep the last safe renderer state; manual recheck remains available.
@@ -205,8 +217,9 @@ export function OnboardingRoute({
     try {
       const next = await api.getOnboardingCliInstallState();
       const codex = mergeInstallationSnapshot(next.codex);
+      const claude = mergeInstallationSnapshot(next.claude);
       const kimi = mergeInstallationSnapshot(next.kimi);
-      if (codex.becameSucceeded || kimi.becameSucceeded) {
+      if (codex.becameSucceeded || claude.becameSucceeded || kimi.becameSucceeded) {
         await loadReadinessState();
       }
     } catch {
@@ -268,7 +281,11 @@ export function OnboardingRoute({
   useEffect(() => {
     if (
       api?.getOnboardingCliInstallState === undefined
-      || (installations.codex.status !== "running" && installations.kimi.status !== "running")
+      || (
+        installations.codex.status !== "running"
+        && installations.claude.status !== "running"
+        && installations.kimi.status !== "running"
+      )
     ) {
       return;
     }
@@ -279,6 +296,7 @@ export function OnboardingRoute({
   }, [
     api,
     installations.codex.status,
+    installations.claude.status,
     installations.kimi.status,
     loadInstallState,
   ]);
@@ -418,13 +436,52 @@ export function OnboardingRoute({
           installMutationPendingRef.current.delete(cli);
         }
       }}
+      onUpdateClaude={async () => {
+        const cli = "claude";
+        if (
+          api?.startOnboardingClaudeUpdate === undefined
+          || installMutationPendingRef.current.has(cli)
+          || previousInstallationsRef.current.claude.status === "running"
+        ) {
+          return;
+        }
+        installMutationPendingRef.current.add(cli);
+        const optimistic: OnboardingInstallationState["claude"] = {
+          cli,
+          status: "running",
+          revision: previousInstallationsRef.current.claude.revision,
+          stage: "starting",
+        };
+        previousInstallationsRef.current = {
+          ...previousInstallationsRef.current,
+          claude: optimistic,
+        };
+        setInstallations((current) => ({ ...current, claude: optimistic }));
+        try {
+          mergeInstallationSnapshot(await api.startOnboardingClaudeUpdate());
+        } catch {
+          const failed: OnboardingInstallationState["claude"] = {
+            cli,
+            status: "failed",
+            revision: previousInstallationsRef.current.claude.revision,
+          };
+          previousInstallationsRef.current = {
+            ...previousInstallationsRef.current,
+            claude: failed,
+          };
+          setInstallations((current) => ({ ...current, claude: failed }));
+          await loadInstallState();
+        } finally {
+          installMutationPendingRef.current.delete(cli);
+        }
+      }}
       onCancelCliInstallation={async (cli) => {
         if (
           api?.cancelOnboardingCliInstall === undefined
           || installMutationPendingRef.current.has(cli)
           || !window.confirm(
             t("onboarding.cancelInstallConfirm", {
-              cli: cli === "codex" ? "Codex" : "Kimi",
+              cli: cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi",
             }),
           )
         ) {
@@ -486,6 +543,7 @@ function toViewEnvironment(
 ): OnboardingEnvironmentState {
   return {
     codex: toViewReadiness(state.codex),
+    claude: toViewReadiness(state.claude),
     kimi: toViewReadiness(state.kimi),
   };
 }
@@ -506,6 +564,7 @@ function toViewInstallations(
 ): OnboardingInstallationState {
   return {
     codex: toViewInstallation(state.codex),
+    claude: toViewInstallation(state.claude),
     kimi: toViewInstallation(state.kimi),
   };
 }

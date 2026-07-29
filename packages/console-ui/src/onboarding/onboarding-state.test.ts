@@ -87,12 +87,13 @@ describe("onboarding shell state", () => {
     const missing = { status: "missing" as const, revision: 1 };
     const ready = { status: "ready" as const, revision: 1 };
 
-    expect(canContinueOnboardingEnvironment({ codex: ready, kimi: missing })).toBe(true);
-    expect(canContinueOnboardingEnvironment({ codex: missing, kimi: ready })).toBe(true);
-    expect(canContinueOnboardingEnvironment({ codex: ready, kimi: ready })).toBe(true);
-    expect(canContinueOnboardingEnvironment({ codex: missing, kimi: missing })).toBe(false);
-    expect(chooseOnboardingBuilderCli({ codex: missing, kimi: ready })).toBe("kimi");
-    expect(chooseOnboardingBuilderCli({ codex: ready, kimi: ready })).toBe("codex");
+    expect(canContinueOnboardingEnvironment({ codex: ready, claude: missing, kimi: missing })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: missing, claude: missing, kimi: ready })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: ready, claude: ready, kimi: ready })).toBe(true);
+    expect(canContinueOnboardingEnvironment({ codex: missing, claude: missing, kimi: missing })).toBe(false);
+    expect(chooseOnboardingBuilderCli({ codex: missing, claude: ready, kimi: ready })).toBe("kimi");
+    expect(chooseOnboardingBuilderCli({ codex: ready, claude: ready, kimi: ready })).toBe("codex");
+    expect(chooseOnboardingBuilderCli({ codex: missing, claude: ready, kimi: missing })).toBe("claude");
   });
 
   it("reports affected members without changing their configured CLI", () => {
@@ -124,6 +125,7 @@ describe("onboarding shell state", () => {
     };
     const result = getOnboardingTeamCompatibility(team, {
       codex: { status: "ready", revision: 1 },
+      claude: { status: "missing", revision: 1 },
       kimi: { status: "missing", revision: 1 },
     }, (key, values) => translate("zh-CN", key, values));
 
@@ -155,6 +157,7 @@ describe("onboarding shell state", () => {
       }],
     }, {
       codex: { status: "ready", revision: 1 },
+      claude: { status: "missing", revision: 1 },
       kimi: { status: "missing", revision: 1 },
     }, (key, values) => translate("en", key, values));
 

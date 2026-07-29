@@ -265,7 +265,7 @@ export interface OperatorMessage {
     elapsedMs: number | null;
     completedAt: string | null;
     status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
-    engine: "codex" | "kimi";
+    engine: "codex" | "claude" | "kimi";
     processOutputAvailable: boolean;
   } | null;
   createdAt: string;
@@ -325,7 +325,7 @@ export interface OperatorRunSnapshot {
   elapsedMs: number | null;
   stepId?: string;
   attempt?: number;
-  engine?: "codex" | "kimi";
+  engine?: "codex" | "claude" | "kimi";
   processOutputAvailable?: boolean;
   activity?: {
     cursor: number;
@@ -402,7 +402,7 @@ export interface OperatorConsoleProps {
   agentTeamDetailState?: AgentTeamDetailState | null;
   agentTeamBuilder?: AgentTeamBuilderController;
   newConversation?: OperatorNewConversationState | null;
-  activeCliInstallations?: Array<"codex" | "kimi">;
+  activeCliInstallations?: Array<"codex" | "claude" | "kimi">;
   activeLocale?: Locale;
   pendingLocale?: Locale | null;
   languageSaveStatus?: LanguageSaveStatus;
@@ -476,6 +476,7 @@ export interface OperatorConsoleProps {
     runId: string | null;
     messageId: number | null;
   }) => void;
+  onUpdateClaude?: () => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onReplayOnboarding?: () => void;
@@ -636,6 +637,7 @@ export function OperatorConsole({
   onRetryRun,
   onAnalyzeSession,
   onAnalyzeConversation,
+  onUpdateClaude,
   onEditAndResend,
   onOpenDiagnostics,
   onReplayOnboarding,
@@ -1240,7 +1242,13 @@ export function OperatorConsole({
         >
           <RefreshCw className="h-3 w-3 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
           {activeCliInstallations.length === 1
-            ? t("console.operator.installingCli", { cli: activeCliInstallations[0] === "codex" ? "Codex" : "Kimi" })
+            ? t("console.operator.installingCli", {
+                cli: activeCliInstallations[0] === "codex"
+                  ? "Codex"
+                  : activeCliInstallations[0] === "claude"
+                    ? "Claude Code"
+                    : "Kimi",
+              })
             : t("console.operator.installingClis", { count: activeCliInstallations.length })}
         </div>
       ) : null}
@@ -1709,6 +1717,7 @@ export function OperatorConsole({
                             onOpenSubSession={openSubSession}
                             onRetryRun={onRetryRun}
                             onAnalyzeConversation={onAnalyzeConversation}
+                            onUpdateClaude={onUpdateClaude}
                             onEditAndResend={onEditAndResend}
                             onOpenDiagnostics={onOpenDiagnostics}
                             onOpenExternalLink={onOpenExternalLink}
@@ -1731,7 +1740,7 @@ export function OperatorConsole({
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
                             processOutputAvailable={run.processOutputAvailable}
-                            outputUnavailableMessage={t("console.common.kimiOutputUnavailable")}
+                            outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
                             rawOutput={runRawOutput(run)}
@@ -2590,6 +2599,7 @@ function TimelineEntry({
   onOpenSubSession,
   onRetryRun,
   onAnalyzeConversation,
+  onUpdateClaude,
   onEditAndResend,
   onOpenDiagnostics,
   onOpenExternalLink,
@@ -2609,6 +2619,7 @@ function TimelineEntry({
     runId: string | null;
     messageId: number | null;
   }) => void;
+  onUpdateClaude?: () => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
@@ -2676,6 +2687,13 @@ function TimelineEntry({
           onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
             ? () => onRetryRun?.(message.sessionId, message.runId!)
             : undefined}
+          maintenanceAction={message.error === "claude-cli-unsupported-version"
+            && onUpdateClaude !== undefined
+            ? {
+                label: t("onboarding.updateClaude"),
+                onClick: onUpdateClaude,
+              }
+            : undefined}
           onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
             ? () => onEditAndResend({
                 stoppedMessageId: message.id,
@@ -2695,7 +2713,7 @@ function TimelineEntry({
         />
         {message.runTiming?.processOutputAvailable === false ? (
           <p className="mt-2 pl-7 text-xs text-hint">
-            {t("console.common.kimiOutputUnavailable")}
+            {t("console.common.providerOutputUnavailable")}
           </p>
         ) : null}
       </div>
@@ -2832,7 +2850,7 @@ function TimelineEntry({
       ) : null}
       {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
         <p className="mt-2 text-xs text-hint">
-          {t("console.common.kimiOutputUnavailable")}
+          {t("console.common.providerOutputUnavailable")}
         </p>
       ) : null}
       </div>
@@ -2980,7 +2998,21 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
     || error === "kimi-cli-not-executable"
     || error === "kimi-cli-spawn-failed"
     || error === "kimi-cli-exited"
-    || error === "kimi-acp-timeout";
+    || error === "kimi-acp-timeout"
+    || error === "claude-cli-not-found"
+    || error === "claude-cli-not-executable"
+    || error === "claude-cli-unsupported-version"
+    || error === "claude-cli-spawn-failed"
+    || error === "claude-auth-required"
+    || error === "claude-profile-invalid"
+    || error === "claude-permission-denied"
+    || error === "claude-rate-limited"
+    || error === "claude-billing-unavailable"
+    || error === "claude-service-unavailable"
+    || error === "claude-resume-unavailable"
+    || error === "claude-protocol-invalid"
+    || error === "claude-timeout"
+    || error === "claude-cancelled";
 }
 
 function systemSummary(message: OperatorMessage, t: Translate): string {

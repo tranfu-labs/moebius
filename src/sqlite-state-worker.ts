@@ -711,7 +711,7 @@ function ensureSessionAgentTeamColumns(database: SqliteDatabase): void {
 function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "session_agent_team_members", "execution_cli")) {
     database.exec(
-      "ALTER TABLE session_agent_team_members ADD COLUMN execution_cli TEXT CHECK (execution_cli IS NULL OR execution_cli IN ('codex', 'kimi'))",
+      "ALTER TABLE session_agent_team_members ADD COLUMN execution_cli TEXT CHECK (execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi'))",
     );
   }
   if (!tableHasColumn(database, "session_agent_team_members", "execution_model")) {
@@ -720,7 +720,85 @@ function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "session_agent_team_members", "execution_effort")) {
     database.exec("ALTER TABLE session_agent_team_members ADD COLUMN execution_effort TEXT");
   }
+  migrateSessionAgentTeamProfileCliConstraint(database);
   markSchemaMigration(database, "agent-runtime-profiles-session-snapshot");
+}
+
+function migrateSessionAgentTeamProfileCliConstraint(database: SqliteDatabase): void {
+  const migrationVersion = "support-claude-cli-session-profile-constraint";
+  if (
+    database.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
+      .get(migrationVersion) !== undefined
+  ) {
+    return;
+  }
+  const tableSql = database.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'session_agent_team_members'",
+  ).get();
+  if (
+    isRecord(tableSql)
+    && typeof tableSql.sql === "string"
+    && tableSql.sql.includes("'claude'")
+  ) {
+    markSchemaMigration(database, migrationVersion);
+    return;
+  }
+  const beforeCount = readTableRowCount(database, "session_agent_team_members");
+  database.exec("PRAGMA foreign_keys = OFF");
+  try {
+    transaction(database, () => {
+      database.exec(`
+        CREATE TABLE session_agent_team_members_claude_migration (
+          session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          slot TEXT NOT NULL CHECK (slot IN ('effective', 'pending')),
+          member_name TEXT NOT NULL,
+          agent_markdown TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          execution_cli TEXT CHECK (
+            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi')
+          ),
+          execution_model TEXT,
+          execution_effort TEXT,
+          PRIMARY KEY(session_id, slot, member_name)
+        );
+        INSERT INTO session_agent_team_members_claude_migration
+          (session_id, slot, member_name, agent_markdown, sort_order,
+           execution_cli, execution_model, execution_effort)
+        SELECT session_id, slot, member_name, agent_markdown, sort_order,
+               execution_cli, execution_model, execution_effort
+        FROM session_agent_team_members
+        ORDER BY session_id, slot, sort_order, member_name;
+        DROP TABLE session_agent_team_members;
+        ALTER TABLE session_agent_team_members_claude_migration
+          RENAME TO session_agent_team_members;
+      `);
+      const afterCount = readTableRowCount(database, "session_agent_team_members");
+      if (afterCount !== beforeCount) {
+        throw new Error("Row count changed during Claude execution profile migration");
+      }
+      const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all();
+      if (foreignKeyViolations.length > 0) {
+        throw new Error("Foreign key check failed during Claude execution profile migration");
+      }
+      markSchemaMigration(database, migrationVersion);
+      return null;
+    });
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function readTableRowCount(database: SqliteDatabase, tableName: string): number {
+  if (tableName !== "session_agent_team_members") {
+    throw new Error("Unsupported row-count table");
+  }
+  const row = database.prepare(
+    "SELECT COUNT(*) AS row_count FROM session_agent_team_members",
+  ).get();
+  if (!isRecord(row) || typeof row.row_count !== "number") {
+    throw new Error("Unable to read session Agent team member row count");
+  }
+  return row.row_count;
 }
 
 function ensureRoleThreadContextColumns(database: SqliteDatabase): void {
@@ -2183,7 +2261,7 @@ function listLocalSessionAgentTeamSnapshot(
 ): { members: Array<{
   name: string;
   agentMarkdown: string;
-  executionProfile: { cli: "codex" | "kimi"; model: string; effort: string } | null;
+  executionProfile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
 }> } | null {
   const rows = database.prepare(
     `SELECT member_name, agent_markdown, execution_cli, execution_model, execution_effort
@@ -4623,7 +4701,7 @@ function readNullableAgentTeamOwnership(value: unknown): "system" | "user" | nul
 }
 
 function readExecutionProfile(row: Record<string, unknown>): {
-  cli: "codex" | "kimi";
+  cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
 } | null {
@@ -4634,7 +4712,7 @@ function readExecutionProfile(row: Record<string, unknown>): {
     return null;
   }
   if (
-    (cli !== "codex" && cli !== "kimi")
+    (cli !== "codex" && cli !== "claude" && cli !== "kimi")
     || typeof model !== "string"
     || model.length === 0
     || typeof effort !== "string"

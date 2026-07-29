@@ -79,6 +79,14 @@ export function registerOnboardingIpc(input: {
     installer.getState());
   input.ipcMain.handle(ONBOARDING_IPC_CHANNELS.cliInstallStart, async (_event, rawRequest) =>
     installer.start(parseCliRequest(rawRequest)));
+  input.ipcMain.handle(ONBOARDING_IPC_CHANNELS.claudeUpdateStart, async (_event, rawRequest) => {
+    if (rawRequest !== undefined) {
+      throw new OnboardingIpcRequestError();
+    }
+    return installer.startClaudeUpdate(
+      await readiness.getOrResolveTrustedClaudeExecutable(),
+    );
+  });
   input.ipcMain.handle(ONBOARDING_IPC_CHANNELS.cliInstallCancel, async (_event, rawRequest) =>
     installer.cancel(parseCliRequest(rawRequest)));
 

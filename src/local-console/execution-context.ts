@@ -12,7 +12,7 @@ export interface LocalRunExecutionContextFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   profile: LocalConsoleExecutionProfile | null;
   profileFingerprint: string;
   agentIdentityFingerprint: string;
@@ -39,7 +39,7 @@ export interface LocalExecutionSessionLinkFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   externalSessionId: string;
   profileFingerprint: string;
   agentIdentityFingerprint?: string;
@@ -51,7 +51,7 @@ export interface LocalAgentSessionLinkFact {
   sessionId: string;
   agentIdentityFingerprint: string;
   role: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   externalSessionId: string;
   profileFingerprint: string;
   contextFingerprint: string;
@@ -63,7 +63,7 @@ export interface LocalProviderSessionObservedFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   agentIdentityFingerprint: string;
   contextFingerprint: string;
   externalSessionId: string | null;
@@ -214,7 +214,7 @@ export function localAgentIdentityFingerprint(input: {
 
 export function executionContextFingerprint(input: {
   role: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   profileFingerprint: string;
   workspace: { cwd: string; mode: string };
   team: Array<{

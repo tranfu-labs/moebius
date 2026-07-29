@@ -3,7 +3,7 @@ export const consoleZhCN = {
   "console.common.cancel": "取消",
   "console.common.collaborator": "协作者",
   "console.common.fullOutput": "完整输出",
-  "console.common.kimiOutputUnavailable": "完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录",
+  "console.common.providerOutputUnavailable": "完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录",
   "console.common.outputUnavailable": "完整输出不可用",
   "console.common.systemNotice": "系统提示",
   "console.common.unknownMember": "成员未知",

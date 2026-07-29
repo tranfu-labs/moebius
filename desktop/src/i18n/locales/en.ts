@@ -10,7 +10,7 @@ export const en = {
   "dialog.quit.cancelInstall": "Cancel installation and quit",
   "dialog.quit.title": "CLI installation is still running",
   "dialog.quit.oneInstalling": "{cli} CLI is still being installed.",
-  "dialog.quit.bothInstalling": "Codex and Kimi CLIs are still being installed.",
+  "dialog.quit.manyInstalling": "{clis} CLIs are still being installed.",
   "dialog.quit.detail": "Stay in Moebius until installation finishes, or cancel all installations and quit.",
   "dialog.cleanup.title": "Installation process is still stopping",
   "dialog.cleanup.message": "Moebius has not confirmed that the CLI installation process exited safely.",

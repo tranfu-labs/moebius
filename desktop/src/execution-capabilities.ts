@@ -6,6 +6,10 @@ import {
   MINIMUM_CODEX_CLI_VERSION,
 } from "../../src/codex-cli-version.js";
 import {
+  isSupportedClaudeCliVersion,
+  MINIMUM_CLAUDE_CLI_VERSION,
+} from "../../src/claude-cli-version.js";
+import {
   capabilitySnapshotId,
   type ExecutionCapabilityModel,
   type ExecutionCapabilitySnapshot,
@@ -24,7 +28,7 @@ export type SafeCommandRunner = (
 ) => Promise<SafeCommandResult>;
 
 export async function probeExecutionCapabilities(input: {
-  cli: "codex" | "kimi";
+  cli: "codex" | "claude" | "kimi";
   now?: () => Date;
   timeoutMs?: number;
   runCommand?: SafeCommandRunner;
@@ -33,7 +37,95 @@ export async function probeExecutionCapabilities(input: {
 }): Promise<ExecutionCapabilitySnapshot> {
   return input.cli === "codex"
     ? probeCodexCapabilities(input)
-    : probeKimiCapabilities(input);
+    : input.cli === "claude"
+      ? probeClaudeCapabilities(input)
+      : probeKimiCapabilities(input);
+}
+
+export async function probeClaudeCapabilities(input: {
+  now?: () => Date;
+  timeoutMs?: number;
+  runCommand?: SafeCommandRunner;
+  knownCliVersion?: string;
+} = {}): Promise<ExecutionCapabilitySnapshot> {
+  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const run = input.runCommand ?? runCommandSafely;
+  let version: string | null = null;
+  try {
+    version = input.knownCliVersion
+      ?? ((await run("claude", ["--version"], timeoutMs)).stdout.trim() || null);
+    if (version === null) {
+      throw new CapabilityProbeError("CLI_UNAVAILABLE", "Claude Code 没有返回版本信息。");
+    }
+    if (!isSupportedClaudeCliVersion(version)) {
+      throw new CapabilityProbeError(
+        "CLI_VERSION_UNSUPPORTED",
+        `Claude Code 版本过旧，需要 ${MINIMUM_CLAUDE_CLI_VERSION} 或更高版本。`,
+      );
+    }
+    const auth = parseClaudeAuthStatus(
+      JSON.parse((await run("claude", ["auth", "status", "--json"], timeoutMs)).stdout),
+    );
+    if (!auth.loggedIn) {
+      throw new CapabilityProbeError(
+        "AUTHENTICATION_REQUIRED",
+        "Claude Code 尚未登录。",
+      );
+    }
+    return makeSnapshot({
+      cli: "claude",
+      cliVersion: version,
+      status: "available",
+      models: claudeStaticModels(),
+      checkedAt: (input.now ?? (() => new Date()))().toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return failedSnapshot(
+        "claude",
+        new CapabilityProbeError(
+          "CAPABILITY_PROTOCOL_UNAVAILABLE",
+          "Claude Code 返回了无法识别的登录状态。",
+        ),
+        input.now,
+        version,
+      );
+    }
+    return failedSnapshot("claude", error, input.now, version);
+  }
+}
+
+export function parseClaudeAuthStatus(value: unknown): { loggedIn: boolean } {
+  if (!isPlainObject(value) || typeof value.loggedIn !== "boolean") {
+    throw new CapabilityProbeError(
+      "CAPABILITY_PROTOCOL_UNAVAILABLE",
+      "Claude Code 返回了无法识别的登录状态。",
+    );
+  }
+  return { loggedIn: value.loggedIn };
+}
+
+export function claudeStaticModels(): ExecutionCapabilityModel[] {
+  return [
+    {
+      id: "fable",
+      displayName: "fable",
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      defaultEffort: "high",
+    },
+    {
+      id: "sonnet",
+      displayName: "sonnet",
+      efforts: ["low", "medium", "high", "max"],
+      defaultEffort: "high",
+    },
+    {
+      id: "opus",
+      displayName: "opus",
+      efforts: ["low", "medium", "high", "max"],
+      defaultEffort: "high",
+    },
+  ];
 }
 
 export async function probeCodexCapabilities(input: {
@@ -349,7 +441,7 @@ function makeSnapshot(input: Omit<ExecutionCapabilitySnapshot, "snapshotId">): E
 }
 
 function failedSnapshot(
-  cli: "codex" | "kimi",
+  cli: "codex" | "claude" | "kimi",
   error: unknown,
   now?: () => Date,
   cliVersion: string | null = null,

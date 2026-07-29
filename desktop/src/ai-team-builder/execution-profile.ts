@@ -17,14 +17,19 @@ export async function resolveAiTeamBuilderExecutionProfile(): Promise<ExecutionP
   if (kimi.status === "available") {
     return selectProfile(kimi);
   }
+  const claude = await probeExecutionCapabilities({ cli: "claude" });
+  if (claude.status === "available") {
+    return selectProfile(claude, "sonnet");
+  }
   throw new AiTeamBuilderExecutionProfileError(
-    "Codex 和 Kimi 当前都未通过服务端就绪检查。",
+    "Codex、Kimi 和 Claude 当前都未通过服务端就绪检查。",
   );
 }
 
 export function selectAiTeamBuilderProfileFromSnapshots(input: {
   codex: ExecutionCapabilitySnapshot;
   kimi: ExecutionCapabilitySnapshot;
+  claude: ExecutionCapabilitySnapshot;
   preferredCodexModel?: string;
 }): ExecutionProfile {
   if (input.codex.status === "available") {
@@ -33,8 +38,11 @@ export function selectAiTeamBuilderProfileFromSnapshots(input: {
   if (input.kimi.status === "available") {
     return selectProfile(input.kimi);
   }
+  if (input.claude.status === "available") {
+    return selectProfile(input.claude, "sonnet");
+  }
   throw new AiTeamBuilderExecutionProfileError(
-    "Codex 和 Kimi 当前都未通过服务端就绪检查。",
+    "Codex、Kimi 和 Claude 当前都未通过服务端就绪检查。",
   );
 }
 
@@ -49,7 +57,13 @@ export function selectAiTeamBuilderProfileFromSnapshot(
   }
   return selectProfile(
     snapshot,
-    preferredModel ?? (snapshot.cli === "codex" ? CODEX_MODEL : undefined),
+    preferredModel ?? (
+      snapshot.cli === "codex"
+        ? CODEX_MODEL
+        : snapshot.cli === "claude"
+          ? "sonnet"
+          : undefined
+    ),
   );
 }
 

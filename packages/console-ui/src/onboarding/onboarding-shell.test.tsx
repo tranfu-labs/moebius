@@ -115,8 +115,13 @@ describe("OnboardingShell", () => {
     expect(screen.queryByRole("button", { name: "退出引导回看" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
     expect(screen.getByText("Codex CLI 未安装")).toBeVisible();
+    expect(screen.getByText("Claude Code 未安装")).toBeVisible();
     expect(screen.getByText("Kimi CLI 未安装")).toBeVisible();
     expect(screen.getByText("npm install -g @openai/codex")).toBeInTheDocument();
+    expect(screen.getByText("curl -fsSL https://claude.ai/install.sh | bash")).toBeInTheDocument();
+    expect(screen.getByText(
+      "Codex、Claude Code 或 Kimi 至少一个可用，就可以启动团队",
+    )).toBeInTheDocument();
     expect(screen.getByText("curl -LsSf https://code.kimi.com/install.sh | bash")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "安装 Kimi CLI" }));
     fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
@@ -164,6 +169,31 @@ describe("OnboardingShell", () => {
       "当前版本：codex-cli 0.144.1。请升级到 0.145.0 或更高版本后重新检查。",
     )).toBeVisible();
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
+  });
+
+  it("offers only the trusted Claude update action for an unsupported installed version", () => {
+    const onUpdateClaude = vi.fn();
+    const onInstallCli = vi.fn();
+    renderShell({
+      environment: createEnvironment({
+        claude: {
+          status: "unavailable",
+          code: "version-unsupported",
+          revision: 1,
+          version: "2.1.169 (Claude Code)",
+        },
+      }),
+      onUpdateClaude,
+      onInstallCli,
+    });
+
+    expect(screen.getByText("Claude Code 需要升级")).toBeVisible();
+    expect(screen.getByText(
+      "当前版本：2.1.169 (Claude Code)。请升级到 2.1.170 或更高版本后重新检查。",
+    )).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "更新 Claude Code" }));
+    expect(onUpdateClaude).toHaveBeenCalledOnce();
+    expect(onInstallCli).not.toHaveBeenCalledWith("claude");
   });
 
   it("allows Kimi-only continuation and keeps Codex recovery visible", () => {
@@ -275,6 +305,61 @@ describe("OnboardingShell", () => {
     expect(onOpenTeamBuilder).toHaveBeenCalledOnce();
   });
 
+  it("keeps the Claude-only builder card and inline context label consistent", () => {
+    renderShell({
+      environment: createEnvironment({
+        codex: { status: "missing", revision: 1 },
+        claude: { status: "ready", revision: 1, version: "2.1.220 (Claude Code)" },
+        kimi: { status: "missing", revision: 1 },
+      }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByText(
+      "你说一下要做什么样的活，AI 将使用 Claude Code 帮你把成员组齐",
+    )).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("open-onboarding-team-builder"));
+
+    expect(screen.getByText("使用 Claude Code CLI · 仍在第 2 步")).toBeInTheDocument();
+    expect(screen.queryByText("使用 Kimi CLI · 仍在第 2 步")).not.toBeInTheDocument();
+  });
+
+  it("ends partial compatibility messaging at the onboarding boundary", async () => {
+    renderShell({
+      environment: createEnvironment({
+        codex: { status: "missing", revision: 1 },
+        claude: { status: "ready", revision: 1, version: "2.1.220 (Claude Code)" },
+        kimi: { status: "missing", revision: 1 },
+      }),
+      teamsState: {
+        status: "ready",
+        teams: [{
+          ...developmentTeam,
+          members: developmentTeam.members.map((member) => ({
+            ...member,
+            executionProfile: {
+              binding: { source: "recommended" as const },
+              recommendation: { cli: "codex" as const, model: "gpt", effort: "high" },
+              effectiveProfile: { cli: "codex" as const, model: "gpt", effort: "high" },
+            },
+          })),
+        }],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /开发团队/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    expect(screen.getByText(/其中 \d+ 名成员仍需完成 Codex 准备/u)).toBeVisible();
+    expect(screen.queryByText(/进入新对话后仍会保留/u)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ready-compatibility")).not.toBeInTheDocument();
+  });
+
   it("finishes with the selected team key", async () => {
     const onComplete = vi.fn(async () => undefined);
     renderShell({ onComplete });
@@ -360,6 +445,7 @@ function createEnvironment(
 ): OnboardingEnvironmentState {
   return {
     codex: { status: "ready", revision: 1, version: "codex-cli 1.0" },
+    claude: { status: "missing", revision: 1 },
     kimi: { status: "missing", revision: 1 },
     ...overrides,
   };
@@ -370,6 +456,7 @@ function createInstallations(
 ): OnboardingInstallationState {
   return {
     codex: { cli: "codex", status: "idle", revision: 0 },
+    claude: { cli: "claude", status: "idle", revision: 0 },
     kimi: { cli: "kimi", status: "idle", revision: 0 },
     ...overrides,
   };

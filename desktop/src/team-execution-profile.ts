@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export type ExecutionCli = "codex" | "kimi";
+export type ExecutionCli = "codex" | "claude" | "kimi";
 
 export interface ExecutionProfile {
   cli: ExecutionCli;
@@ -51,11 +51,11 @@ export type ExecutionProfileStatus =
 
 export function normalizeExecutionProfile(value: unknown): ExecutionProfile {
   if (!isPlainObject(value)) {
-    throw new ExecutionProfileError("CLI 必须是 Codex 或 Kimi。");
+    throw new ExecutionProfileError("CLI 必须是 Codex、Claude Code 或 Kimi。");
   }
   const cli = typeof value.cli === "string" ? value.cli.trim() : "";
-  if (cli !== "codex" && cli !== "kimi") {
-    throw new ExecutionProfileError("CLI 必须是 Codex 或 Kimi。");
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+    throw new ExecutionProfileError("CLI 必须是 Codex、Claude Code 或 Kimi。");
   }
   if (typeof value.model !== "string" || value.model.trim().length === 0) {
     throw new ExecutionProfileError("Model 不能为空。");

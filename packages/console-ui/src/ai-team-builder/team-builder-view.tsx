@@ -28,7 +28,7 @@ export type TeamBuilderViewPhase =
 
 export interface TeamBuilderViewState {
   phase: TeamBuilderViewPhase;
-  builderCli?: "codex" | "kimi" | null;
+  builderCli?: "codex" | "claude" | "kimi" | null;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   proposal: TeamProposalPreview | null;
   proposalRevision: number | null;

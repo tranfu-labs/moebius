@@ -376,58 +376,64 @@ Source: docs/product/pages/main-left-sidebar.md#底部应用操作
 - **THEN** “重新查看引导”位于“设置”之前
 - **AND** 两者都有可读的辅助名称和悬停说明。
 
-### Requirement: 引导第 1 步以双 CLI 独立状态放行
+### Requirement: 引导第 1 步以三 CLI 独立状态放行
 
 Source: docs/product/pages/onboarding.md#第-1-步-环境就绪至少一个-cli-可用
 
-`OnboardingShell` MUST 同时渲染 Codex 和 Kimi 两行独立状态，并明确“Codex 或 Kimi 至少一个可用”。任一行 ready 时“继续” MUST 可用；两行都不 ready 时 MUST 禁用。全局“重新检查” MUST 在 checking、ready、错误和安装状态下始终可操作，且不得让一套 CLI 的状态覆盖另一套。
+`OnboardingShell` MUST 同时渲染 Codex、Claude Code 和 Kimi 三行独立状态，并明确三者
+至少一个可用即可继续。任一行 ready 时“继续” MUST 可用；三行都不 ready 时 MUST
+禁用。全局“重新检查” MUST 在 checking、ready、错误和安装状态下始终可操作，并同时
+刷新三行；每行状态 MUST 只由自身最新 revision 更新。
 
-缺失行 MUST 展示随应用发布的安装命令和具有“安装 Codex CLI”或“安装 Kimi CLI”可访问名称的播放按钮。needs-login 与 unavailable 行 MUST 只展示对应修复指引，不得展示安装动作。ready 行 MUST 原样展示调用方提供的当次真实版本；静态表面没有真实输入时 MUST 使用无版本通用文案。
+缺失行 MUST 展示该 CLI 随应用发布的安装命令和可访问安装按钮。Claude 按钮名称 MUST
+为“安装 Claude Code”。needs-login、unsupported-version 与 unavailable 行 MUST 只
+展示对应修复指引，不得展示安装动作；Claude unsupported-version 行 MUST 额外展示
+可访问的「更新 Claude Code」按钮，并只能触发调用方提供的受信任 update action。
+ready 行 MUST 展示调用方提供的真实版本；静态表面没有真实输入时 MUST 使用无版本
+通用文案。
 
-#### Scenario: 任一 ready 立即放行
+#### Scenario: Claude-only ready 立即放行
 
-- **GIVEN** Codex ready 且 Kimi missing
+- **GIVEN** Claude Code ready 且 Codex/Kimi missing
 - **WHEN** 第 1 步渲染
 - **THEN** “继续”可用
-- **AND** Kimi 行仍展示独立安装动作
-- **AND** 页面明确安装 Kimi 是可选的。
+- **AND** Codex 与 Kimi 行仍展示各自安装动作
+- **AND** 页面明确其安装是可选的。
 
-#### Scenario: 手动重新检查始终存在
+#### Scenario: 三行重新检查
 
-- **GIVEN** 两行都 ready
-- **WHEN** 用户查看 footer
-- **THEN** “重新检查”仍然可用
-- **AND** 触发后两行分别显示当次 checking 反馈。
+- **GIVEN** 三行已各自有终态
+- **WHEN** 用户触发“重新检查”
+- **THEN** 三行分别显示当次 checking 反馈
+- **AND** 任一迟到的旧 revision 不覆盖新结果。
 
 ### Requirement: 引导安装反馈持续且可访问
 
 Source: docs/product/pages/onboarding.md#第-1-步-cli-缺失与安装中
 
-启动安装后，对应播放按钮 MUST 立即禁止重复触发，行内 MUST 持续显示 starting、downloading、installing 或 verifying 受控阶段，并提供带确认文案的取消。活动变化、成功、失败、取消和超时 MUST 通过 `aria-live` 宣告；reduced-motion 下 MUST 以非动画状态变化保留同等信息。
+启动安装后，对应按钮 MUST 立即禁止重复触发，行内 MUST 持续显示 starting、
+downloading、installing 或 verifying 阶段，并提供确认取消。活动变化、成功、失败、
+取消和超时 MUST 通过 `aria-live` 宣告；reduced-motion 下 MUST 保留非动画等价信息。
 
-离开第 1 步后，标题栏 MUST 在存在活动任务时聚合单项或双项状态；没有任务时 MUST 不占据状态位置。安装成功 MUST 只刷新对应 CLI；失败、取消和超时 MUST 保留独立重试。
+离开第 1 步后，标题栏 MUST 聚合任意 1–3 项活动任务；没有任务时 MUST 不占据状态位置。
+聚合数量 MUST 随任务完成准确下降，每项阶段与取消入口仍可区分。安装成功 MUST 只刷新
+对应 CLI；失败、取消和超时 MUST 保留独立重试。
 
-#### Scenario: 点击播放立即反馈
+#### Scenario: 三任务聚合
 
-- **GIVEN** Kimi missing
-- **WHEN** 用户点击“安装 Kimi CLI”
-- **THEN** 按钮立即变为不可重复触发
-- **AND** 行内显示“正在安装”和当前阶段
-- **AND** screen reader 收到状态更新。
-
-#### Scenario: 双任务聚合
-
-- **GIVEN** Codex 与 Kimi 安装都在运行
+- **GIVEN** Codex、Claude Code 与 Kimi 安装都在运行
 - **WHEN** 用户进入第 2 步
-- **THEN** 标题栏显示两项安装活动的聚合入口
-- **AND** 每项仍可区分自身阶段。
+- **THEN** 标题栏显示“3 项 CLI 正在安装”的聚合入口
+- **AND** 详情能区分三项自身阶段
+- **WHEN** Claude 任务结束
+- **THEN** 聚合数量按剩余两项更新。
 
 ### Requirement: 引导贯穿团队 CLI 兼容提示
 
 Source: docs/product/pages/onboarding.md#第-2-步-选团队
 Source: docs/product/pages/onboarding.md#第-4-步-准备就绪
 
-onboarding 团队卡与第 4 步 MUST 根据成员 effective CLI 和当前 readiness 使用同一规则提示不兼容成员数与需要准备的 CLI，MUST NOT 静默替换成员 CLI。全兼容时 MAY 显示准备就绪；部分兼容时 MUST 使用中性状态且 MUST NOT 显示全成功大勾。相关 CLI 修复后，引导内提示 MUST 根据新 readiness 自动消失。
+onboarding 团队卡与第 4 步 MUST 根据成员 effective CLI 和 Codex/Claude Code/Kimi readiness 使用同一规则提示不兼容成员数与需要准备的 CLI，MUST NOT 静默替换成员 CLI。全兼容时 MAY 显示准备就绪；部分兼容时 MUST 使用中性状态且 MUST NOT 显示全成功大勾。相关 CLI 修复后，引导内提示 MUST 根据新 readiness 自动消失。
 
 该提示 MUST 止于 onboarding 边界，MUST NOT 作为状态、文案或交互要求传播到新对话页。
 
@@ -445,12 +451,20 @@ onboarding 团队卡与第 4 步 MUST 根据成员 effective CLI 和当前 readi
 - **WHEN** Kimi 后台安装并 readiness 复检成功
 - **THEN** onboarding 内同一团队的兼容警告自动消失。
 
+#### Scenario: Claude 成员部分兼容
+
+- **GIVEN** 只有 Codex ready 且所选团队有两名 Claude 成员
+- **WHEN** 用户查看 onboarding 团队卡和第 4 步
+- **THEN** 两处一致提示两名成员需要 Claude Code 准备
+- **AND** 不改变这些成员的 CLI
+- **AND** 第 4 步不显示全成功大勾。
+
 ### Requirement: 新对话不展示 CLI 准备概念
 
 Source: docs/product/pages/main-conversation.md#选择工作空间与团队
 Source: docs/product/pages/main-conversation.md#指标与验收
 
-新对话页 MUST NOT 读取或展示 onboarding readiness，MUST NOT 显示成员准备人数、Codex/Kimi 准备信息、团队 CLI 兼容性提示或为解决该提示而前往 Agent 团队页的引导。该规则 MUST 对 checking、ready、missing、needs-login、unavailable、IPC 延迟、IPC 失败和迟到响应一致成立。
+新对话页 MUST NOT 读取或展示 onboarding readiness，MUST NOT 显示成员准备人数、Codex/Claude Code/Kimi 准备信息、团队 CLI 兼容性提示或为解决该提示而前往 Agent 团队页的引导。该规则 MUST 对 checking、ready、missing、needs-login、unavailable、IPC 延迟、IPC 失败和迟到响应一致成立。
 
 zh-CN 与 en locale MUST 使用同一信息边界；切换 locale、父级重渲染或导航后返回 MUST NOT 恢复旧提示 DOM 或任一语言的准备文案。
 
@@ -458,7 +472,7 @@ zh-CN 与 en locale MUST 使用同一信息边界；切换 locale、父级重渲
 
 #### Scenario: 任意 readiness 终态都没有准备提示
 
-- **GIVEN** 正常操作台的新对话选择了包含 Codex/Kimi 混合成员的有效团队
+- **GIVEN** 正常操作台的新对话选择了包含 Codex/Claude Code/Kimi 混合成员的有效团队
 - **WHEN** 上游 readiness 分别为 ready、missing、needs-login 或 unavailable
 - **THEN** 页面都不显示成员准备人数、CLI 准备信息或兼容性提示
 - **AND** readiness 差异不改变发送按钮状态。
@@ -472,11 +486,10 @@ zh-CN 与 en locale MUST 使用同一信息边界；切换 locale、父级重渲
 
 #### Scenario: 中英文均无旧提示
 
-- **GIVEN** 新对话选择了含 Codex/Kimi 混合成员的有效团队
+- **GIVEN** 新对话选择了含 Codex/Claude Code/Kimi 混合成员的有效团队
 - **WHEN** 页面分别以 zh-CN 与 en 渲染并发生父级重渲染
 - **THEN** 两种 locale 都不存在旧兼容性提示 DOM
 - **AND** 不存在成员准备人数、CLI setup/准备或前往 Agent 团队页调整的文案。
-
 ### Requirement: 引导壳区分首启与回看模式
 
 Source: docs/product/pages/onboarding.md#重新查看引导
@@ -993,13 +1006,17 @@ Source: docs/product/pages/agent-conversation.md#完成时间
 ## Requirement: 完整输出能力按执行引擎局部降级
 Source: docs/product/pages/agent-conversation.md#完整输出
 
-系统 MUST 只为能提供稳定过程记录的 run 显示可点击完整输出入口。Kimi run MUST 保留最新活动、计时和最终回复，但原位说明当前执行不提供可恢复的完整过程记录，MUST NOT 打开空标签或借用 Codex 记录。
+系统 MUST 只为能提供稳定过程记录的 run 显示可点击完整输出入口。Kimi 与 Claude run
+MUST 保留最新活动、计时和最终回复，但统一原位说明当前执行引擎不提供可恢复的完整
+过程记录，MUST NOT 打开空标签、借用 Codex 记录或显示另一执行引擎的名称。
 
-### Scenario: Kimi run 工作中
-- GIVEN 当前活动 run 的执行引擎是 Kimi
-- WHEN 用户查看活动记录
-- THEN 最新活动与已进行时长正常显示
-- AND 完整输出位置显示不可用说明而不是按钮
+#### Scenario: Claude run 工作中
+
+- **GIVEN** 当前活动 run 的执行引擎是 Claude
+- **WHEN** 用户查看活动记录
+- **THEN** 最新活动与已进行时长正常显示
+- **AND** 完整输出位置显示执行引擎中性不可用说明而不是按钮
+- **AND** 说明中不出现 Kimi。
 
 ## Requirement: 恢复不可用事实提供明确重新运行
 Source: docs/product/pages/agent-conversation.md#四种事实与异常状态
@@ -2128,51 +2145,51 @@ introduce a runtime-profile management status.
 
 Source: docs/product/pages/agent-teams.md#Agent-运行配置
 
-The selected member MUST expose the saved CLI, model and effort, its source, and eligible restore/save
-actions without waiting for runtime capability data. CLI MUST be a Codex/Kimi enum. Model MUST be a
-dropdown backed by the product-bundled registry for the selected CLI, and effort MUST be a dropdown
-containing only the selected model's supported efforts. Changing CLI MUST choose that CLI's compatibility
-default. Changing model MUST preserve the current effort only when the new model supports it and otherwise
-choose the model's default effort.
+The selected member MUST expose the saved CLI, model and effort, source and eligible restore/save
+actions without runtime capability data. CLI MUST be a Codex/Claude Code/Kimi enum. Model MUST use
+the product-bundled registry for that CLI; effort MUST contain only the selected model's supported
+efforts. Selecting Claude MUST choose `sonnet/high`. Selecting Claude `fable` MUST offer xhigh,
+while selecting `sonnet` or `opus` MUST remove xhigh. Changing model MUST preserve effort only when
+still supported and otherwise choose that model's default `high`.
 
-A previously saved model or effort absent from the current registry MUST remain visible as an explicitly
-unsupported legacy custom value. Opening the detail, switching members and parent rerenders MUST NOT
-replace or persist that value. Selecting a current model MUST replace the legacy draft with a supported
-model/effort combination.
+A saved value absent from the registry MUST remain visibly unsupported until the user explicitly
+selects a current combination. Profile drafts MUST survive member switches independently of Markdown
+drafts. Parent rerenders, new callback identities and slow or failed async returns MUST NOT reset a
+draft, reapply stale data or trigger duplicate reads. Save failure MUST retain the draft and identify
+the last saved profile as effective.
 
-Profile drafts MUST survive member switches independently of Agent Markdown drafts. Save failure MUST
-retain the draft and state that the last saved profile remains effective. Leaving, duplicating or updating
-with either draft type MUST use one combined save/discard/cancel guard.
+#### Scenario: Claude draft survives parent rerenders
 
-#### Scenario: Profile save fails while Markdown is clean
+- **GIVEN** a member has an unsaved Claude/fable/xhigh profile draft
+- **WHEN** the parent rerenders with new callback identities and an older read resolves late
+- **THEN** the Claude draft remains visible
+- **AND** the old response does not reset or persist it
+- **AND** no duplicate save occurs.
 
-- **GIVEN** a member has a dirty execution-profile draft and no Markdown draft
-- **WHEN** save fails
-- **THEN** all draft selections remain visible
-- **AND** the saved profile is still identified as effective
-- **AND** leaving the detail still triggers the dirty guard.
+#### Scenario: Historical Claude profile remains visible
 
-#### Scenario: Parent rerenders while a profile is displayed
-
-- **GIVEN** a member's static profile is visible and the parent rerenders repeatedly with new callback identities
-- **WHEN** no team or member data changes
-- **THEN** the same profile and draft remain visible
-- **AND** no loading state or additional profile-read request appears.
-
-#### Scenario: Model selection updates its effort choices
-
-- **GIVEN** a member profile editor shows a supported CLI/model/effort combination
-- **WHEN** the user selects another model
-- **THEN** the effort dropdown contains only efforts supported by the new model
-- **AND** an effort supported by both models remains selected
-- **AND** an unsupported effort is replaced by the new model's default.
-
-#### Scenario: Historical unknown profile remains visible
-
-- **GIVEN** a member previously saved a model or effort absent from the bundled registry
+- **GIVEN** a member previously saved a Claude model or effort absent from the bundled registry
 - **WHEN** the user opens the detail or switches away and back
-- **THEN** the original value remains selected and is labelled as an unsupported legacy custom value
-- **AND** no save occurs until the user selects a supported combination and explicitly saves it.
+- **THEN** the original values remain selected and labelled as legacy custom
+- **AND** no save occurs until a supported combination is explicitly selected and saved.
+
+### Requirement: Claude 旧版本失败提供同一受信任更新入口
+
+Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
+Acceptance: main-conversation#58
+
+When a Claude-bound run fails the `<2.1.170` runtime gate, the console MUST show a stable
+“Claude Code 需要升级” reason and an accessible update action. The renderer MUST NOT receive or
+submit executable paths, commands, args, stderr or internal errors. Triggering update MUST preserve
+the failed run, user message and frozen profile; completion MUST offer an explicit retry rather than
+automatically creating a Claude session.
+
+#### Scenario: Runtime old-version failure does not crash
+
+- **GIVEN** a Claude-bound run reports unsupported version before session creation
+- **WHEN** the failure renders
+- **THEN** the timeline remains usable and shows the update action
+- **AND** updating does not erase the failed attempt or automatically rerun it.
 
 ### Requirement: Official update shows impact before and facts after
 

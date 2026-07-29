@@ -1,4 +1,4 @@
-export type ExecutionProfileCli = "codex" | "kimi";
+export type ExecutionProfileCli = "codex" | "claude" | "kimi";
 
 export interface RegistryExecutionProfile {
   cli: ExecutionProfileCli;
@@ -23,6 +23,11 @@ export const EXECUTION_MODEL_REGISTRY = {
     codexModel("gpt-5.4", ["low", "medium", "high", "xhigh"]),
     codexModel("gpt-5.4-mini", ["low", "medium", "high", "xhigh"]),
   ],
+  claude: [
+    claudeModel("fable", ["low", "medium", "high", "xhigh", "max"]),
+    claudeModel("sonnet", ["low", "medium", "high", "max"]),
+    claudeModel("opus", ["low", "medium", "high", "max"]),
+  ],
   kimi: [
     kimiModel("kimi-code/kimi-for-coding", "kimi-for-coding", ["on"], "on", false),
     kimiModel("kimi-code/k3", "k3", ["low", "high", "max"], "high", true),
@@ -39,6 +44,7 @@ export const EXECUTION_MODEL_REGISTRY = {
 
 export const DEFAULT_EXECUTION_PROFILES = {
   codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+  claude: { cli: "claude", model: "sonnet", effort: "high" },
   kimi: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
 } as const satisfies Record<ExecutionProfileCli, RegistryExecutionProfile>;
 
@@ -103,4 +109,17 @@ function kimiModel(
   membershipRestricted: boolean,
 ): ExecutionModelRegistryEntry {
   return { value, label, efforts, defaultEffort, membershipRestricted };
+}
+
+function claudeModel(
+  value: string,
+  efforts: readonly string[],
+): ExecutionModelRegistryEntry {
+  return {
+    value,
+    label: value,
+    efforts,
+    defaultEffort: "high",
+    membershipRestricted: false,
+  };
 }

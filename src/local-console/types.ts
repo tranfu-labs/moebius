@@ -106,7 +106,7 @@ export interface LocalConsoleRunTiming {
   elapsedMs: number | null;
   completedAt: string | null;
   status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   processOutputAvailable: boolean;
 }
 
@@ -178,7 +178,7 @@ export interface LocalConsoleAgentTeamSnapshot {
 }
 
 export interface LocalConsoleExecutionProfile {
-  cli: "codex" | "kimi";
+  cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
 }
@@ -478,7 +478,7 @@ export interface LocalConsoleRunSnapshot {
   elapsedMs: number | null;
   stepId: string;
   attempt: number;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
   runDir: string | null;
@@ -747,7 +747,7 @@ export interface LocalConsoleStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "kimi";
+    engine: "codex" | "claude" | "kimi";
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;

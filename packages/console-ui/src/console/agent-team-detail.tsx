@@ -36,7 +36,7 @@ export interface AgentTeamDetailMember {
 }
 
 export interface AgentExecutionProfile {
-  cli: "codex" | "kimi";
+  cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
 }
@@ -996,11 +996,12 @@ export function AgentTeamDetail({
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                          draft: resolveProfileForCli(event.currentTarget.value as "codex" | "kimi"),
+                          draft: resolveProfileForCli(event.currentTarget.value as "codex" | "claude" | "kimi"),
                           error: null,
                         })}
                       >
                         <option value="codex">Codex</option>
+                        <option value="claude">Claude Code</option>
                         <option value="kimi">Kimi</option>
                       </select>
                     </label>

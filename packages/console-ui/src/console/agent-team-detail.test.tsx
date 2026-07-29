@@ -278,6 +278,19 @@ describe("AgentTeamDetail", () => {
     expect(within(screen.getByRole("combobox", { name: "思考程度" })).getAllByRole("option")
       .map((option) => option.getAttribute("value"))).toEqual(["low", "medium", "high", "xhigh", "max"]);
 
+    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "claude" } });
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("sonnet");
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
+    expect(within(screen.getByRole("combobox", { name: "Model" })).getAllByRole("option")
+      .map((option) => option.getAttribute("value"))).toEqual(["fable", "sonnet", "opus"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "fable" },
+    });
+    expect(within(screen.getByRole("combobox", { name: "思考程度" })).getAllByRole("option")
+      .map((option) => option.getAttribute("value"))).toEqual([
+        "low", "medium", "high", "xhigh", "max",
+      ]);
+
     fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("kimi-code/kimi-for-coding");
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("on");

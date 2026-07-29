@@ -60,6 +60,28 @@ describe("Desktop runtime provider call-site inventory", () => {
     ]);
   });
 
+  it("keeps Claude limited to local console and isolated AI team building", async () => {
+    const files = await productionTypeScriptFiles([
+      path.join(projectRoot, "src"),
+      path.join(projectRoot, "desktop", "src"),
+    ]);
+    const concreteClaudeImports: string[] = [];
+    for (const file of files) {
+      const source = await fs.readFile(file, "utf8");
+      if (
+        /from ["'][^"']*claude\.js["']/.test(source)
+        && /\brunClaude\b/.test(source)
+      ) {
+        concreteClaudeImports.push(path.relative(projectRoot, file));
+      }
+    }
+    expect(concreteClaudeImports.sort()).toEqual([
+      "desktop/src/ai-team-builder/claude-spawner.ts",
+      "src/local-console/execution-driver.ts",
+    ]);
+    expect(await read("src/runner.ts")).not.toContain("runClaude");
+  });
+
   it("injects the active desktop data root into the local console provider runtime", async () => {
     const main = await read("desktop/src/main.ts");
     const callStart = main.indexOf("localConsoleServer = await startLocalConsoleServer({");
@@ -94,13 +116,18 @@ describe("Desktop runtime provider call-site inventory", () => {
     expect(aiKimi).toContain("assertExternalSessionIdentity");
     expect(aiKimi).not.toContain("reconstruction");
 
+    const aiClaude = await read("desktop/src/ai-team-builder/claude-spawner.ts");
+    expect(aiClaude).toContain('kind: "resume"');
+    expect(aiClaude).toContain("assertExternalSessionIdentity");
+    expect(aiClaude).not.toContain("reconstruction");
+
     const githubRunner = await read("src/runner.ts");
     expect(githubRunner).toContain("resolveCodexThread");
     expect(githubRunner).toContain("threadStatePersisted");
     expect(githubRunner.match(/dependencies\.runCodex\(\{/g)).toHaveLength(1);
     expect(githubRunner).not.toContain("-fallback");
 
-    for (const source of [localDriver, aiCodex, aiKimi, githubRunner]) {
+    for (const source of [localDriver, aiCodex, aiKimi, aiClaude, githubRunner]) {
       expect(source).not.toContain("full-fallback");
     }
   });

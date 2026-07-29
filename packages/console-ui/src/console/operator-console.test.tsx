@@ -2143,6 +2143,28 @@ describe("OperatorConsole", () => {
     expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-stuck");
   });
 
+  it("exposes the trusted Claude update action for a runtime version gate", () => {
+    const onUpdateClaude = vi.fn();
+    renderConsole({
+      onUpdateClaude,
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          runId: "run-claude-old",
+          status: "failed",
+          systemEventKind: "run-not-started",
+          body: "Claude Code 版本过旧，需要 2.1.170 或更高版本。",
+          error: "claude-cli-unsupported-version",
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Claude Code 版本过旧，需要 2.1.170 或更高版本。")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "更新 Claude Code" }));
+    expect(onUpdateClaude).toHaveBeenCalledOnce();
+  });
+
   it("explains Kimi process-output unavailability on a terminal outcome without an empty outlet", () => {
     renderConsole({
       messages: [
@@ -2170,7 +2192,7 @@ describe("OperatorConsole", () => {
     });
 
     expect(screen.getByText("这一步没跑起来")).toBeVisible();
-    expect(screen.getByText("完整输出不可用 · 当前 Kimi 执行不提供可恢复的完整过程记录")).toBeVisible();
+    expect(screen.getByText("完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录")).toBeVisible();
     expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
   });

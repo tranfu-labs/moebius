@@ -223,6 +223,12 @@ describe("NewConversationPage", () => {
           description: "功能验收",
           executionProfile: { effectiveProfile: { cli: "kimi" } },
         },
+        {
+          slug: "reviewer",
+          displayName: "复核",
+          description: "独立复核",
+          executionProfile: { effectiveProfile: { cli: "claude" } },
+        },
       ],
     }];
     const props = {
@@ -236,7 +242,9 @@ describe("NewConversationPage", () => {
     );
 
     expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
-    expect(screen.queryByText(/名成员仍需|Codex 准备|Kimi 准备|可在 Agent 团队页调整/u))
+    expect(screen.queryByText(
+      /名成员仍需|Codex 准备|Claude Code 准备|Kimi 准备|可在 Agent 团队页调整/u,
+    ))
       .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
 
@@ -247,7 +255,9 @@ describe("NewConversationPage", () => {
     );
 
     expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
-    expect(screen.queryByText(/members still need|Codex setup|Kimi setup|adjust this on the Agent teams page/iu))
+    expect(screen.queryByText(
+      /members still need|Codex setup|Claude Code setup|Kimi setup|adjust this on the Agent teams page/iu,
+    ))
       .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
   });

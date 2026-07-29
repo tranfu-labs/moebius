@@ -43,7 +43,7 @@ export interface NewConversationTeamOption {
     available?: boolean;
     executionProfile?: {
       effectiveProfile: {
-        cli: "codex" | "kimi";
+        cli: "codex" | "claude" | "kimi";
       };
     };
   }>;
