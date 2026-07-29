@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowDown,
   Diamond,
+  Ellipsis,
   FileText,
   PanelLeft,
   PanelLeftClose,
@@ -34,6 +35,12 @@ import {
 } from "@/console/agent-team-detail";
 import { MoebiusLogo } from "@/brand/moebius-logo";
 import { I18nProvider, translate, useI18n, type Locale, type Translate } from "@/i18n";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import {
   AgentTeamsPage,
   type AgentTeamBuilderController,
@@ -98,11 +105,13 @@ import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
 import { RunTime } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
+import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import {
   DEFAULT_RIGHT_SIDEBAR_WIDTH_PX,
   RIGHT_SIDEBAR_OVERLAY_WIDTH_PX,
   RightSidebar,
   clampRightSidebarWidth,
+  type RightSidebarContentSlots,
 } from "@/console/right-sidebar";
 import {
   createFileReferenceSourceKey,
@@ -110,13 +119,16 @@ import {
   dedupeRunOutputTabsByStableStep,
   EMPTY_RIGHT_SIDEBAR_TABS,
   RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
-  ensureRightSidebarTabsForOpen,
   openRightSidebarSourceTab,
   parseFileReferenceSourceKey,
   updateRightSidebarProcessScroll,
   parseRunOutputSourceKey,
   type RightSidebarTabsState,
 } from "@/console/right-sidebar-tabs";
+import {
+  TextFragmentList,
+  type ComposerTextFragment,
+} from "@/console/text-fragment-list";
 import {
   containsMachineText,
   machineTextPlaceholders,
@@ -171,6 +183,9 @@ export interface OperatorSession {
   sessionId: string;
   projectId: string;
   parentSessionId?: string | null;
+  originSessionId?: string | null;
+  entryTemplate?: "session-analysis" | null;
+  writePolicy?: "normal" | "confirm-current-plan-before-write";
   agentTeamOwnership?: "system" | "user" | null;
   agentTeamId?: string | null;
   agentTeamHealth?: "usable" | "deleted" | "needs-repair" | null;
@@ -254,6 +269,7 @@ export interface OperatorMessage {
   createdAt: string;
   updatedAt: string;
   attachments?: StructuredAttachment[];
+  textFragments?: ComposerTextFragment[];
 }
 
 export type OperatorChildSessionSummary = SubSessionCardItem;
@@ -261,8 +277,11 @@ export type OperatorChildSessionSummary = SubSessionCardItem;
 export interface OperatorSubSessionView {
   session: OperatorSession;
   messages: OperatorMessage[];
+  pendingPrimaryMessages?: OperatorMessage[];
   memberIdentities?: OperatorMemberIdentity[];
   activeRun: OperatorRunSnapshot | null;
+  activeRuns?: OperatorRunSnapshot[];
+  workspaceDiff?: OperatorWorkspaceDiffSummary;
 }
 
 export type OperatorEvidenceOpenIntent =
@@ -325,6 +344,8 @@ export interface OperatorNewConversationState {
   draft: string;
   isSubmitting: boolean;
   error: string | null;
+  textFragments?: ComposerTextFragment[];
+  promptSuggestions?: Array<{ id: string; label: string; prompt: string }>;
 }
 
 export interface OperatorEditAndResendTarget {
@@ -334,11 +355,14 @@ export interface OperatorEditAndResendTarget {
 }
 
 export interface OperatorConsoleProps {
+  presentation?: "application" | "conversation";
   project: OperatorProject;
   projects?: OperatorProject[];
   selectedProjectId?: string;
   selectedSessionId: string;
+  navigationSessionId?: string;
   selectedSession: OperatorSession | null;
+  conversationNotice?: ReactNode;
   messages: OperatorMessage[];
   initialReadingMessageId?: number | null;
   onReadingMessageChange?: (sessionId: string, messageId: number) => void;
@@ -383,6 +407,7 @@ export interface OperatorConsoleProps {
   onCheckSettingsUpdates?: () => void;
   onCopySettingsVersion?: () => void;
   onOpenSettingsExternalLink?: (url: string) => Promise<void>;
+  renderSearchOverlay?: (onClose: () => void) => ReactNode;
   onComposerChange(value: string): void;
   onComposerFilesAdded?: (files: File[]) => void;
   onComposerAttachmentRemove?: (clientId: string) => void;
@@ -393,6 +418,12 @@ export interface OperatorConsoleProps {
   onNewConversationWorkspaceChange?: (workspaceMode: "direct" | "worktree") => void;
   onNewConversationTeamChange?: (teamKey: string) => void;
   onNewConversationDraftChange?: (value: string) => void;
+  onNewConversationTextFragmentRemove?: (fragmentId: string) => void;
+  onNewConversationPromptSuggestionSelect?: (suggestion: {
+    id: string;
+    label: string;
+    prompt: string;
+  }) => void;
   onSubmitNewConversation?: () => void;
   onAddNewConversationProject?: () => void;
   onReorderProjects?: (projectIds: string[]) => boolean | void | Promise<boolean | void>;
@@ -429,6 +460,11 @@ export interface OperatorConsoleProps {
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onInterrupt(sessionId: string, runId: string): void;
   onRetryRun?: (sessionId: string, runId: string) => void;
+  onAnalyzeConversation?: (input: {
+    sessionId: string;
+    runId: string | null;
+    messageId: number | null;
+  }) => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onReplayOnboarding?: () => void;
@@ -473,6 +509,9 @@ export interface OperatorConsoleProps {
   onDuplicateAgentTeamMember?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onTrashAgentTeamMember?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onTrashUserAgentTeam?: (teamKey: string) => void | Promise<void>;
+  onViewAgentTeamRegistrationConflict?: () => void;
+  onShowAgentTeamRegistrationConflictLocation?: () => void | Promise<void>;
+  onPreserveAgentTeamRegistrationConflicts?: () => void | Promise<void>;
   isSending?: boolean;
   isSubSessionSending?: boolean;
   isSelectionMutationPending?: boolean;
@@ -483,22 +522,27 @@ export interface OperatorConsoleProps {
   rightSidebarOpen?: boolean;
   rightSidebarWidth?: number;
   rightSidebarTabs?: RightSidebarTabsState;
+  rightSidebarContentSlots?: RightSidebarContentSlots;
   processOutputs?: Readonly<Record<string, OperatorProcessOutputState>>;
   processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
   onLoadProcessInvocation?: (sessionId: string, runId: string) => void;
   onRightSidebarOpenChange?: (open: boolean) => void;
   onRightSidebarWidthChange?: (width: number) => void;
   onRightSidebarTabsChange?: (state: RightSidebarTabsState) => void;
+  onBeforeCloseRightSidebarTab?: (tab: import("@/console/right-sidebar-tabs").RightSidebarTab) => boolean;
   onLoadProcessOutputPrevious?: (sourceKey: string, cursor: string) => void;
   className?: string;
 }
 
 export function OperatorConsole({
+  presentation = "application",
   project,
   projects,
   selectedProjectId,
   selectedSessionId,
+  navigationSessionId,
   selectedSession,
+  conversationNotice,
   messages,
   initialReadingMessageId = null,
   onReadingMessageChange,
@@ -535,6 +579,7 @@ export function OperatorConsole({
   onCheckSettingsUpdates,
   onCopySettingsVersion,
   onOpenSettingsExternalLink,
+  renderSearchOverlay,
   onComposerChange,
   onComposerFilesAdded,
   onComposerAttachmentRemove,
@@ -545,6 +590,8 @@ export function OperatorConsole({
   onNewConversationWorkspaceChange,
   onNewConversationTeamChange,
   onNewConversationDraftChange,
+  onNewConversationTextFragmentRemove,
+  onNewConversationPromptSuggestionSelect,
   onSubmitNewConversation,
   onAddNewConversationProject,
   onReorderProjects,
@@ -576,6 +623,7 @@ export function OperatorConsole({
   onCopySessionLogPath,
   onInterrupt,
   onRetryRun,
+  onAnalyzeConversation,
   onEditAndResend,
   onOpenDiagnostics,
   onReplayOnboarding,
@@ -611,6 +659,9 @@ export function OperatorConsole({
   onDuplicateAgentTeamMember,
   onTrashAgentTeamMember,
   onTrashUserAgentTeam,
+  onViewAgentTeamRegistrationConflict,
+  onShowAgentTeamRegistrationConflictLocation,
+  onPreserveAgentTeamRegistrationConflicts,
   isSending = false,
   isSubSessionSending = false,
   isSelectionMutationPending = false,
@@ -621,15 +672,18 @@ export function OperatorConsole({
   rightSidebarOpen,
   rightSidebarWidth,
   rightSidebarTabs,
+  rightSidebarContentSlots,
   processOutputs = {},
   processInvocationStates = {},
   onLoadProcessInvocation,
   onRightSidebarOpenChange,
   onRightSidebarWidthChange,
   onRightSidebarTabsChange,
+  onBeforeCloseRightSidebarTab,
   onLoadProcessOutputPrevious,
   className,
 }: OperatorConsoleProps): JSX.Element {
+  const embeddedConversation = presentation === "conversation";
   const t: Translate = (key, values) => translate(activeLocale, key, values);
   const resolvedAgentTeamFileManagerLabel = agentTeamFileManagerLabel ?? t("console.operator.fileManager");
   const displayedActiveRuns = activeRuns ?? (activeRun === null ? [] : [activeRun]);
@@ -790,9 +844,11 @@ export function OperatorConsole({
   });
   const requestedSidebarOpen = sidebarOpen ?? uncontrolledSidebarOpen;
   const sidebarAutoCollapsed = requestedSidebarOpen && isNarrowWindow;
-  const effectiveSidebarOpen = requestedSidebarOpen && !isNarrowWindow;
+  const effectiveSidebarOpen = !embeddedConversation && requestedSidebarOpen && !isNarrowWindow;
   const requestedRightSidebarOpen = rightSidebarOpen ?? uncontrolledRightSidebarOpen;
-  const effectiveRightSidebarOpen = applicationView === "conversation" && requestedRightSidebarOpen;
+  const effectiveRightSidebarOpen = !embeddedConversation
+    && applicationView === "conversation"
+    && requestedRightSidebarOpen;
   const effectiveRightSidebarWidth = clampRightSidebarWidth(
     rightSidebarWidth ?? uncontrolledRightSidebarWidth,
   );
@@ -816,30 +872,6 @@ export function OperatorConsole({
     window.addEventListener("resize", updateResponsiveLayout);
     return () => window.removeEventListener("resize", updateResponsiveLayout);
   }, []);
-
-  useEffect(() => {
-    if (
-      !effectiveRightSidebarOpen
-      || effectiveRightSidebarTabs.tabs.length > 0
-      || pendingFileReferenceOpensRef.current > 0
-    ) {
-      return;
-    }
-    const nextState = ensureRightSidebarTabsForOpen(effectiveRightSidebarTabs, {
-      id: createRightSidebarTabId(nextRightSidebarTabIdRef),
-      isGitRepository: activeProject.isGitRepository === true,
-    });
-    if (rightSidebarTabs === undefined) {
-      setUncontrolledRightSidebarTabs(nextState);
-    }
-    onRightSidebarTabsChange?.(nextState);
-  }, [
-    activeProject.isGitRepository,
-    effectiveRightSidebarOpen,
-    effectiveRightSidebarTabs,
-    onRightSidebarTabsChange,
-    rightSidebarTabs,
-  ]);
 
   useLayoutEffect(() => {
     const pane = parentConversationPaneRef.current;
@@ -944,7 +976,7 @@ export function OperatorConsole({
   const openSubSession = (sessionId: string) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
     const childSession = childSessions.find((session) => session.sessionId === sessionId);
-    setRightSidebarOpen(true, { ensureTabs: false });
+    setRightSidebarOpen(true);
     updateRightSidebarTabs(openRightSidebarSourceTab(effectiveRightSidebarTabs, {
       id: createRightSidebarTabId(nextRightSidebarTabIdRef),
       type: "sub-session",
@@ -957,7 +989,7 @@ export function OperatorConsole({
   const openFileReference = (sessionId: string, reference: MarkdownFileReference) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
     pendingFileReferenceOpensRef.current += 1;
-    setRightSidebarOpen(true, { ensureTabs: false });
+    setRightSidebarOpen(true);
     void onLoadFileReference(sessionId, reference.path, reference.line, reference.column)
       .catch(() => unavailableFileReference(
         sessionId,
@@ -997,7 +1029,7 @@ export function OperatorConsole({
     identities: readonly OperatorMemberIdentity[] = memberIdentities,
   ) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
-    setRightSidebarOpen(true, { ensureTabs: false });
+    setRightSidebarOpen(true);
     updateRightSidebarTabs(openRightSidebarSourceTab(effectiveRightSidebarTabs, intent.kind === "workspace-diff"
       ? {
           id: createRightSidebarTabId(nextRightSidebarTabIdRef),
@@ -1084,15 +1116,9 @@ export function OperatorConsole({
     onRightSidebarTabsChange?.(nextState);
   }
 
-  function setRightSidebarOpen(open: boolean, options: { ensureTabs?: boolean } = {}): void {
+  function setRightSidebarOpen(open: boolean): void {
     if (open) {
       parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
-      if (options.ensureTabs !== false && effectiveRightSidebarTabs.tabs.length === 0) {
-        updateRightSidebarTabs(ensureRightSidebarTabsForOpen(effectiveRightSidebarTabs, {
-          id: createRightSidebarTabId(nextRightSidebarTabIdRef),
-          isGitRepository: activeProject.isGitRepository === true,
-        }));
-      }
     } else {
       restoreTimelineScroll(timelineScrollRef, parentScrollTopRef.current);
       onCloseEvidence?.();
@@ -1182,8 +1208,12 @@ export function OperatorConsole({
   };
 
   return (
-    <div className={cn("relative flex h-screen min-h-[560px] overflow-hidden bg-canvas text-ink", className)}>
-      {activeCliInstallations.length > 0 ? (
+    <div className={cn(
+      "relative flex overflow-hidden bg-canvas text-ink",
+      embeddedConversation ? "h-full min-h-0" : "h-screen min-h-[560px]",
+      className,
+    )}>
+      {!embeddedConversation && activeCliInstallations.length > 0 ? (
         <div
           className="window-no-drag absolute left-1/2 top-2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub shadow-sm"
           role="status"
@@ -1195,7 +1225,7 @@ export function OperatorConsole({
             : t("console.operator.installingClis", { count: activeCliInstallations.length })}
         </div>
       ) : null}
-      <aside
+      {!embeddedConversation ? <aside
         className={cn(
           "relative shrink-0 flex-col overflow-hidden border-r border-line bg-rail",
           effectiveSidebarOpen ? "flex" : "hidden",
@@ -1274,7 +1304,9 @@ export function OperatorConsole({
         <ConversationSidebar
           projects={sidebarProjects}
           dataState={projectListState}
-          selectedSessionId={newConversation === null ? selectedSessionId : undefined}
+          selectedSessionId={newConversation === null
+            ? navigationSessionId ?? selectedSessionId
+            : undefined}
           showProjectPath={false}
           onSelectSession={(sessionId, projectId) => {
             if (!isSelectionMutationPending) {
@@ -1395,7 +1427,7 @@ export function OperatorConsole({
         >
           <span className="absolute inset-y-0 right-0 w-px bg-line transition-colors group-hover:bg-accent group-active:bg-accent" />
         </div>
-      </aside>
+      </aside> : null}
 
       <div className="relative flex min-w-0 flex-1" data-testid="operator-content-shell">
       <main
@@ -1404,7 +1436,7 @@ export function OperatorConsole({
         data-sidebar-open={effectiveSidebarOpen ? "true" : "false"}
         data-sidebar-auto-collapsed={sidebarAutoCollapsed ? "true" : "false"}
       >
-        <div
+        {!embeddedConversation ? <div
           className="window-drag-region absolute inset-x-0 top-0 z-30 flex h-[var(--window-header-height)] items-center"
           data-testid="main-window-drag-region"
         >
@@ -1433,7 +1465,7 @@ export function OperatorConsole({
               <PanelRight className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             )}
           </button>
-        </div>
+        </div> : null}
 
         {applicationView === "agent-teams" ? (
           <AgentTeamsPage
@@ -1473,6 +1505,9 @@ export function OperatorConsole({
             onDuplicateMember={onDuplicateAgentTeamMember}
             onTrashMember={onTrashAgentTeamMember}
             onTrashUserTeam={onTrashUserAgentTeam}
+            onViewRegistrationConflictTeam={onViewAgentTeamRegistrationConflict}
+            onShowRegistrationConflictLocation={onShowAgentTeamRegistrationConflictLocation}
+            onPreserveRegistrationConflicts={onPreserveAgentTeamRegistrationConflicts}
             onBack={() => routeToConversation()}
           />
         ) : newConversation !== null ? (
@@ -1486,10 +1521,17 @@ export function OperatorConsole({
             }))}
             teams={agentTeamsState.status === "ready"
               ? agentTeamsState.teams
-                .filter((team) => team.canCreateConversation)
                 .map((team) => ({
                   teamKey: team.teamKey,
-                  label: team.name?.trim() || t("console.common.untitledTeam"),
+                  label: getAgentTeamSelectionLabel({
+                    team,
+                    teams: agentTeamsState.teams,
+                    locale: activeLocale,
+                    untitledLabel: t("console.common.untitledTeam"),
+                    officialLabel: t("console.agentTeamDetail.official"),
+                    userLabel: t("console.agentTeamDetail.userTeam"),
+                  }),
+                  available: team.canCreateConversation,
                   members: team.members,
                 }))
               : []}
@@ -1499,6 +1541,8 @@ export function OperatorConsole({
             cliReadiness={cliReadiness}
             draft={newConversation.draft}
             attachments={composerAttachments}
+            textFragments={newConversation.textFragments}
+            promptSuggestions={newConversation.promptSuggestions}
             isSubmitting={newConversation.isSubmitting}
             isProjectMutationPending={isSelectionMutationPending}
             error={newConversation.error}
@@ -1510,6 +1554,8 @@ export function OperatorConsole({
             onFilesAdded={(files) => onComposerFilesAdded?.(files)}
             onAttachmentRemove={(clientId) => onComposerAttachmentRemove?.(clientId)}
             onAttachmentRetry={(clientId) => onComposerAttachmentRetry?.(clientId)}
+            onTextFragmentRemove={(fragmentId) => onNewConversationTextFragmentRemove?.(fragmentId)}
+            onPromptSuggestionSelect={(suggestion) => onNewConversationPromptSuggestionSelect?.(suggestion)}
             onSubmit={() => onSubmitNewConversation?.()}
           />
         ) : (
@@ -1593,6 +1639,19 @@ export function OperatorConsole({
                   </h1>
                 </header>
               ) : null}
+              {conversationNotice ? (
+                <div className={MAIN_CONVERSATION_COLUMN_GUTTER_CLASS}>
+                  <div
+                    className={cn(
+                      "mx-auto mt-3 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub",
+                      MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+                    )}
+                    role="status"
+                  >
+                    {conversationNotice}
+                  </div>
+                </div>
+              ) : null}
               {emptyConversation ? (
                 <ConversationEmptyState
                   className={cn(
@@ -1628,6 +1687,7 @@ export function OperatorConsole({
                             openedSubSessionId={openedSubSessionId}
                             onOpenSubSession={openSubSession}
                             onRetryRun={onRetryRun}
+                            onAnalyzeConversation={onAnalyzeConversation}
                             onEditAndResend={onEditAndResend}
                             onOpenDiagnostics={onOpenDiagnostics}
                             onOpenExternalLink={onOpenExternalLink}
@@ -1670,6 +1730,13 @@ export function OperatorConsole({
                             onInterrupt={!isPrimaryRun && run.interruptible
                               ? () => onInterrupt(run.sessionId, run.runId)
                               : undefined}
+                            onAnalyzeConversation={onAnalyzeConversation === undefined
+                              ? undefined
+                              : () => onAnalyzeConversation({
+                                  sessionId: run.sessionId,
+                                  runId: run.runId,
+                                  messageId: null,
+                                })}
                             interruptLabel={!isPrimaryRun ? t("console.runBlock.stopMember", { member: roleLabel }) : undefined}
                             className="mt-4 max-w-none"
                           />
@@ -1833,6 +1900,7 @@ export function OperatorConsole({
         onStateChange={updateRightSidebarTabs}
         onOpenChange={setRightSidebarOpen}
         onWidthChange={setRightSidebarWidth}
+        onBeforeCloseTab={onBeforeCloseRightSidebarTab}
         createTabId={() => createRightSidebarTabId(nextRightSidebarTabIdRef)}
         contentSlots={{
           "sub-session": (tab) => {
@@ -1924,12 +1992,15 @@ export function OperatorConsole({
               loadFile={onLoadProjectFile}
             />
           ),
+          ...rightSidebarContentSlots,
         }}
       />
       </div>
 
       {applicationOverlay ? (
-        <ApplicationPlaceholder overlay={applicationOverlay} onClose={() => setApplicationOverlay(null)} />
+        applicationOverlay.kind === "search" && renderSearchOverlay !== undefined
+          ? renderSearchOverlay(() => setApplicationOverlay(null))
+          : <ApplicationPlaceholder overlay={applicationOverlay} onClose={() => setApplicationOverlay(null)} />
       ) : null}
 
       <I18nProvider locale={activeLocale}>
@@ -2482,6 +2553,7 @@ function TimelineEntry({
   openedSubSessionId = null,
   onOpenSubSession,
   onRetryRun,
+  onAnalyzeConversation,
   onEditAndResend,
   onOpenDiagnostics,
   onOpenExternalLink,
@@ -2496,6 +2568,11 @@ function TimelineEntry({
   openedSubSessionId?: string | null;
   onOpenSubSession?: (sessionId: string) => void;
   onRetryRun?: (sessionId: string, runId: string) => void;
+  onAnalyzeConversation?: (input: {
+    sessionId: string;
+    runId: string | null;
+    messageId: number | null;
+  }) => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
@@ -2518,7 +2595,16 @@ function TimelineEntry({
   const outcome = terminalOutcome(message);
   if (outcome) {
     return (
-      <div className="my-4">
+      <div className="relative my-4">
+        {onAnalyzeConversation ? (
+          <ConversationAnalysisMenu
+            onSelect={() => onAnalyzeConversation({
+              sessionId: message.sessionId,
+              runId: message.runId,
+              messageId: message.id,
+            })}
+          />
+        ) : null}
         <RunOutcome
           status={outcome}
           role={processRole}
@@ -2582,6 +2668,11 @@ function TimelineEntry({
               mode="message"
               className={message.body.trim() === "" ? "" : "mt-2"}
             />
+            <TextFragmentList
+              fragments={message.textFragments ?? []}
+              mode="message"
+              className={message.body.trim() === "" && (message.attachments?.length ?? 0) === 0 ? "" : "mt-2"}
+            />
           </div>
         </div>
       </div>
@@ -2612,6 +2703,16 @@ function TimelineEntry({
           />
         ) : null}
         <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+        {message.speaker === "agent" && onAnalyzeConversation ? (
+          <ConversationAnalysisMenu
+            inline
+            onSelect={() => onAnalyzeConversation({
+              sessionId: message.sessionId,
+              runId: message.runId,
+              messageId: message.id,
+            })}
+          />
+        ) : null}
       </div>
       <div className="relative pl-7">
       {message.speaker === "system" ? (
@@ -2662,6 +2763,37 @@ function TimelineEntry({
         </p>
       ) : null}
       </div>
+    </div>
+  );
+}
+
+function ConversationAnalysisMenu({
+  inline = false,
+  onSelect,
+}: {
+  inline?: boolean;
+  onSelect(): void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className={inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-opacity hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            aria-label={t("console.sessionAnalysis.moreActions")}
+            title={t("console.sessionAnalysis.moreActions")}
+          >
+            <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onSelect}>
+            {t("console.sessionAnalysis.analyzeConversation")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

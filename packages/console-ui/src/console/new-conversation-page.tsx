@@ -11,6 +11,7 @@ import {
   readyComposerAttachmentIds,
   type ComposerAttachment,
 } from "@/console/structured-attachments";
+import type { ComposerTextFragment } from "@/console/text-fragment-list";
 import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -34,6 +35,7 @@ export interface NewConversationProjectOption {
 export interface NewConversationTeamOption {
   teamKey: string;
   label: string;
+  available?: boolean;
   members: Array<{
     slug: string;
     displayName: string;
@@ -47,6 +49,12 @@ export interface NewConversationTeamOption {
   }>;
 }
 
+export interface NewConversationPromptSuggestion {
+  id: string;
+  label: string;
+  prompt: string;
+}
+
 export interface NewConversationPageProps {
   projects: NewConversationProjectOption[];
   teams: NewConversationTeamOption[];
@@ -56,6 +64,8 @@ export interface NewConversationPageProps {
   cliReadiness?: { codex: boolean; kimi: boolean };
   draft: string;
   attachments?: readonly ComposerAttachment[];
+  textFragments?: readonly ComposerTextFragment[];
+  promptSuggestions?: readonly NewConversationPromptSuggestion[];
   isSubmitting?: boolean;
   isProjectMutationPending?: boolean;
   error?: string | null;
@@ -67,6 +77,8 @@ export interface NewConversationPageProps {
   onFilesAdded?: (files: File[]) => void;
   onAttachmentRemove?: (clientId: string) => void;
   onAttachmentRetry?: (clientId: string) => void;
+  onTextFragmentRemove?: (fragmentId: string) => void;
+  onPromptSuggestionSelect?: (suggestion: NewConversationPromptSuggestion) => void;
   onSubmit(): void;
   className?: string;
 }
@@ -80,6 +92,8 @@ export function NewConversationPage({
   cliReadiness,
   draft,
   attachments = [],
+  textFragments = [],
+  promptSuggestions = [],
   isSubmitting = false,
   isProjectMutationPending = false,
   error,
@@ -91,6 +105,8 @@ export function NewConversationPage({
   onFilesAdded,
   onAttachmentRemove,
   onAttachmentRetry,
+  onTextFragmentRemove,
+  onPromptSuggestionSelect,
   onSubmit,
   className,
 }: NewConversationPageProps): JSX.Element {
@@ -101,7 +117,8 @@ export function NewConversationPage({
   const compatibility = getNewConversationTeamCompatibility(selectedTeam, cliReadiness, t);
   const hasAvailableProjects = projects.some((project) => project.available);
   const canSubmit = selectedProject !== undefined
-    && selectedTeamKey !== null
+    && selectedTeam !== undefined
+    && selectedTeam.available !== false
     && (draft.trim() !== "" || readyComposerAttachmentIds(attachments).length > 0)
     && !hasBlockingComposerAttachment(attachments)
     && !isSubmitting
@@ -110,8 +127,10 @@ export function NewConversationPage({
     ? hasAvailableProjects
       ? t("console.newConversation.selectProject")
       : t("console.newConversation.addProjectFirst")
-    : selectedTeamKey === null
+    : selectedTeamKey === null || selectedTeam === undefined
       ? t("console.newConversation.selectTeam")
+      : selectedTeam.available === false
+        ? t("console.newConversation.teamUnavailable")
       : undefined;
 
   return (
@@ -146,13 +165,32 @@ export function NewConversationPage({
           data-testid="new-conversation-column"
         >
           <p className="mb-8 text-center text-lg font-medium text-ink">{t("console.newConversation.invitation")}</p>
+          {promptSuggestions.length > 0 ? (
+            <div
+              className="mb-4 flex flex-wrap justify-center gap-2"
+              aria-label={t("console.newConversation.promptSuggestions")}
+            >
+              {promptSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion.id}
+                  type="button"
+                  className="rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={() => onPromptSuggestionSelect?.(suggestion)}
+                >
+                  {suggestion.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <RoleComposer
             value={draft}
             attachments={attachments}
+            textFragments={textFragments}
             onValueChange={onDraftChange}
             onFilesAdded={onFilesAdded}
             onAttachmentRemove={onAttachmentRemove}
             onAttachmentRetry={onAttachmentRetry}
+            onTextFragmentRemove={onTextFragmentRemove}
             onSubmit={onSubmit}
             roles={selectedTeam?.members
               .filter((member) => member.available !== false)
@@ -200,7 +238,15 @@ export function NewConversationPage({
                     onChange={(event) => onSelectTeam(event.currentTarget.value)}
                   >
                     {teams.length === 0 ? <option value="">{t("console.newConversation.noTeams")}</option> : null}
-                    {teams.map((team) => <option key={team.teamKey} value={team.teamKey}>{team.label}</option>)}
+                    {teams.map((team) => (
+                      <option
+                        key={team.teamKey}
+                        value={team.teamKey}
+                        disabled={team.available === false}
+                      >
+                        {team.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>

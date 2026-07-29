@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { NewConversationPage, type NewConversationPageProps } from "./new-conversation-page";
@@ -120,6 +121,66 @@ describe("NewConversationPage", () => {
     expect(screen.getByText("磁盘空间不足")).toBeVisible();
   });
 
+  it("shows full static text on hover and keyboard focus without coupling the remove action", async () => {
+    const onTextFragmentRemove = vi.fn();
+    const user = userEvent.setup();
+    renderPage({
+      draft: "",
+      textFragments: [{
+        id: "fragment-1",
+        label: "文本片段 1",
+        text: "Moebius 会话记录：sessions/source.jsonl；外部执行：Codex abc",
+      }],
+      onTextFragmentRemove,
+    });
+
+    const fragment = screen.getByRole("listitem", {
+      name: "文本片段 1：Moebius 会话记录：sessions/source.jsonl；外部执行：Codex abc",
+    });
+    const remove = screen.getByRole("button", { name: "删除 文本片段 1" });
+
+    expect(fragment).not.toHaveAttribute("title");
+    await user.hover(fragment);
+    const hoverTooltip = await screen.findByRole("tooltip");
+    expect(hoverTooltip).toHaveTextContent(
+      "Moebius 会话记录：sessions/source.jsonl；外部执行：Codex abc",
+    );
+    expect(fragment.closest("ul")).not.toContainElement(hoverTooltip);
+
+    await user.unhover(fragment);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+    act(() => fragment.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Moebius 会话记录：sessions/source.jsonl；外部执行：Codex abc",
+    );
+
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    act(() => remove.focus());
+    expect(remove).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onTextFragmentRemove).toHaveBeenCalledWith("fragment-1");
+  });
+
+  it("inserts the full prompt when a candidate question is activated", () => {
+    const onPromptSuggestionSelect = vi.fn();
+    renderPage({
+      promptSuggestions: [{
+        id: "slow",
+        label: "Agent 运行太长了？",
+        prompt: "分析耗时并先给出方案。",
+      }],
+      onPromptSuggestionSelect,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent 运行太长了？" }));
+    expect(onPromptSuggestionSelect).toHaveBeenCalledWith({
+      id: "slow",
+      label: "Agent 运行太长了？",
+      prompt: "分析耗时并先给出方案。",
+    });
+  });
+
   it("keeps the selected team's CLI compatibility warning until readiness recovers", () => {
     const teams: NewConversationPageProps["teams"] = [{
       teamKey: "system:development",
@@ -155,6 +216,22 @@ describe("NewConversationPage", () => {
       cliReadiness={{ codex: true, kimi: true }}
     />);
     expect(screen.queryByTestId("new-conversation-team-compatibility")).not.toBeInTheDocument();
+  });
+
+  it("keeps an unavailable preselected team visible but blocks sending until repair or an explicit change", () => {
+    renderPage({
+      teams: [{
+        teamKey: "system:general-assistant",
+        label: "通用助手 · 官方来源",
+        available: false,
+        members: [],
+      }],
+      selectedTeamKey: "system:general-assistant",
+    });
+
+    expect(screen.getByRole("option", { name: "通用助手 · 官方来源" })).toBeDisabled();
+    expect(screen.getByText("所选 Agent 团队需要先修复")).toBeVisible();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });
 });
 

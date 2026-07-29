@@ -102,6 +102,8 @@ export interface MoebiusDesktopApi {
   readonly agentTeamFileManagerKind: AgentTeamFileManagerKind;
   openAgentTeamLocation(request: AgentTeamFileManagerRequest): Promise<void>;
   listAgentTeams(): Promise<AgentTeamListResponse>;
+  resolveAgentTeamSeedConflict(): Promise<AgentTeamListResponse>;
+  showAgentTeamSeedConflictLocation(): Promise<void>;
   createAgentTeam(request: AgentTeamCreateRequest): Promise<AgentTeamListItem>;
   readAgentTeamMember(request: AgentTeamMemberRequest): Promise<AgentTeamMemberDocument>;
   writeAgentTeamMember(request: AgentTeamMemberWriteRequest): Promise<AgentTeamMemberDocument>;
@@ -228,6 +230,12 @@ const api: MoebiusDesktopApi = {
   },
   listAgentTeams() {
     return ipcRenderer.invoke(TEAM_IPC_CHANNELS.list) as Promise<AgentTeamListResponse>;
+  },
+  resolveAgentTeamSeedConflict() {
+    return ipcRenderer.invoke(TEAM_IPC_CHANNELS.resolveSeedConflict) as Promise<AgentTeamListResponse>;
+  },
+  showAgentTeamSeedConflictLocation() {
+    return ipcRenderer.invoke(TEAM_IPC_CHANNELS.showSeedConflictLocation) as Promise<void>;
   },
   createAgentTeam(request) {
     return ipcRenderer.invoke(TEAM_IPC_CHANNELS.create, request) as Promise<AgentTeamListItem>;

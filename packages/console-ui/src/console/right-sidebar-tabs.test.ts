@@ -23,16 +23,21 @@ import {
 } from "./right-sidebar-tabs";
 
 describe("right sidebar tab model", () => {
-  it("keeps the complete tab enum separate from the two user-selectable types", () => {
+  it("keeps the complete tab enum separate from the three user-selectable types", () => {
     expect(RIGHT_SIDEBAR_TAB_TYPES).toEqual([
       "workspace-diff",
       "project-files",
       "file-reference",
       "run-output",
       "sub-session",
+      "conversation",
       "blank",
     ]);
-    expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).toEqual(["workspace-diff", "project-files"]);
+    expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).toEqual([
+      "conversation",
+      "workspace-diff",
+      "project-files",
+    ]);
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("run-output");
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("sub-session");
   });
@@ -73,6 +78,32 @@ describe("right sidebar tab model", () => {
     expect(reopened.activeTabId).toBe("diff-1");
   });
 
+  it("refreshes an existing conversation tab title from the canonical session source", () => {
+    const stale = openRightSidebarSourceTab(EMPTY_RIGHT_SIDEBAR_TABS, {
+      id: "conversation-a",
+      type: "conversation",
+      title: "新会话",
+      sourceKey: "conversation:analysis-a",
+    });
+    const refreshed = openRightSidebarSourceTab(stale, {
+      id: "conversation-a-again",
+      type: "conversation",
+      title: "分析 Agent 运行耗时",
+      sourceKey: "conversation:analysis-a",
+    });
+
+    expect(refreshed).toEqual({
+      tabs: [{
+        id: "conversation-a",
+        type: "conversation",
+        title: "分析 Agent 运行耗时",
+        sourceKey: "conversation:analysis-a",
+        closable: true,
+      }],
+      activeTabId: "conversation-a",
+    });
+  });
+
   it("keeps new tab ids unique after restored tabs reuse the in-memory counter id", () => {
     const restored: RightSidebarTabsState = {
       tabs: [{
@@ -100,31 +131,16 @@ describe("right sidebar tab model", () => {
     expect(new Set(withSource.tabs.map((tab) => tab.id))).toHaveLength(3);
   });
 
-  it("keeps the sidebar state alive with a blank tab after the last tab closes", () => {
-    const initial = ensureRightSidebarTabsForOpen(EMPTY_RIGHT_SIDEBAR_TABS, {
-      id: "initial-diff",
-      isGitRepository: true,
-    });
-    const closed = closeRightSidebarTab(initial, "initial-diff", "fallback-blank");
+  it("returns a zero-tab state after the last tab closes", () => {
+    const initial = initialState();
+    const closed = closeRightSidebarTab(initial, "initial-diff");
 
-    expect(closed).toEqual({
-      tabs: [{
-        id: "fallback-blank",
-        type: "blank",
-        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank,
-        sourceKey: null,
-        closable: true,
-      }],
-      activeTabId: "fallback-blank",
-    });
+    expect(closed).toEqual(EMPTY_RIGHT_SIDEBAR_TABS);
   });
 
   it("converts only blank tabs and preserves the user's active tab during unrelated updates", () => {
     const state = addBlankRightSidebarTab(
-      ensureRightSidebarTabsForOpen(EMPTY_RIGHT_SIDEBAR_TABS, {
-        id: "diff",
-        isGitRepository: true,
-      }),
+      initialState("diff"),
       "blank",
     );
     const converted = convertBlankRightSidebarTab(state, "blank", "project-files");
@@ -159,11 +175,11 @@ describe("right sidebar tab model", () => {
     });
   });
 
-  it("uses project files as the first tab for a non-git project", () => {
+  it("keeps zero tabs when the sidebar is reopened", () => {
     expect(ensureRightSidebarTabsForOpen(EMPTY_RIGHT_SIDEBAR_TABS, {
       id: "files",
       isGitRepository: false,
-    }).tabs[0]?.type).toBe("project-files");
+    })).toEqual(EMPTY_RIGHT_SIDEBAR_TABS);
   });
 
   it("keeps a process reading anchor only while the run tab remains open in memory", () => {
@@ -328,3 +344,16 @@ describe("right sidebar tab model", () => {
     });
   });
 });
+
+function initialState(id = "initial-diff"): RightSidebarTabsState {
+  return {
+    tabs: [{
+      id,
+      type: "workspace-diff",
+      title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
+      sourceKey: null,
+      closable: true,
+    }],
+    activeTabId: id,
+  };
+}

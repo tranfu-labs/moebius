@@ -4,6 +4,8 @@ import {
   I18nProvider,
   useI18n,
   OperatorConsole,
+  ConversationSearch,
+  type ConversationSearchResultItem,
   resolveNewConversationAgentTeamKey,
   type AgentTeamInformationInput,
   type AgentTeamDetailState,
@@ -32,6 +34,8 @@ import {
   readyComposerAttachmentIds,
   type OperatorWorkspaceDiffSummary,
   processInvocationKey,
+  openRightSidebarSourceTab,
+  createRunOutputSourceKey,
 } from "@moebius/console-ui";
 import type {
   AgentTeamDuplicateBuiltInRequest,
@@ -121,6 +125,11 @@ import {
   subSessionIdFromSourceKey,
   submitSessionMessage,
   retrySessionRun,
+  createSidebarConversationSession,
+  loadSessionReferenceText,
+  searchConsoleSessions,
+  restoreConsoleSession,
+  type SessionSearchResult,
   type ConsoleSelection,
   type SelectionMutationKind,
   type SelectionMutationToken,
@@ -158,7 +167,24 @@ import {
   writeRightSidebarWidthPreference,
   type RightSidebarVisibilityPreference,
 } from "./right-sidebar-preference.js";
-import { createRightSidebarTabsStore } from "./right-sidebar-tabs-store.js";
+import {
+  conversationDraftTabSourceKey,
+  conversationTabSourceKey,
+  createRightSidebarTabsStore,
+  parseConversationTabSourceKey,
+} from "./right-sidebar-tabs-store.js";
+import {
+  createSidebarConversationDraft,
+  createSidebarConversationDraftStore,
+  sidebarConversationDraftHasUserChanges,
+  type SidebarConversationDraft,
+} from "./sidebar-conversation-drafts.js";
+import {
+  createConsolePresentationRouteStore,
+  ordinaryPresentationRoute,
+  sidebarPresentationRoute,
+  type ConsolePresentationRoute,
+} from "./presentation-route.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import {
   applyAgentTeamMemberExternalChange,
@@ -238,6 +264,8 @@ export interface DesktopApi {
   readonly agentTeamFileManagerKind?: AgentTeamFileManagerKind;
   openAgentTeamLocation?: (request: AgentTeamFileManagerRequest) => Promise<void>;
   listAgentTeams?: () => Promise<AgentTeamListResponse>;
+  resolveAgentTeamSeedConflict?: () => Promise<AgentTeamListResponse>;
+  showAgentTeamSeedConflictLocation?: () => Promise<void>;
   createAgentTeam?: (request: AgentTeamCreateRequest) => Promise<AgentTeamListItem>;
   readAgentTeamMember?: (request: AgentTeamMemberRequest) => Promise<AgentTeamMemberDocument>;
   writeAgentTeamMember?: (request: AgentTeamMemberWriteRequest) => Promise<AgentTeamMemberDocument>;
@@ -594,13 +622,27 @@ export function OperatorConsoleApp({
   const selectionPersistenceEnabledRef = useRef(false);
   const coordinatorRef = useRef(new ConsoleStateCoordinator());
   const [state, setState] = useState<LocalConsoleState | null>(null);
+  const stateRef = useRef<LocalConsoleState | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
   const rightSidebarTabsStoreRef = useRef(createRightSidebarTabsStore(window.localStorage));
+  const sidebarConversationDraftStoreRef = useRef(
+    createSidebarConversationDraftStore(window.localStorage),
+  );
+  const presentationRouteStoreRef = useRef(createConsolePresentationRouteStore(window.localStorage));
+  const [presentationRoute, setPresentationRoute] = useState<ConsolePresentationRoute | null>(() =>
+    presentationRouteStoreRef.current.read(),
+  );
+  const presentationRouteRef = useRef<ConsolePresentationRoute | null>(presentationRoute);
+  const [sidebarConversationDrafts, setSidebarConversationDrafts] = useState<SidebarConversationDraft[]>(() =>
+    sidebarConversationDraftStoreRef.current.list(),
+  );
   const conversationReadingPositionStoreRef = useRef(
     createConversationReadingPositionStore(window.localStorage),
   );
   const [rightSidebarTabs, setRightSidebarTabs] = useState<RightSidebarTabsState>(() =>
-    rightSidebarTabsStoreRef.current.read(selection.sessionId),
+    rightSidebarTabsStoreRef.current.read(
+      presentationRouteStoreRef.current.read()?.hostSessionId ?? selection.sessionId,
+    ),
   );
   const [processOutputs, setProcessOutputs] = useState<Record<string, OperatorProcessOutputState>>({});
   const processOutputsRef = useRef(processOutputs);
@@ -610,6 +652,19 @@ export function OperatorConsoleApp({
   const processInvocationStatesRef = useRef(processInvocationStates);
   const processInvocationRequestsRef = useRef(new ProcessInvocationRequestCoordinator());
   const [subSessionViews, setSubSessionViews] = useState<Record<string, OperatorSubSessionViewState>>({});
+  const [sidebarConversationViews, setSidebarConversationViews] =
+    useState<Record<string, OperatorSubSessionViewState>>({});
+  const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
+    useState<Record<string, string>>({});
+  const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
+  const [conversationSearchState, setConversationSearchState] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    results: SessionSearchResult[];
+    error: string | null;
+    conditionKey: string | null;
+  }>({ status: "idle", results: [], error: null, conditionKey: null });
+  const conversationSearchRequestRef = useRef<AbortController | null>(null);
+  const sourceMigrationRef = useRef<string | null>(null);
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [subSessionSendingId, setSubSessionSendingId] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState(() =>
@@ -668,10 +723,26 @@ export function OperatorConsoleApp({
   const activeSubSessionId = activeRightSidebarTab?.type === "sub-session"
     ? subSessionIdFromSourceKey(activeRightSidebarTab.sourceKey)
     : null;
+  const activeConversationLocator = activeRightSidebarTab?.type === "conversation"
+    ? parseConversationTabSourceKey(activeRightSidebarTab.sourceKey)
+    : null;
+  const activeSidebarConversationSessionId = activeConversationLocator?.kind === "session"
+    ? activeConversationLocator.sessionId
+    : null;
+  const activeSidebarConversationDraftId = activeConversationLocator?.kind === "draft"
+    ? activeConversationLocator.draftId
+    : null;
+  const activeSidebarConversationDraft = activeSidebarConversationDraftId === null
+    ? null
+    : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
   const currentAttachmentDraftKey = newConversation?.isOpen !== true
     ? sessionDraftKey(selection.sessionId)
     : NEW_CONVERSATION_DRAFT_KEY;
   const activeSubSessionDraftKey = sessionDraftKey(activeSubSessionId ?? "__inactive-sub-session__");
+  const activeSidebarConversationAttachmentDraftKey = activeSidebarConversationDraft?.attachmentDraftKey
+    ?? (activeSidebarConversationSessionId === null
+      ? "draft:sidebar:__inactive__"
+      : sessionDraftKey(activeSidebarConversationSessionId));
   const reportAttachmentError = useCallback((error: string) => setClientError(error), []);
   const managedAttachments = useManagedAttachmentDrafts({
     apiBase,
@@ -683,6 +754,12 @@ export function OperatorConsoleApp({
     apiBase,
     capability: attachmentCapability,
     currentDraftKey: activeSubSessionDraftKey,
+    onError: reportAttachmentError,
+  });
+  const managedSidebarConversationAttachments = useManagedAttachmentDrafts({
+    apiBase,
+    capability: attachmentCapability,
+    currentDraftKey: activeSidebarConversationAttachmentDraftKey,
     onError: reportAttachmentError,
   });
 
@@ -740,6 +817,7 @@ export function OperatorConsoleApp({
   }, []);
 
   useEffect(() => {
+    stateRef.current = state;
     if (state === null) return;
     conversationReadingPositionStoreRef.current.retain(
       state.projects.flatMap((candidate) =>
@@ -786,7 +864,11 @@ export function OperatorConsoleApp({
           return;
         }
 
-        setAgentTeamsState({ status: "ready", teams: result.teams.map(toOperatorAgentTeam) });
+        setAgentTeamsState({
+          status: "ready",
+          teams: result.teams.map(toOperatorAgentTeam),
+          registrationIssues: result.registrationIssues,
+        });
         setLastUsedAgentTeamKey(lastUsedTeam === null ? null : getAgentTeamIdentityKey(lastUsedTeam));
         setAgentTeamSelection((current) => reconcileAgentTeamSelection(result.teams, current));
       } catch {
@@ -1133,6 +1215,35 @@ export function OperatorConsoleApp({
       void loadAgentTeamMember(teamKey, currentMemberSlug);
     }
   }, [agentTeamSelection, agentTeamsState, loadAgentTeamMember]);
+
+  const viewAgentTeamRegistrationConflict = useCallback(() => {
+    openAgentTeam("user:general-assistant");
+  }, [openAgentTeam]);
+
+  const showAgentTeamRegistrationConflictLocation = useCallback(async (): Promise<void> => {
+    const showLocation = window.moebius?.showAgentTeamSeedConflictLocation;
+    if (showLocation === undefined) {
+      throw new Error(t("desktop.error.openLocation"));
+    }
+    await showLocation();
+  }, [t]);
+
+  const preserveAgentTeamRegistrationConflicts = useCallback(async (): Promise<void> => {
+    const resolveConflict = window.moebius?.resolveAgentTeamSeedConflict;
+    if (resolveConflict === undefined) {
+      throw new Error(t("console.agentTeams.registrationConflictActionFailed"));
+    }
+    const result = await resolveConflict();
+    if (result.status !== "ready") {
+      throw new Error(t("console.agentTeams.registrationConflictActionFailed"));
+    }
+    setAgentTeamsState({
+      status: "ready",
+      teams: result.teams.map(toOperatorAgentTeam),
+      registrationIssues: result.registrationIssues,
+    });
+    setAgentTeamSelection((current) => reconcileAgentTeamSelection(result.teams, current));
+  }, [t]);
 
   const selectAgentTeamMember = useCallback((teamKey: string, memberSlug: string) => {
     const team = findOperatorAgentTeam(agentTeamsState, teamKey);
@@ -1861,6 +1972,18 @@ export function OperatorConsoleApp({
     setSelection(nextSelection);
   }, []);
 
+  const commitPresentationRoute = useCallback((route: ConsolePresentationRoute) => {
+    presentationRouteStoreRef.current.write(route);
+    presentationRouteRef.current = route;
+    setPresentationRoute(route);
+  }, []);
+
+  const setRightSidebarOpen = useCallback((open: boolean) => {
+    const preference = open ? "open" : "closed";
+    setRightSidebarVisibilityPreference(preference);
+    writeRightSidebarVisibilityPreference(window.localStorage, preference);
+  }, []);
+
   const forgetPersistedSelection = useCallback(() => {
     clearConsoleSelectionPreference(window.localStorage);
     persistedSelectionRef.current = null;
@@ -1914,13 +2037,15 @@ export function OperatorConsoleApp({
 
   useEffect(() => {
     processInvocationRequestsRef.current.abortAll();
-    setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(selection.sessionId));
+    setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(
+      presentationRoute?.hostSessionId ?? selection.sessionId,
+    ));
     processOutputsRef.current = {};
     setProcessOutputs({});
     processInvocationStatesRef.current = {};
     setProcessInvocationStates({});
     setSubSessionViews({});
-  }, [selection.sessionId]);
+  }, [presentationRoute?.hostSessionId, selection.sessionId]);
 
   const activeProcessSourceKey = activeRightSidebarTab?.type === "run-output"
     ? activeRightSidebarTab.sourceKey
@@ -2154,6 +2279,60 @@ export function OperatorConsoleApp({
       controller.abort("sub-session-tab-changed");
     };
   }, [activeSubSessionId, apiBase]);
+
+  useEffect(() => {
+    if (
+      apiBase === null
+      || activeSidebarConversationSessionId === null
+    ) {
+      return;
+    }
+    const sessionId = activeSidebarConversationSessionId;
+    const controller = new AbortController();
+    let timer: number | null = null;
+    let inFlight = false;
+    setSidebarConversationViews((current) => ({
+      ...current,
+      [sessionId]: current[sessionId]?.status === "ready"
+        ? current[sessionId]!
+        : { status: "loading" },
+    }));
+    const refreshView = async (): Promise<void> => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const view = await loadSubSessionView({
+          apiBase,
+          sessionId,
+          fetch,
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
+          setSidebarConversationViews((current) => ({
+            ...current,
+            [sessionId]: { status: "ready", view },
+          }));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setSidebarConversationViews((current) => ({
+            ...current,
+            [sessionId]: { status: "error", message: formatError(error) },
+          }));
+        }
+      } finally {
+        inFlight = false;
+        if (!controller.signal.aborted) {
+          timer = window.setTimeout(() => void refreshView(), 1_000);
+        }
+      }
+    };
+    void refreshView();
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      controller.abort("sidebar-conversation-tab-changed");
+    };
+  }, [activeSidebarConversationSessionId, apiBase]);
 
   const refresh = useCallback(async (
     targetSelection: ConsoleSelection,
@@ -2509,13 +2688,26 @@ export function OperatorConsoleApp({
     }
     setIsProjectMutationPending(true);
     const wasCurrentProject = selectionRef.current.projectId === projectId;
+    const removingSessionIds = new Set(
+      state?.projects.find((candidate) => candidate.projectId === projectId)
+        ?.sessions.map((session) => session.sessionId) ?? [],
+    );
+    const routeBeforeRemoval = presentationRoute;
+    const migratingSidebarSession = routeBeforeRemoval === null
+      || routeBeforeRemoval.rightConversationSessionId === null
+      || !removingSessionIds.has(routeBeforeRemoval.mainSessionId)
+      || removingSessionIds.has(routeBeforeRemoval.rightConversationSessionId)
+      ? undefined
+      : state?.projects
+        .flatMap((candidate) => candidate.sessions)
+        .find((session) => session.sessionId === routeBeforeRemoval.rightConversationSessionId);
     try {
       const response = await fetch(endpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ force }),
       });
-      const body = await response.json() as { error?: string };
+      const body = await response.json() as { error?: string; archivedSessionIds?: string[] };
       if (!response.ok) {
         throw new Error(body.error ?? "remove project failed");
       }
@@ -2523,7 +2715,28 @@ export function OperatorConsoleApp({
         selectionPersistenceEnabledRef.current = false;
         forgetPersistedSelection();
       }
-      await refresh(selectionRef.current);
+      for (const sessionId of body.archivedSessionIds ?? [...removingSessionIds]) {
+        rightSidebarTabsStoreRef.current.removeSession(sessionId);
+      }
+      rightSidebarTabsStoreRef.current.clearHosts([...removingSessionIds]);
+      if (migratingSidebarSession !== undefined) {
+        const migrated = await refresh({
+          projectId: migratingSidebarSession.projectId,
+          sessionId: migratingSidebarSession.sessionId,
+        });
+        if (migrated) {
+          commitPresentationRoute(sidebarPresentationRoute({
+            sidebarProjectId: migratingSidebarSession.projectId,
+            sidebarSessionId: migratingSidebarSession.sessionId,
+            originSessionId: migratingSidebarSession.originSessionId ?? routeBeforeRemoval!.mainSessionId,
+            originAvailable: false,
+          }));
+          setRightSidebarOpen(false);
+          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(migratingSidebarSession.sessionId));
+        }
+      } else {
+        await refresh(selectionRef.current);
+      }
       if (wasCurrentProject) {
         startNewConversation();
       }
@@ -2534,7 +2747,16 @@ export function OperatorConsoleApp({
     } finally {
       setIsProjectMutationPending(false);
     }
-  }, [apiBase, forgetPersistedSelection, refresh, startNewConversation]);
+  }, [
+    apiBase,
+    commitPresentationRoute,
+    forgetPersistedSelection,
+    presentationRoute,
+    refresh,
+    setRightSidebarOpen,
+    startNewConversation,
+    state?.projects,
+  ]);
 
   const selectFolderForRepair = useCallback(async (projectId: string): Promise<string | null> => {
     if (window.moebius?.selectFolderForRepair === undefined) {
@@ -2690,11 +2912,44 @@ export function OperatorConsoleApp({
     writeSidebarVisibilityPreference(window.localStorage, preference);
   }, []);
 
-  const setRightSidebarOpen = useCallback((open: boolean) => {
-    const preference = open ? "open" : "closed";
-    setRightSidebarVisibilityPreference(preference);
-    writeRightSidebarVisibilityPreference(window.localStorage, preference);
-  }, []);
+  useEffect(() => {
+    if (
+      state === null
+      || presentationRoute?.rightConversationSessionId === null
+      || presentationRoute === null
+    ) {
+      return;
+    }
+    const sessions = state.projects.flatMap((candidate) => candidate.sessions);
+    const sourceAvailable = sessions.some(
+      (session) => session.sessionId === presentationRoute.mainSessionId,
+    );
+    if (sourceAvailable) return;
+    const target = sessions.find(
+      (session) => session.sessionId === presentationRoute.rightConversationSessionId,
+    );
+    if (target === undefined || sourceMigrationRef.current === target.sessionId) return;
+    sourceMigrationRef.current = target.sessionId;
+    void refresh({ projectId: target.projectId, sessionId: target.sessionId }).then((migrated) => {
+      if (!migrated) return;
+      commitPresentationRoute(sidebarPresentationRoute({
+        sidebarProjectId: target.projectId,
+        sidebarSessionId: target.sessionId,
+        originSessionId: target.originSessionId ?? presentationRoute.mainSessionId,
+        originAvailable: false,
+      }));
+      setRightSidebarOpen(false);
+      setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(target.sessionId));
+    }).finally(() => {
+      sourceMigrationRef.current = null;
+    });
+  }, [
+    commitPresentationRoute,
+    presentationRoute,
+    refresh,
+    setRightSidebarOpen,
+    state,
+  ]);
 
   const changeRightSidebarWidth = useCallback((width: number) => {
     setRightSidebarWidth(width);
@@ -2702,10 +2957,268 @@ export function OperatorConsoleApp({
   }, []);
 
   const changeRightSidebarTabs = useCallback((nextState: RightSidebarTabsState) => {
-    const sessionId = selectionRef.current.sessionId;
-    rightSidebarTabsStoreRef.current.write(sessionId, nextState);
-    setRightSidebarTabs(nextState);
+    const hostSessionId = presentationRoute?.hostSessionId ?? selectionRef.current.sessionId;
+    let resolvedState = nextState;
+    const unresolvedConversation = nextState.tabs.find(
+      (tab) => tab.type === "conversation" && tab.sourceKey === null,
+    );
+    if (unresolvedConversation !== undefined) {
+      const selected = state?.selectedSession ?? null;
+      const generalAssistant = agentTeamsState.status === "ready"
+        ? agentTeamsState.teams.find((team) =>
+            team.ownership === "system" && team.id === "general-assistant")
+        : undefined;
+      const draft = createSidebarConversationDraft({
+        draftId: crypto.randomUUID(),
+        hostSessionId,
+        originSessionId: selected?.sessionId ?? null,
+        entryTemplate: null,
+        context: {
+          projectId: selected?.projectId ?? selectionRef.current.projectId,
+          workspaceMode: selected?.workspaceMode ?? "direct",
+          teamKey: generalAssistant?.teamKey ?? null,
+        },
+        now: new Date().toISOString(),
+      });
+      sidebarConversationDraftStoreRef.current.write(draft);
+      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
+      resolvedState = {
+        ...nextState,
+        tabs: nextState.tabs.map((tab) => tab.id === unresolvedConversation.id
+          ? { ...tab, sourceKey: conversationDraftTabSourceKey(draft.draftId) }
+          : tab),
+      };
+    }
+    rightSidebarTabsStoreRef.current.write(hostSessionId, resolvedState);
+    setRightSidebarTabs(resolvedState);
+  }, [agentTeamsState, presentationRoute?.hostSessionId, state?.selectedSession]);
+
+  const analyzeConversation = useCallback(async (input: {
+    sessionId: string;
+    runId: string | null;
+    messageId: number | null;
+  }) => {
+    if (apiBase === null) return;
+    const sourceSession = state?.projects
+      .flatMap((project) => project.sessions)
+      .find((session) => session.sessionId === input.sessionId);
+    if (sourceSession === undefined) {
+      setClientError(t("console.sessionAnalysis.sourceMissing"));
+      return;
+    }
+    const generalAssistant = agentTeamsState.status === "ready"
+      ? agentTeamsState.teams.find((team) =>
+          team.ownership === "system" && team.id === "general-assistant")
+      : undefined;
+    try {
+      const reference = await loadSessionReferenceText({
+        apiBase,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        fetch,
+      });
+      const existing = sidebarConversationDraftStoreRef.current.findMergeable({
+        hostSessionId: input.sessionId,
+        originSessionId: input.sessionId,
+        initialProjectId: sourceSession.projectId,
+        initialWorkspaceMode: sourceSession.workspaceMode,
+        entryTemplate: "session-analysis",
+      });
+      const draft = existing ?? createSidebarConversationDraft({
+        draftId: crypto.randomUUID(),
+        hostSessionId: input.sessionId,
+        originSessionId: input.sessionId,
+        entryTemplate: "session-analysis",
+        context: {
+          projectId: sourceSession.projectId,
+          workspaceMode: sourceSession.workspaceMode,
+          teamKey: generalAssistant?.teamKey ?? null,
+        },
+        now: new Date().toISOString(),
+      });
+      const nextDraft: SidebarConversationDraft = {
+        ...draft,
+        textFragments: [
+          ...draft.textFragments,
+          {
+            ...reference.fragment,
+            label: t("console.sessionAnalysis.fragmentLabel", {
+              index: draft.textFragments.length + 1,
+            }),
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      sidebarConversationDraftStoreRef.current.write(nextDraft);
+      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
+      const nextTabs = openRightSidebarSourceTab(
+        rightSidebarTabsStoreRef.current.read(input.sessionId),
+        {
+          id: `conversation-draft-${nextDraft.draftId}`,
+          type: "conversation",
+          title: t("console.sessionAnalysis.newConversation"),
+          sourceKey: conversationDraftTabSourceKey(nextDraft.draftId),
+        },
+      );
+      rightSidebarTabsStoreRef.current.write(input.sessionId, nextTabs);
+      setRightSidebarTabs(nextTabs);
+      setRightSidebarOpen(true);
+      commitPresentationRoute(ordinaryPresentationRoute({
+        projectId: sourceSession.projectId,
+        sessionId: input.sessionId,
+      }));
+      setClientError(null);
+    } catch (error) {
+      setClientError(formatError(error));
+    }
+  }, [
+    agentTeamsState,
+    apiBase,
+    commitPresentationRoute,
+    setRightSidebarOpen,
+    state?.projects,
+    t,
+  ]);
+
+  const updateSidebarConversationDraft = useCallback((
+    draftId: string,
+    update: (draft: SidebarConversationDraft) => SidebarConversationDraft,
+  ) => {
+    const current = sidebarConversationDraftStoreRef.current.read(draftId);
+    if (current === null) return;
+    sidebarConversationDraftStoreRef.current.write(update(current));
+    setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
   }, []);
+
+  const submitSidebarConversationDraft = useCallback(async (draftId: string) => {
+    const draft = sidebarConversationDraftStoreRef.current.read(draftId);
+    if (
+      apiBase === null
+      || draft === null
+      || draft.body.trim() === ""
+      || draft.context.projectId === null
+      || draft.context.teamKey === null
+      || sidebarConversationSendingId !== null
+      || hasBlockingComposerAttachment(managedSidebarConversationAttachments.attachments)
+    ) {
+      return;
+    }
+    const team = findOperatorAgentTeam(agentTeamsState, draft.context.teamKey);
+    if (team === undefined || !team.canCreateConversation) {
+      setClientError(t("desktop.error.teamUnavailable"));
+      return;
+    }
+    setSidebarConversationSendingId(draftId);
+    try {
+      const created = await createSidebarConversationSession({
+        apiBase,
+        projectId: draft.context.projectId,
+        initialMessage: draft.body,
+        agentTeam: { ownership: team.ownership, id: team.id },
+        workspaceMode: draft.context.workspaceMode,
+        attachmentIds: readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
+        attachmentDraftKey: draft.attachmentDraftKey,
+        originSessionId: draft.originSessionId,
+        entryTemplate: draft.entryTemplate,
+        writePolicy: draft.writePolicy,
+        textFragments: draft.textFragments,
+        fetch,
+      });
+      const createdTitle = created.title
+        ?? draft.body.trim().replace(/\s+/gu, " ").slice(0, 32);
+      rightSidebarTabsStoreRef.current.promoteConversationDraft({
+        draftId,
+        sessionId: created.sessionId,
+        title: createdTitle,
+      });
+      const nextTabs = rightSidebarTabsStoreRef.current.read(draft.hostSessionId);
+      const currentHostSessionId = presentationRouteRef.current?.hostSessionId
+        ?? selectionRef.current.sessionId;
+      if (currentHostSessionId === draft.hostSessionId) {
+        setRightSidebarTabs(nextTabs);
+      }
+      sidebarConversationDraftStoreRef.current.remove(draftId);
+      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
+      managedSidebarConversationAttachments.clearDraft(draft.attachmentDraftKey);
+      setSidebarConversationComposerValues((current) => ({
+        ...current,
+        [created.sessionId]: "",
+      }));
+      commitPresentationRoute(sidebarPresentationRoute({
+        sidebarProjectId: draft.context.projectId,
+        sidebarSessionId: created.sessionId,
+        originSessionId: draft.originSessionId,
+        originAvailable: draft.originSessionId !== null,
+      }));
+      await refresh(selectionRef.current);
+      const recordSuccessfulTeam = window.moebius?.recordSuccessfulConversationAgentTeam;
+      if (recordSuccessfulTeam !== undefined) {
+        await recordSuccessfulTeam({
+          ownership: team.ownership,
+          teamId: team.id,
+          sessionId: created.sessionId,
+        });
+        setLastUsedAgentTeamKey(team.teamKey);
+      }
+      setClientError(null);
+    } catch (error) {
+      setClientError(formatError(error));
+    } finally {
+      setSidebarConversationSendingId(null);
+    }
+  }, [
+    agentTeamsState,
+    apiBase,
+    commitPresentationRoute,
+    managedSidebarConversationAttachments.attachments,
+    managedSidebarConversationAttachments.clearDraft,
+    refresh,
+    sidebarConversationSendingId,
+    t,
+  ]);
+
+  const sendSidebarConversationMessage = useCallback(async (sessionId: string) => {
+    const body = sidebarConversationComposerValues[sessionId]
+      ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId));
+    if (
+      apiBase === null
+      || sidebarConversationSendingId !== null
+      || (body.trim() === "" && readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments).length === 0)
+    ) {
+      return;
+    }
+    setSidebarConversationSendingId(sessionId);
+    try {
+      await submitSessionMessage({
+        apiBase,
+        sessionId,
+        body,
+        attachmentIds: readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
+        fetch,
+      });
+      conversationDraftStoreRef.current.clear(sessionDraftKey(sessionId));
+      setSidebarConversationComposerValues((current) => ({ ...current, [sessionId]: "" }));
+      managedSidebarConversationAttachments.clearDraft(sessionDraftKey(sessionId));
+      const view = await loadSubSessionView({ apiBase, sessionId, fetch });
+      setSidebarConversationViews((current) => ({
+        ...current,
+        [sessionId]: { status: "ready", view },
+      }));
+      await refresh(selectionRef.current);
+      setClientError(null);
+    } catch (error) {
+      setClientError(formatError(error));
+    } finally {
+      setSidebarConversationSendingId(null);
+    }
+  }, [
+    apiBase,
+    managedSidebarConversationAttachments.attachments,
+    managedSidebarConversationAttachments.clearDraft,
+    refresh,
+    sidebarConversationComposerValues,
+    sidebarConversationSendingId,
+  ]);
 
   const readWorkspaceDiff = useCallback((sessionId: string) => {
     if (apiBase === null) {
@@ -2803,6 +3316,308 @@ export function OperatorConsoleApp({
     });
   }, [apiBase, commitProcessOutputs]);
 
+  const executeConversationSearch = useCallback((input: {
+    query: string;
+    includeArchived: boolean;
+  }) => {
+    if (apiBase === null) return;
+    conversationSearchRequestRef.current?.abort("search-condition-changed");
+    const controller = new AbortController();
+    conversationSearchRequestRef.current = controller;
+    const conditionKey = `${input.query.trim().normalize("NFKC").toLowerCase()}\u0000${String(input.includeArchived)}`;
+    setConversationSearchState({
+      status: "loading",
+      results: [],
+      error: null,
+      conditionKey,
+    });
+    void searchConsoleSessions({
+      apiBase,
+      query: input.query,
+      includeArchived: input.includeArchived,
+      fetch,
+      signal: controller.signal,
+    }).then((results) => {
+      if (conversationSearchRequestRef.current !== controller || controller.signal.aborted) return;
+      setConversationSearchState({ status: "ready", results, error: null, conditionKey });
+    }).catch((error: unknown) => {
+      if (conversationSearchRequestRef.current !== controller || controller.signal.aborted) return;
+      setConversationSearchState({
+        status: "error",
+        results: [],
+        error: formatError(error),
+        conditionKey,
+      });
+    });
+  }, [apiBase]);
+
+  const openSearchedSession = useCallback(async (
+    result: SessionSearchResult,
+    restore: boolean,
+  ) => {
+    if (apiBase === null) return false;
+    try {
+      const target = restore
+        ? await restoreConsoleSession({
+            apiBase,
+            sessionId: result.session.sessionId,
+            fetch,
+          })
+        : result.session;
+      const currentState = stateRef.current;
+      const origin = target.originSessionId == null
+        ? undefined
+        : currentState?.projects
+          .flatMap((candidate) => candidate.sessions)
+          .find((session) => session.sessionId === target.originSessionId);
+      if (origin !== undefined && result.originAvailable) {
+        const route = sidebarPresentationRoute({
+          sidebarProjectId: target.projectId,
+          sidebarSessionId: target.sessionId,
+          originSessionId: origin.sessionId,
+          originAvailable: true,
+        });
+        commitPresentationRoute(route);
+        const tabs = openRightSidebarSourceTab(
+          rightSidebarTabsStoreRef.current.read(origin.sessionId),
+          {
+            id: `conversation-${target.sessionId}`,
+            type: "conversation",
+            title: target.title,
+            sourceKey: conversationTabSourceKey(target.sessionId),
+          },
+        );
+        rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
+        setRightSidebarTabs(tabs);
+        setRightSidebarOpen(true);
+        actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
+      } else {
+        commitPresentationRoute(sidebarPresentationRoute({
+          sidebarProjectId: target.projectId,
+          sidebarSessionId: target.sessionId,
+          originSessionId: target.originSessionId ?? null,
+          originAvailable: false,
+        }));
+        setRightSidebarOpen(false);
+        actions.selectSession({ projectId: target.projectId, sessionId: target.sessionId });
+      }
+      return true;
+    } catch (error) {
+      setClientError(formatError(error));
+      return false;
+    }
+  }, [apiBase, commitPresentationRoute, setRightSidebarOpen]);
+
+  const renderSidebarConversation = useCallback(() => {
+    if (activeSidebarConversationDraft !== null) {
+      const draft = activeSidebarConversationDraft;
+      const draftProject = projects.find((candidate) => candidate.projectId === draft.context.projectId) ?? project;
+      const promptSuggestions = draft.entryTemplate === "session-analysis"
+        ? [
+            {
+              id: "unexpected-agent-run",
+              label: t("console.sessionAnalysis.unexpectedLabel"),
+              prompt: t("console.sessionAnalysis.unexpectedPrompt"),
+            },
+            {
+              id: "long-agent-run",
+              label: t("console.sessionAnalysis.slowLabel"),
+              prompt: t("console.sessionAnalysis.slowPrompt"),
+            },
+          ]
+        : [];
+      return (
+        <OperatorConsole
+          presentation="conversation"
+          project={draftProject}
+          projects={projects}
+          selectedProjectId={draft.context.projectId ?? draftProject.projectId}
+          selectedSessionId={draft.hostSessionId}
+          selectedSession={null}
+          messages={[]}
+          activeRun={null}
+          composerValue=""
+          composerAttachments={managedSidebarConversationAttachments.attachments}
+          agentTeamsState={agentTeamsState}
+          newConversation={{
+            selectedProjectId: draft.context.projectId,
+            selectedWorkspaceMode: draft.context.workspaceMode,
+            selectedTeamKey: draft.context.teamKey,
+            draft: draft.body,
+            isSubmitting: sidebarConversationSendingId === draft.draftId,
+            error: null,
+            textFragments: draft.textFragments,
+            promptSuggestions,
+          }}
+          cliReadiness={onboardingCliReadiness}
+          onComposerChange={() => undefined}
+          onComposerFilesAdded={managedSidebarConversationAttachments.addFiles}
+          onComposerAttachmentRemove={managedSidebarConversationAttachments.remove}
+          onComposerAttachmentRetry={managedSidebarConversationAttachments.retry}
+          onSend={() => undefined}
+          onSelectSession={() => undefined}
+          onInterrupt={() => undefined}
+          onNewConversationProjectChange={(projectId) => {
+            const nextProject = projects.find((candidate) => candidate.projectId === projectId);
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              context: {
+                ...current.context,
+                projectId,
+                workspaceMode: nextProject?.worktreeMode === true ? "worktree" : "direct",
+              },
+              updatedAt: new Date().toISOString(),
+            }));
+          }}
+          onNewConversationWorkspaceChange={(workspaceMode) =>
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              context: { ...current.context, workspaceMode },
+              updatedAt: new Date().toISOString(),
+            }))}
+          onNewConversationTeamChange={(teamKey) =>
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              context: { ...current.context, teamKey },
+              updatedAt: new Date().toISOString(),
+            }))}
+          onNewConversationDraftChange={(body) =>
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              body,
+              updatedAt: new Date().toISOString(),
+            }))}
+          onNewConversationTextFragmentRemove={(fragmentId) =>
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              textFragments: current.textFragments.filter((fragment) => fragment.id !== fragmentId),
+              updatedAt: new Date().toISOString(),
+            }))}
+          onNewConversationPromptSuggestionSelect={(suggestion) =>
+            updateSidebarConversationDraft(draft.draftId, (current) => ({
+              ...current,
+              body: current.body.trim() === ""
+                ? suggestion.prompt
+                : `${current.body.trimEnd()}\n${suggestion.prompt}`,
+              updatedAt: new Date().toISOString(),
+            }))}
+          onSubmitNewConversation={() => void submitSidebarConversationDraft(draft.draftId)}
+          onAddNewConversationProject={() => void actions.addProject(
+            projects.map((candidate) => candidate.projectId),
+          )}
+        />
+      );
+    }
+
+    if (activeSidebarConversationSessionId === null) {
+      return null;
+    }
+    const viewState = sidebarConversationViews[activeSidebarConversationSessionId];
+    if (viewState?.status !== "ready") {
+      return (
+        <div className="grid min-h-full place-items-center p-6 text-sm text-sub" role="status">
+            {viewState?.status === "error"
+              ? viewState.message
+              : t("console.sessionAnalysis.loadingConversation")}
+        </div>
+      );
+    }
+    const view = viewState.view;
+    const conversationProject = projects.find((candidate) =>
+      candidate.projectId === view.session.projectId) ?? project;
+    const composerValue = sidebarConversationComposerValues[view.session.sessionId]
+      ?? conversationDraftStoreRef.current.read(sessionDraftKey(view.session.sessionId));
+    return (
+      <OperatorConsole
+        presentation="conversation"
+        project={conversationProject}
+        projects={projects}
+        selectedProjectId={view.session.projectId}
+        selectedSessionId={view.session.sessionId}
+        selectedSession={view.session}
+        messages={view.messages}
+        pendingPrimaryMessages={view.pendingPrimaryMessages ?? []}
+        memberIdentities={view.memberIdentities ?? []}
+        activeRun={view.activeRun}
+        activeRuns={view.activeRuns ?? (view.activeRun === null ? [] : [view.activeRun])}
+        workspaceDiff={view.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
+        composerValue={composerValue}
+        composerAttachments={managedSidebarConversationAttachments.attachments}
+        agentTeamsState={agentTeamsState}
+        conversationAgentTeamKey={view.session.agentTeamOwnership != null && view.session.agentTeamId != null
+          ? `${view.session.agentTeamOwnership}:${view.session.agentTeamId}`
+          : null}
+        isSending={sidebarConversationSendingId === view.session.sessionId}
+        onComposerChange={(value) => {
+          conversationDraftStoreRef.current.write(sessionDraftKey(view.session.sessionId), value);
+          setSidebarConversationComposerValues((current) => ({
+            ...current,
+            [view.session.sessionId]: value,
+          }));
+        }}
+        onComposerFilesAdded={managedSidebarConversationAttachments.addFiles}
+        onComposerAttachmentRemove={managedSidebarConversationAttachments.remove}
+        onComposerAttachmentRetry={managedSidebarConversationAttachments.retry}
+        onSend={() => void sendSidebarConversationMessage(view.session.sessionId)}
+        onSelectSession={() => undefined}
+        onInterrupt={(sessionId, runId) => void interruptSubSession(sessionId, runId)}
+        onRetryRun={(sessionId, runId) => void retryRun(sessionId, runId)}
+        onAnalyzeConversation={analyzeConversation}
+        onChangeSessionWorkspace={actions.changeSessionWorkspace}
+        onChangeSessionTeam={(sessionId, team) => actions.changeSessionTeam(sessionId, {
+          ownership: team.ownership,
+          id: team.id,
+        })}
+        onOpenEvidence={(intent) => {
+          changeRightSidebarTabs(openRightSidebarSourceTab(rightSidebarTabs, intent.kind === "workspace-diff"
+            ? {
+                id: `sidebar-workspace-${intent.sessionId}`,
+                type: "workspace-diff",
+                title: "builtin:workspace-diff",
+                sourceKey: `workspace-diff:${intent.sessionId}`,
+              }
+            : {
+                id: `sidebar-run-${intent.runId}`,
+                type: "run-output",
+                title: intent.role ?? t("console.sessionAnalysis.fullOutput"),
+                sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId, intent.stepId),
+              }));
+        }}
+        onLoadWorkspaceDiff={readWorkspaceDiff}
+        onLoadProjectFiles={readProjectFiles}
+        onLoadProjectFile={readProjectFile}
+        onLoadFileReference={readFileReference}
+      />
+    );
+  }, [
+    activeSidebarConversationDraft,
+    activeSidebarConversationSessionId,
+    agentTeamsState,
+    analyzeConversation,
+    changeRightSidebarTabs,
+    interruptSubSession,
+    managedSidebarConversationAttachments.addFiles,
+    managedSidebarConversationAttachments.attachments,
+    managedSidebarConversationAttachments.remove,
+    managedSidebarConversationAttachments.retry,
+    onboardingCliReadiness,
+    project,
+    projects,
+    readFileReference,
+    readProjectFile,
+    readProjectFiles,
+    readWorkspaceDiff,
+    retryRun,
+    rightSidebarTabs,
+    sendSidebarConversationMessage,
+    sidebarConversationComposerValues,
+    sidebarConversationSendingId,
+    sidebarConversationViews,
+    submitSidebarConversationDraft,
+    t,
+    updateSidebarConversationDraft,
+  ]);
+
   return (
     <OperatorConsole
       activeLocale={language.activeLocale}
@@ -2833,11 +3648,57 @@ export function OperatorConsoleApp({
         }
         await openExternalLink(url);
       }}
+      renderSearchOverlay={(close) => {
+        const items: ConversationSearchResultItem[] = conversationSearchState.results.map((result) => ({
+          sessionId: result.session.sessionId,
+          projectId: result.project.projectId,
+          projectTitle: result.project.title,
+          title: result.session.title,
+          archived: result.archived,
+        }));
+        const original = (item: ConversationSearchResultItem) =>
+          conversationSearchState.results.find((result) => result.session.sessionId === item.sessionId);
+        const closeSearch = () => {
+          conversationSearchRequestRef.current?.abort("search-closed");
+          conversationSearchRequestRef.current = null;
+          setConversationSearchState({ status: "idle", results: [], error: null, conditionKey: null });
+          close();
+        };
+        return (
+          <ConversationSearch
+            results={items}
+            status={conversationSearchState.status}
+            error={conversationSearchState.error}
+            onSearch={executeConversationSearch}
+            onClose={closeSearch}
+            onOpen={(item) => {
+              const result = original(item);
+              if (result !== undefined) {
+                void openSearchedSession(result, false).then((opened) => {
+                  if (opened) closeSearch();
+                });
+              }
+            }}
+            onRestoreAndOpen={(item) => {
+              const result = original(item);
+              if (result !== undefined) {
+                void openSearchedSession(result, true).then((opened) => {
+                  if (opened) closeSearch();
+                });
+              }
+            }}
+          />
+        );
+      }}
       project={project}
       projects={projects}
       selectedProjectId={selection.projectId}
       selectedSessionId={selection.sessionId}
+      navigationSessionId={presentationRoute?.selectedSessionId}
       selectedSession={selectedSession}
+      conversationNotice={presentationRoute?.notice === "source-unavailable"
+        ? t("console.sessionAnalysis.sourceUnavailable")
+        : null}
       messages={messagesWithPreviews}
       initialReadingMessageId={selectedSession === null
         ? null
@@ -2949,8 +3810,52 @@ export function OperatorConsoleApp({
       onSelectSession={(nextSelection) => {
         selectionPersistenceEnabledRef.current = true;
         dispatchNewConversation({ type: "hide" });
+        const target = projects
+          .flatMap((candidate) => candidate.sessions)
+          .find((session) => session.sessionId === nextSelection.sessionId);
+        const origin = target?.originSessionId == null
+          ? undefined
+          : projects
+            .flatMap((candidate) => candidate.sessions)
+            .find((session) => session.sessionId === target.originSessionId);
+        if (target?.originSessionId != null && origin !== undefined) {
+          const route = sidebarPresentationRoute({
+            sidebarProjectId: target.projectId,
+            sidebarSessionId: target.sessionId,
+            originSessionId: origin.sessionId,
+            originAvailable: true,
+          });
+          commitPresentationRoute(route);
+          setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(origin.sessionId)));
+          const tabs = openRightSidebarSourceTab(
+            rightSidebarTabsStoreRef.current.read(origin.sessionId),
+            {
+              id: `conversation-${target.sessionId}`,
+              type: "conversation",
+              title: target.title,
+              sourceKey: conversationTabSourceKey(target.sessionId),
+            },
+          );
+          rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
+          setRightSidebarTabs(tabs);
+          setRightSidebarOpen(true);
+          actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
+          return;
+        }
+        const route = target?.originSessionId != null
+          ? sidebarPresentationRoute({
+              sidebarProjectId: target.projectId,
+              sidebarSessionId: target.sessionId,
+              originSessionId: target.originSessionId,
+              originAvailable: false,
+            })
+          : ordinaryPresentationRoute(nextSelection);
+        commitPresentationRoute(route);
         setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(nextSelection.sessionId)));
         setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(nextSelection.sessionId));
+        if (target?.originSessionId != null) {
+          setRightSidebarOpen(false);
+        }
         actions.selectSession(nextSelection);
       }}
       onChangeSessionProject={actions.rebindSessionProject}
@@ -2959,7 +3864,19 @@ export function OperatorConsoleApp({
       onRemoveProject={removeProject}
       onSelectFolderForRepair={selectFolderForRepair}
       onRepairProjectFolder={repairProjectFolder}
-      onArchiveSession={actions.archiveSession}
+      onArchiveSession={async (sessionId, projectId) => {
+        await actions.archiveSession(sessionId, projectId);
+        const activeHostSessionId = presentationRouteRef.current?.hostSessionId
+          ?? selectionRef.current.sessionId;
+        rightSidebarTabsStoreRef.current.removeSession(sessionId);
+        if (presentationRoute?.selectedSessionId === sessionId) {
+          const next = selectionRef.current;
+          commitPresentationRoute(ordinaryPresentationRoute(next));
+          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(next.sessionId));
+        } else {
+          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(activeHostSessionId));
+        }
+      }}
       onCopySessionLogPath={async (sessionId) => {
         const copySessionLogPath = window.moebius?.copySessionLogPath;
         if (copySessionLogPath === undefined) {
@@ -2971,6 +3888,7 @@ export function OperatorConsoleApp({
       onRetryRun={(sessionId, runId) => {
         void retryRun(sessionId, runId);
       }}
+      onAnalyzeConversation={analyzeConversation}
       onEditAndResend={editAndResend}
       onOpenDiagnostics={openDiagnostics}
       onReplayOnboarding={onReplayOnboarding}
@@ -3039,6 +3957,9 @@ export function OperatorConsoleApp({
       onDuplicateAgentTeamMember={duplicateAgentTeamMember}
       onTrashAgentTeamMember={trashAgentTeamMember}
       onTrashUserAgentTeam={trashUserAgentTeam}
+      onViewAgentTeamRegistrationConflict={viewAgentTeamRegistrationConflict}
+      onShowAgentTeamRegistrationConflictLocation={showAgentTeamRegistrationConflictLocation}
+      onPreserveAgentTeamRegistrationConflicts={preserveAgentTeamRegistrationConflicts}
       isSending={isSending}
       isSubSessionSending={subSessionSendingId !== null}
       isSelectionMutationPending={selectionMutationKind !== null}
@@ -3049,12 +3970,35 @@ export function OperatorConsoleApp({
       rightSidebarOpen={rightSidebarVisibilityPreference === "open"}
       rightSidebarWidth={rightSidebarWidth}
       rightSidebarTabs={rightSidebarTabs}
+      rightSidebarContentSlots={{
+        conversation: renderSidebarConversation,
+      }}
       processOutputs={processOutputs}
       processInvocationStates={processInvocationStates}
       onLoadProcessInvocation={readProcessDebugInvocation}
       onRightSidebarOpenChange={setRightSidebarOpen}
       onRightSidebarWidthChange={changeRightSidebarWidth}
       onRightSidebarTabsChange={changeRightSidebarTabs}
+      onBeforeCloseRightSidebarTab={(tab) => {
+        const locator = tab.type === "conversation"
+          ? parseConversationTabSourceKey(tab.sourceKey)
+          : null;
+        if (locator?.kind !== "draft") return true;
+        const draft = sidebarConversationDraftStoreRef.current.read(locator.draftId);
+        if (draft === null) return true;
+        const hasAttachments = activeSidebarConversationDraftId === draft.draftId
+          && managedSidebarConversationAttachments.attachments.length > 0;
+        if (
+          (sidebarConversationDraftHasUserChanges(draft) || hasAttachments)
+            && !window.confirm(t("console.sessionAnalysis.discardDraft"))
+        ) {
+          return false;
+        }
+        sidebarConversationDraftStoreRef.current.remove(draft.draftId);
+        setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
+        managedSidebarConversationAttachments.clearDraft(draft.attachmentDraftKey);
+        return true;
+      }}
       onLoadWorkspaceDiff={readWorkspaceDiff}
       onLoadProjectFiles={readProjectFiles}
       onLoadProjectFile={readProjectFile}
@@ -3150,6 +4094,8 @@ function toOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTeam {
     teamKey: getAgentTeamKey(team),
     id: team.id,
     ownership: team.ownership,
+    createdAt: team.createdAt,
+    officialSourceName: team.officialSourceName,
     name: team.definition?.name ?? null,
     description: team.definition?.description ?? null,
     primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,

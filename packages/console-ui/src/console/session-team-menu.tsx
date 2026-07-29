@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -28,12 +29,22 @@ export function SessionTeamMenu({
   disabled?: boolean;
   onSelectTeam?: (team: OperatorAgentTeam) => void;
 }): JSX.Element | null {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const displayedTeam = pendingTeam ?? team;
   if (displayedTeam === undefined && missingTeamId == null) {
     return null;
   }
-  const teamLabel = displayedTeam?.name?.trim() || missingTeamId || t("console.common.untitledTeam");
+  const selectionLabel = (candidate: OperatorAgentTeam) => getAgentTeamSelectionLabel({
+    team: candidate,
+    teams,
+    locale,
+    untitledLabel: t("console.common.untitledTeam"),
+    officialLabel: t("console.agentTeamDetail.official"),
+    userLabel: t("console.agentTeamDetail.userTeam"),
+  });
+  const teamLabel = displayedTeam === undefined
+    ? missingTeamId || t("console.common.untitledTeam")
+    : selectionLabel(displayedTeam);
   const needsAttention = pendingTeam === undefined && (health === "deleted" || health === "needs-repair" || team?.status === "needs-repair");
   const stateLabel = t(health === "deleted" ? "console.sessionTeam.deleted" : "console.sessionTeam.needsRepair");
   const accessibleLabel = needsAttention
@@ -77,7 +88,7 @@ export function SessionTeamMenu({
               }
             }}
           >
-            {candidate.name?.trim() || t("console.common.untitledTeam")}
+            {selectionLabel(candidate)}
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />

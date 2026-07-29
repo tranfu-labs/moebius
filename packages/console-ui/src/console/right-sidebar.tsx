@@ -3,6 +3,7 @@ import {
   FileText,
   Files,
   ListTree,
+  MessageSquare,
   Plus,
   ScrollText,
   X,
@@ -49,6 +50,7 @@ export interface RightSidebarProps {
   onStateChange(state: RightSidebarTabsState): void;
   onOpenChange(open: boolean): void;
   onWidthChange(width: number): void;
+  onBeforeCloseTab?: (tab: RightSidebarTab) => boolean;
   createTabId(): string;
   contentSlots?: RightSidebarContentSlots;
   className?: string;
@@ -69,6 +71,7 @@ export function RightSidebar({
   onStateChange,
   onOpenChange,
   onWidthChange,
+  onBeforeCloseTab,
   createTabId,
   contentSlots = {},
   className,
@@ -172,7 +175,16 @@ export function RightSidebar({
                   type="button"
                   className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-sub hover:bg-sunken hover:text-ink"
                   aria-label={t("console.rightSidebar.closeTab", { title: displayTitle })}
-                  onClick={() => onStateChange(closeRightSidebarTab(state, tab.id, createTabId()))}
+                  onClick={() => {
+                    if (onBeforeCloseTab?.(tab) === false) {
+                      return;
+                    }
+                    const nextState = closeRightSidebarTab(state, tab.id);
+                    onStateChange(nextState);
+                    if (nextState.tabs.length === 0) {
+                      onOpenChange(false);
+                    }
+                  }}
                 >
                   <X className="h-[11px] w-[11px]" strokeWidth={1.5} aria-hidden="true" />
                 </button>
@@ -206,7 +218,13 @@ export function RightSidebar({
 
       <div className="scroll-thin min-h-0 flex-1 overflow-auto" data-testid="right-sidebar-content">
         {activeTab === null ? (
-          <div className="grid min-h-full place-items-center p-6 text-sm text-sub">{t("console.rightSidebar.preparing")}</div>
+          <BlankTab
+            isGitRepository={isGitRepository}
+            onSelect={(type) => {
+              const withBlank = addBlankRightSidebarTab(state, createTabId());
+              onStateChange(convertBlankRightSidebarTab(withBlank, withBlank.activeTabId!, type));
+            }}
+          />
         ) : activeTab.type === "blank" ? (
           <BlankTab
             isGitRepository={isGitRepository}
@@ -246,15 +264,25 @@ function BlankTab({
           >
             {type === "workspace-diff" ? (
               <FileDiff className="mt-0.5 h-4 w-4 shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
+            ) : type === "conversation" ? (
+              <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
             ) : (
               <Files className="mt-0.5 h-4 w-4 shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
             )}
             <span>
               <span className="block text-sm font-medium text-ink">
-                {t(type === "workspace-diff" ? "console.rightSidebar.changes" : "console.rightSidebar.projectFiles")}
+                {t(type === "workspace-diff"
+                  ? "console.rightSidebar.changes"
+                  : type === "conversation"
+                    ? "console.rightSidebar.conversation"
+                    : "console.rightSidebar.projectFiles")}
               </span>
               <span className="mt-0.5 block text-xs leading-5 text-sub">
-                {t(type === "workspace-diff" ? "console.rightSidebar.changesDescription" : "console.rightSidebar.projectFilesDescription")}
+                {t(type === "workspace-diff"
+                  ? "console.rightSidebar.changesDescription"
+                  : type === "conversation"
+                    ? "console.rightSidebar.conversationDescription"
+                    : "console.rightSidebar.projectFilesDescription")}
               </span>
             </span>
           </button>
@@ -288,6 +316,7 @@ function ContentSlotPlaceholder({ tab }: { tab: RightSidebarTab }): JSX.Element 
 
 function rightSidebarTabLabel(type: RightSidebarTabType, t: Translate): string {
   if (type === "workspace-diff") return t("console.rightSidebar.changes");
+  if (type === "conversation") return t("console.rightSidebar.conversation");
   if (type === "project-files") return t("console.rightSidebar.projectFiles");
   if (type === "file-reference") return t("console.rightSidebar.fileReference");
   if (type === "run-output") return t("console.rightSidebar.process");
@@ -300,6 +329,9 @@ function rightSidebarTabDisplayTitle(tab: RightSidebarTab, t: Translate): string
   }
   if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff) {
     return t("console.rightSidebar.changes");
+  }
+  if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.conversation) {
+    return t("console.rightSidebar.conversation");
   }
   if (tab.title === RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles) {
     return t("console.rightSidebar.projectFiles");
@@ -316,6 +348,8 @@ function TabIcon({
 }): JSX.Element {
   const Icon = type === "workspace-diff"
     ? FileDiff
+    : type === "conversation"
+      ? MessageSquare
     : type === "project-files"
       ? Files
       : type === "file-reference"

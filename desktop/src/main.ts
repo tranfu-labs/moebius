@@ -57,7 +57,7 @@ import {
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
 } from "./team-repair-ipc.js";
-import { getTeamsRoot } from "./team-store.js";
+import { getSystemTeamsRoot, getTeamsRoot } from "./team-store.js";
 import { seedBuiltInTeams } from "./team-seed.js";
 import {
   listSessionAgentFiles,
@@ -462,6 +462,28 @@ ipcMain.handle(TEAM_IPC_CHANNELS.list, async () => listAgentTeams({
   dataRoot: status.dataRoot,
   seedPending: status.seed.status === "pending",
 }));
+
+ipcMain.handle(TEAM_IPC_CHANNELS.resolveSeedConflict, async () => {
+  const seedRoot = resolveSeedRoot();
+  await seedBuiltInTeams({
+    seedTeamsRoot: app.isPackaged
+      ? path.join(seedRoot, "teams")
+      : path.join(projectRoot, "seeds", "teams"),
+    dataRoot: status.dataRoot,
+    preserveGeneralAssistantConflicts: true,
+  });
+  return listAgentTeams({
+    dataRoot: status.dataRoot,
+    seedPending: false,
+  });
+});
+
+ipcMain.handle(TEAM_IPC_CHANNELS.showSeedConflictLocation, async () => {
+  shell.showItemInFolder(path.join(
+    getSystemTeamsRoot(status.dataRoot),
+    "general-assistant",
+  ));
+});
 
 ipcMain.handle(TEAM_IPC_CHANNELS.create, async (_event, request: unknown) =>
   createAgentTeam(status.dataRoot, request));

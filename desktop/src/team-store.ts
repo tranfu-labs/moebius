@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -30,6 +30,11 @@ import {
 
 export const TEAMS_DIRECTORY = "teams";
 export const SYSTEM_TEAMS_DIRECTORY = ".system";
+export const SYSTEM_TEAM_LOCATION_OVERRIDES_FILE = path.join(
+  ".state",
+  "agent-teams",
+  "system-location-overrides-v1.json",
+);
 
 export interface TeamLocation {
   dataRoot: string;
@@ -91,9 +96,10 @@ export function resolveTeamLocation(input: {
 }): TeamLocation {
   assertTeamId(input.teamId);
   const dataRoot = path.resolve(input.dataRoot);
+  const override = readSystemTeamLocationOverrides(dataRoot)[input.teamId];
   const directory =
     input.ownership === "system"
-      ? path.join(getSystemTeamsRoot(dataRoot), input.teamId)
+      ? path.join(getSystemTeamsRoot(dataRoot), override ?? input.teamId)
       : path.join(getTeamsRoot(dataRoot), input.teamId);
 
   return {
@@ -139,10 +145,82 @@ export async function listTeamLocations(dataRoot: string): Promise<TeamLocation[
     listDirectoryNames(teamsRoot, { exclude: new Set([SYSTEM_TEAMS_DIRECTORY]) }),
   ]);
 
+  const overrides = readSystemTeamLocationOverrides(resolvedDataRoot);
+  const overriddenDirectoryNames = new Set(
+    Object.values(overrides).filter((value): value is string => value !== null),
+  );
+  const excludedCanonicalIds = new Set(
+    Object.entries(overrides).filter(([, value]) => value === null).map(([teamId]) => teamId),
+  );
+  const defaultSystemIds = systemIds.filter(
+    (teamId) => !overriddenDirectoryNames.has(teamId) && !excludedCanonicalIds.has(teamId),
+  );
   return [
-    ...systemIds.map((teamId) => resolveTeamLocation({ dataRoot: resolvedDataRoot, teamId, ownership: "system" })),
+    ...defaultSystemIds.map((teamId) =>
+      resolveTeamLocation({ dataRoot: resolvedDataRoot, teamId, ownership: "system" })),
+    ...Object.entries(overrides).flatMap(([teamId, directoryName]) =>
+      directoryName === null
+        ? []
+        : [resolveTeamLocation({ dataRoot: resolvedDataRoot, teamId, ownership: "system" })]),
     ...userIds.map((teamId) => resolveTeamLocation({ dataRoot: resolvedDataRoot, teamId, ownership: "user" })),
   ];
+}
+
+export async function writeSystemTeamLocationOverrides(
+  dataRoot: string,
+  overrides: Record<string, string | null>,
+): Promise<void> {
+  const target = path.join(path.resolve(dataRoot), SYSTEM_TEAM_LOCATION_OVERRIDES_FILE);
+  const normalized = normalizeSystemTeamLocationOverrides(overrides);
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(temporary, `${JSON.stringify({ version: 1, teams: normalized }, null, 2)}\n`, "utf8");
+  await fs.rename(temporary, target);
+}
+
+export function readSystemTeamLocationOverrides(
+  dataRoot: string,
+): Record<string, string | null> {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(path.join(path.resolve(dataRoot), SYSTEM_TEAM_LOCATION_OVERRIDES_FILE), "utf8"),
+    ) as unknown;
+    if (
+      typeof parsed !== "object"
+      || parsed === null
+      || (parsed as { version?: unknown }).version !== 1
+      || typeof (parsed as { teams?: unknown }).teams !== "object"
+      || (parsed as { teams?: unknown }).teams === null
+    ) {
+      return {};
+    }
+    return normalizeSystemTeamLocationOverrides(
+      (parsed as { teams: Record<string, unknown> }).teams,
+    );
+  } catch {
+    return {};
+  }
+}
+
+function normalizeSystemTeamLocationOverrides(
+  value: Record<string, unknown>,
+): Record<string, string | null> {
+  const normalized: Record<string, string | null> = {};
+  for (const [teamId, rawDirectoryName] of Object.entries(value)) {
+    if (!isValidPathSegment(teamId)) continue;
+    if (rawDirectoryName === null) {
+      normalized[teamId] = null;
+      continue;
+    }
+    if (
+      typeof rawDirectoryName === "string"
+      && isValidPathSegment(rawDirectoryName)
+      && rawDirectoryName !== SYSTEM_TEAMS_DIRECTORY
+    ) {
+      normalized[teamId] = rawDirectoryName;
+    }
+  }
+  return normalized;
 }
 
 export async function readTeamSnapshot(location: TeamLocation): Promise<TeamSnapshot> {

@@ -101,6 +101,10 @@ export type SqliteStateCommand =
       initialAttachmentIds?: string[];
       attachmentDraftKey?: string;
       baselineCommit?: string | null;
+      originSessionId?: string | null;
+      entryTemplate?: "session-analysis" | null;
+      writePolicy?: "normal" | "confirm-current-plan-before-write";
+      initialTextFragments?: Array<{ id: string; label: string; text: string }>;
       now: string;
     }
   | { kind: "local-move-empty-session"; sessionId: string; projectId: string; now: string }
@@ -129,6 +133,14 @@ export type SqliteStateCommand =
       now: string;
     }
   | { kind: "local-list-sessions" }
+  | { kind: "local-search-sessions"; query: string; includeArchived: boolean }
+  | {
+      kind: "local-update-session-analysis-gate";
+      sessionId: string;
+      proposalVersion: string | null;
+      writeLeaseVersion: string | null;
+      now: string;
+    }
   | { kind: "local-mark-session-result-read"; sessionId: string; unreadSince: string; now: string }
   | {
       kind: "local-append-user";
@@ -136,6 +148,7 @@ export type SqliteStateCommand =
       body: string;
       attachmentIds?: string[];
       attachmentDraftKey?: string;
+      textFragments?: Array<{ id: string; label: string; text: string }>;
       now: string;
     }
   | {

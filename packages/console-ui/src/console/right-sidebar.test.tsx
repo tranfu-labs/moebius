@@ -11,18 +11,18 @@ import {
 } from "./right-sidebar";
 import {
   addBlankRightSidebarTab,
-  ensureRightSidebarTabsForOpen,
   type RightSidebarTabsState,
 } from "./right-sidebar-tabs";
 
 describe("RightSidebar", () => {
-  it("offers exactly diff and project files in a git blank tab", () => {
+  it("offers an ordinary conversation, diff, and project files in a git blank tab", () => {
     renderSidebar({
       state: addBlankRightSidebarTab(initialState(), "blank"),
       isGitRepository: true,
     });
 
     const content = screen.getByTestId("right-sidebar-content");
+    expect(within(content).getByRole("button", { name: /新会话/u })).toBeVisible();
     expect(within(content).getByRole("button", { name: /改动/u })).toBeVisible();
     expect(within(content).getByRole("button", { name: /项目文件/u })).toBeVisible();
     expect(within(content).queryByText(/终端|预览|浏览器/u)).not.toBeInTheDocument();
@@ -67,6 +67,38 @@ describe("RightSidebar", () => {
     expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({
       tabs: expect.arrayContaining([expect.objectContaining({ type: "blank" })]),
     }));
+  });
+
+  it("closes the sidebar when its final tab closes", () => {
+    const onStateChange = vi.fn();
+    const onOpenChange = vi.fn();
+    renderSidebar({ onStateChange, onOpenChange });
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭标签：改动" }));
+
+    expect(onStateChange).toHaveBeenCalledWith({ tabs: [], activeTabId: null });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("renders an ordinary conversation through the generic conversation content slot", () => {
+    renderSidebar({
+      state: {
+        tabs: [{
+          id: "conversation",
+          type: "conversation",
+          title: "分析运行耗时",
+          sourceKey: "conversation:analysis",
+          closable: true,
+        }],
+        activeTabId: "conversation",
+      },
+      contentSlots: {
+        conversation: () => <div>普通会话内容</div>,
+      },
+    });
+
+    expect(screen.getByRole("tab", { name: "分析运行耗时" })).toBeVisible();
+    expect(screen.getByText("普通会话内容")).toBeVisible();
   });
 
   it("uses an overlay with its own route back to the conversation", () => {
@@ -119,10 +151,19 @@ function renderSidebar(
 }
 
 function initialState(isGitRepository = true): RightSidebarTabsState {
-  return ensureRightSidebarTabsForOpen(
-    { tabs: [], activeTabId: null },
-    { id: isGitRepository ? "diff" : "files", isGitRepository },
-  );
+  const type = isGitRepository ? "workspace-diff" : "project-files";
+  return {
+    tabs: [{
+      id: isGitRepository ? "diff" : "files",
+      type,
+      title: isGitRepository
+        ? "builtin:workspace-diff"
+        : "builtin:project-files",
+      sourceKey: null,
+      closable: true,
+    }],
+    activeTabId: isGitRepository ? "diff" : "files",
+  };
 }
 
 function firePointer(

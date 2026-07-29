@@ -25,6 +25,17 @@ afterEach(() => {
 });
 
 describe("OperatorConsole", () => {
+  it("reuses the ordinary conversation layout without the application shell when embedded", () => {
+    renderConsole({ presentation: "conversation" });
+
+    expect(screen.queryByTestId("operator-sidebar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("main-window-drag-region")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "默认会话" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "会话时间线" })).toBeVisible();
+    expect(screen.getByTestId("operator-content-shell").parentElement).toHaveClass("h-full", "min-h-0");
+  });
+
   it("renders the fixed sidebar skeleton around the only scrolling project region", () => {
     renderConsole({ onOpenDiagnostics: vi.fn() });
 
@@ -1314,7 +1325,7 @@ describe("OperatorConsole", () => {
     expect(within(panel).queryByText(/成员改了|团队改了/u)).not.toBeInTheDocument();
   });
 
-  it("drives a blank-tab project-files choice through the console container and includes unchanged files", async () => {
+  it("opens the zero-tab content selector before loading project files", async () => {
     const loadFiles = vi.fn(async () => ({
       available: true as const,
       files: [
@@ -1344,6 +1355,8 @@ describe("OperatorConsole", () => {
       onLoadProjectFile: loadFile,
     });
 
+    expect(screen.getByRole("heading", { name: "这个标签要看什么" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /项目文件/u }));
     const panel = await screen.findByTestId("project-files-tab");
     expect(within(panel).getByText("正在浏览完整项目树（项目文件夹）。")).toBeVisible();
     expect(within(panel).getByTitle("README.md")).toBeVisible();

@@ -57,6 +57,7 @@ interface WorkerLocalMessage {
   sourceKind: string | null;
   sourceId: string | null;
   attachments?: unknown[];
+  textFragments?: unknown[];
   activatedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -159,6 +160,7 @@ function runCommand(input: WorkerInput): unknown {
       case "local-create-child-session":
       case "local-record-child-session-card":
       case "local-append-user":
+      case "local-update-session-analysis-gate":
       case "local-claim-next":
       case "local-set-run-dir":
       case "local-record-message-processed":
@@ -219,6 +221,8 @@ function runCommand(input: WorkerInput): unknown {
         return listChildSessionSummarySources(database, input.command.parentSessionId);
       case "local-list-sessions":
         return listLocalSessions(database);
+      case "local-search-sessions":
+        return searchLocalSessions(database, input.command);
       case "local-mark-session-result-read":
         return markSessionResultRead(database, input.command);
       case "local-add-draft-attachment":
@@ -304,6 +308,11 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       source_repo TEXT,
       source_issue_number INTEGER,
       parent_session_id TEXT,
+      origin_session_id TEXT,
+      entry_template TEXT CHECK (entry_template IS NULL OR entry_template = 'session-analysis'),
+      write_policy TEXT NOT NULL DEFAULT 'normal' CHECK (write_policy IN ('normal', 'confirm-current-plan-before-write')),
+      proposal_version TEXT,
+      write_lease_version TEXT,
       agent_team_ownership TEXT CHECK (agent_team_ownership IS NULL OR agent_team_ownership IN ('system', 'user')),
       agent_team_id TEXT,
       agent_team_pending_ownership TEXT CHECK (agent_team_pending_ownership IS NULL OR agent_team_pending_ownership IN ('system', 'user')),
@@ -354,6 +363,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       last_failure_reason TEXT,
       source_kind TEXT,
       source_id TEXT,
+      text_fragments_json TEXT NOT NULL DEFAULT '[]',
       activated_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -504,6 +514,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateLocalMessageFailureMetadata(database);
   migrateLocalMessageActivation(database);
   migrateLocalWorkspaceDiffMetadata(database);
+  migrateSidebarChatSessionAnalysis(database);
   const now = new Date().toISOString();
   ensureLocalProjectSortOrderColumn(database);
   migrateMainSidebarProjectRemoval(database);
@@ -529,6 +540,28 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   markSchemaMigration(database, "main-sidebar-t11-session-archive");
   markSchemaMigration(database, "main-sidebar-t3-session-attention-state");
   markSchemaMigration(database, "local-console-managed-attachments");
+  markSchemaMigration(database, "sidebar-chat-session-analysis");
+}
+
+function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "sessions", "origin_session_id")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN origin_session_id TEXT");
+  }
+  if (!tableHasColumn(database, "sessions", "entry_template")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN entry_template TEXT CHECK (entry_template IS NULL OR entry_template = 'session-analysis')");
+  }
+  if (!tableHasColumn(database, "sessions", "write_policy")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN write_policy TEXT NOT NULL DEFAULT 'normal' CHECK (write_policy IN ('normal', 'confirm-current-plan-before-write'))");
+  }
+  if (!tableHasColumn(database, "sessions", "proposal_version")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN proposal_version TEXT");
+  }
+  if (!tableHasColumn(database, "sessions", "write_lease_version")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN write_lease_version TEXT");
+  }
+  if (!tableHasColumn(database, "session_messages", "text_fragments_json")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN text_fragments_json TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 function preserveLegacyLocalSessionTeamBindings(database: SqliteDatabase): void {
@@ -1343,8 +1376,8 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
     const insert = database.prepare(
       `INSERT INTO session_messages
         (id, session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind,
-         failure_count, last_failure_reason, source_kind, source_id, activated_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          speaker = excluded.speaker,
          role = excluded.role,
@@ -1358,6 +1391,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
          last_failure_reason = excluded.last_failure_reason,
          source_kind = excluded.source_kind,
          source_id = excluded.source_id,
+         text_fragments_json = excluded.text_fragments_json,
          activated_at = excluded.activated_at,
          created_at = excluded.created_at,
          updated_at = excluded.updated_at`,
@@ -1378,6 +1412,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
         message.lastFailureReason,
         message.sourceKind,
         message.sourceId,
+        JSON.stringify(message.textFragments ?? []),
         message.activatedAt,
         message.createdAt,
         message.updatedAt,
@@ -1551,6 +1586,7 @@ function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateC
     case "local-create-child-session": return createLocalChildSession(database, command);
     case "local-record-child-session-card": return recordChildSessionCard(database, command);
     case "local-append-user": return appendUserMessage(database, command);
+    case "local-update-session-analysis-gate": return updateLocalSessionAnalysisGate(database, command);
     case "local-claim-next": return claimNextPendingMessage(database, command);
     case "local-set-run-dir": return setRunDir(database, command);
     case "local-record-message-processed": return recordMessageProcessed(database, command);
@@ -1598,6 +1634,7 @@ function readSessionFactMessage(value: unknown): WorkerLocalMessage {
     sourceKind: readNullableString(value.sourceKind, "sourceKind"),
     sourceId: readNullableString(value.sourceId, "sourceId"),
     attachments: Array.isArray(value.attachments) ? value.attachments : [],
+    textFragments: Array.isArray(value.textFragments) ? readTextFragments(value.textFragments) : [],
     activatedAt: "activatedAt" in value ? readNullableString(value.activatedAt, "activatedAt") : null,
     createdAt: readString(value.createdAt, "createdAt"),
     updatedAt: readString(value.updatedAt, "updatedAt"),
@@ -2106,6 +2143,27 @@ function createLocalSession(
       ownership: input.agentTeamOwnership,
       id: input.agentTeamId,
     });
+    if (input.originSessionId !== undefined && input.originSessionId !== null) {
+      const origin = database
+        .prepare("SELECT 1 AS found FROM sessions WHERE session_id = ? AND source_type = 'local'")
+        .get(input.originSessionId);
+      if (origin === undefined) {
+        throw new Error(`local console origin session not found: ${input.originSessionId}`);
+      }
+    }
+    database
+      .prepare(
+        `UPDATE sessions
+         SET origin_session_id = ?, entry_template = ?, write_policy = ?, updated_at = ?
+         WHERE session_id = ? AND source_type = 'local'`,
+      )
+      .run(
+        input.originSessionId ?? null,
+        input.entryTemplate ?? null,
+        input.writePolicy ?? "normal",
+        input.now,
+        input.sessionId,
+      );
     if (input.workspaceMode !== undefined) {
       database.prepare(
         "UPDATE sessions SET workspace_mode = ? WHERE session_id = ? AND source_type = 'local'",
@@ -2119,7 +2177,8 @@ function createLocalSession(
     );
     ensureLocalCursor(database, input.sessionId, input.now);
     const attachmentIds = input.initialAttachmentIds ?? [];
-    if (input.initialMessage !== undefined || attachmentIds.length > 0) {
+    const textFragments = readTextFragments(input.initialTextFragments ?? []);
+    if (input.initialMessage !== undefined || attachmentIds.length > 0 || textFragments.length > 0) {
       const initialBody = input.initialMessage ?? "";
       if (initialBody.trim() === "" && attachmentIds.length === 0) {
         throw new Error("Message body or attachment must be provided");
@@ -2127,10 +2186,10 @@ function createLocalSession(
       const result = database
         .prepare(
           `INSERT INTO session_messages
-            (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, created_at, updated_at)
-          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?)`,
+            (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, text_fragments_json, created_at, updated_at)
+          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?)`,
         )
-        .run(input.sessionId, initialBody, input.now, input.now);
+        .run(input.sessionId, initialBody, JSON.stringify(textFragments), input.now, input.now);
       claimAttachmentRefs(
         database,
         input.attachmentDraftKey ?? "draft:new",
@@ -2428,6 +2487,69 @@ function listLocalSessions(database: SqliteDatabase): unknown[] {
   return rows.map((row) => readLocalSessionRow(database, row));
 }
 
+function searchLocalSessions(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-search-sessions" }>,
+): unknown[] {
+  const normalizedQuery = normalizeSessionSearchText(input.query);
+  if (normalizedQuery === "") {
+    return [];
+  }
+  const rows = database
+    .prepare(
+      `SELECT s.*, p.title AS project_title,
+              CASE WHEN s.archived_at IS NULL THEN 0 ELSE 1 END AS is_archived,
+              CASE WHEN origin.session_id IS NULL OR origin.archived_at IS NOT NULL OR origin_project.removed_at IS NOT NULL
+                THEN 0 ELSE 1 END AS origin_available
+       FROM sessions s
+       JOIN projects p ON p.project_id = s.project_id AND p.removed_at IS NULL
+       LEFT JOIN sessions origin ON origin.session_id = s.origin_session_id AND origin.source_type = 'local'
+       LEFT JOIN projects origin_project ON origin_project.project_id = origin.project_id
+       WHERE s.source_type = 'local'
+         AND s.parent_session_id IS NULL
+         AND (? = 1 OR s.archived_at IS NULL)
+       ORDER BY s.updated_at DESC, s.session_id ASC`,
+    )
+    .all(input.includeArchived ? 1 : 0);
+  return rows
+    .filter((row) => isRecord(row)
+      && normalizeSessionSearchText(readNullableString(row.title, "title") ?? "").includes(normalizedQuery))
+    .map((row) => {
+      if (!isRecord(row)) {
+        throw new Error("Invalid local session search row");
+      }
+      return {
+        session: readLocalSessionRow(database, row),
+        project: {
+          projectId: readString(row.project_id, "project_id"),
+          title: readString(row.project_title, "project_title"),
+        },
+        archived: readBooleanNumber(row.is_archived, "is_archived"),
+        originAvailable: row.origin_session_id === null
+          ? true
+          : readBooleanNumber(row.origin_available, "origin_available"),
+      };
+    });
+}
+
+function updateLocalSessionAnalysisGate(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-update-session-analysis-gate" }>,
+): unknown {
+  const result = database
+    .prepare(
+      `UPDATE sessions
+       SET proposal_version = ?, write_lease_version = ?, updated_at = ?
+       WHERE session_id = ? AND source_type = 'local'
+         AND write_policy = 'confirm-current-plan-before-write'`,
+    )
+    .run(input.proposalVersion, input.writeLeaseVersion, input.now, input.sessionId);
+  if (Number(result.changes ?? 0) !== 1) {
+    throw new Error(`local console analysis session not found: ${input.sessionId}`);
+  }
+  return requireLocalSession(database, input.sessionId);
+}
+
 function markSessionResultRead(
   database: SqliteDatabase,
   input: Extract<SqliteStateCommand, { kind: "local-mark-session-result-read" }>,
@@ -2448,6 +2570,7 @@ function appendUserMessage(
 ): unknown {
   return transaction(database, () => {
     const attachmentIds = input.attachmentIds ?? [];
+    const textFragments = readTextFragments(input.textFragments ?? []);
     if (input.body.trim() === "" && attachmentIds.length === 0) {
       throw new Error("Message body or attachment must be provided");
     }
@@ -2459,10 +2582,10 @@ function appendUserMessage(
     const result = database
       .prepare(
         `INSERT INTO session_messages
-          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, created_at, updated_at)
-        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?)`,
+          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, text_fragments_json, created_at, updated_at)
+        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?)`,
       )
-      .run(input.sessionId, input.body, input.now, input.now);
+      .run(input.sessionId, input.body, JSON.stringify(textFragments), input.now, input.now);
     const messageId = toNumberId(result.lastInsertRowid);
     claimAttachmentRefs(
       database,
@@ -3817,6 +3940,11 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     sessionId,
     projectId: readString(row.project_id, "project_id"),
     parentSessionId: readNullableString(row.parent_session_id, "parent_session_id"),
+    originSessionId: "origin_session_id" in row ? readNullableString(row.origin_session_id, "origin_session_id") : null,
+    entryTemplate: readLocalEntryTemplate("entry_template" in row ? row.entry_template : null),
+    writePolicy: readLocalWritePolicy("write_policy" in row ? row.write_policy : "normal"),
+    proposalVersion: "proposal_version" in row ? readNullableString(row.proposal_version, "proposal_version") : null,
+    writeLeaseVersion: "write_lease_version" in row ? readNullableString(row.write_lease_version, "write_lease_version") : null,
     agentTeamOwnership: readNullableAgentTeamOwnership(row.agent_team_ownership),
     agentTeamId: readNullableString(row.agent_team_id, "agent_team_id"),
     agentTeamPendingOwnership: readNullableAgentTeamOwnership(row.agent_team_pending_ownership),
@@ -3957,10 +4085,75 @@ function readLocalMessageRow(row: unknown): WorkerLocalMessage {
     lastFailureReason: "last_failure_reason" in row ? readNullableString(row.last_failure_reason, "last_failure_reason") : null,
     sourceKind: "source_kind" in row ? readNullableString(row.source_kind, "source_kind") : null,
     sourceId: "source_id" in row ? readNullableString(row.source_id, "source_id") : null,
+    textFragments: "text_fragments_json" in row
+      ? readTextFragmentsJson(row.text_fragments_json)
+      : [],
     activatedAt: "activated_at" in row ? readNullableString(row.activated_at, "activated_at") : null,
     createdAt: readString(row.created_at, "created_at"),
     updatedAt: readString(row.updated_at, "updated_at"),
   };
+}
+
+function readLocalEntryTemplate(value: unknown): "session-analysis" | null {
+  const template = readNullableString(value, "entry_template");
+  if (template === null || template === "session-analysis") {
+    return template;
+  }
+  throw new Error("Invalid entry_template");
+}
+
+function readLocalWritePolicy(value: unknown): "normal" | "confirm-current-plan-before-write" {
+  const policy = readString(value, "write_policy");
+  if (policy === "normal" || policy === "confirm-current-plan-before-write") {
+    return policy;
+  }
+  throw new Error("Invalid write_policy");
+}
+
+function readTextFragmentsJson(value: unknown): Array<{ id: string; label: string; text: string }> {
+  if (typeof value !== "string") {
+    throw new Error("Invalid text_fragments_json");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Invalid text_fragments_json");
+  }
+  return readTextFragments(parsed);
+}
+
+function readTextFragments(value: unknown): Array<{ id: string; label: string; text: string }> {
+  if (!Array.isArray(value)) {
+    throw new Error("Text fragments must be an array");
+  }
+  const ids = new Set<string>();
+  return value.map((fragment) => {
+    if (
+      !isRecord(fragment)
+      || typeof fragment.id !== "string"
+      || fragment.id.trim() === ""
+      || typeof fragment.label !== "string"
+      || fragment.label.trim() === ""
+      || typeof fragment.text !== "string"
+      || fragment.text.trim() === ""
+    ) {
+      throw new Error("Invalid text fragment");
+    }
+    if (ids.has(fragment.id)) {
+      throw new Error("Text fragment ids must be unique");
+    }
+    ids.add(fragment.id);
+    return {
+      id: fragment.id,
+      label: fragment.label,
+      text: fragment.text,
+    };
+  });
+}
+
+function normalizeSessionSearchText(value: string): string {
+  return value.trim().normalize("NFKC").toLowerCase();
 }
 
 function readSystemEventKind(value: unknown): LocalConsoleSystemEventKind {

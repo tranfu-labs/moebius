@@ -4,12 +4,14 @@ export const RIGHT_SIDEBAR_TAB_TYPES = [
   "file-reference",
   "run-output",
   "sub-session",
+  "conversation",
   "blank",
 ] as const;
 
 export type RightSidebarTabType = (typeof RIGHT_SIDEBAR_TAB_TYPES)[number];
 
 export const RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES = [
+  "conversation",
   "workspace-diff",
   "project-files",
 ] as const satisfies readonly RightSidebarTabType[];
@@ -50,6 +52,7 @@ export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
 
 export const RIGHT_SIDEBAR_BUILTIN_TAB_TITLES = {
   blank: "builtin:blank",
+  conversation: "builtin:conversation",
   workspaceDiff: "builtin:workspace-diff",
   projectFiles: "builtin:project-files",
 } as const;
@@ -186,29 +189,14 @@ export function addBlankRightSidebarTab(
 
 export function ensureRightSidebarTabsForOpen(
   state: RightSidebarTabsState,
-  options: { id: string; isGitRepository: boolean },
+  _options: { id: string; isGitRepository: boolean },
 ): RightSidebarTabsState {
   if (state.tabs.length > 0) {
     return state.activeTabId === null
       ? { ...state, activeTabId: state.tabs[0]?.id ?? null }
       : state;
   }
-  const tab: RightSidebarTab = options.isGitRepository
-    ? {
-        id: options.id,
-        type: "workspace-diff",
-        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
-        sourceKey: null,
-        closable: true,
-      }
-    : {
-        id: options.id,
-        type: "project-files",
-        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles,
-        sourceKey: null,
-        closable: true,
-      };
-  return { tabs: [tab], activeTabId: tab.id };
+  return EMPTY_RIGHT_SIDEBAR_TABS;
 }
 
 export function openRightSidebarSourceTab(
@@ -229,21 +217,27 @@ export function openRightSidebarSourceTab(
     const shouldCorrectUnknownTitle = existing.type === "run-output"
       && isUnknownProcessTitle(existing.title)
       && !isUnknownProcessTitle(source.title);
+    const shouldRefreshConversationTitle = existing.type === "conversation"
+      && source.type === "conversation"
+      && existing.title !== source.title;
     if (
       state.activeTabId === existing.id
       && !shouldUpgradeRunSource
       && !shouldCorrectUnknownTitle
+      && !shouldRefreshConversationTitle
     ) {
       return state;
     }
     return {
       ...state,
-      tabs: shouldUpgradeRunSource || shouldCorrectUnknownTitle
+      tabs: shouldUpgradeRunSource || shouldCorrectUnknownTitle || shouldRefreshConversationTitle
         ? state.tabs.map((tab) => tab.id === existing.id
             ? {
                 ...tab,
                 sourceKey: shouldUpgradeRunSource ? source.sourceKey : tab.sourceKey,
-                title: shouldCorrectUnknownTitle ? source.title : tab.title,
+                title: shouldCorrectUnknownTitle || shouldRefreshConversationTitle
+                  ? source.title
+                  : tab.title,
               }
             : tab)
         : state.tabs,
@@ -367,7 +361,7 @@ export function updateRightSidebarProcessScroll(
 export function closeRightSidebarTab(
   state: RightSidebarTabsState,
   tabId: string,
-  fallbackBlankId: string,
+  _fallbackBlankId?: string,
 ): RightSidebarTabsState {
   const closingIndex = state.tabs.findIndex((tab) => tab.id === tabId);
   if (closingIndex < 0) {
@@ -375,12 +369,7 @@ export function closeRightSidebarTab(
   }
   const remaining = state.tabs.filter((tab) => tab.id !== tabId);
   if (remaining.length === 0) {
-    const blank = createBlankRightSidebarTab(fallbackBlankId);
-    return {
-      ...state,
-      tabs: [blank],
-      activeTabId: blank.id,
-    };
+    return EMPTY_RIGHT_SIDEBAR_TABS;
   }
   if (state.activeTabId !== tabId) {
     return { ...state, tabs: remaining };
@@ -396,7 +385,9 @@ export function convertBlankRightSidebarTab(
 ): RightSidebarTabsState {
   const title = type === "workspace-diff"
     ? RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff
-    : RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles;
+    : type === "project-files"
+      ? RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles
+      : RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.conversation;
   return {
     tabs: state.tabs.map((tab) => tab.id === tabId && tab.type === "blank"
       ? { ...tab, type, title }
@@ -423,7 +414,7 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
     return [{
       id: entry.id,
       type: entry.type,
-      title: normalizeBuiltinTabTitle(entry.type, entry.title),
+      title: normalizeBuiltinTabTitle(entry.type, entry.title, entry.sourceKey),
       sourceKey: entry.sourceKey,
       closable: true,
     }];
@@ -445,7 +436,11 @@ export function serializeRightSidebarTabsState(state: RightSidebarTabsState): st
   return JSON.stringify(parseRightSidebarTabsState(state));
 }
 
-function normalizeBuiltinTabTitle(type: RightSidebarTabType, title: string): string {
+function normalizeBuiltinTabTitle(
+  type: RightSidebarTabType,
+  title: string,
+  sourceKey: string | null,
+): string {
   if (type === "blank") {
     return RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.blank;
   }
@@ -454,6 +449,9 @@ function normalizeBuiltinTabTitle(type: RightSidebarTabType, title: string): str
   }
   if (type === "project-files") {
     return RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles;
+  }
+  if (type === "conversation") {
+    return sourceKey === null ? RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.conversation : title;
   }
   return title;
 }

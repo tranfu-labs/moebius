@@ -10,6 +10,10 @@ import {
   readyComposerAttachmentIds,
   type ComposerAttachment,
 } from "@/console/structured-attachments";
+import {
+  TextFragmentList,
+  type ComposerTextFragment,
+} from "@/console/text-fragment-list";
 
 export interface RoleCompletion {
   handle: string;
@@ -56,6 +60,8 @@ export interface RoleComposerProps {
   onFilesAdded?: (files: File[]) => void;
   onAttachmentRemove?: (clientId: string) => void;
   onAttachmentRetry?: (clientId: string) => void;
+  textFragments?: readonly ComposerTextFragment[];
+  onTextFragmentRemove?: (fragmentId: string) => void;
   placeholder?: string;
   statusText?: string;
   submitLabel?: string;
@@ -207,9 +213,11 @@ export function RoleComposer({
   context,
   className,
   attachments = [],
+  textFragments = [],
   onFilesAdded,
   onAttachmentRemove,
   onAttachmentRetry,
+  onTextFragmentRemove,
 }: RoleComposerProps): JSX.Element {
   const { t } = useI18n();
   const roleOptions = roles ?? localizedRoleCompletions(t);
@@ -372,6 +380,12 @@ export function RoleComposer({
         }}
       >
         {context ? <div className="px-3 pt-2">{context}</div> : null}
+        <TextFragmentList
+          fragments={textFragments}
+          mode="draft"
+          className="border-b border-line px-3.5 py-3"
+          onRemove={onTextFragmentRemove}
+        />
         <StructuredAttachmentList
           attachments={attachments}
           mode="draft"

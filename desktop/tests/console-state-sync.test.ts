@@ -4,6 +4,7 @@ import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
   ConsoleStateCoordinator,
+  createSidebarConversationSession,
   loadEvidenceView,
   loadProcessDebugInvocation,
   loadProcessOutput,
@@ -11,6 +12,7 @@ import {
   loadProcessOutputUpdate,
   mergeSettledProcessOutput,
   loadSubSessionView,
+  loadSessionReferenceText,
   ProcessOutputRequestError,
   ProcessInvocationRequestCoordinator,
   processOutputLocator,
@@ -20,12 +22,111 @@ import {
   loadProjectFiles,
   loadWorkspaceDiff,
   refreshConsoleState,
+  restoreConsoleSession,
   retrySessionRun,
   subSessionIdFromSourceKey,
   submitSessionMessage,
+  searchConsoleSessions,
   type ConsoleSelection,
   type SelectionMutationKind,
 } from "../src/console-page/state-sync.js";
+
+describe("sidebar conversation state sync", () => {
+  it("submits creation facts in one request and keeps caller-owned draft state on failure", async () => {
+    const fetch = vi.fn(function (
+      this: unknown,
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) {
+      expect(this).toBe(globalThis);
+      expect(JSON.parse(String(init?.body))).toEqual({
+        projectId: "project-a",
+        initialMessage: "分析耗时",
+        agentTeamOwnership: "system",
+        agentTeamId: "general-assistant",
+        workspaceMode: "worktree",
+        attachmentIds: ["attachment-a"],
+        attachmentDraftKey: "draft-a",
+        originSessionId: "source-a",
+        entryTemplate: "session-analysis",
+        writePolicy: "confirm-current-plan-before-write",
+        textFragments: [{ id: "fragment-a", label: "文本片段 1", text: "静态文本" }],
+      });
+      return Promise.resolve(jsonResponse({ error: "create failed" }, 500));
+    });
+    const draft = {
+      body: "分析耗时",
+      fragments: [{ id: "fragment-a", label: "文本片段 1", text: "静态文本" }],
+    };
+
+    await expect(createSidebarConversationSession({
+      apiBase: "http://127.0.0.1:8787/",
+      projectId: "project-a",
+      initialMessage: draft.body,
+      agentTeam: { ownership: "system", id: "general-assistant" },
+      workspaceMode: "worktree",
+      attachmentIds: ["attachment-a"],
+      attachmentDraftKey: "draft-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      writePolicy: "confirm-current-plan-before-write",
+      textFragments: draft.fragments,
+      fetch,
+    })).rejects.toThrow("create failed");
+    expect(draft).toEqual({
+      body: "分析耗时",
+      fragments: [{ id: "fragment-a", label: "文本片段 1", text: "静态文本" }],
+    });
+  });
+
+  it("encodes trusted reference, search, and restore requests without deriving facts in the renderer", async () => {
+    const fetch = vi.fn(function (
+      this: unknown,
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) {
+      expect(this).toBe(globalThis);
+      const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url);
+      if (url.pathname.endsWith("/reference-text")) {
+        expect(url.searchParams.get("runId")).toBe("run/1");
+        return Promise.resolve(jsonResponse({
+          fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
+        }));
+      }
+      if (url.pathname.endsWith("/search")) {
+        expect(url.searchParams.get("query")).toBe(" 分析 ");
+        expect(url.searchParams.get("includeArchived")).toBe("true");
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        return Promise.resolve(jsonResponse({ results: [] }));
+      }
+      expect(url.pathname).toBe("/api/local-console/sessions/session%2F1/restore");
+      expect(init?.method).toBe("POST");
+      return Promise.resolve(jsonResponse({ session: { sessionId: "session/1", title: "分析" } }));
+    });
+    const controller = new AbortController();
+
+    await expect(loadSessionReferenceText({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/1",
+      runId: "run/1",
+      fetch,
+    })).resolves.toEqual({
+      fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
+    });
+    await expect(searchConsoleSessions({
+      apiBase: "http://127.0.0.1:8787/",
+      query: " 分析 ",
+      includeArchived: true,
+      signal: controller.signal,
+      fetch,
+    })).resolves.toEqual([]);
+    await expect(restoreConsoleSession({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/1",
+      fetch,
+    })).resolves.toMatchObject({ sessionId: "session/1", title: "分析" });
+  });
+});
 
 interface TestState {
   selectedProjectId: string;

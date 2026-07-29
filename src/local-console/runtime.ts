@@ -54,6 +54,8 @@ import {
   type LocalConsoleRunSnapshot,
   type LocalConsoleRunOutput,
   type LocalConsoleSessionSummary,
+  type LocalConsoleSessionSearchResult,
+  type LocalConsoleSessionReferenceText,
   type LocalConsoleSessionWorkspaceSource,
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
@@ -65,6 +67,9 @@ import {
   type LocalConsoleWorkspaceDiffDetail,
   type LocalConsoleWorkspaceDiffSummary,
   type LocalConsoleStore,
+  type LocalConsoleEntryTemplate,
+  type LocalConsoleWritePolicy,
+  type LocalConsoleTextFragment,
 } from "./types.js";
 import {
   createLocalExecutionRunner,
@@ -128,6 +133,11 @@ import {
   type LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
 import { resolveCodexRollout, resolveCodexSessionsRoot } from "./codex-rollout.js";
+import {
+  buildConfirmedPlanExecutionPrompt,
+  buildSessionAnalysisReadOnlyContract,
+  parseSessionAnalysisResponse,
+} from "./session-analysis-gate.js";
 
 export interface LocalConsoleAgentFile {
   name: string;
@@ -577,6 +587,13 @@ export class LocalConsoleRuntime {
     initialMessage?: string,
     workspaceMode?: LocalConsoleWorkspaceMode,
     attachmentIds: string[] = [],
+    metadata: {
+      originSessionId?: string | null;
+      entryTemplate?: LocalConsoleEntryTemplate | null;
+      writePolicy?: LocalConsoleWritePolicy;
+      textFragments?: LocalConsoleTextFragment[];
+      attachmentDraftKey?: string;
+    } = {},
   ): Promise<LocalConsoleSessionSummary> {
     const sessionId = `local:${this.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
     const resolvedProjectId = projectId ?? (await this.defaultProjectId());
@@ -587,6 +604,7 @@ export class LocalConsoleRuntime {
     if (new Set(attachmentIds).size !== attachmentIds.length) {
       throw new Error("Attachment ids must be unique");
     }
+    assertTextFragments(metadata.textFragments ?? []);
     await this.assertProjectDirectoryAvailable(resolvedProjectId);
     const project = await this.storedProject(resolvedProjectId);
     if (project === undefined) {
@@ -639,8 +657,12 @@ export class LocalConsoleRuntime {
         workspaceMode,
         initialMessage: normalizedInitialMessage,
         initialAttachmentIds: attachmentIds,
-        attachmentDraftKey: "draft:new",
+        attachmentDraftKey: metadata.attachmentDraftKey ?? "draft:new",
         baselineCommit,
+        originSessionId: metadata.originSessionId,
+        entryTemplate: metadata.entryTemplate,
+        writePolicy: metadata.writePolicy,
+        initialTextFragments: metadata.textFragments,
         now: this.nowIso(),
       }),
     );
@@ -750,6 +772,49 @@ export class LocalConsoleRuntime {
     return session;
   }
 
+  async searchSessions(input: {
+    query: string;
+    includeArchived: boolean;
+  }): Promise<LocalConsoleSessionSearchResult[]> {
+    if (this.options.store.searchSessions === undefined) {
+      throw new Error("local console session search unavailable");
+    }
+    return await this.storeCall("local-console-store-search-sessions", () =>
+      this.options.store.searchSessions!(input),
+    );
+  }
+
+  async sessionReferenceText(input: {
+    sessionId: string;
+    runId?: string | null;
+  }): Promise<LocalConsoleSessionReferenceText> {
+    const sessions = await this.storeCall(
+      "local-console-store-list-sessions-for-reference",
+      () => this.options.store.listSessions(),
+    );
+    if (!sessions.some((session) => session.sessionId === input.sessionId)) {
+      throw new Error(`local console session not found: ${input.sessionId}`);
+    }
+    const logPath = this.getSessionFactLogPath(input.sessionId);
+    const links = await readExecutionSessionLinks(logPath, input.sessionId);
+    const matchingLink = input.runId == null
+      ? [...links].reverse()[0] ?? null
+      : [...links].reverse().find((link) => link.runId === input.runId) ?? null;
+    const providerText = matchingLink === null
+      ? ""
+      : `；外部执行：${matchingLink.engine === "kimi" ? "Kimi" : "Codex"} ${matchingLink.externalSessionId}`;
+    const text = `Moebius 会话记录：${logPath}${providerText}`;
+    return {
+      sessionId: input.sessionId,
+      runId: input.runId ?? null,
+      fragment: {
+        id: crypto.randomUUID(),
+        label: "文本片段",
+        text,
+      },
+    };
+  }
+
   async createChildSession(input: {
     parentSessionId: string;
     childSessionId: string;
@@ -792,6 +857,7 @@ export class LocalConsoleRuntime {
     sessionId = this.sessionId,
     attachmentIds: string[] = [],
     resumeRunId?: string,
+    textFragments: LocalConsoleTextFragment[] = [],
   ): Promise<LocalConsoleMessage> {
     const trimmed = body.trim();
     if (trimmed === "" && attachmentIds.length === 0) {
@@ -800,6 +866,7 @@ export class LocalConsoleRuntime {
     if (new Set(attachmentIds).size !== attachmentIds.length) {
       throw new Error("Attachment ids must be unique");
     }
+    assertTextFragments(textFragments);
     await this.assertSessionCanContinue(sessionId);
 
     const primaryRun = this.activeRunForLane(sessionId, "primary");
@@ -816,6 +883,7 @@ export class LocalConsoleRuntime {
         body: trimmed,
         attachmentIds,
         attachmentDraftKey: `draft:${sessionId}`,
+        textFragments,
         now: this.nowIso(),
       }),
     );
@@ -1308,6 +1376,9 @@ export class LocalConsoleRuntime {
             return;
           }
           const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
+          const policySession = await this.sessionSummary(sessionId);
+          const analysisGateEnabled =
+            policySession.writePolicy === "confirm-current-plan-before-write";
           const timelineMessages = messages.filter(
             (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
           );
@@ -1588,6 +1659,9 @@ export class LocalConsoleRuntime {
                   })}\n\n${buildLocalAgentDeltaPrompt({ role: trigger.role, timeline: deltaTimeline })}`
                 : buildLocalAgentDeltaPrompt({ role: trigger.role, timeline: deltaTimeline })
               : fullPrompt;
+          if (analysisGateEnabled && trigger.role === primaryAgent) {
+            prompt += buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null);
+          }
           prompt += preparedAttachments.promptSuffix;
 
           if (recoveryPlan.intent !== null) {
@@ -1663,7 +1737,7 @@ export class LocalConsoleRuntime {
             outcome: "started",
             recordedAt: this.nowIso(),
           });
-          const result = await (async () => {
+          let result = await (async () => {
             try {
               return await this.executionRunner({
                 prompt,
@@ -1677,6 +1751,7 @@ export class LocalConsoleRuntime {
                 ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
                 ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
                 ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
+                workspaceAccess: analysisGateEnabled ? "read-only" : "read-write",
                 onVisibleAgentMarkdown: (text) => {
                   const active = this.activeRuns.get(nextRunId);
                   if (active?.sessionId === sessionId) {
@@ -1797,7 +1872,72 @@ export class LocalConsoleRuntime {
               profileFingerprint: executionContext.profileFingerprint,
               agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
               contextFingerprint: executionContext.contextFingerprint,
-            });
+              });
+          }
+
+          if (analysisGateEnabled && trigger.role === primaryAgent && result.ok) {
+            const parsedControl = parseSessionAnalysisResponse(result.finalText);
+            if (parsedControl.control?.action === "proposal") {
+              await this.updateSessionAnalysisGate({
+                sessionId,
+                proposalVersion: parsedControl.control.version,
+                writeLeaseVersion: null,
+              });
+              result = { ...result, finalText: parsedControl.visibleText };
+            } else if (parsedControl.control?.action === "confirm") {
+              const confirmedVersion = parsedControl.control.version;
+              const externalSessionId = observedExternalSessionId ?? result.threadId;
+              if (
+                policySession.proposalVersion !== confirmedVersion
+                || externalSessionId === null
+              ) {
+                result = {
+                  ...result,
+                  finalText: [
+                    parsedControl.visibleText,
+                    "这次确认没有与当前方案版本精确匹配，或当前 provider 会话无法安全继续；我保持只读，没有修改文件。请先重新确认当前完整方案。",
+                  ].filter((part) => part.trim() !== "").join("\n\n"),
+                };
+              } else {
+                await this.updateSessionAnalysisGate({
+                  sessionId,
+                  proposalVersion: confirmedVersion,
+                  writeLeaseVersion: confirmedVersion,
+                });
+                try {
+                  result = await this.executionRunner({
+                    prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
+                    runDir: activeRunDir,
+                    cwd: workspace.cwd,
+                    profile: executionContext.profile,
+                    mode: { kind: "resume", externalSessionId },
+                    signal: controller.signal,
+                    workspaceAccess: "read-write",
+                    ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
+                    ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
+                    onVisibleAgentMarkdown: (text) => {
+                      const active = this.activeRuns.get(nextRunId);
+                      if (active?.sessionId === sessionId) {
+                        active.liveMarkdown = text;
+                        this.updateAgentProgressActivity(nextRunId, text);
+                      }
+                    },
+                    onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
+                    onSessionStarted: async ({ externalSessionId: resumedSessionId }) => {
+                      if (resumedSessionId !== externalSessionId) {
+                        throw new Error("analysis-write-lease-provider-session-mismatch");
+                      }
+                    },
+                  });
+                } finally {
+                  await this.updateSessionAnalysisGate({
+                    sessionId,
+                    proposalVersion: confirmedVersion,
+                    writeLeaseVersion: null,
+                  });
+                }
+              }
+            }
           }
 
           await this.recordProviderInvocation({
@@ -1987,6 +2127,34 @@ export class LocalConsoleRuntime {
     }
   }
 
+  private async sessionSummary(sessionId: string): Promise<LocalConsoleSessionSummary> {
+    const sessions = await this.storeCall(
+      "local-console-store-list-session-policy",
+      () => this.options.store.listSessions(),
+    );
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    if (session === undefined) {
+      throw new Error(`local console session not found: ${sessionId}`);
+    }
+    return session;
+  }
+
+  private async updateSessionAnalysisGate(input: {
+    sessionId: string;
+    proposalVersion: string | null;
+    writeLeaseVersion: string | null;
+  }): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.updateSessionAnalysisGate === undefined) {
+      throw new Error("local console analysis gate persistence unavailable");
+    }
+    return await this.storeCall("local-console-store-update-analysis-gate", () =>
+      this.options.store.updateSessionAnalysisGate!({
+        ...input,
+        now: this.nowIso(),
+      }),
+    );
+  }
+
   private scheduleWorkerRun(input: {
     sessionId: string;
     runId: string;
@@ -2043,6 +2211,7 @@ export class LocalConsoleRuntime {
     }
 
     const runId = input.runId;
+    const workerPolicySession = await this.sessionSummary(input.sessionId);
     const currentAgentMarkdown = input.selectedAgent.agentMarkdown
       ?? await fs.readFile(requireAgentFilePath(input.selectedAgent), "utf8");
 
@@ -2326,6 +2495,9 @@ export class LocalConsoleRuntime {
             ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
             ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
             ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
+            workspaceAccess: workerPolicySession.writePolicy === "confirm-current-plan-before-write"
+              ? "read-only"
+              : "read-write",
             onVisibleAgentMarkdown: (text) => {
               const active = this.activeRuns.get(runId);
               if (active?.sessionId === input.sessionId) {
@@ -3902,6 +4074,23 @@ function isWorkerRunPlaceholder(message: LocalConsoleMessage): boolean {
 
 function isVisibleTimelineMessage(message: LocalConsoleMessage): boolean {
   return !isPendingPrimaryMessage(message) && !isWorkerRunPlaceholder(message);
+}
+
+function assertTextFragments(fragments: readonly LocalConsoleTextFragment[]): void {
+  const ids = new Set<string>();
+  for (const fragment of fragments) {
+    if (
+      fragment.id.trim() === ""
+      || fragment.label.trim() === ""
+      || fragment.text.trim() === ""
+    ) {
+      throw new Error("Text fragments require non-empty id, label, and text");
+    }
+    if (ids.has(fragment.id)) {
+      throw new Error("Text fragment ids must be unique");
+    }
+    ids.add(fragment.id);
+  }
 }
 
 function requireAgentFilePath(agent: LocalConsoleAgentFile): string {

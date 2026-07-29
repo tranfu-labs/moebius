@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+
 import { isValidPathSegment } from "./team-model.js";
 import type {
   TeamDefinition,
@@ -19,6 +21,7 @@ import type {
   AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
 import {
+  getPackagedTeamCacheDirectory,
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
   removeTeamExecutionBindings,
@@ -63,6 +66,7 @@ import {
   type TeamMemberSnapshot,
   type TeamSnapshot,
 } from "./team-store.js";
+import { readTeamSeedConflicts } from "./team-seed.js";
 
 export * from "./team-ipc-contract.js";
 
@@ -80,6 +84,7 @@ export async function listAgentTeams(input: {
     Promise.all(systemLocations.map((location) => readTeamSnapshot(location))),
     listRecordedUserTeamSnapshots(input.dataRoot),
   ]);
+  const registrationIssues = await readTeamSeedConflicts(input.dataRoot);
   const hasReadableBuiltInTeam = systemSnapshots.some(
     (snapshot) => snapshot.location.ownership === "system" && snapshot.status === "usable",
   );
@@ -90,6 +95,7 @@ export async function listAgentTeams(input: {
 
   return {
     status: "ready",
+    registrationIssues: registrationIssues.map(({ kind, canPreserve }) => ({ kind, canPreserve })),
     teams: await Promise.all([
       ...systemSnapshots.map((snapshot) => toManagedListItemWithOnboardingOrchestration(snapshot)),
       ...recordedUserTeams.map(({ record, snapshot }) =>
@@ -413,6 +419,24 @@ async function toManagedListItemWithOnboardingOrchestration(
   fallback?: { definition: TeamDefinition | null },
 ): Promise<AgentTeamListItem> {
   const item = await toListItemWithOnboardingOrchestration(snapshot, fallback);
+  const stats = await fs.stat(snapshot.location.directory).catch(() => null);
+  if (stats !== null) {
+    const createdAt = stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
+    item.createdAt = createdAt.toISOString();
+  }
+  if (snapshot.location.ownership === "system") {
+    const packagedDirectory = getPackagedTeamCacheDirectory(
+      snapshot.location.dataRoot,
+      snapshot.location.id,
+    );
+    const packagedSnapshot = await readTeamSnapshot({
+      ...snapshot.location,
+      directory: packagedDirectory,
+    }).catch(() => null);
+    item.officialSourceName = packagedSnapshot?.definition?.name
+      ?? snapshot.definition?.name
+      ?? undefined;
+  }
   const bindings = await readTeamExecutionBindings({
     dataRoot: snapshot.location.dataRoot,
     ownership: snapshot.location.ownership,

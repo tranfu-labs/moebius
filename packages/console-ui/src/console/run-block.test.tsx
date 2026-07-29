@@ -150,4 +150,19 @@ describe("RunBlock", () => {
     expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停下开发" })).toBeVisible();
   });
+
+  it("opens the keyboard-accessible more menu and forwards the analysis entry", async () => {
+    const onAnalyzeConversation = vi.fn();
+    render(
+      <RunBlock
+        role="dev"
+        summary="正在分析"
+        onAnalyzeConversation={onAnalyzeConversation}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "在侧边栏分析这个对话" }));
+    expect(onAnalyzeConversation).toHaveBeenCalledTimes(1);
+  });
 });

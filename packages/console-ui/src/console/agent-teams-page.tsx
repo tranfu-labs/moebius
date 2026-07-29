@@ -60,6 +60,8 @@ export interface OperatorAgentTeam {
   teamKey: string;
   id: string;
   ownership: "system" | "user";
+  createdAt?: string;
+  officialSourceName?: string;
   name: string | null;
   description: string | null;
   primaryAgentSlug: string | null;
@@ -78,7 +80,14 @@ export type OperatorAgentTeamsState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "configuration-error" }
-  | { status: "ready"; teams: OperatorAgentTeam[] };
+  | {
+      status: "ready";
+      teams: OperatorAgentTeam[];
+      registrationIssues?: Array<{
+        kind: "stable-identity" | "directory";
+        canPreserve: boolean;
+      }>;
+    };
 
 export interface AgentTeamInformationInput {
   name: string;
@@ -157,6 +166,9 @@ export function AgentTeamsPage({
   onDuplicateMember,
   onTrashMember,
   onTrashUserTeam,
+  onViewRegistrationConflictTeam,
+  onShowRegistrationConflictLocation,
+  onPreserveRegistrationConflicts,
   onBack,
 }: {
   state: OperatorAgentTeamsState;
@@ -202,6 +214,9 @@ export function AgentTeamsPage({
   onDuplicateMember?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onTrashMember?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onTrashUserTeam?: (teamKey: string) => void | Promise<void>;
+  onViewRegistrationConflictTeam?: () => void;
+  onShowRegistrationConflictLocation?: () => void | Promise<void>;
+  onPreserveRegistrationConflicts?: () => void | Promise<void>;
   onBack: () => void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -216,6 +231,7 @@ export function AgentTeamsPage({
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [registrationRecoveryPending, setRegistrationRecoveryPending] = useState(false);
   const contentView = view.kind === "information-dialog" ? view.returnView : view;
   const openedTeamKey = contentView.kind === "team-detail" ? contentView.teamKey : null;
   const openedTeam = state.status === "ready"
@@ -352,6 +368,21 @@ export function AgentTeamsPage({
       return;
     }
     void executeFileOperation(operation);
+  };
+
+  const preserveRegistrationConflicts = async () => {
+    if (registrationRecoveryPending || onPreserveRegistrationConflicts === undefined) return;
+    setRegistrationRecoveryPending(true);
+    setActionError(null);
+    try {
+      await onPreserveRegistrationConflicts();
+    } catch (error) {
+      setActionError(error instanceof Error
+        ? error.message
+        : t("console.agentTeams.registrationConflictActionFailed"));
+    } finally {
+      setRegistrationRecoveryPending(false);
+    }
   };
 
   return (
@@ -659,6 +690,77 @@ export function AgentTeamsPage({
                 data-selected-team-key={selectedTeamKey ?? undefined}
                 data-selected-member-slug={selectedMemberSlug ?? undefined}
               >
+                {(state.registrationIssues?.length ?? 0) > 0 ? (
+                  <div
+                    className="mb-6 border border-warning/35 bg-warning/5 p-4"
+                    role="alert"
+                    data-testid="agent-team-registration-conflict"
+                  >
+                    <div className="flex gap-3">
+                      <AlertTriangle
+                        className="mt-0.5 h-4 w-4 shrink-0 text-warning"
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-ink">
+                          {t("console.agentTeams.registrationConflictTitle")}
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm leading-5 text-sub">
+                          {state.registrationIssues?.map((issue) => (
+                            <li key={issue.kind}>
+                              {t(issue.kind === "stable-identity"
+                                ? "console.agentTeams.registrationStableIdentityConflict"
+                                : "console.agentTeams.registrationDirectoryConflict")}
+                            </li>
+                          ))}
+                        </ul>
+                        {actionError !== null ? (
+                          <p className="mt-3 text-sm text-danger" role="alert">{actionError}</p>
+                        ) : null}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {state.registrationIssues?.some((issue) => issue.kind === "stable-identity")
+                            && onViewRegistrationConflictTeam !== undefined ? (
+                              <Button type="button" variant="outline" size="sm" onClick={onViewRegistrationConflictTeam}>
+                                {t("console.agentTeams.viewConflictingTeam")}
+                              </Button>
+                            ) : null}
+                          {state.registrationIssues?.some((issue) => issue.kind === "directory")
+                            && onShowRegistrationConflictLocation !== undefined ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void onShowRegistrationConflictLocation()}
+                              >
+                                <FolderOpen className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                                {t("console.agentTeams.viewConflictInFinder")}
+                              </Button>
+                            ) : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={registrationRecoveryPending
+                              || onPreserveRegistrationConflicts === undefined
+                              || state.registrationIssues?.some((issue) => !issue.canPreserve)}
+                            onClick={() => void preserveRegistrationConflicts()}
+                          >
+                            {registrationRecoveryPending ? (
+                              <LoaderCircle
+                                className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            {t(registrationRecoveryPending
+                              ? "console.agentTeams.addingOfficialAssistant"
+                              : "console.agentTeams.preserveAndAddOfficialAssistant")}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="divide-y divide-line border-y border-line" data-testid="agent-team-list">
                   {state.teams.map((team) => (
                     <AgentTeamRow

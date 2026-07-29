@@ -26,6 +26,7 @@ export interface LocalExecutionRunOptions {
   imagePaths?: string[];
   idleTimeoutMs?: number;
   maxDurationMs?: number;
+  workspaceAccess?: "read-write" | "read-only";
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
@@ -99,6 +100,7 @@ export function createLocalExecutionRunner(input: {
         imagePaths: options.imagePaths,
         idleTimeoutMs: options.idleTimeoutMs,
         maxDurationMs: options.maxDurationMs,
+        workspaceAccess: options.workspaceAccess,
         runtimeHomePaths: kimiRuntimeHomePaths,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onProcessStarted: options.onProcessStarted,
@@ -113,6 +115,13 @@ export function createLocalExecutionRunner(input: {
     if (!codexReportsProcessStart) {
       await options.onProcessStarted?.();
     }
+    const configuredExecOptions = profile === null
+      ? undefined
+      : buildCodexExecOptionsForRuntimeProfile(
+          CODEX_PROVIDER_CONFIG,
+          profile.model,
+          profile.effort,
+        );
     const result = await codex({
       prompt: options.prompt,
       runDir: options.runDir,
@@ -120,15 +129,10 @@ export function createLocalExecutionRunner(input: {
       mode: options.mode.kind === "resume"
         ? { kind: "resume", threadId: options.mode.externalSessionId }
         : { kind: "full" },
-      ...(profile === null
-        ? {}
-        : {
-            execOptions: buildCodexExecOptionsForRuntimeProfile(
-              CODEX_PROVIDER_CONFIG,
-              profile.model,
-              profile.effort,
-            ),
-          }),
+      execOptions: withCodexSandbox(
+        configuredExecOptions,
+        options.workspaceAccess === "read-only" ? "read-only" : null,
+      ),
       signal: options.signal,
       imagePaths: options.imagePaths,
       idleTimeoutMs: options.idleTimeoutMs,
@@ -141,6 +145,23 @@ export function createLocalExecutionRunner(input: {
     assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
     return result;
   };
+}
+
+export function withCodexSandbox(
+  options: readonly string[] | undefined,
+  sandbox: "read-only" | null,
+): string[] | undefined {
+  if (sandbox === null) return options === undefined ? undefined : [...options];
+  const source = options ?? [];
+  const result: string[] = [];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "--sandbox") {
+      index += 1;
+      continue;
+    }
+    result.push(source[index]!);
+  }
+  return [...result, "--sandbox", sandbox];
 }
 
 function assertSuccessfulSessionIdentity(

@@ -13,6 +13,7 @@ import {
   type WorkspaceDiffData,
   type WorkspaceFileContent,
 } from "@moebius/console-ui";
+import { invokeBrowserFetch } from "./browser-fetch.js";
 
 export interface ConsoleSelection {
   projectId: string;
@@ -641,8 +642,121 @@ function translatedEvidenceMemberName(role: string | null, t: Translate): string
 
 export interface CreatedSession {
   sessionId: string;
+  title?: string;
+  projectId?: string;
+  originSessionId?: string | null;
+  entryTemplate?: "session-analysis" | null;
+  writePolicy?: "normal" | "confirm-current-plan-before-write";
   agentTeamOwnership?: "system" | "user" | null;
   agentTeamId?: string | null;
+}
+
+export async function createSidebarConversationSession(options: {
+  apiBase: string;
+  projectId: string;
+  initialMessage: string;
+  agentTeam: { ownership: "system" | "user"; id: string };
+  workspaceMode: "direct" | "worktree";
+  attachmentIds?: readonly string[];
+  attachmentDraftKey: string;
+  originSessionId: string | null;
+  entryTemplate: "session-analysis" | null;
+  writePolicy: "normal" | "confirm-current-plan-before-write";
+  textFragments: readonly { id: string; label: string; text: string }[];
+  fetch: FetchLike;
+}): Promise<CreatedSession> {
+  if (options.initialMessage.trim() === "") {
+    throw new Error("Message body must not be empty");
+  }
+  const response = await invokeBrowserFetch(options.fetch, endpoint(options.apiBase, "/api/local-console/sessions"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: options.projectId,
+      initialMessage: options.initialMessage,
+      agentTeamOwnership: options.agentTeam.ownership,
+      agentTeamId: options.agentTeam.id,
+      workspaceMode: options.workspaceMode,
+      attachmentIds: options.attachmentIds ?? [],
+      attachmentDraftKey: options.attachmentDraftKey,
+      originSessionId: options.originSessionId,
+      entryTemplate: options.entryTemplate,
+      writePolicy: options.writePolicy,
+      textFragments: options.textFragments,
+    }),
+  });
+  const body = await response.json() as SessionResponse;
+  if (!response.ok || body.session === undefined) {
+    throw new Error(body.error ?? "create sidebar conversation failed");
+  }
+  return body.session;
+}
+
+export async function loadSessionReferenceText(options: {
+  apiBase: string;
+  sessionId: string;
+  runId?: string | null;
+  fetch: FetchLike;
+}): Promise<{ fragment: { id: string; label: string; text: string } }> {
+  const url = endpoint(
+    options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/reference-text`,
+  );
+  if (options.runId != null) url.searchParams.set("runId", options.runId);
+  const response = await invokeBrowserFetch(options.fetch, url);
+  const body = await response.json() as { fragment?: { id: string; label: string; text: string }; error?: string };
+  if (!response.ok || body.fragment === undefined) {
+    throw new Error(body.error ?? "session reference request failed");
+  }
+  return { fragment: body.fragment };
+}
+
+export interface SessionSearchResult {
+  session: import("@moebius/console-ui").OperatorSession;
+  project: { projectId: string; title: string };
+  archived: boolean;
+  originAvailable: boolean;
+}
+
+export async function searchConsoleSessions(options: {
+  apiBase: string;
+  query: string;
+  includeArchived: boolean;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<SessionSearchResult[]> {
+  const url = endpoint(options.apiBase, "/api/local-console/sessions/search");
+  url.searchParams.set("query", options.query);
+  url.searchParams.set("includeArchived", String(options.includeArchived));
+  const response = await invokeBrowserFetch(
+    options.fetch,
+    url,
+    options.signal === undefined ? undefined : { signal: options.signal },
+  );
+  const body = await response.json() as { results?: SessionSearchResult[]; error?: string };
+  if (!response.ok || body.results === undefined) {
+    throw new Error(body.error ?? "session search failed");
+  }
+  return body.results;
+}
+
+export async function restoreConsoleSession(options: {
+  apiBase: string;
+  sessionId: string;
+  fetch: FetchLike;
+}): Promise<import("@moebius/console-ui").OperatorSession> {
+  const response = await invokeBrowserFetch(options.fetch, endpoint(
+    options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/restore`,
+  ), { method: "POST" });
+  const body = await response.json() as {
+    session?: import("@moebius/console-ui").OperatorSession;
+    error?: string;
+  };
+  if (!response.ok || body.session === undefined) {
+    throw new Error(body.error ?? "restore session failed");
+  }
+  return body.session;
 }
 
 interface SessionResponse {

@@ -4,6 +4,14 @@ export const LOCAL_CONSOLE_PROJECT_SOURCE_TYPE = "local-folder";
 
 export type LocalConsoleSpeaker = "user" | "agent" | "system";
 export type LocalAttachmentKind = "image" | "file";
+export type LocalConsoleEntryTemplate = "session-analysis";
+export type LocalConsoleWritePolicy = "normal" | "confirm-current-plan-before-write";
+
+export interface LocalConsoleTextFragment {
+  id: string;
+  label: string;
+  text: string;
+}
 
 export interface LocalAttachment {
   attachmentId: string;
@@ -66,6 +74,7 @@ export interface LocalConsoleMessage {
   sourceKind?: string | null;
   sourceId?: string | null;
   attachments?: LocalAttachment[];
+  textFragments?: LocalConsoleTextFragment[];
   /** When a queued user message actually entered the primary-agent timeline. */
   activatedAt?: string | null;
   runTiming?: LocalConsoleRunTiming | null;
@@ -299,6 +308,11 @@ export interface LocalConsoleSessionSummary {
   sessionId: string;
   projectId: string;
   parentSessionId?: string | null;
+  originSessionId?: string | null;
+  entryTemplate?: LocalConsoleEntryTemplate | null;
+  writePolicy?: LocalConsoleWritePolicy;
+  proposalVersion?: string | null;
+  writeLeaseVersion?: string | null;
   agentTeamOwnership?: LocalConsoleAgentTeamOwnership | null;
   agentTeamId?: string | null;
   agentTeamHealth?: LocalConsoleAgentTeamHealth | null;
@@ -403,6 +417,19 @@ export interface LocalConsoleSessionArchiveResult {
   sessionId: string;
   projectId: string;
   selectedSessionId: string | null;
+}
+
+export interface LocalConsoleSessionSearchResult {
+  session: LocalConsoleSessionSummary;
+  project: Pick<LocalConsoleProjectSummary, "projectId" | "title">;
+  archived: boolean;
+  originAvailable: boolean;
+}
+
+export interface LocalConsoleSessionReferenceText {
+  fragment: LocalConsoleTextFragment;
+  sessionId: string;
+  runId: string | null;
 }
 
 export class LocalConsoleProjectRunningError extends Error {
@@ -539,6 +566,10 @@ export interface LocalConsoleStore {
     initialAttachmentIds?: string[];
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
+    originSessionId?: string | null;
+    entryTemplate?: LocalConsoleEntryTemplate | null;
+    writePolicy?: LocalConsoleWritePolicy;
+    initialTextFragments?: LocalConsoleTextFragment[];
     now: string;
   }): Promise<LocalConsoleSessionSummary>;
   moveEmptySessionToProject(input: {
@@ -549,12 +580,23 @@ export interface LocalConsoleStore {
   archiveSession?(input: { sessionId: string; now: string }): Promise<LocalConsoleSessionArchiveResult>;
   restoreSession?(input: { sessionId: string; now: string }): Promise<LocalConsoleSessionSummary>;
   listSessions(): Promise<LocalConsoleSessionSummary[]>;
+  searchSessions?(input: {
+    query: string;
+    includeArchived: boolean;
+  }): Promise<LocalConsoleSessionSearchResult[]>;
+  updateSessionAnalysisGate?(input: {
+    sessionId: string;
+    proposalVersion: string | null;
+    writeLeaseVersion: string | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary>;
   markSessionResultRead(input: { sessionId: string; unreadSince: string; now: string }): Promise<boolean>;
   appendUserMessage(input: {
     sessionId: string;
     body: string;
     attachmentIds?: string[];
     attachmentDraftKey?: string;
+    textFragments?: LocalConsoleTextFragment[];
     now: string;
   }): Promise<LocalConsoleMessage>;
   addDraftAttachment?(input: {

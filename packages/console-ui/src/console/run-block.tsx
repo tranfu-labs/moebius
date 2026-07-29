@@ -1,4 +1,4 @@
-import { FileText, Square } from "lucide-react";
+import { Ellipsis, FileText, Square } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,12 @@ import {
 } from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
 import {
@@ -45,6 +51,7 @@ export interface RunBlockProps {
   onOpenTeamMember?: (slug: string) => void;
   onOpenOutput?: (rawOutput: string | null) => void;
   onInterrupt?: () => void;
+  onAnalyzeConversation?: () => void;
   interruptLabel?: string;
   className?: string;
 }
@@ -66,6 +73,7 @@ export function RunBlock({
   onOpenTeamMember,
   onOpenOutput,
   onInterrupt,
+  onAnalyzeConversation,
   interruptLabel,
   className,
 }: RunBlockProps): JSX.Element {
@@ -122,6 +130,25 @@ export function RunBlock({
             >
               <Square className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             </button>
+          ) : null}
+          {onAnalyzeConversation ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
+                  aria-label={t("console.sessionAnalysis.moreActions")}
+                  title={t("console.sessionAnalysis.moreActions")}
+                >
+                  <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onAnalyzeConversation}>
+                  {t("console.sessionAnalysis.analyzeConversation")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
         </span>
       </div>

@@ -22,12 +22,16 @@ import {
   type LocalRouteDecisionRecord,
   type LocalConsoleSessionStatus,
   type LocalConsoleSessionSummary,
+  type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionWorkspaceSource,
   type LocalConsoleAgentTeamSnapshot,
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
   type LocalConsoleSpeaker,
   type LocalConsoleSystemEventKind,
+  type LocalConsoleEntryTemplate,
+  type LocalConsoleWritePolicy,
+  type LocalConsoleTextFragment,
   type LocalConsoleStore,
 } from "./types.js";
 import {
@@ -197,6 +201,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     initialAttachmentIds?: string[];
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
+    originSessionId?: string | null;
+    entryTemplate?: LocalConsoleEntryTemplate | null;
+    writePolicy?: LocalConsoleWritePolicy;
+    initialTextFragments?: LocalConsoleTextFragment[];
     now: string;
   }): Promise<LocalConsoleSessionSummary> {
     return this.runFact(
@@ -240,6 +248,26 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     return this.run({ kind: "local-list-sessions" });
   }
 
+  async searchSessions(input: {
+    query: string;
+    includeArchived: boolean;
+  }): Promise<LocalConsoleSessionSearchResult[]> {
+    return this.run({ kind: "local-search-sessions", ...input });
+  }
+
+  async updateSessionAnalysisGate(input: {
+    sessionId: string;
+    proposalVersion: string | null;
+    writeLeaseVersion: string | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.runFact(
+      { kind: "local-update-session-analysis-gate", ...input },
+      [input.sessionId],
+      new Set([input.sessionId]),
+    );
+  }
+
   async markSessionResultRead(input: { sessionId: string; unreadSince: string; now: string }): Promise<boolean> {
     return this.run({ kind: "local-mark-session-result-read", ...input });
   }
@@ -249,6 +277,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     body: string;
     attachmentIds?: string[];
     attachmentDraftKey?: string;
+    textFragments?: LocalConsoleTextFragment[];
     now: string;
   }): Promise<LocalConsoleMessage> {
     return this.runFact({ kind: "local-append-user", ...input }, [input.sessionId], new Set([input.sessionId]));
@@ -1425,6 +1454,9 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       attachments: "attachments" in value && Array.isArray(value.attachments)
         ? value.attachments.map(normalizeAttachment)
         : [],
+      textFragments: "textFragments" in value && Array.isArray(value.textFragments)
+        ? value.textFragments.map(normalizeTextFragment)
+        : [],
       activatedAt: "activatedAt" in value ? readNullableString(value.activatedAt, "activatedAt") : null,
       createdAt: readString(value.createdAt, "createdAt"),
       updatedAt: readString(value.updatedAt, "updatedAt"),
@@ -1434,6 +1466,17 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
     sessionId: readString(value.sessionId, "sessionId"),
     projectId: readString(value.projectId, "projectId"),
     parentSessionId: "parentSessionId" in value ? readNullableString(value.parentSessionId, "parentSessionId") : null,
+    originSessionId: "originSessionId" in value
+      ? readNullableString(value.originSessionId, "originSessionId")
+      : null,
+    entryTemplate: "entryTemplate" in value ? readEntryTemplate(value.entryTemplate) : null,
+    writePolicy: "writePolicy" in value ? readWritePolicy(value.writePolicy) : "normal",
+    proposalVersion: "proposalVersion" in value
+      ? readNullableString(value.proposalVersion, "proposalVersion")
+      : null,
+    writeLeaseVersion: "writeLeaseVersion" in value
+      ? readNullableString(value.writeLeaseVersion, "writeLeaseVersion")
+      : null,
     agentTeamOwnership: "agentTeamOwnership" in value
       ? readNullableAgentTeamOwnership(value.agentTeamOwnership)
       : null,
@@ -1487,6 +1530,27 @@ function normalizeAttachment(value: unknown): LocalAttachment {
     mediaType: readString(value.mediaType, "mediaType"),
     byteSize: readNumber(value.byteSize, "byteSize"),
   };
+}
+
+function normalizeTextFragment(value: unknown): LocalConsoleTextFragment {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local text fragment");
+  }
+  return {
+    id: readString(value.id, "id"),
+    label: readString(value.label, "label"),
+    text: readString(value.text, "text"),
+  };
+}
+
+function readEntryTemplate(value: unknown): LocalConsoleEntryTemplate | null {
+  if (value === null || value === "session-analysis") return value;
+  throw new Error(`Invalid local console entry template: ${String(value)}`);
+}
+
+function readWritePolicy(value: unknown): LocalConsoleWritePolicy {
+  if (value === "normal" || value === "confirm-current-plan-before-write") return value;
+  throw new Error(`Invalid local console write policy: ${String(value)}`);
 }
 
 function readNullableAgentTeamOwnership(value: unknown): "system" | "user" | null {

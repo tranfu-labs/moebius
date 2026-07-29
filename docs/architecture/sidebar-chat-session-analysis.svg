@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620" viewBox="0 0 960 620" role="img" aria-labelledby="title desc">
+  <title id="title">sidebar chat 变更后架构</title>
+  <desc id="desc">普通会话可由右侧栏承载，组合路由分离选中会话和主内容，local-console 保存来源、文本片段与入口写策略。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#5E6AD2"/>
+    </marker>
+    <style>
+      .box{fill:#171717;stroke:#4b4b4b;stroke-width:1.5;rx:12}
+      .accent{fill:#1d2035;stroke:#5E6AD2;stroke-width:1.7;rx:12}
+      .label{fill:#f2f2f2;font:600 15px system-ui,sans-serif}
+      .copy{fill:#b7b7b7;font:13px system-ui,sans-serif}
+      .line{stroke:#5E6AD2;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="960" height="620" fill="#101010"/>
+  <text x="40" y="42" class="label">目标：普通 session + sidebar presentation route + 入口写策略</text>
+  <rect x="30" y="75" width="280" height="145" class="accent"/>
+  <text x="50" y="107" class="label">desktop presentation controller</text>
+  <text x="50" y="135" class="copy">selected / main / right / host route</text>
+  <text x="50" y="159" class="copy">版本化 sidebar draft + tab document</text>
+  <text x="50" y="183" class="copy">搜索条件隔离 + 归档恢复</text>
+  <text x="50" y="207" class="copy">来源失效迁移与原子 UI 提交</text>
+  <rect x="340" y="75" width="280" height="145" class="accent"/>
+  <text x="360" y="107" class="label">OperatorConsole production UI</text>
+  <text x="360" y="135" class="copy">主内容与右侧复用 ConversationPane</text>
+  <text x="360" y="159" class="copy">文本胶囊 + 候选问题 + 普通附件</text>
+  <text x="360" y="183" class="copy">零标签内容选择 / 相邻焦点</text>
+  <text x="360" y="207" class="copy">兄弟 evidence / file / subtask tab</text>
+  <rect x="650" y="75" width="280" height="145" class="accent"/>
+  <text x="670" y="107" class="label">local-console API/runtime</text>
+  <text x="670" y="135" class="copy">独立 session view + reference text</text>
+  <text x="670" y="159" class="copy">origin + entry template + write policy</text>
+  <text x="670" y="183" class="copy">活动/归档标题搜索与恢复</text>
+  <text x="670" y="207" class="copy">普通 session 生命周期</text>
+  <path d="M310 148H340" class="line"/>
+  <path d="M620 148H650" class="line"/>
+  <rect x="60" y="300" width="250" height="145" class="box"/>
+  <text x="80" y="332" class="label">SQLite + JSONL facts</text>
+  <text x="80" y="360" class="copy">message textFragments 原子提交</text>
+  <text x="80" y="384" class="copy">origin / entry / policy / gate facts</text>
+  <text x="80" y="408" class="copy">JSONL 仍是消息事实源</text>
+  <text x="80" y="432" class="copy">旧 session 字段为空即普通行为</text>
+  <rect x="355" y="300" width="250" height="145" class="accent"/>
+  <text x="375" y="332" class="label">write gate controller</text>
+  <text x="375" y="360" class="copy">read-only → proposal(version)</text>
+  <text x="375" y="384" class="copy">confirm(version) → one-shot lease</text>
+  <text x="375" y="408" class="copy">Codex/Kimi provider 强制只读</text>
+  <text x="375" y="432" class="copy">失败、过期、终态一律关闭 lease</text>
+  <rect x="650" y="300" width="250" height="145" class="box"/>
+  <text x="670" y="332" class="label">official team management</text>
+  <text x="670" y="360" class="copy">general-assistant package seed</text>
+  <text x="670" y="384" class="copy">既有安装登记与冲突恢复</text>
+  <text x="670" y="408" class="copy">Codex / gpt-5.6-sol / high</text>
+  <text x="670" y="432" class="copy">只作可改初始预选</text>
+  <path d="M790 220V300" class="line"/>
+  <path d="M720 220V260H480V300" class="line"/>
+  <path d="M680 220V270H185V300" class="line"/>
+  <rect x="245" y="505" width="470" height="70" class="box"/>
+  <text x="265" y="535" class="label">Provider execution</text>
+  <text x="265" y="560" class="copy">同一团队快照与 Agent identity；只读控制回合和确认后正常执行均精确 resume</text>
+  <path d="M480 445V505" class="line"/>
+</svg>

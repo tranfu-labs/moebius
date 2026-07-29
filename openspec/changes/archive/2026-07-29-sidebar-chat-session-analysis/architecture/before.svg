@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">sidebar chat 变更前架构</title>
+  <desc id="desc">OperatorConsole 只有一个主会话选择，右侧栏仅承载证据和子任务，新对话只有一个应用级草稿。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#5E6AD2"/>
+    </marker>
+    <style>
+      .box{fill:#171717;stroke:#4b4b4b;stroke-width:1.5;rx:12}
+      .label{fill:#f2f2f2;font:600 15px system-ui,sans-serif}
+      .copy{fill:#b7b7b7;font:13px system-ui,sans-serif}
+      .line{stroke:#5E6AD2;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="960" height="520" fill="#101010"/>
+  <text x="40" y="42" class="label">现状：单会话 presentation + 证据右侧栏</text>
+  <rect x="40" y="80" width="250" height="120" class="box"/>
+  <text x="60" y="112" class="label">desktop renderer</text>
+  <text x="60" y="140" class="copy">ConsoleSelection(projectId, sessionId)</text>
+  <text x="60" y="164" class="copy">draft:new</text>
+  <text x="60" y="188" class="copy">tabs:&lt;selected session&gt;</text>
+  <rect x="355" y="80" width="250" height="120" class="box"/>
+  <text x="375" y="112" class="label">OperatorConsole</text>
+  <text x="375" y="140" class="copy">一个主时间线 / composer</text>
+  <text x="375" y="164" class="copy">右侧：diff/files/run/subtask</text>
+  <text x="375" y="188" class="copy">零标签时自动补内容标签</text>
+  <rect x="670" y="80" width="250" height="120" class="box"/>
+  <text x="690" y="112" class="label">local-console API</text>
+  <text x="690" y="140" class="copy">一次选择返回一次 session view</text>
+  <text x="690" y="164" class="copy">创建普通 session + 首条消息</text>
+  <text x="690" y="188" class="copy">无 origin / entry policy</text>
+  <path d="M290 140H355" class="line"/>
+  <path d="M605 140H670" class="line"/>
+  <rect x="210" y="285" width="250" height="120" class="box"/>
+  <text x="230" y="317" class="label">SQLite + JSONL</text>
+  <text x="230" y="345" class="copy">session / message / attachment</text>
+  <text x="230" y="369" class="copy">左侧栏只列活动根会话</text>
+  <text x="230" y="393" class="copy">归档可写但无搜索恢复 UI</text>
+  <rect x="535" y="285" width="250" height="120" class="box"/>
+  <text x="555" y="317" class="label">execution driver</text>
+  <text x="555" y="345" class="copy">团队快照选择 Codex / Kimi</text>
+  <text x="555" y="369" class="copy">普通运行权限</text>
+  <text x="555" y="393" class="copy">无方案确认写入闸门</text>
+  <path d="M795 200V245H660V285" class="line"/>
+  <path d="M730 200V245H335V285" class="line"/>
+  <text x="40" y="475" class="copy">基线：docs/architecture/local-console-operator.svg + agent-teams-runtime-binding.svg</text>
+</svg>

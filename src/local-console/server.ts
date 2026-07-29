@@ -381,8 +381,27 @@ async function handleRequest(
         isRecord(payload) ? readOptionalMessageBody(payload.initialMessage) : undefined,
         isRecord(payload) ? readOptionalWorkspaceMode(payload.workspaceMode) : undefined,
         isRecord(payload) ? readOptionalStringArray(payload.attachmentIds) : undefined,
+        isRecord(payload)
+          ? {
+              originSessionId: readOptionalNullableString(payload.originSessionId),
+              entryTemplate: readOptionalEntryTemplate(payload.entryTemplate),
+              writePolicy: readOptionalWritePolicy(payload.writePolicy),
+              textFragments: readOptionalTextFragments(payload.textFragments),
+              attachmentDraftKey: readOptionalString(payload.attachmentDraftKey),
+            }
+          : undefined,
       );
       sendJson(response, 201, { session });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/local-console/sessions/search") {
+      sendJson(response, 200, {
+        results: await runtime.searchSessions({
+          query: url.searchParams.get("query") ?? "",
+          includeArchived: url.searchParams.get("includeArchived") === "true",
+        }),
+      });
       return;
     }
 
@@ -427,6 +446,15 @@ async function handleRequest(
     const sessionViewMatch = matchSessionRoute(url.pathname, "view");
     if (request.method === "GET" && sessionViewMatch !== null) {
       sendJson(response, 200, await runtime.sessionView(sessionViewMatch.sessionId));
+      return;
+    }
+
+    const sessionReferenceMatch = matchSessionRoute(url.pathname, "reference-text");
+    if (request.method === "GET" && sessionReferenceMatch !== null) {
+      sendJson(response, 200, await runtime.sessionReferenceText({
+        sessionId: sessionReferenceMatch.sessionId,
+        runId: url.searchParams.get("runId"),
+      }));
       return;
     }
 
@@ -626,6 +654,7 @@ async function handleRequest(
         sessionMessagesMatch.sessionId,
         readOptionalStringArray(payload.attachmentIds),
         readOptionalString(payload.resumeRunId),
+        readOptionalTextFragments(payload.textFragments),
       );
       return;
     }
@@ -740,9 +769,10 @@ async function submitMessage(
   sessionId?: string,
   attachmentIds?: string[],
   resumeRunId?: string,
+  textFragments?: import("./types.js").LocalConsoleTextFragment[],
 ): Promise<void> {
   try {
-    const message = await runtime.submitUserMessage(body, sessionId, attachmentIds, resumeRunId);
+    const message = await runtime.submitUserMessage(body, sessionId, attachmentIds, resumeRunId, textFragments);
     sendJson(response, 202, { message });
   } catch (error) {
     if (error instanceof LocalConsoleBusyError) {
@@ -1000,6 +1030,47 @@ function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+function readOptionalNullableString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "string" && value.trim() !== "") return value;
+  throw new Error("Expected a non-empty string or null");
+}
+
+function readOptionalEntryTemplate(value: unknown): "session-analysis" | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "session-analysis") return value;
+  throw new Error("Expected entryTemplate to be session-analysis or null");
+}
+
+function readOptionalWritePolicy(
+  value: unknown,
+): "normal" | "confirm-current-plan-before-write" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "normal" || value === "confirm-current-plan-before-write") return value;
+  throw new Error("Expected a supported writePolicy");
+}
+
+function readOptionalTextFragments(
+  value: unknown,
+): import("./types.js").LocalConsoleTextFragment[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("Expected textFragments to be an array");
+  }
+  return value.map((fragment) => {
+    if (
+      !isRecord(fragment)
+      || typeof fragment.id !== "string"
+      || typeof fragment.label !== "string"
+      || typeof fragment.text !== "string"
+    ) {
+      throw new Error("Expected each text fragment to contain string id, label, and text");
+    }
+    return { id: fragment.id, label: fragment.label, text: fragment.text };
+  });
+}
+
 function readPositiveQueryInteger(value: string | null): number | null {
   if (value === null || !/^[1-9]\d*$/u.test(value)) {
     return null;
@@ -1123,6 +1194,7 @@ function matchSessionRoute(
     | "file-reference"
     | "team"
     | "archive"
+    | "reference-text"
     | "restore"
     | "children"
     | "view",

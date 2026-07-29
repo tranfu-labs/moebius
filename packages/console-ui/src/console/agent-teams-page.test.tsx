@@ -5,6 +5,44 @@ import { describe, expect, it, vi } from "vitest";
 import { type AgentTeamDetailState } from "./agent-team-detail";
 import { AgentTeamsPage, type OperatorAgentTeam, type OperatorAgentTeamsState } from "./agent-teams-page";
 
+describe("AgentTeamsPage official team registration recovery", () => {
+  it("keeps both conflict reasons visible and exposes the product recovery actions", async () => {
+    const onView = vi.fn();
+    const onShow = vi.fn();
+    const onPreserve = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AgentTeamsPage
+        state={{
+          status: "ready",
+          teams: [userTeam],
+          registrationIssues: [
+            { kind: "stable-identity", canPreserve: true },
+            { kind: "directory", canPreserve: true },
+          ],
+        }}
+        useStackedRows={false}
+        onViewRegistrationConflictTeam={onView}
+        onShowRegistrationConflictLocation={onShow}
+        onPreserveRegistrationConflicts={onPreserve}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId("agent-team-registration-conflict")).toHaveTextContent(
+      "现有用户团队与系统的通用助手身份冲突",
+    );
+    expect(screen.getByTestId("agent-team-registration-conflict")).toHaveTextContent(
+      "通用助手的预定位置已有其他文件",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "查看现有团队" }));
+    fireEvent.click(screen.getByRole("button", { name: "在 Finder 中查看" }));
+    fireEvent.click(screen.getByRole("button", { name: "保留现有内容并添加官方团队" }));
+    await waitFor(() => expect(onPreserve).toHaveBeenCalledOnce());
+    expect(onView).toHaveBeenCalledOnce();
+    expect(onShow).toHaveBeenCalledOnce();
+  });
+});
+
 describe("AgentTeamsPage member identity avatars", () => {
   it("shows the same neutral initial avatar in the team row, member selector, and current member heading", () => {
     const { container } = render(

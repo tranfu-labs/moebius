@@ -19,6 +19,8 @@ import type {
 
 export const TEAM_IPC_CHANNELS = {
   list: "agent-teams:list",
+  resolveSeedConflict: "agent-teams:resolve-seed-conflict",
+  showSeedConflictLocation: "agent-teams:show-seed-conflict-location",
   create: "agent-teams:create",
   readMember: "agent-teams:read-member",
   writeMember: "agent-teams:write-member",
@@ -37,6 +39,11 @@ export const TEAM_IPC_CHANNELS = {
   applyOfficialUpdate: "agent-teams:apply-official-update",
 } as const;
 
+export interface AgentTeamRegistrationIssue {
+  kind: "stable-identity" | "directory";
+  canPreserve: boolean;
+}
+
 export interface AgentTeamExecutionProfileSummary {
   binding: ExecutionProfileBinding;
   recommendation: ExecutionProfile | null;
@@ -54,6 +61,8 @@ export interface AgentTeamMemberSummary {
 export interface AgentTeamListItem {
   id: string;
   ownership: TeamOwnership;
+  createdAt?: string;
+  officialSourceName?: string;
   definition: TeamDefinition | null;
   members: AgentTeamMemberSummary[];
   status: TeamStatus;
@@ -74,7 +83,11 @@ export interface AgentTeamListItem {
 
 export type AgentTeamListResponse =
   | { status: "loading" }
-  | { status: "ready"; teams: AgentTeamListItem[] }
+  | {
+      status: "ready";
+      teams: AgentTeamListItem[];
+      registrationIssues?: AgentTeamRegistrationIssue[];
+    }
   | { status: "configuration-error" };
 
 export interface AgentTeamMemberRequest {

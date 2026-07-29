@@ -403,6 +403,253 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(facts).toContain('"engine":"codex"');
   });
 
+  it("keeps analysis entry runs read-only until the current proposal is confirmed, then grants one write attempt", async () => {
+    const root = await fixtureRoot();
+    let call = 0;
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      call += 1;
+      await options.onThreadStarted?.("analysis-thread");
+      const finalText = call === 1
+        ? "方案 v1\n<!-- moebius:session-analysis-control={\"action\":\"proposal\",\"version\":\"plan-v1\"} -->"
+        : call === 2
+          ? "确认当前方案\n<!-- moebius:session-analysis-control={\"action\":\"confirm\",\"version\":\"plan-v1\"} -->"
+          : "执行完成";
+      return {
+        ...success(options, finalText),
+        threadId: "analysis-thread",
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [{
+        name: "assistant",
+        agentMarkdown: "# assistant",
+        executionProfile: null,
+      }],
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    const createResponse = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "先分析",
+        originSessionId: "default",
+        entryTemplate: "session-analysis",
+        writePolicy: "confirm-current-plan-before-write",
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as { session: { sessionId: string } };
+    await waitForSessionAgent(server, created.session.sessionId, "方案 v1");
+
+    const confirmResponse = await fetch(new URL(
+      `/api/local-console/sessions/${encodeURIComponent(created.session.sessionId)}/messages`,
+      server.url,
+    ), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "可以，按这个方案修改" }),
+    });
+    expect(confirmResponse.status).toBe(202);
+    await waitForSessionAgent(server, created.session.sessionId, "执行完成");
+
+    expect(codex).toHaveBeenCalledTimes(3);
+    expect(codex.mock.calls[0]?.[0].prompt).toContain("当前回合处于只读环境");
+    expect(codex.mock.calls[1]?.[0].prompt).toContain("当前可确认方案版本：plan-v1");
+    expect(codex.mock.calls[2]?.[0].prompt).toContain("写入许可只覆盖本次紧接着的执行尝试");
+    expect(sandboxValue(codex.mock.calls[0]?.[0].execOptions)).toBe("read-only");
+    expect(sandboxValue(codex.mock.calls[1]?.[0].execOptions)).toBe("read-only");
+    expect(sandboxValue(codex.mock.calls[2]?.[0].execOptions)).not.toBe("read-only");
+
+    const session = (await server.runtime.sessionView(created.session.sessionId)).session;
+    expect(session).toMatchObject({
+      proposalVersion: "plan-v1",
+      writeLeaseVersion: null,
+      writePolicy: "confirm-current-plan-before-write",
+    });
+  });
+
+  it("accepts compact Kimi control markers and resumes one session for the confirmed write lease", async () => {
+    const root = await fixtureRoot();
+    const codex = vi.fn(async (options: CodexRunOptions) => success(options, "unexpected Codex"));
+    let call = 0;
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
+      call += 1;
+      await options.onSessionStarted?.("kimi-analysis-session");
+      if (call === 3) {
+        await fs.writeFile(path.join(options.cwd, "kimi-gate.txt"), "written by confirmed Kimi");
+      }
+      const finalText = call === 1
+        ? "方案 v1\n<!--moebius:session-analysis-control={\"action\":\"proposal\",\"version\":\"v1\"}-->"
+        : call === 2
+          ? "确认当前方案\n<!--moebius:session-analysis-control={\"action\":\"confirm\",\"version\":\"v1\"}-->"
+          : "Kimi 执行完成";
+      return {
+        ok: true,
+        finalText,
+        threadId: "kimi-analysis-session",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+        stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Kimi analysis", {
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+    });
+    servers.push(server);
+
+    const createResponse = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "先提出创建 kimi-gate.txt 的方案",
+        agentTeamOwnership: "user",
+        agentTeamId: "kimi-team",
+        workspaceMode: "direct",
+        originSessionId: "default",
+        entryTemplate: "session-analysis",
+        writePolicy: "confirm-current-plan-before-write",
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as { session: { sessionId: string } };
+    await waitForSessionAgent(server, created.session.sessionId, "方案 v1");
+    expect((await server.runtime.sessionView(created.session.sessionId)).session).toMatchObject({
+      proposalVersion: "v1",
+      writeLeaseVersion: null,
+    });
+
+    await postToSession(server, created.session.sessionId, "可以，执行 v1");
+    await waitForSessionAgent(server, created.session.sessionId, "Kimi 执行完成");
+
+    expect(codex).not.toHaveBeenCalled();
+    expect(kimi).toHaveBeenCalledTimes(3);
+    expect(kimi.mock.calls.map(([options]) => options.mode)).toEqual([
+      { kind: "full" },
+      { kind: "resume", externalSessionId: "kimi-analysis-session" },
+      { kind: "resume", externalSessionId: "kimi-analysis-session" },
+    ]);
+    expect(kimi.mock.calls.map(([options]) => options.workspaceAccess)).toEqual([
+      "read-only",
+      "read-only",
+      "read-write",
+    ]);
+    expect(await fs.readFile(path.join(root, "kimi-gate.txt"), "utf8"))
+      .toBe("written by confirmed Kimi");
+    expect((await server.runtime.sessionView(created.session.sessionId)).session).toMatchObject({
+      proposalVersion: "v1",
+      writeLeaseVersion: null,
+      writePolicy: "confirm-current-plan-before-write",
+    });
+  });
+
+  it("rejects stale plan confirmation and clears a failed one-shot write lease before the next turn", async () => {
+    const root = await fixtureRoot();
+    let call = 0;
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      call += 1;
+      await options.onThreadStarted?.("analysis-thread-versioned");
+      if (call === 5) {
+        return {
+          ok: false,
+          reason: "exit:1",
+          runDir: options.runDir,
+          stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+          stderrPath: path.join(options.runDir, "stderr.log"),
+        };
+      }
+      const finalText = [
+        "方案 v1\n<!-- moebius:session-analysis-control={\"action\":\"proposal\",\"version\":\"plan-v1\"} -->",
+        "方案 v2\n<!-- moebius:session-analysis-control={\"action\":\"proposal\",\"version\":\"plan-v2\"} -->",
+        "错误确认旧方案\n<!-- moebius:session-analysis-control={\"action\":\"confirm\",\"version\":\"plan-v1\"} -->",
+        "确认 v2\n<!-- moebius:session-analysis-control={\"action\":\"confirm\",\"version\":\"plan-v2\"} -->",
+        "",
+        "方案 v3\n<!-- moebius:session-analysis-control={\"action\":\"proposal\",\"version\":\"plan-v3\"} -->",
+      ][call - 1] ?? "unexpected";
+      return {
+        ...success(options, finalText),
+        threadId: "analysis-thread-versioned",
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [{
+        name: "assistant",
+        agentMarkdown: "# assistant",
+        executionProfile: null,
+      }],
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    const createResponse = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: "先分析",
+        originSessionId: "default",
+        entryTemplate: "session-analysis",
+        writePolicy: "confirm-current-plan-before-write",
+      }),
+    });
+    const created = await createResponse.json() as { session: { sessionId: string } };
+    await waitForSessionAgent(server, created.session.sessionId, "方案 v1");
+    await postToSession(server, created.session.sessionId, "请调整第二项");
+    await waitForSessionAgent(server, created.session.sessionId, "方案 v2");
+    await postToSession(server, created.session.sessionId, "按旧方案做");
+    await waitForSessionAgent(
+      server,
+      created.session.sessionId,
+      "错误确认旧方案\n\n这次确认没有与当前方案版本精确匹配，或当前 provider 会话无法安全继续；我保持只读，没有修改文件。请先重新确认当前完整方案。",
+    );
+
+    expect(sandboxValue(codex.mock.calls[2]?.[0].execOptions)).toBe("read-only");
+    expect((await server.runtime.sessionView(created.session.sessionId)).session).toMatchObject({
+      proposalVersion: "plan-v2",
+      writeLeaseVersion: null,
+    });
+
+    await postToSession(server, created.session.sessionId, "可以，按 v2 修改");
+    await waitForCalls(codex, 5);
+    expect(sandboxValue(codex.mock.calls[3]?.[0].execOptions)).toBe("read-only");
+    expect(sandboxValue(codex.mock.calls[4]?.[0].execOptions)).not.toBe("read-only");
+    expect((await server.runtime.sessionView(created.session.sessionId)).session).toMatchObject({
+      proposalVersion: "plan-v2",
+      writeLeaseVersion: null,
+    });
+
+    await postToSession(server, created.session.sessionId, "失败后重新讨论");
+    await waitForSessionAgent(server, created.session.sessionId, "方案 v3");
+    expect(sandboxValue(codex.mock.calls[5]?.[0].execOptions)).toBe("read-only");
+  });
+
   it("records an observed Codex thread before link failure and never starts full again", async () => {
     const root = await fixtureRoot();
     const sqlitePath = path.join(root, "local-console.sqlite");
@@ -661,6 +908,22 @@ async function post(url: string, body: string): Promise<void> {
   expect(response.status).toBe(202);
 }
 
+async function postToSession(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  body: string,
+): Promise<void> {
+  const response = await fetch(new URL(
+    `/api/local-console/sessions/${encodeURIComponent(sessionId)}/messages`,
+    server.url,
+  ), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  expect(response.status).toBe(202);
+}
+
 async function waitForAgent(url: string, body: string): Promise<void> {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
@@ -691,9 +954,15 @@ async function waitForDatabaseRow(
 ): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
-    const row = database.prepare(query.sql).get(...query.params);
-    if (row !== undefined) {
-      return row as Record<string, unknown>;
+    try {
+      const row = database.prepare(query.sql).get(...query.params);
+      if (row !== undefined) {
+        return row as Record<string, unknown>;
+      }
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("database is locked")) {
+        throw error;
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -762,4 +1031,10 @@ function success(options: CodexRunOptions, finalText: string): CodexRunResult {
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),
     stderrPath: path.join(options.runDir, "stderr.log"),
   };
+}
+
+function sandboxValue(options: readonly string[] | undefined): string | null {
+  if (options === undefined) return null;
+  const index = options.lastIndexOf("--sandbox");
+  return index < 0 ? null : options[index + 1] ?? null;
 }

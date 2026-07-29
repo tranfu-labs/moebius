@@ -14,20 +14,44 @@ import {
   DEFAULT_TEAM_EXECUTION_PROFILE,
 } from "./team-execution-profile.js";
 import {
+  readPersistedUserTeamRecordsDocument,
+  resolveRecordedTeamLocation,
+} from "./team-record-store.js";
+import {
   computeOfficialTeamContentFingerprint,
   readPackagedOfficialTeamManifest,
   recommendationFingerprint,
   recommendationsFromManifest,
 } from "./team-official-management.js";
 import { recoverOfficialTeamUpdateTransactions } from "./team-official-update.js";
-import { getSystemTeamsRoot, resolveTeamLocation } from "./team-store.js";
+import {
+  getSystemTeamsRoot,
+  getTeamsRoot,
+  readSystemTeamLocationOverrides,
+  readTeamSnapshot,
+  resolveTeamLocation,
+  writeSystemTeamLocationOverrides,
+} from "./team-store.js";
 
 export const TEAMS_SEED_MARKER_FILE = ".teams-seed.marker";
+export const TEAM_SEED_CONFLICTS_FILE = path.join(
+  ".state",
+  "agent-teams",
+  "seed-conflicts-v1.json",
+);
+export const GENERAL_ASSISTANT_TEAM_ID = "general-assistant";
 
 const FINGERPRINT_VERSION = "moebius-team-seed-v1";
 export interface BuiltInTeamSeedResult {
   fingerprint: string;
-  status: "seeded" | "skipped";
+  status: "seeded" | "skipped" | "conflict";
+  conflicts: TeamSeedConflict[];
+}
+
+export interface TeamSeedConflict {
+  teamId: typeof GENERAL_ASSISTANT_TEAM_ID;
+  kind: "stable-identity" | "directory";
+  canPreserve: boolean;
 }
 
 interface SeedEntry {
@@ -39,6 +63,7 @@ interface SeedEntry {
 export async function seedBuiltInTeams(input: {
   seedTeamsRoot: string;
   dataRoot: string;
+  preserveGeneralAssistantConflicts?: boolean;
 }): Promise<BuiltInTeamSeedResult> {
   await recoverOfficialTeamUpdateTransactions(input.dataRoot);
   const seedTeamsRoot = path.resolve(input.seedTeamsRoot);
@@ -46,8 +71,14 @@ export async function seedBuiltInTeams(input: {
   const fingerprint = await computeTeamSeedFingerprint(seedTeamsRoot);
   const officialDocument = await readOfficialTeamStateDocument(input.dataRoot);
   const bindingDocument = await readExecutionBindingDocument(input.dataRoot);
+  const originalOfficialDocument = structuredClone(officialDocument);
+  const originalBindingDocument = structuredClone(bindingDocument);
   const packagedTeamIds = await listPackagedTeamIds(seedTeamsRoot);
   let copiedTeamCount = 0;
+  const conflicts: TeamSeedConflict[] = [];
+  const originalOverrides = readSystemTeamLocationOverrides(input.dataRoot);
+  let locationOverrides = { ...originalOverrides };
+  let conflictRecoveryDirectory: string | null = null;
 
   await fs.mkdir(systemRoot, { recursive: true });
 
@@ -60,15 +91,66 @@ export async function seedBuiltInTeams(input: {
       sourceDirectory,
     });
     const packagedFingerprint = await computeOfficialTeamContentFingerprint(packagedDirectory);
-    const location = resolveTeamLocation({
+    let location = resolveTeamLocation({
       dataRoot: input.dataRoot,
       teamId,
       ownership: "system",
     });
-    const existed = await pathExists(location.directory);
+    let existed = await pathExists(location.directory);
+    if (
+      teamId === GENERAL_ASSISTANT_TEAM_ID
+      && officialDocument.teams[teamId] === undefined
+    ) {
+      const userRecords = await readPersistedUserTeamRecordsDocument(input.dataRoot);
+      const stableIdentityRecord = userRecords?.records.find((record) => record.id === teamId);
+      const managedUserDirectoryExists = await pathExists(path.join(getTeamsRoot(input.dataRoot), teamId));
+      const stableIdentityConflict = stableIdentityRecord !== undefined || managedUserDirectoryExists;
+      const stableIdentityCanPreserve = stableIdentityConflict
+        ? await canPreserveStableIdentity(input.dataRoot, stableIdentityRecord !== undefined)
+        : true;
+      const directoryConflict = existed;
+      if (
+        (stableIdentityConflict || directoryConflict)
+        && (
+          input.preserveGeneralAssistantConflicts !== true
+          || (stableIdentityConflict && !stableIdentityCanPreserve)
+        )
+      ) {
+        if (stableIdentityConflict) {
+          conflicts.push({
+            teamId,
+            kind: "stable-identity",
+            canPreserve: stableIdentityCanPreserve,
+          });
+        }
+        if (directoryConflict) {
+          conflicts.push({ teamId, kind: "directory", canPreserve: true });
+          locationOverrides[teamId] = null;
+          await writeSystemTeamLocationOverrides(input.dataRoot, locationOverrides);
+        }
+        continue;
+      }
+      if (directoryConflict) {
+        const directoryName = await nextPreservedOfficialDirectoryName(systemRoot, teamId);
+        locationOverrides[teamId] = directoryName;
+        location = {
+          dataRoot: path.resolve(input.dataRoot),
+          id: teamId,
+          ownership: "system",
+          directory: path.join(systemRoot, directoryName),
+        };
+        existed = false;
+      }
+    }
     if (!existed) {
       await copyEditableTeamContent(sourceDirectory, location.directory);
       copiedTeamCount += 1;
+      if (
+        teamId === GENERAL_ASSISTANT_TEAM_ID
+        && input.preserveGeneralAssistantConflicts === true
+      ) {
+        conflictRecoveryDirectory = location.directory;
+      }
     }
 
     const currentFingerprint = await tryComputeContentFingerprint(location.directory);
@@ -100,13 +182,68 @@ export async function seedBuiltInTeams(input: {
     }
   }
 
-  await writeOfficialTeamStateDocument(input.dataRoot, officialDocument);
-  await writeExecutionBindingDocument(input.dataRoot, bindingDocument);
-  await writeMarker(path.join(systemRoot, TEAMS_SEED_MARKER_FILE), fingerprint);
+  try {
+    await writeSystemTeamLocationOverrides(input.dataRoot, locationOverrides);
+    await writeOfficialTeamStateDocument(input.dataRoot, officialDocument);
+    await writeExecutionBindingDocument(input.dataRoot, bindingDocument);
+    await writeSeedConflicts(input.dataRoot, conflicts);
+    await writeMarker(path.join(systemRoot, TEAMS_SEED_MARKER_FILE), fingerprint);
+  } catch (error) {
+    if (conflictRecoveryDirectory !== null) {
+      await fs.rm(conflictRecoveryDirectory, { recursive: true, force: true }).catch(() => undefined);
+      await Promise.allSettled([
+        writeSystemTeamLocationOverrides(input.dataRoot, originalOverrides),
+        writeOfficialTeamStateDocument(input.dataRoot, originalOfficialDocument),
+        writeExecutionBindingDocument(input.dataRoot, originalBindingDocument),
+      ]);
+    }
+    throw error;
+  }
   return {
     fingerprint,
-    status: copiedTeamCount > 0 ? "seeded" : "skipped",
+    status: conflicts.length > 0 ? "conflict" : copiedTeamCount > 0 ? "seeded" : "skipped",
+    conflicts,
   };
+}
+
+export async function readTeamSeedConflicts(dataRoot: string): Promise<TeamSeedConflict[]> {
+  try {
+    const value = JSON.parse(
+      await fs.readFile(path.join(path.resolve(dataRoot), TEAM_SEED_CONFLICTS_FILE), "utf8"),
+    ) as unknown;
+    if (
+      typeof value !== "object"
+      || value === null
+      || (value as { version?: unknown }).version !== 1
+      || !Array.isArray((value as { conflicts?: unknown }).conflicts)
+    ) {
+      return [];
+    }
+    const conflicts = (value as { conflicts: unknown[] }).conflicts.flatMap((entry): TeamSeedConflict[] => {
+      if (
+        typeof entry !== "object"
+        || entry === null
+        || (entry as { teamId?: unknown }).teamId !== GENERAL_ASSISTANT_TEAM_ID
+        || ((entry as { kind?: unknown }).kind !== "stable-identity"
+          && (entry as { kind?: unknown }).kind !== "directory")
+      ) {
+        return [];
+      }
+      return [{
+        teamId: GENERAL_ASSISTANT_TEAM_ID,
+        kind: (entry as { kind: TeamSeedConflict["kind"] }).kind,
+        canPreserve: (entry as { canPreserve?: unknown }).canPreserve === true,
+      }];
+    });
+    return await Promise.all(conflicts.map(async (conflict) => conflict.kind === "stable-identity"
+      ? {
+          ...conflict,
+          canPreserve: await canPreserveStableIdentity(dataRoot, true),
+        }
+      : conflict));
+  } catch {
+    return [];
+  }
 }
 
 export async function computeTeamSeedFingerprint(seedTeamsRoot: string): Promise<string> {
@@ -216,6 +353,50 @@ async function writeMarker(markerPath: string, fingerprint: string): Promise<voi
   const temporaryMarkerPath = `${markerPath}.${process.pid}.tmp`;
   await fs.writeFile(temporaryMarkerPath, `${fingerprint}\n`, "utf8");
   await fs.rename(temporaryMarkerPath, markerPath);
+}
+
+async function writeSeedConflicts(
+  dataRoot: string,
+  conflicts: readonly TeamSeedConflict[],
+): Promise<void> {
+  const target = path.join(path.resolve(dataRoot), TEAM_SEED_CONFLICTS_FILE);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.tmp`;
+  await fs.writeFile(
+    temporary,
+    `${JSON.stringify({ version: 1, conflicts }, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.rename(temporary, target);
+}
+
+async function nextPreservedOfficialDirectoryName(
+  systemRoot: string,
+  teamId: string,
+): Promise<string> {
+  for (let index = 1; index < 10_000; index += 1) {
+    const candidate = index === 1 ? `${teamId}.official` : `${teamId}.official-${String(index)}`;
+    if (!await pathExists(path.join(systemRoot, candidate))) return candidate;
+  }
+  throw new Error(`No managed directory is available for official team ${teamId}`);
+}
+
+async function canPreserveStableIdentity(
+  dataRoot: string,
+  hasRecordedIdentity: boolean,
+): Promise<boolean> {
+  try {
+    const location = hasRecordedIdentity
+      ? await resolveRecordedTeamLocation(dataRoot, GENERAL_ASSISTANT_TEAM_ID)
+      : resolveTeamLocation({
+          dataRoot,
+          teamId: GENERAL_ASSISTANT_TEAM_ID,
+          ownership: "user",
+        });
+    return (await readTeamSnapshot(location)).status === "usable";
+  } catch {
+    return false;
+  }
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {

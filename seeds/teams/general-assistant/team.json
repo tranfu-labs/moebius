@@ -1,0 +1,8 @@
+{
+  "name": "通用助手",
+  "description": "用于通用对话与任务处理的单 Agent 团队",
+  "primaryAgentSlug": "assistant",
+  "memberOrder": [
+    "assistant"
+  ]
+}
