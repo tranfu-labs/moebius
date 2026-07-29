@@ -453,6 +453,7 @@ async function handleRequest(
     if (request.method === "GET" && sessionReferenceMatch !== null) {
       sendJson(response, 200, await runtime.sessionReferenceText({
         sessionId: sessionReferenceMatch.sessionId,
+        scope: readSessionReferenceScope(url.searchParams.get("scope")),
         runId: url.searchParams.get("runId"),
       }));
       return;
@@ -1041,6 +1042,11 @@ function readOptionalEntryTemplate(value: unknown): "session-analysis" | null | 
   if (value === undefined) return undefined;
   if (value === null || value === "session-analysis") return value;
   throw new Error("Expected entryTemplate to be session-analysis or null");
+}
+
+function readSessionReferenceScope(value: unknown): "message" | "conversation" {
+  if (value === "message" || value === "conversation") return value;
+  throw new Error("Expected reference-text scope to be message or conversation");
 }
 
 function readOptionalWritePolicy(

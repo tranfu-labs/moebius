@@ -663,15 +663,48 @@ desktop renderer MUST 在首次发送和已有 session 发送中同时提交正�
 - THEN handler 不发送第二个消息请求或附件归属请求
 - AND 现有草稿保持不变。
 
-## Requirement: 对话菜单只提供归档与复制记录路径
-Source: docs/product/pages/main-left-sidebar.md#复制对话记录路径
+## Requirement: 对话菜单提供分析、复制记录路径与归档
+Source: docs/product/pages/main-left-sidebar.md#项目与对话菜单
 
-系统 MUST 在每个对话菜单中提供“归档”和“复制对话记录路径”两个操作。系统 MUST NOT 在当前侧栏范围内加入第三个对话操作或把复制操作放入项目菜单。
+系统 MUST 在每个对话菜单中依次提供「在右侧栏分析这段对话」「复制对话记录路径」和「归档」。系统 MUST NOT 把任一对话操作放入项目菜单。
 
 ### Scenario: 打开对话菜单
 - GIVEN 侧边栏存在一段用户发起的对话
 - WHEN 用户打开该对话的菜单
-- THEN 菜单项恰好为“归档”和“复制对话记录路径”
+- THEN 菜单项依次为「在右侧栏分析这段对话」「复制对话记录路径」和「归档」
+
+## Requirement: 非当前对话分析采用原子组合路由
+Source: docs/product/pages/main-left-sidebar.md#在右侧栏分析这段对话
+
+用户从左侧栏非当前对话触发分析时，desktop renderer MUST 先准备目标来源视图、对话级片段、可归并草稿与右侧栏标签，全部成功后再提交唯一选中行、主内容和右侧栏状态。任一步失败时 MUST 保留进入前的选中行、主内容、右侧栏标签、草稿与阅读现场，MUST NOT 留下半切换状态或无来源片段的草稿。
+
+### Scenario: 非当前对话成功切换
+
+- GIVEN 主内容显示对话 A 且用户从对话 B 的菜单触发分析
+- WHEN B 的来源视图、片段、草稿与标签全部准备成功
+- THEN B 成为左侧栏唯一选中项
+- AND 主内容显示 B，右侧栏显示 B 的分析草稿
+- AND A 的右侧栏标签、草稿和阅读状态按 A 保留
+
+### Scenario: 非当前对话准备失败
+
+- GIVEN 主内容显示对话 A 或全局新对话页，且用户从对话 B 的菜单触发分析
+- WHEN B 的读取、片段生成、草稿准备或页面呈现任一步失败
+- THEN 进入前的选中项、主内容与右侧栏保持不变
+- AND B 不留下新草稿或半套标签
+- AND 用户看到可理解且可访问的失败原因
+
+## Requirement: 分析发送条件只取草稿当前项目
+Source: docs/product/pages/main-conversation.md#右侧栏中的分析新会话
+
+来源项目目录不可用但记录路径可取得时，renderer MUST 允许打开完整分析草稿，并 MUST 保留且标明不可用的来源项目，根据草稿当前选择的项目重新计算工作空间与发送条件。用户改选可用项目后 MUST 立即恢复发送；原来源项目之后不可用 MUST NOT 继续阻止发送。
+
+### Scenario: 改选项目恢复发送
+
+- GIVEN 分析草稿来源项目不可用且草稿内容与片段完整保留
+- WHEN 用户把草稿当前项目改为可用项目
+- THEN 工作空间与发送条件按新项目重新计算
+- AND 来源片段保持不变
 
 ## Requirement: 复制动作把事实日志稳定路径写入系统剪贴板
 Source: docs/product/pages/main-left-sidebar.md#复制对话记录路径
@@ -1371,7 +1404,7 @@ Source: docs/product/pages/agent-teams.md#既有安装首次登记通用助手
 
 Source: docs/product/pages/agent-teams.md#新建对话中的团队预选
 
-renderer MUST 在手动 sidebar chat 与「分析当前对话」草稿中初始选择当前可用的官方 `general-assistant`，并允许发送前改选。首次发送成功前 MUST NOT 更新 last-used team；团队不可用时 MUST 保留草稿并等待修复或用户改选，MUST NOT 静默替换团队或运行配置。
+renderer MUST 在手动 sidebar chat 与消息级或对话级分析入口创建的草稿中初始选择当前可用的官方 `general-assistant`，并允许发送前改选。首次发送成功前 MUST NOT 更新 last-used team；团队不可用时 MUST 保留草稿并等待修复或用户改选，MUST NOT 静默替换团队或运行配置。
 
 #### Scenario: 改选团队后首次发送
 

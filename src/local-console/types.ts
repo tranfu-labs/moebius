@@ -6,6 +6,7 @@ export type LocalConsoleSpeaker = "user" | "agent" | "system";
 export type LocalAttachmentKind = "image" | "file";
 export type LocalConsoleEntryTemplate = "session-analysis";
 export type LocalConsoleWritePolicy = "normal" | "confirm-current-plan-before-write";
+export type LocalConsoleSessionReferenceScope = "message" | "conversation";
 
 export interface LocalConsoleTextFragment {
   id: string;
@@ -320,6 +321,7 @@ export interface LocalConsoleSessionSummary {
   continuation?: LocalConsoleContinuationStatus;
   agentTeamPendingOwnership?: LocalConsoleAgentTeamOwnership | null;
   agentTeamPendingId?: string | null;
+  analysisRecordAvailable?: boolean;
   workspaceMode: LocalConsoleWorkspaceMode;
   workspacePendingMode: LocalConsoleWorkspaceMode | null;
   workspaceUnavailableReason?: string | null;
@@ -430,6 +432,7 @@ export interface LocalConsoleSessionReferenceText {
   fragment: LocalConsoleTextFragment;
   sessionId: string;
   runId: string | null;
+  scope: LocalConsoleSessionReferenceScope;
 }
 
 export class LocalConsoleProjectRunningError extends Error {

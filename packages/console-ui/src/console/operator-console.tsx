@@ -24,6 +24,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
+  type SyntheticEvent,
 } from "react";
 
 import {
@@ -192,6 +193,7 @@ export interface OperatorSession {
   agentTeamHealthReason?: string | null;
   agentTeamPendingOwnership?: "system" | "user" | null;
   agentTeamPendingId?: string | null;
+  analysisRecordAvailable?: boolean;
   workspaceMode: "direct" | "worktree";
   workspacePendingMode: "direct" | "worktree" | null;
   workspaceUnavailableReason?: string | null;
@@ -459,6 +461,7 @@ export interface OperatorConsoleProps {
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onInterrupt(sessionId: string, runId: string): void;
   onRetryRun?: (sessionId: string, runId: string) => void;
+  onAnalyzeSession?: (input: { sessionId: string; projectId: string }) => void;
   onAnalyzeConversation?: (input: {
     sessionId: string;
     runId: string | null;
@@ -621,6 +624,7 @@ export function OperatorConsole({
   onCopySessionLogPath,
   onInterrupt,
   onRetryRun,
+  onAnalyzeSession,
   onAnalyzeConversation,
   onEditAndResend,
   onOpenDiagnostics,
@@ -1341,6 +1345,9 @@ export function OperatorConsole({
             } else {
               setRemovalRequest({ project: target, force: false });
             }
+          }}
+          onAnalyzeConversation={onAnalyzeSession === undefined ? undefined : (sessionId, projectId) => {
+            onAnalyzeSession({ sessionId, projectId });
           }}
           onArchiveSession={onArchiveSession === undefined ? undefined : (sessionId, projectId) => {
             const archive = () => void onArchiveSession(sessionId, projectId);
@@ -2578,6 +2585,15 @@ function TimelineEntry({
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
 }): JSX.Element {
   const { locale, t } = useI18n();
+  const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
+  const analysisMenuReturnFocusRef = useRef<HTMLElement | null>(null);
+  const openAnalysisMenu = (event: SyntheticEvent<HTMLElement>): void => {
+    if (onAnalyzeConversation) {
+      event.preventDefault();
+      analysisMenuReturnFocusRef.current = event.currentTarget;
+      setAnalysisMenuOpen(true);
+    }
+  };
   if (message.sourceKind === "local-child-session-card") {
     const sessionIds = parseChildSessionCardIds(message.body);
     const items = sessionIds === null
@@ -2592,9 +2608,23 @@ function TimelineEntry({
   const outcome = terminalOutcome(message);
   if (outcome) {
     return (
-      <div className="relative my-4">
+      <div
+        className="relative my-4"
+        tabIndex={onAnalyzeConversation ? 0 : undefined}
+        onContextMenu={onAnalyzeConversation ? openAnalysisMenu : undefined}
+        onKeyDown={onAnalyzeConversation
+          ? (event) => {
+              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                openAnalysisMenu(event);
+              }
+            }
+          : undefined}
+      >
         {onAnalyzeConversation ? (
           <ConversationAnalysisMenu
+            open={analysisMenuOpen}
+            onOpenChange={setAnalysisMenuOpen}
+            returnFocusTarget={analysisMenuReturnFocusRef.current}
             onSelect={() => onAnalyzeConversation({
               sessionId: message.sessionId,
               runId: message.runId,
@@ -2677,7 +2707,18 @@ function TimelineEntry({
   }
 
   return (
-    <div className="group py-4 text-sm">
+    <div
+      className="group py-4 text-sm"
+      tabIndex={message.speaker === "agent" && onAnalyzeConversation ? 0 : undefined}
+      onContextMenu={message.speaker === "agent" ? openAnalysisMenu : undefined}
+      onKeyDown={message.speaker === "agent" && onAnalyzeConversation
+        ? (event) => {
+            if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+              openAnalysisMenu(event);
+            }
+          }
+        : undefined}
+    >
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
           <RoleTag
@@ -2703,6 +2744,9 @@ function TimelineEntry({
         {message.speaker === "agent" && onAnalyzeConversation ? (
           <ConversationAnalysisMenu
             inline
+            open={analysisMenuOpen}
+            onOpenChange={setAnalysisMenuOpen}
+            returnFocusTarget={analysisMenuReturnFocusRef.current}
             onSelect={() => onAnalyzeConversation({
               sessionId: message.sessionId,
               runId: message.runId,
@@ -2766,15 +2810,21 @@ function TimelineEntry({
 
 function ConversationAnalysisMenu({
   inline = false,
+  open,
+  onOpenChange,
+  returnFocusTarget,
   onSelect,
 }: {
   inline?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  returnFocusTarget?: HTMLElement | null;
   onSelect(): void;
 }): JSX.Element {
   const { t } = useI18n();
   return (
     <div className={inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -2785,9 +2835,17 @@ function ConversationAnalysisMenu({
             <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent
+          align="end"
+          onCloseAutoFocus={(event) => {
+            if (returnFocusTarget !== null && returnFocusTarget !== undefined) {
+              event.preventDefault();
+              returnFocusTarget.focus();
+            }
+          }}
+        >
           <DropdownMenuItem onSelect={onSelect}>
-            {t("console.sessionAnalysis.analyzeConversation")}
+            {t("console.sessionAnalysis.analyzeMessage")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -2815,6 +2873,9 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
         ? session.unresolvedSystemEventKind
         : null,
       isNonContinuable: project.directoryAvailable === false || session.continuation?.canContinue === false,
+      analysisDisabledReason: session.analysisRecordAvailable === false
+        ? t("console.sessionAnalysis.recordUnavailable")
+        : null,
       createdAt: session.createdAt,
       summary: sessionSummary(session, t),
     })),

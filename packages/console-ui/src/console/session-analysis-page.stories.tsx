@@ -14,7 +14,6 @@ import {
 } from "@/console/operator-console";
 import {
   EMPTY_RIGHT_SIDEBAR_TABS,
-  RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   type RightSidebarTabsState,
 } from "@/console/right-sidebar-tabs";
 import type { ComposerTextFragment } from "@/console/text-fragment-list";
@@ -22,6 +21,11 @@ import type { ComposerTextFragment } from "@/console/text-fragment-list";
 type SessionAnalysisState =
   | "draft-single"
   | "draft-accumulated"
+  | "message-menu"
+  | "conversation-menu"
+  | "conversation-disabled"
+  | "project-unavailable"
+  | "non-current-result"
   | "created"
   | "zero-tabs"
   | "recovered"
@@ -62,6 +66,14 @@ const analysisSession: OperatorSession = {
   updatedAt: "2026-07-29T08:12:00.000Z",
 };
 
+const alternateSourceSession: OperatorSession = {
+  ...sourceSession,
+  sessionId: "alternate-source-session",
+  title: "侧边栏中的另一段对话",
+  createdAt: "2026-07-29T08:13:00.000Z",
+  updatedAt: "2026-07-29T08:14:00.000Z",
+};
+
 const project: OperatorProject = {
   projectId: "moebius",
   sourceType: "local-folder",
@@ -76,36 +88,45 @@ const project: OperatorProject = {
   branchName: "feature/sidebar-chat",
   isGitRepository: true,
   directoryAvailable: true,
-  sessions: [sourceSession, analysisSession],
+  sessions: [sourceSession, alternateSourceSession, analysisSession],
   runningCount: 0,
   waitingCount: 0,
   stuckCount: 0,
   errorCount: 0,
 };
 
+const messageFragment: ComposerTextFragment = {
+  id: "fragment-message",
+  label: "文本片段 1",
+  text: "Moebius 会话记录：sessions/source-session.jsonl；外部执行：Codex 019b8ef2",
+};
+
+const conversationFragment: ComposerTextFragment = {
+  id: "fragment-conversation",
+  label: "文本片段 2",
+  text: "Moebius 会话记录：sessions/alternate-source-session.jsonl",
+};
+
+const singleConversationFragment: ComposerTextFragment = {
+  ...conversationFragment,
+  label: "文本片段 1",
+};
+
 const fragments: ComposerTextFragment[] = [
-  {
-    id: "fragment-1",
-    label: "文本片段 1",
-    text: "Moebius 会话记录：sessions/source-session.jsonl；外部执行：Codex 019b8ef2",
-  },
-  {
-    id: "fragment-2",
-    label: "文本片段 2",
-    text: "Moebius 会话记录：sessions/source-session.jsonl；外部执行：Codex 019b8f47",
-  },
+  messageFragment,
+  conversationFragment,
 ];
 
 const suggestions: NewConversationPromptSuggestion[] = [
   {
     id: "unexpected",
     label: "Agent 运行不符合预期？",
-    prompt: "分析这个会话是否符合这个 Agent 团队设计的预期",
+    prompt: "分析这段对话是否符合这个 Agent 团队设计的预期",
   },
   {
     id: "slow",
     label: "Agent 运行太长了？",
-    prompt: "分析这个会话为什么占用的时间那么长，主要耗时在哪一块，是否符合团队设计的预期，是否有优化空间",
+    prompt: "分析这段对话为什么占用的时间那么长，主要耗时在哪一块，是否符合团队设计的预期，是否有优化空间",
   },
 ];
 
@@ -155,7 +176,7 @@ const analysisMessages: OperatorMessage[] = [
     sessionId: analysisSession.sessionId,
     speaker: "user",
     role: null,
-    body: "分析这个会话为什么占用的时间那么长，主要耗时在哪一块，是否有优化空间？",
+    body: "分析这段对话为什么占用的时间那么长，主要耗时在哪一块，是否有优化空间？",
     textFragments: fragments,
     status: "displayed",
     runId: null,
@@ -202,7 +223,7 @@ const conversationDraftTab: RightSidebarTabsState = {
   tabs: [{
     id: "conversation-tab",
     type: "conversation",
-    title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.conversation,
+    title: "新对话",
     sourceKey: "story:conversation",
     closable: true,
   }],
@@ -218,9 +239,33 @@ const createdConversationTab: RightSidebarTabsState = {
 };
 
 function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element {
-  const draftState = state === "draft-single" || state === "draft-accumulated";
+  const draftState = state === "draft-single"
+    || state === "draft-accumulated"
+    || state === "message-menu"
+    || state === "conversation-menu"
+    || state === "conversation-disabled"
+    || state === "project-unavailable"
+    || state === "non-current-result";
   const sourceUnavailable = state === "source-unavailable";
   const hasCreatedSidebarConversation = state === "created" || state === "recovered";
+  const nonCurrentResult = state === "non-current-result";
+  const projectForState: OperatorProject = state === "project-unavailable"
+    ? {
+        ...project,
+        directoryAvailable: false,
+        directoryUnavailableReason: "当前项目本地文件夹未找到，可以指定新的文件夹",
+      }
+    : state === "conversation-disabled"
+      ? {
+          ...project,
+          sessions: project.sessions.map((session) => session.sessionId === sourceSession.sessionId
+            ? { ...session, analysisRecordAvailable: false }
+            : session),
+        }
+      : project;
+  const selectedSourceSession = nonCurrentResult
+    ? alternateSourceSession
+    : projectForState.sessions.find((session) => session.sessionId === sourceSession.sessionId) ?? sourceSession;
   const [sidebarOpen, setSidebarOpen] = useState(state !== "zero-tabs" && !sourceUnavailable);
   const [tabs, setTabs] = useState<RightSidebarTabsState>(
     state === "zero-tabs" || sourceUnavailable
@@ -232,18 +277,29 @@ function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element
   const [draft, setDraft] = useState("");
   const [createdFromDraft, setCreatedFromDraft] = useState(false);
   const [draftFragments, setDraftFragments] = useState(
-    state === "draft-accumulated" ? fragments : fragments.slice(0, 1),
+    state === "draft-accumulated"
+      ? fragments
+      : nonCurrentResult
+        ? [singleConversationFragment]
+        : [messageFragment],
   );
 
-  const selectedSession = sourceUnavailable ? analysisSession : sourceSession;
-  const messages = sourceUnavailable ? analysisMessages : sourceMessages;
+  const selectedSession = sourceUnavailable ? analysisSession : selectedSourceSession;
+  const messages = sourceUnavailable
+    ? analysisMessages
+    : nonCurrentResult
+      ? sourceMessages.map((message) => ({
+          ...message,
+          sessionId: alternateSourceSession.sessionId,
+        }))
+      : sourceMessages;
 
   return (
     <OperatorConsole
-      {...baseConsoleProps(selectedSession, messages)}
+      {...baseConsoleProps(projectForState, selectedSession, messages)}
       navigationSessionId={hasCreatedSidebarConversation || sourceUnavailable
         ? analysisSession.sessionId
-        : sourceSession.sessionId}
+        : selectedSession.sessionId}
       conversationNotice={sourceUnavailable
         ? "来源会话暂时不可用，当前 sidebar chat 已在主内容区打开；会话历史、工作空间与运行能力不受影响。"
         : undefined}
@@ -252,17 +308,19 @@ function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element
       rightSidebarTabs={tabs}
       onRightSidebarOpenChange={setSidebarOpen}
       onRightSidebarTabsChange={setTabs}
+      onAnalyzeSession={() => undefined}
+      onAnalyzeConversation={() => undefined}
       rightSidebarContentSlots={{
         conversation: () => (
           <div className="flex h-full min-h-0">
             {draftState && !createdFromDraft ? (
               <NewConversationPage
                 projects={[{
-                  projectId: project.projectId,
-                  title: project.title,
-                  available: true,
+                  projectId: projectForState.projectId,
+                  title: projectForState.title,
+                  available: projectForState.directoryAvailable !== false,
                   independentWorkspaceAvailable: true,
-                  branchLabel: project.branchName ?? "—",
+                  branchLabel: projectForState.branchName ?? "—",
                 }]}
                 teams={[{
                   teamKey: "system:general-assistant",
@@ -273,7 +331,7 @@ function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element
                     description: "没有预设专业职责的主 Agent",
                   }],
                 }]}
-                selectedProjectId={project.projectId}
+                selectedProjectId={projectForState.projectId}
                 selectedWorkspaceMode="worktree"
                 selectedTeamKey="system:general-assistant"
                 draft={draft}
@@ -301,6 +359,7 @@ function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element
             ) : (
               <OperatorConsole
                 {...baseConsoleProps(
+                  projectForState,
                   analysisSession,
                   createdFromDraft
                     ? [{
@@ -321,13 +380,14 @@ function SessionAnalysisStory({ state }: SessionAnalysisStoryProps): JSX.Element
 }
 
 function baseConsoleProps(
+  selectedProject: OperatorProject,
   selectedSession: OperatorSession,
   messages: OperatorMessage[],
 ): OperatorConsoleProps {
   return {
-    project,
-    projects: [project],
-    selectedProjectId: project.projectId,
+    project: selectedProject,
+    projects: [selectedProject],
+    selectedProjectId: selectedProject.projectId,
     selectedSessionId: selectedSession.sessionId,
     selectedSession,
     messages,
@@ -358,6 +418,38 @@ export const AnalysisDraftSingleFragment: Story = {
 
 export const AnalysisDraftAccumulatedFragments: Story = {
   args: { state: "draft-accumulated" },
+};
+
+export const MessageMenu: Story = {
+  args: { state: "message-menu" },
+  play: async ({ canvasElement }) => {
+    canvasElement
+      .querySelector<HTMLElement>('[data-testid="timeline-message-2"] [tabindex="0"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  },
+};
+
+export const ConversationMenu: Story = {
+  args: { state: "conversation-menu" },
+  play: async ({ canvasElement }) => {
+    canvasElement
+      .querySelector<HTMLElement>('[data-testid="conversation-sidebar-session"][data-session-id="source-session"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  },
+};
+
+export const ConversationMenuRecordUnavailable: Story = {
+  args: { state: "conversation-disabled" },
+  play: ConversationMenu.play,
+};
+
+export const ConversationMenuProjectUnavailable: Story = {
+  args: { state: "project-unavailable" },
+  play: ConversationMenu.play,
+};
+
+export const NonCurrentConversationSwitchResult: Story = {
+  args: { state: "non-current-result" },
 };
 
 export const TextFragmentTooltipOnKeyboardFocus: Story = {

@@ -38,6 +38,29 @@ describe("NewConversationPage", () => {
     expect(onSelectTeam).toHaveBeenCalledWith("user:product");
   });
 
+  it("keeps an unavailable selected project visible with a repair-or-change reason", async () => {
+    const onSelectProject = vi.fn();
+    renderPage({
+      projects: [
+        { ...projects[0]!, available: false },
+        projects[1]!,
+      ],
+      selectedProjectId: "a",
+      onSelectProject,
+    });
+
+    const projectButton = screen.getByRole("button", { name: "项目：moebius，点击切换" });
+    expect(projectButton).toHaveAttribute("aria-invalid", "true");
+    expect(projectButton).toHaveClass("text-danger");
+    expect(screen.getByText("当前项目不可用，请修复项目目录或改选可用项目")).toBeVisible();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "工作空间：默认工作空间，点击切换" })).toBeDisabled();
+
+    fireEvent.keyDown(projectButton, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "marketing-site" }));
+    expect(onSelectProject).toHaveBeenCalledWith("b");
+  });
+
   it("lists projects and appends the add-project action after a separator", async () => {
     const onSelectProject = vi.fn();
     const onAddProject = vi.fn();

@@ -56,6 +56,7 @@ import {
   type LocalConsoleSessionSummary,
   type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionReferenceText,
+  type LocalConsoleSessionReferenceScope,
   type LocalConsoleSessionWorkspaceSource,
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
@@ -71,6 +72,7 @@ import {
   type LocalConsoleWritePolicy,
   type LocalConsoleTextFragment,
 } from "./types.js";
+import { buildSessionReferenceText } from "./session-reference-text.js";
 import {
   createLocalExecutionRunner,
   type LocalExecutionRunner,
@@ -786,6 +788,7 @@ export class LocalConsoleRuntime {
 
   async sessionReferenceText(input: {
     sessionId: string;
+    scope: LocalConsoleSessionReferenceScope;
     runId?: string | null;
   }): Promise<LocalConsoleSessionReferenceText> {
     const sessions = await this.storeCall(
@@ -796,17 +799,19 @@ export class LocalConsoleRuntime {
       throw new Error(`local console session not found: ${input.sessionId}`);
     }
     const logPath = this.getSessionFactLogPath(input.sessionId);
-    const links = await readExecutionSessionLinks(logPath, input.sessionId);
-    const matchingLink = input.runId == null
-      ? [...links].reverse()[0] ?? null
-      : [...links].reverse().find((link) => link.runId === input.runId) ?? null;
-    const providerText = matchingLink === null
-      ? ""
-      : `；外部执行：${matchingLink.engine === "kimi" ? "Kimi" : "Codex"} ${matchingLink.externalSessionId}`;
-    const text = `Moebius 会话记录：${logPath}${providerText}`;
+    const links = input.scope === "message"
+      ? await readExecutionSessionLinks(logPath, input.sessionId)
+      : [];
+    const text = buildSessionReferenceText({
+      scope: input.scope,
+      logPath,
+      runId: input.runId ?? null,
+      links,
+    });
     return {
       sessionId: input.sessionId,
       runId: input.runId ?? null,
+      scope: input.scope,
       fragment: {
         id: crypto.randomUUID(),
         label: "文本片段",
@@ -849,7 +854,13 @@ export class LocalConsoleRuntime {
   }
 
   getSessionFactLogPath(sessionId: string): string {
-    return this.sessionFactStore().getSessionFactLogPath(sessionId);
+    const store = this.options.store as LocalConsoleStore
+      & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
+    const getSessionFactLogPath = store.getSessionFactLogPath;
+    if (getSessionFactLogPath === undefined) {
+      throw new Error("local console store does not provide the session fact log path");
+    }
+    return getSessionFactLogPath.call(store, sessionId);
   }
 
   async submitUserMessage(
@@ -2934,6 +2945,7 @@ export class LocalConsoleRuntime {
     const sessions = await Promise.all(project.sessions.map(async (session) => {
       const healthySession = await this.withAgentTeamHealth(session);
       const context = resolveSessionWorkspaceContext(session, projectFacts);
+      const analysisRecordAvailable = await fileAvailable(this.getSessionFactLogPath(session.sessionId));
       let branchName = context.workspaceMode === "direct" ? projectFacts.branchName : null;
       if (context.workspaceMode === "worktree") {
         const worktreePath = localSessionWorktreePath(
@@ -2950,6 +2962,7 @@ export class LocalConsoleRuntime {
       }
       return {
         ...healthySession,
+        analysisRecordAvailable,
         workspaceUnavailableReason: context.independentWorkspaceUnavailableReason,
         branchName,
         continuation: resolveLocalSessionContinuation({
@@ -4108,6 +4121,15 @@ async function directoryAvailable(folderPath: string): Promise<boolean> {
     }
     await fs.access(folderPath);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fileAvailable(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
   } catch {
     return false;
   }

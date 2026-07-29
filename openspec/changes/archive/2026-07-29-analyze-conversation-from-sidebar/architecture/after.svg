@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="title desc">
+  <title id="title">对话分析入口变更后架构</title>
+  <desc id="desc">消息菜单与左侧栏对话菜单产生显式范围 intent，renderer 先准备再原子提交组合路由，local-console 按范围生成可信片段，两种入口复用同一草稿。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#5E6AD2"/></marker>
+    <style>
+      .box{fill:#171717;stroke:#4b4b4b;stroke-width:1.5;rx:12}
+      .accent{fill:#1d2035;stroke:#5E6AD2;stroke-width:1.7;rx:12}
+      .label{fill:#f2f2f2;font:600 15px system-ui,sans-serif}
+      .copy{fill:#b7b7b7;font:13px system-ui,sans-serif}
+      .line{stroke:#5E6AD2;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="960" height="560" fill="#101010"/>
+  <text x="40" y="44" class="label">目标：双入口 + 显式片段范围 + 原子组合路由</text>
+  <rect x="35" y="85" width="250" height="145" class="accent"/>
+  <text x="55" y="119" class="label">production menus</text>
+  <text x="55" y="149" class="copy">message intent（精确 run）</text>
+  <text x="55" y="175" class="copy">conversation intent（整段对话）</text>
+  <text x="55" y="201" class="copy">右键 / 按钮 / 键盘同一菜单</text>
+  <rect x="355" y="85" width="250" height="145" class="accent"/>
+  <text x="375" y="119" class="label">desktop prepare / commit</text>
+  <text x="375" y="149" class="copy">准备 source view / fragment</text>
+  <text x="375" y="175" class="copy">准备 draft / host tabs</text>
+  <text x="375" y="201" class="copy">成功后原子提交三栏状态</text>
+  <rect x="675" y="85" width="250" height="145" class="accent"/>
+  <text x="695" y="119" class="label">local-console reference-text</text>
+  <text x="695" y="149" class="copy">scope=message → 精确 / 未建立</text>
+  <text x="695" y="175" class="copy">scope=conversation → 仅记录路径</text>
+  <text x="695" y="201" class="copy">不再猜测最近 provider link</text>
+  <path d="M285 158H355" class="line"/>
+  <path d="M605 158H675" class="line"/>
+  <rect x="170" y="335" width="280" height="135" class="box"/>
+  <text x="190" y="369" class="label">presentation route</text>
+  <text x="190" y="399" class="copy">唯一 selected + source main</text>
+  <text x="190" y="425" class="copy">目标 sidebar chat 在右侧</text>
+  <text x="190" y="451" class="copy">失败保留进入前现场</text>
+  <rect x="510" y="335" width="280" height="135" class="box"/>
+  <text x="530" y="369" class="label">shared sidebar chat draft</text>
+  <text x="530" y="399" class="copy">同一 session-analysis 模板</text>
+  <text x="530" y="425" class="copy">相同候选问题 / 发送 / 后续</text>
+  <text x="530" y="451" class="copy">唯一差异：静态片段文本</text>
+  <path d="M440 230V300H310V335" class="line"/>
+  <path d="M520 230V300H650V335" class="line"/>
+</svg>

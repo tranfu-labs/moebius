@@ -1,4 +1,5 @@
 import { Ellipsis, FileText, Square } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,8 @@ export function RunBlock({
   className,
 }: RunBlockProps): JSX.Element {
   const { t } = useI18n();
+  const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
+  const analysisMenuReturnFocusRef = useRef<HTMLElement | null>(null);
   const machineText = machineTextPlaceholders(t);
   const roleLabel = resolveOperatorMemberName(
     role,
@@ -95,7 +98,27 @@ export function RunBlock({
   );
 
   return (
-    <div className={cn("max-w-[680px]", className)}>
+    <div
+      className={cn("max-w-[680px]", className)}
+      tabIndex={onAnalyzeConversation ? 0 : undefined}
+      onContextMenu={(event) => {
+        if (onAnalyzeConversation) {
+          event.preventDefault();
+          analysisMenuReturnFocusRef.current = event.currentTarget;
+          setAnalysisMenuOpen(true);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (
+          onAnalyzeConversation
+          && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
+        ) {
+          event.preventDefault();
+          analysisMenuReturnFocusRef.current = event.currentTarget;
+          setAnalysisMenuOpen(true);
+        }
+      }}
+    >
       <div className="flex items-center gap-2">
         <RoleTag label={roleLabel} toneKey={role} />
         <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
@@ -132,7 +155,7 @@ export function RunBlock({
             </button>
           ) : null}
           {onAnalyzeConversation ? (
-            <DropdownMenu>
+            <DropdownMenu open={analysisMenuOpen} onOpenChange={setAnalysisMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -143,9 +166,18 @@ export function RunBlock({
                   <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent
+                align="end"
+                onCloseAutoFocus={(event) => {
+                  if (analysisMenuReturnFocusRef.current !== null) {
+                    event.preventDefault();
+                    analysisMenuReturnFocusRef.current.focus();
+                    analysisMenuReturnFocusRef.current = null;
+                  }
+                }}
+              >
                 <DropdownMenuItem onSelect={onAnalyzeConversation}>
-                  {t("console.sessionAnalysis.analyzeConversation")}
+                  {t("console.sessionAnalysis.analyzeMessage")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

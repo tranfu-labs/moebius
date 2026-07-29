@@ -1464,6 +1464,37 @@ describe("OperatorConsole", () => {
     expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
   });
 
+  it("opens the same message analysis action from right click and keyboard context input", async () => {
+    const onAnalyzeConversation = vi.fn();
+    renderConsole({
+      messages: [message({
+        id: 42,
+        speaker: "agent",
+        role: "dev",
+        runId: "run-42",
+        body: "请分析这一条。",
+      })],
+      onAnalyzeConversation,
+    });
+
+    const timelineMessage = screen.getByTestId("timeline-message-42");
+    const analysisTarget = timelineMessage.querySelector<HTMLElement>("[tabindex='0']");
+    expect(analysisTarget).not.toBeNull();
+
+    fireEvent.contextMenu(analysisTarget!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "在右侧栏分析这条消息" }));
+    expect(onAnalyzeConversation).toHaveBeenLastCalledWith({
+      sessionId: "session-a",
+      runId: "run-42",
+      messageId: 42,
+    });
+    await waitFor(() => expect(analysisTarget).toHaveFocus());
+
+    fireEvent.keyDown(analysisTarget!, { key: "ContextMenu" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "在右侧栏分析这条消息" }));
+    expect(onAnalyzeConversation).toHaveBeenCalledTimes(2);
+  });
+
   it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {
     const loadReference = vi.fn().mockResolvedValue({
       available: true,

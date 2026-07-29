@@ -24,10 +24,22 @@ describe("desktop App sidebar conversation regressions", () => {
   let host: HTMLDivElement;
   let sessions: ReturnType<typeof createSession>[];
   let archivedSessionIds: Set<string>;
+  let referenceFailure: boolean;
+  let referenceResponsePromise: Promise<Response> | null;
+  let referenceUrls: URL[];
+  let timelineMessages: Array<Record<string, unknown>>;
+  let projectDirectoryAvailable: boolean;
+  let includeAvailableAlternativeProject: boolean;
 
   beforeEach(() => {
     sessions = [createSession("source-a", "来源会话")];
     archivedSessionIds = new Set();
+    referenceFailure = false;
+    referenceResponsePromise = null;
+    referenceUrls = [];
+    timelineMessages = [];
+    projectDirectoryAvailable = true;
+    includeAvailableAlternativeProject = false;
     window.localStorage.clear();
     window.localStorage.setItem(
       "moebius.console.selection",
@@ -57,7 +69,22 @@ describe("desktop App sidebar conversation regressions", () => {
         ? input
         : new URL(typeof input === "string" ? input : input.url);
       if (url.pathname === "/api/local-console/state") {
-        return Promise.resolve(jsonResponse(createState()));
+        return Promise.resolve(jsonResponse(createState(url.searchParams.get("sessionId") ?? "source-a")));
+      }
+      if (url.pathname.endsWith("/reference-text")) {
+        referenceUrls.push(url);
+        if (referenceResponsePromise !== null) {
+          return referenceResponsePromise;
+        }
+        return Promise.resolve(referenceFailure
+          ? jsonResponse({ error: "reference unavailable" }, 500)
+          : jsonResponse({
+              fragment: {
+                id: `fragment-${referenceUrls.length}`,
+                label: "文本片段",
+                text: `Moebius 会话记录：/tmp/${url.pathname.includes("source-b") ? "source-b" : "source-a"}.jsonl`,
+              },
+            }));
       }
       if (url.pathname === "/api/local-console/sessions" && init?.method === "POST") {
         const created = createSession(
@@ -201,9 +228,268 @@ describe("desktop App sidebar conversation regressions", () => {
     });
   });
 
-  function createState() {
+  it("atomically selects a non-current conversation and opens its conversation-scoped analysis draft", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+
+    await act(async () => root.render(<App />));
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => {
+      targetRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+    const selected = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    );
+    expect(selected.dataset.sessionId).toBe("source-b");
+    expect(host.querySelector('main h1')?.textContent).toBe("来源会话 B");
+    expect(host.querySelector('[aria-label^="文本片段 1："]')?.getAttribute("aria-label"))
+      .toContain("Moebius 会话记录：/tmp/source-b.jsonl");
+    expect(referenceUrls).toHaveLength(1);
+    expect(referenceUrls[0]!.searchParams.get("scope")).toBe("conversation");
+    expect(referenceUrls[0]!.searchParams.has("runId")).toBe(false);
+  });
+
+  it("keeps the current source route while requesting an exact message-scoped fragment", async () => {
+    timelineMessages = [{
+      id: 7,
+      sessionId: "source-a",
+      speaker: "agent",
+      role: "assistant",
+      body: "请分析这一条消息。",
+      status: "displayed",
+      runId: "run-7",
+      runDir: null,
+      error: null,
+      systemEventKind: "other",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:01.000Z",
+    }];
+
+    await act(async () => root.render(<App />));
+    const messageTarget = await findElement<HTMLElement>(
+      '[data-testid="timeline-message-7"] [tabindex="0"]',
+    );
+    await act(async () => {
+      messageTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这条消息");
+    await act(async () => analyze.click());
+
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+    expect(referenceUrls).toHaveLength(1);
+    expect(referenceUrls[0]!.searchParams.get("scope")).toBe("message");
+    expect(referenceUrls[0]!.searchParams.get("runId")).toBe("run-7");
+    expect(host.querySelector('main h1')?.textContent).toBe("来源会话");
+    expect(host.querySelector(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    )?.getAttribute("data-session-id")).toBe("source-a");
+  });
+
+  it("keeps the previous selection and leaves no draft when a non-current reference fails", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    referenceFailure = true;
+
+    await act(async () => root.render(<App />));
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => {
+      targetRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+
+    await waitFor(() => host.textContent?.includes("暂时无法打开分析草稿，原对话未切换，请重试") === true);
+    const selected = host.querySelector<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    );
+    expect(selected?.dataset.sessionId).toBe("source-a");
+    expect(host.querySelector('main h1')?.textContent).toBe("来源会话 A");
+    expect(createSidebarConversationDraftStore(window.localStorage).list()).toEqual([]);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-b").tabs).toEqual([]);
+  });
+
+  it("shows an accessible analysis failure while preserving the global new-conversation page", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    referenceFailure = true;
+
+    await act(async () => root.render(<App />));
+    const newConversation = await findElement<HTMLButtonElement>("button", (element) =>
+      element.getAttribute("aria-label") === "新建对话");
+    await act(async () => newConversation.click());
+    const newConversationPage = await findElement<HTMLElement>('section[aria-label="新建对话"]');
+
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => {
+      targetRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+
+    const notice = await findElement<HTMLElement>('[role="alert"]', (element) =>
+      element.textContent?.trim() === "暂时无法打开分析草稿，原对话未切换，请重试");
+    expect(newConversationPage.contains(notice)).toBe(true);
+    expect(host.querySelector('main h1')?.textContent).toBe("新对话");
+    expect(newConversation.getAttribute("aria-current")).toBe("page");
+    expect(window.localStorage.getItem("moebius.console.selection")).toBe(JSON.stringify({
+      projectId: "local",
+      sessionId: "source-a",
+    }));
+    expect(createSidebarConversationDraftStore(window.localStorage).list()).toEqual([]);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-b").tabs).toEqual([]);
+    expect(host.querySelector('[aria-label^="文本片段 1："]')).toBeNull();
+  });
+
+  it("opens a conversation draft while its source project directory is unavailable", async () => {
+    projectDirectoryAvailable = false;
+    includeAvailableAlternativeProject = true;
+
+    await act(async () => root.render(<App />));
+    const sourceRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+    await act(async () => {
+      sourceRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    expect(analyze.getAttribute("aria-disabled")).not.toBe("true");
+    await act(async () => analyze.click());
+
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+    expect(host.querySelector(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    )?.getAttribute("data-session-id")).toBe("source-a");
+    const analysisDraftRegion = await findElement<HTMLElement>('section[aria-label="新建对话"]');
+    const send = analysisDraftRegion.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]');
+    expect(send?.disabled).toBe(true);
+    const unavailableProject = analysisDraftRegion.querySelector<HTMLButtonElement>('button[aria-invalid="true"]');
+    expect(unavailableProject?.textContent?.trim()).toBe("Moebius");
+    expect(analysisDraftRegion.textContent).toContain("当前项目不可用，请修复项目目录或改选可用项目");
+    expect(referenceUrls[0]?.searchParams.get("scope")).toBe("conversation");
+
+    const suggestion = await findElement<HTMLButtonElement>("button", (element) =>
+      element.textContent?.trim() === "Agent 运行不符合预期？");
+    await act(async () => suggestion.click());
+    expect(send?.disabled).toBe(true);
+
+    await act(async () => {
+      unavailableProject!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    const availableProject = await findElement<HTMLElement>('[role="menuitemcheckbox"]', (element) =>
+      element.textContent?.trim() === "可用项目");
+    await act(async () => availableProject.click());
+
+    await waitFor(() => analysisDraftRegion.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]',
+    )?.disabled === false);
+    expect(host.querySelector('[aria-label^="文本片段 1："]')?.getAttribute("aria-label"))
+      .toContain("Moebius 会话记录：/tmp/source-a.jsonl");
+  });
+
+  it("atomically leaves the global new-conversation page for an unavailable source conversation", async () => {
+    projectDirectoryAvailable = false;
+    includeAvailableAlternativeProject = true;
+
+    await act(async () => root.render(<App />));
+    const newConversation = await findElement<HTMLButtonElement>("button", (element) =>
+      element.getAttribute("aria-label") === "新建对话");
+    await act(async () => newConversation.click());
+    await findElement<HTMLElement>('section[aria-label="新建对话"]');
+
+    const sourceRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+    await act(async () => {
+      sourceRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+    expect(host.querySelector(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    )?.getAttribute("data-session-id")).toBe("source-a");
+    expect(host.querySelector('main h1')?.textContent).toBe("来源会话");
+    const analysisDraftRegion = await findElement<HTMLElement>('section[aria-label="新建对话"]');
+    expect(analysisDraftRegion.querySelector('button[aria-invalid="true"]')?.textContent?.trim())
+      .toBe("Moebius");
+    expect(analysisDraftRegion.textContent).toContain("当前项目不可用，请修复项目目录或改选可用项目");
+  });
+
+  it("keeps the requested conversation across a slow reference response and parent rerender", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    let resolveReferenceResponse: ((response: Response) => void) | null = null;
+    referenceResponsePromise = new Promise<Response>((resolve) => {
+      resolveReferenceResponse = resolve;
+    });
+
+    await act(async () => root.render(<App />));
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => {
+      targetRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+    await waitFor(() => referenceUrls.length === 1);
+
+    await act(async () => root.render(<App />));
+    expect(host.querySelector(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    )?.getAttribute("data-session-id")).toBe("source-a");
+
+    await act(async () => {
+      resolveReferenceResponse?.(jsonResponse({
+        fragment: {
+          id: "fragment-slow-source-b",
+          label: "文本片段",
+          text: "Moebius 会话记录：/tmp/source-b.jsonl",
+        },
+      }));
+      await referenceResponsePromise;
+    });
+
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+    expect(host.querySelector(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    )?.getAttribute("data-session-id")).toBe("source-b");
+    expect(host.querySelector('main h1')?.textContent).toBe("来源会话 B");
+    expect(host.querySelectorAll('[aria-label^="文本片段 "]')).toHaveLength(1);
+    expect(referenceUrls).toHaveLength(1);
+  });
+
+  function createState(selectedSessionId = "source-a") {
     const visibleSessions = sessions.filter((session) => !archivedSessionIds.has(session.sessionId));
-    const source = visibleSessions.find((session) => session.sessionId === "source-a") ?? visibleSessions[0] ?? null;
+    const source = visibleSessions.find((session) => session.sessionId === selectedSessionId)
+      ?? visibleSessions[0]
+      ?? null;
     const project = {
       projectId: "local",
       sourceType: "local-folder",
@@ -217,21 +503,32 @@ describe("desktop App sidebar conversation regressions", () => {
       workspaceUpdatedAt: "2026-07-29T00:00:00.000Z",
       branchName: "feature/sidebar-chat",
       isGitRepository: true,
-      directoryAvailable: true,
-      directoryUnavailableReason: null,
+      directoryAvailable: projectDirectoryAvailable,
+      directoryUnavailableReason: projectDirectoryAvailable ? null : "项目目录不可用",
       sessions: visibleSessions,
       runningCount: 0,
       waitingCount: 0,
       stuckCount: 0,
       errorCount: 0,
     };
+    const alternativeProject = {
+      ...project,
+      projectId: "available",
+      title: "可用项目",
+      folderPath: "/tmp/available",
+      workspaceCwd: "/tmp/available-worktree",
+      worktreePath: "/tmp/available-worktree",
+      directoryAvailable: true,
+      directoryUnavailableReason: null,
+      sessions: [],
+    };
     return {
-      projects: [project],
+      projects: includeAvailableAlternativeProject ? [project, alternativeProject] : [project],
       project,
       selectedProjectId: "local",
       selectedSessionId: source?.sessionId ?? "source-a",
       selectedSession: source,
-      messages: [],
+      messages: timelineMessages,
       childSessions: [],
       activeRun: null,
       workspaceDiff: { available: true, fileCount: 0, reason: null },
@@ -255,6 +552,7 @@ function createSession(sessionId: string, title: string, originSessionId: string
     agentTeamId: "general-assistant",
     agentTeamHealth: "usable",
     agentTeamHealthReason: null,
+    analysisRecordAvailable: true,
     workspaceMode: "worktree",
     workspacePendingMode: null,
     workspaceUnavailableReason: null,

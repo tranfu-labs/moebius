@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -210,12 +211,14 @@ describe("ConversationSidebar", () => {
     expect(screen.getByRole("button", { name: "moebius 项目，已展开" })).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("offers only archive and copy-path actions from a focusable hover menu and reports copy success", async () => {
+  it("offers analysis, copy-path, and archive from one pointer or keyboard menu bound to the same conversation", async () => {
+    const onAnalyzeConversation = vi.fn();
     const onArchiveSession = vi.fn();
     const onCopySessionLogPath = vi.fn(async () => ({ ok: true as const }));
     render(
       <ConversationSidebar
         projects={[project]}
+        onAnalyzeConversation={onAnalyzeConversation}
         onArchiveSession={onArchiveSession}
         onCopySessionLogPath={onCopySessionLogPath}
       />,
@@ -225,11 +228,24 @@ describe("ConversationSidebar", () => {
     fireEvent.focus(menuTrigger);
     expect(menuTrigger).toHaveClass("focus:opacity-100");
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "导出功能重构" }));
-    const archiveItem = await screen.findByRole("menuitem", { name: "归档" });
-    const copyItem = screen.getByRole("menuitem", { name: "复制对话记录路径" });
-    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
-    fireEvent.click(copyItem);
+    const conversationRow = screen.getByRole("button", { name: "导出功能重构" });
+    fireEvent.contextMenu(conversationRow);
+    const analyzeItem = await screen.findByRole("menuitem", { name: "在右侧栏分析这段对话" });
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "在右侧栏分析这段对话",
+      "复制对话记录路径",
+      "归档",
+    ]);
+    fireEvent.click(analyzeItem);
+    expect(onAnalyzeConversation).toHaveBeenCalledWith("idle-refactor", "moebius");
+    await waitFor(() => expect(conversationRow).toHaveFocus());
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "导出功能重构" }), {
+      key: "F10",
+      shiftKey: true,
+    });
+    const keyboardCopyItem = await screen.findByRole("menuitem", { name: "复制对话记录路径" });
+    fireEvent.click(keyboardCopyItem);
 
     expect(onCopySessionLogPath).toHaveBeenCalledWith("idle-refactor", "moebius");
     expect(await screen.findByRole("status")).toHaveTextContent("路径已复制");
@@ -240,6 +256,45 @@ describe("ConversationSidebar", () => {
     fireEvent.click(reopenedArchiveItem);
 
     expect(onArchiveSession).toHaveBeenCalledWith("idle-refactor", "moebius");
+  });
+
+  it("keeps analysis enabled for an unavailable project but disables it for an unavailable record", async () => {
+    const user = userEvent.setup();
+    const onAnalyzeConversation = vi.fn();
+    const unavailableProject: ConversationSidebarProject = {
+      ...project,
+      directoryAvailable: false,
+      sessions: project.sessions.map((session) => session.id === "idle-refactor"
+        ? { ...session, analysisDisabledReason: "对话记录不可用，暂时无法分析" }
+        : session),
+    };
+    const { rerender } = render(
+      <ConversationSidebar
+        projects={[{ ...unavailableProject, sessions: project.sessions }]}
+        onAnalyzeConversation={onAnalyzeConversation}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "导出功能重构" }));
+    const enabledItem = await screen.findByRole("menuitem", { name: "在右侧栏分析这段对话" });
+    expect(enabledItem).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(enabledItem, { key: "Escape" });
+
+    rerender(
+      <ConversationSidebar
+        projects={[unavailableProject]}
+        onAnalyzeConversation={onAnalyzeConversation}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByRole("button", { name: "导出功能重构" }));
+    const disabledItem = await screen.findByRole("menuitem", { name: "在右侧栏分析这段对话" });
+    expect(disabledItem).toHaveAttribute("aria-disabled", "true");
+    expect(disabledItem).toHaveAttribute("aria-description", "对话记录不可用，暂时无法分析");
+    expect(disabledItem).toHaveAttribute("title", "对话记录不可用，暂时无法分析");
+    await user.hover(disabledItem.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("对话记录不可用，暂时无法分析");
+    fireEvent.click(disabledItem);
+    expect(onAnalyzeConversation).not.toHaveBeenCalled();
   });
 
   it("reports a copy failure without rendering an error detail or path", async () => {

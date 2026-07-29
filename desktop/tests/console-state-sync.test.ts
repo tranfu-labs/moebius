@@ -88,6 +88,7 @@ describe("sidebar conversation state sync", () => {
       expect(this).toBe(globalThis);
       const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url);
       if (url.pathname.endsWith("/reference-text")) {
+        expect(url.searchParams.get("scope")).toBe("message");
         expect(url.searchParams.get("runId")).toBe("run/1");
         return Promise.resolve(jsonResponse({
           fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
@@ -108,6 +109,7 @@ describe("sidebar conversation state sync", () => {
     await expect(loadSessionReferenceText({
       apiBase: "http://127.0.0.1:8787/",
       sessionId: "session/1",
+      scope: "message",
       runId: "run/1",
       fetch,
     })).resolves.toEqual({

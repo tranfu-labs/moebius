@@ -161,8 +161,10 @@ describe("RunBlock", () => {
       />,
     );
 
-    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "在侧边栏分析这个对话" }));
+    const runBlock = screen.getByTestId("run-live-output").parentElement!;
+    fireEvent.contextMenu(runBlock);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "在右侧栏分析这条消息" }));
     expect(onAnalyzeConversation).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(runBlock).toHaveFocus());
   });
 });

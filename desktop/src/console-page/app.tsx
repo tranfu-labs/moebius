@@ -610,6 +610,7 @@ export function OperatorConsoleApp({
   const { t } = useI18n();
   const [apiBase, setApiBase] = useState<string | null>(readQueryApiBase());
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
+  const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
   const [initialSelectionPreference] = useState<ConsoleSelection | null>(() =>
     readConsoleSelectionPreference(window.localStorage),
   );
@@ -2008,6 +2009,7 @@ export function OperatorConsoleApp({
       });
     }
 
+    stateRef.current = nextState;
     setState(nextState);
   }, [forgetPersistedSelection, rememberConfirmedSelection]);
 
@@ -2969,17 +2971,53 @@ export function OperatorConsoleApp({
     setRightSidebarTabs(resolvedState);
   }, [agentTeamsState, presentationRoute?.hostSessionId, state?.selectedSession]);
 
-  const analyzeConversation = useCallback(async (input: {
-    sessionId: string;
-    runId: string | null;
-    messageId: number | null;
-  }) => {
+  const analyzeConversation = useCallback(async (input:
+    | {
+        kind: "message";
+        sessionId: string;
+        runId: string | null;
+        messageId: number | null;
+      }
+    | {
+        kind: "conversation";
+        sessionId: string;
+        projectId: string;
+      }
+  ) => {
     if (apiBase === null) return;
-    const sourceSession = state?.projects
+    const currentState = stateRef.current;
+    if (currentState === null) {
+      setClientError(t("console.sessionAnalysis.sourceMissing"));
+      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
+      return;
+    }
+    const sourceSession = currentState.projects
       .flatMap((project) => project.sessions)
       .find((session) => session.sessionId === input.sessionId);
     if (sourceSession === undefined) {
       setClientError(t("console.sessionAnalysis.sourceMissing"));
+      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
+      return;
+    }
+    if (input.kind === "conversation" && sourceSession.analysisRecordAvailable === false) {
+      setClientError(t("console.sessionAnalysis.recordUnavailable"));
+      setSessionAnalysisNotice(t("console.sessionAnalysis.recordUnavailable"));
+      return;
+    }
+    const targetSelection = {
+      projectId: sourceSession.projectId,
+      sessionId: sourceSession.sessionId,
+    };
+    const shouldLoadTarget = input.kind === "conversation"
+      && currentState.selectedSessionId !== input.sessionId;
+    const shouldCommitConversationRoute = input.kind === "conversation"
+      && presentationRouteRef.current?.selectedSessionId !== input.sessionId;
+    const mutation = shouldLoadTarget || shouldCommitConversationRoute
+      ? coordinatorRef.current.beginSelectionMutation("analyze-conversation")
+      : null;
+    if ((shouldLoadTarget || shouldCommitConversationRoute) && mutation === null) {
+      setClientError(t("console.sessionAnalysis.navigationBusy"));
+      setSessionAnalysisNotice(t("console.sessionAnalysis.navigationBusy"));
       return;
     }
     const generalAssistant = agentTeamsState.status === "ready"
@@ -2990,9 +3028,39 @@ export function OperatorConsoleApp({
       const reference = await loadSessionReferenceText({
         apiBase,
         sessionId: input.sessionId,
-        runId: input.runId,
+        scope: input.kind,
+        runId: input.kind === "message" ? input.runId : null,
         fetch,
       });
+      let preparedState: LocalConsoleState | null = null;
+      if (shouldLoadTarget) {
+        const loaded = await refreshConsoleState<LocalConsoleState>({
+          apiBase,
+          selection: targetSelection,
+          coordinator: coordinatorRef.current,
+          fetch,
+          readSelection: (nextState) => ({
+            projectId: nextState.selectedProjectId,
+            sessionId: nextState.selectedSessionId,
+          }),
+          commitState: (nextState) => {
+            preparedState = nextState;
+          },
+          commitSelection: () => undefined,
+          setError: setClientError,
+          mutationOwner: mutation ?? undefined,
+        });
+        if (!loaded || preparedState === null) {
+          setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
+          return;
+        }
+        const preparedSource = (preparedState as LocalConsoleState).projects
+          .flatMap((project) => project.sessions)
+          .find((session) => session.sessionId === input.sessionId);
+        if (preparedSource === undefined) {
+          throw new Error(t("console.sessionAnalysis.sourceMissing"));
+        }
+      }
       const existing = sidebarConversationDraftStoreRef.current.findMergeable({
         hostSessionId: input.sessionId,
         originSessionId: input.sessionId,
@@ -3036,23 +3104,38 @@ export function OperatorConsoleApp({
           sourceKey: conversationDraftTabSourceKey(nextDraft.draftId),
         },
       );
+      if (input.kind === "conversation") {
+        selectionPersistenceEnabledRef.current = true;
+        dispatchNewConversation({ type: "hide" });
+        if (preparedState !== null) {
+          commitConsoleState(preparedState);
+        }
+        commitSelection(targetSelection);
+        rememberConfirmedSelection(targetSelection);
+        commitPresentationRoute(ordinaryPresentationRoute(targetSelection));
+        setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(input.sessionId)));
+      }
       rightSidebarTabsStoreRef.current.write(input.sessionId, nextTabs);
       setRightSidebarTabs(nextTabs);
       setRightSidebarOpen(true);
-      commitPresentationRoute(ordinaryPresentationRoute({
-        projectId: sourceSession.projectId,
-        sessionId: input.sessionId,
-      }));
       setClientError(null);
+      setSessionAnalysisNotice(null);
     } catch (error) {
       setClientError(formatError(error));
+      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
+    } finally {
+      if (mutation !== null) {
+        coordinatorRef.current.endSelectionMutation(mutation);
+      }
     }
   }, [
     agentTeamsState,
     apiBase,
+    commitConsoleState,
+    commitSelection,
     commitPresentationRoute,
+    rememberConfirmedSelection,
     setRightSidebarOpen,
-    state?.projects,
     t,
   ]);
 
@@ -3537,7 +3620,10 @@ export function OperatorConsoleApp({
         onSelectSession={() => undefined}
         onInterrupt={(sessionId, runId) => void interruptSubSession(sessionId, runId)}
         onRetryRun={(sessionId, runId) => void retryRun(sessionId, runId)}
-        onAnalyzeConversation={analyzeConversation}
+        onAnalyzeConversation={(input) => void analyzeConversation({
+          kind: "message",
+          ...input,
+        })}
         onChangeSessionWorkspace={actions.changeSessionWorkspace}
         onChangeSessionTeam={(sessionId, team) => actions.changeSessionTeam(sessionId, {
           ownership: team.ownership,
@@ -3670,9 +3756,9 @@ export function OperatorConsoleApp({
       selectedSessionId={selection.sessionId}
       navigationSessionId={presentationRoute?.selectedSessionId}
       selectedSession={selectedSession}
-      conversationNotice={presentationRoute?.notice === "source-unavailable"
+      conversationNotice={sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
         ? t("console.sessionAnalysis.sourceUnavailable")
-        : null}
+        : null)}
       messages={messagesWithPreviews}
       initialReadingMessageId={selectedSession === null
         ? null
@@ -3717,7 +3803,7 @@ export function OperatorConsoleApp({
         selectedTeamKey: newConversation.teamKey,
         draft: newConversation.draft,
         isSubmitting: newConversation.isSubmitting,
-        error: newConversation.error ?? clientError,
+        error: sessionAnalysisNotice ?? newConversation.error ?? clientError,
       }}
       activeCliInstallations={activeCliInstallations}
       onComposerChange={(value) => {
@@ -3861,7 +3947,18 @@ export function OperatorConsoleApp({
       onRetryRun={(sessionId, runId) => {
         void retryRun(sessionId, runId);
       }}
-      onAnalyzeConversation={analyzeConversation}
+      onAnalyzeSession={(input) => {
+        void analyzeConversation({
+          kind: "conversation",
+          ...input,
+        });
+      }}
+      onAnalyzeConversation={(input) => {
+        void analyzeConversation({
+          kind: "message",
+          ...input,
+        });
+      }}
       onEditAndResend={editAndResend}
       onOpenDiagnostics={openDiagnostics}
       onReplayOnboarding={onReplayOnboarding}

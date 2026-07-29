@@ -16,6 +16,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/ui/tooltip";
 
 export type ConversationSessionStatus = ConversationStatusDot;
 export type ConversationSidebarDataState = "ready" | "loading" | "error";
@@ -24,6 +30,7 @@ export interface ConversationSidebarSession extends StatusDotFacts {
   id: string;
   title: string;
   awaitsHumanReason?: string | null;
+  analysisDisabledReason?: string | null;
   createdAt: string;
   summary?: string;
 }
@@ -58,6 +65,7 @@ export interface ConversationSidebarProps {
   onShowProjectInFolder?: (project: ConversationSidebarProject) => void;
   onRenameProject?: (project: ConversationSidebarProject) => void;
   onRemoveProject?: (project: ConversationSidebarProject) => void;
+  onAnalyzeConversation?: (sessionId: string, projectId: string) => void;
   onArchiveSession?: (sessionId: string, projectId: string) => void;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onReorderProjects?: (projectIds: string[]) => boolean | void | Promise<boolean | void>;
@@ -157,6 +165,7 @@ export function ConversationSidebar({
   onShowProjectInFolder,
   onRenameProject,
   onRemoveProject,
+  onAnalyzeConversation,
   onArchiveSession,
   onCopySessionLogPath,
   onReorderProjects,
@@ -500,6 +509,7 @@ export function ConversationSidebar({
                       session={session}
                       selected={session.id === selectedSessionId}
                       onSelectSession={onSelectSession}
+                      onAnalyzeConversation={onAnalyzeConversation}
                       onArchiveSession={onArchiveSession}
                       onCopySessionLogPath={onCopySessionLogPath}
                       disabled={disabled}
@@ -557,6 +567,7 @@ function SessionRow({
   session,
   selected,
   onSelectSession,
+  onAnalyzeConversation,
   onArchiveSession,
   onCopySessionLogPath,
   disabled
@@ -565,12 +576,14 @@ function SessionRow({
   session: ConversationSidebarSession;
   selected: boolean;
   onSelectSession?: (sessionId: string, projectId: string) => void;
+  onAnalyzeConversation?: (sessionId: string, projectId: string) => void;
   onArchiveSession?: (sessionId: string, projectId: string) => void;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   disabled: boolean;
 }): JSX.Element {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const [copyFeedback, setCopyFeedback] = React.useState<"success" | CopySessionLogPathFailureReason | null>(null);
   const [copyPending, setCopyPending] = React.useState(false);
   React.useEffect(() => {
@@ -585,6 +598,16 @@ function SessionRow({
     .filter((part): part is string => part !== null)
     .join("，");
   const archiveDisabledReason = session.isRunning ? t("console.conversationSidebar.archiveRunning") : null;
+  const hasMenu = onAnalyzeConversation !== undefined
+    || onArchiveSession !== undefined
+    || onCopySessionLogPath !== undefined;
+  const openMenuFromContext = (event: React.SyntheticEvent): void => {
+    if (!disabled && hasMenu) {
+      event.preventDefault();
+      menuReturnFocusRef.current = event.currentTarget as HTMLElement;
+      setMenuOpen(true);
+    }
+  };
   return (
     <div className="group relative flex h-8 min-w-0 items-center" data-testid="conversation-sidebar-session-row">
       <button
@@ -605,10 +628,10 @@ function SessionRow({
             onSelectSession?.(session.id, projectId);
           }
         }}
-        onContextMenu={(event) => {
-          if (!disabled && (onArchiveSession !== undefined || onCopySessionLogPath !== undefined)) {
-            event.preventDefault();
-            setMenuOpen(true);
+        onContextMenu={openMenuFromContext}
+        onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            openMenuFromContext(event);
           }
         }}
       >
@@ -617,7 +640,7 @@ function SessionRow({
         </span>
         <StatusIcon status={status} />
       </button>
-      {onArchiveSession !== undefined || onCopySessionLogPath !== undefined ? (
+      {hasMenu ? (
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
@@ -633,16 +656,24 @@ function SessionRow({
               <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" aria-label={t("console.conversationSidebar.conversationActions", { title: session.title })} className="min-w-32">
-            {onArchiveSession !== undefined ? (
-              <DropdownMenuItem
-                disabled={archiveDisabledReason !== null}
-                aria-description={archiveDisabledReason ?? undefined}
-                title={archiveDisabledReason ?? t("console.conversationSidebar.archive")}
-                onSelect={() => onArchiveSession(session.id, projectId)}
-              >
-                {t("console.conversationSidebar.archive")}
-              </DropdownMenuItem>
+          <DropdownMenuContent
+            align="end"
+            aria-label={t("console.conversationSidebar.conversationActions", { title: session.title })}
+            className="min-w-32"
+            onCloseAutoFocus={(event) => {
+              if (menuReturnFocusRef.current !== null) {
+                event.preventDefault();
+                menuReturnFocusRef.current.focus();
+                menuReturnFocusRef.current = null;
+              }
+            }}
+          >
+            {onAnalyzeConversation !== undefined ? (
+              <SessionAnalysisMenuItem
+                disabledReason={session.analysisDisabledReason ?? null}
+                label={t("console.sessionAnalysis.analyzeConversation")}
+                onSelect={() => onAnalyzeConversation(session.id, projectId)}
+              />
             ) : null}
             {onCopySessionLogPath !== undefined ? (
               <DropdownMenuItem
@@ -660,6 +691,16 @@ function SessionRow({
                 {t("console.conversationSidebar.copyPath")}
               </DropdownMenuItem>
             ) : null}
+            {onArchiveSession !== undefined ? (
+              <DropdownMenuItem
+                disabled={archiveDisabledReason !== null}
+                aria-description={archiveDisabledReason ?? undefined}
+                title={archiveDisabledReason ?? t("console.conversationSidebar.archive")}
+                onSelect={() => onArchiveSession(session.id, projectId)}
+              >
+                {t("console.conversationSidebar.archive")}
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -675,6 +716,44 @@ function SessionRow({
         </span>
       ) : null}
     </div>
+  );
+}
+
+function SessionAnalysisMenuItem({
+  disabledReason,
+  label,
+  onSelect,
+}: {
+  disabledReason: string | null;
+  label: string;
+  onSelect: () => void;
+}): JSX.Element {
+  const item = (
+    <DropdownMenuItem
+      disabled={disabledReason !== null}
+      aria-description={disabledReason ?? undefined}
+      title={disabledReason ?? label}
+      onSelect={onSelect}
+    >
+      {label}
+    </DropdownMenuItem>
+  );
+  if (disabledReason === null) {
+    return item;
+  }
+  return (
+    <TooltipProvider delayDuration={200} skipDelayDuration={100}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="block cursor-not-allowed">
+            {item}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          {disabledReason}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

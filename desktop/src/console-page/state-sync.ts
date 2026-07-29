@@ -50,7 +50,12 @@ export class ProcessInvocationRequestCoordinator {
   }
 }
 
-export type SelectionMutationKind = "create-session" | "open-project" | "rebind-session" | "archive-session";
+export type SelectionMutationKind =
+  | "create-session"
+  | "open-project"
+  | "rebind-session"
+  | "archive-session"
+  | "analyze-conversation";
 
 export interface SelectionMutationToken {
   readonly id: number;
@@ -695,6 +700,7 @@ export async function createSidebarConversationSession(options: {
 export async function loadSessionReferenceText(options: {
   apiBase: string;
   sessionId: string;
+  scope: "message" | "conversation";
   runId?: string | null;
   fetch: FetchLike;
 }): Promise<{ fragment: { id: string; label: string; text: string } }> {
@@ -702,6 +708,7 @@ export async function loadSessionReferenceText(options: {
     options.apiBase,
     `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/reference-text`,
   );
+  url.searchParams.set("scope", options.scope);
   if (options.runId != null) url.searchParams.set("runId", options.runId);
   const response = await invokeBrowserFetch(options.fetch, url);
   const body = await response.json() as { fragment?: { id: string; label: string; text: string }; error?: string };

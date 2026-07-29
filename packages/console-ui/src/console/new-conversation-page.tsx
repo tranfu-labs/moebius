@@ -110,10 +110,11 @@ export function NewConversationPage({
 }: NewConversationPageProps): JSX.Element {
   const { t } = useI18n();
   const [confirmIndependentWorkspace, setConfirmIndependentWorkspace] = useState(false);
-  const selectedProject = projects.find((project) => project.projectId === selectedProjectId && project.available);
+  const selectedProject = projects.find((project) => project.projectId === selectedProjectId);
   const selectedTeam = teams.find((team) => team.teamKey === selectedTeamKey);
   const hasAvailableProjects = projects.some((project) => project.available);
   const canSubmit = selectedProject !== undefined
+    && selectedProject.available
     && selectedTeam !== undefined
     && selectedTeam.available !== false
     && (draft.trim() !== "" || readyComposerAttachmentIds(attachments).length > 0)
@@ -124,11 +125,13 @@ export function NewConversationPage({
     ? hasAvailableProjects
       ? t("console.newConversation.selectProject")
       : t("console.newConversation.addProjectFirst")
-    : selectedTeamKey === null || selectedTeam === undefined
-      ? t("console.newConversation.selectTeam")
-      : selectedTeam.available === false
-        ? t("console.newConversation.teamUnavailable")
-      : undefined;
+    : !selectedProject.available
+      ? t("console.newConversation.projectUnavailable")
+      : selectedTeamKey === null || selectedTeam === undefined
+        ? t("console.newConversation.selectTeam")
+        : selectedTeam.available === false
+          ? t("console.newConversation.teamUnavailable")
+        : undefined;
 
   return (
     <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label={t("console.newConversation.label")}>
@@ -205,6 +208,7 @@ export function NewConversationPage({
                 <ProjectMenu
                   projects={projects}
                   selectedProject={selectedProject}
+                  unavailableReason={selectedProject?.available === false ? disabledReason : undefined}
                   disabled={isSubmitting || isProjectMutationPending}
                   onSelectProject={onSelectProject}
                   onAddProject={onAddProject}
@@ -214,7 +218,7 @@ export function NewConversationPage({
                     <WorkspaceMenu
                       mode={selectedWorkspaceMode}
                       independentAvailable={selectedProject.independentWorkspaceAvailable}
-                      disabled={isSubmitting || isProjectMutationPending}
+                      disabled={!selectedProject.available || isSubmitting || isProjectMutationPending}
                       onSelectDirect={() => onSelectWorkspace("direct")}
                       onSelectIndependent={() => setConfirmIndependentWorkspace(true)}
                     />
@@ -343,12 +347,14 @@ function WorkspaceMenu({
 function ProjectMenu({
   projects,
   selectedProject,
+  unavailableReason,
   disabled,
   onSelectProject,
   onAddProject,
 }: {
   projects: NewConversationProjectOption[];
   selectedProject?: NewConversationProjectOption;
+  unavailableReason?: string;
   disabled: boolean;
   onSelectProject(projectId: string): void;
   onAddProject(): void;
@@ -359,10 +365,16 @@ function ProjectMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
+          className={cn(
+            "inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50",
+            selectedProject?.available === false && "bg-danger/10 text-danger hover:bg-danger/15 hover:text-danger",
+          )}
           aria-label={selectedProject
             ? t("console.composerContext.projectSwitch", { project: selectedProject.title })
             : t("console.newConversation.projectUnselected")}
+          aria-invalid={selectedProject?.available === false ? "true" : undefined}
+          aria-description={unavailableReason}
+          title={unavailableReason}
           disabled={disabled}
         >
           <FolderOpen className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
