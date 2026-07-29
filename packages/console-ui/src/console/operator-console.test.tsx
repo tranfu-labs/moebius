@@ -358,6 +358,71 @@ describe("OperatorConsole", () => {
     expect(onSubmitNewConversation).not.toHaveBeenCalled();
   });
 
+  it("keeps CLI preparation copy absent across parent rerenders and locale changes", () => {
+    const profile = (cli: "codex" | "kimi") => ({
+      binding: {
+        source: "explicit" as const,
+        profile: {
+          cli,
+          model: cli === "codex" ? "gpt-5.6-sol" : "kimi-code/k3",
+          effort: "high",
+        },
+      },
+      recommendation: null,
+      effectiveProfile: {
+        cli,
+        model: cli === "codex" ? "gpt-5.6-sol" : "kimi-code/k3",
+        effort: "high",
+      },
+    });
+    const mixedTeam = {
+      ...agentTeam,
+      members: [
+        { ...agentTeam.members[0], executionProfile: profile("codex") },
+        {
+          slug: "qa",
+          displayName: "测试",
+          description: "质量保证",
+          executionProfile: profile("kimi"),
+        },
+      ],
+      memberOrder: ["manager", "qa"],
+    };
+    const props = baseProps({
+      agentTeamsState: { status: "ready", teams: [mixedTeam] },
+      newConversation: {
+        selectedProjectId: project.projectId,
+        selectedWorkspaceMode: "direct",
+        selectedTeamKey: mixedTeam.teamKey,
+        draft: "目标",
+        isSubmitting: false,
+        error: null,
+      },
+      activeLocale: "zh-CN",
+    });
+    const view = render(<OperatorConsole {...props} />);
+
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    expect(screen.queryByText(/名成员仍需|Codex 准备|Kimi 准备|可在 Agent 团队页调整/u))
+      .not.toBeInTheDocument();
+
+    view.rerender(<OperatorConsole
+      {...props}
+      activeLocale="en"
+      agentTeamsState={{
+        status: "ready",
+        teams: [{
+          ...mixedTeam,
+          members: [...mixedTeam.members].reverse(),
+        }],
+      }}
+    />);
+
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    expect(screen.queryByText(/members still need|Codex setup|Kimi setup|adjust this on the Agent teams page/iu))
+      .not.toBeInTheDocument();
+  });
+
   it("falls back to the first built-in team for first use, deletion, drafts, and repair states", () => {
     const unavailableLastUsed = {
       ...agentTeam,

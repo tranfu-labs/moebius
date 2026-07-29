@@ -684,9 +684,6 @@ export function OperatorConsoleApp({
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const [agentTeamsState, setAgentTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
-  const [onboardingCliReadiness, setOnboardingCliReadiness] = useState<
-    { codex: boolean; kimi: boolean } | undefined
-  >(undefined);
   const [activeCliInstallations, setActiveCliInstallations] = useState<OnboardingCli[]>([]);
   const cliInstallRevisionRef = useRef<Record<OnboardingCli, number>>({ codex: -1, kimi: -1 });
   const cliInstallStatusRef = useRef<Record<OnboardingCli, OnboardingCliInstallSnapshot["status"]>>({
@@ -892,26 +889,8 @@ export function OperatorConsoleApp({
     let cancelled = false;
     let pollTimer: number | undefined;
 
-    const applyReadiness = (next: OnboardingCliReadinessState) => {
-      if (!cancelled) {
-        setOnboardingCliReadiness({
-          codex: next.codex.status === "ready",
-          kimi: next.kimi.status === "ready",
-        });
-      }
-    };
-
-    const readReadiness = async () => {
-      const api = window.moebius;
-      const next = await api?.getOnboardingCliReadinessState?.().catch(() => undefined);
-      if (next !== undefined) {
-        applyReadiness(next);
-      }
-    };
-
     const recheckAfterInstall = async (cli: OnboardingCli) => {
       await window.moebius?.checkOnboardingCliReadiness?.(cli).catch(() => undefined);
-      await readReadiness();
     };
 
     const applyInstallSnapshot = (snapshot: OnboardingCliInstallSnapshot): boolean => {
@@ -941,14 +920,11 @@ export function OperatorConsoleApp({
         (cli) => cliInstallStatusRef.current[cli] === "running",
       );
       if (active.length > 0) {
-        await readReadiness();
         pollTimer = window.setTimeout(() => void pollInstallations(), 750);
-      } else {
-        await readReadiness();
       }
     };
 
-    void readReadiness().then(pollInstallations);
+    void pollInstallations();
     const unsubscribeInstall = window.moebius?.onOnboardingCliInstallSnapshot?.((snapshot) => {
       if (cancelled || !applyInstallSnapshot(snapshot)) {
         return;
@@ -3449,7 +3425,6 @@ export function OperatorConsoleApp({
             textFragments: draft.textFragments,
             promptSuggestions,
           }}
-          cliReadiness={onboardingCliReadiness}
           onComposerChange={() => undefined}
           onComposerFilesAdded={managedSidebarConversationAttachments.addFiles}
           onComposerAttachmentRemove={managedSidebarConversationAttachments.remove}
@@ -3600,7 +3575,6 @@ export function OperatorConsoleApp({
     managedSidebarConversationAttachments.attachments,
     managedSidebarConversationAttachments.remove,
     managedSidebarConversationAttachments.retry,
-    onboardingCliReadiness,
     project,
     projects,
     readFileReference,
@@ -3745,7 +3719,6 @@ export function OperatorConsoleApp({
         isSubmitting: newConversation.isSubmitting,
         error: newConversation.error ?? clientError,
       }}
-      cliReadiness={onboardingCliReadiness}
       activeCliInstallations={activeCliInstallations}
       onComposerChange={(value) => {
         conversationDraftStoreRef.current.write(sessionDraftKey(selectionRef.current.sessionId), value);

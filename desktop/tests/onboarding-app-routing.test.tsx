@@ -88,9 +88,19 @@ describe("desktop onboarding routing", () => {
     expect(window.location.hash).toBe("#/");
   });
 
-  it("does not probe either CLI when the normal console mounts, becomes shell-ready, or opens teams", async () => {
+  it.each([
+    "checking",
+    "ready",
+    "missing",
+    "needs-login",
+    "unavailable",
+  ] as const)("does not consume %s readiness when the normal console mounts or navigates", async (readinessStatus) => {
     const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") =>
-      readinessSnapshot(cli, cli === "codex" ? "ready" : "missing", 1));
+      readinessSnapshot(cli, readinessStatus, 1));
+    const getOnboardingCliReadinessState = vi.fn(async () => ({
+      codex: readinessSnapshot("codex", readinessStatus, 1),
+      kimi: readinessSnapshot("kimi", readinessStatus, 1),
+    }));
     let statusListener: Parameters<NonNullable<DesktopApi["onStatus"]>>[0] | null = null;
     installApi({
       getOnboardingStatus: async () => ({
@@ -98,10 +108,7 @@ describe("desktop onboarding routing", () => {
         completedAt: "2026-07-24T00:00:00.000Z",
       }),
       checkOnboardingCliReadiness,
-      getOnboardingCliReadinessState: async () => ({
-        codex: readinessSnapshot("codex", "ready", 1),
-        kimi: readinessSnapshot("kimi", "missing", 1),
-      }),
+      getOnboardingCliReadinessState,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
         kimi: installSnapshot("kimi", "idle", 0),
@@ -123,9 +130,47 @@ describe("desktop onboarding routing", () => {
     }));
     await clickButton("Agent 团队");
     await findElement('[data-testid="agent-team-list"]');
+    await clickButton("新建对话");
+    await findElement('[aria-label="新建对话"]');
 
     expect(checkOnboardingCliReadiness).not.toHaveBeenCalled();
+    expect(getOnboardingCliReadinessState).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/名成员仍需|Codex 准备|Kimi 准备|可在 Agent 团队页调整/u);
   });
+
+  it.each(["deferred", "rejected"] as const)(
+    "does not start a %s readiness IPC request in the normal console",
+    async (mode) => {
+      const readiness = deferred<Awaited<ReturnType<
+        NonNullable<DesktopApi["getOnboardingCliReadinessState"]>
+      >>>();
+      const getOnboardingCliReadinessState = vi.fn(
+        () => mode === "deferred"
+          ? readiness.promise
+          : Promise.reject(new Error("readiness unavailable")),
+      );
+      installApi({
+        getOnboardingStatus: async () => ({
+          completed: true,
+          completedAt: "2026-07-24T00:00:00.000Z",
+        }),
+        getOnboardingCliReadinessState,
+        getOnboardingCliInstallState: async () => ({
+          codex: installSnapshot("codex", "idle", 0),
+          kimi: installSnapshot("kimi", "idle", 0),
+        }),
+      });
+
+      await act(async () => root.render(<App />));
+      await findElement('[data-testid="operator-sidebar"]');
+      await clickButton("新建对话");
+      await findElement('[aria-label="新建对话"]');
+
+      expect(getOnboardingCliReadinessState).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    },
+  );
 
   it("replaces the displayed version after the existing shell PATH recheck", async () => {
     const versions = ["codex-cli 0.144.1", "codex-cli 0.145.0"];
@@ -592,14 +637,15 @@ describe("desktop onboarding routing", () => {
       codex: readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1),
       kimi: readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
     }));
+    const checkOnboardingCliReadiness = vi.fn(async (cli: "codex" | "kimi") => cli === "codex"
+      ? readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1)
+      : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"));
     installApi({
       getOnboardingStatus: async () => ({
         completed: true,
         completedAt: "2026-07-24T00:00:00.000Z",
       }),
-      checkOnboardingCliReadiness: async (cli) => cli === "codex"
-        ? readinessSnapshot("codex", codexReady ? "ready" : "missing", codexReady ? 2 : 1)
-        : readinessSnapshot("kimi", "ready", 1, "kimi 1.2.3"),
+      checkOnboardingCliReadiness,
       getOnboardingCliReadinessState,
       getOnboardingCliInstallState: async () => ({
         codex: installSnapshot("codex", "idle", 0),
@@ -633,14 +679,18 @@ describe("desktop onboarding routing", () => {
     await waitFor(() => document.body.textContent?.includes("正在安装 Codex…") === true);
 
     const readinessCallsBeforeCompletion = getOnboardingCliReadinessState.mock.calls.length;
+    const checksBeforeCompletion = checkOnboardingCliReadiness.mock.calls.length;
     codexReady = true;
     await act(async () => {
       const succeeded = installSnapshot("codex", "succeeded", 2);
       for (const listener of installListeners) listener(succeeded);
     });
-    await waitFor(() =>
-      getOnboardingCliReadinessState.mock.calls.length > readinessCallsBeforeCompletion);
+    await waitFor(() => checkOnboardingCliReadiness.mock.calls.length > checksBeforeCompletion);
     await waitFor(() => !document.body.textContent?.includes("正在安装 Codex…"));
+    expect(getOnboardingCliReadinessState).toHaveBeenCalledTimes(readinessCallsBeforeCompletion);
+    expect(checkOnboardingCliReadiness.mock.calls.at(-1)?.[0]).toBe("codex");
+    expect(checkOnboardingCliReadiness.mock.calls.slice(checksBeforeCompletion)).toEqual([["codex"]]);
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
   });
 
   it("opens the existing AI team builder service inside step 2", async () => {
@@ -826,14 +876,21 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function readinessSnapshot(
   cli: "codex" | "kimi",
-  status: "ready" | "missing",
+  status: "checking" | "ready" | "missing" | "needs-login" | "unavailable",
   revision: number,
   version: string | null = null,
 ) {
+  const code = {
+    checking: "checking",
+    ready: "ready",
+    missing: "cli-missing",
+    "needs-login": "authentication-required",
+    unavailable: "capability-unavailable",
+  } as const;
   return {
     cli,
     status,
-    code: status === "ready" ? "ready" as const : "cli-missing" as const,
+    code: code[status],
     revision,
     version,
     checkedAt: "2026-07-26T00:00:00.000Z",

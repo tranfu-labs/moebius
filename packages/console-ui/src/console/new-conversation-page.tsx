@@ -1,4 +1,4 @@
-import { ChevronDown, CircleAlert, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
+import { ChevronDown, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -12,7 +12,7 @@ import {
   type ComposerAttachment,
 } from "@/console/structured-attachments";
 import type { ComposerTextFragment } from "@/console/text-fragment-list";
-import { useI18n, type Translate } from "@/i18n";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -61,7 +61,6 @@ export interface NewConversationPageProps {
   selectedProjectId: string | null;
   selectedWorkspaceMode: "direct" | "worktree";
   selectedTeamKey: string | null;
-  cliReadiness?: { codex: boolean; kimi: boolean };
   draft: string;
   attachments?: readonly ComposerAttachment[];
   textFragments?: readonly ComposerTextFragment[];
@@ -89,7 +88,6 @@ export function NewConversationPage({
   selectedProjectId,
   selectedWorkspaceMode,
   selectedTeamKey,
-  cliReadiness,
   draft,
   attachments = [],
   textFragments = [],
@@ -114,7 +112,6 @@ export function NewConversationPage({
   const [confirmIndependentWorkspace, setConfirmIndependentWorkspace] = useState(false);
   const selectedProject = projects.find((project) => project.projectId === selectedProjectId && project.available);
   const selectedTeam = teams.find((team) => team.teamKey === selectedTeamKey);
-  const compatibility = getNewConversationTeamCompatibility(selectedTeam, cliReadiness, t);
   const hasAvailableProjects = projects.some((project) => project.available);
   const canSubmit = selectedProject !== undefined
     && selectedTeam !== undefined
@@ -252,15 +249,6 @@ export function NewConversationPage({
               </div>
             )}
           />
-          {compatibility.affectedCount > 0 ? (
-            <div
-              className="mt-3 flex items-start gap-2 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub"
-              data-testid="new-conversation-team-compatibility"
-            >
-              <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <p>{t("console.newConversation.compatibilityHint", { copy: compatibility.copy })}</p>
-            </div>
-          ) : null}
           {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
         </div>
       </div>
@@ -295,30 +283,6 @@ export function NewConversationPage({
       ) : null}
     </section>
   );
-}
-
-function getNewConversationTeamCompatibility(
-  team: NewConversationTeamOption | undefined,
-  readiness: NewConversationPageProps["cliReadiness"],
-  t: Translate,
-): { affectedCount: number; copy: string } {
-  if (team === undefined || readiness === undefined) {
-    return { affectedCount: 0, copy: "" };
-  }
-  const missing = team.members.flatMap((member): Array<"codex" | "kimi"> => {
-    const cli = member.executionProfile?.effectiveProfile.cli;
-    return (cli === "codex" || cli === "kimi") && !readiness[cli] ? [cli] : [];
-  });
-  const labels = [...new Set(missing)].map((cli) => cli === "codex" ? "Codex" : "Kimi");
-  return {
-    affectedCount: missing.length,
-    copy: missing.length === 0
-      ? ""
-      : t("console.newConversation.membersNeedCli", {
-          count: missing.length,
-          clis: labels.join(" / "),
-        }),
-  };
 }
 
 function WorkspaceMenu({

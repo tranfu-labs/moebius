@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { I18nProvider } from "@/i18n";
+
 import { NewConversationPage, type NewConversationPageProps } from "./new-conversation-page";
 
 describe("NewConversationPage", () => {
@@ -181,7 +183,7 @@ describe("NewConversationPage", () => {
     });
   });
 
-  it("keeps the selected team's CLI compatibility warning until readiness recovers", () => {
+  it("never renders the removed CLI preparation concept in Chinese or English", () => {
     const teams: NewConversationPageProps["teams"] = [{
       teamKey: "system:development",
       label: "开发团队",
@@ -200,22 +202,31 @@ describe("NewConversationPage", () => {
         },
       ],
     }];
-    const { rerender } = renderPage({
+    const props = {
+      ...baseProps(),
       teams,
-      cliReadiness: { codex: true, kimi: false },
-    });
-
-    expect(screen.getByTestId("new-conversation-team-compatibility")).toHaveTextContent(
-      "其中 1 名成员仍需完成 Kimi 准备",
+    };
+    const { rerender } = render(
+      <I18nProvider locale="zh-CN">
+        <NewConversationPage {...props} />
+      </I18nProvider>,
     );
+
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    expect(screen.queryByText(/名成员仍需|Codex 准备|Kimi 准备|可在 Agent 团队页调整/u))
+      .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeEnabled();
 
-    rerender(<NewConversationPage
-      {...baseProps()}
-      teams={teams}
-      cliReadiness={{ codex: true, kimi: true }}
-    />);
-    expect(screen.queryByTestId("new-conversation-team-compatibility")).not.toBeInTheDocument();
+    rerender(
+      <I18nProvider locale="en">
+        <NewConversationPage {...props} />
+      </I18nProvider>,
+    );
+
+    expect(document.querySelector('[data-testid*="compatibility"]')).toBeNull();
+    expect(screen.queryByText(/members still need|Codex setup|Kimi setup|adjust this on the Agent teams page/iu))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
   });
 
   it("keeps an unavailable preselected team visible but blocks sending until repair or an explicit change", () => {

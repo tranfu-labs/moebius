@@ -391,7 +391,6 @@ export interface OperatorConsoleProps {
   agentTeamDetailState?: AgentTeamDetailState | null;
   agentTeamBuilder?: AgentTeamBuilderController;
   newConversation?: OperatorNewConversationState | null;
-  cliReadiness?: { codex: boolean; kimi: boolean };
   activeCliInstallations?: Array<"codex" | "kimi">;
   activeLocale?: Locale;
   pendingLocale?: Locale | null;
@@ -567,7 +566,6 @@ export function OperatorConsole({
   agentTeamDetailState,
   agentTeamBuilder,
   newConversation = null,
-  cliReadiness,
   activeCliInstallations = [],
   activeLocale = "zh-CN",
   pendingLocale = null,
@@ -1538,7 +1536,6 @@ export function OperatorConsole({
             selectedProjectId={newConversation.selectedProjectId}
             selectedWorkspaceMode={newConversation.selectedWorkspaceMode}
             selectedTeamKey={newConversation.selectedTeamKey}
-            cliReadiness={cliReadiness}
             draft={newConversation.draft}
             attachments={composerAttachments}
             textFragments={newConversation.textFragments}
