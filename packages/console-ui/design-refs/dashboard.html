@@ -78,6 +78,10 @@
             <span class="name">文案打磨</span>
             <span class="dot dot-run" title="正在运行" aria-label="正在运行"></span>
           </button>
+          <button class="conv-row" id="conv-operator" data-od-id="conv-operator" title="操作员详情 · 窗口化分析">
+            <span class="sel-mark" aria-hidden="true">»</span>
+            <span class="name">操作员详情</span>
+          </button>
           <button class="conv-row" data-od-id="conv-req" title="需求梳理">
             <span class="sel-mark" aria-hidden="true">»</span>
             <span class="name">需求梳理</span>
@@ -150,12 +154,21 @@
       </div>
 
       <div class="msg" data-od-id="msg-manager">
-        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="msg-time">10:22</span></div>
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 47 秒</span></div>
         <div class="msg-body">这个改动只碰落地页，<span class="mention" data-od-id="mention-dev">@开发</span> 来做。</div>
+        <div class="msg-tools" data-od-id="msg-tools-manager">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 10:22</span>
+        </div>
       </div>
 
       <div class="msg" data-od-id="msg-dev-step">
-        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="msg-time">10:23</span></div>
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">已进行 42 秒</span></div>
         <div class="msg-body">运行 <span class="mono-cmd">pnpm test -- landing</span></div>
         <div class="msg-tools" data-od-id="msg-tools">
           <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
@@ -164,12 +177,12 @@
           <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
             <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
           </button>
-          <span class="dur">已进行 42 秒</span>
+          <span class="dur">完成于 10:24</span>
         </div>
       </div>
 
       <div class="msg">
-        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="msg-time">10:24</span></div>
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 18 秒</span></div>
         <div class="msg-body">这个目标要动三个模块，我拆成三段并行推进。</div>
         <div class="subcard" data-od-id="subcard">
           <button class="subcard-row" data-subtask="落地页文案" data-od-id="subtask-copy" title="在右侧栏打开「落地页文案」">
@@ -191,10 +204,19 @@
             <span class="pill pill-green"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>已结束</span>
           </button>
         </div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 10:24</span>
+        </div>
       </div>
 
       <div class="msg">
-        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="msg-time">10:26</span></div>
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 2 分 14 秒</span></div>
         <div class="msg-body">已补上空状态验收语句。</div>
         <div class="result-card" data-od-id="result-card">
           <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
@@ -208,7 +230,7 @@
           <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
             <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
           </button>
-          <span class="dur">耗时 2 分 14 秒</span>
+          <span class="dur">完成于 10:26</span>
         </div>
       </div>
 
@@ -262,7 +284,7 @@
       </div>
 
       <div class="msg" data-od-id="msg-copy-step">
-        <div class="msg-who"><span class="role-tag tone-2">文</span>文案 <span class="msg-time">11:03</span></div>
+        <div class="msg-who"><span class="role-tag tone-2">文</span>文案 <span class="dur">已进行 18 秒</span></div>
         <div class="msg-body">正在逐句打磨第二版，先收紧标题…</div>
         <div class="msg-tools" data-od-id="msg-tools">
           <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
@@ -271,9 +293,290 @@
           <button class="icon-btn js-full-output" data-member="文案" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
             <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
           </button>
-          <span class="dur">已进行 18 秒</span>
         </div>
       </div>
+    </div>
+
+    <!-- 操作员详情·窗口化分析:真实会话复刻(2026-07-23 开发团队),数据来自 sessions 实录,全文照录 -->
+    <div class="timeline" id="timeline-operator" data-od-id="timeline-operator" hidden>
+      <h1 class="tl-title" title="操作员详情 · 窗口化分析"><span>操作员详情 · 窗口化分析</span></h1>
+
+      <div class="msg is-user" data-od-id="msg-op-01">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:05</span></div>
+        <div class="msg-body">如果说在 /skills 页面切换“按人”，然后选中了特定时间范围，比如今天的时候，那么点进去就应该是一个“今天”范围的个人统计页面，你觉得呢</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-02">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 23 秒</span></div>
+        <div class="msg-body">我赞成，而且这应该是明确的上下文继承规则。<br><br>在 <span class="mono-cmd">/skills</span> 切到“按人”后，用户看到的是特定时间窗下的个人排行；点击某个人，进入 <span class="mono-cmd">/operator/:name</span> 时应继续携带：<br><br>- 时间窗：<span class="mono-cmd">w=today</span>，或完整的 <span class="mono-cmd">w=custom&amp;wstart=...&amp;wend=...</span><br>- 当前有效的观察范围：<span class="mono-cmd">rt</span>、<span class="mono-cmd">src</span><br><br>不应继承 Skill 搜索词、Top N、隐藏零使用等只影响总览展示的条件。<br><br>个人页标题也应明确显示“今天”，所有统计、趋势和记录都按今天计算。否则用户会误以为是在查看刚才那一行的明细，实际却跳回默认时间范围，属于明显的上下文断裂。<br><br>返回 <span class="mono-cmd">/skills</span> 时也应保留原来的“按人”和筛选状态。这个方向没有需要额外拍板的分叉。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:05</span>
+        </div>
+      </div>
+
+      <div class="msg is-user" data-od-id="msg-op-03">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:07</span></div>
+        <div class="msg-body">好，我们继续聊操作员的详情如何设计，<span class="mono-cmd">使用Skill排行</span>需要显示这个吗？还是显示扇形图？我拿不准</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-04">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 26 秒</span></div>
+        <div class="msg-body">我目前更倾向保留「使用 Skill 排行」，不要用扇形图替代。<br><br>先确认一个关键目标：进入操作员详情后，你最希望管理者先回答哪句话——“他主要用了哪些 Skill”，还是“他的使用是否过度集中在少数 Skill”？<br><br>我的判断是前者更核心，因此主视图适合排行条形图：<br><br>- 能直接读出 Skill 名、使用次数、会话数等精确值。<br>- Skill 数量多时仍然可读，也方便整行点击进入 Skill 详情。<br>- 扇形图类别超过 5～6 个后，颜色、图例和小扇区会迅速失去辨识度。<br>- 和 <span class="mono-cmd">/skills</span> 按 Skill、按人的排行语法更一致。<br><br>扇形图只有在强调“使用结构/集中度”时更合适，例如显示 Top 5 + 其他，并回答“前三项占了多少”。我的建议是：当前先用横向排行；如果确实要突出使用集中度，再把环形图做成排行旁边的辅助视图，而不是替代排行。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:08</span>
+        </div>
+      </div>
+
+      <div class="msg is-user" data-od-id="msg-op-05">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:10</span></div>
+        <div class="msg-body">主要是如果是显示今天进去的时候，“每日使用 · 按 Skill”只有一个柱子。现在目前显示所有范围大的时候“使用 Skill 排行”显示所有的排行太长了</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-06">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 30 秒</span></div>
+        <div class="msg-body">对，这两个问题其实应该一起解决：图表随时间窗自适应，同时限制排行长度。<br><br>我的建议是：<br><br>- <span class="mono-cmd">今天</span>：不显示“每日使用 · 按 Skill”的单柱趋势，改成“今日 Skill 使用构成”环形图，采用 <span class="mono-cmd">Top 5 + 其他</span>；旁边保留紧凑排行，显示精确次数和会话数。<br>- <span class="mono-cmd">7d / 14d / 30d / 90d</span>：显示按天趋势；Skill 排行只展示 Top 8 或 Top 10，不把全部 Skill 铺成长页面。<br>- 完整名单放到下方明细表，或提供“查看全部 N 个”，承担查账和下钻，不让主分析区承担完整枚举。<br><br>这样环形图不是替代排行，而是专门解决单日没有趋势的问题；排行则始终回答“主要用了什么”。<br><br>现在真正影响设计的只有一点：操作员详情更偏“管理概览”，还是必须在同页承担“完整使用清单”？我倾向前者，完整记录放下方明细区。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:11</span>
+        </div>
+      </div>
+
+      <div class="msg is-user" data-od-id="msg-op-07">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:11</span></div>
+        <div class="msg-body">好，是不是可以给我绘制线框图对齐一下</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-08">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 55 秒</span></div>
+        <div class="msg-body">可以。推进到 <span class="mono-cmd">方案已定(plan-written)</span> 后停下，只对齐线框，不写代码。<br><br>还差一个会影响版式的选择：完整 Skill 清单放在操作员详情页下方的明细表里，还是通过“查看全部”进入独立视图？我推荐前者，查账与下钻更连贯。<br><br>除此之外还有要补充的吗？</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:12</span>
+        </div>
+      </div>
+
+      <div class="msg is-user" data-od-id="msg-op-09">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:13</span></div>
+        <div class="msg-body">没有</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-10">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 41 秒</span></div>
+        <div class="msg-body">方向已确认：完整 Skill 清单保留在操作员详情页下方。请为 <span class="mono-cmd">/operator/:name</span> 绘制字符线框，并按 OpenSpec 流程落方案，重点覆盖：<br><br>- 继承 <span class="mono-cmd">w/rt/src</span> 筛选，标题明确当前时间窗。<br>- <span class="mono-cmd">today</span>：今日 Skill 使用构成环形图（Top 5 + 其他）＋紧凑排行。<br>- 多日窗口：每日按 Skill 趋势＋Top 8/10 排行。<br>- 下方完整 Skill 明细表支持下钻。<br>- 同步对应 wireframe 页面与页面流转。<br>- 方案必须附逐条、可核查的验收清单。<br><br>只推进到 <span class="mono-cmd">plan-written</span>，不要实现代码。<span class="mention">@开发</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:14</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-11">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 8 分 6 秒</span></div>
+        <div class="msg-body">方案已完成并落盘，本轮未修改实现代码。<br><br>- proposal.md<br>- design.md<br>- wireframes.md<br>- spec delta<br>- tasks 与 A1–A13 验收清单<br><br>方案明确了：<br><br>- 详情统计只继承 <span class="mono-cmd">w/wstart/wend/rt/src</span>，返回上下文独立保存。<br>- 单日采用 Top 5 + 其他环形图及紧凑排行。<br>- 多日采用 Top 8 + 其他趋势及紧凑排行。<br>- 当前窗口完整 Skill 清单下沉展示并支持下钻。<br>- 空筛选范围返回 200 空态，未知操作员才返回 404。<br>- 覆盖桌面、平板、手机线框及 SKILLS 下钻/返回流转。<br><br>自审结果：字符线框显示列全部通过 120/64/31 列校验，无尾随空格；当前工作区只有该 change 新增文件。环境未提供 OpenSpec CLI，因此未执行 CLI schema validation；代码测试留到实施阶段。<br><br>请 <span class="mention">@开发经理</span> 按 A1–A13 验收清单核验，确认后再放行实现。<br><br>stage: plan-written</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:22</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-12">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 2 分 47 秒</span></div>
+        <div class="msg-body">验收清单 A1–A13 齐全，覆盖了上下文继承、单日/多日图形、完整清单、空态、响应式和验证命令。但暂不放行实现，请先逐条回应并修订方案：<br><br>1. 线框示例违反 A2：顶部筛选为 <span class="mono-cmd">[Codex] [own]</span>，Runtime 却显示 Claude Code，完整明细还出现 <span class="mono-cmd">meta</span>。请统一示例数据，确保所有区块体现同一 <span class="mono-cmd">rt/src</span> 交集。<br>2. <span class="mono-cmd">design.md</span> 称“保留已有兼容字段”，同时把无参数接口及 <span class="mono-cmd">daily/skills/runtime/records</span> 改为默认 7d，兼容含义不清。请明确旧字段哪些保留原语义、哪些属于契约变更，并补一条可执行的无参数兼容测试。<br>3. 设计要求紧凑排行展示来源，但桌面线框未体现。请统一设计、线框和 A5/A6 的验收口径。<br>4. 修改后逐条说明 A1–A13 对应的测试或浏览器证据；仍只推进 <span class="mono-cmd">方案已定(plan-written)</span>，不要写代码。<br><br><span class="mention">@开发</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:25</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-13">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 10 分 50 秒</span></div>
+        <div class="msg-body">方案已按 A1–A13 修订完成，本轮未修改实现代码。<br><br>关键修订：<br><br>- 线框数据统一为 <span class="mono-cmd">Codex + own</span>，所有区块保持同一 <span class="mono-cmd">rt/src</span> 交集，不再出现 Claude Code、meta 等冲突。<br>- 单日和多日紧凑排行均明确显示来源，桌面、平板、手机口径一致。<br>- API 改为加法兼容：旧顶层 <span class="mono-cmd">metrics/daily/skills/runtime/records</span> 保持原语义；新增 <span class="mono-cmd">analysis</span> 承载窗口化统计，新页面只消费 <span class="mono-cmd">analysis</span>。<br>- 补充无参数兼容测试：逐项验证旧字段不变，同时验证 <span class="mono-cmd">analysis</span> 默认 7d。<br>- A1–A13 均已映射到具体自动化测试、Network、截图、键盘或 DOM 证据。<br><br>方案文件：<br><br>- design.md<br>- spec delta<br>- wireframes.md<br>- tasks 与 A1–A13 证据矩阵<br><br>方案级验证通过：5 个 change 文件齐全、无尾随空格；线框宽度严格为 120/64/31 列，最高分别为 31/38、26/43、33/34 行；示例仅含 Codex + own。环境仍未提供 OpenSpec CLI，因此未做 CLI schema validation；代码测试留待实施阶段。<br><br>请 <span class="mention">@开发经理</span> 复核后决定是否放行实现。<br><br>stage: plan-written</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:36</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-14">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 47 秒</span></div>
+        <div class="msg-body">线框与方案已对齐，A1–A13 验收清单及证据矩阵完整，复核通过。<br><br>关键确认：<br><br>- <span class="mono-cmd">today</span>：Top 5 + 其他环形图，并保留紧凑排行。<br>- 多日：Top 8 + 其他趋势，并限制排行长度。<br>- 完整 Skill 清单放在详情页下方。<br>- <span class="mono-cmd">w/wstart/wend/rt/src</span> 全页面统一生效。<br>- 旧 API 字段保持原语义，新统计由 <span class="mono-cmd">analysis</span> 承载。<br>- 桌面、平板、手机线框示例数据已统一为 <span class="mono-cmd">Codex + own</span>。<br><br>可查看：<br><br>- 字符线框<br>- 设计方案<br>- A1–A13 验收清单<br><br>当前停在 <span class="mono-cmd">方案已定(plan-written)</span>，未修改实现代码。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:37</span>
+        </div>
+      </div>
+
+      <div class="msg-gap" data-od-id="msg-gap-1">16 分钟后</div>
+
+      <div class="msg is-user" data-od-id="msg-op-15">
+        <div class="msg-who"><span class="role-tag rt-you">你</span><span class="msg-time">16:53</span></div>
+        <div class="msg-body">开始实现</div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-16">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 43 秒</span></div>
+        <div class="msg-body">进入实施：严格按现有 change 完成代码与测试，对照 A1–A13 逐条提交证据；暂不归档或提交，先交回我做符合度核验，返工后再决定是否交独立复核。<span class="mention">@开发</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 16:54</span>
+        </div>
+      </div>
+
+      <div class="msg-gap" data-od-id="msg-gap-2">26 分钟后</div>
+
+      <div class="msg" data-od-id="msg-op-17">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 26 分 22 秒</span></div>
+        <div class="msg-body">实现完成，A1–A13 已逐项验证并记录；未归档、未提交。<br><br>关键改动：<br><br>- <span class="mono-cmd">/api/operator/{name}</span> 新增窗口化 <span class="mono-cmd">analysis</span>，支持 <span class="mono-cmd">w/wstart/wend/rt/src</span>，旧字段保持原语义：board.py<br>- 新增安全的下钻/返回 query 与纯分析模型：operatorDetailQuery.ts、operatorDetailAnalysis.ts<br>- 操作员详情实现今日环形 Top 5、多日趋势 Top 8、完整 Skill 清单、空态与响应式布局：OperatorDetail.tsx<br>- 完整证据已回填：tasks.md<br><br>验证结果：<br><br>- 后端全量：406 passed<br>- 服务端覆盖率：96%<br>- 前端单测：84 passed<br>- TypeScript 生产构建、Python 编译、<span class="mono-cmd">git diff --check</span>：通过<br>- 浏览器：1440/768/375、today/30d/custom、交集筛选、返回恢复、空态/404、中英文及深浅主题均完成走查，无根级横滚<br>- 全量 ESLint 仍有仓库既有 10 errors / 1 warning；本次新增详情文件定向 ESLint 为 0<br><br>请 <span class="mention">@开发经理</span> 进行符合度核验和后续归档裁决。<br><br>stage: code-verified</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:20</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-18">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 3 分 30 秒</span></div>
+        <div class="msg-body">符合度核验暂不通过，A5 存在未覆盖边界：<br><br>- 当今天只有 1 个 Skill 时，环形扇区跨度为完整 <span class="mono-cmd">2π</span>，当前 SVG 单弧路径起终点重合，可能只显示灰色底环。<br>- 现有测试只覆盖 7 个 Skill，未覆盖单 Skill 构成。<br><br>请修复完整圆环渲染，补充单 Skill 路径/组件测试，并重新执行前端单测与构建。其余 A1–A4、A6–A13 暂未发现偏差；仍不要归档或提交。<span class="mention">@开发</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:23</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-19">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 4 分 22 秒</span></div>
+        <div class="msg-body">A5 返工已完成，单 Skill 时可正确渲染完整圆环；未归档、未提交。<br><br>关键改动：<br><br>- skillsAttribution.ts：完整 <span class="mono-cmd">2π</span> 扇区改用内外缘各两段 arc 绘制。<br>- OperatorSkillAnalysis.tsx：修正 SVG 可访问标题输出。<br>- 组件测试：覆盖单 Skill 完整环、<span class="mono-cmd">100%</span> 图例和标题。<br>- 路径测试：验证完整环带的四段 arc。<br>- 验收记录：已回填 A5/A13 证据。<br><br>验证结果：<br><br>- 前端单测：86 passed<br>- 生产构建：通过<br>- 返工文件定向 ESLint：0 问题<br>- <span class="mono-cmd">git diff --check</span>：通过<br><br>请 <span class="mention">@开发经理</span> 继续符合度核验。<br><br>stage: code-verified</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:28</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-20">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 36 秒</span></div>
+        <div class="msg-body">A5 返工证据完整，进入独立复核。重点验证：<br><br>- 单 Skill 时完整圆环真实可见，不退化为灰色底环。<br>- 多 Skill、Top 5 + 其他未被返工影响。<br>- SVG 标题、图例和键盘/读屏语义正确。<br>- 重跑前端单测、生产构建，并抽查 A1–A13 是否仍符合既定方案。<br>- 检查是否存在清单外改动或回归。<br><br>暂不归档、不提交；复核后交回最终裁决。<span class="mention">@测试</span></div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:28</span>
+        </div>
+      </div>
+
+      <div class="msg" data-od-id="msg-op-21">
+        <div class="msg-who"><span class="role-tag tone-3">测</span>测试 <span class="dur">耗时 9 分 27 秒</span></div>
+        <div class="msg-body">结论：独立复核暂不通过。单 Skill 完整圆环修复有效，但发现 1 个上下文误导缺陷。<br><br>阻塞项：<br><br>- 历史单日 custom 窗口被误标为“今天”。<br>  - 复现：打开 <span class="mono-cmd">w=custom&amp;wstart=1783958400&amp;wend=1784044799</span>，实际数据日期为 <span class="mono-cmd">2026-07-14</span>。<br>  - 页面标题显示“自定义周期”，但图表标题与 SVG 读屏名称显示“今日 Skill 使用构成”；英文显示 “Skill usage composition today”。<br>  - 原因：OperatorDetail.tsx 对所有单日模式复用固定文案，i18n.ts 将其写死为“今日/Today”，并传给 OperatorSkillAnalysis.tsx 的可访问名称。<br>  - 影响：管理者和读屏用户会把历史单日统计误认为今天，违反窗口上下文一致性。<br>  - 建议：改成中性的“Skill 使用构成”，或附加真实 <span class="mono-cmd">windowLabel</span>；补历史一天 custom 的中英文组件测试与浏览器用例。<br><br>其余重点复核通过：<br><br>- 单 Skill 圆环真实可见：彩色路径完整覆盖灰色底环，内外缘各两段 arc，图例为 <span class="mono-cmd">100%</span>。<br>- 多 Skill保持 Top 5 + 其他；紧凑榜 5 行、完整清单 7 行。<br>- 30 天保持 Top 8 + 其他；紧凑榜 8 行、完整清单 10 行；仅图表盒横滚。<br>- SVG 在可访问树中为命名图像，扇区标题和值可读；排行为原生按钮。<br>- 完整清单 Enter 下钻成功；最近记录无链接、按钮或 <span class="mono-cmd">tabIndex</span>。<br>- <span class="mono-cmd">/skills</span> 下钻只保留 <span class="mono-cmd">w/rt/src</span> 为统计条件；返回后恢复 <span class="mono-cmd">q/topn/hz/view</span>。<br>- 1440 和 375 视口均无根级横滚；浅色、深色及中英文已抽查。<br>- 未发现清单外代码改动。<br><br>自动化结果：<br><br>- 前端单测：86/86<br>- 前端生产构建：通过<br>- 后端定向测试：54/54<br>- 本次文件 ESLint、<span class="mono-cmd">git diff --check</span>：通过<br><br>未独立重跑全量 406 项与覆盖率；未使用真实屏幕阅读器发声，仅检查浏览器可访问树。<br><br>请 <span class="mention">@开发</span> 修复单日 custom 的时间文案并补回归测试后，再交回复核。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="测试" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:38</span>
+        </div>
+      </div>
+
+      <div class="msg-gap" data-od-id="msg-gap-3">16 分钟后</div>
+
+      <div class="msg" data-od-id="msg-op-22">
+        <div class="msg-who"><span class="role-tag tone-4">开</span>开发 <span class="dur">耗时 16 分 7 秒</span></div>
+        <div class="msg-body">历史单日 custom 误标“今天”的缺陷已修复，等待独立复核。<br><br>关键改动：<br><br>- 构成标题统一由窗口标签生成：operatorDetailAnalysis.ts<br>- 可见标题与 SVG 可访问名称共用同一文案：OperatorDetail.tsx<br>- 中英文改为中性文案：i18n.ts<br>- 补充历史单日 custom 中英文组件回归：OperatorSkillAnalysis.test.tsx<br>- 验收证据已回填：tasks.md<br><br>验证结果：<br><br>- 前端单测：87/87<br>- 生产构建：通过<br>- 本次文件定向 ESLint：0 问题<br>- <span class="mono-cmd">git diff --check</span>：通过<br>- 真实浏览器：历史 <span class="mono-cmd">2026-06-12</span> 单日窗口中英文标题、SVG 名称一致，旧“今日/Today”文案不存在，无根级横滚<br>- 多 Skill、Top 5/8、完整圆环等逻辑未改动<br>- 未归档、未提交<br><br>请 <span class="mention">@开发经理</span> 继续独立复核与最终裁决。<br><br>stage: code-verified</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 17:54</span>
+        </div>
+      </div>
+
+      <div class="msg-gap" data-od-id="msg-gap-4">21 分钟后</div>
+
+      <div class="msg" data-od-id="msg-op-23">
+        <div class="msg-who"><span class="role-tag tone-1">经</span>开发经理 <span class="dur">耗时 21 分 29 秒</span></div>
+        <div class="msg-body">实现、独立复核、OpenSpec 归档与提交均已完成，工作区干净。<br><br>- Commit：<span class="mono-cmd">8ed426a16f1d8703fc4d37990ddc908dfade9bfb</span><br>- 后端：406 passed，覆盖率 96%<br>- 前端：87 passed，生产构建通过<br>- 浏览器复核：单日/多日、Top 5/8、圆环、下钻返回及三档响应式均通过<br>- 归档方案<br>- 正式线框<br><br>当前 <span class="mono-cmd">main</span> 领先 <span class="mono-cmd">origin/main</span> 一个提交。是否继续创建分支并向 <span class="mono-cmd">dev</span> 提 PR？我推荐提 PR；也可以先保留本地提交。</div>
+        <div class="msg-tools" data-od-id="msg-tools">
+          <button class="icon-btn js-copy" data-od-id="copy-msg" title="复制这条消息" aria-label="复制这条消息">
+            <svg class="icon" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+          <button class="icon-btn js-full-output" data-member="开发经理" data-od-id="full-output" title="在右侧栏查看这一步的完整输出" aria-label="查看完整输出">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+          </button>
+          <span class="dur">完成于 18:15</span>
+        </div>
+      </div>
+
     </div>
 
     <footer class="composer" data-od-id="composer">
@@ -609,7 +912,7 @@
   var drafts = {};
   try { drafts = JSON.parse(store.get(LS.drafts) || '{}'); } catch (e) { drafts = {}; }
   var savedConv = store.get(LS.conv);
-  var currentConv = (savedConv === 'new' || savedConv === 'copy' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
+  var currentConv = (savedConv === 'new' || savedConv === 'copy' || savedConv === 'operator' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
   var composerText = $('#composer-text');
   var sendBtn = $('#send-btn');
 
@@ -619,11 +922,12 @@
     currentConv = name;
     store.set(LS.conv, name);
     var blocked = !recovered[name] && BLOCKED_CONVS[name] ? BLOCKED_CONVS[name] : null;
-    var isNew = name === 'new', isCopy = name === 'copy';
-    var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), reason = $('#composer-reason');
-    if (tl) tl.hidden = isNew || isCopy;
+    var isNew = name === 'new', isCopy = name === 'copy', isOp = name === 'operator';
+    var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), to = $('#timeline-operator'), reason = $('#composer-reason');
+    if (tl) tl.hidden = isNew || isCopy || isOp;
     if (tn) tn.hidden = !isNew;
     if (tc) tc.hidden = !isCopy;
+    if (to) to.hidden = !isOp;
     if (reason) reason.hidden = !isNew || !!newCtx.project;
     sendBtn.disabled = isNew && !newCtx.project;
     composerText.placeholder = isNew ? '描述你的目标…' : '说点什么，或 @ 一个成员…';
@@ -728,6 +1032,7 @@
   on('#nav-new', 'click', function () { setConversation('new'); });
   on('#conv-landing', 'click', function () { setConversation('landing'); });
   on('#conv-copy', 'click', function () { setConversation('copy'); });
+  on('#conv-operator', 'click', function () { setConversation('operator'); });
   on('#conv-broken-project', 'click', function () { setConversation('broken-project'); });
   on('#conv-broken-team-deleted', 'click', function () { setConversation('broken-team-deleted'); });
   on('#conv-broken-team-repair', 'click', function () { setConversation('broken-team-repair'); });
@@ -1211,7 +1516,9 @@
      悬浮态:展开为 git-graph 式车道图——「你」为主干竖线贯穿全程,
      每个成员的线从主干分叉、竖直穿过自己的圆点、再并回主干
      (参照 git log --graph 的点线语言),点击节点平滑滚动定位并短暂高亮。
-     原型简化:不做键盘/滚轮浏览,省略行逻辑保留但演示数据不会触发。 */
+     原型简化:不做键盘/滚轮浏览,省略行逻辑保留但演示数据不会触发。
+     窄容器(<1200px)防碰撞:轨道从悬浮覆盖切换为左右布局——时间线/输入区
+     让出左槽(收起 56px,展开 20+面板宽),见 app.css 的 @container conv 块。 */
 
   var RELAY_ROW_H = 20, RELAY_MIN_CAP = 7, RELAY_SPINE_X = 14;
   var TONE_HEX = ['#E8B4C8', '#F0C9A0', '#BCD9F7', '#B8E3D2', '#D9C2F0', '#E8D1A8'];
@@ -1219,6 +1526,11 @@
   var relayRO = null;
   /* 评审/导出钩子:?relay=open 或 #relay=open 强制保持展开态(截图/评审用) */
   var relayForceOpen = /relay=open/.test(location.search) || /relay=open/.test(location.hash);
+  /* URL 深链显式要求的展开态:dev 状态切换(含 #state=x 深链)只清除交互
+     设置的强制展开,不清除 URL 带来的——否则 ?relay=open#state=xxx 截图链
+     会在应用深链状态时被静默收起(setConversation 的 replaceState 已抹掉
+     入站 query,事后无法再从 URL 恢复) */
+  var relayForceOpenFromUrl = relayForceOpen;
 
   function relayColor(actorKey, kind) {
     if (kind === 'user') return 'var(--fg)';
@@ -1242,12 +1554,17 @@
       }
       var bodyEl = el.querySelector('.msg-body');
       var timeEl = el.querySelector('.msg-time');
+      var time = timeEl ? timeEl.textContent.trim() : '';
+      if (!time) {
+        var doneEl = el.querySelector('.msg-tools .dur');
+        time = doneEl ? doneEl.textContent.trim().replace(/^完成于\s*/, '') : '';
+      }
       out.push({
         id: 'm' + i, el: el,
         kind: isUser ? 'user' : 'agent',
         actorKey: name, actorName: name,
         body: bodyEl ? bodyEl.textContent.trim() : '',
-        time: timeEl ? timeEl.textContent.trim() : ''
+        time: time
       });
     });
     return out;
@@ -1307,7 +1624,7 @@
   function refreshRelay() {
     var vp = $('#relay-viewport');
     if (!vp) return;
-    var tl = currentConv === 'new' ? null : (currentConv === 'copy' ? $('#timeline-copy') : $('#timeline-landing'));
+    var tl = currentConv === 'new' ? null : (currentConv === 'copy' ? $('#timeline-copy') : (currentConv === 'operator' ? $('#timeline-operator') : $('#timeline-landing')));
     relay.events = relayCollect(tl);
     relay.currentId = relay.events.length ? relay.events[relay.events.length - 1].id : null;
     clearTimeout(relay.closeTimer);
@@ -1335,6 +1652,10 @@
        变量,CSS transition 在变量切换时自动补间,无需重建 DOM。 */
     var railUnits = rows.length * RELAY_ROW_H;
     vp.style.setProperty('--relay-w', expandedW + 'px');
+    /* 镜像到 .conv:窄容器「左右布局」时,.timeline/.composer 的左让位要读
+       面板宽——CSS 变量只向下继承,不跨兄弟,所以抬到共同祖先上 */
+    var convEl = vp.closest('.conv');
+    if (convEl) convEl.style.setProperty('--relay-w', expandedW + 'px');
 
     var h = '<nav class="relay-nav" aria-label="当前会话消息目录" style="top:max(0px,calc((100% - ' + rows.length + ' * var(--relay-row-h)) / 2));height:calc(' + rows.length + ' * var(--relay-row-h))">';
     h += '<svg class="relay-svg" width="' + expandedW + '" height="' + railUnits + '" viewBox="0 0 ' + expandedW + ' ' + railUnits + '" preserveAspectRatio="none" style="width:' + expandedW + 'px;height:calc(' + rows.length + ' * var(--relay-row-h))" aria-hidden="true">';
@@ -1500,6 +1821,7 @@
   var DEV_STATES = [
     { id: 'landing', label: '对话·落地页验收' },
     { id: 'copy', label: '对话·文案打磨' },
+    { id: 'operator', label: '对话·操作员详情' },
     { id: 'relay-open', label: '会话目录展开' },
     { id: 'new', label: '新对话' },
     { id: 'broken-project', label: '阻断·项目不可用' },
@@ -1517,7 +1839,7 @@
       setConversation(currentConv === 'new' ? 'landing' : currentConv);
       return;
     }
-    relayForceOpen = false;
+    relayForceOpen = relayForceOpenFromUrl;
     setConversation(id);
   }
 

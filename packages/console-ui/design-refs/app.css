@@ -332,10 +332,29 @@ ul { list-style: none; }
 }
 .msg:hover .msg-time { opacity: 1; }
 .msg-body { font-size: 14px; color: var(--fg); padding-left: 32px; }
-/* 你的消息:整条右对齐,头像贴在右边界 */
+/* 成员长消息限宽:正文 ≤68ch(约 39 个汉字/行),短消息不受影响;你的气泡另有 75% 上限 */
+.msg:not(.is-user) .msg-body { max-width: 68ch; }
+/* 时间空隙分隔:相邻消息间隔 ≥15 分钟时标出真实会话节奏,与 hover 才显示的精确时间互补 */
+.msg-gap {
+  display: flex; align-items: center; gap: 12px;
+  padding-left: 32px;
+  font-size: 11px; color: var(--faint);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+.msg-gap::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+/* 你的消息:整条右对齐,头像贴在右边界;正文带浅底气泡,长消息不读毛边、和成员消息一眼可分 */
 .msg.is-user { align-items: flex-end; }
 .msg.is-user .msg-who { flex-direction: row-reverse; }
-.msg.is-user .msg-body { padding-left: 0; padding-right: 32px; text-align: right; }
+.msg.is-user .msg-body {
+  padding: 8px 12px;
+  max-width: 75%;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: left;
+}
 .mono-cmd {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -354,9 +373,10 @@ ul { list-style: none; }
 .msg-tools .icon-btn { width: 24px; height: 24px; border-radius: 6px; }
 .msg-tools .icon-btn .icon { width: 14px; height: 14px; }
 .msg-tools .icon-btn.copied { color: var(--success); }
-.msg-tools .dur {
+/* 耗时/完成时间小字:可放在名字行(.msg-who)或功能区(.msg-tools),两处样式一致 */
+.dur {
   margin-left: 6px;
-  font-size: 11.5px; color: var(--faint);
+  font-size: 11.5px; font-weight: 400; color: var(--faint);
   font-feature-settings: "tnum";
 }
 
@@ -997,8 +1017,26 @@ button.chip:hover { background: var(--hover); }
   100% { background: transparent; }
 }
 
+/* 窄容器防碰撞:目录轨从「悬浮覆盖」切换为「左右布局」——时间线与输入区
+   让出左侧槽位(收起 56px = 12 内缩 + 44 视口;展开 20 + 面板宽),轨道任何
+   状态下都不压消息。容器够宽(≥1200px)时保持覆盖式:840px 内容列居中后
+   左留白 ≥180px,展开面板(≤7 泳道 ≈154px)落在留白里,天然无碰撞。
+   展开/收起时 padding-left 随面板宽度过渡,内容平滑让位而非跳变。 */
+@container conv (max-width: 1199px) {
+  #relay-viewport:not([hidden]) ~ .timeline,
+  #relay-viewport:not([hidden]) ~ .composer {
+    padding-left: 56px;
+    transition: padding-left .2s ease;
+  }
+  #relay-viewport.is-expanded ~ .timeline,
+  #relay-viewport.is-expanded ~ .composer {
+    padding-left: calc(20px + var(--relay-w, 148px));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .relay-nav, .relay-row, .relay-band, .relay-tick, .relay-node, .relay-svg, .relay-path, .relay-omission { transition: none; }
+  .timeline, .composer { transition: none; }
   .msg.relay-flash { animation: none; }
 }
 

@@ -53,7 +53,7 @@
   }
   .vl-l{ transform:translateX(-560px); }
   .vl-r{ transform:translateX(560px); }
-  .hero,.trust,.features,.manifesto,.cta,.footer{ position:relative; z-index:1; }
+  .hero,.features,.manifesto,.cta,.footer{ position:relative; z-index:1; }
 
   /* ============ Liquid glass ============ */
   .liquid-glass{
@@ -165,7 +165,7 @@
     font-size:18px; line-height:1.6; color:var(--muted);
   }
   .hero-ctas{ margin-top:36px; display:flex; justify-content:center; gap:12px; }
-  .hero-shot{ margin:72px auto 0; max-width:1200px; padding:0 32px; }
+  .hero-shot{ margin:72px auto 0; max-width:1184px; padding:0 32px; }
 
   @keyframes riseIn{ from{ opacity:0; transform:translateY(18px); } to{ opacity:1; transform:none; } }
   @media (prefers-reduced-motion: no-preference){
@@ -178,42 +178,22 @@
 
   /* macOS window chrome around the hero screenshot */
   .hero-shot-frame{
-    border:1px solid var(--border); border-bottom:0;
-    border-radius:18px 18px 0 0; overflow:hidden;
+    position:relative;
+    border:1px solid var(--border);
+    border-radius:18px; overflow:hidden;
     background:rgba(255,255,255,0.02);
     backdrop-filter:blur(8px);
   }
   .hero-shot-bar{
-    display:flex; align-items:center; height:40px; padding:0 16px;
-    background:rgba(0,0,0,0.4); backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--border);
-    position:relative;
+    position:absolute; top:2.25%; left:18px; z-index:2;
+    display:flex; align-items:center;
+    transform:translateY(-50%);
   }
   .hero-shot-bar .tl{ flex:none; width:12px; height:12px; border-radius:50%; margin-right:8px; }
   .hero-shot-bar .tl:nth-child(1){ background:#ff5f57; }
   .hero-shot-bar .tl:nth-child(2){ background:#febc2e; }
   .hero-shot-bar .tl:nth-child(3){ background:#28c840; }
-  .hero-shot-title{
-    position:absolute; left:50%; transform:translateX(-50%);
-    font-size:12px; font-weight:500; color:var(--muted); letter-spacing:0.01em;
-  }
   .hero-shot-frame img{ display:block; width:100%; height:auto; }
-
-  /* ============ Trust strip ============ */
-  .trust{ padding:88px 0 0; text-align:center; }
-  .trust p{
-    font-size:12px; font-weight:500; letter-spacing:0.08em; text-transform:uppercase;
-    color:var(--faint);
-  }
-  .trust-row{
-    margin-top:28px; display:flex; justify-content:center; align-items:center;
-    gap:56px; flex-wrap:wrap;
-  }
-  .trust-row span{
-    font:600 17px var(--font-display); letter-spacing:-0.01em; color:var(--faint);
-    display:inline-flex; align-items:center; gap:9px;
-  }
-  .trust-row svg{ opacity:.55; }
 
   /* ============ Sticky narrative features ============ */
   .features{ padding:120px 0 0; }
@@ -224,7 +204,7 @@
   }
   .fs-grid > .f-visual{
     grid-column:1; grid-row:1 / -1;
-    position:sticky; top:15vh; height:70vh;
+    position:sticky; top:18vh; height:auto; max-height:72vh;
     align-self:start;
     display:flex; flex-direction:column;
     opacity:0; transform:scale(.985) translateY(10px);
@@ -333,45 +313,109 @@
   .mk-load{ margin-top:12px; height:4px; border-radius:2px; background:var(--active); overflow:hidden; }
   .mk-load i{ display:block; height:100%; border-radius:2px; }
 
-  /* --- mock: diff --- */
-  .mk-diff{ font:12.5px/1.7 var(--font-mono); }
-  .mk-diff-file{
-    display:flex; align-items:center; gap:8px;
-    padding:8px 12px; border:1px solid var(--border); border-radius:10px 10px 0 0;
-    background:var(--raised); color:var(--fg); font-size:12.5px;
+  /* --- mock: team picker --- */
+  .mk-req{
+    display:flex; gap:10px; align-items:baseline;
+    padding:10px 13px; margin-bottom:14px;
+    border:1px dashed var(--border); border-radius:12px;
+    font-size:13px; color:var(--fg);
   }
-  .mk-diff-file .plus{ margin-left:auto; color:var(--success); }
-  .mk-diff-file .minus{ color:var(--danger); }
-  .mk-diff-lines{ border:1px solid var(--border); border-top:0; border-radius:0 0 10px 10px; overflow:hidden; }
-  .mk-ln{ display:flex; }
-  .mk-ln .no{
-    flex:none; width:38px; text-align:right; padding-right:12px;
-    color:var(--faint); user-select:none;
+  .mk-req-label{ flex:none; font:500 11px var(--font-mono); letter-spacing:0.08em; color:var(--faint); }
+  .mk-agent.sel{ border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: decision --- */
+  .mk-decision{
+    margin-top:10px; border:1px solid var(--border); border-radius:12px;
+    padding:12px 13px; background:var(--surface);
   }
-  .mk-ln .code{ flex:1; white-space:pre; color:var(--muted); }
-  .mk-ln.add{ background:rgba(46,224,58,.07); }
-  .mk-ln.add .code{ color:#9ee8a5; }
-  .mk-ln.del{ background:rgba(247,35,50,.07); }
-  .mk-ln.del .code{ color:#e89a9e; }
+  .mk-decision .q{ font-size:13px; color:var(--fg); margin-bottom:10px; }
+  .mk-opts{ display:flex; gap:8px; }
+  .mk-opt{
+    flex:1; height:30px; display:grid; place-items:center;
+    border:1px solid var(--border); border-radius:8px;
+    font-size:12.5px; color:var(--muted);
+  }
+  .mk-opt.hot{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: analysis --- */
+  .mk-split{ display:grid; grid-template-columns:6fr 5fr; gap:14px; height:100%; }
+  .mk-col{ position:relative; min-width:0; }
+  .mk-col-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:12px; font:500 12px var(--font-mono); color:var(--faint);
+  }
+  .mk-dots{
+    width:26px; height:26px; border-radius:8px; border:1px solid var(--border);
+    display:grid; place-items:center; color:var(--muted);
+    font-size:13px; letter-spacing:1px; line-height:1; padding-bottom:6px;
+  }
+  .mk-menu{
+    position:absolute; top:32px; right:0; z-index:3;
+    width:176px; padding:5px;
+    border:1px solid var(--border); border-radius:12px;
+    background:var(--raised); box-shadow:0 12px 32px rgba(0,0,0,.4);
+  }
+  .mk-menu div{ padding:8px 10px; border-radius:8px; font-size:12.5px; color:var(--muted); }
+  .mk-menu .hot{
+    color:var(--accent); font-weight:500;
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .mk-side{
+    display:flex; flex-direction:column; min-width:0;
+    border-left:1px solid var(--border); padding-left:14px;
+  }
+  .mk-side-h{
+    font:500 11px var(--font-mono); letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:12px;
+  }
+  .mk-qa-q{
+    align-self:flex-end; max-width:90%; margin-bottom:10px;
+    font-size:12.5px; line-height:1.5; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:8px 11px;
+  }
+  .mk-qa-a{
+    font-size:12.5px; line-height:1.6; color:var(--muted);
+    border:1px solid var(--border); border-radius:12px;
+    padding:10px 12px; background:var(--surface);
+  }
+  .mk-qa-a strong{ color:var(--fg); font-weight:500; }
+  .mk-qa-in{
+    margin-top:auto; height:34px; display:flex; align-items:center;
+    padding:0 12px; border:1px solid var(--border); border-radius:999px;
+    font-size:12px; color:var(--faint);
+  }
 
   /* ============ Manifesto band ============ */
   .manifesto{
-    margin-top:140px;
-    border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+    margin-top:110px;
+    border-bottom:1px solid var(--border);
   }
-  .manifesto-in{ padding:128px 0 136px; text-align:center; }
+  .manifesto-in{
+    padding:96px 0;
+    display:grid; grid-template-columns:7fr 5fr;
+    column-gap:56px; align-items:end;
+  }
   .manifesto .eyebrow{
+    grid-column:1/-1;
+    display:flex; align-items:center; gap:14px;
     font:500 12px/1.5 var(--font-mono);
     letter-spacing:0.14em; text-transform:uppercase;
     color:rgba(244,244,244,.5);
   }
-  .manifesto h2{
-    margin-top:26px;
-    font:600 clamp(38px, 5vw, 64px)/1.14 var(--font-display);
-    letter-spacing:-0.028em;
+  .manifesto .eyebrow::before{
+    content:""; flex:none; width:32px; height:1px; background:currentColor;
   }
-  .manifesto h2 .dim{ display:block; color:rgba(244,244,244,.42); }
-  .manifesto h2 .lit{ display:block; color:var(--fg); }
+  .manifesto h2{
+    margin:28px 0 0;
+    font:600 clamp(36px, 4.6vw, 58px)/1.16 var(--font-display);
+    letter-spacing:-0.026em;
+  }
+  .manifesto .m-sub{
+    margin:0 0 5px; max-width:28ch; justify-self:end;
+    font-size:19px; line-height:1.65; color:var(--muted);
+  }
+  .manifesto .m-hl{ font-style:normal; font-weight:500; color:var(--accent); }
 
   /* ============ CTA band ============ */
   .cta{ margin-top:140px; border-top:1px solid var(--border); }
@@ -417,6 +461,9 @@
     .nav-links{ display:none; }
     .footer-in{ grid-template-columns:1fr 1fr; }
     .hero{ padding-top:80px; }
+    .manifesto-in{ padding:72px 0; grid-template-columns:1fr; row-gap:22px; }
+    .manifesto h2{ margin-top:2px; }
+    .manifesto .m-sub{ justify-self:start; margin:0; }
   }
   @media (max-width: 768px){
     .vl{ display:none; }
@@ -491,35 +538,73 @@
     <div class="hero-shot-frame">
       <div class="hero-shot-bar">
         <span class="tl"></span><span class="tl"></span><span class="tl"></span>
-        <span class="hero-shot-title">Moebius — 主对话</span>
       </div>
       <img src="preview-center.png" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
     </div>
   </div>
 </header>
 
-<!-- ================= Trust ================= -->
-<section class="trust wrap reveal" data-od-id="trust">
-  <p>正在这些团队的工作流里运行</p>
-  <div class="trust-row">
-    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="3.5" stroke="currentColor" stroke-width="1.6"/></svg>LumenForge</span>
-    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.6"/></svg>NebulaCart</span>
-    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2l6 12H2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Marketeam</span>
-    <span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Northfield</span>
+<!-- ================= Manifesto band ================= -->
+<section class="manifesto" id="manifesto" data-od-id="manifesto">
+  <div class="wrap manifesto-in reveal">
+    <p class="eyebrow">Moebius 的方式</p>
+    <h2>不要一个个<br>管理 Agent。</h2>
+    <p class="m-sub">只需要和 <em class="m-hl">Leader Agent</em> 聊清楚就可以了。</p>
   </div>
 </section>
+
+
 
 <!-- ================= Sticky narrative features ================= -->
 <section class="features wrap" data-od-id="features">
   <div class="fs-grid">
 
-    <div class="f-visual liquid-glass active" data-od-id="mock-conversation">
-      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页验收</span></div>
+    <div class="f-visual liquid-glass active" data-od-id="mock-team">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>新对话 · 选择团队</span></div>
+      <div class="f-visual-body">
+        <div class="mk-req"><span class="mk-req-label">需求</span>帮我把落地页的空状态补上验收语句</div>
+        <div class="mk-agent sel">
+          <div class="mk-agent-top">
+            <div class="mk-ava dev">开</div>
+            <div><div class="n">开发团队</div><div class="r">开发经理 · 开发 · 测试</div></div>
+            <span class="mk-pill done">已匹配</span>
+          </div>
+          <div class="mk-task">擅长:产品落地、脚本、验收回归</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava mgr">文</div>
+            <div><div class="n">文案团队</div><div class="r">主编 · 撰稿 · 校对</div></div>
+          </div>
+          <div class="mk-task">擅长:品牌文案、内容排期</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava qa">增</div>
+            <div><div class="n">增长团队</div><div class="r">策划 · 投放 · 数据</div></div>
+          </div>
+          <div class="mk-task">擅长:活动页、A/B 实验</div>
+        </div>
+      </div>
+    </div>
+    <div class="f-text fs-block active" id="f-agents" data-od-id="feature-team">
+      <span class="f-index">01</span>
+      <h2>从一个团队开始</h2>
+      <p>每一个需求,都有对应最专业的团队。</p>
+      <ul class="f-points">
+        <li><strong>团队开箱即用</strong>——开发、文案、增长,按领域预置好角色</li>
+        <li><strong>按需求匹配</strong>——说出目标,为你推荐最合适的一支</li>
+        <li><strong>成员各司其职</strong>——专长写在卡片上,谁做什么一眼看清</li>
+      </ul>
+    </div>
+
+    <div class="f-visual liquid-glass" data-od-id="mock-conversation">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化</span></div>
       <div class="f-visual-body">
         <div class="mk-msg user">
           <div class="mk-bubble">
             <div class="mk-name">你</div>
-            <div class="mk-text">帮我把落地页的空状态补上验收语句</div>
+            <div class="mk-text">落地页空状态太生硬,按验收标准补上,今天下班前我要看到。</div>
           </div>
           <div class="mk-ava you">你</div>
         </div>
@@ -527,109 +612,80 @@
           <div class="mk-ava mgr">经</div>
           <div class="mk-bubble">
             <div class="mk-name">开发经理</div>
-            <div class="mk-text">这个改动只碰落地页,<span class="mention">@开发</span> 来做。</div>
+            <div class="mk-text">收到,<span class="mention">@开发</span> 改文案,<span class="mention">@测试</span> 同步验收。有一处需要你定:</div>
             <div class="mk-subtasks">
-              <div class="mk-sub"><span class="t">落地页文案</span><span class="mk-pill doing">进行中</span></div>
-              <div class="mk-sub"><span class="t">空状态验收</span><span class="mk-pill fail">没跑起来</span></div>
-              <div class="mk-sub"><span class="t">构建脚本</span><span class="mk-pill done">已结束</span></div>
+              <div class="mk-sub"><span class="t">空状态文案</span><span class="mk-pill doing">进行中</span></div>
+              <div class="mk-sub"><span class="t">验收脚本</span><span class="mk-pill done">已结束</span></div>
+            </div>
+            <div class="mk-decision">
+              <div class="q">空状态配图,两版选一:</div>
+              <div class="mk-opts">
+                <span class="mk-opt hot">A · 极简线条</span>
+                <span class="mk-opt">B · 插画</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-    <div class="f-text fs-block active" id="f-conversation" data-od-id="feature-conversation">
-      <span class="f-index">01</span>
-      <h2>对话,就是指挥中心</h2>
-      <p>不用在群聊、任务看板和 IDE 之间来回切。你说一句目标,开发经理把它拆成并行子任务,@到具体的成员,每一步的状态就长在会话里。</p>
-      <ul class="f-points">
-        <li><strong>@提及即派活</strong>——@开发、@测试,谁接谁做一目了然</li>
-        <li><strong>子任务内联呈现</strong>——进行中、没跑起来、已结束,状态实时更新</li>
-        <li><strong>卡住了能重试</strong>——失败的一步可以改一改指令,原地重发</li>
-      </ul>
-    </div>
-
-    <div class="f-visual liquid-glass" data-od-id="mock-agents">
-      <div class="f-visual-head"><i></i><i></i><i></i><span>Agent 团队 · 开发团队</span></div>
-      <div class="f-visual-body">
-        <div class="mk-agent">
-          <div class="mk-agent-top">
-            <div class="mk-ava mgr">经</div>
-            <div><div class="n">开发经理</div><div class="r">拆解与分派</div></div>
-            <span class="mk-pill doing">进行中</span>
-          </div>
-          <div class="mk-task">官网落地页验收 · 拆解子任务</div>
-          <div class="mk-load"><i style="width:62%; background:var(--orange);"></i></div>
-        </div>
-        <div class="mk-agent">
-          <div class="mk-agent-top">
-            <div class="mk-ava dev">开</div>
-            <div><div class="n">开发</div><div class="r">前端与脚本</div></div>
-            <span class="mk-pill doing">进行中</span>
-          </div>
-          <div class="mk-task">落地页文案 · sites/marketeam</div>
-          <div class="mk-load"><i style="width:88%; background:var(--success);"></i></div>
-        </div>
-        <div class="mk-agent">
-          <div class="mk-agent-top">
-            <div class="mk-ava qa">测</div>
-            <div><div class="n">测试</div><div class="r">验收与回归</div></div>
-            <span class="mk-pill fail">没跑起来</span>
-          </div>
-          <div class="mk-task">空状态验收 · landing.test.ts</div>
-          <div class="mk-load"><i style="width:34%; background:var(--orange);"></i></div>
-        </div>
-      </div>
-    </div>
-    <div class="f-text fs-block" id="f-agents" data-od-id="feature-agents">
+    <div class="f-text fs-block" id="f-conversation" data-od-id="feature-conversation">
       <span class="f-index">02</span>
-      <h2>一支团队,并行推进</h2>
-      <p>每个成员都有自己的专长和负载。开发经理负责拆解,开发、文案、测试同时开工——原来要排期一周的事,一条对话里跑完。</p>
+      <h2>尽情表达需求,团队自己会推进</h2>
+      <p>你就像老板一样,只需要发号施令。Agent 管理者会主动推进,遇到问题会即时和你汇报,供你决策。</p>
       <ul class="f-points">
-        <li><strong>团队按项目组装</strong>——为这个项目选一支队,快照随对话锁定</li>
-        <li><strong>负载实时可见</strong>——谁在满负荷、谁有空档,一眼看清</li>
-        <li><strong>独立工作空间</strong>——改动隔离在副本里,合不合并你说了算</li>
+        <li><strong>说人话就行</strong>——不拆任务、不排期,一句话下达目标</li>
+        <li><strong>进度主动汇报</strong>——每一步状态实时长在会话里</li>
+        <li><strong>决策摆到面前</strong>——需要拍板时,选项直接给你</li>
       </ul>
     </div>
 
-    <div class="f-visual liquid-glass" data-od-id="mock-diff">
-      <div class="f-visual-head"><i></i><i></i><i></i><span>改动 · 项目文件夹</span></div>
+    <div class="f-visual liquid-glass" data-od-id="mock-analysis">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化 · 分析</span></div>
       <div class="f-visual-body">
-        <div class="mk-diff">
-          <div class="mk-diff-file">sites/marketeam/index.html<span class="plus">+12</span><span class="minus">−3</span></div>
-          <div class="mk-diff-lines">
-<div class="mk-ln"><span class="no">43</span><span class="code">  &lt;h1&gt;让团队自己推进&lt;/h1&gt;</span></div>
-<div class="mk-ln del"><span class="no">44</span><span class="code">- &lt;div class="empty"&gt;&lt;/div&gt;</span></div>
-<div class="mk-ln add"><span class="no">44</span><span class="code">+ &lt;div class="empty-state" role="status"&gt;</span></div>
-<div class="mk-ln add"><span class="no">45</span><span class="code">+   &lt;p class="empty-title"&gt;这里还没有内容&lt;/p&gt;</span></div>
-<div class="mk-ln add"><span class="no">46</span><span class="code">+   &lt;p class="empty-accept"&gt;空状态已给出验收&lt;/p&gt;</span></div>
-<div class="mk-ln"><span class="no">47</span><span class="code">  &lt;/div&gt;</span></div>
-<div class="mk-ln"><span class="no">48</span><span class="code">&lt;/section&gt;</span></div>
+        <div class="mk-split">
+          <div class="mk-col">
+            <div class="mk-col-head"><span>会话</span><span class="mk-dots">•••</span></div>
+            <div class="mk-menu">
+              <div>重命名</div>
+              <div>导出记录</div>
+              <div class="hot">分析这段对话</div>
+              <div>归档</div>
+            </div>
+            <div class="mk-msg user">
+              <div class="mk-bubble">
+                <div class="mk-name">你</div>
+                <div class="mk-text">落地页空状态太生硬,按验收标准补上。</div>
+              </div>
+              <div class="mk-ava you">你</div>
+            </div>
+            <div class="mk-msg">
+              <div class="mk-ava mgr">经</div>
+              <div class="mk-bubble">
+                <div class="mk-name">开发经理</div>
+                <div class="mk-text">验收脚本第二次失败了,我先按旧选择器重试。</div>
+              </div>
+            </div>
           </div>
+          <aside class="mk-side">
+            <div class="mk-side-h">对话分析</div>
+            <div class="mk-qa-q">为什么测试环节慢了?</div>
+            <div class="mk-qa-a"><strong>卡在「空状态验收」:</strong>脚本两次失败,原因是选择器与新版 DOM 不匹配,建议让开发先修选择器再回归。</div>
+            <div class="mk-qa-in">提出你的疑问…</div>
+          </aside>
         </div>
       </div>
     </div>
-    <div class="f-text fs-block" id="f-diff" data-od-id="feature-diff">
+    <div class="f-text fs-block" id="f-diff" data-od-id="feature-analysis">
       <span class="f-index">03</span>
-      <h2>每一处改动,全程可见</h2>
-      <p>对话进行的同一刻,项目文件夹里的每一次增删都在右栏实时展开。改了哪个文件、动了哪几行,不用猜,不用等汇报。</p>
+      <h2>团队进程不满意?直接开始优化</h2>
+      <p>在会话的更多菜单点击「分析这段对话」,在侧边栏直接提出你想要的疑问。</p>
       <ul class="f-points">
-        <li><strong>按文件聚合</strong>——这段对话期间碰过的文件,全部列出来</li>
-        <li><strong>行级 diff</strong>——新增与删除分行着色,改动即证据</li>
-        <li><strong>随时停下</strong>——任何一步不对,一键叫停,现场保留</li>
+        <li><strong>一键分析</strong>——更多菜单里点一下,整段对话的得失自动梳理</li>
+        <li><strong>侧边栏直接问</strong>——哪里慢了、哪里偏了,想问就问</li>
+        <li><strong>优化成指令</strong>——分析结论可以直接转成下一轮安排</li>
       </ul>
     </div>
 
-  </div>
-</section>
-
-<!-- ================= Manifesto band ================= -->
-<section class="manifesto" id="manifesto" data-od-id="manifesto">
-  <div class="wrap manifesto-in reveal">
-    <p class="eyebrow">Moebius 的方式</p>
-    <h2>
-      <span class="dim">你负责决定方向。</span>
-      <span class="lit">团队负责把它做完。</span>
-    </h2>
   </div>
 </section>
 
