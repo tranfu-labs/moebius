@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/console-page/app.js";
-import { sidebarPresentationRoute, createConsolePresentationRouteStore } from "../src/console-page/presentation-route.js";
+import {
+  ordinaryPresentationRoute,
+  sidebarPresentationRoute,
+  createConsolePresentationRouteStore,
+} from "../src/console-page/presentation-route.js";
 import {
   conversationDraftTabSourceKey,
   conversationTabSourceKey,
@@ -30,6 +34,10 @@ describe("desktop App sidebar conversation regressions", () => {
   let timelineMessages: Array<Record<string, unknown>>;
   let projectDirectoryAvailable: boolean;
   let includeAvailableAlternativeProject: boolean;
+  let stateRequestCount: number;
+  let ordinaryCreateFailure: boolean;
+  let preferenceRecordFailure: boolean;
+  let preferenceRecordAttemptCount: number;
 
   beforeEach(() => {
     sessions = [createSession("source-a", "来源会话")];
@@ -40,6 +48,10 @@ describe("desktop App sidebar conversation regressions", () => {
     timelineMessages = [];
     projectDirectoryAvailable = true;
     includeAvailableAlternativeProject = false;
+    stateRequestCount = 0;
+    ordinaryCreateFailure = false;
+    preferenceRecordFailure = false;
+    preferenceRecordAttemptCount = 0;
     window.localStorage.clear();
     window.localStorage.setItem(
       "moebius.console.selection",
@@ -54,7 +66,12 @@ describe("desktop App sidebar conversation regressions", () => {
         getLocalConsoleAttachmentCapability: async () => null,
         listAgentTeams: async () => ({ status: "ready", teams: [generalAssistantTeam] }),
         readLastUsedAgentTeam: async () => ({ ownership: "system", teamId: "general-assistant" }),
-        recordSuccessfulConversationAgentTeam: async () => undefined,
+        recordSuccessfulConversationAgentTeam: async () => {
+          preferenceRecordAttemptCount += 1;
+          if (preferenceRecordFailure) {
+            throw new Error("preference unavailable");
+          }
+        },
       },
     });
     vi.stubGlobal("fetch", vi.fn(function (
@@ -69,6 +86,7 @@ describe("desktop App sidebar conversation regressions", () => {
         ? input
         : new URL(typeof input === "string" ? input : input.url);
       if (url.pathname === "/api/local-console/state") {
+        stateRequestCount += 1;
         return Promise.resolve(jsonResponse(createState(url.searchParams.get("sessionId") ?? "source-a")));
       }
       if (url.pathname.endsWith("/reference-text")) {
@@ -87,11 +105,14 @@ describe("desktop App sidebar conversation regressions", () => {
             }));
       }
       if (url.pathname === "/api/local-console/sessions" && init?.method === "POST") {
-        const created = createSession(
-          "analysis-created",
-          "分析 Agent 运行耗时",
-          "source-a",
-        );
+        const request = JSON.parse(String(init.body)) as { attachmentDraftKey?: unknown };
+        const sidebarConversation = typeof request.attachmentDraftKey === "string";
+        if (!sidebarConversation && ordinaryCreateFailure) {
+          return Promise.resolve(jsonResponse({ error: "create rejected" }, 500));
+        }
+        const created = sidebarConversation
+          ? createSession("analysis-created", "分析 Agent 运行耗时", "source-a")
+          : createSession("created-b", "新会话 B");
         sessions.push(created);
         return Promise.resolve(jsonResponse({ session: created }, 201));
       }
@@ -126,6 +147,87 @@ describe("desktop App sidebar conversation regressions", () => {
     await act(async () => root.unmount());
     host.remove();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps the newly created ordinary conversation aligned across main content, sidebar, refresh, and reload", async () => {
+    createConsolePresentationRouteStore(window.localStorage).write(ordinaryPresentationRoute({
+      projectId: "local",
+      sessionId: "source-a",
+    }));
+
+    await act(async () => root.render(<App />));
+    await submitGlobalConversation("新会话 B");
+
+    await waitFor(() => host.querySelector("main h1")?.textContent === "新会话 B");
+    expectSelectedMainConversation("created-b", "新会话 B");
+    expect(createConsolePresentationRouteStore(window.localStorage).read())
+      .toEqual(ordinaryPresentationRoute({ projectId: "local", sessionId: "created-b" }));
+    expect(window.localStorage.getItem("moebius.console.selection")).toBe(JSON.stringify({
+      projectId: "local",
+      sessionId: "created-b",
+    }));
+
+    const requestsAfterCreation = stateRequestCount;
+    await waitFor(() => stateRequestCount > requestsAfterCreation, 2_000);
+    expectSelectedMainConversation("created-b", "新会话 B");
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(<App />));
+    await waitFor(() => host.querySelector("main h1")?.textContent === "新会话 B");
+    expectSelectedMainConversation("created-b", "新会话 B");
+
+    const sourceRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+    await act(async () => sourceRow.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "来源会话");
+    expectSelectedMainConversation("source-a", "来源会话");
+
+    const createdRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="created-b"]',
+    );
+    await act(async () => createdRow.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "新会话 B");
+    expectSelectedMainConversation("created-b", "新会话 B");
+  });
+
+  it("keeps the previous route and draft when ordinary conversation creation fails", async () => {
+    ordinaryCreateFailure = true;
+    createConsolePresentationRouteStore(window.localStorage).write(ordinaryPresentationRoute({
+      projectId: "local",
+      sessionId: "source-a",
+    }));
+
+    await act(async () => root.render(<App />));
+    const draftRegion = await submitGlobalConversation("保留失败草稿");
+    await waitFor(() => draftRegion.textContent?.includes("创建失败，请检查当前项目和 Agent 团队后重试。") === true);
+
+    expect(draftRegion.querySelector<HTMLTextAreaElement>('textarea[aria-label="消息内容"]')?.value)
+      .toBe("保留失败草稿");
+    expect(createConsolePresentationRouteStore(window.localStorage).read())
+      .toEqual(ordinaryPresentationRoute({ projectId: "local", sessionId: "source-a" }));
+    expect(window.localStorage.getItem("moebius.console.selection")).toBe(JSON.stringify({
+      projectId: "local",
+      sessionId: "source-a",
+    }));
+  });
+
+  it("selects the created conversation even when recording the team preference fails", async () => {
+    preferenceRecordFailure = true;
+    createConsolePresentationRouteStore(window.localStorage).write(ordinaryPresentationRoute({
+      projectId: "local",
+      sessionId: "source-a",
+    }));
+
+    await act(async () => root.render(<App />));
+    await submitGlobalConversation("新会话 B");
+
+    await waitFor(() => host.querySelector("main h1")?.textContent === "新会话 B");
+    expectSelectedMainConversation("created-b", "新会话 B");
+    expect(preferenceRecordAttemptCount).toBe(1);
+    expect(createConsolePresentationRouteStore(window.localStorage).read())
+      .toEqual(ordinaryPresentationRoute({ projectId: "local", sessionId: "created-b" }));
   });
 
   it("uses the native fetch receiver and persists the generated title after first send", async () => {
@@ -536,6 +638,29 @@ describe("desktop App sidebar conversation regressions", () => {
       lastError: null,
     };
   }
+
+  function expectSelectedMainConversation(sessionId: string, title: string): void {
+    const selected = host.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.dataset.sessionId).toBe(sessionId);
+    expect(host.querySelector("main h1")?.textContent).toBe(title);
+  }
+
+  async function submitGlobalConversation(message: string): Promise<HTMLElement> {
+    const projectNewConversation = await findElement<HTMLButtonElement>("button", (element) =>
+      element.getAttribute("aria-label") === "在 Moebius 中新建会话");
+    await act(async () => projectNewConversation.click());
+    const draftRegion = await findElement<HTMLElement>('section[aria-label="新建对话"]');
+    const textarea = draftRegion.querySelector<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    expect(textarea).not.toBeNull();
+    await act(async () => setInputValue(textarea!, message));
+    const send = draftRegion.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]');
+    await waitFor(() => send?.disabled === false);
+    await act(async () => send!.click());
+    return draftRegion;
+  }
 });
 
 function createSession(sessionId: string, title: string, originSessionId: string | null = null) {
@@ -610,6 +735,12 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function setInputValue(input: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
 }
 
 async function findElement<T extends Element>(

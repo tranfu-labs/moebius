@@ -2801,8 +2801,10 @@ export function OperatorConsoleApp({
       return;
     }
 
+    const createdSelection = { projectId, sessionId: result.sessionId };
     selectionPersistenceEnabledRef.current = true;
-    rememberConfirmedSelection({ projectId, sessionId: result.sessionId });
+    rememberConfirmedSelection(createdSelection);
+    commitPresentationRoute(ordinaryPresentationRoute(createdSelection));
     conversationDraftStoreRef.current.clear(NEW_CONVERSATION_DRAFT_KEY);
     managedAttachments.clearDraft(NEW_CONVERSATION_DRAFT_KEY);
     setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(result.sessionId)));
@@ -2815,7 +2817,15 @@ export function OperatorConsoleApp({
         error: formatError(result.preferenceError),
       }));
     }
-  }, [actions, agentTeamsState, managedAttachments, newConversation, rememberConfirmedSelection, t]);
+  }, [
+    actions,
+    agentTeamsState,
+    commitPresentationRoute,
+    managedAttachments,
+    newConversation,
+    rememberConfirmedSelection,
+    t,
+  ]);
 
   const showProjectInFolder = useCallback(async (folderPath: string) => {
     try {
