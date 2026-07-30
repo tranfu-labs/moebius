@@ -26,7 +26,6 @@ const productionFiles = [
 ].map((file) => path.resolve(packageRoot, "..", "..", "desktop", "src", file));
 productionFiles.push(
   path.join(packageRoot, "src", "console", "conversation-relay-rail-model.ts"),
-  path.join(packageRoot, "src", "console", "machine-text.ts"),
   path.join(packageRoot, "src", "console", "member-name.ts"),
   path.join(packageRoot, "src", "console", "right-sidebar-tabs.ts"),
   path.join(packageRoot, "src", "onboarding", "onboarding-state.ts"),

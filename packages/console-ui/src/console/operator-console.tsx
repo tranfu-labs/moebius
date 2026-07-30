@@ -141,11 +141,6 @@ import {
   TextFragmentList,
   type ComposerTextFragment,
 } from "@/console/text-fragment-list";
-import {
-  containsMachineText,
-  machineTextPlaceholders,
-  sanitizeMachineText,
-} from "@/console/machine-text";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
@@ -2903,7 +2898,7 @@ function TimelineEntry({
           memberIdentities={memberIdentities}
           rawReason={message.error ?? message.body}
           rawOutput={message.error ?? message.body}
-          description={terminalOutcomeDescription(message, t)}
+          description={terminalOutcomeDescription(message)}
           elapsedMs={message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
           onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
@@ -3208,13 +3203,9 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
     : null;
 }
 
-function terminalOutcomeDescription(message: OperatorMessage, t: Translate): string | null {
+function terminalOutcomeDescription(message: OperatorMessage): string | null {
   return isSafeTerminalFailureCode(message.error)
-    ? sanitizeMachineText(
-        message.body,
-        machineTextPlaceholders(t).machine,
-        machineTextPlaceholders(t),
-      )
+    ? nonBlank(message.body)
     : null;
 }
 
@@ -3242,23 +3233,11 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
 }
 
 function systemSummary(message: OperatorMessage, t: Translate): string {
-  return sanitizeMachineText(
-    message.body,
-    t("console.operator.systemUpdated"),
-    machineTextPlaceholders(t),
-  );
+  return nonBlank(message.body) ?? t("console.operator.systemUpdated");
 }
 
 function safeRunSummary(summary: string | null | undefined, t: Translate): string {
-  const text = nonBlank(summary);
-  if (!text || containsMachineText(text)) {
-    return t("console.runBlock.progress");
-  }
-  return sanitizeMachineText(
-    text,
-    t("console.runBlock.progress"),
-    machineTextPlaceholders(t),
-  );
+  return nonBlank(summary) ?? t("console.runBlock.progress");
 }
 
 function runRawOutput(activeRun: OperatorRunSnapshot): string {

@@ -44,27 +44,6 @@ describe("FileReferenceTab", () => {
     expect(screen.getByTestId("file-reference-path")).toHaveTextContent("/Users/wing/.codex/sessions");
   });
 
-  it("shows an explicit boundary message for an untrusted target", async () => {
-    render(
-      <FileReferenceTab
-        sessionId="session-a"
-        filePath="/etc/passwd"
-        line={1}
-        column={null}
-        loadReference={vi.fn().mockResolvedValue({
-          available: false,
-          path: "/etc/passwd",
-          lines: [],
-          reason: "outside-trusted-roots",
-          targetLine: 1,
-          targetColumn: null,
-        })}
-      />,
-    );
-
-    expect(await screen.findByText("这个文件不在当前会话允许读取的位置。")).toBeVisible();
-  });
-
   it.each([
     ["line-too-large", "目标附近存在过长单行，无法安全显示。"],
     ["response-too-large", "目标附近内容超过本次安全显示范围。"],

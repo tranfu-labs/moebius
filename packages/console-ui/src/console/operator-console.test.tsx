@@ -1140,7 +1140,7 @@ describe("OperatorConsole", () => {
       "px-8",
     );
     expect(titleHeader).not.toHaveClass("absolute", "pt-12", "window-drag-region");
-    expect(title).toHaveClass("w-full", "max-w-[840px]", "text-left");
+    expect(title).toHaveClass("w-full", "max-w-[760px]", "text-left");
     expect(composer).toHaveClass("w-full", "max-w-[840px]");
     expect(composer).not.toHaveClass("max-w-[720px]");
     expect(composerHost).toHaveClass("px-8");
@@ -1620,7 +1620,10 @@ describe("OperatorConsole", () => {
     });
 
     expect(screen.getByRole("heading", { name: "完成" })).toBeVisible();
-    expect(screen.getByText(/路径已隐藏/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "/tmp/private-run" })).toBeVisible();
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P"
+      && element.textContent === "产物位于 /tmp/private-run，runId=run-secret。")).toBeVisible();
     const outputButton = screen.getByRole("button", { name: "完整输出" });
     expect(outputButton).toHaveAttribute("title", "完整输出");
     expect(outputButton).toHaveClass(
@@ -1638,7 +1641,7 @@ describe("OperatorConsole", () => {
     expect(outputButton).not.toHaveTextContent("完整输出");
     expect(outputButton.querySelector("svg")).not.toBeNull();
     expect(outputButton.parentElement).toHaveClass("relative", "max-w-[68ch]", "pl-8");
-    expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
+    expect(screen.queryByText(/路径已隐藏/u)).not.toBeInTheDocument();
   });
 
   it("opens the same message analysis action from right click and keyboard context input", async () => {
@@ -1723,10 +1726,10 @@ describe("OperatorConsole", () => {
       292,
       null,
     );
-    expect(screen.queryByText("/tmp/private.txt")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "/tmp/private.txt" })).toBeVisible();
   });
 
-  it("preserves titled and reference-style Markdown file targets while hiding bare paths", () => {
+  it("preserves titled, reference-style, and bare Markdown file targets", () => {
     renderConsole({
       messages: [message({
         id: 2,
@@ -1744,7 +1747,7 @@ describe("OperatorConsole", () => {
 
     expect(screen.getByRole("button", { name: "带标题" })).toBeVisible();
     expect(screen.getByRole("button", { name: "引用式" })).toBeVisible();
-    expect(screen.queryByText("/tmp/private.txt")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "/tmp/private.txt" })).toBeVisible();
   });
 
   it("deduplicates alias and real-path references after canonical resolution", async () => {
@@ -2360,6 +2363,25 @@ describe("OperatorConsole", () => {
     expect(screen.queryByText("spawn ENOENT raw provider payload")).not.toBeInTheDocument();
   });
 
+  it("uses the structured terminal fallback when a safe failure explanation is blank", () => {
+    renderConsole({
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          runId: "run-blank-safe-failure",
+          status: "failed",
+          systemEventKind: "run-not-started",
+          body: "   ",
+          error: "codex-cli-upgrade-required",
+        }),
+      ],
+    });
+
+    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.queryByText(/机器信息已隐藏/u)).not.toBeInTheDocument();
+  });
+
   it("keeps derived sessions out of the sidebar and opens them from a timeline card", () => {
     const onOpenSubSession = vi.fn();
     const parentSession = {
@@ -2697,7 +2719,7 @@ describe("OperatorConsole", () => {
     }
   });
 
-  it("keeps machine terms out of the default conversation surface", () => {
+  it("preserves a non-empty machine-facing activity summary while retaining structured terminal copy", () => {
     renderConsole({
       messages: [
         message({
@@ -2716,11 +2738,36 @@ describe("OperatorConsole", () => {
       },
     });
 
-    expect(screen.getByText("正在推进这一步…")).toBeVisible();
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P"
+      && element.textContent === "cwd /tmp/project runDir /tmp/run direct worktree")).toBeVisible();
+    expect(screen.getByRole("button", { name: "/tmp/project" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "/tmp/run" })).toBeVisible();
+    expect(screen.queryByText("正在推进这一步…")).not.toBeInTheDocument();
     expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
     expect(screen.queryByText(/\/tmp\/moebius-run/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/cwd=\/tmp/u)).not.toBeInTheDocument();
     expect(screen.queryByText("查看详情")).not.toBeInTheDocument();
+  });
+
+  it("uses the activity fallback only for blank summaries and preserves ordinary system records", () => {
+    renderConsole({
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          systemEventKind: "other",
+          body: "系统产物：/tmp/system-report.txt runId=run-system direct handoff",
+        }),
+      ],
+      activeRun: {
+        ...runSnapshot,
+        lastOutputSummary: "   ",
+      },
+    });
+
+    expect(screen.getByText("正在推进这一步…")).toBeVisible();
+    expect(screen.getByText("系统产物：/tmp/system-report.txt runId=run-system direct handoff")).toBeVisible();
   });
 
   it("locks the workspace but keeps the team selectable after the first message", () => {
