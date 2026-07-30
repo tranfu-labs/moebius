@@ -1213,6 +1213,50 @@ describe("ConsoleStateActions", () => {
     expect(harness.selection()).toEqual({ projectId: "project-a", sessionId: "session-a" });
   });
 
+  it("commits confirmed sidebar metadata before a failed follow-up refresh and rejects stale writes", async () => {
+    const confirmedSession = {
+      sessionId: "session-a",
+      projectId: "project-a",
+      title: "新标题",
+      titleRevision: 1,
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ session: confirmedSession }))
+      .mockResolvedValueOnce(jsonResponse({
+        error: "对话名称已经变化，请重新打开重命名",
+        code: "SESSION_SIDEBAR_STATE_STALE",
+      }, 409));
+    const refresh = vi.fn(async () => false);
+    const commitSessionMetadata = vi.fn();
+    const harness = actionHarness({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch,
+      refresh,
+      commitSessionMetadata,
+    });
+
+    await expect(harness.actions.renameSession(
+      { id: "session-a", titleRevision: 0 },
+      "新标题",
+    )).resolves.toBeUndefined();
+    expect(commitSessionMetadata).toHaveBeenCalledWith(confirmedSession);
+    expect(refresh).toHaveBeenCalledWith({ projectId: "project-a", sessionId: "session-a" });
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      new URL("http://127.0.0.1:8787/api/local-console/sessions/session-a/title"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ title: "新标题", expectedTitleRevision: 0 }),
+      }),
+    );
+
+    await expect(harness.actions.renameSession(
+      { id: "session-a", titleRevision: 0 },
+      "陈旧标题",
+    )).rejects.toThrow("对话名称已经变化");
+    expect(commitSessionMetadata).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a project reorder failure and lets the sidebar restore server order", async () => {
     const coordinator = new ConsoleStateCoordinator();
     const fetch = vi.fn(async () => jsonResponse({ error: "stale project order" }, 409));
@@ -1369,6 +1413,9 @@ function actionHarness(input: {
   selectProjectFolder?: () => Promise<string | null>;
   composerValue?: string;
   attachmentIds?: string[];
+  commitSessionMetadata?: (
+    session: import("@moebius/console-ui").OperatorSession,
+  ) => void;
 }) {
   let selection: ConsoleSelection = { projectId: "project-a", sessionId: "session-a" };
   const mutationKinds: Array<SelectionMutationKind | null> = [];
@@ -1393,6 +1440,7 @@ function actionHarness(input: {
     setMutationKind: (kind) => mutationKinds.push(kind),
     setSending: (value) => sending.push(value),
     setError: (error) => errors.push(error),
+    commitSessionMetadata: input.commitSessionMetadata,
     selectProjectFolder: input.selectProjectFolder,
   });
   return {

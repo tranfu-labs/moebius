@@ -705,6 +705,120 @@ async function handleRequest(
       return;
     }
 
+    const sessionAttentionMatch = matchSessionRoute(url.pathname, "attention");
+    if (request.method === "POST" && sessionAttentionMatch !== null) {
+      const payload = await readJsonBody(request);
+      if (
+        !isRecord(payload)
+        || (
+          payload.action !== "mark-read-attention"
+          && payload.action !== "mark-read-unread"
+          && payload.action !== "mark-unread"
+        )
+        || typeof payload.expectedAttentionRevision !== "number"
+        || typeof payload.expectedReadStateRevision !== "number"
+        || typeof payload.expectedTitleRevision !== "number"
+        || typeof payload.isCurrent !== "boolean"
+      ) {
+        sendJson(response, 400, { error: "Expected a valid session attention mutation" });
+        return;
+      }
+      try {
+        const session = await runtime.updateSessionReadState({
+          sessionId: sessionAttentionMatch.sessionId,
+          action: payload.action,
+          expectedAttentionRevision: payload.expectedAttentionRevision,
+          expectedReadStateRevision: payload.expectedReadStateRevision,
+          expectedTitleRevision: payload.expectedTitleRevision,
+          isCurrent: payload.isCurrent,
+        });
+        sendJson(response, 200, { session });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("SESSION_SIDEBAR_STATE_STALE")) {
+          sendJson(response, 409, { error: "会话状态已经变化，请重新打开菜单", code: "SESSION_SIDEBAR_STATE_STALE" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const sessionPinMatch = matchSessionRoute(url.pathname, "pin");
+    if (request.method === "POST" && sessionPinMatch !== null) {
+      const payload = await readJsonBody(request);
+      if (
+        !isRecord(payload)
+        || typeof payload.pinned !== "boolean"
+        || !(typeof payload.expectedPinnedAt === "string" || payload.expectedPinnedAt === null)
+      ) {
+        sendJson(response, 400, { error: "Expected pinned and expectedPinnedAt fields" });
+        return;
+      }
+      try {
+        const session = await runtime.setSessionPinned({
+          sessionId: sessionPinMatch.sessionId,
+          pinned: payload.pinned,
+          expectedPinnedAt: payload.expectedPinnedAt,
+        });
+        sendJson(response, 200, { session });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("SESSION_SIDEBAR_STATE_STALE")) {
+          sendJson(response, 409, { error: "置顶状态已经变化，请重试", code: "SESSION_SIDEBAR_STATE_STALE" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const sessionTitleMatch = matchSessionRoute(url.pathname, "title");
+    if (request.method === "POST" && sessionTitleMatch !== null) {
+      const payload = await readJsonBody(request);
+      if (
+        !isRecord(payload)
+        || typeof payload.title !== "string"
+        || typeof payload.expectedTitleRevision !== "number"
+      ) {
+        sendJson(response, 400, { error: "Expected title and expectedTitleRevision fields" });
+        return;
+      }
+      try {
+        const session = await runtime.renameSession({
+          sessionId: sessionTitleMatch.sessionId,
+          title: payload.title,
+          expectedTitleRevision: payload.expectedTitleRevision,
+        });
+        sendJson(response, 200, { session });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("SESSION_TITLE_EMPTY")) {
+          sendJson(response, 400, { error: "对话名称不能为空", code: "SESSION_TITLE_EMPTY" });
+          return;
+        }
+        if (error instanceof Error && error.message.includes("SESSION_SIDEBAR_STATE_STALE")) {
+          sendJson(response, 409, { error: "对话名称已经变化，请重新打开重命名", code: "SESSION_SIDEBAR_STATE_STALE" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const sessionArmUnreadMatch = matchSessionRoute(url.pathname, "arm-manual-unread");
+    if (request.method === "POST" && sessionArmUnreadMatch !== null) {
+      sendJson(response, 200, {
+        session: await runtime.armSessionManualUnread(sessionArmUnreadMatch.sessionId),
+      });
+      return;
+    }
+
+    const sessionViewedMatch = matchSessionRoute(url.pathname, "viewed");
+    if (request.method === "POST" && sessionViewedMatch !== null) {
+      sendJson(response, 200, {
+        session: await runtime.markSessionViewed(sessionViewedMatch.sessionId),
+      });
+      return;
+    }
+
     const sessionArchiveMatch = matchSessionRoute(url.pathname, "archive");
     if (request.method === "POST" && sessionArchiveMatch !== null) {
       try {
@@ -1285,6 +1399,11 @@ function matchSessionRoute(
     | "file-reference"
     | "team"
     | "archive"
+    | "attention"
+    | "pin"
+    | "title"
+    | "arm-manual-unread"
+    | "viewed"
     | "reference-text"
     | "restore"
     | "children"

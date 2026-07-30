@@ -687,6 +687,12 @@ export function OperatorConsoleApp({
     conditionKey: string | null;
   }>({ status: "idle", results: [], error: null, conditionKey: null });
   const conversationSearchRequestRef = useRef<AbortController | null>(null);
+  const conversationSearchInputRef = useRef<{
+    query: string;
+    includeArchived: boolean;
+  } | null>(null);
+  const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
+    useState<Set<string>>(() => new Set());
   const sourceMigrationRef = useRef<string | null>(null);
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [subSessionSendingId, setSubSessionSendingId] = useState<string | null>(null);
@@ -2484,6 +2490,52 @@ export function OperatorConsoleApp({
   const activeRuns = state?.activeRuns ?? (activeRun === null ? [] : [activeRun]);
   const sqlitePath = state?.sqlitePath;
   const projectListState = state !== null ? "ready" : clientError === null ? "loading" : "error";
+  const resolvedRightSidebarTabs = resolveCanonicalConversationTabTitles(
+    rightSidebarTabs,
+    state?.projects ?? [],
+  );
+  const rightSidebarUpdatingTabIds = resolvedRightSidebarTabs.unresolvedTabIds.concat(
+    resolvedRightSidebarTabs.state.tabs.flatMap((tab) => {
+      if (tab.type !== "conversation") return [];
+      const locator = parseConversationTabSourceKey(tab.sourceKey);
+      return locator?.kind === "session"
+        && updatingConversationTitleSessionIds.has(locator.sessionId)
+        ? [tab.id]
+        : [];
+    }),
+  );
+  const rightSidebarTabDiscriminators = conversationTabDiscriminators(
+    resolvedRightSidebarTabs.state,
+    state?.projects ?? [],
+    new Set(rightSidebarUpdatingTabIds),
+    {
+      fallback: t("console.rightSidebar.conversationDiscriminatorFallback"),
+      sameMomentIndex: (index) => t("console.rightSidebar.sameMomentIndex", { index }),
+    },
+  );
+  const commitSidebarSessionMetadata = useCallback((updated: OperatorSession) => {
+    const current = stateRef.current;
+    if (current === null) return;
+    const mergeSessions = (sessions: OperatorSession[]) => sessions.map((session) =>
+      session.sessionId === updated.sessionId ? { ...session, ...updated } : session);
+    const projects = current.projects.map((candidate) => ({
+      ...candidate,
+      sessions: mergeSessions(candidate.sessions),
+    }));
+    const nextState: LocalConsoleState = {
+      ...current,
+      projects,
+      project: {
+        ...current.project,
+        sessions: mergeSessions(current.project.sessions),
+      },
+      selectedSession: current.selectedSession?.sessionId === updated.sessionId
+        ? { ...current.selectedSession, ...updated }
+        : current.selectedSession,
+    };
+    stateRef.current = nextState;
+    setState(nextState);
+  }, []);
 
   const actions = useMemo(() => new ConsoleStateActions({
     apiBase,
@@ -2508,10 +2560,19 @@ export function OperatorConsoleApp({
     setMutationKind: setSelectionMutationKind,
     setSending: setIsSending,
     setError: setClientError,
+    commitSessionMetadata: commitSidebarSessionMetadata,
     selectProjectFolder: window.moebius?.selectProjectFolder === undefined
       ? undefined
       : () => window.moebius!.selectProjectFolder!(),
-  }), [apiBase, commitSelection, composerValue, managedAttachments, refresh, t]);
+  }), [
+    apiBase,
+    commitSelection,
+    commitSidebarSessionMetadata,
+    composerValue,
+    managedAttachments,
+    refresh,
+    t,
+  ]);
 
   const allSidebarSessions = useMemo(
     () => projects.flatMap((candidate) => candidate.sessions),
@@ -3440,10 +3501,16 @@ export function OperatorConsoleApp({
       });
       const createdTitle = created.title
         ?? draft.body.trim().replace(/\s+/gu, " ").slice(0, 32);
+      const createdProject = stateRef.current?.projects.find(
+        (project) => project.projectId === draft.context.projectId,
+      );
       rightSidebarTabsStoreRef.current.promoteConversationDraft({
         draftId,
         sessionId: created.sessionId,
         title: createdTitle,
+        conversationContext: createdProject === undefined
+          ? undefined
+          : conversationProjectContext(createdProject),
       });
       const directParent = allSidebarSessions.find((session) => session.sessionId === draft.hostSessionId);
       const root = directParent === undefined
@@ -3695,6 +3762,7 @@ export function OperatorConsoleApp({
     includeArchived: boolean;
   }) => {
     if (apiBase === null) return;
+    conversationSearchInputRef.current = input;
     conversationSearchRequestRef.current?.abort("search-condition-changed");
     const controller = new AbortController();
     conversationSearchRequestRef.current = controller;
@@ -3759,6 +3827,11 @@ export function OperatorConsoleApp({
             type: "conversation",
             title: target.title,
             sourceKey: conversationTabSourceKey(target.sessionId),
+            conversationContext: conversationProjectContext(
+              currentState?.projects.find((project) => project.projectId === target.projectId),
+              target,
+            ),
+            conversationCreatedAt: target.createdAt,
           },
         );
         rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
@@ -4081,6 +4154,7 @@ export function OperatorConsoleApp({
         const closeSearch = () => {
           conversationSearchRequestRef.current?.abort("search-closed");
           conversationSearchRequestRef.current = null;
+          conversationSearchInputRef.current = null;
           setConversationSearchState({ status: "idle", results: [], error: null, conditionKey: null });
           close();
         };
@@ -4261,6 +4335,7 @@ export function OperatorConsoleApp({
         id: team.id,
       })}
       onSelectSession={(nextSelection) => {
+        const previousSessionId = selectionRef.current.sessionId;
         selectionPersistenceEnabledRef.current = true;
         dispatchNewConversation({ type: "hide" });
         const target = projects
@@ -4287,12 +4362,19 @@ export function OperatorConsoleApp({
               type: "conversation",
               title: target.title,
               sourceKey: conversationTabSourceKey(target.sessionId),
+              conversationContext: conversationProjectContext(
+                projects.find((project) => project.projectId === target.projectId),
+                target,
+              ),
+              conversationCreatedAt: target.createdAt,
             },
           );
           rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
           setRightSidebarTabs(tabs);
           setRightSidebarOpen(true);
-          actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
+          void actions.transitionSessionView(previousSessionId, target.sessionId).finally(() => {
+            actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
+          });
           return;
         }
         const route = target?.originSessionId != null
@@ -4309,7 +4391,9 @@ export function OperatorConsoleApp({
         if (target?.originSessionId != null) {
           setRightSidebarOpen(false);
         }
-        actions.selectSession(nextSelection);
+        void actions.transitionSessionView(previousSessionId, nextSelection.sessionId).finally(() => {
+          actions.selectSession(nextSelection);
+        });
       }}
       onChangeSessionProject={actions.rebindSessionProject}
       onShowProjectInFolder={showProjectInFolder}
@@ -4340,6 +4424,41 @@ export function OperatorConsoleApp({
           return { ok: false, reason: "service-unavailable" };
         }
         return copySessionLogPath(sessionId);
+      }}
+      onUpdateSessionReadState={async (session, _projectId, action) => {
+        await actions.updateSessionReadState(session, action);
+      }}
+      onSetSessionPinned={async (session, _projectId, pinned) => {
+        await actions.setSessionPinned(session, pinned);
+      }}
+      onRenameSession={async (session, _projectId, title) => {
+        const searchInput = conversationSearchInputRef.current;
+        setUpdatingConversationTitleSessionIds((current) => new Set(current).add(session.id));
+        conversationSearchRequestRef.current?.abort("conversation-title-mutation-started");
+        conversationSearchRequestRef.current = null;
+        setConversationSearchState((current) => ({
+          ...current,
+          status: current.conditionKey === null ? "idle" : "loading",
+          results: [],
+          error: null,
+        }));
+        try {
+          await actions.renameSession(session, title);
+          rightSidebarTabsStoreRef.current.renameConversation(session.id, title.trim());
+          const hostSessionId = presentationRouteRef.current?.hostSessionId
+            ?? selectionRef.current.sessionId;
+          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(hostSessionId));
+          if (searchInput !== null) executeConversationSearch(searchInput);
+        } catch (error) {
+          if (searchInput !== null) executeConversationSearch(searchInput);
+          throw error;
+        } finally {
+          setUpdatingConversationTitleSessionIds((current) => {
+            const next = new Set(current);
+            next.delete(session.id);
+            return next;
+          });
+        }
       }}
       onInterrupt={interrupt}
       onRetryRun={(sessionId, runId, executionOverride) =>
@@ -4440,7 +4559,13 @@ export function OperatorConsoleApp({
       onSidebarOpenChange={setSidebarOpen}
       rightSidebarOpen={rightSidebarVisibilityPreference === "open"}
       rightSidebarWidth={rightSidebarWidth}
-      rightSidebarTabs={rightSidebarTabs}
+      rightSidebarTabs={resolvedRightSidebarTabs.state}
+      rightSidebarTabDiscriminators={rightSidebarTabDiscriminators}
+      rightSidebarUpdatingTabIds={rightSidebarUpdatingTabIds}
+      onRetryRightSidebarTitles={() => {
+        setClientError(null);
+        void refresh(selectionRef.current);
+      }}
       rightSidebarFocusTabId={
         selectedSession !== null
         && rightSidebarFocusRequest?.hostSessionId === selectedSession.sessionId
@@ -4486,6 +4611,141 @@ export function OperatorConsoleApp({
       onLoadProcessOutputPrevious={loadPreviousProcessOutput}
     />
   );
+}
+
+function conversationTabDiscriminators(
+  tabsState: RightSidebarTabsState,
+  projects: readonly OperatorProject[],
+  updatingTabIds: ReadonlySet<string>,
+  labels: {
+    fallback: string;
+    sameMomentIndex(index: number): string;
+  },
+): Record<string, string> {
+  const titleCounts = new Map<string, number>();
+  for (const tab of tabsState.tabs) {
+    if (tab.type === "conversation") {
+      titleCounts.set(tab.title, (titleCounts.get(tab.title) ?? 0) + 1);
+    }
+  }
+  const candidates = tabsState.tabs.flatMap((tab) => {
+    if (
+      tab.type !== "conversation"
+      || ((titleCounts.get(tab.title) ?? 0) < 2 && !updatingTabIds.has(tab.id))
+    ) {
+      return [];
+    }
+    const locator = parseConversationTabSourceKey(tab.sourceKey);
+    const session = locator?.kind === "session"
+      ? projects.flatMap((project) => project.sessions).find(
+          (candidate) => candidate.sessionId === locator.sessionId,
+        )
+      : undefined;
+    const project = session === undefined
+      ? undefined
+      : projects.find((candidate) => candidate.projectId === session.projectId);
+    const base = conversationProjectContext(project, session)
+      ?? tab.conversationContext
+      ?? labels.fallback;
+    const createdAt = session?.createdAt ?? tab.conversationCreatedAt ?? null;
+    return [{
+      tabId: tab.id,
+      base,
+      minute: createdAt?.replace("T", " ").slice(0, 16) ?? null,
+      stableKey: `${createdAt ?? ""}\u0000${tab.sourceKey ?? tab.id}`,
+    }];
+  });
+  const baseCounts = new Map<string, number>();
+  for (const entry of candidates) {
+    baseCounts.set(entry.base, (baseCounts.get(entry.base) ?? 0) + 1);
+  }
+  const withMinute = candidates.map((entry) => ({
+    ...entry,
+    candidate: (baseCounts.get(entry.base) ?? 0) > 1 && entry.minute !== null
+      ? `${entry.base} · ${entry.minute}`
+      : entry.base,
+  }));
+  const candidateCounts = new Map<string, number>();
+  for (const entry of withMinute) {
+    candidateCounts.set(entry.candidate, (candidateCounts.get(entry.candidate) ?? 0) + 1);
+  }
+  const result: Record<string, string> = {};
+  const collisions = new Map<string, typeof withMinute>();
+  for (const entry of withMinute) {
+    if ((candidateCounts.get(entry.candidate) ?? 0) === 1) {
+      result[entry.tabId] = entry.candidate;
+      continue;
+    }
+    const group = collisions.get(entry.candidate) ?? [];
+    group.push(entry);
+    collisions.set(entry.candidate, group);
+  }
+  for (const group of collisions.values()) {
+    group.sort((left, right) => left.stableKey.localeCompare(right.stableKey));
+    group.forEach((entry, index) => {
+      result[entry.tabId] = `${entry.candidate} · ${labels.sameMomentIndex(index + 1)}`;
+    });
+  }
+  return result;
+}
+
+function conversationProjectContext(
+  project: OperatorProject | undefined,
+  session?: OperatorSession,
+): string | undefined {
+  if (project === undefined) return undefined;
+  const context = [
+    project.title,
+    session?.branchName ?? project.branchName ?? null,
+  ].filter((value): value is string => value !== null && value.trim() !== "").join(" · ");
+  return context === "" ? undefined : context;
+}
+
+function resolveCanonicalConversationTabTitles(
+  tabsState: RightSidebarTabsState,
+  projects: readonly OperatorProject[],
+): { state: RightSidebarTabsState; unresolvedTabIds: string[] } {
+  const sessions = new Map(
+    projects.flatMap((project) =>
+      project.sessions.map((session) => [
+        session.sessionId,
+        { project, session },
+      ] as const)),
+  );
+  const unresolvedTabIds: string[] = [];
+  return {
+    state: {
+      ...tabsState,
+      tabs: tabsState.tabs.map((tab) => {
+        if (tab.type !== "conversation") return tab;
+        const locator = parseConversationTabSourceKey(tab.sourceKey);
+        if (locator?.kind !== "session") return tab;
+        const resolved = sessions.get(locator.sessionId);
+        if (resolved === undefined) {
+          unresolvedTabIds.push(tab.id);
+          return tab;
+        }
+        const conversationContext = conversationProjectContext(
+          resolved.project,
+          resolved.session,
+        );
+        if (
+          resolved.session.title === tab.title
+          && conversationContext === tab.conversationContext
+          && resolved.session.createdAt === tab.conversationCreatedAt
+        ) {
+          return tab;
+        }
+        return {
+          ...tab,
+          title: resolved.session.title,
+          conversationContext,
+          conversationCreatedAt: resolved.session.createdAt,
+        };
+      }),
+    },
+    unresolvedTabIds,
+  };
 }
 
 function mergeRefreshedProcessOutput(

@@ -56,6 +56,9 @@ export interface RightSidebarProps {
   onFocusTabHandled?: (tabId: string) => void;
   createTabId(): string;
   contentSlots?: RightSidebarContentSlots;
+  tabDiscriminators?: Readonly<Record<string, string>>;
+  updatingTabIds?: readonly string[];
+  onRetryTitles?: () => void;
   className?: string;
 }
 
@@ -79,12 +82,35 @@ export function RightSidebar({
   onFocusTabHandled,
   createTabId,
   contentSlots = {},
+  tabDiscriminators = {},
+  updatingTabIds = [],
+  onRetryTitles,
   className,
 }: RightSidebarProps): JSX.Element | null {
   const { t } = useI18n();
   const resizeGestureRef = useRef<ResizeGesture | null>(null);
   const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const focusedTabIdRef = useRef<string | null>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null;
+  const tabLayoutKey = state.tabs
+    .map((tab) => `${tab.id}:${tab.title}:${tabDiscriminators[tab.id] ?? ""}`)
+    .join("\u0000");
+
+  useLayoutEffect(() => {
+    if (
+      focusedTabIdRef.current !== null
+      && !tabElementsRef.current.has(focusedTabIdRef.current)
+    ) {
+      focusedTabIdRef.current = null;
+    }
+    const targetTabId = focusedTabIdRef.current ?? activeTab?.id ?? null;
+    if (targetTabId === null) return;
+    tabElementsRef.current.get(targetTabId)?.scrollIntoView?.({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [activeTab?.id, tabLayoutKey]);
 
   useLayoutEffect(() => {
     if (!open || focusTabId === null) return;
@@ -165,12 +191,23 @@ export function RightSidebar({
           aria-label={t("console.rightSidebar.tabs")}
         >
           {state.tabs.map((tab) => {
-            const displayTitle = rightSidebarTabDisplayTitle(tab, t);
+            const updating = updatingTabIds.includes(tab.id);
+            const displayTitle = updating
+              ? t("console.rightSidebar.titleUpdating")
+              : rightSidebarTabDisplayTitle(tab, t);
+            const discriminator = tabDiscriminators[tab.id] ?? null;
+            const accessibleTitle = discriminator === null
+              ? displayTitle
+              : `${displayTitle}，${discriminator}`;
             return (
               <div
                 key={tab.id}
+                ref={(element) => {
+                  if (element === null) tabElementsRef.current.delete(tab.id);
+                  else tabElementsRef.current.set(tab.id, element);
+                }}
                 className={cn(
-                  "flex h-[30px] max-w-[150px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-[12.5px] font-medium transition-colors",
+                  "flex h-[38px] max-w-[190px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-[12.5px] font-medium transition-colors",
                   activeTab?.id === tab.id ? "bg-sel text-ink" : "text-sub hover:bg-hover hover:text-ink",
                 )}
               >
@@ -184,16 +221,36 @@ export function RightSidebar({
                   role="tab"
                   aria-selected={activeTab?.id === tab.id}
                   data-tab-id={tab.id}
-                  title={displayTitle}
+                  aria-label={accessibleTitle}
+                  title={accessibleTitle}
+                  onFocus={(event) => {
+                    focusedTabIdRef.current = tab.id;
+                    event.currentTarget.parentElement?.scrollIntoView?.({
+                      block: "nearest",
+                      inline: "nearest",
+                    });
+                  }}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
+                      focusedTabIdRef.current = null;
+                    }
+                  }}
                   onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
                 >
                   <TabIcon type={tab.type} />
-                  <span className="truncate">{displayTitle}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">{displayTitle}</span>
+                    {discriminator !== null ? (
+                      <span className="block truncate text-[10.5px] font-normal text-hint">
+                        {discriminator}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-sub hover:bg-sunken hover:text-ink"
-                  aria-label={t("console.rightSidebar.closeTab", { title: displayTitle })}
+                  aria-label={t("console.rightSidebar.closeTab", { title: accessibleTitle })}
                   onClick={() => {
                     if (onBeforeCloseTab?.(tab) === false) {
                       return;
@@ -234,6 +291,23 @@ export function RightSidebar({
           </button>
         ) : null}
       </header>
+
+      {updatingTabIds.length > 0 ? (
+        <div
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-sunken px-3 py-2 text-xs text-sub"
+          role="status"
+          data-testid="right-sidebar-title-retry"
+        >
+          <span>{t("console.rightSidebar.titleRetrying")}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-sm border border-line px-2 py-1 font-medium text-ink hover:bg-hover"
+            onClick={onRetryTitles}
+          >
+            {t("console.rightSidebar.retryTitle")}
+          </button>
+        </div>
+      ) : null}
 
       <div className="scroll-thin min-h-0 flex-1 overflow-auto" data-testid="right-sidebar-content">
         {activeTab === null ? (

@@ -162,6 +162,78 @@ type Story = StoryObj<typeof meta>;
 
 export const T65Running: Story = {};
 
+export const SidebarConversationManagement: Story = {
+  args: {
+    project: {
+      ...sample.project,
+      branchName: "feature/sidebar-management",
+      isGitRepository: true,
+      sessions: [
+        {
+          ...sessions[0]!,
+          title: "发布前检查",
+          hasUnacknowledgedAttention: true,
+          attentionRevision: 3,
+          attentionAcknowledgedRevision: 2,
+          titleRevision: 1,
+          branchName: "feature/sidebar-management",
+          pinnedAt: "2026-07-11T10:10:00.000Z",
+        },
+        {
+          ...sessions[1]!,
+          title: "发布前检查",
+          hasUnacknowledgedAttention: false,
+          titleRevision: 0,
+          branchName: "feature/release-check",
+        },
+        {
+          ...sessions[2]!,
+          parentSessionId: null,
+          title: "文档同步",
+          hasUnacknowledgedAttention: false,
+          manualUnreadAt: "2026-07-11T10:08:00.000Z",
+          titleRevision: 0,
+          branchName: "feature/docs",
+        },
+      ],
+    },
+    selectedSession: {
+      ...sessions[1]!,
+      title: "发布前检查",
+      hasUnacknowledgedAttention: false,
+      titleRevision: 0,
+      branchName: "feature/release-check",
+    },
+    rightSidebarOpen: true,
+    rightSidebarTabs: {
+      tabs: [
+        {
+          id: "same-title-a",
+          type: "conversation",
+          title: "发布前检查",
+          sourceKey: "conversation:waiting",
+          closable: true,
+        },
+        {
+          id: "same-title-b",
+          type: "conversation",
+          title: "发布前检查",
+          sourceKey: "conversation:running",
+          closable: true,
+        },
+      ],
+      activeTabId: "same-title-b",
+    },
+    rightSidebarTabDiscriminators: {
+      "same-title-a": "moebius · feature/sidebar-management",
+      "same-title-b": "moebius · feature/release-check",
+    },
+    onUpdateSessionReadState: async () => undefined,
+    onSetSessionPinned: async () => undefined,
+    onRenameSession: async () => undefined,
+  },
+};
+
 export const PrimaryControlLanes: Story = {
   args: {
     activeRun: {

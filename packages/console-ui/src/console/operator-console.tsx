@@ -94,6 +94,7 @@ import {
 import {
   ConversationSidebar,
   type ConversationSidebarProject,
+  type ConversationSidebarProps,
   type CopySessionLogPathResult,
 } from "@/console/conversation-sidebar";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
@@ -209,6 +210,14 @@ export interface OperatorSession {
   workspaceUnavailableReason?: string | null;
   branchName?: string | null;
   title: string;
+  titleRevision?: number;
+  pinnedAt?: string | null;
+  manualUnreadAt?: string | null;
+  manualUnreadRequiresLeave?: boolean;
+  readStateRevision?: number;
+  attentionRevision?: number;
+  attentionAcknowledgedRevision?: number;
+  hasUnacknowledgedAttention?: boolean;
   status: OperatorSessionStatus;
   awaitsHumanReason: "answer" | "confirmation" | "acceptance" | "exception" | null;
   unreadSince: string | null;
@@ -513,6 +522,9 @@ export interface OperatorConsoleProps {
   onRepairProjectFolder?: (projectId: string, folderPath: string) => void | Promise<void>;
   onArchiveSession?: (sessionId: string, projectId: string) => void | Promise<void>;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
+  onUpdateSessionReadState?: ConversationSidebarProps["onUpdateReadState"];
+  onSetSessionPinned?: ConversationSidebarProps["onSetSessionPinned"];
+  onRenameSession?: ConversationSidebarProps["onRenameSession"];
   onInterrupt(sessionId: string, runId: string): void;
   onRetryRun?: (
     sessionId: string,
@@ -589,6 +601,9 @@ export interface OperatorConsoleProps {
   rightSidebarTabs?: RightSidebarTabsState;
   rightSidebarFocusTabId?: string | null;
   onRightSidebarFocusHandled?: (tabId: string) => void;
+  rightSidebarTabDiscriminators?: Readonly<Record<string, string>>;
+  rightSidebarUpdatingTabIds?: readonly string[];
+  onRetryRightSidebarTitles?: () => void;
   rightSidebarContentSlots?: RightSidebarContentSlots;
   processOutputs?: Readonly<Record<string, OperatorProcessOutputState>>;
   processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
@@ -693,6 +708,9 @@ export function OperatorConsole({
   onRepairProjectFolder,
   onArchiveSession,
   onCopySessionLogPath,
+  onUpdateSessionReadState,
+  onSetSessionPinned,
+  onRenameSession,
   onInterrupt,
   onRetryRun,
   onRetryPendingMessage,
@@ -752,6 +770,9 @@ export function OperatorConsole({
   rightSidebarTabs,
   rightSidebarFocusTabId = null,
   onRightSidebarFocusHandled,
+  rightSidebarTabDiscriminators,
+  rightSidebarUpdatingTabIds,
+  onRetryRightSidebarTitles,
   rightSidebarContentSlots,
   processOutputs = {},
   processInvocationStates = {},
@@ -1370,7 +1391,7 @@ export function OperatorConsole({
       ) : null}
       {!embeddedConversation ? <aside
         className={cn(
-          "relative shrink-0 flex-col overflow-hidden border-r border-line bg-canvas",
+          "relative shrink-0 flex-col overflow-visible border-r border-line bg-canvas",
           effectiveSidebarOpen ? "flex" : "hidden",
         )}
         data-testid="operator-sidebar"
@@ -1438,12 +1459,6 @@ export function OperatorConsole({
           />
         </nav>
 
-        <div className="flex shrink-0 items-center justify-between px-5 pb-1.5 pt-[18px] text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
-          <span>{translate(activeLocale, "sidebar.projects")}</span>
-          {projectConfigurationPending
-            ? <span role="status">{translate(activeLocale, "sidebar.updating")}</span>
-            : null}
-        </div>
         <ConversationSidebar
           projects={sidebarProjects}
           dataState={projectListState}
@@ -1499,6 +1514,9 @@ export function OperatorConsole({
             }
           }}
           onCopySessionLogPath={onCopySessionLogPath}
+          onUpdateReadState={onUpdateSessionReadState}
+          onSetSessionPinned={onSetSessionPinned}
+          onRenameSession={onRenameSession}
           onReorderProjects={isSelectionMutationPending || isProjectMutationPending ? undefined : onReorderProjects}
           onRepairProject={onSelectFolderForRepair === undefined ? undefined : (sidebarProject) => {
             const target = visibleProjects.find((candidate) => candidate.projectId === sidebarProject.id);
@@ -1521,7 +1539,7 @@ export function OperatorConsole({
           disabledReason={translate(activeLocale, "sidebar.projectChanging")}
           projectActionsDisabled={projectConfigurationPending}
           projectActionsDisabledReason={translate(activeLocale, "sidebar.projectConfigUpdating")}
-          className="min-h-0 w-full flex-1 overflow-hidden border-0"
+          className="min-h-0 w-full flex-1 overflow-visible border-0"
         />
 
         <footer className="shrink-0 border-t border-line px-2.5 pb-3 pt-2" data-testid="sidebar-footer">
@@ -1793,7 +1811,7 @@ export function OperatorConsole({
                     MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                   )}>
                     <h1
-                      className="min-w-0 w-full max-w-[760px] flex-1 truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink"
+                      className="min-w-0 w-full max-w-[840px] flex-1 truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink"
                       title={selectedSession.title}
                     >
                       {selectedSession.title}
@@ -2183,6 +2201,9 @@ export function OperatorConsole({
         narrow={rightSidebarOverlay}
         isGitRepository={activeProject.isGitRepository === true}
         state={effectiveRightSidebarTabs}
+        tabDiscriminators={rightSidebarTabDiscriminators}
+        updatingTabIds={rightSidebarUpdatingTabIds}
+        onRetryTitles={onRetryRightSidebarTitles}
         onStateChange={updateRightSidebarTabs}
         onOpenChange={setRightSidebarOpen}
         onWidthChange={setRightSidebarWidth}
@@ -3190,10 +3211,19 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
     newConversationDisabledReason: project.newConversationDisabledReason,
     directoryAvailable: project.directoryAvailable,
     directoryUnavailableReason: project.directoryUnavailableReason,
+    isGitRepository: project.isGitRepository,
     sessions: project.sessions.filter((session) =>
       session.parentSessionId == null && session.analysisParentSessionId == null).map((session) => ({
       id: session.sessionId,
       title: session.title,
+      titleRevision: session.titleRevision,
+      pinnedAt: session.pinnedAt,
+      manualUnreadAt: session.manualUnreadAt,
+      readStateRevision: session.readStateRevision,
+      attentionRevision: session.attentionRevision,
+      hasUnacknowledgedAttention: session.hasUnacknowledgedAttention,
+      branchName: session.branchName ?? project.branchName ?? null,
+      branchUnavailable: session.workspaceUnavailableReason != null,
       unreadSince: session.unreadSince,
       isRunning: session.status === "running" || session.runningCount > 0 || session.hasPendingControlWork === true,
       hasPendingControlWork: session.hasPendingControlWork ?? false,

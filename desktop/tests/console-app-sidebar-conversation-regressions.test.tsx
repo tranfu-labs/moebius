@@ -276,6 +276,118 @@ describe("desktop App sidebar conversation regressions", () => {
     });
   });
 
+  it("projects canonical session titles and hides unresolved stored titles", async () => {
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [
+        {
+          id: "canonical-tab",
+          type: "conversation",
+          title: "陈旧标题",
+          sourceKey: conversationTabSourceKey("source-a"),
+          closable: true,
+        },
+        {
+          id: "unresolved-tab",
+          type: "conversation",
+          title: "不得回显的旧标题",
+          sourceKey: conversationTabSourceKey("missing-session"),
+          closable: true,
+        },
+      ],
+      activeTabId: "canonical-tab",
+    });
+
+    await act(async () => root.render(<App />));
+
+    await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("来源会话") === true);
+    await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("标题更新中") === true);
+    expect(host.textContent).not.toContain("陈旧标题");
+    expect(host.textContent).not.toContain("不得回显的旧标题");
+  });
+
+  it("keeps same-title sessions unique when project, branch, and creation minute all match", async () => {
+    sessions = [
+      createSession("source-a", "同名会话"),
+      createSession("source-b", "同名会话"),
+    ];
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [
+        {
+          id: "same-a",
+          type: "conversation",
+          title: "同名会话",
+          sourceKey: conversationTabSourceKey("source-a"),
+          closable: true,
+        },
+        {
+          id: "same-b",
+          type: "conversation",
+          title: "同名会话",
+          sourceKey: conversationTabSourceKey("source-b"),
+          closable: true,
+        },
+      ],
+      activeTabId: "same-a",
+    });
+
+    await act(async () => root.render(<App />));
+
+    const first = await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.getAttribute("aria-label")?.includes("同刻第 1 个") === true);
+    const second = await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.getAttribute("aria-label")?.includes("同刻第 2 个") === true);
+    expect(first.getAttribute("aria-label")).not.toBe(second.getAttribute("aria-label"));
+    expect(first.textContent).toContain("同刻第 1 个");
+    expect(second.textContent).toContain("同刻第 2 个");
+  });
+
+  it("keeps multiple unresolved titles unique and exposes a manual retry", async () => {
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [
+        {
+          id: "missing-a",
+          type: "conversation",
+          title: "旧标题 A",
+          sourceKey: conversationTabSourceKey("missing-a"),
+          closable: true,
+        },
+        {
+          id: "missing-b",
+          type: "conversation",
+          title: "旧标题 B",
+          sourceKey: conversationTabSourceKey("missing-b"),
+          closable: true,
+        },
+      ],
+      activeTabId: "missing-a",
+    });
+
+    await act(async () => root.render(<App />));
+
+    const first = await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.getAttribute("aria-label")?.includes("会话 · 同刻第 1 个") === true);
+    const second = await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.getAttribute("aria-label")?.includes("会话 · 同刻第 2 个") === true);
+    expect(first.getAttribute("aria-label")).not.toBe(second.getAttribute("aria-label"));
+    expect(host.textContent).toContain("会话名称已保存，标签标题正在重试");
+    const retry = await findElement<HTMLButtonElement>("button", (element) =>
+      element.textContent?.trim() === "重试标题");
+    sessions.push(
+      createSession("missing-a", "恢复后的标题 A"),
+      createSession("missing-b", "恢复后的标题 B"),
+    );
+    await act(async () => retry.click());
+    await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("恢复后的标题 A") === true);
+    await findElement<HTMLElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("恢复后的标题 B") === true);
+    expect(host.textContent).not.toContain("旧标题 A");
+    expect(host.textContent).not.toContain("旧标题 B");
+    expect(host.textContent).not.toContain("会话名称已保存，标签标题正在重试");
+  });
+
   it("removes an archived non-current sidebar tab from the live DOM without disturbing its sibling", async () => {
     sessions = [
       createSession("source-a", "来源会话"),

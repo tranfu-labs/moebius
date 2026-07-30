@@ -149,6 +149,38 @@ export type SqliteStateCommand =
     }
   | { kind: "local-mark-session-result-read"; sessionId: string; unreadSince: string; now: string }
   | {
+      kind: "local-update-session-read-state";
+      sessionId: string;
+      action: "mark-read-attention" | "mark-read-unread" | "mark-unread";
+      expectedAttentionRevision: number;
+      expectedReadStateRevision: number;
+      expectedTitleRevision: number;
+      isCurrent: boolean;
+      now: string;
+    }
+  | { kind: "local-arm-session-manual-unread"; sessionId: string; now: string }
+  | { kind: "local-mark-session-viewed"; sessionId: string; now: string }
+  | {
+      kind: "local-set-session-pinned";
+      sessionId: string;
+      pinned: boolean;
+      expectedPinnedAt: string | null;
+      now: string;
+    }
+  | {
+      kind: "local-rename-session";
+      sessionId: string;
+      title: string;
+      expectedTitleRevision: number;
+      now: string;
+    }
+  | {
+      kind: "local-sync-session-continuation-attention";
+      sessionId: string;
+      attentionKind: "project-unavailable" | "team-deleted" | "team-needs-repair" | null;
+      now: string;
+    }
+  | {
       kind: "local-append-user";
       sessionId: string;
       body: string;

@@ -65,6 +65,8 @@ describe("right sidebar tabs store", () => {
       draftId: "draft-a",
       sessionId: "analysis-a",
       title: "分析 Agent 运行耗时",
+      conversationContext: "Moebius · feature/sidebar",
+      conversationCreatedAt: "2026-07-30T09:15:00.000Z",
     })).toEqual(["source-a"]);
 
     const restarted = createRightSidebarTabsStore(storage);
@@ -75,6 +77,8 @@ describe("right sidebar tabs store", () => {
         title: "分析 Agent 运行耗时",
         sourceKey: conversationTabSourceKey("analysis-a"),
         closable: true,
+        conversationContext: "Moebius · feature/sidebar",
+        conversationCreatedAt: "2026-07-30T09:15:00.000Z",
       }],
       activeTabId: "draft",
     });
@@ -120,6 +124,35 @@ describe("right sidebar tabs store", () => {
       activeTabId: "kept",
     });
     expect(store.read("source-b")).toEqual({ tabs: [], activeTabId: null });
+  });
+
+  it("renames one conversation in every visible or retained host without changing tab identity", () => {
+    const storage = new MemoryStorage();
+    const store = createRightSidebarTabsStore(storage);
+    for (const hostId of ["visible-host", "retained-host"]) {
+      store.write(hostId, {
+        tabs: [{
+          id: `${hostId}-tab`,
+          type: "conversation",
+          title: "原标题",
+          sourceKey: conversationTabSourceKey("renamed-session"),
+          closable: true,
+        }],
+        activeTabId: `${hostId}-tab`,
+      });
+    }
+
+    expect(store.renameConversation("renamed-session", "新标题"))
+      .toEqual(["visible-host", "retained-host"]);
+    const restarted = createRightSidebarTabsStore(storage);
+    expect(restarted.read("visible-host")).toMatchObject({
+      tabs: [{ id: "visible-host-tab", title: "新标题" }],
+      activeTabId: "visible-host-tab",
+    });
+    expect(restarted.read("retained-host")).toMatchObject({
+      tabs: [{ id: "retained-host-tab", title: "新标题" }],
+      activeTabId: "retained-host-tab",
+    });
   });
 });
 

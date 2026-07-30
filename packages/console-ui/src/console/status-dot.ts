@@ -6,6 +6,9 @@ export interface StatusDotFacts {
   unresolvedSystemEventKind?: "run-not-started" | "run-stuck" | "retry-exhausted" | null;
   isNonContinuable?: boolean;
   unreadSince: string | null;
+  manualUnreadAt?: string | null;
+  hasUnread?: boolean;
+  hasUnacknowledgedAttention?: boolean;
   isRunning: boolean;
   hasPendingControlWork?: boolean;
   /** Legacy field retained only for source compatibility; it never affects the dot. */
@@ -13,11 +16,19 @@ export interface StatusDotFacts {
 }
 
 export function deriveStatusDot(facts: StatusDotFacts): ConversationStatusDot {
-  if ((facts.unresolvedSystemEventKind ?? null) !== null || facts.isNonContinuable === true) {
+  if (
+    facts.hasUnacknowledgedAttention === true
+    || (
+      facts.hasUnacknowledgedAttention === undefined
+      && ((facts.unresolvedSystemEventKind ?? null) !== null || facts.isNonContinuable === true)
+    )
+  ) {
     return "red";
   }
   const isRunning = facts.isRunning || facts.hasPendingControlWork === true;
-  if (!isRunning && facts.unreadSince !== null) {
+  const hasUnread = facts.hasUnread
+    ?? ((facts.unreadSince ?? null) !== null || (facts.manualUnreadAt ?? null) !== null);
+  if (!isRunning && hasUnread) {
     return "blue";
   }
   if (isRunning) {

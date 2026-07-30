@@ -24,7 +24,10 @@ export interface RightSidebarTabsStore {
     draftId: string;
     sessionId: string;
     title: string;
+    conversationContext?: string;
+    conversationCreatedAt?: string;
   }): readonly string[];
+  renameConversation(sessionId: string, title: string): readonly string[];
   removeSession(sessionId: string): void;
   clearHosts(hostSessionIds: readonly string[]): void;
 }
@@ -99,7 +102,32 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
             ...tab,
             sourceKey: conversationTabSourceKey(input.sessionId),
             title: input.title,
+            conversationContext: input.conversationContext,
+            conversationCreatedAt: input.conversationCreatedAt,
           };
+        });
+        if (!changed) continue;
+        updatedHosts.push(hostId);
+        document.hosts[hostId] = serializeRightSidebarTabsState({
+          tabs,
+          activeTabId: parsed.activeTabId,
+        });
+      }
+      if (updatedHosts.length > 0) writeDocument(document);
+      return updatedHosts;
+    },
+    renameConversation(sessionId, title) {
+      const document = readDocument();
+      const updatedHosts: string[] = [];
+      for (const [hostId, state] of Object.entries(document.hosts)) {
+        const parsed = parseStoredState(state);
+        let changed = false;
+        const tabs = parsed.tabs.map((tab) => {
+          if (tab.type !== "conversation") return tab;
+          const locator = parseConversationTabSourceKey(tab.sourceKey);
+          if (locator?.kind !== "session" || locator.sessionId !== sessionId) return tab;
+          changed = true;
+          return { ...tab, title };
         });
         if (!changed) continue;
         updatedHosts.push(hostId);

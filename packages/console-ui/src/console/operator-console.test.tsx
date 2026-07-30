@@ -125,7 +125,7 @@ describe("OperatorConsole", () => {
     expect(projectList).toHaveClass("overflow-y-auto");
     expect(projectList).not.toContainElement(brandRegion);
     expect(projectList).not.toContainElement(appActions);
-    expect(projectList).not.toContainElement(projectHeading);
+    expect(projectList).toContainElement(projectHeading);
     expect(projectList).not.toContainElement(footer);
 
     expect(screen.queryByRole("button", { name: "打开项目" })).not.toBeInTheDocument();

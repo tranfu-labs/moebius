@@ -44,6 +44,216 @@ describe("ConversationSidebar", () => {
     expect(deriveStatusDot({ unreadSince: null, isRunning: false })).toBe("none");
     expect(deriveStatusDot({ awaitsHumanReason: "legacy-value", unreadSince: null, isRunning: false })).toBe("none");
     expect(deriveStatusDot({ unreadSince: "2026-07-09T00:02:00.000Z", isRunning: false, hasPendingControlWork: true })).toBe("blink");
+    expect(deriveStatusDot({
+      hasUnacknowledgedAttention: true,
+      manualUnreadAt: "2026-07-09T00:02:00.000Z",
+      unreadSince: null,
+      isRunning: true,
+    })).toBe("red");
+    expect(deriveStatusDot({
+      hasUnacknowledgedAttention: false,
+      manualUnreadAt: "2026-07-09T00:02:00.000Z",
+      unreadSince: null,
+      isRunning: false,
+    })).toBe("blue");
+  });
+
+  it("shows the read action dictated by the final visible dot", async () => {
+    const onUpdateReadState = vi.fn(async () => undefined);
+    const cases = [
+      {
+        session: {
+          id: "red",
+          title: "红点对话",
+          createdAt: "2026-07-09T00:00:00.000Z",
+          hasUnacknowledgedAttention: true,
+          unreadSince: null,
+          isRunning: true,
+        },
+        expected: "标记为已读",
+      },
+      {
+        session: {
+          id: "blue",
+          title: "蓝点对话",
+          createdAt: "2026-07-09T00:00:00.000Z",
+          hasUnacknowledgedAttention: false,
+          manualUnreadAt: "2026-07-09T00:00:00.000Z",
+          unreadSince: null,
+          isRunning: false,
+        },
+        expected: "标记为已读",
+      },
+      {
+        session: {
+          id: "running",
+          title: "运行对话",
+          createdAt: "2026-07-09T00:00:00.000Z",
+          hasUnacknowledgedAttention: false,
+          unreadSince: null,
+          isRunning: true,
+        },
+        expected: null,
+      },
+      {
+        session: {
+          id: "idle",
+          title: "静止对话",
+          createdAt: "2026-07-09T00:00:00.000Z",
+          hasUnacknowledgedAttention: false,
+          unreadSince: null,
+          isRunning: false,
+        },
+        expected: "标记为未读",
+      },
+    ] as const;
+
+    const { rerender } = render(<div />);
+    for (const item of cases) {
+      rerender(
+        <ConversationSidebar
+          projects={[{ id: "project", path: "/tmp/project", sessions: [item.session] }]}
+          onUpdateReadState={onUpdateReadState}
+        />,
+      );
+      fireEvent.contextMenu(screen.getByTestId("conversation-sidebar-session"));
+      await screen.findByRole("menu");
+      if (item.expected === null) {
+        expect(screen.queryByRole("menuitem", { name: /标记为/u })).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByRole("menuitem", { name: item.expected })).toBeInTheDocument();
+      }
+      fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    }
+  });
+
+  it("renders one shared preview surface and replaces Git context without duplicating it", () => {
+    const gitProject: ConversationSidebarProject = {
+      id: "git",
+      path: "/workspace/git-project",
+      label: "展示项目名",
+      isGitRepository: true,
+      sessions: [{
+        id: "git-session",
+        title: "Git 对话",
+        branchName: "feature/sidebar",
+        unreadSince: null,
+        isRunning: false,
+        createdAt: "2026-07-09T00:00:00.000Z",
+      }],
+    };
+    const plainProject: ConversationSidebarProject = {
+      id: "plain",
+      path: "/workspace/plain-folder",
+      isGitRepository: false,
+      sessions: [{
+        id: "plain-session",
+        title: "普通对话",
+        unreadSince: null,
+        isRunning: false,
+        createdAt: "2026-07-09T00:00:00.000Z",
+      }],
+    };
+    const { rerender } = render(<ConversationSidebar projects={[gitProject, plainProject]} />);
+
+    const preview = screen.getByTestId("conversation-sidebar-shared-preview");
+    expect(screen.getAllByTestId("conversation-sidebar-shared-preview")).toHaveLength(1);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Git 对话" }));
+    expect(preview).toHaveAttribute("data-visible", "true");
+    expect(preview).toHaveTextContent("Git 对话");
+    expect(preview).toHaveTextContent("git-project");
+    expect(preview).toHaveTextContent("feature/sidebar");
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "普通对话" }));
+    expect(screen.getAllByTestId("conversation-sidebar-shared-preview")).toHaveLength(1);
+    expect(preview).toHaveTextContent("普通对话");
+    expect(preview).toHaveTextContent("plain-folder");
+    expect(preview).not.toHaveTextContent("feature/sidebar");
+
+    rerender(<ConversationSidebar projects={[{
+      ...gitProject,
+      sessions: [{ ...gitProject.sessions[0]!, branchName: "detached" }],
+    }]} />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Git 对话" }));
+    expect(preview).toHaveTextContent("detached");
+
+    rerender(<ConversationSidebar projects={[{
+      ...gitProject,
+      sessions: [{ ...gitProject.sessions[0]!, branchUnavailable: true }],
+    }]} />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Git 对话" }));
+    expect(preview).toHaveTextContent("分支信息不可用");
+
+    rerender(<ConversationSidebar projects={[{
+      ...gitProject,
+      directoryAvailable: false,
+      isGitRepository: false,
+      sessions: [{
+        ...gitProject.sessions[0]!,
+        branchName: null,
+        branchUnavailable: false,
+      }],
+    }]} />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Git 对话" }));
+    expect(preview).toHaveTextContent("分支信息不可用");
+  });
+
+  it("moves a pinned conversation without rendering a duplicate and restores created order", async () => {
+    const onSetSessionPinned = vi.fn(async () => undefined);
+    const baseProject: ConversationSidebarProject = {
+      id: "project",
+      path: "/tmp/project",
+      sessions: [
+        { id: "older", title: "较早", unreadSince: null, isRunning: false, createdAt: "2026-07-09T00:00:00.000Z" },
+        { id: "newer", title: "较新", unreadSince: null, isRunning: false, createdAt: "2026-07-09T00:01:00.000Z" },
+      ],
+    };
+    const { rerender } = render(
+      <ConversationSidebar projects={[baseProject]} onSetSessionPinned={onSetSessionPinned} />,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "较早" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "置顶" }));
+    await waitFor(() => expect(onSetSessionPinned).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "older" }),
+      "project",
+      true,
+    ));
+
+    const pinnedProject = {
+      ...baseProject,
+      sessions: baseProject.sessions.map((session) =>
+        session.id === "older" ? { ...session, pinnedAt: "2026-07-09T00:02:00.000Z" } : session),
+    };
+    rerender(<ConversationSidebar projects={[pinnedProject]} onSetSessionPinned={onSetSessionPinned} />);
+    expect(screen.getAllByTestId("conversation-sidebar-session")
+      .filter((row) => row.dataset.sessionId === "older")).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "置顶" })).toContainElement(
+      screen.getByRole("button", { name: "较早" }),
+    );
+
+    rerender(<ConversationSidebar projects={[baseProject]} onSetSessionPinned={onSetSessionPinned} />);
+    expect(within(screen.getByRole("list", { name: "project 对话" }))
+      .getAllByTestId("conversation-sidebar-session")
+      .map((row) => row.dataset.sessionId)).toEqual(["newer", "older"]);
+  });
+
+  it("keeps rename input and the original row title when persistence fails", async () => {
+    const onRenameSession = vi.fn(async () => {
+      throw new Error("保存失败");
+    });
+    render(<ConversationSidebar projects={[project]} onRenameSession={onRenameSession} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "导出功能重构" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "重命名对话" }));
+    const input = screen.getByRole("textbox", { name: "对话名称" });
+    fireEvent.change(input, { target: { value: "新的名称" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败");
+    expect(screen.getByRole("textbox", { name: "对话名称" })).toHaveValue("新的名称");
+    expect(screen.getByRole("button", { name: "导出功能重构" })).toBeInTheDocument();
   });
 
   it("places the dragged project around row midpoints without mutating input", () => {
@@ -170,11 +380,11 @@ describe("ConversationSidebar", () => {
     render(<ConversationSidebar projects={[project]} />);
 
     expect(screen.getByRole("button", { name: "失败汇总，需要你处理" })).toHaveAttribute("data-status-dot", "red");
-    expect(screen.getByRole("button", { name: "文档记录，有新结果" })).toHaveAttribute("data-status-dot", "blue");
+    expect(screen.getByRole("button", { name: "文档记录，未读" })).toHaveAttribute("data-status-dot", "blue");
     expect(screen.getByRole("button", { name: "进度提示，正在运行" })).toHaveAttribute("data-status-dot", "blink");
     expect(screen.getByRole("button", { name: "导出功能重构" })).toHaveAttribute("data-status-dot", "none");
     expect(screen.getByRole("img", { name: "需要你处理" })).toHaveAttribute("title", "需要你处理");
-    expect(screen.getByRole("img", { name: "有新结果" })).toHaveAttribute("title", "有新结果");
+    expect(screen.getByRole("img", { name: "未读" })).toHaveAttribute("title", "未读");
     expect(screen.getByRole("img", { name: "正在运行" })).toHaveAttribute("title", "正在运行");
     expect(screen.getByRole("img", { name: "当前静止" })).toHaveAttribute("title", "当前静止");
   });
@@ -216,6 +426,45 @@ describe("ConversationSidebar", () => {
 
     expect(screen.getByRole("button", { name: "moebius 项目，已展开" })).toHaveAttribute("data-status-dot", "none");
     expect(screen.getByRole("button", { name: "导出功能重构" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("excludes pinned conversations from a collapsed project status", () => {
+    const pinnedRed = {
+      id: "pinned-red",
+      title: "置顶红点",
+      pinnedAt: "2026-07-09T00:03:00.000Z",
+      hasUnacknowledgedAttention: true,
+      unreadSince: null,
+      isRunning: false,
+      createdAt: "2026-07-09T00:03:00.000Z",
+    };
+    const projectBlue = {
+      id: "project-blue",
+      title: "项目蓝点",
+      unreadSince: "2026-07-09T00:02:00.000Z",
+      isRunning: false,
+      createdAt: "2026-07-09T00:02:00.000Z",
+    };
+    const projectRunning = {
+      id: "project-running",
+      title: "项目运行",
+      unreadSince: null,
+      isRunning: true,
+      createdAt: "2026-07-09T00:01:00.000Z",
+    };
+    render(<ConversationSidebar projects={[{
+      id: "aggregate",
+      path: "/tmp/aggregate",
+      sessions: [pinnedRed, projectBlue, projectRunning],
+    }]} />);
+
+    const projectRow = screen.getByTestId("conversation-sidebar-project");
+    firePointer(projectRow, "pointerdown", { pointerId: 12, button: 0, clientX: 10, clientY: 10 });
+    firePointer(projectRow, "pointerup", { pointerId: 12, button: 0, clientX: 10, clientY: 10 });
+
+    expect(screen.getByRole("button", {
+      name: "aggregate 项目，已折叠，未读",
+    })).toHaveAttribute("data-status-dot", "blue");
   });
 
   it("keeps project action buttons from bubbling into the project disclosure", () => {

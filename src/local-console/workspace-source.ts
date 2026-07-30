@@ -197,7 +197,7 @@ async function inspectLocalWorkspaceFacts(
   }
   return {
     isGitRepository: true,
-    branchName: await readCurrentBranch(folderPath, signal, dependencies),
+    branchName: await readCurrentBranch(folderPath, signal, dependencies).catch(() => null),
   };
 }
 

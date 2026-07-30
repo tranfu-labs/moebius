@@ -359,9 +359,18 @@ export interface LocalConsoleSessionSummary {
   workspaceUnavailableReason?: string | null;
   branchName?: string | null;
   title: string;
+  titleRevision?: number;
+  pinnedAt?: string | null;
   status: LocalConsoleSessionStatus;
   awaitsHumanReason: LocalConsoleAwaitsHumanReason | null;
   unreadSince: string | null;
+  manualUnreadAt?: string | null;
+  manualUnreadRequiresLeave?: boolean;
+  readStateRevision?: number;
+  attentionRevision?: number;
+  attentionAcknowledgedRevision?: number;
+  attentionKind?: "project-unavailable" | "team-deleted" | "team-needs-repair" | null;
+  hasUnacknowledgedAttention?: boolean;
   unresolvedSystemEventKind?: LocalConsoleSystemEventKind | null;
   lastMessageMentionsAgent?: boolean;
   hasPendingControlWork?: boolean;
@@ -636,6 +645,34 @@ export interface LocalConsoleStore {
     now: string;
   }): Promise<LocalConsoleSessionSummary>;
   markSessionResultRead(input: { sessionId: string; unreadSince: string; now: string }): Promise<boolean>;
+  updateSessionReadState?(input: {
+    sessionId: string;
+    action: "mark-read-attention" | "mark-read-unread" | "mark-unread";
+    expectedAttentionRevision: number;
+    expectedReadStateRevision: number;
+    expectedTitleRevision: number;
+    isCurrent: boolean;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary>;
+  armSessionManualUnread?(input: { sessionId: string; now: string }): Promise<LocalConsoleSessionSummary>;
+  markSessionViewed?(input: { sessionId: string; now: string }): Promise<LocalConsoleSessionSummary>;
+  setSessionPinned?(input: {
+    sessionId: string;
+    pinned: boolean;
+    expectedPinnedAt: string | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary>;
+  renameSession?(input: {
+    sessionId: string;
+    title: string;
+    expectedTitleRevision: number;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary>;
+  syncSessionContinuationAttention?(input: {
+    sessionId: string;
+    kind: "project-unavailable" | "team-deleted" | "team-needs-repair" | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary>;
   appendUserMessage(input: {
     sessionId: string;
     body: string;

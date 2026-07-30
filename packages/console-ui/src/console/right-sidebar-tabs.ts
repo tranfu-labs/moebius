@@ -24,6 +24,8 @@ export interface RightSidebarTab {
   title: string;
   sourceKey: string | null;
   closable: true;
+  conversationContext?: string;
+  conversationCreatedAt?: string;
   processScroll?: RightSidebarProcessScrollSnapshot;
 }
 
@@ -43,6 +45,8 @@ export interface RightSidebarSourceTab {
   type: Exclude<RightSidebarTabType, "blank">;
   title: string;
   sourceKey: string;
+  conversationContext?: string;
+  conversationCreatedAt?: string;
 }
 
 export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
@@ -220,17 +224,27 @@ export function openRightSidebarSourceTab(
     const shouldRefreshConversationTitle = existing.type === "conversation"
       && source.type === "conversation"
       && existing.title !== source.title;
+    const shouldRefreshConversationContext = existing.type === "conversation"
+      && source.type === "conversation"
+      && (
+        existing.conversationContext !== source.conversationContext
+        || existing.conversationCreatedAt !== source.conversationCreatedAt
+      );
     if (
       state.activeTabId === existing.id
       && !shouldUpgradeRunSource
       && !shouldCorrectUnknownTitle
       && !shouldRefreshConversationTitle
+      && !shouldRefreshConversationContext
     ) {
       return state;
     }
     return {
       ...state,
-      tabs: shouldUpgradeRunSource || shouldCorrectUnknownTitle || shouldRefreshConversationTitle
+      tabs: shouldUpgradeRunSource
+        || shouldCorrectUnknownTitle
+        || shouldRefreshConversationTitle
+        || shouldRefreshConversationContext
         ? state.tabs.map((tab) => tab.id === existing.id
             ? {
                 ...tab,
@@ -238,6 +252,12 @@ export function openRightSidebarSourceTab(
                 title: shouldCorrectUnknownTitle || shouldRefreshConversationTitle
                   ? source.title
                   : tab.title,
+                ...(source.type === "conversation"
+                  ? {
+                      conversationContext: source.conversationContext,
+                      conversationCreatedAt: source.conversationCreatedAt,
+                    }
+                  : {}),
               }
             : tab)
         : state.tabs,
@@ -411,12 +431,24 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
     ) {
       return [];
     }
+    const conversationContext = entry.type === "conversation"
+      && typeof entry.conversationContext === "string"
+      && entry.conversationContext.trim() !== ""
+      ? entry.conversationContext.trim()
+      : undefined;
+    const conversationCreatedAt = entry.type === "conversation"
+      && typeof entry.conversationCreatedAt === "string"
+      && entry.conversationCreatedAt.trim() !== ""
+      ? entry.conversationCreatedAt
+      : undefined;
     return [{
       id: entry.id,
       type: entry.type,
       title: normalizeBuiltinTabTitle(entry.type, entry.title, entry.sourceKey),
       sourceKey: entry.sourceKey,
       closable: true,
+      ...(conversationContext === undefined ? {} : { conversationContext }),
+      ...(conversationCreatedAt === undefined ? {} : { conversationCreatedAt }),
     }];
   });
   const uniqueTabs = tabs.filter(

@@ -279,6 +279,63 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     return this.run({ kind: "local-mark-session-result-read", ...input });
   }
 
+  async updateSessionReadState(input: {
+    sessionId: string;
+    action: "mark-read-attention" | "mark-read-unread" | "mark-unread";
+    expectedAttentionRevision: number;
+    expectedReadStateRevision: number;
+    expectedTitleRevision: number;
+    isCurrent: boolean;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({ kind: "local-update-session-read-state", ...input });
+  }
+
+  async armSessionManualUnread(input: {
+    sessionId: string;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({ kind: "local-arm-session-manual-unread", ...input });
+  }
+
+  async markSessionViewed(input: {
+    sessionId: string;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({ kind: "local-mark-session-viewed", ...input });
+  }
+
+  async setSessionPinned(input: {
+    sessionId: string;
+    pinned: boolean;
+    expectedPinnedAt: string | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({ kind: "local-set-session-pinned", ...input });
+  }
+
+  async renameSession(input: {
+    sessionId: string;
+    title: string;
+    expectedTitleRevision: number;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({ kind: "local-rename-session", ...input });
+  }
+
+  async syncSessionContinuationAttention(input: {
+    sessionId: string;
+    kind: "project-unavailable" | "team-deleted" | "team-needs-repair" | null;
+    now: string;
+  }): Promise<LocalConsoleSessionSummary> {
+    return this.run({
+      kind: "local-sync-session-continuation-attention",
+      sessionId: input.sessionId,
+      attentionKind: input.kind,
+      now: input.now,
+    });
+  }
+
   async appendUserMessage(input: {
     sessionId: string;
     body: string;
@@ -1625,9 +1682,28 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       : null,
     branchName: "branchName" in value ? readNullableString(value.branchName, "branchName") : null,
     title: readString(value.title, "title"),
+    titleRevision: "titleRevision" in value ? readNumber(value.titleRevision, "titleRevision") : 0,
+    pinnedAt: "pinnedAt" in value ? readNullableString(value.pinnedAt, "pinnedAt") : null,
     status: readSessionStatus(value.status),
     awaitsHumanReason: readAwaitsHumanReason(value.awaitsHumanReason),
     unreadSince: readNullableString(value.unreadSince, "unreadSince"),
+    manualUnreadAt: "manualUnreadAt" in value
+      ? readNullableString(value.manualUnreadAt, "manualUnreadAt")
+      : null,
+    manualUnreadRequiresLeave: value.manualUnreadRequiresLeave === true,
+    readStateRevision: "readStateRevision" in value
+      ? readNumber(value.readStateRevision, "readStateRevision")
+      : 0,
+    attentionRevision: "attentionRevision" in value
+      ? readNumber(value.attentionRevision, "attentionRevision")
+      : 0,
+    attentionAcknowledgedRevision: "attentionAcknowledgedRevision" in value
+      ? readNumber(value.attentionAcknowledgedRevision, "attentionAcknowledgedRevision")
+      : 0,
+    attentionKind: "attentionKind" in value
+      ? readAttentionKind(value.attentionKind)
+      : null,
+    hasUnacknowledgedAttention: value.hasUnacknowledgedAttention === true,
     unresolvedSystemEventKind: "unresolvedSystemEventKind" in value && value.unresolvedSystemEventKind !== null
       ? readSystemEventKind(value.unresolvedSystemEventKind)
       : null,
@@ -1767,6 +1843,20 @@ function readSystemEventKind(value: unknown): LocalConsoleSystemEventKind {
     return value;
   }
   throw new Error(`Invalid local console system event kind: ${String(value)}`);
+}
+
+function readAttentionKind(
+  value: unknown,
+): "project-unavailable" | "team-deleted" | "team-needs-repair" | null {
+  if (
+    value === null
+    || value === "project-unavailable"
+    || value === "team-deleted"
+    || value === "team-needs-repair"
+  ) {
+    return value;
+  }
+  throw new Error(`Invalid local console attention kind: ${String(value)}`);
 }
 
 function readMessageSystemEventKind(kind: unknown, error: unknown): LocalConsoleSystemEventKind {

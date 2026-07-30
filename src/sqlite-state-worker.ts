@@ -237,6 +237,18 @@ function runCommand(input: WorkerInput): unknown {
         return searchLocalSessions(database, input.command);
       case "local-mark-session-result-read":
         return markSessionResultRead(database, input.command);
+      case "local-update-session-read-state":
+        return updateSessionReadState(database, input.command);
+      case "local-arm-session-manual-unread":
+        return armSessionManualUnread(database, input.command);
+      case "local-mark-session-viewed":
+        return markSessionViewed(database, input.command);
+      case "local-set-session-pinned":
+        return setSessionPinned(database, input.command);
+      case "local-rename-session":
+        return renameSession(database, input.command);
+      case "local-sync-session-continuation-attention":
+        return syncSessionContinuationAttention(database, input.command);
       case "local-add-draft-attachment":
         return addDraftAttachment(database, input.command);
       case "local-list-draft-attachments":
@@ -339,6 +351,16 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
         awaits_human_reason IS NULL OR awaits_human_reason IN ('answer', 'confirmation', 'acceptance', 'exception')
       ),
       unread_since TEXT,
+      manual_unread_at TEXT,
+      manual_unread_requires_leave INTEGER NOT NULL DEFAULT 0,
+      read_state_revision INTEGER NOT NULL DEFAULT 0,
+      attention_revision INTEGER NOT NULL DEFAULT 0,
+      attention_acknowledged_revision INTEGER NOT NULL DEFAULT 0,
+      attention_kind TEXT CHECK (
+        attention_kind IS NULL OR attention_kind IN ('project-unavailable', 'team-deleted', 'team-needs-repair')
+      ),
+      pinned_at TEXT,
+      title_revision INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       CHECK (source_type <> 'local' OR project_id IS NOT NULL)
@@ -552,6 +574,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
+  migrateSessionSidebarMetadata(database);
   migrateSystemEventKinds(database);
   migrateLocalTerminalFacts(database);
   database.exec(
@@ -919,6 +942,36 @@ function migrateSessionAttentionState(database: SqliteDatabase): void {
         ), '等待真人：') > 0
     `);
   }
+}
+
+function migrateSessionSidebarMetadata(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "sessions", "manual_unread_at")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN manual_unread_at TEXT");
+  }
+  if (!tableHasColumn(database, "sessions", "manual_unread_requires_leave")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN manual_unread_requires_leave INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!tableHasColumn(database, "sessions", "read_state_revision")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN read_state_revision INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!tableHasColumn(database, "sessions", "attention_revision")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN attention_revision INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!tableHasColumn(database, "sessions", "attention_acknowledged_revision")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN attention_acknowledged_revision INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!tableHasColumn(database, "sessions", "attention_kind")) {
+    database.exec(
+      "ALTER TABLE sessions ADD COLUMN attention_kind TEXT CHECK (attention_kind IS NULL OR attention_kind IN ('project-unavailable', 'team-deleted', 'team-needs-repair'))",
+    );
+  }
+  if (!tableHasColumn(database, "sessions", "pinned_at")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN pinned_at TEXT");
+  }
+  if (!tableHasColumn(database, "sessions", "title_revision")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN title_revision INTEGER NOT NULL DEFAULT 0");
+  }
+  markSchemaMigration(database, "sidebar-conversation-management-metadata");
 }
 
 function migrateSessionsCreatedAt(database: SqliteDatabase, now: string): void {
@@ -2628,7 +2681,7 @@ function updateSessionsArchivedAt(
   database
     .prepare(
       `UPDATE sessions
-       SET archived_at = ?, updated_at = ?
+       SET archived_at = ?, pinned_at = NULL, updated_at = ?
        WHERE session_id IN (${placeholders}) AND archived_at IS NULL`,
     )
     .run(archivedAt, updatedAt, ...sessionIds);
@@ -2881,11 +2934,210 @@ function markSessionResultRead(
   const result = database
     .prepare(
       `UPDATE sessions
-       SET unread_since = NULL, updated_at = ?
+       SET unread_since = NULL,
+           read_state_revision = read_state_revision + 1,
+           updated_at = ?
        WHERE session_id = ? AND source_type = 'local' AND unread_since = ?`,
     )
     .run(input.now, input.sessionId, input.unreadSince);
   return Number(result.changes ?? 0) === 1;
+}
+
+function updateSessionReadState(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-update-session-read-state" }>,
+): unknown {
+  return transaction(database, () => {
+    const row = database
+      .prepare("SELECT * FROM sessions WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL")
+      .get(input.sessionId);
+    if (!isRecord(row)) {
+      throw new Error(`local console session not found: ${input.sessionId}`);
+    }
+    const attentionRevision = readNumber(row.attention_revision, "attention_revision");
+    const readStateRevision = readNumber(row.read_state_revision, "read_state_revision");
+    const titleRevision = readNumber(row.title_revision, "title_revision");
+    if (
+      attentionRevision !== input.expectedAttentionRevision
+      || readStateRevision !== input.expectedReadStateRevision
+      || titleRevision !== input.expectedTitleRevision
+    ) {
+      throw new Error("SESSION_SIDEBAR_STATE_STALE");
+    }
+    const visible = localSessionVisibleAttentionState(database, row);
+    if (
+      (input.action === "mark-read-attention" && visible !== "red")
+      || (input.action === "mark-read-unread" && visible !== "blue")
+      || (input.action === "mark-unread" && visible !== "none")
+    ) {
+      throw new Error("SESSION_SIDEBAR_STATE_STALE");
+    }
+    if (input.action === "mark-read-attention") {
+      database
+        .prepare(
+          `UPDATE sessions
+           SET attention_acknowledged_revision = attention_revision,
+               read_state_revision = read_state_revision + 1,
+               updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(input.now, input.sessionId);
+    } else if (input.action === "mark-read-unread") {
+      database
+        .prepare(
+          `UPDATE sessions
+           SET unread_since = NULL, manual_unread_at = NULL,
+               manual_unread_requires_leave = 0,
+               read_state_revision = read_state_revision + 1,
+               updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(input.now, input.sessionId);
+    } else {
+      database
+        .prepare(
+          `UPDATE sessions
+           SET manual_unread_at = ?, manual_unread_requires_leave = ?,
+               read_state_revision = read_state_revision + 1,
+               updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(input.now, input.isCurrent ? 1 : 0, input.now, input.sessionId);
+    }
+    return requireLocalSession(database, input.sessionId);
+  });
+}
+
+function armSessionManualUnread(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-arm-session-manual-unread" }>,
+): unknown {
+  database
+    .prepare(
+      `UPDATE sessions
+       SET manual_unread_requires_leave = 0,
+           read_state_revision = read_state_revision + 1,
+           updated_at = ?
+       WHERE session_id = ? AND source_type = 'local'
+         AND manual_unread_at IS NOT NULL AND manual_unread_requires_leave <> 0`,
+    )
+    .run(input.now, input.sessionId);
+  return requireLocalSession(database, input.sessionId);
+}
+
+function markSessionViewed(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-mark-session-viewed" }>,
+): unknown {
+  database
+    .prepare(
+      `UPDATE sessions
+       SET manual_unread_at = NULL, manual_unread_requires_leave = 0,
+           read_state_revision = read_state_revision + 1,
+           updated_at = ?
+       WHERE session_id = ? AND source_type = 'local'
+         AND manual_unread_at IS NOT NULL AND manual_unread_requires_leave = 0`,
+    )
+    .run(input.now, input.sessionId);
+  return requireLocalSession(database, input.sessionId);
+}
+
+function setSessionPinned(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-set-session-pinned" }>,
+): unknown {
+  return transaction(database, () => {
+    const row = database
+      .prepare("SELECT pinned_at FROM sessions WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL")
+      .get(input.sessionId);
+    if (!isRecord(row)) {
+      throw new Error(`local console session not found: ${input.sessionId}`);
+    }
+    const pinnedAt = readNullableString(row.pinned_at, "pinned_at");
+    if (pinnedAt !== input.expectedPinnedAt || input.pinned === (pinnedAt !== null)) {
+      throw new Error("SESSION_SIDEBAR_STATE_STALE");
+    }
+    database
+      .prepare("UPDATE sessions SET pinned_at = ?, updated_at = ? WHERE session_id = ?")
+      .run(input.pinned ? input.now : null, input.now, input.sessionId);
+    return requireLocalSession(database, input.sessionId);
+  });
+}
+
+function renameSession(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-rename-session" }>,
+): unknown {
+  const title = input.title.trim();
+  if (title === "") {
+    throw new Error("SESSION_TITLE_EMPTY");
+  }
+  const result = database
+    .prepare(
+      `UPDATE sessions
+       SET title = ?, title_revision = title_revision + 1, updated_at = ?
+       WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL
+         AND title_revision = ?`,
+    )
+    .run(title, input.now, input.sessionId, input.expectedTitleRevision);
+  if (Number(result.changes ?? 0) !== 1) {
+    throw new Error("SESSION_SIDEBAR_STATE_STALE");
+  }
+  return requireLocalSession(database, input.sessionId);
+}
+
+function syncSessionContinuationAttention(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-sync-session-continuation-attention" }>,
+): unknown {
+  return transaction(database, () => {
+    const row = database
+      .prepare("SELECT attention_kind FROM sessions WHERE session_id = ? AND source_type = 'local'")
+      .get(input.sessionId);
+    if (!isRecord(row)) {
+      throw new Error(`local console session not found: ${input.sessionId}`);
+    }
+    const currentKind = readNullableString(row.attention_kind, "attention_kind");
+    if (currentKind !== input.attentionKind) {
+      database
+        .prepare(
+          `UPDATE sessions
+           SET attention_kind = ?,
+               attention_revision = attention_revision + CASE WHEN ? IS NULL THEN 0 ELSE 1 END,
+               updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(input.attentionKind, input.attentionKind, input.now, input.sessionId);
+    }
+    return requireLocalSession(database, input.sessionId);
+  });
+}
+
+function localSessionVisibleAttentionState(
+  database: SqliteDatabase,
+  row: Record<string, unknown>,
+): "red" | "blue" | "blink" | "none" {
+  const sessionId = readString(row.session_id, "session_id");
+  const attentionRevision = readNumber(row.attention_revision, "attention_revision");
+  const acknowledgedRevision = readNumber(
+    row.attention_acknowledged_revision,
+    "attention_acknowledged_revision",
+  );
+  const hasCurrentAttention = readUnresolvedSystemEventKind(database, sessionId) !== null
+    || readNullableString(row.attention_kind, "attention_kind") !== null;
+  if (hasCurrentAttention && attentionRevision > acknowledgedRevision) {
+    return "red";
+  }
+  if (hasPendingLocalControlWork(database, sessionId)) {
+    return "blink";
+  }
+  if (
+    readNullableString(row.unread_since, "unread_since") !== null
+    || readNullableString(row.manual_unread_at, "manual_unread_at") !== null
+  ) {
+    return "blue";
+  }
+  return "none";
 }
 
 function appendUserMessage(
@@ -4550,6 +4802,15 @@ function insertSystemMessage(
       now,
       now,
     );
+  if (
+    systemEventKind === "run-not-started"
+    || systemEventKind === "run-stuck"
+    || systemEventKind === "retry-exhausted"
+  ) {
+    database
+      .prepare("UPDATE sessions SET attention_revision = attention_revision + 1 WHERE session_id = ?")
+      .run(sessionId);
+  }
 }
 
 function requireLocalMessage(database: SqliteDatabase, id: number, sessionId: string): WorkerLocalMessage {
@@ -4659,9 +4920,32 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
     workspacePendingMode: null,
     title: readNullableString(row.title, "title") ?? fallbackSessionTitle(sessionId),
+    titleRevision: readNumber(row.title_revision, "title_revision"),
+    pinnedAt: readNullableString(row.pinned_at, "pinned_at"),
     status: sessionStatusFromCounts(effectiveCounts),
     awaitsHumanReason,
     unreadSince: readNullableString(row.unread_since, "unread_since"),
+    manualUnreadAt: readNullableString(row.manual_unread_at, "manual_unread_at"),
+    manualUnreadRequiresLeave: readBooleanNumber(
+      row.manual_unread_requires_leave,
+      "manual_unread_requires_leave",
+    ),
+    readStateRevision: readNumber(row.read_state_revision, "read_state_revision"),
+    attentionRevision: readNumber(row.attention_revision, "attention_revision"),
+    attentionAcknowledgedRevision: readNumber(
+      row.attention_acknowledged_revision,
+      "attention_acknowledged_revision",
+    ),
+    attentionKind: readNullableString(row.attention_kind, "attention_kind") as
+      | "project-unavailable"
+      | "team-deleted"
+      | "team-needs-repair"
+      | null,
+    hasUnacknowledgedAttention: (
+      unresolvedSystemEventKind !== null
+      || readNullableString(row.attention_kind, "attention_kind") !== null
+    ) && readNumber(row.attention_revision, "attention_revision")
+      > readNumber(row.attention_acknowledged_revision, "attention_acknowledged_revision"),
     unresolvedSystemEventKind,
     lastMessageMentionsAgent,
     hasPendingControlWork,
@@ -4744,7 +5028,13 @@ function updateSessionAttentionAfterAgentResponse(
   now: string,
 ): void {
   database
-    .prepare("UPDATE sessions SET awaits_human_reason = NULL, unread_since = ?, updated_at = ? WHERE session_id = ?")
+    .prepare(
+      `UPDATE sessions
+       SET awaits_human_reason = NULL, unread_since = ?,
+           read_state_revision = read_state_revision + 1,
+           updated_at = ?
+       WHERE session_id = ?`,
+    )
     .run(now, now, sessionId);
 }
 

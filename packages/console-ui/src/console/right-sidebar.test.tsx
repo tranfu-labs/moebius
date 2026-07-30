@@ -122,6 +122,63 @@ describe("RightSidebar", () => {
     expect(onFocusTabHandled).toHaveBeenCalledWith("conversation");
   });
 
+  it("gives same-title and updating tabs visible discriminators with matching accessible names", () => {
+    const onRetryTitles = vi.fn();
+    renderSidebar({
+      state: {
+        tabs: [
+          { id: "one", type: "conversation", title: "发布前检查", sourceKey: "conversation:one", closable: true },
+          { id: "two", type: "conversation", title: "发布前检查", sourceKey: "conversation:two", closable: true },
+          { id: "loading", type: "conversation", title: "旧标题", sourceKey: "conversation:loading", closable: true },
+        ],
+        activeTabId: "two",
+      },
+      tabDiscriminators: {
+        one: "moebius · feature/sidebar",
+        two: "docs · feature/sidebar",
+        loading: "moebius · main",
+      },
+      updatingTabIds: ["loading"],
+      onRetryTitles,
+    });
+
+    expect(screen.getByRole("tab", { name: "发布前检查，moebius · feature/sidebar" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "发布前检查，docs · feature/sidebar" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "标题更新中，moebius · main" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("会话名称已保存，标签标题正在重试");
+    fireEvent.click(screen.getByRole("button", { name: "重试标题" }));
+    expect(onRetryTitles).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", {
+      name: "关闭标签：发布前检查，docs · feature/sidebar",
+    })).toBeVisible();
+  });
+
+  it("keeps the active or keyboard-focused tab inside the horizontal viewport", () => {
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderSidebar({
+        state: {
+          tabs: [{
+            id: "long",
+            type: "conversation",
+            title: "这是一个重命名之后明显变长的会话标题",
+            sourceKey: "conversation:long",
+            closable: true,
+          }],
+          activeTabId: "long",
+        },
+      });
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+      scrollIntoView.mockClear();
+      fireEvent.focus(screen.getByRole("tab"));
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
   it("uses an overlay with its own route back to the conversation", () => {
     const onOpenChange = vi.fn();
     renderSidebar({ narrow: true, onOpenChange });

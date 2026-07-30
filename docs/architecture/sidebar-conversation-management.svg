@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="260" viewBox="0 0 920 260">
+  <style>text{font:14px system-ui;fill:#202124}.box{fill:#fff;stroke:#5e6ad2;stroke-width:1.5}.arrow{stroke:#5e6ad2;stroke-width:1.5;marker-end:url(#a)}</style>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5e6ad2"/></marker></defs>
+  <rect class="box" x="20" y="70" width="180" height="110" rx="12"/><text x="45" y="105">console-ui controlled UI</text><text x="42" y="130">single preview / menus</text><text x="45" y="154">tabs / focus / errors</text>
+  <rect class="box" x="260" y="70" width="180" height="110" rx="12"/><text x="285" y="105">desktop renderer</text><text x="280" y="130">mutation coordinator</text><text x="276" y="154">search + title resolver</text>
+  <rect class="box" x="500" y="70" width="180" height="110" rx="12"/><text x="538" y="105">local-console</text><text x="520" y="130">revision preconditions</text><text x="522" y="154">canonical metadata</text>
+  <rect class="box" x="740" y="70" width="160" height="110" rx="12"/><text x="780" y="105">SQLite</text><text x="760" y="130">attention / unread</text><text x="763" y="154">pin / title revision</text>
+  <line class="arrow" x1="200" y1="125" x2="260" y2="125"/><line class="arrow" x1="440" y1="125" x2="500" y2="125"/><line class="arrow" x1="680" y1="125" x2="740" y2="125"/>
+  <text x="270" y="220">State commits only after persisted mutation success; sourceKey remains tab identity.</text>
+</svg>

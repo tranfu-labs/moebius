@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronRight, MoreHorizontal, Plus, Wrench } from "lucide-react";
+import { ChevronRight, Folder, GitBranch, MoreHorizontal, Plus, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
@@ -32,6 +32,14 @@ export interface ConversationSidebarSession extends StatusDotFacts {
   awaitsHumanReason?: string | null;
   analysisDisabledReason?: string | null;
   createdAt: string;
+  pinnedAt?: string | null;
+  titleRevision?: number;
+  attentionRevision?: number;
+  readStateRevision?: number;
+  manualUnreadAt?: string | null;
+  hasUnacknowledgedAttention?: boolean;
+  branchName?: string | null;
+  branchUnavailable?: boolean;
   summary?: string;
 }
 
@@ -42,6 +50,7 @@ export interface ConversationSidebarProject {
   newConversationDisabledReason?: string | null;
   directoryAvailable?: boolean;
   directoryUnavailableReason?: string | null;
+  isGitRepository?: boolean;
   sessions: ConversationSidebarSession[];
 }
 
@@ -67,6 +76,21 @@ export interface ConversationSidebarProps {
   onRemoveProject?: (project: ConversationSidebarProject) => void;
   onAnalyzeConversation?: (sessionId: string, projectId: string) => void;
   onArchiveSession?: (sessionId: string, projectId: string) => void;
+  onUpdateReadState?: (
+    session: ConversationSidebarSession,
+    projectId: string,
+    action: "mark-read-attention" | "mark-read-unread" | "mark-unread",
+  ) => Promise<void>;
+  onSetSessionPinned?: (
+    session: ConversationSidebarSession,
+    projectId: string,
+    pinned: boolean,
+  ) => Promise<void>;
+  onRenameSession?: (
+    session: ConversationSidebarSession,
+    projectId: string,
+    title: string,
+  ) => Promise<void>;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onReorderProjects?: (projectIds: string[]) => boolean | void | Promise<boolean | void>;
   onRepairProject?: (project: ConversationSidebarProject) => void;
@@ -81,7 +105,7 @@ export interface ConversationSidebarProps {
 
 const statusLabelKey: Record<ConversationSessionStatus, TranslationKey> = {
   red: "console.conversationSidebar.needsYou",
-  blue: "console.conversationSidebar.newResult",
+  blue: "console.conversationSidebar.unread",
   blink: "console.conversationSidebar.running",
   none: "console.conversationSidebar.idle",
 };
@@ -167,6 +191,9 @@ export function ConversationSidebar({
   onRemoveProject,
   onAnalyzeConversation,
   onArchiveSession,
+  onUpdateReadState,
+  onSetSessionPinned,
+  onRenameSession,
   onCopySessionLogPath,
   onReorderProjects,
   onRepairProject,
@@ -179,6 +206,12 @@ export function ConversationSidebar({
   className
 }: ConversationSidebarProps): JSX.Element {
   const { t } = useI18n();
+  const asideRef = React.useRef<HTMLElement | null>(null);
+  const [preview, setPreview] = React.useState<{
+    session: ConversationSidebarSession;
+    project: ConversationSidebarProject;
+    top: number;
+  } | null>(null);
   const [collapsedProjectIds, setCollapsedProjectIds] = React.useState<Set<string>>(() => new Set());
   const [draftProjectOrder, setDraftProjectOrder] = React.useState<string[] | null>(null);
   const [draggingProjectId, setDraggingProjectId] = React.useState<string | null>(null);
@@ -212,6 +245,23 @@ export function ConversationSidebar({
     const project = projectsById.get(projectId);
     return project === undefined ? [] : [project];
   });
+  const pinnedSessions = projects
+    .flatMap((project) => project.sessions
+      .filter((session) => (session.pinnedAt ?? null) !== null)
+      .map((session) => ({ project, session })))
+    .sort((left, right) =>
+      (right.session.pinnedAt ?? "").localeCompare(left.session.pinnedAt ?? ""));
+  const showPreview = (
+    session: ConversationSidebarSession,
+    project: ConversationSidebarProject,
+    element: HTMLElement,
+  ): void => {
+    const aside = asideRef.current?.getBoundingClientRect();
+    const row = element.getBoundingClientRect();
+    if (aside !== undefined) {
+      setPreview({ session, project, top: row.top - aside.top });
+    }
+  };
 
   const rowBounds = (): ProjectRowBounds[] => visibleProjectIds.flatMap((projectId) => {
     const element = rowElements.current.get(projectId);
@@ -292,10 +342,15 @@ export function ConversationSidebar({
 
   return (
     <aside
-      className={cn("flex w-[252px] flex-col bg-canvas text-ink", className)}
+      ref={asideRef}
+      className={cn("relative flex w-[252px] flex-col overflow-visible bg-canvas text-ink", className)}
       aria-label={t("console.conversationSidebar.label")}
     >
-      <nav className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2.5 pb-2" aria-label={t("console.conversationSidebar.projectList")}>
+      <nav
+        className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2.5 pb-2"
+        aria-label={t("console.conversationSidebar.projectList")}
+        onMouseLeave={() => setPreview(null)}
+      >
         {dataState === "loading" ? (
           <ProjectListSkeleton />
         ) : dataState === "error" ? (
@@ -304,11 +359,47 @@ export function ConversationSidebar({
           <p className="px-2 py-3 text-xs leading-5 text-hint" data-testid="conversation-sidebar-no-projects">
             {t("console.conversationSidebar.addFirstProject")}
           </p>
-        ) : visibleProjects.map((project) => {
+        ) : (
+          <>
+            {pinnedSessions.length > 0 ? (
+              <section aria-label={t("console.conversationSidebar.pinned")} className="mb-3">
+                <div className="px-2 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+                  {t("console.conversationSidebar.pinned")}
+                </div>
+                <div className="space-y-0.5" role="list">
+                  {pinnedSessions.map(({ project, session }) => (
+                    <SessionRow
+                      key={session.id}
+                      project={project}
+                      projectId={project.id}
+                      session={session}
+                      selected={session.id === selectedSessionId}
+                      onSelectSession={onSelectSession}
+                      onAnalyzeConversation={onAnalyzeConversation}
+                      onArchiveSession={onArchiveSession}
+                      onCopySessionLogPath={onCopySessionLogPath}
+                      onUpdateReadState={onUpdateReadState}
+                      onSetSessionPinned={onSetSessionPinned}
+                      onRenameSession={onRenameSession}
+                      onPreview={showPreview}
+                      onPreviewEnd={() => setPreview(null)}
+                      disabled={disabled}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            <div className="flex items-center justify-between px-2 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+              <span>{t("console.conversationSidebar.projects")}</span>
+              {projectActionsDisabled ? <span role="status">{t("sidebar.updating")}</span> : null}
+            </div>
+            {visibleProjects.map((project) => {
           const projectName = projectDirectoryName(project, t("console.conversationSidebar.untitledProject"));
-          const orderedSessions = orderSessionsByCreatedAt(project.sessions);
+          const orderedSessions = orderSessionsByCreatedAt(
+            project.sessions.filter((session) => (session.pinnedAt ?? null) === null),
+          );
           const expanded = !collapsedProjectIds.has(project.id);
-          const aggregatedStatus = expanded ? "none" : deriveProjectStatusDot(project.sessions);
+          const aggregatedStatus = expanded ? "none" : deriveProjectStatusDot(orderedSessions);
           const conversationListId = `project-${project.id}-conversations`;
           const projectAccessibleName = t("console.conversationSidebar.projectState", {
             project: projectName,
@@ -417,7 +508,7 @@ export function ConversationSidebar({
                     <h2 className="truncate text-[13.5px] font-semibold leading-5" title={projectName}>{projectName}</h2>
                     {showProjectPath ? <p className="truncate text-xs text-hint" title={project.path}>{project.path}</p> : null}
                   </div>
-                  {!expanded ? <StatusIcon status={aggregatedStatus} /> : null}
+                  {!expanded ? <ConversationStatusIndicator status={aggregatedStatus} /> : null}
                 </div>
                 {project.directoryAvailable === false && onRepairProject ? (
                   <button
@@ -498,13 +589,16 @@ export function ConversationSidebar({
                   className="px-8 py-1.5 text-xs text-hint"
                   data-testid="conversation-sidebar-empty-project"
                 >
-                  {t("console.conversationSidebar.noConversations")}
+                  {project.sessions.length > 0
+                    ? t("console.conversationSidebar.allPinned")
+                    : t("console.conversationSidebar.noConversations")}
                 </p>
               ) : (
                 <div id={conversationListId} className="space-y-0.5" role="list" aria-label={t("console.conversationSidebar.projectConversations", { project: projectName })}>
                   {orderedSessions.map((session) => (
                     <SessionRow
                       key={session.id}
+                      project={project}
                       projectId={project.id}
                       session={session}
                       selected={session.id === selectedSessionId}
@@ -512,6 +606,11 @@ export function ConversationSidebar({
                       onAnalyzeConversation={onAnalyzeConversation}
                       onArchiveSession={onArchiveSession}
                       onCopySessionLogPath={onCopySessionLogPath}
+                      onUpdateReadState={onUpdateReadState}
+                      onSetSessionPinned={onSetSessionPinned}
+                      onRenameSession={onRenameSession}
+                      onPreview={showPreview}
+                      onPreviewEnd={() => setPreview(null)}
                       disabled={disabled}
                     />
                   ))}
@@ -519,8 +618,11 @@ export function ConversationSidebar({
               ) : null}
             </section>
           );
-        })}
+            })}
+          </>
+        )}
       </nav>
+      <ConversationPreview preview={preview} />
     </aside>
   );
 }
@@ -562,7 +664,62 @@ function ProjectListError({ onRetry }: { onRetry?: () => void }): JSX.Element {
   );
 }
 
+function ConversationPreview({
+  preview,
+}: {
+  preview: {
+    session: ConversationSidebarSession;
+    project: ConversationSidebarProject;
+    top: number;
+  } | null;
+}): JSX.Element {
+  const { t } = useI18n();
+  const folderName = preview === null
+    ? ""
+    : preview.project.path.trim().replace(/[\\/]+$/u, "").split(/[\\/]/u).filter(Boolean).at(-1)
+      ?? t("console.conversationSidebar.untitledProject");
+  const branchName = preview === null
+    ? null
+    : preview.project.directoryAvailable === false
+      ? t("console.conversationSidebar.branchUnavailable")
+      : preview.project.isGitRepository === false
+        ? null
+        : preview.session.branchUnavailable === true
+      || !preview.session.branchName
+        ? t("console.conversationSidebar.branchUnavailable")
+        : preview.session.branchName;
+
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute left-[calc(100%+8px)] top-0 z-50 w-64 rounded-lg border border-line bg-sunken px-3 py-2.5 shadow-lg",
+        "transition-[transform,opacity] duration-150 ease-out motion-reduce:transition-none",
+        preview === null ? "invisible opacity-0" : "visible opacity-100",
+      )}
+      style={{ transform: `translate3d(0, ${preview?.top ?? 0}px, 0)` }}
+      data-testid="conversation-sidebar-shared-preview"
+      data-visible={preview === null ? "false" : "true"}
+      aria-hidden={preview === null}
+    >
+      <p className="truncate text-sm font-semibold text-ink">
+        {preview?.session.title ?? ""}
+      </p>
+      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sub">
+        <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+        <span className="truncate">{folderName}</span>
+      </p>
+      {branchName !== null ? (
+        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sub">
+          <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span className="truncate">{branchName}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SessionRow({
+  project,
   projectId,
   session,
   selected,
@@ -570,8 +727,14 @@ function SessionRow({
   onAnalyzeConversation,
   onArchiveSession,
   onCopySessionLogPath,
+  onUpdateReadState,
+  onSetSessionPinned,
+  onRenameSession,
+  onPreview,
+  onPreviewEnd,
   disabled
 }: {
+  project: ConversationSidebarProject;
   projectId: string;
   session: ConversationSidebarSession;
   selected: boolean;
@@ -579,6 +742,15 @@ function SessionRow({
   onAnalyzeConversation?: (sessionId: string, projectId: string) => void;
   onArchiveSession?: (sessionId: string, projectId: string) => void;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
+  onUpdateReadState?: ConversationSidebarProps["onUpdateReadState"];
+  onSetSessionPinned?: ConversationSidebarProps["onSetSessionPinned"];
+  onRenameSession?: ConversationSidebarProps["onRenameSession"];
+  onPreview: (
+    session: ConversationSidebarSession,
+    project: ConversationSidebarProject,
+    element: HTMLElement,
+  ) => void;
+  onPreviewEnd: () => void;
   disabled: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -586,6 +758,10 @@ function SessionRow({
   const menuReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const [copyFeedback, setCopyFeedback] = React.useState<"success" | CopySessionLogPathFailureReason | null>(null);
   const [copyPending, setCopyPending] = React.useState(false);
+  const [mutationPending, setMutationPending] = React.useState(false);
+  const [mutationError, setMutationError] = React.useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = React.useState(false);
+  const [renameValue, setRenameValue] = React.useState(session.title);
   React.useEffect(() => {
     if (copyFeedback === null) {
       return;
@@ -600,10 +776,14 @@ function SessionRow({
   const archiveDisabledReason = session.isRunning ? t("console.conversationSidebar.archiveRunning") : null;
   const hasMenu = onAnalyzeConversation !== undefined
     || onArchiveSession !== undefined
-    || onCopySessionLogPath !== undefined;
+    || onCopySessionLogPath !== undefined
+    || onUpdateReadState !== undefined
+    || onSetSessionPinned !== undefined
+    || onRenameSession !== undefined;
   const openMenuFromContext = (event: React.SyntheticEvent): void => {
     if (!disabled && hasMenu) {
       event.preventDefault();
+      onPreviewEnd();
       menuReturnFocusRef.current = event.currentTarget as HTMLElement;
       setMenuOpen(true);
     }
@@ -623,6 +803,14 @@ function SessionRow({
         aria-label={accessibleName}
         title={session.title}
         disabled={disabled}
+        onMouseEnter={(event) => onPreview(session, project, event.currentTarget)}
+        onMouseLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onPreviewEnd();
+        }}
+        onFocus={(event) => onPreview(session, project, event.currentTarget)}
+        onBlur={(event) => {
+          if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) onPreviewEnd();
+        }}
         onClick={() => {
           if (!disabled) {
             onSelectSession?.(session.id, projectId);
@@ -643,10 +831,16 @@ function SessionRow({
             {session.title}
           </span>
         </span>
-        <StatusIcon status={status} />
+        <ConversationStatusIndicator status={status} />
       </button>
       {hasMenu ? (
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            setMenuOpen(open);
+            if (open) onPreviewEnd();
+          }}
+        >
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -679,6 +873,69 @@ function SessionRow({
                 label={t("console.sessionAnalysis.analyzeConversation")}
                 onSelect={() => onAnalyzeConversation(session.id, projectId)}
               />
+            ) : null}
+            {onUpdateReadState !== undefined && status !== "blink" ? (
+              <DropdownMenuItem
+                disabled={mutationPending}
+                onSelect={() => {
+                  const action = status === "red"
+                    ? "mark-read-attention"
+                    : status === "blue"
+                      ? "mark-read-unread"
+                      : "mark-unread";
+                  setMutationPending(true);
+                  setMutationError(null);
+                  void onUpdateReadState(session, projectId, action)
+                    .catch((error: unknown) =>
+                      setMutationError(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setMutationPending(false));
+                }}
+              >
+                {t(status === "none"
+                  ? "console.conversationSidebar.markUnread"
+                  : "console.conversationSidebar.markRead")}
+              </DropdownMenuItem>
+            ) : null}
+            {onSetSessionPinned !== undefined ? (
+              <DropdownMenuItem
+                disabled={mutationPending}
+                onSelect={() => {
+                  const pinned = (session.pinnedAt ?? null) === null;
+                  setMutationPending(true);
+                  setMutationError(null);
+                  void onSetSessionPinned(session, projectId, pinned)
+                    .then(() => {
+                      window.requestAnimationFrame(() => {
+                        const destination = document.querySelector<HTMLElement>(
+                          `[data-session-id="${CSS.escape(session.id)}"]`,
+                        ) ?? document.querySelector<HTMLElement>(
+                          `[data-project-id="${CSS.escape(projectId)}"][data-testid="conversation-sidebar-project-toggle"]`,
+                        );
+                        destination?.focus();
+                      });
+                    })
+                    .catch((error: unknown) =>
+                      setMutationError(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setMutationPending(false));
+                }}
+              >
+                {t((session.pinnedAt ?? null) === null
+                  ? "console.conversationSidebar.pin"
+                  : "console.conversationSidebar.unpin")}
+              </DropdownMenuItem>
+            ) : null}
+            {onRenameSession !== undefined ? (
+              <DropdownMenuItem
+                disabled={mutationPending}
+                onSelect={() => {
+                  onPreviewEnd();
+                  setRenameValue(session.title);
+                  setMutationError(null);
+                  setRenameOpen(true);
+                }}
+              >
+                {t("console.conversationSidebar.renameConversation")}
+              </DropdownMenuItem>
             ) : null}
             {onCopySessionLogPath !== undefined ? (
               <DropdownMenuItem
@@ -719,6 +976,63 @@ function SessionRow({
         >
           {copyFeedback === "success" ? t("console.conversationSidebar.pathCopied") : copySessionLogFailureMessage(copyFeedback, t)}
         </span>
+      ) : null}
+      {mutationError !== null ? (
+        <span
+          className="absolute right-0 top-8 z-40 max-w-64 rounded-md border border-danger/40 bg-sunken px-2 py-1 text-xs text-danger"
+          role="alert"
+        >
+          {mutationError}
+        </span>
+      ) : null}
+      {renameOpen ? (
+        <div
+          className="absolute left-2 top-8 z-50 w-60 rounded-md border border-line bg-sunken p-3"
+          role="dialog"
+          aria-label={t("console.conversationSidebar.renameConversation")}
+        >
+          <label className="block text-xs font-medium text-sub">
+            {t("console.conversationSidebar.conversationName")}
+            <input
+              autoFocus
+              className="mt-1 h-8 w-full rounded-sm border border-line bg-input px-2 text-sm text-ink outline-none focus:border-accent"
+              disabled={mutationPending}
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setRenameOpen(false);
+              }}
+            />
+          </label>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              className="h-7 rounded-sm px-2 text-xs text-sub hover:bg-hover"
+              disabled={mutationPending}
+              onClick={() => setRenameOpen(false)}
+            >
+              {t("console.common.cancel")}
+            </button>
+            <button
+              type="button"
+              className="h-7 rounded-sm bg-accent px-2 text-xs font-medium text-white disabled:opacity-40"
+              disabled={mutationPending || renameValue.trim() === ""}
+              onClick={() => {
+                setMutationPending(true);
+                setMutationError(null);
+                void onRenameSession?.(session, projectId, renameValue)
+                  .then(() => setRenameOpen(false))
+                  .catch((error: unknown) =>
+                    setMutationError(error instanceof Error ? error.message : String(error)))
+                  .finally(() => setMutationPending(false));
+              }}
+            >
+              {mutationPending
+                ? t("console.conversationSidebar.saving")
+                : t("console.conversationSidebar.save")}
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -777,7 +1091,11 @@ function copySessionLogFailureMessage(reason: CopySessionLogPathFailureReason, t
   }
 }
 
-function StatusIcon({ status }: { status: ConversationSessionStatus }): JSX.Element {
+export function ConversationStatusIndicator({
+  status,
+}: {
+  status: ConversationSessionStatus;
+}): JSX.Element {
   const { t } = useI18n();
   return (
     <span

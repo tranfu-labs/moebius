@@ -1578,6 +1578,66 @@ export class LocalConsoleRuntime {
     );
   }
 
+  async updateSessionReadState(input: {
+    sessionId: string;
+    action: "mark-read-attention" | "mark-read-unread" | "mark-unread";
+    expectedAttentionRevision: number;
+    expectedReadStateRevision: number;
+    expectedTitleRevision: number;
+    isCurrent: boolean;
+  }): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.updateSessionReadState === undefined) {
+      throw new Error("local console session read state unavailable");
+    }
+    return await this.storeCall("local-console-store-update-session-read-state", () =>
+      this.options.store.updateSessionReadState!({ ...input, now: this.nowIso() }),
+    );
+  }
+
+  async armSessionManualUnread(sessionId: string): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.armSessionManualUnread === undefined) {
+      throw new Error("local console manual unread unavailable");
+    }
+    return await this.storeCall("local-console-store-arm-session-manual-unread", () =>
+      this.options.store.armSessionManualUnread!({ sessionId, now: this.nowIso() }),
+    );
+  }
+
+  async markSessionViewed(sessionId: string): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.markSessionViewed === undefined) {
+      throw new Error("local console session view state unavailable");
+    }
+    return await this.storeCall("local-console-store-mark-session-viewed", () =>
+      this.options.store.markSessionViewed!({ sessionId, now: this.nowIso() }),
+    );
+  }
+
+  async setSessionPinned(input: {
+    sessionId: string;
+    pinned: boolean;
+    expectedPinnedAt: string | null;
+  }): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.setSessionPinned === undefined) {
+      throw new Error("local console session pin unavailable");
+    }
+    return await this.storeCall("local-console-store-set-session-pinned", () =>
+      this.options.store.setSessionPinned!({ ...input, now: this.nowIso() }),
+    );
+  }
+
+  async renameSession(input: {
+    sessionId: string;
+    title: string;
+    expectedTitleRevision: number;
+  }): Promise<LocalConsoleSessionSummary> {
+    if (this.options.store.renameSession === undefined) {
+      throw new Error("local console session rename unavailable");
+    }
+    return await this.storeCall("local-console-store-rename-session", () =>
+      this.options.store.renameSession!({ ...input, now: this.nowIso() }),
+    );
+  }
+
   async snapshot(sessionId = this.sessionId): Promise<LocalConsoleSnapshot> {
     const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
     const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
@@ -3962,22 +4022,38 @@ export class LocalConsoleRuntime {
           session.sessionId,
         );
         if (await directoryAvailable(worktreePath)) {
-          branchName = (await readCachedLocalWorkspaceFacts({
+          branchName = await readCachedLocalWorkspaceFacts({
             folderPath: worktreePath,
             gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-          })).branchName;
+          }).then((facts) => facts.branchName, () => null);
         }
       }
+      const continuation = resolveLocalSessionContinuation({
+        projectDirectoryAvailable: project.directoryAvailable !== false,
+        agentTeamHealth: healthySession.agentTeamHealth,
+        agentTeamHealthReason: healthySession.agentTeamHealthReason,
+      });
+      const desiredAttentionKind = continuation.canContinue ? null : continuation.kind;
+      const syncedAttention = this.options.store.syncSessionContinuationAttention === undefined
+        || (healthySession.attentionKind ?? null) === desiredAttentionKind
+        ? healthySession
+        : await this.storeCall("local-console-store-sync-session-continuation-attention", () =>
+          this.options.store.syncSessionContinuationAttention!({
+            sessionId: session.sessionId,
+            kind: desiredAttentionKind,
+            now: this.nowIso(),
+          }),
+        );
       return {
         ...healthySession,
+        attentionRevision: syncedAttention.attentionRevision,
+        attentionAcknowledgedRevision: syncedAttention.attentionAcknowledgedRevision,
+        attentionKind: syncedAttention.attentionKind,
+        hasUnacknowledgedAttention: syncedAttention.hasUnacknowledgedAttention,
         analysisRecordAvailable,
         workspaceUnavailableReason: context.independentWorkspaceUnavailableReason,
         branchName,
-        continuation: resolveLocalSessionContinuation({
-          projectDirectoryAvailable: project.directoryAvailable !== false,
-          agentTeamHealth: healthySession.agentTeamHealth,
-          agentTeamHealthReason: healthySession.agentTeamHealthReason,
-        }),
+        continuation,
       };
     }));
     return {

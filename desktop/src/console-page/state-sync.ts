@@ -7,6 +7,7 @@ import {
   type OperatorProcessAppendOutput,
   type OperatorProcessDebugInvocation,
   type OperatorProcessOutput,
+  type OperatorSession,
   type OperatorSubSessionView,
   type ExecutionModelRegistry,
   type FileReferenceContent,
@@ -914,6 +915,7 @@ export interface ConsoleStateActionsOptions {
   setMutationKind(kind: SelectionMutationKind | null): void;
   setSending(sending: boolean): void;
   setError(error: string): void;
+  commitSessionMetadata?(session: OperatorSession): void;
   selectProjectFolder?: () => Promise<string | null>;
 }
 
@@ -1181,6 +1183,71 @@ export class ConsoleStateActions {
     }
   };
 
+  readonly updateSessionReadState = async (
+    session: {
+      id: string;
+      titleRevision?: number;
+      attentionRevision?: number;
+      readStateRevision?: number;
+    },
+    action: "mark-read-attention" | "mark-read-unread" | "mark-unread",
+  ): Promise<void> => {
+    await this.mutateSidebarSession(
+      session.id,
+      "attention",
+      {
+        action,
+        expectedAttentionRevision: session.attentionRevision ?? 0,
+        expectedReadStateRevision: session.readStateRevision ?? 0,
+        expectedTitleRevision: session.titleRevision ?? 0,
+        isCurrent: this.options.getSelection().sessionId === session.id,
+      },
+      "update conversation read state failed",
+    );
+  };
+
+  readonly setSessionPinned = async (
+    session: { id: string; pinnedAt?: string | null },
+    pinned: boolean,
+  ): Promise<void> => {
+    await this.mutateSidebarSession(
+      session.id,
+      "pin",
+      { pinned, expectedPinnedAt: session.pinnedAt ?? null },
+      "update conversation pin failed",
+    );
+  };
+
+  readonly renameSession = async (
+    session: { id: string; titleRevision?: number },
+    title: string,
+  ): Promise<void> => {
+    await this.mutateSidebarSession(
+      session.id,
+      "title",
+      { title, expectedTitleRevision: session.titleRevision ?? 0 },
+      "rename conversation failed",
+    );
+  };
+
+  readonly transitionSessionView = async (
+    previousSessionId: string,
+    nextSessionId: string,
+  ): Promise<void> => {
+    if (
+      this.options.apiBase === null
+      || previousSessionId === nextSessionId
+    ) {
+      return;
+    }
+    try {
+      await this.postSessionMutation(previousSessionId, "arm-manual-unread", undefined);
+      await this.postSessionMutation(nextSessionId, "viewed", undefined);
+    } catch (error) {
+      this.options.setError(formatError(error));
+    }
+  };
+
   readonly sendMessage = async (): Promise<void> => {
     const attachmentIds = this.options.getAttachmentIds?.() ?? [];
     if (
@@ -1259,6 +1326,59 @@ export class ConsoleStateActions {
     } catch (error) {
       this.options.setError(formatError(error));
     }
+  }
+
+  private async mutateSidebarSession(
+    sessionId: string,
+    action: "attention" | "pin" | "title",
+    payload: Record<string, unknown>,
+    fallbackError: string,
+  ): Promise<void> {
+    if (this.options.apiBase === null) {
+      const error = new Error(this.options.t("desktop.error.localConsoleUnavailable"));
+      this.options.setError(error.message);
+      throw error;
+    }
+    try {
+      const session = await this.postSessionMutation(sessionId, action, payload);
+      this.options.commitSessionMetadata?.(session);
+      this.options.coordinator.invalidateRefresh();
+      await this.options.refresh(this.options.getSelection());
+    } catch (error) {
+      const message = formatError(error) || fallbackError;
+      this.options.setError(message);
+      throw error;
+    }
+  }
+
+  private async postSessionMutation(
+    sessionId: string,
+    action: "attention" | "pin" | "title" | "arm-manual-unread" | "viewed",
+    payload: Record<string, unknown> | undefined,
+  ): Promise<OperatorSession> {
+    if (this.options.apiBase === null) {
+      throw new Error(this.options.t("desktop.error.localConsoleUnavailable"));
+    }
+    const response = await this.options.fetch(
+      endpoint(
+        this.options.apiBase,
+        `/api/local-console/sessions/${encodeURIComponent(sessionId)}/${action}`,
+      ),
+      {
+        method: "POST",
+        ...(payload === undefined
+          ? {}
+          : {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(payload),
+            }),
+      },
+    );
+    const body = await response.json() as { session?: OperatorSession; error?: string };
+    if (!response.ok || body.session === undefined) {
+      throw new Error(body.error ?? "conversation mutation failed");
+    }
+    return body.session;
   }
 
   private beginMutation(kind: SelectionMutationKind): SelectionMutationToken | null {
