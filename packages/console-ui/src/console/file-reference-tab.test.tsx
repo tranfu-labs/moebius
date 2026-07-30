@@ -37,8 +37,9 @@ describe("FileReferenceTab", () => {
       292,
       7,
     ));
-    expect(screen.getByTestId("file-reference-target-line")).toHaveTextContent("292");
-    expect(screen.getByTestId("file-reference-target-line")).toHaveTextContent("target");
+    const targetLine = await screen.findByTestId("file-reference-target-line");
+    expect(targetLine).toHaveTextContent("292");
+    expect(targetLine).toHaveTextContent("target");
     expect(screen.getByText("目标位置：第 292 行，第 7 列")).toBeVisible();
     expect(screen.getByTestId("file-reference-path")).toHaveTextContent("/Users/wing/.codex/sessions");
   });

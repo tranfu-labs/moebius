@@ -198,6 +198,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     agentTeamSnapshot?: LocalConsoleAgentTeamSnapshot;
     workspaceMode?: LocalConsoleWorkspaceMode;
     initialMessage?: string;
+    initialDispatch?: {
+      lane: "primary" | "worker";
+      role: string;
+      reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+    };
     initialAttachmentIds?: string[];
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
@@ -278,6 +283,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     attachmentIds?: string[];
     attachmentDraftKey?: string;
     textFragments?: LocalConsoleTextFragment[];
+    dispatch?: {
+      lane: "primary" | "worker" | "awaiting-team";
+      role: string | null;
+      reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+    };
     now: string;
   }): Promise<LocalConsoleMessage> {
     return this.runFact({ kind: "local-append-user", ...input }, [input.sessionId], new Set([input.sessionId]));
@@ -350,9 +360,39 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   async claimNextPendingMessage(input: {
     sessionId: string;
     runId: string;
+    gracefulResumeTargets?: Array<{
+      sourceMessageId: number;
+      targetRunId: string;
+    }>;
     now: string;
   }): Promise<LocalConsoleMessage | null> {
     return this.runFact({ kind: "local-claim-next", ...input }, [input.sessionId]);
+  }
+
+  async claimNextPendingWorkerMessage(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    now: string;
+  }): Promise<LocalConsoleMessage | null> {
+    return this.runFact({ kind: "local-claim-next-worker", ...input }, [input.sessionId]);
+  }
+
+  async resolveAwaitingUserMessageDispatches(input: {
+    sessionId: string;
+    dispatches: Array<{
+      messageId: number;
+      lane: "primary" | "worker";
+      role: string;
+      reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+    }>;
+    now: string;
+  }): Promise<void> {
+    await this.runFact(
+      { kind: "local-resolve-awaiting-user-dispatches", ...input },
+      [input.sessionId],
+      new Set([input.sessionId]),
+    );
   }
 
   async setRunDir(input: { id: number; sessionId?: string; runDir: string; now: string }): Promise<void> {
@@ -492,8 +532,42 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     await this.runFact({ kind: "local-release-message-for-retry", ...input }, [input.sessionId]);
   }
 
-  async releaseMessageForResume(input: { userMessageId: number; sessionId: string; now: string }): Promise<void> {
+  async releaseMessageForResume(input: {
+    userMessageId: number;
+    sessionId: string;
+    sourceDisposition: import("./codex-resume.js").LocalRunSourceDisposition;
+    targetRunId: string;
+    role: string;
+    now: string;
+  }): Promise<void> {
     await this.runFact({ kind: "local-release-message-for-resume", ...input }, [input.sessionId]);
+  }
+
+  async repairAgentHandoffResumeSource(input: {
+    sessionId: string;
+    intentId: string;
+    targetRunId: string;
+    sourceMessageId: number;
+    role: string;
+    now: string;
+  }): Promise<"repaired" | "already-repaired"> {
+    return this.enqueue(async () => {
+      const events = await readFactEvents(
+        this.getSessionFactLogPath(input.sessionId),
+        input.sessionId,
+        false,
+      );
+      if (events.some((event) =>
+        event.type === "repair_agent_handoff_resume_source"
+        && isRecord(event.payload)
+        && event.payload.intentId === input.intentId)) {
+        return "already-repaired";
+      }
+      return this.runFactDirect({
+        kind: "local-repair-agent-handoff-resume-source",
+        ...input,
+      }, [input.sessionId]);
+    });
   }
 
   async recordFailure(input: {
@@ -1458,6 +1532,13 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
         ? value.textFragments.map(normalizeTextFragment)
         : [],
       activatedAt: "activatedAt" in value ? readNullableString(value.activatedAt, "activatedAt") : null,
+      dispatchLane: "dispatchLane" in value
+        ? readDispatchLane(value.dispatchLane)
+        : value.speaker === "user" ? "primary" : null,
+      dispatchRole: "dispatchRole" in value ? readNullableString(value.dispatchRole, "dispatchRole") : null,
+      dispatchReason: "dispatchReason" in value
+        ? readDispatchReason(value.dispatchReason)
+        : value.speaker === "user" ? "no-valid-mention" : null,
       createdAt: readString(value.createdAt, "createdAt"),
       updatedAt: readString(value.updatedAt, "updatedAt"),
     } satisfies LocalConsoleMessage;
@@ -1513,6 +1594,25 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
     createdAt: readString(value.createdAt, "createdAt"),
     updatedAt: readString(value.updatedAt, "updatedAt"),
   } satisfies LocalConsoleSessionSummary;
+}
+
+function readDispatchLane(value: unknown): LocalConsoleMessage["dispatchLane"] {
+  if (value === null || value === "primary" || value === "worker" || value === "awaiting-team") {
+    return value;
+  }
+  throw new Error("Invalid local message dispatch lane");
+}
+
+function readDispatchReason(value: unknown): LocalConsoleMessage["dispatchReason"] {
+  if (
+    value === null
+    || value === "single-valid-mention"
+    || value === "no-valid-mention"
+    || value === "multiple-valid-mentions"
+  ) {
+    return value;
+  }
+  throw new Error("Invalid local message dispatch reason");
 }
 
 function normalizeAttachment(value: unknown): LocalAttachment {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 
 export type LocalCodexResumeReason = "graceful-shutdown" | "retry" | "edit-resend";
 export type LocalCodexResumeMode = "resume" | "full-fallback" | "unavailable";
+export type LocalRunSourceDisposition = "primary" | "user-direct" | "agent-handoff";
 
 export interface LocalCodexResumeIntentFact {
   sessionId: string;
@@ -10,6 +11,7 @@ export interface LocalCodexResumeIntentFact {
   sourceMessageId: number;
   role: string;
   reason: LocalCodexResumeReason;
+  sourceDisposition?: LocalRunSourceDisposition;
   createdAt: string;
 }
 
@@ -32,6 +34,7 @@ export interface LocalCodexRunUsageFact {
 export interface LocalCodexRecoveryFacts {
   intents: LocalCodexResumeIntentFact[];
   consumedIntentIds: Set<string>;
+  repairedIntentIds: Set<string>;
 }
 
 export function buildLocalResumePrompt(input: {
@@ -59,14 +62,17 @@ export async function readLocalCodexRecoveryFacts(
   const events = await readCompleteFactEvents(logPath, sessionId);
   const intents: LocalCodexResumeIntentFact[] = [];
   const consumedIntentIds = new Set<string>();
+  const repairedIntentIds = new Set<string>();
   for (const event of events) {
     if (event.type === "codex_resume_intent") {
       intents.push(parseResumeIntent(event.payload, sessionId));
     } else if (event.type === "codex_resume_consumed") {
       consumedIntentIds.add(parseResumeConsumed(event.payload, sessionId).intentId);
+    } else if (event.type === "repair_agent_handoff_resume_source") {
+      repairedIntentIds.add(parseAgentHandoffRepairIntentId(event.payload, sessionId));
     }
   }
-  return { intents, consumedIntentIds };
+  return { intents, consumedIntentIds, repairedIntentIds };
 }
 
 async function readCompleteFactEvents(
@@ -105,6 +111,9 @@ function parseResumeIntent(value: unknown, sessionId: string): LocalCodexResumeI
   if (reason !== "graceful-shutdown" && reason !== "retry" && reason !== "edit-resend") {
     throw new Error(`invalid Codex resume reason: ${reason}`);
   }
+  const sourceDisposition = value.sourceDisposition === undefined
+    ? undefined
+    : readSourceDisposition(value.sourceDisposition);
   return {
     sessionId,
     intentId: readString(value.intentId, "intentId"),
@@ -112,8 +121,16 @@ function parseResumeIntent(value: unknown, sessionId: string): LocalCodexResumeI
     sourceMessageId: readInteger(value.sourceMessageId, "sourceMessageId"),
     role: readString(value.role, "role"),
     reason,
+    ...(sourceDisposition === undefined ? {} : { sourceDisposition }),
     createdAt: readString(value.createdAt, "createdAt"),
   };
+}
+
+function parseAgentHandoffRepairIntentId(value: unknown, sessionId: string): string {
+  if (!isRecord(value) || value.sessionId !== sessionId) {
+    throw new Error(`invalid Agent handoff repair fact for ${sessionId}`);
+  }
+  return readString(value.intentId, "intentId");
 }
 
 function parseResumeConsumed(value: unknown, sessionId: string): LocalCodexResumeConsumedFact {
@@ -143,6 +160,13 @@ function readString(value: unknown, field: string): string {
     throw new Error(`invalid ${field}`);
   }
   return value;
+}
+
+function readSourceDisposition(value: unknown): LocalRunSourceDisposition {
+  if (value === "primary" || value === "user-direct" || value === "agent-handoff") {
+    return value;
+  }
+  throw new Error(`invalid sourceDisposition: ${String(value)}`);
 }
 
 function readInteger(value: unknown, field: string): number {

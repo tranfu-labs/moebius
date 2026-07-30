@@ -973,21 +973,42 @@ Source: docs/product/pages/main-conversation.md#区域与信息
 - WHEN 同一结构升级执行一次或重复执行
 - THEN 每条系统记录都有非空类型、旧等待值均被清空且 exception 不触发异常红点
 
-## Requirement: #14 用户消息遵循团队主 Agent 与重定向语义
+## Requirement: 主 Agent 控制与成员接力
 Source: docs/product/pages/main-conversation.md#说话与提及
 
-系统 MUST 把所有 composer 用户消息交给当前团队主 Agent；用户正文中的成员 mention MUST 作为主 Agent 可见内容保留，MUST NOT 在入站时直接启动或中断专业成员。非主 Agent 回复有合法 mention 时 MUST 优先按显式交棒继续，无合法 mention 时 MUST 确定性运行主 Agent；主 Agent 回复无合法 mention 时 MUST 推进 cursor 并结束本轮。主 Agent 提及正在工作的成员时 MUST 中止该成员当前步骤，等待其进入终态后再用新指令启动同成员。系统 MUST NOT 把主 Agent 强制插入每次显式成员间交棒，MUST NOT 让主 Agent 无 mention 回复再次触发自己。
+local runtime MUST 使用目标 session 的 effective 团队快照解释 composer 用户消息。代码区域外只命中一个不同的有效成员时 MUST 直接把该成员作为首位执行者；没有有效 mention、mention 全部无效或命中两个及以上不同有效成员时 MUST 运行团队主 Agent。系统 MUST 保留原始正文，MUST NOT 修改共享 GitHub mention trigger 或 Agent 回复的既有 handoff 选择规则。
 
-### Scenario: 无提及消息进入主 Agent
-- GIVEN 会话绑定的团队主 Agent 为 dev-manager 且没有成员正在工作
-- WHEN 用户发送一条不含 mention 的消息
-- THEN 运行时以 dev-manager 启动该消息且没有调用旧兜底路由
+同一有效成员重复出现 MUST 视为一个目标；无效 mention 与唯一有效 mention 并存时 MUST 直达该唯一有效成员。非主 Agent 回复有合法 mention 时 MUST 优先按显式交棒继续，无合法 mention 时 MUST 确定性运行主 Agent；主 Agent 回复无合法 mention 时 MUST 推进 cursor 并结束本轮。主 Agent 提及正在工作的成员时 MUST 中止该成员当前步骤，等待其进入终态后再用新指令启动同成员。系统 MUST NOT 把主 Agent 强制插入每次显式成员间交棒，MUST NOT 让主 Agent 无 mention 回复再次触发自己。
 
-### Scenario: 用户直接点名成员也回主 Agent
-- GIVEN 团队主 Agent 是 dev-manager
-- WHEN 用户发送包含 @qa 的消息
-- THEN 该消息由 dev-manager 领取且正文中的 @qa 保持可见
-- AND qa 不因该用户消息直接启动或中断
+### Scenario: 唯一有效成员直达
+- GIVEN effective 团队首成员为 dev-manager，另有 dev 与 qa
+- WHEN 用户发送 `@qa 请直接检查`
+- THEN 首个新 run 的 role 为 qa
+- AND dev-manager 与 dev 不因该用户消息启动
+
+### Scenario: 未点名与无效 mention 回主 Agent
+- GIVEN effective 团队首成员为 dev-manager，另有 qa
+- WHEN 用户分别发送 `请检查` 与 `@unknown 请检查`
+- THEN 两条消息的首位执行者都是 dev-manager
+- AND qa 不因这两条消息启动
+
+### Scenario: 多个不同有效成员回主 Agent
+- GIVEN effective 团队包含 dev-manager、dev、qa
+- WHEN 用户发送 `@qa 和 @dev 一起看看`
+- THEN 首位执行者是 dev-manager
+- AND dev 与 qa 都不被直接启动
+
+### Scenario: 重复同一目标仍可直达
+- GIVEN effective 团队包含 dev-manager 与 qa
+- WHEN 用户发送 `@qa 请检查，@qa 完成后说明结果`
+- THEN 有效目标集合只有 qa
+- AND 首位执行者是 qa
+
+### Scenario: 无效 mention 不遮蔽唯一有效目标
+- GIVEN effective 团队包含 dev-manager 与 qa，且不包含 unknown
+- WHEN 用户发送 `@unknown 请旁听，@qa 请检查`
+- THEN 有效目标集合只有 qa
+- AND 首位执行者是 qa
 
 ### Scenario: 显式成员接力优先
 - GIVEN 最新回复来自非主 Agent qa
@@ -1023,10 +1044,12 @@ Source: docs/product/pages/main-conversation.md#团队推进中
 - THEN runtime 中断旧 dev run 并等待其终态
 - AND 之后才以新指令启动新的 dev run
 
-## Requirement: 主理人 pending FIFO 在任一主理人终态后发射
+## Requirement: 一个主理人 FIFO 与按成员隔离的持久 FIFO
 Source: docs/product/pages/main-conversation.md#输入框
 
-主 Agent 运行期间提交的用户消息 MUST 以原子、可恢复的 pending 事实保存正文与附件，并 MUST 按提交顺序暴露给 state。主 Agent completed、failed、stuck 或 interrupted 后，runtime MUST 幂等唤醒并领取最早一条 pending；专业成员终态 MUST NOT 单独触发该队列发射。进程重启且不存在真实主 Agent run 时 MUST 继续 catch-up。
+主 Agent MUST 保持既有 pending FIFO。每个专业成员 MUST 拥有按 `sessionId + role` 隔离的持久 FIFO；同 role 最多一个 active run，不同 role MAY 与主 Agent 并行。用户直达活动成员时 MUST 只入该成员 FIFO，不得并行启动第二个同 role run，也不得中断当前 run。主 Agent 对活动成员的显式 redirect MUST 保持既有“中断后带新指令重启”语义，系统 MUST 在持久事实和调度类型上区分 redirect 与 user-direct。
+
+主 Agent 运行期间提交给主 Agent 的用户消息 MUST 以原子、可恢复的 pending 事实保存正文与附件，并 MUST 按提交顺序暴露给 state。主 Agent completed、failed、stuck 或 interrupted 后，runtime MUST 幂等唤醒并领取最早一条主 Agent pending；专业成员终态 MUST NOT 单独触发主 Agent 队列发射。进程重启且不存在真实主 Agent run 时 MUST 继续 catch-up。
 
 ### Scenario: 停下主理人后发射
 - GIVEN 主 Agent 正在运行且有两条 pending 用户消息
@@ -1040,16 +1063,73 @@ Source: docs/product/pages/main-conversation.md#输入框
 - THEN pending 用户消息保持 pending
 - AND 主 Agent run 不受影响
 
-## Requirement: state 暴露多 run 与主理人兼容投影
+### Scenario: 忙碌成员只排队
+- GIVEN qa 已有一个活动 run
+- WHEN 用户发送唯一有效 mention `@qa 再检查第二项`
+- THEN 该消息以 targetRole=qa 持久化为 pending
+- AND qa 活动 runId 与 controller 未被中断
+- AND session 中仍只有一个 qa active run
+
+### Scenario: 同成员终态后发射最早一条
+- GIVEN qa 正在运行且 qa FIFO 依次有消息 A、B
+- WHEN 活动 qa run 进入任一已确认终态
+- THEN 系统只领取 A 并启动新的 qa run
+- AND B 保持 pending
+- AND A 的 run 启动前 B 不得越过 A
+
+### Scenario: 不同成员队列独立
+- GIVEN qa 忙碌且 qa FIFO 有一条 pending，dev 空闲
+- WHEN 用户发送唯一 `@dev`
+- THEN dev 可以启动
+- AND qa 的活动 run 与 pending 顺序不变
+
+## Requirement: dispatch、团队切换与恢复使用同一持久事实
+Source: docs/product/pages/main-conversation.md#选择项目与添加项目
+
+每条 user message MUST 持久化 dispatch lane、目标 role 与判定原因，或在 pending 团队切换期间持久化为 awaiting-team。升级前没有 dispatch 字段的 pending user message MUST 兼容为主 Agent 目标，历史 completed/displayed 消息、cursor、附件与 provider links MUST NOT 被改写。
+
+切换请求之前已经进入专业成员 FIFO 的消息 MUST 使用旧 effective 快照并阻止团队切换提升，直至这些工作进入终态；切换请求之后的用户消息 MUST 等待新快照生效，再按新团队名单解析。graceful restart MUST 先恢复同 role 活动 run，再领取其 FIFO；orphan running MUST 先形成可见 stuck 或其他真实终态，之后才可释放同 role 下一条。系统 MUST NOT 为直达消息创建 replacement provider session。
+
+### Scenario: 重启保留忙碌成员队列
+- GIVEN qa 正在运行，第二条唯一 `@qa` 消息处于 qa FIFO
+- WHEN 应用正常退出并使用同一数据根重启
+- THEN 原 qa run 按既有 runId/provider identity 恢复或形成真实不可恢复终态
+- AND 第二条消息仍显示 targetRole=qa 且顺序不变
+- AND 原 run 终态前不会启动第二个 qa run
+
+### Scenario: 已有会话升级不重解释旧 pending
+- GIVEN 升级前会话有一条包含 `@qa` 的 pending user message
+- WHEN 新版本完成 schema migration 与 startup catch-up
+- THEN 该旧消息仍交给主 Agent
+- AND 历史时间线与既有 provider links 不变
+- AND 升级后新发送的唯一 `@qa` 使用新直达规则
+
+### Scenario: 切换前后消息使用正确团队
+- GIVEN 旧团队 qa 正在运行且已有一条旧团队 qa pending
+- WHEN 用户请求切换团队并在切换等待期间再发送消息
+- THEN 旧 qa pending 先按旧快照完成并阻止新快照提升
+- AND 切换等待期间的新消息不启动旧团队成员
+- AND 新快照提升后才按新团队名单解析新消息
+
+## Requirement: state 暴露全部待发射目标且保持主理人兼容投影
 Source: docs/product/pages/main-conversation.md#团队推进中
 
-local state、session view 与 snapshot MUST 返回当前 session 的全部 `activeRuns`，每项以非空 runId、role、live Markdown 和 interruptible 区分。迁移期 `activeRun` MAY 保留，但 MUST 只投影主 Agent run；主 Agent 空闲时 MUST 为 null，MUST NOT 随机投影专业成员。
+local state、session view 与 snapshot MUST 返回当前 session 的全部 `activeRuns`，每项以非空 runId、role、live Markdown 和 interruptible 区分；同时 MUST 暴露全部 pending dispatch，每项至少包含目标 lane、目标 role 或 awaiting-team 状态。迁移期 `activeRun` MAY 保留，但 MUST 只投影主 Agent run；主 Agent 空闲时 MUST 为 null，MUST NOT 随机投影专业成员。`pendingPrimaryMessages` MAY 在迁移期保留，但 MUST 只包含主 Agent 项。
+
+`hasPendingControlWork`、running count、archive guard、session/project summary MUST 覆盖所有成员 pending、活动恢复与待主 Agent 接回结果，MUST NOT 因主 Agent 空闲而把仍有 worker FIFO 的 session 标为 idle。
 
 ### Scenario: 只有两个专业成员运行
 - GIVEN dev 与 qa 正在运行且主 Agent 空闲
 - WHEN 客户端读取 state
 - THEN `activeRuns` 含 dev 与 qa 两项
 - AND `activeRun` 为 null
+
+### Scenario: 只有专业成员 pending
+- GIVEN 主 Agent 空闲、qa 正在运行且 qa FIFO 有一条 pending
+- WHEN 客户端读取 session view
+- THEN pending dispatch 包含 targetRole=qa 的条目
+- AND `pendingPrimaryMessages` 不包含该条目
+- AND `hasPendingControlWork` 为 true
 
 ## Requirement: 中断按精确 runId 匹配
 Source: docs/product/pages/main-conversation.md#停下
@@ -1065,13 +1145,19 @@ runtime MUST 在 session 的全部活动 run 中按 `sessionId + runId` 精确�
 ## Requirement: 并行控制工作事实与恢复
 Source: docs/product/pages/main-conversation.md#指标与验收
 
-`hasPendingControlWork` 与 running count MUST 覆盖全部活动 run、尚未领取的主理人 pending、已完成但尚待主理人接回的专业结果。重启恢复 MUST 逐条识别持久化但已无真实进程的 running run 并写入可见 stuck 终态。系统 MUST NOT 因某一 run 完成而把仍有其他 run 或 pending 的 session 标为 idle。
+`hasPendingControlWork` 与 running count MUST 覆盖全部活动 run、尚未领取的主理人或专业成员 pending、awaiting-team、活动恢复，以及已完成但尚待主理人接回的专业结果。archive guard 与 session/project summary MUST 使用同一事实。重启恢复 MUST 逐条识别持久化但已无真实进程的 running run 并写入可见 stuck 终态。系统 MUST NOT 因某一 run 完成而把仍有其他 run 或 pending 的 session 标为 idle。
 
 ### Scenario: 一个成员完成但另一个仍运行
 - GIVEN dev 与 qa 并行且 dev 已完成
 - WHEN session summary 刷新
 - THEN qa 仍计入 runningCount
 - AND session 保持进行中
+
+### Scenario: 只有成员队列仍待发射
+- GIVEN 主 Agent 空闲且没有专业成员活动，但 qa FIFO 仍有一条 pending
+- WHEN session summary 与 archive guard 刷新
+- THEN `hasPendingControlWork` 为 true 且会话保持进行中
+- AND archive guard 不允许把该会话当作无控制工作归档
 
 ## Requirement: 会话团队快照首成员是主 Agent 单一事实
 Source: docs/product/pages/agent-teams.md#主-Agent

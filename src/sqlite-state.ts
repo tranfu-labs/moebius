@@ -98,6 +98,11 @@ export type SqliteStateCommand =
       };
       workspaceMode?: "direct" | "worktree";
       initialMessage?: string;
+      initialDispatch?: {
+        lane: "primary" | "worker";
+        role: string;
+        reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+      };
       initialAttachmentIds?: string[];
       attachmentDraftKey?: string;
       baselineCommit?: string | null;
@@ -149,6 +154,11 @@ export type SqliteStateCommand =
       attachmentIds?: string[];
       attachmentDraftKey?: string;
       textFragments?: Array<{ id: string; label: string; text: string }>;
+      dispatch?: {
+        lane: "primary" | "worker" | "awaiting-team";
+        role: string | null;
+        reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+      };
       now: string;
     }
   | {
@@ -184,7 +194,28 @@ export type SqliteStateCommand =
   | { kind: "local-prune-orphan-attachment-blobs" }
   | { kind: "local-list"; sessionId: string }
   | { kind: "local-has-running"; sessionId: string }
-  | { kind: "local-claim-next"; sessionId: string; runId: string; now: string }
+  | {
+      kind: "local-claim-next";
+      sessionId: string;
+      runId: string;
+      gracefulResumeTargets?: Array<{
+        sourceMessageId: number;
+        targetRunId: string;
+      }>;
+      now: string;
+    }
+  | { kind: "local-claim-next-worker"; sessionId: string; role: string; runId: string; now: string }
+  | {
+      kind: "local-resolve-awaiting-user-dispatches";
+      sessionId: string;
+      dispatches: Array<{
+        messageId: number;
+        lane: "primary" | "worker";
+        role: string;
+        reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
+      }>;
+      now: string;
+    }
   | { kind: "local-set-run-dir"; id: number; runDir: string; now: string }
   | { kind: "local-record-message-processed"; userMessageId: number; sessionId: string; runId: string; runDir: string | null; now: string }
   | { kind: "local-find-route-decision"; sessionId: string; routeKey: string }
@@ -211,7 +242,24 @@ export type SqliteStateCommand =
       now: string;
     }
   | { kind: "local-release-message-for-retry"; userMessageId: number; sessionId: string; now: string }
-  | { kind: "local-release-message-for-resume"; userMessageId: number; sessionId: string; now: string }
+  | {
+      kind: "local-release-message-for-resume";
+      userMessageId: number;
+      sessionId: string;
+      sourceDisposition: "primary" | "user-direct" | "agent-handoff";
+      targetRunId: string;
+      role: string;
+      now: string;
+    }
+  | {
+      kind: "local-repair-agent-handoff-resume-source";
+      sessionId: string;
+      intentId: string;
+      targetRunId: string;
+      sourceMessageId: number;
+      role: string;
+      now: string;
+    }
   | {
       kind: "local-record-agent-response";
       userMessageId: number;

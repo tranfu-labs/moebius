@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 620" width="1080" height="620">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif; fill: #111827; }
+    .title { font-size: 22px; font-weight: 600; }
+    .label { font-size: 15px; font-weight: 600; }
+    .sub { font-size: 12px; fill: #6b7280; }
+  </style>
+  <defs>
+    <marker id="blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#5e6ad2"/></marker>
+    <marker id="amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#d97706"/></marker>
+  </defs>
+  <rect width="1080" height="620" fill="#fff"/>
+  <text x="48" y="48" class="title">现状：所有用户消息先进入主理人车道</text>
+  <rect x="48" y="100" width="210" height="84" rx="10" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="153" y="132" text-anchor="middle" class="label">composer</text>
+  <text x="153" y="155" text-anchor="middle" class="sub">所有消息只给主理人</text>
+  <text x="153" y="174" text-anchor="middle" class="sub">忙时保留为 primary pending</text>
+  <rect x="354" y="88" width="264" height="108" rx="10" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="486" y="124" text-anchor="middle" class="label">主理人控制车道</text>
+  <text x="486" y="148" text-anchor="middle" class="sub">每 session 最多一个 run</text>
+  <text x="486" y="170" text-anchor="middle" class="sub">终态后 FIFO 发射 pending</text>
+  <path d="M258 142H354" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <rect x="734" y="88" width="294" height="108" rx="10" fill="#f5f3ff" stroke="#ddd6fe"/>
+  <text x="881" y="124" text-anchor="middle" class="label">主理人 provider run</text>
+  <text x="881" y="148" text-anchor="middle" class="sub">理解用户点名意图</text>
+  <text x="881" y="170" text-anchor="middle" class="sub">回复决定派工 / redirect</text>
+  <path d="M618 142H734" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <rect x="76" y="286" width="250" height="92" rx="10" fill="#ecfeff" stroke="#a5f3fc"/>
+  <text x="201" y="322" text-anchor="middle" class="label">dev 执行车道</text>
+  <text x="201" y="346" text-anchor="middle" class="sub">主理人派工后启动</text>
+  <rect x="414" y="286" width="250" height="92" rx="10" fill="#ecfeff" stroke="#a5f3fc"/>
+  <text x="539" y="322" text-anchor="middle" class="label">qa 执行车道</text>
+  <text x="539" y="346" text-anchor="middle" class="sub">用户 @qa 不能直接进入</text>
+  <rect x="752" y="286" width="250" height="92" rx="10" fill="#ecfeff" stroke="#a5f3fc"/>
+  <text x="877" y="322" text-anchor="middle" class="label">其他成员执行车道</text>
+  <text x="877" y="346" text-anchor="middle" class="sub">内存 tail 串行已调度工作</text>
+  <path d="M834 196C790 244 300 236 201 286" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#amber)"/>
+  <path d="M881 196V238C770 248 620 250 539 286" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#amber)"/>
+  <path d="M928 196C972 236 958 250 877 286" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#amber)"/>
+  <rect x="272" y="468" width="536" height="92" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
+  <text x="540" y="504" text-anchor="middle" class="label">activeRuns + SQLite / JSONL 事实写链</text>
+  <text x="540" y="528" text-anchor="middle" class="sub">只有 primary pending 可持久恢复目标与 FIFO</text>
+  <path d="M201 378C252 426 350 438 434 468" fill="none" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M539 378V468" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M877 378C828 426 728 438 646 468" fill="none" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M486 196V244C486 410 486 410 486 468" fill="none" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <text x="48" y="598" class="sub">基线：docs/architecture/local-console-primary-control-lanes.svg</text>
+</svg>

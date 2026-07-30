@@ -1240,16 +1240,37 @@ describe("OperatorConsole", () => {
     expect(onOpenDiagnostics).not.toHaveBeenCalled();
   });
 
-  it("renders a FIFO primary pending zone and independent worker stop controls", () => {
+  it("renders real pending targets in submission order and independent worker stop controls", () => {
     const onInterrupt = vi.fn();
     const devRun = { ...runSnapshot, runId: "run-dev", role: "dev" };
     const qaRun = { ...runSnapshot, runId: "run-qa", role: "qa" };
     renderConsole({
       activeRun: runSnapshot,
       activeRuns: [runSnapshot, devRun, qaRun],
-      pendingPrimaryMessages: [
-        message({ id: 7, body: "先处理线上报错", status: "pending" }),
-        message({ id: 8, body: "再补一份回归说明", status: "pending" }),
+      memberIdentities: [
+        { slug: "dev-manager", displayName: "主理人" },
+        { slug: "dev", displayName: "开发" },
+        { slug: "qa", displayName: "测试" },
+      ],
+      pendingDispatchMessages: [
+        {
+          message: message({ id: 7, body: "先处理线上报错", status: "pending" }),
+          targetLane: "primary",
+          targetRole: "dev-manager",
+          waitingForTeam: false,
+        },
+        {
+          message: message({ id: 8, body: "再补一份回归说明", status: "pending" }),
+          targetLane: "worker",
+          targetRole: "qa",
+          waitingForTeam: false,
+        },
+        {
+          message: message({ id: 9, body: "@reviewer 新团队复核", status: "pending" }),
+          targetLane: "awaiting-team",
+          targetRole: null,
+          waitingForTeam: true,
+        },
       ],
       onInterrupt,
     });
@@ -1257,6 +1278,12 @@ describe("OperatorConsole", () => {
     const pendingZone = screen.getByTestId("primary-pending-zone");
     expect(within(pendingZone).getByText("先处理线上报错")).toBeVisible();
     expect(within(pendingZone).getByText("再补一份回归说明")).toBeVisible();
+    expect(within(pendingZone).getByText("→ 主理人")).toBeVisible();
+    expect(within(pendingZone).getByText("→ 测试")).toBeVisible();
+    expect(within(pendingZone).getByText("→ 新团队生效后决定")).toBeVisible();
+    expect(within(pendingZone).queryByText("待发射给主理人")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "消息内容" }))
+      .toHaveAttribute("placeholder", "继续说点什么，或 @ 一个成员…");
     expect(pendingZone).toHaveClass("w-full", "max-w-[760px]");
     expect(pendingZone).not.toHaveClass("max-w-[720px]");
     expect(screen.getByRole("region", { name: "会话时间线" })).toHaveClass("pb-72");
@@ -1268,6 +1295,37 @@ describe("OperatorConsole", () => {
     expect(onInterrupt).toHaveBeenLastCalledWith("session-a", "run-qa");
     fireEvent.click(screen.getByRole("button", { name: "停下主理人" }));
     expect(onInterrupt).toHaveBeenLastCalledWith("session-a", "run-1");
+  });
+
+  it("replaces a pending target after parent props update", () => {
+    const rendered = renderConsole({
+      memberIdentities: [
+        { slug: "qa", displayName: "测试" },
+        { slug: "dev", displayName: "开发" },
+      ],
+      pendingDispatchMessages: [{
+        message: message({ id: 7, body: "检查目标", status: "pending" }),
+        targetLane: "worker",
+        targetRole: "qa",
+        waitingForTeam: false,
+      }],
+    });
+    expect(screen.getByText("→ 测试")).toBeVisible();
+
+    rendered.rerender(<OperatorConsole {...baseProps({
+      memberIdentities: [
+        { slug: "qa", displayName: "测试" },
+        { slug: "dev", displayName: "开发" },
+      ],
+      pendingDispatchMessages: [{
+        message: message({ id: 7, body: "检查目标", status: "pending" }),
+        targetLane: "worker",
+        targetRole: "dev",
+        waitingForTeam: false,
+      }],
+    })} />);
+    expect(screen.queryByText("→ 测试")).not.toBeInTheDocument();
+    expect(screen.getByText("→ 开发")).toBeVisible();
   });
 
   it("uses effective custom member names across the main timeline, runs, facts, stops, and process tabs", () => {

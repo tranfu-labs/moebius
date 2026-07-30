@@ -260,6 +260,7 @@ export function planLocalExecutionRecovery(input: {
   sourceMessageId: number;
   role: string;
   currentContext: LocalRunExecutionContextFact;
+  preferredIntentId?: string;
   intents: LocalCodexResumeIntentFact[];
   consumedIntentIds: ReadonlySet<string>;
   canonicalLinks?: LocalAgentSessionLinkFact[];
@@ -268,11 +269,16 @@ export function planLocalExecutionRecovery(input: {
   legacyCodexLinks: LocalCodexThreadLinkFact[];
   contexts: LocalRunExecutionContextFact[];
 }): LocalExecutionRecoveryPlan {
-  const intent = [...input.intents]
-    .reverse()
-    .find((candidate) =>
-      candidate.sourceMessageId === input.sourceMessageId
-      && !input.consumedIntentIds.has(candidate.intentId)) ?? null;
+  const intent = input.preferredIntentId === undefined
+    ? [...input.intents]
+        .reverse()
+        .find((candidate) =>
+          candidate.sourceMessageId === input.sourceMessageId
+          && !input.consumedIntentIds.has(candidate.intentId)) ?? null
+    : input.intents.find((candidate) =>
+        candidate.intentId === input.preferredIntentId
+        && candidate.sourceMessageId === input.sourceMessageId
+        && !input.consumedIntentIds.has(candidate.intentId)) ?? null;
   const currentIdentity = contextIdentity(input.currentContext);
   const computedIdentity = localAgentIdentityFingerprint(input.currentContext);
   const computedContext = executionContextFingerprint(input.currentContext);

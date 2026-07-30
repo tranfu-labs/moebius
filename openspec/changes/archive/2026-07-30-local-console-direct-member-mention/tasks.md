@@ -1,0 +1,58 @@
+# 任务：local-console-direct-member-mention
+
+- [x] 修复第四轮 QA 阻塞：agent-handoff graceful resume
+  - [x] 先增加稳定红色复现：`agent + displayed` handoff source 启动 QA、建立 provider ID、clean close、同根启动；修复前必须观察到 source 不能恢复或 later user source 继承旧 QA runId，修复后同一用例转绿。
+  - [x] 给活动 worker 与新 graceful intent 保留 `user-direct | agent-handoff`（或等价判别联合）source 语义；旧 intent 缺字段只走 design 白名单，关闭和恢复不得从正文、role 名或“最近 placeholder”猜测。
+  - [x] 把 graceful source 释放收进 store/session-fact 原子状态转换：user source 回原 dispatch pending；agent source 保持 displayed 并回退 cursor；placeholder 只收束自身；重复提交为 no-op。
+  - [x] 改造 primary claim，使 intent.targetRunId 在 store 同一事务内只绑定 actual claimed source；候选被跳过、已终态或不是本次 source 时使用新 runId，后续普通用户消息不得继承旧 QA runId。
+  - [x] 增加有界 startup compatibility repair：仅处理 design 六项安全判据同时成立的 `agent + pending` legacy footprint，经 fact 写漏斗追加单一 repair fact并原子恢复 source/cursor；不消费 intent、不清 context、不改 provider link、不删除或改写 later 历史。
+  - [x] repair 拒绝矩阵覆盖 consumed/non-graceful 或冲突 intent、context 缺失/冲突、非 exact agent source、非 pending/displayed、active/running owner、placeholder/cursor/disposition 冲突；拒绝时零 repair fact、零 provider 调用。
+  - [x] 单测/store 测试覆盖 user/agent/system source 状态矩阵、cursor、重复启动幂等、repair marker 和 exact-source runId 隔离。
+  - [x] runtime 测试覆盖“主 Agent handoff QA → QA 建立 provider ID → clean close → 同 run/source/role/step/attempt/provider resume 一次 → QA 结果回主 Agent”，并断言 full/replacement 为零。
+  - [x] 回归 user-direct graceful resume + 同 role FIFO/不 abort、primary resume、resume-unavailable、orphan stuck、provider-start close races、跨 role 并行与主理人 redirect 中断重启。
+  - [x] 把指定污染会话的完整数据根复制到系统临时目录，只对副本执行 startup repair；启动前后逐字段核对 404 与 412/413/414/415，证明只追加一个 repair fact、历史事实不删不改、重复启动幂等。
+  - [x] 在生产桌面主对话指向该临时副本：证明原 QA 使用同 run/source/role/step/attempt 和 canonical provider ID 恢复一次；恢复窗口发送新的“继续”，证明它使用自身 source、新 runId 与 dev-manager context，不继承旧 QA runId。
+  - [x] 真实 evidence 记录原数据根未写证明、临时副本路径、修复前后 source/cursor/历史摘要、repair fact 数、provider mode/ID、后续“继续”run/context、最终回复及 context-conflict/run-not-started/replacement 计数；证据只写系统临时目录。
+  - [x] 运行定向 Vitest、`pnpm test`、`pnpm typecheck`、console-ui Storybook gate与 desktop build；日志写系统临时目录，只汇报退出码和关键证据。
+  - [x] 对照本节方案、现行 PRD/spec 与原 change 全清单做符合度反思；本轮返工不得新增共享 mention parser、triggers、GitHub runner 或 UI diff，且不得改变 user-direct FIFO/不 abort、跨 role 并行、团队切换、Agent handoff 选择或主理人 redirect；独立 QA 通过前不得重新归档或声明 code-verified。
+- [x] 建立用户消息纯路由规则
+  - [x] 新增 local-only `user-message-routing` 纯模块，覆盖有效成员去重、无效/多目标回主 Agent 和代码区域屏蔽。
+  - [x] 不修改共享 mention parser、Agent-to-Agent trigger 或 GitHub runner 规则。
+  - [x] 更新 `docs/architecture/module-map.md` 的 local-console 入口与职责说明，保持纯路由模块不反向依赖 IO adapter。
+- [x] 持久化 dispatch 与迁移
+  - [x] 为 user message 增加 dispatch lane、target role、reason 的幂等 SQLite migration。
+  - [x] 新消息 append 原子写入 dispatch；pending 团队切换期间写入 `awaiting-team`。
+  - [x] 旧消息确定性兼容：升级前 pending user message 继续给主 Agent，历史时间线与 provider links 不改写。
+- [x] 实现主理人与成员独立 FIFO
+  - [x] 让主理人 claim 忽略已经委派给 worker 的 user source，并正确推进本地消息 cursor。
+  - [x] 增加 `sessionId + role` 原子 worker pending claim；同 role 串行、不同 role 可并行。
+  - [x] 让 user-direct 使用用户消息作为 run source，并在成功/失败/stuck/interrupted/resume-unavailable 时原子收束。
+  - [x] 区分 user-direct 与 primary-redirect：前者绝不 abort，后者保持中断后重启。
+- [x] 闭合切换与恢复
+  - [x] 切换前 worker pending 保持旧 effective 快照并阻止新快照提升；切换后消息等新快照再解析。
+  - [x] graceful restart 先恢复活动 role，再启动同 role pending；provider identity 不创建 replacement session。
+  - [x] orphan/stuck 修复后只释放对应 role 下一条，其他 role 与主 Agent 不受阻塞。
+  - [x] `hasPendingControlWork`、running count、archive guard 与 session/project summary 覆盖所有 dispatch 状态。
+- [x] 泛化 state 与 UI
+  - [x] state/session view 增加统一 pending dispatch 投影，并保留 `pendingPrimaryMessages` 兼容子集。
+  - [x] desktop renderer 保持薄映射，不在 UI 推导目标或队列顺序。
+  - [x] operator console 待发射区显示目标成员、摘要和顺序，支持等待新团队文案；把错误的“继续告诉主理人”提示替换为 PRD 已有的“继续说话或提及成员”语义。
+  - [x] 保持主 Agent 方形停止按钮、正文列宽度、窄窗口滚动和现有视觉令牌不变。
+  - [x] 只更新必要中英文文案、生产组件和组件测试；不新增 Page Story，既有 Story fixture 仅在 props 类型变化导致编译失败时机械适配。
+  - [x] 父级重渲染/props 更新后不得显示过期目标。
+- [x] 补齐自动化验证
+  - [x] 纯路由测试按 PRD/delta 同一判据覆盖未点名、全无效、唯一有效、无效+唯一仍直达、重复同一目标仍直达、多个不同目标回主 Agent 及代码区域。
+  - [x] store/runtime 测试覆盖 `@dev` / `@qa` 直达、未启动成员、忙碌排队、不 abort、FIFO 和跨 role 并行。
+  - [x] 覆盖已有会话 migration、pending 团队切换、graceful restart、orphan/stuck、canonical provider resume 和附件。
+  - [x] 回归主 Agent redirect、Agent-to-Agent 第一有效 mention、主理人 pending FIFO 与 GitHub mention 行为；核对 changed files 不包含 `src/conversation.ts`、`src/triggers/*` 或 GitHub runner 业务代码。
+- [x] 完成真实主对话验收
+  - [x] 在系统临时目录创建隔离 `MOEBIUS_DATA_ROOT`、`CODEX_HOME` 和协议兼容 Codex CLI shim；shim 支持 version/full/resume、写 rollout 与 invocation/signal log，并用 release 文件确定性保持 qa run。通过 `pnpm desktop` 启动生产桌面，不新增 runtime 测试开关。
+  - [x] 入口：生产桌面主对话，绑定包含 dev-manager/dev/qa 的团队；发送 `@qa 只回复 ROUTE-QA`。观察实际启动 qa、首次 Agent 回复为 qa，dev-manager/dev 在首次执行阶段均未启动。
+  - [x] 分别新建三个隔离会话发送无 mention、`@unknown`、`@qa @dev`；每个会话只核自己的首次 invocation，观察都先启动 dev-manager，qa/dev 均未被直接启动。不得在上一 run 或 pending 未清空时复用会话。
+  - [x] 忙碌 FIFO 使用 shim started/release 闸门：第一条 qa invocation 持续活动时发送第二条唯一 `@qa`。观察“待发射 → qa”、仍只有一个 qa active run、runId/PID 不变、invocation count=1，且显式 release 前 signal log 没有 SIGINT/SIGTERM；release 后才出现第二个 qa runId/invocation。
+  - [x] 重启使用独立会话重建 qa 活动与第二条 qa pending；正常关闭前 signal log 必须为空。重启同一数据根/CODEX_HOME 后，观察旧 qa 以相同 runId/thread ID resume、qa pending 仍在；release 后新 qa run 启动且没有 full replacement session。
+  - [x] 打开升级前已有会话，确认历史不改写、旧 pending 仍给主 Agent；再发唯一有效 mention，确认按新规则直达。
+  - [x] 用 CDP 可见文本、local state、CLI invocation/signal log 与 rollout 交叉断言；把入口、sessionId、发送内容、实际启动成员、未启动成员、runId/PID、pending target、release 时刻、重启前后 provider ID 与时间戳写入系统临时目录 evidence JSON。
+- [x] 运行门禁与符合度复核
+  - [x] 运行定向 Vitest、`pnpm test`、`pnpm typecheck`、console-ui Storybook gate 和 desktop build，日志写临时目录并核对退出码。
+  - [x] 对照 proposal、design、spec-delta 与真实验收逐条检查漏做、多做和 GitHub 零漂移。

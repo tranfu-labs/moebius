@@ -276,9 +276,17 @@ export interface OperatorMessage {
 
 export type OperatorChildSessionSummary = SubSessionCardItem;
 
+export interface OperatorPendingDispatch {
+  message: OperatorMessage;
+  targetLane: "primary" | "worker" | "awaiting-team";
+  targetRole: string | null;
+  waitingForTeam: boolean;
+}
+
 export interface OperatorSubSessionView {
   session: OperatorSession;
   messages: OperatorMessage[];
+  pendingDispatchMessages?: OperatorPendingDispatch[];
   pendingPrimaryMessages?: OperatorMessage[];
   memberIdentities?: OperatorMemberIdentity[];
   activeRun: OperatorRunSnapshot | null;
@@ -368,6 +376,7 @@ export interface OperatorConsoleProps {
   messages: OperatorMessage[];
   initialReadingMessageId?: number | null;
   onReadingMessageChange?: (sessionId: string, messageId: number) => void;
+  pendingDispatchMessages?: OperatorPendingDispatch[];
   pendingPrimaryMessages?: OperatorMessage[];
   childSessions?: OperatorChildSessionSummary[];
   memberIdentities?: readonly OperatorMemberIdentity[];
@@ -548,6 +557,7 @@ export function OperatorConsole({
   messages,
   initialReadingMessageId = null,
   onReadingMessageChange,
+  pendingDispatchMessages,
   pendingPrimaryMessages = [],
   childSessions = [],
   memberIdentities = [],
@@ -689,6 +699,13 @@ export function OperatorConsole({
   const t: Translate = (key, values) => translate(activeLocale, key, values);
   const resolvedAgentTeamFileManagerLabel = agentTeamFileManagerLabel ?? t("console.operator.fileManager");
   const displayedActiveRuns = activeRuns ?? (activeRun === null ? [] : [activeRun]);
+  const visiblePendingDispatches = pendingDispatchMessages
+    ?? pendingPrimaryMessages.map((message) => ({
+      message,
+      targetLane: "primary" as const,
+      targetRole: null,
+      waitingForTeam: false,
+    }));
   const [uncontrolledSidebarOpen, setUncontrolledSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH_PX);
   const [uncontrolledRightSidebarOpen, setUncontrolledRightSidebarOpen] = useState(false);
@@ -1573,7 +1590,7 @@ export function OperatorConsole({
               <div
                 className={cn(
                   "pointer-events-none absolute left-3 top-[var(--window-header-height)] z-20 w-11",
-                  pendingPrimaryMessages.length > 0 ? "bottom-72" : "bottom-40",
+                  visiblePendingDispatches.length > 0 ? "bottom-72" : "bottom-40",
                 )}
                 data-testid="main-conversation-relay-slot"
               >
@@ -1591,7 +1608,7 @@ export function OperatorConsole({
             <section
               className={cn(
                 "scroll-thin min-h-0 flex-1 overflow-auto",
-                pendingPrimaryMessages.length > 0 ? "pb-72" : "pb-44",
+                visiblePendingDispatches.length > 0 ? "pb-72" : "pb-44",
               )}
               aria-label={t("console.operator.timeline")}
               ref={timelineScrollRef}
@@ -1782,7 +1799,7 @@ export function OperatorConsole({
                 type="button"
                 className={cn(
                   "absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub hover:text-ink",
-                  pendingPrimaryMessages.length > 0 ? "bottom-64" : "bottom-36",
+                  visiblePendingDispatches.length > 0 ? "bottom-64" : "bottom-36",
                 )}
                 onClick={() => {
                   const timeline = timelineScrollRef.current;
@@ -1804,23 +1821,38 @@ export function OperatorConsole({
                 MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
               )}
             >
-                {pendingPrimaryMessages.length > 0 ? (
+                {visiblePendingDispatches.length > 0 ? (
                   <section
                     className={cn(
                       "pointer-events-auto mx-auto mb-2 w-full rounded-[14px] border border-accent/35 bg-accent/10 px-3.5 py-2.5",
                       MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                     )}
-                    aria-label={t("console.operator.pendingPrimary")}
+                    aria-label={t("console.operator.pendingDispatch")}
                     data-testid="primary-pending-zone"
                   >
-                    <p className="text-xs font-medium text-accent">{t("console.operator.pendingPrimary")}</p>
+                    <p className="text-xs font-medium text-accent">{t("console.operator.pendingDispatch")}</p>
                     <ol className="scroll-thin mt-1.5 max-h-24 space-y-1 overflow-y-auto pr-1 text-sm text-ink">
-                      {pendingPrimaryMessages.map((message, index) => (
-                        <li key={message.id} className="flex min-w-0 gap-2">
+                      {visiblePendingDispatches.map((dispatch, index) => (
+                        <li key={dispatch.message.id} className="flex min-w-0 gap-2">
                           <span className="shrink-0 text-sub">{index + 1}</span>
+                          <span className="shrink-0 text-accent">
+                            {dispatch.waitingForTeam
+                              ? t("console.operator.pendingNewTeam")
+                              : t("console.operator.pendingTarget", {
+                                  target: resolveOperatorMemberName(
+                                    dispatch.targetRole
+                                      ?? (dispatch.targetLane === "primary"
+                                        ? memberIdentities[0]?.slug ?? null
+                                        : null),
+                                    memberIdentities,
+                                    t,
+                                    t("console.common.collaborator"),
+                                  ),
+                                })}
+                          </span>
                           <span className="truncate">
-                            {message.body.trim()
-                              || message.attachments?.map((attachment) => attachment.displayName).join(", ")
+                            {dispatch.message.body.trim()
+                              || dispatch.message.attachments?.map((attachment) => attachment.displayName).join(", ")
                               || t("console.operator.attachmentMessage")}
                           </span>
                         </li>

@@ -32,6 +32,13 @@ describe("local attachment HTTP boundary", () => {
       projectRoot: root,
       port: 0,
       attachmentCapability: capability,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => ({
+        members: [
+          { name: "manager", agentMarkdown: "# Manager\n\nROLE:manager" },
+          { name: "qa", agentMarkdown: "# QA\n\nROLE:qa" },
+        ],
+      }),
       runCodex,
       storeTimeoutMs: 10_000,
       makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
@@ -78,11 +85,17 @@ describe("local attachment HTTP boundary", () => {
       const createResponse = await fetch(new URL("api/local-console/sessions", started.url), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId: "local", initialMessage: "", attachmentIds }),
+        body: JSON.stringify({
+          projectId: "local",
+          initialMessage: "@qa inspect managed attachments",
+          attachmentIds,
+          agentTeamOwnership: "system",
+          agentTeamId: "development",
+        }),
       });
       const created = await createResponse.json() as { session: { sessionId: string; title: string } };
       expect(createResponse.status).toBe(201);
-      expect(created.session.title).toBe("screen.png");
+      expect(created.session.title).toBe("@qa inspect managed attachments");
 
       await vi.waitFor(() => expect(runCodex).toHaveBeenCalledOnce(), { timeout: 10_000 });
       const options = runCodex.mock.calls[0]![0];
@@ -90,6 +103,8 @@ describe("local attachment HTTP boundary", () => {
       expect(options.imagePaths?.[0]).toContain("screen.png");
       expect(options.prompt).toContain("notes.pdf");
       expect(options.prompt).toContain("input-attachments");
+      expect(options.prompt).toContain("ROLE:qa");
+      expect(options.prompt).not.toContain("ROLE:manager");
       expect(options.imagePaths?.some((candidate) => candidate.includes("notes.pdf"))).toBe(false);
 
       const view = await fetch(new URL(`api/local-console/sessions/${encodeURIComponent(created.session.sessionId)}/view`, started.url));

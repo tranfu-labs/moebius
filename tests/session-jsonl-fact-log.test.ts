@@ -113,6 +113,24 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       },
       { kind: "local-release-message-for-retry", userMessageId: messageId, sessionId, now },
       {
+        kind: "local-release-message-for-resume",
+        userMessageId: messageId,
+        sessionId,
+        sourceDisposition: "primary",
+        targetRunId: "run-blocked",
+        role: "dev-manager",
+        now,
+      },
+      {
+        kind: "local-repair-agent-handoff-resume-source",
+        sessionId,
+        intentId: "intent-blocked",
+        targetRunId: "run-blocked",
+        sourceMessageId: messageId,
+        role: "qa",
+        now,
+      },
+      {
         kind: "local-record-agent-response",
         userMessageId: messageId,
         sessionId,
@@ -170,6 +188,301 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
     } finally {
       database.close();
     }
+  });
+
+  it("releases graceful resume sources by explicit disposition and repairs an Agent source idempotently", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    await store.init();
+
+    await store.createSession({
+      sessionId: "local:resume-primary",
+      title: "primary",
+      now: "2026-07-22T01:00:00.000Z",
+    });
+    const primary = await store.appendUserMessage({
+      sessionId: "local:resume-primary",
+      body: "primary",
+      dispatch: { lane: "primary", role: "dev-manager", reason: "no-valid-mention" },
+      now: "2026-07-22T01:00:01.000Z",
+    });
+    await store.claimNextPendingMessage({
+      sessionId: primary.sessionId,
+      runId: "run-primary",
+      now: "2026-07-22T01:00:02.000Z",
+    });
+    await store.releaseMessageForResume({
+      userMessageId: primary.id,
+      sessionId: primary.sessionId,
+      sourceDisposition: "primary",
+      targetRunId: "run-primary",
+      role: "dev-manager",
+      now: "2026-07-22T01:00:03.000Z",
+    });
+    await expect(store.listMessages(primary.sessionId)).resolves.toContainEqual(expect.objectContaining({
+      id: primary.id,
+      speaker: "user",
+      status: "pending",
+      runId: null,
+      dispatchLane: "primary",
+      dispatchRole: "dev-manager",
+    }));
+
+    await store.createSession({
+      sessionId: "local:resume-direct",
+      title: "direct",
+      now: "2026-07-22T01:01:00.000Z",
+    });
+    const direct = await store.appendUserMessage({
+      sessionId: "local:resume-direct",
+      body: "@qa direct",
+      dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+      now: "2026-07-22T01:01:01.000Z",
+    });
+    await store.claimNextPendingWorkerMessage({
+      sessionId: direct.sessionId,
+      role: "qa",
+      runId: "run-direct",
+      now: "2026-07-22T01:01:02.000Z",
+    });
+    await store.releaseMessageForResume({
+      userMessageId: direct.id,
+      sessionId: direct.sessionId,
+      sourceDisposition: "user-direct",
+      targetRunId: "run-direct",
+      role: "qa",
+      now: "2026-07-22T01:01:03.000Z",
+    });
+    await expect(store.listMessages(direct.sessionId)).resolves.toContainEqual(expect.objectContaining({
+      id: direct.id,
+      speaker: "user",
+      status: "pending",
+      runId: null,
+      dispatchLane: "worker",
+      dispatchRole: "qa",
+    }));
+
+    await store.createSession({
+      sessionId: "local:resume-handoff",
+      title: "handoff",
+      now: "2026-07-22T01:02:00.000Z",
+    });
+    const managerSource = await store.appendUserMessage({
+      sessionId: "local:resume-handoff",
+      body: "delegate",
+      dispatch: { lane: "primary", role: "dev-manager", reason: "no-valid-mention" },
+      now: "2026-07-22T01:02:01.000Z",
+    });
+    await store.claimNextPendingMessage({
+      sessionId: managerSource.sessionId,
+      runId: "run-manager",
+      now: "2026-07-22T01:02:02.000Z",
+    });
+    await store.recordAgentResponse({
+      userMessageId: managerSource.id,
+      sessionId: managerSource.sessionId,
+      role: "dev-manager",
+      body: "@qa handoff",
+      runId: "run-manager",
+      runDir: "/tmp/run-manager",
+      now: "2026-07-22T01:02:03.000Z",
+    });
+    const handoffSource = (await store.listMessages(managerSource.sessionId)).find((message) =>
+      message.speaker === "agent" && message.body === "@qa handoff")!;
+    await store.claimNextPendingMessage({
+      sessionId: managerSource.sessionId,
+      runId: "run-handoff",
+      now: "2026-07-22T01:02:04.000Z",
+    });
+    await store.releaseMessageForResume({
+      userMessageId: handoffSource.id,
+      sessionId: managerSource.sessionId,
+      sourceDisposition: "agent-handoff",
+      targetRunId: "run-handoff",
+      role: "qa",
+      now: "2026-07-22T01:02:05.000Z",
+    });
+    await expect(store.listMessages(managerSource.sessionId)).resolves.toContainEqual(expect.objectContaining({
+      id: handoffSource.id,
+      speaker: "agent",
+      status: "displayed",
+    }));
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      expect(database.prepare(
+        "SELECT processed_through_message_id, active_message_id, active_run_id FROM local_message_cursors WHERE session_id = ?",
+      ).get(managerSource.sessionId)).toMatchObject({
+        processed_through_message_id: handoffSource.id - 1,
+        active_message_id: null,
+        active_run_id: null,
+      });
+      database.prepare(
+        "UPDATE session_messages SET status = 'pending' WHERE session_id = ? AND id = ?",
+      ).run(managerSource.sessionId, handoffSource.id);
+    } finally {
+      database.close();
+    }
+    const repairInput = {
+      sessionId: managerSource.sessionId,
+      intentId: "legacy-handoff-intent",
+      targetRunId: "run-handoff",
+      sourceMessageId: handoffSource.id,
+      role: "qa",
+      now: "2026-07-22T01:02:06.000Z",
+    };
+    await expect(store.repairAgentHandoffResumeSource(repairInput)).resolves.toBe("repaired");
+    await expect(store.repairAgentHandoffResumeSource({
+      ...repairInput,
+      now: "2026-07-22T01:02:07.000Z",
+    })).resolves.toBe("already-repaired");
+    const repairFacts = (await fs.readFile(
+      store.getSessionFactLogPath(managerSource.sessionId),
+      "utf8",
+    )).trimEnd().split("\n").map((line) => JSON.parse(line) as { type?: string });
+    expect(repairFacts.filter((fact) =>
+      fact.type === "repair_agent_handoff_resume_source")).toHaveLength(1);
+
+    await store.claimNextPendingMessage({
+      sessionId: managerSource.sessionId,
+      runId: "run-active-cursor",
+      now: "2026-07-22T01:02:07.100Z",
+    });
+    await expect(store.repairAgentHandoffResumeSource({
+      ...repairInput,
+      intentId: "reject-active-cursor",
+      targetRunId: "run-active-cursor",
+      now: "2026-07-22T01:02:07.200Z",
+    })).rejects.toThrow("active cursor");
+    await store.releaseMessageForResume({
+      userMessageId: handoffSource.id,
+      sessionId: managerSource.sessionId,
+      sourceDisposition: "agent-handoff",
+      targetRunId: "run-active-cursor",
+      role: "qa",
+      now: "2026-07-22T01:02:07.300Z",
+    });
+
+    await store.recordDetachedRunStarted({
+      sessionId: managerSource.sessionId,
+      role: "qa",
+      runId: "run-running-owner",
+      runDir: "/tmp/run-running-owner",
+      now: "2026-07-22T01:02:07.400Z",
+    });
+    await expect(store.repairAgentHandoffResumeSource({
+      ...repairInput,
+      intentId: "reject-running-owner",
+      targetRunId: "run-running-owner",
+      now: "2026-07-22T01:02:07.500Z",
+    })).rejects.toThrow("running owner");
+    await store.recordDetachedRunTerminal({
+      sessionId: managerSource.sessionId,
+      body: "running owner stopped",
+      systemEventKind: "other",
+      runId: "run-running-owner",
+      runDir: "/tmp/run-running-owner",
+      error: "stopped",
+      status: "interrupted",
+      now: "2026-07-22T01:02:07.600Z",
+    });
+
+    await store.recordDetachedRunStarted({
+      sessionId: managerSource.sessionId,
+      role: "qa",
+      runId: "run-multiple-placeholders",
+      runDir: "/tmp/run-multiple-placeholders-1",
+      now: "2026-07-22T01:02:07.700Z",
+    });
+    await store.recordDetachedRunStarted({
+      sessionId: managerSource.sessionId,
+      role: "qa",
+      runId: "run-multiple-placeholders",
+      runDir: "/tmp/run-multiple-placeholders-2",
+      now: "2026-07-22T01:02:07.800Z",
+    });
+    await store.recordDetachedRunTerminal({
+      sessionId: managerSource.sessionId,
+      body: "multiple placeholders stopped",
+      systemEventKind: "other",
+      runId: "run-multiple-placeholders",
+      runDir: null,
+      error: "stopped",
+      status: "interrupted",
+      now: "2026-07-22T01:02:07.900Z",
+    });
+    await expect(store.repairAgentHandoffResumeSource({
+      ...repairInput,
+      intentId: "reject-multiple-placeholders",
+      targetRunId: "run-multiple-placeholders",
+      now: "2026-07-22T01:02:07.950Z",
+    })).rejects.toThrow("multiple placeholders");
+    const rejectionRepairFacts = (await fs.readFile(
+      store.getSessionFactLogPath(managerSource.sessionId),
+      "utf8",
+    )).trimEnd().split("\n").map((line) => JSON.parse(line) as {
+      type?: string;
+      payload?: { intentId?: string };
+    }).filter((fact) =>
+      fact.type === "repair_agent_handoff_resume_source"
+      && fact.payload?.intentId?.startsWith("reject-"));
+    expect(rejectionRepairFacts).toHaveLength(0);
+
+    await store.recordSystemMessage({
+      sessionId: managerSource.sessionId,
+      body: "placeholder",
+      runId: "run-placeholder",
+      runDir: null,
+      error: null,
+      now: "2026-07-22T01:02:08.000Z",
+    });
+    const systemSource = (await store.listMessages(managerSource.sessionId)).find((message) =>
+      message.speaker === "system" && message.body === "placeholder")!;
+    await expect(store.releaseMessageForResume({
+      userMessageId: systemSource.id,
+      sessionId: managerSource.sessionId,
+      sourceDisposition: "agent-handoff",
+      targetRunId: "run-placeholder",
+      role: "qa",
+      now: "2026-07-22T01:02:09.000Z",
+    })).rejects.toThrow("must be an Agent message");
+    await expect(store.listMessages(managerSource.sessionId)).resolves.toContainEqual(expect.objectContaining({
+      id: systemSource.id,
+      speaker: "system",
+      status: "displayed",
+    }));
+
+    await store.createSession({
+      sessionId: "local:resume-exact-source",
+      title: "exact source",
+      now: "2026-07-22T01:03:00.000Z",
+    });
+    const skippedWorker = await store.appendUserMessage({
+      sessionId: "local:resume-exact-source",
+      body: "@qa queued",
+      dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+      now: "2026-07-22T01:03:01.000Z",
+    });
+    const freshPrimary = await store.appendUserMessage({
+      sessionId: "local:resume-exact-source",
+      body: "continue",
+      dispatch: { lane: "primary", role: "dev-manager", reason: "no-valid-mention" },
+      now: "2026-07-22T01:03:02.000Z",
+    });
+    const exactClaim = await store.claimNextPendingMessage({
+      sessionId: "local:resume-exact-source",
+      runId: "run-fresh-primary",
+      gracefulResumeTargets: [{
+        sourceMessageId: skippedWorker.id,
+        targetRunId: "run-old-qa",
+      }],
+      now: "2026-07-22T01:03:03.000Z",
+    });
+    expect(exactClaim).toMatchObject({
+      id: freshPrimary.id,
+      runId: "run-fresh-primary",
+    });
+    await store.close();
   });
 
   it("keeps every message-mutating store facade inside the fact-write funnel", async () => {
@@ -231,7 +544,19 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
     });
 
     const retry = await claimed("retry", "2026-07-22T00:05:00.000Z");
+    await store.setRunDir({
+      id: retry.messageId,
+      sessionId: retry.sessionId,
+      runDir: "/tmp/retry",
+      now: "2026-07-22T00:05:00.500Z",
+    });
     await store.releaseMessageForRetry({ userMessageId: retry.messageId, sessionId: retry.sessionId, now: "2026-07-22T00:05:01.000Z" });
+    await expect(store.listMessages(retry.sessionId)).resolves.toContainEqual(expect.objectContaining({
+      id: retry.messageId,
+      status: "pending",
+      runId: null,
+      runDir: null,
+    }));
 
     const systemComplete = await claimed("system-complete", "2026-07-22T00:06:00.000Z");
     await store.recordSystemAndComplete({

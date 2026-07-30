@@ -48,6 +48,11 @@ export type LocalConsoleMessageStatus =
   | "interrupted"
   | "stuck"
   | "displayed";
+export type LocalUserMessageDispatchLane = "primary" | "worker" | "awaiting-team";
+export type LocalUserMessageDispatchReason =
+  | "single-valid-mention"
+  | "no-valid-mention"
+  | "multiple-valid-mentions";
 
 export const LOCAL_CONSOLE_SYSTEM_EVENT_KINDS = [
   "run-not-started",
@@ -78,9 +83,19 @@ export interface LocalConsoleMessage {
   textFragments?: LocalConsoleTextFragment[];
   /** When a queued user message actually entered the primary-agent timeline. */
   activatedAt?: string | null;
+  dispatchLane?: LocalUserMessageDispatchLane | null;
+  dispatchRole?: string | null;
+  dispatchReason?: LocalUserMessageDispatchReason | null;
   runTiming?: LocalConsoleRunTiming | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LocalConsolePendingDispatch {
+  message: LocalConsoleMessage;
+  targetLane: LocalUserMessageDispatchLane;
+  targetRole: string | null;
+  waitingForTeam: boolean;
 }
 
 export interface LocalConsoleRunTiming {
@@ -484,6 +499,7 @@ export interface LocalConsoleSnapshot {
   sessionId: string;
   status: "idle" | "running" | "failed" | "stuck";
   messages: LocalConsoleMessage[];
+  pendingDispatchMessages?: LocalConsolePendingDispatch[];
   pendingPrimaryMessages: LocalConsoleMessage[];
   sqlitePath: string;
   lastError: string | null;
@@ -499,6 +515,7 @@ export interface LocalConsoleStateSnapshot {
   selectedSessionId: string;
   selectedSession: LocalConsoleSessionSummary | null;
   messages: LocalConsoleMessage[];
+  pendingDispatchMessages?: LocalConsolePendingDispatch[];
   pendingPrimaryMessages: LocalConsoleMessage[];
   childSessions: LocalConsoleChildSessionSummary[];
   memberIdentities: LocalConsoleMemberIdentity[];
@@ -513,6 +530,7 @@ export interface LocalConsoleStateSnapshot {
 export interface LocalConsoleSessionView {
   session: LocalConsoleSessionSummary;
   messages: LocalConsoleMessage[];
+  pendingDispatchMessages?: LocalConsolePendingDispatch[];
   pendingPrimaryMessages: LocalConsoleMessage[];
   memberIdentities: LocalConsoleMemberIdentity[];
   activeRuns: LocalConsoleRunSnapshot[];
@@ -566,6 +584,11 @@ export interface LocalConsoleStore {
     agentTeamSnapshot?: LocalConsoleAgentTeamSnapshot;
     workspaceMode?: LocalConsoleWorkspaceMode;
     initialMessage?: string;
+    initialDispatch?: {
+      lane: Exclude<LocalUserMessageDispatchLane, "awaiting-team">;
+      role: string;
+      reason: LocalUserMessageDispatchReason;
+    };
     initialAttachmentIds?: string[];
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
@@ -600,6 +623,11 @@ export interface LocalConsoleStore {
     attachmentIds?: string[];
     attachmentDraftKey?: string;
     textFragments?: LocalConsoleTextFragment[];
+    dispatch?: {
+      lane: LocalUserMessageDispatchLane;
+      role: string | null;
+      reason: LocalUserMessageDispatchReason;
+    };
     now: string;
   }): Promise<LocalConsoleMessage>;
   addDraftAttachment?(input: {
@@ -638,8 +666,28 @@ export interface LocalConsoleStore {
   claimNextPendingMessage(input: {
     sessionId: string;
     runId: string;
+    gracefulResumeTargets?: Array<{
+      sourceMessageId: number;
+      targetRunId: string;
+    }>;
     now: string;
   }): Promise<LocalConsoleMessage | null>;
+  claimNextPendingWorkerMessage?(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    now: string;
+  }): Promise<LocalConsoleMessage | null>;
+  resolveAwaitingUserMessageDispatches?(input: {
+    sessionId: string;
+    dispatches: Array<{
+      messageId: number;
+      lane: Exclude<LocalUserMessageDispatchLane, "awaiting-team">;
+      role: string;
+      reason: LocalUserMessageDispatchReason;
+    }>;
+    now: string;
+  }): Promise<void>;
   setRunDir(input: { id: number; sessionId?: string; runDir: string; now: string }): Promise<void>;
   recordAgentResponse(input: {
     userMessageId: number;
@@ -771,8 +819,19 @@ export interface LocalConsoleStore {
   releaseMessageForResume?(input: {
     userMessageId: number;
     sessionId: string;
+    sourceDisposition: import("./codex-resume.js").LocalRunSourceDisposition;
+    targetRunId: string;
+    role: string;
     now: string;
   }): Promise<void>;
+  repairAgentHandoffResumeSource?(input: {
+    sessionId: string;
+    intentId: string;
+    targetRunId: string;
+    sourceMessageId: number;
+    role: string;
+    now: string;
+  }): Promise<"repaired" | "already-repaired">;
   recordFailure(input: {
     userMessageId: number;
     sessionId: string;

@@ -107,12 +107,12 @@ describe("main conversation timeline truth through the HTTP assembly", () => {
     });
     try {
       const session = await createSession(harness.started.url, "redirect active", "system", "development");
-      expect((await postMessage(harness.started.url, session.sessionId, "@dev 先做旧任务")).status).toBe(202);
+      expect((await postMessage(harness.started.url, session.sessionId, "先做旧任务")).status).toBe(202);
       await waitForState(harness.started.url, session.sessionId, (snapshot) =>
         snapshot.activeRun === null && snapshot.activeRuns.some((run) => run.role === "dev")
       );
 
-      expect((await postMessage(harness.started.url, session.sessionId, "@dev 改按这条新指令做")).status).toBe(202);
+      expect((await postMessage(harness.started.url, session.sessionId, "改按这条新指令做")).status).toBe(202);
       const restarted = await waitForState(harness.started.url, session.sessionId, (snapshot) =>
         snapshot.activeRuns.length === 0
         && snapshot.messages.some((message) => message.speaker === "agent" && message.body === "重新安排完成"),
@@ -159,7 +159,7 @@ describe("main conversation timeline truth through the HTTP assembly", () => {
     });
     try {
       const session = await createSession(harness.started.url, "supplement active run", "system", "development");
-      expect((await postMessage(harness.started.url, session.sessionId, "@dev 先做旧任务")).status).toBe(202);
+      expect((await postMessage(harness.started.url, session.sessionId, "先做旧任务")).status).toBe(202);
       await waitForState(harness.started.url, session.sessionId, (snapshot) =>
         snapshot.activeRun === null && snapshot.activeRuns.some((run) => run.role === "dev")
       );

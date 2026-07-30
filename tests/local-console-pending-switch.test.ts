@@ -207,6 +207,7 @@ describe("pending session context switches", () => {
           ? [{ name: "manager", agentMarkdown: "# manager\n\nROLE:manager\n" }]
           : [{ name: "dev", agentMarkdown: "# dev\n\nROLE:dev\n" }],
       }),
+      isCodexThreadAvailable: async () => true,
       runCodex,
       makeRunDir: (count) => path.join(root, `run-team-primary-${String(count)}`),
     });
@@ -233,7 +234,7 @@ describe("pending session context switches", () => {
         const state = await readState(started.url, sessionId);
         return state.messages.some((message) => message.speaker === "agent" && message.role === "manager")
           && state.selectedSession?.hasPendingControlWork === false;
-      });
+      }, 8_000);
 
       const settled = await readState(started.url, sessionId);
       expect(settled.messages.filter((message) => message.speaker === "agent").map((message) => message.role)).toEqual([
@@ -251,6 +252,131 @@ describe("pending session context switches", () => {
       await started.close();
     }
   }, 15_000);
+
+  it("drains the old worker FIFO before promoting the team and resolves later messages against the new snapshot", async () => {
+    const root = await makeGitRoot();
+    let releaseFirstQa!: () => void;
+    let releaseSecondQa!: () => void;
+    let qaCalls = 0;
+    const roles: string[] = [];
+    const runCodex = vi.fn((options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = ["qa", "reviewer", "dev-manager", "new-manager"]
+        .find((candidate) => options.prompt.includes(`ROLE:${candidate}`))
+        ?? (options.mode?.kind === "resume" && qaCalls > 0 ? "qa" : "unknown");
+      roles.push(role);
+      if (role === "qa") {
+        qaCalls += 1;
+        return new Promise((resolve) => {
+          const release = () => resolve({
+            ...successfulRun(root, `qa-${String(qaCalls)}`),
+            finalText: `qa ${String(qaCalls)} done`,
+          });
+          if (qaCalls === 1) {
+            releaseFirstQa = release;
+          } else {
+            releaseSecondQa = release;
+          }
+        });
+      }
+      return Promise.resolve({
+        ...successfulRun(root, role),
+        finalText: `${role} done`,
+      });
+    });
+    const started = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      workdirRoot: path.join(root, "workdir"),
+      sqlitePath: path.join(root, "worker-fifo-team-switch.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async (binding) => ({
+        members: binding.id === "review"
+          ? [
+              { name: "new-manager", agentMarkdown: "# new-manager\n\nROLE:new-manager\n" },
+              { name: "reviewer", agentMarkdown: "# reviewer\n\nROLE:reviewer\n" },
+            ]
+          : [
+              { name: "dev-manager", agentMarkdown: "# dev-manager\n\nROLE:dev-manager\n" },
+              { name: "qa", agentMarkdown: "# qa\n\nROLE:qa\n" },
+            ],
+      }),
+      isCodexThreadAvailable: async () => true,
+      runCodex,
+      makeRunDir: (count) => path.join(root, `run-worker-switch-${String(count)}`),
+    });
+
+    try {
+      const created = await requestJson(started.url, "/api/local-console/sessions", {
+        method: "POST",
+        body: {
+          projectId: "local",
+          title: "worker fifo team switch",
+          agentTeamOwnership: "system",
+          agentTeamId: "development",
+        },
+      });
+      const sessionId = (created.session as { sessionId: string }).sessionId;
+      await requestJson(started.url, `/api/local-console/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        method: "POST",
+        body: { body: "@qa first old task" },
+      });
+      await waitFor(() => qaCalls === 1);
+      await requestJson(started.url, `/api/local-console/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        method: "POST",
+        body: { body: "@qa second old task" },
+      });
+      await requestJson(started.url, `/api/local-console/sessions/${encodeURIComponent(sessionId)}/team`, {
+        method: "PATCH",
+        body: { agentTeamOwnership: "user", agentTeamId: "review" },
+      });
+      await requestJson(started.url, `/api/local-console/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        method: "POST",
+        body: { body: "@reviewer new team task" },
+      });
+
+      const queued = await readState(started.url, sessionId);
+      expect(queued.selectedSession).toMatchObject({
+        agentTeamId: "development",
+        agentTeamPendingId: "review",
+      });
+      expect(queued.pendingDispatchMessages).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          targetLane: "worker",
+          targetRole: "qa",
+          waitingForTeam: false,
+        }),
+        expect.objectContaining({
+          targetLane: "awaiting-team",
+          targetRole: null,
+          waitingForTeam: true,
+        }),
+      ]));
+
+      releaseFirstQa();
+      await waitFor(() => qaCalls === 2);
+      const secondOldActive = await readState(started.url, sessionId);
+      expect(secondOldActive.selectedSession).toMatchObject({
+        agentTeamId: "development",
+        agentTeamPendingId: "review",
+      });
+      expect(roles.filter((role) => role === "qa")).toEqual(["qa", "qa"]);
+      expect(roles).not.toContain("reviewer");
+
+      releaseSecondQa();
+      await waitFor(() => roles.includes("reviewer"), 10_000);
+      await waitFor(async () => {
+        const state = await readState(started.url, sessionId);
+        return state.selectedSession?.agentTeamId === "review"
+          && state.selectedSession.agentTeamPendingId === null;
+      }, 10_000);
+      expect(roles.indexOf("reviewer")).toBeGreaterThan(roles.lastIndexOf("qa"));
+    } finally {
+      releaseFirstQa?.();
+      releaseSecondQa?.();
+      await started.close();
+    }
+  }, 30_000);
 
   it("freezes the selected team content through the server boundary and promotes its pending snapshot", async () => {
     const root = await makeGitRoot();
@@ -524,6 +650,7 @@ async function requestJson(base: string, route: string, input: { method: string;
 async function readState(base: string, sessionId: string): Promise<{
   selectedSession: Record<string, unknown> | null;
   messages: Array<Record<string, unknown>>;
+  pendingDispatchMessages: Array<Record<string, unknown>>;
 }> {
   const url = new URL("/api/local-console/state", base);
   url.searchParams.set("sessionId", sessionId);
@@ -532,6 +659,7 @@ async function readState(base: string, sessionId: string): Promise<{
   return await response.json() as {
     selectedSession: Record<string, unknown> | null;
     messages: Array<Record<string, unknown>>;
+    pendingDispatchMessages: Array<Record<string, unknown>>;
   };
 }
 

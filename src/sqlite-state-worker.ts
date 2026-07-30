@@ -59,6 +59,9 @@ interface WorkerLocalMessage {
   attachments?: unknown[];
   textFragments?: unknown[];
   activatedAt: string | null;
+  dispatchLane: "primary" | "worker" | "awaiting-team" | null;
+  dispatchRole: string | null;
+  dispatchReason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions" | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -162,12 +165,15 @@ function runCommand(input: WorkerInput): unknown {
       case "local-append-user":
       case "local-update-session-analysis-gate":
       case "local-claim-next":
+      case "local-claim-next-worker":
+      case "local-resolve-awaiting-user-dispatches":
       case "local-set-run-dir":
       case "local-record-message-processed":
       case "local-record-route-append":
       case "local-record-route-no-action":
       case "local-release-message-for-retry":
       case "local-release-message-for-resume":
+      case "local-repair-agent-handoff-resume-source":
       case "local-record-agent-response":
       case "local-record-detached-run-started":
       case "local-record-detached-agent-response":
@@ -365,6 +371,15 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       source_id TEXT,
       text_fragments_json TEXT NOT NULL DEFAULT '[]',
       activated_at TEXT,
+      dispatch_lane TEXT CHECK (dispatch_lane IS NULL OR dispatch_lane IN ('primary', 'worker', 'awaiting-team')),
+      dispatch_role TEXT,
+      dispatch_reason TEXT CHECK (
+        dispatch_reason IS NULL OR dispatch_reason IN (
+          'single-valid-mention',
+          'no-valid-mention',
+          'multiple-valid-mentions'
+        )
+      ),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -513,6 +528,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateLocalAcceptanceFactsHistory(database);
   migrateLocalMessageFailureMetadata(database);
   migrateLocalMessageActivation(database);
+  migrateLocalUserMessageDispatch(database);
   migrateLocalWorkspaceDiffMetadata(database);
   migrateSidebarChatSessionAnalysis(database);
   const now = new Date().toISOString();
@@ -882,6 +898,35 @@ function migrateLocalMessageActivation(database: SqliteDatabase): void {
     database.exec("ALTER TABLE session_messages ADD COLUMN activated_at TEXT");
   }
   markSchemaMigration(database, "multi-agent-primary-control-lanes-message-activation");
+}
+
+function migrateLocalUserMessageDispatch(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "session_messages", "dispatch_lane")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN dispatch_lane TEXT");
+  }
+  if (!tableHasColumn(database, "session_messages", "dispatch_role")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN dispatch_role TEXT");
+  }
+  if (!tableHasColumn(database, "session_messages", "dispatch_reason")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN dispatch_reason TEXT");
+  }
+  database.exec(`
+    UPDATE session_messages
+    SET dispatch_lane = 'primary',
+        dispatch_role = (
+          SELECT member_name
+          FROM session_agent_team_members
+          WHERE session_agent_team_members.session_id = session_messages.session_id
+            AND slot = 'effective'
+          ORDER BY sort_order ASC
+          LIMIT 1
+        ),
+        dispatch_reason = 'no-valid-mention'
+    WHERE speaker = 'user' AND dispatch_lane IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_session_messages_dispatch
+      ON session_messages(session_id, dispatch_lane, dispatch_role, status, id);
+  `);
+  markSchemaMigration(database, "local-console-direct-member-mention-dispatch");
 }
 
 function migrateLocalWorkspaceDiffMetadata(database: SqliteDatabase): void {
@@ -1376,8 +1421,9 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
     const insert = database.prepare(
       `INSERT INTO session_messages
         (id, session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind,
-         failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at,
+         dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          speaker = excluded.speaker,
          role = excluded.role,
@@ -1393,6 +1439,9 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
          source_id = excluded.source_id,
          text_fragments_json = excluded.text_fragments_json,
          activated_at = excluded.activated_at,
+         dispatch_lane = excluded.dispatch_lane,
+         dispatch_role = excluded.dispatch_role,
+         dispatch_reason = excluded.dispatch_reason,
          created_at = excluded.created_at,
          updated_at = excluded.updated_at`,
     );
@@ -1414,6 +1463,9 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
         message.sourceId,
         JSON.stringify(message.textFragments ?? []),
         message.activatedAt,
+        message.dispatchLane,
+        message.dispatchRole,
+        message.dispatchReason,
         message.createdAt,
         message.updatedAt,
       );
@@ -1588,12 +1640,15 @@ function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateC
     case "local-append-user": return appendUserMessage(database, command);
     case "local-update-session-analysis-gate": return updateLocalSessionAnalysisGate(database, command);
     case "local-claim-next": return claimNextPendingMessage(database, command);
+    case "local-claim-next-worker": return claimNextPendingWorkerMessage(database, command);
+    case "local-resolve-awaiting-user-dispatches": return resolveAwaitingUserMessageDispatches(database, command);
     case "local-set-run-dir": return setRunDir(database, command);
     case "local-record-message-processed": return recordMessageProcessed(database, command);
     case "local-record-route-append": return recordLocalRouteAppend(database, command);
     case "local-record-route-no-action": return recordLocalRouteNoAction(database, command);
     case "local-release-message-for-retry": return releaseMessageForRetry(database, command);
     case "local-release-message-for-resume": return releaseMessageForResume(database, command);
+    case "local-repair-agent-handoff-resume-source": return repairAgentHandoffResumeSource(database, command);
     case "local-record-agent-response": return recordAgentResponse(database, command);
     case "local-record-detached-run-started": return recordDetachedRunStarted(database, command);
     case "local-record-detached-agent-response": return recordDetachedAgentResponse(database, command);
@@ -1636,6 +1691,13 @@ function readSessionFactMessage(value: unknown): WorkerLocalMessage {
     attachments: Array.isArray(value.attachments) ? value.attachments : [],
     textFragments: Array.isArray(value.textFragments) ? readTextFragments(value.textFragments) : [],
     activatedAt: "activatedAt" in value ? readNullableString(value.activatedAt, "activatedAt") : null,
+    dispatchLane: "dispatchLane" in value
+      ? readDispatchLane(value.dispatchLane)
+      : value.speaker === "user" ? "primary" : null,
+    dispatchRole: "dispatchRole" in value ? readNullableString(value.dispatchRole, "dispatchRole") : null,
+    dispatchReason: "dispatchReason" in value
+      ? readDispatchReason(value.dispatchReason)
+      : value.speaker === "user" ? "no-valid-mention" : null,
     createdAt: readString(value.createdAt, "createdAt"),
     updatedAt: readString(value.updatedAt, "updatedAt"),
   };
@@ -1987,7 +2049,18 @@ function switchLocalSessionTeam(
 ): unknown {
   return transaction(database, () => {
     requireLocalSession(database, input.sessionId);
-    if (hasRunningMessage(database, input.sessionId)) {
+    const hasQueuedWorker = database
+      .prepare(
+        `SELECT 1 AS found
+         FROM session_messages
+         WHERE session_id = ?
+           AND speaker = 'user'
+           AND status = 'pending'
+           AND dispatch_lane = 'worker'
+         LIMIT 1`,
+      )
+      .get(input.sessionId) !== undefined;
+    if (hasRunningMessage(database, input.sessionId) || hasQueuedWorker) {
       database.prepare(
         `UPDATE sessions
          SET agent_team_pending_ownership = ?, agent_team_pending_id = ?, updated_at = ?
@@ -2013,6 +2086,25 @@ function applyPendingLocalSessionContext(
   input: Extract<SqliteStateCommand, { kind: "local-apply-pending-session-context" }>,
 ): unknown {
   return transaction(database, () => {
+    const oldTeamWork = database
+      .prepare(
+        `SELECT 1 AS found
+         FROM session_messages
+         WHERE session_id = ?
+           AND (
+             status = 'running'
+             OR (
+               speaker = 'user'
+               AND status = 'pending'
+               AND dispatch_lane = 'worker'
+             )
+           )
+         LIMIT 1`,
+      )
+      .get(input.sessionId);
+    if (oldTeamWork !== undefined) {
+      return requireLocalSession(database, input.sessionId);
+    }
     const hasPendingTeam = database
       .prepare("SELECT 1 AS found FROM sessions WHERE session_id = ? AND agent_team_pending_id IS NOT NULL")
       .get(input.sessionId) !== undefined;
@@ -2070,6 +2162,19 @@ function replaceLocalSessionAgentTeamSnapshot(
       index,
     );
   });
+}
+
+function primaryAgentForSession(database: SqliteDatabase, sessionId: string): string | null {
+  const row = database
+    .prepare(
+      `SELECT member_name
+       FROM session_agent_team_members
+       WHERE session_id = ? AND slot = 'effective'
+       ORDER BY sort_order ASC
+       LIMIT 1`,
+    )
+    .get(sessionId);
+  return isRecord(row) ? readString(row.member_name, "member_name") : null;
 }
 
 function listLocalSessionAgentTeamSnapshot(
@@ -2186,10 +2291,20 @@ function createLocalSession(
       const result = database
         .prepare(
           `INSERT INTO session_messages
-            (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, text_fragments_json, created_at, updated_at)
-          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?)`,
+            (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id,
+             text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
+          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(input.sessionId, initialBody, JSON.stringify(textFragments), input.now, input.now);
+        .run(
+          input.sessionId,
+          initialBody,
+          JSON.stringify(textFragments),
+          input.initialDispatch?.lane ?? "primary",
+          input.initialDispatch?.role ?? input.agentTeamSnapshot?.members[0]?.name ?? null,
+          input.initialDispatch?.reason ?? "no-valid-mention",
+          input.now,
+          input.now,
+        );
       claimAttachmentRefs(
         database,
         input.attachmentDraftKey ?? "draft:new",
@@ -2582,10 +2697,22 @@ function appendUserMessage(
     const result = database
       .prepare(
         `INSERT INTO session_messages
-          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, text_fragments_json, created_at, updated_at)
-        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?)`,
+          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id,
+           text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
+        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.sessionId, input.body, JSON.stringify(textFragments), input.now, input.now);
+      .run(
+        input.sessionId,
+        input.body,
+        JSON.stringify(textFragments),
+        input.dispatch?.lane ?? "primary",
+        input.dispatch === undefined
+          ? primaryAgentForSession(database, input.sessionId)
+          : input.dispatch.role,
+        input.dispatch?.reason ?? "no-valid-mention",
+        input.now,
+        input.now,
+      );
     const messageId = toNumberId(result.lastInsertRowid);
     claimAttachmentRefs(
       database,
@@ -2903,6 +3030,19 @@ function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string)
   if (hasRunningMessage(database, sessionId)) {
     return true;
   }
+  if (database
+    .prepare(
+      `SELECT 1 AS found
+       FROM session_messages
+       WHERE session_id = ?
+         AND speaker = 'user'
+         AND status = 'pending'
+         AND dispatch_lane IN ('worker', 'awaiting-team')
+       LIMIT 1`,
+    )
+    .get(sessionId) !== undefined) {
+    return true;
+  }
   const cursor = database
     .prepare(
       `SELECT processed_through_message_id, active_message_id
@@ -2975,6 +3115,13 @@ function claimNextPendingMessage(
       return null;
     }
     const message = readLocalMessageRow(row);
+    if (message.speaker === "user" && message.dispatchLane === "awaiting-team") {
+      return null;
+    }
+    if (message.speaker === "user" && message.dispatchLane === "worker") {
+      advanceLocalCursor(database, input.sessionId, message.id, input.now);
+      return claimNextPendingMessage(database, input);
+    }
     if (message.speaker === "user" && message.status === "running") {
       return null;
     }
@@ -2997,13 +3144,125 @@ function claimNextPendingMessage(
                updated_at = ?
            WHERE id = ? AND status = 'pending'`,
         )
-        .run(input.runId, input.now, input.now, message.id);
+        .run(claimRunId(input, message.id), input.now, input.now, message.id);
       if (Number(result.changes ?? 0) !== 1) {
         return null;
       }
     }
-    setLocalCursorActive(database, input.sessionId, message.id, input.runId, input.now);
+    setLocalCursorActive(database, input.sessionId, message.id, claimRunId(input, message.id), input.now);
     return requireLocalMessage(database, message.id, input.sessionId);
+  });
+}
+
+function claimRunId(
+  input: Extract<SqliteStateCommand, { kind: "local-claim-next" }>,
+  sourceMessageId: number,
+): string {
+  const matching = (input.gracefulResumeTargets ?? [])
+    .filter((target) => target.sourceMessageId === sourceMessageId);
+  if (matching.length === 0) {
+    return input.runId;
+  }
+  const targetRunIds = new Set(matching.map((target) => target.targetRunId));
+  if (targetRunIds.size !== 1) {
+    throw new Error(`Conflicting graceful resume targets for source ${String(sourceMessageId)}`);
+  }
+  return matching[0]!.targetRunId;
+}
+
+function claimNextPendingWorkerMessage(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-claim-next-worker" }>,
+): unknown | null {
+  return transaction(database, () => {
+    const session = database
+      .prepare("SELECT archived_at FROM sessions WHERE session_id = ? AND source_type = 'local'")
+      .get(input.sessionId);
+    if (!isRecord(session) || session.archived_at !== null) {
+      return null;
+    }
+    const active = database
+      .prepare(
+        `SELECT 1 AS found
+         FROM session_messages
+         WHERE session_id = ?
+           AND status = 'running'
+           AND (
+             (dispatch_lane = 'worker' AND dispatch_role = ?)
+             OR (source_kind = 'local-worker-run' AND role = ?)
+           )
+         LIMIT 1`,
+      )
+      .get(input.sessionId, input.role, input.role);
+    if (active !== undefined) {
+      return null;
+    }
+    const row = database
+      .prepare(
+        `SELECT id
+         FROM session_messages
+         WHERE session_id = ?
+           AND speaker = 'user'
+           AND status = 'pending'
+           AND dispatch_lane = 'worker'
+           AND dispatch_role = ?
+         ORDER BY id ASC
+         LIMIT 1`,
+      )
+      .get(input.sessionId, input.role);
+    if (!isRecord(row)) {
+      return null;
+    }
+    const messageId = readNumber(row.id, "id");
+    const result = database
+      .prepare(
+        `UPDATE session_messages
+         SET status = 'running',
+             run_id = ?,
+             error = NULL,
+             activated_at = COALESCE(activated_at, ?),
+             updated_at = ?
+         WHERE id = ?
+           AND status = 'pending'
+           AND dispatch_lane = 'worker'
+           AND dispatch_role = ?`,
+      )
+      .run(input.runId, input.now, input.now, messageId, input.role);
+    return Number(result.changes ?? 0) === 1
+      ? requireLocalMessage(database, messageId, input.sessionId)
+      : null;
+  });
+}
+
+function resolveAwaitingUserMessageDispatches(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-resolve-awaiting-user-dispatches" }>,
+): null {
+  return transaction(database, () => {
+    for (const dispatch of input.dispatches) {
+      database
+        .prepare(
+          `UPDATE session_messages
+           SET dispatch_lane = ?,
+               dispatch_role = ?,
+               dispatch_reason = ?,
+               updated_at = ?
+           WHERE id = ?
+             AND session_id = ?
+             AND speaker = 'user'
+             AND status = 'pending'
+             AND dispatch_lane = 'awaiting-team'`,
+        )
+        .run(
+          dispatch.lane,
+          dispatch.role,
+          dispatch.reason,
+          input.now,
+          dispatch.messageId,
+          input.sessionId,
+        );
+    }
+    return null;
   });
 }
 
@@ -3235,7 +3494,11 @@ function releaseMessageForRetry(
       )
     ) {
       database
-        .prepare("UPDATE session_messages SET status = 'pending', run_id = NULL, error = NULL, updated_at = ? WHERE id = ?")
+        .prepare(
+          `UPDATE session_messages
+           SET status = 'pending', run_id = NULL, run_dir = NULL, error = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
         .run(input.now, source.id);
     }
     rewindLocalCursorForRetry(database, input.sessionId, source.id, input.now);
@@ -3250,18 +3513,114 @@ function releaseMessageForResume(
   return transaction(database, () => {
     ensureLocalCursor(database, input.sessionId, input.now);
     const source = requireLocalMessage(database, input.userMessageId, input.sessionId);
-    if (source.speaker === "system") {
-      throw new Error("A system message cannot be resumed as an Agent source");
+    if (input.sourceDisposition === "agent-handoff") {
+      if (source.speaker !== "agent" || source.sourceKind !== "local-message") {
+        throw new Error("Agent handoff resume source must be an Agent message");
+      }
+      if (source.status !== "displayed" && source.status !== "pending") {
+        throw new Error(`Agent handoff resume source has invalid status: ${source.status}`);
+      }
+      if (source.status === "pending") {
+        database
+          .prepare("UPDATE session_messages SET status = 'displayed', error = NULL, updated_at = ? WHERE id = ?")
+          .run(input.now, source.id);
+      }
+      rewindLocalCursorForRetry(database, input.sessionId, source.id, input.now);
+      return null;
+    }
+    if (source.speaker !== "user") {
+      throw new Error(`${input.sourceDisposition} resume source must be a user message`);
+    }
+    if (
+      input.sourceDisposition === "user-direct"
+      && (source.dispatchLane !== "worker" || source.dispatchRole !== input.role)
+    ) {
+      throw new Error("User-direct resume source dispatch does not match the active role");
+    }
+    if (input.sourceDisposition === "primary" && source.dispatchLane === "worker") {
+      throw new Error("Primary resume source cannot use the worker dispatch lane");
     }
     database
       .prepare(
         `UPDATE session_messages
-         SET status = 'pending', run_id = NULL, error = NULL, updated_at = ?
+         SET status = 'pending', run_id = NULL, run_dir = NULL, error = NULL, updated_at = ?
          WHERE id = ?`,
       )
       .run(input.now, source.id);
     rewindLocalCursorForRetry(database, input.sessionId, source.id, input.now);
     return null;
+  });
+}
+
+function repairAgentHandoffResumeSource(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-repair-agent-handoff-resume-source" }>,
+): "repaired" | "already-repaired" {
+  return transaction(database, () => {
+    ensureLocalCursor(database, input.sessionId, input.now);
+    const source = requireLocalMessage(database, input.sourceMessageId, input.sessionId);
+    if (source.speaker !== "agent" || source.sourceKind !== "local-message") {
+      throw new Error("Agent handoff compatibility repair requires the exact Agent source");
+    }
+    if (source.status !== "pending" && source.status !== "displayed") {
+      throw new Error(`Agent handoff compatibility repair rejected source status: ${source.status}`);
+    }
+
+    const cursor = database
+      .prepare("SELECT * FROM local_message_cursors WHERE session_id = ?")
+      .get(input.sessionId);
+    if (!isRecord(cursor)) {
+      throw new Error(`local console cursor not found: ${input.sessionId}`);
+    }
+    if (cursor.active_message_id !== null || cursor.active_run_id !== null) {
+      throw new Error("Agent handoff compatibility repair rejected an active cursor");
+    }
+
+    const runningOwner = database
+      .prepare(
+        `SELECT id FROM session_messages
+         WHERE session_id = ? AND run_id = ? AND status = 'running'
+         LIMIT 1`,
+      )
+      .get(input.sessionId, input.targetRunId);
+    if (runningOwner !== undefined) {
+      throw new Error("Agent handoff compatibility repair rejected a running owner");
+    }
+
+    const placeholders = database
+      .prepare(
+        `SELECT * FROM session_messages
+         WHERE session_id = ?
+           AND run_id = ?
+           AND source_kind = 'local-worker-run'
+           AND role = ?
+         ORDER BY id ASC`,
+      )
+      .all(input.sessionId, input.targetRunId, input.role)
+      .map(readLocalMessageRow);
+    if (placeholders.length > 1) {
+      throw new Error("Agent handoff compatibility repair found multiple placeholders");
+    }
+    if (placeholders[0]?.status === "running") {
+      throw new Error("Agent handoff compatibility repair rejected a running placeholder");
+    }
+
+    const processedThrough = readNumber(
+      cursor.processed_through_message_id,
+      "processed_through_message_id",
+    );
+    const needsStatusRepair = source.status === "pending";
+    const needsCursorRepair = processedThrough >= source.id;
+    if (!needsStatusRepair && !needsCursorRepair) {
+      return "already-repaired";
+    }
+    if (needsStatusRepair) {
+      database
+        .prepare("UPDATE session_messages SET status = 'displayed', error = NULL, updated_at = ? WHERE id = ?")
+        .run(input.now, source.id);
+    }
+    rewindLocalCursorForRetry(database, input.sessionId, source.id, input.now);
+    return "repaired";
   });
 }
 
@@ -3695,7 +4054,11 @@ function computeInitialProcessedThrough(database: SqliteDatabase, sessionId: str
     .map(readLocalMessageRow);
   let processedThrough = 0;
   for (const row of rows) {
-    if (row.speaker === "user" && (row.status === "pending" || row.status === "running")) {
+    if (
+      row.speaker === "user"
+      && (row.status === "pending" || row.status === "running")
+      && row.dispatchLane !== "worker"
+    ) {
       break;
     }
     processedThrough = row.id;
@@ -3729,6 +4092,14 @@ function skipUnprocessableLocalMessages(database: SqliteDatabase, sessionId: str
       return;
     }
     const message = readLocalMessageRow(row);
+    if (
+      message.speaker === "user"
+      && message.dispatchLane === "worker"
+      && (message.status === "pending" || message.status === "running")
+    ) {
+      advanceLocalCursor(database, sessionId, message.id, now);
+      continue;
+    }
     if (message.speaker === "user" && (message.status === "pending" || message.status === "running")) {
       return;
     }
@@ -4089,9 +4460,33 @@ function readLocalMessageRow(row: unknown): WorkerLocalMessage {
       ? readTextFragmentsJson(row.text_fragments_json)
       : [],
     activatedAt: "activated_at" in row ? readNullableString(row.activated_at, "activated_at") : null,
+    dispatchLane: readDispatchLane("dispatch_lane" in row ? row.dispatch_lane : null),
+    dispatchRole: "dispatch_role" in row ? readNullableString(row.dispatch_role, "dispatch_role") : null,
+    dispatchReason: readDispatchReason("dispatch_reason" in row ? row.dispatch_reason : null),
     createdAt: readString(row.created_at, "created_at"),
     updatedAt: readString(row.updated_at, "updated_at"),
   };
+}
+
+function readDispatchLane(value: unknown): WorkerLocalMessage["dispatchLane"] {
+  const lane = readNullableString(value, "dispatch_lane");
+  if (lane === null || lane === "primary" || lane === "worker" || lane === "awaiting-team") {
+    return lane;
+  }
+  throw new Error("Invalid dispatch_lane");
+}
+
+function readDispatchReason(value: unknown): WorkerLocalMessage["dispatchReason"] {
+  const reason = readNullableString(value, "dispatch_reason");
+  if (
+    reason === null
+    || reason === "single-valid-mention"
+    || reason === "no-valid-mention"
+    || reason === "multiple-valid-mentions"
+  ) {
+    return reason;
+  }
+  throw new Error("Invalid dispatch_reason");
 }
 
 function readLocalEntryTemplate(value: unknown): "session-analysis" | null {

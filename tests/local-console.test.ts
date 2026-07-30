@@ -167,6 +167,163 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   });
 
+  it("backfills upgrade-era pending user messages to the primary dispatch without rewriting the body", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    await store.init();
+    await store.createSession({
+      sessionId: "local:dispatch-migration",
+      title: "dispatch migration",
+      agentTeamOwnership: "system",
+      agentTeamId: "development",
+      agentTeamSnapshot: {
+        members: [
+          { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+          { name: "qa", agentMarkdown: "ROLE:qa" },
+        ],
+      },
+      now: "2026-07-29T00:00:00.000Z",
+    });
+    const pending = await store.appendUserMessage({
+      sessionId: "local:dispatch-migration",
+      body: "@qa legacy pending",
+      dispatch: {
+        lane: "worker",
+        role: "qa",
+        reason: "single-valid-mention",
+      },
+      now: "2026-07-29T00:00:01.000Z",
+    });
+    const factLogPath = store.getSessionFactLogPath("local:dispatch-migration");
+    await store.close();
+
+    const legacyFacts = (await fs.readFile(factLogPath, "utf8"))
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        const fact = JSON.parse(line) as { messageUpserts?: Array<Record<string, unknown>> };
+        for (const message of fact.messageUpserts ?? []) {
+          delete message.dispatchLane;
+          delete message.dispatchRole;
+          delete message.dispatchReason;
+        }
+        return JSON.stringify(fact);
+      })
+      .join("\n");
+    await fs.writeFile(factLogPath, `${legacyFacts}\n`, "utf8");
+
+    const database = new DatabaseSync(sqlitePath);
+    database
+      .prepare(
+        `UPDATE session_messages
+         SET dispatch_lane = NULL, dispatch_role = NULL, dispatch_reason = NULL
+         WHERE id = ?`,
+      )
+      .run(pending.id);
+    database.close();
+
+    const restarted = await createSqliteLocalConsoleStore({ sqlitePath });
+    await restarted.init();
+    try {
+      const messages = await restarted.listMessages("local:dispatch-migration");
+      expect(messages.find((message) => message.id === pending.id)).toMatchObject({
+        body: "@qa legacy pending",
+        status: "pending",
+        dispatchLane: "primary",
+        dispatchRole: null,
+        dispatchReason: "no-valid-mention",
+      });
+      await expect(restarted.claimNextPendingMessage({
+        sessionId: "local:dispatch-migration",
+        runId: "legacy-primary-run",
+        now: "2026-07-29T00:00:02.000Z",
+      })).resolves.toMatchObject({
+        id: pending.id,
+        dispatchLane: "primary",
+      });
+    } finally {
+      await restarted.close();
+    }
+  });
+
+  it("claims worker dispatches atomically per role while preserving per-role FIFO", async () => {
+    const root = await makeFixtureRoot();
+    const store = await createSqliteLocalConsoleStore({
+      sqlitePath: path.join(root, ".state", "local-console.sqlite"),
+    });
+    await store.init();
+    try {
+      await store.createSession({
+        sessionId: "local:worker-fifo",
+        title: "worker fifo",
+        now: "2026-07-29T00:00:00.000Z",
+      });
+      const qaFirst = await store.appendUserMessage({
+        sessionId: "local:worker-fifo",
+        body: "@qa first",
+        dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+        now: "2026-07-29T00:00:01.000Z",
+      });
+      const devFirst = await store.appendUserMessage({
+        sessionId: "local:worker-fifo",
+        body: "@dev first",
+        dispatch: { lane: "worker", role: "dev", reason: "single-valid-mention" },
+        now: "2026-07-29T00:00:02.000Z",
+      });
+      const qaSecond = await store.appendUserMessage({
+        sessionId: "local:worker-fifo",
+        body: "@qa second",
+        dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+        now: "2026-07-29T00:00:03.000Z",
+      });
+
+      await expect(store.claimNextPendingMessage({
+        sessionId: "local:worker-fifo",
+        runId: "primary-skip",
+        now: "2026-07-29T00:00:04.000Z",
+      })).resolves.toBeNull();
+      await expect(store.claimNextPendingWorkerMessage?.({
+        sessionId: "local:worker-fifo",
+        role: "qa",
+        runId: "qa-run-1",
+        now: "2026-07-29T00:00:05.000Z",
+      })).resolves.toMatchObject({ id: qaFirst.id });
+      await expect(store.claimNextPendingWorkerMessage?.({
+        sessionId: "local:worker-fifo",
+        role: "qa",
+        runId: "qa-run-2-too-early",
+        now: "2026-07-29T00:00:06.000Z",
+      })).resolves.toBeNull();
+      await expect(store.claimNextPendingWorkerMessage?.({
+        sessionId: "local:worker-fifo",
+        role: "dev",
+        runId: "dev-run-1",
+        now: "2026-07-29T00:00:07.000Z",
+      })).resolves.toMatchObject({ id: devFirst.id });
+
+      await store.recordAgentResponse({
+        userMessageId: qaFirst.id,
+        sessionId: "local:worker-fifo",
+        role: "qa",
+        body: "qa first done",
+        runId: "qa-run-1",
+        runDir: "/tmp/qa-run-1",
+        now: "2026-07-29T00:00:08.000Z",
+      });
+      await expect(store.claimNextPendingWorkerMessage?.({
+        sessionId: "local:worker-fifo",
+        role: "qa",
+        runId: "qa-run-2",
+        now: "2026-07-29T00:00:09.000Z",
+      })).resolves.toMatchObject({ id: qaSecond.id });
+      expect((await store.listSessions()).find((session) => session.sessionId === "local:worker-fifo"))
+        .toMatchObject({ hasPendingControlWork: true });
+    } finally {
+      await store.close();
+    }
+  });
+
   it("persists human-attention and unread-result state with race-safe read acknowledgement", async () => {
     const root = await makeFixtureRoot();
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
@@ -451,6 +608,93 @@ describe("local console", { timeout: 15_000 }, () => {
       await started.close();
     }
   });
+
+  it("marks an orphaned direct worker source stuck before releasing the next same-role dispatch", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    await store.init();
+    await store.createSession({
+      sessionId: "local:direct-orphan-fifo",
+      title: "direct orphan fifo",
+      agentTeamOwnership: "system",
+      agentTeamId: "development",
+      agentTeamSnapshot: {
+        members: [
+          { name: "manager", agentMarkdown: "# manager\n\nROLE:manager" },
+          { name: "qa", agentMarkdown: "# qa\n\nROLE:qa" },
+        ],
+      },
+      now: "2026-07-29T00:00:00.000Z",
+    });
+    const orphaned = await store.appendUserMessage({
+      sessionId: "local:direct-orphan-fifo",
+      body: "@qa orphaned direct",
+      dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+      now: "2026-07-29T00:00:01.000Z",
+    });
+    const next = await store.appendUserMessage({
+      sessionId: "local:direct-orphan-fifo",
+      body: "@qa after orphan",
+      dispatch: { lane: "worker", role: "qa", reason: "single-valid-mention" },
+      now: "2026-07-29T00:00:02.000Z",
+    });
+    await store.claimNextPendingWorkerMessage?.({
+      sessionId: "local:direct-orphan-fifo",
+      role: "qa",
+      runId: "orphan-direct-qa",
+      now: "2026-07-29T00:00:03.000Z",
+    });
+    await store.close();
+
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = roleFromPrompt(options.prompt);
+      const threadId = `thread-${role}-after-orphan`;
+      await options.onThreadStarted?.(threadId);
+      return {
+        ...codexOk(options, role === "qa" ? "qa after orphan" : "manager closeout"),
+        threadId,
+      };
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      sqlitePath,
+      port: 0,
+      runCodex,
+      isCodexThreadAvailable: async () => true,
+      makeRunDir: (count) => path.join(root, "runs", `direct-orphan-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const state = await waitForState(started.url, "local:direct-orphan-fifo", (snapshot) =>
+        snapshot.messages.some((message) =>
+          message.speaker === "agent" && message.role === "qa" && message.body === "qa after orphan"),
+      );
+      expect(state.messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: orphaned.id,
+          status: "stuck",
+          runId: "orphan-direct-qa",
+          dispatchLane: "worker",
+          dispatchRole: "qa",
+        }),
+        expect.objectContaining({
+          id: next.id,
+          status: "completed",
+          dispatchLane: "worker",
+          dispatchRole: "qa",
+        }),
+        expect.objectContaining({
+          speaker: "system",
+          systemEventKind: "run-stuck",
+          runId: "orphan-direct-qa",
+        }),
+      ]));
+      expect(runCodex.mock.calls.map(([options]) => roleFromPrompt(options.prompt))[0]).toBe("qa");
+    } finally {
+      await started.close();
+    }
+  }, 20_000);
 
   it("persists local projects and rejects orphan local sessions atomically", async () => {
     const root = await makeFixtureRoot();
@@ -1154,7 +1398,7 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   });
 
-  it("treats acceptance words and a user mention as primary-agent input only", async () => {
+  it("treats acceptance words as ordinary text while the unique user mention routes directly", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev-manager", "# dev-manager\n\nROLE:dev-manager");
     await writeAgent(root, "qa", "# qa\n\nROLE:qa");
@@ -1186,9 +1430,9 @@ describe("local console", { timeout: 15_000 }, () => {
       const state = await waitForState(started.url, session.sessionId, (data) =>
         data.messages.filter((entry) => entry.speaker === "agent").length === 1,
       );
-      expect(calls).toEqual(["dev-manager"]);
+      expect(calls).toEqual(["qa"]);
       expect(state.messages.filter((entry) => entry.speaker === "agent").map((entry) => entry.role))
-        .toEqual(["dev-manager"]);
+        .toEqual(["qa"]);
       expect(state.messages.filter((entry) => entry.speaker === "system")).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ body: expect.stringContaining("formal acceptance statements") }),
       ]));
@@ -2259,11 +2503,11 @@ describe("local console", { timeout: 15_000 }, () => {
         state.activeRun?.role === "dev-manager"
       );
 
-      expect((await postSessionMessage(started.url, session.sessionId, "@qa 再补一轮验证")).status).toBe(202);
+      expect((await postSessionMessage(started.url, session.sessionId, "再补一轮验证")).status).toBe(202);
       const queued = await waitForState(started.url, session.sessionId, (state) =>
-        state.pendingPrimaryMessages.some((message) => message.body === "@qa 再补一轮验证")
+        state.pendingPrimaryMessages.some((message) => message.body === "再补一轮验证")
       );
-      expect(queued.messages.some((message) => message.body === "@qa 再补一轮验证")).toBe(false);
+      expect(queued.messages.some((message) => message.body === "再补一轮验证")).toBe(false);
       expect(roles).toEqual(["dev-manager"]);
 
       firstRunGate.resolve(undefined);
@@ -2277,17 +2521,479 @@ describe("local console", { timeout: 15_000 }, () => {
       expect(completed.messages.map((message) => message.body)).toEqual([
         "先检查现状",
         "第一轮主理人回复",
-        "@qa 再补一轮验证",
+        "再补一轮验证",
         "第二轮主理人回复",
       ]);
       expect(prompts[1]?.indexOf("第一轮主理人回复")).toBeLessThan(
-        prompts[1]?.indexOf("@qa 再补一轮验证") ?? -1,
+        prompts[1]?.indexOf("再补一轮验证") ?? -1,
       );
     } finally {
       firstRunGate.resolve(undefined);
       await started.close();
     }
   }, 10_000);
+
+  it("routes a unique user mention directly and queues the same busy member without aborting", async () => {
+    const root = await makeFixtureRoot();
+    const firstQaGate = deferred<void>();
+    const roles: string[] = [];
+    const qaSignals: AbortSignal[] = [];
+    let qaCalls = 0;
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = roleFromPrompt(options.prompt);
+      roles.push(role);
+      if (role === "qa") {
+        qaCalls += 1;
+        qaSignals.push(options.signal!);
+        if (qaCalls === 1) {
+          await firstQaGate.promise;
+          return codexOk(options, "QA 第一轮完成");
+        }
+        return codexOk(options, "QA 第二轮完成");
+      }
+      return codexOk(options, "主理人收尾");
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      listAgentFiles: async () => [
+        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+        { name: "dev", agentMarkdown: "ROLE:dev" },
+        { name: "qa", agentMarkdown: "ROLE:qa" },
+      ],
+      makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "direct qa");
+      expect((await postSessionMessage(started.url, session.sessionId, "@qa 只回复第一轮")).status).toBe(202);
+      const firstActive = await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "qa")
+      );
+      const firstQaRun = firstActive.activeRuns.find((run) => run.role === "qa");
+      expect(firstQaRun).toBeDefined();
+      expect(roles).toEqual(["qa"]);
+
+      expect((await postSessionMessage(started.url, session.sessionId, "@qa 只回复第二轮")).status).toBe(202);
+      const queued = await waitForState(started.url, session.sessionId, (state) =>
+        state.pendingDispatchMessages.some((dispatch) =>
+          dispatch.message.body === "@qa 只回复第二轮"
+          && dispatch.targetLane === "worker"
+          && dispatch.targetRole === "qa")
+      );
+      expect(queued.activeRuns.filter((run) => run.role === "qa")).toHaveLength(1);
+      expect(queued.activeRuns.find((run) => run.role === "qa")?.runId).toBe(firstQaRun?.runId);
+      expect(roles).toEqual(["qa"]);
+      expect(qaSignals[0]?.aborted).toBe(false);
+
+      firstQaGate.resolve(undefined);
+      const completed = await waitForState(started.url, session.sessionId, (state) =>
+        state.messages.some((message) => message.body === "QA 第二轮完成")
+        && state.activeRuns.length === 0
+        && state.selectedSession?.hasPendingControlWork === false
+      );
+      expect(roles.filter((role) => role === "qa")).toEqual(["qa", "qa"]);
+      expect(qaSignals[0]?.aborted).toBe(false);
+      expect(completed.pendingDispatchMessages.some((dispatch) => dispatch.targetRole === "qa")).toBe(false);
+    } finally {
+      firstQaGate.resolve(undefined);
+      await started.close();
+    }
+  }, 20_000);
+
+  it("routes no mention, invalid mention, and multiple valid mentions to the primary in isolated sessions", async () => {
+    const root = await makeFixtureRoot();
+    const invocations: Array<{
+      role: string;
+      gate: ReturnType<typeof deferred<void>>;
+      options: CodexRunOptions;
+    }> = [];
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const invocation = {
+        role: roleFromPrompt(options.prompt),
+        gate: deferred<void>(),
+        options,
+      };
+      invocations.push(invocation);
+      await invocation.gate.promise;
+      return codexOk(options, `${invocation.role} 完成`);
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      listAgentFiles: async () => [
+        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+        { name: "dev", agentMarkdown: "ROLE:dev" },
+        { name: "qa", agentMarkdown: "ROLE:qa" },
+      ],
+      makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      for (const body of ["请判断下一步", "@unknown 请处理", "@qa @dev 请协调"]) {
+        const session = await createSession(started.url, body);
+        const invocationOffset = invocations.length;
+        expect((await postSessionMessage(started.url, session.sessionId, body)).status).toBe(202);
+        const active = await waitForState(started.url, session.sessionId, (state) =>
+          state.activeRuns.length > 0
+        );
+        expect(active.activeRuns.map((run) => run.role)).toEqual(["dev-manager"]);
+        expect(invocations.slice(invocationOffset).map((invocation) => invocation.role)).toEqual(["dev-manager"]);
+        invocations.at(-1)?.gate.resolve(undefined);
+        await waitForState(started.url, session.sessionId, (state) => state.activeRuns.length === 0);
+      }
+    } finally {
+      for (const invocation of invocations) {
+        invocation.gate.resolve(undefined);
+      }
+      await started.close();
+    }
+  }, 30_000);
+
+  it("starts a newly addressed idle worker while the primary run remains active", async () => {
+    const root = await makeFixtureRoot();
+    const managerGate = deferred<void>();
+    const qaGate = deferred<void>();
+    const calls: Array<{ role: string; options: CodexRunOptions }> = [];
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = roleFromPrompt(options.prompt);
+      calls.push({ role, options });
+      if (role === "dev-manager") {
+        await managerGate.promise;
+        return codexOk(options, "主理人完成");
+      }
+      if (role === "qa") {
+        await qaGate.promise;
+        return codexOk(options, "QA 完成");
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      listAgentFiles: async () => [
+        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+        { name: "qa", agentMarkdown: "ROLE:qa" },
+      ],
+      makeRunDir: (count) => path.join(root, "runs", `primary-then-worker-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "primary then worker");
+      expect((await postSessionMessage(started.url, session.sessionId, "主理人先处理")).status).toBe(202);
+      const managerActive = await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "dev-manager")
+      );
+      const managerRunId = managerActive.activeRuns.find((run) => run.role === "dev-manager")?.runId;
+
+      expect((await postSessionMessage(started.url, session.sessionId, "@qa ROUTE_QA")).status).toBe(202);
+      const parallel = await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "dev-manager")
+        && state.activeRuns.some((run) => run.role === "qa")
+      );
+      expect(parallel.activeRuns.map((run) => run.role).sort()).toEqual(["dev-manager", "qa"]);
+      expect(parallel.activeRuns.find((run) => run.role === "dev-manager")?.runId).toBe(managerRunId);
+      expect(parallel.pendingDispatchMessages.some((item) => item.message.body === "@qa ROUTE_QA")).toBe(false);
+      expect(calls.map((call) => call.role)).toEqual(["dev-manager", "qa"]);
+      expect(calls.find((call) => call.role === "dev-manager")?.options.signal?.aborted).toBe(false);
+
+      qaGate.resolve(undefined);
+      await waitForState(started.url, session.sessionId, (state) =>
+        state.messages.some((message) => message.role === "qa" && message.body === "QA 完成")
+        && state.activeRuns.some((run) => run.role === "dev-manager")
+      );
+      expect(calls.find((call) => call.role === "dev-manager")?.options.signal?.aborted).toBe(false);
+
+      managerGate.resolve(undefined);
+      await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.length === 0 && state.selectedSession?.hasPendingControlWork === false
+      );
+    } finally {
+      qaGate.resolve(undefined);
+      managerGate.resolve(undefined);
+      await started.close();
+    }
+  }, 20_000);
+
+  it("releases a delayed direct worker claim during clean close and starts it once after restart", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const claimEntered = deferred<void>();
+    const releaseClaim = deferred<void>();
+    const managerAborted = deferred<void>();
+    const innerStore = await createSqliteLocalConsoleStore({ sqlitePath });
+    const delayedStore = new Proxy(innerStore, {
+      get(target, property) {
+        if (property === "claimNextPendingWorkerMessage") {
+          return async (
+            input: Parameters<NonNullable<LocalConsoleStore["claimNextPendingWorkerMessage"]>>[0],
+          ) => {
+            claimEntered.resolve(undefined);
+            await releaseClaim.promise;
+            return await target.claimNextPendingWorkerMessage!(input);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as LocalConsoleStore;
+    const firstRoles: string[] = [];
+    const firstRunCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = roleFromPrompt(options.prompt);
+      firstRoles.push(role);
+      if (role !== "dev-manager") {
+        throw new Error(`worker provider started during clean close: ${role}`);
+      }
+      await options.onThreadStarted?.("thread-clean-close-manager");
+      return await new Promise<CodexRunResult>((resolve) => {
+        options.signal?.addEventListener("abort", () => {
+          managerAborted.resolve(undefined);
+          resolve({
+            ok: false,
+            reason: `interrupted:${String(options.signal?.reason)}`,
+            runDir: options.runDir,
+            stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+            stderrPath: path.join(options.runDir, "stderr.log"),
+          });
+        }, { once: true });
+      });
+    });
+    const agents = [
+      { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+      { name: "qa", agentMarkdown: "ROLE:qa" },
+    ];
+    const first = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      store: delayedStore,
+      runCodex: firstRunCodex,
+      listAgentFiles: async () => agents,
+      makeRunDir: (count) => path.join(root, "runs", `clean-close-first-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    let firstClosed = false;
+    try {
+      const session = await createSession(first.url, "clean close worker claim");
+      expect((await postSessionMessage(first.url, session.sessionId, "主理人保持运行")).status).toBe(202);
+      await waitForState(first.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "dev-manager")
+      );
+      expect((await postSessionMessage(first.url, session.sessionId, "@qa close race")).status).toBe(202);
+      await claimEntered.promise;
+
+      const closePromise = first.close();
+      await managerAborted.promise;
+      releaseClaim.resolve(undefined);
+      await closePromise;
+      firstClosed = true;
+      expect(firstRoles).toEqual(["dev-manager"]);
+
+      const inspectionStore = await createSqliteLocalConsoleStore({ sqlitePath });
+      await inspectionStore.init();
+      const afterClose = await inspectionStore.listMessages(session.sessionId);
+      await inspectionStore.close();
+      expect(afterClose).toContainEqual(expect.objectContaining({
+        body: "@qa close race",
+        status: "pending",
+        runId: null,
+        runDir: null,
+        dispatchLane: "worker",
+        dispatchRole: "qa",
+      }));
+
+      let qaCalls = 0;
+      const restartedRunCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+        const role = options.mode?.kind === "resume"
+          && options.mode.threadId === "thread-clean-close-manager"
+          ? "dev-manager"
+          : roleFromPrompt(options.prompt);
+        const threadId = options.mode?.kind === "resume"
+          ? options.mode.threadId
+          : `thread-clean-close-${role}`;
+        await options.onThreadStarted?.(threadId);
+        if (role === "qa") {
+          qaCalls += 1;
+          return { ...codexOk(options, "QA 重启后恰好执行一次"), threadId };
+        }
+        return { ...codexOk(options, "主理人恢复完成"), threadId };
+      });
+      const restarted = await startLocalConsoleServer({
+        projectRoot: root,
+        sqlitePath,
+        port: 0,
+        runCodex: restartedRunCodex,
+        listAgentFiles: async () => agents,
+        makeRunDir: (count) => path.join(root, "runs", `clean-close-restart-${String(count)}`),
+        storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+      });
+      try {
+        const settled = await waitForState(restarted.url, session.sessionId, (state) =>
+          state.messages.some((message) =>
+            message.role === "qa" && message.body === "QA 重启后恰好执行一次")
+          && state.activeRuns.length === 0
+          && state.selectedSession?.hasPendingControlWork === false
+        );
+        expect(qaCalls).toBe(1);
+        expect(settled.messages.some((message) =>
+          message.systemEventKind === "run-stuck"
+          && message.error === "orphaned-by-restart")).toBe(false);
+        expect(settled.pendingDispatchMessages.some((item) => item.targetRole === "qa")).toBe(false);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      releaseClaim.resolve(undefined);
+      if (!firstClosed) {
+        await first.close().catch(() => undefined);
+      }
+    }
+  }, 30_000);
+
+  it.each([
+    {
+      gateName: "execution context persistence",
+      storeMethod: "recordRunExecutionContext",
+      matchesQaRun: (input: unknown) =>
+        (input as { role?: string }).role === "qa",
+    },
+    {
+      gateName: "lifecycle preparation",
+      storeMethod: "nextRunAttempt",
+      matchesQaRun: (_input: unknown) => true,
+    },
+    {
+      gateName: "provider invocation persistence",
+      storeMethod: "recordProviderInvocation",
+      matchesQaRun: (input: unknown) => {
+        const invocation = input as { role?: string; phase?: string };
+        return invocation.role === "qa" && invocation.phase === "started";
+      },
+    },
+  ])(
+    "releases a direct worker closed during $gateName before provider start and restarts it once",
+    async ({ storeMethod, matchesQaRun }) => {
+      const root = await makeFixtureRoot();
+      const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+      const gateEntered = deferred<void>();
+      const releaseGate = deferred<void>();
+      const innerStore = await createSqliteLocalConsoleStore({ sqlitePath });
+      let gateArmed = false;
+      const gatedStore = new Proxy(innerStore, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target) as unknown;
+          if (property === storeMethod && typeof value === "function") {
+            return async (...args: unknown[]) => {
+              if (gateArmed && matchesQaRun(args[0])) {
+                gateArmed = false;
+                gateEntered.resolve(undefined);
+                await releaseGate.promise;
+              }
+              return await Reflect.apply(value, target, args) as unknown;
+            };
+          }
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as LocalConsoleStore;
+      const firstRunCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> =>
+        codexOk(options, "不应在关闭期间启动"));
+      const agents = [
+        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+        { name: "qa", agentMarkdown: "ROLE:qa" },
+      ];
+      const first = await startLocalConsoleServer({
+        projectRoot: root,
+        port: 0,
+        store: gatedStore,
+        runCodex: firstRunCodex,
+        listAgentFiles: async () => agents,
+        makeRunDir: (count) => path.join(root, "runs", `provider-gap-first-${String(count)}`),
+        storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+      });
+      let firstClosed = false;
+      try {
+        const session = await createSession(first.url, "provider start close race");
+        gateArmed = true;
+        expect((await postSessionMessage(first.url, session.sessionId, "@qa provider gap")).status).toBe(202);
+        await gateEntered.promise;
+        const beforeClose = await getState(first.url, session.sessionId);
+        expect(beforeClose.activeRuns.some((run) => run.role === "qa")).toBe(
+          storeMethod === "recordProviderInvocation",
+        );
+
+        const closePromise = first.close();
+        let closeResolved = false;
+        void closePromise.then(() => {
+          closeResolved = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(closeResolved).toBe(false);
+        releaseGate.resolve(undefined);
+        await closePromise;
+        firstClosed = true;
+        expect(firstRunCodex).not.toHaveBeenCalled();
+
+        const inspectionStore = await createSqliteLocalConsoleStore({ sqlitePath });
+        await inspectionStore.init();
+        const afterClose = await inspectionStore.listMessages(session.sessionId);
+        await inspectionStore.close();
+        expect(afterClose).toContainEqual(expect.objectContaining({
+          body: "@qa provider gap",
+          status: "pending",
+          runId: null,
+          runDir: null,
+          dispatchLane: "worker",
+          dispatchRole: "qa",
+        }));
+
+        let qaCalls = 0;
+        const restartedRunCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+          const role = roleFromPrompt(options.prompt);
+          if (role === "dev-manager") {
+            return codexOk(options, "主理人已接回");
+          }
+          if (role !== "qa") {
+            throw new Error(`unexpected restarted role: ${role}`);
+          }
+          qaCalls += 1;
+          await options.onThreadStarted?.("thread-provider-gap-qa");
+          return { ...codexOk(options, "QA 重启后执行一次"), threadId: "thread-provider-gap-qa" };
+        });
+        const restarted = await startLocalConsoleServer({
+          projectRoot: root,
+          sqlitePath,
+          port: 0,
+          runCodex: restartedRunCodex,
+          listAgentFiles: async () => agents,
+          makeRunDir: (count) => path.join(root, "runs", `provider-gap-restart-${String(count)}`),
+          storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+        });
+        try {
+          const settled = await waitForState(restarted.url, session.sessionId, (state) =>
+            state.messages.some((message) =>
+              message.role === "qa" && message.body === "QA 重启后执行一次")
+            && state.activeRuns.length === 0
+            && state.selectedSession?.hasPendingControlWork === false
+          );
+          expect(qaCalls).toBe(1);
+          expect(settled.messages.some((message) =>
+            message.systemEventKind === "run-stuck"
+            && message.error === "orphaned-by-restart")).toBe(false);
+          expect(settled.pendingDispatchMessages.some((item) => item.targetRole === "qa")).toBe(false);
+        } finally {
+          await restarted.close();
+        }
+      } finally {
+        releaseGate.resolve(undefined);
+        if (!firstClosed) {
+          await first.close().catch(() => undefined);
+        }
+      }
+    },
+    45_000,
+  );
 
   it("runs the primary agent beside a worker and interrupts only the selected worker run", async () => {
     const root = await makeFixtureRoot();
@@ -3059,6 +3765,12 @@ async function waitForSnapshot(
 interface LocalSnapshotResponse {
   status: "idle" | "running" | "failed" | "stuck";
   messages: LocalConsoleMessage[];
+  pendingDispatchMessages: Array<{
+    message: LocalConsoleMessage;
+    targetLane: "primary" | "worker" | "awaiting-team";
+    targetRole: string | null;
+    waitingForTeam: boolean;
+  }>;
   pendingPrimaryMessages: LocalConsoleMessage[];
   activeRuns: LocalRunSnapshotResponse[];
   activeRun: LocalRunSnapshotResponse | null;
@@ -3089,6 +3801,12 @@ interface LocalStateResponse {
   selectedSessionId: string;
   selectedSession: LocalConsoleSessionSummary | null;
   messages: LocalConsoleMessage[];
+  pendingDispatchMessages: Array<{
+    message: LocalConsoleMessage;
+    targetLane: "primary" | "worker" | "awaiting-team";
+    targetRole: string | null;
+    waitingForTeam: boolean;
+  }>;
   pendingPrimaryMessages: LocalConsoleMessage[];
   childSessions: LocalConsoleChildSessionSummary[];
   activeRuns: LocalRunSnapshotResponse[];

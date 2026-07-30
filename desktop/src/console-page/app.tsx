@@ -13,6 +13,7 @@ import {
   type AgentTeamSaveAllFailureView,
   type TeamBuilderViewState,
   type OperatorMessage,
+  type OperatorPendingDispatch,
   type OperatorMemberIdentity,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
@@ -351,6 +352,7 @@ interface LocalConsoleState {
   selectedSessionId: string;
   selectedSession: OperatorSession | null;
   messages: OperatorMessage[];
+  pendingDispatchMessages?: OperatorPendingDispatch[];
   pendingPrimaryMessages: OperatorMessage[];
   childSessions: OperatorChildSessionSummary[];
   memberIdentities: OperatorMemberIdentity[];
@@ -3594,6 +3596,7 @@ export function OperatorConsoleApp({
         selectedSessionId={view.session.sessionId}
         selectedSession={view.session}
         messages={view.messages}
+        pendingDispatchMessages={view.pendingDispatchMessages ?? []}
         pendingPrimaryMessages={view.pendingPrimaryMessages ?? []}
         memberIdentities={view.memberIdentities ?? []}
         activeRun={view.activeRun}
@@ -3766,6 +3769,7 @@ export function OperatorConsoleApp({
       onReadingMessageChange={(sessionId, messageId) => {
         conversationReadingPositionStoreRef.current.write(sessionId, messageId);
       }}
+      pendingDispatchMessages={state?.pendingDispatchMessages ?? []}
       pendingPrimaryMessages={state?.pendingPrimaryMessages ?? []}
       childSessions={state?.childSessions ?? []}
       memberIdentities={state?.memberIdentities ?? []}
