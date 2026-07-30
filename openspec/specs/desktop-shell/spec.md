@@ -1281,27 +1281,28 @@ Electron 打包 MUST 使用品牌脚本生成的 1024px PNG 作为 `.app` 和 DM
 
 Source: docs/product/prd.md#品牌与发行平台
 
-桌面打包配置与发布命令 MUST 只生成 macOS arm64 的 DMG 和 ZIP，产物名 MUST 明确包含 `mac-arm64`。Release workflow MUST 只在原生 arm64 macOS runner 上执行，并在打包前校验 runner 架构。正式发布 MUST NOT 生成 Windows、Linux、macOS x64 或 universal 产物。
+桌面打包配置与正式发布流程 MUST 只生成 macOS arm64 的 DMG 和 ZIP，产物名 MUST 明确包含 `mac-arm64`。正式发布 MUST 在创建 `vX.Y.Z` tag 与 GitHub Release 前校验应用签名和可执行文件 arm64 架构，MUST NOT 生成或上传 Windows、Linux、macOS x64 或 universal 产物。
 
-#### Scenario: desktop tag 触发发布
+#### Scenario: 正式发布生成 v tag
 
-- **GIVEN** `desktop-v*` tag 触发 Release workflow
-- **WHEN** runner 通过架构检查并完成 Electron-builder
+- **GIVEN** 正式发布流程准备版本 `X.Y.Z`
+- **WHEN** 签名、arm64 架构与 Electron-builder 产物检查全部通过
 - **THEN** Release 只收到同版本的 macOS arm64 DMG 与 ZIP
+- **AND** 正式 tag 为 `vX.Y.Z`
 - **AND** 没有 exe、AppImage、x64、universal 或其他平台产物。
 
-#### Scenario: runner 不是 arm64
+#### Scenario: 候选应用不是 arm64
 
-- **GIVEN** Release job 被调度到非 arm64 runner
-- **WHEN** workflow 执行架构门禁
-- **THEN** job 在安装包构建前失败
+- **GIVEN** 候选应用的可执行文件不是 arm64
+- **WHEN** 正式发布流程执行架构门禁
+- **THEN** 流程在创建 tag 或 GitHub Release 前失败
 - **AND** 不发布交叉编译或架构不明的产物。
 
 ### Requirement: 正式更新策略只覆盖 macOS
 
 Source: docs/product/prd.md#品牌与发行平台
 
-正式产品 MUST 只承诺 macOS 的“检查更新 → 设置内显示结果 → 用户显式打开下载页”路径。发布 workflow、官网文案和验收矩阵 MUST 只覆盖 Apple Silicon Mac。
+正式产品 MUST 只承诺 macOS 的“检查更新 → 设置内显示结果 → 用户显式打开下载页”路径。正式发布流程、官网文案和验收矩阵 MUST 只覆盖 Apple Silicon Mac。
 
 #### Scenario: macOS 用户检查更新
 
@@ -1329,7 +1330,7 @@ preload MUST 只暴露读取应用元数据、检查更新和复制固定版本�
 
 Source: docs/product/pages/settings.md#检查更新
 
-主进程 MUST 只比较当前版本与 GitHub 最新正式桌面 Release，并在 15 秒内返回 latest、available 或 failed。检查本身 MUST NOT 打开浏览器、下载、安装、调用自动更新器或要求重启。HTTP 失败、响应非法、网络异常和超时 MUST 返回 failed，MUST NOT 伪装为 latest。available MUST 返回最新版本与本仓库对应的 HTTPS Release URL。
+主进程 MUST 只比较当前版本与 GitHub 最新正式桌面 Release，并在 15 秒内返回 latest、available 或 failed。正式 Release MUST 使用稳定版 `vX.Y.Z` tag、非 Draft、非 Prerelease 状态，且 HTTPS Release URL MUST 与同一 tag 精确对应；不满足任一条件的响应 MUST 视为非法。检查本身 MUST NOT 打开浏览器、下载、安装、调用自动更新器或要求重启。HTTP 失败、响应非法、网络异常和超时 MUST 返回 failed，MUST NOT 伪装为 latest。available MUST 返回最新版本与本仓库对应的 HTTPS Release URL。
 
 #### Scenario: 检查到新版但不离开应用
 

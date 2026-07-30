@@ -134,7 +134,7 @@ Run the desktop shell from source on macOS:
 pnpm desktop
 ```
 
-Desktop tags matching `desktop-v*` build DMG and ZIP artifacts for macOS Apple Silicon only. Current artifacts are signed with an Apple Developer ID but are not notarized, so macOS may show a security warning. Review the release provenance and use the system-provided Open flow only if you trust the artifact.
+Production releases use `v*` tags and contain DMG and ZIP artifacts for macOS Apple Silicon only. Current artifacts are signed with an Apple Developer ID but are not notarized, so macOS may show a security warning. Review the release provenance and use the system-provided Open flow only if you trust the artifact.
 
 ### Data roots
 

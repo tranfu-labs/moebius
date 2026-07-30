@@ -17,8 +17,11 @@ describe("desktop updater", () => {
   it("compares semantic versions", () => {
     expect(compareVersions("1.2.1", "1.2.0")).toBe(1);
     expect(compareVersions("v1.2.0", "1.2.0")).toBe(0);
-    expect(compareVersions("desktop-v1.2.1", "1.2.0")).toBe(1);
     expect(compareVersions("1.1.9", "1.2.0")).toBe(-1);
+    expect(compareVersions("1.2.0-rc.1", "1.2.0")).toBe(-1);
+    expect(compareVersions("1.2.0-rc.2", "1.2.0-rc.10")).toBe(-1);
+    expect(compareVersions("1.2.0+build.2", "1.2.0+build.1")).toBe(0);
+    expect(() => compareVersions("desktop-v1.2.1", "1.2.0")).toThrow(RangeError);
   });
 
   it("decides platform-specific update actions", () => {
@@ -53,20 +56,20 @@ describe("desktop updater", () => {
       currentVersion: "0.1.4",
       fetchLatestRelease: async () => ({
         version: "0.1.5",
-        url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
       }),
     })).resolves.toEqual({
       status: "available",
       currentVersion: "0.1.4",
       latestVersion: "0.1.5",
-      downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+      downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
     });
 
     await expect(checkDesktopUpdates({
       currentVersion: "0.1.5",
       fetchLatestRelease: async () => ({
         version: "0.1.5",
-        url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
       }),
     })).resolves.toMatchObject({
       status: "latest",
@@ -108,31 +111,93 @@ describe("desktop updater", () => {
       currentVersion: "0.1.4",
       fetchLatestRelease: async () => ({
         version: "0.1.5",
-        url: "https://example.test/releases/tag/desktop-v0.1.5",
+        url: "https://example.test/releases/tag/v0.1.5",
+      }),
+    })).resolves.toMatchObject({ status: "failed", reason: "unavailable" });
+    await expect(checkDesktopUpdates({
+      currentVersion: "0.1.4",
+      fetchLatestRelease: async () => ({
+        version: "0.1.5",
+        url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.4",
       }),
     })).resolves.toMatchObject({ status: "failed", reason: "unavailable" });
   });
 
-  it("parses only valid latest-release metadata", async () => {
+  it("parses the real GitHub latest-release response shape", async () => {
     const response = new Response(JSON.stringify({
-      tag_name: "desktop-v0.1.5",
-      html_url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+      url: "https://api.github.com/repos/tranfu-labs/moebius/releases/123",
+      assets_url: "https://api.github.com/repos/tranfu-labs/moebius/releases/123/assets",
+      tag_name: "v0.1.5",
+      name: "Moebius v0.1.5",
+      draft: false,
+      prerelease: false,
+      published_at: "2026-07-30T00:00:00Z",
+      html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
+      assets: [],
     }), { status: 200, headers: { "content-type": "application/json" } });
     await expect(fetchLatestDesktopRelease(
       new AbortController().signal,
       vi.fn(async () => response),
     )).resolves.toEqual({
       version: "0.1.5",
-      url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+      url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
     });
+  });
 
-    const unrelatedRelease = new Response(JSON.stringify({
-      tag_name: "website-v9.0.0",
-      html_url: "https://github.com/tranfu-labs/moebius/releases/tag/website-v9.0.0",
-    }), { status: 200, headers: { "content-type": "application/json" } });
+  it.each([
+    {
+      label: "legacy desktop tag",
+      release: {
+        tag_name: "desktop-v0.1.5",
+        html_url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        draft: false,
+        prerelease: false,
+      },
+    },
+    {
+      label: "draft",
+      release: {
+        tag_name: "v0.1.5",
+        html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
+        draft: true,
+        prerelease: false,
+      },
+    },
+    {
+      label: "prerelease",
+      release: {
+        tag_name: "v0.1.5",
+        html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
+        draft: false,
+        prerelease: true,
+      },
+    },
+    {
+      label: "prerelease tag",
+      release: {
+        tag_name: "v0.1.5-rc.1",
+        html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5-rc.1",
+        draft: false,
+        prerelease: false,
+      },
+    },
+    {
+      label: "mismatched release URL",
+      release: {
+        tag_name: "v0.1.5",
+        html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.4",
+        draft: false,
+        prerelease: false,
+      },
+    },
+  ])("rejects $label metadata", async ({ release }) => {
+    const response = new Response(JSON.stringify(release), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
     await expect(fetchLatestDesktopRelease(
       new AbortController().signal,
-      vi.fn(async () => unrelatedRelease),
+      vi.fn(async () => response),
     )).resolves.toBeNull();
   });
 });
