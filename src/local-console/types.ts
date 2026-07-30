@@ -841,6 +841,8 @@ export interface LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    sourceKind?: string | null;
+    sourceId?: string | null;
   }): Promise<void>;
   recordRetryableFailure(input: {
     userMessageId: number;

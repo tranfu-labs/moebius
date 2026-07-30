@@ -24,7 +24,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-describe("local execution runtime", { timeout: 15_000 }, () => {
+describe("local execution runtime", { timeout: 30_000 }, () => {
   it("runs a mixed Kimi/Codex team through the snapshotted driver for each member", async () => {
     const root = await fixtureRoot();
     const codex = vi.fn(async (options: CodexRunOptions) => success(options, "dev completed"));
@@ -878,6 +878,700 @@ describe("local execution runtime", { timeout: 15_000 }, () => {
     expect(kimi).not.toHaveBeenCalled();
     expect(codex).not.toHaveBeenCalled();
   });
+
+  it("records an explicit no-trigger retry as run-not-started without invoking a provider", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("primary-no-trigger-session");
+      return {
+        ...success(options, "NO_TRIGGER_SOURCE"),
+        threadId: "primary-no-trigger-session",
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      store,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "no-trigger",
+    });
+    await post(server.url, "create a no-trigger source");
+    await waitForAgent(server.url, "NO_TRIGGER_SOURCE");
+    const settled = await waitForSnapshotMatching(server, "default", (snapshot) =>
+      snapshot.activeRuns.length === 0
+      && snapshot.messages.some((message) =>
+        message.speaker === "agent"
+        && message.body === "NO_TRIGGER_SOURCE"
+        && message.status === "displayed"));
+    const source = settled.messages.find((message) =>
+      message.speaker === "agent" && message.body === "NO_TRIGGER_SOURCE")!;
+    const factsBeforeRetry = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    const invocationCountBeforeRetry = factsBeforeRetry.filter((fact) =>
+      fact.type === "provider_invocation").length;
+    const cursorCountBeforeRetry = factsBeforeRetry.filter((fact) =>
+      fact.type === "agent_timeline_cursor").length;
+    codex.mockClear();
+
+    await store.recordCodexResumeIntent({
+      sessionId: "default",
+      intentId: "no-trigger-retry-intent",
+      targetRunId: "missing-trigger-target",
+      sourceMessageId: source.id,
+      role: "manager",
+      reason: "retry",
+      createdAt: new Date().toISOString(),
+    });
+    await store.releaseMessageForRetry({
+      userMessageId: source.id,
+      sessionId: "default",
+      now: new Date().toISOString(),
+    });
+    await server.runtime.processPending("default");
+
+    const firstFailure = await waitForSystemEventMatching(
+      server,
+      "default",
+      (message) => message.error === "retry-source-trigger-missing",
+    );
+    expect(firstFailure).toMatchObject({
+      status: "failed",
+      systemEventKind: "run-not-started",
+      error: "retry-source-trigger-missing",
+      sourceKind: "local-retry-intent",
+      sourceId: "no-trigger-retry-intent",
+    });
+    expect(firstFailure.runId).not.toBeNull();
+    const failedSnapshot = await server.runtime.snapshot("default");
+    expect(failedSnapshot.messages.find((message) => message.id === source.id)).toMatchObject({
+      status: "displayed",
+      runId: source.runId,
+    });
+    expect(failedSnapshot.messages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ systemEventKind: "resume-unavailable" }),
+    ]));
+    expect(codex).not.toHaveBeenCalled();
+
+    const factsAfterRetry = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    expect(factsAfterRetry.filter((fact) => fact.type === "provider_invocation"))
+      .toHaveLength(invocationCountBeforeRetry);
+    expect(factsAfterRetry.filter((fact) => fact.type === "agent_timeline_cursor"))
+      .toHaveLength(cursorCountBeforeRetry);
+    expect(factsAfterRetry).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "provider_invocation",
+        payload: expect.objectContaining({ runId: firstFailure.runId }),
+      }),
+    ]));
+    expect(factsAfterRetry).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "codex_resume_consumed",
+        payload: expect.objectContaining({ intentId: "no-trigger-retry-intent" }),
+      }),
+    ]));
+
+    await server.close();
+    servers.splice(servers.indexOf(server), 1);
+    const restartedCodex = vi.fn(async (options: CodexRunOptions) =>
+      success(options, "unexpected provider invocation"));
+    const restartedServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => {
+        throw new Error("persisted team snapshot should be restored from SQLite");
+      },
+      runCodex: restartedCodex,
+      runExecution: createLocalExecutionRunner({ runCodex: restartedCodex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(restartedServer);
+    const restoredFailure = (await restartedServer.runtime.snapshot("default")).messages.find((message) =>
+      message.runId === firstFailure.runId);
+    expect(restoredFailure).toMatchObject({
+      sourceKind: "local-retry-intent",
+      sourceId: "no-trigger-retry-intent",
+    });
+
+    const retry = await fetch(retryUrl(restartedServer, "default", firstFailure.runId!), {
+      method: "POST",
+    });
+    expect(retry.status).toBe(202);
+    const secondFailure = await waitForSystemEventMatching(
+      restartedServer,
+      "default",
+      (message) =>
+        message.error === "retry-source-trigger-missing"
+        && message.runId !== firstFailure.runId,
+    );
+    expect(secondFailure).toMatchObject({
+      status: "failed",
+      systemEventKind: "run-not-started",
+      error: "retry-source-trigger-missing",
+      sourceKind: "local-retry-intent",
+      sourceId: "no-trigger-retry-intent",
+    });
+    const retriedSnapshot = await restartedServer.runtime.snapshot("default");
+    expect(retriedSnapshot.messages.find((message) => message.id === source.id)).toMatchObject({
+      status: "displayed",
+      runId: source.runId,
+    });
+    expect(retriedSnapshot.messages.filter((message) =>
+      message.error === "retry-source-trigger-missing")).toHaveLength(2);
+    expect(retriedSnapshot.messages.some((message) =>
+      message.systemEventKind === "resume-unavailable")).toBe(false);
+    expect(codex).not.toHaveBeenCalled();
+    expect(restartedCodex).not.toHaveBeenCalled();
+
+    const factsAfterSecondRetry = await readFactEvents(
+      restartedServer.runtime.getSessionFactLogPath("default"),
+    );
+    expect(factsAfterSecondRetry.filter((fact) => fact.type === "provider_invocation"))
+      .toHaveLength(invocationCountBeforeRetry);
+    expect(factsAfterSecondRetry.filter((fact) => fact.type === "agent_timeline_cursor"))
+      .toHaveLength(cursorCountBeforeRetry);
+    expect(factsAfterSecondRetry.filter((fact) =>
+      fact.type === "codex_resume_intent"
+      && fact.payload.intentId === "no-trigger-retry-intent")).toHaveLength(1);
+    expect(factsAfterSecondRetry).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "codex_resume_consumed",
+        payload: expect.objectContaining({ intentId: "no-trigger-retry-intent" }),
+      }),
+    ]));
+  });
+
+  it.each([
+    {
+      intentOrder: ["A", "B"] as const,
+      processOrder: ["A", "B"] as const,
+    },
+    {
+      intentOrder: ["B", "A"] as const,
+      processOrder: ["B", "A"] as const,
+    },
+  ])(
+    "keeps no-trigger retry source-scoped with intent order $intentOrder and process order $processOrder",
+    async ({ intentOrder, processOrder }) => {
+      const root = await fixtureRoot();
+      const sqlitePath = path.join(root, "local-console.sqlite");
+      const store = await createSqliteLocalConsoleStore({ sqlitePath });
+      let providerCall = 0;
+      const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+        providerCall += 1;
+        await options.onThreadStarted?.("cross-intent-primary-session");
+        return {
+          ...success(options, providerCall === 1 ? "NO_TRIGGER_SOURCE_A" : "NO_TRIGGER_SOURCE_B"),
+          threadId: "cross-intent-primary-session",
+        };
+      });
+      const server = await startLocalConsoleServer({
+        host: "127.0.0.1",
+        port: 0,
+        projectRoot: root,
+        sqlitePath,
+        store,
+        listAgentFiles: async () => [],
+        loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+          cli: "kimi",
+          model: "kimi-for-coding",
+          effort: "high",
+        }),
+        runCodex: codex,
+        runExecution: createLocalExecutionRunner({ runCodex: codex }),
+        isCodexThreadAvailable: async () => true,
+      });
+      servers.push(server);
+
+      await server.runtime.switchSessionTeam({
+        sessionId: "default",
+        agentTeamOwnership: "user",
+        agentTeamId: "cross-intent",
+      });
+      await post(server.url, "create source A");
+      const afterA = await waitForSnapshotMatching(server, "default", (snapshot) =>
+        snapshot.activeRuns.length === 0
+        && snapshot.messages.some((message) =>
+          message.speaker === "agent"
+          && message.body === "NO_TRIGGER_SOURCE_A"
+          && message.status === "displayed"));
+      const sourceA = afterA.messages.find((message) =>
+        message.speaker === "agent" && message.body === "NO_TRIGGER_SOURCE_A")!;
+      await post(server.url, "create source B");
+      const afterB = await waitForSnapshotMatching(server, "default", (snapshot) =>
+        snapshot.activeRuns.length === 0
+        && snapshot.messages.some((message) =>
+          message.speaker === "agent"
+          && message.body === "NO_TRIGGER_SOURCE_B"
+          && message.status === "displayed"));
+      const sourceB = afterB.messages.find((message) =>
+        message.speaker === "agent" && message.body === "NO_TRIGGER_SOURCE_B")!;
+      const sources = { A: sourceA, B: sourceB };
+      const intents = {
+        A: {
+          sessionId: "default",
+          intentId: "cross-intent-A",
+          targetRunId: "target-run-A",
+          sourceMessageId: sourceA.id,
+          role: "role-A",
+          reason: "retry" as const,
+        },
+        B: {
+          sessionId: "default",
+          intentId: "cross-intent-B",
+          targetRunId: "target-run-B",
+          sourceMessageId: sourceB.id,
+          role: "role-B",
+          reason: "retry" as const,
+        },
+      };
+      for (const key of intentOrder) {
+        await store.recordCodexResumeIntent({
+          ...intents[key],
+          createdAt: new Date().toISOString(),
+        });
+      }
+      const failures = new Map<"A" | "B", LocalConsoleMessage>();
+      for (const key of processOrder) {
+        await store.releaseMessageForRetry({
+          userMessageId: sources[key].id,
+          sessionId: "default",
+          now: new Date().toISOString(),
+        });
+        await server.runtime.processPending("default");
+        const failure = await waitForSystemEventMatching(
+          server,
+          "default",
+          (message) =>
+            message.error === "retry-source-trigger-missing"
+            && message.sourceId === intents[key].intentId,
+        );
+        expect(failure).toMatchObject({
+          sourceKind: "local-retry-intent",
+          sourceId: intents[key].intentId,
+        });
+        failures.set(key, failure);
+      }
+      codex.mockClear();
+      const releasedSourceIds: number[] = [];
+      const releaseMessageForRetry = store.releaseMessageForRetry.bind(store);
+      store.releaseMessageForRetry = async (input) => {
+        releasedSourceIds.push(input.userMessageId);
+        await releaseMessageForRetry(input);
+      };
+
+      const retryA = await fetch(retryUrl(server, "default", failures.get("A")!.runId!), {
+        method: "POST",
+      });
+      expect(retryA.status).toBe(202);
+
+      expect(releasedSourceIds).toEqual([sourceA.id]);
+      expect(releasedSourceIds).not.toContain(sourceB.id);
+      expect(codex).not.toHaveBeenCalled();
+      const facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+      const persistedIntents = facts.filter((fact) => fact.type === "codex_resume_intent");
+      expect(persistedIntents.filter((fact) =>
+        fact.payload.intentId === intents.A.intentId)).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining(intents.A),
+        }),
+      ]);
+      expect(persistedIntents.filter((fact) =>
+        fact.payload.intentId === intents.B.intentId)).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining(intents.B),
+        }),
+      ]);
+      expect(facts).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: "codex_resume_consumed",
+          payload: expect.objectContaining({
+            intentId: expect.stringMatching(/^cross-intent-[AB]$/u),
+          }),
+        }),
+      ]));
+    },
+  );
+
+  it.each([
+    "missing-link",
+    "missing-intent",
+    "consumed-intent",
+    "mismatched-source",
+  ] as const)("fails closed for an invalid no-trigger retry association: %s", async (invalidCase) => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("invalid-link-primary-session");
+      return {
+        ...success(options, "INVALID_LINK_SOURCE"),
+        threadId: "invalid-link-primary-session",
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      store,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "invalid-link",
+    });
+    await post(server.url, "create invalid-link source");
+    const settled = await waitForSnapshotMatching(server, "default", (snapshot) =>
+      snapshot.activeRuns.length === 0
+      && snapshot.messages.some((message) =>
+        message.speaker === "agent"
+        && message.body === "INVALID_LINK_SOURCE"
+        && message.status === "displayed"));
+    const source = settled.messages.find((message) =>
+      message.speaker === "agent" && message.body === "INVALID_LINK_SOURCE")!;
+    const intentId = `invalid-link-intent:${invalidCase}`;
+    if (invalidCase === "consumed-intent" || invalidCase === "mismatched-source") {
+      await store.recordCodexResumeIntent({
+        sessionId: "default",
+        intentId,
+        targetRunId: `invalid-target:${invalidCase}`,
+        sourceMessageId: invalidCase === "mismatched-source" ? source.id + 10_000 : source.id,
+        role: "manager",
+        reason: "retry",
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (invalidCase === "consumed-intent") {
+      await store.recordCodexResumeConsumed({
+        sessionId: "default",
+        intentId,
+        resumedByRunId: "already-consumed-run",
+        mode: "resume",
+        reason: "already-consumed",
+        consumedAt: new Date().toISOString(),
+      });
+    }
+    const runId = `invalid-link-run:${invalidCase}`;
+    await store.recordFailure({
+      userMessageId: source.id,
+      sessionId: "default",
+      error: "retry-source-trigger-missing",
+      runId,
+      runDir: null,
+      body: "This retry association is intentionally invalid.",
+      systemEventKind: "run-not-started",
+      ...(invalidCase === "missing-link"
+        ? {}
+        : {
+            sourceKind: "local-retry-intent",
+            sourceId: intentId,
+          }),
+      now: new Date().toISOString(),
+    });
+    const factsBeforeRetry = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    const invocationCountBeforeRetry = factsBeforeRetry.filter((fact) =>
+      fact.type === "provider_invocation").length;
+    codex.mockClear();
+
+    const retry = await fetch(retryUrl(server, "default", runId), { method: "POST" });
+    expect(retry.status).toBe(404);
+    expect(codex).not.toHaveBeenCalled();
+    const factsAfterRetry = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    expect(factsAfterRetry.filter((fact) => fact.type === "provider_invocation"))
+      .toHaveLength(invocationCountBeforeRetry);
+    expect((await server.runtime.snapshot("default")).messages.find((message) =>
+      message.id === source.id)).toMatchObject({
+        status: "displayed",
+        runId: source.runId,
+      });
+  });
+
+  it("retries a detached Kimi handoff from its claimed source exactly once and reaches attempt 3", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    let primaryCall = 0;
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      primaryCall += 1;
+      await options.onThreadStarted?.("primary-codex-session");
+      return {
+        ...success(
+          options,
+          primaryCall === 1
+            ? "execute the original handoff @worker"
+            : "PRIMARY_DELTA_ACK",
+        ),
+        threadId: "primary-codex-session",
+      };
+    });
+    let workerCall = 0;
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
+      workerCall += 1;
+      await options.onSessionStarted?.("worker-kimi-session");
+      if (workerCall < 3) {
+        return {
+          ok: false,
+          reason: "kimi-acp-timeout",
+          failure: {
+            code: "kimi-acp-timeout",
+            message: `Kimi attempt ${String(workerCall)} failed`,
+          },
+          runDir: options.runDir,
+          stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+          stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+        };
+      }
+      return {
+        ok: true,
+        finalText: "KIMI_ATTEMPT_3_COMPLETED",
+        threadId: "worker-kimi-session",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+        stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(server);
+
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "detached-kimi",
+    });
+    await post(server.url, "start detached work");
+    const firstFailure = await waitForSystemEventMatching(
+      server,
+      "default",
+      (message) => message.error === "kimi-acp-timeout",
+    );
+    expect(firstFailure.runId).not.toBeNull();
+
+    await post(server.url, "AFTER_FAILURE_PUBLIC_DELTA");
+    await waitForAgent(server.url, "PRIMARY_DELTA_ACK");
+
+    const firstRetryUrl = retryUrl(server, "default", firstFailure.runId!);
+    const [firstRetry, duplicateRetry] = await Promise.all([
+      fetch(firstRetryUrl, { method: "POST" }),
+      fetch(firstRetryUrl, { method: "POST" }),
+    ]);
+    expect([firstRetry.status, duplicateRetry.status]).toEqual([202, 202]);
+    await Promise.all([
+      server.runtime.processPending("default"),
+      server.runtime.processPending("default"),
+      server.runtime.processPending("default"),
+    ]);
+    const secondFailure = await waitForSystemEventMatching(
+      server,
+      "default",
+      (message) =>
+        message.error === "kimi-acp-timeout"
+        && message.runId !== firstFailure.runId,
+    );
+    expect(kimi).toHaveBeenCalledTimes(2);
+    expect(secondFailure.runId).not.toBeNull();
+
+    const thirdRetry = await fetch(retryUrl(server, "default", secondFailure.runId!), {
+      method: "POST",
+    });
+    expect(thirdRetry.status).toBe(202);
+    await waitForAgent(server.url, "KIMI_ATTEMPT_3_COMPLETED");
+
+    expect(codex).toHaveBeenCalledTimes(2);
+    expect(kimi).toHaveBeenCalledTimes(3);
+    expect(kimi.mock.calls.map(([options]) => options.mode)).toEqual([
+      { kind: "full" },
+      { kind: "resume", externalSessionId: "worker-kimi-session" },
+      { kind: "resume", externalSessionId: "worker-kimi-session" },
+    ]);
+    expect(kimi.mock.calls.map(([options]) => options.profile)).toEqual([
+      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+    ]);
+    expect(kimi.mock.calls[1]?.[0].prompt).toContain("AFTER_FAILURE_PUBLIC_DELTA");
+
+    const snapshot = await server.runtime.snapshot("default");
+    const handoffs = snapshot.messages.filter((message) =>
+      message.speaker === "agent"
+      && message.body === "execute the original handoff @worker");
+    expect(handoffs).toHaveLength(1);
+    const handoff = handoffs[0]!;
+    expect(snapshot.messages.filter((message) =>
+      message.speaker === "system" && message.error === "kimi-acp-timeout")).toHaveLength(2);
+
+    const facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    const lifecycleAttempts = facts
+      .filter((fact) =>
+        fact.type === "run_lifecycle"
+        && fact.payload.stepId === `message:${String(handoff.id)}`
+        && fact.payload.phase === "created")
+      .map((fact) => fact.payload.attempt);
+    expect(lifecycleAttempts).toEqual([1, 2, 3]);
+    const workerInvocations = facts.filter((fact) =>
+      fact.type === "provider_invocation"
+      && fact.payload.role === "worker"
+      && fact.payload.phase === "started");
+    expect(workerInvocations.map((fact) => ({
+      mode: fact.payload.mode,
+      requestedExternalSessionId: fact.payload.requestedExternalSessionId,
+    }))).toEqual([
+      { mode: "full", requestedExternalSessionId: null },
+      { mode: "resume", requestedExternalSessionId: "worker-kimi-session" },
+      { mode: "resume", requestedExternalSessionId: "worker-kimi-session" },
+    ]);
+    const retryIntents = facts.filter((fact) =>
+      fact.type === "codex_resume_intent"
+      && fact.payload.reason === "retry"
+      && fact.payload.sourceMessageId === handoff.id);
+    expect(retryIntents).toHaveLength(2);
+    const consumedIds = new Set(facts
+      .filter((fact) => fact.type === "codex_resume_consumed")
+      .map((fact) => fact.payload.intentId));
+    expect(retryIntents.every((fact) => consumedIds.has(fact.payload.intentId))).toBe(true);
+  });
+
+  it("retries a detached Codex handoff after a full process-state restart", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    let firstProcessCall = 0;
+    const firstProcessCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      firstProcessCall += 1;
+      const worker = firstProcessCall === 2;
+      await options.onThreadStarted?.(worker ? "worker-codex-session" : "primary-codex-session");
+      if (!worker) {
+        return {
+          ...success(options, "execute the Codex handoff @worker"),
+          threadId: "primary-codex-session",
+        };
+      }
+      return {
+        ok: false,
+        reason: "exit:1",
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+        stderrPath: path.join(options.runDir, "stderr.log"),
+      };
+    });
+    const firstServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+        cli: "codex",
+        model: "gpt-5.6-sol",
+        effort: "high",
+      }),
+      runCodex: firstProcessCodex,
+      runExecution: createLocalExecutionRunner({ runCodex: firstProcessCodex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(firstServer);
+
+    await firstServer.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "detached-codex",
+    });
+    await post(firstServer.url, "start detached Codex work");
+    const failure = await waitForSystemEventMatching(
+      firstServer,
+      "default",
+      (message) => message.error === "exit:1",
+    );
+    expect(failure.runId).not.toBeNull();
+    await firstServer.close();
+    servers.splice(servers.indexOf(firstServer), 1);
+
+    const secondProcessCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("worker-codex-session");
+      return {
+        ...success(options, "CODEX_RESTART_RETRY_COMPLETED"),
+        threadId: "worker-codex-session",
+      };
+    });
+    const restartedServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => {
+        throw new Error("persisted team snapshot should be restored from SQLite");
+      },
+      runCodex: secondProcessCodex,
+      runExecution: createLocalExecutionRunner({ runCodex: secondProcessCodex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(restartedServer);
+
+    const retry = await fetch(retryUrl(restartedServer, "default", failure.runId!), {
+      method: "POST",
+    });
+    expect(retry.status).toBe(202);
+    await waitForAgent(restartedServer.url, "CODEX_RESTART_RETRY_COMPLETED");
+
+    expect(firstProcessCodex).toHaveBeenCalledTimes(2);
+    expect(secondProcessCodex).toHaveBeenCalledTimes(1);
+    expect(secondProcessCodex.mock.calls[0]?.[0].mode).toEqual({
+      kind: "resume",
+      threadId: "worker-codex-session",
+    });
+    const facts = await readFactEvents(restartedServer.runtime.getSessionFactLogPath("default"));
+    const workerStarts = facts.filter((fact) =>
+      fact.type === "provider_invocation"
+      && fact.payload.role === "worker"
+      && fact.payload.phase === "started");
+    expect(workerStarts).toHaveLength(2);
+    expect(new Set(workerStarts.map((fact) => fact.payload.requestedExternalSessionId)))
+      .toEqual(new Set([null, "worker-codex-session"]));
+  });
 });
 
 function snapshot(
@@ -890,6 +1584,29 @@ function snapshot(
       agentMarkdown: `# dev\n\n${markdown}`,
       executionProfile,
     }],
+  };
+}
+
+function detachedWorkerSnapshot(
+  workerProfile: LocalConsoleExecutionProfile,
+): LocalConsoleAgentTeamSnapshot {
+  return {
+    members: [
+      {
+        name: "manager",
+        agentMarkdown: "# manager\n\nDelegate work to @worker.",
+        executionProfile: {
+          cli: "codex",
+          model: "gpt-5.6-sol",
+          effort: "medium",
+        },
+      },
+      {
+        name: "worker",
+        agentMarkdown: "# worker\n\nComplete the delegated step.",
+        executionProfile: workerProfile,
+      },
+    ],
   };
 }
 
@@ -987,6 +1704,40 @@ async function waitForSystemEvent(
   throw new Error(`timed out waiting for ${systemEventKind}`);
 }
 
+async function waitForSystemEventMatching(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  predicate: (message: LocalConsoleMessage) => boolean,
+): Promise<LocalConsoleMessage> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const snapshot = await server.runtime.snapshot(sessionId);
+    const matching = snapshot.messages.find((message) =>
+      message.speaker === "system" && predicate(message));
+    if (matching !== undefined) {
+      return matching;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for matching system event in ${sessionId}`);
+}
+
+async function waitForSnapshotMatching(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  predicate: (snapshot: Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>) => boolean,
+): Promise<Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const snapshot = await server.runtime.snapshot(sessionId);
+    if (predicate(snapshot)) {
+      return snapshot;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for matching snapshot in ${sessionId}`);
+}
+
 async function waitForSessionSystemEvent(
   server: StartedLocalConsoleServer,
   sessionId: string,
@@ -1037,4 +1788,29 @@ function sandboxValue(options: readonly string[] | undefined): string | null {
   if (options === undefined) return null;
   const index = options.lastIndexOf("--sandbox");
   return index < 0 ? null : options[index + 1] ?? null;
+}
+
+function retryUrl(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  runId: string,
+): URL {
+  return new URL(
+    `/api/local-console/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/retry`,
+    server.url,
+  );
+}
+
+async function readFactEvents(logPath: string): Promise<Array<{
+  type: string;
+  payload: Record<string, unknown>;
+}>> {
+  return (await fs.readFile(logPath, "utf8"))
+    .trimEnd()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as {
+      type: string;
+      payload: Record<string, unknown>;
+    });
 }

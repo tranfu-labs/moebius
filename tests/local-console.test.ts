@@ -5,7 +5,10 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveTrigger } from "../src/triggers/index.js";
-import { buildLocalConsoleTimeline } from "../src/local-console/timeline.js";
+import {
+  buildLocalConsoleRoutingTimeline,
+  buildLocalConsoleTimeline,
+} from "../src/local-console/timeline.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import {
   startLocalConsoleServer as startLocalConsoleServerImpl,
@@ -1628,6 +1631,28 @@ describe("local console", { timeout: 15_000 }, () => {
       kind: "skip",
       reason: "no-trigger",
     });
+  });
+
+  it("routes a claimed source without treating newer execution context as the trigger", () => {
+    const agents = ["manager", "worker"];
+    const messages = [
+      message({ id: 1, speaker: "user", body: "start" }),
+      message({ id: 2, speaker: "agent", role: "manager", body: "take this @worker" }),
+      message({ id: 3, speaker: "system", body: "worker failed" }),
+      message({ id: 4, speaker: "agent", role: "manager", body: "new public context" }),
+    ];
+
+    const routingTimeline = buildLocalConsoleRoutingTimeline(messages, 2, agents);
+    expect(resolveTrigger({
+      timeline: routingTimeline,
+      availableAgentNames: agents,
+    })).toMatchObject({
+      kind: "run-agent",
+      role: "worker",
+    });
+
+    const executionTimeline = buildLocalConsoleTimeline(messages, agents);
+    expect(executionTimeline.at(-1)?.body).toContain("new public context");
   });
 
   it("runs a local HTTP message through fake Codex without calling gh", async () => {

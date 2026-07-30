@@ -3671,6 +3671,8 @@ function recordFailure(database: SqliteDatabase, input: Extract<SqliteStateComma
       input.now,
       source.speaker === "agent" ? "failed" : "displayed",
       input.systemEventKind ?? "run-not-started",
+      input.sourceKind ?? "local-message",
+      input.sourceId ?? null,
     );
     completeSourceMessage(database, source, "failed", input.error, input.runId, input.runDir, input.now);
     return null;
@@ -4208,15 +4210,17 @@ function insertSystemMessage(
   now: string,
   status = "displayed",
   systemEventKind: LocalConsoleSystemEventKind = "other",
+  sourceKind = "local-message",
+  sourceId: string | null = null,
 ): void {
   ensureSession(database, sessionId, now, undefined, LOCAL_CONSOLE_PROJECT_ID);
   database
     .prepare(
       `INSERT INTO session_messages
         (session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, source_kind, source_id, created_at, updated_at)
-      VALUES (?, 'system', NULL, ?, ?, ?, ?, ?, ?, 'local-message', NULL, ?, ?)`,
+      VALUES (?, 'system', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(sessionId, body, status, runId, runDir, error, systemEventKind, now, now);
+    .run(sessionId, body, status, runId, runDir, error, systemEventKind, sourceKind, sourceId, now, now);
 }
 
 function requireLocalMessage(database: SqliteDatabase, id: number, sessionId: string): WorkerLocalMessage {

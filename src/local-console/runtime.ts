@@ -33,7 +33,10 @@ import {
   selectLocalTimelineDelta,
 } from "./prompt.js";
 import type { LocalAttachmentManager } from "./attachments.js";
-import { buildLocalConsoleTimeline } from "./timeline.js";
+import {
+  buildLocalConsoleRoutingTimeline,
+  buildLocalConsoleTimeline,
+} from "./timeline.js";
 import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -309,6 +312,7 @@ export class LocalConsoleRuntime {
   private readonly workerWakeTasks = new Set<Promise<void>>();
   private readonly workerLaneTails = new Map<string, Promise<void>>();
   private readonly activeRuns = new Map<string, ActiveLocalRun>();
+  private readonly retryAdmissions = new Map<string, Promise<boolean>>();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
   private closing = false;
@@ -1123,6 +1127,43 @@ export class LocalConsoleRuntime {
   }
 
   async retryRun(input: { sessionId: string; runId: string }): Promise<boolean> {
+    const admission = await this.prepareRetryAdmission(input);
+    if (admission === null) {
+      return false;
+    }
+    const key = [
+      admission.sessionId,
+      admission.targetRunId,
+      String(admission.source.id),
+      admission.role ?? "",
+      "retry",
+    ].join("\u0000");
+    const pending = this.retryAdmissions.get(key);
+    if (pending !== undefined) {
+      return await pending;
+    }
+    const accepted = this.acceptRetryAdmission(admission);
+    this.retryAdmissions.set(key, accepted);
+    try {
+      return await accepted;
+    } finally {
+      if (this.retryAdmissions.get(key) === accepted) {
+        this.retryAdmissions.delete(key);
+      }
+    }
+  }
+
+  private async prepareRetryAdmission(input: {
+    sessionId: string;
+    runId: string;
+  }): Promise<{
+    sessionId: string;
+    targetRunId: string;
+    source: LocalConsoleMessage;
+    role: string | null;
+    recoveryStore: CodexRecoveryFactStore | null;
+    recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
+  } | null> {
     await this.assertSessionCanContinue(input.sessionId);
     const messages = await this.storeCall("local-console-store-list-retry-source", () =>
       this.options.store.listMessages(input.sessionId));
@@ -1130,50 +1171,98 @@ export class LocalConsoleRuntime {
       message.runId === input.runId
       && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"));
     if (terminal === undefined) {
-      return false;
+      return null;
     }
     const recoveryStore = this.codexRecoveryFactStore();
-    const [executionLinks, codexLinks] = recoveryStore === null
-      ? [[], []]
+    const [executionLinks, codexLinks, recoveryFacts] = recoveryStore === null
+      ? [[], [], {
+          intents: [],
+          consumedIntentIds: new Set<string>(),
+          repairedIntentIds: new Set<string>(),
+        }]
       : await Promise.all([
           readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
           readCodexThreadLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
+          readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
         ]);
     const link = executionLinks.find((candidate) => candidate.runId === input.runId)
       ?? codexLinks.find((candidate) => candidate.runId === input.runId);
+    const linkedRetryIntent = terminal.error === "retry-source-trigger-missing"
+      && terminal.sourceKind === "local-retry-intent"
+      && terminal.sourceId !== null
+      ? recoveryFacts.intents.find((intent) =>
+          intent.sessionId === input.sessionId
+          && intent.intentId === terminal.sourceId
+          && intent.reason === "retry"
+          && !recoveryFacts.consumedIntentIds.has(intent.intentId))
+      : undefined;
+    if (
+      terminal.error === "retry-source-trigger-missing"
+      && linkedRetryIntent === undefined
+    ) {
+      return null;
+    }
     const source = link === undefined
-      ? messages.find((message) =>
-          message.runId === input.runId
-          && message.speaker !== "system"
-          && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"))
+      ? linkedRetryIntent === undefined
+        ? messages.find((message) =>
+            message.runId === input.runId
+            && message.speaker !== "system"
+            && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"))
+        : messages.find((message) =>
+            message.id === linkedRetryIntent.sourceMessageId
+            && message.speaker !== "system")
       : messages.find((message) =>
           message.id === link.sourceMessageId
           && message.speaker !== "system");
     if (source === undefined) {
-      return false;
+      return null;
     }
-    const role = link?.role ?? source.role;
+    const role = link?.role ?? linkedRetryIntent?.role ?? source.role;
+    return {
+      sessionId: input.sessionId,
+      targetRunId: linkedRetryIntent?.targetRunId ?? input.runId,
+      source,
+      role,
+      recoveryStore,
+      recoveryFacts,
+    };
+  }
+
+  private async acceptRetryAdmission(input: {
+    sessionId: string;
+    targetRunId: string;
+    source: LocalConsoleMessage;
+    role: string | null;
+    recoveryStore: CodexRecoveryFactStore | null;
+    recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
+  }): Promise<boolean> {
     if (
-      role !== null
-      && this.activeRunForRole(input.sessionId, role) !== undefined
+      input.role !== null
+      && this.activeRunForRole(input.sessionId, input.role) !== undefined
     ) {
       throw new LocalConsoleBusyError();
     }
-    if (recoveryStore !== null && role !== null) {
+    const existingIntent = input.recoveryFacts.intents.find((intent) =>
+      intent.targetRunId === input.targetRunId
+      && intent.sourceMessageId === input.source.id
+      && intent.role === input.role
+      && intent.reason === "retry"
+      && !input.recoveryFacts.consumedIntentIds.has(intent.intentId));
+    if (input.recoveryStore !== null && input.role !== null && existingIntent === undefined) {
       await this.storeCall("local-console-store-record-user-retry", () =>
-        recoveryStore.recordCodexResumeIntent({
+        input.recoveryStore!.recordCodexResumeIntent({
           sessionId: input.sessionId,
           intentId: crypto.randomUUID(),
-          targetRunId: input.runId,
-          sourceMessageId: source.id,
-          role,
+          targetRunId: input.targetRunId,
+          sourceMessageId: input.source.id,
+          role: input.role!,
           reason: "retry",
           createdAt: this.nowIso(),
         }));
     }
     await this.storeCall("local-console-store-release-user-retry", () =>
       this.options.store.releaseMessageForRetry({
-        userMessageId: source.id,
+        userMessageId: input.source.id,
         sessionId: input.sessionId,
         now: this.nowIso(),
       }));
@@ -1601,14 +1690,16 @@ export class LocalConsoleRuntime {
             timelineMessages,
             agentFiles.map((agent) => agent.name),
           );
+          const routingTimeline = buildLocalConsoleRoutingTimeline(
+            timelineMessages,
+            claimedMessage.id,
+            agentFiles.map((agent) => agent.name),
+          );
           const explicitTrigger = resolveTrigger({
             // Runs can complete out of submission order when roles execute in parallel.
-            // Route the claimed Agent response from its own body, never from whichever
-            // later user message currently sorts last in the shared timeline.
-            timeline: buildLocalConsoleTimeline(
-              [claimedMessage],
-              agentFiles.map((agent) => agent.name),
-            ),
+            // Keep the public context through the claimed source, but never route from
+            // whichever later message currently sorts last in the shared timeline.
+            timeline: routingTimeline,
             availableAgentNames: agentFiles.map((agent) => agent.name),
           });
           const primaryAgent = agentFiles[0]?.name ?? null;
@@ -1622,6 +1713,35 @@ export class LocalConsoleRuntime {
 
           if (trigger.kind !== "run-agent") {
             if (claimedMessage.speaker === "agent") {
+              const recoveryStore = this.codexRecoveryFactStore();
+              const recoveryFacts = recoveryStore === null
+                ? null
+                : await readLocalCodexRecoveryFacts(
+                    recoveryStore.getSessionFactLogPath(sessionId),
+                    sessionId,
+                  );
+              const retryIntent = recoveryFacts === null
+                ? undefined
+                : [...recoveryFacts.intents].reverse().find((intent) =>
+                    intent.reason === "retry"
+                    && intent.sourceMessageId === claimedMessage.id
+                    && !recoveryFacts.consumedIntentIds.has(intent.intentId));
+              if (retryIntent !== undefined) {
+                await this.storeCall("local-console-store-record-retry-trigger-missing", () =>
+                  this.options.store.recordFailure({
+                    userMessageId: claimedMessage.id,
+                    sessionId,
+                    error: "retry-source-trigger-missing",
+                    runId: nextRunId,
+                    runDir: null,
+                    body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+                    systemEventKind: "run-not-started",
+                    sourceKind: "local-retry-intent",
+                    sourceId: retryIntent.intentId,
+                    now: this.nowIso(),
+                  }));
+                continue;
+              }
               await this.storeCall("local-console-store-primary-closeout-complete", () =>
                 this.options.store.recordMessageProcessed({
                   userMessageId: claimedMessage.id,

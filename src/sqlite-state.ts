@@ -329,6 +329,8 @@ export type SqliteStateCommand =
       now: string;
       body?: string;
       systemEventKind?: import("./local-console/types.js").LocalConsoleSystemEventKind;
+      sourceKind?: string | null;
+      sourceId?: string | null;
     }
   | {
       kind: "local-record-retryable-failure";

@@ -18,6 +18,21 @@ export function buildLocalConsoleTimeline(
   );
 }
 
+export function buildLocalConsoleRoutingTimeline(
+  messages: readonly LocalConsoleMessage[],
+  claimedMessageId: number,
+  availableAgentNames: readonly string[],
+): TimelineMessage[] {
+  const claimedIndex = messages.findIndex((message) => message.id === claimedMessageId);
+  if (claimedIndex === -1) {
+    throw new Error(`claimed local console message is absent from timeline: ${String(claimedMessageId)}`);
+  }
+  return buildLocalConsoleTimeline(
+    messages.slice(0, claimedIndex + 1),
+    availableAgentNames,
+  );
+}
+
 function formatLocalMessageBody(message: LocalConsoleMessage): string {
   const body = withTextFragments(message.body, message.textFragments ?? []);
   if (message.speaker === "agent" && message.role !== null) {
