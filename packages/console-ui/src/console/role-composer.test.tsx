@@ -150,6 +150,57 @@ describe("RoleComposer", () => {
     expect(onInterrupt).toHaveBeenCalledTimes(1);
   });
 
+  it("aligns the main stop glyph without changing the embedded stop density", () => {
+    const { rerender } = render(
+      <RoleComposer
+        value=""
+        onValueChange={vi.fn()}
+        runActive
+        onInterrupt={vi.fn()}
+        variant="main"
+      />,
+    );
+    const mainStop = screen.getByRole("button", { name: "停下主理人" });
+    expect(mainStop).toHaveClass("h-8", "w-8");
+    expect(mainStop.querySelector("svg")).toHaveClass("h-4", "w-4");
+
+    rerender(
+      <RoleComposer
+        value=""
+        onValueChange={vi.fn()}
+        runActive
+        onInterrupt={vi.fn()}
+        variant="embedded"
+      />,
+    );
+    const embeddedStop = screen.getByRole("button", { name: "停下主理人" });
+    expect(embeddedStop).toHaveClass("h-8", "w-8");
+    expect(embeddedStop.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
+  });
+
+  it("isolates the single-line 120px main layout from the embedded composer", () => {
+    const { rerender } = render(
+      <RoleComposer value="" onValueChange={vi.fn()} variant="main" />,
+    );
+    const mainInput = screen.getByRole("textbox");
+    const mainBox = mainInput.closest("[data-layout-variant='main']");
+    expect(screen.getByTestId("main-role-composer")).toContainElement(mainBox as HTMLElement);
+
+    expect(mainInput).toHaveAttribute("rows", "1");
+    expect(mainInput).toHaveClass("max-h-[120px]", "min-h-8");
+    expect(mainBox).toHaveClass("bg-card", "rounded-[14px]", "border-line");
+
+    rerender(<RoleComposer value="" onValueChange={vi.fn()} />);
+    const embeddedInput = screen.getByRole("textbox");
+    expect(embeddedInput).toHaveAttribute("rows", "2");
+    expect(embeddedInput).toHaveClass("min-h-[76px]");
+    expect(embeddedInput).not.toHaveClass("max-h-[120px]");
+    expect(embeddedInput.closest("[data-layout-variant='embedded']")).toHaveClass("bg-input");
+    expect(screen.getByTestId("embedded-role-composer")).toContainElement(
+      embeddedInput.closest("[data-layout-variant='embedded']") as HTMLElement,
+    );
+  });
+
   it("uses only the supplied team's members for completion", () => {
     render(<ControlledComposer initialValue="@" roles={teamRoles} />);
     const input = screen.getByRole("textbox");

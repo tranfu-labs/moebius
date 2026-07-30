@@ -216,6 +216,72 @@ export const PrimaryControlLanes: Story = {
   },
 };
 
+export const DashboardShellAlignment: Story = {
+  args: {
+    projects: [
+      {
+        ...sample.project,
+        sessions: [
+          ...sessions,
+          {
+            ...sessions[2]!,
+            sessionId: "unread-root",
+            parentSessionId: null,
+            title: "长消息版式复核",
+          },
+        ],
+      },
+      {
+        ...sample.project,
+        projectId: "marketing",
+        title: "marketing-site",
+        folderPath: "/Users/example/marketing-site",
+        sessions: [
+          {
+            ...sessions[0]!,
+            projectId: "marketing",
+            sessionId: "marketing-waiting",
+            title: "官网分享卡片",
+          },
+        ],
+      },
+    ],
+    messages: [
+      {
+        ...sample.messages[0]!,
+        body: "请把左侧栏、长消息、活动记录和输入框统一到同一条 dashboard 内容轴。",
+      },
+      {
+        ...sample.messages[1]!,
+        body: [
+          "## 对齐说明",
+          "",
+          "这是一段用于检查 68ch 阅读宽度的长回复。它保留 Markdown、完整输出和成员身份，同时让正文从 24px 头像左缘向右缩进 32px。",
+          "",
+          "窗口变窄后，标题、消息、活动 run、待发射区和 composer 应该共同收缩，不能让根页面产生横向滚动。",
+        ].join("\n"),
+      },
+    ],
+    pendingPrimaryMessages: [
+      {
+        ...sample.messages[0]!,
+        id: 41,
+        body: "等待主理人结束后继续核对窄窗。",
+        status: "pending",
+      },
+    ],
+    composerValue: "补充一条带附件的草稿",
+    rightSidebarOpen: false,
+  },
+};
+
+export const DashboardShellWithRightSidebar: Story = {
+  args: {
+    ...DashboardShellAlignment.args,
+    rightSidebarOpen: true,
+  },
+};
+
 export const T65Outcomes: Story = {
   args: {
     activeRun: null,

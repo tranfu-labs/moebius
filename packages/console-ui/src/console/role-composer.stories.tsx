@@ -41,3 +41,31 @@ export const ExistingMentionBlocked: Story = {
   },
   render: MentionCompletion.render
 };
+
+export const MainDashboardLayout: Story = {
+  args: {
+    variant: "main",
+    value: "主会话输入框从单行起步，并随正文增长到 120px。",
+    runActive: true,
+    onInterrupt: () => undefined,
+  },
+  render: (args) => (
+    <div className="w-[840px] max-w-[calc(100vw-64px)]">
+      <RoleComposer {...args} />
+    </div>
+  ),
+};
+
+export const EmbeddedLayoutIsolation: Story = {
+  args: {
+    variant: "embedded",
+    value: "右侧栏继续使用原有密度。",
+    runActive: true,
+    onInterrupt: () => undefined,
+  },
+  render: (args) => (
+    <div className="w-[360px]">
+      <RoleComposer {...args} />
+    </div>
+  ),
+};

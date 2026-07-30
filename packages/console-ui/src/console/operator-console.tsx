@@ -160,11 +160,13 @@ export type OperatorApplicationView = "conversation" | "agent-teams";
 export type OperatorProjectListState = "ready" | "loading" | "error";
 export type OperatorApplicationOverlay = { kind: "search" };
 
-export const DEFAULT_SIDEBAR_WIDTH_PX = 248;
+export const DEFAULT_SIDEBAR_WIDTH_PX = 252;
 export const MIN_SIDEBAR_WIDTH_PX = 220;
 export const MAX_SIDEBAR_WIDTH_PX = 360;
 export const NARROW_WINDOW_WIDTH_PX = 760;
 export const STACKED_TEAM_ROW_WINDOW_WIDTH_PX = 1024;
+export const CONVERSATION_DOCK_GAP_PX = 12;
+const INITIAL_CONVERSATION_DOCK_HEIGHT_PX = 176;
 interface SidebarResizeGesture {
   pointerId: number;
   startX: number;
@@ -724,6 +726,7 @@ export function OperatorConsole({
   const followTimelineRef = useRef(true);
   const parentScrollTopRef = useRef(0);
   const parentConversationPaneRef = useRef<HTMLDivElement | null>(null);
+  const conversationDockRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
   const restoredReadingSessionRef = useRef<string | null>(null);
   const conversationFocusFrameRef = useRef<number | null>(null);
@@ -738,6 +741,9 @@ export function OperatorConsole({
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
   const [relayFeedback, setRelayFeedback] = useState("");
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const [conversationDockHeight, setConversationDockHeight] = useState(
+    INITIAL_CONVERSATION_DOCK_HEIGHT_PX,
+  );
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
   const [fileReferenceContents, setFileReferenceContents] = useState<Record<string, FileReferenceContent>>({});
@@ -905,6 +911,22 @@ export function OperatorConsole({
     return () => observer.disconnect();
   }, [applicationView, newConversation]);
 
+  useLayoutEffect(() => {
+    const dock = conversationDockRef.current;
+    if (dock === null) return;
+    const update = () => {
+      const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
+      if (nextHeight > 0) {
+        setConversationDockHeight((current) => current === nextHeight ? current : nextHeight);
+      }
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [applicationView, newConversation]);
+
   useEffect(() => () => {
     if (conversationFocusFrameRef.current !== null) {
       window.cancelAnimationFrame(conversationFocusFrameRef.current);
@@ -959,6 +981,7 @@ export function OperatorConsole({
       }
     }
   }, [
+    conversationDockHeight,
     conversationRelayEvents,
     messages.length,
     displayedActiveRuns.map((run) => `${run.runId}:${run.lastOutputSummary}:${run.liveMarkdown ?? ""}`).join("|"),
@@ -1231,7 +1254,7 @@ export function OperatorConsole({
   return (
     <div className={cn(
       "relative flex overflow-hidden bg-canvas text-ink",
-      embeddedConversation ? "h-full min-h-0" : "h-screen min-h-[560px]",
+      embeddedConversation ? "h-full min-h-0" : "h-screen min-h-0",
       className,
     )}>
       {!embeddedConversation && activeCliInstallations.length > 0 ? (
@@ -1254,7 +1277,7 @@ export function OperatorConsole({
       ) : null}
       {!embeddedConversation ? <aside
         className={cn(
-          "relative shrink-0 flex-col overflow-hidden border-r border-line bg-rail",
+          "relative shrink-0 flex-col overflow-hidden border-r border-line bg-canvas",
           effectiveSidebarOpen ? "flex" : "hidden",
         )}
         data-testid="operator-sidebar"
@@ -1262,7 +1285,7 @@ export function OperatorConsole({
         style={{ width: `${sidebarWidth}px` }}
       >
         <header
-          className="window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center justify-end pl-[76px] pr-2"
+          className="window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center justify-end pl-[78px] pr-2.5"
           data-testid="sidebar-window-controls"
         >
           <button
@@ -1285,7 +1308,7 @@ export function OperatorConsole({
         </div>
 
         <nav
-          className="shrink-0 space-y-1 px-2.5 pb-1 pt-3"
+          className="shrink-0 space-y-0.5 px-2.5 pb-1 pt-1.5"
           aria-label={translate(activeLocale, "sidebar.navigation")}
           data-testid="sidebar-app-actions"
         >
@@ -1322,7 +1345,7 @@ export function OperatorConsole({
           />
         </nav>
 
-        <div className="flex shrink-0 items-center justify-between px-5 pb-1.5 pt-4 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+        <div className="flex shrink-0 items-center justify-between px-5 pb-1.5 pt-[18px] text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
           <span>{translate(activeLocale, "sidebar.projects")}</span>
           {projectConfigurationPending
             ? <span role="status">{translate(activeLocale, "sidebar.updating")}</span>
@@ -1408,7 +1431,7 @@ export function OperatorConsole({
           className="min-h-0 w-full flex-1 overflow-hidden border-0"
         />
 
-        <footer className="shrink-0 border-t border-line p-2" data-testid="sidebar-footer">
+        <footer className="shrink-0 border-t border-line px-2.5 pb-3 pt-2" data-testid="sidebar-footer">
           <SidebarAction
             icon={CircleHelp}
             label={translate(activeLocale, "sidebar.help")}
@@ -1467,7 +1490,7 @@ export function OperatorConsole({
         data-sidebar-auto-collapsed={sidebarAutoCollapsed ? "true" : "false"}
       >
         {!embeddedConversation ? <div
-          className="window-drag-region absolute inset-x-0 top-0 z-30 flex h-[var(--window-header-height)] items-center"
+          className="window-drag-region absolute inset-x-0 top-0 z-30 flex h-[var(--window-header-height)] items-center border-b border-line"
           data-testid="main-window-drag-region"
         >
           {!effectiveSidebarOpen ? (
@@ -1596,11 +1619,9 @@ export function OperatorConsole({
             >
             {selectedSession !== null && conversationRelayEvents.length > 0 ? (
               <div
-                className={cn(
-                  "pointer-events-none absolute left-3 top-[var(--window-header-height)] z-20 w-11",
-                  visiblePendingDispatches.length > 0 ? "bottom-72" : "bottom-40",
-                )}
+                className="pointer-events-none absolute left-3 top-[var(--window-header-height)] z-20 w-11"
                 data-testid="main-conversation-relay-slot"
+                style={{ bottom: `${conversationDockHeight}px` }}
               >
                 <ConversationRelayRail
                   containerWidth={conversationPaneWidth}
@@ -1614,12 +1635,10 @@ export function OperatorConsole({
               </div>
             ) : null}
             <section
-              className={cn(
-                "scroll-thin min-h-0 flex-1 overflow-auto",
-                visiblePendingDispatches.length > 0 ? "pb-72" : "pb-44",
-              )}
+              className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
               aria-label={t("console.operator.timeline")}
               ref={timelineScrollRef}
+              style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
               onScroll={(event) => {
                 const timeline = event.currentTarget;
                 const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
@@ -1735,6 +1754,7 @@ export function OperatorConsole({
                       return (
                         <div data-testid="active-run-block" data-run-id={run.runId} key={run.runId}>
                           <RunBlock
+                            variant="main"
                             role={run.role ?? "dev"}
                             memberIdentities={memberIdentities}
                             elapsedMs={run.elapsedMs}
@@ -1768,7 +1788,7 @@ export function OperatorConsole({
                                   messageId: null,
                                 })}
                             interruptLabel={!isPrimaryRun ? t("console.runBlock.stopMember", { member: roleLabel }) : undefined}
-                            className="mt-4 max-w-none"
+                            className="mt-3 max-w-none"
                           />
                         </div>
                       );
@@ -1806,10 +1826,9 @@ export function OperatorConsole({
             {showJumpToBottom ? (
               <button
                 type="button"
-                className={cn(
-                  "absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub hover:text-ink",
-                  visiblePendingDispatches.length > 0 ? "bottom-64" : "bottom-36",
-                )}
+                className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub hover:text-ink"
+                data-testid="jump-to-bottom"
+                style={{ bottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
                 onClick={() => {
                   const timeline = timelineScrollRef.current;
                   if (timeline !== null) {
@@ -1825,10 +1844,12 @@ export function OperatorConsole({
             ) : null}
 
             <div
+              ref={conversationDockRef}
               className={cn(
-                "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-5 pt-3",
+                "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-4 pt-3",
                 MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
               )}
+              data-testid="conversation-bottom-dock"
             >
                 {visiblePendingDispatches.length > 0 ? (
                   <section
@@ -1870,6 +1891,7 @@ export function OperatorConsole({
                   </section>
                 ) : null}
                 <RoleComposer
+                  variant="main"
                   value={composerValue}
                   attachments={composerAttachments}
                   onValueChange={onComposerChange}
@@ -2481,7 +2503,7 @@ function SidebarAction({
       ref={buttonRef}
       type="button"
       className={cn(
-        "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-ink hover:bg-hover",
+        "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13.5px] font-medium text-ink hover:bg-hover",
         selected ? "bg-sel" : "bg-transparent",
       )}
       aria-label={label}
@@ -2492,7 +2514,7 @@ function SidebarAction({
       onClick={onClick}
     >
       <Icon
-        className={cn("h-[18px] w-[18px] shrink-0", selected ? "text-ink" : "text-sub")}
+        className={cn("h-4 w-4 shrink-0", selected ? "text-ink" : "text-sub")}
         strokeWidth={1.5}
         aria-hidden="true"
       />
@@ -2722,14 +2744,14 @@ function TimelineEntry({
 
   if (message.speaker === "user") {
     return (
-      <div className="group py-4 text-sm">
+      <div className="group py-3 text-sm">
         <div className="mb-1.5 flex items-center justify-end gap-2 text-[12.5px] text-sub">
           <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
           <span className="font-semibold text-ink">{t("console.common.you")}</span>
-          <RoleTag label={t("console.common.you")} toneKey="user" />
+          <RoleTag label={t("console.common.you")} toneKey="user" className="h-6 w-6 text-xs" />
         </div>
         <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
+          <div className="max-w-[75%] rounded-[10px] border border-line bg-card px-3 py-2">
             {message.body.trim() === "" ? null : (
               <MarkdownMessage
                 content={message.body}
@@ -2758,7 +2780,7 @@ function TimelineEntry({
 
   return (
     <div
-      className="group py-4 text-sm"
+      className="group py-3 text-sm"
       tabIndex={message.speaker === "agent" && onAnalyzeConversation ? 0 : undefined}
       onContextMenu={message.speaker === "agent" ? openAnalysisMenu : undefined}
       onKeyDown={message.speaker === "agent" && onAnalyzeConversation
@@ -2774,6 +2796,7 @@ function TimelineEntry({
           <RoleTag
             label={resolveOperatorMemberName(message.role, memberIdentities, t)}
             toneKey={message.role ?? "agent"}
+            className="h-6 w-6 text-xs"
           />
         ) : null}
         <span className="font-semibold text-ink">
@@ -2805,7 +2828,7 @@ function TimelineEntry({
           />
         ) : null}
       </div>
-      <div className="relative pl-7">
+      <div className="relative max-w-[68ch] pl-8">
       {message.speaker === "system" ? (
         <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message, t)}</div>
       ) : (
@@ -2833,7 +2856,7 @@ function TimelineEntry({
       && message.runTiming?.processOutputAvailable !== false ? (
         <button
           type="button"
-          className="absolute left-7 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
+          className="absolute left-8 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
           aria-label={t("console.common.fullOutput")}
           title={t("console.common.fullOutput")}
           onClick={() => onOpenEvidence({

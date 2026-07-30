@@ -72,6 +72,7 @@ export interface RoleComposerProps {
   onInterrupt?: () => void;
   roles?: readonly RoleCompletion[];
   context?: React.ReactNode;
+  variant?: "main" | "embedded";
   className?: string;
 }
 
@@ -218,6 +219,7 @@ export function RoleComposer({
   onAttachmentRemove,
   onAttachmentRetry,
   onTextFragmentRemove,
+  variant = "embedded",
 }: RoleComposerProps): JSX.Element {
   const { t } = useI18n();
   const roleOptions = roles ?? localizedRoleCompletions(t);
@@ -265,6 +267,13 @@ export function RoleComposer({
     inputRef.current.focus();
     inputRef.current.setSelectionRange(nextCaret, nextCaret);
   }, [value]);
+
+  React.useLayoutEffect(() => {
+    if (variant !== "main" || inputRef.current === null) {
+      return;
+    }
+    resizeMainTextarea(inputRef.current);
+  }, [value, variant]);
 
   const updateCaretFromInput = (input: HTMLTextAreaElement) => {
     setCaret(input.selectionStart ?? input.value.length);
@@ -316,7 +325,10 @@ export function RoleComposer({
   };
 
   return (
-    <div className={cn("relative w-full", className)}>
+    <div
+      className={cn("relative w-full", className)}
+      data-testid={variant === "main" ? "main-role-composer" : "embedded-role-composer"}
+    >
       {panelOpen ? (
         <div
           id={listboxId}
@@ -353,9 +365,11 @@ export function RoleComposer({
 
       <div
         className={cn(
-          "relative overflow-hidden rounded-[14px] border border-line bg-input",
+          "relative overflow-hidden rounded-[14px] border border-line",
+          variant === "main" ? "flex flex-col gap-2 bg-card px-3 pb-3 pt-2.5" : "bg-input",
           dragActive && "border-accent ring-2 ring-accent/20",
         )}
+        data-layout-variant={variant}
         onDragEnter={(event) => {
           if (!disabled && event.dataTransfer.types.includes("Files")) {
             event.preventDefault();
@@ -379,25 +393,29 @@ export function RoleComposer({
           }
         }}
       >
-        {context ? <div className="px-3 pt-2">{context}</div> : null}
+        {context ? <div className={variant === "main" ? "" : "px-3 pt-2"}>{context}</div> : null}
         <TextFragmentList
           fragments={textFragments}
           mode="draft"
-          className="border-b border-line px-3.5 py-3"
+          className={variant === "main"
+            ? "-mx-3 border-b border-line px-3 pb-2"
+            : "border-b border-line px-3.5 py-3"}
           onRemove={onTextFragmentRemove}
         />
         <StructuredAttachmentList
           attachments={attachments}
           mode="draft"
-          className="border-b border-line px-3.5 py-3"
+          className={variant === "main"
+            ? "-mx-3 border-b border-line px-3 pb-2"
+            : "border-b border-line px-3.5 py-3"}
           onRemove={onAttachmentRemove}
           onRetry={onAttachmentRetry}
         />
-        <div className="relative min-h-[76px]">
+        <div className={variant === "main" ? "flex min-h-8 items-end gap-2" : "relative min-h-[76px]"}>
           <textarea
             ref={inputRef}
             value={value}
-            rows={2}
+            rows={variant === "main" ? 1 : 2}
             disabled={disabled}
             placeholder={resolvedPlaceholder}
             aria-label={t("console.roleComposer.message")}
@@ -405,11 +423,14 @@ export function RoleComposer({
             aria-expanded={panelOpen}
             aria-controls={panelOpen ? listboxId : undefined}
             className={cn(
-              "block min-h-[76px] w-full resize-none bg-transparent px-4 py-3.5 text-sm leading-6 text-ink outline-none placeholder:text-hint disabled:cursor-not-allowed",
-              runActive ? "pr-32" : "pr-24",
+              "block w-full resize-none bg-transparent text-sm text-ink outline-none placeholder:text-hint disabled:cursor-not-allowed",
+              variant === "main"
+                ? "min-h-8 max-h-[120px] flex-1 overflow-y-auto px-0 py-[5px] leading-[22px]"
+                : cn("min-h-[76px] px-4 py-3.5 leading-6", runActive ? "pr-32" : "pr-24"),
             )}
             onChange={(event) => {
               setClosedTriggerKey(null);
+              if (variant === "main") resizeMainTextarea(event.currentTarget);
               onValueChange(event.currentTarget.value);
               updateCaretFromInput(event.currentTarget);
             }}
@@ -452,8 +473,9 @@ export function RoleComposer({
             variant="outline"
             size="icon"
             className={cn(
-              "absolute bottom-3 h-8 w-8 rounded-[10px] border-line bg-transparent p-0 text-sub hover:bg-hover hover:text-ink",
-              runActive ? "right-[84px]" : "right-12",
+              "h-8 w-8 shrink-0 rounded-[10px] border-line bg-transparent p-0 text-sub hover:bg-hover hover:text-ink",
+              variant === "embedded" && "absolute bottom-3",
+              variant === "embedded" && (runActive ? "right-[84px]" : "right-12"),
             )}
             disabled={disabled}
             aria-label={t("console.roleComposer.addAttachment")}
@@ -466,7 +488,10 @@ export function RoleComposer({
             <Button
               type="button"
               size="icon"
-              className="absolute bottom-3 right-12 h-8 w-8 rounded-[10px] bg-ink p-0 text-canvas hover:opacity-85"
+              className={cn(
+                "h-8 w-8 shrink-0 rounded-[10px] bg-ink p-0 text-canvas hover:opacity-85",
+                variant === "embedded" && "absolute bottom-3 right-12",
+              )}
               disabled={!canSubmit}
               aria-label={resolvedSubmitLabel}
               title={resolvedSubmitLabel}
@@ -479,7 +504,8 @@ export function RoleComposer({
             type="button"
             size="icon"
             className={cn(
-              "absolute bottom-3 right-3 h-8 w-8 rounded-[10px] p-0",
+              "h-8 w-8 shrink-0 rounded-[10px] p-0",
+              variant === "embedded" && "absolute bottom-3 right-3",
               runActive
                 ? "bg-[var(--status-danger-bg)] text-danger hover:bg-[var(--status-danger-bg)] hover:opacity-85"
                 : "bg-ink text-canvas hover:opacity-85",
@@ -490,7 +516,11 @@ export function RoleComposer({
             onClick={runActive ? onInterrupt : () => onSubmit?.(value, readyAttachmentIds)}
           >
             {runActive ? (
-              <Square className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              <Square
+                className={variant === "main" ? "h-4 w-4" : "h-3.5 w-3.5"}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
             ) : (
               <ArrowUp className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             )}
@@ -508,6 +538,13 @@ function matchingRoles(roles: readonly RoleCompletion[], query: string): readonl
   }
 
   return roles.filter((role) => role.handle.startsWith(query));
+}
+
+function resizeMainTextarea(input: HTMLTextAreaElement): void {
+  input.style.height = "auto";
+  const nextHeight = Math.max(32, Math.min(input.scrollHeight, 120));
+  input.style.height = `${nextHeight}px`;
+  input.style.overflowY = input.scrollHeight > 120 ? "auto" : "hidden";
 }
 
 function escapeRegExp(value: string): string {

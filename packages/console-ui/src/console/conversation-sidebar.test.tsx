@@ -132,9 +132,38 @@ describe("ConversationSidebar", () => {
     const onSelectSession = vi.fn();
     render(<ConversationSidebar projects={[project]} selectedSessionId="idle-refactor" onSelectSession={onSelectSession} />);
 
-    expect(screen.getByRole("button", { name: "导出功能重构" })).toHaveAttribute("aria-current", "page");
+    const selected = screen.getByRole("button", { name: "导出功能重构" });
+    expect(selected).toHaveAttribute("aria-current", "page");
+    expect(selected).toHaveClass("h-8", "rounded-lg", "pl-7", "bg-sel");
+    expect(selected).not.toHaveTextContent(/»|>>/u);
     fireEvent.click(screen.getByRole("button", { name: "进度提示，正在运行" }));
     expect(onSelectSession).toHaveBeenCalledWith("running-progress", "moebius");
+  });
+
+  it("keeps icon hit targets while aligning project and session action glyphs", () => {
+    render(
+      <ConversationSidebar
+        projects={[project]}
+        onNewConversation={vi.fn()}
+        onRenameProject={vi.fn()}
+        onArchiveSession={vi.fn()}
+      />,
+    );
+
+    const projectToggle = screen.getByTestId("conversation-sidebar-project-toggle");
+    expect(projectToggle.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
+
+    const newConversation = screen.getByRole("button", { name: "在 moebius 中新建会话" });
+    expect(newConversation).toHaveClass("h-7", "w-7");
+    expect(newConversation.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
+
+    const projectMenu = screen.getByRole("button", { name: "moebius 项目菜单" });
+    expect(projectMenu).toHaveClass("h-7", "w-7");
+    expect(projectMenu.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
+
+    const sessionMenu = screen.getByRole("button", { name: /进度提示.*菜单/u });
+    expect(sessionMenu).toHaveClass("h-6", "w-6");
+    expect(sessionMenu.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
   });
 
   it("exposes red, blue, blinking, and no-dot meanings without relying on color", () => {

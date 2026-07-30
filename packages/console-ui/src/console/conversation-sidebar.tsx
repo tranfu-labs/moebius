@@ -292,10 +292,10 @@ export function ConversationSidebar({
 
   return (
     <aside
-      className={cn("flex w-[248px] flex-col bg-rail text-ink", className)}
+      className={cn("flex w-[252px] flex-col bg-canvas text-ink", className)}
       aria-label={t("console.conversationSidebar.label")}
     >
-      <nav className="scroll-thin min-h-0 flex-1 overflow-auto px-2 pb-2" aria-label={t("console.conversationSidebar.projectList")}>
+      <nav className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2.5 pb-2" aria-label={t("console.conversationSidebar.projectList")}>
         {dataState === "loading" ? (
           <ProjectListSkeleton />
         ) : dataState === "error" ? (
@@ -336,7 +336,7 @@ export function ConversationSidebar({
                 data-testid="conversation-sidebar-project"
                 data-project-id={project.id}
                 className={cn(
-                  "mb-0.5 flex min-w-0 cursor-grab touch-none select-none items-center gap-2 rounded-md px-2 py-1.5 hover:bg-hover",
+                  "mb-0.5 flex h-8 min-w-0 cursor-grab touch-none select-none items-center gap-1.5 rounded-lg px-2 hover:bg-hover",
                   draggingProjectId === project.id && "cursor-grabbing bg-sel opacity-80",
                 )}
                 onPointerDown={(event) => {
@@ -409,12 +409,12 @@ export function ConversationSidebar({
                   }}
                 >
                   <ChevronRight
-                    className={cn("h-4 w-4 shrink-0 text-sub transition-transform", expanded && "rotate-90")}
+                    className={cn("h-3.5 w-3.5 shrink-0 text-sub transition-transform", expanded && "rotate-90")}
                     strokeWidth={1.5}
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-sm font-semibold leading-5" title={projectName}>{projectName}</h2>
+                    <h2 className="truncate text-[13.5px] font-semibold leading-5" title={projectName}>{projectName}</h2>
                     {showProjectPath ? <p className="truncate text-xs text-hint" title={project.path}>{project.path}</p> : null}
                   </div>
                   {!expanded ? <StatusIcon status={aggregatedStatus} /> : null}
@@ -452,7 +452,7 @@ export function ConversationSidebar({
                       }
                     }}
                   >
-                    <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                    <Plus className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 ) : null}
                 {onShowProjectInFolder || onRenameProject || onRemoveProject ? (
@@ -467,7 +467,7 @@ export function ConversationSidebar({
                         disabled={disabled || projectActionsDisabled}
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                        <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" aria-label={t("console.conversationSidebar.projectActions", { project: projectName })} className="min-w-48">
@@ -616,7 +616,7 @@ function SessionRow({
         data-session-id={session.id}
         data-status-dot={status}
         className={cn(
-          "grid h-8 w-full grid-cols-[minmax(0,1fr)_18px] items-center gap-1.5 rounded-md px-2 text-left text-sm hover:bg-hover",
+          "grid h-8 w-full grid-cols-[minmax(0,1fr)_18px] items-center gap-1.5 rounded-lg pl-7 pr-2 text-left text-sub hover:bg-hover hover:text-ink",
           selected ? "bg-sel" : "bg-transparent"
         )}
         aria-current={selected ? "page" : undefined}
@@ -636,7 +636,12 @@ function SessionRow({
         }}
       >
         <span className="min-w-0">
-          <span className="block truncate text-[13px] font-normal leading-4">{session.title}</span>
+          <span
+            className="block truncate text-[13.5px] font-normal leading-4"
+            data-testid="conversation-sidebar-session-title"
+          >
+            {session.title}
+          </span>
         </span>
         <StatusIcon status={status} />
       </button>
@@ -646,14 +651,14 @@ function SessionRow({
             <button
               type="button"
               className={cn(
-                "absolute right-1 flex h-6 w-6 items-center justify-center rounded-md bg-rail text-sub opacity-0 hover:bg-hover hover:text-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100",
+                "absolute right-1 flex h-6 w-6 items-center justify-center rounded-md bg-canvas text-sub opacity-0 hover:bg-hover hover:text-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100",
                 menuOpen && "opacity-100",
               )}
               aria-label={t("console.conversationSidebar.conversationMenu", { title: session.title })}
               title={t("console.conversationSidebar.conversationMenu", { title: session.title })}
               disabled={disabled}
             >
-              <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+              <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

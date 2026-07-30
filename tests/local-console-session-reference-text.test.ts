@@ -5,6 +5,7 @@ import { buildSessionReferenceText } from "../src/local-console/session-referenc
 const links = [
   { runId: "run-a", engine: "codex" as const, externalSessionId: "codex-a" },
   { runId: "run-b", engine: "kimi" as const, externalSessionId: "kimi-b" },
+  { runId: "run-c", engine: "claude" as const, externalSessionId: "claude-c" },
 ];
 
 describe("session reference text", () => {
@@ -24,6 +25,15 @@ describe("session reference text", () => {
       runId: "run-a",
       links,
     })).toBe("Moebius 会话记录：/tmp/source.jsonl；外部执行：Codex codex-a");
+  });
+
+  it("labels a Claude message reference with its provider", () => {
+    expect(buildSessionReferenceText({
+      scope: "message",
+      logPath: "/tmp/source.jsonl",
+      runId: "run-c",
+      links,
+    })).toBe("Moebius 会话记录：/tmp/source.jsonl；外部执行：Claude claude-c");
   });
 
   it("makes a missing message execution explicit", () => {

@@ -54,6 +54,7 @@ export interface RunBlockProps {
   onInterrupt?: () => void;
   onAnalyzeConversation?: () => void;
   interruptLabel?: string;
+  variant?: "main" | "embedded";
   className?: string;
 }
 
@@ -76,6 +77,7 @@ export function RunBlock({
   onInterrupt,
   onAnalyzeConversation,
   interruptLabel,
+  variant = "embedded",
   className,
 }: RunBlockProps): JSX.Element {
   const { t } = useI18n();
@@ -100,6 +102,7 @@ export function RunBlock({
   return (
     <div
       className={cn("max-w-[680px]", className)}
+      data-layout-variant={variant}
       tabIndex={onAnalyzeConversation ? 0 : undefined}
       onContextMenu={(event) => {
         if (onAnalyzeConversation) {
@@ -120,7 +123,11 @@ export function RunBlock({
       }}
     >
       <div className="flex items-center gap-2">
-        <RoleTag label={roleLabel} toneKey={role} />
+        <RoleTag
+          label={roleLabel}
+          toneKey={role}
+          className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
+        />
         <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
         <span className="ml-auto flex items-center gap-2">
           {elapsedMs !== null && elapsedMs !== undefined ? (
@@ -186,14 +193,17 @@ export function RunBlock({
       </div>
 
       {usableSteps ? (
-        <div className="mt-2.5 space-y-2.5 pl-7">
+        <div className={cn("mt-2.5 space-y-2.5", variant === "main" ? "pl-8" : "pl-7")}>
           {usableSteps.map((step, index) => (
             <RunStepItem key={step.id ?? `${step.title}-${index}`} step={step} index={index} />
           ))}
         </div>
       ) : activity ? (
         <div
-          className="mt-2.5 flex min-w-0 items-center gap-1 overflow-hidden pl-7 text-sm text-sub"
+          className={cn(
+            "mt-2.5 flex min-w-0 items-center gap-1 overflow-hidden text-sm text-sub",
+            variant === "main" ? "pl-8" : "pl-7",
+          )}
           title={[activity.action, activity.object].filter(Boolean).join(" · ")}
           tabIndex={0}
           data-testid="run-activity"
@@ -207,7 +217,13 @@ export function RunBlock({
           ) : null}
         </div>
       ) : (
-        <div className="mt-2.5 max-w-full overflow-x-auto pl-7 text-sm text-sub" data-testid="run-live-output">
+        <div
+          className={cn(
+            "mt-2.5 max-w-full overflow-x-auto text-sm text-sub",
+            variant === "main" ? "pl-8" : "pl-7",
+          )}
+          data-testid="run-live-output"
+        >
           <MarkdownMessage
             content={liveContent === null
               ? fallbackSummary
@@ -222,7 +238,7 @@ export function RunBlock({
         </div>
       )}
       {!processOutputAvailable ? (
-        <p className="mt-1.5 pl-7 text-xs text-hint">
+        <p className={cn("mt-1.5 text-xs text-hint", variant === "main" ? "pl-8" : "pl-7")}>
           {outputUnavailableMessage ?? t("console.common.outputUnavailable")}
         </p>
       ) : null}

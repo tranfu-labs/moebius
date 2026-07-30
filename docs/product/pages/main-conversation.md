@@ -272,6 +272,8 @@
 
 已有会话的标题使用与窗口控制区相同的 46px header 高度和不透明 sticky 行，放在时间线滚动容器内并吸附到主内容区顶部；标题文字与消息行文字使用同一条左边界，并随统一 header 容器自然垂直居中。窗口使用隐藏标题栏，不为系统标题栏增加纵向留白。侧边栏关闭时，恢复按钮必须位于 macOS 红绿灯安全区右侧，不得与红绿灯碰撞。
 
+主会话内除品牌 Logo 外的窗口控制、消息轻操作、活动记录、子会话、系统事实、结果、上下文、附件、发送和停止图标，必须按所在按钮或文本行的共同几何自然居中；相同密度和语义的控件使用一致的图形尺寸、描边与宿主盒，不以单枚图标的 `top`、额外上内边距或位移补偿视觉位置。该规则只约束主会话，不改变右侧栏内部密度。
+
 上下文条第三格显示真实分支名（如 `main`、`feat/x`；detached HEAD 显示确定性兜底值），不可点击，不使用「当前分支」「会话分支」等字面占位词。对话已经开始后，项目与工作空间同样是不可点击的文本，只有团队仍可改选。
 
 ### 会话目录轨
@@ -705,13 +707,15 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 
 ### Agent 执行与恢复
 
-- 每次 Agent 执行在启动时从当前会话团队快照冻结该 run 自己的成员内容与 CLI、model、effort。CLI 是硬绑定：绑定 Codex 就只启动 Codex，绑定 Kimi 就只启动 Kimi；绑定的 CLI 没有启动、配置无法执行或执行失败时，如实记录这一步没跑起来，不自动换用另一套 CLI。
+- 每次 Agent 执行在启动时从当前会话团队快照冻结该 run 自己的成员内容与 CLI、model、effort。CLI 是硬绑定：绑定 Codex、Claude Code 或 Kimi 就只启动对应 CLI；绑定的 CLI 没有启动、配置无法执行或执行失败时，如实记录这一步没跑起来，不自动换用其他 CLI。
 - 新会话第一条消息与后续新 run 使用同一条直接启动路径：系统不先跑一轮独立能力预检，真实的进程启动、认证和运行配置应用结果就是动态校验。失败时保留已经创建的会话、用户消息与冻结快照，显示安全且可理解的“这一步没跑起来”原因，并允许按原快照重试。
-- 本地持久 Agent 身份由「这段对话 + 生效团队快照 + 角色」共同确定。一个身份第一次真正执行时允许创建一个 Codex thread 或 Kimi session；一旦取得 external ID，普通新消息、成员接力、下一步骤、重试、改一改重发、重新运行和重启恢复都必须 resume 同一个 ID，不得创建第二个外部执行会话。明确改选团队并使新快照生效后，即使角色同名也属于新 Agent 身份，允许自己的首次创建，旧快照 ID 不得交给新快照。
+- Claude-bound run 在创建或恢复 Claude session 前，必须对本次实际解析到的同一绝对路径重新执行 `--version`；低于 `2.1.170` 时直接进入稳定的“Claude Code 需要升级”失败，不执行 `-p`、不创建或改写 external session link、不启动 Codex/Kimi，并提供受信任的「更新 Claude Code」入口。更新动作固定执行该解析路径的 `update` 子命令、保持 `shell:false`，成功后允许按原 run 快照显式重试；原始 stderr、路径和内部异常不得进入 renderer。
+- 普通 Claude Agent 按原生 Claude CLI 边界启动：Moebius 不传 `--safe-mode`、不指定 `--setting-sources`、`--strict-mcp-config`、`--disable-slash-commands` 或 `--tools`，不创建 replacement settings，也不查找、读取、解析、复制或管理用户与项目的 Claude 配置。Claude 最终加载哪些 CLAUDE.md、settings、hooks、MCP、skills、plugins 或其他扩展属于 Claude 自身行为，不是 Moebius 的实现或验收责任。Moebius 只保留会话、冻结 model/effort、权限与禁止内部 Agent/team 等产品运行边界。AI 建队的隔离 profile 仍由 onboarding 定义，不适用这条普通运行规则。
+- 本地持久 Agent 身份由「这段对话 + 生效团队快照 + 角色」共同确定。一个身份第一次真正执行时允许创建一个 Codex thread、Claude Code session 或 Kimi session；一旦取得 external ID，普通新消息、成员接力、下一步骤、重试、改一改重发、重新运行和重启恢复都必须 resume 同一个 ID，不得创建第二个外部执行会话。明确改选团队并使新快照生效后，即使角色同名也属于新 Agent 身份，允许自己的首次创建，旧快照 ID 不得交给新快照。
 - 首次创建尚未取得任何 `thread.started` / `session/new` 成功证据就失败，表示外部会话没有建立，用户重试时仍可再次走该身份的首次创建。一旦观察到 external ID，系统必须立即把它绑定到 Agent 身份；即使随后 prompt、输出校验、落库或发布失败，下一次也只能 resume。若已有执行证据却缺失 ID，必须显示「原执行已经无法继续」，不得把它伪装成首次执行。
 - 每个 Agent 身份保存自己已看过的公开时间线游标。首次创建接收当时完整共享时间线；后续 resume 只接收该成员尚未看到的公开消息增量与本轮对应附件。这样 A → B → A 接力时，A 能收到离开期间 B 的公开回复，又不会把已有完整历史重复注入 provider 会话。只有 Agent 回复成功形成公开事实后才推进游标；失败轮保留原游标供显式重试。
-- resume 前必须证明 external ID 与当前会话、团队快照、角色、工作空间、冻结 persona、CLI 及冻结运行配置属于同一身份；Codex 与 Kimi 返回的 ID 也必须与请求 resume 的 ID 一致。任一关联缺失、冲突、不唯一、不兼容，或 provider 明确报告会话不存在时，只执行这一次 resume 并进入「原执行已经无法继续」；不得猜测最近会话、跨 CLI 恢复、清空 ID、用完整时间线重建或发起第二次 full / `session/new`。
-- 升级前旧会话只在同一 Agent 身份下能归一出唯一兼容 external ID 时建立 canonical 关联；没有候选或出现两个不同 ID 都明确失败，不按时间或成功状态猜测。团队快照缺少 CLI/model/effort 的旧会话继续把 legacy Codex 配置作为不可变身份，不读取当前团队页配置补写，也不自动切到 Kimi。
+- resume 前必须证明 external ID 与当前会话、团队快照、角色、工作空间、冻结 persona、CLI 及冻结运行配置属于同一身份；Codex、Claude Code 与 Kimi 返回的 ID 也必须与请求 resume 的 ID 一致。任一关联缺失、冲突、不唯一、不兼容，或 provider 明确报告会话不存在时，只执行这一次 resume 并进入「原执行已经无法继续」；不得猜测最近会话、跨 CLI 恢复、清空 ID、用完整时间线重建或发起第二次 full / `session/new`。
+- 升级前旧会话只在同一 Agent 身份下能归一出唯一兼容 external ID 时建立 canonical 关联；没有候选或出现两个不同 ID 都明确失败，不按时间或成功状态猜测。团队快照缺少 CLI/model/effort 的旧会话继续把 legacy Codex 配置作为不可变身份，不读取当前团队页配置补写，也不自动切到 Claude Code 或 Kimi。
 - 团队页不产生“无法验证”或“需要调整”状态；静态格式有效的运行配置不阻止创建对话或切换团队。动态不可执行只在真正启动对应成员时成为该 run 的失败事实。
 
 ### 说话与提及
@@ -942,8 +946,8 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 44. resume 校验 Agent 身份、工作空间、冻结 persona、CLI、运行配置与 external ID；缺失、不唯一、不兼容、ID 冲突或 provider 会话不存在时只失败这一次 resume，显示「原执行已经无法继续」与「你可以重新运行，或直接说话、换一个成员接手。」，不猜测其他会话、不跨 CLI、不执行 full / `session/new` fallback。
 45. 首版不自动重试且不设重试上限；重试和重新运行创建新 run、独立计时，并与此前尝试在同一步完整输出中依次保留，但不创建 replacement provider session。恢复机制不修改历史或执行 Git reset、checkout、merge、rebase。
 46. 创建对话和明确改选团队生效时，快照包含每名 Agent 的 CLI、model、effort；团队页后续修改不追溯改变它，下一次明确改选该团队时才载入新版本。
-47. Agent 执行按快照 CLI 硬绑定；绑定的 CLI 缺失、配置无法执行或运行失败时留下明确失败事实，另一套 CLI 的启动次数为零。
-48. 升级前旧会话只在同一 Agent 身份能证明唯一兼容 external ID 时建立 canonical 关联；没有候选或存在冲突都 fail closed。缺少运行配置字段的旧会话继续使用不可变 legacy Codex 身份，不读取当前团队页配置补写快照，也不自动切换到 Kimi。
+47. Agent 执行按快照 CLI 硬绑定；绑定的 CLI 缺失、配置无法执行或运行失败时留下明确失败事实，其他 CLI 的启动次数为零。
+48. 升级前旧会话只在同一 Agent 身份能证明唯一兼容 external ID 时建立 canonical 关联；没有候选或存在冲突都 fail closed。缺少运行配置字段的旧会话继续使用不可变 legacy Codex 身份，不读取当前团队页配置补写快照，也不自动切换到 Claude Code 或 Kimi。
 49. 团队切换前已启动的每条 run 冻结原团队内容与运行配置；切换后针对旧步骤发起的重试或重新运行仍使用原 run 快照，当前团队接手必须开启新的执行动作。
 50. 每个 Agent 身份首次创建接收完整共享时间线；后续 resume 只接收其公开时间线游标之后的消息增量与对应附件。A → B → A 时 A 必须收到 B 的公开回复，失败轮不得提前推进 A 的游标。
 51. 无论 onboarding readiness 是检测中、可用、缺失、未登录、不可验证、读取延迟还是读取失败，新对话页都不显示成员准备人数、CLI 准备信息、兼容性提示或调整去向，也不把 readiness 纳入发送条件。普通操作台挂载、shell 就绪、进入团队页和第一条消息都不执行独立能力探测。第一条消息在原子创建会话、消息和团队快照后进入所选 CLI 的运行时硬门，并按 mention 规则直接启动唯一目标成员或主 Agent；CLI 缺失、版本过旧、未登录或拒绝 model/effort 时保留会话、消息、草稿清理结果与快照，并显示“这一步没跑起来”。
@@ -997,9 +1001,9 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 - 子任务标签的内部结构、输入方式和操作，由[主页面右侧栏](./main-right-sidebar.md)定义。
 - 侧边栏的项目与对话组织方式，由[主页面侧边栏](./main-left-sidebar.md)定义。
 - Agent 团队的管理、编辑和修复界面，由[Agent 团队](./agent-teams.md)定义。
-- onboarding 如何检查和呈现 Codex/Kimi 环境准备，不由本页定义。
+- onboarding 如何检查和呈现 Codex、Claude Code、Kimi 环境准备，不由本页定义。
 - 独立“运行环境”诊断页的入口、检查范围和反馈形态，留待后续页面设计。
-- Codex/Kimi 的完整过程能力与降级边界由[主页面右侧栏](./main-right-sidebar.md)定义；本页只按能力显示入口或明确的不可用说明。
+- Codex、Claude Code、Kimi 的完整过程能力与降级边界由[主页面右侧栏](./main-right-sidebar.md)定义；本页只按能力显示入口或明确的不可用说明。
 - 交付结果的独立陈列区。产品不设这样的区域，结果就是这条对话的最后部分；用户要看这段对话改了哪些文件，从结果卡片进[主页面右侧栏](./main-right-sidebar.md)。
 - 对话的归档与恢复，由侧边栏和[全局搜索](./search.md)定义。
 - 高保真颜色、字体数值、精确像素和动效参数。

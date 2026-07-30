@@ -41,6 +41,17 @@ describe("RunBlock", () => {
     expect(screen.queryByText(/exit:42 should stay hidden/u)).not.toBeInTheDocument();
   });
 
+  it("uses 24px identity and 32px indentation only in the main conversation variant", () => {
+    const { rerender } = render(<RunBlock role="dev" summary="主会话活动" variant="main" />);
+
+    expect(screen.getByText("开发").previousElementSibling).toHaveClass("h-6", "w-6");
+    expect(screen.getByTestId("run-live-output")).toHaveClass("pl-8");
+
+    rerender(<RunBlock role="dev" summary="右侧活动" />);
+    expect(screen.getByText("开发").previousElementSibling).toHaveClass("h-5", "w-5");
+    expect(screen.getByTestId("run-live-output")).toHaveClass("pl-7");
+  });
+
   it("degrades to a single useful line when no step data exists", () => {
     render(
       <RunBlock

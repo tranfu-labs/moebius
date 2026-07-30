@@ -2,7 +2,7 @@ import type { LocalConsoleSessionReferenceScope } from "./types.js";
 
 export interface SessionReferenceExecutionLink {
   runId: string;
-  engine: "codex" | "kimi";
+  engine: "codex" | "claude" | "kimi";
   externalSessionId: string;
 }
 
@@ -22,6 +22,10 @@ export function buildSessionReferenceText(input: {
   if (matchingLink === null) {
     return `${recordText}；外部执行：未建立`;
   }
-  const engine = matchingLink.engine === "kimi" ? "Kimi" : "Codex";
+  const engine = matchingLink.engine === "kimi"
+    ? "Kimi"
+    : matchingLink.engine === "claude"
+      ? "Claude"
+      : "Codex";
   return `${recordText}；外部执行：${engine} ${matchingLink.externalSessionId}`;
 }

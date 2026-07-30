@@ -92,12 +92,13 @@ ul { list-style: none; }
 /* 焦点环:仅键盘,2px --accent 外环(规范允许的焦点态紫) */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
-/* Lucide 几何:24px 网格、1.6px 描边、圆头端点、currentColor */
+/* Lucide 几何:24px 网格、默认 1.6px 描边、圆头端点、currentColor */
 .icon {
   width: 18px; height: 18px; flex: none;
   stroke: currentColor; fill: none;
   stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
+.sidebar .icon, .conv .icon { display: block; }
 .icon-sm { width: 14px; height: 14px; }
 .icon-xs { width: 12px; height: 12px; }
 
@@ -123,6 +124,7 @@ ul { list-style: none; }
   flex: none;
 }
 .sidebar-top .icon-btn { margin-left: auto; -webkit-app-region: no-drag; }
+[data-od-id="close-sidebar"] .icon { width: 16px; height: 16px; stroke-width: 1.5; }
 
 /* 次行:独立品牌行 */
 .brand {
@@ -161,7 +163,7 @@ ul { list-style: none; }
 }
 .nav-row:hover { background: var(--hover); }
 .nav-row.is-active { background: var(--active); }
-.nav-row .icon { width: 16px; height: 16px; color: var(--muted); }
+.nav-row .icon { width: 16px; height: 16px; color: var(--muted); stroke-width: 1.5; }
 .nav-row.is-active .icon { color: var(--fg); }
 
 /* 项目区 */
@@ -190,7 +192,7 @@ ul { list-style: none; }
   transition: background .12s ease;
 }
 .project-row:hover { background: var(--hover); }
-.project-row .chev { width: 14px; height: 14px; color: var(--faint); transition: transform .15s ease; transform: rotate(90deg); }
+.project-row .chev { width: 14px; height: 14px; color: var(--faint); stroke-width: 1.5; transition: transform .15s ease; transform: rotate(90deg); }
 .project.collapsed .project-row .chev { transform: none; }
 .project-row .name {
   flex: 1; min-width: 0;
@@ -198,8 +200,8 @@ ul { list-style: none; }
 }
 .project-row .row-actions { display: none; align-items: center; gap: 2px; }
 .project-row:hover .row-actions { display: flex; }
-.project-row .row-actions .icon-btn { width: 22px; height: 22px; border-radius: 6px; }
-.project-row .row-actions .icon { width: 13px; height: 13px; }
+.project-row .row-actions .icon-btn { width: 28px; height: 28px; border-radius: 6px; }
+.project-row .row-actions .icon { width: 14px; height: 14px; stroke-width: 1.5; }
 
 /* 状态点:红=需要你处理 / 蓝=有新结果 / 呼吸=正在运行 */
 .dot { width: 7px; height: 7px; flex: none; border-radius: 50%; }
@@ -228,12 +230,6 @@ ul { list-style: none; }
 }
 .conv-row:hover { background: var(--hover); color: var(--fg); }
 .conv-row.is-selected { background: var(--active); color: var(--fg); }
-.conv-row .sel-mark {
-  position: absolute; left: 12px;
-  font-size: 12px; color: var(--fg);
-  display: none;
-}
-.conv-row.is-selected .sel-mark { display: inline; }
 .conv-row .name {
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -262,6 +258,7 @@ ul { list-style: none; }
   border-bottom: 1px solid var(--border);
 }
 .conv-head .icon-btn { -webkit-app-region: no-drag; }
+.conv-head > .icon-btn .icon { width: 16px; height: 16px; stroke-width: 1.5; }
 .conv-head .open-sidebar { display: none; -webkit-app-region: no-drag; }
 /* 侧栏关闭时:恢复按钮让位红绿灯安全区 */
 .app.no-sidebar .conv-head { padding-left: 78px; }
@@ -371,7 +368,7 @@ ul { list-style: none; }
 /* 消息功能区:挂在消息末尾的一行小图标按钮 + 耗时 */
 .msg-tools { display: flex; align-items: center; gap: 2px; padding-left: 32px; margin-top: 2px; }
 .msg-tools .icon-btn { width: 24px; height: 24px; border-radius: 6px; }
-.msg-tools .icon-btn .icon { width: 14px; height: 14px; }
+.msg-tools .icon-btn .icon { width: 14px; height: 14px; stroke-width: 1.5; }
 .msg-tools .icon-btn.copied { color: var(--success); }
 /* 耗时/完成时间小字:可放在名字行(.msg-who)或功能区(.msg-tools),两处样式一致 */
 .dur {
@@ -401,7 +398,7 @@ ul { list-style: none; }
   background: var(--surface);
   font-size: 13px;
 }
-.sys-rec .icon { width: 15px; height: 15px; }
+.sys-rec > .icon { width: 15px; height: 15px; stroke-width: 1.5; }
 .sys-rec .txt { flex: 1; min-width: 0; }
 .sys-rec .sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
 .sys-rec.warn .icon { color: var(--amber); }
@@ -421,7 +418,7 @@ ul { list-style: none; }
   background: var(--surface);
   font-size: 13px;
 }
-.result-card .icon { width: 15px; height: 15px; color: var(--success); }
+.result-card > .icon { width: 15px; height: 15px; color: var(--success); stroke-width: 1.5; }
 .result-card .txt { flex: 1; }
 .result-card .txt b { font-weight: 590; }
 
@@ -446,7 +443,7 @@ ul { list-style: none; }
 .subcard-row:last-child { border-bottom: 0; }
 .subcard-row:hover { background: var(--hover); }
 .subcard-row.is-viewing { background: var(--active); }
-.subcard-row > .icon { width: 13px; height: 13px; color: var(--faint); }
+.subcard-row > .icon { width: 14px; height: 14px; color: var(--faint); stroke-width: 1.5; }
 .subcard-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 510; }
 .subcard-row .who { color: var(--muted); font-size: 12.5px; }
 
@@ -504,6 +501,7 @@ ul { list-style: none; }
 }
 .chip .icon { width: 13px; height: 13px; color: var(--muted); }
 .chip .chev { width: 11px; height: 11px; color: var(--faint); }
+footer.composer > .composer-box .chip .icon { stroke-width: 1.5; }
 button.chip:hover { background: var(--hover); }
 /* 对话已开始:项目 / 工作空间 / 分支锁定为文本样式 */
 .chip.locked {
@@ -546,7 +544,7 @@ button.chip:hover { background: var(--hover); }
   transition: background .12s ease, opacity .12s ease;
 }
 .send-btn:hover { background: var(--fg-max); }
-.send-btn .icon { width: 15px; height: 15px; }
+footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; stroke-width: 1.5; }
 .send-btn:disabled { opacity: .4; pointer-events: none; }
 /* 停下/发送合一:成员工作且输入框为空时变为停下 */
 .send-btn.is-stop { background: var(--tint-red); color: var(--danger); }
@@ -756,6 +754,7 @@ button.chip:hover { background: var(--hover); }
 .sub-composer .composer-box { border-radius: 12px; padding: 8px 10px 10px; }
 .sub-composer textarea { font-size: 13px; }
 .sub-composer .send-btn { width: 28px; height: 28px; }
+.sub-composer .send-btn .icon { width: 15px; height: 15px; }
 
 /* 空白标签:类型只有 改动 / 项目文件 两种 */
 .blank-pane {
@@ -866,7 +865,7 @@ button.chip:hover { background: var(--hover); }
   transition: background .12s ease, color .12s ease;
 }
 .attach-btn:hover { background: var(--hover); color: var(--fg); }
-.attach-btn .icon { width: 15px; height: 15px; }
+footer.composer > .composer-box .attach-btn .icon { width: 16px; height: 16px; stroke-width: 1.5; }
 
 .attach-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .attach-card {

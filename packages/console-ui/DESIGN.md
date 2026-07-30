@@ -13,7 +13,8 @@
 - 暗色画布近纯黑（`--canvas: #101010`）、卡面微亮（`--card: #171717`）、描边可见（`--line: #262626` 实色）；亮色为同结构镜像（灰底白卡，`bg→surface` 向亮走，`hover/sel` 向灰走）。
 - 状态色相族令牌：`--status-{run,info,violet,neutral}-{fg,bg,line}` 及裁决 `--pass` / `--danger` 配套 tint，亮暗双主题成对定义；tint 底为实色（暗色如 `--status-run-bg: #2B2612`，亮色为 12% 浅洗底），fg 在其上满足正文对比度。
 - 桌面窗口顶层 header 统一使用 `--window-header-height: 46px`；macOS 交通灯、sidebar 展开/折叠按钮和会话 sticky 标题都由该高度容器配合 `items-center` 自然居中，禁止为单个控件追加 `top`、`padding-top` 或 translate 补偿。
-- 会话 sticky 标题、Agent 历史消息正文与主时间线活动 run 的角色名/实时正文使用同一条左边界；活动 run 的操作贴住同一正文列右边界。已有会话 composer、待发射区与新对话 composer 复用该列的 `760px` 最大宽度和 `px-8` 页面 gutter，窄窗一起收缩；右侧子任务 composer 保留自己的可用宽度。该正文列由宿主建立，通用 `RunBlock` 与 `RoleComposer` 不内置主时间线宽度。**用户消息是唯一的例外**：按聊天惯例走右泳道（who 行右对齐 + 右侧气泡），不占用左正文列。
+- 会话 sticky 标题、Agent 历史消息正文与主时间线活动 run 的角色名/实时正文使用同一条左边界；活动 run 的操作贴住同一正文列右边界。已有会话 composer、待发射区与新对话 composer 复用该列的 `840px` 最大宽度和 `px-8` 页面 gutter，窄窗一起收缩；右侧子任务 composer 保留自己的可用宽度。该正文列由 `conversation-layout.ts` 和宿主建立，通用 `RunBlock` 与 `RoleComposer` 不内置主时间线宽度。**用户消息是唯一的例外**：按聊天惯例走右泳道（who 行右对齐 + 右侧气泡），不占用左正文列。
+- 主侧栏默认 252px，保留 220–360px 拖动边界；窗口控制行为 46px、品牌与导航行为 34px、项目与会话行为 32px，会话标题左缩进 28px。窗口控制、品牌、应用导航和底部操作固定，只有项目列表纵向滚动；侧栏和主区共用 `bg-canvas`，只用 1px `border-line` 分区。
 - 圆角分级：卡片/表格 14px（`--radius`，Tailwind lg）、chip/菜单 12px（md）、控件/按钮/输入 10px（sm）、药丸与轻跳转全圆角、头像正圆；同一层级圆角必须一致。
 
 ## 排版
@@ -25,7 +26,7 @@
 
 ## 图标
 
-- 一律 lucide-react，默认 16px（`h-4 w-4`），`strokeWidth={1.5}`；高密度上下文可用 14px（`h-3.5 w-3.5`）；状态 pill 内图标 12px（`h-3 w-3`），`strokeWidth={2}` 保持可读。
+- 一律 lucide-react，默认 16px（`h-4 w-4`），`strokeWidth={1.5}`；高密度上下文可用 14px（`h-3.5 w-3.5`）；状态 pill 内图标 12px（`h-3 w-3`），`strokeWidth={2}` 保持可读。图形由既有按钮或文本行宿主自然居中，不缩小宿主，也不为单枚图标追加 `top`、额外上内边距或 transform 位移补偿。
 - running 的半满饼图为自绘 12px SVG（lucide 无对应精度图形），见 `src/ui/badge.tsx`；除此之外不为同一语义引入第二种图标集。
 
 ## 状态语义与色相预算
@@ -56,11 +57,12 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 - **inbox 行**：`src/console/agent-message.tsx`——32px 圆形角色头像（右下角 15px stage 角标）+ 行 1（角色名 510 + stage muted + 右侧状态图标与 tnum 时间）+ 行 2 结论 + 行 3 箭头 + handoff；行间发丝线（行内 `border-t`），hover 行底色，无常驻卡片边框。
 - **Agent 首字头像与角色标签**：`src/console/agent-initial-avatar.tsx`（团队页 20/32px）与 `src/console/role-tag.tsx`（时间线 who 行 20px）共用同一身份体系——彩底正圆 + 深色首字，底色按 slug/toneKey 稳定取自身份色板（`--ident-1…6`，moebius-desktop-spec 6.6 采样，亮暗共用），同一角色全产品同色；头像自身保持装饰性，旁边必须保留可读名称。
-- **用户消息右泳道**：`operator-console.tsx` 的 `TimelineEntry` 与子任务标签的 `SubtaskTimelineEntry`——「你」的消息 who 行右对齐（时间戳 · 你 · 彩色头像），正文包在右侧 `rounded-[14px] border bg-card` 气泡内（max-w 85%）；Agent 与系统消息保持左正文列。
+- **主会话消息层级**：`operator-console.tsx` 的 `TimelineEntry`——主会话用户与 Agent 使用 24px 身份头像；Agent / system 正文左缩进 32px且最长 68ch。「你」的消息 who 行右对齐，正文包在右侧 `rounded-[10px] border bg-card` 气泡内（max-w 75%）。右侧子任务的 `SubtaskTimelineEntry` 保持 embedded 密度，不继承这些主会话参数。
 - **主会话目录轨**：`src/console/conversation-relay-rail.tsx` + `conversation-relay-rail-model.ts`——只固定在当前根会话面板左缘；收起为共同左端对齐的紧凑短横线，用户使用前景色、Agent 使用稳定身份色，当前阅读位置以更长更强的横线突出。展开时面板从同一左锚点向右打开，用户事件留在固定主干，Agent 圆点按成员首次出现顺序进入内容驱动的泳道；成员色分支从前一可见事件平滑分叉、纵向穿过该成员回复并在后一可见事件并回，省略区两侧必须收束断开。hover band 在轨迹下方、整条事件行在轨迹上方作为唯一节点命中区；当前节点使用身份色描边环。预览 Popover 相对整个面板边缘保持固定间距并沿事件行纵向跟随，只显示可读成员名、时间与有限行原文。目录滚轮 / 方向键只浏览，点击、Enter 或 Space 后才定位主时间线；不得使用全宽等距散点、逐相邻事件 S 线、居中膨胀或邻近项金字塔，reduced-motion 必须即时呈现等价静态信息。
 - **历史消息轻操作**：`operator-console.tsx` 的成功 Agent 历史消息——完整输出入口保持在正文下方原有左边界，使用 24px `FileText` 图标按钮；按钮绝对定位在消息间隙中，默认透明，整条消息 hover / focus-within 或按钮 focus-visible 时显示，不占常驻操作行、不移动到 who 行右侧，也不使用 `ghost` 文字按钮。
 - **本地调试披露组**：`src/console/process-tab.tsx` + `process-event.tsx`——每次 attempt 以状态、计时、模型元数据和原始 run/thread 标识开头，常驻本地敏感信息提示，再用三个独立的 `SYSTEM_PROMPT` / `DEVELOPER_PROMPT` / `USER_INPUT` disclosure 与逐事件原文 disclosure 展示调用链。披露面只组合 `bg-card` / `bg-sunken` / `border-line`，原文使用可选择的等宽 `<pre>`；长内容默认折叠，HTML / Markdown / 终端控制字符只以转义文本呈现。token usage 使用中性 `Cpu` 图标，reasoning 不进入该模式。
-- **Agent 运行活动与时间**：`src/console/run-block.tsx` + `src/console/run-time.tsx`——who 行右侧常驻语义明确的「已进行」时长，下一行只保留最新一条安全活动并截断对象；终态改为「耗时」，完成时刻通过 title、键盘焦点与可访问名称提供。活动记录不显示百分比、不轮播旧工具、不堆积工具日志；无稳定过程能力的执行引擎原位显示不可用说明，不渲染空入口。
+- **Agent 运行活动与时间**：`src/console/run-block.tsx` + `src/console/run-time.tsx`——who 行右侧常驻语义明确的「已进行」时长，下一行只保留最新一条安全活动并截断对象；终态改为「耗时」，完成时刻通过 title、键盘焦点与可访问名称提供。`main` 变体使用 24px 身份头像与 32px 正文缩进，`embedded` 保留原密度；活动记录不显示百分比、不轮播旧工具、不堆积工具日志；无稳定过程能力的执行引擎原位显示不可用说明，不渲染空入口。
+- **主 / embedded composer**：`src/console/role-composer.tsx`——`main` 使用 14px card、10/12px 内间距、单行起步且最多 120px 的 textarea，并把附件、发送和主理人停止保持为 32px 方形操作；`embedded` 保留 76px 起步与右侧栏自己的可用宽度。两者只隔离视觉密度，不改变发送、停止、附件、mention、输入法或待发射规则。
 - **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px 510 + 14px 图标）在下。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。

@@ -143,7 +143,7 @@ export function NewConversationPage({
       >
         <h1
           className={cn(
-            "mx-auto w-full truncate text-base font-semibold text-ink",
+            "mx-auto w-full truncate font-display text-[15px] font-semibold tracking-[-0.01em] text-ink",
             MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
           )}
           title={t("console.newConversation.title")}
@@ -183,6 +183,7 @@ export function NewConversationPage({
             </div>
           ) : null}
           <RoleComposer
+            variant="main"
             value={draft}
             attachments={attachments}
             textFragments={textFragments}

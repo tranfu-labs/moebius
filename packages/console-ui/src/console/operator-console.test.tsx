@@ -40,6 +40,7 @@ describe("OperatorConsole", () => {
     renderConsole({ onOpenDiagnostics: vi.fn() });
 
     const sidebar = screen.getByTestId("operator-sidebar");
+    const root = screen.getByTestId("operator-content-shell").parentElement;
     const windowControls = screen.getByTestId("sidebar-window-controls");
     const brandRegion = screen.getByTestId("sidebar-brand-region");
     const appActions = screen.getByTestId("sidebar-app-actions");
@@ -54,11 +55,11 @@ describe("OperatorConsole", () => {
     expect(windowControls).toHaveClass(
       "window-drag-region",
       "h-[var(--window-header-height)]",
-      "pl-[76px]",
+      "pl-[78px]",
     );
     expect(windowControls).not.toHaveClass("pt-[6px]");
     expect(brandRegion).toHaveClass("window-drag-region", "h-[34px]", "px-4");
-    expect(brandRegion).not.toHaveClass("pl-[76px]");
+    expect(brandRegion).not.toHaveClass("pl-[78px]");
     expect(windowControls).not.toContainElement(brandLogo);
     expect(screen.getByRole("button", { name: "关闭侧边栏" })).toHaveClass("window-no-drag");
     expect(screen.getByRole("button", { name: "关闭侧边栏" })).toHaveAttribute("title", "关闭侧边栏");
@@ -84,7 +85,9 @@ describe("OperatorConsole", () => {
     expect(sidebar).toContainElement(projectHeading);
     expect(sidebar).toContainElement(projectList);
     expect(sidebar).toContainElement(footer);
-    expect(projectList).toHaveClass("overflow-auto");
+    expect(root).toHaveClass("h-screen", "min-h-0");
+    expect(root).not.toHaveClass("min-h-[560px]");
+    expect(projectList).toHaveClass("overflow-y-auto");
     expect(projectList).not.toContainElement(brandRegion);
     expect(projectList).not.toContainElement(appActions);
     expect(projectList).not.toContainElement(projectHeading);
@@ -1102,12 +1105,55 @@ describe("OperatorConsole", () => {
       "px-8",
     );
     expect(titleHeader).not.toHaveClass("absolute", "pt-12", "window-drag-region");
-    expect(title).toHaveClass("w-full", "max-w-[760px]", "text-left");
-    expect(composer).toHaveClass("w-full", "max-w-[760px]");
+    expect(title).toHaveClass("w-full", "max-w-[840px]", "text-left");
+    expect(composer).toHaveClass("w-full", "max-w-[840px]");
     expect(composer).not.toHaveClass("max-w-[720px]");
     expect(composerHost).toHaveClass("px-8");
     expect(composerHost).not.toHaveClass("px-6");
     expect(title).not.toHaveClass("pl-10");
+  });
+
+  it("reserves the measured bottom dock height for the timeline, relay, and jump control", async () => {
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    const rect = (height: number): DOMRect => ({
+      x: 0,
+      y: 0,
+      width: 840,
+      height,
+      top: 0,
+      right: 840,
+      bottom: height,
+      left: 0,
+      toJSON: () => ({}),
+    });
+    const bounds = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      return (this as HTMLElement).dataset.testid === "conversation-bottom-dock"
+        ? rect(253)
+        : originalGetBoundingClientRect.call(this);
+    });
+
+    try {
+      renderConsole({
+        activeRun: runSnapshot,
+        messages: [message({ id: 1, body: "动态底部占位", speaker: "agent", role: "dev" })],
+        pendingPrimaryMessages: [message({ id: 7, body: "待发射", status: "pending" })],
+      });
+
+      const timeline = screen.getByRole("region", { name: "会话时间线" });
+      const relay = screen.getByTestId("main-conversation-relay-slot");
+      expect(timeline).toHaveStyle({ paddingBottom: "265px" });
+      expect(relay).toHaveStyle({ bottom: "253px" });
+
+      Object.defineProperties(timeline, {
+        scrollHeight: { configurable: true, value: 1_000 },
+        clientHeight: { configurable: true, value: 400 },
+        scrollTop: { configurable: true, value: 0, writable: true },
+      });
+      fireEvent.scroll(timeline);
+      expect(await screen.findByTestId("jump-to-bottom")).toHaveStyle({ bottom: "265px" });
+    } finally {
+      bounds.mockRestore();
+    }
   });
 
   it("aligns the active run with the same content column as historical messages", () => {
@@ -1121,9 +1167,9 @@ describe("OperatorConsole", () => {
     const activeRun = activeRunHost.firstElementChild;
 
     expect(historicalMessage).not.toHaveClass("pl-10");
-    expect(historicalMessage?.querySelector(".pl-7")).not.toBeNull();
+    expect(historicalMessage?.querySelector(".pl-8")).not.toBeNull();
     expect(activeRunHost).not.toHaveClass("pl-10");
-    expect(activeRun?.querySelector(".pl-7")).not.toBeNull();
+    expect(activeRun?.querySelector(".pl-8")).not.toBeNull();
     expect(activeRun).toHaveClass("max-w-none");
     expect(activeRun).not.toHaveClass("max-w-[680px]");
   });
@@ -1284,9 +1330,13 @@ describe("OperatorConsole", () => {
     expect(within(pendingZone).queryByText("待发射给主理人")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "消息内容" }))
       .toHaveAttribute("placeholder", "继续说点什么，或 @ 一个成员…");
-    expect(pendingZone).toHaveClass("w-full", "max-w-[760px]");
+    expect(pendingZone).toHaveClass("w-full", "max-w-[840px]");
     expect(pendingZone).not.toHaveClass("max-w-[720px]");
-    expect(screen.getByRole("region", { name: "会话时间线" })).toHaveClass("pb-72");
+    expect(screen.getByRole("region", { name: "会话时间线" })).toHaveClass(
+      "overflow-y-auto",
+      "overflow-x-hidden",
+    );
+    expect(screen.getByRole("region", { name: "会话时间线" })).toHaveStyle({ paddingBottom: "188px" });
     expect(screen.getAllByTestId("active-run-block")).toHaveLength(3);
 
     fireEvent.click(screen.getByRole("button", { name: "停下开发" }));
@@ -1506,7 +1556,7 @@ describe("OperatorConsole", () => {
     expect(outputButton).toHaveAttribute("title", "完整输出");
     expect(outputButton).toHaveClass(
       "absolute",
-      "left-7",
+      "left-8",
       "top-full",
       "h-6",
       "w-6",
@@ -1518,7 +1568,7 @@ describe("OperatorConsole", () => {
     expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
     expect(outputButton).not.toHaveTextContent("完整输出");
     expect(outputButton.querySelector("svg")).not.toBeNull();
-    expect(outputButton.parentElement).toHaveClass("relative", "pl-7");
+    expect(outputButton.parentElement).toHaveClass("relative", "max-w-[68ch]", "pl-8");
     expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
   });
 
@@ -1551,6 +1601,23 @@ describe("OperatorConsole", () => {
     fireEvent.keyDown(analysisTarget!, { key: "ContextMenu" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "在右侧栏分析这条消息" }));
     expect(onAnalyzeConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the dashboard user message in a bordered 75 percent right lane", () => {
+    renderConsole();
+
+    const userMessage = screen.getByTestId("timeline-message-1");
+    const bubble = userMessage.querySelector(".max-w-\\[75\\%\\]");
+    expect(bubble).toHaveClass(
+      "max-w-[75%]",
+      "rounded-[10px]",
+      "border",
+      "border-line",
+      "bg-card",
+      "px-3",
+      "py-2",
+    );
+    expect(userMessage.querySelector(".h-6.w-6")).toHaveClass("h-6", "w-6");
   });
 
   it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {
