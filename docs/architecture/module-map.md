@@ -2,6 +2,13 @@
 
 当前仓库已提供 TypeScript 运行时代码与可选 Electron 桌面壳；`agents/` 仍只作为 Markdown 素材模块记录，不承担运行时状态。
 
+### marketing-site
+- 职责边界：`sites/marketeam/index.html` 仍是无构建、可直接静态部署的唯一正式官网入口；隔离候选页与 `assets/` 可以承载视觉实验。`scripts/generate-team-diorama.mjs` 只在开发期用 Three.js 生成可直接发布的 GLB 静态资产，网页运行时不得依赖 Node、产品运行时或桌面壳。
+- 入口：正式页 `sites/marketeam/index.html`；3D 资产生成 `pnpm diorama:generate`。
+- 上游：用户提供的视觉参考、GPT Image 补充的隐藏面设定与项目品牌约束。
+- 下游：静态 HTML、GLB/PNG 资源与浏览器 WebGL；不得反向依赖 runner、local-console、desktop-shell 或 console-ui。
+- 禁止依赖：MUST NOT 把候选页自动提升为正式入口；MUST NOT 让 GLB 生成成为线上请求或部署前置；MUST NOT 在 WebGL、第三方模块或动画不可用时隐藏核心官网文案与操作。
+
 ## 业务视角六层总览
 
 自上而下：交互层（GitHub 及对外功能，含本地只读观察页与桌面状态页）→ 运维层（仓库、issue、Codex 的规模与节奏管理）→ 目标编排层（跨 issue 的目标入账、目标账本、子 issue 派生与验收回流）→ issue 内处理（单个 issue 的处理能力）→ 大模型执行层（本地会话支持 Codex/Claude/Kimi，GitHub runner 使用 Codex）→ 资产及其维护。图中块名按业务能力命名，不与具体文件绑定；文件级职责见下方各模块条目。

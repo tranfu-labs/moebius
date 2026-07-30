@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d0c0d">
+  <meta name="description" content="Moebius 3D 团队空间视觉候选：六名成员围绕一条对话协作。">
+  <title>Moebius · 3D 团队空间候选</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./assets/team-diorama/viewer.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d0c0d;
+      --ink: #f2eeea;
+      --muted: #9b9492;
+      --line: rgba(255,255,255,.14);
+      --panel: rgba(22,19,20,.82);
+      --pink: #ec8e9a;
+      --orange: #f0a54e;
+      --blue: #79b7d8;
+      --mint: #8fc9ac;
+      --lavender: #a993d1;
+      --cream: #e7c487;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    body {
+      min-height: 100svh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 46%, rgba(244,181,95,.08), transparent 31%),
+        var(--bg);
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .skip {
+      position: fixed;
+      z-index: 20;
+      top: 8px;
+      left: 8px;
+      padding: 9px 12px;
+      color: #111;
+      background: #fff;
+      transform: translateY(-160%);
+      transition: transform .2s ease;
+    }
+
+    .skip:focus { transform: translateY(0); }
+
+    .topbar {
+      position: fixed;
+      z-index: 10;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: max(18px, env(safe-area-inset-top)) clamp(18px, 3vw, 42px) 18px;
+      pointer-events: none;
+    }
+
+    .brand,
+    .actions {
+      display: flex;
+      align-items: center;
+      pointer-events: auto;
+    }
+
+    .brand { gap: 10px; }
+    .brand img { width: 25px; height: 25px; border-radius: 6px; }
+    .brand strong { font-size: 13px; letter-spacing: .16em; text-transform: uppercase; }
+    .brand span { color: var(--muted); font-size: 12px; }
+
+    .actions { gap: 8px; }
+
+    .quiet-button {
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      color: var(--muted);
+      background: rgba(13,12,13,.58);
+      backdrop-filter: blur(16px);
+      cursor: pointer;
+    }
+
+    .quiet-button:hover { color: var(--ink); border-color: rgba(255,255,255,.28); }
+    .quiet-button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+
+    main {
+      position: relative;
+      width: 100vw;
+      height: 100svh;
+      isolation: isolate;
+    }
+
+    .reference-poster,
+    #diorama-canvas,
+    .hotspot-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .reference-poster {
+      z-index: -2;
+      object-fit: contain;
+      padding: clamp(44px, 7vw, 92px);
+      opacity: 1;
+      transition: opacity .7s ease;
+    }
+
+    body.model-ready .reference-poster { opacity: 0; }
+
+    #diorama-canvas {
+      z-index: -1;
+      display: block;
+      background: transparent;
+      outline: 0;
+      touch-action: pan-y;
+    }
+
+    .hotspot-layer {
+      z-index: 3;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .stage-label {
+      position: absolute;
+      left: clamp(18px, 3vw, 42px);
+      bottom: max(24px, env(safe-area-inset-bottom));
+      z-index: 4;
+      width: min(345px, calc(100vw - 36px));
+      padding: 17px 0 0;
+      border-top: 1px solid var(--line);
+      pointer-events: none;
+    }
+
+    .stage-label .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 7px;
+      color: var(--cream);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .stage-label .eyebrow::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      box-shadow: 12px 0 0 var(--pink), 24px 0 0 var(--blue);
+      margin-right: 24px;
+    }
+
+    .stage-label h1 {
+      margin: 0;
+      font-size: clamp(22px, 2.3vw, 34px);
+      font-weight: 560;
+      letter-spacing: -.04em;
+    }
+
+    .stage-label p {
+      margin: 8px 0 0;
+      max-width: 31ch;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .member-card {
+      position: absolute;
+      z-index: 5;
+      right: clamp(18px, 3vw, 42px);
+      bottom: max(24px, env(safe-area-inset-bottom));
+      width: min(310px, calc(100vw - 36px));
+      min-height: 118px;
+      padding: 17px 19px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--member-color, var(--cream));
+      border-radius: 3px;
+      background: var(--panel);
+      box-shadow: 0 20px 50px rgba(0,0,0,.28);
+      backdrop-filter: blur(18px);
+    }
+
+    .member-card .number {
+      color: var(--member-color, var(--cream));
+      font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .12em;
+    }
+
+    .member-card h2 {
+      margin: 9px 0 5px;
+      font-size: 18px;
+      font-weight: 620;
+    }
+
+    .member-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .hotspot {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      cursor: pointer;
+      pointer-events: auto;
+      transform: translate(-50%, -50%);
+    }
+
+    .hotspot::before {
+      position: absolute;
+      inset: 14px;
+      border: 1px solid rgba(255,255,255,.9);
+      border-radius: 50%;
+      background: var(--hotspot, var(--cream));
+      box-shadow: 0 0 0 5px rgba(13,12,13,.36), 0 6px 22px rgba(0,0,0,.4);
+      content: "";
+      transform: scale(.86);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .hotspot::after {
+      position: absolute;
+      left: 50%;
+      bottom: 40px;
+      width: max-content;
+      max-width: 160px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      color: var(--ink);
+      background: rgba(13,12,13,.88);
+      font-size: 11px;
+      line-height: 1;
+      opacity: 0;
+      pointer-events: none;
+      content: attr(aria-label);
+      transform: translate(-50%, 5px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .hotspot:hover,
+    .hotspot:focus-visible,
+    .hotspot[aria-pressed="true"] {
+      transform: translate(-50%, -50%);
+    }
+
+    .hotspot:hover::before,
+    .hotspot:focus-visible::before,
+    .hotspot[aria-pressed="true"]::before {
+      box-shadow: 0 0 0 6px rgba(13,12,13,.48), 0 8px 28px rgba(0,0,0,.48);
+      transform: scale(1.08);
+    }
+
+    .hotspot:hover::after,
+    .hotspot:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+    .hotspot:focus-visible { outline: 2px solid #fff; outline-offset: 5px; }
+
+    dialog {
+      width: min(880px, calc(100vw - 36px));
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--ink);
+      background: #151314;
+      box-shadow: 0 28px 90px rgba(0,0,0,.58);
+    }
+
+    dialog::backdrop {
+      background: rgba(7,6,7,.82);
+      backdrop-filter: blur(10px);
+    }
+
+    .reference-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .reference-head strong { font-size: 13px; }
+    dialog img { display: block; width: 100%; height: auto; }
+
+    .no-webgl {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      top: 50%;
+      display: none;
+      width: min(380px, calc(100vw - 36px));
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: rgba(13,12,13,.9);
+      color: var(--muted);
+      text-align: center;
+      transform: translate(-50%,-50%);
+    }
+
+    body.model-error .no-webgl { display: block; }
+
+    @media (max-width: 760px) {
+      body { overflow: auto; }
+      main { min-height: 760px; }
+      .topbar { align-items: flex-start; }
+      .brand span { display: none; }
+      .quiet-button { min-height: 44px; padding-inline: 12px; }
+      .reference-poster { padding: 80px 4px 210px; }
+      #diorama-canvas,
+      .hotspot-layer { height: calc(100% - 116px); }
+      .stage-label {
+        left: 18px;
+        right: 18px;
+        bottom: 170px;
+        width: auto;
+      }
+      .stage-label p { display: none; }
+      .member-card {
+        left: 18px;
+        right: 18px;
+        bottom: max(18px, env(safe-area-inset-bottom));
+        width: auto;
+        min-height: 106px;
+      }
+      .hotspot::after { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .001ms !important;
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#scene">跳到 3D 场景</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="./assets/moebius-icon-64.png" width="25" height="25" alt="">
+      <strong>Moebius</strong>
+      <span>3D 团队空间候选</span>
+    </div>
+    <div class="actions" aria-label="场景操作">
+      <button class="quiet-button" type="button" data-reference>原图对照</button>
+      <button class="quiet-button" type="button" data-reset>复位视角</button>
+    </div>
+  </header>
+
+  <main id="scene">
+    <img
+      class="reference-poster"
+      src="./assets/team-diorama/reference-front.png"
+      width="1254"
+      height="1254"
+      alt=""
+      aria-hidden="true"
+    >
+
+    <canvas
+      id="diorama-canvas"
+      tabindex="0"
+      role="img"
+      aria-label="环形石台上的六人智能体团队 3D 工作空间，六套彩色工位围绕中央对话屏幕"
+      aria-describedby="scene-description"
+    ></canvas>
+
+    <div class="hotspot-layer" aria-label="团队成员">
+      <button
+        class="hotspot"
+        data-position="-1.025,2.98,-1.775"
+        data-member="0"
+        aria-label="产品经理"
+        aria-pressed="false"
+        style="--hotspot:var(--orange)"
+      ></button>
+      <button
+        class="hotspot"
+        data-position="-2.2,2.98,0"
+        data-member="1"
+        aria-label="品牌与内容"
+        aria-pressed="false"
+        style="--hotspot:var(--pink)"
+      ></button>
+      <button
+        class="hotspot"
+        data-position="-1.025,2.98,1.775"
+        data-member="2"
+        aria-label="开发"
+        aria-pressed="false"
+        style="--hotspot:var(--cream)"
+      ></button>
+      <button
+        class="hotspot"
+        data-position="1.1,2.98,1.905"
+        data-member="3"
+        aria-label="Leader Agent"
+        aria-pressed="false"
+        style="--hotspot:var(--lavender)"
+      ></button>
+      <button
+        class="hotspot"
+        data-position="2.05,2.98,0"
+        data-member="4"
+        aria-label="测试与验收"
+        aria-pressed="false"
+        style="--hotspot:var(--mint)"
+      ></button>
+      <button
+        class="hotspot"
+        data-position="1.1,2.98,-1.905"
+        data-member="5"
+        aria-label="研究与分析"
+        aria-pressed="false"
+        style="--hotspot:var(--blue)"
+      ></button>
+    </div>
+
+    <section class="stage-label" aria-labelledby="scene-title">
+      <p class="eyebrow">六名成员 · 一条对话</p>
+      <h1 id="scene-title">让团队自己推进。</h1>
+      <p id="scene-description">拖动场景查看隐藏面，滚轮或双指缩放；选择成员，了解他在这次协作中的职责。</p>
+    </section>
+
+    <aside class="member-card" aria-live="polite" style="--member-color:var(--cream)">
+      <span class="number">TEAM / 06</span>
+      <h2>围绕同一个目标协作</h2>
+      <p>选择场景中的彩色成员，查看角色分工。视角被限制在主视觉附近，保证所有角度都保持完整构图。</p>
+    </aside>
+
+    <p class="no-webgl" role="status">
+      当前浏览器没有加载 3D 场景，已保留原始视觉作为静态展示。
+    </p>
+  </main>
+
+  <dialog data-reference-dialog aria-labelledby="reference-title">
+    <div class="reference-head">
+      <strong id="reference-title">原始视觉参考</strong>
+      <button class="quiet-button" type="button" data-close-reference>关闭</button>
+    </div>
+    <img
+      src="./assets/team-diorama/reference-front.png"
+      width="1254"
+      height="1254"
+      alt="原始等距团队空间视觉参考"
+    >
+  </dialog>
+
+  <noscript>
+    <p class="no-webgl" style="display:block">JavaScript 已关闭，当前显示静态参考图。</p>
+  </noscript>
+
+  <script>
+    (() => {
+      const card = document.querySelector(".member-card");
+      const dialog = document.querySelector("[data-reference-dialog]");
+      const members = [
+        {
+          number: "01 / PRODUCT",
+          name: "产品经理",
+          copy: "把目标拆成明确边界与可验收结果，负责确认下一步应该交给谁。",
+          color: "var(--orange)",
+          target: [-1.025, 1.25, -1.775],
+        },
+        {
+          number: "02 / CONTENT",
+          name: "品牌与内容",
+          copy: "把产品判断转成用户能理解的叙事，并保持全页语言与品牌一致。",
+          color: "var(--pink)",
+          target: [-2.2, 1.25, 0],
+        },
+        {
+          number: "03 / BUILD",
+          name: "开发",
+          copy: "接手实现、处理工程约束，并把可运行结果交回团队继续复核。",
+          color: "var(--cream)",
+          target: [-1.025, 1.25, 1.775],
+        },
+        {
+          number: "04 / LEAD",
+          name: "Leader Agent",
+          copy: "是你唯一需要对话的入口：接住目标、组织成员、在需要拍板时回来找你。",
+          color: "var(--lavender)",
+          target: [1.1, 1.25, 1.905],
+        },
+        {
+          number: "05 / VERIFY",
+          name: "测试与验收",
+          copy: "根据已确认的标准检查结果；不合格时带着明确原因退回，而不是静默放行。",
+          color: "var(--mint)",
+          target: [2.05, 1.25, 0],
+        },
+        {
+          number: "06 / ANALYZE",
+          name: "研究与分析",
+          copy: "补充事实、梳理风险和替代方案，让团队在关键决策前拥有足够依据。",
+          color: "var(--blue)",
+          target: [1.1, 1.25, -1.905],
+        },
+      ];
+
+      window.addEventListener("diorama-ready", () => {
+        document.body.classList.add("model-ready");
+      });
+
+      window.addEventListener("diorama-error", () => {
+        document.body.classList.add("model-error");
+      });
+
+      document.querySelectorAll("[data-member]").forEach((hotspot) => {
+        hotspot.addEventListener("click", () => {
+          const member = members[Number(hotspot.dataset.member)];
+          document.querySelectorAll("[data-member]").forEach((item) => {
+            item.setAttribute("aria-pressed", String(item === hotspot));
+          });
+          card.style.setProperty("--member-color", member.color);
+          card.querySelector(".number").textContent = member.number;
+          card.querySelector("h2").textContent = member.name;
+          card.querySelector("p").textContent = member.copy;
+          window.__diorama?.focus(member.target);
+        });
+      });
+
+      document.querySelector("[data-reset]").addEventListener("click", () => {
+        window.__diorama?.reset();
+        document.querySelectorAll("[data-member]").forEach((item) => {
+          item.setAttribute("aria-pressed", "false");
+        });
+        card.style.setProperty("--member-color", "var(--cream)");
+        card.querySelector(".number").textContent = "TEAM / 06";
+        card.querySelector("h2").textContent = "围绕同一个目标协作";
+        card.querySelector("p").textContent =
+          "选择场景中的彩色成员，查看角色分工。视角被限制在主视觉附近，保证所有角度都保持完整构图。";
+      });
+
+      document.querySelector("[data-reference]").addEventListener("click", () => {
+        dialog.showModal();
+      });
+      document.querySelector("[data-close-reference]").addEventListener("click", () => {
+        dialog.close();
+      });
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+
+      setTimeout(() => {
+        if (!document.body.classList.contains("model-ready")) {
+          document.body.classList.add("model-error");
+        }
+      }, 12000);
+    })();
+  </script>
+</body>
+</html>

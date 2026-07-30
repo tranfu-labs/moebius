@@ -35,6 +35,7 @@
 ## 常用命令
 - 安装：`pnpm install`
 - 品牌资产：`pnpm brand:generate` 生成 / `pnpm brand:check` 只读校验（管线与门禁见 `openspec/specs/product-identity/spec.md`）
+- 官网 3D 团队空间资产：`pnpm diorama:generate`（从受控几何源生成 `sites/marketeam/assets/team-diorama/team-workspace.glb`；候选页约束见 marketing-site 域文档）
 - 本地模式：`pnpm start`（干净环境可冷启动；只在真正调用 Codex 时需要本机 `codex` CLI）
 - 纯 GitHub runner：`pnpm start -- --github-mode`（flag 必须 exact，见下方红线；需要 `codex` CLI 与 `gh auth login`）
 - 只读观察页：`pnpm observer`（默认 `127.0.0.1:8787`，`OBSERVER_PORT` 覆盖端口；只读旁路，行为见 `openspec/specs/local-console/spec.md` observer 节）

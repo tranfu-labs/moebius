@@ -74,3 +74,9 @@
 - `style-atlas-a31f.html`：从已采用的 `index-field-atlas-a31f.html` 抽取 Relay Atlas 的可复用视觉事实，包括令牌、三种文字声部、handoff coordinates、路线与责任领地、状态标签、过程底单、派工单、动效预算和使用禁区。它是后续 Atlas 方向页面的优先参考，并继续保持为不覆盖现有 `style.html` 的独立文件；正式 `index.html` 的提升来自用户单独确认，而不是样张自动改写入口。
 
 这份样张不是营销页副本：不得把具体首屏、章节文案或整页布局当成组件照搬。复用时必须先写清当前页面中的真实站点、经手人、下一站和退回原因，再选择坐标、路线、领地或底单等视觉语法。
+
+## 3D 团队空间候选（2026-07-30）
+
+- `index-team-diorama-7f3a.html`：根据用户提供的等距团队空间参考制作的中配真 3D 候选。页面消费 `assets/team-diorama/team-workspace.glb`，提供有限旋转、缩放、六名成员热点、原图对照、静态海报和 reduced-motion / WebGL 失败降级。
+- `assets/team-diorama/reference-front.png`：用户提供的主视角事实参考；`reference-turnaround.png`：GPT Image 依据主视角补全的四视图建模参考；两者只服务候选设计与验收。
+- 正式 `index.html` 不自动引入该候选。只有用户完成视觉评审并明确选择提升后，才可按官网产品事实源与 OpenSpec 流程迁移。
