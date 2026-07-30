@@ -113,7 +113,7 @@ describe("RunBlock", () => {
     expect(screen.getAllByTestId("run-live-output")).toHaveLength(1);
   });
 
-  it("keeps Streamdown Markdown while hiding machine details from live output", () => {
+  it("keeps Streamdown Markdown and preserves machine details in live output", () => {
     render(
       <RunBlock
         role="dev"
@@ -122,8 +122,11 @@ describe("RunBlock", () => {
     );
 
     expect(screen.getByRole("heading", { name: "检查结果" })).toBeVisible();
-    expect(screen.getByText(/路径已隐藏/u)).toBeVisible();
-    expect(screen.queryByText(/\/tmp\/private-run|run-secret/u)).not.toBeInTheDocument();
+    expect(screen.getByText("/tmp/private-run", { selector: "code" })).toBeVisible();
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P"
+      && element.textContent === "正在读取 /tmp/private-run，runId=run-secret。")).toBeVisible();
+    expect(screen.queryByText(/路径已隐藏/u)).not.toBeInTheDocument();
   });
 
   it("uses the session member projection for custom roles and stop actions", () => {

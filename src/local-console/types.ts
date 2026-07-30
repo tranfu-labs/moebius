@@ -277,7 +277,6 @@ export type LocalConsoleFileReferenceContent =
       lines: [];
       reason:
         | "invalid-path"
-        | "outside-trusted-roots"
         | "not-found"
         | "not-file"
         | "binary-file"

@@ -12,21 +12,18 @@ afterEach(async () => {
 });
 
 describe("local console file reference reader", () => {
-  it("reads a bounded window with real line numbers from either trusted root", async () => {
+  it("reads a bounded window with real line numbers from an arbitrary local path", async () => {
     const root = await temporaryRoot();
-    const workspace = path.join(root, "workspace");
     const sessionsRoot = path.join(root, "codex", "sessions");
     const rollout = path.join(sessionsRoot, "2026", "07", "27", "rollout.jsonl");
     await fs.mkdir(path.dirname(rollout), { recursive: true });
     const lines = Array.from({ length: 420 }, (_value, index) => `line ${String(index + 1)}`);
     await fs.writeFile(rollout, `${lines.join("\n")}\n${"x".repeat(2 * 1024 * 1024)}\n`, "utf8");
-    await fs.mkdir(workspace, { recursive: true });
 
     const result = await readLocalFileReferenceWindow({
       filePath: rollout,
       line: 292,
       column: 7,
-      trustedRoots: [workspace, sessionsRoot],
       contextLines: 2,
     });
 
@@ -47,14 +44,12 @@ describe("local console file reference reader", () => {
     ]);
   });
 
-  it("rejects a symlink whose real target escapes every trusted root", async () => {
+  it("reads a symlink whose real target is outside its containing directory", async () => {
     const root = await temporaryRoot();
     const workspace = path.join(root, "workspace");
-    const sessionsRoot = path.join(root, "sessions");
     const outside = path.join(root, "outside.txt");
     const link = path.join(workspace, "linked.txt");
     await fs.mkdir(workspace, { recursive: true });
-    await fs.mkdir(sessionsRoot, { recursive: true });
     await fs.writeFile(outside, "secret\n", "utf8");
     await fs.symlink(outside, link);
 
@@ -62,14 +57,15 @@ describe("local console file reference reader", () => {
       filePath: link,
       line: 1,
       column: null,
-      trustedRoots: [workspace, sessionsRoot],
     })).resolves.toEqual({
-      available: false,
-      path: link,
-      lines: [],
-      reason: "outside-trusted-roots",
+      available: true,
+      path: await fs.realpath(outside),
+      lines: [{ lineNumber: 1, text: "secret" }],
+      reason: null,
       targetLine: 1,
       targetColumn: null,
+      truncatedBefore: false,
+      truncatedAfter: false,
     });
   });
 
@@ -84,7 +80,6 @@ describe("local console file reference reader", () => {
       filePath: target,
       line: 1,
       column: null,
-      trustedRoots: [workspace],
     });
 
     expect(result).toEqual({
@@ -110,7 +105,6 @@ describe("local console file reference reader", () => {
       filePath: alias,
       line: 1,
       column: null,
-      trustedRoots: [workspace],
     });
 
     expect(result).toEqual({
@@ -137,7 +131,6 @@ describe("local console file reference reader", () => {
         filePath,
         line: 1,
         column: null,
-        trustedRoots: [workspace],
       })));
     const expected = {
       available: false,
@@ -163,7 +156,6 @@ describe("local console file reference reader", () => {
       filePath: target,
       line: 3,
       column: null,
-      trustedRoots: [workspace],
       contextLines: 2,
       maxLineBytes: 200,
       maxResponseBytes: 250,

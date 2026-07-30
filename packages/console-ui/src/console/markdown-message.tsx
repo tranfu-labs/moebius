@@ -24,7 +24,6 @@ import {
   type MarkdownConversationReference,
   type MarkdownMemberIdentity,
 } from "@/console/markdown-internal-reference";
-import { machineTextPlaceholders } from "@/console/machine-text";
 
 export interface MarkdownMessageProps {
   content: string;
@@ -64,7 +63,6 @@ export function MarkdownMessage({
   onOpenTeamMember,
   className,
 }: MarkdownMessageProps): JSX.Element {
-  const { t } = useI18n();
   const [intentKey] = useState(createMarkdownIntentKey);
   useEffect(() => {
     retainMarkdownInternalIntentRegistry(intentKey);
@@ -88,10 +86,9 @@ export function MarkdownMessage({
       createMarkdownInternalReferencePlugin(
         memberIdentities,
         intentKey,
-        machineTextPlaceholders(t),
       ),
     ],
-    [intentKey, memberIdentities, t],
+    [intentKey, memberIdentities],
   );
   const streaming = mode === "streaming";
 

@@ -33,6 +33,7 @@ interface ConsoleState {
     runId: string;
     activity?: { action?: string; object?: string } | null;
     liveMarkdown?: string | null;
+    lastOutputSummary?: string | null;
   }>;
   pendingPrimaryMessages?: Array<{ body: string }>;
 }
@@ -51,6 +52,7 @@ interface GeometryEvidence {
   pending: Box;
   activeRun: Box;
   userAvatar: Box;
+  userMessageContainer: Box;
   userBubble: Box;
   agentAvatar: Box;
   agentBody: Box;
@@ -128,6 +130,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const desktopRoot = path.join(projectRoot, "desktop");
 const outputRoot = await createAcceptanceOutputDirectory("console-dashboard-ui");
 const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-dashboard-runtime-"));
+const fileReferenceRoot = await fs.mkdtemp(path.join("/tmp", "moebius-file-reference-acceptance-"));
 const fixtureProjectRoot = path.join(runtimeRoot, "fixture-project");
 const secondaryProjectRoot = path.join(runtimeRoot, "secondary-project");
 const shortWindowProjectRoots = Array.from(
@@ -136,6 +139,10 @@ const shortWindowProjectRoots = Array.from(
 );
 const fakeBin = path.join(runtimeRoot, "bin");
 const attachmentPath = path.join(runtimeRoot, "dashboard-evidence.txt");
+const reportPath = path.join(fileReferenceRoot, "report.txt");
+const binaryPath = path.join(fileReferenceRoot, "binary.dat");
+const longLinePath = path.join(fileReferenceRoot, "long-line.txt");
+const activitySummary = `正在核对 ${reportPath} runId=run-live direct handoff`;
 const evidencePath = path.join(outputRoot, "console-dashboard-evidence.json");
 const referenceScreenshot = path.join(outputRoot, "dashboard-reference.png");
 const wideScreenshot = path.join(outputRoot, "dashboard-wide.png");
@@ -146,6 +153,9 @@ await Promise.all([
   fs.mkdir(fixtureProjectRoot, { recursive: true }),
   fs.mkdir(secondaryProjectRoot, { recursive: true }),
   fs.mkdir(fakeBin, { recursive: true }),
+  fs.writeFile(reportPath, "第一行\n真实 Electron 目标行\n第三行\n", "utf8"),
+  fs.writeFile(binaryPath, Buffer.from([0x4d, 0x6f, 0x65, 0x62, 0x69, 0x75, 0x73, 0x00, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74])),
+  fs.writeFile(longLinePath, `${"x".repeat(300 * 1024)}\n`, "utf8"),
   ...shortWindowProjectRoots.map((projectPath) => fs.mkdir(projectPath, { recursive: true })),
 ]);
 await fs.writeFile(path.join(runtimeRoot, ".onboarding-completed"), `${new Date().toISOString()}\n`, "utf8");
@@ -154,7 +164,12 @@ await fs.writeFile(
   "Dashboard acceptance attachment created in the system temporary directory.\n",
   "utf8",
 );
-await fs.writeFile(path.join(fakeBin, "codex"), fakeCodexSource(), { mode: 0o755 });
+await fs.writeFile(path.join(fakeBin, "codex"), fakeCodexSource({
+  reportPath,
+  binaryPath,
+  longLinePath,
+  activitySummary,
+}), { mode: 0o755 });
 
 let application: ElectronApplication | null = null;
 let referenceBrowser: Browser | null = null;
@@ -180,6 +195,12 @@ const cleanup = (): Promise<void> => {
       referenceBrowser = null;
     }
     await fs.rm(runtimeRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 8,
+      retryDelay: 100,
+    });
+    await fs.rm(fileReferenceRoot, {
       recursive: true,
       force: true,
       maxRetries: 8,
@@ -333,6 +354,158 @@ try {
   );
   await page.screenshot({ path: rightSidebarScreenshot, fullPage: true });
 
+  await selectSession(page, success.sessionId);
+  const exposedSentence = "Send a direct message before handoff.";
+  await page.getByText(exposedSentence, { exact: true }).waitFor();
+  const exposedMachineTextEvidence = {
+    sentence: await page.getByText(exposedSentence, { exact: true }).textContent(),
+    hiddenPlaceholderCount: await page.getByText(/\[(?:路径|机器信息|内部标识|工作区类型)已隐藏\]/u).count(),
+  };
+  assert(
+    exposedMachineTextEvidence.sentence === exposedSentence,
+    "ordinary direct/handoff sentence was not preserved exactly",
+  );
+  assert(
+    exposedMachineTextEvidence.hiddenPlaceholderCount === 0,
+    "machine-text placeholder remained in the real timeline",
+  );
+
+  const reportReference = page.getByRole("button", { name: `${reportPath}:2`, exact: true });
+  await reportReference.waitFor();
+  await reportReference.click();
+  const reportTab = page.getByTestId("file-reference-tab");
+  await reportTab.waitFor();
+  const reportCanonicalPath = await reportTab.getByTestId("file-reference-path").textContent();
+  const reportTargetLine = reportTab.getByTestId("file-reference-target-line");
+  await reportTargetLine.waitFor();
+  const reportReferenceEvidence = {
+    visibleReference: await reportReference.textContent(),
+    canonicalPath: reportCanonicalPath,
+    targetLineNumber: await reportTargetLine.getAttribute("data-target-line"),
+    targetLineText: await reportTargetLine.textContent(),
+  };
+  assert(
+    reportReferenceEvidence.visibleReference === `${reportPath}:2`,
+    "bare absolute path was not shown unchanged in the timeline",
+  );
+  assert(
+    reportReferenceEvidence.canonicalPath === await fs.realpath(reportPath),
+    "right sidebar did not show the canonical path for the /tmp file",
+  );
+  assert(
+    reportReferenceEvidence.targetLineNumber === "true"
+      && reportReferenceEvidence.targetLineText?.includes("真实 Electron 目标行") === true,
+    "right sidebar did not highlight line 2 from the /tmp text file",
+  );
+
+  const binaryReference = page.getByRole("button", { name: binaryPath, exact: true });
+  await binaryReference.click();
+  const binaryReason = page.getByText("这个文件不是可显示的 UTF-8 文本。", { exact: true });
+  await binaryReason.waitFor();
+  const binaryGuardEvidence = {
+    reason: await binaryReason.textContent(),
+    targetLineCount: await page.getByTestId("file-reference-target-line").count(),
+    leakedContentCount: await page.getByText(/Moebius.*secret/u).count(),
+  };
+  assert(binaryGuardEvidence.targetLineCount === 0, "binary file rendered a target line");
+  assert(binaryGuardEvidence.leakedContentCount === 0, "binary file content leaked into the sidebar");
+
+  const longLineReference = page.getByRole("button", { name: longLinePath, exact: true });
+  await longLineReference.click();
+  const longLineReason = page.getByText("目标附近存在过长单行，无法安全显示。", { exact: true });
+  await longLineReason.waitFor();
+  const longLineGuardEvidence = {
+    reason: await longLineReason.textContent(),
+    targetLineCount: await page.getByTestId("file-reference-target-line").count(),
+  };
+  assert(longLineGuardEvidence.targetLineCount === 0, "overlong line rendered file content");
+
+  const summaryLive = await createSession(apiBase, {
+    projectId: primaryProject.projectId,
+    initialMessage: "SUMMARY dashboard 机器信息活动摘要验收",
+  });
+  await waitForState(apiBase, (state) => findSession(state, summaryLive.sessionId)?.runningCount === 1);
+  await selectSession(page, summaryLive.sessionId);
+  const summaryRunBlock = page.getByTestId("active-run-block");
+  await summaryRunBlock.waitFor();
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+  const summaryRunText = await summaryRunBlock.textContent();
+  assert(
+    summaryRunText?.includes(activitySummary) === true,
+    `active-run block did not contain the expected summary: ${JSON.stringify(summaryRunText)}`,
+  );
+  const activitySummaryOutput = summaryRunBlock.locator("[data-testid='run-live-output']");
+  await activitySummaryOutput.waitFor();
+  const activitySummaryEvidence = {
+    visibleText: await activitySummaryOutput.textContent(),
+    progressFallbackCount: await page.getByText("正在推进这一步…", { exact: true }).count(),
+  };
+  assert(
+    activitySummaryEvidence.visibleText === activitySummary,
+    "active-run summary did not preserve the absolute path and internal identifiers",
+  );
+  assert(
+    activitySummaryEvidence.progressFallbackCount === 0,
+    "non-blank active-run summary fell back to generic progress copy",
+  );
+  const summaryStopEvidence = await exerciseMainStop(page);
+
+  const blankLive = await createSession(apiBase, {
+    projectId: primaryProject.projectId,
+    initialMessage: "BLANK dashboard 空白活动摘要验收",
+  });
+  await waitForState(apiBase, (state) => findSession(state, blankLive.sessionId)?.runningCount === 1);
+  await page.evaluate((sessionId) => {
+    const target = window as typeof window & { __moebiusAcceptanceFetch?: typeof window.fetch };
+    target.__moebiusAcceptanceFetch = window.fetch;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (...fetchArgs) => {
+      const response = await originalFetch(...fetchArgs);
+      const requestUrl = new URL(
+        typeof fetchArgs[0] === "string"
+          ? fetchArgs[0]
+          : fetchArgs[0] instanceof URL
+            ? fetchArgs[0].href
+            : fetchArgs[0].url,
+        window.location.href,
+      );
+      if (requestUrl.pathname !== "/api/local-console/state" || !response.ok) return response;
+      const state = await response.clone().json() as ConsoleState;
+      for (const run of state.activeRuns ?? []) {
+        if (run.sessionId === sessionId) {
+          run.activity = null;
+          run.liveMarkdown = null;
+          run.lastOutputSummary = "   ";
+        }
+      }
+      return new Response(JSON.stringify(state), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    };
+  }, blankLive.sessionId);
+  await selectSession(page, blankLive.sessionId);
+  await page.getByTestId("active-run-block").waitFor();
+  const blankFallback = page.getByText("正在推进这一步…", { exact: true });
+  await blankFallback.waitFor();
+  const blankSummaryEvidence = {
+    fallback: await blankFallback.textContent(),
+    activeRunCount: await page.getByTestId("active-run-block").count(),
+  };
+  assert(
+    blankSummaryEvidence.fallback === "正在推进这一步…",
+    "blank active-run summary did not use the generic progress fallback",
+  );
+  const blankStopEvidence = await exerciseMainStop(page);
+  await page.evaluate(() => {
+    const target = window as typeof window & { __moebiusAcceptanceFetch?: typeof window.fetch };
+    if (target.__moebiusAcceptanceFetch !== undefined) {
+      window.fetch = target.__moebiusAcceptanceFetch;
+      delete target.__moebiusAcceptanceFetch;
+    }
+  });
+
   const evidence = {
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -345,6 +518,8 @@ try {
         failed: failed.sessionId,
         success: success.sessionId,
         live: live.sessionId,
+        summaryLive: summaryLive.sessionId,
+        blankLive: blankLive.sessionId,
       },
     },
     acceptance: {
@@ -375,6 +550,7 @@ try {
       messageHierarchy: {
         passed: true,
         userAvatar: wideGeometry.userAvatar,
+        userMessageContainer: wideGeometry.userMessageContainer,
         userBubble: wideGeometry.userBubble,
         agentAvatar: wideGeometry.agentAvatar,
         agentBody: wideGeometry.agentBody,
@@ -407,6 +583,20 @@ try {
       excludedRightSidebar: {
         passed: true,
         ...rightSidebarEvidence,
+      },
+      localFileReferences: {
+        passed: true,
+        exposedMachineText: exposedMachineTextEvidence,
+        report: reportReferenceEvidence,
+        binaryGuard: binaryGuardEvidence,
+        longLineGuard: longLineGuardEvidence,
+      },
+      activeRunMachineText: {
+        passed: true,
+        nonBlank: activitySummaryEvidence,
+        nonBlankStop: summaryStopEvidence,
+        blank: blankSummaryEvidence,
+        blankStop: blankStopEvidence,
       },
     },
     styles: wideGeometry.styles,
@@ -588,7 +778,9 @@ async function collectProductionIconEvidence(page: Page): Promise<{
     navigation: await iconMetric(page.getByTestId("sidebar-app-actions").getByRole("button").first()),
     ...projectIcons,
     sessionMore: await iconMetric(sessionMenu),
-    mainRightToggle: await iconMetric(page.getByTestId("main-window-drag-region").getByRole("button")),
+    mainRightToggle: await iconMetric(
+      page.getByTestId("main-window-drag-region").getByRole("button", { name: "显示右侧栏" }),
+    ),
     messageTool: await iconMetric(page.getByRole("button", { name: "完整输出" }).last()),
     attachment: await iconMetric(page.getByRole("button", { name: "添加附件" })),
     send: await iconMetric(page.getByRole("button", { name: "发送消息" })),
@@ -772,6 +964,7 @@ async function collectWideGeometry(
     pending: await box(page.getByTestId("primary-pending-zone")),
     activeRun: await box(page.getByTestId("active-run-block").first()),
     userAvatar: await box(userAvatar),
+    userMessageContainer: await box(userBubble.locator("..")),
     userBubble: await box(userBubble),
     agentAvatar: agent.avatar,
     agentBody: agent.body,
@@ -836,6 +1029,7 @@ async function collectNarrowGeometry(page: Page): Promise<{
   composer: Box;
   gutterLeft: number;
   gutterRight: number;
+  timelineScrollbarWidth: number;
   viewport: { width: number; height: number; scrollWidth: number; scrollHeight: number };
 }> {
   const main = await box(page.getByTestId("operator-main"));
@@ -847,11 +1041,20 @@ async function collectNarrowGeometry(page: Page): Promise<{
     composer,
     gutterLeft: title.x - main.x,
     gutterRight: main.x + main.width - (title.x + title.width),
+    timelineScrollbarWidth: await page.getByRole("region", { name: "会话时间线" })
+      .evaluate((element) => element.offsetWidth - element.clientWidth),
     viewport: await viewportGeometry(page),
   };
 }
 
 function assertWideGeometry(value: GeometryEvidence): void {
+  console.log(JSON.stringify({
+    geometryDiagnostic: {
+      userBubbleWidth: value.userBubble.width,
+      titleWidth: value.title.width,
+      userMessageContainerWidth: value.userMessageContainer.width,
+    },
+  }));
   assertClose(value.sidebar.width, 252, 1, "default sidebar width");
   assertClose(value.sidebarWindowControls.height, 46, 1, "sidebar window controls height");
   assertClose(value.brand.height, 34, 1, "brand row height");
@@ -860,7 +1063,7 @@ function assertWideGeometry(value: GeometryEvidence): void {
   assertClose(value.sessionRow.height, 32, 1, "session row height");
   assertClose(value.mainWindowControls.height, 46, 1, "main window controls height");
   assertClose(value.titleHeader.height, 46, 1, "sticky title height");
-  assertClose(value.title.width, 840, 1, "wide title axis");
+  assertClose(value.title.width, 760, 1, "wide title axis");
   assertClose(value.composer.width, 840, 1, "wide composer axis");
   assertClose(value.pending.width, 840, 1, "wide pending axis");
   assertClose(value.activeRun.width, 840, 1, "wide activity axis");
@@ -868,7 +1071,10 @@ function assertWideGeometry(value: GeometryEvidence): void {
   assertClose(value.userAvatar.height, 24, 1, "user avatar height");
   assertClose(value.agentAvatar.width, 24, 1, "agent avatar width");
   assertClose(value.agentAvatar.height, 24, 1, "agent avatar height");
-  assert(value.userBubble.width <= value.title.width * 0.75 + 1, "user bubble exceeded 75 percent");
+  assert(
+    value.userBubble.width <= value.userMessageContainer.width * 0.75 + 1,
+    "user bubble exceeded 75 percent",
+  );
   assert(value.agentBody.width <= 68 * 14 + 1, "agent body exceeded its 68ch readable bound");
   assert(value.textarea.height >= 32 && value.textarea.height <= 120, "main textarea escaped 32–120px range");
   assertClose(value.attachmentButton.width, 32, 1, "attachment button width");
@@ -888,9 +1094,19 @@ function assertWideGeometry(value: GeometryEvidence): void {
 
 function assertNarrowGeometry(value: Awaited<ReturnType<typeof collectNarrowGeometry>>): void {
   assertClose(value.gutterLeft, 32, 1, "narrow left gutter");
-  assertClose(value.gutterRight, 32, 1, "narrow right gutter");
+  assertClose(
+    value.gutterRight,
+    32 + value.timelineScrollbarWidth,
+    1,
+    "narrow right gutter plus scrollbar",
+  );
   assertClose(value.title.x, value.composer.x, 1, "narrow title/composer left edge");
-  assertClose(value.title.width, value.composer.width, 1, "narrow title/composer width");
+  assertClose(
+    value.title.width + value.timelineScrollbarWidth,
+    value.composer.width,
+    1,
+    "narrow title/composer content width",
+  );
   assert(value.viewport.scrollWidth <= value.viewport.width, "narrow renderer overflowed horizontally");
 }
 
@@ -1235,11 +1451,32 @@ function waitForInterrupt(): Promise<void> {
   });
 }
 
-function fakeCodexSource(): string {
+function fakeCodexSource(input: {
+  reportPath: string;
+  binaryPath: string;
+  longLinePath: string;
+  activitySummary: string;
+}): string {
+  const reportReference = `${input.reportPath}:2`;
   return `#!/usr/bin/env node
 const prompt = process.argv.at(-1) ?? "";
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 const threadId = "thread-dashboard-" + String(process.pid);
+
+if (prompt.includes("SUMMARY dashboard")) {
+  emit({
+    type: "summary",
+    summary: ${JSON.stringify(input.activitySummary)}
+  });
+  setInterval(() => {}, 1000);
+  return;
+}
+
+if (prompt.includes("BLANK dashboard")) {
+  setInterval(() => {}, 1000);
+  return;
+}
+
 emit({ type: "thread.started", thread_id: threadId });
 
 if (prompt.includes("FAIL dashboard")) {
@@ -1260,7 +1497,15 @@ if (prompt.includes("SUCCESS dashboard")) {
           "",
           "- 标题、消息与 composer 共用内容轴",
           "- 窄窗口不产生根级横向滚动",
-          "- 右侧栏继续使用 embedded 密度"
+          "- 右侧栏继续使用 embedded 密度",
+          "",
+          "产物位于 ${reportReference}。",
+          "",
+          "Send a direct message before handoff.",
+          "",
+          "二进制文件 ${input.binaryPath}。",
+          "",
+          "超长行文件 ${input.longLinePath}。"
         ].join("\\n")
       }
     });
