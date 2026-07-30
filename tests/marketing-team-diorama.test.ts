@@ -16,6 +16,11 @@ const viewerPath = resolve(
   root,
   "sites/marketeam/assets/team-diorama/viewer.js",
 );
+const detailReferencePath = resolve(
+  root,
+  "sites/marketeam/assets/team-diorama/reference-detail-sheet-v2.png",
+);
+const generatorPath = resolve(root, "scripts/generate-team-diorama.mjs");
 
 describe("marketing team diorama candidate", () => {
   it("keeps the formal homepage isolated from the 3D experiment", async () => {
@@ -28,6 +33,7 @@ describe("marketing team diorama candidate", () => {
   it("ships six accessible hotspots and bounded camera controls", async () => {
     const html = await readFile(candidatePath, "utf8");
     const viewer = await readFile(viewerPath, "utf8");
+    const generator = await readFile(generatorPath, "utf8");
 
     expect(html.match(/class="hotspot"/gu)).toHaveLength(6);
     expect(html).toContain('id="diorama-canvas"');
@@ -38,7 +44,13 @@ describe("marketing team diorama candidate", () => {
     expect(viewer).toContain("minPolarAngle = THREE.MathUtils.degToRad(48)");
     expect(viewer).toContain("maxPolarAngle = THREE.MathUtils.degToRad(64)");
     expect(viewer).toContain("UnrealBloomPass");
+    expect(viewer).toContain("SMAAPass");
+    expect(viewer).toContain("composer.setPixelRatio(pixelRatio)");
     expect(viewer).toContain("VSMShadowMap");
+    expect(viewer).toContain("RoomEnvironment");
+    expect(generator).toContain("new THREE.InstancedMesh");
+    expect(generator).toContain("createNotebook");
+    expect(generator).toContain("domeGeometry");
     expect(html).toContain("prefers-reduced-motion: reduce");
     expect(html).toContain("data-reference-dialog");
     expect(html).toContain('class="reference-poster"');
@@ -51,7 +63,14 @@ describe("marketing team diorama candidate", () => {
     expect(bytes.subarray(0, 4).toString("ascii")).toBe("glTF");
     expect(bytes.readUInt32LE(4)).toBe(2);
     expect(bytes.readUInt32LE(8)).toBe(modelStat.size);
-    expect(modelStat.size).toBeGreaterThan(500_000);
-    expect(modelStat.size).toBeLessThan(4_000_000);
+    expect(bytes.includes(Buffer.from("EXT_mesh_gpu_instancing"))).toBe(true);
+    expect(modelStat.size).toBeGreaterThan(2_000_000);
+    expect(modelStat.size).toBeLessThan(8_000_000);
+  });
+
+  it("keeps the generated precision sheet with the candidate assets", async () => {
+    const detailReference = await stat(detailReferencePath);
+
+    expect(detailReference.size).toBeGreaterThan(500_000);
   });
 });

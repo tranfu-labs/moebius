@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
@@ -11,8 +13,10 @@ const canvas = document.querySelector("#diorama-canvas");
 const stage = document.querySelector("#scene");
 const hotspotElements = [...document.querySelectorAll("[data-member]")];
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const captureRequested = new URLSearchParams(location.search).has("capture");
+const assetVersion = "80-precision-7";
 
-const defaultCameraPosition = new THREE.Vector3(0, 12.6, 16.8);
+const defaultCameraPosition = new THREE.Vector3(0, 9.1, 18.2);
 const defaultTarget = new THREE.Vector3(0, 0.34, 0);
 const focusTarget = defaultTarget.clone();
 let cameraGoal = null;
@@ -21,6 +25,7 @@ let composer = null;
 let renderer = null;
 let camera = null;
 let controls = null;
+let capturedFrames = 0;
 
 function dispatch(name, detail) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -31,13 +36,13 @@ function buildRenderer() {
     canvas,
     antialias: true,
     alpha: false,
-    preserveDrawingBuffer: new URLSearchParams(location.search).has("capture"),
+    preserveDrawingBuffer: captureRequested,
     powerPreference: "high-performance",
   });
   renderer.setClearColor(0x0d0c0d, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1;
+  renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.VSMShadowMap;
 }
@@ -46,17 +51,24 @@ function buildScene() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0d0c0d);
   scene.fog = new THREE.FogExp2(0x0d0c0d, 0.014);
+  const environmentGenerator = new THREE.PMREMGenerator(renderer);
+  const roomEnvironment = new RoomEnvironment();
+  scene.environment = environmentGenerator.fromScene(roomEnvironment, 0.04).texture;
+  scene.environmentIntensity = 0.3;
+  roomEnvironment.dispose();
+  environmentGenerator.dispose();
 
-  const ambient = new THREE.AmbientLight(0x8d8587, 0.62);
+  const ambient = new THREE.AmbientLight(0x9b9395, 0.42);
   scene.add(ambient);
 
-  const hemisphere = new THREE.HemisphereLight(0xfff0de, 0x171318, 1.02);
+  const hemisphere = new THREE.HemisphereLight(0xfff0de, 0x1d181a, 0.72);
   scene.add(hemisphere);
 
-  const key = new THREE.DirectionalLight(0xffd9b3, 2.15);
-  key.position.set(-6.5, 12.5, 9.5);
+  const key = new THREE.DirectionalLight(0xffd9b3, 1.58);
+  key.position.set(-7.5, 16.5, 10.5);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  const shadowMapSize = matchMedia("(max-width: 760px)").matches ? 2048 : 4096;
+  key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
   key.shadow.camera.left = -9;
   key.shadow.camera.right = 9;
   key.shadow.camera.top = 9;
@@ -65,15 +77,15 @@ function buildScene() {
   key.shadow.camera.far = 36;
   key.shadow.bias = -0.0007;
   key.shadow.normalBias = 0.026;
-  key.shadow.blurSamples = 8;
-  key.shadow.radius = 3;
+  key.shadow.blurSamples = 16;
+  key.shadow.radius = 4;
   scene.add(key);
 
-  const coolFill = new THREE.DirectionalLight(0x93bee0, 0.46);
+  const coolFill = new THREE.DirectionalLight(0x93bee0, 0.34);
   coolFill.position.set(8, 5.5, 3);
   scene.add(coolFill);
 
-  const rim = new THREE.DirectionalLight(0xe4a5d6, 0.34);
+  const rim = new THREE.DirectionalLight(0xe4a5d6, 0.28);
   rim.position.set(-3, 6, -9);
   scene.add(rim);
 
@@ -82,7 +94,7 @@ function buildScene() {
 
 function buildCameraAndControls() {
   const aspect = Math.max(stage.clientWidth / stage.clientHeight, 0.5);
-  const viewHeight = 13;
+  const viewHeight = 13.9;
   camera = new THREE.OrthographicCamera(
     (-viewHeight * aspect) / 2,
     (viewHeight * aspect) / 2,
@@ -93,7 +105,7 @@ function buildCameraAndControls() {
   );
   camera.position.copy(defaultCameraPosition);
   camera.lookAt(defaultTarget);
-  camera.zoom = 0.98;
+  camera.zoom = 1;
   camera.updateProjectionMatrix();
 
   controls = new OrbitControls(camera, canvas);
@@ -127,8 +139,8 @@ function buildPostProcessing(scene) {
     stage.clientHeight,
   );
   ambientOcclusion.kernelRadius = 12;
-  ambientOcclusion.minDistance = 0.002;
-  ambientOcclusion.maxDistance = 0.085;
+  ambientOcclusion.minDistance = 0.0015;
+  ambientOcclusion.maxDistance = 0.11;
   composer.addPass(ambientOcclusion);
 
   const bloom = new UnrealBloomPass(
@@ -142,6 +154,7 @@ function buildPostProcessing(scene) {
   bloom.radius = 0.38;
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
+  composer.addPass(new SMAAPass(stage.clientWidth, stage.clientHeight));
 }
 
 function tuneModel(root) {
@@ -154,7 +167,7 @@ function tuneModel(root) {
         : [object.material];
       modelMaterials.forEach((modelMaterial) => {
         if (!modelMaterial) return;
-        modelMaterial.envMapIntensity = 0.54;
+        modelMaterial.envMapIntensity = 0.35;
         modelMaterial.needsUpdate = true;
       });
     }
@@ -173,14 +186,19 @@ function resize() {
   const width = stage.clientWidth;
   const height = stage.clientHeight;
   const aspect = Math.max(width / height, 0.5);
-  const viewHeight = matchMedia("(max-width: 760px)").matches ? 17 : 13;
+  const viewHeight = matchMedia("(max-width: 760px)").matches ? 17.6 : 13.9;
   camera.left = (-viewHeight * aspect) / 2;
   camera.right = (viewHeight * aspect) / 2;
   camera.top = viewHeight / 2;
   camera.bottom = -viewHeight / 2;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+  const pixelRatio = Math.min(
+    devicePixelRatio,
+    matchMedia("(max-width: 760px)").matches ? 1.5 : 2,
+  );
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height, false);
+  composer.setPixelRatio(pixelRatio);
   composer.setSize(width, height);
 }
 
@@ -216,8 +234,25 @@ function renderFrame() {
     if (camera.position.distanceTo(cameraGoal) < 0.015) cameraGoal = null;
   }
   controls.update();
+  if (captureRequested) {
+    canvas.dataset.cameraState = JSON.stringify({
+      position: camera.position.toArray(),
+      target: controls.target.toArray(),
+      zoom: camera.zoom,
+      frustum: [camera.left, camera.right, camera.top, camera.bottom],
+    });
+  }
   updateHotspots();
   composer.render();
+  if (
+    captureRequested &&
+    loadedScene &&
+    !canvas.dataset.capture &&
+    capturedFrames++ >= 2
+  ) {
+    canvas.dataset.capture = canvas.toDataURL("image/png");
+    dispatch("diorama-capture-ready");
+  }
 }
 
 async function init() {
@@ -229,10 +264,19 @@ async function init() {
     resize();
 
     const gltf = await new GLTFLoader().loadAsync(
-      "./assets/team-diorama/team-workspace.glb",
+      `./assets/team-diorama/team-workspace.glb?v=${assetVersion}`,
     );
     loadedScene = gltf.scene;
     tuneModel(loadedScene);
+    if (captureRequested) {
+      const bounds = new THREE.Box3().setFromObject(loadedScene);
+      canvas.dataset.modelBounds = JSON.stringify({
+        min: bounds.min.toArray(),
+        max: bounds.max.toArray(),
+        center: bounds.getCenter(new THREE.Vector3()).toArray(),
+        size: bounds.getSize(new THREE.Vector3()).toArray(),
+      });
+    }
     scene.add(loadedScene);
 
     renderer.setAnimationLoop(renderFrame);
@@ -244,6 +288,21 @@ async function init() {
 }
 
 window.__diorama = {
+  debug() {
+    return {
+      camera: camera?.position.toArray(),
+      target: controls?.target.toArray(),
+      zoom: camera?.zoom,
+      frustum: camera
+        ? {
+            left: camera.left,
+            right: camera.right,
+            top: camera.top,
+            bottom: camera.bottom,
+          }
+        : null,
+    };
+  },
   focus(position) {
     focusTarget.set(position[0] * 0.24, 0.46, position[2] * 0.24);
   },
@@ -251,7 +310,7 @@ window.__diorama = {
     focusTarget.copy(defaultTarget);
     cameraGoal = defaultCameraPosition.clone();
     if (camera) {
-      camera.zoom = 0.98;
+      camera.zoom = 1;
       camera.updateProjectionMatrix();
     }
   },

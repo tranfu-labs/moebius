@@ -15,7 +15,7 @@
       }
     }
   </script>
-  <script type="module" src="./assets/team-diorama/viewer.js"></script>
+  <script type="module" src="./assets/team-diorama/viewer.js?v=80-precision-7"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -49,6 +49,14 @@
       background:
         radial-gradient(circle at 50% 46%, rgba(244,181,95,.08), transparent 31%),
         var(--bg);
+    }
+
+    body.capture-mode .skip,
+    body.capture-mode .topbar,
+    body.capture-mode .hotspot-layer,
+    body.capture-mode .stage-label,
+    body.capture-mode .member-card {
+      display: none !important;
     }
 
     button {
@@ -497,6 +505,9 @@
 
   <script>
     (() => {
+      if (new URLSearchParams(location.search).has("capture")) {
+        document.body.classList.add("capture-mode");
+      }
       const card = document.querySelector(".member-card");
       const dialog = document.querySelector("[data-reference-dialog]");
       const members = [
