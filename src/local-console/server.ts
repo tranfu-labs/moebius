@@ -384,6 +384,7 @@ async function handleRequest(
         isRecord(payload)
           ? {
               originSessionId: readOptionalNullableString(payload.originSessionId),
+              analysisParentSessionId: readOptionalNullableString(payload.analysisParentSessionId),
               entryTemplate: readOptionalEntryTemplate(payload.entryTemplate),
               writePolicy: readOptionalWritePolicy(payload.writePolicy),
               textFragments: readOptionalTextFragments(payload.textFragments),
@@ -455,6 +456,7 @@ async function handleRequest(
         sessionId: sessionReferenceMatch.sessionId,
         scope: readSessionReferenceScope(url.searchParams.get("scope")),
         runId: url.searchParams.get("runId"),
+        messageId: readOptionalPositiveInteger(url.searchParams.get("messageId")),
       }));
       return;
     }
@@ -657,6 +659,31 @@ async function handleRequest(
         readOptionalString(payload.resumeRunId),
         readOptionalTextFragments(payload.textFragments),
       );
+      return;
+    }
+
+    const pendingMessageMatch = matchPendingMessageRoute(url.pathname);
+    if (pendingMessageMatch !== null && request.method === "POST") {
+      await runtime.retryPendingUserMessage(pendingMessageMatch);
+      sendJson(response, 202, { retried: true });
+      return;
+    }
+    if (pendingMessageMatch !== null && request.method === "PATCH") {
+      const payload = await readJsonBody(request);
+      if (!isRecord(payload) || typeof payload.body !== "string") {
+        sendJson(response, 400, { error: "Expected JSON body with a string body field" });
+        return;
+      }
+      const message = await runtime.updatePendingUserMessage({
+        ...pendingMessageMatch,
+        body: payload.body,
+      });
+      sendJson(response, 200, { message });
+      return;
+    }
+    if (pendingMessageMatch !== null && request.method === "DELETE") {
+      await runtime.removePendingUserMessage(pendingMessageMatch);
+      sendJson(response, 200, { removed: true });
       return;
     }
 
@@ -1049,6 +1076,18 @@ function readSessionReferenceScope(value: unknown): "message" | "conversation" {
   throw new Error("Expected reference-text scope to be message or conversation");
 }
 
+function readOptionalPositiveInteger(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string" || !/^[1-9]\d*$/u.test(value)) {
+    throw new Error("Expected a positive integer");
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error("Expected a safe positive integer");
+  }
+  return parsed;
+}
+
 function readOptionalWritePolicy(
   value: unknown,
 ): "normal" | "confirm-current-plan-before-write" | undefined {
@@ -1220,6 +1259,17 @@ function matchRunOutputRoute(pathname: string): { sessionId: string; runId: stri
   return {
     sessionId: decodeURIComponent(match[1] ?? ""),
     runId: decodeURIComponent(match[2] ?? ""),
+  };
+}
+
+function matchPendingMessageRoute(pathname: string): { sessionId: string; messageId: number } | null {
+  const match = pathname.match(/^\/api\/local-console\/sessions\/([^/]+)\/messages\/([1-9]\d*)\/pending$/u);
+  if (match === null) return null;
+  const messageId = Number.parseInt(match[2]!, 10);
+  if (!Number.isSafeInteger(messageId)) return null;
+  return {
+    sessionId: decodeURIComponent(match[1]!),
+    messageId,
   };
 }
 

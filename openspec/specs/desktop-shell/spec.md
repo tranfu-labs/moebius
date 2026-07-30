@@ -1443,15 +1443,15 @@ renderer MUST 在手动 sidebar chat 与消息级或对话级分析入口创建�
 - AND last-used team 记录为 T
 - AND 通用助手不成为应用级默认团队。
 
-### Requirement: renderer 持久化完整 sidebar presentation route
+### Requirement: renderer 持久化完整手动 sidebar presentation route
 
 Source: docs/product/pages/main-left-sidebar.md#选择对话
 
-renderer MUST 以版本化文档保存 selected、main、right 与 host 会话关系、每个 host 的右侧标签现场和未发送 sidebar 草稿。重启恢复、归档、项目移除和来源失效 MUST 提交完整组合或保持最后成功组合，MUST NOT 持久化半套选择。
+renderer MUST 以版本化文档保存手动 sidebar chat 的 selected、main、right 与 host 会话关系、每个 host 的右侧标签现场和未发送 sidebar 草稿。重启恢复、归档、项目移除和来源失效 MUST 提交完整组合或保持最后成功组合，MUST NOT 持久化半套选择。分析会话标签与面板开合状态分别适用下文 Requirements；面板开合不得进入该版本化文档。
 
 #### Scenario: 重启恢复组合
 
-- GIVEN 最后成功状态选中 sidebar chat B、主内容为来源 A、右侧聚焦 B
+- GIVEN 最后成功状态选中手动 sidebar chat B、主内容为来源 A、右侧聚焦 B
 - WHEN desktop renderer 重启且 A/B 均可用
 - THEN 左侧只高亮 B
 - AND 主内容恢复 A
@@ -1459,7 +1459,86 @@ renderer MUST 以版本化文档保存 selected、main、right 与 host 会话�
 
 #### Scenario: 创建失败保留草稿
 
-- GIVEN sidebar 草稿包含上下文、正文、文本片段和普通附件
+- GIVEN 手动 sidebar 草稿包含上下文、正文、来源胶囊和普通附件
 - WHEN 会话创建或首条消息原子提交失败
 - THEN 版本化草稿完整保留
 - AND renderer 不写入 session locator 或 last-used team。
+
+### Requirement: 分析草稿提升为直接父拥有的唯一会话标签
+
+Source: docs/product/pages/main-right-sidebar.md#分析对话标签与跨树路由
+
+desktop renderer MUST 在分析首发成功后把草稿原位提升为已创建分析会话标签，并在根会话的同一外层标签组中按会话标识去重。分析会话不生成左侧栏会话行。
+
+#### Scenario: 重复激活直接子项
+
+- GIVEN 分析会话 B 已在根会话 A 的标签组打开
+- WHEN 用户再次激活 A 面板中的 B
+- THEN 聚焦既有 B 标签
+- AND 不创建重复标签。
+
+#### Scenario: 孙辈打开为兄弟标签
+
+- GIVEN 分析会话 B 在根会话 A 的外层标签组中
+- AND B 的面板包含直接子项 C
+- WHEN 用户激活 C
+- THEN C 在同一外层标签条打开
+- AND 不创建嵌套右侧栏。
+
+### Requirement: 跨树分析导航原子切换工作现场
+
+Source: docs/product/pages/main-right-sidebar.md#分析对话标签与跨树路由
+
+跨树 `moebius-ref:` 导航 MUST 先解析并准备目标根会话及其标签现场，再一次提交根选择与目标分析标签；失败 MUST 保持原工作现场。
+
+#### Scenario: 跨树消息引用成功
+
+- GIVEN 当前位于根会话 A，引用目标属于根会话 B 的分析后代
+- WHEN 用户激活引用
+- THEN 主内容切换为 B
+- AND 恢复 B 自己的标签组并聚焦目标
+- AND 消息目标挂载后获得焦点与短暂高亮。
+
+#### Scenario: 目标准备失败
+
+- GIVEN 目标根会话或目标分析会话不可用
+- WHEN 用户激活引用
+- THEN 当前根会话、标签组、活动标签和阅读位置不变
+- AND 原链接显示可理解的不可用反馈。
+
+### Requirement: 面板开合只在当前应用进程按 session 记忆
+
+Source: docs/product/pages/main-conversation.md#分析对话入口面板规则
+
+renderer MUST 按当前对话 session 分别记忆分析面板开合，MUST NOT 将该状态持久化到跨进程存储。
+
+#### Scenario: 切换后返回
+
+- GIVEN 用户在本次应用运行中打开会话 A 的分析面板
+- WHEN 切换到 B 再返回 A
+- THEN A 的面板保持打开。
+
+#### Scenario: 软件重启
+
+- GIVEN 上次运行结束前 A 的面板打开
+- WHEN 应用重新启动
+- THEN A 的面板默认关闭。
+
+### Requirement: 服务端提交后才清理分析入口和标签
+
+Source: docs/product/pages/main-conversation.md#分析对话归属归档与移除
+
+renderer MUST 仅在归档或项目移除服务端提交成功后清理对应面板入口和分析标签；失败或回滚 MUST 保持原工作现场。根对话归档恢复只恢复对话树与直接父面板入口，不自动重开归档前的分析标签；未归档现场的软件重启仍恢复已持久化的标签现场。
+
+#### Scenario: 强制项目移除失败
+
+- GIVEN 分析子树在面板与标签组中可见
+- WHEN 强制移除的停止或放弃步骤失败
+- THEN 面板入口、标签顺序和活动标签保持不变。
+
+#### Scenario: 根对话归档后恢复
+
+- GIVEN 根对话归档前打开了若干分析标签
+- WHEN 根对话恢复
+- THEN 直接父面板入口恢复
+- AND 归档前分析标签不自动重开。

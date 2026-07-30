@@ -101,6 +101,27 @@ describe("RightSidebar", () => {
     expect(screen.getByText("普通会话内容")).toBeVisible();
   });
 
+  it("moves keyboard focus to a requested active conversation tab", () => {
+    const onFocusTabHandled = vi.fn();
+    renderSidebar({
+      state: {
+        tabs: [{
+          id: "conversation",
+          type: "conversation",
+          title: "分析运行耗时",
+          sourceKey: "conversation:analysis",
+          closable: true,
+        }],
+        activeTabId: "conversation",
+      },
+      focusTabId: "conversation",
+      onFocusTabHandled,
+    });
+
+    expect(screen.getByRole("tab", { name: "分析运行耗时" })).toHaveFocus();
+    expect(onFocusTabHandled).toHaveBeenCalledWith("conversation");
+  });
+
   it("uses an overlay with its own route back to the conversation", () => {
     const onOpenChange = vi.fn();
     renderSidebar({ narrow: true, onOpenChange });

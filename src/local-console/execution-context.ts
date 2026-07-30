@@ -31,6 +31,7 @@ export interface LocalRunExecutionContextFact {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  referenceContext?: string | null;
   recordedAt: string;
 }
 
@@ -150,6 +151,7 @@ export function createRunExecutionContext(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  referenceContext?: string | null;
   recordedAt: string;
 }): LocalRunExecutionContextFact {
   const engine = input.profile?.cli ?? "codex";
@@ -190,6 +192,7 @@ export function createRunExecutionContext(input: {
       agentMarkdown: member.agentMarkdown,
       executionProfile: member.executionProfile,
     })),
+    referenceContext: input.referenceContext ?? null,
     recordedAt: input.recordedAt,
   };
 }

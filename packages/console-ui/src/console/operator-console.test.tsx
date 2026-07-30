@@ -36,6 +36,41 @@ describe("OperatorConsole", () => {
     expect(screen.getByTestId("operator-content-shell").parentElement).toHaveClass("h-full", "min-h-0");
   });
 
+  it("keeps root and embedded analysis panels on their own conversation surfaces", () => {
+    const onOpenChange = vi.fn();
+    const onOpenEntry = vi.fn();
+    const analysisPanel = {
+      open: true,
+      state: {
+        status: "ready" as const,
+        entries: [{ sessionId: "analysis-a", title: "分析运行耗时" }],
+      },
+      onOpenChange,
+      onOpenEntry,
+    };
+    const view = renderConsole({ analysisPanel });
+
+    const rootToggle = screen.getByRole("button", { name: "隐藏分析面板" });
+    expect(rootToggle).toHaveAttribute("aria-expanded", "true");
+    expect(rootToggle).toHaveAttribute("aria-controls", "conversation-analysis-panel-session-a");
+    expect(screen.getByRole("button", { name: "显示右侧栏" })).toBeVisible();
+    expect(screen.getByTestId("analysis-panel")).toHaveAttribute("data-layout", "overlay");
+    fireEvent.click(screen.getByRole("button", { name: "分析运行耗时" }));
+    expect(onOpenEntry).toHaveBeenCalledWith({
+      sessionId: "analysis-a",
+      title: "分析运行耗时",
+    });
+    fireEvent.click(rootToggle);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+
+    view.rerender(<OperatorConsole {...baseProps({ presentation: "conversation", analysisPanel })} />);
+    expect(screen.queryByTestId("main-window-drag-region")).not.toBeInTheDocument();
+    const embeddedHeader = screen.getByTestId("conversation-title-header");
+    expect(within(embeddedHeader).getByRole("button", { name: "隐藏分析面板" })).toBeVisible();
+    expect(screen.getAllByTestId("analysis-panel")).toHaveLength(1);
+    expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+  });
+
   it("renders the fixed sidebar skeleton around the only scrolling project region", () => {
     renderConsole({ onOpenDiagnostics: vi.fn() });
 
@@ -1378,6 +1413,40 @@ describe("OperatorConsole", () => {
     expect(screen.getByText("→ 开发")).toBeVisible();
   });
 
+  it("keeps a source-failed queue head in place with retry, edit, and remove recovery", () => {
+    const onRetryPendingMessage = vi.fn();
+    const onEditPendingMessage = vi.fn();
+    const onRemovePendingMessage = vi.fn();
+    renderConsole({
+      pendingPrimaryMessages: [
+        message({ id: 7, body: "[来源](moebius-ref:conversation/missing)", status: "pending", error: "来源不可用" }),
+        message({ id: 8, body: "后续消息", status: "pending" }),
+      ],
+      onRetryPendingMessage,
+      onEditPendingMessage,
+      onRemovePendingMessage,
+    });
+
+    const pendingZone = screen.getByTestId("primary-pending-zone");
+    expect(within(pendingZone).getByRole("alert")).toHaveTextContent("尚未进入时间线，也未创建运行");
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "重试读取" }));
+    expect(onRetryPendingMessage).toHaveBeenCalledWith("session-a", 7);
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "编辑" }));
+    const editor = within(pendingZone).getByRole("textbox", { name: "编辑待发射内容或来源引用" });
+    fireEvent.change(editor, { target: { value: "[来源](moebius-ref:conversation/source)" } });
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "保存并重试" }));
+    expect(onEditPendingMessage).toHaveBeenCalledWith(
+      "session-a",
+      7,
+      "[来源](moebius-ref:conversation/source)",
+    );
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "移除" }));
+    expect(onRemovePendingMessage).toHaveBeenCalledWith("session-a", 7);
+    expect(within(pendingZone).getByText("后续消息")).toBeVisible();
+  });
+
   it("uses effective custom member names across the main timeline, runs, facts, stops, and process tabs", () => {
     const onInterrupt = vi.fn();
     const memberIdentities = [
@@ -2580,6 +2649,42 @@ describe("OperatorConsole", () => {
         ["session-b", 3],
         ["session-a", 1],
       ]);
+    } finally {
+      if (originalScrollIntoView === undefined) {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+      } else {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      }
+    }
+  });
+
+  it("locates, focuses, and highlights an explicit message navigation request", () => {
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const onMessageNavigationHandled = vi.fn();
+
+    try {
+      renderConsole({
+        messages: [
+          message({ id: 1, body: "来源消息" }),
+          message({ id: 2, speaker: "agent", role: "dev", body: "后续消息" }),
+        ],
+        messageNavigationRequest: { messageId: 1, requestId: 7 },
+        onMessageNavigationHandled,
+      });
+
+      const target = screen.getByTestId("timeline-message-1");
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(target).toHaveFocus();
+      expect(target).toHaveClass("bg-sel", "ring-2", "ring-inset", "ring-accent");
+      expect(onMessageNavigationHandled).toHaveBeenCalledWith(7);
     } finally {
       if (originalScrollIntoView === undefined) {
         delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="820" viewBox="0 0 1320 820" role="img" aria-labelledby="title desc">
+  <title id="title">分析对话树改造后架构</title>
+  <desc id="desc">分析会话直接归属于父会话，通过面板进入唯一兄弟标签；内部引用同时驱动导航和来源交付。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <style>
+      .box{fill:#f8fafc;stroke:#475569;stroke-width:2;rx:14}.good{fill:#ecfdf5;stroke:#059669;stroke-width:2;rx:14}.ui{fill:#eff6ff;stroke:#2563eb;stroke-width:2;rx:14}
+      .label{font:600 17px system-ui;fill:#0f172a}.small{font:14px system-ui;fill:#334155}.line{stroke:#475569;stroke-width:2;marker-end:url(#arrow)}.dash{stroke-dasharray:7 6}
+    </style>
+  </defs>
+  <text x="44" y="42" class="label">会话模型 / 来源交付 / 跨树路由</text>
+  <rect x="50" y="90" width="250" height="110" class="good"/><text x="76" y="130" class="label">Session facts + SQLite</text><text x="76" y="158" class="small">analysis_parent_session_id</text><text x="76" y="181" class="small">entry_template=session-analysis</text>
+  <rect x="390" y="90" width="240" height="110" class="good"/><text x="420" y="130" class="label">直接子项投影</text><text x="420" y="158" class="small">只查当前父 session</text><text x="420" y="181" class="small">不进入左栏 / 子任务</text>
+  <rect x="720" y="80" width="250" height="130" class="ui"/><text x="750" y="120" class="label">生产 AnalysisPanel</text><text x="750" y="148" class="small">进程内开合 Map</text><text x="750" y="171" class="small">空 / 加载 / 失败 / 列表</text><text x="750" y="194" class="small">仅触发入口</text>
+  <line x1="300" y1="145" x2="390" y2="145" class="line"/><line x1="630" y1="145" x2="720" y2="145" class="line"/>
+  <rect x="1050" y="80" width="230" height="130" class="ui"/><text x="1078" y="120" class="label">根标签组</text><text x="1078" y="148" class="small">唯一 conversation source</text><text x="1078" y="171" class="small">父 / 子为兄弟标签</text><text x="1078" y="194" class="small">无嵌套右侧栏</text>
+  <line x1="970" y1="145" x2="1050" y2="145" class="line"/>
+
+  <rect x="50" y="320" width="250" height="120" class="box"/><text x="76" y="360" class="label">用户 Markdown</text><text x="76" y="388" class="small">moebius-ref:message</text><text x="76" y="412" class="small">moebius-ref:conversation</text>
+  <rect x="390" y="310" width="240" height="140" class="good"/><text x="420" y="350" class="label">共享协议解析器</text><text x="420" y="378" class="small">严格语法 / AST 位置</text><text x="420" y="402" class="small">目标可读性校验</text><text x="420" y="426" class="small">不可用降级</text>
+  <line x1="300" y1="380" x2="390" y2="380" class="line"/>
+  <rect x="720" y="285" width="250" height="105" class="ui"/><text x="750" y="325" class="label">导航路由</text><text x="750" y="353" class="small">解析根会话 + 标签现场</text><text x="750" y="376" class="small">跨树原子提交</text>
+  <rect x="720" y="430" width="250" height="120" class="good"/><text x="750" y="470" class="label">来源读取器</text><text x="750" y="498" class="small">消息 / 时间线 / run 输出</text><text x="750" y="522" class="small">只读且不扩文件权限</text>
+  <line x1="630" y1="365" x2="720" y2="337" class="line"/><line x1="630" y1="395" x2="720" y2="485" class="line"/>
+  <line x1="970" y1="337" x2="1050" y2="175" class="line dash"/>
+  <rect x="1050" y="430" width="230" height="120" class="good"/><text x="1078" y="470" class="label">run execution context</text><text x="1078" y="498" class="small">同 run resume 复用</text><text x="1078" y="522" class="small">新 run 读取最新</text>
+  <line x1="970" y1="490" x2="1050" y2="490" class="line"/>
+
+  <rect x="180" y="650" width="270" height="110" class="box"/><text x="208" y="690" class="label">pending primary FIFO</text><text x="208" y="718" class="small">队首读取失败则原位阻塞</text><text x="208" y="742" class="small">重试 / 编辑 / 移除恢复</text>
+  <rect x="535" y="650" width="270" height="110" class="box"/><text x="563" y="690" class="label">归档 / 项目移除</text><text x="563" y="718" class="small">分析后代闭包 + 运行检查</text><text x="563" y="742" class="small">服务端事务提交</text>
+  <rect x="890" y="650" width="270" height="110" class="ui"/><text x="918" y="690" class="label">renderer reconcile</text><text x="918" y="718" class="small">提交后清入口与标签</text><text x="918" y="742" class="small">失败保持原工作现场</text>
+  <line x1="450" y1="705" x2="535" y2="705" class="line dash"/><line x1="805" y1="705" x2="890" y2="705" class="line"/>
+</svg>

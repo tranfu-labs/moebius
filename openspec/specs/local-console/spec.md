@@ -2483,68 +2483,66 @@ session-scoped 文件引用端点 MUST 只接受绝对 POSIX 文件路径、正�
 - THEN 响应为 outside-trusted-roots
 - AND 外部目标内容没有返回
 
-### Requirement: sidebar chat 仍是普通根会话
+### Requirement: 手动 sidebar chat 仍是普通根会话
 
 Source: docs/product/flows/session-analysis.md#4-首次发送并创建会话
 
-local-console MUST 把 sidebar chat 保存为普通、可继续、可归档和可恢复的根 session。session MAY 保存可信 `originSessionId`、`entryTemplate` 与 `writePolicy` 导航/入口事实；这些字段 MUST NOT 改变普通团队快照、provider/model/effort、工作空间或消息生命周期，也 MUST NOT 从消息正文、文本片段或来源 run 推断。
+local-console MUST 把用户手动创建的 sidebar chat 保存为普通、可继续、可归档和可恢复的根 session。分析入口创建的 session MUST 按下文“分析会话持久化直接父归属”保存为直接分析子会话，不适用本 Requirement 的根会话规则。session MAY 保存可信 `originSessionId`、`entryTemplate` 与 `writePolicy` 导航/入口事实；这些字段 MUST NOT 改变普通团队快照、provider/model/effort、工作空间或消息生命周期，也 MUST NOT 从消息正文或来源 run 推断。
 
 #### Scenario: 最终上下文创建 session
 
-- GIVEN sidebar chat 草稿在发送瞬间选择项目 P、工作空间 W 和团队 T
+- GIVEN 手动 sidebar chat 草稿在发送瞬间选择项目 P、工作空间 W 和团队 T
 - WHEN 创建与首条消息原子成功
 - THEN session 属于 P 并使用 W 与 T 的冻结快照
 - AND 不继承来源会话运行配置
 - AND origin 仅保存为导航元数据。
 
-### Requirement: 文本片段与用户消息原子提交
+### Requirement: 来源胶囊序列化为用户消息来源块
 
-Source: docs/product/flows/session-analysis.md#2-收集静态文本片段
+Source: docs/product/flows/session-analysis.md#2-收集来源引用
 
-用户消息 MUST 支持有序静态文本片段。每项 MUST 保存稳定 fragment id、短标签与完整普通文本，并与正文和普通附件在同一个 session fact 中原子提交。prompt builder MUST 把片段作为普通文本上下文按顺序交给 Agent；系统 MUST NOT 把片段当作文件附件、自动读取路径、刷新内容或授予权限。
+分析草稿在发送前 MUST 支持有序、可删除的来源胶囊。提交时，local-console MUST 把仍存在的胶囊按顺序序列化为用户消息顶部唯一的 Markdown 来源块，并与正文和普通附件在同一个 session fact 中原子提交；已发送消息 MUST NOT 继续保存或重复呈现独立胶囊。来源块中的合法 `moebius-ref:` 按下文来源读取规则向新 run 提供只读引用内容，MUST NOT 被当作文件附件或扩展来源项目文件权限。
 
 #### Scenario: 删除片段后发送
 
-- GIVEN 草稿原有两个片段且用户删除第一个
+- GIVEN 草稿原有两个来源胶囊且用户删除第一个
 - WHEN 首条消息提交成功
-- THEN JSONL、SQLite 投影、消息 UI 与 prompt 只包含第二个片段
-- AND 被删片段不形成附件或隐藏 prompt。
+- THEN JSONL、SQLite 投影与消息 UI 的 Markdown 来源块只包含第二个引用
+- AND 被删胶囊不形成附件、引用或隐藏 prompt。
 
-#### Scenario: 重建保留片段顺序
+#### Scenario: 重建保留来源块顺序
 
-- GIVEN JSONL 用户消息包含三个片段
+- GIVEN JSONL 用户消息包含具有三个链接的来源块
 - WHEN SQLite 索引被删除并从 JSONL 重建
-- THEN 三个片段的 id、标签、完整文本和顺序保持。
+- THEN 三个链接的标签、目标与顺序保持
+- AND 不重建独立来源胶囊。
 
-### Requirement: reference-text 显式区分消息级与对话级片段
+### Requirement: reference-text 生成公开应用内来源链接
 
-Source: docs/product/flows/session-analysis.md#2-收集静态文本片段
+Source: docs/product/flows/session-analysis.md#2-收集来源引用
 
-local-console reference-text API MUST 要求调用方显式声明 `message` 或 `conversation` 范围，并 MUST 只从可信 session fact log 与 provider link 生成静态文本。系统 MUST NOT 读取记录内容、复制记录或扩张 Agent read roots。
+local-console reference-text API MUST 要求调用方显式声明 `message` 或 `conversation` 范围，并生成可读标签与公开 `moebius-ref:` 目标。消息级链接 MUST 使用稳定 session/message 标识并提供安全纯文本摘录；对话级链接 MUST 使用稳定 session 标识与可读标题。长文本、Markdown 特殊字符、Emoji、控制字符与空正文 MUST 经过确定性投影、转义和截断。该 API 只生成来源链接；链接在用户消息中启动新 run 时的读取与权限边界由下文来源读取 Requirement 约束。
 
-`conversation` 范围 MUST 只返回 `Moebius 会话记录：<路径>`，MUST NOT 推断最近一次 run 或追加外部执行信息。
+#### Scenario: 对话级来源链接
 
-`message` 范围 MUST 始终返回记录路径；能够按明确 run 匹配 provider link 时 MUST 追加对应 Codex 或 Kimi external session id，不能匹配或尚未建立时 MUST 追加 `外部执行：未建立`。
-
-#### Scenario: 对话级片段不猜测最近 run
-
-- GIVEN 对话记录中存在多个 provider execution link
+- GIVEN 对话具有稳定 session 标识与可读标题
 - WHEN 客户端请求 conversation 范围的 reference-text
-- THEN 返回文本只包含 Moebius 会话记录路径
-- AND 不包含任何 Codex、Kimi 或 external session id
+- THEN 返回合法 `moebius-ref:conversation/<session-id>` Markdown link
+- AND 可见标签使用对话标题且不展示文件路径或 provider 标识。
 
-#### Scenario: 消息级片段精确匹配 run
+#### Scenario: 消息级来源链接
 
-- GIVEN 消息对应 run B 且记录中同时存在 run A 与 run B 的 provider link
-- WHEN 客户端请求 message 范围并指定 run B
-- THEN 返回文本包含 run B 对应的 CLI 与 external session id
-- AND 不包含 run A 的 external session id
-
-#### Scenario: 消息尚未建立外部会话
-
-- GIVEN 消息没有可匹配的 provider link
+- GIVEN 消息属于稳定 session 且具有稳定 message 标识
 - WHEN 客户端请求 message 范围的 reference-text
-- THEN 返回文本包含记录路径与 `外部执行：未建立`
+- THEN 返回合法 `moebius-ref:message/<session-id>/<message-id>` Markdown link
+- AND 可见标签使用安全纯文本摘录且不展示内部路径或 provider 标识。
+
+#### Scenario: 特殊字符安全投影
+
+- GIVEN 消息正文含 Markdown 链接、代码、Emoji、控制字符或超长文本
+- WHEN 客户端请求 message 范围的 reference-text
+- THEN 可见标签是确定性转义与截断后的单行纯文本
+- AND 生成链接仍可被 Markdown parser 解析为唯一来源目标。
 
 ### Requirement: 分析入口策略在确认前强制只读
 
@@ -2589,16 +2587,108 @@ local-console MUST 支持按规范化标题搜索活动项目内的活动或可�
 - AND 不创建替代 session
 - AND origin 与入口策略保持。
 
-### Requirement: 归档与来源失效保持 sidebar chat 独立
+### Requirement: 手动 sidebar chat 的归档与来源失效保持独立
 
 Source: docs/product/pages/main-left-sidebar.md#归档
 
-归档 sidebar chat MUST 只归档目标 session；归档或移除来源项目 MUST NOT 自动归档属于其他项目的 sidebar chat。来源可用性变化 MUST 只改变 presentation route，不改变 sidebar chat 历史、团队、工作空间、权限或运行状态。
+归档手动 sidebar chat MUST 只归档目标 session；归档或移除来源项目 MUST NOT 自动归档属于其他项目的手动 sidebar chat。来源可用性变化 MUST 只改变 presentation route，不改变手动 sidebar chat 历史、团队、工作空间、权限或运行状态。分析会话及其后代适用下文“归档和项目移除按分析后代闭包提交”，不得套用本 Requirement 的独立归档语义。
 
 #### Scenario: 来源项目被移除
 
-- GIVEN sidebar chat B 属于项目 P2 且来源 A 属于项目 P1
+- GIVEN 手动 sidebar chat B 属于项目 P2 且来源 A 属于项目 P1
 - WHEN P1 被移除
 - THEN A 随 P1 归档
 - AND B 保持活动且事实不变
 - AND presentation 层可把 B 降级到主内容。
+
+### Requirement: 分析会话持久化直接父归属
+
+Source: docs/product/flows/session-analysis.md#5-分析并确认方案
+
+local-console MUST 为已创建分析会话持久化直接父会话标识；该关系 MUST NOT 进入团队子任务投影，具有直接分析父关系的会话 MUST NOT 进入根会话列表。
+
+#### Scenario: 分析会话首次发送成功
+
+- GIVEN 分析草稿从会话 A 创建
+- WHEN 首条消息与分析会话 B 创建成功
+- THEN B 的直接分析父会话为 A
+- AND 根会话列表不包含 B
+- AND A 的直接分析子项只包含 B，不包含 B 的后代。
+
+#### Scenario: 旧分析会话安全迁移
+
+- GIVEN 旧会话具有有效 `entryTemplate=session-analysis` 与现存 `originSessionId`
+- WHEN store 执行幂等迁移
+- THEN 直接分析父关系回填为该来源会话
+- AND 缺失、自指或非法来源不得导致会话从所有入口消失。
+
+### Requirement: 来源引用在新 run 前读取最新可访问内容
+
+Source: docs/product/flows/session-analysis.md#收集来源引用
+
+任意用户消息中位于可导航 Markdown link 的合法 `moebius-ref:` MUST 在新 run 创建前读取目标当时最新的只读来源；Agent 消息中的引用 MUST NOT 触发来源交付。一次 run 的来源读取 MUST 形成稳定上下文；同一 run 恢复 MUST 沿用该上下文，新 run 才重新读取。
+
+#### Scenario: 消息引用启动新 run
+
+- GIVEN 用户消息包含可访问的消息引用
+- WHEN runtime 准备创建新 run
+- THEN run 上下文包含目标消息及其关联运行记录
+- AND 不授予读取来源项目文件或其他对象的能力。
+
+#### Scenario: 同一 run 恢复
+
+- GIVEN run 已经取得来源上下文后中断
+- WHEN 用户继续该 run
+- THEN runtime 复用该 run 的既有来源上下文
+- AND 不重新读取引用目标。
+
+#### Scenario: 新 run 读取更新
+
+- GIVEN 引用目标在上一次 run 后产生新内容
+- WHEN 用户重试、重新运行或重发并创建新 run
+- THEN runtime 重新读取引用目标的最新可访问内容。
+
+### Requirement: 来源读取失败不创建新消息或 run
+
+Source: docs/product/flows/session-analysis.md#来源引用不可用
+
+来源读取 MUST 先于新用户消息提交、分析会话创建和新 run 创建。读取失败 MUST 返回可恢复错误，并保持原草稿、既有消息或 pending 项。主 Agent 忙碌时，pending 项 MUST 先按原顺序持久化；只有队首项准备创建 run 时才读取来源。
+
+#### Scenario: 分析首条消息来源失败
+
+- GIVEN 分析草稿的来源目标不可读
+- WHEN 用户发送首条消息
+- THEN 不创建用户消息、分析会话、父面板入口或 run。
+
+#### Scenario: pending 队首来源失败
+
+- GIVEN 主理人忙碌且队首 pending 项包含不可读引用
+- WHEN 该项准备发射
+- THEN 该项保持队首并记录失败原因
+- AND 不 claim 该项、不创建 run、后续项不发射。
+
+### Requirement: 归档和项目移除按分析后代闭包提交
+
+Source: docs/product/pages/main-left-sidebar.md#归档
+
+归档根会话或因项目移除归档任一会话时，local-console MUST 递归处理其全部分析后代；普通操作遇到范围内运行中或待接回控制工作 MUST 被拒绝。
+
+#### Scenario: 根会话归档
+
+- GIVEN 根会话具有多层分析后代且全部静止
+- WHEN 归档提交成功
+- THEN 根会话与全部分析后代在同一提交结果中隐藏。
+
+#### Scenario: 项目移除命中中间分析会话
+
+- GIVEN 分析会话 B 使用待移除项目且 B 有使用其他项目的后代 C
+- WHEN 项目移除提交成功
+- THEN B 与 C 均隐藏
+- AND B 的父会话及子树外兄弟保持可见。
+
+#### Scenario: 强制移除前置步骤失败
+
+- GIVEN 待隐藏范围存在运行中或待接回工作
+- WHEN 停止或放弃待接回任一步失败
+- THEN 项目移除事务不提交
+- AND 会话归档状态保持不变。

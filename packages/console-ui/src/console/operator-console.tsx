@@ -4,6 +4,7 @@ import {
   Diamond,
   Ellipsis,
   FileText,
+  MessagesSquare,
   PanelLeft,
   PanelLeftClose,
   PanelRight,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -27,6 +29,12 @@ import {
   type SyntheticEvent,
 } from "react";
 
+import {
+  ANALYSIS_PANEL_SPLIT_MIN_WIDTH_PX,
+  AnalysisPanel,
+  type AnalysisPanelEntry,
+  type AnalysisPanelState,
+} from "@/console/analysis-panel";
 import {
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
@@ -66,7 +74,10 @@ import {
   FileReferenceTab,
   type FileReferenceContent,
 } from "@/console/file-reference-tab";
-import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
+import type {
+  MarkdownConversationReference,
+  MarkdownFileReference,
+} from "@/console/markdown-internal-reference";
 import { NewConversationPage } from "@/console/new-conversation-page";
 import { ProjectFilesTab, type ProjectFilesData } from "@/console/project-files-tab";
 import {
@@ -186,6 +197,7 @@ export interface OperatorSession {
   sessionId: string;
   projectId: string;
   parentSessionId?: string | null;
+  analysisParentSessionId?: string | null;
   originSessionId?: string | null;
   entryTemplate?: "session-analysis" | null;
   writePolicy?: "normal" | "confirm-current-plan-before-write";
@@ -366,6 +378,19 @@ export interface OperatorEditAndResendTarget {
   runId: string | null;
 }
 
+export interface OperatorAnalysisPanelController {
+  open: boolean;
+  state: AnalysisPanelState;
+  onOpenChange(open: boolean): void;
+  onOpenEntry(entry: AnalysisPanelEntry): void;
+  onRetry?: () => void;
+}
+
+export interface OperatorMessageNavigationRequest {
+  messageId: number;
+  requestId: number;
+}
+
 export interface OperatorConsoleProps {
   presentation?: "application" | "conversation";
   project: OperatorProject;
@@ -375,8 +400,11 @@ export interface OperatorConsoleProps {
   navigationSessionId?: string;
   selectedSession: OperatorSession | null;
   conversationNotice?: ReactNode;
+  analysisPanel?: OperatorAnalysisPanelController;
   messages: OperatorMessage[];
   initialReadingMessageId?: number | null;
+  messageNavigationRequest?: OperatorMessageNavigationRequest | null;
+  onMessageNavigationHandled?: (requestId: number) => void;
   onReadingMessageChange?: (sessionId: string, messageId: number) => void;
   pendingDispatchMessages?: OperatorPendingDispatch[];
   pendingPrimaryMessages?: OperatorMessage[];
@@ -472,6 +500,9 @@ export interface OperatorConsoleProps {
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onInterrupt(sessionId: string, runId: string): void;
   onRetryRun?: (sessionId: string, runId: string) => void;
+  onRetryPendingMessage?: (sessionId: string, messageId: number) => void;
+  onEditPendingMessage?: (sessionId: string, messageId: number, body: string) => void;
+  onRemovePendingMessage?: (sessionId: string, messageId: number) => void;
   onAnalyzeSession?: (input: { sessionId: string; projectId: string }) => void;
   onAnalyzeConversation?: (input: {
     sessionId: string;
@@ -483,6 +514,7 @@ export interface OperatorConsoleProps {
   onOpenDiagnostics?: () => void;
   onReplayOnboarding?: () => void;
   onOpenExternalLink?: (url: string) => void;
+  onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   onRetryProjectList?: () => void;
   onRetryAgentTeams?: () => void;
   onCreateAgentTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
@@ -536,6 +568,8 @@ export interface OperatorConsoleProps {
   rightSidebarOpen?: boolean;
   rightSidebarWidth?: number;
   rightSidebarTabs?: RightSidebarTabsState;
+  rightSidebarFocusTabId?: string | null;
+  onRightSidebarFocusHandled?: (tabId: string) => void;
   rightSidebarContentSlots?: RightSidebarContentSlots;
   processOutputs?: Readonly<Record<string, OperatorProcessOutputState>>;
   processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
@@ -557,8 +591,11 @@ export function OperatorConsole({
   navigationSessionId,
   selectedSession,
   conversationNotice,
+  analysisPanel,
   messages,
   initialReadingMessageId = null,
+  messageNavigationRequest = null,
+  onMessageNavigationHandled,
   onReadingMessageChange,
   pendingDispatchMessages,
   pendingPrimaryMessages = [],
@@ -637,6 +674,9 @@ export function OperatorConsole({
   onCopySessionLogPath,
   onInterrupt,
   onRetryRun,
+  onRetryPendingMessage,
+  onEditPendingMessage,
+  onRemovePendingMessage,
   onAnalyzeSession,
   onAnalyzeConversation,
   onUpdateClaude,
@@ -644,6 +684,7 @@ export function OperatorConsole({
   onOpenDiagnostics,
   onReplayOnboarding,
   onOpenExternalLink,
+  onOpenConversationReference,
   onRetryProjectList,
   onRetryAgentTeams,
   onCreateAgentTeam,
@@ -688,6 +729,8 @@ export function OperatorConsole({
   rightSidebarOpen,
   rightSidebarWidth,
   rightSidebarTabs,
+  rightSidebarFocusTabId = null,
+  onRightSidebarFocusHandled,
   rightSidebarContentSlots,
   processOutputs = {},
   processInvocationStates = {},
@@ -717,6 +760,10 @@ export function OperatorConsole({
   const [uncontrolledRightSidebarTabs, setUncontrolledRightSidebarTabs] = useState<RightSidebarTabsState>(
     EMPTY_RIGHT_SIDEBAR_TABS,
   );
+  const [editingPendingMessage, setEditingPendingMessage] = useState<{
+    id: number;
+    body: string;
+  } | null>(null);
   const [isNarrowWindow, setIsNarrowWindow] = useState(() => viewportIsNarrow());
   const [rightSidebarOverlay, setRightSidebarOverlay] = useState(() => viewportUsesRightSidebarOverlay());
   const [useStackedTeamRows, setUseStackedTeamRows] = useState(() => viewportUsesStackedTeamRows());
@@ -731,6 +778,7 @@ export function OperatorConsole({
   const restoredReadingSessionRef = useRef<string | null>(null);
   const conversationFocusFrameRef = useRef<number | null>(null);
   const conversationHighlightTimerRef = useRef<number | null>(null);
+  const handledMessageNavigationRequestRef = useRef<number | null>(null);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsOpenRef = useRef(false);
   const previousLanguageSaveStatusRef = useRef(languageSaveStatus);
@@ -854,6 +902,13 @@ export function OperatorConsole({
     && !selectedAgentTeamUnavailable
     && !continuationBlocked;
   const emptyConversation = messages.length === 0 && displayedActiveRuns.length === 0;
+  const analysisPanelLayout = conversationPaneWidth >= ANALYSIS_PANEL_SPLIT_MIN_WIDTH_PX
+    ? "split"
+    : "overlay";
+  const analysisPanelReservesSpace = analysisPanel?.open === true && analysisPanelLayout === "split";
+  const analysisPanelId = selectedSession === null
+    ? "conversation-analysis-panel"
+    : `conversation-analysis-panel-${encodeURIComponent(selectedSession.sessionId)}`;
   const conversationRelayEvents = useMemo(
     () => projectConversationRelayEvents(
       messages,
@@ -989,7 +1044,7 @@ export function OperatorConsole({
     selectedSessionId,
   ]);
 
-  const locateConversationRelayEvent = (event: ConversationRelayEvent) => {
+  const locateConversationRelayEvent = useCallback((event: ConversationRelayEvent) => {
     const timeline = timelineScrollRef.current;
     const target = conversationMessageRefs.current.get(event.messageId);
     if (timeline === null || target === undefined || !target.isConnected) {
@@ -1015,7 +1070,24 @@ export function OperatorConsole({
     conversationHighlightTimerRef.current = window.setTimeout(() => {
       setHighlightedMessageId(null);
     }, prefersReducedMotion() ? 700 : 1500);
-  };
+  }, [conversationRelayEvents, onReadingMessageChange, selectedSessionId, t]);
+
+  useLayoutEffect(() => {
+    if (messageNavigationRequest === null) return;
+    if (handledMessageNavigationRequestRef.current === messageNavigationRequest.requestId) return;
+    const targetEvent = conversationRelayEvents.find(
+      (event) => event.messageId === messageNavigationRequest.messageId,
+    );
+    if (targetEvent === undefined) return;
+    handledMessageNavigationRequestRef.current = messageNavigationRequest.requestId;
+    locateConversationRelayEvent(targetEvent);
+    onMessageNavigationHandled?.(messageNavigationRequest.requestId);
+  }, [
+    conversationRelayEvents,
+    locateConversationRelayEvent,
+    messageNavigationRequest,
+    onMessageNavigationHandled,
+  ]);
 
   const openSubSession = (sessionId: string) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
@@ -1504,9 +1576,25 @@ export function OperatorConsole({
               <PanelLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
           ) : null}
+          {analysisPanel && selectedSession ? (
+            <button
+              type="button"
+              className="window-no-drag z-20 ml-auto flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
+              title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
+              aria-expanded={analysisPanel.open}
+              aria-controls={analysisPanelId}
+              onClick={() => analysisPanel.onOpenChange(!analysisPanel.open)}
+            >
+              <MessagesSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             type="button"
-            className="window-no-drag z-20 ml-auto mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+            className={cn(
+              "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink",
+              analysisPanel && selectedSession ? "ml-1" : "ml-auto",
+            )}
             aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
             title={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
             aria-pressed={requestedRightSidebarOpen}
@@ -1635,7 +1723,10 @@ export function OperatorConsole({
               </div>
             ) : null}
             <section
-              className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+              className={cn(
+                "scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
+                analysisPanelReservesSpace && "pr-[312px]",
+              )}
               aria-label={t("console.operator.timeline")}
               ref={timelineScrollRef}
               style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
@@ -1676,15 +1767,30 @@ export function OperatorConsole({
                   )}
                   data-testid="conversation-title-header"
                 >
-                  <h1
-                    className={cn(
-                      "mx-auto w-full truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink",
-                      MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
-                    )}
-                    title={selectedSession.title}
-                  >
-                    {selectedSession.title}
-                  </h1>
+                  <div className={cn(
+                    "mx-auto flex w-full min-w-0 items-center gap-2",
+                    MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+                  )}>
+                    <h1
+                      className="min-w-0 w-full max-w-[760px] flex-1 truncate text-left font-display text-[15px] font-semibold tracking-[-0.01em] text-ink"
+                      title={selectedSession.title}
+                    >
+                      {selectedSession.title}
+                    </h1>
+                    {embeddedConversation && analysisPanel ? (
+                      <button
+                        type="button"
+                        className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
+                        title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
+                        aria-expanded={analysisPanel.open}
+                        aria-controls={analysisPanelId}
+                        onClick={() => analysisPanel.onOpenChange(!analysisPanel.open)}
+                      >
+                        <MessagesSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
                 </header>
               ) : null}
               {conversationNotice ? (
@@ -1721,7 +1827,7 @@ export function OperatorConsole({
                           }}
                           className={cn(
                             "rounded-md outline-none transition-colors",
-                            highlightedMessageId === message.id && "bg-accent/10",
+                            highlightedMessageId === message.id && "bg-sel ring-2 ring-inset ring-accent",
                           )}
                           data-message-id={message.id}
                           data-testid={`timeline-message-${String(message.id)}`}
@@ -1740,6 +1846,7 @@ export function OperatorConsole({
                             onEditAndResend={onEditAndResend}
                             onOpenDiagnostics={onOpenDiagnostics}
                             onOpenExternalLink={onOpenExternalLink}
+                            onOpenConversationReference={onOpenConversationReference}
                             onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
                             onOpenTeamMember={openMentionedTeamMember}
                             onOpenEvidence={openEvidence}
@@ -1848,6 +1955,7 @@ export function OperatorConsole({
               className={cn(
                 "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-4 pt-3",
                 MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+                analysisPanelReservesSpace && "pr-[312px]",
               )}
               data-testid="conversation-bottom-dock"
             >
@@ -1862,31 +1970,110 @@ export function OperatorConsole({
                   >
                     <p className="text-xs font-medium text-accent">{t("console.operator.pendingDispatch")}</p>
                     <ol className="scroll-thin mt-1.5 max-h-24 space-y-1 overflow-y-auto pr-1 text-sm text-ink">
-                      {visiblePendingDispatches.map((dispatch, index) => (
-                        <li key={dispatch.message.id} className="flex min-w-0 gap-2">
-                          <span className="shrink-0 text-sub">{index + 1}</span>
-                          <span className="shrink-0 text-accent">
-                            {dispatch.waitingForTeam
-                              ? t("console.operator.pendingNewTeam")
-                              : t("console.operator.pendingTarget", {
-                                  target: resolveOperatorMemberName(
-                                    dispatch.targetRole
-                                      ?? (dispatch.targetLane === "primary"
-                                        ? memberIdentities[0]?.slug ?? null
-                                        : null),
-                                    memberIdentities,
-                                    t,
-                                    t("console.common.collaborator"),
-                                  ),
-                                })}
-                          </span>
-                          <span className="truncate">
-                            {dispatch.message.body.trim()
-                              || dispatch.message.attachments?.map((attachment) => attachment.displayName).join(", ")
-                              || t("console.operator.attachmentMessage")}
-                          </span>
-                        </li>
-                      ))}
+                      {visiblePendingDispatches.map((dispatch, index) => {
+                        const message = dispatch.message;
+                        const editing = editingPendingMessage?.id === message.id;
+                        return (
+                          <li key={message.id} className="min-w-0">
+                            <div className="flex min-w-0 gap-2">
+                              <span className="shrink-0 text-sub">{index + 1}</span>
+                              <span className="shrink-0 text-accent">
+                                {dispatch.waitingForTeam
+                                  ? t("console.operator.pendingNewTeam")
+                                  : t("console.operator.pendingTarget", {
+                                      target: resolveOperatorMemberName(
+                                        dispatch.targetRole
+                                          ?? (dispatch.targetLane === "primary"
+                                            ? memberIdentities[0]?.slug ?? null
+                                            : null),
+                                        memberIdentities,
+                                        t,
+                                        t("console.common.collaborator"),
+                                      ),
+                                    })}
+                              </span>
+                              {editing ? (
+                                <input
+                                  className="min-w-0 flex-1 rounded-md border border-line bg-card px-2 py-1 text-sm text-ink"
+                                  aria-label={t("console.operator.pendingEditLabel")}
+                                  value={editingPendingMessage.body}
+                                  onChange={(event) => setEditingPendingMessage({
+                                    id: message.id,
+                                    body: event.currentTarget.value,
+                                  })}
+                                />
+                              ) : (
+                                <span className="truncate">
+                                  {message.body.trim()
+                                    || message.attachments?.map((attachment) => attachment.displayName).join(", ")
+                                    || t("console.operator.attachmentMessage")}
+                                </span>
+                              )}
+                            </div>
+                            {message.error ? (
+                              <div
+                                className="ml-5 mt-1 rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-xs text-danger"
+                                role="alert"
+                                tabIndex={-1}
+                              >
+                                <p>{message.error}</p>
+                                <p className="mt-0.5">{t("console.operator.pendingNotSent")}</p>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {editing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line bg-card px-2 py-1 text-ink"
+                                        onClick={() => {
+                                          onEditPendingMessage?.(
+                                            selectedSessionId,
+                                            message.id,
+                                            editingPendingMessage.body,
+                                          );
+                                          setEditingPendingMessage(null);
+                                        }}
+                                      >
+                                        {t("console.operator.pendingSave")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line bg-card px-2 py-1 text-ink"
+                                        onClick={() => setEditingPendingMessage(null)}
+                                      >
+                                        {t("console.operator.pendingCancel")}
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line bg-card px-2 py-1 text-ink"
+                                        onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
+                                      >
+                                        {t("console.operator.pendingRetry")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line bg-card px-2 py-1 text-ink"
+                                        onClick={() => setEditingPendingMessage({ id: message.id, body: message.body })}
+                                      >
+                                        {t("console.operator.pendingEdit")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded border border-line bg-card px-2 py-1 text-danger"
+                                        onClick={() => onRemovePendingMessage?.(selectedSessionId, message.id)}
+                                      >
+                                        {t("console.operator.pendingRemove")}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
                     </ol>
                   </section>
                 ) : null}
@@ -1954,6 +2141,15 @@ export function OperatorConsole({
                   )}
                 />
             </div>
+            {analysisPanel?.open ? (
+              <AnalysisPanel
+                id={analysisPanelId}
+                layout={analysisPanelLayout}
+                state={analysisPanel.state}
+                onOpenEntry={analysisPanel.onOpenEntry}
+                onRetry={analysisPanel.onRetry}
+              />
+            ) : null}
             </div>
           </>
         )}
@@ -1968,6 +2164,8 @@ export function OperatorConsole({
         onOpenChange={setRightSidebarOpen}
         onWidthChange={setRightSidebarWidth}
         onBeforeCloseTab={onBeforeCloseRightSidebarTab}
+        focusTabId={rightSidebarFocusTabId}
+        onFocusTabHandled={onRightSidebarFocusHandled}
         createTabId={() => createRightSidebarTabId(nextRightSidebarTabIdRef)}
         contentSlots={{
           "sub-session": (tab) => {
@@ -2625,6 +2823,7 @@ function TimelineEntry({
   onEditAndResend,
   onOpenDiagnostics,
   onOpenExternalLink,
+  onOpenConversationReference,
   onOpenFileReference,
   onOpenTeamMember,
   onOpenEvidence,
@@ -2645,6 +2844,7 @@ function TimelineEntry({
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
   onOpenDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
+  onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
@@ -2757,6 +2957,7 @@ function TimelineEntry({
                 content={message.body}
                 mode="static"
                 onOpenExternalLink={onOpenExternalLink}
+                onOpenConversationReference={onOpenConversationReference}
                 onOpenFileReference={onOpenFileReference}
                 memberIdentities={memberIdentities}
                 onOpenTeamMember={onOpenTeamMember}
@@ -2838,6 +3039,7 @@ function TimelineEntry({
               content={message.body}
               mode="static"
               onOpenExternalLink={onOpenExternalLink}
+              onOpenConversationReference={onOpenConversationReference}
               onOpenFileReference={onOpenFileReference}
               memberIdentities={memberIdentities}
               onOpenTeamMember={onOpenTeamMember}
@@ -2934,7 +3136,8 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
     newConversationDisabledReason: project.newConversationDisabledReason,
     directoryAvailable: project.directoryAvailable,
     directoryUnavailableReason: project.directoryUnavailableReason,
-    sessions: project.sessions.filter((session) => session.parentSessionId == null).map((session) => ({
+    sessions: project.sessions.filter((session) =>
+      session.parentSessionId == null && session.analysisParentSessionId == null).map((session) => ({
       id: session.sessionId,
       title: session.title,
       unreadSince: session.unreadSince,
@@ -3076,6 +3279,7 @@ function formatTime(value: string, locale: Locale): string {
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

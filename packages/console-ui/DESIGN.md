@@ -64,6 +64,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **Agent 运行活动与时间**：`src/console/run-block.tsx` + `src/console/run-time.tsx`——who 行右侧常驻语义明确的「已进行」时长，下一行只保留最新一条安全活动并截断对象；终态改为「耗时」，完成时刻通过 title、键盘焦点与可访问名称提供。`main` 变体使用 24px 身份头像与 32px 正文缩进，`embedded` 保留原密度；活动记录不显示百分比、不轮播旧工具、不堆积工具日志；无稳定过程能力的执行引擎原位显示不可用说明，不渲染空入口。
 - **主 / embedded composer**：`src/console/role-composer.tsx`——`main` 使用 14px card、10/12px 内间距、单行起步且最多 120px 的 textarea，并把附件、发送和主理人停止保持为 32px 方形操作；`embedded` 保留 76px 起步与右侧栏自己的可用宽度。两者只隔离视觉密度，不改变发送、停止、附件、mention、输入法或待发射规则。
 - **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px 510 + 14px 图标）在下。
+- **分析对话入口面板**：`src/console/analysis-panel.tsx`——所在对话右上角的轻量入口面，只显示直接子分析对话的可读标题与必要的同名消歧；宽容器为 288px 并排面，窄容器覆盖所在对话而不改正文宽度。空、加载、失败与长列表都留在面板内部，条目只触发外层右侧栏唯一会话标签，不承载时间线、状态、摘要或管理操作。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。
 - **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-md`（12px）+ `bg-sunken`，无阴影。

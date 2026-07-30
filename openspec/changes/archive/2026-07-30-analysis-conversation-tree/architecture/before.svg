@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">分析对话改造前架构</title>
+  <desc id="desc">分析草稿创建普通根会话，进入左侧栏；来源只形成路径文本。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker>
+    <style>
+      .box{fill:#f8fafc;stroke:#475569;stroke-width:2;rx:14}.bad{fill:#fff1f2;stroke:#e11d48;stroke-width:2;rx:14}
+      .label{font:600 18px system-ui;fill:#0f172a}.small{font:14px system-ui;fill:#334155}.line{stroke:#64748b;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <text x="48" y="48" class="label">基线：sidebar-chat-session-analysis.svg / conversation-analysis-entry.svg</text>
+  <rect x="60" y="100" width="220" height="90" class="box"/><text x="88" y="137" class="label">来源根会话</text><text x="88" y="165" class="small">消息 / 对话菜单</text>
+  <rect x="380" y="100" width="230" height="90" class="box"/><text x="407" y="137" class="label">右侧栏分析草稿</text><text x="407" y="165" class="small">textFragments</text>
+  <rect x="710" y="90" width="260" height="110" class="bad"/><text x="740" y="130" class="label">普通根 sidebar chat</text><text x="740" y="158" class="small">originSessionId + entryTemplate</text><text x="740" y="181" class="small">无直接父归属</text>
+  <line x1="280" y1="145" x2="380" y2="145" class="line"/><line x1="610" y1="145" x2="710" y2="145" class="line"/>
+  <rect x="710" y="280" width="220" height="90" class="bad"/><text x="746" y="318" class="label">左侧栏根列表</text><text x="746" y="346" class="small">分析会话成为同行</text>
+  <line x1="840" y1="200" x2="830" y2="280" class="line"/>
+  <rect x="60" y="430" width="250" height="100" class="box"/><text x="88" y="470" class="label">reference-text API</text><text x="88" y="500" class="small">日志路径 + provider 标识</text>
+  <rect x="410" y="430" width="250" height="100" class="bad"/><text x="444" y="470" class="label">普通 Markdown 文本</text><text x="444" y="500" class="small">不可导航、不交付来源</text>
+  <line x1="310" y1="480" x2="410" y2="480" class="line"/>
+  <rect x="760" y="430" width="340" height="100" class="box"/><text x="794" y="470" class="label">RightSidebarTabsStore</text><text x="794" y="500" class="small">按当前 host 保存，不解析对话树</text>
+</svg>

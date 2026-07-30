@@ -21,6 +21,7 @@ import {
   releaseMarkdownInternalIntentRegistry,
   retainMarkdownInternalIntentRegistry,
   type MarkdownFileReference,
+  type MarkdownConversationReference,
   type MarkdownMemberIdentity,
 } from "@/console/markdown-internal-reference";
 import { machineTextPlaceholders } from "@/console/machine-text";
@@ -31,6 +32,7 @@ export interface MarkdownMessageProps {
   density?: "conversation" | "live";
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   memberIdentities?: readonly MarkdownMemberIdentity[];
   onOpenTeamMember?: (slug: string) => void;
   className?: string;
@@ -57,6 +59,7 @@ export function MarkdownMessage({
   density = "conversation",
   onOpenExternalLink,
   onOpenFileReference,
+  onOpenConversationReference,
   memberIdentities = [],
   onOpenTeamMember,
   className,
@@ -74,10 +77,11 @@ export function MarkdownMessage({
         intentKey={intentKey}
         onOpenExternalLink={onOpenExternalLink}
         onOpenFileReference={onOpenFileReference}
+        onOpenConversationReference={onOpenConversationReference}
         onOpenTeamMember={onOpenTeamMember}
       />
     ),
-  }), [intentKey, onOpenExternalLink, onOpenFileReference, onOpenTeamMember]);
+  }), [intentKey, onOpenConversationReference, onOpenExternalLink, onOpenFileReference, onOpenTeamMember]);
   const remarkPlugins = useMemo<NonNullable<StreamdownProps["remarkPlugins"]>>(
     () => [
       ...Object.values(defaultRemarkPlugins),
@@ -129,6 +133,7 @@ type SafeMarkdownLinkProps = ComponentPropsWithoutRef<"a"> & {
   intentKey: string;
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   onOpenTeamMember?: (slug: string) => void;
 };
 
@@ -139,6 +144,7 @@ function SafeMarkdownLink({
   intentKey,
   onOpenExternalLink,
   onOpenFileReference,
+  onOpenConversationReference,
   onOpenTeamMember,
 }: SafeMarkdownLinkProps): JSX.Element {
   const { t } = useI18n();
@@ -146,6 +152,7 @@ function SafeMarkdownLink({
   const intent = readMarkdownInternalIntent(href, intentKey);
   const fileReference = intent.fileReference;
   const memberSlug = intent.memberSlug;
+  const conversationReference = intent.conversationReference;
   const safeUrl = normalizeMarkdownUrl(href, "link");
 
   if (fileReference !== null) {
@@ -156,6 +163,19 @@ function SafeMarkdownLink({
             type="button"
             className="inline break-words text-left font-medium text-accent underline"
             onClick={() => onOpenFileReference(fileReference)}
+          >
+            {children}
+          </button>
+        );
+  }
+  if (conversationReference !== null) {
+    return onOpenConversationReference === undefined
+      ? <span className="break-words text-sub underline decoration-dotted">{children}</span>
+      : (
+          <button
+            type="button"
+            className="inline break-words text-left font-medium text-accent underline"
+            onClick={() => onOpenConversationReference(conversationReference)}
           >
             {children}
           </button>

@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  useLayoutEffect,
   useRef,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -51,6 +52,8 @@ export interface RightSidebarProps {
   onOpenChange(open: boolean): void;
   onWidthChange(width: number): void;
   onBeforeCloseTab?: (tab: RightSidebarTab) => boolean;
+  focusTabId?: string | null;
+  onFocusTabHandled?: (tabId: string) => void;
   createTabId(): string;
   contentSlots?: RightSidebarContentSlots;
   className?: string;
@@ -72,13 +75,24 @@ export function RightSidebar({
   onOpenChange,
   onWidthChange,
   onBeforeCloseTab,
+  focusTabId = null,
+  onFocusTabHandled,
   createTabId,
   contentSlots = {},
   className,
 }: RightSidebarProps): JSX.Element | null {
   const { t } = useI18n();
   const resizeGestureRef = useRef<ResizeGesture | null>(null);
+  const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null;
+
+  useLayoutEffect(() => {
+    if (!open || focusTabId === null) return;
+    const target = tabButtonRefs.current.get(focusTabId);
+    if (target === undefined) return;
+    target.focus();
+    onFocusTabHandled?.(focusTabId);
+  }, [focusTabId, onFocusTabHandled, open, state.tabs]);
 
   if (!open) {
     return null;
@@ -162,9 +176,14 @@ export function RightSidebar({
               >
                 <button
                   type="button"
+                  ref={(element) => {
+                    if (element === null) tabButtonRefs.current.delete(tab.id);
+                    else tabButtonRefs.current.set(tab.id, element);
+                  }}
                   className="flex min-w-0 items-center gap-1.5"
                   role="tab"
                   aria-selected={activeTab?.id === tab.id}
+                  data-tab-id={tab.id}
                   title={displayTitle}
                   onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
                 >

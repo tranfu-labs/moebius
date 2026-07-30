@@ -503,6 +503,64 @@ export async function submitSessionMessage(options: {
   }
 }
 
+export async function retryPendingSessionMessage(options: {
+  apiBase: string;
+  sessionId: string;
+  messageId: number;
+  fetch: FetchLike;
+}): Promise<void> {
+  await mutatePendingSessionMessage({ ...options, method: "POST" });
+}
+
+export async function updatePendingSessionMessage(options: {
+  apiBase: string;
+  sessionId: string;
+  messageId: number;
+  body: string;
+  fetch: FetchLike;
+}): Promise<void> {
+  await mutatePendingSessionMessage({ ...options, method: "PATCH" });
+}
+
+export async function removePendingSessionMessage(options: {
+  apiBase: string;
+  sessionId: string;
+  messageId: number;
+  fetch: FetchLike;
+}): Promise<void> {
+  await mutatePendingSessionMessage({ ...options, method: "DELETE" });
+}
+
+async function mutatePendingSessionMessage(options: {
+  apiBase: string;
+  sessionId: string;
+  messageId: number;
+  method: "POST" | "PATCH" | "DELETE";
+  body?: string;
+  fetch: FetchLike;
+}): Promise<void> {
+  const fetch = options.fetch;
+  const response = await fetch(
+    endpoint(
+      options.apiBase,
+      `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/messages/${String(options.messageId)}/pending`,
+    ),
+    {
+      method: options.method,
+      ...(options.method === "PATCH"
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ body: options.body ?? "" }),
+          }
+        : {}),
+    },
+  );
+  const responseBody = await response.json() as { error?: string };
+  if (!response.ok) {
+    throw new Error(responseBody.error ?? "pending message mutation failed");
+  }
+}
+
 export async function retrySessionRun(options: {
   apiBase: string;
   sessionId: string;
@@ -649,6 +707,7 @@ export interface CreatedSession {
   sessionId: string;
   title?: string;
   projectId?: string;
+  analysisParentSessionId?: string | null;
   originSessionId?: string | null;
   entryTemplate?: "session-analysis" | null;
   writePolicy?: "normal" | "confirm-current-plan-before-write";
@@ -665,6 +724,7 @@ export async function createSidebarConversationSession(options: {
   attachmentIds?: readonly string[];
   attachmentDraftKey: string;
   originSessionId: string | null;
+  analysisParentSessionId?: string | null;
   entryTemplate: "session-analysis" | null;
   writePolicy: "normal" | "confirm-current-plan-before-write";
   textFragments: readonly { id: string; label: string; text: string }[];
@@ -685,6 +745,8 @@ export async function createSidebarConversationSession(options: {
       attachmentIds: options.attachmentIds ?? [],
       attachmentDraftKey: options.attachmentDraftKey,
       originSessionId: options.originSessionId,
+      analysisParentSessionId: options.analysisParentSessionId
+        ?? (options.entryTemplate === "session-analysis" ? options.originSessionId : null),
       entryTemplate: options.entryTemplate,
       writePolicy: options.writePolicy,
       textFragments: options.textFragments,
@@ -702,6 +764,7 @@ export async function loadSessionReferenceText(options: {
   sessionId: string;
   scope: "message" | "conversation";
   runId?: string | null;
+  messageId?: number | null;
   fetch: FetchLike;
 }): Promise<{ fragment: { id: string; label: string; text: string } }> {
   const url = endpoint(
@@ -710,6 +773,7 @@ export async function loadSessionReferenceText(options: {
   );
   url.searchParams.set("scope", options.scope);
   if (options.runId != null) url.searchParams.set("runId", options.runId);
+  if (options.messageId != null) url.searchParams.set("messageId", String(options.messageId));
   const response = await invokeBrowserFetch(options.fetch, url);
   const body = await response.json() as { fragment?: { id: string; label: string; text: string }; error?: string };
   if (!response.ok || body.fragment === undefined) {
@@ -788,6 +852,7 @@ interface ArchiveSessionResponse {
   sessionId?: string;
   projectId?: string;
   selectedSessionId?: string | null;
+  archivedSessionIds?: string[];
   error?: string;
 }
 
@@ -1041,14 +1106,14 @@ export class ConsoleStateActions {
     }
   };
 
-  readonly archiveSession = async (sessionId: string, projectId: string): Promise<void> => {
+  readonly archiveSession = async (sessionId: string, projectId: string): Promise<string[] | null> => {
     if (this.options.apiBase === null) {
       this.options.setError(this.options.t("desktop.error.localConsoleUnavailable"));
-      return;
+      return null;
     }
     const token = this.beginMutation("archive-session");
     if (token === null) {
-      return;
+      return null;
     }
     try {
       const fetch = this.options.fetch;
@@ -1066,8 +1131,10 @@ export class ConsoleStateActions {
         : currentSelection;
       this.options.commitSelection(nextSelection);
       await this.options.refresh(nextSelection, token);
+      return body.archivedSessionIds ?? [sessionId];
     } catch (error) {
       this.options.setError(formatError(error));
+      return null;
     } finally {
       this.finishMutation(token);
     }

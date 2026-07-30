@@ -15,6 +15,7 @@ import {
   type MoveEmptySessionResult,
 } from "./local-console/types.js";
 import type { SqliteStateCommand, SqliteStateSource } from "./sqlite-state.js";
+import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
 
 interface SqliteRunResult {
   changes?: number | bigint;
@@ -186,6 +187,9 @@ function runCommand(input: WorkerInput): unknown {
       case "local-record-interrupted":
       case "local-record-stuck":
       case "local-mark-stale-running":
+      case "local-mark-pending-reference-error":
+      case "local-update-pending-user":
+      case "local-remove-pending-user":
         return rejectDirectSessionMessageWrite(input.command);
       case "local-commit-session-fact-write":
         return commitSessionFactWrite(database, input.command.factCommand, input.command.facts);
@@ -314,6 +318,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       source_repo TEXT,
       source_issue_number INTEGER,
       parent_session_id TEXT,
+      analysis_parent_session_id TEXT,
       origin_session_id TEXT,
       entry_template TEXT CHECK (entry_template IS NULL OR entry_template = 'session-analysis'),
       write_policy TEXT NOT NULL DEFAULT 'normal' CHECK (write_policy IN ('normal', 'confirm-current-plan-before-write')),
@@ -560,6 +565,9 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
 }
 
 function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "sessions", "analysis_parent_session_id")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN analysis_parent_session_id TEXT");
+  }
   if (!tableHasColumn(database, "sessions", "origin_session_id")) {
     database.exec("ALTER TABLE sessions ADD COLUMN origin_session_id TEXT");
   }
@@ -578,6 +586,23 @@ function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "session_messages", "text_fragments_json")) {
     database.exec("ALTER TABLE session_messages ADD COLUMN text_fragments_json TEXT NOT NULL DEFAULT '[]'");
   }
+  database.exec(
+    `UPDATE sessions
+     SET analysis_parent_session_id = origin_session_id
+     WHERE source_type = 'local'
+       AND entry_template = 'session-analysis'
+       AND analysis_parent_session_id IS NULL
+       AND origin_session_id IS NOT NULL
+       AND origin_session_id <> session_id
+       AND EXISTS (
+         SELECT 1 FROM sessions parent
+         WHERE parent.session_id = sessions.origin_session_id
+           AND parent.source_type = 'local'
+       )`,
+  );
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_sessions_analysis_parent_session_id ON sessions(analysis_parent_session_id) WHERE analysis_parent_session_id IS NOT NULL",
+  );
 }
 
 function preserveLegacyLocalSessionTeamBindings(database: SqliteDatabase): void {
@@ -1716,6 +1741,9 @@ function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateC
     case "local-create-child-session": return createLocalChildSession(database, command);
     case "local-record-child-session-card": return recordChildSessionCard(database, command);
     case "local-append-user": return appendUserMessage(database, command);
+    case "local-mark-pending-reference-error": return markPendingReferenceError(database, command);
+    case "local-update-pending-user": return updatePendingUserMessage(database, command);
+    case "local-remove-pending-user": return removePendingUserMessage(database, command);
     case "local-update-session-analysis-gate": return updateLocalSessionAnalysisGate(database, command);
     case "local-claim-next": return claimNextPendingMessage(database, command);
     case "local-claim-next-worker": return claimNextPendingWorkerMessage(database, command);
@@ -1886,21 +1914,18 @@ function removeLocalProject(
     const activeSessionRows = database
       .prepare("SELECT session_id FROM sessions WHERE project_id = ? AND source_type = 'local' AND archived_at IS NULL")
       .all(input.projectId);
-    const hasPendingControlWorkInProject = activeSessionRows.some((row) => {
-      if (!isRecord(row)) {
-        throw new Error("Invalid local console session row");
-      }
-      return hasPendingLocalControlWork(database, readString(row.session_id, "session_id"));
-    });
-    if (hasPendingControlWorkInProject && !input.force) {
-      throw new Error("PROJECT_HAS_RUNNING_AGENTS");
-    }
-    const archivedSessionIds = activeSessionRows.map((row) => {
+    const projectSessionIds = activeSessionRows.map((row) => {
       if (!isRecord(row)) {
         throw new Error("Invalid local console session row");
       }
       return readString(row.session_id, "session_id");
     });
+    const archivedSessionIds = listActiveAnalysisSubtreeIds(database, projectSessionIds);
+    const hasPendingControlWorkInProject = archivedSessionIds.some((sessionId) =>
+      hasPendingLocalControlWork(database, sessionId));
+    if (hasPendingControlWorkInProject && !input.force) {
+      throw new Error("PROJECT_HAS_RUNNING_AGENTS");
+    }
     const originalFolderPath = readString(project.folder_path, "folder_path");
     const releasedFolderPath = `${originalFolderPath}#removed:${input.projectId}:${input.now}`;
     database
@@ -1910,13 +1935,10 @@ function removeLocalProject(
          WHERE project_id = ?`,
       )
       .run(originalFolderPath, releasedFolderPath, input.now, input.now, input.projectId);
-    database
-      .prepare(
-        `UPDATE sessions
-         SET archived_at = ?, updated_at = ?
-         WHERE project_id = ? AND source_type = 'local' AND archived_at IS NULL`,
-      )
-      .run(input.now, input.now, input.projectId);
+    updateSessionsArchivedAt(database, archivedSessionIds, input.now, input.now);
+    for (const sessionId of archivedSessionIds) {
+      clearLocalCursorActive(database, sessionId, input.now);
+    }
     return { projectId: input.projectId, archivedSessionIds };
   });
 }
@@ -2019,6 +2041,7 @@ function isUnusedDefaultLocalProject(
     || readNullableString(session.source_repo, "source_repo") !== null
     || session.source_issue_number !== null
     || readNullableString(session.parent_session_id, "parent_session_id") !== null
+    || readNullableString(session.analysis_parent_session_id, "analysis_parent_session_id") !== null
     || readNullableString(session.agent_team_ownership, "agent_team_ownership") !== null
     || readNullableString(session.agent_team_id, "agent_team_id") !== null
     || readNullableString(session.agent_team_pending_ownership, "agent_team_pending_ownership") !== null
@@ -2054,11 +2077,16 @@ function isUnusedDefaultLocalProject(
          WHERE parent_session_id = ?
        )
        OR EXISTS (
+         SELECT 1 FROM sessions
+         WHERE analysis_parent_session_id = ?
+       )
+       OR EXISTS (
          SELECT 1 FROM session_edges
          WHERE parent_session_id = ? OR child_session_id = ?
        )`,
     )
     .get(
+      LOCAL_CONSOLE_DEFAULT_SESSION_ID,
       LOCAL_CONSOLE_DEFAULT_SESSION_ID,
       LOCAL_CONSOLE_DEFAULT_SESSION_ID,
       LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -2334,14 +2362,31 @@ function createLocalSession(
         throw new Error(`local console origin session not found: ${input.originSessionId}`);
       }
     }
+    if (input.analysisParentSessionId !== undefined && input.analysisParentSessionId !== null) {
+      if (input.entryTemplate !== "session-analysis") {
+        throw new Error("analysis parent requires session-analysis entry template");
+      }
+      if (input.analysisParentSessionId === input.sessionId) {
+        throw new Error("analysis session cannot parent itself");
+      }
+      const parent = database
+        .prepare(
+          "SELECT 1 AS found FROM sessions WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL",
+        )
+        .get(input.analysisParentSessionId);
+      if (parent === undefined) {
+        throw new Error(`local console analysis parent session not found: ${input.analysisParentSessionId}`);
+      }
+    }
     database
       .prepare(
         `UPDATE sessions
-         SET origin_session_id = ?, entry_template = ?, write_policy = ?, updated_at = ?
+         SET origin_session_id = ?, analysis_parent_session_id = ?, entry_template = ?, write_policy = ?, updated_at = ?
          WHERE session_id = ? AND source_type = 'local'`,
       )
       .run(
         input.originSessionId ?? null,
+        input.analysisParentSessionId ?? null,
         input.entryTemplate ?? null,
         input.writePolicy ?? "normal",
         input.now,
@@ -2363,6 +2408,7 @@ function createLocalSession(
     const textFragments = readTextFragments(input.initialTextFragments ?? []);
     if (input.initialMessage !== undefined || attachmentIds.length > 0 || textFragments.length > 0) {
       const initialBody = input.initialMessage ?? "";
+      const persistedBody = serializeTextFragmentReferences(initialBody, textFragments);
       if (initialBody.trim() === "" && attachmentIds.length === 0) {
         throw new Error("Message body or attachment must be provided");
       }
@@ -2375,8 +2421,8 @@ function createLocalSession(
         )
         .run(
           input.sessionId,
-          initialBody,
-          JSON.stringify(textFragments),
+          persistedBody,
+          "[]",
           input.initialDispatch?.lane ?? "primary",
           input.initialDispatch?.role ?? input.agentTeamSnapshot?.members[0]?.name ?? null,
           input.initialDispatch?.reason ?? "no-valid-mention",
@@ -2401,7 +2447,9 @@ function moveEmptyLocalSession(
 ): MoveEmptySessionResult {
   return transaction(database, () => {
     const session = database
-      .prepare("SELECT session_id, parent_session_id FROM sessions WHERE session_id = ? AND source_type = 'local'")
+      .prepare(
+        "SELECT session_id, parent_session_id, analysis_parent_session_id FROM sessions WHERE session_id = ? AND source_type = 'local'",
+      )
       .get(input.sessionId);
     if (!isRecord(session)) {
       return { ok: false, code: "LOCAL_SESSION_NOT_FOUND" };
@@ -2416,12 +2464,20 @@ function moveEmptyLocalSession(
       .prepare("SELECT 1 AS found FROM session_messages WHERE session_id = ? LIMIT 1")
       .get(input.sessionId);
     const hasChild = database
-      .prepare("SELECT 1 AS found FROM sessions WHERE parent_session_id = ? LIMIT 1")
-      .get(input.sessionId);
+      .prepare(
+        "SELECT 1 AS found FROM sessions WHERE parent_session_id = ? OR analysis_parent_session_id = ? LIMIT 1",
+      )
+      .get(input.sessionId, input.sessionId);
     const hasEdge = database
       .prepare("SELECT 1 AS found FROM session_edges WHERE parent_session_id = ? OR child_session_id = ? LIMIT 1")
       .get(input.sessionId, input.sessionId);
-    if (session.parent_session_id !== null || hasMessages !== undefined || hasChild !== undefined || hasEdge !== undefined) {
+    if (
+      session.parent_session_id !== null
+      || session.analysis_parent_session_id !== null
+      || hasMessages !== undefined
+      || hasChild !== undefined
+      || hasEdge !== undefined
+    ) {
       return { ok: false, code: "SESSION_PROJECT_LOCKED" };
     }
 
@@ -2446,7 +2502,8 @@ function archiveLocalSession(
     if (row.archived_at !== null) {
       throw new Error(`local console session already archived: ${input.sessionId}`);
     }
-    if (hasPendingLocalControlWork(database, input.sessionId)) {
+    const archivedSessionIds = listActiveAnalysisSubtreeIds(database, [input.sessionId]);
+    if (archivedSessionIds.some((sessionId) => hasPendingLocalControlWork(database, sessionId))) {
       throw new Error("SESSION_HAS_RUNNING_AGENT");
     }
 
@@ -2454,7 +2511,8 @@ function archiveLocalSession(
     const visibleSessionIds = database
       .prepare(
         `SELECT session_id FROM sessions
-         WHERE source_type = 'local' AND project_id = ? AND archived_at IS NULL AND parent_session_id IS NULL
+         WHERE source_type = 'local' AND project_id = ? AND archived_at IS NULL
+           AND parent_session_id IS NULL AND analysis_parent_session_id IS NULL
          ORDER BY created_at DESC, session_id ASC`,
       )
       .all(projectId)
@@ -2472,11 +2530,11 @@ function archiveLocalSession(
       ?? visibleSessionIds[archivedIndex - 1]
       ?? null;
 
-    database
-      .prepare("UPDATE sessions SET archived_at = ?, updated_at = ? WHERE session_id = ? AND archived_at IS NULL")
-      .run(input.now, input.now, input.sessionId);
-    clearLocalCursorActive(database, input.sessionId, input.now);
-    return { sessionId: input.sessionId, projectId, selectedSessionId };
+    updateSessionsArchivedAt(database, archivedSessionIds, input.now, input.now);
+    for (const sessionId of archivedSessionIds) {
+      clearLocalCursorActive(database, sessionId, input.now);
+    }
+    return { sessionId: input.sessionId, projectId, selectedSessionId, archivedSessionIds };
   });
 }
 
@@ -2496,12 +2554,70 @@ function restoreLocalSession(
     if (!isRecord(row)) {
       throw new Error(`local console archived session not found: ${input.sessionId}`);
     }
-    database
-      .prepare("UPDATE sessions SET archived_at = NULL, updated_at = ? WHERE session_id = ?")
-      .run(input.now, input.sessionId);
-    ensureLocalCursor(database, input.sessionId, input.now);
+    const restoredSessionIds = listAnalysisSubtreeIds(database, [input.sessionId], false);
+    if (restoredSessionIds.length > 0) {
+      const placeholders = restoredSessionIds.map(() => "?").join(", ");
+      database
+        .prepare(`UPDATE sessions SET archived_at = NULL, updated_at = ? WHERE session_id IN (${placeholders})`)
+        .run(input.now, ...restoredSessionIds);
+    }
+    for (const sessionId of restoredSessionIds) {
+      ensureLocalCursor(database, sessionId, input.now);
+    }
     return requireLocalSession(database, input.sessionId);
   });
+}
+
+function listActiveAnalysisSubtreeIds(
+  database: SqliteDatabase,
+  rootSessionIds: readonly string[],
+): string[] {
+  return listAnalysisSubtreeIds(database, rootSessionIds, true);
+}
+
+function listAnalysisSubtreeIds(
+  database: SqliteDatabase,
+  rootSessionIds: readonly string[],
+  activeOnly: boolean,
+): string[] {
+  const seen = new Set<string>();
+  const queue = [...rootSessionIds];
+  const rootExists = database.prepare(
+    `SELECT 1 AS found FROM sessions
+     WHERE session_id = ? AND source_type = 'local'${activeOnly ? " AND archived_at IS NULL" : ""}`,
+  );
+  const children = database.prepare(
+    `SELECT session_id FROM sessions
+     WHERE analysis_parent_session_id = ? AND source_type = 'local'${activeOnly ? " AND archived_at IS NULL" : ""}
+     ORDER BY created_at ASC, session_id ASC`,
+  );
+  while (queue.length > 0) {
+    const sessionId = queue.shift()!;
+    if (seen.has(sessionId) || rootExists.get(sessionId) === undefined) continue;
+    seen.add(sessionId);
+    for (const child of children.all(sessionId)) {
+      if (!isRecord(child)) throw new Error("Invalid analysis child session row");
+      queue.push(readString(child.session_id, "session_id"));
+    }
+  }
+  return [...seen];
+}
+
+function updateSessionsArchivedAt(
+  database: SqliteDatabase,
+  sessionIds: readonly string[],
+  archivedAt: string,
+  updatedAt: string,
+): void {
+  if (sessionIds.length === 0) return;
+  const placeholders = sessionIds.map(() => "?").join(", ");
+  database
+    .prepare(
+      `UPDATE sessions
+       SET archived_at = ?, updated_at = ?
+       WHERE session_id IN (${placeholders}) AND archived_at IS NULL`,
+    )
+    .run(archivedAt, updatedAt, ...sessionIds);
 }
 
 function createLocalChildSession(
@@ -2700,6 +2816,7 @@ function searchLocalSessions(
        LEFT JOIN projects origin_project ON origin_project.project_id = origin.project_id
        WHERE s.source_type = 'local'
          AND s.parent_session_id IS NULL
+         AND s.analysis_parent_session_id IS NULL
          AND (? = 1 OR s.archived_at IS NULL)
        ORDER BY s.updated_at DESC, s.session_id ASC`,
     )
@@ -2764,6 +2881,7 @@ function appendUserMessage(
   return transaction(database, () => {
     const attachmentIds = input.attachmentIds ?? [];
     const textFragments = readTextFragments(input.textFragments ?? []);
+    const persistedBody = serializeTextFragmentReferences(input.body, textFragments);
     if (input.body.trim() === "" && attachmentIds.length === 0) {
       throw new Error("Message body or attachment must be provided");
     }
@@ -2781,8 +2899,8 @@ function appendUserMessage(
       )
       .run(
         input.sessionId,
-        input.body,
-        JSON.stringify(textFragments),
+        persistedBody,
+        "[]",
         input.dispatch?.lane ?? "primary",
         input.dispatch === undefined
           ? primaryAgentForSession(database, input.sessionId)
@@ -2800,6 +2918,90 @@ function appendUserMessage(
       input.now,
     );
     return requireLocalMessage(database, messageId, input.sessionId);
+  });
+}
+
+function requireEditablePendingUserMessage(
+  database: SqliteDatabase,
+  sessionId: string,
+  messageId: number,
+): WorkerLocalMessage {
+  const message = database
+    .prepare(
+      `SELECT * FROM session_messages
+       WHERE id = ? AND session_id = ? AND speaker = 'user' AND status = 'pending' AND run_id IS NULL`,
+    )
+    .get(messageId, sessionId);
+  if (!isRecord(message)) {
+    throw new Error("PENDING_MESSAGE_NOT_EDITABLE");
+  }
+  const active = database
+    .prepare(
+      `SELECT 1 AS found FROM local_message_cursors
+       WHERE session_id = ? AND active_message_id = ?`,
+    )
+    .get(sessionId, messageId);
+  if (active !== undefined) {
+    throw new Error("PENDING_MESSAGE_NOT_EDITABLE");
+  }
+  return readLocalMessageRow(message);
+}
+
+function markPendingReferenceError(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-mark-pending-reference-error" }>,
+): unknown {
+  return transaction(database, () => {
+    requireEditablePendingUserMessage(database, input.sessionId, input.messageId);
+    database
+      .prepare("UPDATE session_messages SET error = ?, updated_at = ? WHERE id = ? AND session_id = ?")
+      .run(input.error, input.now, input.messageId, input.sessionId);
+    return requireLocalMessage(database, input.messageId, input.sessionId);
+  });
+}
+
+function updatePendingUserMessage(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-update-pending-user" }>,
+): unknown {
+  return transaction(database, () => {
+    requireEditablePendingUserMessage(database, input.sessionId, input.messageId);
+    const body = input.body.trim();
+    const hasAttachment = database
+      .prepare("SELECT 1 AS found FROM local_attachment_refs WHERE message_id = ? LIMIT 1")
+      .get(input.messageId);
+    if (body === "" && hasAttachment === undefined) {
+      throw new Error("Message body or attachment must be provided");
+    }
+    database
+      .prepare(
+        "UPDATE session_messages SET body = ?, error = NULL, updated_at = ? WHERE id = ? AND session_id = ?",
+      )
+      .run(body, input.now, input.messageId, input.sessionId);
+    return requireLocalMessage(database, input.messageId, input.sessionId);
+  });
+}
+
+function removePendingUserMessage(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-remove-pending-user" }>,
+): void {
+  transaction(database, () => {
+    requireEditablePendingUserMessage(database, input.sessionId, input.messageId);
+    database
+      .prepare(
+        `UPDATE session_messages
+         SET status = 'completed',
+             source_kind = 'pending-removed',
+             error = NULL,
+             updated_at = ?
+         WHERE id = ? AND session_id = ?`,
+      )
+      .run(input.now, input.messageId, input.sessionId);
+    advanceLocalCursor(database, input.sessionId, input.messageId, input.now);
+    database
+      .prepare("UPDATE sessions SET updated_at = ? WHERE session_id = ?")
+      .run(input.now, input.sessionId);
   });
 }
 
@@ -4393,6 +4595,9 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     sessionId,
     projectId: readString(row.project_id, "project_id"),
     parentSessionId: readNullableString(row.parent_session_id, "parent_session_id"),
+    analysisParentSessionId: "analysis_parent_session_id" in row
+      ? readNullableString(row.analysis_parent_session_id, "analysis_parent_session_id")
+      : null,
     originSessionId: "origin_session_id" in row ? readNullableString(row.origin_session_id, "origin_session_id") : null,
     entryTemplate: readLocalEntryTemplate("entry_template" in row ? row.entry_template : null),
     writePolicy: readLocalWritePolicy("write_policy" in row ? row.write_policy : "normal"),

@@ -107,6 +107,50 @@ describe("MarkdownMessage", () => {
     expect(screen.queryByRole("dialog", { name: "确认打开外部链接" })).not.toBeInTheDocument();
   });
 
+  it("routes public moebius conversation references internally and rejects malformed targets", () => {
+    const onOpenConversationReference = vi.fn();
+    const onOpenExternalLink = vi.fn();
+    render(
+      <MarkdownMessage
+        content={[
+          "[目标消息](moebius-ref:message/local%3Asource/17)",
+          "[坏引用](moebius-ref:message/local%3Asource/not-a-number)",
+        ].join(" ")}
+        onOpenConversationReference={onOpenConversationReference}
+        onOpenExternalLink={onOpenExternalLink}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "目标消息" }));
+
+    expect(onOpenConversationReference).toHaveBeenCalledWith({
+      scope: "message",
+      sessionId: "local:source",
+      messageId: 17,
+    });
+    expect(screen.getByText("坏引用")).not.toHaveAttribute("href");
+    expect(onOpenExternalLink).not.toHaveBeenCalled();
+  });
+
+  it("only treats parsed Markdown link nodes as conversation references", () => {
+    const onOpenConversationReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content={[
+          "\\[转义文本](moebius-ref:conversation/escaped)",
+          "`[代码](moebius-ref:conversation/code)`",
+          "![图片](moebius-ref:conversation/image)",
+          "<span data-reference=\"[HTML 属性](moebius-ref:conversation/html)\">普通文本</span>",
+          "[有效引用](moebius-ref:conversation/source)",
+        ].join("\n\n")}
+        onOpenConversationReference={onOpenConversationReference}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "有效引用" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /转义文本|代码|图片|HTML 属性/u })).not.toBeInTheDocument();
+  });
+
   it.each([
     ["伪装文件", "https://file-reference.moebius.invalid/open?path=%2Ftmp%2Fa&line=1"],
     ["伪装成员", "https://member-mention.moebius.invalid/open/implementer"],

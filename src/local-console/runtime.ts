@@ -75,7 +75,12 @@ import {
   type LocalConsoleWritePolicy,
   type LocalConsoleTextFragment,
 } from "./types.js";
-import { buildSessionReferenceText } from "./session-reference-text.js";
+import {
+  buildMoebiusReferenceText,
+  extractMoebiusReferences,
+  plainTextExcerpt,
+  serializeTextFragmentReferences,
+} from "./session-reference-text.js";
 import {
   createLocalExecutionRunner,
   type LocalExecutionRunner,
@@ -719,7 +724,28 @@ export class LocalConsoleRuntime {
       throw new LocalConsoleProjectRunningError();
     }
 
-    const sessionIds = project.sessions.map((session) => session.sessionId);
+    const allSessions = await this.storeCall(
+      "local-console-store-list-project-removal-sessions",
+      () => this.options.store.listSessions(),
+    );
+    const removalRoots = project.sessions.map((session) => session.sessionId);
+    const removalSessionIds = new Set(removalRoots);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const session of allSessions) {
+        if (
+          session.analysisParentSessionId !== null
+          && session.analysisParentSessionId !== undefined
+          && removalSessionIds.has(session.analysisParentSessionId)
+          && !removalSessionIds.has(session.sessionId)
+        ) {
+          removalSessionIds.add(session.sessionId);
+          changed = true;
+        }
+      }
+    }
+    const sessionIds = [...removalSessionIds];
     for (const sessionId of sessionIds) {
       this.inactiveSessions.add(sessionId);
       if (input.force) {
@@ -762,6 +788,7 @@ export class LocalConsoleRuntime {
     attachmentIds: string[] = [],
     metadata: {
       originSessionId?: string | null;
+      analysisParentSessionId?: string | null;
       entryTemplate?: LocalConsoleEntryTemplate | null;
       writePolicy?: LocalConsoleWritePolicy;
       textFragments?: LocalConsoleTextFragment[];
@@ -778,6 +805,12 @@ export class LocalConsoleRuntime {
       throw new Error("Attachment ids must be unique");
     }
     assertTextFragments(metadata.textFragments ?? []);
+    const persistedInitialMessage = normalizedInitialMessage === undefined
+      ? undefined
+      : serializeTextFragmentReferences(normalizedInitialMessage, metadata.textFragments ?? []);
+    if (persistedInitialMessage !== undefined) {
+      await this.resolveReferenceContext(persistedInitialMessage);
+    }
     await this.assertProjectDirectoryAvailable(resolvedProjectId);
     const project = await this.storedProject(resolvedProjectId);
     if (project === undefined) {
@@ -845,15 +878,16 @@ export class LocalConsoleRuntime {
         agentTeamId: agentTeam?.id,
         agentTeamSnapshot,
         workspaceMode,
-        initialMessage: normalizedInitialMessage,
+        initialMessage: persistedInitialMessage,
         initialDispatch,
         initialAttachmentIds: attachmentIds,
         attachmentDraftKey: metadata.attachmentDraftKey ?? "draft:new",
         baselineCommit,
         originSessionId: metadata.originSessionId,
+        analysisParentSessionId: metadata.analysisParentSessionId,
         entryTemplate: metadata.entryTemplate,
         writePolicy: metadata.writePolicy,
-        initialTextFragments: metadata.textFragments,
+        initialTextFragments: [],
         now: this.nowIso(),
       }),
     );
@@ -979,24 +1013,41 @@ export class LocalConsoleRuntime {
     sessionId: string;
     scope: LocalConsoleSessionReferenceScope;
     runId?: string | null;
+    messageId?: number | null;
   }): Promise<LocalConsoleSessionReferenceText> {
     const sessions = await this.storeCall(
       "local-console-store-list-sessions-for-reference",
       () => this.options.store.listSessions(),
     );
-    if (!sessions.some((session) => session.sessionId === input.sessionId)) {
+    const session = sessions.find((candidate) => candidate.sessionId === input.sessionId);
+    if (session === undefined) {
       throw new Error(`local console session not found: ${input.sessionId}`);
     }
-    const logPath = this.getSessionFactLogPath(input.sessionId);
-    const links = input.scope === "message"
-      ? await readExecutionSessionLinks(logPath, input.sessionId)
+    const messages = input.scope === "message"
+      ? await this.storeCall("local-console-store-list-reference-messages", () =>
+          this.options.store.listMessages(input.sessionId))
       : [];
-    const text = buildSessionReferenceText({
-      scope: input.scope,
-      logPath,
-      runId: input.runId ?? null,
-      links,
-    });
+    const targetMessage = input.scope === "message"
+      ? (input.messageId == null
+          ? [...messages].reverse().find((message) => message.runId === (input.runId ?? null))
+          : messages.find((message) => message.id === input.messageId))
+      : undefined;
+    if (input.scope === "message" && targetMessage === undefined) {
+      throw new Error(`local console source message not found: ${input.sessionId}`);
+    }
+    const text = input.scope === "conversation"
+      ? buildMoebiusReferenceText({
+          scope: "conversation",
+          sessionId: input.sessionId,
+          title: session.title,
+        })
+      : buildMoebiusReferenceText({
+          scope: "message",
+          sessionId: input.sessionId,
+          messageId: targetMessage!.id,
+          role: targetMessage!.role ?? (targetMessage!.speaker === "user" ? "用户" : "协作者"),
+          excerpt: plainTextExcerpt(targetMessage!.body),
+        });
     return {
       sessionId: input.sessionId,
       runId: input.runId ?? null,
@@ -1007,6 +1058,98 @@ export class LocalConsoleRuntime {
         text,
       },
     };
+  }
+
+  private async resolveReferenceContext(markdown: string): Promise<string | null> {
+    const references = extractMoebiusReferences(markdown);
+    if (references.length === 0) return null;
+    const sessions = await this.storeCall(
+      "local-console-store-list-reference-sessions",
+      () => this.options.store.listSessions(),
+    );
+    const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
+    const messageCache = new Map<string, LocalConsoleMessage[]>();
+    const readMessages = async (sessionId: string): Promise<LocalConsoleMessage[]> => {
+      const cached = messageCache.get(sessionId);
+      if (cached !== undefined) return cached;
+      const messages = await this.storeCall(
+        "local-console-store-list-reference-context",
+        () => this.options.store.listMessages(sessionId),
+      );
+      messageCache.set(sessionId, messages);
+      return messages;
+    };
+    const sections: string[] = [];
+    const seen = new Set<string>();
+    for (const reference of references) {
+      const key = reference.scope === "conversation"
+        ? `conversation:${reference.sessionId}`
+        : `message:${reference.sessionId}:${String(reference.messageId)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const session = sessionById.get(reference.sessionId);
+      if (session === undefined) {
+        throw new Error(`来源不可用：${reference.sessionId}`);
+      }
+      const messages = await readMessages(reference.sessionId);
+      const selectedMessages = reference.scope === "conversation"
+        ? messages.filter((message) =>
+            message.status !== "pending"
+            && message.sourceKind !== "pending-removed"
+            && !isWorkerRunPlaceholder(message))
+        : messages.filter((message) =>
+            message.status !== "pending"
+            && message.sourceKind !== "pending-removed"
+            && !isWorkerRunPlaceholder(message)
+            && (
+              message.id === reference.messageId
+              || (message.runId !== null
+                && messages.some((candidate) =>
+                  candidate.id === reference.messageId
+                  && candidate.status !== "pending"
+                  && candidate.sourceKind !== "pending-removed"
+                  && candidate.runId === message.runId))
+            ));
+      if (reference.scope === "message" && !selectedMessages.some((message) => message.id === reference.messageId)) {
+        throw new Error(`来源不可用：${session.title} 中的消息 ${String(reference.messageId)}`);
+      }
+      const runIds = [...new Set(selectedMessages
+        .map((message) => message.runId)
+        .filter((runId): runId is string => runId !== null))];
+      const runOutputs = await Promise.all(runIds.map(async (runId) => {
+        const output = await this.runOutput(reference.sessionId, runId);
+        return [
+          `#### 运行 ${runId}${output.role === null ? "" : ` · ${output.role}`}`,
+          output.stdout === null ? "" : formatReferenceContentSegments("stdout", output.stdout),
+          output.stderr === null ? "" : formatReferenceContentSegments("stderr", output.stderr),
+          output.stdout === null && output.stderr === null && output.fallback !== null
+            ? formatReferenceContentSegments("可用输出", output.fallback)
+            : "",
+        ].filter(Boolean).join("\n");
+      }));
+      sections.push([
+        `### ${reference.scope === "conversation" ? "对话" : "消息"}来源：${session.title}`,
+        ...selectedMessages.map((message) => [
+          `- message=${String(message.id)} speaker=${message.speaker}`
+            + `${message.role === null ? "" : ` role=${message.role}`}`
+            + `${message.runId === null ? "" : ` run=${message.runId}`}`
+            + ` status=${message.status}`,
+          formatReferenceContentSegments("消息正文", message.body),
+          (message.attachments?.length ?? 0) === 0
+            ? ""
+            : `附件：${message.attachments!.map((attachment) =>
+                `${attachment.displayName} (${attachment.mediaType}, ${String(attachment.byteSize)} bytes)`).join("；")}`,
+          message.runTiming == null
+            ? ""
+            : `运行时序：${JSON.stringify(message.runTiming)}`,
+          message.error === null ? "" : `错误：${message.error}`,
+        ].filter(Boolean).join("\n")),
+        ...runOutputs,
+      ].join("\n"));
+    }
+    return sections.length === 0
+      ? null
+      : `\n\n以下内容由 Moebius 根据消息中的公开 moebius-ref: 以只读方式提供；它不授予来源项目文件或其他对象的访问权限：\n\n${sections.join("\n\n")}`;
   }
 
   async createChildSession(input: {
@@ -1068,6 +1211,7 @@ export class LocalConsoleRuntime {
     }
     assertTextFragments(textFragments);
     await this.assertSessionCanContinue(sessionId);
+    const persistedBody = serializeTextFragmentReferences(trimmed, textFragments);
 
     const primaryRun = this.activeRunForLane(sessionId, "primary");
     if (
@@ -1084,14 +1228,17 @@ export class LocalConsoleRuntime {
           reason: "no-valid-mention" as const,
         }
       : await this.resolveUserMessageDispatch(sessionId, trimmed);
+    if (primaryRun === undefined) {
+      await this.resolveReferenceContext(persistedBody);
+    }
 
     const message = await this.storeCall("local-console-store-append-user", () =>
       this.options.store.appendUserMessage({
         sessionId,
-        body: trimmed,
+        body: persistedBody,
         attachmentIds,
         attachmentDraftKey: `draft:${sessionId}`,
-        textFragments,
+        textFragments: [],
         dispatch,
         now: this.nowIso(),
       }),
@@ -1124,6 +1271,55 @@ export class LocalConsoleRuntime {
     }
     void this.processPending(sessionId);
     return message;
+  }
+
+  async retryPendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
+    const markPendingReferenceError = this.options.store.markPendingReferenceError;
+    if (markPendingReferenceError === undefined) {
+      throw new Error("pending message retry unavailable");
+    }
+    await this.storeCall("local-console-store-clear-pending-reference-error", () =>
+      markPendingReferenceError.call(this.options.store, {
+        sessionId: input.sessionId,
+        messageId: input.messageId,
+        error: null,
+        now: this.nowIso(),
+    }));
+    this.lastError = null;
+    this.schedulePendingProcessing(input.sessionId);
+  }
+
+  async updatePendingUserMessage(input: {
+    sessionId: string;
+    messageId: number;
+    body: string;
+  }): Promise<LocalConsoleMessage> {
+    const updatePendingUserMessage = this.options.store.updatePendingUserMessage;
+    if (updatePendingUserMessage === undefined) {
+      throw new Error("pending message editing unavailable");
+    }
+    const message = await this.storeCall("local-console-store-update-pending-user", () =>
+      updatePendingUserMessage.call(this.options.store, {
+        ...input,
+        now: this.nowIso(),
+    }));
+    this.lastError = null;
+    this.schedulePendingProcessing(input.sessionId);
+    return message;
+  }
+
+  async removePendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
+    const removePendingUserMessage = this.options.store.removePendingUserMessage;
+    if (removePendingUserMessage === undefined) {
+      throw new Error("pending message removal unavailable");
+    }
+    await this.storeCall("local-console-store-remove-pending-user", () =>
+      removePendingUserMessage.call(this.options.store, {
+        ...input,
+        now: this.nowIso(),
+    }));
+    this.lastError = null;
+    this.schedulePendingProcessing(input.sessionId);
   }
 
   async retryRun(input: { sessionId: string; runId: string }): Promise<boolean> {
@@ -1324,7 +1520,8 @@ export class LocalConsoleRuntime {
     await this.synchronizeNonContinuableRecords(projects);
     await this.stopUnsafeRunsWithUnavailableContext(projects);
     const sessions = projects.flatMap((project) => project.sessions);
-    const firstRootSession = sessions.find((session) => session.parentSessionId == null);
+    const firstRootSession = sessions.find((session) =>
+      session.parentSessionId == null && session.analysisParentSessionId == null);
     const requestedProject = requestedProjectId === undefined ? undefined : projects.find((project) => project.projectId === requestedProjectId);
     const requestedSession = (requestedProject?.sessions ?? sessions).find((session) => session.sessionId === selectedSessionId);
     const selectedProject =
@@ -1335,7 +1532,8 @@ export class LocalConsoleRuntime {
       buildFallbackProjectSummary(this.options.projectRoot);
     const storedSelectedSession =
       (requestedSession?.projectId === selectedProject.projectId ? requestedSession : undefined) ??
-      selectedProject.sessions.find((session) => session.parentSessionId == null) ??
+      selectedProject.sessions.find((session) =>
+        session.parentSessionId == null && session.analysisParentSessionId == null) ??
       (requestedProject === undefined ? firstRootSession : undefined) ??
       null;
     const selectedSession = storedSelectedSession;
@@ -1638,6 +1836,52 @@ export class LocalConsoleRuntime {
         if (await this.hasPersistedPrimaryRun(sessionId)) {
           return;
         }
+        let pendingReferenceContext: string | null = null;
+        let nextPendingUserMessage: LocalConsoleMessage | undefined;
+        try {
+          const pendingMessages = await this.storeCall(
+            "local-console-store-list-pending-reference-source",
+            () => this.options.store.listMessages(sessionId),
+          );
+          nextPendingUserMessage = pendingMessages
+            .filter((message) => message.speaker === "user" && message.status === "pending")
+            .sort((left, right) => left.id - right.id)[0];
+          if (nextPendingUserMessage !== undefined) {
+            pendingReferenceContext = await this.resolveReferenceContext(nextPendingUserMessage.body);
+            if (nextPendingUserMessage.error !== null) {
+              const markPendingReferenceError = this.options.store.markPendingReferenceError;
+              if (markPendingReferenceError === undefined) {
+                throw new Error("pending message reference error capability unavailable");
+              }
+              nextPendingUserMessage = await this.storeCall(
+                "local-console-store-clear-pending-reference-error",
+                () => markPendingReferenceError.call(this.options.store, {
+                  sessionId,
+                  messageId: nextPendingUserMessage!.id,
+                  error: null,
+                  now: this.nowIso(),
+                }),
+              );
+            }
+          }
+        } catch (error) {
+          this.lastError = formatLocalError(error);
+          const markPendingReferenceError = this.options.store.markPendingReferenceError;
+          if (nextPendingUserMessage !== undefined && markPendingReferenceError !== undefined) {
+            try {
+              await this.storeCall("local-console-store-mark-pending-reference-error", () =>
+                markPendingReferenceError.call(this.options.store, {
+                  sessionId,
+                  messageId: nextPendingUserMessage!.id,
+                  error: this.lastError,
+                  now: this.nowIso(),
+                }));
+            } catch {
+              // Preserve the source read failure as the useful user-facing error.
+            }
+          }
+          return;
+        }
 
         let activeMessage: LocalConsoleMessage | null = null;
         let activeRunId: string | null = null;
@@ -1862,6 +2106,7 @@ export class LocalConsoleRuntime {
             profile: selectedAgent.executionProfile ?? null,
             workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
             team: agentContents,
+            referenceContext: pendingReferenceContext,
             recordedAt: this.nowIso(),
           });
           const recoveryStore = this.codexRecoveryFactStore();
@@ -1961,6 +2206,7 @@ export class LocalConsoleRuntime {
                 sessionId,
                 runId: nextRunId,
                 sourceMessageId: claimedMessage.id,
+                referenceContext: currentContext.referenceContext ?? null,
                 recordedAt: this.nowIso(),
               };
           const workspace = workspaceFromExecutionContext(executionContext);
@@ -2027,6 +2273,7 @@ export class LocalConsoleRuntime {
           if (analysisGateEnabled && trigger.role === primaryAgent) {
             prompt += buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null);
           }
+          prompt += executionContext.referenceContext ?? "";
           prompt += preparedAttachments.promptSuffix;
 
           if (recoveryPlan.intent !== null) {
@@ -2491,6 +2738,12 @@ export class LocalConsoleRuntime {
     if (!this.closing) {
       await this.processPending(sessionId);
     }
+  }
+
+  private schedulePendingProcessing(sessionId: string): void {
+    setTimeout(() => {
+      if (!this.closing) void this.processPending(sessionId);
+    }, 25);
   }
 
   private async sessionSummary(sessionId: string): Promise<LocalConsoleSessionSummary> {
@@ -4859,7 +5112,22 @@ function isWorkerRunPlaceholder(message: LocalConsoleMessage): boolean {
 }
 
 function isVisibleTimelineMessage(message: LocalConsoleMessage): boolean {
-  return !isPendingDispatchMessage(message) && !isWorkerRunPlaceholder(message);
+  return message.sourceKind !== "pending-removed"
+    && !isPendingDispatchMessage(message)
+    && !isWorkerRunPlaceholder(message);
+}
+
+function formatReferenceContentSegments(label: string, value: string, segmentSize = 12_000): string {
+  const graphemes = Array.from(value);
+  const segmentCount = Math.max(1, Math.ceil(graphemes.length / segmentSize));
+  const sections: string[] = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    sections.push([
+      `${label} [${String(index + 1)}/${String(segmentCount)}]`,
+      graphemes.slice(index * segmentSize, (index + 1) * segmentSize).join(""),
+    ].join("\n"));
+  }
+  return sections.join("\n");
 }
 
 function assertTextFragments(fragments: readonly LocalConsoleTextFragment[]): void {

@@ -23,9 +23,12 @@ import {
   loadWorkspaceDiff,
   refreshConsoleState,
   restoreConsoleSession,
+  retryPendingSessionMessage,
   retrySessionRun,
+  removePendingSessionMessage,
   subSessionIdFromSourceKey,
   submitSessionMessage,
+  updatePendingSessionMessage,
   searchConsoleSessions,
   type ConsoleSelection,
   type SelectionMutationKind,
@@ -48,6 +51,7 @@ describe("sidebar conversation state sync", () => {
         attachmentIds: ["attachment-a"],
         attachmentDraftKey: "draft-a",
         originSessionId: "source-a",
+        analysisParentSessionId: "source-a",
         entryTemplate: "session-analysis",
         writePolicy: "confirm-current-plan-before-write",
         textFragments: [{ id: "fragment-a", label: "文本片段 1", text: "静态文本" }],
@@ -90,6 +94,7 @@ describe("sidebar conversation state sync", () => {
       if (url.pathname.endsWith("/reference-text")) {
         expect(url.searchParams.get("scope")).toBe("message");
         expect(url.searchParams.get("runId")).toBe("run/1");
+        expect(url.searchParams.get("messageId")).toBe("17");
         return Promise.resolve(jsonResponse({
           fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
         }));
@@ -111,6 +116,7 @@ describe("sidebar conversation state sync", () => {
       sessionId: "session/1",
       scope: "message",
       runId: "run/1",
+      messageId: 17,
       fetch,
     })).resolves.toEqual({
       fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
@@ -301,6 +307,36 @@ describe("sub-session adapters", () => {
       new URL("http://127.0.0.1:8787/api/local-console/sessions/child%2Fa/runs/run%2Fstuck/retry"),
       { method: "POST" },
     );
+
+    await retryPendingSessionMessage({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "child/a",
+      messageId: 7,
+      fetch,
+    });
+    await updatePendingSessionMessage({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "child/a",
+      messageId: 7,
+      body: "修正引用",
+      fetch,
+    });
+    await removePendingSessionMessage({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "child/a",
+      messageId: 7,
+      fetch,
+    });
+    const pendingUrl = new URL(
+      "http://127.0.0.1:8787/api/local-console/sessions/child%2Fa/messages/7/pending",
+    );
+    expect(fetch).toHaveBeenNthCalledWith(4, pendingUrl, { method: "POST" });
+    expect(fetch).toHaveBeenNthCalledWith(5, pendingUrl, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "修正引用" }),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(6, pendingUrl, { method: "DELETE" });
   });
 });
 

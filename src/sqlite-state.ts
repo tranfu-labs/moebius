@@ -107,6 +107,7 @@ export type SqliteStateCommand =
       attachmentDraftKey?: string;
       baselineCommit?: string | null;
       originSessionId?: string | null;
+      analysisParentSessionId?: string | null;
       entryTemplate?: "session-analysis" | null;
       writePolicy?: "normal" | "confirm-current-plan-before-write";
       initialTextFragments?: Array<{ id: string; label: string; text: string }>;
@@ -159,6 +160,26 @@ export type SqliteStateCommand =
         role: string | null;
         reason: "single-valid-mention" | "no-valid-mention" | "multiple-valid-mentions";
       };
+      now: string;
+    }
+  | {
+      kind: "local-mark-pending-reference-error";
+      sessionId: string;
+      messageId: number;
+      error: string | null;
+      now: string;
+    }
+  | {
+      kind: "local-update-pending-user";
+      sessionId: string;
+      messageId: number;
+      body: string;
+      now: string;
+    }
+  | {
+      kind: "local-remove-pending-user";
+      sessionId: string;
+      messageId: number;
       now: string;
     }
   | {

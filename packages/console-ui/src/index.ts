@@ -6,6 +6,7 @@ export * from "./onboarding/onboarding-shell";
 export * from "./onboarding/onboarding-state";
 export * from "./console/accept-card";
 export * from "./console/agent-message";
+export * from "./console/analysis-panel";
 export * from "./console/agent-team-detail";
 export * from "./console/agent-teams-page";
 export * from "./console/conversation-empty-state";

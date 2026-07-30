@@ -14,9 +14,14 @@ export interface MarkdownMemberIdentity {
   displayName: string;
 }
 
+export type MarkdownConversationReference =
+  | { scope: "conversation"; sessionId: string }
+  | { scope: "message"; sessionId: string; messageId: number };
+
 export interface MarkdownInternalIntent {
   fileReference: MarkdownFileReference | null;
   memberSlug: string | null;
+  conversationReference: MarkdownConversationReference | null;
 }
 
 const MEMBER_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -71,8 +76,8 @@ export function readMarkdownInternalIntent(
 ): MarkdownInternalIntent {
   return typeof href === "string"
     ? intentRegistries.get(expectedIntentKey)?.get(href)
-      ?? { fileReference: null, memberSlug: null }
-    : { fileReference: null, memberSlug: null };
+      ?? { fileReference: null, memberSlug: null, conversationReference: null }
+    : { fileReference: null, memberSlug: null, conversationReference: null };
 }
 
 export function releaseMarkdownInternalIntentRegistry(intentKey: string): void {
@@ -194,11 +199,19 @@ function transformNode(
     if (typeof node.title === "string") {
       node.title = sanitizeMachineTextFragment(node.title, machineText);
     }
+    const conversationReference = parseMarkdownConversationReference(node.url);
     const reference = parseMarkdownFileReference(node.url);
-    if (reference !== null) {
+    if (conversationReference !== null) {
+      node.url = registerIntent(context, {
+        fileReference: null,
+        memberSlug: null,
+        conversationReference,
+      });
+    } else if (reference !== null) {
       node.url = registerIntent(context, {
         fileReference: reference,
         memberSlug: null,
+        conversationReference: null,
       });
     }
     sanitizeVisibleChildren(node, machineText);
@@ -256,6 +269,7 @@ function mentionNodes(
       url: registerIntent(context, {
         fileReference: null,
         memberSlug: identity.slug,
+        conversationReference: null,
       }),
       children: [{ type: "text", value: `@${identity.displayName}` }],
     });
@@ -268,6 +282,31 @@ function mentionNodes(
     nodes.push({ type: "text", value: value.slice(cursor) });
   }
   return nodes;
+}
+
+export function parseMarkdownConversationReference(
+  value: string | null | undefined,
+): MarkdownConversationReference | null {
+  if (typeof value !== "string") return null;
+  const match = /^moebius-ref:(conversation|message)\/([^/\s]+)(?:\/([1-9]\d*))?$/u.exec(value);
+  if (match === null) return null;
+  let sessionId: string;
+  try {
+    sessionId = decodeURIComponent(match[2]!);
+  } catch {
+    return null;
+  }
+  if (sessionId === "" || /[\r\n\0]/u.test(sessionId)) return null;
+  if (match[1] === "conversation" && match[3] === undefined) {
+    return { scope: "conversation", sessionId };
+  }
+  if (match[1] === "message" && match[3] !== undefined) {
+    const messageId = Number.parseInt(match[3], 10);
+    return Number.isSafeInteger(messageId) && messageId > 0
+      ? { scope: "message", sessionId, messageId }
+      : null;
+  }
+  return null;
 }
 
 function registerIntent(

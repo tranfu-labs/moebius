@@ -207,6 +207,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
     originSessionId?: string | null;
+    analysisParentSessionId?: string | null;
     entryTemplate?: LocalConsoleEntryTemplate | null;
     writePolicy?: LocalConsoleWritePolicy;
     initialTextFragments?: LocalConsoleTextFragment[];
@@ -291,6 +292,32 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     now: string;
   }): Promise<LocalConsoleMessage> {
     return this.runFact({ kind: "local-append-user", ...input }, [input.sessionId], new Set([input.sessionId]));
+  }
+
+  async markPendingReferenceError(input: {
+    sessionId: string;
+    messageId: number;
+    error: string | null;
+    now: string;
+  }): Promise<LocalConsoleMessage> {
+    return this.runFact({ kind: "local-mark-pending-reference-error", ...input }, [input.sessionId]);
+  }
+
+  async updatePendingUserMessage(input: {
+    sessionId: string;
+    messageId: number;
+    body: string;
+    now: string;
+  }): Promise<LocalConsoleMessage> {
+    return this.runFact({ kind: "local-update-pending-user", ...input }, [input.sessionId]);
+  }
+
+  async removePendingUserMessage(input: {
+    sessionId: string;
+    messageId: number;
+    now: string;
+  }): Promise<void> {
+    await this.runFact({ kind: "local-remove-pending-user", ...input }, [input.sessionId]);
   }
 
   async addDraftAttachment(input: {
@@ -1512,6 +1539,9 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       sessionId: readString(value.sessionId, "sessionId"),
       projectId: readString(value.projectId, "projectId"),
       selectedSessionId: readNullableString(value.selectedSessionId, "selectedSessionId"),
+      archivedSessionIds: "archivedSessionIds" in value && Array.isArray(value.archivedSessionIds)
+        ? value.archivedSessionIds.map((sessionId) => readString(sessionId, "archivedSessionIds"))
+        : [readString(value.sessionId, "sessionId")],
     } satisfies LocalConsoleSessionArchiveResult;
   }
   if (!isRecord(value) || !("sessionId" in value)) {
@@ -1555,6 +1585,9 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
     sessionId: readString(value.sessionId, "sessionId"),
     projectId: readString(value.projectId, "projectId"),
     parentSessionId: "parentSessionId" in value ? readNullableString(value.parentSessionId, "parentSessionId") : null,
+    analysisParentSessionId: "analysisParentSessionId" in value
+      ? readNullableString(value.analysisParentSessionId, "analysisParentSessionId")
+      : null,
     originSessionId: "originSessionId" in value
       ? readNullableString(value.originSessionId, "originSessionId")
       : null,

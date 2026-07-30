@@ -468,6 +468,7 @@ describe("local console", { timeout: 15_000 }, () => {
         sessionId: target.sessionId,
         projectId,
         selectedSessionId: neighbor.sessionId,
+        archivedSessionIds: [target.sessionId],
       });
       expect((await store.listSessions()).map((session) => session.sessionId)).not.toContain(target.sessionId);
 

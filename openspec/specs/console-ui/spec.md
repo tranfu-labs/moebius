@@ -2422,14 +2422,14 @@ Source: docs/product/flows/session-analysis.md#1-从来源消息或对话开始�
 
 系统 MUST 在符合条件的 Agent 消息菜单提供「在右侧栏分析这条消息」，并在左侧栏对话菜单提供「在右侧栏分析这段对话」。每个对象的鼠标右键、可聚焦菜单按钮与键盘上下文操作 MUST 打开同一菜单并绑定同一消息或对话，菜单关闭后 MUST 把焦点返回对应对象或其菜单按钮。
 
-两种入口 MUST 打开同一个右侧栏普通新对话组合，使用相同布局、候选问题、草稿归并、发送和后续对话行为，MUST NOT 创建分析专用页面或第二套草稿。入口对象只允许改变追加的静态文本片段。入口选定的草稿只在普通附件区域增加可删除文本胶囊，并在空态增加候选问题；文本胶囊 MUST 显示短标签，通过 hover 与键盘焦点提供完整静态文本，候选问题 MUST 只把对应提示词写入正文。
+两种入口 MUST 打开同一个右侧栏普通新对话生产组合，使用相同布局、候选问题、草稿归并、发送和后续对话行为，MUST NOT 创建分析专用详情页或第二套草稿。入口对象只允许改变追加的来源引用。入口选定的草稿在普通附件区域增加可删除来源胶囊，并在空态增加候选问题；胶囊 MUST 显示可读来源标签，并在发送前说明将向所选团队提供对应消息或对话及关联运行记录，候选问题 MUST 只把对应提示词写入正文。
 
 #### Scenario: 两种菜单进入同一页面
 
 - GIVEN 一条可分析的 Agent 消息和一段记录可用的对话
 - WHEN 用户分别从消息菜单和对话菜单触发分析
 - THEN 两次结果使用同一个右侧栏新对话生产组合与相同候选问题
-- AND 消息级与对话级结果只在文本片段内容上不同
+- AND 消息级与对话级结果只在来源引用目标与标签上不同
 
 #### Scenario: 三种菜单打开方式绑定同一对象
 
@@ -2443,7 +2443,7 @@ Source: docs/product/flows/session-analysis.md#1-从来源消息或对话开始�
 - GIVEN 流程控制器返回一份可归并未发送草稿
 - WHEN 用户从另一个时间线位置再次触发入口
 - THEN 页面聚焦同一右侧标签
-- AND 在现有片段后追加一个可独立删除的文本胶囊
+- AND 在现有来源后追加一个可独立删除的来源胶囊
 - AND 不修改正文、上下文或普通附件。
 
 #### Scenario: 首次发送后零专用布局
@@ -2452,7 +2452,8 @@ Source: docs/product/flows/session-analysis.md#1-从来源消息或对话开始�
 - WHEN 页面显示已创建会话
 - THEN 候选问题消失
 - AND 会话使用普通已有会话的全部布局
-- AND 已发送片段在首条用户消息中保持短标签与完整详情。
+- AND 来源胶囊序列化为首条用户消息顶部唯一的 Markdown 来源块
+- AND 历史不再重复显示独立胶囊。
 
 ### Requirement: 对话分析项按记录可用性禁用
 
@@ -2477,14 +2478,13 @@ Source: docs/product/pages/main-left-sidebar.md#在右侧栏分析这段对话
 
 Source: docs/product/pages/main-right-sidebar.md#新会话与已有会话标签
 
-`Page/Console/SessionAnalysis` MUST 使用确定性 fixture、fullscreen 布局与真实生产导出展示消息级和对话级菜单、启用与禁用状态、非当前对话切换结果以及两种入口的片段差异。分析草稿标签 MUST 显示「新对话」并与真实应用一致；Story MUST NOT 复制平行菜单或连接真实 IPC、文件系统和用户数据。
+`Page/Console/SessionAnalysis` MUST 使用确定性 fixture、fullscreen 布局与真实生产导出展示根对话与分析对话自己的分析面板、宽窄布局、关闭/空/加载/失败/重试/多条目状态、直接父子归属与同一外层兄弟标签导航。Story MUST 复用生产 `AnalysisPanel`、`OperatorConsole` 与右侧栏导出，MUST NOT 复制平行组件或连接真实 IPC、文件系统和用户数据。
 
-#### Scenario: Page Story 可机械比较两类片段
+#### Scenario: Page Story 可机械比较面板状态与层级
 
-- WHEN 打开 SessionAnalysis 的入口对比 Story
-- THEN 消息级片段包含精确外部执行信息或「未建立」
-- AND 对话级片段只包含 Moebius 会话记录路径
-- AND 两者使用标题为「新对话」的相同右侧栏布局与候选问题。
+- WHEN 打开 SessionAnalysis 的 Page Stories
+- THEN 可分别观察根面板多条目、分析对话自己的面板、孙辈兄弟标签、窄窗口覆盖和读取失败重试
+- AND fixture 只驱动真实生产组件的受控 props。
 
 ### Requirement: 零标签关闭右侧栏并恢复内容选择
 
@@ -2500,11 +2500,11 @@ Source: docs/product/pages/main-right-sidebar.md#标签全部关闭
 - AND 右侧栏关闭
 - AND 焦点回到主内容显示按钮。
 
-### Requirement: sidebar chat 组合路由区分选中与承载会话
+### Requirement: 手动 sidebar chat 组合路由区分选中与承载会话
 
 Source: docs/product/pages/main-left-sidebar.md#选择对话
 
-左侧栏 MUST 把已创建 sidebar chat 作为最终项目下的普通用户会话呈现。来源可用时，页面 MUST 只高亮 sidebar chat 行，同时在主内容显示来源并在右侧栏显示 sidebar chat；来源不可用时 MUST 在主内容显示 sidebar chat。两段会话的状态点、阅读位置和草稿 MUST 独立。
+左侧栏 MUST 把已创建的手动 sidebar chat 作为最终项目下的普通用户会话呈现。来源可用时，页面 MUST 只高亮该手动 sidebar chat 行，同时在主内容显示来源并在右侧栏显示 sidebar chat；来源不可用时 MUST 在主内容显示 sidebar chat。分析会话不进入左侧栏，适用分析面板与外层兄弟标签 Requirements。两段会话的状态点、阅读位置和草稿 MUST 独立。
 
 #### Scenario: 来源可用时找回
 
@@ -2677,3 +2677,88 @@ Source: docs/product/pages/main-conversation.md#输入框
 - **WHEN** 主会话显示发送、停止和待发射状态
 - **THEN** 主 composer 使用 dashboard 主布局并保持既有控制语义
 - **AND** 右侧子任务 composer 继续使用 embedded 可用宽度和原有密度
+### Requirement: 分析面板只展示直接分析子项入口
+
+Source: docs/product/pages/main-conversation.md#分析对话入口面板规则
+
+分析面板 MUST 支持关闭、空、加载、失败和直接子项列表状态；列表项 MUST 只触发打开或聚焦会话，不得承载摘要、运行状态、详情、输入或管理动作。
+
+#### Scenario: 多层分析关系
+
+- GIVEN 当前对话 A 的直接子项为 B，B 的直接子项为 C
+- WHEN 渲染 A 的分析面板
+- THEN 面板显示 B
+- AND 不显示 C、不缩进、不画树。
+
+#### Scenario: 长列表
+
+- GIVEN 直接子项超过面板可用高度
+- WHEN 用户滚动面板
+- THEN 仅面板列表滚动
+- AND 所在对话时间线阅读位置不变。
+
+### Requirement: 根对话与分析对话复用同一面板组件
+
+Source: docs/product/pages/main-conversation.md#分析对话入口面板规则
+
+根对话的面板 MUST 锚定主内容右上角；右侧栏分析对话的面板 MUST 锚定该标签内容右上角。宽内容区 MUST 使用 288px 并排面板，窄内容区 MUST 使用不改变正文宽度的覆盖布局。
+
+#### Scenario: 右侧栏分析对话打开自己的面板
+
+- GIVEN 分析对话显示在外层右侧栏标签
+- WHEN 用户激活其标题区分析面板开关
+- THEN 面板出现在该标签的内容区域
+- AND 外层右侧栏不新增嵌套层。
+
+### Requirement: 分析面板交互可访问
+
+Source: docs/product/pages/main-conversation.md#分析对话入口面板规则
+
+面板开关 MUST 暴露可访问名称与展开状态；入口 MUST 可键盘聚焦激活并使用完整标题；关闭面板与成功导航 MUST 遵守规定焦点去向。消息级导航 MUST 在目标挂载后聚焦并短暂突出目标消息。
+
+#### Scenario: 键盘关闭面板
+
+- GIVEN 键盘焦点在打开的面板内
+- WHEN 用户关闭面板
+- THEN 焦点返回控制该面板的开关。
+
+#### Scenario: 键盘打开分析入口
+
+- GIVEN 键盘焦点位于可用分析入口
+- WHEN 用户激活入口
+- THEN 唯一目标标签打开或聚焦
+- AND 焦点进入活动标签或目标会话标题。
+
+#### Scenario: 入口打开失败
+
+- GIVEN 目标会话不可用
+- WHEN 用户激活入口
+- THEN 焦点保持原入口
+- AND 显示可被辅助技术读取的失败原因。
+
+### Requirement: `moebius-ref:` 作为受控应用内链接渲染
+
+Source: docs/product/pages/main-conversation.md#右侧栏中的分析新会话
+
+合法 `moebius-ref:` Markdown link MUST 渲染为应用内导航；未知自定义协议、非法目标以及转义文本、代码、HTML、图片地址或裸文本中的协议样式 MUST NOT 获得导航或来源交付能力。导航判定与 local-console 来源提取 MUST 使用同一 Markdown link-node 语义。
+
+#### Scenario: 合法消息引用
+
+- GIVEN 用户消息包含合法且可访问的消息引用链接
+- WHEN 渲染消息并激活链接
+- THEN 发出消息导航 intent
+- AND 不调用系统外链能力。
+
+#### Scenario: 非链接语法不获得能力
+
+- GIVEN 正文在转义文本、代码、HTML、图片地址或裸文本中包含 `moebius-ref:` 样式
+- WHEN 渲染并准备来源交付
+- THEN 不渲染应用内导航
+- AND 不向 Agent 交付对应来源。
+
+#### Scenario: 不可用引用
+
+- GIVEN 链接语法非法或目标不可访问
+- WHEN 渲染消息
+- THEN 保留可读标签并说明来源不可用
+- AND 不允许激活为应用内或外部链接。

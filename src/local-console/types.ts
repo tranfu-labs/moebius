@@ -324,6 +324,7 @@ export interface LocalConsoleSessionSummary {
   sessionId: string;
   projectId: string;
   parentSessionId?: string | null;
+  analysisParentSessionId?: string | null;
   originSessionId?: string | null;
   entryTemplate?: LocalConsoleEntryTemplate | null;
   writePolicy?: LocalConsoleWritePolicy;
@@ -434,6 +435,7 @@ export interface LocalConsoleSessionArchiveResult {
   sessionId: string;
   projectId: string;
   selectedSessionId: string | null;
+  archivedSessionIds?: string[];
 }
 
 export interface LocalConsoleSessionSearchResult {
@@ -593,6 +595,7 @@ export interface LocalConsoleStore {
     attachmentDraftKey?: string;
     baselineCommit?: string | null;
     originSessionId?: string | null;
+    analysisParentSessionId?: string | null;
     entryTemplate?: LocalConsoleEntryTemplate | null;
     writePolicy?: LocalConsoleWritePolicy;
     initialTextFragments?: LocalConsoleTextFragment[];
@@ -630,6 +633,23 @@ export interface LocalConsoleStore {
     };
     now: string;
   }): Promise<LocalConsoleMessage>;
+  markPendingReferenceError?(input: {
+    sessionId: string;
+    messageId: number;
+    error: string | null;
+    now: string;
+  }): Promise<LocalConsoleMessage>;
+  updatePendingUserMessage?(input: {
+    sessionId: string;
+    messageId: number;
+    body: string;
+    now: string;
+  }): Promise<LocalConsoleMessage>;
+  removePendingUserMessage?(input: {
+    sessionId: string;
+    messageId: number;
+    now: string;
+  }): Promise<void>;
   addDraftAttachment?(input: {
     blobId: string;
     attachmentId: string;

@@ -26,6 +26,132 @@ afterEach(async () => {
 });
 
 describe("local execution runtime", { timeout: 30_000 }, () => {
+  it("creates an analysis child and gives its new run the latest referenced conversation", async () => {
+    const root = await fixtureRoot();
+    let call = 0;
+    const codex = vi.fn(async (options: CodexRunOptions) => {
+      call += 1;
+      return success(options, call === 1 ? "来源处理完成" : "分析完成");
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Analyze the supplied source.", {
+        cli: "codex",
+        model: "gpt-5.6-sol",
+        effort: "medium",
+      }),
+      runCodex: codex,
+    });
+    servers.push(server);
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "analysis",
+    });
+    await post(server.url, "来源中的关键事实");
+    await waitForAgent(server.url, "来源处理完成");
+
+    const response = await fetch(new URL("/api/local-console/sessions", server.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: "local",
+        initialMessage: [
+          "> 来源：",
+          "> - [对话 · “默认会话”](moebius-ref:conversation/default)",
+          "",
+          "分析来源",
+        ].join("\n"),
+        originSessionId: "default",
+        analysisParentSessionId: "default",
+        entryTemplate: "session-analysis",
+        writePolicy: "confirm-current-plan-before-write",
+        agentTeamOwnership: "user",
+        agentTeamId: "analysis",
+      }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json() as {
+      session: { sessionId: string; analysisParentSessionId: string | null };
+    };
+    expect(created.session.analysisParentSessionId).toBe("default");
+    await waitForCalls(codex, 2);
+
+    const analysisPrompt = codex.mock.calls[1]![0].prompt;
+    expect(analysisPrompt).toContain("来源中的关键事实");
+    expect(analysisPrompt).toContain("来源处理完成");
+    expect(analysisPrompt).toContain("只读方式提供");
+    expect(analysisPrompt).toContain("当前回合处于只读环境");
+  });
+
+  it("keeps a queued source failure at the head without starting later items", async () => {
+    const root = await fixtureRoot();
+    let releaseBusyRun!: () => void;
+    const busyRun = new Promise<void>((resolve) => {
+      releaseBusyRun = resolve;
+    });
+    let call = 0;
+    const codex = vi.fn(async (options: CodexRunOptions) => {
+      call += 1;
+      if (call === 2) {
+        await busyRun;
+        return success(options, "占用结束");
+      }
+      return success(options, call === 1 ? "来源完成" : "恢复后完成");
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Handle the message.", {
+        cli: "codex",
+        model: "gpt-5.6-sol",
+        effort: "medium",
+      }),
+      runCodex: codex,
+    });
+    servers.push(server);
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "analysis",
+    });
+    await post(server.url, "来源");
+    await waitForAgent(server.url, "来源完成");
+    const target = await server.runtime.createSession(
+      "目标",
+      "local",
+      { ownership: "user", id: "analysis" },
+      "先占用主理人",
+    );
+    await waitForCalls(codex, 2);
+    await server.runtime.archiveSession("default");
+    await postToSession(
+      server,
+      target.sessionId,
+      "[来源](moebius-ref:conversation/default)\n\n分析来源",
+    );
+    await postToSession(server, target.sessionId, "@dev 后续消息");
+    releaseBusyRun();
+
+    const failed = await waitForPendingError(server, target.sessionId);
+    expect(failed).toMatchObject({
+      status: "pending",
+      error: "来源不可用：default",
+    });
+    expect((await server.runtime.sessionView(target.sessionId)).pendingPrimaryMessages).toMatchObject([
+      { id: failed.id, error: "来源不可用：default" },
+      { body: "@dev 后续消息", error: null },
+    ]);
+    expect(codex).toHaveBeenCalledTimes(2);
+  });
+
   it("runs a mixed Kimi/Codex team through the snapshotted driver for each member", async () => {
     const root = await fixtureRoot();
     const codex = vi.fn(async (options: CodexRunOptions) => success(options, "dev completed"));
@@ -1744,6 +1870,20 @@ async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: numbe
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`timed out waiting for ${String(count)} driver calls`);
+}
+
+async function waitForPendingError(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+): Promise<LocalConsoleMessage> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const view = await server.runtime.sessionView(sessionId);
+    const failed = view.pendingPrimaryMessages.find((message) => message.error !== null);
+    if (failed !== undefined) return failed;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for pending source failure in ${sessionId}`);
 }
 
 async function waitForDatabaseRow(
