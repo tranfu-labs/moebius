@@ -134,7 +134,7 @@ pnpm start -- --github-mode
 pnpm desktop
 ```
 
-匹配 `desktop-v*` 的 tag 会生成仅适用于 Apple Silicon Mac 的 DMG 和 ZIP。目前产物使用 Apple Developer ID 签名，但尚未 notarization，因此 macOS 仍可能显示安全提醒。打开前请检查 GitHub Release 的来源和对应 commit 或 tag，只在信任产物时使用系统提供的“打开”流程。
+正式发行使用 `v*` tag，并只提供适用于 Apple Silicon Mac 的 DMG 和 ZIP。目前产物使用 Apple Developer ID 签名，但尚未 notarization，因此 macOS 仍可能显示安全提醒。打开前请检查 GitHub Release 的来源和对应 commit 或 tag，只在信任产物时使用系统提供的“打开”流程。
 
 ### 数据根目录
 

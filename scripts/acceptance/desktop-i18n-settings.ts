@@ -335,8 +335,10 @@ try {
       return new Promise<Response>((resolve) => {
       state.__moebiusResolveUpdateFetch = () => {
         resolve(new Response(JSON.stringify({
-          tag_name: "desktop-v99.0.0",
-          html_url: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v99.0.0",
+          tag_name: "v99.0.0",
+          html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v99.0.0",
+          draft: false,
+          prerelease: false,
         }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -429,8 +431,80 @@ try {
     "download-opens-only-after-explicit-activation",
     linksAfterDownload.length === 4
       && linksAfterDownload[3]
-        === "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v99.0.0",
+        === "https://github.com/tranfu-labs/moebius/releases/tag/v99.0.0",
     { linksAfterDownload },
+  );
+
+  record(
+    "available-update-shows-version-and-download",
+    await page.getByText("Version 99.0.0 is available").isVisible()
+      && await page.getByRole("button", { name: "Download update" }).isEnabled(),
+    {
+      versionText: await page.getByText("Version 99.0.0 is available").textContent(),
+      downloadEnabled: await page.getByRole("button", { name: "Download update" }).isEnabled(),
+    },
+  );
+
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & { fetch: typeof fetch };
+    state.fetch = (async () => new Response(JSON.stringify({
+      tag_name: "v0.1.4",
+      html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.4",
+      draft: false,
+      prerelease: false,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+  });
+  await page.getByRole("button", { name: "Check again" }).click();
+  await page.getByText("You're up to date").waitFor();
+  record(
+    "latest-update-shows-terminal-result",
+    await page.getByText("You're up to date").isVisible()
+      && await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    {
+      latestText: await page.getByText("You're up to date").textContent(),
+      checkAgainEnabled: await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    },
+  );
+
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & { fetch: typeof fetch };
+    state.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
+  });
+  await page.getByRole("button", { name: "Check again" }).click();
+  await page.getByText("The update check failed. Check your connection and try again.").waitFor();
+  const updateRetry = page.getByRole("button", { name: "Retry" });
+  record(
+    "failed-update-shows-retry",
+    await updateRetry.isEnabled(),
+    {
+      failureText: await page
+        .getByText("The update check failed. Check your connection and try again.")
+        .textContent(),
+      retryEnabled: await updateRetry.isEnabled(),
+    },
+  );
+
+  await application.evaluate(() => {
+    const state = globalThis as typeof globalThis & { fetch: typeof fetch };
+    state.fetch = (async () => new Response(JSON.stringify({
+      tag_name: "v0.1.4",
+      html_url: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.4",
+      draft: false,
+      prerelease: false,
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+  });
+  await updateRetry.click();
+  await page.getByText("You're up to date").waitFor();
+  record(
+    "failed-update-retry-recovers",
+    await page.getByText("You're up to date").isVisible(),
+    { latestText: await page.getByText("You're up to date").textContent() },
   );
 
   await application.evaluate(({ shell }) => {

@@ -1,7 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,28 +21,44 @@ describe("desktop release contract", () => {
       { target: "dmg", arch: ["arm64"] },
       { target: "zip", arch: ["arm64"] },
     ]);
+    expect(desktopPackage.dependencies["electron-updater"]).toBeDefined();
+    expect(desktopPackage.build.publish).toEqual([{
+      provider: "github",
+      owner: "tranfu-labs",
+      repo: "moebius",
+    }]);
   });
 
-  it("uses one native Apple Silicon release job with an architecture gate", async () => {
-    const workflow = parse(
-      await readFile(path.join(repoRoot, ".github/workflows/release-desktop.yml"), "utf8"),
-    ) as ReleaseWorkflow;
-    const job = workflow.jobs.build;
-    const scripts = job.steps
-      .map((step) => step.run)
-      .filter((run): run is string => run !== undefined)
-      .join("\n");
+  it("uses release-moebius as the only publisher and keeps package versions synchronized", async () => {
+    await expect(access(path.join(repoRoot, ".github/workflows/release-desktop.yml")))
+      .rejects.toMatchObject({ code: "ENOENT" });
 
-    expect(job["runs-on"]).toBe("macos-latest");
-    expect(job.strategy).toBeUndefined();
-    expect(scripts).toContain('test "$RUNNER_ARCH" = "ARM64"');
-    expect(scripts).toContain('test "$(uname -m)" = "arm64"');
-    expect(scripts).toContain("pnpm --filter @moebius/desktop dist");
-    expect(JSON.stringify(workflow)).not.toMatch(/windows-latest|ubuntu-latest/);
+    const releaseSkill = await readFile(
+      path.join(repoRoot, ".agents/skills/release-moebius/SKILL.md"),
+      "utf8",
+    );
+    expect(releaseSkill).toContain("Create annotated tag `v<VERSION>`");
+    expect(releaseSkill).toContain("Publish the Draft only when all match.");
+    expect(releaseSkill).toContain("upload exactly those two files");
+
+    const packagePaths = [
+      "package.json",
+      "desktop/package.json",
+      "packages/console-ui/package.json",
+      "prototypes/package.json",
+    ];
+    const versions = await Promise.all(packagePaths.map(async (packagePath) => {
+      const packageJson = JSON.parse(
+        await readFile(path.join(repoRoot, packagePath), "utf8"),
+      ) as { version: string };
+      return packageJson.version;
+    }));
+    expect(new Set(versions).size).toBe(1);
   });
 });
 
 interface DesktopPackage {
+  dependencies: Record<string, string>;
   scripts: { dist: string };
   build: {
     mac: {
@@ -51,17 +66,8 @@ interface DesktopPackage {
       artifactName: string;
       target: Array<{ target: string; arch: string[] }>;
     };
+    publish: Array<{ provider: string; owner: string; repo: string }>;
     win?: unknown;
     linux?: unknown;
-  };
-}
-
-interface ReleaseWorkflow {
-  jobs: {
-    build: {
-      "runs-on": string;
-      strategy?: unknown;
-      steps: Array<{ run?: string }>;
-    };
   };
 }

@@ -224,7 +224,7 @@ describe("OperatorConsole", () => {
       settingsAbout={{
         currentVersion: "0.1.4",
         latestVersion: "0.1.5",
-        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
         updateStatus: "available",
       }}
     />);

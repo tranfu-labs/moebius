@@ -18,14 +18,14 @@ describe("desktop settings state", () => {
         status: "available",
         currentVersion: "0.1.4",
         latestVersion: "0.1.5",
-        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
       },
     });
 
     expect(available).toMatchObject({
       updateStatus: "available",
       latestVersion: "0.1.5",
-      downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/desktop-v0.1.5",
+      downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
       updateRequestId: null,
     });
   });

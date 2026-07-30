@@ -17,22 +17,28 @@ export interface ReleaseMetadata {
 
 export const SETTINGS_UPDATE_TIMEOUT_MS = 15_000;
 const LATEST_DESKTOP_RELEASE_API = "https://api.github.com/repos/tranfu-labs/moebius/releases/latest";
+const DESKTOP_RELEASE_TAG_PATTERN = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/u;
+const SEMANTIC_VERSION_PATTERN =
+  /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+const DESKTOP_RELEASE_URL_PREFIX = "https://github.com/tranfu-labs/moebius/releases/tag/";
 
 export function resolveUpdateStrategy(platform: NodeJS.Platform): UpdateStrategy {
   return platform === "darwin" ? "manual-download" : "auto-update";
 }
 
 export function compareVersions(left: string, right: string): number {
-  const leftParts = parseVersion(left);
-  const rightParts = parseVersion(right);
-  const length = Math.max(leftParts.length, rightParts.length);
-  for (let index = 0; index < length; index += 1) {
-    const delta = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (delta !== 0) {
-      return Math.sign(delta);
+  const leftVersion = parseVersion(left);
+  const rightVersion = parseVersion(right);
+
+  for (let index = 0; index < leftVersion.core.length; index += 1) {
+    const leftPart = leftVersion.core[index]!;
+    const rightPart = rightVersion.core[index]!;
+    if (leftPart !== rightPart) {
+      return leftPart > rightPart ? 1 : -1;
     }
   }
-  return 0;
+
+  return comparePrerelease(leftVersion.prerelease, rightVersion.prerelease);
 }
 
 export function decideUpdate(input: {
@@ -97,7 +103,7 @@ export async function checkDesktopUpdates(input: {
         reason: timedOut ? "timeout" : "unavailable",
       };
     }
-    if (!isSafeReleaseUrl(latestRelease.url)) {
+    if (!isSafeReleaseMetadata(latestRelease)) {
       return {
         status: "failed",
         currentVersion: input.currentVersion,
@@ -149,8 +155,13 @@ export async function fetchLatestDesktopRelease(
     if (!isReleaseResponse(raw)) {
       return null;
     }
-    const version = raw.tag_name.match(/^desktop-v(\d+\.\d+\.\d+)$/u)?.[1];
-    if (version === undefined) {
+    const version = raw.tag_name.match(DESKTOP_RELEASE_TAG_PATTERN)?.[1];
+    if (
+      version === undefined
+      || raw.draft
+      || raw.prerelease
+      || raw.html_url !== `${DESKTOP_RELEASE_URL_PREFIX}${raw.tag_name}`
+    ) {
       return null;
     }
     return {
@@ -165,32 +176,74 @@ export async function fetchLatestDesktopRelease(
   }
 }
 
-function isSafeReleaseUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:"
-      && url.origin === "https://github.com"
-      && url.pathname.startsWith("/tranfu-labs/moebius/releases/");
-  } catch {
-    return false;
-  }
+function isSafeReleaseMetadata(release: ReleaseMetadata): boolean {
+  return DESKTOP_RELEASE_TAG_PATTERN.test(`v${release.version}`)
+    && release.url === `${DESKTOP_RELEASE_URL_PREFIX}v${release.version}`;
 }
 
-function isReleaseResponse(value: unknown): value is { tag_name: string; html_url: string } {
+function isReleaseResponse(value: unknown): value is {
+  tag_name: string;
+  html_url: string;
+  draft: boolean;
+  prerelease: boolean;
+} {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
-  const release = value as Partial<{ tag_name: unknown; html_url: unknown }>;
+  const release = value as Partial<{
+    tag_name: unknown;
+    html_url: unknown;
+    draft: unknown;
+    prerelease: unknown;
+  }>;
   return typeof release.tag_name === "string"
     && release.tag_name.trim() !== ""
-    && typeof release.html_url === "string";
+    && typeof release.html_url === "string"
+    && typeof release.draft === "boolean"
+    && typeof release.prerelease === "boolean";
 }
 
-function parseVersion(version: string): number[] {
-  return version
-    .trim()
-    .replace(/^[^\d]*/u, "")
-    .split(/[.-]/u)
-    .map((part) => Number.parseInt(part, 10))
-    .map((part) => (Number.isFinite(part) ? part : 0));
+function parseVersion(version: string): {
+  core: readonly [bigint, bigint, bigint];
+  prerelease: readonly string[];
+} {
+  const match = version.trim().match(SEMANTIC_VERSION_PATTERN);
+  if (match === null) {
+    throw new RangeError(`invalid semantic version: ${version}`);
+  }
+  return {
+    core: [BigInt(match[1]!), BigInt(match[2]!), BigInt(match[3]!)],
+    prerelease: match[4]?.split(".") ?? [],
+  };
+}
+
+function comparePrerelease(left: readonly string[], right: readonly string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    if (left.length === right.length) {
+      return 0;
+    }
+    return left.length === 0 ? 1 : -1;
+  }
+
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index];
+    const rightPart = right[index];
+    if (leftPart === undefined || rightPart === undefined) {
+      return leftPart === undefined ? -1 : 1;
+    }
+    if (leftPart === rightPart) {
+      continue;
+    }
+    const leftNumeric = /^\d+$/u.test(leftPart);
+    const rightNumeric = /^\d+$/u.test(rightPart);
+    if (leftNumeric && rightNumeric) {
+      return BigInt(leftPart) > BigInt(rightPart) ? 1 : -1;
+    }
+    if (leftNumeric !== rightNumeric) {
+      return leftNumeric ? -1 : 1;
+    }
+    return leftPart > rightPart ? 1 : -1;
+  }
+  return 0;
 }

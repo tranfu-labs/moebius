@@ -40,7 +40,7 @@
 - 只读观察页：`pnpm observer`（默认 `127.0.0.1:8787`，`OBSERVER_PORT` 覆盖端口；只读旁路，行为见 `openspec/specs/local-console/spec.md` observer 节）
 - 桌面开发态：`pnpm desktop`（数据根、种子拷贝、附件 capability 等行为见 `openspec/specs/desktop-shell/spec.md`；dev 期开放 CDP `9222` 供 AI 调试，见 ADR-0002，首选 `.mcp.json` 的 `electron` MCP server）
 - 桌面构建：`pnpm --filter @moebius/desktop build`（构建门禁见 desktop-shell spec）
-- 桌面打包：`pnpm --filter @moebius/desktop dist`（只产 macOS arm64 DMG/ZIP；`desktop-v*` tag 触发发布 workflow，红线见 desktop-shell spec）
+- 桌面打包：`pnpm --filter @moebius/desktop dist`（只产 macOS arm64 DMG/ZIP；正式发行使用 `v*` tag，红线见 desktop-shell spec）
 - 组件库 Storybook：`pnpm --filter @moebius/console-ui storybook`（设计语言事实源是 `packages/console-ui/DESIGN.md`）
 - Storybook 门禁：`pnpm --filter @moebius/console-ui check:storybook`（检查 Component / Block / Page 分类并构建静态 Storybook）
 - 原型构建验证：`pnpm --filter @moebius/prototypes check`（沙盒规则见 `prototypes/AGENTS.md` 与 `openspec/specs/design-prototypes/spec.md`）
