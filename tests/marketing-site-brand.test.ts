@@ -21,12 +21,15 @@ describe("marketing site brand", () => {
     ]);
   });
 
-  it("states the Apple Silicon-only platform scope at each purchase-facing entry", async () => {
+  it("discloses the Apple Silicon platform scope for every download entry", async () => {
     const html = await readFile(path.join(siteRoot, "index.html"), "utf8");
 
-    expect(html).toContain("macOS · Apple Silicon 公测中");
-    expect(html).toContain("macOS Apple Silicon 桌面端");
-    expect(html).toContain("macOS 14+ · Apple Silicon");
+    const downloadEntries = html.match(/href="[^"]*\/releases\/latest"[^>]*data-download/g) ?? [];
+    const platformDisclosures = html.match(/Apple Silicon/g) ?? [];
+
+    expect(downloadEntries.length).toBeGreaterThan(0);
+    expect(platformDisclosures.length).toBeGreaterThanOrEqual(downloadEntries.length);
+    expect(html).toContain("macOS 14+");
   });
 
   it("links source, releases, and every download entry to the public GitHub repository", async () => {

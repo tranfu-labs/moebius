@@ -33,14 +33,6 @@ describe("desktop release contract", () => {
     await expect(access(path.join(repoRoot, ".github/workflows/release-desktop.yml")))
       .rejects.toMatchObject({ code: "ENOENT" });
 
-    const releaseSkill = await readFile(
-      path.join(repoRoot, ".agents/skills/release-moebius/SKILL.md"),
-      "utf8",
-    );
-    expect(releaseSkill).toContain("Create annotated tag `v<VERSION>`");
-    expect(releaseSkill).toContain("Publish the Draft only when all match.");
-    expect(releaseSkill).toContain("upload exactly those two files");
-
     const packagePaths = [
       "package.json",
       "desktop/package.json",

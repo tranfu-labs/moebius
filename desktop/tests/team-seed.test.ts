@@ -419,6 +419,56 @@ describe("built-in team seed", () => {
     ]);
   });
 
+  it("packages a valid product development team with six ordered members", async () => {
+    const root = await makeTemporaryRoot();
+    const dataRoot = path.join(root, "data");
+
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot })).resolves.toMatchObject({
+      status: "seeded",
+    });
+
+    const snapshot = await readTeamSnapshot(
+      resolveTeamLocation({ dataRoot, teamId: "product-development", ownership: "system" }),
+    );
+    expect(snapshot).toMatchObject({
+      status: "usable",
+      canCreateConversation: true,
+      definition: {
+        name: "产品研发闭环团队",
+        primaryAgentSlug: "product-delivery-lead",
+        memberOrder: [
+          "product-delivery-lead",
+          "product-reviewer",
+          "ui-prototyper",
+          "implementation-lead",
+          "functional-qa",
+          "visual-qa",
+        ],
+      },
+    });
+    await expect(readTeamOnboardingOrchestration({
+      directory: snapshot.location.directory,
+      memberOrder: snapshot.definition?.memberOrder ?? [],
+    })).resolves.toMatchObject({
+      status: "ready",
+      source: "independent",
+      orchestration: {
+        version: 1,
+        relayBeats: [
+          { speakerSlug: "product-delivery-lead" },
+          { speakerSlug: "product-reviewer" },
+          { speakerSlug: "ui-prototyper" },
+          { speakerSlug: "implementation-lead" },
+          { speakerSlug: "functional-qa" },
+          { speakerSlug: "implementation-lead" },
+          { speakerSlug: "visual-qa" },
+          { speakerSlug: "product-delivery-lead" },
+        ],
+      },
+    });
+    expect(snapshot.members.map(({ slug }) => slug)).toEqual(snapshot.definition?.memberOrder);
+  });
+
   it("skips the entire seed flow when the packaged fingerprint matches", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");

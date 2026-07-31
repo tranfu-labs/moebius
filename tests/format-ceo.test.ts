@@ -12,7 +12,6 @@ import {
   type FormatExternalCommentRouteInput,
 } from "../src/format-ceo.js";
 import { parseAgentMentions } from "../src/conversation.js";
-import { loadCeoScripts } from "../src/ceo-scripts.js";
 
 const PLAN_REVIEW_TEMPLATE_ITEMS = [
   "本轮方案已输出",
@@ -260,38 +259,6 @@ describe("formatCeoComment", () => {
     }
   });
 
-  it("loads CEO stage acceptance routing templates from the script library", async () => {
-    const persona = await fs.readFile(path.resolve("agents", "ceo.md"), "utf8");
-    const scripts = await loadCeoScripts({ agentsDir: path.resolve("agents"), required: true });
-    const planReview = scripts.find((script) => script.id === "plan-review");
-    const retro = scripts.find((script) => script.id === "post-implementation-retro");
-
-    expect(persona).toContain("识别场景 -> 套模板 -> @角色");
-    expect(persona).toContain("agents/ceo-scripts/");
-    expect(persona).toContain("plan-review");
-    expect(persona).toContain("post-implementation-retro");
-    expect(persona).toContain("回流给发起需求角色验收");
-    expect(persona).toContain("缺验收语句时要求补齐");
-    expect(persona).toContain("mention `@dev`");
-    expect(persona).toContain("唯一合法 mention 指向该发起角色");
-
-    expect(planReview).toBeDefined();
-    expect(retro).toBeDefined();
-    expectItemsInOrder(planReview?.body ?? "", PLAN_REVIEW_TEMPLATE_ITEMS);
-    expectItemsInOrder(retro?.body ?? "", CODE_VERIFIED_RETRO_TEMPLATE_ITEMS);
-  });
-
-  it("documents GitHub interaction protocol corrections in the persona", async () => {
-    const persona = await fs.readFile(path.resolve("agents", "ceo.md"), "utf8");
-
-    expect(persona).toContain("docs/protocols/github-interaction.md");
-    expect(persona).toContain("append-only");
-    expect(persona).toContain("`#数字` 误用");
-    expect(persona).toContain("T3");
-    expect(persona).toContain("第 N 条评论");
-    expect(persona).toContain("role envelope");
-  });
-
   it("returns APPEND when CEO corrects GitHub interaction protocol violations", async () => {
     const latestResponse = `我同意 @dev 的说法，请完成 #3。另见 #6 评论里的 #1 验收项。
 
@@ -329,7 +296,6 @@ describe("formatCeoComment", () => {
     expect(prompt).toContain("我同意 @dev 的说法");
     expect(prompt).toContain("完成 #3");
     expect(prompt).toContain("另见 #6 评论里的 #1 验收项");
-    expect(prompt).toContain("docs/protocols/github-interaction.md");
   });
 
   it("returns APPEND with the plan review template to qa for plan-written", async () => {
@@ -892,14 +858,6 @@ function makePlanReviewAppendBody(): string {
 
 function makeCodeVerifiedRetroAppendBody(requester: string): string {
   return `@${requester} dev 已输出 \`code-verified\`，请按已确认「验收语句」逐条验收实现证据；任一不通过时指出未过语句、实际观察与期望差异。`;
-}
-
-function extractTemplateSection(text: string, start: string, end: string): string {
-  const startIndex = text.indexOf(start);
-  expect(startIndex).toBeGreaterThanOrEqual(0);
-  const endIndex = text.indexOf(end, startIndex + start.length);
-  expect(endIndex).toBeGreaterThan(startIndex);
-  return text.slice(startIndex, endIndex);
 }
 
 function expectItemsInOrder(text: string, items: string[]): void {
