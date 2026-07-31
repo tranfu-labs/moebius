@@ -148,7 +148,7 @@ export function SubtaskTab({
                   memberIdentities={memberIdentities}
                   elapsedMs={activeRun.elapsedMs}
                   activity={activeRun.activity}
-                  processOutputAvailable={activeRun.processOutputAvailable}
+                  processOutputAvailable
                   outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
@@ -156,7 +156,7 @@ export function SubtaskTab({
                   onOpenExternalLink={onOpenExternalLink}
                   onOpenFileReference={onOpenFileReference}
                   onOpenTeamMember={onOpenTeamMember}
-                  onOpenOutput={onOpenOutput === undefined || activeRun.processOutputAvailable === false
+                  onOpenOutput={onOpenOutput === undefined
                     ? undefined
                     : (fallbackOutput) => onOpenOutput({
                         sessionId: activeRun.sessionId,
@@ -273,7 +273,6 @@ function SubtaskTimelineEntry({
         }
         onOpenOutput={message.runId === null
           || onOpenOutput === undefined
-          || message.runTiming?.processOutputAvailable === false
           ? undefined
           : (fallbackOutput) => onOpenOutput({
               sessionId: message.sessionId,
@@ -363,8 +362,7 @@ function SubtaskTimelineEntry({
           />
           {message.speaker === "agent"
           && message.runId !== null
-          && onOpenOutput !== undefined
-          && message.runTiming?.processOutputAvailable !== false ? (
+          && onOpenOutput !== undefined ? (
             <Button
               type="button"
               variant="ghost"
@@ -380,11 +378,6 @@ function SubtaskTimelineEntry({
             >
               {t("console.common.fullOutput")}
             </Button>
-          ) : null}
-          {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
-            <p className="mt-2 text-xs text-hint">
-              {t("console.common.providerOutputUnavailable")}
-            </p>
           ) : null}
         </>
       )}

@@ -436,7 +436,7 @@ describe("local console conversation workspace diff through HTTP", () => {
         events: expect.arrayContaining([
           expect.objectContaining({
             kind: "error",
-            message: "这次执行的过程记录不可用",
+            message: "Codex 过程记录已不可用",
           }),
         ]),
       });

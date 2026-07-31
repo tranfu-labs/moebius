@@ -49,6 +49,8 @@ const KIMI_SPAWN_FAILED_MESSAGE = "Kimi CLI 启动失败。请确认安装完整
 const KIMI_EXITED_MESSAGE =
   "Kimi CLI 启动后提前退出。请先在终端运行 Kimi 检查登录或配置，然后重试。";
 const KIMI_TIMEOUT_MESSAGE = "Kimi CLI 启动后没有及时响应。请检查 Kimi 状态后重试。";
+const KIMI_EMPTY_RESPONSE_MESSAGE =
+  "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。";
 
 export interface KimiAcpRunOptions {
   prompt: string;
@@ -69,6 +71,7 @@ export interface KimiAcpRunOptions {
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
+  onExecutionTraceReady?: (sessionId: string) => void | Promise<void>;
   transportFactory?: (input: {
     cwd: string;
     readRoots: string[];
@@ -191,8 +194,15 @@ export async function runKimiAcpWithTransport(
   let progressSequence = 0;
   let progressSupervisor = createRunSupervisorState(Date.now());
   let toolProjection = createProviderToolProjectionState();
+  const terminalEvidence: KimiTerminalEvidence = {
+    hasVisibleText: false,
+    terminalToolCallIds: new Set(),
+  };
   let settled = false;
   let sessionId: string | null = null;
+  let traceReadyQueued = false;
+  let traceReadyError: unknown = null;
+  let traceReadyTail = Promise.resolve();
   let stopLifecycle!: (error: Error) => void;
   const lifecycleStopped = new Promise<never>((_resolve, reject) => {
     stopLifecycle = reject;
@@ -302,6 +312,20 @@ export async function runKimiAcpWithTransport(
     }
     resetIdle();
   };
+  const queueExecutionTraceReady = (): void => {
+    if (traceReadyQueued || !hasKimiTerminalEvidence(terminalEvidence)) return;
+    traceReadyQueued = true;
+    traceReadyTail = traceReadyTail
+      .then(async () => {
+        if (sessionId === null) {
+          throw new Error("kimi-execution-trace-ready-before-session");
+        }
+        await options.onExecutionTraceReady?.(sessionId);
+      })
+      .catch((error: unknown) => {
+        traceReadyError = error;
+      });
+  };
   const clearUpdate = transport.onSessionUpdate((update) => {
     options.onStructuredActivity?.(update);
     const sequence = ++progressSequence;
@@ -329,9 +353,16 @@ export async function runKimiAcpWithTransport(
       options.onExecutionProgress?.(progress);
     }
     const text = readAgentTextChunk(update);
-    if (text === null) return;
-    finalText += text;
-    options.onVisibleAgentMarkdown?.(finalText);
+    if (text !== null) {
+      finalText += text;
+      terminalEvidence.hasVisibleText = true;
+      options.onVisibleAgentMarkdown?.(finalText);
+    }
+    const terminalToolCallId = readTerminalToolCallId(update);
+    if (terminalToolCallId !== null) {
+      terminalEvidence.terminalToolCallIds.add(terminalToolCallId);
+    }
+    queueExecutionTraceReady();
   });
   resetIdle();
   if (options.maxDurationMs !== undefined) {
@@ -434,6 +465,7 @@ export async function runKimiAcpWithTransport(
     const resultText = readPromptResultText(promptResult);
     if (resultText !== null && !finalText.endsWith(resultText)) {
       finalText += resultText;
+      terminalEvidence.hasVisibleText = true;
       options.onVisibleAgentMarkdown?.(finalText);
     }
     const stopReason = readPromptStopReason(promptResult);
@@ -463,9 +495,24 @@ export async function runKimiAcpWithTransport(
         stderrPath,
       };
     }
+    queueExecutionTraceReady();
+    await traceReadyTail;
+    if (traceReadyError !== null) {
+      throw traceReadyError;
+    }
+    if (!hasKimiTerminalEvidence(terminalEvidence)) {
+      throw new KimiAcpError(
+        "KIMI_EMPTY_RESPONSE",
+        KIMI_EMPTY_RESPONSE_MESSAGE,
+        {
+          stopReason,
+          visibleTextBytes: Buffer.byteLength(finalText, "utf8"),
+          terminalToolCount: terminalEvidence.terminalToolCallIds.size,
+        },
+      );
+    }
     if (
-      finalText.trim().length === 0
-      || (stopReason !== null && stopReason !== "end_turn")
+      stopReason !== null && stopReason !== "end_turn"
     ) {
       const failure: CodexRunFailure = {
         code: "kimi-no-complete-result",
@@ -487,6 +534,9 @@ export async function runKimiAcpWithTransport(
     return {
       ok: true,
       finalText,
+      completionKind: terminalEvidence.hasVisibleText
+        ? "visible-text"
+        : "terminal-tool-result",
       threadId: sessionId,
       cachedInputTokens: null,
       terminal: {
@@ -1131,6 +1181,25 @@ function sanitizeKimiDiagnosticData(value: unknown): unknown {
   );
 }
 
+interface KimiTerminalEvidence {
+  hasVisibleText: boolean;
+  terminalToolCallIds: Set<string>;
+}
+
+function hasKimiTerminalEvidence(evidence: KimiTerminalEvidence): boolean {
+  return evidence.hasVisibleText || evidence.terminalToolCallIds.size > 0;
+}
+
+function readTerminalToolCallId(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const update = isRecord(value.update) ? value.update : value;
+  const kind = firstString(update.sessionUpdate, update.session_update, update.type);
+  if (kind !== "tool_call" && kind !== "tool_call_update") return null;
+  const status = firstString(update.status);
+  if (status !== "completed" && status !== "failed") return null;
+  return firstString(update.toolCallId, update.tool_call_id);
+}
+
 function readParamString(value: unknown, field: string): string {
   if (!isRecord(value) || typeof value[field] !== "string") {
     throw new Error(`missing ${field}`);
@@ -1210,6 +1279,11 @@ function classifyKimiFailure(error: unknown): CodexRunFailure | null {
         message: "Kimi 没有返回完整结果，可能是额度或服务问题。",
       };
     }
+    case "KIMI_EMPTY_RESPONSE":
+      return {
+        code: "kimi-empty-response",
+        message: error.safeMessage,
+      };
     default:
       return null;
   }
@@ -1273,6 +1347,7 @@ export class KimiAcpError extends Error {
       | "KIMI_ACP_INTERRUPTED"
       | "KIMI_ACP_TIMEOUT"
       | "KIMI_ACP_BUSY_TIMEOUT"
+      | "KIMI_EMPTY_RESPONSE"
       | "KIMI_CLI_SPAWN_FAILED"
       | "KIMI_CLI_EXITED"
       | "KIMI_IMAGE_UNSUPPORTED",

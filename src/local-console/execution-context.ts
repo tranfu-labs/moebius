@@ -441,7 +441,12 @@ export function planLocalExecutionRecovery(input: {
   }
 
   if (intent !== null) {
-    return unavailable(context, intent, "session-link-missing");
+    return {
+      kind: "first",
+      intent,
+      context,
+      reason: "no-provider-session",
+    };
   }
   return {
     kind: "first",

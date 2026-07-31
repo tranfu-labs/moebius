@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Brain,
   Braces,
   Cpu,
   FilePenLine,
@@ -17,11 +18,21 @@ export interface OperatorProcessPromptLayer {
   contents: string[];
 }
 
+export interface OperatorProcessContextSection {
+  key: string;
+  label: string;
+  source: "codex-rollout" | "claude-transcript" | "kimi-wire";
+  status: "recorded" | "not-recorded";
+  contents: string[];
+}
+
 export type OperatorProcessDebugInvocation =
   | {
       status: "available";
       sessionId: string;
       runId: string;
+      engine?: "codex" | "claude" | "kimi";
+      sections?: OperatorProcessContextSection[];
       prompts: {
         system: OperatorProcessPromptLayer;
         developer: OperatorProcessPromptLayer;
@@ -33,8 +44,10 @@ export type OperatorProcessDebugInvocation =
         provider: string | null;
         cliVersion: string | null;
         cwd: string | null;
+        externalSessionId?: string;
+        identityLabel?: "thread" | "session";
         threadId: string;
-        metadataSource: "rollout" | "immutable-context" | "not-recorded";
+        metadataSource: "rollout" | "provider-native" | "immutable-context" | "not-recorded";
       };
     }
   | {
@@ -61,6 +74,7 @@ type RunStatus =
 
 interface DebugEventBase {
   key: string;
+  engine?: "codex" | "claude" | "kimi";
   timestamp: string | null;
   protocolType: string;
   rawPayload: string;
@@ -73,12 +87,14 @@ export type OperatorProcessTimelineEvent =
       runId: string;
       attempt: number;
       role: string;
-      engine: "codex";
+      engine: "codex" | "claude" | "kimi";
       model: string | null;
       effort: string | null;
       provider: string | null;
       cliVersion: string | null;
-      metadataSource: "rollout" | "immutable-context" | "not-recorded";
+      metadataSource: "rollout" | "provider-native" | "immutable-context" | "not-recorded";
+      externalSessionId?: string;
+      identityLabel?: "thread" | "session";
       threadId: string;
       startedAt: string;
       status: RunStatus;
@@ -94,6 +110,10 @@ export type OperatorProcessTimelineEvent =
   | (DebugEventBase & {
       kind: "agent-output";
       output: string;
+    })
+  | (DebugEventBase & {
+      kind: "thinking";
+      thinking: string;
     })
   | (DebugEventBase & {
       kind: "command";
@@ -176,6 +196,18 @@ export function ProcessEvent({
       return (
         <DebugCard icon={<Braces className="h-4 w-4" strokeWidth={1.5} />} title={t("console.processEvent.agentRawOutput")} header={header}>
           <ReadonlyBlock label={t("console.processEvent.rawOutput")} value={event.output} />
+          <ReadonlyBlock label="raw payload" value={event.rawPayload} />
+        </DebugCard>
+      );
+    case "thinking":
+      return (
+        <DebugCard icon={<Brain className="h-4 w-4" strokeWidth={1.5} />} title={t("console.processEvent.thinking")} header={header}>
+          <ReadonlyBlock
+            label={t("console.processEvent.thinking")}
+            value={event.thinking.trim().length > 0
+              ? event.thinking
+              : t("console.processEvent.thinkingUnavailable")}
+          />
           <ReadonlyBlock label="raw payload" value={event.rawPayload} />
         </DebugCard>
       );
@@ -286,8 +318,12 @@ function AttemptDebugHeader({
         <DebugMeta label="effort" value={effort} />
         <DebugMeta label="provider" value={provider} />
         <DebugMeta label="CLI" value={cliVersion} />
+        <DebugMeta label="engine" value={event.engine} />
         <DebugMeta label="run" value={event.runId} />
-        <DebugMeta label="thread" value={metadata?.threadId ?? event.threadId} />
+        <DebugMeta
+          label={metadata?.identityLabel ?? event.identityLabel ?? (event.engine === "codex" ? "thread" : "session")}
+          value={metadata?.externalSessionId ?? metadata?.threadId ?? event.externalSessionId ?? event.threadId}
+        />
         <DebugMeta label={t("console.processEvent.started")} value={event.startedAt} />
         <DebugMeta label={t("console.processEvent.completed")} value={event.completedAt ?? (event.status === "running" ? "running" : null)} />
         {metadata?.cwd !== null && metadata?.cwd !== undefined
@@ -298,30 +334,18 @@ function AttemptDebugHeader({
         {t("console.processEvent.sensitiveNotice")}
       </p>
       <div className="mt-3 grid gap-2">
-        <PromptDisclosure
-          label="SYSTEM_PROMPT"
-          layer="system"
-          state={invocationState}
-          sessionId={sessionId}
-          runId={event.runId}
-          onLoadInvocation={onLoadInvocation}
-        />
-        <PromptDisclosure
-          label="DEVELOPER_PROMPT"
-          layer="developer"
-          state={invocationState}
-          sessionId={sessionId}
-          runId={event.runId}
-          onLoadInvocation={onLoadInvocation}
-        />
-        <PromptDisclosure
-          label="USER_INPUT"
-          layer="user"
-          state={invocationState}
-          sessionId={sessionId}
-          runId={event.runId}
-          onLoadInvocation={onLoadInvocation}
-        />
+        {(invocation?.sections ?? defaultContextSections(event.engine)).map((section) => (
+          <PromptDisclosure
+            key={section.key}
+            label={section.label}
+            sectionKey={section.key}
+            legacyLayer={legacyLayer(section.key)}
+            state={invocationState}
+            sessionId={sessionId}
+            runId={event.runId}
+            onLoadInvocation={onLoadInvocation}
+          />
+        ))}
       </div>
     </article>
   );
@@ -329,14 +353,16 @@ function AttemptDebugHeader({
 
 function PromptDisclosure({
   label,
-  layer,
+  sectionKey,
+  legacyLayer,
   state,
   sessionId,
   runId,
   onLoadInvocation,
 }: {
   label: string;
-  layer: "system" | "developer" | "user";
+  sectionKey: string;
+  legacyLayer: "system" | "developer" | "user" | null;
   state: OperatorProcessInvocationState;
   sessionId: string;
   runId: string;
@@ -380,11 +406,11 @@ function PromptDisclosure({
               ? t("console.processEvent.promptMalformed")
               : t("console.processEvent.promptUnavailable")}
           </p>
-        ) : state.invocation.prompts[layer].status === "not-recorded" ? (
+        ) : resolveContextSection(state.invocation, sectionKey, legacyLayer).status === "not-recorded" ? (
           <p className="text-xs text-sub">{t("console.processEvent.layerNotRecorded")}</p>
         ) : (
           <div className="grid gap-2">
-            {state.invocation.prompts[layer].contents.map((content, index) => (
+            {resolveContextSection(state.invocation, sectionKey, legacyLayer).contents.map((content, index) => (
               <pre
                 key={index}
                 className="scroll-thin max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink"
@@ -397,6 +423,45 @@ function PromptDisclosure({
       </div>
     </details>
   );
+}
+
+function defaultContextSections(
+  engine: "codex" | "claude" | "kimi",
+): OperatorProcessContextSection[] {
+  const definitions = engine === "claude"
+    ? [["user", "USER"], ["assistant", "ASSISTANT"], ["session-metadata", "SESSION_METADATA"]]
+    : engine === "kimi"
+      ? [["system", "SYSTEM_PROMPT"], ["turn", "TURN_PROMPT"], ["context", "CONTEXT"], ["request", "LLM_REQUEST"]]
+      : [["system", "SYSTEM_PROMPT"], ["developer", "DEVELOPER_PROMPT"], ["user", "USER_INPUT"]];
+  return definitions.map(([key, label]) => ({
+    key: key!,
+    label: label!,
+    source: engine === "claude"
+      ? "claude-transcript"
+      : engine === "kimi"
+        ? "kimi-wire"
+        : "codex-rollout",
+    status: "not-recorded",
+    contents: [],
+  }));
+}
+
+function legacyLayer(key: string): "system" | "developer" | "user" | null {
+  return key === "system" || key === "developer" || key === "user" ? key : null;
+}
+
+function resolveContextSection(
+  invocation: Extract<OperatorProcessDebugInvocation, { status: "available" }>,
+  sectionKey: string,
+  layer: "system" | "developer" | "user" | null,
+): OperatorProcessPromptLayer {
+  const section = invocation.sections?.find((candidate) => candidate.key === sectionKey);
+  if (section !== undefined) {
+    return section;
+  }
+  return layer === null
+    ? { status: "not-recorded", contents: [] }
+    : invocation.prompts[layer];
 }
 
 function DebugCard({

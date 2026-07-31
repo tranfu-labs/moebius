@@ -896,6 +896,7 @@ describe("local console", { timeout: 15_000 }, () => {
       port: 0,
       runCodex: vi.fn(async (options: CodexRunOptions) => {
         runCount += 1;
+        await options.onThreadStarted?.(threadIdFor(options));
         return codexOk(options, runCount === 1 ? "修复前历史已记录" : "项目修复后继续推进");
       }),
       makeRunDir: (count) => path.join(root, "runs", `repair-${String(count)}`),
@@ -5060,6 +5061,14 @@ class RecoveringAppendStore implements LocalConsoleStore {
     await this.appendFact("codex_run_usage", input, input.recordedAt);
   }
 
+  async recordRunExecutionContext(input: LocalRunExecutionContextFact): Promise<void> {
+    await this.appendFact("run_execution_context", input, input.recordedAt);
+  }
+
+  async recordExecutionSessionLink(input: LocalExecutionSessionLinkFact): Promise<void> {
+    await this.appendFact("execution_session_link", input, input.startedAt);
+  }
+
   async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
     await this.appendFact("agent_session_link", input, input.linkedAt);
   }
@@ -5074,6 +5083,12 @@ class RecoveringAppendStore implements LocalConsoleStore {
 
   async recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void> {
     await this.appendFact("provider_invocation", input, input.recordedAt);
+  }
+
+  async recordCodexThreadLink(
+    input: Parameters<NonNullable<LocalConsoleStore["recordCodexThreadLink"]>>[0],
+  ): Promise<void> {
+    await this.appendFact("codex_thread_link", input, input.startedAt);
   }
 
   private async appendFact(

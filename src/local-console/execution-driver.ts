@@ -38,6 +38,10 @@ export interface LocalExecutionRunOptions {
     engine: LocalExecutionEngine;
     externalSessionId: string;
   }) => void | Promise<void>;
+  onExecutionTraceReady?: (input: {
+    engine: LocalExecutionEngine;
+    externalSessionId: string;
+  }) => void | Promise<void>;
 }
 
 export type LocalExecutionRunner = (
@@ -65,6 +69,7 @@ export function createLocalExecutionRunner(input: {
   return async (options) => {
     const engine = options.profile?.cli ?? "codex";
     let observedExternalSessionId: string | null = null;
+    let traceReadyExternalSessionId: string | null = null;
     const observeSession = async (
       observedEngine: LocalExecutionEngine,
       externalSessionId: string,
@@ -89,6 +94,56 @@ export function createLocalExecutionRunner(input: {
         externalSessionId,
       });
     };
+    const markExecutionTraceReady = async (
+      observedEngine: LocalExecutionEngine,
+      externalSessionId: string,
+    ): Promise<void> => {
+      if (observedExternalSessionId === null) {
+        throw new Error("provider-execution-trace-ready-before-session-observed");
+      }
+      if (observedExternalSessionId !== externalSessionId) {
+        throw new Error("provider-execution-trace-session-id-conflict");
+      }
+      if (traceReadyExternalSessionId !== null) {
+        if (traceReadyExternalSessionId !== externalSessionId) {
+          throw new Error("provider-reported-conflicting-execution-trace-ids");
+        }
+        return;
+      }
+      traceReadyExternalSessionId = externalSessionId;
+      await options.onExecutionTraceReady?.({
+        engine: observedEngine,
+        externalSessionId,
+      });
+    };
+    const observeSessionAndTrace = async (
+      observedEngine: LocalExecutionEngine,
+      externalSessionId: string,
+    ): Promise<void> => {
+      await observeSession(observedEngine, externalSessionId);
+      await markExecutionTraceReady(observedEngine, externalSessionId);
+    };
+    const finishProviderRun = async (
+      observedEngine: LocalExecutionEngine,
+      result: CodexRunResult,
+    ): Promise<CodexRunResult> => {
+      if (
+        result.ok
+        && observedEngine === "kimi"
+        && observedExternalSessionId === null
+        && result.threadId !== null
+      ) {
+        await observeSession(observedEngine, result.threadId);
+      }
+      assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
+      if (result.ok && observedExternalSessionId !== null) {
+        await markExecutionTraceReady(
+          observedEngine,
+          result.threadId ?? observedExternalSessionId,
+        );
+      }
+      return result;
+    };
     if (engine === "claude") {
       const profile = options.profile;
       if (profile === null || profile.cli !== "claude") {
@@ -111,10 +166,9 @@ export function createLocalExecutionRunner(input: {
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
-        onSessionStarted: async (sessionId) => observeSession("claude", sessionId),
+        onSessionStarted: async (sessionId) => observeSessionAndTrace("claude", sessionId),
       });
-      assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
-      return result;
+      return await finishProviderRun("claude", result);
     }
     if (engine === "kimi") {
       const profile = options.profile;
@@ -142,9 +196,10 @@ export function createLocalExecutionRunner(input: {
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
         onSessionStarted: async (sessionId) => observeSession("kimi", sessionId),
+        onExecutionTraceReady: async (sessionId) =>
+          markExecutionTraceReady("kimi", sessionId),
       });
-      assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
-      return result;
+      return await finishProviderRun("kimi", result);
     }
 
     const profile = options.profile;
@@ -178,10 +233,9 @@ export function createLocalExecutionRunner(input: {
       onProcessStarted: options.onProcessStarted,
       onStructuredActivity: options.onStructuredActivity,
       onExecutionProgress: options.onExecutionProgress,
-      onThreadStarted: async (threadId) => observeSession("codex", threadId),
+      onThreadStarted: async (threadId) => observeSessionAndTrace("codex", threadId),
     });
-    assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
-    return result;
+    return await finishProviderRun("codex", result);
   };
 }
 

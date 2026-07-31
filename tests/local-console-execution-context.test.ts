@@ -93,6 +93,26 @@ describe("local execution recovery planning", () => {
     });
   });
 
+  it("retries full with the frozen target context when the failed attempt never observed a provider id", () => {
+    const old = context({ runId: "run-old", cli: "kimi", markdown: "old team" });
+    const current = context({ runId: "run-new", cli: "codex", markdown: "new team" });
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: current,
+      intents: [{ ...intent, reason: "retry" }],
+      consumedIntentIds: new Set(),
+      executionLinks: [],
+      legacyCodexLinks: [],
+      contexts: [old],
+    })).toMatchObject({
+      kind: "first",
+      intent: { targetRunId: "run-old" },
+      context: { runId: "run-old", engine: "kimi" },
+      reason: "no-provider-session",
+    });
+  });
+
   it("resumes an ordinary later turn with the unique compatible id", () => {
     const old = context({ runId: "run-old", cli: "kimi", markdown: "team" });
     const current = context({ runId: "run-new", cli: "kimi", markdown: "team" });

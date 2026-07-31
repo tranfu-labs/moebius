@@ -1907,7 +1907,7 @@ export function OperatorConsole({
                             memberIdentities={memberIdentities}
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
-                            processOutputAvailable={run.processOutputAvailable}
+                            processOutputAvailable
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
@@ -1915,16 +1915,14 @@ export function OperatorConsole({
                             onOpenExternalLink={onOpenExternalLink}
                             onOpenFileReference={(reference) => openFileReference(run.sessionId, reference)}
                             onOpenTeamMember={openMentionedTeamMember}
-                            onOpenOutput={run.processOutputAvailable !== false
-                              ? (fallbackOutput) => openEvidence({
+                            onOpenOutput={(fallbackOutput) => openEvidence({
                                   kind: "run-output",
                                   sessionId: run.sessionId,
                                   runId: run.runId,
                                   stepId: run.stepId ?? null,
                                   role: run.role,
                                   fallbackOutput,
-                                })
-                              : undefined}
+                                })}
                             onInterrupt={!isPrimaryRun && run.interruptible
                               ? () => onInterrupt(run.sessionId, run.runId)
                               : undefined}
@@ -2999,7 +2997,7 @@ function TimelineEntry({
               })
             : undefined}
           onOpenDiagnostics={onOpenDiagnostics}
-          onOpenOutput={message.runId === null || message.runTiming?.processOutputAvailable === false ? undefined : (fallbackOutput) => onOpenEvidence?.({
+          onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
             kind: "run-output",
             sessionId: message.sessionId,
             runId: message.runId!,
@@ -3008,11 +3006,6 @@ function TimelineEntry({
             fallbackOutput,
           })}
         />
-        {message.runTiming?.processOutputAvailable === false ? (
-          <p className="mt-2 pl-7 text-xs text-hint">
-            {t("console.common.providerOutputUnavailable")}
-          </p>
-        ) : null}
       </div>
     );
   }
@@ -3129,8 +3122,7 @@ function TimelineEntry({
       )}
       {message.speaker === "agent"
       && message.runId !== null
-      && onOpenEvidence
-      && message.runTiming?.processOutputAvailable !== false ? (
+      && onOpenEvidence ? (
         <button
           type="button"
           className="absolute left-8 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
@@ -3147,11 +3139,6 @@ function TimelineEntry({
         >
           <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
         </button>
-      ) : null}
-      {message.speaker === "agent" && message.runTiming?.processOutputAvailable === false ? (
-        <p className="mt-2 text-xs text-hint">
-          {t("console.common.providerOutputUnavailable")}
-        </p>
       ) : null}
       </div>
     </div>
@@ -3322,6 +3309,7 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
     || error === "kimi-quota-exhausted"
     || error === "kimi-rate-limited"
     || error === "kimi-no-complete-result"
+    || error === "kimi-empty-response"
     || error === "claude-cli-not-found"
     || error === "claude-cli-not-executable"
     || error === "claude-cli-unsupported-version"

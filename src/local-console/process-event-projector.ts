@@ -1,5 +1,6 @@
 export interface LocalConsoleProcessEventBase {
   key: string;
+  engine: "codex" | "claude" | "kimi";
   timestamp: string | null;
   protocolType: string;
   rawPayload: string;
@@ -9,6 +10,10 @@ export type LocalConsoleProcessEvent =
   | (LocalConsoleProcessEventBase & {
       kind: "agent-output";
       output: string;
+    })
+  | (LocalConsoleProcessEventBase & {
+      kind: "thinking";
+      thinking: string;
     })
   | (LocalConsoleProcessEventBase & {
       kind: "command";
@@ -308,6 +313,7 @@ function baseEvent(
 ): LocalConsoleProcessEventBase {
   return {
     key,
+    engine: "codex",
     timestamp,
     protocolType,
     rawPayload: serializeRaw(payload),
@@ -392,6 +398,20 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+function readProviderTimestamp(value: unknown): string | null {
+  if (typeof value === "string" && value !== "") {
+    return value;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return null;
+  }
+}
+
 function isCommandName(value: string | null): boolean {
   return value === "exec_command" || value === "shell" || value === "command";
 }
@@ -412,4 +432,286 @@ function fileAction(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function projectClaudeTranscriptRecord(
+  value: unknown,
+  context: ProjectCodexRolloutContext,
+): LocalConsoleProcessEvent[] {
+  const keyPrefix = `${context.runId}:claude:${String(context.lineOffset)}`;
+  if (!isRecord(value)) {
+    return [providerUnsupported("claude", keyPrefix, null, "unknown", value)];
+  }
+  const timestamp = readString(value.timestamp);
+  const recordType = readString(value.type) ?? "unknown";
+  const message = isRecord(value.message) ? value.message : null;
+  const role = message === null ? null : readString(message.role);
+  const content = message?.content;
+  if (recordType === "assistant" && role === "assistant" && Array.isArray(content)) {
+    const events = content.flatMap((part, index): LocalConsoleProcessEvent[] => {
+      if (!isRecord(part)) {
+        return [providerUnsupported(
+          "claude",
+          `${keyPrefix}:${String(index)}`,
+          timestamp,
+          "assistant · unknown",
+          part,
+        )];
+      }
+      const type = readString(part.type) ?? "unknown";
+      const base = providerBase(
+        "claude",
+        `${keyPrefix}:${String(index)}`,
+        timestamp,
+        `assistant · ${type}`,
+        part,
+      );
+      if (type === "text") {
+        const output = readText(part.text);
+        return output === null ? [] : [{ ...base, kind: "agent-output", output }];
+      }
+      if (type === "thinking") {
+        return [{
+          ...base,
+          kind: "thinking",
+          thinking: readString(part.thinking) ?? "",
+        }];
+      }
+      if (type === "tool_use") {
+        return [{
+          ...base,
+          kind: "tool",
+          phase: "started",
+          name: readString(part.name) ?? "tool_use",
+          callId: readCallId(part),
+          status: null,
+          input: rawField(part.input),
+          output: null,
+        }];
+      }
+      return [{ ...base, kind: "unsupported-debug" }];
+    });
+    const usage = message !== null && isRecord(message.usage) ? message.usage : null;
+    if (usage !== null) {
+      events.push({
+        ...providerBase("claude", `${keyPrefix}:usage`, timestamp, "assistant · usage", usage),
+        kind: "usage",
+        usage: serializeRaw(usage),
+      });
+    }
+    return events;
+  }
+  if (recordType === "user" && role === "user" && Array.isArray(content)) {
+    return content.flatMap((part, index): LocalConsoleProcessEvent[] => {
+      if (!isRecord(part) || part.type !== "tool_result") {
+        return [];
+      }
+      return [{
+        ...providerBase(
+          "claude",
+          `${keyPrefix}:${String(index)}`,
+          timestamp,
+          "user · tool_result",
+          part,
+        ),
+        kind: "tool",
+        phase: "completed",
+        name: readString(part.name) ?? "tool_result",
+        callId: readString(part.tool_use_id) ?? readCallId(part),
+        status: part.is_error === true ? "error" : "completed",
+        input: null,
+        output: rawField(part.content),
+      }];
+    });
+  }
+  if (recordType === "system" && value.level === "error") {
+    return [{
+      ...providerBase("claude", keyPrefix, timestamp, "system", value),
+      kind: "error",
+      message: readText(value.subtype) ?? "Claude system error",
+      detail: rawField(value.hookErrors) ?? rawField(value.stopReason),
+    }];
+  }
+  if (
+    recordType === "user"
+    || recordType === "attachment"
+    || recordType === "last-prompt"
+    || recordType === "custom-title"
+    || recordType === "mode"
+  ) {
+    return [];
+  }
+  return [providerUnsupported("claude", keyPrefix, timestamp, recordType, value)];
+}
+
+export function projectKimiWireRecord(
+  value: unknown,
+  context: ProjectCodexRolloutContext,
+): LocalConsoleProcessEvent[] {
+  const keyPrefix = `${context.runId}:kimi:${String(context.lineOffset)}`;
+  if (!isRecord(value)) {
+    return [providerUnsupported("kimi", keyPrefix, null, "unknown", value)];
+  }
+  const timestamp = readProviderTimestamp(value.time) ?? readProviderTimestamp(value.created_at);
+  const recordType = readString(value.type) ?? "unknown";
+  if (
+    recordType === "metadata"
+    || recordType === "config.update"
+    || recordType === "tools.set_active_tools"
+    || recordType === "context.append_message"
+    || recordType === "turn.prompt"
+  ) {
+    return [];
+  }
+  if (recordType === "context.append_loop_event" && isRecord(value.event)) {
+    const event = value.event;
+    const eventType = readString(event.type) ?? "unknown";
+    const base = providerBase("kimi", keyPrefix, timestamp, `loop · ${eventType}`, event);
+    if (eventType === "content.part" && isRecord(event.part)) {
+      const partType = readString(event.part.type) ?? "unknown";
+      if (partType === "think") {
+        const thinking = readText(event.part.think);
+        return thinking === null ? [] : [{
+          ...base,
+          protocolType: `${base.protocolType} · think`,
+          kind: "thinking",
+          thinking,
+        }];
+      }
+      if (partType === "text") {
+        const output = readText(event.part.text);
+        return output === null ? [] : [{
+          ...base,
+          protocolType: `${base.protocolType} · text`,
+          kind: "agent-output",
+          output,
+        }];
+      }
+    }
+    if (eventType === "tool.call") {
+      return [{
+        ...base,
+        kind: "tool",
+        phase: "started",
+        name: readString(event.name) ?? "tool.call",
+        callId: readString(event.toolCallId) ?? readCallId(event),
+        status: "started",
+        input: rawField(event.args),
+        output: null,
+      }];
+    }
+    if (eventType === "tool.result") {
+      return [{
+        ...base,
+        kind: "tool",
+        phase: "completed",
+        name: "tool.result",
+        callId: readString(event.toolCallId) ?? readCallId(event),
+        status: "completed",
+        input: null,
+        output: rawField(event.result),
+      }];
+    }
+    if (eventType === "step.end" && event.usage !== undefined) {
+      return [{
+        ...base,
+        kind: "usage",
+        usage: serializeRaw(event.usage),
+      }];
+    }
+    if (eventType === "step.begin") {
+      return [];
+    }
+    return [{ ...base, kind: "unsupported-debug" }];
+  }
+  if (recordType === "usage.record") {
+    return [{
+      ...providerBase("kimi", keyPrefix, timestamp, recordType, value),
+      kind: "usage",
+      usage: serializeRaw(value.usage),
+    }];
+  }
+  if (recordType === "permission.record_approval_result") {
+    return [{
+      ...providerBase("kimi", keyPrefix, timestamp, recordType, value),
+      kind: "tool",
+      phase: "completed",
+      name: readString(value.toolName) ?? "permission",
+      callId: readString(value.toolCallId),
+      status: rawField(value.result),
+      input: rawField(value.action),
+      output: null,
+    }];
+  }
+  if (recordType === "turn.cancel") {
+    return [{
+      ...providerBase("kimi", keyPrefix, timestamp, recordType, value),
+      kind: "error",
+      message: "Kimi turn cancelled",
+      detail: null,
+    }];
+  }
+  return [providerUnsupported("kimi", keyPrefix, timestamp, recordType, value)];
+}
+
+export function malformedProviderProcessEvent(
+  engine: "claude" | "kimi",
+  runId: string,
+  lineOffset: number,
+): LocalConsoleProcessEvent {
+  return {
+    ...providerBase(
+      engine,
+      `${runId}:${engine}:${String(lineOffset)}:malformed`,
+      null,
+      "malformed-jsonl",
+      "",
+    ),
+    kind: "error",
+    message: "过程记录读取异常",
+    detail: `这一条 ${engine === "claude" ? "Claude" : "Kimi"} 过程记录无法解析。`,
+  };
+}
+
+function providerBase(
+  engine: "claude" | "kimi",
+  key: string,
+  timestamp: string | null,
+  protocolType: string,
+  payload: unknown,
+): LocalConsoleProcessEventBase {
+  return {
+    key,
+    engine,
+    timestamp,
+    protocolType,
+    rawPayload: serializeRaw(redactOpaqueProviderPayload(payload)),
+  };
+}
+
+function redactOpaqueProviderPayload(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactOpaqueProviderPayload);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !/(?:encrypted|signature|opaque)/iu.test(key))
+      .map(([key, child]) => [key, redactOpaqueProviderPayload(child)]),
+  );
+}
+
+function providerUnsupported(
+  engine: "claude" | "kimi",
+  key: string,
+  timestamp: string | null,
+  protocolType: string,
+  payload: unknown,
+): LocalConsoleProcessEvent {
+  return {
+    ...providerBase(engine, key, timestamp, protocolType, payload),
+    kind: "unsupported-debug",
+  };
 }

@@ -329,6 +329,140 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     }
   });
 
+  it("fails an empty Kimi turn without an execution link and retries the canonical session", async () => {
+    const root = await fixtureRoot();
+    const codex = vi.fn();
+    const modes: KimiAcpRunOptions["mode"][] = [];
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
+      modes.push(options.mode);
+      const sessionId = options.mode.kind === "resume"
+        ? options.mode.externalSessionId
+        : "kimi-empty-session";
+      await options.onSessionStarted?.(sessionId);
+      return {
+        ok: false,
+        reason: "kimi-empty-response",
+        failure: {
+          code: "kimi-empty-response",
+          message: "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。",
+        },
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+        stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Kimi empty response", {
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+    });
+    servers.push(server);
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "development",
+    });
+
+    await post(server.url, "@dev answer");
+    const firstFailure = await waitForSystemEventMatching(server, "default", (message) =>
+      message.error === "kimi-empty-response");
+    expect(firstFailure.body).toBe(
+      "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。",
+    );
+    let facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    expect(facts.filter((fact) => fact.type === "provider_session_observed")).toHaveLength(1);
+    expect(facts.filter((fact) => fact.type === "agent_session_link")).toHaveLength(1);
+    expect(facts.filter((fact) => fact.type === "execution_session_link")).toHaveLength(0);
+    expect(facts.filter((fact) => fact.type === "agent_timeline_cursor")).toHaveLength(0);
+    expect((await server.runtime.snapshot("default")).messages.some((message) =>
+      message.speaker === "agent" && message.body.trim() === "")).toBe(false);
+
+    const retry = await fetch(retryUrl(server, "default", firstFailure.runId!), { method: "POST" });
+    expect(retry.status).toBe(202);
+    await waitForSnapshotMatching(server, "default", (current) =>
+      current.messages.filter((message) =>
+        message.speaker === "system"
+        && message.error === "kimi-empty-response").length === 2);
+
+    expect(modes).toEqual([
+      { kind: "full" },
+      { kind: "resume", externalSessionId: "kimi-empty-session" },
+    ]);
+    expect(codex).not.toHaveBeenCalled();
+    facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    expect(facts.filter((fact) => fact.type === "execution_session_link")).toHaveLength(0);
+    expect(facts.filter((fact) =>
+      fact.type === "provider_invocation"
+      && fact.payload.phase === "terminal"
+      && fact.payload.outcome === "failed")).toHaveLength(2);
+  });
+
+  it("completes a Kimi tool-only turn without publishing a blank Agent response", async () => {
+    const root = await fixtureRoot();
+    const codex = vi.fn();
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
+      await options.onSessionStarted?.("kimi-tool-only");
+      await options.onExecutionTraceReady?.("kimi-tool-only");
+      return {
+        ok: true,
+        finalText: "",
+        completionKind: "terminal-tool-result",
+        threadId: "kimi-tool-only",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+        stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("Kimi tool only", {
+        cli: "kimi",
+        model: "kimi-for-coding",
+        effort: "high",
+      }),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+    });
+    servers.push(server);
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "development",
+    });
+
+    await post(server.url, "@dev write the file");
+    const completed = await waitForSnapshotMatching(server, "default", (current) =>
+      current.status === "idle"
+      && current.messages.some((message) =>
+        message.speaker === "user"
+        && message.body === "@dev write the file"
+        && message.status === "completed"));
+    expect(completed.messages.some((message) => message.speaker === "agent")).toBe(false);
+    expect(codex).not.toHaveBeenCalled();
+
+    const facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    expect(facts.filter((fact) => fact.type === "execution_session_link")).toHaveLength(1);
+    expect(facts.filter((fact) => fact.type === "agent_timeline_cursor")).toHaveLength(1);
+    expect(facts.filter((fact) =>
+      fact.type === "run_lifecycle"
+      && fact.payload.phase === "terminal"
+      && fact.payload.status === "completed")).toHaveLength(1);
+  });
+
   it("freezes a Claude profile and resumes only its canonical Claude session", async () => {
     const root = await fixtureRoot();
     const claudeProfile: LocalConsoleExecutionProfile = {
@@ -1658,7 +1792,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       });
   });
 
-  it("retries a detached Kimi handoff from its claimed source exactly once and reaches attempt 3", async () => {
+  it("retries a detached Kimi empty response from its claimed source and links only the successful attempt", async () => {
     const root = await fixtureRoot();
     const sqlitePath = path.join(root, "local-console.sqlite");
     let primaryCall = 0;
@@ -1682,10 +1816,10 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       if (workerCall < 3) {
         return {
           ok: false,
-          reason: "kimi-acp-timeout",
+          reason: "kimi-empty-response",
           failure: {
-            code: "kimi-acp-timeout",
-            message: `Kimi attempt ${String(workerCall)} failed`,
+            code: "kimi-empty-response",
+            message: "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。",
           },
           runDir: options.runDir,
           stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
@@ -1728,7 +1862,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     const firstFailure = await waitForSystemEventMatching(
       server,
       "default",
-      (message) => message.error === "kimi-acp-timeout",
+      (message) => message.error === "kimi-empty-response",
     );
     expect(firstFailure.runId).not.toBeNull();
 
@@ -1750,7 +1884,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       server,
       "default",
       (message) =>
-        message.error === "kimi-acp-timeout"
+        message.error === "kimi-empty-response"
         && message.runId !== firstFailure.runId,
     );
     expect(kimi).toHaveBeenCalledTimes(2);
@@ -1783,7 +1917,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(handoffs).toHaveLength(1);
     const handoff = handoffs[0]!;
     expect(snapshot.messages.filter((message) =>
-      message.speaker === "system" && message.error === "kimi-acp-timeout")).toHaveLength(2);
+      message.speaker === "system" && message.error === "kimi-empty-response")).toHaveLength(2);
 
     const facts = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
     const lifecycleAttempts = facts
@@ -1805,6 +1939,12 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       { mode: "resume", requestedExternalSessionId: "worker-kimi-session" },
       { mode: "resume", requestedExternalSessionId: "worker-kimi-session" },
     ]);
+    expect(facts.filter((fact) =>
+      fact.type === "execution_session_link"
+      && fact.payload.role === "worker")).toHaveLength(1);
+    expect(facts.filter((fact) =>
+      fact.type === "agent_timeline_cursor"
+      && fact.payload.role === "worker")).toHaveLength(1);
     const retryIntents = facts.filter((fact) =>
       fact.type === "codex_resume_intent"
       && fact.payload.reason === "retry"

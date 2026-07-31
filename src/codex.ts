@@ -62,6 +62,7 @@ export interface CodexRunFailure {
     | "kimi-quota-exhausted"
     | "kimi-rate-limited"
     | "kimi-no-complete-result"
+    | "kimi-empty-response"
     | "claude-cli-not-found"
     | "claude-cli-not-executable"
     | "claude-cli-unsupported-version"
@@ -164,6 +165,7 @@ export type CodexRunResult =
   | {
       ok: true;
       finalText: string;
+      completionKind?: "visible-text" | "terminal-tool-result";
       threadId: string | null;
       cachedInputTokens: number | null;
       runDir: string;
@@ -882,6 +884,7 @@ export function terminalForFailure(
     case "kimi-cli-spawn-failed":
     case "kimi-cli-exited":
     case "kimi-no-complete-result":
+    case "kimi-empty-response":
     case "claude-cli-not-found":
     case "claude-cli-not-executable":
     case "claude-cli-unsupported-version":

@@ -7,6 +7,15 @@ import {
   projectCodexRolloutRecord,
   type LocalConsoleProcessEvent,
 } from "./local-console/process-event-projector.js";
+import {
+  inspectTrustedJsonlCandidate,
+  openValidatedTrustedJsonl,
+  readTrustedJsonlAppend,
+  readTrustedJsonlPage,
+  sameTrustedJsonlFile,
+  TrustedJsonlCursorInvalidError,
+  type TrustedJsonlFile,
+} from "./trusted-jsonl.js";
 
 export type CodexRolloutUnavailableReason =
   | "invalid-thread-id"
@@ -114,8 +123,6 @@ export class CodexRolloutCursorInvalidError extends Error {
 }
 
 const THREAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/u;
-const DEFAULT_PAGE_BYTES = 256 * 1024;
-const DEFAULT_PAGE_EVENTS = 80;
 const READ_CHUNK_BYTES = 64 * 1024;
 const DEFAULT_INVOCATION_MAX_BYTES = 64 * 1024 * 1024;
 const RESOLUTION_CACHE_TTL_MS = 30_000;
@@ -254,9 +261,7 @@ export function sameCodexRolloutFile(
   expected: Pick<CodexRolloutIdentity, "realPath" | "device" | "inode">,
   actual: Pick<CodexRolloutIdentity, "realPath" | "device" | "inode">,
 ): boolean {
-  return expected.realPath === actual.realPath
-    && expected.device === actual.device
-    && expected.inode === actual.inode;
+  return sameTrustedJsonlFile(expected, actual);
 }
 
 export async function readCodexRolloutInvocation(
@@ -381,90 +386,61 @@ export async function readCodexRolloutInvocation(
 export async function readCodexRolloutPage(
   options: ReadCodexRolloutPageOptions,
 ): Promise<CodexRolloutEventSlice> {
-  const maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_PAGE_BYTES, "maxBytes");
-  const maxEvents = positiveInteger(options.maxEvents ?? DEFAULT_PAGE_EVENTS, "maxEvents");
-  const opened = await openValidatedRollout(
-    options.resolution,
-    options.expectedIdentity,
-    options.minimumSize,
-  );
   try {
-    const completeEndOffset = await findCompleteJsonlEnd(opened.handle, opened.identity.size);
-    const endOffset = options.endOffset ?? completeEndOffset;
-    if (!Number.isInteger(endOffset) || endOffset < 0 || endOffset > completeEndOffset) {
+    const slice = await readTrustedJsonlPage({
+      file: trustedFile(options.resolution),
+      ...(options.endOffset === undefined ? {} : { endOffset: options.endOffset }),
+      ...(options.expectedIdentity === undefined
+        ? {}
+        : { expectedIdentity: options.expectedIdentity }),
+      ...(options.minimumSize === undefined ? {} : { minimumSize: options.minimumSize }),
+      ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
+      ...(options.maxEvents === undefined ? {} : { maxEvents: options.maxEvents }),
+      projectLine: (value, context) =>
+        projectCodexRolloutRecord(value, { runId: options.runId, ...context }),
+      malformedLine: (context) => [
+        malformedCodexRolloutEvent(options.runId, context.lineOffset),
+      ],
+    });
+    return {
+      ...slice,
+      events: dedupeEvents(slice.events),
+    };
+  } catch (error) {
+    if (error instanceof TrustedJsonlCursorInvalidError) {
       throw new CodexRolloutCursorInvalidError();
     }
-    const window = await readBackwardWindow(opened.handle, endOffset, maxBytes);
-    const groups = projectWindow(window.buffer, window.startOffset, options.runId);
-    const selected = selectEventSuffix(groups, maxEvents);
-    const startOffset = selected.length > 0
-      ? selected[0]!.lineOffset
-      : window.startOffset;
-    const events = dedupeEvents(selected.flatMap((group) => group.events));
-    return {
-      events,
-      rawBytes: endOffset - startOffset,
-      startOffset,
-      endOffset,
-      completeEndOffset,
-      previousOffset: startOffset > 0 ? startOffset : null,
-      nextOffset: endOffset,
-      identity: opened.identity,
-    };
-  } finally {
-    await opened.handle.close();
+    throw error;
   }
 }
 
 export async function readCodexRolloutAppend(
   options: ReadCodexRolloutAppendOptions,
 ): Promise<CodexRolloutEventSlice> {
-  const maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_PAGE_BYTES, "maxBytes");
-  const maxEvents = positiveInteger(options.maxEvents ?? DEFAULT_PAGE_EVENTS, "maxEvents");
-  const opened = await openValidatedRollout(
-    options.resolution,
-    options.expectedIdentity,
-    options.minimumSize,
-  );
   try {
-    const completeEndOffset = await findCompleteJsonlEnd(opened.handle, opened.identity.size);
-    if (
-      !Number.isInteger(options.startOffset)
-      || options.startOffset < 0
-      || options.startOffset > completeEndOffset
-    ) {
+    const slice = await readTrustedJsonlAppend({
+      file: trustedFile(options.resolution),
+      startOffset: options.startOffset,
+      expectedIdentity: options.expectedIdentity,
+      minimumSize: options.minimumSize,
+      ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }),
+      ...(options.maxEvents === undefined ? {} : { maxEvents: options.maxEvents }),
+      projectLine: (value, context) =>
+        projectCodexRolloutRecord(value, { runId: options.runId, ...context }),
+      malformedLine: (context) => [
+        malformedCodexRolloutEvent(options.runId, context.lineOffset),
+      ],
+    });
+    return {
+      ...slice,
+      events: dedupeEvents(slice.events),
+    };
+  } catch (error) {
+    if (error instanceof TrustedJsonlCursorInvalidError) {
       throw new CodexRolloutCursorInvalidError();
     }
-    const window = await readForwardWindow(
-      opened.handle,
-      options.startOffset,
-      completeEndOffset,
-      maxBytes,
-    );
-    const groups = projectWindow(window.buffer, options.startOffset, options.runId);
-    const selected = selectEventPrefix(groups, maxEvents);
-    const nextOffset = selected.length > 0
-      ? selected.at(-1)!.lineEndOffset
-      : window.endOffset;
-    return {
-      events: dedupeEvents(selected.flatMap((group) => group.events)),
-      rawBytes: nextOffset - options.startOffset,
-      startOffset: options.startOffset,
-      endOffset: nextOffset,
-      completeEndOffset,
-      previousOffset: options.startOffset > 0 ? options.startOffset : null,
-      nextOffset,
-      identity: opened.identity,
-    };
-  } finally {
-    await opened.handle.close();
+    throw error;
   }
-}
-
-interface ProjectedLine {
-  lineOffset: number;
-  lineEndOffset: number;
-  events: LocalConsoleProcessEvent[];
 }
 
 async function openValidatedRollout(
@@ -472,37 +448,17 @@ async function openValidatedRollout(
   expectedIdentity: Pick<CodexRolloutIdentity, "realPath" | "device" | "inode"> | undefined,
   minimumSize: number | undefined,
 ): Promise<{ handle: fs.FileHandle; identity: CodexRolloutIdentity }> {
-  let handle: fs.FileHandle | null = null;
   try {
-    const realPath = await fs.realpath(resolution.filePath);
-    if (!isPathInside(resolution.sessionsRoot, realPath)) {
-      throw new CodexRolloutCursorInvalidError();
-    }
-    handle = await fs.open(realPath, "r");
-    const stat = await handle.stat();
-    if (!stat.isFile()) {
-      throw new CodexRolloutCursorInvalidError();
-    }
-    const identity = {
-      realPath,
-      device: stat.dev,
-      inode: stat.ino,
-      size: stat.size,
-    };
-    const requiredIdentity = expectedIdentity ?? resolution.identity;
-    if (
-      !sameCodexRolloutFile(requiredIdentity, identity)
-      || (minimumSize !== undefined && stat.size < minimumSize)
-    ) {
-      throw new CodexRolloutCursorInvalidError();
-    }
-    return { handle, identity };
+    return await openValidatedTrustedJsonl(
+      trustedFile(resolution),
+      expectedIdentity,
+      minimumSize,
+    );
   } catch (error) {
-    await handle?.close().catch(() => undefined);
-    if (error instanceof CodexRolloutCursorInvalidError) {
-      throw error;
+    if (error instanceof TrustedJsonlCursorInvalidError) {
+      throw new CodexRolloutCursorInvalidError();
     }
-    throw new CodexRolloutCursorInvalidError();
+    throw error;
   }
 }
 
@@ -530,73 +486,6 @@ async function findCompleteJsonlEnd(handle: fs.FileHandle, size: number): Promis
   return 0;
 }
 
-async function readBackwardWindow(
-  handle: fs.FileHandle,
-  endOffset: number,
-  maxBytes: number,
-): Promise<{ startOffset: number; buffer: Buffer }> {
-  if (endOffset === 0) {
-    return { startOffset: 0, buffer: Buffer.alloc(0) };
-  }
-  let startOffset = Math.max(0, endOffset - maxBytes);
-  let buffer = await readRange(handle, startOffset, endOffset);
-  if (startOffset === 0) {
-    return { startOffset, buffer };
-  }
-  const byteBeforeStart = await readRange(handle, startOffset - 1, startOffset);
-  if (byteBeforeStart[0] === 0x0a) {
-    return { startOffset, buffer };
-  }
-
-  while (startOffset > 0) {
-    const previousStart = Math.max(0, startOffset - READ_CHUNK_BYTES);
-    const previous = await readRange(handle, previousStart, startOffset);
-    const newline = previous.lastIndexOf(0x0a);
-    if (newline >= 0) {
-      buffer = Buffer.concat([previous.subarray(newline + 1), buffer]);
-      startOffset = previousStart + newline + 1;
-      break;
-    }
-    buffer = Buffer.concat([previous, buffer]);
-    startOffset = previousStart;
-  }
-  return { startOffset, buffer };
-}
-
-async function readForwardWindow(
-  handle: fs.FileHandle,
-  startOffset: number,
-  completeEndOffset: number,
-  maxBytes: number,
-): Promise<{ endOffset: number; buffer: Buffer }> {
-  if (startOffset === completeEndOffset) {
-    return { endOffset: startOffset, buffer: Buffer.alloc(0) };
-  }
-  let endOffset = Math.min(completeEndOffset, startOffset + maxBytes);
-  let buffer = await readRange(handle, startOffset, endOffset);
-  if (endOffset < completeEndOffset) {
-    const newline = buffer.lastIndexOf(0x0a);
-    if (newline >= 0) {
-      endOffset = startOffset + newline + 1;
-      buffer = buffer.subarray(0, newline + 1);
-    } else {
-      while (endOffset < completeEndOffset) {
-        const nextEnd = Math.min(completeEndOffset, endOffset + READ_CHUNK_BYTES);
-        const next = await readRange(handle, endOffset, nextEnd);
-        const nextNewline = next.indexOf(0x0a);
-        if (nextNewline >= 0) {
-          buffer = Buffer.concat([buffer, next.subarray(0, nextNewline + 1)]);
-          endOffset += nextNewline + 1;
-          break;
-        }
-        buffer = Buffer.concat([buffer, next]);
-        endOffset = nextEnd;
-      }
-    }
-  }
-  return { endOffset, buffer };
-}
-
 async function readRange(
   handle: fs.FileHandle,
   startOffset: number,
@@ -613,65 +502,6 @@ async function readRange(
     read += result.bytesRead;
   }
   return buffer;
-}
-
-function projectWindow(buffer: Buffer, baseOffset: number, runId: string): ProjectedLine[] {
-  const groups: ProjectedLine[] = [];
-  let lineStart = 0;
-  while (lineStart < buffer.length) {
-    const newline = buffer.indexOf(0x0a, lineStart);
-    if (newline < 0) {
-      break;
-    }
-    const raw = buffer.subarray(lineStart, newline);
-    const content = raw.at(-1) === 0x0d ? raw.subarray(0, -1) : raw;
-    const lineOffset = baseOffset + lineStart;
-    if (content.length > 0) {
-      let events: LocalConsoleProcessEvent[];
-      try {
-        events = projectCodexRolloutRecord(JSON.parse(content.toString("utf8")), {
-          runId,
-          lineOffset,
-        });
-      } catch {
-        events = [malformedCodexRolloutEvent(runId, lineOffset)];
-      }
-      groups.push({
-        lineOffset,
-        lineEndOffset: baseOffset + newline + 1,
-        events,
-      });
-    }
-    lineStart = newline + 1;
-  }
-  return groups;
-}
-
-function selectEventSuffix(groups: ProjectedLine[], maxEvents: number): ProjectedLine[] {
-  let count = 0;
-  let start = groups.length;
-  for (let index = groups.length - 1; index >= 0; index -= 1) {
-    const next = groups[index]!;
-    if (next.events.length > 0 && count > 0 && count + next.events.length > maxEvents) {
-      break;
-    }
-    start = index;
-    count += next.events.length;
-  }
-  return groups.slice(start);
-}
-
-function selectEventPrefix(groups: ProjectedLine[], maxEvents: number): ProjectedLine[] {
-  let count = 0;
-  let end = 0;
-  for (const group of groups) {
-    if (group.events.length > 0 && count > 0 && count + group.events.length > maxEvents) {
-      break;
-    }
-    end += 1;
-    count += group.events.length;
-  }
-  return groups.slice(0, end);
 }
 
 function dedupeEvents(events: LocalConsoleProcessEvent[]): LocalConsoleProcessEvent[] {
@@ -762,18 +592,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPathInside(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && (error.code === "ENOENT" || error.code === "ENOTDIR");
-}
-
 function nonEmpty(value: string | undefined): string | null {
   return value !== undefined && value.trim() !== "" ? value : null;
 }
@@ -782,32 +600,31 @@ async function inspectRolloutCandidate(
   sessionsRoot: string,
   candidate: string,
 ): Promise<CodexRolloutResolution> {
-  try {
-    const realPath = await fs.realpath(candidate);
-    if (!isPathInside(sessionsRoot, realPath)) {
-      return { status: "unavailable", reason: "outside-sessions-root" };
-    }
-    const stat = await fs.stat(realPath);
-    if (!stat.isFile()) {
-      return { status: "unavailable", reason: "not-a-file" };
-    }
-    const handle = await fs.open(realPath, "r");
-    await handle.close();
+  const inspection = await inspectTrustedJsonlCandidate(sessionsRoot, candidate);
+  if (inspection.status === "available") {
     return {
       status: "available",
-      filePath: realPath,
+      filePath: inspection.file.filePath,
       sessionsRoot,
-      identity: {
-        realPath,
-        device: stat.dev,
-        inode: stat.ino,
-        size: stat.size,
-      },
-    };
-  } catch (error) {
-    return {
-      status: "unavailable",
-      reason: isMissingFileError(error) ? "not-found" : "unreadable",
+      identity: inspection.file.identity,
     };
   }
+  return {
+    status: "unavailable",
+    reason: inspection.reason === "outside-root"
+      ? "outside-sessions-root"
+      : inspection.reason === "root-unavailable"
+        ? "sessions-root-unavailable"
+        : inspection.reason,
+  };
+}
+
+function trustedFile(
+  resolution: Extract<CodexRolloutResolution, { status: "available" }>,
+): TrustedJsonlFile {
+  return {
+    filePath: resolution.filePath,
+    trustedRoot: resolution.sessionsRoot,
+    identity: resolution.identity,
+  };
 }

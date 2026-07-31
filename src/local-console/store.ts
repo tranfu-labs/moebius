@@ -1327,7 +1327,7 @@ function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types
       completedAt: typeof payload.completedAt === "string" ? payload.completedAt : null,
       status: readRunTimingStatus(payload.status),
       engine,
-      processOutputAvailable: payload.processOutputAvailable === true,
+      processOutputAvailable: true,
     });
   }
   return timings;

@@ -1445,8 +1445,8 @@ export class LocalConsoleRuntime {
       }
     }
     const recoveryStore = this.codexRecoveryFactStore();
-    const [executionLinks, codexLinks, recoveryFacts] = recoveryStore === null
-      ? [[], [], {
+    const [executionLinks, codexLinks, runContexts, recoveryFacts] = recoveryStore === null
+      ? [[], [], [], {
           intents: [],
           consumedIntentIds: new Set<string>(),
           repairedIntentIds: new Set<string>(),
@@ -1454,10 +1454,12 @@ export class LocalConsoleRuntime {
       : await Promise.all([
           readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
           readCodexThreadLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
+          readRunExecutionContexts(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
           readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
         ]);
     const link = executionLinks.find((candidate) => candidate.runId === input.runId)
       ?? codexLinks.find((candidate) => candidate.runId === input.runId);
+    const runContext = runContexts.find((candidate) => candidate.runId === input.runId);
     const linkedRetryIntent = terminal.error === "retry-source-trigger-missing"
       && terminal.sourceKind === "local-retry-intent"
       && terminal.sourceId !== null
@@ -1475,10 +1477,14 @@ export class LocalConsoleRuntime {
     }
     const source = link === undefined
       ? linkedRetryIntent === undefined
-        ? messages.find((message) =>
-            message.runId === input.runId
-            && message.speaker !== "system"
-            && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"))
+        ? runContext === undefined
+          ? messages.find((message) =>
+              message.runId === input.runId
+              && message.speaker !== "system"
+              && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"))
+          : messages.find((message) =>
+              message.id === runContext.sourceMessageId
+              && message.speaker !== "system")
         : messages.find((message) =>
             message.id === linkedRetryIntent.sourceMessageId
             && message.speaker !== "system")
@@ -1488,7 +1494,12 @@ export class LocalConsoleRuntime {
     if (source === undefined) {
       return null;
     }
-    const role = link?.role ?? linkedRetryIntent?.role ?? source.role;
+    const role = link?.role
+      ?? linkedRetryIntent?.role
+      ?? runContext?.role
+      ?? source.dispatchRole
+      ?? terminal.role
+      ?? source.role;
     return {
       sessionId: input.sessionId,
       targetRunId: linkedRetryIntent?.targetRunId ?? input.runId,
@@ -1924,6 +1935,7 @@ export class LocalConsoleRuntime {
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
       messages,
       activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
+      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
       ...(cursor === undefined ? {} : { cursor }),
     });
   }
@@ -1939,6 +1951,7 @@ export class LocalConsoleRuntime {
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
       activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
       appendCursor,
+      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
     });
   }
 
@@ -1950,6 +1963,7 @@ export class LocalConsoleRuntime {
       sessionId,
       runId,
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
+      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
     });
   }
 
@@ -2500,7 +2514,7 @@ export class LocalConsoleRuntime {
             attempt: primaryLifecycle.attempt,
             engine: executionContext.engine,
             profile: executionContext.profile,
-            processOutputAvailable: executionContext.engine === "codex",
+            processOutputAvailable: true,
             terminalRecorded: false,
             controller,
             threadId: null,
@@ -2513,6 +2527,7 @@ export class LocalConsoleRuntime {
 
           let progressFactTail = Promise.resolve();
           let observedExternalSessionId: string | null = null;
+          let executionTraceExternalSessionId: string | null = null;
           await this.recordProviderInvocation({
             sessionId,
             runId: nextRunId,
@@ -2595,6 +2610,21 @@ export class LocalConsoleRuntime {
                     contextFingerprint: executionContext.contextFingerprint,
                     linkedAt: this.nowIso(),
                   });
+                },
+                onExecutionTraceReady: async ({ engine, externalSessionId }) => {
+                  if (observedExternalSessionId !== externalSessionId) {
+                    throw new Error("execution-trace-ready-session-mismatch");
+                  }
+                  if (
+                    executionTraceExternalSessionId !== null
+                    && executionTraceExternalSessionId !== externalSessionId
+                  ) {
+                    throw new Error("execution-trace-ready-session-conflict");
+                  }
+                  executionTraceExternalSessionId = externalSessionId;
+                  if (continuingSameRun) {
+                    return;
+                  }
                   await this.recordExecutionSessionLink({
                     sessionId,
                     runId: nextRunId,
@@ -2629,47 +2659,57 @@ export class LocalConsoleRuntime {
 
           if (
             result.ok
-            && observedExternalSessionId === null
+            && executionContext.engine === "kimi"
             && result.threadId !== null
             && !continuingSameRun
           ) {
-            observedExternalSessionId = result.threadId;
-            await this.recordProviderSessionObserved({
-              sessionId,
-              runId: nextRunId,
-              sourceMessageId: claimedMessage.id,
-              role: trigger.role,
-              engine: executionContext.engine,
-              externalSessionId: result.threadId,
-              observedAt: this.nowIso(),
-              agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              contextFingerprint: executionContext.contextFingerprint,
-            });
-            await this.recordAgentSessionLink({
-              sessionId,
-              agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              role: trigger.role,
-              engine: executionContext.engine,
-              externalSessionId: result.threadId,
-              profileFingerprint: executionContext.profileFingerprint,
-              contextFingerprint: executionContext.contextFingerprint,
-              linkedAt: this.nowIso(),
-            });
-            await this.recordExecutionSessionLink({
-              sessionId,
-              runId: nextRunId,
-              sourceMessageId: claimedMessage.id,
-              role: trigger.role,
-              engine: executionContext.engine,
-              externalSessionId: result.threadId,
-              startedAt: this.nowIso(),
-              profileFingerprint: executionContext.profileFingerprint,
-              agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              contextFingerprint: executionContext.contextFingerprint,
+            if (observedExternalSessionId === null) {
+              observedExternalSessionId = result.threadId;
+              await this.recordProviderSessionObserved({
+                sessionId,
+                runId: nextRunId,
+                sourceMessageId: claimedMessage.id,
+                role: trigger.role,
+                engine: executionContext.engine,
+                externalSessionId: result.threadId,
+                observedAt: this.nowIso(),
+                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+                contextFingerprint: executionContext.contextFingerprint,
               });
+              await this.recordAgentSessionLink({
+                sessionId,
+                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+                role: trigger.role,
+                engine: executionContext.engine,
+                externalSessionId: result.threadId,
+                profileFingerprint: executionContext.profileFingerprint,
+                contextFingerprint: executionContext.contextFingerprint,
+                linkedAt: this.nowIso(),
+              });
+            }
+            if (executionTraceExternalSessionId === null) {
+              executionTraceExternalSessionId = result.threadId;
+              await this.recordExecutionSessionLink({
+                sessionId,
+                runId: nextRunId,
+                sourceMessageId: claimedMessage.id,
+                role: trigger.role,
+                engine: executionContext.engine,
+                externalSessionId: result.threadId,
+                startedAt: this.nowIso(),
+                profileFingerprint: executionContext.profileFingerprint,
+                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+                contextFingerprint: executionContext.contextFingerprint,
+              });
+            }
           }
 
-          if (analysisGateEnabled && trigger.role === primaryAgent && result.ok) {
+          if (
+            analysisGateEnabled
+            && trigger.role === primaryAgent
+            && result.ok
+            && result.completionKind !== "terminal-tool-result"
+          ) {
             const parsedControl = parseSessionAnalysisResponse(result.finalText);
             if (parsedControl.control?.action === "proposal") {
               await this.updateSessionAnalysisGate({
@@ -2766,6 +2806,7 @@ export class LocalConsoleRuntime {
             await this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, result);
             return;
           }
+          const terminalToolOnly = result.completionKind === "terminal-tool-result";
           await this.finishRunLifecycle(nextRunId, "completed");
           if (recoveryStore !== null && executionContext.engine === "codex") {
             await this.storeCall("local-console-store-record-codex-usage", () =>
@@ -2779,7 +2820,7 @@ export class LocalConsoleRuntime {
 
           const sourceDirectoryAvailable = await this.sessionProjectDirectoryAvailable(sessionId);
 
-          const childSessionCard = sourceDirectoryAvailable && trigger.role === "ceo"
+          const childSessionCard = sourceDirectoryAvailable && !terminalToolOnly && trigger.role === "ceo"
             ? await this.executeLocalCeoChildSessionOrchestrationIfNeeded({
               sessionId,
               runId: nextRunId,
@@ -2794,17 +2835,29 @@ export class LocalConsoleRuntime {
           }
 
           try {
-            await this.storeCall("local-console-store-record-agent-response", () =>
-              this.options.store.recordAgentResponse({
-                userMessageId: claimedMessage.id,
-                sessionId,
-                role: trigger.role,
-                body: result.finalText,
-                runId: nextRunId,
-                runDir: result.runDir,
-                now: this.nowIso(),
-              }),
-            );
+            if (terminalToolOnly) {
+              await this.storeCall("local-console-store-record-tool-only-complete", () =>
+                this.options.store.recordMessageProcessed({
+                  userMessageId: claimedMessage.id,
+                  sessionId,
+                  runId: nextRunId,
+                  runDir: result.runDir,
+                  now: this.nowIso(),
+                }),
+              );
+            } else {
+              await this.storeCall("local-console-store-record-agent-response", () =>
+                this.options.store.recordAgentResponse({
+                  userMessageId: claimedMessage.id,
+                  sessionId,
+                  role: trigger.role,
+                  body: result.finalText,
+                  runId: nextRunId,
+                  runDir: result.runDir,
+                  now: this.nowIso(),
+                }),
+              );
+            }
             await this.recordAgentTimelineCursor({
               sessionId,
               runId: nextRunId,
@@ -3403,7 +3456,7 @@ export class LocalConsoleRuntime {
           sessionId: input.sessionId,
           intentId: recoveryPlan.intent!.intentId,
           resumedByRunId: runId,
-          mode: recoveryPlan.kind === "resume" ? "resume" : "unavailable",
+          mode: recoveryPlan.kind === "resume" ? "resume" : "full-fallback",
           reason: recoveryPlan.reason,
           consumedAt: this.nowIso(),
         }));
@@ -3458,7 +3511,7 @@ export class LocalConsoleRuntime {
       attempt: workerLifecycle.attempt,
       engine: executionContext.engine,
       profile: executionContext.profile,
-      processOutputAvailable: executionContext.engine === "codex",
+      processOutputAvailable: true,
       terminalRecorded: false,
       controller,
       threadId: null,
@@ -3488,6 +3541,7 @@ export class LocalConsoleRuntime {
 
     let progressFactTail = Promise.resolve();
     let observedExternalSessionId: string | null = null;
+    let executionTraceExternalSessionId: string | null = null;
     try {
       if (await releaseDirectWorkerBeforeProviderWhenStopping()) {
         return;
@@ -3579,6 +3633,21 @@ export class LocalConsoleRuntime {
                 contextFingerprint: executionContext.contextFingerprint,
                 linkedAt: this.nowIso(),
               });
+            },
+            onExecutionTraceReady: async ({ engine, externalSessionId }) => {
+              if (observedExternalSessionId !== externalSessionId) {
+                throw new Error("execution-trace-ready-session-mismatch");
+              }
+              if (
+                executionTraceExternalSessionId !== null
+                && executionTraceExternalSessionId !== externalSessionId
+              ) {
+                throw new Error("execution-trace-ready-session-conflict");
+              }
+              executionTraceExternalSessionId = externalSessionId;
+              if (continuingSameRun) {
+                return;
+              }
               await this.recordExecutionSessionLink({
                 sessionId: input.sessionId,
                 runId,
@@ -3613,44 +3682,49 @@ export class LocalConsoleRuntime {
 
       if (
         result.ok
-        && observedExternalSessionId === null
+        && executionContext.engine === "kimi"
         && result.threadId !== null
         && !continuingSameRun
       ) {
-        observedExternalSessionId = result.threadId;
-        await this.recordProviderSessionObserved({
-          sessionId: input.sessionId,
-          runId,
-          sourceMessageId: input.sourceMessage.id,
-          role: input.role,
-          engine: executionContext.engine,
-          externalSessionId: result.threadId,
-          observedAt: this.nowIso(),
-          agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-          contextFingerprint: executionContext.contextFingerprint,
-        });
-        await this.recordAgentSessionLink({
-          sessionId: input.sessionId,
-          agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-          role: input.role,
-          engine: executionContext.engine,
-          externalSessionId: result.threadId,
-          profileFingerprint: executionContext.profileFingerprint,
-          contextFingerprint: executionContext.contextFingerprint,
-          linkedAt: this.nowIso(),
-        });
-        await this.recordExecutionSessionLink({
-          sessionId: input.sessionId,
-          runId,
-          sourceMessageId: input.sourceMessage.id,
-          role: input.role,
-          engine: executionContext.engine,
-          externalSessionId: result.threadId,
-          startedAt: this.nowIso(),
-          profileFingerprint: executionContext.profileFingerprint,
-          agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-          contextFingerprint: executionContext.contextFingerprint,
-        });
+        if (observedExternalSessionId === null) {
+          observedExternalSessionId = result.threadId;
+          await this.recordProviderSessionObserved({
+            sessionId: input.sessionId,
+            runId,
+            sourceMessageId: input.sourceMessage.id,
+            role: input.role,
+            engine: executionContext.engine,
+            externalSessionId: result.threadId,
+            observedAt: this.nowIso(),
+            agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+            contextFingerprint: executionContext.contextFingerprint,
+          });
+          await this.recordAgentSessionLink({
+            sessionId: input.sessionId,
+            agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+            role: input.role,
+            engine: executionContext.engine,
+            externalSessionId: result.threadId,
+            profileFingerprint: executionContext.profileFingerprint,
+            contextFingerprint: executionContext.contextFingerprint,
+            linkedAt: this.nowIso(),
+          });
+        }
+        if (executionTraceExternalSessionId === null) {
+          executionTraceExternalSessionId = result.threadId;
+          await this.recordExecutionSessionLink({
+            sessionId: input.sessionId,
+            runId,
+            sourceMessageId: input.sourceMessage.id,
+            role: input.role,
+            engine: executionContext.engine,
+            externalSessionId: result.threadId,
+            startedAt: this.nowIso(),
+            profileFingerprint: executionContext.profileFingerprint,
+            agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
+            contextFingerprint: executionContext.contextFingerprint,
+          });
+        }
       }
 
       await this.recordProviderInvocation({
@@ -3686,6 +3760,7 @@ export class LocalConsoleRuntime {
         }
         return;
       }
+      const terminalToolOnly = result.completionKind === "terminal-tool-result";
       await this.finishRunLifecycle(runId, "completed");
       if (recoveryStore !== null && executionContext.engine === "codex") {
         await this.storeCall("local-console-store-record-worker-codex-usage", () =>
@@ -3698,7 +3773,7 @@ export class LocalConsoleRuntime {
       }
 
       const sourceDirectoryAvailable = await this.sessionProjectDirectoryAvailable(input.sessionId);
-      const childSessionCard = sourceDirectoryAvailable && input.role === "ceo"
+      const childSessionCard = sourceDirectoryAvailable && !terminalToolOnly && input.role === "ceo"
         ? await this.executeLocalCeoChildSessionOrchestrationIfNeeded({
             sessionId: input.sessionId,
             runId,
@@ -3719,7 +3794,17 @@ export class LocalConsoleRuntime {
         );
       }
 
-      if (input.origin === "user-direct") {
+      if (terminalToolOnly) {
+        await this.storeCall("local-console-store-record-worker-tool-only-complete", () =>
+          this.options.store.recordMessageProcessed({
+            userMessageId: input.sourceMessage.id,
+            sessionId: input.sessionId,
+            runId,
+            runDir: result.runDir,
+            now: this.nowIso(),
+          }),
+        );
+      } else if (input.origin === "user-direct") {
         await this.storeCall("local-console-store-record-direct-worker-response", () =>
           this.options.store.recordAgentResponse({
             userMessageId: input.sourceMessage.id,

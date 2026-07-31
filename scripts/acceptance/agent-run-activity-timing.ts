@@ -61,7 +61,6 @@ try {
   }
   await page.getByText("pnpm test").waitFor();
   await page.getByText("正在读取").waitFor();
-  await page.getByText("完整输出不可用").waitFor();
   await page.getByText("耗时 02:18").waitFor();
   await page.getByLabel(/耗时 02:18，完成于/u).focus();
 
@@ -83,8 +82,8 @@ try {
   if (codexOutputButtons !== 1) {
     throw new Error(`Expected one Codex output button, received ${String(codexOutputButtons)}`);
   }
-  if (kimiOutputButtons !== 0) {
-    throw new Error(`Expected no Kimi output button, received ${String(kimiOutputButtons)}`);
+  if (kimiOutputButtons !== 1) {
+    throw new Error(`Expected one Kimi output button, received ${String(kimiOutputButtons)}`);
   }
   if (stopButtons !== 2) throw new Error(`Expected one stop target per active Agent, received ${String(stopButtons)}`);
   if (visibleText.includes("%")) throw new Error("The Agent activity surface must not show a percentage");
@@ -123,7 +122,7 @@ try {
       narrowDarkReducedMotion: true,
       terminalDuration: "耗时 02:18",
       completionTimeAccessible: true,
-      kimiOutputDegradedInPlace: true,
+      kimiOutputAvailable: true,
     },
     layout,
     narrowLayout,

@@ -36,10 +36,38 @@ describe("ProcessTab", () => {
       </div>,
     );
 
-    expect(screen.getByText("Codex 过程记录文件已不可用")).toBeInTheDocument();
+    expect(screen.getByText("过程记录已不可用")).toBeInTheDocument();
     expect(screen.getByText("这一步的最终回复仍保留在主对话区。")).toBeInTheDocument();
     expect(screen.queryByText("标准输出")).not.toBeInTheDocument();
     expect(screen.queryByText("保留记录")).not.toBeInTheDocument();
+  });
+
+  it("retains the provider label when an attempt has no execution link", () => {
+    render(
+      <div data-testid="scroll-parent">
+        <ProcessTab
+          title="Kimi 验收"
+          state={{
+            status: "ready",
+            output: {
+              sessionId: "session-a",
+              requestedRunId: "run-kimi-empty",
+              role: "kimi-dev",
+              status: "unavailable",
+              unavailableReason: "link-missing",
+              unavailableEngine: "kimi",
+              attempts: [],
+              events: [],
+              previousCursor: null,
+              appendCursor: null,
+              atLatest: true,
+            },
+          }}
+        />
+      </div>,
+    );
+
+    expect(screen.getByText("Kimi 过程记录已不可用")).toBeInTheDocument();
   });
 
   it("renders raw tool fields, exact protocol metadata, and unknown payload", () => {
@@ -200,6 +228,115 @@ describe("ProcessTab", () => {
     expect(screen.getByText("USER-EXACT")).toBeVisible();
     expect(screen.getByText("gpt-5")).toBeVisible();
     expect(load).not.toHaveBeenCalled();
+  });
+
+  it("renders provider-native Claude sections, session identity, and thinking", () => {
+    const { rerender } = render(
+      <ProcessEvent
+        sessionId="session-a"
+        invocationState={{
+          status: "ready",
+          invocation: {
+            status: "available",
+            sessionId: "session-a",
+            runId: "run-claude",
+            engine: "claude",
+            sections: [
+              {
+                key: "user",
+                label: "USER",
+                source: "claude-transcript",
+                status: "recorded",
+                contents: ["CLAUDE_USER_MARKER"],
+              },
+              {
+                key: "assistant",
+                label: "ASSISTANT",
+                source: "claude-transcript",
+                status: "not-recorded",
+                contents: [],
+              },
+            ],
+            prompts: {
+              system: { status: "not-recorded", contents: [] },
+              developer: { status: "not-recorded", contents: [] },
+              user: { status: "recorded", contents: ["CLAUDE_USER_MARKER"] },
+            },
+            metadata: {
+              model: "claude-sonnet",
+              effort: "high",
+              provider: "Anthropic",
+              cliVersion: "2.1.220",
+              cwd: "/tmp/project",
+              externalSessionId: "claude-session",
+              identityLabel: "session",
+              threadId: "claude-session",
+              metadataSource: "provider-native",
+            },
+          },
+        }}
+        event={{
+          key: "attempt-claude",
+          kind: "attempt-header",
+          runId: "run-claude",
+          attempt: 1,
+          role: "dev",
+          engine: "claude",
+          model: null,
+          effort: null,
+          provider: null,
+          cliVersion: null,
+          metadataSource: "provider-native",
+          externalSessionId: "claude-session",
+          identityLabel: "session",
+          threadId: "claude-session",
+          startedAt: "2026-07-30T00:00:00.000Z",
+          status: "completed",
+          elapsedMs: 1_000,
+          completedAt: "2026-07-30T00:00:01.000Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("claude")).toBeVisible();
+    expect(screen.getByText("claude-session")).toBeVisible();
+    fireEvent.click(screen.getByText("USER"));
+    expect(screen.getByText("CLAUDE_USER_MARKER")).toBeVisible();
+    fireEvent.click(screen.getByText("ASSISTANT"));
+    expect(screen.getByText("该引擎未记录此层。")).toBeVisible();
+
+    rerender(
+      <ProcessEvent
+        sessionId="session-a"
+        event={{
+          key: "thinking-claude",
+          engine: "claude",
+          kind: "thinking",
+          timestamp: "2026-07-30T00:00:00.000Z",
+          protocolType: "assistant · thinking",
+          rawPayload: "{\"thinking\":\"CLAUDE_THINKING_MARKER\"}",
+          thinking: "CLAUDE_THINKING_MARKER",
+        }}
+      />,
+    );
+    expect(screen.getByText("CLAUDE_THINKING_MARKER")).toBeVisible();
+    expect(screen.getByText(/assistant · thinking/u)).toBeVisible();
+
+    rerender(
+      <ProcessEvent
+        sessionId="session-a"
+        event={{
+          key: "thinking-claude-redacted",
+          engine: "claude",
+          kind: "thinking",
+          timestamp: "2026-07-30T00:00:01.000Z",
+          protocolType: "assistant · thinking",
+          rawPayload: "{\"type\":\"thinking\"}",
+          thinking: "",
+        }}
+      />,
+    );
+    expect(screen.getByText("该引擎未记录可展示的思考文本")).toBeVisible();
   });
 
   it("keeps prompt state across parent rerenders and retries with the latest callback", () => {

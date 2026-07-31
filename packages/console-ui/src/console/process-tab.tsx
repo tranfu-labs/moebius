@@ -30,12 +30,14 @@ export interface OperatorProcessAttemptMeta {
   runId: string;
   attempt: number;
   role: string;
-  engine: "codex";
+  engine: "codex" | "claude" | "kimi";
   model: string | null;
   effort: string | null;
   provider: string | null;
   cliVersion: string | null;
-  metadataSource: "rollout" | "immutable-context" | "not-recorded";
+  metadataSource: "rollout" | "provider-native" | "immutable-context" | "not-recorded";
+  externalSessionId?: string;
+  identityLabel?: "thread" | "session";
   threadId: string;
   startedAt: string;
   status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
@@ -49,6 +51,7 @@ export interface OperatorProcessOutput {
   role: string | null;
   status: "running" | "settled" | "unavailable";
   unavailableReason: string | null;
+  unavailableEngine?: "codex" | "claude" | "kimi" | null;
   attempts: OperatorProcessAttemptMeta[];
   events: OperatorProcessTimelineEvent[];
   previousCursor: string | null;
@@ -289,7 +292,13 @@ export function ProcessTab({
         <ProcessNotice>{t("console.process.loadFailed", { error: state.message })}</ProcessNotice>
       ) : state.output.status === "unavailable" ? (
         <ProcessNotice>
-          <span className="block font-medium text-ink">{t("console.process.unavailable")}</span>
+          <span className="block font-medium text-ink">
+            {state.output.unavailableEngine == null
+              ? t("console.process.unavailable")
+              : t("console.process.providerUnavailable", {
+                  provider: processProviderName(state.output.unavailableEngine),
+                })}
+          </span>
           <span className="mt-1 block">{t("console.process.replyPreserved")}</span>
         </ProcessNotice>
       ) : events.length === 0 ? (
@@ -351,6 +360,10 @@ export function ProcessTab({
       ) : null}
     </section>
   );
+}
+
+function processProviderName(engine: "codex" | "claude" | "kimi"): string {
+  return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : "Kimi";
 }
 
 export function nextProcessTabTitle(

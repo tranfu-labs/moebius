@@ -1140,7 +1140,7 @@ describe("OperatorConsole", () => {
       "px-8",
     );
     expect(titleHeader).not.toHaveClass("absolute", "pt-12", "window-drag-region");
-    expect(title).toHaveClass("w-full", "max-w-[760px]", "text-left");
+    expect(title).toHaveClass("w-full", "max-w-[840px]", "text-left");
     expect(composer).toHaveClass("w-full", "max-w-[840px]");
     expect(composer).not.toHaveClass("max-w-[720px]");
     expect(composerHost).toHaveClass("px-8");
@@ -2232,7 +2232,7 @@ describe("OperatorConsole", () => {
 
     const panel = screen.getByTestId("right-sidebar");
     expect(within(panel).getByRole("tab", { name: "成员未知" })).toHaveAttribute("title", "成员未知");
-    expect(within(panel).getByText("Codex 过程记录文件已不可用")).toBeVisible();
+    expect(within(panel).getByText("过程记录已不可用")).toBeVisible();
     expect(within(panel).getByText("这一步的最终回复仍保留在主对话区。")).toBeVisible();
     expect(panel).not.toHaveTextContent("fallback /tmp/run-missing");
   });
@@ -2348,7 +2348,7 @@ describe("OperatorConsole", () => {
     expect(onUpdateClaude).toHaveBeenCalledOnce();
   });
 
-  it("explains Kimi process-output unavailability on a terminal outcome without an empty outlet", () => {
+  it("keeps the Kimi process-output entry even when a legacy timing fact says unavailable", () => {
     renderConsole({
       messages: [
         message({
@@ -2375,9 +2375,10 @@ describe("OperatorConsole", () => {
     });
 
     expect(screen.getByText("这一步没跑起来")).toBeVisible();
-    expect(screen.getByText("完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录")).toBeVisible();
     expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "完整输出" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
+    expect(screen.queryByText("完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录"))
+      .not.toBeInTheDocument();
   });
 
   it.each([
@@ -2386,6 +2387,7 @@ describe("OperatorConsole", () => {
     ["kimi-cli-spawn-failed", "Kimi CLI 启动失败。请确认安装完整后重试。"],
     ["kimi-cli-exited", "Kimi CLI 启动后提前退出。请先在终端运行 Kimi 检查登录或配置，然后重试。"],
     ["kimi-acp-timeout", "Kimi CLI 启动后没有及时响应。请检查 Kimi 状态后重试。"],
+    ["kimi-empty-response", "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。"],
   ])("shows the safe Kimi failure explanation for %s", (error, body) => {
     renderConsole({
       messages: [

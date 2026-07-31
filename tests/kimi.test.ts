@@ -57,9 +57,12 @@ function fakeTransport(input: {
   setResponses?: unknown[];
   waitForUpdate?: boolean;
   sessionId?: string | null;
+  promptResult?: unknown;
+  sessionUpdates?: unknown[];
 } = {}): KimiAcpTransport & { requests: Array<{ method: string; params: unknown }> } {
   const requests: Array<{ method: string; params: unknown }> = [];
   const setResponses = [...(input.setResponses ?? [])];
+  let sessionUpdateListener: ((update: unknown) => void) | null = null;
   return {
     requests,
     async request(method, params) {
@@ -86,7 +89,12 @@ function fakeTransport(input: {
         };
       }
       if (method === "session/set_config_option") return setResponses.shift() ?? {};
-      if (method === "session/prompt") return { finalText: "Kimi 完成" };
+      if (method === "session/prompt") {
+        for (const update of input.sessionUpdates ?? []) {
+          sessionUpdateListener?.(update);
+        }
+        return input.promptResult ?? { finalText: "Kimi 完成" };
+      }
       throw new Error(`unexpected ${method}`);
     },
     notify: vi.fn(),
@@ -97,7 +105,12 @@ function fakeTransport(input: {
           ? { configOptions: input.sessionOptions ?? null }
         : null,
     ),
-    onSessionUpdate: () => () => undefined,
+    onSessionUpdate: (listener) => {
+      sessionUpdateListener = listener;
+      return () => {
+        sessionUpdateListener = null;
+      };
+    },
     close: vi.fn().mockResolvedValue(undefined),
     interrupt: vi.fn(),
     terminate: vi.fn(),
@@ -748,6 +761,181 @@ describe("Kimi ACP driver", () => {
       "session/new",
       "session/prompt",
     ]);
+  });
+
+  it("rejects a bare end_turn with a stable empty-response error after preserving session identity", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({ promptResult: { stopReason: "end_turn" } });
+    const observed = vi.fn();
+    const traceReady = vi.fn();
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "无需回答",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      onSessionStarted: observed,
+      onExecutionTraceReady: traceReady,
+    })).rejects.toMatchObject({
+      code: "KIMI_EMPTY_RESPONSE",
+      safeMessage: "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。",
+      diagnostics: {
+        stopReason: "end_turn",
+        visibleTextBytes: 0,
+        terminalToolCount: 0,
+      },
+    });
+    expect(observed).toHaveBeenCalledWith("kimi-session-1");
+    expect(traceReady).not.toHaveBeenCalled();
+  });
+
+  it("does not treat whitespace, thought, plan, usage, config or an unfinished tool as terminal evidence", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({
+      promptResult: { stopReason: "end_turn" },
+      sessionUpdates: [
+        { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "  \n " } },
+        { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } },
+        { sessionUpdate: "plan", entries: [] },
+        { sessionUpdate: "usage_update", used: 1, size: 10 },
+        { sessionUpdate: "config_option_update", configId: "mode", value: "auto" },
+        { sessionUpdate: "unrecognized_update", _meta: { terminal: true } },
+        {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "pending-tool",
+          status: "in_progress",
+        },
+      ],
+    });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "inspect",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).rejects.toMatchObject({ code: "KIMI_EMPTY_RESPONSE" });
+  });
+
+  it.each(["completed", "failed"] as const)(
+    "accepts a %s terminal tool result as a legal textless completion",
+    async (status) => {
+      const root = await makeRunRoot();
+      const traceReady = vi.fn();
+      const transport = fakeTransport({
+        promptResult: { stopReason: "end_turn" },
+        sessionUpdates: [
+          {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "Write file",
+            status,
+          },
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-1",
+            status,
+          },
+        ],
+      });
+
+      await expect(runKimiAcpWithTransport(transport, {
+        prompt: "write the file",
+        runDir: root,
+        cwd: root,
+        profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        mode: { kind: "full" },
+        onExecutionTraceReady: traceReady,
+      })).resolves.toMatchObject({
+        ok: true,
+        finalText: "",
+        completionKind: "terminal-tool-result",
+        threadId: "kimi-session-1",
+      });
+      expect(traceReady).toHaveBeenCalledTimes(1);
+      expect(traceReady).toHaveBeenCalledWith("kimi-session-1");
+    },
+  );
+
+  it("accepts non-empty streamed Agent text and marks the trace ready once", async () => {
+    const root = await makeRunRoot();
+    const traceReady = vi.fn();
+    const transport = fakeTransport({
+      promptResult: { stopReason: "end_turn" },
+      sessionUpdates: [
+        {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Kimi streamed" },
+        },
+      ],
+    });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "answer",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      onExecutionTraceReady: traceReady,
+    })).resolves.toMatchObject({
+      ok: true,
+      finalText: "Kimi streamed",
+      completionKind: "visible-text",
+    });
+    expect(traceReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when trace readiness cannot be persisted", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({
+      promptResult: { stopReason: "end_turn" },
+      sessionUpdates: [
+        {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Kimi streamed" },
+        },
+      ],
+    });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "answer",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      onExecutionTraceReady: async () => {
+        throw new Error("trace store unavailable");
+      },
+    })).rejects.toThrow("trace store unavailable");
+  });
+
+  it("returns the safe public failure while keeping bounded empty-response diagnostics local", async () => {
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const transport = fakeTransport({ promptResult: { stopReason: "end_turn" } });
+    const result = await runKimiAcp({
+      prompt: "answer",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      runtimeHomePaths,
+      transportFactory: vi.fn().mockResolvedValue(transport),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "kimi-empty-response",
+      failure: {
+        code: "kimi-empty-response",
+        message: "Kimi 没有返回可用回复。请在终端直接运行 kimi 查看详细错误，然后重试。",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("HTTP 403");
+    const diagnostic = await fs.readFile(path.join(root, "kimi-stderr.log"), "utf8");
+    expect(diagnostic).toContain('"code":"KIMI_EMPTY_RESPONSE"');
+    expect(diagnostic).toContain('"stopReason":"end_turn"');
   });
 
   it("accepts a setting response that explicitly confirms both changed values", async () => {
@@ -1624,7 +1812,7 @@ describe("Kimi ACP driver", () => {
     expect(transport.close).toHaveBeenCalledTimes(1);
   });
 
-  it("fails closed when end_turn has no complete visible result", async () => {
+  it("classifies an empty end_turn as the stable empty-response failure", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport();
     const request = transport.request.bind(transport);
@@ -1639,13 +1827,12 @@ describe("Kimi ACP driver", () => {
       cwd: root,
       profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
       mode: { kind: "full" },
-    })).resolves.toMatchObject({
-      ok: false,
-      reason: "kimi-no-complete-result",
-      terminal: {
-        kind: "crashed",
-        safeCode: "kimi-no-complete-result",
-        partialText: "",
+    })).rejects.toMatchObject({
+      code: "KIMI_EMPTY_RESPONSE",
+      diagnostics: {
+        stopReason: "end_turn",
+        visibleTextBytes: 0,
+        terminalToolCount: 0,
       },
     });
   });

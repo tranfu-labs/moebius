@@ -47,6 +47,8 @@
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
 - 会话日志压缩：`pnpm exec tsx scripts/compact-session-facts.ts [路径...]`（默认体检数据根下的 `sessions/`，加 `--write` 才落盘；只在应用未运行时执行）
+- Provider 原生过程记录验收：`pnpm exec tsx scripts/acceptance/provider-native-process-traces.ts`（实际调用 Claude/Kimi CLI，断言原生 transcript/wire 在真实 Electron 页面中的展示、resume 同源语义与记录删除后的降级；evidence 写系统临时目录）
+- Kimi ACP 空响应验收：`pnpm exec tsx scripts/acceptance/kimi-empty-response.ts`（实际调用 Kimi CLI，以真实 Electron 页面断言空 `end_turn` 的安全失败、canonical resume、重启保持与过程记录不可用降级；evidence 写系统临时目录；额度状态不再复现时会明确报告前提不成立）
 - 定向测试：`pnpm exec vitest run tests/local-console-codex-resume.test.ts`
 - 测试：`pnpm test`（完整闸门）／`pnpm test --scope [基线]`（只跑受改动影响的测试）；类型检查：`pnpm typecheck`
 - lint/格式化：TODO: 尚未配置 ESLint / Prettier；改代码时至少跑测试与类型检查。
