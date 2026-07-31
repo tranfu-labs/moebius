@@ -29,33 +29,17 @@ Moebius gives that coordination to an Agent team.
 - **Let the team hand work forward.** Members can inspect each other’s work, request corrections, and return evidence to the Leader Agent.
 - **Keep the whole process visible.** Handoffs, tool runs, changes, failures, recovery, and final results stay in one conversation.
 
-You are no longer the message bus between several AI chats. You set the direction; the team keeps the work moving.
-
 ## How the team works
 
-```text
-Your goal
-   ↓
-Leader Agent
-   ↓ delegates, reviews, and routes
-Specialist Agents
-   ↓ implement, test, challenge, and revise
-Leader Agent
-   ↓ closes with the result and evidence
-You
-```
+<p align="center">
+  <img src="./assets/readme/team-loop.svg" width="100%" alt="A goal moves from you to the Leader Agent, through specialist handoffs and review, then returns with evidence for visible closeout">
+</p>
 
-### Teams, not rigid workflows
+**Teams, not rigid workflows.** Agents are defined in natural language: their responsibilities, judgment, collaboration boundaries, and handoff conditions. The team defines who owns the work; the path forms around the goal instead of forcing you to configure every step.
 
-Agents are defined in natural language: their responsibilities, judgment, collaboration boundaries, and handoff conditions. A team describes who is responsible for the work; the actual path forms around the goal instead of making you configure every step in advance.
+**One conversation, shared context.** The selected team stays bound to the conversation. Agents share the timeline, carry findings into the next handoff, and resume after interruptions without asking you to reconstruct the task.
 
-### One conversation, shared context
-
-The selected team stays bound to the conversation. Agents see the shared timeline, carry findings into the next handoff, and can resume after interruptions without asking you to reconstruct the task from scratch.
-
-### Quality has owners
-
-Specialists do not all produce parallel answers to the same prompt. A developer can implement, a reviewer can challenge the design, and QA can verify the behavior. Their evidence returns to the Leader Agent, who decides whether to continue, ask you, or close the work.
+**Quality has owners.** A developer can implement, a reviewer can challenge the design, and QA can verify the behavior. Their evidence returns to the Leader Agent, who decides whether to continue, ask you, or close the work.
 
 ## From download to your first goal
 
