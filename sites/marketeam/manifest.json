@@ -1,0 +1,26 @@
+{
+  "name": "Moebius",
+  "short_name": "Moebius",
+  "description": "桌面上的智能体指挥中心:一支智能体团队在同一条会话里并行推进你的目标,每一段改动全程看得见。",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#101010",
+  "theme_color": "#101010",
+  "icons": [
+    {
+      "src": "/assets/icon-192x192-20260730.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon-512x512-20260730.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/apple-touch-icon-20260730.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

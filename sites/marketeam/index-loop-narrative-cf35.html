@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moebius — 样张 G · 水墨长卷</title>
+<meta name="description" content="Moebius 是桌面上的智能体指挥中心:你只管发号施令,产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程看得见。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Moebius — 把整个开发团队,装进一次对话">
+<meta property="og:description" content="桌面上的智能体指挥中心:一支智能体团队在同一条会话里并行推进你的目标,每一段改动全程看得见。">
+<link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ============ Tokens — brand-spec.md v1.0 (dark) ============ */
+  :root{
+    --bg:      #101010;
+    --surface: #171717;
+    --raised:  #1c1c1c;
+    --fg:      #f4f4f4;
+    --muted:   #a1a1a1;
+    --faint:   #6e6e6e;
+    --border:  #262626;
+    --hover:   #242424;
+    --active:  #2d2d2d;
+    --accent:  #D9C2F0;
+    --ident-0: #E8B4C8; /* 粉 */
+    --ident-1: #F0C9A0; /* 杏 */
+    --ident-2: #BCD9F7; /* 蓝 */
+    --ident-3: #B8E3D2; /* 绿 */
+    --ident-4: #D9C2F0; /* 紫 */
+    --ident-5: #E8D1A8; /* 米黄 */
+    --success: #2ee03a;
+    --info:    #5fb3ff;
+    --amber:   #f0d050;
+    --orange:  #f77342;
+    --danger:  #f72332;
+    --tint-green: #172c19;
+    --tint-amber: #2b2612;
+    --tint-blue:  #19232d;
+    --tint-red:   #321c1e;
+    --font-display: "Inter Tight","Inter",-apple-system,"PingFang SC",sans-serif;
+    --font-body:    "Inter",-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+    --font-mono:    "SF Mono","SFMono-Regular","JetBrains Mono","Menlo","Consolas","DejaVu Sans Mono","Liberation Mono",ui-monospace,monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{
+    background:var(--bg); color:var(--fg);
+    font:16px/1.6 var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+  ::selection{ background:var(--active); }
+  a{ color:inherit; text-decoration:none; }
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 32px; }
+  .skip-link{
+    position:fixed; top:12px; left:12px; z-index:100;
+    padding:8px 12px; border-radius:8px; background:var(--fg); color:var(--bg);
+    transform:translateY(-160%); transition:transform .16s;
+  }
+  .skip-link:focus{ transform:translateY(0); }
+
+  /* ============ Team dots (signature) ============ */
+  .team-dots{ display:inline-flex; align-items:center; gap:4px; margin-left:10px; }
+  .team-dots i{ width:5px; height:5px; border-radius:50%; }
+  .team-dots i:nth-child(1){ background:var(--ident-0); }
+  .team-dots i:nth-child(2){ background:var(--ident-1); }
+  .team-dots i:nth-child(3){ background:var(--ident-2); }
+  .team-dots i:nth-child(4){ background:var(--ident-3); }
+  .team-dots i:nth-child(5){ background:var(--ident-4); }
+  .team-dots i:nth-child(6){ background:var(--ident-5); }
+  .fx-dot{ flex:none; display:inline-block; width:7px; height:7px; border-radius:50%; }
+
+  /* ============ Container guide lines ============ */
+  .vl{
+    position:fixed; top:0; bottom:0; width:1px; left:50%;
+    background:rgba(255,255,255,0.06);
+    pointer-events:none; z-index:0;
+  }
+  .vl-l{ transform:translateX(-560px); }
+  .vl-r{ transform:translateX(560px); }
+  .hero,.features,.manifesto,.trust,.climax,.cta,.footer{ position:relative; z-index:1; }
+
+  /* ============ Liquid glass ============ */
+  .liquid-glass{
+    background:rgba(255,255,255,0.01);
+    background-blend-mode:luminosity;
+    backdrop-filter:blur(4px);
+    position:relative; overflow:hidden;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);
+  }
+  .liquid-glass::before{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    padding:1.4px;
+    background:linear-gradient(180deg,
+      rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
+      rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    pointer-events:none;
+  }
+  .liquid-glass::after{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),
+      rgba(255,255,255,0.06), transparent 70%);
+    opacity:0; transition:opacity .3s;
+    pointer-events:none;
+  }
+  .liquid-glass:hover::after{ opacity:1; }
+
+  /* ============ Scroll reveal ============ */
+  .js .reveal{ opacity:0; transform:translateY(20px); transition:opacity .7s ease, transform .7s cubic-bezier(.2,.6,.2,1); }
+  .js .reveal.in{ opacity:1; transform:none; }
+
+  /* ============ Nav ============ */
+  .nav{
+    position:absolute; top:0; left:0; right:0; z-index:50;
+    border-bottom:1px solid transparent;
+  }
+  .nav-in{ display:flex; align-items:center; height:64px; gap:32px; }
+  .brand{ display:flex; align-items:center; gap:10px; font:600 15px var(--font-display); letter-spacing:-0.01em; }
+  .brand img{ display:block; width:22px; height:22px; border-radius:5px; }
+  .nav-links{ display:flex; gap:4px; margin-left:8px; }
+  .nav-links a{
+    font-size:13.5px; font-weight:500; color:var(--muted);
+    padding:7px 12px; border-radius:8px; transition:color .15s, background .15s;
+  }
+  .nav-links a:hover{ color:var(--fg); background:var(--hover); }
+  .nav-links a.active{ color:var(--fg); background:var(--hover); }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--accent); outline-offset:3px;
+  }
+  .nav-cta{ margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .nav-cta .ghost{ font-size:13.5px; font-weight:500; color:var(--muted); padding:7px 12px; border-radius:8px; }
+  .nav-cta .ghost:hover{ color:var(--fg); background:var(--hover); }
+
+  @keyframes navIn{ from{ opacity:0; transform:translateY(-8px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .nav-links a{ animation:navIn .5s cubic-bezier(.2,.6,.2,1) both; }
+    .nav-links a:nth-child(1){ animation-delay:.10s; }
+    .nav-links a:nth-child(2){ animation-delay:.15s; }
+    .nav-links a:nth-child(3){ animation-delay:.20s; }
+    .nav-links a:nth-child(4){ animation-delay:.25s; }
+  }
+
+  /* ============ Buttons ============ */
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    height:44px; padding:0 22px; border-radius:12px;
+    font:500 14.5px var(--font-body); letter-spacing:0.01em;
+    border:1px solid transparent; cursor:pointer;
+    transition:background .15s, border-color .15s, transform .15s, filter .15s;
+  }
+  .btn:hover{ transform:translateY(-1px); }
+  .btn:active{ transform:scale(.98); }
+  .btn-primary{ background:var(--fg); color:var(--bg); }
+  .btn-primary:hover{ background:#ffffff; filter:brightness(1.03); }
+  .btn-secondary{ background:var(--surface); color:var(--fg); border-color:var(--border); }
+  .btn-secondary:hover{ background:var(--raised); border-color:#333333; }
+  .btn-sm{ height:36px; padding:0 16px; border-radius:10px; font-size:13.5px; }
+
+  /* ============ Hero ============ */
+  .hero{
+    padding:132px 0 0; text-align:center; background:var(--bg);
+  }
+  .hero-eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    height:30px; padding:0 14px; border-radius:999px;
+    border:1px solid var(--border); background:var(--surface);
+    font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:0.02em;
+  }
+  .hero-eyebrow .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); }
+  .hero h1{
+    margin:28px auto 0; max-width:840px;
+    font:600 clamp(44px, 6.4vw, 84px)/1.06 var(--font-display);
+    letter-spacing:-0.03em;
+  }
+  /* metallic silver shimmer — second headline line */
+  .shimmer{
+    background-image:linear-gradient(90deg, var(--ident-0) 0%, var(--ident-1) 20%, var(--ident-2) 40%, var(--ident-3) 60%, var(--ident-4) 80%, var(--ident-5) 100%);
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+  }
+  /* selection would paint --active over the transparent gradient glyphs —
+     restore a solid fill while selected so the text stays readable */
+  .shimmer::selection{
+    -webkit-text-fill-color:var(--fg); color:var(--fg);
+    background:var(--active);
+  }
+  @keyframes shimmerSlide{ from{ background-position:-200% center; } to{ background-position:200% center; } }
+  .hero .sub{
+    margin:24px auto 0; max-width:560px;
+    font-size:18px; line-height:1.6; color:var(--muted);
+  }
+  .hero-ctas{ margin-top:36px; display:flex; justify-content:center; gap:12px; }
+  .hero-shot{ margin:72px auto 0; max-width:1184px; padding:0 32px; }
+
+  /* --- 水墨长卷场景:你的一句话 + 帷幄之内 --- */
+  .cast{ margin:48px auto 0; max-width:880px; }
+  .cast-label{ text-align:right; font-size:12px; font-weight:500; color:var(--muted); margin-bottom:6px; }
+  .cast-bubble{
+    margin-left:auto; width:fit-content; max-width:80%;
+    font-size:14.5px; line-height:1.55; color:var(--fg); text-align:left;
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:14px 14px 4px 14px; padding:10px 15px;
+  }
+  .cast img{ display:block; width:100%; height:auto; margin-top:4px; }
+  .cast-caption{ margin-top:6px; font-size:13px; color:var(--faint); text-align:center; }
+
+  @keyframes riseIn{ from{ opacity:0; transform:translateY(18px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .hero-eyebrow{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) both; }
+    .hero h1{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .08s both; }
+    .hero .sub{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .16s both; }
+    .hero .hero-ctas{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .36s both; }
+    .cast{ animation:riseIn .8s cubic-bezier(.2,.6,.2,1) .24s both; }
+    .hero-shot{ animation:riseIn .8s cubic-bezier(.2,.6,.2,1) .46s both; }
+  }
+
+  /* macOS window chrome around the hero screenshot */
+  .hero-shot-frame{
+    position:relative;
+    border:1px solid var(--border);
+    border-radius:18px; overflow:hidden;
+    background:rgba(255,255,255,0.02);
+    backdrop-filter:blur(8px);
+  }
+  .hero-shot-bar{
+    position:absolute; top:2.25%; left:18px; z-index:2;
+    display:flex; align-items:center;
+    transform:translateY(-50%);
+  }
+  .hero-shot-bar .tl{ flex:none; width:12px; height:12px; border-radius:50%; margin-right:8px; }
+  .hero-shot-bar .tl:nth-child(1){ background:#ff5f57; }
+  .hero-shot-bar .tl:nth-child(2){ background:#febc2e; }
+  .hero-shot-bar .tl:nth-child(3){ background:#28c840; }
+  .hero-shot-frame img{ display:block; width:100%; height:auto; }
+
+  /* ============ Sticky narrative features ============ */
+  .features{ padding:120px 0 0; }
+  .fs-grid{
+    display:grid;
+    grid-template-columns:minmax(0,7fr) minmax(0,5fr);
+    column-gap:72px;
+  }
+  .fs-grid > .f-visual{
+    grid-column:1; grid-row:1 / -1;
+    position:sticky; top:18vh; height:auto; max-height:72vh;
+    align-self:start;
+    display:flex; flex-direction:column;
+    opacity:0; transform:scale(.985) translateY(10px);
+    transition:opacity .5s ease, transform .5s ease;
+    pointer-events:none;
+  }
+  .fs-grid > .f-visual.active{ opacity:1; transform:none; pointer-events:auto; z-index:2; }
+  .fs-block{
+    grid-column:2;
+    min-height:85vh;
+    display:flex; flex-direction:column; justify-content:center;
+    opacity:.4; transition:opacity .4s ease;
+  }
+  .fs-block.active{ opacity:1; }
+
+  .f-index{
+    display:inline-flex; align-items:center; gap:8px;
+    font:500 12px var(--font-mono); letter-spacing:0.14em; color:var(--faint);
+  }
+  .f-text h2{
+    margin-top:16px;
+    font:600 clamp(28px, 3vw, 40px)/1.15 var(--font-display);
+    letter-spacing:-0.02em;
+  }
+  .f-text p{ margin-top:18px; font-size:16.5px; line-height:1.65; color:var(--muted); max-width:46ch; }
+  .f-points{ margin-top:26px; display:flex; flex-direction:column; gap:12px; }
+  .f-points li{
+    list-style:none; display:flex; gap:10px; align-items:baseline;
+    font-size:14.5px; color:var(--muted);
+  }
+  .f-points li::before{
+    content:""; flex:none; width:5px; height:5px; border-radius:50%;
+    background:var(--faint); transform:translateY(-2px);
+  }
+  .f-points li strong{ color:var(--fg); font-weight:500; }
+
+  .f-visual{
+    border:1px solid var(--border); border-radius:16px;
+    background:var(--surface); overflow:hidden;
+  }
+  /* shader border: animated mesh peeks out ~2px around the solid inner panel */
+  .f-shader{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .f-inner{
+    position:relative; z-index:1; flex:1; min-height:0; margin:0;
+    display:flex; flex-direction:column; overflow:hidden;
+    border-radius:14px; background:var(--surface);
+  }
+  .f-visual-head{
+    flex:none;
+    display:flex; align-items:center; gap:6px;
+    height:40px; padding:0 16px; border-bottom:1px solid var(--border);
+  }
+  .f-visual-head i{ width:9px; height:9px; border-radius:50%; background:var(--active); }
+  .f-visual-head span{
+    margin-left:8px; font:500 12px var(--font-mono); color:var(--faint); letter-spacing:0.02em;
+  }
+  .f-visual-body{ flex:1; padding:20px; overflow:hidden; }
+
+  /* --- mock: conversation --- */
+  .mk-msg{ display:flex; gap:10px; margin-bottom:16px; }
+  .mk-msg.user{ justify-content:flex-end; }
+  .mk-ava{
+    flex:none; width:24px; height:24px; border-radius:50%;
+    display:grid; place-items:center;
+    font:600 12px var(--font-body); color:#101010;
+  }
+  /* 角色头像与 dashboard 同一套 6 色粉彩身份色板,FNV-1a(角色名) mod 6 取色(见 brand-spec) */
+  .mk-ava.mgr{ background:#F0C9A0; } /* 开发经理 → tone-1 杏 */
+  .mk-ava.dev{ background:#D9C2F0; } /* 开发 → tone-4 紫 */
+  .mk-ava.qa{ background:#B8E3D2; }  /* 测试 → tone-3 绿 */
+  .mk-ava.you{ background:var(--fg); color:var(--bg); }
+  .mk-bubble{ max-width:78%; }
+  .mk-name{ font-size:12px; font-weight:500; color:var(--muted); margin-bottom:4px; }
+  .mk-msg.user .mk-name{ text-align:right; }
+  .mk-text{
+    font-size:13.5px; line-height:1.55; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:9px 13px;
+  }
+  .mk-text .mention{ color:var(--accent); font-weight:500; }
+  .mk-subtasks{ margin-top:10px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .mk-sub{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 13px; font-size:13px;
+    border-bottom:1px solid var(--border); background:var(--surface);
+  }
+  .mk-sub:last-child{ border-bottom:0; }
+  .mk-sub .t{ flex:1; color:var(--fg); }
+  .mk-pill{
+    display:inline-flex; align-items:center; gap:5px;
+    height:22px; padding:0 9px; border-radius:999px;
+    font-size:11.5px; font-weight:500;
+  }
+  .mk-pill.doing{ color:var(--amber); background:var(--tint-amber); animation:pillPulse 1.8s ease-in-out infinite; }
+  .mk-pill.done{ color:var(--success); background:var(--tint-green); }
+  .mk-pill.fail{ color:var(--danger); background:var(--tint-red); }
+  @keyframes pillPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+
+  /* --- mock: agents --- */
+  .mk-agent{
+    border:1px solid var(--border); border-radius:14px;
+    background:var(--raised); padding:16px; margin-bottom:12px;
+  }
+  .mk-agent:last-child{ margin-bottom:0; }
+  .mk-agent-top{ display:flex; align-items:center; gap:10px; }
+  .mk-agent-top .n{ font-size:14px; font-weight:500; }
+  .mk-agent-top .r{ font-size:12px; color:var(--faint); }
+  .mk-agent-top .mk-pill{ margin-left:auto; }
+  .mk-task{
+    margin-top:10px; display:inline-flex; align-items:center; gap:7px;
+    height:26px; padding:0 11px; border-radius:999px;
+    border:1px solid var(--border); font-size:12px; color:var(--muted);
+  }
+  .mk-load{ margin-top:12px; height:4px; border-radius:2px; background:var(--active); overflow:hidden; }
+  .mk-load i{ display:block; height:100%; border-radius:2px; }
+
+  /* --- mock: team picker --- */
+  .mk-req{
+    display:flex; gap:10px; align-items:baseline;
+    padding:10px 13px; margin-bottom:14px;
+    border:1px dashed var(--border); border-radius:12px;
+    font-size:13px; color:var(--fg);
+  }
+  .mk-req-label{ flex:none; font:500 11px var(--font-mono); letter-spacing:0.08em; color:var(--faint); }
+  .mk-agent.sel{ border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: decision --- */
+  .mk-decision{
+    margin-top:10px; border:1px solid var(--border); border-radius:12px;
+    padding:12px 13px; background:var(--surface);
+  }
+  .mk-decision .q{ font-size:13px; color:var(--fg); margin-bottom:10px; }
+  .mk-opts{ display:flex; gap:8px; }
+  .mk-opt{
+    flex:1; height:30px; display:grid; place-items:center;
+    border:1px solid var(--border); border-radius:8px;
+    font-size:12.5px; color:var(--muted);
+  }
+  .mk-opt.hot{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: analysis --- */
+  .mk-split{ display:grid; grid-template-columns:6fr 5fr; gap:14px; height:100%; }
+  .mk-col{ position:relative; min-width:0; }
+  .mk-col-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:12px; font:500 12px var(--font-mono); color:var(--faint);
+  }
+  .mk-dots{
+    width:26px; height:26px; border-radius:8px; border:1px solid var(--border);
+    display:grid; place-items:center; color:var(--muted);
+    font-size:13px; letter-spacing:1px; line-height:1; padding-bottom:6px;
+  }
+  .mk-menu{
+    position:absolute; top:32px; right:0; z-index:3;
+    width:176px; padding:5px;
+    border:1px solid var(--border); border-radius:12px;
+    background:var(--raised); box-shadow:0 12px 32px rgba(0,0,0,.4);
+  }
+  .mk-menu div{ padding:8px 10px; border-radius:8px; font-size:12.5px; color:var(--muted); }
+  .mk-menu .hot{
+    color:var(--accent); font-weight:500;
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .mk-side{
+    display:flex; flex-direction:column; min-width:0;
+    border-left:1px solid var(--border); padding-left:14px;
+  }
+  .mk-side-h{
+    font:500 11px var(--font-mono); letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:12px;
+  }
+  .mk-qa-q{
+    align-self:flex-end; max-width:90%; margin-bottom:10px;
+    font-size:12.5px; line-height:1.5; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:8px 11px;
+  }
+  .mk-qa-a{
+    font-size:12.5px; line-height:1.6; color:var(--muted);
+    border:1px solid var(--border); border-radius:12px;
+    padding:10px 12px; background:var(--surface);
+  }
+  .mk-qa-a strong{ color:var(--fg); font-weight:500; }
+  .mk-qa-in{
+    margin-top:auto; height:34px; display:flex; align-items:center;
+    padding:0 12px; border:1px solid var(--border); border-radius:999px;
+    font-size:12px; color:var(--faint);
+  }
+
+  /* ============ Manifesto band ============ */
+  .manifesto{
+    margin-top:110px;
+    border-bottom:1px solid var(--border);
+  }
+  .manifesto-in{
+    padding:96px 0;
+    display:grid; grid-template-columns:7fr 5fr;
+    column-gap:56px; align-items:end;
+  }
+  .manifesto .eyebrow{
+    grid-column:1/-1;
+    display:flex; align-items:center; gap:14px;
+    font:500 12px/1.5 var(--font-mono);
+    letter-spacing:0.14em; text-transform:uppercase;
+    color:rgba(244,244,244,.5);
+  }
+  .manifesto .eyebrow::before{
+    content:""; flex:none; width:32px; height:1px; background:currentColor;
+  }
+  .manifesto h2{
+    margin:28px 0 0;
+    font:600 clamp(36px, 4.6vw, 58px)/1.16 var(--font-display);
+    letter-spacing:-0.026em;
+  }
+  .manifesto .m-sub{
+    margin:0 0 5px; max-width:28ch; justify-self:end;
+    font-size:19px; line-height:1.65; color:var(--muted);
+  }
+  .manifesto .m-hl{ font-style:normal; font-weight:500; color:var(--accent); }
+
+  /* ============ Trust band ============ */
+  .trust{ margin-top:140px; border-top:1px solid var(--border); }
+  .trust-in{ padding:96px 0; }
+  .trust .eyebrow{
+    display:flex; align-items:center; gap:14px;
+    font:500 12px/1.5 var(--font-mono);
+    letter-spacing:0.14em; color:rgba(244,244,244,.5);
+  }
+  .trust .eyebrow::before{ content:""; flex:none; width:32px; height:1px; background:currentColor; }
+  .trust h2{
+    margin:24px 0 0;
+    font:600 clamp(28px, 3.4vw, 44px)/1.18 var(--font-display);
+    letter-spacing:-0.024em;
+  }
+  .trust-grid{
+    margin-top:48px;
+    display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:40px 56px;
+  }
+  .trust-item h3{
+    display:flex; align-items:center; gap:10px;
+    font:600 17px/1.4 var(--font-display); letter-spacing:-0.01em;
+  }
+  .trust-item p{ margin-top:10px; font-size:14.5px; line-height:1.65; color:var(--muted); max-width:44ch; }
+  @media (max-width:900px){ .trust-grid{ grid-template-columns:1fr; gap:28px; } }
+
+  /* ============ Contrast climax + name story ============ */
+  .climax{ margin-top:140px; border-top:1px solid var(--border); }
+  .climax-in{ padding:120px 0; text-align:center; }
+  .climax .cl-old{ font-size:16.5px; color:var(--faint); }
+  .climax h2{
+    margin:22px auto 0; max-width:820px;
+    font:600 clamp(34px, 4.6vw, 58px)/1.14 var(--font-display);
+    letter-spacing:-0.026em;
+  }
+  .climax .cl-name{ margin:56px auto 0; max-width:60ch; font-size:15px; line-height:1.9; color:var(--muted); }
+
+  /* ============ CTA band ============ */
+  .cta{ margin-top:140px; border-top:1px solid var(--border); }
+  .cta-in{ padding:120px 0; text-align:center; }
+  .cta h2{
+    font:600 clamp(32px, 4vw, 52px)/1.12 var(--font-display);
+    letter-spacing:-0.025em;
+  }
+  .cta p{ margin:18px auto 0; max-width:440px; color:var(--muted); font-size:16.5px; }
+  .cta .hero-ctas{ margin-top:32px; }
+
+  /* ============ Footer ============ */
+  .footer{ border-top:1px solid var(--border); }
+  .footer-in{
+    padding:56px 0 64px;
+    display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:32px;
+  }
+  .footer .brand{ margin-bottom:14px; }
+  .footer .tag{ font-size:13px; color:var(--faint); max-width:26ch; line-height:1.6; }
+  .fcol h4{
+    font-size:12px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:14px;
+  }
+  .fcol a{ display:block; font-size:13.5px; color:var(--muted); padding:5px 0; }
+  .fcol a:hover{ color:var(--fg); }
+  .footer-base{
+    border-top:1px solid var(--border); padding:20px 0;
+    display:flex; justify-content:space-between;
+    font-size:12.5px; color:var(--faint);
+  }
+
+  /* ============ Text reveal (word stagger, blur + rise) ============ */
+  .js .tr-w{
+    display:inline-block; opacity:0;
+    transform:translateY(45%); filter:blur(10px);
+    transition:opacity .7s cubic-bezier(.2,.6,.2,1),
+               transform .7s cubic-bezier(.2,.6,.2,1),
+               filter .7s ease;
+  }
+  .js .tr-in .tr-w{ opacity:1; transform:none; filter:blur(0); }
+
+  /* ============ Expanding arrow button (beui) ============
+     accent tile expands to cover the whole button on hover/focus;
+     label fades out, a trail of fading dotted chevrons staggers in */
+  .btn-exp{ position:relative; overflow:hidden; padding:0 20px 0 0; }
+  .exp-tile{
+    position:absolute; top:5px; bottom:5px; left:5px; z-index:1;
+    width:36px; border-radius:9px; overflow:hidden;
+    background:var(--bg); color:var(--fg);
+    transition:width .5s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-tile{ width:calc(100% - 10px); }
+  .exp-chev{ display:block; height:16px; width:auto; }
+  .exp-idle{
+    position:absolute; inset:0; display:grid; place-items:center;
+    transition:opacity .1s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-idle{ opacity:0; }
+  .exp-trail{
+    position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:space-around; padding:0 14px;
+  }
+  .exp-trail .exp-chev{
+    opacity:0; transform:translateX(-6px);
+    transition:opacity .18s cubic-bezier(.16,1,.3,1), transform .18s cubic-bezier(.16,1,.3,1);
+  }
+  .exp-trail .exp-chev:nth-child(1){ color:rgba(244,244,244,1); }
+  .exp-trail .exp-chev:nth-child(2){ color:rgba(244,244,244,.78); }
+  .exp-trail .exp-chev:nth-child(3){ color:rgba(244,244,244,.54); }
+  .exp-trail .exp-chev:nth-child(4){ color:rgba(244,244,244,.32); }
+  .exp-trail .exp-chev:nth-child(5){ color:rgba(244,244,244,.16); }
+  .btn-exp:hover .exp-trail .exp-chev{
+    opacity:1; transform:none;
+  }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(1){ transition-delay:.04s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(2){ transition-delay:.065s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(3){ transition-delay:.09s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(4){ transition-delay:.115s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(5){ transition-delay:.14s; }
+  .exp-label{
+    position:relative; z-index:0; margin-left:55px; white-space:nowrap;
+    transition:opacity .12s cubic-bezier(.16,1,.3,1), transform .12s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-label{ opacity:0; transform:translateX(6px); }
+
+  @media (max-width: 900px){
+    .fs-grid{ grid-template-columns:1fr; row-gap:28px; }
+    .fs-grid > .f-visual{
+      grid-column:auto; grid-row:auto;
+      position:relative; height:auto; align-self:auto;
+      opacity:1; transform:none; pointer-events:auto;
+      margin-top:64px;
+    }
+    .fs-grid > .f-visual:first-child{ margin-top:0; }
+    .fs-block{ grid-column:auto; min-height:0; opacity:1; }
+    .fs-block:not(:last-child){ margin-bottom:36px; }
+    .nav-links{ display:none; }
+    .nav-cta .ghost{ display:none; }
+    .btn{ white-space:nowrap; }
+    .hero-ctas{ flex-wrap:wrap; }
+    .footer-in{ grid-template-columns:1fr 1fr; }
+    .hero{ padding-top:80px; }
+    .manifesto-in{ padding:72px 0; grid-template-columns:1fr; row-gap:22px; }
+    .manifesto h2{ margin-top:2px; }
+    .manifesto .m-sub{ justify-self:start; margin:0; }
+  }
+  @media (max-width: 768px){
+    .vl{ display:none; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+    .shimmer{ animation:none; background-position:50% center; }
+    .js .reveal{ opacity:1; transform:none; }
+    .fs-block{ opacity:1; }
+    .fs-grid > .f-visual{ opacity:0; }
+    .fs-grid > .f-visual.active{ opacity:1; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- grain filter for the shimmer headline -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="c3-noise">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+    <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.35 0"/>
+    <feComposite in2="SourceGraphic" operator="in"/>
+    <feBlend in2="SourceGraphic" mode="multiply"/>
+  </filter>
+</svg>
+
+<!-- container guide lines -->
+<div class="vl vl-l" aria-hidden="true"></div>
+<div class="vl vl-r" aria-hidden="true"></div>
+
+<!-- ================= Nav ================= -->
+<nav class="nav" data-od-id="site-nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" data-od-id="brand" aria-label="回到 Moebius 首页顶部">
+      <img src="./assets/moebius-icon-64.png" width="22" height="22" alt="" aria-hidden="true" />
+      Moebius
+      <span class="team-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    </a>
+    <div class="nav-links" data-od-id="nav-links">
+      <a href="#f-agents">团队</a>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-diff">分析</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases" target="_blank" rel="noreferrer">更新日志</a>
+    </div>
+    <div class="nav-cta">
+      <a class="ghost" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="nav-download">下载 macOS 版</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+<!-- ================= Hero ================= -->
+<header class="hero" id="top" data-od-id="hero">
+  <div class="wrap">
+    <span class="hero-eyebrow"><i class="dot"></i>macOS · Apple Silicon · <span data-rel-ver>公测中</span><span data-rel-date></span></span>
+    <h1 data-text-reveal>把整个开发团队,<br><span class="shimmer">装进一次对话。</span></h1>
+    <p class="sub">你只管发号施令:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程看得见。</p>
+    <div class="cast" data-od-id="hero-cast" aria-label="水墨长卷:你发出一句指令,六位幕僚在卷中各就其位">
+      <div class="cast-label">你</div>
+      <div class="cast-bubble">官网落地页,今天下班前我要看到。</div>
+      <img src="./assets/team-ink-scroll.png" alt="水墨手卷:六位各佩一色的幕僚在书案前工作,居中紫带者为 Leader Agent,远处松枝与群山" width="1693" height="929" loading="eager">
+      <div class="cast-caption">听到了。运筹于一次对话,决胜于千里之外。</div>
+    </div>
+    <div class="hero-ctas" data-od-id="hero-ctas">
+      <a class="btn btn-primary btn-exp" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="hero-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">查看 GitHub 源码</a>
+    </div>
+  </div>
+  <div class="hero-shot" data-od-id="hero-shot">
+    <div class="hero-shot-frame">
+      <div class="hero-shot-bar">
+        <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+      </div>
+      <img src="./assets/preview-center.png" width="2880" height="2000" fetchpriority="high" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
+    </div>
+  </div>
+</header>
+
+<!-- ================= Manifesto band ================= -->
+<section class="manifesto" id="manifesto" data-od-id="manifesto">
+  <div class="wrap manifesto-in reveal">
+    <p class="eyebrow">Moebius 的方式</p>
+    <h2 data-text-reveal="view">不要一个个<br>管理 Agent。</h2>
+    <p class="m-sub">你只需要和 <em class="m-hl"><i class="fx-dot" style="background:var(--ident-4); margin-right:6px; transform:translateY(-1px)"></i>Leader Agent</em> 把事情聊清楚。</p>
+  </div>
+</section>
+
+
+
+<!-- ================= Sticky narrative features ================= -->
+<section class="features wrap" data-od-id="features">
+  <div class="fs-grid">
+
+    <div class="f-visual active" data-od-id="mock-team">
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>新对话 · 选择团队</span></div>
+      <div class="f-visual-body">
+        <div class="mk-req"><span class="mk-req-label">需求</span>帮我把落地页的空状态补上验收语句</div>
+        <div class="mk-agent sel">
+          <div class="mk-agent-top">
+            <div class="mk-ava dev">开</div>
+            <div><div class="n">开发团队</div><div class="r">开发经理 · 开发 · 测试</div></div>
+            <span class="mk-pill done">已匹配</span>
+          </div>
+          <div class="mk-task">擅长:产品落地、脚本、验收回归</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava mgr">文</div>
+            <div><div class="n">文案团队</div><div class="r">主编 · 撰稿 · 校对</div></div>
+          </div>
+          <div class="mk-task">擅长:品牌文案、内容排期</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava qa">增</div>
+            <div><div class="n">增长团队</div><div class="r">策划 · 投放 · 数据</div></div>
+          </div>
+          <div class="mk-task">擅长:活动页、A/B 实验</div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block active" id="f-agents" data-od-id="feature-team">
+      <span class="f-index"><i class="fx-dot" style="background:var(--ident-1)"></i>01</span>
+      <h2>一句话,配好一支团队</h2>
+      <p>你的每一个需求,都有对应最专业的团队。</p>
+      <ul class="f-points">
+        <li><strong>团队开箱即用</strong>——开发、文案、增长,按领域预置好角色</li>
+        <li><strong>按需求匹配</strong>——说出目标,为你推荐最合适的一支</li>
+        <li><strong>成员各司其职</strong>——专长写在卡片上,谁做什么一眼看清</li>
+      </ul>
+    </div>
+
+    <div class="f-visual" data-od-id="mock-conversation">
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化</span></div>
+      <div class="f-visual-body">
+        <div class="mk-msg user">
+          <div class="mk-bubble">
+            <div class="mk-name">你</div>
+            <div class="mk-text">落地页空状态太生硬,按验收标准补上,今天下班前我要看到。</div>
+          </div>
+          <div class="mk-ava you">你</div>
+        </div>
+        <div class="mk-msg">
+          <div class="mk-ava mgr">经</div>
+          <div class="mk-bubble">
+            <div class="mk-name">开发经理</div>
+            <div class="mk-text">收到,<span class="mention">@开发</span> 改文案,<span class="mention">@测试</span> 同步验收。有一处需要你定:</div>
+            <div class="mk-subtasks">
+              <div class="mk-sub"><span class="t">空状态文案</span><span class="mk-pill doing">进行中</span></div>
+              <div class="mk-sub"><span class="t">验收脚本</span><span class="mk-pill done">已结束</span></div>
+            </div>
+            <div class="mk-decision">
+              <div class="q">空状态配图,两版选一:</div>
+              <div class="mk-opts">
+                <span class="mk-opt hot">A · 极简线条</span>
+                <span class="mk-opt">B · 插画</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-conversation" data-od-id="feature-conversation">
+      <span class="f-index"><i class="fx-dot" style="background:var(--ident-4)"></i>02</span>
+      <h2>你只管提要求,团队自己推进</h2>
+      <p>敢提要求,是因为有人兜底。Leader Agent 会拆解并主动推进,遇到需要拍板的分叉,带着选项来问你。</p>
+      <ul class="f-points">
+        <li><strong>说人话就行</strong>——不拆任务、不排期,一句话下达目标</li>
+        <li><strong>进度主动汇报</strong>——每一步状态实时长在会话里</li>
+        <li><strong>决策摆到面前</strong>——需要拍板时,选项直接给你</li>
+      </ul>
+    </div>
+
+    <div class="f-visual" data-od-id="mock-analysis">
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化 · 分析</span></div>
+      <div class="f-visual-body">
+        <div class="mk-split">
+          <div class="mk-col">
+            <div class="mk-col-head"><span>会话</span><span class="mk-dots">•••</span></div>
+            <div class="mk-menu">
+              <div>重命名</div>
+              <div>导出记录</div>
+              <div class="hot">分析这段对话</div>
+              <div>归档</div>
+            </div>
+            <div class="mk-msg user">
+              <div class="mk-bubble">
+                <div class="mk-name">你</div>
+                <div class="mk-text">落地页空状态太生硬,按验收标准补上。</div>
+              </div>
+              <div class="mk-ava you">你</div>
+            </div>
+            <div class="mk-msg">
+              <div class="mk-ava mgr">经</div>
+              <div class="mk-bubble">
+                <div class="mk-name">开发经理</div>
+                <div class="mk-text">验收脚本第二次失败了,我先按旧选择器重试。</div>
+              </div>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-side-h">对话分析</div>
+            <div class="mk-qa-q">为什么测试环节慢了?</div>
+            <div class="mk-qa-a"><strong>卡在「空状态验收」:</strong>脚本两次失败,原因是选择器与新版 DOM 不匹配,建议让开发先修选择器再回归。</div>
+            <div class="mk-qa-in">提出你的疑问…</div>
+          </aside>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-diff" data-od-id="feature-analysis">
+      <span class="f-index"><i class="fx-dot" style="background:var(--ident-3)"></i>03</span>
+      <h2>哪里慢了,当面问</h2>
+      <p>在会话的更多菜单点击「分析这段对话」,在侧边栏直接提出你想要的疑问。</p>
+      <ul class="f-points">
+        <li><strong>一键分析</strong>——更多菜单里点一下,整段对话的得失自动梳理</li>
+        <li><strong>侧边栏直接问</strong>——哪里慢了、哪里偏了,想问就问</li>
+        <li><strong>优化成指令</strong>——分析结论可以直接转成下一轮安排</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- ================= Trust ================= -->
+<section class="trust" id="trust" data-od-id="trust">
+  <div class="wrap trust-in reveal">
+    <p class="eyebrow">放心把活交出去</p>
+    <h2>托付的前提,是每一条都可验证。</h2>
+    <div class="trust-grid">
+      <div class="trust-item">
+        <h3><i class="fx-dot" style="background:var(--ident-2)"></i>改动全程看得到</h3>
+        <p>每轮工作结束,一张结果卡片告诉你有几个文件发生改动;右侧栏一步打开,逐个文件看内容。</p>
+      </div>
+      <div class="trust-item">
+        <h3><i class="fx-dot" style="background:var(--ident-3)"></i>不动你的原始项目</h3>
+        <p>改动可以先发生在独立的工作空间副本里,不直接覆盖你的原始文件。</p>
+      </div>
+      <div class="trust-item">
+        <h3><i class="fx-dot" style="background:var(--ident-1)"></i>拿不准,先问你</h3>
+        <p>遇到需要拍板的分叉,团队带着选项来问你,不擅自替你做决定。</p>
+      </div>
+      <div class="trust-item">
+        <h3><i class="fx-dot" style="background:var(--ident-5)"></i>一切留在本地</h3>
+        <p>工程、文件和对话记录都在你的电脑上。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Contrast climax + name story ================= -->
+<section class="climax" id="story" data-od-id="climax">
+  <div class="wrap climax-in reveal">
+    <p class="cl-old">过去,「有一支开发团队」意味着招聘、排期、开会、汇报。</p>
+    <h2 data-text-reveal="view">现在,它是你桌面上的<br>一个窗口。</h2>
+    <p class="cl-name">莫比乌斯环只有一个面:沿着它走,会回到出发的地方。<br>一条对话也是——需求从你这里出发,穿过整个团队,带着成果回到你手上。</p>
+  </div>
+</section>
+
+<!-- ================= CTA ================= -->
+<section class="cta" data-od-id="cta">
+  <div class="wrap cta-in reveal">
+    <h2 data-text-reveal="view">让团队自己推进。</h2>
+    <p>下载 Moebius 的 macOS Apple Silicon 桌面端,把你的第一个目标交给 <span style="color:var(--fg); font-weight:500"><i class="fx-dot" style="background:var(--ident-4); margin-right:5px; transform:translateY(-1px)"></i>Leader Agent</span>。</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary btn-exp" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="cta-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">查看 GitHub 源码</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ================= Footer ================= -->
+<footer class="footer" data-od-id="footer">
+  <div class="wrap footer-in">
+    <div>
+      <a class="brand" href="#top" aria-label="回到 Moebius 首页顶部">
+        <img src="./assets/moebius-icon-64.png" width="22" height="22" alt="" aria-hidden="true" />
+        Moebius
+        <span class="team-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      </a>
+      <p class="tag">让团队自己推进。</p>
+    </div>
+    <div class="fcol">
+      <h4>产品</h4>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-agents">Agent 团队</a>
+      <a href="#f-diff">改动追踪</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases" target="_blank" rel="noreferrer">更新日志</a>
+    </div>
+    <div class="fcol">
+      <h4>资源</h4>
+      <a href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">GitHub 源码</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer">最新版本</a>
+      <a href="https://github.com/tranfu-labs/moebius/issues" target="_blank" rel="noreferrer">问题反馈</a>
+    </div>
+    <div class="fcol">
+      <h4>公司</h4>
+      <a href="https://github.com/tranfu-labs/moebius#readme" target="_blank" rel="noreferrer">关于 Moebius</a>
+      <a href="https://github.com/tranfu-labs/moebius/issues" target="_blank" rel="noreferrer">联系与反馈</a>
+      <a href="https://github.com/tranfu-labs/moebius/blob/main/LICENSE" target="_blank" rel="noreferrer">开源许可</a>
+    </div>
+  </div>
+  <div class="footer-base">
+    <div class="wrap" style="display:flex; justify-content:space-between; width:100%;">
+      <span>© 2026 Moebius</span>
+      <span>macOS 14+ · Apple Silicon</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var releaseApi = 'https://api.github.com/repos/tranfu-labs/moebius/releases/latest';
+  var downloadLinks = [].slice.call(document.querySelectorAll('[data-download]'));
+
+  fetch(releaseApi, { headers: { Accept:'application/vnd.github+json' } })
+    .then(function(response){
+      if (!response.ok) throw new Error('release lookup failed');
+      return response.json();
+    })
+    .then(function(release){
+      if (!release || release.draft || release.prerelease || !Array.isArray(release.assets)) return;
+      var verEl = document.querySelector('[data-rel-ver]');
+      if (verEl && typeof release.tag_name === 'string' && release.tag_name) verEl.textContent = release.tag_name;
+      var dateEl = document.querySelector('[data-rel-date]');
+      if (dateEl && typeof release.published_at === 'string') {
+        var pub = new Date(release.published_at);
+        if (!isNaN(pub)) dateEl.textContent = ' · ' + (pub.getMonth() + 1) + ' 月 ' + pub.getDate() + ' 日更新';
+      }
+      var dmg = release.assets.find(function(asset){
+        return asset && typeof asset.name === 'string' &&
+          /-mac-arm64\.dmg$/i.test(asset.name) &&
+          typeof asset.browser_download_url === 'string';
+      });
+      if (!dmg) return;
+      downloadLinks.forEach(function(link){ link.href = dmg.browser_download_url; });
+    })
+    .catch(function(){ /* Releases 页面仍是可用后备。 */ });
+
+  /* ---- scroll reveals ---- */
+  var reveals = [].slice.call(document.querySelectorAll('.reveal'));
+  if (!reduced && 'IntersectionObserver' in window) {
+    var ro = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('in'); ro.unobserve(e.target); }
+      });
+    }, { threshold: .12 });
+    reveals.forEach(function(el){
+      if (el.getBoundingClientRect().top < innerHeight * .92) el.classList.add('in');
+      else ro.observe(el);
+    });
+    /* safety net: never leave content hidden (e.g. full-page exports) */
+    setTimeout(function(){
+      reveals.forEach(function(el){ el.classList.add('in'); });
+      [].slice.call(document.querySelectorAll('[data-text-reveal]')).forEach(function(el){ el.classList.add('tr-in'); });
+    }, 1600);
+  } else {
+    reveals.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  /* ---- sticky narrative features ---- */
+  var blocks  = [].slice.call(document.querySelectorAll('.fs-block'));
+  var visuals = [].slice.call(document.querySelectorAll('.fs-grid > .f-visual'));
+  var navMap = {};
+  [].slice.call(document.querySelectorAll('.nav-links a[href^="#f-"]')).forEach(function(a){
+    navMap[a.getAttribute('href').slice(1)] = a;
+  });
+  function setActive(i){
+    blocks.forEach(function(b,j){ b.classList.toggle('active', j === i); });
+    visuals.forEach(function(v,j){ v.classList.toggle('active', j === i); });
+    Object.keys(navMap).forEach(function(id){
+      var on = id === blocks[i].id;
+      navMap[id].classList.toggle('active', on);
+      if (on) navMap[id].setAttribute('aria-current', 'true');
+      else navMap[id].removeAttribute('aria-current');
+    });
+  }
+  var ticking = false;
+  function update(){
+    ticking = false;
+    if (innerWidth <= 900) return;
+    var mid = innerHeight / 2, best = 0, bd = Infinity;
+    blocks.forEach(function(b,i){
+      var r = b.getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - mid);
+      if (d < bd) { bd = d; best = i; }
+    });
+    setActive(best);
+    /* outside the features narrative (hero / manifesto / cta) no nav item stays lit */
+    var inRange = blocks[0].getBoundingClientRect().top <= mid &&
+                  blocks[blocks.length - 1].getBoundingClientRect().bottom >= mid;
+    if (!inRange) Object.keys(navMap).forEach(function(id){
+      navMap[id].classList.remove('active');
+      navMap[id].removeAttribute('aria-current');
+    });
+  }
+  function onScroll(){ if (!ticking) { ticking = true; requestAnimationFrame(update); } }
+  addEventListener('scroll', onScroll, { passive:true });
+  addEventListener('resize', onScroll);
+  update();
+
+  /* ---- pointer-follow highlight on glass cards ---- */
+  if (matchMedia('(pointer: fine)').matches) {
+    [].slice.call(document.querySelectorAll('.liquid-glass')).forEach(function(card){
+      card.addEventListener('mousemove', function(e){
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    });
+  }
+
+  /* ---- text reveal: word/segment split with blur + rise ---- */
+  var revealEls = [].slice.call(document.querySelectorAll('[data-text-reveal]'));
+  if (!reduced && revealEls.length) {
+    var segmenter = ('Segmenter' in Intl) ? new Intl.Segmenter('zh', { granularity:'word' }) : null;
+    revealEls.forEach(function(el){
+      var nodes = [].slice.call(el.childNodes), idx = 0;
+      el.textContent = '';
+      nodes.forEach(function(node){
+        if (node.nodeType === 3) {
+          var parts = segmenter
+            ? Array.from(segmenter.segment(node.textContent)).map(function(s){ return s.segment; }).filter(function(s){ return s.trim(); })
+            : node.textContent.replace(/\s+/g,'').split('');
+          parts.forEach(function(p){
+            var s = document.createElement('span');
+            s.className = 'tr-w'; s.textContent = p;
+            s.style.transitionDelay = (idx++ * 55) + 'ms';
+            el.appendChild(s);
+          });
+        } else if (node.nodeName === 'BR') {
+          el.appendChild(node);
+        } else {
+          /* wrap (not re-class) so inner effects like .shimmer's grain filter survive */
+          var wrap = document.createElement('span');
+          wrap.className = 'tr-w';
+          wrap.style.transitionDelay = (idx++ * 55) + 'ms';
+          wrap.appendChild(node);
+          el.appendChild(wrap);
+        }
+      });
+      if (el.getAttribute('data-text-reveal') === 'view') {
+        if ('IntersectionObserver' in window) {
+          var to = new IntersectionObserver(function(entries){
+            entries.forEach(function(e){
+              if (e.isIntersecting) { el.classList.add('tr-in'); to.unobserve(el); }
+            });
+          }, { threshold:.35 });
+          to.observe(el);
+        } else { el.classList.add('tr-in'); }
+      } else {
+        el.style.animation = 'none'; /* word stagger replaces the block riseIn */
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.classList.add('tr-in'); }); });
+      }
+    });
+  }
+
+  /* ---- WebGL shader border on feature visuals (domain-warped fbm mesh) ---- */
+  (function initShaders(){
+    var canvases = [].slice.call(document.querySelectorAll('.f-shader'));
+    if (!canvases.length) return;
+    var VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+    var FS = [
+      'precision highp float;',
+      'uniform vec2 u_res;uniform float u_time;',
+      'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}',
+      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+      ' return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}',
+      'float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/u_res;',
+      ' vec2 p=uv*vec2(u_res.x/u_res.y,1.)*1.7;',
+      ' float t=u_time*.05;',
+      ' vec2 q=vec2(fbm(p+t),fbm(p+vec2(5.2,1.3)-t*.7));',
+      ' vec2 r=vec2(fbm(p+2.4*q+vec2(1.7,9.2)+t*.4),fbm(p+2.4*q+vec2(8.3,2.8)-t*.3));',
+      ' float f=fbm(p+2.6*r);',
+      ' vec3 base=vec3(.063,.063,.063);',
+      ' vec3 purple=vec3(.753,.565,1.)*.32;',
+      ' vec3 blue=vec3(.373,.702,1.)*.22;',
+      ' vec3 col=base;',
+      ' col=mix(col,purple,smoothstep(.42,.95,f));',
+      ' col=mix(col,blue,smoothstep(.55,1.15,length(q)));',
+      ' col+=(hash(gl_FragCoord.xy)-.5)/255.;',        /* dither against banding */
+      ' gl_FragColor=vec4(col,1.);',
+      '}'
+    ].join('\n');
+    canvases.forEach(function(canvas, seed){
+      var gl = canvas.getContext('webgl', { antialias:false, alpha:false, powerPreference:'low-power' });
+      if (!gl) { canvas.remove(); return; } /* solid --surface ring remains as fallback */
+      function compile(type, src){
+        var sh = gl.createShader(type);
+        gl.shaderSource(sh, src); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { return null; }
+        return sh;
+      }
+      var vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, FS);
+      if (!vs || !fs) { canvas.remove(); return; }
+      var prog = gl.createProgram();
+      gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+      gl.useProgram(prog);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      var uRes = gl.getUniformLocation(prog, 'u_res');
+      var uTime = gl.getUniformLocation(prog, 'u_time');
+      var dpr = Math.min(devicePixelRatio || 1, 1.75);
+      function resize(){
+        var w = canvas.clientWidth, h = canvas.clientHeight;
+        if (!w || !h) return;
+        canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+      }
+      resize();
+      addEventListener('resize', resize);
+      function draw(t){ gl.uniform1f(uTime, t); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+      if (reduced) { draw(14.0 + seed * 40); return; } /* single frozen frame */
+      var visible = true, start = performance.now() - seed * 4000; /* desync the three meshes */
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function(entries){ visible = entries[0].isIntersecting; }).observe(canvas);
+      }
+      (function loop(now){
+        requestAnimationFrame(loop);
+        if (visible) draw((now - start) / 1000);
+      })(start);
+    });
+  })();
+})();
+</script>
+
+</body>
+</html>
