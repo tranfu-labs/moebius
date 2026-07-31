@@ -10,6 +10,7 @@ import {
 import { runClaude, type ClaudeRunOptions } from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
+import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
 export type LocalExecutionEngine = "codex" | "claude" | "kimi";
@@ -26,11 +27,13 @@ export interface LocalExecutionRunOptions {
   signal?: AbortSignal;
   imagePaths?: string[];
   idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
   maxDurationMs?: number;
   workspaceAccess?: "read-write" | "read-only";
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
+  onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onSessionStarted?: (input: {
     engine: LocalExecutionEngine;
     externalSessionId: string;
@@ -102,10 +105,12 @@ export function createLocalExecutionRunner(input: {
         mode: options.mode,
         signal: options.signal,
         idleTimeoutMs: options.idleTimeoutMs,
+        toolTimeoutMs: options.toolTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
+        onExecutionProgress: options.onExecutionProgress,
         onSessionStarted: async (sessionId) => observeSession("claude", sessionId),
       });
       assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
@@ -128,12 +133,14 @@ export function createLocalExecutionRunner(input: {
         signal: options.signal,
         imagePaths: options.imagePaths,
         idleTimeoutMs: options.idleTimeoutMs,
+        toolTimeoutMs: options.toolTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         workspaceAccess: options.workspaceAccess,
         runtimeHomePaths: kimiRuntimeHomePaths,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
+        onExecutionProgress: options.onExecutionProgress,
         onSessionStarted: async (sessionId) => observeSession("kimi", sessionId),
       });
       assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);
@@ -165,10 +172,12 @@ export function createLocalExecutionRunner(input: {
       signal: options.signal,
       imagePaths: options.imagePaths,
       idleTimeoutMs: options.idleTimeoutMs,
+      toolTimeoutMs: options.toolTimeoutMs,
       maxDurationMs: options.maxDurationMs,
       onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
       onProcessStarted: options.onProcessStarted,
       onStructuredActivity: options.onStructuredActivity,
+      onExecutionProgress: options.onExecutionProgress,
       onThreadStarted: async (threadId) => observeSession("codex", threadId),
     });
     assertSuccessfulSessionIdentity(options.mode, observedExternalSessionId, result);

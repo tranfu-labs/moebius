@@ -20,7 +20,25 @@ describe("local console persisted system event kinds", () => {
       await recordTerminal(store, "failed", (input) => store.recordFailure({ ...input, error: "exit 1" }));
       await recordTerminal(store, "retryable", (input) => store.recordRetryableFailure({ ...input, error: "exit 2" }));
       await recordTerminal(store, "stuck", (input) => store.recordStuck({ ...input, reason: "idle" }));
+      await recordTerminal(store, "tool-stuck", (input) => store.recordStuck({
+        ...input,
+        reason: "tool-timeout:1800000ms",
+        terminal: {
+          kind: "timeout",
+          subkind: "tool",
+          safeCode: null,
+          retryable: null,
+          partialMarkdown: "",
+          contentIncomplete: true,
+          actualProfile: null,
+        },
+      }));
       await recordTerminal(store, "stopped", (input) => store.recordInterrupted({ ...input, reason: "user-stop", interruptionKind: "user" }));
+      await recordTerminal(store, "system-stopped", (input) => store.recordInterrupted({
+        ...input,
+        reason: "runtime-closing",
+        interruptionKind: "system",
+      }));
       await recordTerminal(store, "dead-letter", (input) => store.recordDeadLetter({ ...input, error: "again", failureCount: 5 }));
       await store.recordSystemMessage({
         sessionId: "local:neutral",
@@ -32,20 +50,97 @@ describe("local console persisted system event kinds", () => {
       });
 
       const systemMessages = (await Promise.all(
-        ["failed", "retryable", "stuck", "stopped", "dead-letter", "neutral"]
+        ["failed", "retryable", "stuck", "tool-stuck", "stopped", "system-stopped", "dead-letter", "neutral"]
           .map((name) => store.listMessages(`local:${name}`)),
       )).flat().filter((message) => message.speaker === "system");
       expect(systemMessages.map((message) => message.systemEventKind)).toEqual([
         "run-not-started",
         "run-not-started",
         "run-stuck",
+        "run-stuck",
         "user-stopped",
+        "other",
         "retry-exhausted",
         "other",
       ]);
+      expect(systemMessages.find((message) => message.runId === "run-tool-stuck")?.body)
+        .toBe("这一步的工具调用运行过久，已经停下。你可以重试，或换一个执行配置。");
+      expect(systemMessages.find((message) => message.runId === "run-system-stopped")?.body)
+        .toBe("这一步被系统停止了。已经产生的文件改动会保留。");
       expect(systemMessages.every((message) => message.systemEventKind !== null)).toBe(true);
     } finally {
       await store.close();
+    }
+  });
+
+  it("rebuilds partial Markdown and structured terminal data after reopening", async () => {
+    const { store, sqlitePath } = await fixtureStore();
+    const sessionId = "local:partial-terminal";
+    await store.createSession({
+      sessionId,
+      title: "partial terminal",
+      now: "2026-07-30T00:00:00.000Z",
+    });
+    const source = await store.appendUserMessage({
+      sessionId,
+      body: "开始",
+      now: "2026-07-30T00:00:01.000Z",
+    });
+    await store.claimNextPendingMessage({
+      sessionId,
+      runId: "run-partial",
+      now: "2026-07-30T00:00:02.000Z",
+    });
+    await store.recordInterrupted({
+      userMessageId: source.id,
+      sessionId,
+      reason: "kimi-acp-interrupted",
+      interruptionKind: "user",
+      runId: "run-partial",
+      runDir: null,
+      terminal: {
+        kind: "interrupted",
+        subkind: "user",
+        safeCode: null,
+        retryable: null,
+        partialMarkdown: "## 已完成\n\n保留这部分",
+        contentIncomplete: true,
+        actualProfile: {
+          cli: "kimi",
+          model: "kimi-code/kimi-for-coding",
+          effort: "on",
+        },
+      },
+      now: "2026-07-30T00:00:03.000Z",
+    });
+    await store.close();
+
+    const reopened = await createSqliteLocalConsoleStore({ sqlitePath });
+    await reopened.init();
+    const terminal = (await reopened.listMessages(sessionId)).find((message) =>
+      message.speaker === "system");
+    expect(terminal).toMatchObject({
+      systemEventKind: "user-stopped",
+      terminal: {
+        kind: "interrupted",
+        partialMarkdown: "## 已完成\n\n保留这部分",
+        contentIncomplete: true,
+        actualProfile: { cli: "kimi" },
+      },
+    });
+    await reopened.close();
+
+    const database = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      const row = database.prepare(
+        "SELECT terminal_json FROM session_messages WHERE session_id = ? AND speaker = 'system'",
+      ).get(sessionId) as { terminal_json: string };
+      expect(JSON.parse(row.terminal_json)).toMatchObject({
+        kind: "interrupted",
+        partialMarkdown: "## 已完成\n\n保留这部分",
+      });
+    } finally {
+      database.close();
     }
   });
 

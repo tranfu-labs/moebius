@@ -32,6 +32,7 @@ import {
   type RightSidebarTabsState,
   type Locale,
   type TranslationKey,
+  type ExecutionRegistryState,
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
   type OperatorWorkspaceDiffSummary,
@@ -120,6 +121,7 @@ import {
   loadProjectFile,
   loadProjectFiles,
   loadSubSessionView,
+  loadExecutionProfileRegistry,
   loadWorkspaceDiff,
   ProcessInvocationRequestCoordinator,
   processOutputLocator,
@@ -616,6 +618,9 @@ export function OperatorConsoleApp({
   const language = useDesktopLanguage();
   const { t } = useI18n();
   const [apiBase, setApiBase] = useState<string | null>(readQueryApiBase());
+  const [executionRegistryState, setExecutionRegistryState] =
+    useState<ExecutionRegistryState>({ status: "loading" });
+  const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
   const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
   const [initialSelectionPreference] = useState<ConsoleSelection | null>(() =>
@@ -1948,6 +1953,29 @@ export function OperatorConsoleApp({
   }, [apiBase]);
 
   useEffect(() => {
+    if (apiBase === null) {
+      setExecutionRegistryState({ status: "loading" });
+      return;
+    }
+    const controller = new AbortController();
+    setExecutionRegistryState({ status: "loading" });
+    void loadExecutionProfileRegistry({
+      apiBase,
+      fetch: window.fetch.bind(window),
+      signal: controller.signal,
+    }).then((registry) => {
+      if (!controller.signal.aborted) {
+        setExecutionRegistryState({ status: "ready", registry });
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setExecutionRegistryState({ status: "error", message: "" });
+      }
+    });
+    return () => controller.abort();
+  }, [apiBase, executionRegistryReload]);
+
+  useEffect(() => {
     let cancelled = false;
     void window.moebius?.getLocalConsoleAttachmentCapability?.().then((capability) => {
       if (!cancelled) setAttachmentCapability(capability);
@@ -3038,13 +3066,23 @@ export function OperatorConsoleApp({
     subSessionSendingId,
   ]);
 
-  const retryRun = useCallback(async (sessionId: string, runId: string) => {
+  const retryRun = useCallback(async (
+    sessionId: string,
+    runId: string,
+    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+  ) => {
     if (apiBase === null || subSessionSendingId !== null) {
-      return;
+      throw new Error("retry unavailable");
     }
     setSubSessionSendingId(sessionId);
     try {
-      await retrySessionRun({ apiBase, sessionId, runId, fetch });
+      await retrySessionRun({
+        apiBase,
+        sessionId,
+        runId,
+        fetch,
+        ...(executionOverride === undefined ? {} : { executionOverride }),
+      });
       await Promise.all([
         refreshSubSessionNow(sessionId),
         refresh(selectionRef.current),
@@ -3052,6 +3090,7 @@ export function OperatorConsoleApp({
       setClientError(null);
     } catch (error) {
       setClientError(formatError(error));
+      throw error;
     } finally {
       setSubSessionSendingId(null);
     }
@@ -3774,6 +3813,8 @@ export function OperatorConsoleApp({
           composerValue=""
           composerAttachments={managedSidebarConversationAttachments.attachments}
           agentTeamsState={agentTeamsState}
+          executionRegistryState={executionRegistryState}
+          onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
           newConversation={{
             selectedProjectId: draft.context.projectId,
             selectedWorkspaceMode: draft.context.workspaceMode,
@@ -3900,6 +3941,8 @@ export function OperatorConsoleApp({
         activeRuns={view.activeRuns ?? (view.activeRun === null ? [] : [view.activeRun])}
         workspaceDiff={view.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
         composerValue={composerValue}
+        executionRegistryState={executionRegistryState}
+        onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
         composerAttachments={managedSidebarConversationAttachments.attachments}
         agentTeamsState={agentTeamsState}
         conversationAgentTeamKey={view.session.agentTeamOwnership != null && view.session.agentTeamId != null
@@ -3919,7 +3962,8 @@ export function OperatorConsoleApp({
         onSend={() => void sendSidebarConversationMessage(view.session.sessionId)}
         onSelectSession={() => undefined}
         onInterrupt={(sessionId, runId) => void interruptSubSession(sessionId, runId)}
-        onRetryRun={(sessionId, runId) => void retryRun(sessionId, runId)}
+        onRetryRun={(sessionId, runId, executionOverride) =>
+          retryRun(sessionId, runId, executionOverride)}
         onRetryPendingMessage={(sessionId, messageId) => void retryPendingMessage(sessionId, messageId)}
         onEditPendingMessage={(sessionId, messageId, body) => void editPendingMessage(sessionId, messageId, body)}
         onRemovePendingMessage={(sessionId, messageId) => void removePendingMessage(sessionId, messageId)}
@@ -3963,6 +4007,7 @@ export function OperatorConsoleApp({
     analyzeConversation,
     changeRightSidebarTabs,
     conversationMessageNavigation,
+    executionRegistryState,
     interruptSubSession,
     managedSidebarConversationAttachments.addFiles,
     managedSidebarConversationAttachments.attachments,
@@ -3993,6 +4038,8 @@ export function OperatorConsoleApp({
 
   return (
     <OperatorConsole
+      executionRegistryState={executionRegistryState}
+      onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
       activeLocale={language.activeLocale}
       pendingLocale={language.pendingLocale}
       languageSaveStatus={language.status}
@@ -4172,9 +4219,8 @@ export function OperatorConsoleApp({
       onSubSessionSend={(sessionId) => {
         void sendSubSessionMessage(sessionId);
       }}
-      onSubSessionRetry={(sessionId, runId) => {
-        void retryRun(sessionId, runId);
-      }}
+      onSubSessionRetry={(sessionId, runId, executionOverride) =>
+        retryRun(sessionId, runId, executionOverride)}
       onSubSessionInterrupt={(sessionId, runId) => {
         void interruptSubSession(sessionId, runId);
       }}
@@ -4296,9 +4342,8 @@ export function OperatorConsoleApp({
         return copySessionLogPath(sessionId);
       }}
       onInterrupt={interrupt}
-      onRetryRun={(sessionId, runId) => {
-        void retryRun(sessionId, runId);
-      }}
+      onRetryRun={(sessionId, runId, executionOverride) =>
+        retryRun(sessionId, runId, executionOverride)}
       onRetryPendingMessage={(sessionId, messageId) => void retryPendingMessage(sessionId, messageId)}
       onEditPendingMessage={(sessionId, messageId, body) => void editPendingMessage(sessionId, messageId, body)}
       onRemovePendingMessage={(sessionId, messageId) => void removePendingMessage(sessionId, messageId)}

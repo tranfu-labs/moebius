@@ -8,6 +8,7 @@ import {
   type OperatorProcessDebugInvocation,
   type OperatorProcessOutput,
   type OperatorSubSessionView,
+  type ExecutionModelRegistry,
   type FileReferenceContent,
   type ProjectFilesData,
   type WorkspaceDiffData,
@@ -472,6 +473,25 @@ export async function loadSubSessionView(options: {
   return body as OperatorSubSessionView;
 }
 
+export async function loadExecutionProfileRegistry(options: {
+  apiBase: string;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<ExecutionModelRegistry> {
+  const response = await options.fetch(
+    endpoint(options.apiBase, "/api/local-console/execution-profiles"),
+    options.signal === undefined ? undefined : { signal: options.signal },
+  );
+  const body = await response.json() as {
+    registry?: ExecutionModelRegistry;
+    error?: string;
+  };
+  if (!response.ok || body.registry === undefined) {
+    throw new Error(body.error ?? "execution profile registry request failed");
+  }
+  return body.registry;
+}
+
 export async function submitSessionMessage(options: {
   apiBase: string;
   sessionId: string;
@@ -565,6 +585,11 @@ export async function retrySessionRun(options: {
   apiBase: string;
   sessionId: string;
   runId: string;
+  executionOverride?: {
+    cli: "codex" | "claude" | "kimi";
+    model: string;
+    effort: string;
+  };
   fetch: FetchLike;
 }): Promise<void> {
   const fetch = options.fetch;
@@ -573,7 +598,23 @@ export async function retrySessionRun(options: {
       options.apiBase,
       `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/runs/${encodeURIComponent(options.runId)}/retry`,
     ),
-    { method: "POST" },
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(options.executionOverride === undefined
+        ? {}
+        : {
+            executionOverride: {
+              overrideId: [
+                "single-run",
+                options.runId,
+                crypto.randomUUID(),
+              ].join(":"),
+              profile: options.executionOverride,
+              scope: "single-run",
+            },
+          }),
+    },
   );
   const responseBody = await response.json() as { error?: string };
   if (!response.ok) {

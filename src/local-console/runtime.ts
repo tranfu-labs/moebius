@@ -12,11 +12,15 @@ import {
 import {
   type CodexRunOptions,
   type CodexRunResult,
-  codexTimeoutKind,
+  executionInterruptionCauseForResult,
+  executionTimeoutKind,
   isInterruptedCodexRunResult,
 } from "../codex.js";
 import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
+import { isTrustedExecutionProfile } from "../execution-profile-registry.js";
+import { LOCAL_LONG_RUN_REPORT_MS } from "../config.js";
+import type { ExecutionProgressEvent } from "../execution-contract.js";
 import { resolveTrigger } from "../triggers/index.js";
 import { readLocalConsoleOutputTail } from "./output-tail.js";
 import {
@@ -74,6 +78,7 @@ import {
   type LocalConsoleEntryTemplate,
   type LocalConsoleWritePolicy,
   type LocalConsoleTextFragment,
+  type LocalConsoleTerminal,
 } from "./types.js";
 import {
   buildMoebiusReferenceText,
@@ -87,6 +92,7 @@ import {
 } from "./execution-driver.js";
 import {
   createRunExecutionContext,
+  singleRunOverrideIdentitySalt,
   latestAgentTimelineCursor,
   legacyCodexContextFingerprint,
   planLocalExecutionRecovery,
@@ -176,6 +182,7 @@ export interface LocalConsoleRuntimeOptions {
   sessionId?: string;
   storeTimeoutMs?: number;
   codexIdleTimeoutMs?: number;
+  toolInFlightTimeoutMs?: number;
   codexMaxDurationMs?: number;
   workspaceGitTimeoutMs?: number;
   staleRunningGraceMs?: number;
@@ -288,6 +295,7 @@ interface ActiveLocalRun {
   activity: LocalRunActivity | null;
   activitySequence: number;
   activityFactTail: Promise<void>;
+  longRunReported: boolean;
   createdAt: string;
   startedAt: string | null;
   segmentStartedAt: string | null;
@@ -296,6 +304,7 @@ interface ActiveLocalRun {
   stepId: string;
   attempt: number;
   engine: "codex" | "claude" | "kimi";
+  profile: LocalConsoleExecutionProfile | null;
   processOutputAvailable: boolean;
   terminalRecorded: boolean;
   controller: AbortController;
@@ -307,6 +316,7 @@ export class LocalConsoleRuntime {
   private readonly sessionId: string;
   private readonly storeTimeoutMs: number;
   private readonly codexIdleTimeoutMs?: number;
+  private readonly toolInFlightTimeoutMs?: number;
   private readonly codexMaxDurationMs?: number;
   private readonly routeTimeoutMs?: number;
   private readonly staleRunningGraceMs: number;
@@ -327,6 +337,7 @@ export class LocalConsoleRuntime {
     this.sessionId = options.sessionId ?? LOCAL_CONSOLE_DEFAULT_SESSION_ID;
     this.storeTimeoutMs = options.storeTimeoutMs ?? 2_000;
     this.codexIdleTimeoutMs = options.codexIdleTimeoutMs;
+    this.toolInFlightTimeoutMs = options.toolInFlightTimeoutMs;
     this.codexMaxDurationMs = options.codexMaxDurationMs;
     this.routeTimeoutMs = options.routeTimeoutMs;
     this.staleRunningGraceMs = options.staleRunningGraceMs ?? 5_000;
@@ -1322,7 +1333,40 @@ export class LocalConsoleRuntime {
     this.schedulePendingProcessing(input.sessionId);
   }
 
-  async retryRun(input: { sessionId: string; runId: string }): Promise<boolean> {
+  async retryRun(input: {
+    sessionId: string;
+    runId: string;
+    executionOverride?: {
+      overrideId: string;
+      profile: LocalConsoleExecutionProfile;
+      scope: "single-run";
+    };
+  }): Promise<boolean> {
+    if (
+      input.executionOverride !== undefined
+      && (
+        input.executionOverride.scope !== "single-run"
+        || input.executionOverride.overrideId.trim().length === 0
+        || !isTrustedExecutionProfile(input.executionOverride.profile)
+      )
+    ) {
+      return false;
+    }
+    if (input.executionOverride !== undefined) {
+      const recoveryStore = this.codexRecoveryFactStore();
+      if (recoveryStore !== null) {
+        const recoveryFacts = await readLocalCodexRecoveryFacts(
+          recoveryStore.getSessionFactLogPath(input.sessionId),
+          input.sessionId,
+        );
+        if (recoveryFacts.intents.some((intent) =>
+          intent.targetRunId === input.runId
+          && intent.reason === "retry"
+          && intent.executionOverride?.overrideId === input.executionOverride?.overrideId)) {
+          return true;
+        }
+      }
+    }
     const admission = await this.prepareRetryAdmission(input);
     if (admission === null) {
       return false;
@@ -1332,7 +1376,7 @@ export class LocalConsoleRuntime {
       admission.targetRunId,
       String(admission.source.id),
       admission.role ?? "",
-      "retry",
+      admission.executionOverride?.overrideId ?? "retry",
     ].join("\u0000");
     const pending = this.retryAdmissions.get(key);
     if (pending !== undefined) {
@@ -1352,6 +1396,11 @@ export class LocalConsoleRuntime {
   private async prepareRetryAdmission(input: {
     sessionId: string;
     runId: string;
+    executionOverride?: {
+      overrideId: string;
+      profile: LocalConsoleExecutionProfile;
+      scope: "single-run";
+    };
   }): Promise<{
     sessionId: string;
     targetRunId: string;
@@ -1359,6 +1408,11 @@ export class LocalConsoleRuntime {
     role: string | null;
     recoveryStore: CodexRecoveryFactStore | null;
     recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
+    executionOverride?: {
+      overrideId: string;
+      profile: LocalConsoleExecutionProfile;
+      scope: "single-run";
+    };
   } | null> {
     await this.assertSessionCanContinue(input.sessionId);
     const messages = await this.storeCall("local-console-store-list-retry-source", () =>
@@ -1368,6 +1422,27 @@ export class LocalConsoleRuntime {
       && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"));
     if (terminal === undefined) {
       return null;
+    }
+    if (input.executionOverride !== undefined) {
+      const structuredTerminal = messages.find((message) =>
+        message.runId === input.runId
+        && message.speaker === "system"
+        && message.terminal !== null
+        && message.terminal !== undefined);
+      if (
+        structuredTerminal?.terminal === null
+        || structuredTerminal?.terminal === undefined
+        || (
+          structuredTerminal.terminal.kind !== "interrupted"
+          && structuredTerminal.terminal.kind !== "timeout"
+          && structuredTerminal.terminal.kind !== "quota-exhausted"
+          && structuredTerminal.terminal.kind !== "rate-limited"
+          && structuredTerminal.terminal.kind !== "auth"
+          && structuredTerminal.terminal.kind !== "crashed"
+        )
+      ) {
+        return null;
+      }
     }
     const recoveryStore = this.codexRecoveryFactStore();
     const [executionLinks, codexLinks, recoveryFacts] = recoveryStore === null
@@ -1421,6 +1496,9 @@ export class LocalConsoleRuntime {
       role,
       recoveryStore,
       recoveryFacts,
+      ...(input.executionOverride === undefined
+        ? {}
+        : { executionOverride: input.executionOverride }),
     };
   }
 
@@ -1431,19 +1509,31 @@ export class LocalConsoleRuntime {
     role: string | null;
     recoveryStore: CodexRecoveryFactStore | null;
     recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
+    executionOverride?: {
+      overrideId: string;
+      profile: LocalConsoleExecutionProfile;
+      scope: "single-run";
+    };
   }): Promise<boolean> {
+    const matchingIntent = input.recoveryFacts.intents.find((intent) =>
+      intent.targetRunId === input.targetRunId
+      && intent.sourceMessageId === input.source.id
+      && intent.role === input.role
+      && intent.reason === "retry"
+      && intent.executionOverride?.overrideId === input.executionOverride?.overrideId);
+    if (input.executionOverride !== undefined && matchingIntent !== undefined) {
+      return true;
+    }
     if (
       input.role !== null
       && this.activeRunForRole(input.sessionId, input.role) !== undefined
     ) {
       throw new LocalConsoleBusyError();
     }
-    const existingIntent = input.recoveryFacts.intents.find((intent) =>
-      intent.targetRunId === input.targetRunId
-      && intent.sourceMessageId === input.source.id
-      && intent.role === input.role
-      && intent.reason === "retry"
-      && !input.recoveryFacts.consumedIntentIds.has(intent.intentId));
+    const existingIntent = matchingIntent !== undefined
+      && !input.recoveryFacts.consumedIntentIds.has(matchingIntent.intentId)
+      ? matchingIntent
+      : undefined;
     if (input.recoveryStore !== null && input.role !== null && existingIntent === undefined) {
       await this.storeCall("local-console-store-record-user-retry", () =>
         input.recoveryStore!.recordCodexResumeIntent({
@@ -1453,6 +1543,9 @@ export class LocalConsoleRuntime {
           sourceMessageId: input.source.id,
           role: input.role!,
           reason: "retry",
+          ...(input.executionOverride === undefined
+            ? {}
+            : { executionOverride: input.executionOverride }),
           createdAt: this.nowIso(),
         }));
     }
@@ -2135,6 +2228,26 @@ export class LocalConsoleRuntime {
                 readProviderSessionObservations(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
                 readAgentTimelineCursors(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
               ]);
+          const executionOverrideIntent = [...recoveryFacts.intents].reverse().find((intent) =>
+            intent.sourceMessageId === claimedMessage.id
+            && intent.reason === "retry"
+            && intent.executionOverride !== undefined
+            && !recoveryFacts.consumedIntentIds.has(intent.intentId));
+          if (executionOverrideIntent?.executionOverride !== undefined) {
+            currentContext = createRunExecutionContext({
+              sessionId,
+              runId: nextRunId,
+              sourceMessageId: claimedMessage.id,
+              role: trigger.role,
+              profile: executionOverrideIntent.executionOverride.profile,
+              workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
+              team: agentContents,
+              recordedAt: this.nowIso(),
+              identitySalt: singleRunOverrideIdentitySalt(
+                executionOverrideIntent.executionOverride,
+              ),
+            });
+          }
           const persistedGracefulRecovery = exactGracefulRecoveryContext({
             sessionId,
             runId: nextRunId,
@@ -2150,10 +2263,11 @@ export class LocalConsoleRuntime {
               runId: nextRunId,
               sourceMessageId: claimedMessage.id,
               role: trigger.role,
-              profile: selectedAgent.executionProfile ?? null,
+              profile: persistedGracefulRecovery.context.profile,
               workspace: workspaceFromExecutionContext(persistedGracefulRecovery.context),
               team: agentContents,
               recordedAt: this.nowIso(),
+              identitySalt: persistedGracefulRecovery.context.identitySalt,
             });
           }
           let recoveryPlan = planLocalExecutionRecovery({
@@ -2282,7 +2396,11 @@ export class LocalConsoleRuntime {
                 sessionId,
                 intentId: consumedIntent.intentId,
                 resumedByRunId: nextRunId,
-                mode: recoveryPlan.kind === "resume" ? "resume" : "unavailable",
+                mode: recoveryPlan.kind === "resume"
+                  ? "resume"
+                  : consumedIntent.executionOverride === undefined
+                    ? "unavailable"
+                    : "full-fallback",
                 reason: recoveryPlan.reason,
                 consumedAt: this.nowIso(),
               }));
@@ -2312,6 +2430,7 @@ export class LocalConsoleRuntime {
             activity: null,
             activitySequence: 0,
             activityFactTail: Promise.resolve(),
+            longRunReported: false,
             createdAt: primaryLifecycle.createdAt,
             startedAt: primaryLifecycle.startedAt,
             segmentStartedAt: null,
@@ -2320,6 +2439,7 @@ export class LocalConsoleRuntime {
             stepId: primaryStepId,
             attempt: primaryLifecycle.attempt,
             engine: executionContext.engine,
+            profile: executionContext.profile,
             processOutputAvailable: executionContext.engine === "codex",
             terminalRecorded: false,
             controller,
@@ -2360,7 +2480,9 @@ export class LocalConsoleRuntime {
                   : { kind: "full" },
                 signal: controller.signal,
                 ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-                ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
+                ...(this.toolInFlightTimeoutMs === undefined
+                  ? {}
+                  : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
                 ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
                 workspaceAccess: analysisGateEnabled ? "read-only" : "read-write",
                 onVisibleAgentMarkdown: (text) => {
@@ -2382,6 +2504,7 @@ export class LocalConsoleRuntime {
                 },
                 onProcessStarted: () => this.markRunStarted(nextRunId),
                 onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
+                onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
                 onSessionStarted: async ({ engine, externalSessionId }) => {
                   observedExternalSessionId = externalSessionId;
                   const active = this.activeRuns.get(nextRunId);
@@ -2525,7 +2648,9 @@ export class LocalConsoleRuntime {
                     signal: controller.signal,
                     workspaceAccess: "read-write",
                     ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-                    ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
+                    ...(this.toolInFlightTimeoutMs === undefined
+                      ? {}
+                      : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
                     onVisibleAgentMarkdown: (text) => {
                       const active = this.activeRuns.get(nextRunId);
                       if (active?.sessionId === sessionId) {
@@ -2534,6 +2659,7 @@ export class LocalConsoleRuntime {
                       }
                     },
                     onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
+                    onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
                     onSessionStarted: async ({ externalSessionId: resumedSessionId }) => {
                       if (resumedSessionId !== externalSessionId) {
                         throw new Error("analysis-write-lease-provider-session-mismatch");
@@ -2570,13 +2696,12 @@ export class LocalConsoleRuntime {
           if (!result.ok) {
             const active = this.activeRuns.get(nextRunId);
             if (
-              isInterruptedCodexRunResult(result)
-              && result.reason.includes("runtime-closing")
+              executionInterruptionCauseForResult(result) === "runtime-closing"
               && active?.gracefulResumePrepared
             ) {
               await this.pauseRunLifecycle(nextRunId);
             } else {
-              await this.finishRunLifecycle(nextRunId, runTimingStatusForFailedResult(result.reason));
+              await this.finishRunLifecycle(nextRunId, runTimingStatusForFailedResult(result));
             }
             await this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, result);
             return;
@@ -3263,6 +3388,7 @@ export class LocalConsoleRuntime {
       activity: null,
       activitySequence: 0,
       activityFactTail: Promise.resolve(),
+      longRunReported: false,
       createdAt: workerLifecycle.createdAt,
       startedAt: workerLifecycle.startedAt,
       segmentStartedAt: null,
@@ -3271,6 +3397,7 @@ export class LocalConsoleRuntime {
       stepId: workerStepId,
       attempt: workerLifecycle.attempt,
       engine: executionContext.engine,
+      profile: executionContext.profile,
       processOutputAvailable: executionContext.engine === "codex",
       terminalRecorded: false,
       controller,
@@ -3335,7 +3462,9 @@ export class LocalConsoleRuntime {
               : { kind: "full" },
             signal: controller.signal,
             ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-            ...(this.codexMaxDurationMs === undefined ? {} : { maxDurationMs: this.codexMaxDurationMs }),
+            ...(this.toolInFlightTimeoutMs === undefined
+              ? {}
+              : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
             ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
             workspaceAccess: workerPolicySession.writePolicy === "confirm-current-plan-before-write"
               ? "read-only"
@@ -3359,6 +3488,7 @@ export class LocalConsoleRuntime {
             },
             onProcessStarted: () => this.markRunStarted(runId),
             onStructuredActivity: (event) => this.updateStructuredRunActivity(runId, event),
+            onExecutionProgress: (event) => this.updateExecutionProgressActivity(runId, event),
             onSessionStarted: async ({ engine, externalSessionId }) => {
               observedExternalSessionId = externalSessionId;
               const active = this.activeRuns.get(runId);
@@ -3482,13 +3612,12 @@ export class LocalConsoleRuntime {
       if (!result.ok) {
         const active = this.activeRuns.get(runId);
         if (
-          isInterruptedCodexRunResult(result)
-          && result.reason.includes("runtime-closing")
+          executionInterruptionCauseForResult(result) === "runtime-closing"
           && active?.gracefulResumePrepared
         ) {
           await this.pauseRunLifecycle(runId);
         } else {
-          await this.finishRunLifecycle(runId, runTimingStatusForFailedResult(result.reason));
+          await this.finishRunLifecycle(runId, runTimingStatusForFailedResult(result));
         }
         if (input.origin === "user-direct") {
           await this.recordFailedCodexResult(input.sourceMessage, input.sessionId, runId, result);
@@ -3647,6 +3776,7 @@ export class LocalConsoleRuntime {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    terminal?: LocalConsoleTerminal | null;
   }): Promise<void> {
     const recordDetachedRunTerminal = this.options.store.recordDetachedRunTerminal;
     if (recordDetachedRunTerminal === undefined) {
@@ -3689,14 +3819,14 @@ export class LocalConsoleRuntime {
   }
 
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
-    const maxDurationMs = this.codexMaxDurationMs ?? 120 * 60 * 1000;
-    const cutoffIso = new Date(this.now().getTime() - maxDurationMs - this.staleRunningGraceMs).toISOString();
+    const staleThresholdMs = this.codexMaxDurationMs ?? this.codexIdleTimeoutMs ?? 10 * 60 * 1000;
+    const cutoffIso = new Date(this.now().getTime() - staleThresholdMs - this.staleRunningGraceMs).toISOString();
     return await this.storeCall("local-console-store-mark-stale", () =>
       this.options.store.markStaleRunning({
         sessionId,
         cutoffIso,
         now: this.nowIso(),
-        reason: `stale-running>${String(maxDurationMs + this.staleRunningGraceMs)}ms`,
+        reason: `stale-running>${String(staleThresholdMs + this.staleRunningGraceMs)}ms`,
       }),
     );
   }
@@ -4047,19 +4177,31 @@ export class LocalConsoleRuntime {
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
   ): Promise<void> {
-    const timeoutKind = codexTimeoutKind(result.reason);
+    const timeoutKind = executionTimeoutKind(result);
     if (timeoutKind !== null) {
       log({
         event: timeoutKind === "idle" ? "local-console-codex-idle-timeout" : "local-console-codex-watchdog-timeout",
         runDir: result.runDir,
         reason: result.reason,
       });
-      await this.recordStuckBestEffort(message, sessionId, runId, result.runDir, result.reason);
+      await this.recordStuckBestEffort(
+        message,
+        sessionId,
+        runId,
+        result.runDir,
+        result.reason,
+        localTerminalFromResult(
+          result,
+          this.activeRuns.get(runId)?.liveMarkdown ?? null,
+          this.activeRuns.get(runId)?.profile ?? null,
+        ),
+      );
       return;
     }
     if (isInterruptedCodexRunResult(result)) {
       const active = this.activeRuns.get(runId);
-      if (result.reason.includes("runtime-closing") && active?.runId === runId && active.gracefulResumePrepared) {
+      const cause = executionInterruptionCauseForResult(result);
+      if (cause === "runtime-closing" && active?.runId === runId && active.gracefulResumePrepared) {
         return;
       }
       await this.recordInterruptedBestEffort(
@@ -4068,11 +4210,18 @@ export class LocalConsoleRuntime {
         runId,
         result.runDir,
         result.reason,
-        result.reason.includes("project-directory-unavailable") || result.reason.includes("agent-team-unavailable")
+        cause === "context-unavailable"
           ? "context-unavailable"
-          : result.reason.includes("user-redirected-active-agent")
+          : cause === "redirect"
             ? "redirect"
-            : "user",
+            : cause === "user"
+              ? "user"
+              : "system",
+        localTerminalFromResult(
+          result,
+          this.activeRuns.get(runId)?.liveMarkdown ?? null,
+          this.activeRuns.get(runId)?.profile ?? null,
+        ),
       );
       return;
     }
@@ -4083,6 +4232,11 @@ export class LocalConsoleRuntime {
       result.runDir,
       result.reason,
       result.failure?.message,
+      localTerminalFromResult(
+        result,
+        this.activeRuns.get(runId)?.liveMarkdown ?? null,
+        this.activeRuns.get(runId)?.profile ?? null,
+      ),
     );
   }
 
@@ -4093,8 +4247,7 @@ export class LocalConsoleRuntime {
   ): Promise<void> {
     const active = this.activeRuns.get(runId);
     if (
-      isInterruptedCodexRunResult(result)
-      && result.reason.includes("runtime-closing")
+      executionInterruptionCauseForResult(result) === "runtime-closing"
       && active?.gracefulResumePrepared
     ) {
       const messages = await this.storeCall("local-console-store-list-graceful-worker-placeholder", () =>
@@ -4112,28 +4265,33 @@ export class LocalConsoleRuntime {
       }
       return;
     }
-    const timeoutKind = codexTimeoutKind(result.reason);
+    const timeoutKind = executionTimeoutKind(result);
     if (timeoutKind !== null) {
       await this.storeCall("local-console-store-record-detached-worker-stuck", () =>
         this.recordDetachedRunTerminal({
           sessionId,
-          body: "这一步卡住了。你可以直接告诉主理人下一步怎么处理。",
+          body: result.terminal?.kind === "timeout" && result.terminal.basis === "tool"
+            ? "这一步的工具调用运行过久，已经停下。你可以直接告诉主理人下一步怎么处理。"
+            : "这一步卡住了。你可以直接告诉主理人下一步怎么处理。",
           systemEventKind: "run-stuck",
           runId,
           runDir: result.runDir,
           error: result.reason,
           status: "stuck",
+          terminal: localTerminalFromResult(
+            result,
+            active?.liveMarkdown ?? null,
+            active?.profile ?? null,
+          ),
         }),
       );
       return;
     }
     if (isInterruptedCodexRunResult(result)) {
-      const contextUnavailable =
-        result.reason.includes("project-directory-unavailable")
-        || result.reason.includes("agent-team-unavailable");
-      const redirected =
-        result.reason.includes("primary-redirected-active-agent")
-        || result.reason.includes("user-redirected-active-agent");
+      const cause = executionInterruptionCauseForResult(result);
+      const contextUnavailable = cause === "context-unavailable";
+      const redirected = cause === "redirect";
+      const systemStopped = cause === "runtime-closing" || cause === "system";
       await this.storeCall("local-console-store-record-detached-worker-interrupted", () =>
         this.recordDetachedRunTerminal({
           sessionId,
@@ -4141,12 +4299,19 @@ export class LocalConsoleRuntime {
             ? "这一步依赖的项目或团队内容已经不可用，因此已停止。已经产生的文件改动会保留。"
             : redirected
               ? "主理人发来了新的指令，当前这一步已经停下；这个成员会带着新指令重新开始。"
+              : systemStopped
+                ? "这一步被系统停止了。已经产生的文件改动会保留。"
               : "你让这一步停下了。已经产生的文件改动会保留。",
-          systemEventKind: redirected || contextUnavailable ? "other" : "user-stopped",
+          systemEventKind: redirected || contextUnavailable || systemStopped ? "other" : "user-stopped",
           runId,
           runDir: result.runDir,
           error: result.reason,
           status: "interrupted",
+          terminal: localTerminalFromResult(
+            result,
+            active?.liveMarkdown ?? null,
+            active?.profile ?? null,
+          ),
         }),
       );
       return;
@@ -4161,6 +4326,11 @@ export class LocalConsoleRuntime {
         runDir: result.runDir,
         error: result.reason,
         status: "failed",
+        terminal: localTerminalFromResult(
+          result,
+          active?.liveMarkdown ?? null,
+          active?.profile ?? null,
+        ),
       }),
     );
   }
@@ -4277,6 +4447,25 @@ export class LocalConsoleRuntime {
 
   private async snapshotActiveRun(active: ActiveLocalRun): Promise<LocalConsoleRunSnapshot> {
     const tail = await readLocalConsoleOutputTail(active.runDir);
+    const elapsedMs = active.startedAt === null ? null : this.activeRunElapsedMs(active);
+    if (
+      !active.longRunReported
+      && elapsedMs !== null
+      && elapsedMs >= LOCAL_LONG_RUN_REPORT_MS
+    ) {
+      active.longRunReported = true;
+      const cursor = ++active.activitySequence;
+      const elapsedMinutes = Math.max(1, Math.floor(elapsedMs / 60_000));
+      const previousActivity = active.activity;
+      this.acceptRunActivity(active, {
+        cursor,
+        kind: "progress",
+        phase: "running",
+        action: `已经运行 ${String(elapsedMinutes)} 分钟，${previousActivity?.action ?? "仍在继续"}`,
+        object: previousActivity?.object ?? null,
+        occurredAt: this.nowIso(),
+      });
+    }
     return {
       sessionId: active.sessionId,
       runId: active.runId,
@@ -4284,9 +4473,7 @@ export class LocalConsoleRuntime {
       status: "running",
       createdAt: active.createdAt,
       startedAt: active.startedAt,
-      elapsedMs: active.startedAt === null
-        ? null
-        : this.activeRunElapsedMs(active),
+      elapsedMs,
       stepId: active.stepId,
       attempt: active.attempt,
       engine: active.engine,
@@ -4326,6 +4513,26 @@ export class LocalConsoleRuntime {
     const cursor = ++active.activitySequence;
     const activity = projectStructuredRunActivity(event, cursor, this.nowIso());
     if (activity !== null) this.acceptRunActivity(active, activity);
+  }
+
+  private updateExecutionProgressActivity(
+    runId: string,
+    event: ExecutionProgressEvent,
+  ): void {
+    if (event.kind !== "provider-retry") return;
+    const active = this.activeRuns.get(runId);
+    if (active === undefined) return;
+    const cursor = ++active.activitySequence;
+    this.acceptRunActivity(active, {
+      cursor,
+      kind: "progress",
+      phase: "running",
+      action: event.attempt === undefined
+        ? "对方服务繁忙，正在重试"
+        : `对方服务繁忙，正在第 ${String(event.attempt)} 次重试`,
+      object: null,
+      occurredAt: this.nowIso(),
+    });
   }
 
   private updateAgentProgressActivity(runId: string, markdown: string): void {
@@ -4521,6 +4728,7 @@ export class LocalConsoleRuntime {
     runDir: string | null,
     error: string,
     body?: string,
+    terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
       await this.storeCall("local-console-store-record-failure", () =>
@@ -4532,6 +4740,7 @@ export class LocalConsoleRuntime {
           runDir,
           now: this.nowIso(),
           ...(body === undefined ? {} : { body }),
+          ...(terminal == null ? {} : { terminal }),
         }),
       );
     } catch (recordError) {
@@ -4614,7 +4823,8 @@ export class LocalConsoleRuntime {
     runId: string | null,
     runDir: string | null,
     reason: string,
-    interruptionKind: "user" | "redirect" | "context-unavailable" = "user",
+    interruptionKind: "user" | "redirect" | "context-unavailable" | "system" = "user",
+    terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
       await this.storeCall("local-console-store-record-interrupted", () =>
@@ -4626,6 +4836,7 @@ export class LocalConsoleRuntime {
           runId,
           runDir,
           now: this.nowIso(),
+          ...(terminal == null ? {} : { terminal }),
         }),
       );
     } catch (recordError) {
@@ -4640,6 +4851,7 @@ export class LocalConsoleRuntime {
     runId: string | null,
     runDir: string | null,
     reason: string,
+    terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
       await this.storeCall("local-console-store-record-stuck", () =>
@@ -4650,6 +4862,7 @@ export class LocalConsoleRuntime {
           runId,
           runDir,
           now: this.nowIso(),
+          ...(terminal == null ? {} : { terminal }),
         }),
       );
     } catch (recordError) {
@@ -5070,11 +5283,82 @@ export function formatLocalError(error: unknown): string {
 }
 
 function runTimingStatusForFailedResult(
-  reason: string,
+  result: Extract<CodexRunResult, { ok: false }>,
 ): import("./types.js").LocalConsoleRunTiming["status"] {
-  if (reason.includes("runtime-closing")) return "paused";
-  if (codexTimeoutKind(reason) !== null) return "stuck";
-  return reason.startsWith("interrupted:") ? "interrupted" : "failed";
+  if (executionInterruptionCauseForResult(result) === "runtime-closing") return "paused";
+  if (executionTimeoutKind(result) !== null) return "stuck";
+  return isInterruptedCodexRunResult(result) ? "interrupted" : "failed";
+}
+
+function localTerminalFromResult(
+  result: Extract<CodexRunResult, { ok: false }>,
+  fallbackPartialMarkdown: string | null,
+  actualProfile: LocalConsoleExecutionProfile | null,
+): LocalConsoleTerminal {
+  const partialMarkdown = result.terminal?.partialText.trim().length
+    ? result.terminal.partialText
+    : fallbackPartialMarkdown ?? "";
+  if (result.terminal === undefined) {
+    return {
+      kind: "crashed",
+      subkind: null,
+      safeCode: "legacy-run-failure",
+      retryable: null,
+      partialMarkdown,
+      contentIncomplete: true,
+      actualProfile,
+    };
+  }
+  switch (result.terminal.kind) {
+    case "interrupted":
+      return {
+        kind: "interrupted",
+        subkind: result.terminal.actor,
+        safeCode: null,
+        retryable: null,
+        partialMarkdown,
+        contentIncomplete: true,
+        actualProfile,
+      };
+    case "timeout":
+      return {
+        kind: "timeout",
+        subkind: result.terminal.basis,
+        safeCode: null,
+        retryable: null,
+        partialMarkdown,
+        contentIncomplete: true,
+        actualProfile,
+      };
+    case "quota-exhausted":
+    case "rate-limited":
+    case "auth":
+      return {
+        kind: result.terminal.kind,
+        subkind: null,
+        safeCode: result.terminal.safeCode,
+        retryable: result.terminal.retryable,
+        partialMarkdown,
+        contentIncomplete: true,
+        actualProfile,
+      };
+    case "crashed":
+      return {
+        kind: "crashed",
+        subkind: null,
+        safeCode: result.terminal.safeCode,
+        retryable: null,
+        partialMarkdown,
+        contentIncomplete: true,
+        actualProfile,
+      };
+    default:
+      return assertNeverExecutionTerminal(result.terminal);
+  }
+}
+
+function assertNeverExecutionTerminal(value: never): never {
+  throw new Error(`Unhandled local execution terminal: ${String(value)}`);
 }
 
 function workerLaneKey(sessionId: string, role: string): string {

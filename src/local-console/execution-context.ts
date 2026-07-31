@@ -16,6 +16,7 @@ export interface LocalRunExecutionContextFact {
   profile: LocalConsoleExecutionProfile | null;
   profileFingerprint: string;
   agentIdentityFingerprint: string;
+  identitySalt?: string;
   contextFingerprint: string;
   workspace: {
     cwd: string;
@@ -139,6 +140,13 @@ export function executionProfileFingerprint(
       });
 }
 
+export function singleRunOverrideIdentitySalt(input: {
+  overrideId: string;
+  profile: LocalConsoleExecutionProfile;
+}): string {
+  return `${input.overrideId}:${executionProfileFingerprint(input.profile)}`;
+}
+
 export function createRunExecutionContext(input: {
   sessionId: string;
   runId: string;
@@ -153,6 +161,7 @@ export function createRunExecutionContext(input: {
   }>;
   referenceContext?: string | null;
   recordedAt: string;
+  identitySalt?: string;
 }): LocalRunExecutionContextFact {
   const engine = input.profile?.cli ?? "codex";
   const profileFingerprint = executionProfileFingerprint(input.profile);
@@ -168,6 +177,7 @@ export function createRunExecutionContext(input: {
   const agentIdentityFingerprint = localAgentIdentityFingerprint({
     role: input.role,
     team: input.team,
+    identitySalt: input.identitySalt,
   });
   const contextFingerprint = executionContextFingerprint({
     role: input.role,
@@ -175,6 +185,7 @@ export function createRunExecutionContext(input: {
     profileFingerprint,
     workspace,
     team: input.team,
+    identitySalt: input.identitySalt,
   });
   return {
     sessionId: input.sessionId,
@@ -185,6 +196,7 @@ export function createRunExecutionContext(input: {
     profile: input.profile,
     profileFingerprint,
     agentIdentityFingerprint,
+    ...(input.identitySalt === undefined ? {} : { identitySalt: input.identitySalt }),
     contextFingerprint,
     workspace,
     team: input.team.map((member) => ({
@@ -204,6 +216,7 @@ export function localAgentIdentityFingerprint(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  identitySalt?: string;
 }): string {
   return sha256({
     role: input.role,
@@ -212,6 +225,7 @@ export function localAgentIdentityFingerprint(input: {
       agentMarkdown: member.agentMarkdown,
       executionProfile: member.executionProfile,
     })),
+    ...(input.identitySalt === undefined ? {} : { identitySalt: input.identitySalt }),
   });
 }
 
@@ -225,6 +239,7 @@ export function executionContextFingerprint(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  identitySalt?: string;
 }): string {
   return sha256({
     role: input.role,
@@ -237,6 +252,7 @@ export function executionContextFingerprint(input: {
     })),
     cwd: path.resolve(input.workspace.cwd),
     workspaceMode: input.workspace.mode,
+    ...(input.identitySalt === undefined ? {} : { identitySalt: input.identitySalt }),
   });
 }
 
@@ -295,6 +311,23 @@ export function planLocalExecutionRecovery(input: {
 
   let context = input.currentContext;
   if (intent !== null) {
+    if (intent.executionOverride !== undefined) {
+      const expectedIdentitySalt = singleRunOverrideIdentitySalt(intent.executionOverride);
+      if (
+        input.currentContext.profile?.cli !== intent.executionOverride.profile.cli
+        || input.currentContext.profile.model !== intent.executionOverride.profile.model
+        || input.currentContext.profile.effort !== intent.executionOverride.profile.effort
+        || input.currentContext.identitySalt !== expectedIdentitySalt
+      ) {
+        return unavailable(input.currentContext, intent, "profile-mismatch");
+      }
+      return {
+        kind: "first",
+        intent,
+        context: input.currentContext,
+        reason: "no-provider-session",
+      };
+    }
     const target = input.contexts.find((candidate) =>
       candidate.runId === intent.targetRunId
       && candidate.sessionId === input.currentContext.sessionId);

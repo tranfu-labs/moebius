@@ -4,6 +4,21 @@ import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { once } from "node:events";
 import { CODEX_EXEC_OPTIONS } from "./config.js";
+import {
+  createProviderToolProjectionState,
+  projectCodexProgress,
+  projectCodexToolLifecycle,
+  executionInterruptionActor,
+  executionInterruptionCause,
+  type ExecutionFailureTerminal,
+  type ExecutionInterruptionCause,
+  type ExecutionProgressEvent,
+  type ExecutionTerminal,
+} from "./execution-contract.js";
+import {
+  createRunSupervisorState,
+  observeRunProgress,
+} from "./run-supervisor.js";
 
 export type CodexRunMode = { kind: "full" } | { kind: "resume"; threadId: string };
 
@@ -18,17 +33,20 @@ export interface CodexRunOptions {
   interruptTerminationDelayMs?: number;
   interruptKillDelayMs?: number;
   idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
   maxDurationMs?: number;
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
+  onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onThreadStarted?: (threadId: string) => void | Promise<void>;
 }
 
-export type CodexWatchdogKind = "idle" | "max-duration";
+export type CodexWatchdogKind = "idle" | "tool" | "max-duration";
 
 export interface CodexRunWatchdogs {
   recordActivity(): void;
+  setToolInFlight(inFlight: boolean): void;
   clear(): void;
 }
 
@@ -40,6 +58,10 @@ export interface CodexRunFailure {
     | "kimi-cli-spawn-failed"
     | "kimi-cli-exited"
     | "kimi-acp-timeout"
+    | "kimi-acp-interrupted"
+    | "kimi-quota-exhausted"
+    | "kimi-rate-limited"
+    | "kimi-no-complete-result"
     | "claude-cli-not-found"
     | "claude-cli-not-executable"
     | "claude-cli-unsupported-version"
@@ -58,15 +80,19 @@ export interface CodexRunFailure {
   action?: "update-claude";
 }
 
-// 单次 codex run 的双看门狗：空闲（stdout 无输出即倒计时，主防线）与总时长硬上限
-// （无视输出活动，兜底持续输出的死循环）。至多触发一次回调；clear 后不再触发。
+// 单次 run 的可选双看门狗：idle 只由调用方记录的语义进展重置，并可在工具
+// 在途时暂停；max-duration 无视活动，保留给 GitHub runner 等显式启用的模式。
+// 至多触发一次回调；clear 后不再触发。
 export function createRunWatchdogs(options: {
   idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
   maxDurationMs?: number;
   onTimeout: (kind: CodexWatchdogKind) => void;
 }): CodexRunWatchdogs {
   let settled = false;
+  let idleSuspended = false;
   let idleTimer: NodeJS.Timeout | null = null;
+  let toolTimer: NodeJS.Timeout | null = null;
   let maxDurationTimer: NodeJS.Timeout | null = null;
 
   const fire = (kind: CodexWatchdogKind) => {
@@ -78,7 +104,7 @@ export function createRunWatchdogs(options: {
   };
 
   const armIdleTimer = () => {
-    if (options.idleTimeoutMs === undefined) {
+    if (options.idleTimeoutMs === undefined || idleSuspended) {
       return;
     }
     idleTimer = setTimeout(() => fire("idle"), options.idleTimeoutMs);
@@ -93,16 +119,39 @@ export function createRunWatchdogs(options: {
 
   return {
     recordActivity() {
-      if (settled || idleTimer === null) {
+      if (settled || idleSuspended || options.idleTimeoutMs === undefined) {
         return;
       }
-      clearTimeout(idleTimer);
+      if (idleTimer !== null) clearTimeout(idleTimer);
       armIdleTimer();
+    },
+    setToolInFlight(suspended) {
+      if (settled || idleSuspended === suspended) return;
+      idleSuspended = suspended;
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+      if (suspended) {
+        if (options.toolTimeoutMs !== undefined) {
+          toolTimer = setTimeout(() => fire("tool"), options.toolTimeoutMs);
+          toolTimer.unref();
+        }
+      } else {
+        if (toolTimer !== null) {
+          clearTimeout(toolTimer);
+          toolTimer = null;
+        }
+        armIdleTimer();
+      }
     },
     clear() {
       settled = true;
       if (idleTimer !== null) {
         clearTimeout(idleTimer);
+      }
+      if (toolTimer !== null) {
+        clearTimeout(toolTimer);
       }
       if (maxDurationTimer !== null) {
         clearTimeout(maxDurationTimer);
@@ -120,6 +169,7 @@ export type CodexRunResult =
       runDir: string;
       stdoutPath: string;
       stderrPath: string;
+      terminal?: Extract<ExecutionTerminal, { kind: "completed" }>;
     }
   | {
       ok: false;
@@ -129,6 +179,7 @@ export type CodexRunResult =
       runDir: string;
       stdoutPath: string;
       stderrPath: string;
+      terminal?: ExecutionFailureTerminal;
     };
 
 const INTERRUPT_TERMINATION_DELAY_MS = 5_000;
@@ -253,6 +304,12 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: interruptedReason(signal.reason),
+      terminal: {
+        kind: "interrupted",
+        actor: executionInterruptionActor(signal.reason),
+        cause: executionInterruptionCause(signal.reason),
+        partialText: "",
+      },
       runDir,
       stdoutPath,
       stderrPath,
@@ -279,6 +336,10 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   let killTimer: NodeJS.Timeout | null = null;
   let forceSettleTimer: NodeJS.Timeout | null = null;
   let observedThreadId: string | null = null;
+  let visibleMarkdown = "";
+  let progressSequence = 0;
+  let progressSupervisor = createRunSupervisorState(Date.now());
+  let toolProjection = createProviderToolProjectionState();
   let threadStartedCallback: Promise<void> = Promise.resolve();
   let processStartedCallback: Promise<void> = Promise.resolve();
   let threadStartedCallbackError: string | null = null;
@@ -340,21 +401,39 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
 
   const watchdogs = createRunWatchdogs({
     ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
+    ...(options.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: options.toolTimeoutMs }),
     ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
     onTimeout: (kind) => {
       if (abortReason !== null) {
         return;
       }
-      timeoutReason =
-        kind === "idle" ? `idle-timeout:${String(idleTimeoutMs)}ms` : `max-duration-timeout:${String(maxDurationMs)}ms`;
+      timeoutReason = kind === "idle"
+        ? `idle-timeout:${String(idleTimeoutMs)}ms`
+        : kind === "tool"
+          ? `tool-timeout:${String(options.toolTimeoutMs)}ms`
+          : `max-duration-timeout:${String(maxDurationMs)}ms`;
       beginTermination();
     },
   });
-  const recordStdoutActivity = () => {
-    watchdogs.recordActivity();
-  };
   const handleStreamEvent = (event: unknown) => {
     failureState.classified = classifyCodexFailure(event) ?? failureState.classified;
+    const sequence = ++progressSequence;
+    const toolLifecycle = projectCodexToolLifecycle(event, sequence, toolProjection);
+    toolProjection = toolLifecycle.state;
+    const progress = toolLifecycle.progress ?? projectCodexProgress(event, sequence);
+    if (progress !== null) {
+      const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
+      progressSupervisor = supervision.state;
+      if (supervision.kind === "progress-observed") {
+        watchdogs.setToolInFlight(progressSupervisor.activeToolIds.size > 0);
+        if (progressSupervisor.activeToolIds.size === 0) watchdogs.recordActivity();
+      }
+      try {
+        options.onExecutionProgress?.(progress);
+      } catch (error) {
+        stderrFile.write(`[moebius] codex-progress-callback-failed:${formatUnknownError(error)}\n`);
+      }
+    }
     try {
       options.onStructuredActivity?.(event);
     } catch (error) {
@@ -382,9 +461,11 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     }
 
     const markdown = extractVisibleAgentMarkdown(event);
-    if (markdown === null || options.onVisibleAgentMarkdown === undefined) {
+    if (markdown === null) {
       return;
     }
+    visibleMarkdown = markdown;
+    if (options.onVisibleAgentMarkdown === undefined) return;
     try {
       options.onVisibleAgentMarkdown(markdown);
     } catch (error) {
@@ -396,7 +477,6 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
       handleStreamEvent(event);
     }
   };
-  child.stdout.on("data", recordStdoutActivity);
   child.stdout.on("data", handleVisibleStdout);
 
   child.stdout.pipe(stdoutFile, { end: false });
@@ -405,7 +485,6 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   const exit = await exitPromise;
 
   watchdogs.clear();
-  child.stdout.removeListener("data", recordStdoutActivity);
   child.stdout.removeListener("data", handleVisibleStdout);
   for (const event of streamFramer.finish()) {
     handleStreamEvent(event);
@@ -429,6 +508,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: threadIdentityError,
+      terminal: crashedTerminal("codex-thread-identity-invalid", visibleMarkdown),
       runDir,
       stdoutPath,
       stderrPath,
@@ -443,6 +523,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: `thread-start-callback-failed:${threadStartedCallbackError}`,
+      terminal: crashedTerminal("codex-thread-link-unavailable", visibleMarkdown),
       threadId: observedThreadId,
       runDir,
       stdoutPath,
@@ -454,16 +535,32 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: abortReason,
+      terminal: {
+        kind: "interrupted",
+        actor: executionInterruptionActor(signal?.reason),
+        cause: executionInterruptionCause(signal?.reason),
+        partialText: visibleMarkdown,
+      },
       runDir,
       stdoutPath,
       stderrPath,
     };
   }
 
-  if (timeoutReason !== null) {
+  const settledTimeoutReason = timeoutReason as string | null;
+  if (settledTimeoutReason !== null) {
     return {
       ok: false,
-      reason: timeoutReason,
+      reason: settledTimeoutReason,
+      terminal: {
+        kind: "timeout",
+        basis: settledTimeoutReason.startsWith("max-duration-timeout:")
+          ? "max"
+          : settledTimeoutReason.startsWith("tool-timeout:")
+            ? "tool"
+            : "idle",
+        partialText: visibleMarkdown,
+      },
       runDir,
       stdoutPath,
       stderrPath,
@@ -475,6 +572,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: "forced-settle-without-reason",
+      terminal: crashedTerminal("codex-forced-settle", visibleMarkdown),
       runDir,
       stdoutPath,
       stderrPath,
@@ -485,6 +583,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: `spawn-error:${exit.error.message}`,
+      terminal: crashedTerminal("codex-spawn-error", visibleMarkdown),
       runDir,
       stdoutPath,
       stderrPath,
@@ -498,6 +597,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
         ok: false,
         reason: failureState.classified.code,
         failure: failureState.classified,
+        terminal: terminalForFailure(failureState.classified, visibleMarkdown),
         runDir,
         stdoutPath,
         stderrPath,
@@ -506,6 +606,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: detail,
+      terminal: crashedTerminal("codex-process-exited", visibleMarkdown),
       runDir,
       stdoutPath,
       stderrPath,
@@ -519,6 +620,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     return {
       ok: false,
       reason: "no-final-message",
+      terminal: crashedTerminal("codex-no-complete-result", visibleMarkdown),
       runDir,
       stdoutPath,
       stderrPath,
@@ -530,6 +632,11 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     finalText: output.finalText,
     threadId: output.threadId,
     cachedInputTokens: output.cachedInputTokens,
+    terminal: {
+      kind: "completed",
+      externalSessionId: output.threadId,
+      finalText: output.finalText,
+    },
     runDir,
     stdoutPath,
     stderrPath,
@@ -685,6 +792,9 @@ export function codexTimeoutKind(reason: string): CodexWatchdogKind | null {
   if (reason.startsWith("idle-timeout:")) {
     return "idle";
   }
+  if (reason.startsWith("tool-timeout:")) {
+    return "tool";
+  }
 
   if (reason.startsWith("max-duration-timeout:")) {
     return "max-duration";
@@ -693,13 +803,105 @@ export function codexTimeoutKind(reason: string): CodexWatchdogKind | null {
   return null;
 }
 
+export function executionTimeoutKind(result: CodexRunResult): CodexWatchdogKind | null {
+  if (result.ok) return null;
+  if (result.terminal?.kind === "timeout") {
+    return result.terminal.basis === "max"
+      ? "max-duration"
+      : result.terminal.basis;
+  }
+  // Compatibility for injected legacy runners and pre-contract fixtures. Production
+  // adapters always attach terminal and no new control flow may emit this shape.
+  return result.terminal === undefined ? codexTimeoutKind(result.reason) : null;
+}
+
 export function isInterruptedCodexRunResult(
   result: CodexRunResult,
 ): result is Extract<CodexRunResult, { ok: false }> & {
   reason: `interrupted:${string}` | "claude-cancelled";
 } {
-  return !result.ok
-    && (result.reason.startsWith("interrupted:") || result.reason === "claude-cancelled");
+  return !result.ok && (
+    result.terminal?.kind === "interrupted"
+    || (
+      result.terminal === undefined
+      && (result.reason.startsWith("interrupted:") || result.reason === "claude-cancelled")
+    )
+  );
+}
+
+export function executionInterruptionCauseForResult(
+  result: Extract<CodexRunResult, { ok: false }>,
+): ExecutionInterruptionCause | null {
+  if (result.terminal?.kind === "interrupted") {
+    return result.terminal.cause;
+  }
+  // Compatibility for injected legacy runners and pre-contract fixtures.
+  return result.terminal === undefined && isInterruptedCodexRunResult(result)
+    ? executionInterruptionCause(result.reason)
+    : null;
+}
+
+export function terminalForFailure(
+  failure: CodexRunFailure,
+  partialText: string,
+): ExecutionFailureTerminal {
+  switch (failure.code) {
+    case "claude-auth-required":
+      return {
+        kind: "auth",
+        retryable: false,
+        partialText,
+        safeCode: failure.code,
+      };
+    case "claude-billing-unavailable":
+    case "kimi-quota-exhausted":
+      return {
+        kind: "quota-exhausted",
+        retryable: false,
+        partialText,
+        safeCode: failure.code,
+      };
+    case "claude-rate-limited":
+    case "claude-service-unavailable":
+    case "kimi-rate-limited":
+      return {
+        kind: "rate-limited",
+        retryable: true,
+        partialText,
+        safeCode: failure.code,
+      };
+    case "claude-cancelled":
+    case "kimi-acp-interrupted":
+      return { kind: "interrupted", actor: "user", cause: "user", partialText };
+    case "claude-timeout":
+    case "kimi-acp-timeout":
+      return { kind: "timeout", basis: "idle", partialText };
+    case "codex-cli-upgrade-required":
+    case "kimi-cli-not-found":
+    case "kimi-cli-not-executable":
+    case "kimi-cli-spawn-failed":
+    case "kimi-cli-exited":
+    case "kimi-no-complete-result":
+    case "claude-cli-not-found":
+    case "claude-cli-not-executable":
+    case "claude-cli-unsupported-version":
+    case "claude-cli-spawn-failed":
+    case "claude-profile-invalid":
+    case "claude-permission-denied":
+    case "claude-resume-unavailable":
+    case "claude-protocol-invalid":
+      return crashedTerminal(failure.code, partialText);
+    default:
+      return assertFailureNever(failure.code);
+  }
+}
+
+function crashedTerminal(safeCode: string, partialText: string): ExecutionFailureTerminal {
+  return { kind: "crashed", partialText, safeCode };
+}
+
+function assertFailureNever(value: never): never {
+  throw new Error(`Unhandled execution failure: ${String(value)}`);
 }
 
 function parseJsonLine(line: string): unknown | null {

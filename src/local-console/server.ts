@@ -3,8 +3,6 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  CODEX_RUN_IDLE_TIMEOUT_MS,
-  CODEX_RUN_MAX_DURATION_MS,
   DATA_ROOT,
   LOCAL_CONSOLE_HOST,
   LOCAL_CONSOLE_PORT,
@@ -12,10 +10,13 @@ import {
   LOCAL_CONSOLE_SQLITE_PATH,
   LOCAL_CONSOLE_SESSION_LOG_ROOT,
   LOCAL_CONSOLE_STORE_TIMEOUT_MS,
+  LOCAL_RUN_IDLE_TIMEOUT_MS,
+  LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
   PROJECT_ROOT,
   TMP_ROOT,
 } from "../config.js";
 import { run as runCodex } from "../codex.js";
+import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
 import { createSqliteLocalConsoleStore } from "./store.js";
 import {
@@ -60,6 +61,7 @@ export interface LocalConsoleServerOptions {
   storeTimeoutMs?: number;
   sqliteBusyTimeoutMs?: number;
   codexIdleTimeoutMs?: number;
+  toolInFlightTimeoutMs?: number;
   codexMaxDurationMs?: number;
   workspaceGitTimeoutMs?: number;
   routeJudgment?: LocalRouteJudgment;
@@ -115,8 +117,9 @@ export async function startLocalConsoleServer(options: LocalConsoleServerOptions
     projectRoot,
     workdirRoot,
     storeTimeoutMs: options.storeTimeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS,
-    codexIdleTimeoutMs: options.codexIdleTimeoutMs ?? CODEX_RUN_IDLE_TIMEOUT_MS,
-    codexMaxDurationMs: options.codexMaxDurationMs ?? CODEX_RUN_MAX_DURATION_MS,
+    codexIdleTimeoutMs: options.codexIdleTimeoutMs ?? LOCAL_RUN_IDLE_TIMEOUT_MS,
+    toolInFlightTimeoutMs: options.toolInFlightTimeoutMs ?? LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
+    codexMaxDurationMs: options.codexMaxDurationMs,
     workspaceGitTimeoutMs: options.workspaceGitTimeoutMs,
     routeJudgment: options.routeJudgment,
     routeTimeoutMs: options.routeTimeoutMs,
@@ -748,7 +751,12 @@ async function handleRequest(
 
     const retryRunMatch = matchRunRetryRoute(url.pathname);
     if (request.method === "POST" && retryRunMatch !== null) {
-      const retried = await runtime.retryRun(retryRunMatch);
+      const payload = await readJsonBody(request);
+      const executionOverride = readExecutionOverride(payload);
+      const retried = await runtime.retryRun({
+        ...retryRunMatch,
+        ...(executionOverride === undefined ? {} : { executionOverride }),
+      });
       sendJson(response, retried ? 202 : 404, {
         retried,
         ...(retried ? {} : { error: "No retryable run matched the requested sessionId/runId" }),
@@ -758,6 +766,11 @@ async function handleRequest(
 
     if (request.method === "GET" && url.pathname === "/api/local-console/messages") {
       sendJson(response, 200, await runtime.snapshot());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/local-console/execution-profiles") {
+      sendJson(response, 200, { registry: TRUSTED_EXECUTION_REGISTRY });
       return;
     }
 
@@ -788,6 +801,39 @@ async function handleRequest(
     }
     sendJson(response, 500, { error: formatLocalError(error) });
   }
+}
+
+function readExecutionOverride(value: unknown): {
+  overrideId: string;
+  profile: import("./types.js").LocalConsoleExecutionProfile;
+  scope: "single-run";
+} | undefined {
+  if (!isRecord(value) || value.executionOverride === undefined) return undefined;
+  const override = value.executionOverride;
+  if (
+    !isRecord(override)
+    || override.scope !== "single-run"
+    || typeof override.overrideId !== "string"
+    || override.overrideId.trim() === ""
+    || !isRecord(override.profile)
+  ) {
+    throw new Error("Expected a valid single-run executionOverride");
+  }
+  const { cli, model, effort } = override.profile;
+  if (
+    (cli !== "codex" && cli !== "claude" && cli !== "kimi")
+    || typeof model !== "string"
+    || model.trim() === ""
+    || typeof effort !== "string"
+    || effort.trim() === ""
+  ) {
+    throw new Error("Expected executionOverride.profile to contain cli/model/effort");
+  }
+  return {
+    overrideId: override.overrideId,
+    profile: { cli, model, effort },
+    scope: "single-run",
+  };
 }
 
 async function submitMessage(

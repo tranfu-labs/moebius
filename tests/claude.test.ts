@@ -260,6 +260,55 @@ console.log(JSON.stringify({type:"result",subtype:"success",session_id:session,r
     });
   });
 
+  it("keeps idle suspended from tool_use through the later tool_result", async () => {
+    const fixture = await makeFakeClaude(`
+const session = process.argv[process.argv.indexOf("--session-id")+1];
+const emit = (value) => console.log(JSON.stringify(value));
+emit({type:"system",subtype:"init",session_id:session,tools:["Bash"]});
+emit({type:"stream_event",event:{type:"content_block_start",index:0,content_block:{type:"tool_use",id:"tool-long",name:"Bash"}}});
+emit({type:"stream_event",event:{type:"content_block_stop",index:0}});
+setTimeout(() => {
+  emit({type:"user",message:{content:[{type:"tool_result",tool_use_id:"tool-long",content:"done"}]}});
+  emit({type:"result",subtype:"success",session_id:session,result:"LONG_TOOL_SUCCESS"});
+}, 2200);
+`);
+    const progress: Array<{ kind: string }> = [];
+    const result = await runFixture(fixture, {
+      idleTimeoutMs: 1_500,
+      toolTimeoutMs: 3_000,
+      interruptTerminationDelayMs: 10,
+      interruptKillDelayMs: 10,
+      onExecutionProgress: (event) => progress.push(event),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      finalText: "LONG_TOOL_SUCCESS",
+    });
+    expect(progress.map((event) => event.kind)).toContain("tool-started");
+    expect(progress.map((event) => event.kind)).toContain("tool-finished");
+  });
+
+  it("stops a tool_use that never produces a tool_result", async () => {
+    const fixture = await makeFakeClaude(`
+const session = process.argv[process.argv.indexOf("--session-id")+1];
+const emit = (value) => console.log(JSON.stringify(value));
+emit({type:"system",subtype:"init",session_id:session,tools:["Bash"]});
+emit({type:"stream_event",event:{type:"content_block_start",index:0,content_block:{type:"tool_use",id:"tool-hung",name:"Bash"}}});
+emit({type:"stream_event",event:{type:"content_block_stop",index:0}});
+setInterval(() => {}, 1000);
+`);
+    await expect(runFixture(fixture, {
+      idleTimeoutMs: 1_500,
+      toolTimeoutMs: 2_000,
+      interruptTerminationDelayMs: 10,
+      interruptKillDelayMs: 10,
+    })).resolves.toMatchObject({
+      ok: false,
+      reason: "claude-timeout",
+      terminal: { kind: "timeout", basis: "tool" },
+    });
+  });
+
   it("fails closed before a session link for forbidden tools or a mismatched id", async () => {
     const forbidden = await makeFakeClaude(`
 console.log(JSON.stringify({type:"system",subtype:"init",session_id:process.argv[process.argv.indexOf("--session-id")+1],tools:["Read","Agent"]}));

@@ -12,6 +12,7 @@ import {
   type LocalConsoleAgentTeamSnapshot,
   type LocalConsoleSessionSummary,
   type LocalConsoleSystemEventKind,
+  type LocalConsoleTerminal,
   type MoveEmptySessionResult,
 } from "./local-console/types.js";
 import type { SqliteStateCommand, SqliteStateSource } from "./sqlite-state.js";
@@ -53,6 +54,7 @@ interface WorkerLocalMessage {
   runDir: string | null;
   error: string | null;
   systemEventKind: LocalConsoleSystemEventKind;
+  terminal?: LocalConsoleTerminal | null;
   failureCount: number;
   lastFailureReason: string | null;
   sourceKind: string | null;
@@ -370,6 +372,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       system_event_kind TEXT NOT NULL DEFAULT 'other' CHECK (
         system_event_kind IN ('run-not-started', 'run-stuck', 'user-stopped', 'resume-unavailable', 'retry-exhausted', 'other')
       ),
+      terminal_json TEXT,
       failure_count INTEGER NOT NULL DEFAULT 0,
       last_failure_reason TEXT,
       source_kind TEXT,
@@ -550,6 +553,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
   migrateSystemEventKinds(database);
+  migrateLocalTerminalFacts(database);
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_sessions_local_project_created_at ON sessions(project_id, created_at DESC, session_id ASC) WHERE source_type = 'local'",
   );
@@ -562,6 +566,13 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   markSchemaMigration(database, "main-sidebar-t3-session-attention-state");
   markSchemaMigration(database, "local-console-managed-attachments");
   markSchemaMigration(database, "sidebar-chat-session-analysis");
+}
+
+function migrateLocalTerminalFacts(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "session_messages", "terminal_json")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN terminal_json TEXT");
+  }
+  markSchemaMigration(database, "local-runtime-structured-terminal-v1");
 }
 
 function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
@@ -1523,10 +1534,10 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
   transaction(database, () => {
     const insert = database.prepare(
       `INSERT INTO session_messages
-        (id, session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind,
+        (id, session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, terminal_json,
          failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at,
          dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          speaker = excluded.speaker,
          role = excluded.role,
@@ -1536,6 +1547,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
          run_dir = excluded.run_dir,
          error = excluded.error,
          system_event_kind = excluded.system_event_kind,
+         terminal_json = excluded.terminal_json,
          failure_count = excluded.failure_count,
          last_failure_reason = excluded.last_failure_reason,
          source_kind = excluded.source_kind,
@@ -1560,6 +1572,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
         message.runDir,
         message.error,
         message.systemEventKind,
+        message.terminal == null ? null : JSON.stringify(message.terminal),
         message.failureCount,
         message.lastFailureReason,
         message.sourceKind,
@@ -1790,6 +1803,7 @@ function readSessionFactMessage(value: unknown): WorkerLocalMessage {
     runDir: readNullableString(value.runDir, "runDir"),
     error: readNullableString(value.error, "error"),
     systemEventKind: readSystemEventKind(value.systemEventKind),
+    terminal: "terminal" in value ? readLocalTerminal(value.terminal) : null,
     failureCount: readNumber(value.failureCount, "failureCount"),
     lastFailureReason: readNullableString(value.lastFailureReason, "lastFailureReason"),
     sourceKind: readNullableString(value.sourceKind, "sourceKind"),
@@ -3636,6 +3650,9 @@ function recordDetachedRunTerminal(
       input.now,
       input.status,
       input.systemEventKind,
+      "local-message",
+      null,
+      input.terminal ?? null,
     );
     return null;
   });
@@ -3932,6 +3949,9 @@ function recordSystemMessage(
       input.now,
       input.status ?? "displayed",
       input.systemEventKind,
+      "local-message",
+      null,
+      input.terminal ?? null,
     );
     return null;
   });
@@ -3953,6 +3973,7 @@ function recordFailure(database: SqliteDatabase, input: Extract<SqliteStateComma
       input.systemEventKind ?? "run-not-started",
       input.sourceKind ?? "local-message",
       input.sourceId ?? null,
+      input.terminal ?? null,
     );
     completeSourceMessage(database, source, "failed", input.error, input.runId, input.runDir, input.now);
     return null;
@@ -4058,6 +4079,8 @@ function recordInterrupted(database: SqliteDatabase, input: Extract<SqliteStateC
         ? "这一步依赖的项目或团队内容已经不可用，因此已停止。已经产生的文件改动会保留。"
         : input.interruptionKind === "redirect"
           ? "新的指令到了，当前这一步已经停下；这个成员会带着新指令重新开始。"
+        : input.interruptionKind === "system"
+          ? "这一步被系统停止了。已经产生的文件改动会保留。"
         : "你让这一步停下了。已经产生的文件改动会保留。",
       input.runId,
       input.runDir,
@@ -4065,6 +4088,9 @@ function recordInterrupted(database: SqliteDatabase, input: Extract<SqliteStateC
       input.now,
       source.speaker === "agent" ? "interrupted" : "displayed",
       input.interruptionKind === "user" || input.interruptionKind === undefined ? "user-stopped" : "other",
+      "local-message",
+      null,
+      input.terminal ?? null,
     );
     completeSourceMessage(database, source, "interrupted", input.reason, input.runId, input.runDir, input.now);
     return null;
@@ -4075,31 +4101,40 @@ function recordStuck(database: SqliteDatabase, input: Extract<SqliteStateCommand
   return transaction(database, () => {
     ensureLocalCursor(database, input.sessionId, input.now);
     const source = requireLocalMessage(database, input.userMessageId, input.sessionId);
+    const body = input.terminal?.kind === "timeout" && input.terminal.subkind === "tool"
+      ? "这一步的工具调用运行过久，已经停下。你可以重试，或换一个执行配置。"
+      : "这一步卡住了。你可以重试，或直接说话、换一个成员接手。";
     if (source.sourceKind === "local-worker-run") {
       completeDetachedRunPlaceholder(database, input.sessionId, input.runId ?? source.runId ?? "", "stuck", input.reason, input.now);
       insertSystemMessage(
         database,
         input.sessionId,
-        "这一步卡住了。你可以重试，或直接说话、换一个成员接手。",
+        body,
         input.runId,
         input.runDir,
         input.reason,
         input.now,
         "stuck",
         "run-stuck",
+        "local-message",
+        null,
+        input.terminal ?? null,
       );
       return null;
     }
     insertSystemMessage(
       database,
       input.sessionId,
-      "这一步卡住了。你可以重试，或直接说话、换一个成员接手。",
+      body,
       input.runId,
       input.runDir,
       input.reason,
       input.now,
       source.speaker === "agent" ? "stuck" : "displayed",
       "run-stuck",
+      "local-message",
+      null,
+      input.terminal ?? null,
     );
     completeSourceMessage(database, source, "stuck", input.reason, input.runId, input.runDir, input.now);
     return null;
@@ -4492,15 +4527,29 @@ function insertSystemMessage(
   systemEventKind: LocalConsoleSystemEventKind = "other",
   sourceKind = "local-message",
   sourceId: string | null = null,
+  terminal: LocalConsoleTerminal | null = null,
 ): void {
   ensureSession(database, sessionId, now, undefined, LOCAL_CONSOLE_PROJECT_ID);
   database
     .prepare(
       `INSERT INTO session_messages
-        (session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, source_kind, source_id, created_at, updated_at)
-      VALUES (?, 'system', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, source_kind, source_id, terminal_json, created_at, updated_at)
+      VALUES (?, 'system', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(sessionId, body, status, runId, runDir, error, systemEventKind, sourceKind, sourceId, now, now);
+    .run(
+      sessionId,
+      body,
+      status,
+      runId,
+      runDir,
+      error,
+      systemEventKind,
+      sourceKind,
+      sourceId,
+      terminal === null ? null : JSON.stringify(terminal),
+      now,
+      now,
+    );
 }
 
 function requireLocalMessage(database: SqliteDatabase, id: number, sessionId: string): WorkerLocalMessage {
@@ -4739,6 +4788,7 @@ function readLocalMessageRow(row: unknown): WorkerLocalMessage {
     runDir: readNullableString(row.run_dir, "run_dir"),
     error: readNullableString(row.error, "error"),
     systemEventKind: readSystemEventKind(row.system_event_kind),
+    terminal: "terminal_json" in row ? readTerminalJson(row.terminal_json) : null,
     failureCount: "failure_count" in row ? readNumber(row.failure_count, "failure_count") : 0,
     lastFailureReason: "last_failure_reason" in row ? readNullableString(row.last_failure_reason, "last_failure_reason") : null,
     sourceKind: "source_kind" in row ? readNullableString(row.source_kind, "source_kind") : null,
@@ -4850,6 +4900,64 @@ function readSystemEventKind(value: unknown): LocalConsoleSystemEventKind {
     return value;
   }
   throw new Error(`Invalid system_event_kind: ${String(value)}`);
+}
+
+function readTerminalJson(value: unknown): LocalConsoleTerminal | null {
+  const serialized = readNullableString(value, "terminal_json");
+  if (serialized === null) return null;
+  try {
+    return readLocalTerminal(JSON.parse(serialized) as unknown);
+  } catch {
+    throw new Error("Invalid terminal_json");
+  }
+}
+
+function readLocalTerminal(value: unknown): LocalConsoleTerminal | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) throw new Error("Invalid local terminal");
+  const kind = readString(value.kind, "terminal.kind");
+  if (
+    kind !== "interrupted"
+    && kind !== "timeout"
+    && kind !== "quota-exhausted"
+    && kind !== "rate-limited"
+    && kind !== "auth"
+    && kind !== "crashed"
+  ) {
+    throw new Error(`Invalid local terminal kind: ${kind}`);
+  }
+  if (value.contentIncomplete !== true) {
+    throw new Error("Invalid local terminal completeness");
+  }
+  return {
+    kind,
+    subkind: readNullableString(value.subkind, "terminal.subkind"),
+    safeCode: readNullableString(value.safeCode, "terminal.safeCode"),
+    retryable: value.retryable === null
+      ? null
+      : typeof value.retryable === "boolean"
+        ? value.retryable
+        : (() => { throw new Error("Invalid terminal.retryable"); })(),
+    partialMarkdown: readString(value.partialMarkdown, "terminal.partialMarkdown"),
+    contentIncomplete: true,
+    actualProfile: readLocalExecutionProfile(value.actualProfile),
+  };
+}
+
+function readLocalExecutionProfile(
+  value: unknown,
+): import("./local-console/types.js").LocalConsoleExecutionProfile | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) throw new Error("Invalid terminal.actualProfile");
+  const cli = readString(value.cli, "terminal.actualProfile.cli");
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+    throw new Error("Invalid terminal.actualProfile.cli");
+  }
+  return {
+    cli,
+    model: readString(value.model, "terminal.actualProfile.model"),
+    effort: readString(value.effort, "terminal.actualProfile.effort"),
+  };
 }
 
 function ensureSession(

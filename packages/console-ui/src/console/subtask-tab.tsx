@@ -13,6 +13,10 @@ import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
 import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
 import { RunTime } from "@/console/run-time";
+import type {
+  ExecutionRegistryState,
+  RegistryExecutionProfile,
+} from "@/console/execution-profile-registry";
 import { StructuredAttachmentList, type ComposerAttachment } from "@/console/structured-attachments";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
@@ -38,7 +42,9 @@ export interface SubtaskTabProps {
   onComposerAttachmentRemove?: (clientId: string) => void;
   onComposerAttachmentRetry?: (clientId: string) => void;
   onSend(): void;
-  onRetry(runId: string): void;
+  onRetry(runId: string, executionOverride?: RegistryExecutionProfile): void | Promise<void>;
+  executionRegistryState?: ExecutionRegistryState;
+  onReloadExecutionRegistry?: () => void;
   onInterrupt(sessionId: string, runId: string): void;
   onOpenOutput?(input: {
     sessionId: string;
@@ -67,6 +73,8 @@ export function SubtaskTab({
   onComposerAttachmentRetry,
   onSend,
   onRetry,
+  executionRegistryState,
+  onReloadExecutionRegistry,
   onInterrupt,
   onOpenOutput,
   onOpenExternalLink,
@@ -125,6 +133,8 @@ export function SubtaskTab({
                 processRole={resolveMessageProcessRole(message, view.messages)}
                 memberIdentities={memberIdentities}
                 onRetry={onRetry}
+                executionRegistryState={executionRegistryState}
+                onReloadExecutionRegistry={onReloadExecutionRegistry}
                 onOpenOutput={onOpenOutput}
                 onOpenExternalLink={onOpenExternalLink}
                 onOpenFileReference={onOpenFileReference}
@@ -207,6 +217,8 @@ function SubtaskTimelineEntry({
   processRole,
   memberIdentities,
   onRetry,
+  executionRegistryState,
+  onReloadExecutionRegistry,
   onOpenOutput,
   onOpenExternalLink,
   onOpenFileReference,
@@ -215,7 +227,9 @@ function SubtaskTimelineEntry({
   message: OperatorMessage;
   processRole: string | null;
   memberIdentities: NonNullable<OperatorSubSessionView["memberIdentities"]>;
-  onRetry(runId: string): void;
+  onRetry(runId: string, executionOverride?: RegistryExecutionProfile): void | Promise<void>;
+  executionRegistryState?: ExecutionRegistryState;
+  onReloadExecutionRegistry?: () => void;
   onOpenOutput?: SubtaskTabProps["onOpenOutput"];
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
@@ -231,11 +245,32 @@ function SubtaskTimelineEntry({
         memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
+        description={message.terminal === null || message.terminal === undefined ? null : message.body}
+        partialMarkdown={message.terminal?.partialMarkdown}
+        contentIncomplete={message.terminal?.contentIncomplete}
+        initialProfile={message.terminal?.actualProfile}
+        executionRegistryState={executionRegistryState}
+        onReloadExecutionRegistry={onReloadExecutionRegistry}
         elapsedMs={message.runTiming?.elapsedMs}
         completedAt={message.runTiming?.completedAt}
-        onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
+        onRetry={outcome !== "retry-exhausted" && message.runId !== null
           ? () => onRetry(message.runId!)
           : undefined}
+        onOverrideAndRetry={
+          message.runId !== null
+          && message.terminal !== null
+          && message.terminal !== undefined
+          && (
+            message.terminal.kind === "interrupted"
+            || message.terminal.kind === "timeout"
+            || message.terminal.kind === "quota-exhausted"
+            || message.terminal.kind === "rate-limited"
+            || message.terminal.kind === "auth"
+            || message.terminal.kind === "crashed"
+          )
+            ? (profile) => onRetry(message.runId!, profile)
+            : undefined
+        }
         onOpenOutput={message.runId === null
           || onOpenOutput === undefined
           || message.runTiming?.processOutputAvailable === false
@@ -388,6 +423,17 @@ function SubtaskStateMessage({
 }
 
 function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
+  if (message.terminal !== null && message.terminal !== undefined) {
+    switch (message.terminal.kind) {
+      case "interrupted":
+        return message.terminal.subkind === "system" ? "system-stopped" : "user-stopped";
+      case "timeout": return "run-stuck";
+      case "quota-exhausted": return "quota-exhausted";
+      case "rate-limited": return "rate-limited";
+      case "auth": return "auth-failed";
+      case "crashed": return "run-crashed";
+    }
+  }
   const eventKind = message.systemEventKind ?? message.sourceKind;
   if (
     eventKind === "run-not-started"

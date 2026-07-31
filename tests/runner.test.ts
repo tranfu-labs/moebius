@@ -583,7 +583,11 @@ describe("codex driver pool default limit", () => {
     const idleTimeoutReason = `idle-timeout:${String(CODEX_RUN_IDLE_TIMEOUT_MS)}ms`;
     let secondStarted = false;
     const runCodex = vi.fn<ProcessIssueSourceDependencies["runCodex"]>(async (options) =>
-      failedCodexRun(options.runDir, idleTimeoutReason),
+      failedCodexRun(options.runDir, idleTimeoutReason, {
+        kind: "timeout",
+        basis: "idle",
+        partialText: "",
+      }),
     );
     const processIssueSourceDependency: RunnerDependencies["processIssueSource"] = async (input) => {
       if (input.source.issueNumber === first.issueNumber) {
@@ -649,6 +653,216 @@ describe("codex driver pool default limit", () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+
+  it("keeps the GitHub max-duration watchdog and folds its structured terminal into a failed outcome", async () => {
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const reason = `max-duration-timeout:${String(CODEX_RUN_MAX_DURATION_MS)}ms`;
+    const runCodex = vi.fn<ProcessIssueSourceDependencies["runCodex"]>(async (options) =>
+      failedCodexRun(options.runDir, reason, {
+        kind: "timeout",
+        basis: "max",
+        partialText: "partial",
+      }),
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await expect(processIssueSource({
+        source,
+        issue: makeIssue("@dev please run"),
+        agentFiles: [agent],
+      }, makeDependencies({ runCodex }))).resolves.toMatchObject({
+        kind: "failed",
+        reason,
+      });
+      expect(runCodex).toHaveBeenCalledTimes(1);
+      expect(runCodex.mock.calls[0]?.[0]).toMatchObject({
+        idleTimeoutMs: CODEX_RUN_IDLE_TIMEOUT_MS,
+        maxDurationMs: CODEX_RUN_MAX_DURATION_MS,
+      });
+      expect(logSpy.mock.calls.some(([line]) =>
+        typeof line === "string"
+        && line.includes('"event":"codex-watchdog-timeout"')
+        && line.includes(`"timeoutMs":${String(CODEX_RUN_MAX_DURATION_MS)}`))).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("keeps a structured Codex crash on the ordinary GitHub retry path", async () => {
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const runCodex = vi.fn<ProcessIssueSourceDependencies["runCodex"]>(async (options) =>
+      failedCodexRun(options.runDir, "exit-code-1", {
+        kind: "crashed",
+        partialText: "partial",
+        safeCode: "codex-process-failed",
+      }),
+    );
+
+    await expect(processIssueSource({
+      source,
+      issue: makeIssue("@dev please run"),
+      agentFiles: [agent],
+    }, makeDependencies({ runCodex }))).resolves.toMatchObject({
+      kind: "failed",
+      reason: "exit-code-1",
+    });
+    expect(runCodex).toHaveBeenCalledTimes(1);
+  });
+
+  it("dead-letters a fifth structured Codex failure without advancing the role cursor", async () => {
+    const issue = makeIssueSource({ owner: source.owner, repo: source.repo, issueNumber: 67 });
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const deadLetterComments: string[] = [];
+    const visibleComments = vi.fn<ProcessIssueSourceDependencies["postComment"]>(async () => {});
+    let roleThreadState: Awaited<ReturnType<
+      ProcessIssueSourceDependencies["loadRoleThreadStateStore"]
+    >> = {};
+    const saveRoleThreadStateEntry = vi.fn<
+      ProcessIssueSourceDependencies["saveRoleThreadStateEntry"]
+    >(async (issueKey, role, state) => {
+      roleThreadState = {
+        ...roleThreadState,
+        [issueKey]: {
+          ...roleThreadState[issueKey],
+          [role]: state,
+        },
+      };
+    });
+    const runCodex = vi.fn<ProcessIssueSourceDependencies["runCodex"]>(async (options) => {
+      await options.onThreadStarted?.("thread-structured-dead-letter");
+      return failedCodexRun(options.runDir, "structured-provider-failure", {
+        kind: "crashed",
+        partialText: "partial",
+        safeCode: "codex-process-failed",
+      });
+    });
+    const runner = createRunner({
+      initialState: stateWithFailureCount(issue, 4),
+      dependencies: makeRunnerDependencies({
+        summaries: [{ issueNumber: issue.issueNumber, updatedAt: "2026-07-01T00:05:00Z" }],
+        listAgentFiles: async () => [agent],
+        processIssueSource: async (input) =>
+          await processIssueSource(input, makeDependencies({
+            runCodex,
+            postComment: visibleComments,
+            loadRoleThreadStateStore: async () => roleThreadState,
+            saveRoleThreadStateEntry,
+          })),
+        postComment: async (_source, body) => {
+          deadLetterComments.push(body);
+        },
+      }),
+    });
+
+    await runner.heartbeat(new Date("2026-07-01T00:10:00Z"));
+    await runner.dispatcher.idle();
+
+    expect(runCodex).toHaveBeenCalledTimes(1);
+    expect(visibleComments).not.toHaveBeenCalled();
+    expect(deadLetterComments).toHaveLength(1);
+    expect(deadLetterComments[0]).toContain("Failure count: 5");
+    expect(deadLetterComments[0]).toContain("Failure reason: structured-provider-failure");
+    expect(roleThreadState[issue.issueKey]?.dev).toMatchObject({
+      threadId: "thread-structured-dead-letter",
+      lastSeenIndex: -1,
+    });
+    expect(runner.persister.state().issues[issue.issueKey]).toMatchObject({
+      mode: "idle",
+      updatedAt: "2026-07-01T00:05:00Z",
+      failureCount: 0,
+      activeNoChangeCount: 0,
+      nextPollAt: null,
+    });
+  });
+
+  it("recovers after a structured Codex failure without dead-lettering and advances the role cursor once", async () => {
+    const issue = makeIssueSource({ owner: source.owner, repo: source.repo, issueNumber: 67 });
+    const agent = await makeAgentFile("dev", "Dev persona");
+    const deadLetterComments = vi.fn<RunnerDependencies["postComment"]>(async () => {});
+    const visibleComments = vi.fn<ProcessIssueSourceDependencies["postComment"]>(async () => {});
+    let roleThreadState: Awaited<ReturnType<
+      ProcessIssueSourceDependencies["loadRoleThreadStateStore"]
+    >> = {};
+    const saveRoleThreadStateEntry = vi.fn<
+      ProcessIssueSourceDependencies["saveRoleThreadStateEntry"]
+    >(async (issueKey, role, state) => {
+      roleThreadState = {
+        ...roleThreadState,
+        [issueKey]: {
+          ...roleThreadState[issueKey],
+          [role]: state,
+        },
+      };
+    });
+    let shouldFail = true;
+    const runCodex = vi.fn<ProcessIssueSourceDependencies["runCodex"]>(async (options) => {
+      if (shouldFail) {
+        await options.onThreadStarted?.("thread-structured-recovery");
+        return failedCodexRun(options.runDir, "structured-transient-failure", {
+          kind: "crashed",
+          partialText: "partial",
+          safeCode: "codex-process-failed",
+        });
+      }
+      return {
+        ...successfulCodexRunWithFinalText(options.runDir, "recovered"),
+        threadId: "thread-structured-recovery",
+      };
+    });
+    const summaries = [{ issueNumber: issue.issueNumber, updatedAt: "2026-07-01T00:05:00Z" }];
+    const runner = createRunner({
+      // Start below the dead-letter boundary: the first structured failure records
+      // count 4, leaving the next heartbeat available to prove recovery.
+      initialState: stateWithFailureCount(issue, 3),
+      dependencies: makeRunnerDependencies({
+        summaries,
+        listAgentFiles: async () => [agent],
+        processIssueSource: async (input) =>
+          await processIssueSource(input, makeDependencies({
+            runCodex,
+            postComment: visibleComments,
+            loadRoleThreadStateStore: async () => roleThreadState,
+            saveRoleThreadStateEntry,
+          })),
+        postComment: deadLetterComments,
+      }),
+    });
+
+    await runner.heartbeat(new Date("2026-07-01T00:10:00Z"));
+    await runner.dispatcher.idle();
+    expect(runner.persister.state().issues[issue.issueKey]).toMatchObject({
+      mode: "active",
+      updatedAt: "2026-07-01T00:00:00Z",
+      failureCount: 4,
+      lastFailureReason: "structured-transient-failure",
+    });
+    expect(roleThreadState[issue.issueKey]?.dev).toMatchObject({
+      threadId: "thread-structured-recovery",
+      lastSeenIndex: -1,
+    });
+
+    shouldFail = false;
+    summaries[0] = { issueNumber: issue.issueNumber, updatedAt: "2026-07-01T00:15:00Z" };
+    await runner.heartbeat(new Date("2026-07-01T00:16:00Z"));
+    await runner.dispatcher.idle();
+
+    expect(runCodex).toHaveBeenCalledTimes(2);
+    expect(runCodex.mock.calls.map(([options]) => options.mode)).toEqual([
+      { kind: "full" },
+      { kind: "resume", threadId: "thread-structured-recovery" },
+    ]);
+    expect(deadLetterComments).not.toHaveBeenCalled();
+    expect(visibleComments).toHaveBeenCalledTimes(1);
+    expect(roleThreadState[issue.issueKey]?.dev).toMatchObject({
+      threadId: "thread-structured-recovery",
+      lastSeenIndex: 0,
+    });
+    expect(runner.persister.state().issues[issue.issueKey]).toMatchObject({
+      mode: "active",
+      updatedAt: "2026-07-01T00:15:00Z",
+      failureCount: 0,
+    });
   });
 });
 
@@ -4271,6 +4485,32 @@ function stateWithIdleScanDueIssues(sources: ReturnType<typeof makeIssueSource>[
   };
 }
 
+function stateWithFailureCount(
+  issue: ReturnType<typeof makeIssueSource>,
+  failureCount: number,
+): GitHubResponseIntakeState {
+  return {
+    repositories: {
+      [`${issue.owner}/${issue.repo}`]: {
+        lastIdleScanAt: "2026-07-01T00:00:00.000Z",
+      },
+    },
+    issues: {
+      [issue.issueKey]: {
+        owner: issue.owner,
+        repo: issue.repo,
+        issueNumber: issue.issueNumber,
+        updatedAt: "2026-07-01T00:00:00Z",
+        mode: "idle",
+        activeNoChangeCount: 0,
+        nextPollAt: null,
+        failureCount,
+        lastFailureReason: "previous structured failure",
+      },
+    },
+  };
+}
+
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
@@ -4340,10 +4580,15 @@ function successfulCodexRunWithFinalText(runDir: string, finalText: string) {
   };
 }
 
-function failedCodexRun(runDir: string, reason: string) {
+function failedCodexRun(
+  runDir: string,
+  reason: string,
+  terminal?: import("../src/execution-contract.js").ExecutionFailureTerminal,
+) {
   return {
     ok: false as const,
     reason,
+    ...(terminal === undefined ? {} : { terminal }),
     runDir,
     stdoutPath: path.join(runDir, "stdout.jsonl"),
     stderrPath: path.join(runDir, "stderr.log"),

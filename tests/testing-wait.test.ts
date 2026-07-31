@@ -90,6 +90,9 @@ describe("waitForValue", () => {
   });
 
   it("超时信息包含等待目标、耗时与上限——这是 flaky 可诊断的前提", async () => {
+    const scale = waitScale();
+    const limit = resolveWaitTimeout({ timeoutMs: 5, kind: "io" });
+    const scaleSuffix = scale === 1 ? "" : `, scale=${String(scale)}`;
     await expect(
       waitForValue(() => undefined, {
         describe: "永远不会就绪的东西",
@@ -97,7 +100,9 @@ describe("waitForValue", () => {
         kind: "io",
         tick: instantTick(),
       }),
-    ).rejects.toThrow(/timed out waiting for 永远不会就绪的东西 after \d+ms \(limit 5ms, kind=io\)/);
+    ).rejects.toThrow(new RegExp(
+      `timed out waiting for 永远不会就绪的东西 after \\d+ms \\(limit ${String(limit)}ms, kind=io${scaleSuffix}\\)`,
+    ));
   });
 
   it("超时信息带上最后一次诊断快照", async () => {

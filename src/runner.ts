@@ -63,7 +63,12 @@ import {
   resolveNextRoleThreadState,
   type TimelineMessage,
 } from "./conversation.js";
-import { codexTimeoutKind, isInterruptedCodexRunResult, run as runCodex } from "./codex.js";
+import {
+  executionTimeoutKind,
+  isInterruptedCodexRunResult,
+  run as runCodex,
+  type CodexRunResult,
+} from "./codex.js";
 import {
   resolveCodexRollout,
   type CodexRolloutResolution,
@@ -901,14 +906,16 @@ export async function processIssueSource(
     });
 
     // 看门狗已下沉到 codex.run() 内部（空闲 + 总时长硬上限，每次 run 独立计时，
-    // 含有限时间 settle 保障）；runner 只按 reason 前缀分流日志并把超时折叠为 failed。
+    // 含有限时间 settle 保障）；runner 只按结构化 terminal 分流日志并把超时折叠为 failed。
     const codexRunTimeouts = {
       idleTimeoutMs: CODEX_RUN_IDLE_TIMEOUT_MS,
       maxDurationMs: CODEX_RUN_MAX_DURATION_MS,
     };
 
-    const resolveCodexTimeoutOutcome = (failedResult: { runDir: string; reason: string }): IssueProcessingOutcome | null => {
-      const timeoutKind = codexTimeoutKind(failedResult.reason);
+    const resolveCodexTimeoutOutcome = (
+      failedResult: Extract<CodexRunResult, { ok: false }>,
+    ): IssueProcessingOutcome | null => {
+      const timeoutKind = executionTimeoutKind(failedResult);
       if (timeoutKind === null) {
         return null;
       }

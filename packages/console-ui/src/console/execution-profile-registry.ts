@@ -14,7 +14,17 @@ export interface ExecutionModelRegistryEntry {
   membershipRestricted: boolean;
 }
 
-export const EXECUTION_MODEL_REGISTRY = {
+export type ExecutionModelRegistry = Readonly<Record<
+  ExecutionProfileCli,
+  readonly ExecutionModelRegistryEntry[]
+>>;
+
+export type ExecutionRegistryState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; registry: ExecutionModelRegistry };
+
+export const EXECUTION_MODEL_REGISTRY: ExecutionModelRegistry = {
   codex: [
     codexModel("gpt-5.6-sol", ["low", "medium", "high", "xhigh", "max"]),
     codexModel("gpt-5.6-terra", ["low", "medium", "high", "xhigh", "max"]),
@@ -40,7 +50,7 @@ export const EXECUTION_MODEL_REGISTRY = {
       true,
     ),
   ],
-} as const satisfies Record<ExecutionProfileCli, readonly ExecutionModelRegistryEntry[]>;
+};
 
 export const DEFAULT_EXECUTION_PROFILES = {
   codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
@@ -48,26 +58,38 @@ export const DEFAULT_EXECUTION_PROFILES = {
   kimi: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
 } as const satisfies Record<ExecutionProfileCli, RegistryExecutionProfile>;
 
-export function listExecutionModels(cli: ExecutionProfileCli): readonly ExecutionModelRegistryEntry[] {
-  return EXECUTION_MODEL_REGISTRY[cli];
+export function listExecutionModels(
+  cli: ExecutionProfileCli,
+  registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
+): readonly ExecutionModelRegistryEntry[] {
+  return registry[cli];
 }
 
 export function findExecutionModel(
   cli: ExecutionProfileCli,
   model: string,
+  registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
 ): ExecutionModelRegistryEntry | null {
-  return listExecutionModels(cli).find((candidate) => candidate.value === model) ?? null;
+  return listExecutionModels(cli, registry).find((candidate) => candidate.value === model) ?? null;
 }
 
-export function resolveProfileForCli(cli: ExecutionProfileCli): RegistryExecutionProfile {
-  return { ...DEFAULT_EXECUTION_PROFILES[cli] };
+export function resolveProfileForCli(
+  cli: ExecutionProfileCli,
+  registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
+): RegistryExecutionProfile {
+  const preferred = DEFAULT_EXECUTION_PROFILES[cli];
+  const model = findExecutionModel(cli, preferred.model, registry) ?? registry[cli][0];
+  return model === undefined
+    ? { ...preferred }
+    : { cli, model: model.value, effort: model.defaultEffort };
 }
 
 export function resolveProfileForModel(
   profile: RegistryExecutionProfile,
   model: string,
+  registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
 ): RegistryExecutionProfile {
-  const definition = findExecutionModel(profile.cli, model);
+  const definition = findExecutionModel(profile.cli, model, registry);
   if (definition === null) {
     return { ...profile };
   }
@@ -84,8 +106,9 @@ export function isRegisteredExecutionEffort(
   cli: ExecutionProfileCli,
   model: string,
   effort: string,
+  registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
 ): boolean {
-  return findExecutionModel(cli, model)?.efforts.includes(effort) ?? false;
+  return findExecutionModel(cli, model, registry)?.efforts.includes(effort) ?? false;
 }
 
 function codexModel(

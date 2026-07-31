@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { LocalConsoleExecutionProfile } from "./types.js";
 
 export type LocalCodexResumeReason = "graceful-shutdown" | "retry" | "edit-resend";
 export type LocalCodexResumeMode = "resume" | "full-fallback" | "unavailable";
@@ -12,6 +13,11 @@ export interface LocalCodexResumeIntentFact {
   role: string;
   reason: LocalCodexResumeReason;
   sourceDisposition?: LocalRunSourceDisposition;
+  executionOverride?: {
+    overrideId: string;
+    profile: LocalConsoleExecutionProfile;
+    scope: "single-run";
+  };
   createdAt: string;
 }
 
@@ -114,6 +120,9 @@ function parseResumeIntent(value: unknown, sessionId: string): LocalCodexResumeI
   const sourceDisposition = value.sourceDisposition === undefined
     ? undefined
     : readSourceDisposition(value.sourceDisposition);
+  const executionOverride = value.executionOverride === undefined
+    ? undefined
+    : parseExecutionOverride(value.executionOverride);
   return {
     sessionId,
     intentId: readString(value.intentId, "intentId"),
@@ -122,7 +131,29 @@ function parseResumeIntent(value: unknown, sessionId: string): LocalCodexResumeI
     role: readString(value.role, "role"),
     reason,
     ...(sourceDisposition === undefined ? {} : { sourceDisposition }),
+    ...(executionOverride === undefined ? {} : { executionOverride }),
     createdAt: readString(value.createdAt, "createdAt"),
+  };
+}
+
+function parseExecutionOverride(
+  value: unknown,
+): NonNullable<LocalCodexResumeIntentFact["executionOverride"]> {
+  if (!isRecord(value) || value.scope !== "single-run" || !isRecord(value.profile)) {
+    throw new Error("invalid execution override");
+  }
+  const cli = readString(value.profile.cli, "executionOverride.profile.cli");
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+    throw new Error(`invalid execution override cli: ${cli}`);
+  }
+  return {
+    overrideId: readString(value.overrideId, "executionOverride.overrideId"),
+    profile: {
+      cli,
+      model: readString(value.profile.model, "executionOverride.profile.model"),
+      effort: readString(value.profile.effort, "executionOverride.profile.effort"),
+    },
+    scope: "single-run",
   };
 }
 
