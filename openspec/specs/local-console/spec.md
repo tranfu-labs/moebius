@@ -1851,7 +1851,7 @@ Source: docs/product/pages/main-right-sidebar.md#过程标签
 - GIVEN rollout 工具参数包含绝对路径 `/Users/person/project/file.ts` 与 `runId=debug-marker`
 - WHEN 过程 API 投影该事件
 - THEN 响应保留完整绝对路径和 `runId=debug-marker`
-- AND 响应不包含 `…/file.ts` 或「内部标识已隐藏」
+- AND 响应未对该路径或内部标识做省略、头尾截断或任何占位替换
 
 ### Scenario: 未识别的新事件保留调试线索
 - GIVEN rollout 包含一个未识别的新事件

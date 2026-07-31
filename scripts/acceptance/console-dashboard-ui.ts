@@ -60,6 +60,7 @@ interface GeometryEvidence {
   attachmentButton: Box;
   sendButton: Box;
   stopButton: Box;
+  timelineScrollbarWidth: number;
   viewport: { width: number; height: number; scrollWidth: number; scrollHeight: number };
   styles: {
     sidebarBackground: string;
@@ -544,6 +545,7 @@ try {
           composer: wideGeometry.composer,
           pending: wideGeometry.pending,
           activeRun: wideGeometry.activeRun,
+          timelineScrollbarWidth: wideGeometry.timelineScrollbarWidth,
         },
         narrow: narrowGeometry,
       },
@@ -972,6 +974,7 @@ async function collectWideGeometry(
     attachmentButton: await box(page.getByRole("button", { name: "添加附件" })),
     sendButton: await box(page.getByRole("button", { name: "发送消息" })),
     stopButton: await box(page.getByRole("button", { name: "停下主理人" })),
+    timelineScrollbarWidth: await timeline.evaluate((element) => element.offsetWidth - element.clientWidth),
     viewport: await viewportGeometry(page),
     styles: await page.evaluate(() => {
       const sidebar = document.querySelector<HTMLElement>("[data-testid='operator-sidebar']");
@@ -1063,10 +1066,16 @@ function assertWideGeometry(value: GeometryEvidence): void {
   assertClose(value.sessionRow.height, 32, 1, "session row height");
   assertClose(value.mainWindowControls.height, 46, 1, "main window controls height");
   assertClose(value.titleHeader.height, 46, 1, "sticky title height");
-  assertClose(value.title.width, 760, 1, "wide title axis");
-  assertClose(value.composer.width, 840, 1, "wide composer axis");
-  assertClose(value.pending.width, 840, 1, "wide pending axis");
-  assertClose(value.activeRun.width, 840, 1, "wide activity axis");
+  assertClose(value.title.x, value.activeRun.x, 1, "wide title/message row left edge");
+  assertClose(value.composer.x, value.pending.x, 1, "wide dock left edge");
+  assertClose(value.composer.width, value.pending.width, 1, "wide dock width");
+  assertClose(value.composer.width, value.activeRun.width, 1, "wide content axis width");
+  assertClose(
+    value.composer.x,
+    value.activeRun.x + value.timelineScrollbarWidth / 2,
+    1,
+    "wide dock/timeline left edge",
+  );
   assertClose(value.userAvatar.width, 24, 1, "user avatar width");
   assertClose(value.userAvatar.height, 24, 1, "user avatar height");
   assertClose(value.agentAvatar.width, 24, 1, "agent avatar width");
