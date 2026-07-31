@@ -825,6 +825,195 @@
   <button class="panel-scrim" id="panel-scrim" aria-label="关闭侧栏或详情面板" hidden></button>
 </div>
 
+<!-- README 英文截图专用确定状态：#state=readme-en
+     与中文交互演示隔离，避免截图依赖运行时逐字翻译。 -->
+<div class="app readme-en-state" id="readme-en-state" lang="en" hidden>
+  <aside class="sidebar" aria-label="Project navigation">
+    <div class="sidebar-top">
+      <button class="icon-btn" title="Close sidebar" aria-label="Close sidebar">
+        <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
+      </button>
+    </div>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 12c-1.4-1.9-2.8-3-4.4-3a3.6 3.6 0 1 0 0 7.2c1.6 0 3-1.1 4.4-3z"/>
+        <path d="M12 12c1.4 1.9 2.8 3 4.4 3a3.6 3.6 0 1 0 0-7.2c-1.6 0-3 1.1-4.4 3z"/>
+      </svg>
+      <span class="brand-name">Moebius</span>
+    </div>
+    <nav class="app-nav" aria-label="Application">
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
+        New conversation
+      </button>
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        Search
+      </button>
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        Agent teams
+      </button>
+    </nav>
+    <div class="projects-head">Projects</div>
+    <div class="projects-scroll">
+      <div class="project">
+        <div class="project-row">
+          <button class="project-toggle" aria-expanded="true">
+            <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="name">Moebius</span>
+            <span class="dot dot-blue agg-dot" role="img" aria-label="New result"></span>
+          </button>
+        </div>
+        <div class="conv-list">
+          <button class="conv-row is-selected" aria-current="page">
+            <span class="name">Operator analytics</span>
+            <span class="dot dot-blue" role="img" aria-label="New result"></span>
+          </button>
+          <button class="conv-row">
+            <span class="name">Desktop release</span>
+          </button>
+          <button class="conv-row">
+            <span class="name">Agent team onboarding</span>
+            <span class="dot dot-run" role="img" aria-label="Running"></span>
+          </button>
+          <button class="conv-row">
+            <span class="name">GitHub runner</span>
+          </button>
+        </div>
+      </div>
+      <div class="project collapsed">
+        <div class="project-row">
+          <button class="project-toggle" aria-expanded="false">
+            <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="name">Marketing site</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-foot">
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </button>
+    </div>
+  </aside>
+
+  <main class="conv" tabindex="-1" aria-label="Operator analytics conversation">
+    <header class="conv-head">
+      <span style="flex:1"></span>
+      <button class="icon-btn" title="Toggle details" aria-label="Toggle details">
+        <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
+      </button>
+    </header>
+    <div class="timeline">
+      <h1 class="tl-title" title="Operator analytics · Windowed view"><span>Operator analytics · Windowed view</span></h1>
+
+      <div class="msg is-user">
+        <div class="msg-who"><span class="role-tag rt-you">You</span><span class="msg-time">10:21</span></div>
+        <div class="msg-body">When I open an operator from the Skills ranking, should the selected time window carry over?</div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-1">E</span>Engineering Manager <span class="dur">47 sec</span></div>
+        <div class="msg-body">Yes. The detail view should inherit the selected window, runtime, and source. Returning to the ranking must preserve the same filters.</div>
+        <div class="msg-tools"><span class="dur">Completed at 10:22</span></div>
+      </div>
+
+      <div class="msg is-user">
+        <div class="msg-who"><span class="role-tag rt-you">You</span><span class="msg-time">10:23</span></div>
+        <div class="msg-body">For a one-day window, a daily-by-Skill chart only has one bar. Should this become a composition view instead?</div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-1">E</span>Engineering Manager <span class="dur">1 min 08 sec</span></div>
+        <div class="msg-body">Exactly. Use a Top 5 + Other composition for one-day windows. Multi-day windows keep the trend view with the Top 8 Skills, while the complete ranking remains below.</div>
+        <div class="msg-tools"><span class="dur">Completed at 10:24</span></div>
+      </div>
+
+      <div class="msg is-user">
+        <div class="msg-who"><span class="role-tag rt-you">You</span><span class="msg-time">10:25</span></div>
+        <div class="msg-body">Good. Keep the analysis evidence visible and make sure the empty and single-Skill cases still read clearly.</div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-4">D</span>Developer <span class="dur">2 min 14 sec</span></div>
+        <div class="msg-body">Implemented window-aware operator analysis with responsive composition and trend views. The current filter context is retained through drill-down and return navigation.</div>
+        <div class="result-card">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <span class="txt"><b>Completed</b> · tests and build passed</span>
+          <button class="btn btn-ghost">View</button>
+        </div>
+        <div class="msg-tools"><span class="dur">Completed at 10:28</span></div>
+      </div>
+
+      <div class="msg">
+        <div class="msg-who"><span class="role-tag tone-3">Q</span>QA <span class="dur">36 sec</span></div>
+        <div class="msg-body">Verified single-Skill, multi-Skill, empty, drill-down, and return-context behavior across one-day and multi-day windows.</div>
+        <div class="result-card">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <span class="txt"><b>Checks passed</b> · ready for closeout</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="composer">
+      <div class="composer-box">
+        <div class="ctx-chips">
+          <span class="chip chip-project"><svg class="icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Moebius</span>
+          <span class="chip chip-team">Development team</span>
+        </div>
+        <div class="composer-input">
+          <textarea rows="1" placeholder="Message the team, or @ a member…"></textarea>
+          <button class="send-btn" title="Send" aria-label="Send">
+            <svg class="icon" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <aside class="rbar" aria-label="Conversation details">
+    <div class="rtabs">
+      <div class="rtabs-scroll" role="tablist" aria-label="Detail tabs">
+        <div class="rtab is-active">
+          <button class="rtab-main" role="tab" aria-selected="true"><span class="t">Changes</span></button>
+        </div>
+        <div class="rtab">
+          <button class="rtab-main" role="tab" aria-selected="false"><span class="t">Developer</span></button>
+        </div>
+        <div class="rtab">
+          <button class="rtab-main" role="tab" aria-selected="false"><span class="t">Verification</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="rbody">
+      <div class="rpane">
+        <div class="rpane-head">Changes made during this conversation</div>
+        <div class="rpane-scroll">
+          <div class="ftree">
+            <button class="ftree-dir"><svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>packages/console-ui</button>
+            <button class="ftree-file is-selected"><span class="fname">OperatorDetail.tsx</span><span class="delta"><span class="add">+84</span><span class="del">−18</span></span></button>
+            <button class="ftree-file"><span class="fname">operatorDetailAnalysis.ts</span><span class="delta"><span class="add">+126</span></span></button>
+            <button class="ftree-dir"><svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>tests</button>
+            <button class="ftree-file"><span class="fname">operator-detail.test.ts</span><span class="delta"><span class="add">+72</span></span></button>
+          </div>
+        </div>
+        <div class="diff-wrap">
+          <div class="diff-file-name">packages/console-ui/src/pages/OperatorDetail.tsx</div>
+          <div class="diff-code">
+            <div class="diff-line ctx"><span class="gutter">118</span><span class="sign"></span><span class="code">const window = parseWindow(searchParams);</span></div>
+            <div class="diff-line add"><span class="gutter">119</span><span class="sign">+</span><span class="code">const analysis = buildOperatorAnalysis(rows, window);</span></div>
+            <div class="diff-line add"><span class="gutter">120</span><span class="sign">+</span><span class="code">const chart = window.days === 1</span></div>
+            <div class="diff-line add"><span class="gutter">121</span><span class="sign">+</span><span class="code">  ? toSkillComposition(analysis, 5)</span></div>
+            <div class="diff-line add"><span class="gutter">122</span><span class="sign">+</span><span class="code">  : toSkillTrend(analysis, 8);</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -961,7 +1150,7 @@
   var drafts = {};
   try { drafts = JSON.parse(store.get(LS.drafts) || '{}'); } catch (e) { drafts = {}; }
   var savedConv = store.get(LS.conv);
-  var currentConv = (savedConv === 'new' || savedConv === 'copy' || savedConv === 'operator' || savedConv === 'loading' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
+  var currentConv = (savedConv === 'new' || savedConv === 'copy' || savedConv === 'operator' || savedConv === 'loading' || savedConv === 'readme-en' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
   var composerText = $('#composer-text');
   var sendBtn = $('#send-btn');
 
@@ -970,6 +1159,17 @@
     drafts[currentConv] = composerText.value;
     currentConv = name;
     store.set(LS.conv, name);
+    var isReadmeEn = name === 'readme-en';
+    var defaultApp = $('#app'), readmeEnState = $('#readme-en-state');
+    if (defaultApp) defaultApp.hidden = isReadmeEn;
+    if (readmeEnState) readmeEnState.hidden = !isReadmeEn;
+    document.documentElement.lang = isReadmeEn ? 'en' : 'zh-CN';
+    if (isReadmeEn) {
+      try { history.replaceState(null, '', '#state=readme-en'); } catch (e) {}
+      syncDevBar('readme-en');
+      announce('README English dashboard state');
+      return;
+    }
     var blocked = !recovered[name] && BLOCKED_CONVS[name] ? BLOCKED_CONVS[name] : null;
     var isNew = name === 'new', isCopy = name === 'copy', isOp = name === 'operator', isLoading = name === 'loading';
     var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), to = $('#timeline-operator'), tload = $('#timeline-loading'), reason = $('#composer-reason');
@@ -1941,6 +2141,7 @@
      #state=<id> 深链可分享指定状态(加载时 hash 优先于本地记忆)。 */
 
   var DEV_STATES = [
+    { id: 'readme-en', label: 'README · English' },
     { id: 'landing', label: '对话·落地页验收' },
     { id: 'copy', label: '对话·文案打磨' },
     { id: 'operator', label: '对话·操作员详情' },
