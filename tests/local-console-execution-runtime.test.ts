@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 import type { ClaudeRunOptions } from "../src/claude.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
@@ -1849,80 +1850,69 @@ async function postToSession(
 }
 
 async function waitForAgent(url: string, body: string): Promise<void> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const response = await fetch(new URL("/api/local-console/messages", url));
-    const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
-    if (snapshot.messages.some((message) => message.speaker === "agent" && message.body === body)) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for ${body}`);
+  await waitForCondition(
+    async () => {
+      const response = await fetch(new URL("/api/local-console/messages", url));
+      const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
+      return snapshot.messages.some(
+        (message) => message.speaker === "agent" && message.body === body,
+      );
+    },
+    { describe: `agent message ${body}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: number): Promise<void> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    if (mock.mock.calls.length >= count) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for ${String(count)} driver calls`);
+  await waitForCondition(() => mock.mock.calls.length >= count, {
+    describe: `${String(count)} driver calls`,
+    kind: "io",
+    timeoutMs: 8_000,
+    snapshot: () => ({ calls: mock.mock.calls.length }),
+  });
 }
 
 async function waitForPendingError(
   server: StartedLocalConsoleServer,
   sessionId: string,
 ): Promise<LocalConsoleMessage> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const view = await server.runtime.sessionView(sessionId);
-    const failed = view.pendingPrimaryMessages.find((message) => message.error !== null);
-    if (failed !== undefined) return failed;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for pending source failure in ${sessionId}`);
+  return waitForValue(
+    async () => {
+      const view = await server.runtime.sessionView(sessionId);
+      return view.pendingPrimaryMessages.find((message) => message.error !== null);
+    },
+    { describe: `pending source failure in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForDatabaseRow(
   database: DatabaseSync,
   query: { sql: string; params: string[] },
 ): Promise<Record<string, unknown>> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    try {
-      const row = database.prepare(query.sql).get(...query.params);
-      if (row !== undefined) {
-        return row as Record<string, unknown>;
-      }
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("database is locked")) {
-        throw error;
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for persisted database row");
+  return waitForValue(() => database.prepare(query.sql).get(...query.params) as
+    | Record<string, unknown>
+    | undefined, {
+    describe: "persisted database row",
+    kind: "io",
+    timeoutMs: 8_000,
+    // 并发写入期间 SQLite 会短暂上锁，这属于正常争用，继续轮询即可；其他错误必须立刻暴露。
+    onError: (error) =>
+      error instanceof Error && error.message.includes("database is locked") ? "retry" : "throw",
+  });
 }
 
 async function waitForSystemEvent(
   url: string,
   systemEventKind: LocalConsoleMessage["systemEventKind"],
 ): Promise<LocalConsoleMessage> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const response = await fetch(new URL("/api/local-console/messages", url));
-    const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
-    const matching = snapshot.messages.find((message) =>
-      message.speaker === "system" && message.systemEventKind === systemEventKind);
-    if (matching !== undefined) {
-      return matching;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for ${systemEventKind}`);
+  return waitForValue(
+    async () => {
+      const response = await fetch(new URL("/api/local-console/messages", url));
+      const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
+      return snapshot.messages.find((message) =>
+        message.speaker === "system" && message.systemEventKind === systemEventKind);
+    },
+    { describe: `system event ${String(systemEventKind)}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForSystemEventMatching(
@@ -1930,17 +1920,14 @@ async function waitForSystemEventMatching(
   sessionId: string,
   predicate: (message: LocalConsoleMessage) => boolean,
 ): Promise<LocalConsoleMessage> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const snapshot = await server.runtime.snapshot(sessionId);
-    const matching = snapshot.messages.find((message) =>
-      message.speaker === "system" && predicate(message));
-    if (matching !== undefined) {
-      return matching;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for matching system event in ${sessionId}`);
+  return waitForValue(
+    async () => {
+      const snapshot = await server.runtime.snapshot(sessionId);
+      return snapshot.messages.find((message) =>
+        message.speaker === "system" && predicate(message));
+    },
+    { describe: `matching system event in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForSnapshotMatching(
@@ -1948,15 +1935,13 @@ async function waitForSnapshotMatching(
   sessionId: string,
   predicate: (snapshot: Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>) => boolean,
 ): Promise<Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const snapshot = await server.runtime.snapshot(sessionId);
-    if (predicate(snapshot)) {
-      return snapshot;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for matching snapshot in ${sessionId}`);
+  return waitForValue(
+    async () => {
+      const snapshot = await server.runtime.snapshot(sessionId);
+      return predicate(snapshot) ? snapshot : undefined;
+    },
+    { describe: `matching snapshot in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForSessionSystemEvent(
@@ -1964,17 +1949,14 @@ async function waitForSessionSystemEvent(
   sessionId: string,
   systemEventKind: LocalConsoleMessage["systemEventKind"],
 ): Promise<LocalConsoleMessage> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const snapshot = await server.runtime.snapshot(sessionId);
-    const matching = snapshot.messages.find((message) =>
-      message.speaker === "system" && message.systemEventKind === systemEventKind);
-    if (matching !== undefined) {
-      return matching;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for ${systemEventKind} in ${sessionId}`);
+  return waitForValue(
+    async () => {
+      const snapshot = await server.runtime.snapshot(sessionId);
+      return snapshot.messages.find((message) =>
+        message.speaker === "system" && message.systemEventKind === systemEventKind);
+    },
+    { describe: `system event ${String(systemEventKind)} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function waitForSessionAgent(
@@ -1982,15 +1964,15 @@ async function waitForSessionAgent(
   sessionId: string,
   body: string,
 ): Promise<void> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const snapshot = await server.runtime.snapshot(sessionId);
-    if (snapshot.messages.some((message) => message.speaker === "agent" && message.body === body)) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for ${body} in ${sessionId}`);
+  await waitForCondition(
+    async () => {
+      const snapshot = await server.runtime.snapshot(sessionId);
+      return snapshot.messages.some(
+        (message) => message.speaker === "agent" && message.body === body,
+      );
+    },
+    { describe: `agent message ${body} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 function success(options: CodexRunOptions, finalText: string): CodexRunResult {

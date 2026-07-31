@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { waitForCondition } from "../../src/testing/wait.js";
 import type { AiTeamBuilderIpcResponse } from "../src/ai-team-builder/contract.js";
 import { App, type DesktopApi } from "../src/console-page/app.js";
 import type { DoctorCheck } from "../src/env-doctor.js";
@@ -870,16 +871,18 @@ async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Pro
   });
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error(`timed out waiting for onboarding route: ${document.body.textContent ?? ""}`);
-    }
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 10));
-    });
-  }
+async function waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void> {
+  await waitForCondition(predicate, {
+    describe: "onboarding route",
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    pollMs: 10,
+    tick: async (ms) => {
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, ms));
+      });
+    },
+    snapshot: () => document.body.textContent ?? "",
+  });
 }
 
 function deferred<T>(): {
