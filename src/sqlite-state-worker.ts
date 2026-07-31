@@ -17,6 +17,7 @@ import {
 } from "./local-console/types.js";
 import type { SqliteStateCommand, SqliteStateSource } from "./sqlite-state.js";
 import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
+import { appendSessionFactLogLineSync, canonicalJson } from "./local-console/session-fact-log.js";
 
 interface SqliteRunResult {
   changes?: number | bigint;
@@ -1767,38 +1768,14 @@ function commitSessionFactWrite(
 }
 
 function changedSessionFactMessages(before: WorkerLocalMessage[], after: WorkerLocalMessage[]): WorkerLocalMessage[] {
-  const existing = new Map(before.map((message) => [message.id, JSON.stringify(message)]));
-  return after.filter((message) => existing.get(message.id) !== JSON.stringify(message));
+  // 必须用键序无关的比较：前后两侧由不同构造函数产出，键序不同但语义相同，
+  // 用 JSON.stringify 直接比会把全部消息判成变更，让日志按平方级膨胀。
+  const existing = new Map(before.map((message) => [message.id, canonicalJson(message)]));
+  return after.filter((message) => existing.get(message.id) !== canonicalJson(message));
 }
 
 function appendSessionFactEvent(logPath: string, event: unknown): void {
-  fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  let current: Buffer;
-  try {
-    current = fs.readFileSync(logPath);
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      current = Buffer.alloc(0);
-    } else {
-      throw error;
-    }
-  }
-  const lastNewline = current.lastIndexOf(0x0a);
-  const validLength = current.length === 0 ? 0 : lastNewline < 0 ? 0 : lastNewline + 1;
-  const descriptor = fs.openSync(logPath, current.length === 0 ? "w+" : "r+");
-  try {
-    if (validLength !== current.length) {
-      fs.ftruncateSync(descriptor, validLength);
-    }
-    const line = Buffer.from(`${JSON.stringify(event)}\n`, "utf8");
-    let written = 0;
-    while (written < line.length) {
-      written += fs.writeSync(descriptor, line, written, line.length - written, validLength + written);
-    }
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
+  appendSessionFactLogLineSync(logPath, JSON.stringify(event));
 }
 
 function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateCommand): unknown {
@@ -5442,10 +5419,6 @@ function entriesObject(value: unknown): Array<[string, unknown]> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }
 
 function readString(value: unknown, field: string): string {

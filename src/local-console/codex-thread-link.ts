@@ -1,4 +1,4 @@
-import fs from "node:fs/promises";
+import { readSessionFactLog } from "./session-fact-log.js";
 import type { LocalConsoleMessage } from "./types.js";
 
 export interface LocalCodexThreadLinkFact {
@@ -33,33 +33,13 @@ export async function readCodexThreadLinks(
   logPath: string,
   sessionId: string,
 ): Promise<LocalCodexThreadLinkFact[]> {
-  let content: string;
-  try {
-    content = await fs.readFile(logPath, "utf8");
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-
-  const complete = content.endsWith("\n")
-    ? content
-    : content.slice(0, Math.max(0, content.lastIndexOf("\n") + 1));
-  if (complete.trim() === "") {
+  const snapshot = await readSessionFactLog(logPath, sessionId);
+  if (snapshot === null) {
     return [];
   }
 
   const links = new Map<string, LocalCodexThreadLinkFact>();
-  for (const [index, line] of complete.trimEnd().split("\n").entries()) {
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch (error) {
-      throw new Error(
-        `invalid session fact log ${sessionId} line ${String(index + 1)}: ${formatError(error)}`,
-      );
-    }
+  for (const [index, value] of snapshot.values.entries()) {
     if (!isRecord(value) || value.sessionId !== sessionId) {
       throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
     }
@@ -166,12 +146,4 @@ function readInteger(value: unknown, field: string): number {
     throw new Error(`invalid Codex thread link ${field}`);
   }
   return value;
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

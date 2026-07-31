@@ -1486,6 +1486,54 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 - WHEN 同一会话新增一条用户或 Agent 消息事实
 - THEN 文件末尾新增一条完整事件行，原有完整行字节保持不变
 
+## Requirement: 事实事件只携带真正变更的消息
+Source: docs/adr/0004-jsonl-session-fact-log.md#决策
+
+系统 MUST 只把「相对该会话上一状态真的发生变化」的消息写进事件的 `messageUpserts`。变更判断 MUST 与对象键序无关；系统 MUST NOT 用键序敏感的序列化结果做等价比较。单条事件携带的消息数 MUST 只与本次动作实际改动的消息相关，MUST NOT 随会话已有消息总数增长。
+
+### Scenario: 长会话连续接力
+- GIVEN 一个已有多条消息的会话
+- WHEN 新一轮认领、回复、标记已处理依次写入事实
+- THEN 每条事件只携带本轮真正改动的消息
+- AND 回放整份日志得到的消息终态与逐条 upsert 等价
+
+### Scenario: 前后快照键序不同
+- GIVEN 变更前后的同一条消息由不同构造路径产出、字段值相同但键序不同
+- WHEN store 提交该会话事实
+- THEN 该消息不出现在事件的 `messageUpserts` 里
+
+## Requirement: 追加与读取的代价不随日志大小增长
+Source: docs/adr/0004-jsonl-session-fact-log.md#决策
+
+追加一条事件 MUST NOT 读取整个日志文件；判断上次是否写了半行 MUST 用文件长度与尾部字节完成。读取 MUST 支持增量：日志只变长时，系统 MUST 只解析新增字节并复用已解析结果，MUST NOT 每次读取都重新解析整份日志。同一份日志被多个读取器消费时 MUST 复用同一次解析结果。日志被整体改写或截短时，系统 MUST 丢弃缓存重新解析，MUST NOT 返回与磁盘内容不一致的结果。
+
+### Scenario: 在大日志上追加
+- GIVEN 一份数 MB 的会话日志
+- WHEN 追加一条事件
+- THEN 本次追加的读取量与文件大小无关
+- AND 原有完整行字节保持不变
+
+### Scenario: 轮询重复读取
+- GIVEN UI 轮询在两次读取之间日志新增了若干行
+- WHEN 第二次读取该日志
+- THEN 只解析新增部分，已解析的历史行不再重新解析
+
+### Scenario: 日志被压缩重写
+- GIVEN 运维用压缩工具原地重写了该日志
+- WHEN 下一次读取该日志
+- THEN 返回重写后的内容
+
+## Requirement: 存量日志可压缩且回放等价
+Source: docs/adr/0004-jsonl-session-fact-log.md#决策
+
+系统 MUST 提供把历史日志中重复携带的消息副本压掉的手段：压缩 MUST 保留全部事件及其类型、载荷、顺序与事件 id，MUST 只删除「与既有状态逐字段相同」的 upsert 副本。压缩结果 MUST 与压缩前回放出同一份消息终态；不等价时 MUST 报错并保留原文件，MUST NOT 落盘。
+
+### Scenario: 压缩键序缺陷时期的日志
+- GIVEN 一份每条事件都重复携带全部消息的历史日志
+- WHEN 执行压缩
+- THEN 事件条数与各事件载荷保持不变
+- AND 压缩前后回放出的消息终态逐项相等
+
 ## Requirement: 生产写链只有一个串行写者
 Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import type { LocalConsoleExecutionProfile } from "./types.js";
+import { readSessionFactLog } from "./session-fact-log.js";
 
 export type LocalCodexResumeReason = "graceful-shutdown" | "retry" | "edit-resend";
 export type LocalCodexResumeMode = "resume" | "full-fallback" | "unavailable";
@@ -85,23 +86,11 @@ async function readCompleteFactEvents(
   logPath: string,
   sessionId: string,
 ): Promise<Array<{ type: string; payload: unknown }>> {
-  let content: string;
-  try {
-    content = await fs.readFile(logPath, "utf8");
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-  const complete = content.endsWith("\n")
-    ? content
-    : content.slice(0, Math.max(0, content.lastIndexOf("\n") + 1));
-  if (complete.trim() === "") {
+  const snapshot = await readSessionFactLog(logPath, sessionId);
+  if (snapshot === null) {
     return [];
   }
-  return complete.trimEnd().split("\n").map((line, index) => {
-    const value = JSON.parse(line) as unknown;
+  return snapshot.values.map((value, index) => {
     if (!isRecord(value) || value.sessionId !== sessionId || typeof value.type !== "string") {
       throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
     }
@@ -205,8 +194,4 @@ function readInteger(value: unknown, field: string): number {
     throw new Error(`invalid ${field}`);
   }
   return value;
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

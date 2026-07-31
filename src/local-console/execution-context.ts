@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
+import { readSessionFactLog } from "./session-fact-log.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
@@ -501,20 +501,10 @@ async function readTypedFacts(
   sessionId: string,
   type: string,
 ): Promise<unknown[]> {
-  let content: string;
-  try {
-    content = await fs.readFile(logPath, "utf8");
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return [];
-    throw error;
-  }
-  const complete = content.endsWith("\n")
-    ? content
-    : content.slice(0, Math.max(0, content.lastIndexOf("\n") + 1));
-  if (complete.trim() === "") return [];
+  const snapshot = await readSessionFactLog(logPath, sessionId);
+  if (snapshot === null) return [];
   const values: unknown[] = [];
-  for (const [index, line] of complete.trimEnd().split("\n").entries()) {
-    const event = JSON.parse(line) as unknown;
+  for (const [index, event] of snapshot.values.entries()) {
     if (!isRecord(event) || event.sessionId !== sessionId) {
       throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
     }
@@ -549,10 +539,6 @@ function unavailable(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }
 
 function sha256(value: unknown): string {

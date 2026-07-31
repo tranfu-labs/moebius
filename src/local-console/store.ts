@@ -39,6 +39,11 @@ import {
   readCodexThreadLinks,
   type LocalCodexThreadLinkFact,
 } from "./codex-thread-link.js";
+import {
+  appendSessionFactLogLine,
+  invalidateSessionFactLog,
+  readSessionFactLog,
+} from "./session-fact-log.js";
 import type {
   LocalCodexResumeConsumedFact,
   LocalCodexResumeIntentFact,
@@ -1246,25 +1251,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   }
 
   private async appendFactEvent(sessionId: string, event: SessionFactEvent): Promise<void> {
-    const logPath = this.getSessionFactLogPath(sessionId);
-    await fs.mkdir(path.dirname(logPath), { recursive: true });
-    const current = await readFileIfExists(logPath);
-    const validLength = completeJsonlLength(current ?? Buffer.alloc(0));
-    const handle = await fs.open(logPath, current === null ? "w+" : "r+");
-    try {
-      if (current !== null && validLength !== current.length) {
-        await handle.truncate(validLength);
-      }
-      const line = Buffer.from(`${JSON.stringify(event)}\n`, "utf8");
-      let written = 0;
-      while (written < line.length) {
-        const result = await handle.write(line, written, line.length - written, validLength + written);
-        written += result.bytesWritten;
-      }
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
+    await appendSessionFactLogLine(this.getSessionFactLogPath(sessionId), JSON.stringify(event));
   }
 
   private async appendIdempotentSessionFact(
@@ -1382,32 +1369,31 @@ function buildFactEvent(command: SqliteStateCommand, sessionId: string, messageU
   };
 }
 
+// 事实事件的投影缓存：键是 readSessionFactLog 返回的原始值数组，日志只追加时该数组身份不变，
+// 于是每次轮询只需要投影新增的几行，而不是整份日志。
+const factEventProjections = new WeakMap<readonly unknown[], SessionFactEvent[]>();
+
 async function readFactEvents(logPath: string, sessionId: string, allowMissing: boolean): Promise<SessionFactEvent[]> {
-  const file = await readFileIfExists(logPath);
-  if (file === null) {
+  const snapshot = await readSessionFactLog(logPath, sessionId);
+  if (snapshot === null) {
     if (allowMissing) {
       return [];
     }
     throw new Error(`session fact log not found: ${sessionId}`);
   }
-  const validLength = completeJsonlLength(file);
-  if (validLength !== file.length) {
-    await fs.truncate(logPath, validLength);
+  if (snapshot.parsedLength !== snapshot.size) {
+    await fs.truncate(logPath, snapshot.parsedLength);
+    invalidateSessionFactLog(logPath);
   }
-  const complete = file.subarray(0, validLength).toString("utf8");
-  if (complete === "") {
-    return [];
+  const projected = factEventProjections.get(snapshot.values) ?? [];
+  for (let index = projected.length; index < snapshot.values.length; index += 1) {
+    projected.push(parseFactEvent(snapshot.values[index], sessionId, index + 1));
   }
-  return complete.trimEnd().split("\n").map((line, index) => parseFactEvent(line, sessionId, index + 1));
+  factEventProjections.set(snapshot.values, projected);
+  return projected;
 }
 
-function parseFactEvent(line: string, sessionId: string, lineNumber: number): SessionFactEvent {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch (error) {
-    throw new Error(`invalid session fact log ${sessionId} line ${String(lineNumber)}: ${String(error)}`);
-  }
+function parseFactEvent(value: unknown, sessionId: string, lineNumber: number): SessionFactEvent {
   if (!isRecord(value) || value.version !== 1 || value.sessionId !== sessionId || !Array.isArray(value.messageUpserts)) {
     throw new Error(`invalid session fact event ${sessionId} line ${String(lineNumber)}`);
   }
@@ -1443,27 +1429,16 @@ function isLocalConsoleMessage(value: unknown): value is LocalConsoleMessage {
   return isRecord(value) && typeof value.id === "number" && typeof value.sessionId === "string" && typeof value.speaker === "string";
 }
 
-function completeJsonlLength(file: Buffer): number {
-  if (file.length === 0) {
-    return 0;
-  }
-  const lastNewline = file.lastIndexOf(0x0a);
-  return lastNewline < 0 ? 0 : lastNewline + 1;
-}
-
-async function readFileIfExists(filePath: string): Promise<Buffer | null> {
+async function fileExists(filePath: string): Promise<boolean> {
   try {
-    return await fs.readFile(filePath);
+    await fs.stat(filePath);
+    return true;
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return null;
+      return false;
     }
     throw error;
   }
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  return (await readFileIfExists(filePath)) !== null;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
