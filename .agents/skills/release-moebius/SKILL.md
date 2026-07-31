@@ -1,92 +1,112 @@
 ---
 name: release-moebius
-description: Publish the Moebius repository's current main branch as a versioned GitHub Release with synchronized package versions, CHANGELOG, tests, signed macOS arm64 DMG/ZIP artifacts, tag, hashes, and remote verification. Use when the user says “发布 Moebius”, “把当前 main 发布为 X 版本”, “release version X”, or asks to perform the complete Moebius desktop release. Do not use for feature development, release planning without execution, non-Moebius repositories, website-only deployment, or publishing Windows, Linux, x64, or universal artifacts.
+description: Publish or repair a Moebius GitHub Release with synchronized versions and CHANGELOG, signed and Apple-notarized macOS arm64 DMG/ZIP artifacts, stapled tickets, hashes, tag, and remote verification. Use when the user asks to release Moebius, publish a version, resume a failed release, replace release artifacts, or add/fix signing or notarization on an existing Moebius release. Do not use for feature development, website-only deployment, non-Moebius repositories, or Windows, Linux, x64, or universal artifacts.
 ---
 
 # Release Moebius
 
-Publish one production version of `tranfu-labs/moebius`. Accept either a semantic version without the `v` prefix or the user's explicit confirmation of a version recommended by this skill. The named output is a verified, non-draft GitHub Release `v<VERSION>`.
+Publish or repair one production version of `tranfu-labs/moebius`. The target outcome is a verified, non-draft, non-prerelease GitHub Release `v<VERSION>` containing exactly one macOS arm64 DMG and one ZIP.
 
-Ownership is **edit file + external publish**: the user's release request authorizes release-metadata edits, commit, annotated tag, push, and GitHub Release creation. NEVER modify product behavior or unrelated files.
+A fresh release request authorizes release-metadata edits, a release commit, annotated tag, push, and GitHub Release creation. Replacing assets or changing an existing public Release requires an explicit repair/resume request. NEVER modify product behavior, move an existing tag, or include unrelated files.
+
+## Constants
+
+- Require Developer ID Application Team `QV657S58FL`.
+- Use notarytool Keychain profile `${MOEBIUS_NOTARY_PROFILE:-moebius-notary-qv657}`. The profile name is not a secret; NEVER print, store, or request the Apple ID password or app-specific password after the profile exists.
+- Produce only `Moebius-<VERSION>-mac-arm64.dmg` and `Moebius-<VERSION>-mac-arm64.zip` for macOS Apple Silicon.
 
 ## Workflow
 
-CREATE A TODO LIST FOR THE TASKS BELOW and update it after every step.
+Create a TODO list for the applicable steps and update it after every step.
 
-1. Validate the input and environment.
-   - If the version is missing, read the latest non-draft, non-prerelease `v*` GitHub Release and inspect the real commit diff through current `main`.
-   - Recommend one exact next version with a short rationale: patch for backward-compatible fixes or internal-only changes, minor for backward-compatible user-facing capabilities, and major for breaking changes.
-   - Ask the user to explicitly confirm the recommended version, then exit without editing files or mutating git/GitHub state. Treat a later explicit confirmation as the required input.
-   - If an explicit version or confirmation is invalid → ask for a valid semantic version and exit.
-   - If the repository is not Moebius → report the mismatch and exit.
-   - Load nvm with `export NVM_DIR="${NVM_DIR:-$HOME/.nvm}" && source "$NVM_DIR/nvm.sh"`, then run `nvm use`.
-   - Assert Node major `24` and pnpm `9.15.4`; keep this environment for every pnpm command.
-   - Assert `gh auth status` has repository write access.
-2. Validate Git state.
-   - Require branch `main` and no unrelated uncommitted changes.
-   - Fetch `origin/main` and tags.
-   - If local `main` is behind or diverged → stop and report; NEVER merge automatically.
-   - If `v<VERSION>` already exists locally or remotely → stop and report.
-   - Read the previous `v*` tag, its GitHub Release, and the real commit diff through current `main`.
-   - If `<VERSION>` is not greater than the previous semantic version → stop and report.
-3. Prepare release metadata.
-   - Set `<VERSION>` in `package.json`, `desktop/package.json`, `packages/console-ui/package.json`, and `prototypes/package.json`.
-   - Update `CHANGELOG.md` in Keep a Changelog format using only changes since the previous tag.
-   - Keep `[Unreleased]` and update compare links.
-4. Run release gates under Node 24.
-   - Run `pnpm install --frozen-lockfile`.
-   - Run `pnpm test`, `pnpm typecheck`, and `pnpm --filter @moebius/prototypes check`.
-   - Run `pnpm --filter @moebius/desktop dist` only after all checks pass.
-   - Redirect long output to `/tmp` logs and read only exit codes and relevant tails.
-   - If any gate fails → stop before commit, tag, push, or Release creation.
-5. Verify local artifacts.
-   - Require both target-versioned macOS arm64 DMG and ZIP; upload exactly those two files and no blockmaps or older artifacts.
-   - Verify the DMG with `hdiutil verify`.
-   - Verify the app with `codesign --verify --deep --strict --verbose=2`.
-   - Inspect the signature details and require Developer ID Team `NP667JFK84`.
-   - Assert bundle version and build equal `<VERSION>` and the executable is arm64.
-   - Record both file sizes and SHA-256 hashes.
-   - If electron-builder download traffic has no byte progress for 120 seconds, first confirm no active `codesign`; then terminate only the stalled builder and retry the missing format from `desktop/release/mac-arm64/Moebius.app` with `--prepackaged`.
-6. Commit, push, and require remote CI.
-   - Run `git diff --check` and require only expected release metadata changes.
-   - Commit as `chore(release): prepare v<VERSION>`.
-   - Fetch again; if remote moved → stop before tagging.
-   - Push `main` without creating or pushing the tag.
-   - Find the `CI` workflow run whose `headSha` exactly equals the release commit. Allow up to 5 minutes for the push-triggered run to appear; ignore runs for other commits.
-   - Wait for that exact run to complete and require `conclusion=success`. If it fails, is cancelled, times out, or never appears → stop before tag or Release creation and report the run URL or missing-run state.
-   - Fetch again after CI succeeds. Require `main`, `origin/main`, and the successful CI `headSha` to equal the release commit; if remote moved → stop before tagging.
-   - Create annotated tag `v<VERSION>` with message `Moebius v<VERSION>` and push only that tag.
-7. Create and publish the GitHub Release.
-   - Create a verified-tag Draft Release in `tranfu-labs/moebius`, titled `Moebius v<VERSION>`.
-   - Write Chinese notes from the previous-tag diff. Include macOS arm64-only support, Developer ID Team `NP667JFK84`, current lack of notarization, and both SHA-256 hashes.
-   - Upload only the DMG and ZIP. Distinct uploads may run in parallel; retry only the missing asset.
-   - If either upload fails → keep the Draft and report the resumable state.
-   - Compare GitHub asset names, sizes, states, and digests with local artifacts. Publish the Draft only when all match.
-8. Verify completion.
-   - Require `isDraft=false`, `isPrerelease=false`, tag and `main` at the release commit, two uploaded assets with matching digests, synchronized `main`, and a clean worktree.
-   - Output the Release URL, commit/tag, gate results, signing and architecture results, artifact sizes/hashes, notarization status, and remaining risks; then end.
+### 1. Select fresh-release or repair mode
+
+- Accept a semantic version without `v`, or an explicit confirmation of a version previously recommended by this skill.
+- If no version is given, inspect the latest stable `v*` Release and the real diff through current `main`; recommend exactly one patch/minor/major version and stop for explicit confirmation without mutation.
+- Verify this is the Moebius repository, activate `.nvmrc`, require Node 24 and pnpm 9.15.4, and verify `gh` repository write access.
+- Fetch `origin/main` and tags without merging.
+- If `v<VERSION>` does not exist, use **fresh-release mode**. Require local `main` synchronized with `origin/main` and no unrelated changes.
+- If the tag or Release exists, continue only for an explicit resume/repair request and use **repair mode**. Resolve the annotated tag to its release commit; NEVER move it or build replacement artifacts from a newer `main`. Reuse artifacts proven to come from that commit, or rebuild in an isolated temporary worktree at the tag.
+
+### 2. Prepare a fresh release
+
+Skip this section in repair mode unless the user explicitly asks to repair missing metadata.
+
+- Read the previous stable tag, Release, and commit diff. Require `<VERSION>` greater than the previous semantic version.
+- Set `<VERSION>` in `package.json`, `desktop/package.json`, `packages/console-ui/package.json`, and `prototypes/package.json`.
+- Update `CHANGELOG.md` in Keep a Changelog format using only changes since the previous tag. Preserve `[Unreleased]` and update compare links.
+- Require only expected release-metadata changes, then run `git diff --check`.
+
+### 3. Run release gates
+
+- Run all pnpm commands under Node 24.
+- Default gates are `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm typecheck`, and `pnpm --filter @moebius/prototypes check`; build only after applicable gates pass.
+- A user may explicitly waive tests, typecheck, prototype checks, or remote CI. NEVER infer a waiver. Record every skipped gate in the final report and do not describe the release as fully gated.
+- Redirect long output to `/tmp` and inspect exit codes plus relevant tails.
+- If an unwaived gate fails, stop before commit, tag, or Release mutation.
+
+### 4. Build and identify the signing identity
+
+- Run `pnpm --filter @moebius/desktop dist` for macOS arm64 only.
+- Inspect `security find-identity -v -p codesigning`. Select a valid `Developer ID Application` identity whose Team ID is exactly `QV657S58FL`; stop if none or the selection is ambiguous. Prefer Team ID and full identity over a certificate fingerprint because certificates rotate.
+- Verify the generated `.app` with `codesign --verify --deep --strict --verbose=2`, require Team ID `QV657S58FL`, bundle short/build versions equal `<VERSION>`, and an arm64 executable.
+
+### 5. Notarize the App before final packaging
+
+- Verify the Keychain profile with `xcrun notarytool history --keychain-profile <PROFILE>` without exposing credentials.
+- Submit a ditto-created ZIP containing the signed `.app` with `xcrun notarytool submit ... --wait`. Require status `Accepted` and retain the submission ID; on rejection, retrieve the notary log and stop.
+- Run `xcrun stapler staple <APP>` and `xcrun stapler validate <APP>`.
+- Require `spctl --assess --type execute -vvv <APP>` to report `accepted` and `source=Notarized Developer ID`.
+- Rebuild the final ZIP and DMG from this stapled App using electron-builder `--prepackaged`. Do not upload artifacts produced before the App was stapled.
+
+### 6. Sign and notarize the outer DMG
+
+- Sign the final DMG with `codesign --force --timestamp --sign <IDENTITY> <DMG>`, then verify its signature and Team ID.
+- Submit the signed DMG with notarytool and require `Accepted`; retain the submission ID.
+- Only after acceptance, staple and validate the DMG ticket. NEVER sign or otherwise rewrite the DMG after stapling because that invalidates the ticket.
+- Require all final checks:
+  - DMG: `codesign --verify`, `xcrun stapler validate`, Gatekeeper open assessment using `spctl --assess --type open --context context:primary-signature -vvv`, and `hdiutil verify`.
+  - App: strict deep codesign verification, stapler validation, Gatekeeper execute acceptance, Team ID, versions, and arm64 architecture.
+  - ZIP: extract with `ditto` into a fresh system temporary directory and repeat the App codesign, stapler, Gatekeeper, version, and architecture checks on the extracted App.
+- Record DMG/ZIP byte sizes and SHA-256 only after all final signing and stapling operations.
+
+### 7. Commit, CI, and tag a fresh release
+
+Skip this section in repair mode.
+
+- Commit release metadata as `chore(release): prepare v<VERSION>`.
+- Fetch again; if remote moved, stop before tagging. Push `main` without the tag.
+- Unless explicitly waived, find the push-triggered `CI` run whose `headSha` exactly equals the release commit, allow up to five minutes for it to appear, wait for completion, and require success.
+- Fetch again. Before tagging, require local `main`, `origin/main`, and any required successful CI `headSha` to equal the release commit.
+- Create annotated tag `v<VERSION>` with message `Moebius v<VERSION>` and push only that tag.
+
+### 8. Publish or repair the GitHub Release
+
+- Write Chinese notes from the tagged diff. State macOS arm64-only support, Developer ID Team `QV657S58FL`, successful Apple notarization with stapled App/DMG tickets, and final SHA-256 hashes.
+- Fresh mode: create a verified-tag Draft Release titled `Moebius v<VERSION>`.
+- Repair mode: preserve the tag and release highlights. If the Release is public, temporarily change it to Draft immediately before asset replacement so users cannot download a mixed pair.
+- Upload exactly the final DMG and ZIP. Replace same-named assets only in repair mode.
+- Compare GitHub asset names, byte sizes, upload states, and digests with local artifacts. Publish only when both match and the notes describe the notarized artifacts.
+- If replacement or upload fails, keep the Release as Draft, report uploaded/missing assets, and give the exact resumable step.
+
+### 9. Verify completion
+
+- Require `isDraft=false`, `isPrerelease=false`, the expected HTTPS Release URL, exactly two matching assets, and a remote annotated tag that still dereferences to the release commit.
+- In fresh mode, require synchronized `main` immediately before tagging. Do not fail a later completion check merely because `main` advanced after publication; require the tag to remain unchanged and report whether current `main` descends from the release commit.
+- Require a clean working tree apart from unrelated pre-existing user files. Never delete, stash, or include them.
+- Report the Release URL, release commit/tag, gate results and explicit waivers, signing Team, App and DMG notarization submission IDs, Gatekeeper results, architecture, artifact sizes/hashes, and remaining risks.
 
 ## Failure paths
 
-- Missing tools, credentials, files, or signing identity → stop before external mutation and name the missing requirement.
-- Unconfirmed recommended version → stop before file edits or external mutation and ask for explicit confirmation.
-- Dirty worktree with unrelated changes → stop; NEVER stash, overwrite, or delete them.
-- CI failure after pushing the release commit → leave `main` at the untagged release commit, report the exact run, and stop. On resume, reuse that commit after its exact CI run succeeds; NEVER create a duplicate release-preparation commit.
-- Failure after Draft creation → leave the Draft intact, list uploaded/missing assets, and give the exact resume step.
-- Unexpected tracked files produced by validation → stop and report. Remove only untracked artifacts proven to be created by this run.
+- Missing tools, credentials, files, signing identity, or Keychain profile: stop before external mutation and name the missing requirement.
+- Notary rejection: retrieve the submission log, keep existing public assets unchanged, and report the submission ID and diagnosis.
+- Dirty worktree with unrelated changes: stop; NEVER stash, overwrite, delete, or commit them.
+- CI failure after pushing a fresh release commit: leave `main` at the untagged release commit and resume from that exact commit after its exact CI run succeeds.
+- Failure after creating or drafting a Release: leave it Draft and report the exact asset/note state. Never publish a partially replaced pair.
+- Unexpected tracked files produced by validation: stop and report. Remove only untracked artifacts proven to be created by the current run.
 
-<example>
-User: “把当前 main 发布为 0.1.2。”
+## Examples
 
-Result: activate Node 24, derive notes from the previous tag, update versions and CHANGELOG, pass all gates, build and verify signed arm64 DMG/ZIP, atomically push `main` plus `v0.1.2`, publish a digest-verified GitHub Release, and return its URL.
-
-User: “发布新版。”
-
-Result: inspect the latest stable release and current diff, recommend one exact semantic version with a short rationale, and wait for explicit confirmation without editing or publishing.
-</example>
-
-<bad-example>
-WRONG: Tests fail, but create `v0.1.2` and upload the ZIP first so the release is partially available.
-
-Reason: a production release requires every gate and both verified artifacts; failures must stop before tag/publish, or leave an explicitly resumable Draft if upload already started.
-</bad-example>
+- “把当前 main 发布为 0.2.1”：prepare metadata, run unwaived gates, sign and notarize App/DMG, tag, upload the verified arm64 DMG/ZIP pair, and publish.
+- “给已经发布的 v0.2.0 补公证”：keep the existing tag fixed, rebuild from that tag or proven artifacts, notarize and staple, temporarily draft the Release, atomically replace both assets, verify digests, and republish.
+- “发布 v0.2.1，不跑测试，CI 不用管”：skip only those explicitly waived gates, complete signing/notarization and artifact verification, and list the waivers as release risks.

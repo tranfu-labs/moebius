@@ -1,4 +1,4 @@
 interface:
   display_name: "Release Moebius"
-  short_description: "Release Moebius with verified macOS artifacts"
-  default_prompt: "Use $release-moebius to recommend and confirm a version when needed, then publish the current main branch."
+  short_description: "Publish or repair notarized Moebius releases"
+  default_prompt: "Use $release-moebius to publish the current main branch or repair an existing release with signed, notarized, and verified macOS arm64 artifacts."
