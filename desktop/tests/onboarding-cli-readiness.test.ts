@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CapabilityProbeError } from "../src/execution-capabilities.js";
 import { KimiExecutableError } from "../../src/kimi-executable.js";
 import { capabilitySnapshotId, type ExecutionCapabilitySnapshot } from "../src/team-execution-profile.js";
-import { OnboardingCliReadinessService } from "../src/onboarding/cli-readiness.js";
+import {
+  OnboardingCliReadinessService,
+  type OnboardingCapabilityProbe,
+} from "../src/onboarding/cli-readiness.js";
 
 const temporaryRoots: string[] = [];
 
@@ -199,7 +202,12 @@ describe("onboarding CLI readiness service", () => {
   });
 
   it("selects the builder engine from its shared latest snapshots without a second probe", async () => {
-    const independentProbe = vi.fn();
+    const sharedProbe = vi.fn(async ({ cli, knownCliVersion }: {
+      cli: "codex" | "claude" | "kimi";
+      knownCliVersion: string;
+    }) => cli === "codex"
+      ? capability("codex", "missing", knownCliVersion, "CLI_MISSING")
+      : capability(cli, "available", knownCliVersion));
     const service = new OnboardingCliReadinessService({
       resolveClaudeExecutable: async () => {
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
@@ -211,18 +219,111 @@ describe("onboarding CLI readiness service", () => {
         }
         return { stdout: `${command} 1.0\n` };
       },
-      probeCapabilities: async ({ cli, knownCliVersion }) => cli === "codex"
-        ? capability("codex", "missing", knownCliVersion, "CLI_MISSING")
-        : capability("kimi", "available", knownCliVersion),
+      probeCapabilities: sharedProbe,
     });
     await service.checkAll();
+    const probeCount = sharedProbe.mock.calls.length;
 
-    expect(service.resolveBuilderExecutionProfile()).toEqual({
+    await expect(service.ensureBuilderExecutionProfile()).resolves.toEqual({
       cli: "kimi",
       model: "model",
       effort: "high",
     });
-    expect(independentProbe).not.toHaveBeenCalled();
+    expect(sharedProbe).toHaveBeenCalledTimes(probeCount);
+  });
+
+  it("checks a cold cache before selecting the preferred available builder engine", async () => {
+    const probeCapabilities = vi.fn(async ({ cli, knownCliVersion }) => capability(
+      cli,
+      cli === "codex" ? "available" : "unavailable",
+      knownCliVersion,
+      cli === "codex" ? undefined : "CLI_UNAVAILABLE",
+    ));
+    const service = builderReadinessService(probeCapabilities);
+
+    await expect(service.ensureBuilderExecutionProfile()).resolves.toEqual({
+      cli: "codex",
+      model: "model",
+      effort: "high",
+    });
+    expect(probeCapabilities).toHaveBeenCalledTimes(3);
+    expect(service.getState()).toMatchObject({
+      codex: { status: "ready", revision: 1 },
+      kimi: { status: "unavailable", revision: 1 },
+      claude: { status: "unavailable", revision: 1 },
+    });
+  });
+
+  it.each([
+    {
+      availableCli: "kimi" as const,
+      expectedProfile: { cli: "kimi", model: "model", effort: "high" },
+    },
+    {
+      availableCli: "claude" as const,
+      expectedProfile: { cli: "claude", model: "model", effort: "high" },
+    },
+  ])("preserves provider priority when only $availableCli is available", async ({
+    availableCli,
+    expectedProfile,
+  }) => {
+    const service = builderReadinessService(async ({ cli, knownCliVersion }) => capability(
+      cli,
+      cli === availableCli ? "available" : "unavailable",
+      knownCliVersion,
+      cli === availableCli ? undefined : "CLI_UNAVAILABLE",
+    ));
+
+    await expect(service.ensureBuilderExecutionProfile()).resolves.toEqual(expectedProfile);
+  });
+
+  it("shares one cold-cache refresh across concurrent builder profile requests", async () => {
+    const gate = deferred<void>();
+    const probeCapabilities = vi.fn(async ({ cli, knownCliVersion }) => {
+      await gate.promise;
+      return capability(
+        cli,
+        cli === "codex" ? "available" : "unavailable",
+        knownCliVersion,
+        cli === "codex" ? undefined : "CLI_UNAVAILABLE",
+      );
+    });
+    const service = builderReadinessService(probeCapabilities);
+
+    const first = service.ensureBuilderExecutionProfile();
+    const second = service.ensureBuilderExecutionProfile();
+    await vi.waitFor(() => expect(probeCapabilities).toHaveBeenCalledTimes(3));
+    gate.resolve(undefined);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { cli: "codex", model: "model", effort: "high" },
+      { cli: "codex", model: "model", effort: "high" },
+    ]);
+    expect(probeCapabilities).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not cache an unavailable refresh and can recover on the next builder retry", async () => {
+    let codexAvailable = false;
+    const probeCapabilities = vi.fn(async ({ cli, knownCliVersion }) => capability(
+      cli,
+      cli === "codex" && codexAvailable ? "available" : "unavailable",
+      knownCliVersion,
+      cli === "codex" && codexAvailable ? undefined : "CLI_UNAVAILABLE",
+    ));
+    const service = builderReadinessService(probeCapabilities);
+
+    await expect(service.ensureBuilderExecutionProfile()).rejects.toMatchObject({
+      code: "ONBOARDING_READINESS_UNAVAILABLE",
+    });
+    expect(probeCapabilities).toHaveBeenCalledTimes(3);
+
+    codexAvailable = true;
+    await expect(service.ensureBuilderExecutionProfile()).resolves.toEqual({
+      cli: "codex",
+      model: "model",
+      effort: "high",
+    });
+    expect(probeCapabilities).toHaveBeenCalledTimes(6);
   });
 
   it("uses the default Kimi executable for both version and provider probes when GUI PATH has none", async () => {
@@ -389,6 +490,23 @@ function deferred<T>(): {
     resolve = next;
   });
   return { promise, resolve };
+}
+
+function builderReadinessService(
+  probeCapabilities: OnboardingCapabilityProbe,
+): OnboardingCliReadinessService {
+  return new OnboardingCliReadinessService({
+    resolveClaudeExecutable: async () => "/trusted/claude",
+    resolveKimiExecutable: async () => "/trusted/kimi",
+    runCommand: async (command) => ({
+      stdout: command === "codex"
+        ? "codex-cli 0.145.0\n"
+        : command.endsWith("/claude")
+          ? "2.1.220 (Claude Code)\n"
+          : "kimi 1.0\n",
+    }),
+    probeCapabilities,
+  });
 }
 
 function kimiProviderListJson(): string {

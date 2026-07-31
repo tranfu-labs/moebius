@@ -58,6 +58,7 @@ export class OnboardingCliReadinessService {
   private readonly homeDir: string;
   private claudeExecutablePath: string | null = null;
   private readonly listeners = new Set<(snapshot: OnboardingCliReadinessSnapshot) => void>();
+  private builderProfileRefresh: Promise<void> | null = null;
   private state: OnboardingCliReadinessState = createInitialOnboardingCliReadinessState();
   private readonly capabilities: Record<OnboardingCli, ExecutionCapabilitySnapshot | null> = {
     codex: null,
@@ -170,6 +171,28 @@ export class OnboardingCliReadinessService {
       return selectAiTeamBuilderProfileFromSnapshot(claude);
     }
     throw new OnboardingReadinessUnavailableError();
+  }
+
+  async ensureBuilderExecutionProfile(): Promise<ExecutionProfile> {
+    try {
+      return this.resolveBuilderExecutionProfile();
+    } catch (error) {
+      if (!(error instanceof OnboardingReadinessUnavailableError)) {
+        throw error;
+      }
+    }
+
+    if (this.builderProfileRefresh === null) {
+      const refresh = this.checkAll().then(() => undefined);
+      const sharedRefresh = refresh.finally(() => {
+        if (this.builderProfileRefresh === sharedRefresh) {
+          this.builderProfileRefresh = null;
+        }
+      });
+      this.builderProfileRefresh = sharedRefresh;
+    }
+    await this.builderProfileRefresh;
+    return this.resolveBuilderExecutionProfile();
   }
 
   private async performCheck(

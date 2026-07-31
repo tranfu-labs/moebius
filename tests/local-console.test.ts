@@ -1564,22 +1564,63 @@ describe("local console", { timeout: 15_000 }, () => {
         },
       ],
     })}\n\n<!-- moebius:stage=in-progress -->`;
-    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => codexOk(options, ceoOutput));
+    const ceoProviderGate = deferred<void>();
+    let ceoProviderStarted = false;
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      ceoProviderStarted = true;
+      await ceoProviderGate.promise;
+      return codexOk(options, ceoOutput);
+    });
     let started = await startLocalConsoleServer({
       projectRoot: root,
       port: 0,
       runCodex,
+      listAgentFiles: async (sessionId) => sessionId.startsWith("local:child:")
+        ? []
+        : [
+            { name: "ceo", agentMarkdown: "ROLE:ceo" },
+            { name: "dev", agentMarkdown: "ROLE:dev" },
+          ],
       makeRunDir: (count) => path.join(root, "runs", `child-orchestration-${String(count)}`),
       storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
     });
     try {
       const parent = await createSession(started.url, "parent goal");
       await postSessionMessage(started.url, parent.sessionId, "@ceo spawn child sessions");
-      const state = await waitForState(started.url, parent.sessionId, (data) => {
-        const sessions = data.projects.flatMap((project) => project.sessions);
-        return sessions.filter((session) => session.parentSessionId === parent.sessionId).length === 2 &&
-          data.messages.some((entry) => entry.sourceKind === "local-child-session-card");
-      });
+      await waitForCondition(
+        () => ceoProviderStarted,
+        {
+          describe: "CEO provider invocation for child orchestration",
+          kind: "io",
+          timeoutMs: 6_000,
+          snapshot: () => ({ ceoProviderStarted, providerCalls: runCodex.mock.calls.length }),
+        },
+      );
+      ceoProviderGate.resolve(undefined);
+      const state = await waitForState(
+        started.url,
+        parent.sessionId,
+        (data) => {
+          const sessions = data.projects.flatMap((project) => project.sessions);
+          return sessions.filter((session) => session.parentSessionId === parent.sessionId).length === 2 &&
+            data.messages.some((entry) => entry.sourceKind === "local-child-session-card");
+        },
+        {
+          describe: "two child sessions and their persisted child-session card",
+          timeoutMs: 10_000,
+          snapshot: (data) => data === null ? null : ({
+            childSessionCount: data.projects
+              .flatMap((project) => project.sessions)
+              .filter((session) => session.parentSessionId === parent.sessionId).length,
+            childCardCount: data.messages.filter((entry) => entry.sourceKind === "local-child-session-card").length,
+            messageStatuses: data.messages.map((entry) => ({
+              role: entry.role,
+              sourceKind: entry.sourceKind,
+              status: entry.status,
+            })),
+          }),
+        },
+      );
       const childSessions = state.projects.flatMap((project) => project.sessions).filter((session) => session.parentSessionId === parent.sessionId);
       expect(childSessions.map((session) => session.title).sort()).toEqual(["Task A", "Task B"]);
       const triggerIndex = state.messages.findIndex((entry) => entry.body === ceoOutput);
@@ -1595,8 +1636,28 @@ describe("local console", { timeout: 15_000 }, () => {
       ]));
       const taskA = childSessions.find((session) => session.title === "Task A")!;
       const taskB = childSessions.find((session) => session.title === "Task B")!;
-      const taskAState = await getState(started.url, taskA.sessionId);
-      const taskBState = await getState(started.url, taskB.sessionId);
+      const [taskAState, taskBState] = await Promise.all([
+        waitForState(
+          started.url,
+          taskA.sessionId,
+          (data) => data.messages.length > 0,
+          {
+            describe: "Task A child session initial message",
+            timeoutMs: 4_000,
+            snapshot: (data) => data === null ? null : ({ messageBodies: data.messages.map((entry) => entry.body) }),
+          },
+        ),
+        waitForState(
+          started.url,
+          taskB.sessionId,
+          (data) => data.messages.length > 0,
+          {
+            describe: "Task B child session initial message",
+            timeoutMs: 4_000,
+            snapshot: (data) => data === null ? null : ({ messageBodies: data.messages.map((entry) => entry.body) }),
+          },
+        ),
+      ]);
       expect(taskAState.messages[0]?.body).toContain("任务检查参考:\n1. 跑 A → 应通过");
       expect(taskBState.messages[0]?.body).not.toContain("任务检查参考:");
       expect(taskAState.messages[0]?.body).not.toContain("Acceptance statements:");
@@ -1608,6 +1669,12 @@ describe("local console", { timeout: 15_000 }, () => {
         projectRoot: root,
         port: 0,
         runCodex,
+        listAgentFiles: async (sessionId) => sessionId.startsWith("local:child:")
+          ? []
+          : [
+              { name: "ceo", agentMarkdown: "ROLE:ceo" },
+              { name: "dev", agentMarkdown: "ROLE:dev" },
+            ],
         makeRunDir: (count) => path.join(root, "runs", `child-orchestration-restart-${String(count)}`),
         storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
       });
@@ -1617,6 +1684,7 @@ describe("local console", { timeout: 15_000 }, () => {
       expect(restartedState.messages.findIndex((entry) => entry.body === ceoOutput))
         .toBe(triggerIndex);
     } finally {
+      ceoProviderGate.resolve(undefined);
       await started.close();
     }
   }, 20_000 * waitScale());
@@ -1837,11 +1905,16 @@ describe("local console", { timeout: 15_000 }, () => {
     for (const role of ["ceo", "dev-manager", "dev", "qa"]) {
       await writeAgent(root, role, `# ${role}\n\nROLE:${role}`);
     }
-    const calls: Array<{ role: string; at: number }> = [];
+    const providerGates = Array.from({ length: 5 }, () => deferred<void>());
+    const calls: Array<{ role: string; timerOrigin: boolean }> = [];
+    const schedulingEvents: Array<{ method: "process-pending" | "process-all-pending"; timerOrigin: boolean }> = [];
     let primaryCallCount = 0;
+    const timerOrigin = trackTimerCallbackOrigin();
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       const role = roleFromPrompt(options.prompt);
-      calls.push({ role, at: Date.now() });
+      const callIndex = calls.length;
+      calls.push({ role, timerOrigin: timerOrigin.isInsideTimerCallback() });
+      await providerGates[callIndex]!.promise;
       if (role === "ceo") {
         primaryCallCount += 1;
         return codexOk(options, primaryCallCount === 1 ? "@dev-manager please review" : "Team handoff complete");
@@ -1853,18 +1926,86 @@ describe("local console", { timeout: 15_000 }, () => {
       };
       return codexOk(options, next[role] ?? "done");
     });
-    const started = await startLocalConsoleServer({
-      projectRoot: root,
-      port: 0,
-      runCodex,
-      makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
-      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
-    });
+    let started: Awaited<ReturnType<typeof startLocalConsoleServer>> | null = null;
+    let processPendingSpy: { mockRestore(): void } | null = null;
+    let processAllPendingSpy: { mockRestore(): void } | null = null;
     try {
+      let sentinelSawTimerOrigin = false;
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          sentinelSawTimerOrigin = timerOrigin.isInsideTimerCallback();
+          resolve();
+        }, 0);
+      });
+      expect(sentinelSawTimerOrigin).toBe(true);
+
+      started = await startLocalConsoleServer({
+        projectRoot: root,
+        port: 0,
+        runCodex,
+        makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
+        storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+      });
+      const originalProcessPending = started.runtime.processPending.bind(started.runtime);
+      const originalProcessAllPending = started.runtime.processAllPending.bind(started.runtime);
+      processPendingSpy = vi.spyOn(started.runtime, "processPending").mockImplementation(async (...args) => {
+        schedulingEvents.push({
+          method: "process-pending",
+          timerOrigin: timerOrigin.isInsideTimerCallback(),
+        });
+        await originalProcessPending(...args);
+      });
+      processAllPendingSpy = vi.spyOn(started.runtime, "processAllPending").mockImplementation(async (...args) => {
+        schedulingEvents.push({
+          method: "process-all-pending",
+          timerOrigin: timerOrigin.isInsideTimerCallback(),
+        });
+        await originalProcessAllPending(...args);
+      });
+
       const session = await createSession(started.url, "handoff");
       await postSessionMessage(started.url, session.sessionId, "@ceo 我想做 X");
-      const state = await waitForState(started.url, session.sessionId, (data) =>
-        data.messages.filter((entry) => entry.speaker === "agent").length === 5,
+      await waitForValue(
+        () => calls.length >= 1 ? calls[0] : undefined,
+        {
+          describe: "initial CEO provider call",
+          kind: "io",
+          timeoutMs: 8_000,
+          snapshot: () => ({ calls, schedulingEvents }),
+        },
+      );
+      schedulingEvents.length = 0;
+
+      for (let callIndex = 0; callIndex < providerGates.length - 1; callIndex += 1) {
+        const schedulingStart = schedulingEvents.length;
+        providerGates[callIndex]!.resolve(undefined);
+        const nextCall = await waitForValue(
+          () => calls.length > callIndex + 1 ? calls[callIndex + 1] : undefined,
+          {
+            describe: `completion-triggered provider call ${String(callIndex + 2)} of 5`,
+            kind: "io",
+            timeoutMs: 8_000,
+            snapshot: () => ({
+              releasedThrough: callIndex + 1,
+              calls,
+              schedulingEvents: schedulingEvents.slice(schedulingStart),
+            }),
+          },
+        );
+        expect(nextCall?.timerOrigin).toBe(false);
+        expect(schedulingEvents.slice(schedulingStart).filter((event) => event.timerOrigin)).toEqual([]);
+      }
+      providerGates[providerGates.length - 1]!.resolve(undefined);
+
+      const state = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.messages.filter((entry) => entry.speaker === "agent").length === 5,
+        {
+          describe: "five persisted handoff agent messages and final CEO closeout",
+          timeoutMs: 8_000,
+          snapshot: handoffStateSnapshot,
+        },
       );
       expect(state.messages.filter((entry) => entry.speaker === "agent").map((entry) => entry.role)).toEqual([
         "ceo",
@@ -1874,11 +2015,20 @@ describe("local console", { timeout: 15_000 }, () => {
         "ceo",
       ]);
       expect(calls.map((entry) => entry.role)).toEqual(["ceo", "dev-manager", "dev", "qa", "ceo"]);
-      for (let index = 1; index < calls.length; index += 1) {
-        expect(calls[index]!.at - calls[index - 1]!.at).toBeLessThan(3_000 * waitScale());
-      }
+      expect(state.messages.filter((entry) => entry.speaker === "agent").at(-1)?.body).toBe("Team handoff complete");
     } finally {
-      await started.close();
+      for (const gate of providerGates) {
+        gate.resolve(undefined);
+      }
+      try {
+        if (started !== null) {
+          await started.close();
+        }
+      } finally {
+        processPendingSpy?.mockRestore();
+        processAllPendingSpy?.mockRestore();
+        timerOrigin.restore();
+      }
     }
   }, 30_000);
 
@@ -2234,35 +2384,54 @@ describe("local console", { timeout: 15_000 }, () => {
     });
     await store.close();
 
-    const runCodex = vi.fn((options: CodexRunOptions): Promise<CodexRunResult> => {
+    let fastProviderStarted = false;
+    let slowProviderStarted = false;
+    let slowProviderSettled = false;
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       if (options.prompt.includes("slow startup")) {
-        return waitForAbortResult(options);
+        slowProviderStarted = true;
+        try {
+          return await waitForAbortResult(options);
+        } finally {
+          slowProviderSettled = true;
+        }
       }
-      return Promise.resolve(codexOk(options, "fast done"));
+      fastProviderStarted = true;
+      return codexOk(options, "fast done");
     });
     const started = await startLocalConsoleServer({
       projectRoot: root,
       sqlitePath,
       port: 0,
       runCodex,
+      listAgentFiles: async () => [{ name: "dev", agentMarkdown: "ROLE:dev" }],
       makeRunDir: (count) => path.join(root, "runs", `startup-${String(count)}`),
       storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
     });
     try {
-      const fastState = await waitForState(started.url, sessionB.sessionId, (data) =>
-        data.messages.some((entry) => entry.speaker === "agent" && entry.body === "fast done"),
+      await waitForCondition(
+        () => slowProviderStarted,
+        {
+          describe: "startup catch-up reaches slow provider after fast provider",
+          kind: "io",
+          timeoutMs: 6_000,
+          snapshot: () => ({
+            fastProviderStarted,
+            slowProviderStarted,
+            providerPrompts: runCodex.mock.calls.map(([options]) =>
+              (options as CodexRunOptions).prompt.includes("slow startup") ? "slow" : "fast"),
+          }),
+        },
       );
-      const slowState = await waitForState(started.url, sessionA.sessionId, (data) => data.activeRun !== null);
+      const fastState = await getState(started.url, sessionB.sessionId);
+      const slowState = await getState(started.url, sessionA.sessionId);
       expect(fastState.messages).toEqual(
         expect.arrayContaining([expect.objectContaining({ speaker: "agent", role: "dev", body: "fast done" })]),
       );
       expect(slowState.activeRun).toMatchObject({ sessionId: sessionA.sessionId, interruptible: true });
-      await interruptRun(started.url, sessionA.sessionId, slowState.activeRun?.runId ?? "");
-      await waitForState(started.url, sessionA.sessionId, (data) =>
-        data.messages.some((entry) => entry.status === "interrupted"),
-      );
     } finally {
       await started.close();
+      expect(slowProviderSettled).toBe(true);
     }
   }, 10_000 * waitScale());
 
@@ -2439,27 +2608,27 @@ describe("local console", { timeout: 15_000 }, () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# Dev");
     let callCount = 0;
+    let firstProviderStarted = false;
+    let firstProviderSettled = false;
+    let secondProviderStarted = false;
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       callCount += 1;
-      await fs.mkdir(options.runDir, { recursive: true });
-      await fs.writeFile(path.join(options.runDir, "stdout.jsonl"), JSON.stringify({ message: "live tail from codex" }) + "\n");
       if (callCount === 1) {
-        return await waitForAbortResult(options);
+        firstProviderStarted = true;
+        try {
+          return await waitForAbortResult(options);
+        } finally {
+          firstProviderSettled = true;
+        }
       }
-      return {
-        ok: true,
-        finalText: "after interrupt",
-        threadId: threadIdFor(options),
-        cachedInputTokens: null,
-        runDir: options.runDir,
-        stdoutPath: path.join(options.runDir, "stdout.jsonl"),
-        stderrPath: path.join(options.runDir, "stderr.log"),
-      };
+      secondProviderStarted = true;
+      return codexOk(options, "after interrupt");
     });
     const started = await startLocalConsoleServer({
       projectRoot: root,
       port: 0,
       runCodex,
+      listAgentFiles: async () => [{ name: "dev", agentMarkdown: "ROLE:dev" }],
       makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
       storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
     });
@@ -2467,19 +2636,54 @@ describe("local console", { timeout: 15_000 }, () => {
       const sessionA = await createSession(started.url, "A");
       const sessionB = await createSession(started.url, "B");
       await postSessionMessage(started.url, sessionA.sessionId, "@dev slow A");
-      const runningA = await waitForState(started.url, sessionA.sessionId, (data) =>
-        data.activeRun?.lastOutputSummary === "live tail from codex",
+      await waitForCondition(
+        () => firstProviderStarted,
+        {
+          describe: "first interruptible provider starts",
+          kind: "io",
+          timeoutMs: 4_000,
+          snapshot: () => ({ callCount, firstProviderStarted }),
+        },
       );
+      const runningA = await getState(started.url, sessionA.sessionId);
+      expect(runningA.activeRun).toMatchObject({
+        sessionId: sessionA.sessionId,
+        role: "dev",
+        interruptible: true,
+      });
 
       const wrongSession = await interruptRun(started.url, sessionB.sessionId, runningA.activeRun?.runId ?? "");
       expect(wrongSession.status).toBe(409);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(firstProviderSettled).toBe(false);
       expect((await getState(started.url, sessionA.sessionId)).activeRun?.runId).toBe(runningA.activeRun?.runId);
 
       const rightSession = await interruptRun(started.url, sessionA.sessionId, runningA.activeRun?.runId ?? "");
       expect(rightSession.status).toBe(202);
-      const interrupted = await waitForState(started.url, sessionA.sessionId, (data) =>
-        data.messages.some((entry) => entry.status === "interrupted"),
+      await waitForCondition(
+        () => firstProviderSettled,
+        {
+          describe: "matching interrupt settles the first provider",
+          kind: "logic",
+          timeoutMs: 2_000,
+          snapshot: () => ({ firstProviderStarted, firstProviderSettled }),
+        },
+      );
+      const interrupted = await waitForState(
+        started.url,
+        sessionA.sessionId,
+        (data) => data.messages.some((entry) => entry.status === "interrupted"),
+        {
+          describe: "matching interrupt persists user and system interruption facts",
+          timeoutMs: 4_000,
+          snapshot: (data) => data === null ? null : ({
+            activeRuns: data.activeRuns.map((run) => ({ runId: run.runId, role: run.role })),
+            messages: data.messages.map((entry) => ({
+              speaker: entry.speaker,
+              status: entry.status,
+              systemEventKind: entry.systemEventKind,
+            })),
+          }),
+        },
       );
       expect(interrupted.messages).toEqual(
         expect.arrayContaining([
@@ -2487,12 +2691,91 @@ describe("local console", { timeout: 15_000 }, () => {
           expect.objectContaining({ speaker: "system", systemEventKind: "user-stopped", body: expect.stringContaining("你让这一步停下了") }),
         ]),
       );
+      expect(secondProviderStarted).toBe(false);
+      expect(runCodex).toHaveBeenCalledTimes(1);
+    } finally {
+      await started.close();
+    }
+  }, 10_000);
 
-      const after = await postSessionMessage(started.url, sessionA.sessionId, "@dev after interrupt");
-      expect(after.status).toBe(202);
-      await waitForState(started.url, sessionA.sessionId, (data) =>
-        data.messages.some((entry) => entry.speaker === "agent" && entry.body === "after interrupt"),
+  it("runs the next provider message after a matching interrupt", async () => {
+    const root = await makeFixtureRoot();
+    await writeAgent(root, "dev", "# Dev");
+    let callCount = 0;
+    let firstProviderStarted = false;
+    let firstProviderSettled = false;
+    let secondProviderStarted = false;
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      callCount += 1;
+      if (callCount === 1) {
+        firstProviderStarted = true;
+        try {
+          return await waitForAbortResult(options);
+        } finally {
+          firstProviderSettled = true;
+        }
+      }
+      secondProviderStarted = true;
+      return codexOk(options, "after interrupt");
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      listAgentFiles: async () => [{ name: "dev", agentMarkdown: "ROLE:dev" }],
+      makeRunDir: (count) => path.join(root, "runs", `interrupt-recovery-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "interrupt recovery");
+      await postSessionMessage(started.url, session.sessionId, "@dev slow first");
+      await waitForCondition(
+        () => firstProviderStarted,
+        {
+          describe: "interrupt recovery first provider starts",
+          kind: "io",
+          timeoutMs: 4_000,
+          snapshot: () => ({ callCount, firstProviderStarted }),
+        },
       );
+      const running = await getState(started.url, session.sessionId);
+      expect((await interruptRun(started.url, session.sessionId, running.activeRun?.runId ?? "")).status).toBe(202);
+      await waitForCondition(
+        () => firstProviderSettled,
+        {
+          describe: "interrupt recovery first provider settles",
+          kind: "logic",
+          timeoutMs: 2_000,
+          snapshot: () => ({ firstProviderStarted, firstProviderSettled }),
+        },
+      );
+
+      expect((await postSessionMessage(started.url, session.sessionId, "@dev after interrupt")).status).toBe(202);
+      await waitForCondition(
+        () => secondProviderStarted,
+        {
+          describe: "interrupt recovery second provider starts",
+          kind: "io",
+          timeoutMs: 4_000,
+          snapshot: () => ({ callCount, firstProviderSettled, secondProviderStarted }),
+        },
+      );
+      const completed = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.messages.some((entry) => entry.speaker === "agent" && entry.body === "after interrupt"),
+        {
+          describe: "interrupt recovery second provider response is persisted",
+          timeoutMs: 4_000,
+          snapshot: (data) => data === null ? null : ({
+            activeRuns: data.activeRuns.map((run) => ({ runId: run.runId, role: run.role })),
+            agentBodies: data.messages.filter((entry) => entry.speaker === "agent").map((entry) => entry.body),
+          }),
+        },
+      );
+      expect(completed.messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ speaker: "agent", role: "dev", body: "after interrupt" }),
+      ]));
       expect(runCodex).toHaveBeenCalledTimes(2);
     } finally {
       await started.close();
@@ -2504,13 +2787,17 @@ describe("local console", { timeout: 15_000 }, () => {
     const firstRunGate = deferred<void>();
     const prompts: string[] = [];
     const roles: string[] = [];
+    let firstProviderStarted = false;
+    let secondProviderStarted = false;
     const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       prompts.push(options.prompt);
       roles.push(roleFromPrompt(options.prompt));
       if (prompts.length === 1) {
+        firstProviderStarted = true;
         await firstRunGate.promise;
         return codexOk(options, "第一轮主理人回复");
       }
+      secondProviderStarted = true;
       return codexOk(options, "第二轮主理人回复");
     });
     const started = await startLocalConsoleServer({
@@ -2527,21 +2814,48 @@ describe("local console", { timeout: 15_000 }, () => {
     try {
       const session = await createSession(started.url, "primary pending");
       expect((await postSessionMessage(started.url, session.sessionId, "先检查现状")).status).toBe(202);
-      await waitForState(started.url, session.sessionId, (state) =>
-        state.activeRun?.role === "dev-manager"
+      await waitForCondition(
+        () => firstProviderStarted,
+        {
+          describe: "first primary provider starts",
+          kind: "io",
+          timeoutMs: 4_000,
+          snapshot: () => ({ firstProviderStarted, roles }),
+        },
       );
 
       expect((await postSessionMessage(started.url, session.sessionId, "再补一轮验证")).status).toBe(202);
-      const queued = await waitForState(started.url, session.sessionId, (state) =>
-        state.pendingPrimaryMessages.some((message) => message.body === "再补一轮验证")
-      );
+      const queued = await getState(started.url, session.sessionId);
+      expect(queued.activeRun?.role).toBe("dev-manager");
+      expect(queued.pendingPrimaryMessages.some((message) => message.body === "再补一轮验证")).toBe(true);
       expect(queued.messages.some((message) => message.body === "再补一轮验证")).toBe(false);
       expect(roles).toEqual(["dev-manager"]);
 
       firstRunGate.resolve(undefined);
-      const completed = await waitForState(started.url, session.sessionId, (state) =>
-        state.messages.some((message) => message.body === "第二轮主理人回复")
-        && state.activeRuns.length === 0
+      await waitForCondition(
+        () => secondProviderStarted,
+        {
+          describe: "queued primary message starts its provider after the first completes",
+          kind: "io",
+          timeoutMs: 4_000,
+          snapshot: () => ({ firstProviderStarted, secondProviderStarted, roles }),
+        },
+      );
+      const completed = await waitForState(
+        started.url,
+        session.sessionId,
+        (state) =>
+          state.messages.some((message) => message.body === "第二轮主理人回复")
+          && state.activeRuns.length === 0,
+        {
+          describe: "queued primary response persists in delivery order and leaves no active run",
+          timeoutMs: 4_000,
+          snapshot: (state) => state === null ? null : ({
+            activeRuns: state.activeRuns.map((run) => ({ runId: run.runId, role: run.role })),
+            pendingPrimaryMessages: state.pendingPrimaryMessages.map((message) => message.body),
+            messageBodies: state.messages.map((message) => message.body),
+          }),
+        },
       );
       expect(roles).toEqual(["dev-manager", "dev-manager"]);
       expect(runCodex).toHaveBeenCalledTimes(2);
@@ -3566,6 +3880,52 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve };
 }
 
+function trackTimerCallbackOrigin(): {
+  isInsideTimerCallback(): boolean;
+  restore(): void;
+} {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalSetInterval = globalThis.setInterval;
+  let timerCallbackDepth = 0;
+
+  const wrapCallback = (callback: (...args: unknown[]) => void): ((...args: unknown[]) => void) =>
+    (...args: unknown[]) => {
+      timerCallbackDepth += 1;
+      try {
+        callback(...args);
+      } finally {
+        timerCallbackDepth -= 1;
+      }
+    };
+  const timeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
+    ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
+      originalSetTimeout(wrapCallback(callback), delay, ...args)) as typeof globalThis.setTimeout,
+  );
+  const intervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(
+    ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
+      originalSetInterval(wrapCallback(callback), delay, ...args)) as typeof globalThis.setInterval,
+  );
+
+  return {
+    isInsideTimerCallback: () => timerCallbackDepth > 0,
+    restore: () => {
+      timeoutSpy.mockRestore();
+      intervalSpy.mockRestore();
+    },
+  };
+}
+
+function handoffStateSnapshot(state: LocalStateResponse | null): unknown {
+  if (state === null) return null;
+  return {
+    activeRuns: state.activeRuns.map((run) => ({ runId: run.runId, role: run.role })),
+    agentMessages: state.messages
+      .filter((message) => message.speaker === "agent")
+      .map((message) => ({ role: message.role, status: message.status, body: message.body })),
+    pendingPrimaryMessages: state.pendingPrimaryMessages.map((message) => message.body),
+  };
+}
+
 async function makeFixtureRoot(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "moebius-local-console-"));
 }
@@ -3740,6 +4100,11 @@ async function waitForState(
   url: string,
   sessionId: string,
   predicate: (snapshot: LocalStateResponse) => boolean,
+  options: {
+    describe?: string;
+    timeoutMs?: number;
+    snapshot?: (snapshot: LocalStateResponse | null) => unknown;
+  } = {},
 ): Promise<LocalStateResponse> {
   let latest: LocalStateResponse | null = null;
   return waitForValue(
@@ -3748,12 +4113,12 @@ async function waitForState(
       return predicate(latest) ? latest : undefined;
     },
     {
-      describe: `local state ${sessionId}`,
+      describe: options.describe ?? `local state ${sessionId}`,
       kind: "io",
-      timeoutMs: 20_000,
+      timeoutMs: options.timeoutMs ?? 20_000,
       // 服务端重启窗口内取状态会抛错，属于预期争用，继续轮询。
       onError: () => "retry",
-      snapshot: () => latest,
+      snapshot: () => options.snapshot?.(latest) ?? latest,
     },
   );
 }

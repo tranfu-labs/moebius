@@ -1,6 +1,11 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { mergePathValues, resolveShellPath } from "../src/shell-path.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createShellPathReadinessGate,
+  mergePathValues,
+  resolveShellPath,
+  type ShellPathResult,
+} from "../src/shell-path.js";
 
 describe("desktop shell path", () => {
   it("does not change PATH outside macOS", async () => {
@@ -125,4 +130,83 @@ describe("desktop shell path", () => {
       ["/nvm/bin", "/shared/bin", "/opt/homebrew/bin"].join(path.delimiter),
     );
   });
+
+  it("keeps waiters pending until the lazy shell PATH resolution is started and applied", async () => {
+    const deferred = promiseWithResolvers<ShellPathResult>();
+    const resolve = vi.fn(() => deferred.promise);
+    const apply = vi.fn();
+    const gate = createShellPathReadinessGate({ resolve, apply });
+    let ready = false;
+    void gate.ready.then(() => {
+      ready = true;
+    });
+
+    await Promise.resolve();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(ready).toBe(false);
+
+    gate.start();
+    await Promise.resolve();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(ready).toBe(false);
+
+    const result: ShellPathResult = {
+      path: "/opt/homebrew/bin:/usr/bin",
+      source: "login-shell",
+    };
+    deferred.resolve(result);
+    await gate.ready;
+    expect(apply).toHaveBeenCalledWith(result);
+    expect(ready).toBe(true);
+  });
+
+  it("starts shell PATH resolution once for repeated starts and concurrent waiters", async () => {
+    const deferred = promiseWithResolvers<ShellPathResult>();
+    const resolve = vi.fn(() => deferred.promise);
+    const gate = createShellPathReadinessGate({ resolve, apply: vi.fn() });
+    const first = gate.ready;
+    const second = gate.ready;
+
+    gate.start();
+    gate.start();
+    deferred.resolve({ path: "/usr/bin", source: "login-shell" });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs dependent readiness work only after applying the resolved PATH", async () => {
+    const deferred = promiseWithResolvers<ShellPathResult>();
+    let activePath = "/usr/bin";
+    const probe = vi.fn(async () => activePath);
+    const gate = createShellPathReadinessGate({
+      resolve: () => deferred.promise,
+      apply: (result) => {
+        activePath = result.path;
+      },
+    });
+
+    const profilePath = gate.afterReady(probe);
+    await Promise.resolve();
+    expect(probe).not.toHaveBeenCalled();
+
+    gate.start();
+    deferred.resolve({
+      path: "/usr/bin:/opt/homebrew/bin",
+      source: "login-shell",
+    });
+
+    await expect(profilePath).resolves.toBe("/usr/bin:/opt/homebrew/bin");
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
 });
+
+function promiseWithResolvers<T>(): PromiseWithResolvers<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}

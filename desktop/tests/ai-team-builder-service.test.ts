@@ -196,9 +196,23 @@ describe("AiTeamBuilder service", () => {
       phase: "failed",
       proposalRevision: 1,
       proposal: { team: { name: proposal.team.name } },
+      messages: expect.arrayContaining([
+        { role: "user", text: "帮我做发布" },
+        { role: "user", text: "再精简一点" },
+      ]),
       error: {
         code: "context-lost",
       },
+    });
+    await expect(new AiTeamBuilder({ dataRoot }).getState("draft")).resolves.toMatchObject({
+      phase: "failed",
+      proposalRevision: 1,
+      proposal: { team: { name: proposal.team.name } },
+      messages: expect.arrayContaining([
+        { role: "user", text: "帮我做发布" },
+        { role: "user", text: "再精简一点" },
+      ]),
+      actions: ["retry", "cancel"],
     });
     await expect(builder.retry("draft")).resolves.toMatchObject({
       phase: "failed",

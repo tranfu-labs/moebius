@@ -151,6 +151,30 @@ describe("AI team builder IPC outer boundary", () => {
     });
     expect(JSON.stringify(failedCommit)).not.toContain(dataRoot);
   });
+
+  it("maps builder readiness failures to the existing safe retryable error", async () => {
+    const dataRoot = await makeDataRoot();
+    const handlers = registerForTest(new AiTeamBuilder({
+      dataRoot,
+      resolveExecutionProfile: async () => {
+        throw new Error(`/private/bin/codex: authentication token expired`);
+      },
+    }));
+
+    const result = await invoke(handlers, AI_TEAM_BUILDER_IPC_CHANNELS.start, {
+      draftId: "cold-start",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "temporarily-unavailable",
+        canRetry: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("/private/bin/codex");
+    expect(JSON.stringify(result)).not.toContain("authentication");
+  });
 });
 
 type Handler = (event: unknown, request: unknown) => Promise<AiTeamBuilderIpcResponse>;

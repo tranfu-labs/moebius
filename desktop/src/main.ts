@@ -26,7 +26,7 @@ import { checkCodex } from "./env-doctor.js";
 import { integratedMainWindowOptions } from "./main-window-options.js";
 import { RunnerSupervisor, type RunnerProcess } from "./runner-supervisor.js";
 import { DESKTOP_RUNNER_ARGS } from "./runner-launch.js";
-import { resolveShellPath } from "./shell-path.js";
+import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
@@ -187,10 +187,22 @@ app.on("window-all-closed", () => {
 async function boot(): Promise<void> {
   activeLocale = await readLanguagePreference(status.dataRoot);
   registerLanguagePreferenceIpc();
+  const shellPathReady = createShellPathReadinessGate({
+    resolve: () => resolveShellPath({
+      platform: process.platform,
+      currentPath: process.env.PATH,
+    }),
+    apply: (shellPath) => {
+      status.shellPath = shellPath;
+      process.env.PATH = shellPath.path;
+      publishStatus();
+    },
+  });
   const onboardingReadiness = new OnboardingCliReadinessService();
   const teamBuilder = new AiTeamBuilder({
     dataRoot: status.dataRoot,
-    resolveExecutionProfile: async () => onboardingReadiness.resolveBuilderExecutionProfile(),
+    resolveExecutionProfile: () =>
+      shellPathReady.afterReady(() => onboardingReadiness.ensureBuilderExecutionProfile()),
   });
   onboardingCliInstaller = new OnboardingCliInstallManager({
     onInstallSucceeded: async (cli) => {
@@ -221,13 +233,8 @@ async function boot(): Promise<void> {
   createWindow();
   publishStatus();
 
-  const shellPath = await resolveShellPath({
-    platform: process.platform,
-    currentPath: process.env.PATH,
-  });
-  status.shellPath = shellPath;
-  process.env.PATH = shellPath.path;
-  publishStatus();
+  shellPathReady.start();
+  await shellPathReady.ready;
 
   try {
     const seedRoot = resolveSeedRoot();

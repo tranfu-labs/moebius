@@ -16,6 +16,48 @@ export interface ShellPathResult {
   error?: string;
 }
 
+export interface ShellPathReadinessGate {
+  readonly ready: Promise<void>;
+  start(): void;
+  afterReady<T>(operation: () => Promise<T>): Promise<T>;
+}
+
+export function createShellPathReadinessGate(input: {
+  resolve: () => Promise<ShellPathResult>;
+  apply: (result: ShellPathResult) => void;
+}): ShellPathReadinessGate {
+  let started = false;
+  let settle: (() => void) | null = null;
+  let reject: ((reason?: unknown) => void) | null = null;
+  const ready = new Promise<void>((resolve, rejectPromise) => {
+    settle = resolve;
+    reject = rejectPromise;
+  });
+
+  return {
+    ready,
+    start() {
+      if (started) {
+        return;
+      }
+      started = true;
+      void Promise.resolve()
+        .then(input.resolve)
+        .then((result) => {
+          input.apply(result);
+          settle?.();
+        })
+        .catch((error: unknown) => {
+          reject?.(error);
+        });
+    },
+    async afterReady<T>(operation: () => Promise<T>): Promise<T> {
+      await ready;
+      return operation();
+    },
+  };
+}
+
 export async function resolveShellPath(input: {
   platform: NodeJS.Platform;
   currentPath: string | undefined;
