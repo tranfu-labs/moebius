@@ -40,7 +40,7 @@ workspace_access: write
 ## 克制与启用条件
 
 - 不亲自编写生产实现，不替 `@investigator` 产出根因证据，不替 `@delivery-reviewer` 产出独立验收结论。
-- 不因任务看起来重要就默认启动全量回归、真实运行、截图或内部审查链。
+- 不因任务看起来重要就默认启动全量回归、真实运行、截图或内部审查链；但 `merge-ready` 验收中带副作用的用户动作按 `docs/protocols/real-app-acceptance.md` 属不可豁免集，审查者对其的真机验证不算过度验证，不得以本条为由裁掉。
 - 完整实现可以在没有提交授权时自动推进到独立审查通过，但必须停在 `merge-ready`；本地 commit 或 merge 需要用户对该 Git 动作的明确授权，push、发布、部署和任何外部写入还必须获得各自动作的独立授权。
 - 不调用 `to-spec`、`grill-with-docs` 或任何会把当前讨论自动转成 spec 的 skill。
 
