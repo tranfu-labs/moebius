@@ -1,0 +1,35 @@
+# 任务：show-machine-text-and-open-local-files
+
+- [x] 落盘产品决策与方案
+  - [x] 更新主会话 PRD：普通机器文本原文呈现、裸绝对路径可点击。
+  - [x] 更新右侧栏 PRD：任意本机普通文本文件可只读打开，记录敏感文件披露取舍。
+  - [x] 完成 proposal、design、tasks 与 console-ui / local-console spec delta 自审。
+- [x] 删除 console-ui 机器文本替换层
+  - [x] 删除 `machine-text.ts`、`machine-text.test.ts` 与四个中英文占位 key。
+  - [x] 清理 Markdown、OperatorConsole、RunBlock 的所有 import 和调用；`safeRunSummary` 删除 `containsMachineText` 整条丢弃门控，非空摘要逐字显示、仅空白回落 `console.runBlock.progress`。
+  - [x] `terminalOutcomeDescription` 保留安全错误码资格门，安全且非空的 `message.body` 原样显示，空白或未分类错误返回 `null` 并使用 RunOutcome 状态默认说明；不得放开 runtime 原始 stderr/路径/内部异常边界。
+  - [x] `systemSummary` 仅对空白正文使用 `console.operator.systemUpdated`，非空正文逐字显示。
+  - [x] 更新组件测试，证明路径、机器字段、内部 id、`direct`、`worktree`、`handoff` 原文可见。
+- [x] 把裸绝对路径提升为应用内文件引用
+  - [x] 在 `markdown-internal-reference.ts` 实现可单测的 AST 文本分词，并与 mention 变换一次合并。
+  - [x] 覆盖普通文本、`:line[:column]`、尾随中英文标点、完整 inline code、显式链接、已有链接、代码块与危险协议。
+  - [x] 复用私有 intent registry 与现有右侧栏回调，不新增导航或协议分支。
+- [x] 放开文件引用位置范围
+  - [x] 从 `readLocalFileReferenceWindow` 删除 `trustedRoots` 参数和 `isPathInside` 位置判定，保留 canonical path 与全部内容预算。
+  - [x] 从 runtime 调用、服务端/renderer 类型和 locale 删除 `outside-trusted-roots`。
+  - [x] 更新读取器与 `local-console-workspace-diff.test.ts` 中共置的 HTTP 文件引用用例，证明 `/tmp` 普通文本和工作空间外符号链接可读；不改变 workspace diff 行为。
+  - [x] 回归二进制、非 UTF-8、目录、缺失、超长行、超大响应、目标行不存在和扫描上限。
+- [x] 补真实运行 UI 验收
+  - [x] 扩展 Dashboard UI 验收脚本或增加同等生产 Electron case，在系统临时目录准备 `/tmp` 普通文本、NUL 文件和超长单行文件。
+  - [x] 断言成员正文中的绝对路径原样显示且可点击，目标行在右侧栏突出。
+  - [x] 断言 `/tmp` 文件不因工作空间范围被拒绝，`direct` / `handoff` 英文句子不被替换。
+  - [x] 断言二进制与超长目标行仍显示既有明确原因且不返回内容。
+  - [x] 断言成员运行期间含绝对路径和内部 id 的非空活动摘要逐字显示、不回落进度文案；空白摘要仍显示既有兜底。
+- [x] 更新现状架构边界
+  - [x] 更新 `docs/architecture/module-map.md` 的 Markdown 边界与文件引用边界，不改依赖方向。
+  - [x] 核对无需 ADR、wireframe、DESIGN token 或 AGENTS.md 更新。
+- [x] 验证与符合度反思
+  - [x] 运行受影响的 console-ui、local-console 定向测试。
+  - [x] 运行 `pnpm test`、`pnpm typecheck`、`pnpm --filter @moebius/console-ui check:storybook` 与必要的 desktop build，日志写系统临时目录并只报告关键结果。
+  - [x] 运行 Dashboard UI 真实 Electron 验收并逐条核对 proposal 的五条真实运行验收语句。
+  - [x] 运行 `git diff --check`，对照 PRD、spec delta 与原始目标检查漏做、多做和安全阀误删。

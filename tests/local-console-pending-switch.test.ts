@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { waitForCondition } from "../src/testing/wait.js";
+
 import { startLocalConsoleServer } from "../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { localSessionWorktreePath } from "../src/local-console/workspace-source.js";
@@ -663,13 +665,14 @@ async function readState(base: string, sessionId: string): Promise<{
   };
 }
 
-async function waitFor(predicate: () => Promise<boolean> | boolean, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await predicate()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for condition");
+async function waitFor(
+  predicate: () => Promise<boolean> | boolean,
+  timeoutMs?: number,
+): Promise<void> {
+  await waitForCondition(predicate, {
+    describe: "pending switch condition",
+    kind: "io",
+    timeoutMs: 5_000,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  });
 }

@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { waitForValue } from "../src/testing/wait.js";
+
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
@@ -456,14 +458,14 @@ async function getState(url: string, sessionId: string): Promise<StateResponse> 
 }
 
 async function waitForState(url: string, sessionId: string, predicate: (state: StateResponse) => boolean): Promise<StateResponse> {
-  const deadline = Date.now() + 20_000;
   let latest: StateResponse | null = null;
-  while (Date.now() < deadline) {
-    latest = await getState(url, sessionId);
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for state: ${JSON.stringify(latest)}`);
+  return waitForValue(
+    async () => {
+      latest = await getState(url, sessionId);
+      return predicate(latest) ? latest : undefined;
+    },
+    { describe: `session state ${sessionId}`, kind: "io", timeoutMs: 20_000, snapshot: () => latest },
+  );
 }
 
 function codexOk(options: CodexRunOptions, finalText: string): CodexRunResult {

@@ -3,10 +3,6 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import {
-  machineTextPlaceholders,
-  sanitizeMachineText,
-} from "@/console/machine-text";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import {
@@ -83,7 +79,6 @@ export function RunBlock({
   const { t } = useI18n();
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
   const analysisMenuReturnFocusRef = useRef<HTMLElement | null>(null);
-  const machineText = machineTextPlaceholders(t);
   const roleLabel = resolveOperatorMemberName(
     role,
     memberIdentities,
@@ -93,11 +88,7 @@ export function RunBlock({
   const usableSteps = steps?.length ? steps : null;
   const liveContent = nonBlank(liveMarkdown);
   const progressFallback = t("console.runBlock.progress");
-  const fallbackSummary = sanitizeMachineText(
-    nonBlank(summary) ?? progressFallback,
-    progressFallback,
-    machineText,
-  );
+  const fallbackSummary = nonBlank(summary) ?? progressFallback;
 
   return (
     <div
@@ -247,16 +238,14 @@ export function RunBlock({
 }
 
 function RunStepItem({ step }: { step: RunBlockStep; index: number }): JSX.Element {
-  const { t } = useI18n();
-  const machineText = machineTextPlaceholders(t);
   const summary = nonBlank(step.summary);
 
   return (
     <div className="border-l border-line pl-3 text-sm text-ink">
-      <span>{sanitizeMachineText(step.title, machineText.machine, machineText)}</span>
+      <span>{step.title}</span>
       {summary ? (
         <span className="mt-0.5 block text-xs leading-5 text-sub">
-          {sanitizeMachineText(summary, machineText.machine, machineText)}
+          {summary}
         </span>
       ) : null}
     </div>

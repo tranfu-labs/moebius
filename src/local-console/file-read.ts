@@ -105,7 +105,6 @@ export async function readLocalFileReferenceWindow(input: {
   filePath: string;
   line: number;
   column: number | null;
-  trustedRoots: readonly string[];
   contextLines?: number;
   maxScanBytes?: number;
   maxLineBytes?: number;
@@ -125,16 +124,6 @@ export async function readLocalFileReferenceWindow(input: {
     candidate = await fs.realpath(input.filePath);
   } catch (error) {
     return unavailableFileReference(input, isMissingFileError(error) ? "not-found" : "unavailable");
-  }
-  const trustedRoots = (await Promise.all(input.trustedRoots.map(async (root) => {
-    try {
-      return await fs.realpath(root);
-    } catch {
-      return null;
-    }
-  }))).filter((root): root is string => root !== null);
-  if (!trustedRoots.some((root) => isPathInside(root, candidate))) {
-    return unavailableFileReference(input, "outside-trusted-roots");
   }
   const canonicalInput = {
     filePath: candidate,

@@ -46,15 +46,37 @@ describe("MarkdownMessage", () => {
     expect(container).toHaveTextContent("本地");
   });
 
-  it("hides bare machine paths across Markdown text, code, and raw HTML", () => {
+  it("preserves machine text and opens bare or inline-code absolute paths", () => {
+    const onOpenFileReference = vi.fn();
     const { container } = render(
       <MarkdownMessage
-        content={"正文 /Users/wing/private.txt\n\n`/tmp/private-run`\n\n<span>/home/user/secret</span>"}
+        content={[
+          "正文 /Users/wing/private.txt，Send a direct message before handoff.",
+          "",
+          "`/tmp/private-run:4`",
+          "",
+          "```text",
+          "cwd=/home/user/secret runId=run-secret worktree",
+          "```",
+          "",
+          "<span>/opt/moebius/output.txt</span>",
+        ].join("\n")}
+        onOpenFileReference={onOpenFileReference}
       />,
     );
 
-    expect(container).toHaveTextContent("[路径已隐藏]");
-    expect(container.textContent).not.toMatch(/\/(?:Users|tmp|home)\//u);
+    expect(container).toHaveTextContent("/Users/wing/private.txt");
+    expect(container).toHaveTextContent("Send a direct message before handoff.");
+    expect(container).toHaveTextContent("cwd=/home/user/secret runId=run-secret worktree");
+    expect(container).toHaveTextContent("/opt/moebius/output.txt");
+
+    fireEvent.click(screen.getByRole("button", { name: "/Users/wing/private.txt" }));
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/private-run:4" }));
+    expect(onOpenFileReference.mock.calls).toEqual([
+      [{ path: "/Users/wing/private.txt", line: 1, column: null }],
+      [{ path: "/tmp/private-run", line: 4, column: null }],
+    ]);
+    expect(screen.queryByRole("button", { name: "/home/user/secret" })).not.toBeInTheDocument();
   });
 
   it("confirms a safe external link and never calls window.open", () => {
@@ -149,6 +171,27 @@ describe("MarkdownMessage", () => {
 
     expect(screen.getByRole("button", { name: "有效引用" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /转义文本|代码|图片|HTML 属性/u })).not.toBeInTheDocument();
+  });
+
+  it("keeps sentence punctuation outside a bare path and blocks file URLs", () => {
+    const onOpenFileReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content={"产物位于 /tmp/report(1).txt:12:3，请查看；file:///tmp/blocked.txt 不可打开。"}
+        onOpenFileReference={onOpenFileReference}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/report(1).txt:12:3" }));
+    expect(onOpenFileReference).toHaveBeenCalledWith({
+      path: "/tmp/report(1).txt",
+      line: 12,
+      column: 3,
+    });
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P"
+      && element.textContent === "产物位于 /tmp/report(1).txt:12:3，请查看；file:///tmp/blocked.txt 不可打开。")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /blocked/u })).not.toBeInTheDocument();
   });
 
   it.each([

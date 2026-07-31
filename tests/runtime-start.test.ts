@@ -3,6 +3,8 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+
+import { waitForCondition } from "../src/testing/wait.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import { resolveRuntimeMode } from "../src/runtime-mode.js";
 import { start, type Runner, type StartDependencies } from "../src/runner.js";
@@ -217,13 +219,7 @@ async function runStartProcess(
 }
 
 async function waitForOutput(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 6_000;
-  while (!(await predicate())) {
-    if (Date.now() >= deadline) {
-      throw new Error("runtime start output timed out");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+  await waitForCondition(predicate, { describe: "runtime start output", kind: "io", timeoutMs: 6_000 });
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

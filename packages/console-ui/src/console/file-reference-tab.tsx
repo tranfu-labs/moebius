@@ -25,7 +25,6 @@ export type FileReferenceContent =
       lines: [];
       reason:
         | "invalid-path"
-        | "outside-trusted-roots"
         | "not-found"
         | "not-file"
         | "binary-file"
@@ -190,7 +189,6 @@ function fileReferenceUnavailableKey(
 ): TranslationKey {
   const keys: Record<typeof reason, TranslationKey> = {
     "invalid-path": "console.fileReference.error.invalid-path",
-    "outside-trusted-roots": "console.fileReference.error.outside-trusted-roots",
     "not-found": "console.fileReference.error.not-found",
     "not-file": "console.fileReference.error.not-file",
     "binary-file": "console.fileReference.error.binary-file",

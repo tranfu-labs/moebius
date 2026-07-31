@@ -144,7 +144,7 @@ import {
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
-import { resolveCodexRollout, resolveCodexSessionsRoot } from "./codex-rollout.js";
+import { resolveCodexRollout } from "./codex-rollout.js";
 import {
   buildConfirmedPlanExecutionPrompt,
   buildSessionAnalysisReadOnlyContract,
@@ -1733,12 +1733,10 @@ export class LocalConsoleRuntime {
     input: { filePath: string; line: number; column: number | null },
   ): Promise<import("./types.js").LocalConsoleFileReferenceContent> {
     try {
-      const context = await this.readConversationWorkspaceContext(sessionId);
       return await readLocalFileReferenceWindow({
         filePath: input.filePath,
         line: input.line,
         column: input.column,
-        trustedRoots: [context.workspacePath, resolveCodexSessionsRoot()],
       });
     } catch (error) {
       log({
