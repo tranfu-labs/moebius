@@ -6,6 +6,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-31
+
+### 新增
+
+- 新增 Claude Code CLI 支持，覆盖桌面首次引导、Agent 执行配置、AI 建队、本地完整执行与会话恢复，以及托管附件。
+- 新增右侧栏分析会话，可从单条消息或整段对话发起，持久保留来源引用，并支持搜索、归档与恢复。
+- 新增内置「通用助手」团队；分析会话在方案确认前默认采用只读执行权限。
+- 新增侧边栏对话管理，支持未读与异常提醒、置顶、重命名、悬浮信息，以及跨刷新和重启保持状态。
+- 新增单个有效成员提及的直达路由，为每位成员提供持久化任务队列，并显示待发射消息的真实目标。
+- 新增跨 Codex、Kimi 与 Claude 的结构化执行终局和语义运行监督；异常结束时保留未完成正文，并允许使用临时 CLI、模型和推理强度原地重跑。
+- 新增 provider 原生过程记录，在过程面板展示可信 transcript/wire 历史并保持同一会话的恢复语义；记录不可用时安全降级。
+- 新增版本化的模型与推理强度注册表，用于配置各 Agent 的执行能力。
+- 重新设计「设置」与「关于」，新增手动检查更新、复制版本号以及访问发布记录、源码和反馈入口。
+
+### 变更
+
+- 更新桌面首页、操作台外壳、首次引导、会话目录轨、图标和设置界面的视觉设计。
+- 原样展示机器文本和 POSIX 路径；将裸绝对路径提升为只读文件引用，并允许在既有安全限制下查看工作空间外的本机文本文件。
+- 将 Codex CLI 最低兼容版本提升至 `0.145.0`，并把运行环境校验延后到实际执行时进行。
+- 更新公开官网的产品叙事、GitHub 链接和 Apple Silicon 下载入口。
+- 重新设计中英文 README，补充产品预览、执行入口和运行边界说明。
+- 加强测试基础设施，新增按依赖范围选择测试、跨 worktree 全量测试互斥以及统一的可诊断等待机制。
+
+### 修复
+
+- 恢复 Kimi 会话连续性，并提高 Kimi CLI 可执行文件发现的可靠性。
+- 将 Kimi ACP 空 `end_turn` 作为安全失败处理，避免把缺少完整回复的执行误判为成功，并保留 canonical resume 语义。
+- 修复大型会话存储可能导致本地操作台启动超时的问题。
+- 限制会话事实日志的重复增长，改为增量追加与读取，并提供保持回放等价的存量日志压缩工具。
+- 修复脱离 worker 的重试路由，以及新对话选择和草稿状态不同步的问题。
+- 修复侧边栏 mutation 请求丢失 fetch receiver 的问题。
+- 修复桌面更新检查未正确跟随正式版本标签的问题，并改为按需初始化 CLI readiness。
+
 ## [0.1.4] - 2026-07-28
 
 ### Added
@@ -88,7 +121,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/tranfu-labs/moebius/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/tranfu-labs/moebius/compare/v0.1.1...v0.1.2
