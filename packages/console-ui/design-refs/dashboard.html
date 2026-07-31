@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<a class="skip-link" href="#conversation">跳到当前对话</a>
+<div class="sr-only" id="ui-status" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="app" id="app">
 
   <!-- ============ 左侧边栏 ============ -->
@@ -49,31 +51,33 @@
 
     <div class="projects-scroll" data-od-id="project-list">
       <div class="project" id="project-a">
-        <button class="project-row" id="project-a-row" data-od-id="project-a" aria-expanded="true">
-          <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-          <span class="name">项目 A</span>
-          <span class="dot dot-red agg-dot" title="需要你处理" aria-label="需要你处理"></span>
+        <div class="project-row">
+          <button class="project-toggle" id="project-a-row" data-od-id="project-a" aria-expanded="true" aria-controls="project-a-convs">
+            <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="name">项目 A</span>
+            <span class="dot dot-red agg-dot" role="img" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
           <span class="row-actions">
-            <span class="icon-btn" role="button" tabindex="0" title="在项目 A 中新建对话" aria-label="在项目 A 中新建对话" data-od-id="project-a-new">
+            <button class="icon-btn" title="在项目 A 中新建对话" aria-label="在项目 A 中新建对话" data-od-id="project-a-new">
               <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-            </span>
-            <span class="icon-btn" role="button" tabindex="0" title="项目 A 更多" aria-label="项目 A 更多">
+            </button>
+            <button class="icon-btn" title="项目 A 更多" aria-label="项目 A 更多">
               <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-            </span>
+            </button>
           </span>
-        </button>
+        </div>
         <div class="conv-list" id="project-a-convs">
           <button class="conv-row is-selected" id="conv-landing" data-od-id="conv-landing" title="官网落地页验收">
             <span class="name">官网落地页验收</span>
-            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+            <span class="dot dot-red" role="img" title="需要你处理" aria-label="需要你处理"></span>
           </button>
           <button class="conv-row" data-od-id="conv-build" title="构建脚本">
             <span class="name">构建脚本</span>
-            <span class="dot dot-blue" title="有新结果" aria-label="有新结果"></span>
+            <span class="dot dot-blue" role="img" title="有新结果" aria-label="有新结果"></span>
           </button>
           <button class="conv-row" id="conv-copy" data-od-id="conv-copy" title="文案打磨">
             <span class="name">文案打磨</span>
-            <span class="dot dot-run" title="正在运行" aria-label="正在运行"></span>
+            <span class="dot dot-run" role="img" title="正在运行" aria-label="正在运行"></span>
           </button>
           <button class="conv-row" id="conv-operator" data-od-id="conv-operator" title="操作员详情 · 窗口化分析">
             <span class="name">操作员详情</span>
@@ -84,30 +88,32 @@
           <!-- 三种不可继续状态的演示会话:红点叫回,打开后历史只读、输入区被说明替换 -->
           <button class="conv-row" id="conv-broken-project" data-od-id="conv-broken-project" title="官网改版（项目文件夹不可用）">
             <span class="name">官网改版</span>
-            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+            <span class="dot dot-red" role="img" title="需要你处理" aria-label="需要你处理"></span>
           </button>
           <button class="conv-row" id="conv-broken-team-deleted" data-od-id="conv-broken-team-deleted" title="季度活动（团队已删除）">
             <span class="name">季度活动</span>
-            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+            <span class="dot dot-red" role="img" title="需要你处理" aria-label="需要你处理"></span>
           </button>
           <button class="conv-row" id="conv-broken-team-repair" data-od-id="conv-broken-team-repair" title="内容排期（团队需要修复）">
             <span class="name">内容排期</span>
-            <span class="dot dot-red" title="需要你处理" aria-label="需要你处理"></span>
+            <span class="dot dot-red" role="img" title="需要你处理" aria-label="需要你处理"></span>
           </button>
         </div>
       </div>
 
       <div class="project collapsed" id="project-b">
-        <button class="project-row" data-od-id="project-b" aria-expanded="false" title="项目 B">
-          <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-          <span class="name">项目 B</span>
-          <span class="dot dot-red agg-dot" title="需要你处理" aria-label="需要你处理"></span>
+        <div class="project-row">
+          <button class="project-toggle" data-od-id="project-b" aria-expanded="false" title="项目 B">
+            <svg class="icon chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="name">项目 B</span>
+            <span class="dot dot-red agg-dot" role="img" title="需要你处理" aria-label="需要你处理"></span>
+          </button>
           <span class="row-actions stay">
-            <span class="icon-btn" role="button" tabindex="0" title="项目 B 更多" aria-label="项目 B 更多">
+            <button class="icon-btn" title="项目 B 更多" aria-label="项目 B 更多">
               <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-            </span>
+            </button>
           </span>
-        </button>
+        </div>
       </div>
     </div>
 
@@ -120,15 +126,15 @@
   </aside>
 
   <!-- ============ 会话区 ============ -->
-  <main class="conv" data-od-id="conversation">
+  <main class="conv" id="conversation" data-od-id="conversation" tabindex="-1">
     <!-- 窗口控制行:46px;侧栏关闭时恢复按钮让位红绿灯安全区 -->
     <header class="conv-head">
-      <button class="open-sidebar" id="btn-open-sidebar" data-od-id="open-sidebar">
+      <button class="open-sidebar" id="btn-open-sidebar" data-od-id="open-sidebar" aria-label="打开侧边栏">
         <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m13 9 3 3-3 3"/></svg>
-        打开侧边栏
+        <span class="label">打开侧边栏</span>
       </button>
       <span style="flex:1"></span>
-      <button class="icon-btn" id="btn-toggle-rbar" data-od-id="toggle-rbar" title="显示/隐藏右侧栏" aria-label="显示或隐藏右侧栏">
+      <button class="icon-btn" id="btn-toggle-rbar" data-od-id="toggle-rbar" title="显示/隐藏右侧栏" aria-label="显示右侧详情栏" aria-controls="rbar" aria-expanded="true">
         <svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
       </button>
     </header>
@@ -261,9 +267,22 @@
     </div>
 
     <!-- 新对话·项目未选定:同一页面的另一种状态 -->
-    <div class="timeline" id="timeline-new" hidden>
+    <div class="timeline" id="timeline-new" data-od-id="timeline-empty" hidden>
       <h1 class="tl-title" title="新对话"><span>新对话</span></h1>
-      <div class="new-guide">描述你的目标，团队会开始推进</div>
+      <div class="view-state empty-state" role="status">
+        <div class="state-title">开始一次新对话</div>
+        <div class="state-copy">描述你的目标，团队会从这里开始推进。</div>
+      </div>
+    </div>
+
+    <!-- 加载态可通过 #state=loading 验收；默认不打断最近一次会话 -->
+    <div class="timeline" id="timeline-loading" data-od-id="timeline-loading" aria-busy="true" hidden>
+      <h1 class="tl-title" title="正在载入"><span>当前对话</span></h1>
+      <div class="view-state loading-state" role="status" aria-live="polite">
+        <span class="loading-mark" aria-hidden="true"></span>
+        <div class="state-title">正在载入对话</div>
+        <div class="state-copy">消息、运行状态和项目上下文马上就绪。</div>
+      </div>
     </div>
 
     <!-- 文案打磨:有成员正在工作的会话,演示停下/发送合一与运行中改选团队 -->
@@ -637,7 +656,7 @@
           </button>
         </div>
         <!-- 不可继续状态:输入区被说明文案替换,恢复入口随状态给 -->
-        <div class="composer-blocked" id="composer-blocked" data-od-id="composer-blocked" hidden>
+        <div class="composer-blocked" id="composer-blocked" data-od-id="composer-blocked" role="alert" aria-live="assertive" hidden>
           <span class="txt" id="blocked-text"></span>
           <button class="btn btn-ghost" id="blocked-action" data-od-id="blocked-action" hidden></button>
         </div>
@@ -647,19 +666,19 @@
   </main>
 
   <!-- ============ 右侧栏 ============ -->
-  <aside class="rbar" id="rbar" data-od-id="right-sidebar">
+  <aside class="rbar" id="rbar" data-od-id="right-sidebar" aria-label="对话详情">
     <div class="rtabs" data-od-id="rbar-tabs">
-      <div class="rtabs-scroll" id="rtabs-scroll">
-        <div class="rtab is-active" role="tab" tabindex="0" data-id="t1" title="改动">
-          <span class="t">改动</span>
+      <div class="rtabs-scroll" id="rtabs-scroll" role="tablist" aria-label="详情标签">
+        <div class="rtab is-active" data-id="t1" title="改动">
+          <button class="rtab-main" role="tab" tabindex="0" aria-selected="true"><span class="t">改动</span></button>
           <button class="x" title="关闭标签" aria-label="关闭标签 改动"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
-        <div class="rtab" role="tab" tabindex="0" data-id="t2" title="开发">
-          <span class="t">开发</span>
+        <div class="rtab" data-id="t2" title="开发">
+          <button class="rtab-main" role="tab" tabindex="-1" aria-selected="false"><span class="t">开发</span></button>
           <button class="x" title="关闭标签" aria-label="关闭标签 开发"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
-        <div class="rtab" role="tab" tabindex="0" data-id="t3" title="空状态验收">
-          <span class="t">空状态验收</span>
+        <div class="rtab" data-id="t3" title="空状态验收">
+          <button class="rtab-main" role="tab" tabindex="-1" aria-selected="false"><span class="t">空状态验收</span></button>
           <button class="x" title="关闭标签" aria-label="关闭标签 空状态验收"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
       </div>
@@ -803,6 +822,7 @@
       <div class="rpane" id="rbody-dyn" hidden></div>
     </div>
   </aside>
+  <button class="panel-scrim" id="panel-scrim" aria-label="关闭侧栏或详情面板" hidden></button>
 </div>
 
 <script>
@@ -845,22 +865,59 @@
   /* ================= 侧栏 / 右栏开合 ================= */
 
   var app = $('#app');
-  var sidebarOpen = store.get(LS.sidebar) !== '0';
-  var rbarOpen = store.get(LS.rbar) !== '0';
+  var scrim = $('#panel-scrim');
+  var sidebarPreference = store.get(LS.sidebar);
+  var rbarPreference = store.get(LS.rbar);
+  var mobileViewport = window.matchMedia('(max-width: 760px)');
+  var compactViewport = window.matchMedia('(max-width: 1100px)');
+  var sidebarOpen = sidebarPreference !== '0' && !(mobileViewport.matches && sidebarPreference === null);
+  var rbarOpen = rbarPreference !== '0' && !(compactViewport.matches && rbarPreference === null);
+
+  function announce(message) {
+    var status = $('#ui-status');
+    if (!status) return;
+    status.textContent = '';
+    window.setTimeout(function () { status.textContent = message; }, 20);
+  }
 
   function applyChrome() {
     app.classList.toggle('no-sidebar', !sidebarOpen);
     app.classList.toggle('no-rbar', !rbarOpen);
+    var rbarToggle = $('#btn-toggle-rbar');
+    if (rbarToggle) {
+      rbarToggle.setAttribute('aria-expanded', String(rbarOpen));
+      rbarToggle.setAttribute('aria-label', rbarOpen ? '隐藏右侧详情栏' : '显示右侧详情栏');
+    }
+    if (scrim) {
+      scrim.hidden = !((mobileViewport.matches && sidebarOpen) || (compactViewport.matches && rbarOpen));
+    }
+    var sidebar = $('.sidebar');
+    var rbar = $('#rbar');
+    if (sidebar) sidebar.setAttribute('aria-hidden', String(!sidebarOpen));
+    if (rbar) rbar.setAttribute('aria-hidden', String(!rbarOpen));
   }
   on('#btn-close-sidebar', 'click', function () {
-    sidebarOpen = false; store.set(LS.sidebar, '0'); applyChrome();
+    sidebarOpen = false; store.set(LS.sidebar, '0'); applyChrome(); announce('侧边栏已关闭');
   });
   on('#btn-open-sidebar', 'click', function () {
-    sidebarOpen = true; store.set(LS.sidebar, '1'); applyChrome();
+    sidebarOpen = true; store.set(LS.sidebar, '1'); applyChrome(); announce('侧边栏已打开');
   });
   on('#btn-toggle-rbar', 'click', function () {
     rbarOpen = !rbarOpen; store.set(LS.rbar, rbarOpen ? '1' : '0'); applyChrome();
+    announce(rbarOpen ? '右侧详情栏已打开' : '右侧详情栏已关闭');
   });
+  on('#panel-scrim', 'click', function () {
+    if (mobileViewport.matches && sidebarOpen) sidebarOpen = false;
+    if (compactViewport.matches && rbarOpen) rbarOpen = false;
+    applyChrome();
+  });
+  function handleViewportChange() {
+    if (mobileViewport.matches) sidebarOpen = false;
+    if (compactViewport.matches) rbarOpen = false;
+    applyChrome();
+  }
+  if (mobileViewport.addEventListener) mobileViewport.addEventListener('change', handleViewportChange);
+  if (compactViewport.addEventListener) compactViewport.addEventListener('change', handleViewportChange);
 
   /* ================= 项目折叠(展开时由对话行自行显示状态点) ================= */
 
@@ -904,7 +961,7 @@
   var drafts = {};
   try { drafts = JSON.parse(store.get(LS.drafts) || '{}'); } catch (e) { drafts = {}; }
   var savedConv = store.get(LS.conv);
-  var currentConv = (savedConv === 'new' || savedConv === 'copy' || savedConv === 'operator' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
+  var currentConv = (savedConv === 'new' || savedConv === 'copy' || savedConv === 'operator' || savedConv === 'loading' || BLOCKED_CONVS[savedConv]) ? savedConv : 'landing';
   var composerText = $('#composer-text');
   var sendBtn = $('#send-btn');
 
@@ -914,15 +971,18 @@
     currentConv = name;
     store.set(LS.conv, name);
     var blocked = !recovered[name] && BLOCKED_CONVS[name] ? BLOCKED_CONVS[name] : null;
-    var isNew = name === 'new', isCopy = name === 'copy', isOp = name === 'operator';
-    var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), to = $('#timeline-operator'), reason = $('#composer-reason');
-    if (tl) tl.hidden = isNew || isCopy || isOp;
+    var isNew = name === 'new', isCopy = name === 'copy', isOp = name === 'operator', isLoading = name === 'loading';
+    var tl = $('#timeline-landing'), tn = $('#timeline-new'), tc = $('#timeline-copy'), to = $('#timeline-operator'), tload = $('#timeline-loading'), reason = $('#composer-reason');
+    if (tl) tl.hidden = isNew || isCopy || isOp || isLoading;
     if (tn) tn.hidden = !isNew;
     if (tc) tc.hidden = !isCopy;
     if (to) to.hidden = !isOp;
+    if (tload) tload.hidden = !isLoading;
     if (reason) reason.hidden = !isNew || !!newCtx.project;
-    sendBtn.disabled = isNew && !newCtx.project;
+    sendBtn.disabled = isLoading || (isNew && !newCtx.project);
     composerText.placeholder = isNew ? '描述你的目标…' : '说点什么，或 @ 一个成员…';
+    var composer = $('.composer');
+    if (composer) composer.hidden = isLoading;
     var l = $('#chips-landing'), n = $('#chips-new');
     if (l) l.hidden = isNew;
     if (n) n.hidden = !isNew;
@@ -936,9 +996,15 @@
     }
     applyBlocked(blocked);
     var navNew = $('#nav-new');
-    if (navNew) navNew.classList.toggle('is-active', isNew);
+    if (navNew) {
+      navNew.classList.toggle('is-active', isNew);
+      navNew.setAttribute('aria-pressed', String(isNew));
+    }
     $$('.conv-row').forEach(function (row) {
-      row.classList.toggle('is-selected', row.id === 'conv-' + name);
+      var selected = row.id === 'conv-' + name;
+      row.classList.toggle('is-selected', selected);
+      if (selected) row.setAttribute('aria-current', 'page');
+      else row.removeAttribute('aria-current');
     });
     composerText.value = drafts[name] || '';
     autoGrow();
@@ -947,6 +1013,7 @@
     try { history.replaceState(null, '', '#state=' + stateFromConv()); } catch (e) {}
     refreshRelay();
     syncDevBar(stateFromConv());
+    announce(isLoading ? '正在载入当前对话' : '已切换到' + (isNew ? '新对话' : (isCopy ? '文案打磨' : (isOp ? '操作员详情' : (blocked ? blocked.title : '官网落地页验收')))));
   }
 
   /* 停下/发送合一:成员正在工作且输入框为空时,右下角按钮为停下 */
@@ -1071,27 +1138,56 @@
   var composerEl = $('.composer');
   var menuEl = document.createElement('div');
   menuEl.className = 'ctx-menu';
+  menuEl.id = 'context-menu';
+  menuEl.setAttribute('role', 'menu');
   menuEl.hidden = true;
   if (composerEl) composerEl.appendChild(menuEl);
   var menuAnchor = null;
 
-  function closeMenu() { menuEl.hidden = true; menuAnchor = null; }
+  function closeMenu(restoreFocus) {
+    var anchor = menuAnchor;
+    menuEl.hidden = true;
+    menuAnchor = null;
+    if (anchor) anchor.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && anchor) anchor.focus();
+  }
 
   function openMenu(anchor, html) {
     if (!composerEl) return;
-    if (menuAnchor === anchor && !menuEl.hidden) { closeMenu(); return; }
+    if (menuAnchor === anchor && !menuEl.hidden) { closeMenu(true); return; }
+    if (menuAnchor) menuAnchor.setAttribute('aria-expanded', 'false');
     menuAnchor = anchor;
     menuEl.innerHTML = html;
+    $$('.menu-item', menuEl).forEach(function (item) {
+      item.setAttribute('role', 'menuitem');
+      if (item.disabled) item.setAttribute('aria-disabled', 'true');
+    });
     var r = anchor.getBoundingClientRect();
     var c = composerEl.getBoundingClientRect();
     menuEl.style.left = Math.max(0, r.left - c.left) + 'px';
     menuEl.style.bottom = (c.bottom - r.top + 6) + 'px';
     menuEl.hidden = false;
+    anchor.setAttribute('aria-controls', 'context-menu');
+    anchor.setAttribute('aria-expanded', 'true');
+    var firstItem = $('.menu-item:not(:disabled)', menuEl);
+    if (firstItem) firstItem.focus();
   }
 
   document.addEventListener('mousedown', function (e) {
     if (menuEl.hidden || !menuAnchor) return;
-    if (!e.target.closest('.ctx-menu') && !menuAnchor.contains(e.target)) closeMenu();
+    if (!e.target.closest('.ctx-menu') && !menuAnchor.contains(e.target)) closeMenu(false);
+  });
+  menuEl.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+    var items = $$('.menu-item:not(:disabled)', menuEl);
+    if (!items.length) return;
+    var index = items.indexOf(document.activeElement);
+    if (e.key === 'Home') index = 0;
+    else if (e.key === 'End') index = items.length - 1;
+    else if (e.key === 'ArrowDown') index = (index + 1 + items.length) % items.length;
+    else index = (index - 1 + items.length) % items.length;
+    e.preventDefault();
+    items[index].focus();
   });
 
   /* 确认弹层:工作空间切换专用,一次一个 */
@@ -1099,28 +1195,45 @@
   dialogOverlay.className = 'dialog-overlay';
   dialogOverlay.hidden = true;
   dialogOverlay.innerHTML =
-    '<div class="dialog" role="dialog" aria-modal="true" data-od-id="workspace-confirm">' +
-    '<div class="dialog-title"></div><div class="dialog-body"></div>' +
+    '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-confirm-title" aria-describedby="workspace-confirm-body" tabindex="-1" data-od-id="workspace-confirm">' +
+    '<div class="dialog-title" id="workspace-confirm-title"></div><div class="dialog-body" id="workspace-confirm-body"></div>' +
     '<div class="dialog-actions">' +
     '<button class="btn btn-ghost" data-x="cancel">取消</button>' +
     '<button class="btn btn-primary" data-x="ok">换过去</button>' +
     '</div></div>';
   document.body.appendChild(dialogOverlay);
   var dialogOk = null;
+  var dialogReturnFocus = null;
 
   function openConfirm(title, body, onOk) {
     $('.dialog-title', dialogOverlay).textContent = title;
     $('.dialog-body', dialogOverlay).textContent = body;
     dialogOk = onOk;
+    dialogReturnFocus = document.activeElement;
     dialogOverlay.hidden = false;
+    var cancel = $('[data-x="cancel"]', dialogOverlay);
+    if (cancel) cancel.focus();
   }
-  function closeDialog() { dialogOverlay.hidden = true; dialogOk = null; }
+  function closeDialog() {
+    if (dialogOverlay.hidden) return;
+    dialogOverlay.hidden = true;
+    dialogOk = null;
+    if (dialogReturnFocus && dialogReturnFocus.focus) dialogReturnFocus.focus();
+    dialogReturnFocus = null;
+  }
   dialogOverlay.addEventListener('click', function (e) {
     if (e.target === dialogOverlay || e.target.closest('[data-x="cancel"]')) { closeDialog(); return; }
     if (e.target.closest('[data-x="ok"]')) { var fn = dialogOk; closeDialog(); if (fn) fn(); }
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { closeMenu(); closeDialog(); }
+    if (e.key === 'Escape') { closeMenu(true); closeDialog(); return; }
+    if (e.key === 'Tab' && !dialogOverlay.hidden) {
+      var controls = $$('button:not(:disabled)', dialogOverlay);
+      if (!controls.length) return;
+      var first = controls[0], last = controls[controls.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   });
 
   function projectMenuHtml() {
@@ -1162,21 +1275,21 @@
     var kind = it.dataset.kind;
     if (kind === 'project') {
       newCtx.project = it.dataset.val;
-      closeMenu(); applyNewContext();
+      closeMenu(true); applyNewContext();
     } else if (kind === 'add-project') {
       /* 原型以「新项目」代替系统文件夹选择器的返回结果 */
       PROJECTS.push('新项目');
       newCtx.project = '新项目';
-      closeMenu(); applyNewContext();
+      closeMenu(true); applyNewContext();
     } else if (kind === 'team') {
       newCtx.team = it.dataset.val;
-      closeMenu(); applyTeam();
+      closeMenu(true); applyTeam();
       /* 团队已删除:改选一支可用团队即恢复;运行中改选则等当前步跑完 */
       if (!recovered[currentConv] && BLOCKED_CONVS[currentConv] && BLOCKED_CONVS[currentConv].kind === 'team-deleted') recoverConv();
       else refreshTeamHint();
     } else if (kind === 'workspace') {
       var val = it.dataset.val;
-      closeMenu();
+      closeMenu(true);
       if (val === newCtx.workspace) return;
       if (val === 'isolated') {
         openConfirm('换成独立工作空间', '副本基于项目当前所在的提交，不包含你还没提交的改动。', function () {
@@ -1289,8 +1402,9 @@
     var wrap = $('#rtabs-scroll');
     if (!wrap) return;
     wrap.innerHTML = tabs.map(function (t) {
-      return '<div class="rtab' + (t.id === activeTabId ? ' is-active' : '') + '" role="tab" tabindex="0" data-id="' + t.id + '" title="' + esc(t.title) + '">' +
-        '<span class="t">' + esc(t.title) + '</span>' +
+      var active = t.id === activeTabId;
+      return '<div class="rtab' + (active ? ' is-active' : '') + '" data-id="' + t.id + '" title="' + esc(t.title) + '">' +
+        '<button class="rtab-main" role="tab" tabindex="' + (active ? '0' : '-1') + '" aria-selected="' + String(active) + '" aria-label="' + esc(t.title) + '"><span class="t">' + esc(t.title) + '</span></button>' +
         '<button class="x" title="关闭标签" aria-label="关闭标签 ' + esc(t.title) + '">' + ICON_X + '</button>' +
         '</div>';
     }).join('');
@@ -1370,11 +1484,20 @@
     activeTabId = id; persistTabs(); renderTabs(); renderBody();
   });
   on('#rtabs-scroll', 'keydown', function (e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.target.closest('.x')) return;
     var tabEl = e.target.closest('.rtab');
     if (!tabEl) return;
+    var idx = tabs.findIndex(function (t) { return t.id === tabEl.dataset.id; });
+    if (idx < 0) return;
+    if (e.key === 'ArrowRight') idx = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') idx = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') idx = 0;
+    else if (e.key === 'End') idx = tabs.length - 1;
+    else if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
-    activeTabId = tabEl.dataset.id; persistTabs(); renderTabs(); renderBody();
+    activeTabId = tabs[idx].id; persistTabs(); renderTabs(); renderBody();
+    var nextTab = $('.rtab[data-id="' + activeTabId + '"] .rtab-main', $('#rtabs-scroll'));
+    if (nextTab) nextTab.focus();
   });
 
   /* 关掉最后一个标签不收起右栏,留下一个空白标签 */
@@ -1473,12 +1596,19 @@
     if (!t) return;
     safe(function () {
       var staticPane = $('.rpane[data-pane="' + t.id + '"]');
-      if (staticPane) { staticPane.hidden = false; return; }
+      if (staticPane) {
+        staticPane.hidden = false;
+        staticPane.setAttribute('role', 'tabpanel');
+        staticPane.setAttribute('aria-label', t.title);
+        return;
+      }
       if (!dyn) return;
       if (t.type === 'files') dyn.innerHTML = filesPane();
       else if (t.type === 'subtask') dyn.innerHTML = subtaskDynPane(t);
       else dyn.innerHTML = blankPane();
       dyn.hidden = false;
+      dyn.setAttribute('role', 'tabpanel');
+      dyn.setAttribute('aria-label', t.title);
     });
   }
 
@@ -1616,7 +1746,7 @@
   function refreshRelay() {
     var vp = $('#relay-viewport');
     if (!vp) return;
-    var tl = currentConv === 'new' ? null : (currentConv === 'copy' ? $('#timeline-copy') : (currentConv === 'operator' ? $('#timeline-operator') : $('#timeline-landing')));
+    var tl = (currentConv === 'new' || currentConv === 'loading') ? null : (currentConv === 'copy' ? $('#timeline-copy') : (currentConv === 'operator' ? $('#timeline-operator') : $('#timeline-landing')));
     relay.events = relayCollect(tl);
     relay.currentId = relay.events.length ? relay.events[relay.events.length - 1].id : null;
     clearTimeout(relay.closeTimer);
@@ -1816,6 +1946,7 @@
     { id: 'operator', label: '对话·操作员详情' },
     { id: 'relay-open', label: '会话目录展开' },
     { id: 'new', label: '新对话' },
+    { id: 'loading', label: '加载中' },
     { id: 'broken-project', label: '阻断·项目不可用' },
     { id: 'broken-team-deleted', label: '阻断·团队已删除' },
     { id: 'broken-team-repair', label: '阻断·团队需修复' }
@@ -1845,6 +1976,7 @@
 
   function buildDevBar() {
     if ($('#dev-bar')) return;
+    if (!/[?&]dev=1(?:&|$)/.test(location.search)) return;
     var bar = document.createElement('div');
     bar.id = 'dev-bar';
     bar.setAttribute('data-od-id', 'dev-bar');

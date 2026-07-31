@@ -89,8 +89,28 @@ body {
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 ul { list-style: none; }
 
-/* 焦点环:仅键盘,2px --accent 外环(规范允许的焦点态紫) */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: fixed; top: 8px; left: 12px; z-index: 100;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--raised); color: var(--fg);
+  font-size: 13px; font-weight: 590;
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: translateY(0); }
+
+/* 焦点环只绑定真实交互控件，避免给普通内容节点制造伪交互。 */
+button:focus-visible,
+textarea:focus-visible,
+.skip-link:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 /* Lucide 几何:24px 网格、默认 1.6px 描边、圆头端点、currentColor */
 .icon {
@@ -104,7 +124,7 @@ ul { list-style: none; }
 
 /* ---------- App shell: 侧栏 / 会话区 / 右侧栏 ---------- */
 
-.app { display: flex; height: 100vh; min-width: 0; }
+.app { display: flex; height: 100vh; height: 100dvh; min-width: 0; }
 
 /* ---------- 左侧边栏(w252,与主区同底) ---------- */
 
@@ -147,6 +167,7 @@ ul { list-style: none; }
   transition: background .12s ease, color .12s ease;
 }
 .icon-btn:hover { background: var(--hover); color: var(--fg); }
+.icon-btn:active { background: var(--active); }
 
 /* 应用级入口:新建对话 / 搜索 / Agent 团队,与项目/对话行同一密度层级 */
 .app-nav { flex: none; padding: 6px 10px 4px; display: flex; flex-direction: column; gap: 2px; }
@@ -162,6 +183,7 @@ ul { list-style: none; }
   transition: background .12s ease;
 }
 .nav-row:hover { background: var(--hover); }
+.nav-row:active { background: var(--active); }
 .nav-row.is-active { background: var(--active); }
 .nav-row .icon { width: 16px; height: 16px; color: var(--muted); stroke-width: 1.5; }
 .nav-row.is-active .icon { color: var(--fg); }
@@ -185,13 +207,20 @@ ul { list-style: none; }
 .project-row {
   display: flex; align-items: center; gap: 6px;
   width: 100%; height: 32px;
-  padding: 0 8px;
+  padding: 0 2px 0 0;
   border-radius: 8px;
   font-size: 13.5px; font-weight: 590;
   text-align: left;
   transition: background .12s ease;
 }
+.project-toggle {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0; height: 100%;
+  padding: 0 0 0 8px;
+  text-align: left;
+}
 .project-row:hover { background: var(--hover); }
+.project-row:active { background: var(--active); }
 .project-row .chev { width: 14px; height: 14px; color: var(--faint); stroke-width: 1.5; transition: transform .15s ease; transform: rotate(90deg); }
 .project.collapsed .project-row .chev { transform: none; }
 .project-row .name {
@@ -229,6 +258,7 @@ ul { list-style: none; }
   position: relative;
 }
 .conv-row:hover { background: var(--hover); color: var(--fg); }
+.conv-row:active { background: var(--active); color: var(--fg); }
 .conv-row.is-selected { background: var(--active); color: var(--fg); }
 .conv-row .name {
   flex: 1; min-width: 0;
@@ -462,15 +492,29 @@ ul { list-style: none; }
 .pill-neutral { background: var(--raised); border: 1px solid var(--border); color: var(--muted); }
 
 /* 新对话引导 */
-.new-guide {
+.view-state {
   flex: 1;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
   color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 17px; letter-spacing: -0.01em;
   text-align: center;
-  padding: 0 40px;
+  padding: 48px 24px;
 }
+.state-title {
+  color: var(--fg);
+  font-family: var(--font-display);
+  font-size: 18px; font-weight: 590; letter-spacing: -0.01em;
+}
+.state-copy { max-width: 38ch; font-size: 13px; line-height: 1.6; }
+.loading-mark {
+  width: 22px; height: 22px;
+  margin-bottom: 8px;
+  border: 2px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* 输入框(固定可达) */
 /* 输入框:与时间线同一内容列(840px 居中) */
@@ -544,8 +588,9 @@ button.chip:hover { background: var(--hover); }
   transition: background .12s ease, opacity .12s ease;
 }
 .send-btn:hover { background: var(--fg-max); }
+.send-btn:active { transform: scale(.98); }
 footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; stroke-width: 1.5; }
-.send-btn:disabled { opacity: .4; pointer-events: none; }
+.send-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* 停下/发送合一:成员工作且输入框为空时变为停下 */
 .send-btn.is-stop { background: var(--tint-red); color: var(--danger); }
 .send-btn.is-stop:hover { background: var(--tint-red); }
@@ -579,6 +624,11 @@ footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; str
   min-height: 0; min-width: 0;
 }
 .app.no-rbar .rbar { display: none; }
+.panel-scrim {
+  position: fixed; inset: 0; z-index: 18;
+  background: color-mix(in oklch, var(--bg) 72%, transparent);
+  cursor: default;
+}
 
 .rtabs {
   flex: none;
@@ -599,7 +649,7 @@ footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; str
 
 .rtab {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 8px 0 12px;
+  height: 30px; padding: 0 6px 0 0;
   border-radius: 8px;
   color: var(--muted);
   font-size: 12.5px; font-weight: 510;
@@ -608,7 +658,13 @@ footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; str
   transition: background .12s ease, color .12s ease;
   cursor: pointer;
 }
+.rtab-main {
+  display: inline-flex; align-items: center;
+  min-width: 0; height: 100%; padding-left: 12px;
+  color: inherit; cursor: pointer;
+}
 .rtab:hover { background: var(--hover); color: var(--fg); }
+.rtab:active { background: var(--active); }
 .rtab.is-active { background: var(--active); color: var(--fg); }
 .rtab .t { overflow: hidden; text-overflow: ellipsis; }
 .rtab .x {
@@ -821,6 +877,8 @@ footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; str
   transition: background .12s ease;
 }
 .menu-item:hover { background: var(--hover); }
+.menu-item:active { background: var(--active); }
+.menu-item:disabled { opacity: .48; cursor: not-allowed; }
 .menu-item .tick {
   width: 14px; height: 14px; flex: none;
   margin-top: 2px;
@@ -854,6 +912,7 @@ footer.composer > .composer-box .send-btn .icon { width: 16px; height: 16px; str
 .dialog-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
 .btn-primary { background: var(--fg); color: var(--bg); }
 .btn-primary:hover { background: var(--fg-max); }
+.btn:active, .btn-primary:active { transform: scale(.98); }
 
 /* 附件:「＋」与发送按钮相邻;草稿卡片排在输入框上方 */
 .attach-btn {
@@ -1034,9 +1093,66 @@ footer.composer > .composer-box .attach-btn .icon { width: 16px; height: 16px; s
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .loading-mark { animation: none; border-top-color: var(--muted); }
   .relay-nav, .relay-row, .relay-band, .relay-tick, .relay-node, .relay-svg, .relay-path, .relay-omission { transition: none; }
   .timeline, .composer { transition: none; }
   .msg.relay-flash { animation: none; }
+}
+
+/* ---------- Responsive shell ---------- */
+
+@media (max-width: 1100px) {
+  .rbar {
+    position: fixed; z-index: 20;
+    top: 0; right: 0; bottom: 0;
+    width: min(420px, 92vw);
+    background: var(--bg);
+  }
+  .panel-scrim:not([hidden]) { display: block; }
+}
+
+@media (max-width: 760px) {
+  :root { --header-h: 52px; }
+  .sidebar {
+    position: fixed; z-index: 21;
+    top: 0; left: 0; bottom: 0;
+    width: min(320px, 88vw);
+    background: var(--bg);
+  }
+  .app:not(.no-sidebar) .conv-head .open-sidebar { display: none; }
+  .app.no-sidebar .conv-head { padding-left: 12px; }
+  .app.no-sidebar .conv-head .open-sidebar { display: inline-flex; }
+  .open-sidebar { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .open-sidebar .label { display: none; }
+  .timeline {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 20px;
+  }
+  .tl-title {
+    height: var(--header-h);
+    margin-right: -16px; margin-left: -16px;
+    padding-right: 16px; padding-left: 16px;
+  }
+  .composer { padding-left: 16px; padding-right: 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .msg.is-user .msg-body { max-width: 88%; }
+  .subcard, .result-card { width: calc(100% - 32px); max-width: none; }
+  .sys-rec { align-items: flex-start; flex-wrap: wrap; }
+  .sys-rec .btn { margin-left: 25px; }
+  .icon-btn, .attach-btn, .send-btn { min-width: 44px; min-height: 44px; }
+  .nav-row { min-height: 44px; height: 44px; }
+  .project-row, .conv-row { min-height: 44px; height: 44px; }
+  .chip { min-height: 36px; }
+  .msg-time { opacity: 1; }
+  .dialog { width: min(360px, calc(100vw - 32px)); padding: 20px; }
+  .dialog-actions .btn { min-height: 44px; }
+  #relay-viewport { display: none; }
+  #relay-viewport:not([hidden]) ~ .timeline,
+  #relay-viewport:not([hidden]) ~ .composer,
+  #relay-viewport.is-expanded ~ .timeline,
+  #relay-viewport.is-expanded ~ .composer {
+    padding-left: 16px;
+  }
 }
 
 /* ---------- 开发工具条(多状态直达,仅原型用) ---------- */

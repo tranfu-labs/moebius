@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>首次启动引导 · Moebius</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;510;590&family=Inter+Tight:wght@510;590&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<style>
+/* ============================================================
+   首次启动引导 — 页面专属样式
+   令牌/度量全部沿用 app.css(brand-spec);本文件只加布局与步骤组件。
+   PRD 事实源: docs/product/pages/onboarding.md
+   框架: 标题栏 46px + 可滚动主体(最大 780px)+ 固定底部 footer。
+   ============================================================ */
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+/* hidden 语义优先于布局类的 display 声明(落地屏 / 安装聚合初始不可见) */
+[hidden] { display: none !important; }
+
+.ob-shell { display: flex; flex-direction: column; height: 100vh; }
+
+/* ---------- 应用标题栏(四步共用) ---------- */
+.ob-titlebar {
+  -webkit-app-region: drag;
+  flex: none; position: relative;
+  display: flex; align-items: center;
+  height: var(--header-h);
+  padding: 0 14px 0 78px; /* 左 78px 让位 macOS 交通灯 */
+  border-bottom: 1px solid var(--border);
+}
+.ob-brand { display: flex; align-items: center; gap: 8px; }
+.ob-brand .brand-mark { width: 20px; height: 20px; color: var(--fg); }
+
+/* 后台安装聚合状态:标题栏中间,不替换身份区 */
+.ob-install {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-size: 12px;
+  -webkit-app-region: no-drag;
+  transition: background .12s ease, color .12s ease;
+}
+.ob-install:hover { background: var(--hover); color: var(--fg); }
+.ob-install .icon { width: 12px; height: 12px; }
+.ob-install-pop {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(var(--header-h) + 6px); z-index: 30;
+  width: 320px; padding: 6px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 12px;
+}
+.ob-install-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; }
+.ob-install-row .icon { width: 13px; height: 13px; color: var(--muted); }
+.ob-install-row .t { flex: 1; min-width: 0; }
+.ob-install-row .stage { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.ob-install-row .btn { flex: none; }
+
+/* ---------- 主体:可滚动,最大 780px 对齐框架 ---------- */
+.ob-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 max(32px, calc((100% - 780px) / 2)); }
+.ob-frame { max-width: 780px; margin: 0 auto; padding: 44px 0 36px; display: flex; flex-direction: column; align-items: center; }
+
+.ob-stephead { text-align: center; }
+.ob-stepcap { font-size: 12px; color: var(--faint); letter-spacing: .03em; }
+
+/* 步进指示:4 段细条,当前 = --fg,已过 = --muted,未到 = --border */
+.ob-progress { display: flex; justify-content: center; gap: 4px; margin-bottom: 12px; }
+.ob-progress i { width: 22px; height: 3px; border-radius: 99px; background: var(--border); transition: background .2s ease; }
+.ob-progress i.done { background: var(--muted); }
+.ob-progress i.now { background: var(--fg); }
+
+/* 步骤切换:整列轻微上浮入场(仅跨步时触发,同步内状态更新不重放) */
+.ob-enter { animation: ob-rise .22s cubic-bezier(.2, 0, 0, 1) both; }
+@keyframes ob-rise { from { opacity: 0; transform: translateY(6px); } }
+.ob-title { font-family: var(--font-display); font-size: 22px; font-weight: 590; letter-spacing: -0.01em; margin-top: 8px; }
+.ob-sub { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+.ob-content { width: 100%; margin-top: 32px; display: flex; flex-direction: column; align-items: center; }
+.ob-narrow { width: 100%; max-width: 640px; }
+.ob-wide { width: 100%; }
+
+/* ---------- 固定底部操作 footer ---------- */
+.ob-footer { flex: none; border-top: 1px solid var(--border); padding: 14px max(32px, calc((100% - 780px) / 2)); }
+.ob-footer-inner { max-width: 780px; margin: 0 auto; display: flex; justify-content: flex-end; gap: 8px; transition: max-width .22s ease; }
+/* 与当前步骤的内容列对齐:窄列步骤(1/2/4)= 640px,宽列步骤(3)= 780px */
+.ob-footer-inner.narrow { max-width: 640px; }
+
+/* 按钮:沿用 app.css .btn / .btn-ghost,lg 尺寸给步骤 CTA */
+.btn-lg { height: 38px; padding: 0 18px; font-size: 13.5px; }
+.btn:disabled { opacity: .4; pointer-events: none; }
+
+/* ---------- 第 1 步:CLI 检查行组 ---------- */
+.cli-list { width: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.cli-row { display: flex; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.cli-row:last-child { border-bottom: 0; }
+.cli-ic { width: 20px; height: 20px; flex: none; display: grid; place-items: center; margin-top: 1px; }
+.cli-ic .icon { width: 16px; height: 16px; }
+.cli-ic.ok { color: var(--success); }
+.cli-ic.warn { color: var(--amber); }
+.cli-ic.bad { color: var(--danger); }
+.cli-ic.run { color: var(--muted); }
+.cli-main { flex: 1; min-width: 0; }
+.cli-top { display: flex; align-items: center; gap: 8px; }
+.cli-name { font-size: 13.5px; font-weight: 590; }
+.cli-desc { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.6; }
+.cli-cmd { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.cli-act { flex: none; }
+
+.spin { animation: ob-rot 1s linear infinite; }
+@keyframes ob-rot { to { transform: rotate(360deg); } }
+
+/* ---------- 第 2 步:团队卡组 ---------- */
+.team-card {
+  display: flex; gap: 14px; width: 100%;
+  padding: 16px 18px; text-align: left;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  transition: background .12s ease, border-color .12s ease;
+}
+.team-card:hover { background: var(--hover); }
+.team-card.is-selected { border-color: var(--accent); background: var(--tint-blue); }
+.team-radio { width: 18px; height: 18px; flex: none; margin-top: 3px; border-radius: 50%; border: 2px solid var(--faint); transition: border .12s ease; }
+.team-card.is-selected .team-radio { border: 6px solid var(--info); }
+.team-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.team-top { display: flex; align-items: center; gap: 8px; }
+.team-name { font-size: 14px; font-weight: 590; }
+.team-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.team-sel { margin-left: auto; font-size: 12px; color: var(--muted); }
+.team-members { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+/* 主 Agent 不再写文字,用 accent 圆点 + 提亮名字标识,长列表下减少重复噪音 */
+.team-members .m-lead { color: var(--fg); font-weight: 550; }
+.team-members .m-lead::before { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.team-desc { margin-top: 2px; font-size: 12.5px; color: var(--faint); }
+.team-hint { margin-top: 8px; display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: var(--amber); line-height: 1.5; }
+.team-hint .icon { width: 13px; height: 13px; flex: none; margin-top: 2px; }
+.team-plus { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border: 1px dashed var(--faint); border-radius: 10px; color: var(--muted); }
+.team-go { margin-left: auto; align-self: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+
+/* 多团队场景:搜索 + 计数 + 内部滚动分组列表(30+ 团队不撑长页面) */
+.team-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.team-search { position: relative; flex: 1; min-width: 0; }
+.team-search .icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--faint); pointer-events: none; }
+.team-search input {
+  width: 100%; height: 36px; padding: 0 12px 0 32px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  color: var(--fg); font: inherit; font-size: 13px; outline: none;
+  transition: border-color .12s ease;
+}
+.team-search input::placeholder { color: var(--faint); }
+.team-search input:focus { border-color: var(--accent); }
+.team-count { flex: none; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.team-scroll {
+  max-height: min(408px, calc(100vh - 430px)); min-height: 120px;
+  overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  padding: 2px;
+  scroll-padding-bottom: 100px; /* 让最后一张卡不被吸底的创建入口遮住 */
+}
+.team-group-label { font-size: 11.5px; color: var(--faint); letter-spacing: .04em; padding: 2px 4px 0; }
+.team-group-label:not(:first-child) { margin-top: 6px; }
+.team-empty { border: 1px dashed var(--border); border-radius: 14px; padding: 26px 20px; text-align: center; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+/* 创建入口吸在列表视口底部:与上方卡片同一内容盒,任何平台滚动条下都严格对齐,
+   且长列表滚动时始终可见;顶部渐隐遮住从下方滚过的卡片 */
+.team-create-stick {
+  position: sticky; bottom: 0; z-index: 1; margin-top: 2px;
+  padding-top: 18px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 45%);
+}
+
+/* ---------- 第 2 步 · AI 团队设计器(宽版工作区) ---------- */
+.builder {
+  width: 100%;
+  height: min(720px, calc(100vh - 220px)); min-height: 420px;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+  overflow: hidden;
+}
+.builder-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.builder-back { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; color: var(--muted); font-size: 12.5px; transition: background .12s ease, color .12s ease; }
+.builder-back:hover { background: var(--hover); color: var(--fg); }
+.builder-back .icon { width: 14px; height: 14px; }
+.builder-title { font-size: 13px; font-weight: 590; }
+.builder-meta { margin-left: auto; font-size: 11.5px; color: var(--faint); }
+.builder-log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.b-msg { max-width: 88%; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.b-msg.user { align-self: flex-end; max-width: 75%; padding: 8px 12px; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; }
+.b-typing { display: flex; gap: 4px; padding: 4px 2px; }
+.b-typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); animation: ob-blink 1.2s ease-in-out infinite; }
+.b-typing i:nth-child(2) { animation-delay: .2s; }
+.b-typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes ob-blink { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+.proposal { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; background: var(--raised); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.proposal.fresh { border-color: var(--accent); }
+.p-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.p-name { font-family: var(--font-display); font-size: 15px; font-weight: 590; letter-spacing: -0.01em; }
+.p-desc { font-size: 12.5px; color: var(--muted); }
+.p-members { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.p-members li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.p-members .role-tag { width: 20px; height: 20px; font-size: 11px; }
+.p-primary { font-size: 11px; color: var(--faint); }
+.p-flow { border-top: 1px solid var(--border); padding-top: 8px; font-size: 12px; color: var(--faint); }
+.p-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.builder-foot { flex: none; display: flex; align-items: flex-end; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.builder-foot textarea { flex: 1; min-width: 0; background: none; border: 0; outline: 0; resize: none; color: var(--fg); font: inherit; font-size: 13px; line-height: 1.5; max-height: 90px; }
+.builder-foot textarea::placeholder { color: var(--faint); }
+
+/* ---------- 第 3 步:接力演示舞台(宽版) ---------- */
+.relay-card { width: 100%; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
+.relay-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 590; }
+.relay-head .sub { font-size: 12.5px; font-weight: 400; color: var(--muted); }
+.relay-head .btn { margin-left: auto; }
+.relay-stage-body { position: relative; min-height: 0; overflow: hidden; }
+/* 第 3 步是一段微缩的真实主会话时间线。
+   graph 通过覆盖层相对可见消息视口垂直居中，只被动表达六棒 Agent 接力。 */
+.ob-demo-scroll {
+  min-height: 360px;
+  max-height: min(470px, calc(100dvh - 286px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 22px 24px 30px 116px;
+}
+.ob-demo-user {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  width: min(75%, 520px);
+  margin: 0 0 34px auto;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.ob-demo-user.is-visible { opacity: 1; }
+.ob-demo-user-avatar {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--fg); color: var(--bg);
+  font-size: 12px; font-weight: 590;
+}
+.ob-demo-user-bubble {
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--fg);
+  font-size: 14px; line-height: 1.65;
+}
+.ob-demo-messages { display: flex; flex-direction: column; gap: 28px; }
+.ob-demo-message {
+  display: none;
+  min-width: 0;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.ob-demo-message.is-mounted { display: block; }
+.ob-demo-message.is-visible { opacity: 1; }
+.ob-demo-message-who {
+  display: flex; align-items: center; gap: 9px;
+  min-width: 0;
+}
+.ob-demo-message-who .role-tag { width: 24px; height: 24px; font-size: 12px; }
+.ob-demo-message-name {
+  min-width: 0;
+  color: var(--fg);
+  font-size: 13px; font-weight: 590;
+}
+.ob-demo-message-duration {
+  color: var(--faint);
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.ob-demo-message-body {
+  max-width: 68ch;
+  margin: 9px 0 0 33px;
+  color: var(--fg);
+  font-size: 14px; line-height: 1.65;
+}
+.ob-demo-rail-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding-left: 18px;
+  pointer-events: none;
+}
+.ob-demo-rail {
+  position: relative;
+  flex: none;
+  width: 82px; height: 246px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--raised);
+  overflow: hidden;
+  pointer-events: none;
+}
+.ob-demo-rail-svg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  transition: clip-path .35s ease;
+}
+.ob-demo-rail-path {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: .92;
+}
+.ob-demo-rail-node {
+  position: absolute; z-index: 2;
+  width: 10px; height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 2px solid var(--raised);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.ob-demo-rail-node.is-visible { opacity: 1; }
+.ob-demo-rail-node.is-current {
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 3px solid var(--event-color);
+  background: var(--raised) !important;
+}
+/* ---------- 第 4 步:终页 ---------- */
+.ob-done { display: flex; justify-content: center; padding-top: 4px; }
+.done-icon { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; }
+.done-icon.ok { background: var(--tint-green); color: var(--success); }
+.done-icon.neutral { background: var(--raised); border: 1px solid var(--border); color: var(--muted); }
+.done-icon .icon { width: 30px; height: 30px; }
+
+/* 终页摘要:环境与团队的真实状态复述 */
+.done-recap { width: 100%; max-width: 380px; margin-top: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.recap-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.recap-row:last-child { border-bottom: 0; }
+.recap-row .icon { width: 14px; height: 14px; color: var(--success); }
+.recap-row .r-label { color: var(--muted); }
+.recap-row .r-value { font-weight: 510; }
+
+/* ---------- 落地:新建对话形态 ---------- */
+.landing-empty { padding: 4px 12px; font-size: 12px; color: var(--faint); line-height: 1.6; }
+.landing-team { font-weight: 590; color: var(--fg); }
+
+/* ---------- 响应式:小窗宽收窄边距与卡片,矮窗口压缩纵向留白 ---------- */
+@media (max-width: 720px) {
+  .ob-body { padding: 0 20px; }
+  .ob-footer { padding: 12px 20px; }
+  .ob-frame { padding-top: 28px; }
+  .ob-title { font-size: 20px; }
+  .team-card { padding: 14px; gap: 12px; }
+  .team-badge { display: none; }
+}
+@media (max-width: 560px) {
+  .team-count { display: none; }
+  .team-members, .team-desc { font-size: 12px; }
+  .ob-demo-scroll { min-height: 350px; padding: 18px 14px 26px 88px; }
+  .ob-demo-user { width: 92%; margin-bottom: 28px; }
+  .ob-demo-user-bubble, .ob-demo-message-body { font-size: 13px; }
+  .ob-demo-messages { gap: 24px; }
+  .ob-demo-rail-layer { padding-left: 8px; }
+  .ob-demo-rail { width: 68px; height: 224px; }
+}
+@media (max-height: 740px) {
+  .ob-frame { padding-top: 22px; padding-bottom: 24px; }
+  .ob-content { margin-top: 22px; }
+  .ob-demo-scroll { min-height: 320px; max-height: min(390px, calc(100dvh - 268px)); }
+}
+
+/* ---------- 减少动态效果:不做持续位移,等价信息静态呈现 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ob-demo-user, .ob-demo-message, .ob-demo-rail-node, .ob-demo-rail-svg { transition: none; }
+  .spin { animation: none; }
+  .b-typing i { animation: none; }
+  .ob-enter { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ 引导壳:标题栏 + 主体 + 固定 footer ============ -->
+<div class="ob-shell" id="ob-shell">
+  <header class="ob-titlebar" data-od-id="titlebar">
+    <div class="ob-brand" data-od-id="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 12c-1.4-1.9-2.8-3-4.4-3a3.6 3.6 0 1 0 0 7.2c1.6 0 3-1.1 4.4-3z"/>
+        <path d="M12 12c1.4 1.9 2.8 3 4.4 3a3.6 3.6 0 1 0 0-7.2c-1.6 0-3 1.1-4.4 3z"/>
+      </svg>
+      <span class="brand-name">Moebius</span>
+    </div>
+    <button class="ob-install" id="ob-install" hidden aria-expanded="false" aria-controls="ob-install-pop"></button>
+    <div class="ob-install-pop" id="ob-install-pop" hidden role="dialog" aria-label="安装详情"></div>
+  </header>
+
+  <main class="ob-body" id="ob-body">
+    <div class="ob-frame">
+      <div class="ob-stephead" id="ob-stephead" data-od-id="step-head"></div>
+      <div class="ob-content" id="ob-content" data-od-id="step-content"></div>
+    </div>
+  </main>
+
+  <footer class="ob-footer" id="ob-footer" data-od-id="step-footer">
+    <div class="ob-footer-inner" id="ob-footer-inner"></div>
+  </footer>
+</div>
+
+<!-- ============ 引导去向:新建对话形态(项目为空,团队预选) ============ -->
+<div class="app" id="landing" hidden>
+  <aside class="sidebar" data-od-id="landing-sidebar">
+    <div class="sidebar-top"></div>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 12c-1.4-1.9-2.8-3-4.4-3a3.6 3.6 0 1 0 0 7.2c1.6 0 3-1.1 4.4-3z"/>
+        <path d="M12 12c1.4 1.9 2.8 3 4.4 3a3.6 3.6 0 1 0 0-7.2c-1.6 0-3 1.1-4.4 3z"/>
+      </svg>
+      <span class="brand-name">Moebius</span>
+    </div>
+    <nav class="app-nav">
+      <button class="nav-row is-active">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
+        新建对话
+      </button>
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        搜索
+      </button>
+      <button class="nav-row">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        Agent 团队
+      </button>
+    </nav>
+    <div class="projects-head">项目</div>
+    <div class="projects-scroll">
+      <div class="landing-empty">还没有项目。在下方输入区添加第一个项目,团队就能开始接力。</div>
+    </div>
+    <div class="sidebar-foot">
+      <button class="nav-row" id="btn-review" data-od-id="review-entry">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        重新查看引导
+      </button>
+    </div>
+  </aside>
+
+  <section class="conv">
+    <div class="conv-head"><span style="font-size:13.5px;font-weight:590">新对话</span></div>
+    <div class="timeline">
+      <div class="new-guide">说出你的目标,团队会替你接力。</div>
+    </div>
+    <div class="composer">
+      <div class="composer-box">
+        <div class="ctx-chips">
+          <button class="chip">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            添加项目
+          </button>
+          <span class="chip locked" id="landing-team-chip">
+            团队 · <span class="landing-team" id="landing-team">开发团队</span>
+          </span>
+        </div>
+        <div class="composer-input">
+          <textarea rows="2" placeholder="说出你的目标,团队会替你接力" aria-label="输入你的目标"></textarea>
+          <button class="send-btn" disabled aria-label="发送">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="sr-only" aria-live="polite" id="ob-live"></div>
+
+<script>
+/* ============================================================
+   首次启动引导 — 交互(确定性 mock,不调用真实 CLI)
+   行为事实源: docs/product/pages/onboarding.md
+   ============================================================ */
+(function () {
+  'use strict';
+
+  /* ---------- 工具 ---------- */
+  const $ = (id) => document.getElementById(id);
+  const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const TONES = ['#E8B4C8', '#F0C9A0', '#BCD9F7', '#B8E3D2', '#D9C2F0', '#E8D1A8'];
+  function toneOf(slug) { let h = 0x811c9dc5; for (const c of slug) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h % 6; }
+  const roleTag = (m, cls) => `<span class="role-tag tone-${toneOf(m.slug)}${cls ? ' ' + cls : ''}">${m.name[0]}</span>`;
+  const ICONS = {
+    check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    warn: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    bad: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    run: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+    bigcheck: '<path d="m5 12.5 4.5 4.5L19 7.5"/>'
+  };
+  const icon = (name, cls) => `<svg class="icon${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+  function announce(text) { $('ob-live').textContent = text; }
+
+  /* ---------- 状态 ---------- */
+  const DEV_TEAM = {
+    id: 'dev', name: '开发团队', badge: '内置团队',
+    desc: '负责软件方案、实现、测试、复核和主理收尾',
+    userMessage: '帮我修复运行时长统计不准确的问题,并把边界情况验证清楚。',
+    members: [
+      { slug: 'dev-manager', name: '开发经理', primary: true },
+      { slug: 'dev', name: '开发' },
+      { slug: 'qa', name: '软件测试' }
+    ],
+    beats: [
+      { slug: 'dev-manager', text: '我先把时长统计问题拆成计算口径、边界样本和回归证据,开发先定位并提交修复。' },
+      { slug: 'dev', text: '已经定位到暂停区间被重复计入,修正实现并补上基础回归用例,请测试复核。' },
+      { slug: 'qa', text: '第一轮复核未通过:跨日运行仍有一分钟偏差,现有用例没有覆盖这个边界。' },
+      { slug: 'dev', text: '收到,已统一跨日取整口径并加入午夜边界用例,重新提交复核。' },
+      { slug: 'qa', text: '第二轮复核通过:暂停、跨日和取整边界都已覆盖,结果与预期一致。' },
+      { slug: 'dev-manager', text: '收尾:统计口径已修正,两轮复核及通过证据都保留在时间线中,本次目标完成。' }
+    ]
+  };
+
+  /* 多团队场景 mock:演示 30 量级下的搜索 / 分组 / 滚动行为 */
+  const MOCK_TEAMS = [
+    { id: 'marketing', name: '市场团队', desc: '负责市场推广、活动策划与投放复盘',
+      members: [{ slug: 'mkt-lead', name: '市场经理', primary: true }, { slug: 'copywriter', name: '文案' }, { slug: 'channel-ops', name: '渠道运营' }] },
+    { id: 'content', name: '内容创作团队', desc: '负责公众号与博客的选题、撰写与发布',
+      members: [{ slug: 'chief-editor', name: '内容主编', primary: true }, { slug: 'writer', name: '撰稿人' }, { slug: 'proofreader', name: '审校' }] },
+    { id: 'data', name: '数据分析团队', desc: '负责业务口径、看板搭建与周报产出',
+      members: [{ slug: 'data-lead', name: '数据负责人', primary: true }, { slug: 'analyst', name: '数据分析师' }, { slug: 'bi-engineer', name: '报表工程师' }] },
+    { id: 'support', name: '客户支持团队', desc: '负责工单分流、答复与 FAQ 沉淀',
+      members: [{ slug: 'support-lead', name: '客服主管', primary: true }, { slug: 'ticket-agent', name: '工单专员' }, { slug: 'kb-keeper', name: '知识库维护' }] },
+    { id: 'ecommerce', name: '电商运营团队', desc: '负责店铺日常运营、大促活动与售后跟进',
+      members: [{ slug: 'ec-lead', name: '运营负责人', primary: true }, { slug: 'buyer', name: '选品专员' }, { slug: 'campaign-planner', name: '活动策划' }, { slug: 'aftersale', name: '售后协调' }] },
+    { id: 'product-design', name: '产品设计团队', desc: '负责需求梳理、原型与视觉稿产出',
+      members: [{ slug: 'design-lead', name: '设计负责人', primary: true }, { slug: 'interaction-designer', name: '交互设计' }, { slug: 'visual-designer2', name: '视觉设计' }] },
+    { id: 'growth', name: '增长实验团队', desc: '负责增长假设、A/B 实验与结论归档',
+      members: [{ slug: 'growth-lead', name: '增长负责人', primary: true }, { slug: 'experiment-designer', name: '实验设计' }, { slug: 'data-reviewer', name: '数据复核' }] },
+    { id: 'legal', name: '法务合规团队', desc: '负责合同条款、隐私合规与风险标注',
+      members: [{ slug: 'legal-lead', name: '法务负责人', primary: true }, { slug: 'contract-reviewer', name: '合同审查' }, { slug: 'compliance-officer', name: '合规专员' }] },
+    { id: 'hr', name: '招聘团队', desc: '负责职位发布、简历初筛与面试安排',
+      members: [{ slug: 'hr-lead', name: '招聘负责人', primary: true }, { slug: 'resume-screener', name: '简历筛选' }, { slug: 'interview-coordinator', name: '面试协调' }] },
+    { id: 'finance', name: '财务团队', desc: '负责月度结账、报销复核与票据归档',
+      members: [{ slug: 'finance-lead', name: '财务主管', primary: true }, { slug: 'bookkeeper', name: '记账专员' }, { slug: 'expense-auditor', name: '报销审核' }] },
+    { id: 'social', name: '社媒运营团队', desc: '负责多平台排期、发布与互动回复',
+      members: [{ slug: 'social-lead', name: '社媒负责人', primary: true }, { slug: 'content-editor', name: '内容编辑' }, { slug: 'community-ops', name: '评论运营' }] },
+    { id: 'video', name: '视频制作团队', desc: '负责选题、脚本与成片交付',
+      members: [{ slug: 'producer', name: '制作人', primary: true }, { slug: 'scriptwriter', name: '脚本作者' }, { slug: 'editor', name: '剪辑师' }] },
+    { id: 'i18n', name: '翻译本地化团队', desc: '负责界面与文档的多语言翻译与术语统一',
+      members: [{ slug: 'l10n-lead', name: '本地化负责人', primary: true }, { slug: 'translator', name: '翻译' }, { slug: 'terminology-reviewer', name: '术语审校' }] },
+    { id: 'research', name: '学术研究团队', desc: '负责文献综述、实验记录与论文撰写',
+      members: [{ slug: 'research-lead', name: '研究负责人', primary: true }, { slug: 'literature-assistant', name: '文献助理' }, { slug: 'writing-editor', name: '写作编辑' }] }
+  ].map((t) => ({ ...t, badge: '用户团队' }));
+
+  const S = {
+    step: 1, review: false,
+    cli: { codex: 'ok', claude: 'login', kimi: 'missing' },
+    installing: null,           // { id, stage, timer }
+    teams: [DEV_TEAM, ...MOCK_TEAMS], teamId: 'dev', teamQuery: '',
+    builder: { open: false, turns: 0, proposalRev: 0, busy: false, initialGoal: '' },
+    relayTimers: []
+  };
+
+  /* ---------- 标题栏:身份区 + 后台安装聚合 ---------- */
+  function renderInstall() {
+    const btn = $('ob-install'), pop = $('ob-install-pop');
+    if (!S.installing) {
+      btn.hidden = true; pop.hidden = true; btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    btn.hidden = false;
+    btn.innerHTML = `${icon('run', 'spin')}<span>正在安装 ${S.installing.name}…</span>`;
+    pop.innerHTML = '';
+    const row = el(`
+      <div class="ob-install-row">
+        ${icon('run', 'spin')}
+        <span class="t">${S.installing.name} CLI<span class="stage">${S.installing.stage}</span></span>
+        <button class="btn btn-ghost">取消</button>
+      </div>`);
+    row.querySelector('button').addEventListener('click', cancelInstall);
+    pop.appendChild(row);
+  }
+
+  $('ob-install').addEventListener('click', () => {
+    const pop = $('ob-install-pop');
+    pop.hidden = !pop.hidden;
+    $('ob-install').setAttribute('aria-expanded', String(!pop.hidden));
+  });
+  document.addEventListener('click', (e) => {
+    const pop = $('ob-install-pop');
+    if (!pop.hidden && !e.target.closest('#ob-install') && !e.target.closest('#ob-install-pop')) {
+      pop.hidden = true; $('ob-install').setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const pop = $('ob-install-pop');
+    if (!pop.hidden) {
+      pop.hidden = true; $('ob-install').setAttribute('aria-expanded', 'false');
+      $('ob-install').focus();
+    }
+  });
+
+  /* ---------- 第 1 步:环境就绪 ---------- */
+  const CLI_DEFS = [
+    { id: 'codex', name: 'Codex CLI', cmd: 'npm install -g @openai/codex', loginTip: '请在终端运行 codex 完成登录,再回来重新检查。' },
+    { id: 'claude', name: 'Claude Code', cmd: 'curl -fsSL https://claude.ai/install.sh | bash', loginTip: '请在终端运行 claude 完成登录,再回来重新检查。' },
+    { id: 'kimi', name: 'Kimi CLI', cmd: 'curl -LsSf https://code.kimi.com/install.sh | bash', loginTip: '请在终端运行 kimi 并完成 /login,再回来重新检查。' }
+  ];
+
+  function cliRow(def) {
+    const st = S.installing && S.installing.id === def.id ? 'installing' : S.cli[def.id];
+    const row = el(`<div class="cli-row" data-od-id="cli-${def.id}"></div>`);
+    let ic = '', main = '';
+    if (st === 'ok') {
+      ic = `<span class="cli-ic ok">${icon('check')}</span>`;
+      main = `<div class="cli-top"><span class="cli-name">${def.name}</span></div>
+              <div class="cli-desc">可用 · 已通过版本与能力检查</div>`;
+    } else if (st === 'login') {
+      ic = `<span class="cli-ic warn">${icon('warn')}</span>`;
+      main = `<div class="cli-top"><span class="cli-name">${def.name}</span></div>
+              <div class="cli-desc">已安装 · 需要登录。${def.loginTip}</div>`;
+    } else if (st === 'missing') {
+      ic = `<span class="cli-ic bad">${icon('bad')}</span>`;
+      main = `<div class="cli-top"><span class="cli-name">${def.name}</span></div>
+              <div class="cli-desc">未安装 · 安装 ${def.name.replace(' CLI', '')}(可选,不影响继续)</div>
+              <div class="cli-cmd">
+                <code class="mono-cmd">${def.cmd}</code>
+                <button class="icon-btn cli-act" aria-label="安装 ${def.name}">${icon('play')}</button>
+              </div>`;
+    } else if (st === 'installing') {
+      ic = `<span class="cli-ic run">${icon('run', 'spin')}</span>`;
+      main = `<div class="cli-top"><span class="cli-name">${def.name}</span></div>
+              <div class="cli-desc">正在安装 · ${S.installing.stage}</div>`;
+    } else if (st === 'checking') {
+      ic = `<span class="cli-ic run">${icon('run', 'spin')}</span>`;
+      main = `<div class="cli-top"><span class="cli-name">${def.name}</span></div>
+              <div class="cli-desc">正在检查…</div>`;
+    }
+    row.innerHTML = `${ic}<div class="cli-main">${main}</div>`;
+    const act = row.querySelector('.cli-act');
+    if (act) act.addEventListener('click', () => startInstall(def));
+    return row;
+  }
+
+  async function startInstall(def) {
+    if (S.installing) return;
+    S.installing = { id: def.id, name: def.name.replace(' CLI', ''), stage: '已启动安装 · 请保持 Moebius 打开' };
+    renderInstall(); renderEnvStep();
+    announce(`${def.name} 开始安装`);
+    const stages = ['正在下载安装脚本…', '正在安装到本机…', '正在验证安装结果…'];
+    for (const s of stages) {
+      await wait(1600);
+      if (!S.installing || S.installing.id !== def.id) return; // 已取消
+      S.installing.stage = s; renderInstall(); renderEnvStep();
+    }
+    await wait(1600);
+    if (!S.installing || S.installing.id !== def.id) return;
+    // 安装成功 → 自动复检该行:尚未登录 → 已安装需登录
+    S.cli[def.id] = 'login';
+    S.installing = null;
+    renderInstall(); renderEnvStep();
+    announce(`${def.name} 安装完成,需要登录后可用`);
+  }
+
+  function cancelInstall() {
+    if (!S.installing) return;
+    const id = S.installing.id;
+    S.cli[id] = 'missing';
+    S.installing = null;
+    renderInstall(); renderEnvStep();
+    announce('已取消安装');
+  }
+
+  async function recheck() {
+    if (S._checking) return;
+    S._checking = true;
+    const saved = { ...S.cli };
+    for (const d of CLI_DEFS) if (!(S.installing && S.installing.id === d.id)) S.cli[d.id] = 'checking';
+    renderEnvStep();
+    announce('正在重新检查三套 CLI');
+    await wait(1300);
+    for (const d of CLI_DEFS) if (S.cli[d.id] === 'checking') S.cli[d.id] = saved[d.id];
+    S._checking = false;
+    renderEnvStep();
+    announce('环境检查完成:Codex CLI 可用');
+  }
+
+  /* ---------- 第 2 步:选团队 ---------- */
+  function teamCard(team) {
+    const sel = S.teamId === team.id;
+    const card = el(`
+      <button class="team-card${sel ? ' is-selected' : ''}" data-od-id="team-card-${team.id}" data-team="${team.id}" aria-pressed="${sel}">
+        <span class="team-radio" aria-hidden="true"></span>
+        <span class="team-main">
+          <span class="team-top">
+            <span class="team-name">${team.name}</span>
+            <span class="team-badge">${team.badge}</span>
+            ${sel ? '<span class="team-sel">已选择</span>' : ''}
+          </span>
+          <span class="team-members">${team.members.map((m) => m.primary ? `<span class="m-lead" title="主 Agent">${m.name}</span>` : m.name).join(' │ ')}</span>
+          <span class="team-desc">${team.desc}</span>
+        </span>
+      </button>`);
+    // 就地切换选中态,不重建列表 —— 长列表下保留滚动位置
+    card.addEventListener('click', () => {
+      S.teamId = team.id;
+      const scroll = $('team-scroll');
+      scroll.querySelectorAll('.team-card[data-team]').forEach((c) => {
+        const on = c.dataset.team === team.id;
+        c.classList.toggle('is-selected', on);
+        c.setAttribute('aria-pressed', String(on));
+        const old = c.querySelector('.team-sel');
+        if (old) old.remove();
+        if (on) c.querySelector('.team-top').insertAdjacentHTML('beforeend', '<span class="team-sel">已选择</span>');
+      });
+      announce(`已选择${team.name}`);
+    });
+    return card;
+  }
+
+  function teamMatches(t, q) {
+    const hay = (t.name + ' ' + t.desc + ' ' + t.members.map((m) => m.name).join(' ')).toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderTeamCards(scroll) {
+    // 创建入口吸底在滚动视口内,重绘前先摘下、最后放回,保证它永远是最后一个子节点
+    const stick = scroll.querySelector('.team-create-stick');
+    scroll.innerHTML = '';
+    const q = S.teamQuery.trim().toLowerCase();
+    const shown = q ? S.teams.filter((t) => teamMatches(t, q)) : S.teams;
+    // 计数节点与列表同处一个(可能尚未挂文档的)容器,不能走 document.getElementById
+    scroll.closest('[data-od-id="team-list"]').querySelector('.team-count').textContent =
+      q ? `匹配 ${shown.length} / ${S.teams.length}` : `${S.teams.length} 支团队`;
+    if (!shown.length) {
+      scroll.appendChild(el(`<div class="team-empty">没有匹配「${S.teamQuery.trim()}」的团队。<br>换个关键词,或者在下方跟 AI 聊出一支新团队。</div>`));
+    } else {
+      const groups = [
+        ['内置团队', shown.filter((t) => t.badge === '内置团队')],
+        ['我的团队', shown.filter((t) => t.badge !== '内置团队')]
+      ];
+      groups.forEach(([label, teams]) => {
+        if (!teams.length) return;
+        scroll.appendChild(el(`<div class="team-group-label">${label} · ${teams.length}</div>`));
+        teams.forEach((t) => scroll.appendChild(teamCard(t)));
+      });
+    }
+    if (stick) scroll.appendChild(stick);
+  }
+
+  function renderTeamList(wrap) {
+    const box = el(`
+      <div class="ob-narrow" data-od-id="team-list">
+        <div class="team-tools">
+          <div class="team-search">
+            ${icon('search')}
+            <input type="text" aria-label="搜索团队" placeholder="搜索团队、成员或职责…" autocomplete="off">
+          </div>
+          <span class="team-count" id="team-count"></span>
+        </div>
+        <div class="team-scroll" id="team-scroll" data-od-id="team-scroll"></div>
+      </div>`);
+    const input = box.querySelector('input');
+    const scroll = box.querySelector('#team-scroll');
+    input.value = S.teamQuery;
+    input.addEventListener('input', () => { S.teamQuery = input.value; renderTeamCards(scroll); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value) { input.value = ''; S.teamQuery = ''; renderTeamCards(scroll); e.stopPropagation(); }
+    });
+    renderTeamCards(scroll);
+    const ai = el(`
+      <div class="team-create-stick">
+        <button class="team-card team-create" data-od-id="team-card-ai">
+          <span class="team-plus"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span>
+          <span class="team-main">
+            <span class="team-top"><span class="team-name">跟 AI 聊出一支新团队</span></span>
+            <span class="team-desc">你说一下要做什么样的活,AI 帮你把成员组齐</span>
+          </span>
+          <span class="team-go">开始对话 →</span>
+        </button>
+      </div>`);
+    ai.querySelector('button').addEventListener('click', openBuilder);
+    scroll.appendChild(ai);
+    wrap.appendChild(box);
+  }
+
+  /* ---------- 第 2 步 · AI 团队设计器(确定性 mock) ---------- */
+  const PROPOSALS = [
+    {
+      name: '产品发布团队', rev: 1,
+      desc: '负责产品发布的资料研究、内容撰写与上线前复核',
+      members: [
+        { slug: 'launch-lead', name: '策略负责人', primary: true },
+        { slug: 'researcher', name: '研究员' },
+        { slug: 'content-writer', name: '内容作者' },
+        { slug: 'brand-reviewer', name: '品牌审校' }
+      ],
+      flow: '你 → 策略负责人 → 研究员 / 内容作者 → 品牌审校 → 策略负责人'
+    },
+    {
+      name: '产品发布团队', rev: 2,
+      desc: '负责产品发布的资料研究、内容撰写、视觉配套与上线前复核',
+      members: [
+        { slug: 'launch-lead', name: '策略负责人', primary: true },
+        { slug: 'researcher', name: '研究员' },
+        { slug: 'content-writer', name: '内容作者' },
+        { slug: 'visual-designer', name: '视觉设计' },
+        { slug: 'brand-reviewer', name: '品牌审校' }
+      ],
+      flow: '你 → 策略负责人 → 研究员 / 内容作者 / 视觉设计 → 品牌审校 → 策略负责人'
+    }
+  ];
+
+  function openBuilder() {
+    S.builder.open = true;
+    renderContent(); renderFooter();
+    $('ob-footer').style.display = 'none'; // 设计器打开期间隐藏全局 footer
+    const ta = $('builder-input');
+    if (ta) ta.focus();
+  }
+  function closeBuilder() {
+    S.builder.open = false;
+    $('ob-footer').style.display = '';
+    renderContent(); renderFooter();
+  }
+
+  function proposalCard(p, live) {
+    const card = el(`
+      <div class="proposal${live ? ' fresh' : ''}" data-od-id="proposal-rev-${p.rev}">
+        <div class="p-head"><span>团队提案 · ${p.members.length} 名成员</span><span style="margin-left:auto">AI 生成</span></div>
+        <div class="p-name">${p.name}</div>
+        <div class="p-desc">${p.desc}</div>
+        <ul class="p-members">
+          ${p.members.map((m) => `<li>${roleTag(m)}<span>${m.name}</span>${m.primary ? '<span class="p-primary">主 Agent</span>' : ''}<span style="color:var(--faint);font-family:var(--font-mono);font-size:11.5px">@${m.slug}</span></li>`).join('')}
+        </ul>
+        <div class="p-flow">${p.flow}</div>
+        ${live ? `<div class="p-actions">
+          <button class="btn btn-ghost" data-act="adjust">继续聊着调整</button>
+          <button class="btn btn-primary" data-act="create">创建并选中</button>
+        </div>` : ''}
+      </div>`);
+    if (live) {
+      card.querySelector('[data-act="adjust"]').addEventListener('click', () => {
+        card.classList.remove('fresh');
+        card.querySelector('.p-actions').remove(); // 方案转为只读快照
+        const ta = $('builder-input'); if (ta) ta.focus();
+      });
+      card.querySelector('[data-act="create"]').addEventListener('click', (e) => commitProposal(p, e.currentTarget));
+    }
+    return card;
+  }
+
+  async function builderSend() {
+    if (S.builder.busy) return;
+    const ta = $('builder-input');
+    const send = $('builder-send');
+    const text = ta.value.trim();
+    if (!text) return;
+    if (!S.builder.initialGoal) S.builder.initialGoal = text;
+    S.builder.busy = true;
+    if (send) send.disabled = true;
+    ta.value = '';
+    const log = $('builder-log');
+    log.appendChild(el(`<div class="b-msg user">${text.replace(/</g, '&lt;')}</div>`));
+    const typing = el('<div class="b-typing" aria-label="正在输入"><i></i><i></i><i></i></div>');
+    log.appendChild(typing);
+    log.scrollTop = log.scrollHeight;
+    await wait(1500);
+    typing.remove();
+    const p = PROPOSALS[Math.min(S.builder.turns, PROPOSALS.length - 1)];
+    S.builder.turns += 1;
+    S.builder.proposalRev = p.rev;
+    log.appendChild(el(`<div class="b-msg">${S.builder.turns === 1 ? '我整理了一版团队方案。' : '按你的补充更新了方案。'}</div>`));
+    log.appendChild(proposalCard(p, true));
+    log.scrollTop = log.scrollHeight;
+    S.builder.busy = false;
+    if (send) send.disabled = !ta.value.trim();
+    announce('AI 给出了新的团队方案');
+  }
+
+  async function commitProposal(p, btn) {
+    btn.disabled = true; btn.textContent = '创建中…';
+    await wait(900);
+    const team = {
+      id: 'ai-' + p.rev, name: p.name, badge: '用户团队', desc: p.desc,
+      userMessage: S.builder.initialGoal || `请帮我完成${p.name}的这次任务。`,
+      members: p.members, beats: beatsFor(p)
+    };
+    S.teams = S.teams.filter((t) => !t.id.startsWith('ai-'));
+    S.teams.push(team);
+    S.teamId = team.id;
+    closeBuilder();
+    announce(`${p.name} 已创建并选中`);
+  }
+
+  // AI 团队的协作示例:主 Agent 安排 → 执行 → 复核退回 → 修改 → 通过 → 收尾
+  function beatsFor(p) {
+    const lead = p.members.find((m) => m.primary);
+    const rev = p.members[p.members.length - 1];
+    const worker = p.members.find((m) => !m.primary && m !== rev) || p.members[1];
+    return [
+      { slug: lead.slug, text: `我先把目标拆成可交接的步骤,${worker.name}先执行,${rev.name}负责复核。` },
+      { slug: worker.slug, text: `已完成第一版,过程与结论都留在时间线,请${rev.name}复核。` },
+      { slug: rev.slug, text: '第一轮复核未通过:关键边界还没有覆盖,退回补充。' },
+      { slug: worker.slug, text: '收到,已按复核意见补齐边界,重新提交复核。' },
+      { slug: rev.slug, text: '第二轮复核通过:结论与预期一致,证据已留存。' },
+      { slug: lead.slug, text: '收尾:目标完成,两轮复核与通过证据都保留在时间线中。' }
+    ];
+  }
+
+  function renderBuilder(wrap) {
+    const b = el(`
+      <div class="builder ob-wide" data-od-id="team-builder">
+        <div class="builder-head">
+          <button class="builder-back">${icon('back')}返回选团队</button>
+          <span class="builder-title">AI 团队设计器</span>
+          <span class="builder-meta">仍在第 2 步 · 独立只读 AI 会话</span>
+        </div>
+        <div class="builder-log" id="builder-log"></div>
+        <div class="builder-foot">
+          <textarea id="builder-input" rows="1" placeholder="说说你的目标,或对当前方案提调整…" aria-label="向 AI 描述你的团队需求"></textarea>
+          <button class="send-btn" id="builder-send" aria-label="发送" disabled>
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>`);
+    b.querySelector('.builder-back').addEventListener('click', closeBuilder);
+    const ta = b.querySelector('#builder-input');
+    const send = b.querySelector('#builder-send');
+    const syncSend = () => { send.disabled = S.builder.busy || !ta.value.trim(); };
+    ta.addEventListener('input', syncSend);
+    send.addEventListener('click', builderSend);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !send.disabled) { e.preventDefault(); builderSend(); }
+    });
+    wrap.appendChild(b);
+    const log = b.querySelector('#builder-log');
+    log.appendChild(el(`<div class="b-msg">你希望这支团队长期替你完成什么工作?
+先说目标就好,不需要想好角色和分工。</div>`));
+  }
+
+  /* ---------- 第 3 步:接力演示(git-graph 式,与 dashboard 目录轨同一语言) ---------- */
+  function clearRelay() { S.relayTimers.forEach(clearTimeout); S.relayTimers = []; }
+
+  function renderRelay(wrap) {
+    const team = S.teams.find((t) => t.id === S.teamId) || DEV_TEAM;
+    // 只有内置团队带接力脚本;选中其他团队时沿用开发团队的演示数据
+    const demo = team.beats && team.beats.length ? team : DEV_TEAM;
+    const devDurations = ['47 秒', '42 秒', '18 秒', '53 秒', '36 秒', '2 分 14 秒'];
+    const fallbackDurations = ['38 秒', '51 秒', '1 分 08 秒', '44 秒', '57 秒', '1 分 32 秒'];
+    const events = demo.beats.map((beat, index) => {
+      const member = demo.members.find((item) => item.slug === beat.slug) || { slug: beat.slug, name: beat.slug };
+      return {
+        slug: beat.slug,
+        name: member.name,
+        text: beat.text,
+        duration: (demo.id === DEV_TEAM.id ? devDurations : fallbackDurations)[index % 6]
+      };
+    });
+    // graph 只表达 Agent 接力;成员按首次出现顺序进入稳定泳道,用户气泡不占轨道。
+    const laneSlugs = [];
+    events.forEach((event) => {
+      if (!laneSlugs.includes(event.slug)) laneSlugs.push(event.slug);
+    });
+    const LANE_X = 18, LANE_STEP = 20;
+    const laneX = (slug) => LANE_X + laneSlugs.indexOf(slug) * LANE_STEP;
+    const card = el(`
+      <div class="relay-card ob-wide" data-od-id="relay-stage">
+        <div class="relay-head">接力演示 <span class="sub">${demo.name}</span>
+          <button class="btn btn-ghost" data-od-id="relay-replay">重新播放</button>
+        </div>
+        <div class="relay-stage-body">
+          <div class="ob-demo-scroll" data-od-id="relay-scroll" aria-live="polite">
+            <div class="ob-demo-user" data-od-id="relay-user">
+              <span class="ob-demo-user-avatar" aria-hidden="true">你</span>
+              <p class="ob-demo-user-bubble">${demo.userMessage || '请帮我完成这次任务,并保留过程和复核证据。'}</p>
+            </div>
+            <div class="ob-demo-messages"></div>
+          </div>
+          <div class="ob-demo-rail-layer" aria-hidden="true">
+            <div class="ob-demo-rail" data-od-id="relay-graph"></div>
+          </div>
+        </div>
+      </div>`);
+    const layout = { events, laneSlugs, laneX, railW: 82, railH: 246, rowY: (index) => 22 + index * 40 };
+    card.querySelector('[data-od-id="relay-replay"]').addEventListener('click', () => playRelay(card, layout));
+    wrap.appendChild(card);
+    playRelay(card, layout);
+  }
+
+  function playRelay(card, L) {
+    clearRelay();
+    const scroll = card.querySelector('.ob-demo-scroll');
+    const user = card.querySelector('.ob-demo-user');
+    const messages = card.querySelector('.ob-demo-messages');
+    const rail = card.querySelector('.ob-demo-rail');
+    messages.innerHTML = '';
+    rail.innerHTML = '';
+
+    const colorOf = (event) => TONES[toneOf(event.slug)];
+    const laneOf = (event) => L.laneX(event.slug);
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'ob-demo-rail-svg');
+    svg.setAttribute('width', L.railW);
+    svg.setAttribute('height', L.railH);
+    svg.setAttribute('viewBox', `0 0 ${L.railW} ${L.railH}`);
+    svg.style.clipPath = 'inset(0 0 100% 0)';
+    const addPath = (d, color) => {
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('class', 'ob-demo-rail-path');
+      path.setAttribute('d', d);
+      path.setAttribute('stroke', color);
+      svg.appendChild(path);
+    };
+
+    // 首位成员是主泳道;其余成员从上一棒分叉,在该成员最后一棒后并回下一位发言者。
+    const mainSlug = L.laneSlugs[0];
+    addPath(
+      `M ${L.laneX(mainSlug)} ${L.rowY(0)} L ${L.laneX(mainSlug)} ${L.rowY(L.events.length - 1)}`,
+      colorOf(L.events[0])
+    );
+    L.laneSlugs.slice(1).forEach((slug) => {
+      const indices = [];
+      L.events.forEach((event, index) => {
+        if (event.slug === slug) indices.push(index);
+      });
+      if (!indices.length) return;
+      const x = L.laneX(slug);
+      const first = indices[0];
+      const last = indices[indices.length - 1];
+      const prev = L.events[first - 1] || null;
+      const next = L.events[last + 1] || null;
+      const fromX = prev ? laneOf(prev) : x;
+      const fromY = prev ? L.rowY(first - 1) : L.rowY(first);
+      const toY = L.rowY(first);
+      const bend = Math.max(7, (toY - fromY) * .52);
+      let d = `M ${fromX} ${fromY} C ${fromX} ${fromY + bend}, ${x} ${toY - bend}, ${x} ${toY}`;
+      indices.slice(1).forEach((index) => {
+        d += ` L ${x} ${L.rowY(index)}`;
+      });
+      if (next) {
+        const branchFromY = L.rowY(last);
+        const toX = laneOf(next);
+        const branchToY = L.rowY(last + 1);
+        const branchBend = Math.max(7, (branchToY - branchFromY) * .52);
+        d += ` C ${x} ${branchFromY + branchBend}, ${toX} ${branchToY - branchBend}, ${toX} ${branchToY}`;
+      }
+      addPath(d, TONES[toneOf(slug)]);
+    });
+    rail.appendChild(svg);
+
+    const messageRows = [];
+    const nodes = [];
+    L.events.forEach((event, index) => {
+      const row = el(`
+        <article class="ob-demo-message" data-relay-index="${index}" aria-hidden="true">
+          <div class="ob-demo-message-who">
+            ${roleTag({ slug: event.slug, name: event.name })}
+            <strong class="ob-demo-message-name">${event.name}</strong>
+            <span class="ob-demo-message-duration">耗时 ${event.duration}</span>
+          </div>
+          <p class="ob-demo-message-body">${event.text}</p>
+        </article>`);
+      messages.appendChild(row);
+      messageRows.push(row);
+      const node = el(`
+        <span class="ob-demo-rail-node"
+          style="left:${laneOf(event)}px;top:${L.rowY(index)}px;background:${colorOf(event)};--event-color:${colorOf(event)}"></span>`);
+      rail.appendChild(node);
+      nodes.push(node);
+    });
+
+    let autoFollow = true;
+    let ignoreScrollUntil = 0;
+    scroll.addEventListener('scroll', () => {
+      if (performance.now() < ignoreScrollUntil) return;
+      const distanceFromBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight;
+      autoFollow = distanceFromBottom <= 24;
+    });
+    const followLatest = () => {
+      if (!autoFollow) return;
+      ignoreScrollUntil = performance.now() + 500;
+      scroll.scrollTo({
+        top: scroll.scrollHeight,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+      });
+    };
+
+    const reveal = (index) => {
+      messageRows.forEach((row, rowIndex) => {
+        const visible = rowIndex <= index;
+        if (visible && !row.classList.contains('is-mounted')) {
+          row.classList.add('is-mounted');
+          void row.offsetWidth;
+        }
+        row.classList.toggle('is-visible', visible);
+        row.setAttribute('aria-hidden', String(!visible));
+      });
+      nodes.forEach((node, nodeIndex) => {
+        node.classList.toggle('is-visible', nodeIndex <= index);
+        node.classList.toggle('is-current', nodeIndex === index);
+      });
+      svg.style.clipPath = `inset(0 0 ${Math.max(0, L.railH - L.rowY(index) - 8)}px 0)`;
+      requestAnimationFrame(followLatest);
+      announce(`${L.events[index].name},第 ${index + 1} 棒`);
+    };
+
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    autoFollow = true;
+    scroll.scrollTop = 0;
+    user.classList.add('is-visible');
+    L.events.forEach((event, index) => {
+      S.relayTimers.push(setTimeout(() => reveal(index), reduce ? 0 : 650 + index * 1600));
+    });
+  }
+
+  /* ---------- 第 4 步:准备就绪 ---------- */
+  function renderDone(wrap) {
+    wrap.appendChild(el(`
+      <div class="ob-done ob-narrow" data-od-id="step-done">
+        <div class="done-icon ok">${icon('bigcheck')}</div>
+      </div>`));
+    // 摘要复述真实状态:哪套 CLI 可用、选中了哪支团队
+    const okClis = CLI_DEFS.filter((d) => S.cli[d.id] === 'ok').map((d) => d.name);
+    const team = S.teams.find((t) => t.id === S.teamId) || DEV_TEAM;
+    wrap.appendChild(el(`
+      <div class="done-recap" data-od-id="done-recap">
+        <div class="recap-row">${icon('check')}<span class="r-label">环境</span><span class="r-value">${okClis.length ? okClis.join('、') + ' 可用' : '尚未有可用的 CLI'}</span></div>
+        <div class="recap-row">${icon('check')}<span class="r-label">团队</span><span class="r-value">${team.name} · ${team.members.length} 名成员</span></div>
+      </div>`));
+  }
+
+  /* ---------- 骨架渲染 ---------- */
+  const STEP_META = {
+    1: { title: '环境准备', sub: 'Codex、Claude Code 或 Kimi 至少一个可用,就可以启动团队' },
+    2: { title: '选择一支团队', sub: '先选一支最接近你当前工作的团队,之后随时可以切换' },
+    3: { title: '看看团队如何完成一次接力', sub: '每一次交接都会留下过程、结论和复核证据' },
+    4: { title: '准备就绪', sub: '团队已经就位,说出你的目标就能开工' }
+  };
+
+  function renderHead() {
+    const meta = STEP_META[S.step];
+    const head = $('ob-stephead');
+    const building = S.step === 2 && S.builder.open;
+    head.innerHTML = `
+      <div class="ob-progress" aria-hidden="true">${[1, 2, 3, 4].map((i) => `<i class="${i < S.step ? 'done' : i === S.step ? 'now' : ''}"></i>`).join('')}</div>
+      <div class="ob-stepcap">第 ${S.step} 步,共 4 步</div>
+      <h1 class="ob-title">${building ? '跟 AI 聊出一支新团队' : meta.title}</h1>
+      ${building ? '' : `<p class="ob-sub">${meta.sub}</p>`}`;
+  }
+
+  let lastAnimatedStep = 0;
+  function renderContent() {
+    renderHead();
+    const c = $('ob-content');
+    c.innerHTML = '';
+    if (S.step === 1) {
+      const list = el('<div class="cli-list ob-narrow" data-od-id="step-env"></div>');
+      CLI_DEFS.forEach((d) => list.appendChild(cliRow(d)));
+      c.appendChild(list);
+    } else if (S.step === 2) {
+      if (S.builder.open) renderBuilder(c); else renderTeamList(c);
+    } else if (S.step === 3) {
+      renderRelay(c);
+    } else if (S.step === 4) {
+      renderDone(c);
+    }
+    // 入场动画只在跨步时重放;同步骤内的状态更新(安装进度等)不打扰
+    if (S.step !== lastAnimatedStep) {
+      lastAnimatedStep = S.step;
+      c.classList.remove('ob-enter');
+      void c.offsetWidth;
+      c.classList.add('ob-enter');
+    }
+    $('ob-body').scrollTop = 0;
+  }
+
+  // 安装/复检只影响第 1 步的环境行;切到其他步骤后不再重渲染,
+  // 否则每次安装阶段更新都会重建第 3 步、打断接力动画
+  function renderEnvStep() {
+    if (S.step !== 1) return;
+    renderContent(); renderFooter();
+  }
+
+  function renderFooter() {
+    const f = $('ob-footer-inner');
+    f.innerHTML = '';
+    f.classList.toggle('narrow', S.step !== 3); // 按钮右缘对齐当前步骤内容列
+    const anyOk = CLI_DEFS.some((d) => S.cli[d.id] === 'ok');
+    const back = () => { const b = el('<button class="btn btn-ghost btn-lg" data-od-id="step-back">上一步</button>'); b.addEventListener('click', () => go(S.step - 1)); return b; };
+    const next = (label, disabled, cb, odId) => {
+      const b = el(`<button class="btn btn-primary btn-lg" data-od-id="${odId}"${disabled ? ' disabled' : ''}>${label}</button>`);
+      b.addEventListener('click', cb); return b;
+    };
+    if (S.step === 1) {
+      const re = el('<button class="btn btn-ghost btn-lg" data-od-id="recheck">重新检查</button>');
+      re.addEventListener('click', recheck);
+      f.appendChild(re);
+      f.appendChild(next('继续', !anyOk, () => go(2), 'step-next'));
+    } else if (S.step === 2) {
+      f.appendChild(back());
+      f.appendChild(next('继续', false, () => go(3), 'step-next'));
+    } else if (S.step === 3) {
+      f.appendChild(back());
+      f.appendChild(next('继续', false, () => go(4), 'step-next'));
+    } else if (S.step === 4) {
+      f.appendChild(back());
+      f.appendChild(next('开始使用', false, finish, 'step-start'));
+    }
+  }
+
+  function go(step) {
+    clearRelay();
+    S.step = step;
+    if (step !== 2) { S.builder.open = false; $('ob-footer').style.display = ''; }
+    renderContent(); renderFooter();
+    announce(`第 ${step} 步,共 4 步`);
+  }
+
+  /* ---------- 去向:新建对话形态 / 回看模式 ---------- */
+  let appliedTeam = null;
+
+  function finish() {
+    clearRelay();
+    const wasReview = S.review;
+    S.review = false;
+    if (!wasReview) {
+      const team = S.teams.find((t) => t.id === S.teamId) || DEV_TEAM;
+      appliedTeam = team.name;
+      $('landing-team').textContent = team.name;
+    }
+    $('ob-shell').style.display = 'none';
+    $('landing').hidden = false;
+    announce(wasReview ? '已退出回看,返回主页面' : '已进入新建对话');
+  }
+
+  function enterReview() {
+    S.review = true;
+    $('landing').hidden = true;
+    $('ob-shell').style.display = '';
+    go(1);
+  }
+
+  $('btn-review').addEventListener('click', enterReview);
+
+  /* ---------- 启动 ---------- */
+  renderContent(); renderFooter(); renderInstall();
+})();
+</script>
+</body>
+</html>
