@@ -15,9 +15,22 @@ import {
 } from "./claude-executable.js";
 import {
   createRunWatchdogs,
+  terminalForFailure,
   type CodexRunFailure,
   type CodexRunResult,
 } from "./codex.js";
+import {
+  createClaudeToolProjectionState,
+  executionInterruptionCause,
+  projectClaudeProgress,
+  projectClaudeToolLifecycle,
+  type ExecutionInterruptionCause,
+  type ExecutionProgressEvent,
+} from "./execution-contract.js";
+import {
+  createRunSupervisorState,
+  observeRunProgress,
+} from "./run-supervisor.js";
 import type { LocalConsoleExecutionProfile } from "./local-console/types.js";
 import type { LocalExecutionMode } from "./local-console/execution-driver.js";
 
@@ -49,6 +62,7 @@ export interface ClaudeRunOptions {
   mode: LocalExecutionMode;
   signal?: AbortSignal;
   idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
   maxDurationMs?: number;
   versionTimeoutMs?: number;
   interruptTerminationDelayMs?: number;
@@ -63,6 +77,7 @@ export interface ClaudeRunOptions {
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
+  onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
 }
 
@@ -71,7 +86,17 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
   const stdoutPath = path.join(runDir, "claude-stream.jsonl");
   const stderrPath = path.join(runDir, "claude-stderr.log");
   if (options.signal?.aborted === true) {
-    return failed("claude-cancelled", "Claude 执行已取消。", runDir, stdoutPath, stderrPath);
+    return failed(
+      "claude-cancelled",
+      "Claude 执行已取消。",
+      runDir,
+      stdoutPath,
+      stderrPath,
+      undefined,
+      undefined,
+      "",
+      executionInterruptionCause(options.signal?.reason),
+    );
   }
 
   let executable: string;
@@ -112,7 +137,17 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
     }
   } catch (error) {
     if (isSignalAborted(options.signal)) {
-      return failed("claude-cancelled", "Claude 执行已取消。", runDir, stdoutPath, stderrPath);
+      return failed(
+        "claude-cancelled",
+        "Claude 执行已取消。",
+        runDir,
+        stdoutPath,
+        stderrPath,
+        undefined,
+        undefined,
+        "",
+        executionInterruptionCause(options.signal?.reason),
+      );
     }
     return failed(
       "claude-cli-spawn-failed",
@@ -124,7 +159,17 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
   }
 
   if (isSignalAborted(options.signal)) {
-    return failed("claude-cancelled", "Claude 执行已取消。", runDir, stdoutPath, stderrPath);
+    return failed(
+      "claude-cancelled",
+      "Claude 执行已取消。",
+      runDir,
+      stdoutPath,
+      stderrPath,
+      undefined,
+      undefined,
+      "",
+      executionInterruptionCause(options.signal?.reason),
+    );
   }
 
   await fs.mkdir(path.join(runDir, "input-attachments"), { recursive: true });
@@ -289,7 +334,7 @@ async function runClaudeProcess(
   let callbackFailure = false;
   let sessionCallback = Promise.resolve();
   let processCallback = Promise.resolve();
-  let abortReason: "cancelled" | "idle" | "max-duration" | null = null;
+  let abortReason: "cancelled" | "idle" | "tool" | "max-duration" | null = null;
   let terminating = false;
   let terminationTimer: NodeJS.Timeout | null = null;
   let killTimer: NodeJS.Timeout | null = null;
@@ -297,6 +342,9 @@ async function runClaudeProcess(
   let totalBytes = 0;
   let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   let droppingOversized = false;
+  let progressSequence = 0;
+  let progressSupervisor = createRunSupervisorState(Date.now());
+  let toolProjection = createClaudeToolProjectionState();
   const terminationDelayMs = options.interruptTerminationDelayMs ?? DEFAULT_SIGNAL_GRACE_MS;
   const killDelayMs = options.interruptKillDelayMs ?? DEFAULT_SIGNAL_GRACE_MS;
 
@@ -343,6 +391,23 @@ async function runClaudeProcess(
     beginTermination();
   };
   const handleEvent = (event: unknown): void => {
+    const sequence = ++progressSequence;
+    const toolLifecycle = projectClaudeToolLifecycle(event, sequence, toolProjection);
+    toolProjection = toolLifecycle.state;
+    const progress = toolLifecycle.progress ?? projectClaudeProgress(event, sequence);
+    if (progress !== null) {
+      const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
+      progressSupervisor = supervision.state;
+      if (supervision.kind === "progress-observed") {
+        watchdogs.setToolInFlight(progressSupervisor.activeToolIds.size > 0);
+        if (progressSupervisor.activeToolIds.size === 0) watchdogs.recordActivity();
+      }
+      try {
+        options.onExecutionProgress?.(progress);
+      } catch {
+        // Supervision callbacks are observational and cannot control protocol state.
+      }
+    }
     try {
       options.onStructuredActivity?.(event);
     } catch {
@@ -506,7 +571,6 @@ async function runClaudeProcess(
     }
   };
 
-  child.stdout.on("data", handleChunk);
   const handleAbort = (): void => {
     abortReason = "cancelled";
     beginTermination();
@@ -514,6 +578,7 @@ async function runClaudeProcess(
   options.signal?.addEventListener("abort", handleAbort, { once: true });
   const watchdogs = createRunWatchdogs({
     ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
+    ...(options.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: options.toolTimeoutMs }),
     ...(options.maxDurationMs === undefined ? {} : { maxDurationMs: options.maxDurationMs }),
     onTimeout: (kind) => {
       if (abortReason !== null) return;
@@ -521,13 +586,10 @@ async function runClaudeProcess(
       beginTermination();
     },
   });
-  const recordActivity = (): void => watchdogs.recordActivity();
-  child.stdout.on("data", recordActivity);
-
+  child.stdout.on("data", handleChunk);
   const exit = await exitPromise;
   watchdogs.clear();
   child.stdout.removeListener("data", handleChunk);
-  child.stdout.removeListener("data", recordActivity);
   await Promise.all([sessionCallback, processCallback]);
   options.signal?.removeEventListener("abort", handleAbort);
   if (terminationTimer !== null) clearTimeout(terminationTimer);
@@ -536,10 +598,39 @@ async function runClaudeProcess(
   await Promise.all([finishWritable(stdoutFile), finishWritable(stderrFile)]);
 
   if (abortReason === "cancelled") {
-    return failed("claude-cancelled", "Claude 执行已取消。", runDir, stdoutPath, stderrPath);
+    return failed(
+      "claude-cancelled",
+      "Claude 执行已取消。",
+      runDir,
+      stdoutPath,
+      stderrPath,
+      undefined,
+      undefined,
+      finalText,
+      executionInterruptionCause(options.signal?.reason),
+    );
   }
-  if (abortReason === "idle" || abortReason === "max-duration") {
-    return failed("claude-timeout", "Claude 执行超时，请重试。", runDir, stdoutPath, stderrPath);
+  if (abortReason === "idle" || abortReason === "tool" || abortReason === "max-duration") {
+    const result = failed(
+      "claude-timeout",
+      abortReason === "tool"
+        ? "Claude 的工具调用运行过久，已停止本次执行。"
+        : "Claude 执行超时，请重试。",
+      runDir,
+      stdoutPath,
+      stderrPath,
+      undefined,
+      undefined,
+      finalText,
+    );
+    if (!result.ok) {
+      result.terminal = {
+        kind: "timeout",
+        basis: abortReason === "max-duration" ? "max" : abortReason,
+        partialText: finalText,
+      };
+    }
+    return result;
   }
   const terminalProtocolFailure = protocolFailure as CodexRunFailure | null;
   if (terminalProtocolFailure !== null) {
@@ -547,6 +638,7 @@ async function runClaudeProcess(
       ok: false,
       reason: terminalProtocolFailure.code,
       failure: terminalProtocolFailure,
+      terminal: terminalForFailure(terminalProtocolFailure, finalText),
       ...(initObserved ? { threadId: sessionId } : {}),
       runDir,
       stdoutPath,
@@ -579,6 +671,7 @@ async function runClaudeProcess(
       ok: false,
       reason: terminalClassifiedFailure.code,
       failure: terminalClassifiedFailure,
+      terminal: terminalForFailure(terminalClassifiedFailure, finalText),
       ...(initObserved ? { threadId: sessionId } : {}),
       runDir,
       stdoutPath,
@@ -616,6 +709,11 @@ async function runClaudeProcess(
     finalText,
     threadId: sessionId,
     cachedInputTokens: null,
+    terminal: {
+      kind: "completed",
+      externalSessionId: sessionId,
+      finalText,
+    },
     runDir,
     stdoutPath,
     stderrPath,
@@ -680,15 +778,26 @@ function failed(
   stderrPath: string,
   action?: CodexRunFailure["action"],
   threadId?: string,
+  partialText = "",
+  interruptionCause?: ExecutionInterruptionCause,
 ): CodexRunResult {
+  const failure: CodexRunFailure = {
+    code,
+    message,
+    ...(action === undefined ? {} : { action }),
+  };
   return {
     ok: false,
     reason: code,
-    failure: {
-      code,
-      message,
-      ...(action === undefined ? {} : { action }),
-    },
+    failure,
+    terminal: interruptionCause === undefined
+      ? terminalForFailure(failure, partialText)
+      : {
+          kind: "interrupted",
+          actor: interruptionCause === "user" ? "user" : "system",
+          cause: interruptionCause,
+          partialText,
+        },
     ...(threadId === undefined ? {} : { threadId }),
     runDir,
     stdoutPath,

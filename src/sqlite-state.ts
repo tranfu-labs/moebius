@@ -317,6 +317,7 @@ export type SqliteStateCommand =
       runDir: string | null;
       error: string;
       status: "failed" | "interrupted" | "stuck";
+      terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       now: string;
     }
   | {
@@ -338,6 +339,7 @@ export type SqliteStateCommand =
       error: string | null;
       status?: "displayed" | "failed" | "interrupted" | "stuck";
       systemEventKind: import("./local-console/types.js").LocalConsoleSystemEventKind;
+      terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       now: string;
     }
   | {
@@ -350,6 +352,7 @@ export type SqliteStateCommand =
       now: string;
       body?: string;
       systemEventKind?: import("./local-console/types.js").LocalConsoleSystemEventKind;
+      terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       sourceKind?: string | null;
       sourceId?: string | null;
     }
@@ -377,10 +380,11 @@ export type SqliteStateCommand =
       userMessageId: number;
       sessionId: string;
       reason: string;
-      interruptionKind?: "user" | "redirect" | "context-unavailable";
+      interruptionKind?: "user" | "redirect" | "context-unavailable" | "system";
       runId: string | null;
       runDir: string | null;
       now: string;
+      terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
     }
   | {
       kind: "local-record-stuck";
@@ -390,6 +394,7 @@ export type SqliteStateCommand =
       runId: string | null;
       runDir: string | null;
       now: string;
+      terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
     }
   | {
       kind: "local-record-route-decision";

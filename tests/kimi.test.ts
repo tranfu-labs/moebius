@@ -282,6 +282,49 @@ describe("Kimi ACP driver", () => {
     });
   });
 
+  it("preserves JSON-RPC error code, message, and data in run-local diagnostics", async () => {
+    const root = await makeRunRoot();
+    const executable = path.join(root, "bin", "kimi");
+    await fs.mkdir(path.dirname(executable), { recursive: true });
+    await fs.writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await fs.chmod(executable, 0o755);
+    const child = fakeChildProcess();
+    const spawnProcess = vi.fn(() => child) as unknown as typeof import("node:child_process").spawn;
+    const factory = createKimiProcessTransport({
+      cwd: root,
+      readRoots: [root],
+      stdoutPath: path.join(root, "stdout.jsonl"),
+      stderrPath: path.join(root, "stderr.log"),
+      env: { PATH: path.dirname(executable) },
+      allowWrites: true,
+      homeDir: path.join(root, "home"),
+      spawnProcess,
+    });
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(1));
+    child.emit("spawn");
+    const transport = await factory;
+    const pending = transport.request("session/prompt", {});
+    (child.stdout as PassThrough).write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      error: {
+        code: 403,
+        message: "billing cycle usage limit reached",
+        data: { retryable: false, privateDetail: "diagnostic only" },
+      },
+    })}\n`);
+
+    await expect(pending).rejects.toMatchObject({
+      code: "KIMI_ACP_REQUEST_FAILED",
+      diagnostics: {
+        jsonRpcCode: 403,
+        jsonRpcMessage: "billing cycle usage limit reached",
+        jsonRpcData: { retryable: false, privateDetail: "diagnostic only" },
+      },
+    });
+    await transport.close();
+  });
+
   it("bounds a spawn handshake that emits no authoritative event", async () => {
     vi.useFakeTimers();
     const child = fakeChildProcess();
@@ -1188,6 +1231,243 @@ describe("Kimi ACP driver", () => {
     expect(transport.kill).toHaveBeenCalledTimes(1);
   });
 
+  it("does not let config chatter refresh idle but does refresh on reasoning progress", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => {
+        emitUpdate = (_update: unknown): void => undefined;
+      };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") {
+        return { sessionId: "kimi-session-1", configOptions: configOptions() };
+      }
+      if (method === "session/prompt") {
+        promptStarted();
+        return await new Promise(() => undefined);
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "semantic idle",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      idleTimeoutMs: 100,
+      toolTimeoutMs: 1_500,
+    }).catch((error: unknown) => error);
+    await promptReady;
+
+    await vi.advanceTimersByTimeAsync(80);
+    emitUpdate({ update: { sessionUpdate: "config_option_update" } });
+    await vi.advanceTimersByTimeAsync(19);
+    emitUpdate({
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { text: "still reasoning" },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(80);
+    emitUpdate({ update: { sessionUpdate: "config_option_update" } });
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(transport.interrupt).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({
+      code: "KIMI_ACP_TIMEOUT",
+      diagnostics: { partialText: "" },
+    });
+  });
+
+  it("does not time out while a tool call is still running", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    let resolvePrompt!: (value: unknown) => void;
+    const promptResult = new Promise<unknown>((resolve) => {
+      resolvePrompt = resolve;
+    });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => {
+        emitUpdate = (_update: unknown): void => undefined;
+      };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") {
+        return { sessionId: "kimi-session-1", configOptions: configOptions() };
+      }
+      if (method === "session/prompt") {
+        promptStarted();
+        return await promptResult;
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "run a slow tool",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      idleTimeoutMs: 100,
+    });
+    await promptReady;
+
+    emitUpdate({
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "slow-tool",
+        title: "run tests",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+
+    emitUpdate({
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "slow-tool",
+        status: "completed",
+      },
+    });
+    resolvePrompt({ stopReason: "end_turn", finalText: "LONG_TOOL_SUCCESS" });
+    await expect(run).resolves.toMatchObject({
+      ok: true,
+      finalText: "LONG_TOOL_SUCCESS",
+    });
+    expect(transport.interrupt).not.toHaveBeenCalled();
+  });
+
+  it("stops a tool call that remains in flight past its dedicated deadline", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => {
+        emitUpdate = (_update: unknown): void => undefined;
+      };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") {
+        return { sessionId: "kimi-session-1", configOptions: configOptions() };
+      }
+      if (method === "session/prompt") {
+        promptStarted();
+        return await new Promise(() => undefined);
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "run a hung tool",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      idleTimeoutMs: 50,
+      toolTimeoutMs: 100,
+    }).catch((error: unknown) => error);
+    await promptReady;
+
+    emitUpdate({
+      update: {
+        sessionUpdate: "tool_call",
+        title: "git push",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.interrupt).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({
+      code: "KIMI_ACP_TIMEOUT",
+      diagnostics: { timeoutBasis: "tool" },
+    });
+  });
+
+  it("exposes provider retries and stops a sustained busy phase after five minutes", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const progress = vi.fn();
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => {
+        emitUpdate = (_update: unknown): void => undefined;
+      };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") {
+        return { sessionId: "kimi-session-1", configOptions: configOptions() };
+      }
+      if (method === "session/prompt") {
+        promptStarted();
+        return await new Promise(() => undefined);
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "busy provider",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      onExecutionProgress: progress,
+    }).catch((error: unknown) => error);
+    await promptReady;
+
+    emitUpdate({
+      update: {
+        sessionUpdate: "status",
+        message: "engine overloaded, retry attempt 3",
+      },
+    });
+    expect(progress).toHaveBeenCalledWith({
+      kind: "provider-retry",
+      retryKind: "service",
+      attempt: 3,
+      sequence: expect.any(Number),
+    });
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1_000 - 1);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.interrupt).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({
+      code: "KIMI_ACP_BUSY_TIMEOUT",
+      diagnostics: { partialText: "" },
+    });
+  });
+
   it.each([
     { phase: "initialize", trigger: "abort" },
     { phase: "authenticate", trigger: "max" },
@@ -1331,7 +1611,8 @@ describe("Kimi ACP driver", () => {
 
     await expect(run).resolves.toMatchObject({
       ok: false,
-      reason: expect.stringContaining("Kimi 执行已中止"),
+      reason: "kimi-acp-interrupted",
+      terminal: { kind: "interrupted", actor: "user" },
     });
     expect(events).toEqual(expectCancel
       ? ["session/cancel:kimi-session-1", "SIGINT", "SIGTERM", "SIGKILL", "close"]
@@ -1341,5 +1622,71 @@ describe("Kimi ACP driver", () => {
     expect(transport.terminate).toHaveBeenCalledTimes(1);
     expect(transport.kill).toHaveBeenCalledTimes(1);
     expect(transport.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when end_turn has no complete visible result", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport();
+    const request = transport.request.bind(transport);
+    transport.request = vi.fn(async (method, params) =>
+      method === "session/prompt"
+        ? { stopReason: "end_turn" }
+        : request(method, params));
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "empty terminal",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).resolves.toMatchObject({
+      ok: false,
+      reason: "kimi-no-complete-result",
+      terminal: {
+        kind: "crashed",
+        safeCode: "kimi-no-complete-result",
+        partialText: "",
+      },
+    });
+  });
+
+  it("uses a reliable non-retryable 403 signal for quota classification", async () => {
+    const root = await makeRunRoot();
+    const runtimeHomePaths = await makeRuntimeHomes(root);
+    const transport = fakeTransport();
+    const request = transport.request.bind(transport);
+    transport.request = vi.fn(async (method, params) => {
+      if (method === "session/prompt") {
+        throw new KimiAcpError(
+          "KIMI_ACP_REQUEST_FAILED",
+          "Kimi ACP 请求失败。",
+          {
+            jsonRpcCode: 403,
+            jsonRpcMessage: "billing cycle usage limit reached",
+            jsonRpcData: { retryable: false },
+          },
+        );
+      }
+      return request(method, params);
+    });
+
+    await expect(runKimiAcp({
+      prompt: "quota",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      runtimeHomePaths,
+      transportFactory: vi.fn().mockResolvedValue(transport),
+    })).resolves.toMatchObject({
+      ok: false,
+      reason: "kimi-quota-exhausted",
+      failure: { message: expect.stringContaining("已确认") },
+      terminal: {
+        kind: "quota-exhausted",
+        retryable: false,
+        safeCode: "kimi-quota-exhausted",
+      },
+    });
   });
 });

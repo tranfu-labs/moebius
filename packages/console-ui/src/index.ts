@@ -13,6 +13,7 @@ export * from "./console/conversation-empty-state";
 export * from "./console/conversation-relay-rail";
 export * from "./console/conversation-relay-rail-model";
 export * from "./console/conversation-sidebar";
+export * from "./console/execution-profile-registry";
 export * from "./console/markdown-message";
 export type { OperatorMemberIdentity } from "./console/member-name";
 export * from "./console/composer-context";

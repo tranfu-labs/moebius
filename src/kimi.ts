@@ -4,8 +4,28 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { DATA_ROOT, KIMI_CLI_SPAWN_TIMEOUT_MS } from "./config.js";
-import type { CodexRunFailure, CodexRunResult } from "./codex.js";
+import {
+  DATA_ROOT,
+  KIMI_CLI_SPAWN_TIMEOUT_MS,
+  LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
+} from "./config.js";
+import {
+  terminalForFailure,
+  type CodexRunFailure,
+  type CodexRunResult,
+} from "./codex.js";
+import {
+  createProviderToolProjectionState,
+  projectKimiProgress,
+  projectKimiToolLifecycle,
+  executionInterruptionActor,
+  executionInterruptionCause,
+  type ExecutionProgressEvent,
+} from "./execution-contract.js";
+import {
+  createRunSupervisorState,
+  observeRunProgress,
+} from "./run-supervisor.js";
 import {
   KimiExecutableError,
   resolveKimiExecutable,
@@ -39,6 +59,7 @@ export interface KimiAcpRunOptions {
   signal?: AbortSignal;
   imagePaths?: string[];
   idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
   maxDurationMs?: number;
   runtimeHomePaths?: KimiRuntimeHomePaths;
   workspaceAccess?: "read-write" | "read-only";
@@ -46,6 +67,7 @@ export interface KimiAcpRunOptions {
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
+  onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
   transportFactory?: (input: {
     cwd: string;
@@ -107,10 +129,45 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
   } catch (error) {
     await appendKimiFailureDiagnostic(stderrPath, error).catch(() => undefined);
     const failure = classifyKimiFailure(error);
+    const partialText = readKimiPartialText(error);
+    const terminal = failure === null
+      ? { kind: "crashed" as const, partialText, safeCode: "kimi-unknown" }
+      : terminalForFailure(failure, partialText);
+    if (
+      terminal.kind === "timeout"
+      && error instanceof KimiAcpError
+      && (
+        error.diagnostics?.timeoutBasis === "max"
+        || error.diagnostics?.timeoutBasis === "tool"
+      )
+    ) {
+      terminal.basis = error.diagnostics.timeoutBasis;
+    }
+    if (
+      terminal.kind === "interrupted"
+      && error instanceof KimiAcpError
+    ) {
+      if (
+        error.diagnostics?.interruptionActor === "user"
+        || error.diagnostics?.interruptionActor === "system"
+      ) {
+        terminal.actor = error.diagnostics.interruptionActor;
+      }
+      if (
+        error.diagnostics?.interruptionCause === "user"
+        || error.diagnostics?.interruptionCause === "runtime-closing"
+        || error.diagnostics?.interruptionCause === "redirect"
+        || error.diagnostics?.interruptionCause === "context-unavailable"
+        || error.diagnostics?.interruptionCause === "system"
+      ) {
+        terminal.cause = error.diagnostics.interruptionCause;
+      }
+    }
     return {
       ok: false,
       reason: failure?.code ?? safeKimiError(error),
       ...(failure === null ? {} : { failure }),
+      terminal,
       runDir,
       stdoutPath,
       stderrPath,
@@ -131,6 +188,9 @@ export async function runKimiAcpWithTransport(
   const stdoutPath = options.stdoutPath ?? path.join(runDir, "kimi-acp.jsonl");
   const stderrPath = options.stderrPath ?? path.join(runDir, "kimi-stderr.log");
   let finalText = "";
+  let progressSequence = 0;
+  let progressSupervisor = createRunSupervisorState(Date.now());
+  let toolProjection = createProviderToolProjectionState();
   let settled = false;
   let sessionId: string | null = null;
   let stopLifecycle!: (error: Error) => void;
@@ -143,7 +203,9 @@ export async function runKimiAcpWithTransport(
   let terminateGraceTimer: NodeJS.Timeout | null = null;
   const raceLifecycle = async <T>(operation: Promise<T>): Promise<T> =>
     Promise.race([operation, lifecycleStopped]);
-  const cancelAndEscalate = (reason: "abort" | "idle" | "max-duration"): void => {
+  const cancelAndEscalate = (
+    reason: "abort" | "idle" | "tool" | "max-duration" | "provider-busy",
+  ): void => {
     if (settled || escalationStarted) return;
     escalationStarted = true;
     if (sessionId !== null) {
@@ -175,26 +237,97 @@ export async function runKimiAcpWithTransport(
         }, DEFAULT_SIGNAL_GRACE_MS);
       }, DEFAULT_SIGNAL_GRACE_MS);
     });
-    stopLifecycle(reason === "abort"
-      ? new KimiAcpError("KIMI_ACP_INTERRUPTED", "Kimi 执行已中止。")
-      : new KimiAcpError(
-        "KIMI_ACP_TIMEOUT",
-        KIMI_TIMEOUT_MESSAGE,
-      ));
+    stopLifecycle(
+      reason === "abort"
+        ? new KimiAcpError(
+            "KIMI_ACP_INTERRUPTED",
+            "Kimi 执行已中止。",
+            {
+              interruptionActor: executionInterruptionActor(options.signal?.reason),
+              interruptionCause: executionInterruptionCause(options.signal?.reason),
+            },
+          )
+        : reason === "provider-busy"
+          ? new KimiAcpError(
+              "KIMI_ACP_BUSY_TIMEOUT",
+              "Kimi 服务持续繁忙，已停止本次运行。",
+            )
+          : new KimiAcpError(
+              "KIMI_ACP_TIMEOUT",
+              reason === "tool"
+                ? "Kimi 的工具调用运行过久，已停止本次执行。"
+                : KIMI_TIMEOUT_MESSAGE,
+              {
+                timeoutBasis: reason === "max-duration"
+                  ? "max"
+                  : reason === "tool"
+                    ? "tool"
+                    : "idle",
+              },
+            ),
+    );
   };
   let idleTimer: NodeJS.Timeout | null = null;
+  let toolTimer: NodeJS.Timeout | null = null;
   let maxTimer: NodeJS.Timeout | null = null;
+  let busyTimer: NodeJS.Timeout | null = null;
+  const clearIdle = (): void => {
+    if (idleTimer === null) return;
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  };
   const resetIdle = (): void => {
     if (options.idleTimeoutMs === undefined || settled || escalationStarted) return;
-    if (idleTimer !== null) clearTimeout(idleTimer);
+    clearIdle();
     idleTimer = setTimeout(
       () => cancelAndEscalate("idle"),
       options.idleTimeoutMs,
     );
   };
-  const clearUpdate = transport.onSessionUpdate((update) => {
+  const setToolInFlight = (inFlight: boolean): void => {
+    if (settled || escalationStarted) return;
+    if (inFlight) {
+      clearIdle();
+      if (toolTimer === null && options.toolTimeoutMs !== undefined) {
+        toolTimer = setTimeout(
+          () => cancelAndEscalate("tool"),
+          options.toolTimeoutMs,
+        );
+      }
+      return;
+    }
+    if (toolTimer !== null) {
+      clearTimeout(toolTimer);
+      toolTimer = null;
+    }
     resetIdle();
+  };
+  const clearUpdate = transport.onSessionUpdate((update) => {
     options.onStructuredActivity?.(update);
+    const sequence = ++progressSequence;
+    const toolLifecycle = projectKimiToolLifecycle(update, sequence, toolProjection);
+    toolProjection = toolLifecycle.state;
+    const progress = toolLifecycle.progress ?? projectKimiProgress(update, sequence);
+    if (progress !== null) {
+      const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
+      progressSupervisor = supervision.state;
+      if (supervision.kind === "progress-observed") {
+        setToolInFlight(progressSupervisor.activeToolIds.size > 0);
+        if (busyTimer !== null) {
+          clearTimeout(busyTimer);
+          busyTimer = null;
+        }
+      } else if (supervision.kind === "busy-retry-observed" && busyTimer === null) {
+        // Once the provider explicitly reports a busy phase, its dedicated
+        // bounded gate is more informative than the generic idle watchdog.
+        clearIdle();
+        busyTimer = setTimeout(
+          () => cancelAndEscalate("provider-busy"),
+          LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
+        );
+      }
+      options.onExecutionProgress?.(progress);
+    }
     const text = readAgentTextChunk(update);
     if (text === null) return;
     finalText += text;
@@ -303,21 +436,87 @@ export async function runKimiAcpWithTransport(
       finalText += resultText;
       options.onVisibleAgentMarkdown?.(finalText);
     }
+    const stopReason = readPromptStopReason(promptResult);
+    if (stopReason === "cancelled" || stopReason === "canceled") {
+      const failure: CodexRunFailure = {
+        code: "kimi-acp-interrupted",
+        message: "Kimi 执行已中止。",
+      };
+      settled = true;
+      return {
+        ok: false,
+        reason: failure.code,
+        failure,
+        terminal: {
+          kind: "interrupted",
+          actor: options.signal?.aborted === true
+            ? executionInterruptionActor(options.signal.reason)
+            : "system",
+          cause: options.signal?.aborted === true
+            ? executionInterruptionCause(options.signal.reason)
+            : "system",
+          partialText: finalText,
+        },
+        threadId: sessionId,
+        runDir,
+        stdoutPath,
+        stderrPath,
+      };
+    }
+    if (
+      finalText.trim().length === 0
+      || (stopReason !== null && stopReason !== "end_turn")
+    ) {
+      const failure: CodexRunFailure = {
+        code: "kimi-no-complete-result",
+        message: "Kimi 没有返回完整结果，可能是额度或服务问题。",
+      };
+      settled = true;
+      return {
+        ok: false,
+        reason: failure.code,
+        failure,
+        terminal: terminalForFailure(failure, finalText),
+        threadId: sessionId,
+        runDir,
+        stdoutPath,
+        stderrPath,
+      };
+    }
     settled = true;
     return {
       ok: true,
       finalText,
       threadId: sessionId,
       cachedInputTokens: null,
+      terminal: {
+        kind: "completed",
+        externalSessionId: sessionId,
+        finalText,
+      },
       runDir,
       stdoutPath,
       stderrPath,
     };
+  } catch (error) {
+    if (error instanceof KimiAcpError) {
+      throw new KimiAcpError(
+        error.code,
+        error.safeMessage,
+        {
+          ...(error.diagnostics ?? {}),
+          partialText: finalText,
+        },
+      );
+    }
+    throw error;
   } finally {
     settled = true;
     clearUpdate();
     if (idleTimer !== null) clearTimeout(idleTimer);
+    if (toolTimer !== null) clearTimeout(toolTimer);
     if (maxTimer !== null) clearTimeout(maxTimer);
+    if (busyTimer !== null) clearTimeout(busyTimer);
     options.signal?.removeEventListener("abort", abort);
     if (escalationCompletion !== null) {
       await escalationCompletion;
@@ -646,7 +845,12 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
       if (pending === undefined) return;
       this.pending.delete(value.id);
       if (value.error !== undefined) {
-        pending.reject(new KimiAcpError("KIMI_ACP_REQUEST_FAILED", "Kimi ACP 请求失败。"));
+        const responseError = readKimiResponseError(value.error);
+        pending.reject(new KimiAcpError(
+          "KIMI_ACP_REQUEST_FAILED",
+          "Kimi ACP 请求失败。",
+          responseError,
+        ));
       } else {
         pending.resolve(value.result);
       }
@@ -884,6 +1088,49 @@ function readPromptResultText(value: unknown): string | null {
   return firstString(value.text, value.finalText, value.final_text);
 }
 
+function readPromptStopReason(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  return firstString(value.stopReason, value.stop_reason);
+}
+
+function readKimiResponseError(value: unknown): Readonly<Record<string, unknown>> {
+  if (!isRecord(value)) {
+    return { rawType: typeof value };
+  }
+  const code = typeof value.code === "number" || typeof value.code === "string"
+    ? value.code
+    : null;
+  const message = typeof value.message === "string"
+    ? value.message.slice(0, 2_000)
+    : null;
+  const data = sanitizeKimiDiagnosticData(value.data);
+  return {
+    ...(code === null ? {} : { jsonRpcCode: code }),
+    ...(message === null ? {} : { jsonRpcMessage: message }),
+    ...(data === undefined ? {} : { jsonRpcData: data }),
+  };
+}
+
+function sanitizeKimiDiagnosticData(value: unknown): unknown {
+  if (
+    value === null
+    || typeof value === "boolean"
+    || typeof value === "number"
+  ) {
+    return value;
+  }
+  if (typeof value === "string") return value.slice(0, 4_000);
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map(sanitizeKimiDiagnosticData);
+  }
+  if (!isRecord(value)) return undefined;
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 30)
+      .map(([key, item]) => [key.slice(0, 100), sanitizeKimiDiagnosticData(item)]),
+  );
+}
+
 function readParamString(value: unknown, field: string): string {
   if (!isRecord(value) || typeof value[field] !== "string") {
     throw new Error(`missing ${field}`);
@@ -930,9 +1177,63 @@ function classifyKimiFailure(error: unknown): CodexRunFailure | null {
         code: "kimi-acp-timeout",
         message: error.safeMessage,
       };
+    case "KIMI_ACP_INTERRUPTED":
+      return {
+        code: "kimi-acp-interrupted",
+        message: error.safeMessage,
+      };
+    case "KIMI_ACP_BUSY_TIMEOUT":
+      return {
+        code: "kimi-rate-limited",
+        message: error.safeMessage,
+      };
+    case "KIMI_ACP_REQUEST_FAILED": {
+      const signal = JSON.stringify(error.diagnostics ?? {});
+      const retryable = readDiagnosticRetryable(error.diagnostics);
+      if (
+        retryable === false
+        && /403|billing|quota|usage.?limit|credit/iu.test(signal)
+      ) {
+        return {
+          code: "kimi-quota-exhausted",
+          message: "Kimi 已确认当前账户的推理额度不可用。",
+        };
+      }
+      if (/429|overload|busy|rate.?limit|too.?many.?requests/iu.test(signal)) {
+        return {
+          code: "kimi-rate-limited",
+          message: "Kimi 服务持续繁忙，已停止本次运行。",
+        };
+      }
+      return {
+        code: "kimi-no-complete-result",
+        message: "Kimi 没有返回完整结果，可能是额度或服务问题。",
+      };
+    }
     default:
       return null;
   }
+}
+
+function readDiagnosticRetryable(
+  diagnostics: Readonly<Record<string, unknown>> | undefined,
+): boolean | null {
+  if (diagnostics === undefined) return null;
+  const data = diagnostics.jsonRpcData;
+  if (isRecord(data) && typeof data.retryable === "boolean") {
+    return data.retryable;
+  }
+  return typeof diagnostics.retryable === "boolean" ? diagnostics.retryable : null;
+}
+
+function readKimiPartialText(error: unknown): string {
+  if (
+    error instanceof KimiAcpError
+    && typeof error.diagnostics?.partialText === "string"
+  ) {
+    return error.diagnostics.partialText;
+  }
+  return "";
 }
 
 async function appendKimiFailureDiagnostic(
@@ -971,6 +1272,7 @@ export class KimiAcpError extends Error {
       | "KIMI_ACP_PROTOCOL_FAILED"
       | "KIMI_ACP_INTERRUPTED"
       | "KIMI_ACP_TIMEOUT"
+      | "KIMI_ACP_BUSY_TIMEOUT"
       | "KIMI_CLI_SPAWN_FAILED"
       | "KIMI_CLI_EXITED"
       | "KIMI_IMAGE_UNSUPPORTED",

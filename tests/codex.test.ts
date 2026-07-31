@@ -754,6 +754,43 @@ describe("createRunWatchdogs", () => {
     expect(fired).toEqual(["idle"]);
   });
 
+  it("uses a wider tool deadline in flight and restarts idle after it finishes", () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    const watchdogs = createRunWatchdogs({
+      idleTimeoutMs: 1_000,
+      toolTimeoutMs: 5_000,
+      onTimeout: (kind) => fired.push(kind),
+    });
+
+    vi.advanceTimersByTime(900);
+    watchdogs.setToolInFlight(true);
+    vi.advanceTimersByTime(4_000);
+    expect(fired).toEqual([]);
+
+    watchdogs.setToolInFlight(false);
+    vi.advanceTimersByTime(999);
+    expect(fired).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(fired).toEqual(["idle"]);
+  });
+
+  it("fires the dedicated tool deadline when an in-flight tool never finishes", () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    const watchdogs = createRunWatchdogs({
+      idleTimeoutMs: 1_000,
+      toolTimeoutMs: 5_000,
+      onTimeout: (kind) => fired.push(kind),
+    });
+
+    watchdogs.setToolInFlight(true);
+    vi.advanceTimersByTime(4_999);
+    expect(fired).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(fired).toEqual(["tool"]);
+  });
+
   it("fires max-duration regardless of activity", () => {
     vi.useFakeTimers();
     const fired: string[] = [];
@@ -788,6 +825,7 @@ describe("createRunWatchdogs", () => {
 describe("codexTimeoutKind", () => {
   it("classifies watchdog reasons and rejects everything else", () => {
     expect(codexTimeoutKind("idle-timeout:600000ms")).toBe("idle");
+    expect(codexTimeoutKind("tool-timeout:1800000ms")).toBe("tool");
     expect(codexTimeoutKind("max-duration-timeout:7200000ms")).toBe("max-duration");
     expect(codexTimeoutKind("interrupted:new-message")).toBeNull();
     expect(codexTimeoutKind("exit-code-1")).toBeNull();
@@ -795,6 +833,90 @@ describe("codexTimeoutKind", () => {
 });
 
 describe("run watchdogs", () => {
+  it("does not idle-timeout a command that runs longer than the idle window", async () => {
+    // These compressed timings assert ordering, not wall-clock performance:
+    // the tool outlives the 2s idle deadline but finishes before the 5s tool deadline.
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const emit = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+emit({ type: "thread.started", thread_id: "long-tool-thread" });
+emit({ type: "item.started", item: { id: "command-1", type: "command_execution" } });
+setTimeout(() => {
+  emit({ type: "item.completed", item: { id: "command-1", type: "command_execution" } });
+  emit({ type: "item.completed", item: { type: "agent_message", text: "LONG_TOOL_SUCCESS" } });
+  emit({ type: "turn.completed", usage: { cached_input_tokens: 0 } });
+}, 2_500);
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await run({
+        prompt: "run a long tool",
+        runDir,
+        idleTimeoutMs: 2_000,
+        toolTimeoutMs: 5_000,
+        interruptTerminationDelayMs: 10,
+        interruptKillDelayMs: 10,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        finalText: "LONG_TOOL_SUCCESS",
+      });
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("stops a command that remains in flight past the tool deadline", async () => {
+    // This fake tool never completes, so it must outlive the 3s tool deadline
+    // after idle supervision has been suspended.
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const emit = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+emit({ type: "thread.started", thread_id: "hung-tool-thread" });
+emit({ type: "item.started", item: { type: "command_execution", command: "git push" } });
+setInterval(() => {}, 1000);
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      await expect(run({
+        prompt: "run a hung tool",
+        runDir,
+        idleTimeoutMs: 2_000,
+        toolTimeoutMs: 3_000,
+        interruptTerminationDelayMs: 10,
+        interruptKillDelayMs: 10,
+      })).resolves.toMatchObject({
+        ok: false,
+        reason: "tool-timeout:3000ms",
+        terminal: { kind: "timeout", basis: "tool" },
+      });
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
   it("kills a silent codex process and returns idle-timeout", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
     const binDir = path.join(tempDir, "bin");

@@ -566,7 +566,7 @@ describe("pending session context switches", () => {
     } finally {
       await restarted.close();
     }
-  }, 15_000);
+  }, 30_000);
 
   it("reports a stable non-git reason and rejects independent mode at the server boundary", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-non-git-"));

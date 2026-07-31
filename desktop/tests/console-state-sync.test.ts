@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { translate, type OperatorProcessOutput } from "@moebius/console-ui";
+import {
+  EXECUTION_MODEL_REGISTRY,
+  translate,
+  type OperatorProcessOutput,
+} from "@moebius/console-ui";
+import { TRUSTED_EXECUTION_REGISTRY } from "../../src/execution-profile-registry.js";
 import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
@@ -19,6 +24,7 @@ import {
   processOutputRunId,
   loadProjectFile,
   loadFileReference,
+  loadExecutionProfileRegistry,
   loadProjectFiles,
   loadWorkspaceDiff,
   refreshConsoleState,
@@ -33,6 +39,65 @@ import {
   type ConsoleSelection,
   type SelectionMutationKind,
 } from "../src/console-page/state-sync.js";
+
+describe("execution profile registry state sync", () => {
+  it("keeps server admission and the team-page registry in lockstep", () => {
+    expect(TRUSTED_EXECUTION_REGISTRY).toEqual(EXECUTION_MODEL_REGISTRY);
+  });
+
+  it("loads the trusted serializable registry", async () => {
+    const registry = {
+      codex: [{
+        value: "gpt-5.6-sol",
+        label: "gpt-5.6-sol",
+        efforts: ["high"],
+        defaultEffort: "high",
+        membershipRestricted: false,
+      }],
+      claude: [],
+      kimi: [],
+    };
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ registry }));
+    await expect(loadExecutionProfileRegistry({
+      apiBase: "http://127.0.0.1:8787/",
+      fetch,
+    })).resolves.toEqual(registry);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("http://127.0.0.1:8787/api/local-console/execution-profiles"),
+      undefined,
+    );
+  });
+
+  it("creates a fresh single-run intent for each confirmed override retry", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({}));
+    const input = {
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session-a",
+      runId: "run-timeout",
+      executionOverride: {
+        cli: "codex" as const,
+        model: "gpt-5.6-sol",
+        effort: "high",
+      },
+      fetch,
+    };
+
+    await retrySessionRun(input);
+    await retrySessionRun(input);
+
+    const first = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {
+      executionOverride: { overrideId: string };
+    };
+    const second = JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)) as {
+      executionOverride: { overrideId: string };
+    };
+    expect(first.executionOverride.overrideId).toMatch(/^single-run:run-timeout:/u);
+    expect(second.executionOverride.overrideId).toMatch(/^single-run:run-timeout:/u);
+    expect(second.executionOverride.overrideId).not.toBe(first.executionOverride.overrideId);
+  });
+});
 
 describe("sidebar conversation state sync", () => {
   it("submits creation facts in one request and keeps caller-owned draft state on failure", async () => {
@@ -305,7 +370,13 @@ describe("sub-session adapters", () => {
     expect(fetch).toHaveBeenNthCalledWith(
       3,
       new URL("http://127.0.0.1:8787/api/local-console/sessions/child%2Fa/runs/run%2Fstuck/retry"),
-      { method: "POST" },
+      {
+        body: "{}",
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
     );
 
     await retryPendingSessionMessage({

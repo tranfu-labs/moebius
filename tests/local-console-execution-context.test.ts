@@ -5,6 +5,7 @@ import {
   createRunExecutionContext,
   legacyCodexContextFingerprint,
   planLocalExecutionRecovery,
+  singleRunOverrideIdentitySalt,
   type LocalExecutionSessionLinkFact,
 } from "../src/local-console/execution-context.js";
 
@@ -213,5 +214,98 @@ describe("local execution recovery planning", () => {
       legacyCodexLinks: [],
       contexts: [],
     })).toMatchObject({ kind: "unavailable", reason: "provider-id-missing" });
+  });
+
+  it("runs a single-run override under a derived identity and leaves the base link resumable", () => {
+    const base = context({ runId: "run-base", cli: "kimi", markdown: "team" });
+    const overrideProfile = { cli: "codex", model: "gpt-5.6-sol", effort: "high" } as const;
+    const override = createRunExecutionContext({
+      sessionId: "session-a",
+      runId: "run-override",
+      sourceMessageId: 7,
+      role: "dev",
+      profile: overrideProfile,
+      workspace: {
+        cwd: "/tmp/project",
+        mode: "direct",
+        worktreePath: null,
+        worktreeUnavailableReason: null,
+        branchName: null,
+        baseRef: null,
+        originalRepoRoot: null,
+      },
+      team: base.team,
+      identitySalt: singleRunOverrideIdentitySalt({
+        overrideId: "override-1",
+        profile: overrideProfile,
+      }),
+      recordedAt: "2026-07-25T00:00:03.000Z",
+    });
+    const overrideIntent: LocalCodexResumeIntentFact = {
+      ...intent,
+      reason: "retry",
+      executionOverride: {
+        overrideId: "override-1",
+        profile: overrideProfile,
+        scope: "single-run",
+      },
+    };
+
+    expect(override.agentIdentityFingerprint).not.toBe(base.agentIdentityFingerprint);
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: override,
+      intents: [overrideIntent],
+      consumedIntentIds: new Set(),
+      canonicalLinks: [{
+        sessionId: "session-a",
+        role: "dev",
+        engine: "kimi",
+        externalSessionId: "kimi-base",
+        profileFingerprint: base.profileFingerprint,
+        agentIdentityFingerprint: base.agentIdentityFingerprint,
+        contextFingerprint: base.contextFingerprint,
+        linkedAt: "2026-07-25T00:00:02.000Z",
+      }],
+      executionLinks: [link(base, { externalSessionId: "kimi-base" })],
+      legacyCodexLinks: [],
+      contexts: [base],
+    })).toMatchObject({
+      kind: "first",
+      context: {
+        engine: "codex",
+        identitySalt: singleRunOverrideIdentitySalt({
+          overrideId: "override-1",
+          profile: overrideProfile,
+        }),
+      },
+    });
+
+    const nextBase = context({ runId: "run-next", cli: "kimi", markdown: "team" });
+    expect(planLocalExecutionRecovery({
+      sourceMessageId: 7,
+      role: "dev",
+      currentContext: nextBase,
+      intents: [],
+      consumedIntentIds: new Set(),
+      canonicalLinks: [{
+        sessionId: "session-a",
+        role: "dev",
+        engine: "kimi",
+        externalSessionId: "kimi-base",
+        profileFingerprint: base.profileFingerprint,
+        agentIdentityFingerprint: base.agentIdentityFingerprint,
+        contextFingerprint: base.contextFingerprint,
+        linkedAt: "2026-07-25T00:00:02.000Z",
+      }],
+      executionLinks: [link(base, { externalSessionId: "kimi-base" })],
+      legacyCodexLinks: [],
+      contexts: [base, override],
+    })).toMatchObject({
+      kind: "resume",
+      externalSessionId: "kimi-base",
+      context: { engine: "kimi" },
+    });
   });
 });

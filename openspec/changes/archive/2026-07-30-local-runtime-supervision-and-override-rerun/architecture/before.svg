@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif; fill: #111827; }
+    .title { font-size: 22px; font-weight: 600; }
+    .label { font-size: 15px; font-weight: 600; }
+    .sub { font-size: 12px; fill: #6b7280; }
+    .warn { font-size: 12px; fill: #b45309; }
+  </style>
+  <defs>
+    <marker id="blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#5e6ad2"/></marker>
+    <marker id="amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#d97706"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#dc2626"/></marker>
+  </defs>
+  <rect width="1200" height="760" fill="#fff"/>
+  <text x="48" y="48" class="title">现状：引擎字符串终局、伪活动续命、终局丢正文</text>
+
+  <rect x="52" y="100" width="244" height="108" rx="10" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="174" y="132" text-anchor="middle" class="label">Codex adapter</text>
+  <text x="174" y="156" text-anchor="middle" class="sub">ok + reason + threadId</text>
+  <text x="174" y="178" text-anchor="middle" class="warn">任意 stdout 刷新 idle</text>
+
+  <rect x="52" y="262" width="244" height="108" rx="10" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="174" y="294" text-anchor="middle" class="label">Claude adapter</text>
+  <text x="174" y="318" text-anchor="middle" class="sub">分类后仍压回 reason</text>
+  <text x="174" y="340" text-anchor="middle" class="warn">任意 stdout 刷新 idle</text>
+
+  <rect x="52" y="424" width="244" height="132" rx="10" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="174" y="456" text-anchor="middle" class="label">Kimi ACP adapter</text>
+  <text x="174" y="480" text-anchor="middle" class="sub">任意 session/update 刷新 idle</text>
+  <text x="174" y="502" text-anchor="middle" class="warn">忽略 stopReason；error payload 被折叠</text>
+  <text x="174" y="524" text-anchor="middle" class="warn">failed/end_turn 可能返回 ok:true</text>
+
+  <rect x="388" y="214" width="288" height="188" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
+  <text x="532" y="248" text-anchor="middle" class="label">local execution driver</text>
+  <text x="532" y="276" text-anchor="middle" class="sub">三引擎共享 CodexRunResult 外形</text>
+  <text x="532" y="300" text-anchor="middle" class="sub">onStructuredActivity 仍是 unknown</text>
+  <text x="532" y="324" text-anchor="middle" class="warn">没有穷尽 terminal/progress 契约</text>
+  <text x="532" y="348" text-anchor="middle" class="warn">local 传 idle + 120 分钟 max</text>
+  <text x="532" y="376" text-anchor="middle" class="sub">profile mismatch → unavailable</text>
+
+  <path d="M296 154C340 154 350 246 388 260" fill="none" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M296 316H388" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M296 490C348 490 352 380 388 362" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#amber)"/>
+
+  <rect x="768" y="94" width="372" height="178" rx="10" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="954" y="128" text-anchor="middle" class="label">runtime 终局字符串分类</text>
+  <text x="954" y="154" text-anchor="middle" class="sub">codexTimeoutKind(reason)</text>
+  <text x="954" y="176" text-anchor="middle" class="sub">isInterruptedCodexRunResult(reason)</text>
+  <text x="954" y="200" text-anchor="middle" class="warn">漏登记 → run-not-started 或成功</text>
+  <text x="954" y="224" text-anchor="middle" class="warn">新引擎遗漏不会编译失败</text>
+  <path d="M676 274C716 246 728 206 768 190" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#amber)"/>
+
+  <rect x="768" y="324" width="372" height="148" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
+  <text x="954" y="358" text-anchor="middle" class="label">active snapshot</text>
+  <text x="954" y="384" text-anchor="middle" class="sub">liveMarkdown 只在内存/API 活动态</text>
+  <text x="954" y="408" text-anchor="middle" class="warn">终局时移除，不进入 terminal fact</text>
+  <text x="954" y="432" text-anchor="middle" class="sub">Kimi/Claude 嵌套活动多数不可见</text>
+  <path d="M676 320C722 330 732 372 768 386" fill="none" stroke="#5e6ad2" stroke-width="2" marker-end="url(#blue)"/>
+
+  <rect x="768" y="524" width="372" height="142" rx="10" fill="#fee2e2" stroke="#fecaca"/>
+  <text x="954" y="558" text-anchor="middle" class="label">RunOutcome / retry</text>
+  <text x="954" y="584" text-anchor="middle" class="sub">标题 + 耗时 + generic 原因</text>
+  <text x="954" y="608" text-anchor="middle" class="warn">user-stopped 无普通 retry；无 profile override</text>
+  <text x="954" y="632" text-anchor="middle" class="warn">终局看不到中断前正文</text>
+  <path d="M954 272V324" stroke="#dc2626" stroke-width="2" marker-end="url(#red)"/>
+  <path d="M954 472V524" stroke="#dc2626" stroke-width="2" marker-end="url(#red)"/>
+
+  <text x="48" y="718" class="sub">基线：docs/architecture/local-console-operator.svg、docs/architecture/agent-runtime-profiles-official-team-updates.svg</text>
+</svg>

@@ -76,6 +76,18 @@ export const GITHUB_CLI_RETRY_POLICY = {
   factor: 2,
 } as const;
 export const CODEX_RUN_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+export const LOCAL_RUN_IDLE_TIMEOUT_MS = parseOptionalPositiveInteger(
+  process.env.MOEBIUS_LOCAL_RUN_IDLE_TIMEOUT_MS,
+) ?? 3 * 60 * 1000;
+export const LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS = parseOptionalPositiveInteger(
+  process.env.MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
+) ?? 30 * 60 * 1000;
+export const LOCAL_PROVIDER_BUSY_TIMEOUT_MS = parseOptionalPositiveInteger(
+  process.env.MOEBIUS_LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
+) ?? 5 * 60 * 1000;
+export const LOCAL_LONG_RUN_REPORT_MS = parseOptionalPositiveInteger(
+  process.env.MOEBIUS_LOCAL_LONG_RUN_REPORT_MS,
+) ?? 15 * 60 * 1000;
 export const KIMI_CLI_SPAWN_TIMEOUT_MS = 5_000;
 export const CODEX_RUN_MAX_DURATION_MS = 120 * 60 * 1000;
 export const AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS = 2 * 60 * 1000;

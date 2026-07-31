@@ -1009,6 +1009,139 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(kimi.mock.calls[1]?.[0].prompt).not.toContain("new Codex rules");
   });
 
+  it("runs an eligible override once under a derived identity then returns to the base provider session", async () => {
+    const root = await fixtureRoot();
+    const baseProfile: LocalConsoleExecutionProfile = {
+      cli: "kimi",
+      model: "kimi-code/kimi-for-coding",
+      effort: "on",
+    };
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("codex-override-session");
+      return {
+        ...success(options, "override completed"),
+        threadId: "codex-override-session",
+      };
+    });
+    let kimiCalls = 0;
+    const kimi = vi.fn(async (options: KimiAcpRunOptions): Promise<CodexRunResult> => {
+      kimiCalls += 1;
+      await options.onSessionStarted?.("kimi-base-session");
+      if (kimiCalls === 1) {
+        return {
+          ok: false,
+          reason: "kimi-acp-interrupted",
+          terminal: {
+            kind: "interrupted",
+            actor: "user",
+            cause: "user",
+            partialText: "partial before stop",
+          },
+          runDir: options.runDir,
+          stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+          stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+        };
+      }
+      return {
+        ok: true,
+        terminal: {
+          kind: "completed",
+          externalSessionId: "kimi-base-session",
+          finalText: "base resumed",
+        },
+        finalText: "base resumed",
+        threadId: "kimi-base-session",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "kimi-acp.jsonl"),
+        stderrPath: path.join(options.runDir, "kimi-stderr.log"),
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath: path.join(root, "local-console.sqlite"),
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => snapshot("base Kimi rules", baseProfile),
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex, runKimi: kimi }),
+    });
+    servers.push(server);
+
+    await server.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "base",
+    });
+    await post(server.url, "@dev implement");
+    const stopped = await waitForSystemEvent(server.url, "user-stopped");
+    const overrideBody = JSON.stringify({
+      executionOverride: {
+        overrideId: "override-once",
+        profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+        scope: "single-run",
+      },
+    });
+    const retry = await fetch(retryUrl(server, "default", stopped.runId!), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: overrideBody,
+    });
+    expect(retry.status).toBe(202);
+    await waitForAgent(server.url, "override completed");
+
+    const delayedDuplicate = await fetch(retryUrl(server, "default", stopped.runId!), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: overrideBody,
+    });
+    expect(delayedDuplicate.status).toBe(202);
+
+    await post(server.url, "@dev continue normally");
+    await waitForAgent(server.url, "base resumed");
+
+    expect(codex).toHaveBeenCalledTimes(1);
+    expect(codex.mock.calls[0]?.[0]).toMatchObject({ mode: { kind: "full" } });
+    expect(kimi).toHaveBeenCalledTimes(2);
+    expect(kimi.mock.calls[1]?.[0]).toMatchObject({
+      profile: baseProfile,
+      mode: { kind: "resume", externalSessionId: "kimi-base-session" },
+    });
+    const events = await readFactEvents(server.runtime.getSessionFactLogPath("default"));
+    const contexts = events
+      .filter((event) => event.type === "run_execution_context")
+      .map((event) => event.payload);
+    expect(contexts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        engine: "codex",
+        identitySalt: expect.stringMatching(/^override-once:/u),
+      }),
+      expect.objectContaining({
+        engine: "kimi",
+      }),
+    ]));
+    expect(
+      contexts
+        .filter((context) => context.engine === "kimi")
+        .every((context) => !("identitySalt" in context)),
+    ).toBe(true);
+    const database = new DatabaseSync(path.join(root, "local-console.sqlite"), { readOnly: true });
+    try {
+      expect(database.prepare(
+        `SELECT execution_cli, execution_model, execution_effort
+         FROM session_agent_team_members
+         WHERE session_id = 'default' AND slot = 'effective'`,
+      ).all()).toEqual([{
+        execution_cli: "kimi",
+        execution_model: "kimi-code/kimi-for-coding",
+        execution_effort: "on",
+      }]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("fails closed when an explicit retry has lost its frozen old run context", async () => {
     const root = await fixtureRoot();
     const snapshots: Record<string, LocalConsoleAgentTeamSnapshot> = {

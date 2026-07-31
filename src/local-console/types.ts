@@ -64,6 +64,22 @@ export const LOCAL_CONSOLE_SYSTEM_EVENT_KINDS = [
 ] as const;
 export type LocalConsoleSystemEventKind = (typeof LOCAL_CONSOLE_SYSTEM_EVENT_KINDS)[number];
 
+export interface LocalConsoleTerminal {
+  kind:
+    | "interrupted"
+    | "timeout"
+    | "quota-exhausted"
+    | "rate-limited"
+    | "auth"
+    | "crashed";
+  subkind: string | null;
+  safeCode: string | null;
+  retryable: boolean | null;
+  partialMarkdown: string;
+  contentIncomplete: true;
+  actualProfile: LocalConsoleExecutionProfile | null;
+}
+
 export interface LocalConsoleMessage {
   id: number;
   sessionId: string;
@@ -75,6 +91,7 @@ export interface LocalConsoleMessage {
   runDir: string | null;
   error: string | null;
   systemEventKind: LocalConsoleSystemEventKind;
+  terminal?: LocalConsoleTerminal | null;
   failureCount: number;
   lastFailureReason: string | null;
   sourceKind?: string | null;
@@ -740,6 +757,7 @@ export interface LocalConsoleStore {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
   recordCodexThreadLink?(input: {
@@ -797,6 +815,7 @@ export interface LocalConsoleStore {
     error: string | null;
     status?: "displayed" | "failed" | "interrupted" | "stuck";
     systemEventKind?: LocalConsoleSystemEventKind;
+    terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
   recordMessageProcessed(input: {
@@ -860,6 +879,7 @@ export interface LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    terminal?: LocalConsoleTerminal | null;
     sourceKind?: string | null;
     sourceId?: string | null;
   }): Promise<void>;
@@ -884,10 +904,11 @@ export interface LocalConsoleStore {
     userMessageId: number;
     sessionId: string;
     reason: string;
-    interruptionKind?: "user" | "redirect" | "context-unavailable";
+    interruptionKind?: "user" | "redirect" | "context-unavailable" | "system";
     runId: string | null;
     runDir: string | null;
     now: string;
+    terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   recordStuck(input: {
     userMessageId: number;
@@ -896,6 +917,7 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   markStaleRunning(input: {
     sessionId: string;

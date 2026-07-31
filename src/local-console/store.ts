@@ -29,6 +29,7 @@ import {
   type LocalConsoleAgentTeamOwnership,
   type LocalConsoleSpeaker,
   type LocalConsoleSystemEventKind,
+  type LocalConsoleTerminal,
   type LocalConsoleEntryTemplate,
   type LocalConsoleWritePolicy,
   type LocalConsoleTextFragment,
@@ -481,6 +482,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-detached-run-terminal", ...input }, [input.sessionId]);
@@ -506,6 +508,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     error: string | null;
     status?: "displayed" | "failed" | "interrupted" | "stuck";
     systemEventKind?: LocalConsoleSystemEventKind;
+    terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void> {
     await this.runFact(
@@ -606,6 +609,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    terminal?: import("./types.js").LocalConsoleTerminal | null;
     sourceKind?: string | null;
     sourceId?: string | null;
   }): Promise<void> {
@@ -639,10 +643,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     userMessageId: number;
     sessionId: string;
     reason: string;
-    interruptionKind?: "user" | "redirect" | "context-unavailable";
+    interruptionKind?: "user" | "redirect" | "context-unavailable" | "system";
     runId: string | null;
     runDir: string | null;
     now: string;
+    terminal?: import("./types.js").LocalConsoleTerminal | null;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-interrupted", ...input }, [input.sessionId]);
   }
@@ -654,6 +659,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    terminal?: import("./types.js").LocalConsoleTerminal | null;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-stuck", ...input }, [input.sessionId]);
   }
@@ -1559,6 +1565,7 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       runDir: readNullableString(value.runDir, "runDir"),
       error: readNullableString(value.error, "error"),
       systemEventKind: readMessageSystemEventKind(value.systemEventKind, value.error),
+      terminal: "terminal" in value ? normalizeTerminal(value.terminal) : null,
       failureCount: "failureCount" in value ? readNumber(value.failureCount, "failureCount") : 0,
       lastFailureReason: "lastFailureReason" in value ? readNullableString(value.lastFailureReason, "lastFailureReason") : null,
       sourceKind: "sourceKind" in value ? readNullableString(value.sourceKind, "sourceKind") : null,
@@ -1670,6 +1677,53 @@ function normalizeAttachment(value: unknown): LocalAttachment {
     displayName: readString(value.displayName, "displayName"),
     mediaType: readString(value.mediaType, "mediaType"),
     byteSize: readNumber(value.byteSize, "byteSize"),
+  };
+}
+
+function normalizeTerminal(value: unknown): LocalConsoleTerminal | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) throw new Error("Invalid local terminal");
+  const kind = readString(value.kind, "terminal.kind");
+  if (
+    kind !== "interrupted"
+    && kind !== "timeout"
+    && kind !== "quota-exhausted"
+    && kind !== "rate-limited"
+    && kind !== "auth"
+    && kind !== "crashed"
+  ) {
+    throw new Error(`Invalid local terminal kind: ${kind}`);
+  }
+  if (value.contentIncomplete !== true) {
+    throw new Error("Invalid local terminal completeness");
+  }
+  return {
+    kind,
+    subkind: readNullableString(value.subkind, "terminal.subkind"),
+    safeCode: readNullableString(value.safeCode, "terminal.safeCode"),
+    retryable: value.retryable === null
+      ? null
+      : typeof value.retryable === "boolean"
+        ? value.retryable
+        : (() => { throw new Error("Invalid terminal.retryable"); })(),
+    partialMarkdown: readString(value.partialMarkdown, "terminal.partialMarkdown"),
+    contentIncomplete: true,
+    actualProfile: value.actualProfile === null || value.actualProfile === undefined
+      ? null
+      : normalizeExecutionProfile(value.actualProfile),
+  };
+}
+
+function normalizeExecutionProfile(value: unknown): LocalConsoleTerminal["actualProfile"] {
+  if (!isRecord(value)) throw new Error("Invalid terminal.actualProfile");
+  const cli = readString(value.cli, "terminal.actualProfile.cli");
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+    throw new Error(`Invalid terminal.actualProfile.cli: ${cli}`);
+  }
+  return {
+    cli,
+    model: readString(value.model, "terminal.actualProfile.model"),
+    effort: readString(value.effort, "terminal.actualProfile.effort"),
   };
 }
 

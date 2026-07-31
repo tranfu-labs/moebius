@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { waitForCondition, waitForValue } from "../src/testing/wait.js";
+import { waitForCondition, waitForValue, waitScale } from "../src/testing/wait.js";
 import { resolveTrigger } from "../src/triggers/index.js";
 import {
   buildLocalConsoleRoutingTimeline,
@@ -1619,7 +1619,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       await started.close();
     }
-  }, 20_000);
+  }, 20_000 * waitScale());
 
   it("builds local timelines that reuse mention parsing rules", () => {
     const agents = ["dev"];
@@ -1875,7 +1875,7 @@ describe("local console", { timeout: 15_000 }, () => {
       ]);
       expect(calls.map((entry) => entry.role)).toEqual(["ceo", "dev-manager", "dev", "qa", "ceo"]);
       for (let index = 1; index < calls.length; index += 1) {
-        expect(calls[index]!.at - calls[index - 1]!.at).toBeLessThan(3_000);
+        expect(calls[index]!.at - calls[index - 1]!.at).toBeLessThan(3_000 * waitScale());
       }
     } finally {
       await started.close();
@@ -2264,7 +2264,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       await started.close();
     }
-  }, 10_000);
+  }, 10_000 * waitScale());
 
   it("returns project/session state and runs messages in the selected session", async () => {
     const root = await makeFixtureRoot();
@@ -2497,7 +2497,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       await started.close();
     }
-  }, 10_000);
+  }, 10_000 * waitScale());
 
   it("queues user messages for the primary agent and activates them in delivery order", async () => {
     const root = await makeFixtureRoot();
@@ -2559,7 +2559,7 @@ describe("local console", { timeout: 15_000 }, () => {
       firstRunGate.resolve(undefined);
       await started.close();
     }
-  }, 10_000);
+  }, 10_000 * waitScale());
 
   it("routes a unique user mention directly and queues the same busy member without aborting", async () => {
     const root = await makeFixtureRoot();

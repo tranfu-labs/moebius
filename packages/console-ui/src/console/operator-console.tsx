@@ -42,6 +42,7 @@ import {
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
+import type { ExecutionRegistryState } from "@/console/execution-profile-registry";
 import { MoebiusLogo } from "@/brand/moebius-logo";
 import { I18nProvider, translate, useI18n, type Locale, type Translate } from "@/i18n";
 import {
@@ -264,6 +265,19 @@ export interface OperatorMessage {
   runDir: string | null;
   error: string | null;
   systemEventKind?: "run-not-started" | "run-stuck" | "user-stopped" | "resume-unavailable" | "retry-exhausted" | "other";
+  terminal?: {
+    kind: "interrupted" | "timeout" | "quota-exhausted" | "rate-limited" | "auth" | "crashed";
+    subkind: string | null;
+    safeCode: string | null;
+    retryable: boolean | null;
+    partialMarkdown: string;
+    contentIncomplete: true;
+    actualProfile: {
+      cli: "codex" | "claude" | "kimi";
+      model: string;
+      effort: string;
+    } | null;
+  } | null;
   sourceKind?: string | null;
   sourceId?: string | null;
   runTiming?: {
@@ -428,6 +442,8 @@ export interface OperatorConsoleProps {
   agentTeamBuilder?: AgentTeamBuilderController;
   newConversation?: OperatorNewConversationState | null;
   activeCliInstallations?: Array<"codex" | "claude" | "kimi">;
+  executionRegistryState?: ExecutionRegistryState;
+  onReloadExecutionRegistry?: () => void;
   activeLocale?: Locale;
   pendingLocale?: Locale | null;
   languageSaveStatus?: LanguageSaveStatus;
@@ -472,7 +488,11 @@ export interface OperatorConsoleProps {
   onSubSessionComposerAttachmentRemove?: (clientId: string) => void;
   onSubSessionComposerAttachmentRetry?: (clientId: string) => void;
   onSubSessionSend?: (sessionId: string) => void;
-  onSubSessionRetry?: (sessionId: string, runId: string) => void;
+  onSubSessionRetry?: (
+    sessionId: string,
+    runId: string,
+    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+  ) => void | Promise<void>;
   onSubSessionInterrupt?: (sessionId: string, runId: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
   onCloseEvidence?: () => void;
@@ -494,7 +514,11 @@ export interface OperatorConsoleProps {
   onArchiveSession?: (sessionId: string, projectId: string) => void | Promise<void>;
   onCopySessionLogPath?: (sessionId: string, projectId: string) => Promise<CopySessionLogPathResult>;
   onInterrupt(sessionId: string, runId: string): void;
-  onRetryRun?: (sessionId: string, runId: string) => void;
+  onRetryRun?: (
+    sessionId: string,
+    runId: string,
+    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+  ) => void | Promise<void>;
   onRetryPendingMessage?: (sessionId: string, messageId: number) => void;
   onEditPendingMessage?: (sessionId: string, messageId: number, body: string) => void;
   onRemovePendingMessage?: (sessionId: string, messageId: number) => void;
@@ -615,6 +639,8 @@ export function OperatorConsole({
   agentTeamBuilder,
   newConversation = null,
   activeCliInstallations = [],
+  executionRegistryState,
+  onReloadExecutionRegistry,
   activeLocale = "zh-CN",
   pendingLocale = null,
   languageSaveStatus = "idle",
@@ -1836,6 +1862,8 @@ export function OperatorConsole({
                             openedSubSessionId={openedSubSessionId}
                             onOpenSubSession={openSubSession}
                             onRetryRun={onRetryRun}
+                            executionRegistryState={executionRegistryState}
+                            onReloadExecutionRegistry={onReloadExecutionRegistry}
                             onAnalyzeConversation={onAnalyzeConversation}
                             onUpdateClaude={onUpdateClaude}
                             onEditAndResend={onEditAndResend}
@@ -2180,7 +2208,10 @@ export function OperatorConsole({
                 onComposerAttachmentRemove={onSubSessionComposerAttachmentRemove}
                 onComposerAttachmentRetry={onSubSessionComposerAttachmentRetry}
                 onSend={() => onSubSessionSend?.(sessionId)}
-                onRetry={(runId) => onSubSessionRetry?.(sessionId, runId)}
+                onRetry={(runId, executionOverride) =>
+                  onSubSessionRetry?.(sessionId, runId, executionOverride)}
+                executionRegistryState={executionRegistryState}
+                onReloadExecutionRegistry={onReloadExecutionRegistry}
                 onInterrupt={onSubSessionInterrupt ?? onInterrupt}
                 onOpenOutput={(input) => openEvidence({
                   kind: "run-output",
@@ -2813,6 +2844,8 @@ function TimelineEntry({
   openedSubSessionId = null,
   onOpenSubSession,
   onRetryRun,
+  executionRegistryState,
+  onReloadExecutionRegistry,
   onAnalyzeConversation,
   onUpdateClaude,
   onEditAndResend,
@@ -2829,7 +2862,13 @@ function TimelineEntry({
   childSessions?: readonly OperatorChildSessionSummary[];
   openedSubSessionId?: string | null;
   onOpenSubSession?: (sessionId: string) => void;
-  onRetryRun?: (sessionId: string, runId: string) => void;
+  onRetryRun?: (
+    sessionId: string,
+    runId: string,
+    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+  ) => void | Promise<void>;
+  executionRegistryState?: ExecutionRegistryState;
+  onReloadExecutionRegistry?: () => void;
   onAnalyzeConversation?: (input: {
     sessionId: string;
     runId: string | null;
@@ -2899,11 +2938,31 @@ function TimelineEntry({
           rawReason={message.error ?? message.body}
           rawOutput={message.error ?? message.body}
           description={terminalOutcomeDescription(message)}
+          partialMarkdown={message.terminal?.partialMarkdown}
+          contentIncomplete={message.terminal?.contentIncomplete}
+          initialProfile={message.terminal?.actualProfile}
+          executionRegistryState={executionRegistryState}
+          onReloadExecutionRegistry={onReloadExecutionRegistry}
           elapsedMs={message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
-          onRetry={(outcome === "run-not-started" || outcome === "run-stuck" || outcome === "resume-unavailable") && message.runId !== null
+          onRetry={outcome !== "retry-exhausted" && message.runId !== null
             ? () => onRetryRun?.(message.sessionId, message.runId!)
             : undefined}
+          onOverrideAndRetry={
+            message.runId !== null
+            && message.terminal !== null
+            && message.terminal !== undefined
+            && (
+              message.terminal.kind === "interrupted"
+              || message.terminal.kind === "timeout"
+              || message.terminal.kind === "quota-exhausted"
+              || message.terminal.kind === "rate-limited"
+              || message.terminal.kind === "auth"
+              || message.terminal.kind === "crashed"
+            )
+              ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
+              : undefined
+          }
           maintenanceAction={message.error === "claude-cli-unsupported-version"
             && onUpdateClaude !== undefined
             ? {
@@ -3198,13 +3257,26 @@ function sessionSummary(session: OperatorSession, t: Translate): string | undefi
 }
 
 function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
+  if (message.speaker === "system" && message.terminal !== null && message.terminal !== undefined) {
+    switch (message.terminal.kind) {
+      case "interrupted":
+        return message.terminal.subkind === "system" ? "system-stopped" : "user-stopped";
+      case "timeout": return "run-stuck";
+      case "quota-exhausted": return "quota-exhausted";
+      case "rate-limited": return "rate-limited";
+      case "auth": return "auth-failed";
+      case "crashed": return "run-crashed";
+    }
+  }
   return message.speaker === "system" && message.systemEventKind !== undefined && message.systemEventKind !== "other"
     ? message.systemEventKind
     : null;
 }
 
 function terminalOutcomeDescription(message: OperatorMessage): string | null {
-  return isSafeTerminalFailureCode(message.error)
+  return message.terminal !== null && message.terminal !== undefined
+    ? nonBlank(message.body)
+    : isSafeTerminalFailureCode(message.error)
     ? nonBlank(message.body)
     : null;
 }
@@ -3216,6 +3288,10 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
     || error === "kimi-cli-spawn-failed"
     || error === "kimi-cli-exited"
     || error === "kimi-acp-timeout"
+    || error === "kimi-acp-interrupted"
+    || error === "kimi-quota-exhausted"
+    || error === "kimi-rate-limited"
+    || error === "kimi-no-complete-result"
     || error === "claude-cli-not-found"
     || error === "claude-cli-not-executable"
     || error === "claude-cli-unsupported-version"

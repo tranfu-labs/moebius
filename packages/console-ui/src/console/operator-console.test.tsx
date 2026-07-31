@@ -2278,8 +2278,52 @@ describe("OperatorConsole", () => {
     const retryButtons = screen.getAllByRole("button", { name: "重试" });
     fireEvent.click(retryButtons[0]!);
     fireEvent.click(retryButtons[1]!);
-    expect(onRetryRun).toHaveBeenNthCalledWith(1, "session-a", "run-fail");
-    expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-stuck");
+    fireEvent.click(retryButtons[2]!);
+    expect(onRetryRun).toHaveBeenNthCalledWith(1, "session-a", "run-stop");
+    expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-fail");
+    expect(onRetryRun).toHaveBeenNthCalledWith(3, "session-a", "run-stuck");
+  });
+
+  it("offers a single-run execution override after timeout and auth failures", () => {
+    renderConsole({
+      onRetryRun: vi.fn(),
+      messages: [
+        message({
+          id: 1,
+          speaker: "system",
+          runId: "run-timeout",
+          status: "stuck",
+          body: "这一步卡住了",
+          terminal: {
+            kind: "timeout",
+            subkind: "idle",
+            safeCode: null,
+            retryable: null,
+            partialMarkdown: "",
+            contentIncomplete: true,
+            actualProfile: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
+          },
+        }),
+        message({
+          id: 2,
+          speaker: "system",
+          runId: "run-auth",
+          status: "failed",
+          body: "执行引擎需要重新登录",
+          terminal: {
+            kind: "auth",
+            subkind: null,
+            safeCode: "auth",
+            retryable: false,
+            partialMarkdown: "",
+            contentIncomplete: true,
+            actualProfile: { cli: "claude", model: "sonnet", effort: "high" },
+          },
+        }),
+      ],
+    });
+
+    expect(screen.getAllByRole("button", { name: "换执行配置重跑" })).toHaveLength(2);
   });
 
   it("exposes the trusted Claude update action for a runtime version gate", () => {
@@ -3229,6 +3273,7 @@ function message(input: Partial<OperatorMessage> & { id: number; body: string })
     runTiming: input.runTiming,
     error: input.error ?? null,
     systemEventKind: input.systemEventKind ?? "other",
+    terminal: input.terminal,
     createdAt: input.createdAt ?? "2026-07-09T00:00:00.000Z",
     updatedAt: input.updatedAt ?? "2026-07-09T00:00:01.000Z",
   };
