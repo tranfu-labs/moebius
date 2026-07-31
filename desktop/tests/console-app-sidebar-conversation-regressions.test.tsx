@@ -39,6 +39,7 @@ describe("desktop App sidebar conversation regressions", () => {
   let ordinaryCreateFailure: boolean;
   let preferenceRecordFailure: boolean;
   let preferenceRecordAttemptCount: number;
+  let pinRequestCount: number;
 
   beforeEach(() => {
     sessions = [createSession("source-a", "来源会话")];
@@ -53,6 +54,7 @@ describe("desktop App sidebar conversation regressions", () => {
     ordinaryCreateFailure = false;
     preferenceRecordFailure = false;
     preferenceRecordAttemptCount = 0;
+    pinRequestCount = 0;
     window.localStorage.clear();
     window.localStorage.setItem(
       "moebius.console.selection",
@@ -75,6 +77,7 @@ describe("desktop App sidebar conversation regressions", () => {
         },
       },
     });
+    vi.stubGlobal("CSS", { escape: (value: string) => value });
     vi.stubGlobal("fetch", vi.fn(function (
       this: unknown,
       input: string | URL | Request,
@@ -135,6 +138,23 @@ describe("desktop App sidebar conversation regressions", () => {
           projectId: "local",
           selectedSessionId: "source-a",
         }));
+      }
+      const pinMatch = /^\/api\/local-console\/sessions\/(.+)\/pin$/u.exec(url.pathname);
+      if (pinMatch !== null && init?.method === "POST") {
+        const sessionId = decodeURIComponent(pinMatch[1]!);
+        const request = JSON.parse(String(init.body)) as { pinned?: unknown };
+        const sessionIndex = sessions.findIndex((candidate) => candidate.sessionId === sessionId);
+        const session = sessions[sessionIndex];
+        if (session === undefined || typeof request.pinned !== "boolean") {
+          return Promise.resolve(jsonResponse({ error: "invalid pin request" }, 400));
+        }
+        const updated = {
+          ...session,
+          pinnedAt: request.pinned ? "2026-07-31T00:00:00.000Z" : null,
+        };
+        sessions[sessionIndex] = updated;
+        pinRequestCount += 1;
+        return Promise.resolve(jsonResponse({ session: updated }));
       }
       return Promise.resolve(jsonResponse({ error: `unexpected request: ${url.pathname}` }, 404));
     }));
@@ -212,6 +232,25 @@ describe("desktop App sidebar conversation regressions", () => {
       projectId: "local",
       sessionId: "source-a",
     }));
+  });
+
+  it("pins a conversation from its context menu through receiver-safe browser fetch", async () => {
+    await act(async () => root.render(<App />));
+    const sourceRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+
+    await act(async () => {
+      sourceRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const pin = await findElement<HTMLElement>('[role="menuitem"]', (element) =>
+      element.textContent?.trim() === "置顶");
+    await act(async () => pin.click());
+
+    await waitFor(() => pinRequestCount === 1 && host.querySelector(
+      '[aria-label="置顶"] [data-session-id="source-a"]',
+    ) !== null);
+    expect(host.textContent).not.toContain("Illegal invocation");
   });
 
   it("selects the created conversation even when recording the team preference fails", async () => {
@@ -808,6 +847,7 @@ function createSession(sessionId: string, title: string, originSessionId: string
     errorCount: 0,
     interruptedCount: 0,
     childCount: 0,
+    pinnedAt: null as string | null,
     createdAt: "2026-07-29T00:00:00.000Z",
     updatedAt: "2026-07-29T00:00:00.000Z",
   };

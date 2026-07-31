@@ -1359,7 +1359,8 @@ export class ConsoleStateActions {
     if (this.options.apiBase === null) {
       throw new Error(this.options.t("desktop.error.localConsoleUnavailable"));
     }
-    const response = await this.options.fetch(
+    const response = await invokeBrowserFetch(
+      this.options.fetch,
       endpoint(
         this.options.apiBase,
         `/api/local-console/sessions/${encodeURIComponent(sessionId)}/${action}`,
