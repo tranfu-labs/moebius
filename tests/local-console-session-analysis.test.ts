@@ -144,7 +144,7 @@ describe("sidebar chat session analysis facts", () => {
     }
   });
 
-  it("keeps a failed queue head editable in place and resumes order after edit or removal", async () => {
+  it("releases a legacy source-error queue head without changing FIFO order", async () => {
     const root = await fixtureRoot();
     const store = await createSqliteLocalConsoleStore({
       sqlitePath: path.join(root, ".state", "local-console.sqlite"),
@@ -169,20 +169,11 @@ describe("sidebar chat session analysis facts", () => {
         error: "来源不可用",
         now: "2026-07-29T00:00:03.000Z",
       })).resolves.toMatchObject({ id: first.id, status: "pending", error: "来源不可用" });
-      await expect(store.updatePendingUserMessage?.({
+      await expect(store.claimNextPendingMessage({
         sessionId: "root",
-        messageId: first.id,
-        body: "[来源](moebius-ref:conversation/source)",
+        runId: "run-legacy-source-error",
         now: "2026-07-29T00:00:04.000Z",
-      })).resolves.toMatchObject({ id: first.id, error: null });
-      expect((await store.listMessages("root")).filter((message) => message.status === "pending")
-        .map((message) => message.id)).toEqual([first.id, second.id]);
-
-      await store.removePendingUserMessage?.({
-        sessionId: "root",
-        messageId: first.id,
-        now: "2026-07-29T00:00:05.000Z",
-      });
+      })).resolves.toMatchObject({ id: first.id, status: "running", error: null });
       expect((await store.listMessages("root")).filter((message) => message.status === "pending")
         .map((message) => message.id)).toEqual([second.id]);
     } finally {

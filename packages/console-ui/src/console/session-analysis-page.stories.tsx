@@ -127,13 +127,13 @@ const project: OperatorProject = {
 const messageFragment: ComposerTextFragment = {
   id: "fragment-message",
   label: "文本片段 1",
-  text: "消息 · 产品交付负责人 · “已完成本轮运行”；发送后将向所选团队提供此消息及关联运行记录",
+  text: "[消息 · 产品交付负责人 · “已完成本轮运行”](moebius-ref:message/source/1)",
 };
 
 const conversationFragment: ComposerTextFragment = {
   id: "fragment-conversation",
   label: "文本片段 2",
-  text: "对话 · “官网落地页验收”；发送后将向所选团队提供此对话及关联运行记录",
+  text: "[对话 · “官网落地页验收”](moebius-ref:conversation/source)",
 };
 
 const fragments: ComposerTextFragment[] = [messageFragment, conversationFragment];

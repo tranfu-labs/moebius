@@ -32,6 +32,7 @@ export interface LocalRunExecutionContextFact {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  /** Legacy facts may contain this field; normalization strips it before runtime reuse. */
   referenceContext?: string | null;
   recordedAt: string;
 }
@@ -159,7 +160,6 @@ export function createRunExecutionContext(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
-  referenceContext?: string | null;
   recordedAt: string;
   identitySalt?: string;
 }): LocalRunExecutionContextFact {
@@ -204,7 +204,6 @@ export function createRunExecutionContext(input: {
       agentMarkdown: member.agentMarkdown,
       executionProfile: member.executionProfile,
     })),
-    referenceContext: input.referenceContext ?? null,
     recordedAt: input.recordedAt,
   };
 }
@@ -521,10 +520,12 @@ async function readTypedFacts(
 function normalizeContext(
   context: LocalRunExecutionContextFact,
 ): LocalRunExecutionContextFact {
-  return {
+  const normalized = {
     ...context,
     agentIdentityFingerprint: contextIdentity(context),
   };
+  delete normalized.referenceContext;
+  return normalized;
 }
 
 function contextIdentity(context: LocalRunExecutionContextFact): string {

@@ -2645,7 +2645,23 @@ local-console MUST 把用户手动创建的 sidebar chat 保存为普通、可�
 
 Source: docs/product/flows/session-analysis.md#2-收集来源引用
 
-分析草稿在发送前 MUST 支持有序、可删除的来源胶囊。提交时，local-console MUST 把仍存在的胶囊按顺序序列化为用户消息顶部唯一的 Markdown 来源块，并与正文和普通附件在同一个 session fact 中原子提交；已发送消息 MUST NOT 继续保存或重复呈现独立胶囊。来源块中的合法 `moebius-ref:` 按下文来源读取规则向新 run 提供只读引用内容，MUST NOT 被当作文件附件或扩展来源项目文件权限。
+分析草稿在发送前 MUST 支持有序、可删除的来源胶囊。每个胶囊通过悬浮、键盘聚焦与辅助技术公开的完整文本 MUST 是该胶囊唯一的 Agent 输入载荷。提交时 local-console MUST 把仍存在的胶囊文本按顺序各序列化一次，形成用户消息顶部唯一的 Markdown 来源块，并与正文和普通附件在同一个 session fact 中原子提交；已发送消息 MUST NOT 继续保存或重复呈现独立胶囊。
+
+来源块或任意正文中的 `moebius-ref:` MUST 只承担用户导航语义。runtime MUST NOT 根据该链接追加目标消息、目标对话、结构化运行记录、stdout、stderr 或完整输出，也 MUST NOT 因链接目标不可用而阻止消息提交、pending 发射或 run 创建。
+
+#### Scenario: 对话片段只传递可见文本
+
+- GIVEN 对话级胶囊公开文本为 T，目标对话含多条消息与大体量完整输出
+- WHEN 用户发送分析问题并启动 Agent
+- THEN Agent 输入中的来源片段逐字等于 T 且只出现一次
+- AND 输入不含仅存在于目标时间线或运行输出中的内容。
+
+#### Scenario: 多个片段保持顺序且各出现一次
+
+- GIVEN 草稿按顺序包含文本 T1 与 T2 两个胶囊
+- WHEN 用户提交首条消息
+- THEN 来源块按 T1、T2 的顺序生成
+- AND T1 与 T2 各自只序列化一次。
 
 #### Scenario: 删除片段后发送
 
@@ -2661,11 +2677,18 @@ Source: docs/product/flows/session-analysis.md#2-收集来源引用
 - THEN 三个链接的标签、目标与顺序保持
 - AND 不重建独立来源胶囊。
 
+#### Scenario: 链接目标不可用不阻塞 pending
+
+- GIVEN 队首用户消息含指向缺失或不可访问目标的合法 `moebius-ref:`
+- WHEN 主 Agent 车道可发射该消息
+- THEN 消息与 run 按普通顺序创建
+- AND 链接目标状态只在用户激活导航时处理。
+
 ### Requirement: reference-text 生成公开应用内来源链接
 
 Source: docs/product/flows/session-analysis.md#2-收集来源引用
 
-local-console reference-text API MUST 要求调用方显式声明 `message` 或 `conversation` 范围，并生成可读标签与公开 `moebius-ref:` 目标。消息级链接 MUST 使用稳定 session/message 标识并提供安全纯文本摘录；对话级链接 MUST 使用稳定 session 标识与可读标题。长文本、Markdown 特殊字符、Emoji、控制字符与空正文 MUST 经过确定性投影、转义和截断。该 API 只生成来源链接；链接在用户消息中启动新 run 时的读取与权限边界由下文来源读取 Requirement 约束。
+local-console reference-text API MUST 要求调用方显式声明 `message` 或 `conversation` 范围，并生成可读标签与公开 `moebius-ref:` 目标。消息级链接 MUST 使用稳定 session/message 标识并提供安全纯文本摘录；对话级链接 MUST 使用稳定 session 标识与可读标题。长文本、Markdown 特殊字符、Emoji、控制字符与空正文 MUST 经过确定性投影、转义和截断。该 API 只生成导航链接与胶囊的完整可见文本；链接 MUST NOT 触发 run 输入侧的来源读取或权限扩张。
 
 #### Scenario: 对话级来源链接
 
@@ -2687,6 +2710,20 @@ local-console reference-text API MUST 要求调用方显式声明 `message` 或 
 - WHEN 客户端请求 message 范围的 reference-text
 - THEN 可见标签是确定性转义与截断后的单行纯文本
 - AND 生成链接仍可被 Markdown parser 解析为唯一来源目标。
+
+### Requirement: 已持久化可见消息是重试与恢复的唯一来源文本
+
+Source: docs/product/flows/session-analysis.md#用户移除文本片段
+
+重试、重新运行、同一 run 恢复与恢复失败后的重新执行 MUST 只使用对应用户消息中已持久化的可见文本。runtime MUST NOT 刷新 `moebius-ref:` 目标，也 MUST NOT 把历史 execution context 中遗留的隐藏 `referenceContext` 拼入 provider prompt。新建或从历史 context 派生的 execution context MUST NOT 再持久化 `referenceContext`。
+
+#### Scenario: 旧隐藏上下文不进入重试 prompt
+
+- GIVEN 历史 run execution context 含遗留 `referenceContext`，而用户消息只含短来源片段 T
+- WHEN runtime 重试或恢复该工作
+- THEN provider prompt 包含用户消息中的 T
+- AND prompt 不含遗留 `referenceContext` 内容
+- AND 新 run 的 execution context 不含 `referenceContext`。
 
 ### Requirement: 分析入口策略在确认前强制只读
 
@@ -2765,51 +2802,6 @@ local-console MUST 为已创建分析会话持久化直接父会话标识；该�
 - WHEN store 执行幂等迁移
 - THEN 直接分析父关系回填为该来源会话
 - AND 缺失、自指或非法来源不得导致会话从所有入口消失。
-
-### Requirement: 来源引用在新 run 前读取最新可访问内容
-
-Source: docs/product/flows/session-analysis.md#收集来源引用
-
-任意用户消息中位于可导航 Markdown link 的合法 `moebius-ref:` MUST 在新 run 创建前读取目标当时最新的只读来源；Agent 消息中的引用 MUST NOT 触发来源交付。一次 run 的来源读取 MUST 形成稳定上下文；同一 run 恢复 MUST 沿用该上下文，新 run 才重新读取。
-
-#### Scenario: 消息引用启动新 run
-
-- GIVEN 用户消息包含可访问的消息引用
-- WHEN runtime 准备创建新 run
-- THEN run 上下文包含目标消息及其关联运行记录
-- AND 不授予读取来源项目文件或其他对象的能力。
-
-#### Scenario: 同一 run 恢复
-
-- GIVEN run 已经取得来源上下文后中断
-- WHEN 用户继续该 run
-- THEN runtime 复用该 run 的既有来源上下文
-- AND 不重新读取引用目标。
-
-#### Scenario: 新 run 读取更新
-
-- GIVEN 引用目标在上一次 run 后产生新内容
-- WHEN 用户重试、重新运行或重发并创建新 run
-- THEN runtime 重新读取引用目标的最新可访问内容。
-
-### Requirement: 来源读取失败不创建新消息或 run
-
-Source: docs/product/flows/session-analysis.md#来源引用不可用
-
-来源读取 MUST 先于新用户消息提交、分析会话创建和新 run 创建。读取失败 MUST 返回可恢复错误，并保持原草稿、既有消息或 pending 项。主 Agent 忙碌时，pending 项 MUST 先按原顺序持久化；只有队首项准备创建 run 时才读取来源。
-
-#### Scenario: 分析首条消息来源失败
-
-- GIVEN 分析草稿的来源目标不可读
-- WHEN 用户发送首条消息
-- THEN 不创建用户消息、分析会话、父面板入口或 run。
-
-#### Scenario: pending 队首来源失败
-
-- GIVEN 主理人忙碌且队首 pending 项包含不可读引用
-- WHEN 该项准备发射
-- THEN 该项保持队首并记录失败原因
-- AND 不 claim 该项、不创建 run、后续项不发射。
 
 ### Requirement: 归档和项目移除按分析后代闭包提交
 

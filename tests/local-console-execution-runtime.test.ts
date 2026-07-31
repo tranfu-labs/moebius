@@ -10,6 +10,7 @@ import type { ClaudeRunOptions } from "../src/claude.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
+import { invalidateSessionFactLog } from "../src/local-console/session-fact-log.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import type {
@@ -27,12 +28,12 @@ afterEach(async () => {
 });
 
 describe("local execution runtime", { timeout: 30_000 }, () => {
-  it("creates an analysis child and gives its new run the latest referenced conversation", async () => {
+  it("gives an analysis run exactly the visible fragment text without expanding its target", async () => {
     const root = await fixtureRoot();
     let call = 0;
     const codex = vi.fn(async (options: CodexRunOptions) => {
       call += 1;
-      return success(options, call === 1 ? "来源处理完成" : "分析完成");
+      return success(options, call === 1 ? "HIDDEN_SOURCE_AGENT_OUTPUT" : "分析完成");
     });
     const server = await startLocalConsoleServer({
       host: "127.0.0.1",
@@ -53,20 +54,22 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamOwnership: "user",
       agentTeamId: "analysis",
     });
-    await post(server.url, "来源中的关键事实");
-    await waitForAgent(server.url, "来源处理完成");
+    await post(server.url, "HIDDEN_SOURCE_USER_MESSAGE");
+    await waitForAgent(server.url, "HIDDEN_SOURCE_AGENT_OUTPUT");
+
+    const visibleFragment = "[对话 · “默认会话”](moebius-ref:conversation/default)";
 
     const response = await fetch(new URL("/api/local-console/sessions", server.url), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         projectId: "local",
-        initialMessage: [
-          "> 来源：",
-          "> - [对话 · “默认会话”](moebius-ref:conversation/default)",
-          "",
-          "分析来源",
-        ].join("\n"),
+        initialMessage: "分析来源",
+        textFragments: [{
+          id: "visible-fragment",
+          label: "文本片段 1",
+          text: visibleFragment,
+        }],
         originSessionId: "default",
         analysisParentSessionId: "default",
         entryTemplate: "session-analysis",
@@ -83,13 +86,14 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     await waitForCalls(codex, 2);
 
     const analysisPrompt = codex.mock.calls[1]![0].prompt;
-    expect(analysisPrompt).toContain("来源中的关键事实");
-    expect(analysisPrompt).toContain("来源处理完成");
-    expect(analysisPrompt).toContain("只读方式提供");
+    expect(analysisPrompt.split(visibleFragment)).toHaveLength(2);
+    expect(analysisPrompt).not.toContain("HIDDEN_SOURCE_USER_MESSAGE");
+    expect(analysisPrompt).not.toContain("HIDDEN_SOURCE_AGENT_OUTPUT");
+    expect(analysisPrompt).not.toContain("只读方式提供");
     expect(analysisPrompt).toContain("当前回合处于只读环境");
   });
 
-  it("keeps a queued source failure at the head without starting later items", async () => {
+  it("does not let an unavailable navigation target block queued messages", async () => {
     const root = await fixtureRoot();
     let releaseBusyRun!: () => void;
     const busyRun = new Promise<void>((resolve) => {
@@ -98,11 +102,11 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     let call = 0;
     const codex = vi.fn(async (options: CodexRunOptions) => {
       call += 1;
-      if (call === 2) {
+      if (call === 1) {
         await busyRun;
         return success(options, "占用结束");
       }
-      return success(options, call === 1 ? "来源完成" : "恢复后完成");
+      return success(options, call === 2 ? "链接消息完成" : "后续消息完成");
     });
     const server = await startLocalConsoleServer({
       host: "127.0.0.1",
@@ -118,39 +122,28 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       runCodex: codex,
     });
     servers.push(server);
-    await server.runtime.switchSessionTeam({
-      sessionId: "default",
-      agentTeamOwnership: "user",
-      agentTeamId: "analysis",
-    });
-    await post(server.url, "来源");
-    await waitForAgent(server.url, "来源完成");
     const target = await server.runtime.createSession(
       "目标",
       "local",
       { ownership: "user", id: "analysis" },
       "先占用主理人",
     );
-    await waitForCalls(codex, 2);
-    await server.runtime.archiveSession("default");
+    await waitForCalls(codex, 1);
     await postToSession(
       server,
       target.sessionId,
-      "[来源](moebius-ref:conversation/default)\n\n分析来源",
+      "[来源](moebius-ref:conversation/missing-session)\n\n分析来源",
     );
-    await postToSession(server, target.sessionId, "@dev 后续消息");
+    await postToSession(server, target.sessionId, "后续消息");
     releaseBusyRun();
 
-    const failed = await waitForPendingError(server, target.sessionId);
-    expect(failed).toMatchObject({
-      status: "pending",
-      error: "来源不可用：default",
-    });
-    expect((await server.runtime.sessionView(target.sessionId)).pendingPrimaryMessages).toMatchObject([
-      { id: failed.id, error: "来源不可用：default" },
-      { body: "@dev 后续消息", error: null },
-    ]);
-    expect(codex).toHaveBeenCalledTimes(2);
+    await waitForCalls(codex, 3);
+    await waitForAgentInSession(server, target.sessionId, "后续消息完成");
+
+    expect(codex.mock.calls[1]![0].prompt).toContain(
+      "[来源](moebius-ref:conversation/missing-session)",
+    );
+    expect((await server.runtime.sessionView(target.sessionId)).pendingPrimaryMessages).toEqual([]);
   });
 
   it("runs a mixed Kimi/Codex team through the snapshotted driver for each member", async () => {
@@ -701,6 +694,13 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(facts).toContain("Codex 版本过旧");
     expect(facts).not.toContain("invalid_request_error");
 
+    const legacyReferenceContext = "HIDDEN_LEGACY_REFERENCE_CONTEXT";
+    await injectLegacyReferenceContext(
+      server.runtime.getSessionFactLogPath(created.session.sessionId),
+      failed.runId!,
+      legacyReferenceContext,
+    );
+
     const retry = await fetch(new URL(
       `/api/local-console/sessions/${encodeURIComponent(created.session.sessionId)}/runs/${encodeURIComponent(failed.runId!)}/retry`,
       server.url,
@@ -713,6 +713,16 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       kind: "resume",
       threadId: "codex-upgrade-thread",
     });
+    expect(codex.mock.calls[1]?.[0].prompt).not.toContain(legacyReferenceContext);
+    const contextsAfterRetry = (await readFactEvents(
+      server.runtime.getSessionFactLogPath(created.session.sessionId),
+    ))
+      .filter((event) => event.type === "run_execution_context")
+      .map((event) => event.payload);
+    expect(contextsAfterRetry.length).toBeGreaterThan(1);
+    expect(contextsAfterRetry.filter((context) =>
+      context.referenceContext === legacyReferenceContext)).toHaveLength(1);
+    expect(contextsAfterRetry.at(-1)).not.toHaveProperty("referenceContext");
   });
 
   it("keeps a NULL legacy snapshot on Codex without profile options", async () => {
@@ -2135,6 +2145,19 @@ async function waitForAgent(url: string, body: string): Promise<void> {
   );
 }
 
+async function waitForAgentInSession(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  body: string,
+): Promise<void> {
+  await waitForCondition(
+    async () => (await server.runtime.sessionView(sessionId)).messages.some(
+      (message) => message.speaker === "agent" && message.body === body,
+    ),
+    { describe: `agent message ${body} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+  );
+}
+
 async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: number): Promise<void> {
   await waitForCondition(() => mock.mock.calls.length >= count, {
     describe: `${String(count)} driver calls`,
@@ -2144,17 +2167,35 @@ async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: numbe
   });
 }
 
-async function waitForPendingError(
-  server: StartedLocalConsoleServer,
-  sessionId: string,
-): Promise<LocalConsoleMessage> {
-  return waitForValue(
-    async () => {
-      const view = await server.runtime.sessionView(sessionId);
-      return view.pendingPrimaryMessages.find((message) => message.error !== null);
-    },
-    { describe: `pending source failure in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+async function injectLegacyReferenceContext(
+  logPath: string,
+  runId: string,
+  referenceContext: string,
+): Promise<void> {
+  let matched = false;
+  const lines = (await fs.readFile(logPath, "utf8")).trimEnd().split("\n");
+  const rewritten = lines.map((line) => {
+    const event = JSON.parse(line) as {
+      type?: string;
+      payload?: Record<string, unknown>;
+    };
+    if (event.type !== "run_execution_context" || event.payload?.runId !== runId) {
+      return line;
+    }
+    matched = true;
+    return JSON.stringify({
+      ...event,
+      payload: {
+        ...event.payload,
+        referenceContext,
+      },
+    });
+  });
+  if (!matched) {
+    throw new Error(`run execution context fixture not found: ${runId}`);
+  }
+  await fs.writeFile(logPath, `${rewritten.join("\n")}\n`, "utf8");
+  invalidateSessionFactLog(logPath);
 }
 
 async function waitForDatabaseRow(
