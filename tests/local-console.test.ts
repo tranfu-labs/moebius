@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 import { resolveTrigger } from "../src/triggers/index.js";
 import {
   buildLocalConsoleRoutingTimeline,
@@ -3615,14 +3617,7 @@ async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; st
 }
 
 async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    if (await predicate()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("Timed out waiting for condition");
+  await waitForCondition(predicate, { describe: "local console condition", kind: "io", timeoutMs: 5_000 });
 }
 
 async function writeAgent(root: string, name: string, body: string): Promise<void> {
@@ -3746,46 +3741,38 @@ async function waitForState(
   sessionId: string,
   predicate: (snapshot: LocalStateResponse) => boolean,
 ): Promise<LocalStateResponse> {
-  const deadline = Date.now() + 20_000;
   let latest: LocalStateResponse | null = null;
-  while (Date.now() < deadline) {
-    try {
+  return waitForValue(
+    async () => {
       latest = await getState(url, sessionId);
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      continue;
-    }
-    if (predicate(latest)) {
-      return latest;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`Timed out waiting for local state: ${JSON.stringify(latest)}`);
+      return predicate(latest) ? latest : undefined;
+    },
+    {
+      describe: `local state ${sessionId}`,
+      kind: "io",
+      timeoutMs: 20_000,
+      // 服务端重启窗口内取状态会抛错，属于预期争用，继续轮询。
+      onError: () => "retry",
+      snapshot: () => latest,
+    },
+  );
 }
 
 async function waitForSnapshot(
   url: string,
   predicate: (snapshot: LocalSnapshotResponse) => boolean,
 ): Promise<LocalSnapshotResponse> {
-  const deadline = Date.now() + 5_000;
   let latest: LocalSnapshotResponse | null = null;
-  while (Date.now() < deadline) {
-    const response = await fetch(new URL("/api/local-console/messages", url));
-    if (response.status !== 200) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      continue;
-    }
-    latest = (await response.json()) as LocalSnapshotResponse;
-    if (!Array.isArray(latest.messages)) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      continue;
-    }
-    if (predicate(latest)) {
-      return latest;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`Timed out waiting for local snapshot: ${JSON.stringify(latest)}`);
+  return waitForValue(
+    async () => {
+      const response = await fetch(new URL("/api/local-console/messages", url));
+      if (response.status !== 200) return undefined;
+      latest = (await response.json()) as LocalSnapshotResponse;
+      if (!Array.isArray(latest.messages)) return undefined;
+      return predicate(latest) ? latest : undefined;
+    },
+    { describe: "local snapshot", kind: "io", timeoutMs: 5_000, snapshot: () => latest },
+  );
 }
 
 interface LocalSnapshotResponse {

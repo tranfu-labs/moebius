@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { waitForCondition } from "../../src/testing/wait.js";
 import { App } from "../src/console-page/app.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -138,16 +139,18 @@ async function findElement<T extends Element>(selector: string): Promise<T> {
   return found!;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error(`timed out waiting for desktop App state: ${document.body.textContent ?? ""}`);
-    }
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 10));
-    });
-  }
+async function waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void> {
+  await waitForCondition(predicate, {
+    describe: "desktop App state",
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    pollMs: 10,
+    tick: async (ms) => {
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, ms));
+      });
+    },
+    snapshot: () => document.body.textContent ?? "",
+  });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

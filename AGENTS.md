@@ -47,8 +47,26 @@
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
 - 定向测试：`pnpm exec vitest run tests/local-console-codex-resume.test.ts`
-- 测试：`pnpm test`；类型检查：`pnpm typecheck`
+- 测试：`pnpm test`（完整闸门）／`pnpm test --scope [基线]`（只跑受改动影响的测试）；类型检查：`pnpm typecheck`
 - lint/格式化：TODO: 尚未配置 ESLint / Prettier；改代码时至少跑测试与类型检查。
+
+### 测试闸门的三种形态
+| 命令 | 跑什么 | 跨 worktree 互斥 |
+| --- | --- | --- |
+| `pnpm test` | 完整闸门（根套件 + 慢测 + desktop + console-ui） | **是** |
+| `pnpm test --scope [基线]` | 只跑受改动影响的测试（不带基线＝未提交改动） | 否 |
+| `pnpm test <文件...>` | 直通给 vitest | 否 |
+
+**开发过程中的收口用 `--scope`，合并前必须跑一次完整 `pnpm test`。** `--scope` 靠 vitest 的 import 依赖图挑文件，是机器算出的依赖闭环——NEVER 自己凭直觉挑测试文件当闸门，那样闸门不可复现。
+
+**完整闸门会跨 worktree 排队**：本仓库全量测试是串行的（`--maxWorkers=1`），且大量断言在等真实 I/O。多个 worktree 同机并发跑全量时，彼此抢 CPU 会让这些断言直接撞 deadline——表现不是「慢一点」而是「随机变红」，红了重跑又加剧竞争。锁（`$TMPDIR/moebius-full-test.lock`）保证同一时刻只有一套全量测试在跑；等不到锁时以退出码 **75** 结束，这表示**没跑测试**，不是测试失败。持有者进程死掉或持有超过 45 分钟会被自动抢占。
+
+调节用的环境变量：`MOEBIUS_FULL_TEST_LOCK=0` 跳过互斥（确认独占机器时）、`MOEBIUS_FULL_TEST_LOCK_WAIT_MS`、`MOEBIUS_FULL_TEST_LOCK_STALE_MS`。
+
+### 测试里的等待
+等待一律用 `src/testing/wait.ts` 的 `waitForCondition` / `waitForValue`，NEVER 在测试文件里再手写 `while (Date.now() < deadline) { ... setTimeout(20) }` 轮询——仓库曾因此散落 27 份各自为政的实现，deadline 从 2 秒到 20 秒不等，超时只报 `timed out waiting for condition`，负载一高就随机变红且无从诊断。
+
+两个档位：`logic`（等纯内存时序，默认 5 秒）、`io`（等另一个真实进程的副作用，默认 10 秒）。**deadline MUST 留在用例自己的 vitest `testTimeout` 之内**（全局 20 秒，个别用例声明 15 秒）——一旦超过，vitest 会先判用例超时并报出无信息的 `Test timed out`，helper 备好的诊断信息就永远出不来。`describe` 必填，`snapshot` 用来在超时时带出最后一次实际状态。高负载环境可用 `MOEBIUS_TEST_WAIT_SCALE` 整体放大倍数，但那是应急手段，NEVER 当常态来掩盖真实的时序问题。
 
 ## 域文档指针
 按改动所属域读对应事实源；一个改动通常只涉及一两个域。

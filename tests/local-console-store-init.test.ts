@@ -5,6 +5,8 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { waitForCondition, waitForValue } from "../src/testing/wait.js";
+
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "../src/local-console/types.js";
@@ -521,21 +523,26 @@ async function waitForStableFactLogHashes(
 ): Promise<Map<string, string>> {
   let previous = await factLogHashes(sessionLogRoot, excludedSessionIds);
   let stableSamples = 0;
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const current = await factLogHashes(sessionLogRoot, excludedSessionIds);
-    if (mapsEqual(previous, current)) {
-      stableSamples += 1;
-      if (stableSamples >= 3) {
-        return current;
+  return waitForValue(
+    async () => {
+      const current = await factLogHashes(sessionLogRoot, excludedSessionIds);
+      if (!mapsEqual(previous, current)) {
+        stableSamples = 0;
+        previous = current;
+        return undefined;
       }
-    } else {
-      stableSamples = 0;
-      previous = current;
-    }
-  }
-  throw new Error("session fact logs did not stabilize");
+      stableSamples += 1;
+      // 连续三次采样一致才算稳定——单次相等可能只是恰好落在两次写入之间。
+      return stableSamples >= 3 ? current : undefined;
+    },
+    {
+      describe: "session fact logs 稳定",
+      kind: "io",
+      timeoutMs: 5_000,
+      pollMs: 100,
+      snapshot: () => ({ stableSamples, entries: previous.size }),
+    },
+  );
 }
 
 function mapsEqual(left: Map<string, string>, right: Map<string, string>): boolean {
@@ -544,12 +551,10 @@ function mapsEqual(left: Map<string, string>, right: Map<string, string>): boole
 }
 
 async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (await predicate()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error("timed out waiting for startup catch-up");
+  await waitForCondition(predicate, {
+    describe: "startup catch-up",
+    kind: "io",
+    timeoutMs: 15_000,
+    pollMs: 50,
+  });
 }

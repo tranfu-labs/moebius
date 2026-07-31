@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { waitForValue } from "../src/testing/wait.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import {
   buildLocalResumePrompt,
@@ -930,15 +932,10 @@ async function waitForActiveWorker(
   url: string,
   role: string,
 ): Promise<Pick<LocalConsoleRunSnapshot, "runId" | "role" | "stepId" | "attempt">> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const active = (await getSnapshot(url)).activeRuns.find((run) => run.role === role);
-    if (active !== undefined) {
-      return active;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for active worker: ${role}`);
+  return waitForValue(
+    async () => (await getSnapshot(url)).activeRuns.find((run) => run.role === role),
+    { describe: `active worker ${role}`, kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 async function postSessionMessage(url: string, sessionId: string, body: string): Promise<void> {
@@ -963,32 +960,27 @@ async function waitForState<T>(
   url: string,
   select: (messages: LocalConsoleMessage[]) => T | null,
 ): Promise<T> {
-  const deadline = Date.now() + 8_000;
   let latest: LocalConsoleMessage[] = [];
-  while (Date.now() < deadline) {
-    latest = await getMessages(url);
-    const selected = select(latest);
-    if (selected !== null) {
-      return selected;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for local console state: ${JSON.stringify(latest)}`);
+  return waitForValue(
+    async () => {
+      latest = await getMessages(url);
+      return select(latest) ?? undefined;
+    },
+    { describe: "local console state", kind: "io", timeoutMs: 8_000, snapshot: () => latest },
+  );
 }
 
 async function waitForActiveRun(url: string): Promise<{ runId: string; attempt: number }> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const response = await fetch(new URL("/api/local-console/messages", url));
-    const body = await response.json() as {
-      activeRun: { runId: string; attempt: number } | null;
-    };
-    if (body.activeRun !== null) {
-      return body.activeRun;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for active run");
+  return waitForValue(
+    async () => {
+      const response = await fetch(new URL("/api/local-console/messages", url));
+      const body = await response.json() as {
+        activeRun: { runId: string; attempt: number } | null;
+      };
+      return body.activeRun ?? undefined;
+    },
+    { describe: "active run", kind: "io", timeoutMs: 8_000 },
+  );
 }
 
 function failed(options: CodexRunOptions, reason: string): CodexRunResult {

@@ -30,7 +30,7 @@
     "desktop": "cross-env NODE_OPTIONS=--disable-warning=ExperimentalWarning pnpm --filter @moebius/desktop dev",
     "brand:generate": "node scripts/generate-brand-assets.mjs",
     "brand:check": "node scripts/generate-brand-assets.mjs --check",
-    "test": "node scripts/test.mjs",
+    "test": "tsx scripts/test.ts",
     "typecheck": "tsc --noEmit && pnpm --filter @moebius/desktop typecheck && pnpm --filter @moebius/console-ui typecheck"
   },
   "devDependencies": {

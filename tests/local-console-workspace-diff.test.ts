@@ -5,6 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { waitForValue } from "../src/testing/wait.js";
+
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import type { LocalConsoleStateSnapshot } from "../src/local-console/types.js";
@@ -556,15 +558,18 @@ async function waitForState(
   predicate: (snapshot: LocalConsoleStateSnapshot) => boolean,
 ): Promise<LocalConsoleStateSnapshot> {
   let latest: LocalConsoleStateSnapshot | null = null;
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    const endpoint = new URL("/api/local-console/state", url);
-    endpoint.searchParams.set("sessionId", sessionId);
-    const response = await fetch(endpoint);
-    latest = await response.json() as LocalConsoleStateSnapshot;
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`timed out waiting for local state: ${JSON.stringify(latest)}`);
+  return waitForValue(
+    async () => {
+      const endpoint = new URL("/api/local-console/state", url);
+      endpoint.searchParams.set("sessionId", sessionId);
+      const response = await fetch(endpoint);
+      latest = await response.json() as LocalConsoleStateSnapshot;
+      return predicate(latest) ? latest : undefined;
+    },
+    // 原实现按「最多轮询 120 次」计，真实上限随每次 fetch 的快慢漂移（约 3–6 秒）。
+    // 换成明确的时间上限，仍留在用例自己的 20 秒 testTimeout 之内。
+    { describe: `local state ${sessionId}`, kind: "io", timeoutMs: 10_000, snapshot: () => latest },
+  );
 }
 
 async function git(cwd: string, ...args: string[]): Promise<void> {
