@@ -96,19 +96,15 @@ import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
   LocalWorkerDispatchRuntime,
 } from "./worker-dispatch-runtime.js";
-import { createLocalWorkerDispatchPorts } from "./worker-dispatch-wiring.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { ActiveLocalRun } from "./active-run.js";
 import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
-import { createLocalWorkerPreparationPorts } from "./worker-preparation-wiring.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
-import { createLocalWorkerProviderPorts } from "./worker-provider-wiring.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
-import { createLocalWorkerTerminalPorts } from "./worker-terminal-wiring.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
-import { createLocalWorkerExecutionPorts } from "./worker-execution-wiring.js";
+import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
@@ -314,34 +310,32 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         this.lastError = formatLocalError(error);
       },
     });
-    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(createLocalWorkerDispatchPorts({
+    const workerWiring = createLocalWorkerWiring({
       options,
       storePorts: this.storePorts,
-      activeRunForRole: (sessionId, role) =>
-        this.runLifecycleRuntime.runForRole(sessionId, role) as ActiveLocalRun | undefined,
+      executionRunner: this.executionRunner,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
+      idleTimeoutMs: this.codexIdleTimeoutMs,
+      toolTimeoutMs: this.toolInFlightTimeoutMs,
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      now: () => this.now(),
+      nowIso: () => this.nowIso(),
       nextRunId: (sessionId, messageId) => this.runRecoveryRuntime.targetForMessage(sessionId, messageId),
       recordMissingAgent: (message, sessionId, runId, role) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
-      nowIso: () => this.nowIso(),
-      nowRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       scheduleRun: (input) => this.workerExecutionRuntime.run(input),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
-      setError: (error) => {
+      recordError: (error) => {
         this.lastError = formatLocalError(error);
         return this.lastError;
       },
       report: (event, sessionId, role, error) =>
         log({ event, sessionId, ...(role === null ? {} : { role }), error }),
-    }));
-    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(createLocalWorkerPreparationPorts({
-      options,
-      storePorts: this.storePorts,
-      nowIso: () => this.nowIso(),
-      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
-      releaseClaim: (message, sessionId) => this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
+      releaseClaim: (message, sessionId) =>
+        this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
       sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
       makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
       resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
@@ -362,44 +356,17 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
           reason: unavailable.reason,
           runDir,
         }),
-      prepareLifecycle: (input) => this.runLifecycleRuntime.prepare(input),
-      setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
-      recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
-    }));
-    this.workerProviderRuntime = new LocalWorkerProviderRuntime(createLocalWorkerProviderPorts({
-      storePorts: this.storePorts,
-      executionRunner: this.executionRunner,
-      idleTimeoutMs: this.codexIdleTimeoutMs,
-      toolTimeoutMs: this.toolInFlightTimeoutMs,
-      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
-      releaseClaim: (input) => this.releaseClaimedUserDirectMessageWhenStopping(
-        input.sourceMessage,
-        input.sessionId,
-      ).then(() => undefined),
-      finishLifecycle: (runId) => this.runLifecycleRuntime.finish(runId, "interrupted"),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      nowIso: () => this.nowIso(),
-      onProcessStarted: (runId) => this.runLifecycleRuntime.markStarted(runId),
-      updateAgentProgress: (runId, text) => this.runLifecycleRuntime.updateAgentProgress(runId, text),
-      onStructuredActivity: (runId, event) => this.runLifecycleRuntime.updateStructuredActivity(runId, event),
-      onExecutionProgress: (runId, event) => this.runLifecycleRuntime.updateExecutionProgress(runId, event),
-    }));
-    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime(createLocalWorkerTerminalPorts({
-      store: options.store,
-      storePorts: this.storePorts,
-      nowIso: () => this.nowIso(),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
       }),
-      pauseLifecycle: (runId) => this.runLifecycleRuntime.pause(runId),
-      finishLifecycle: (runId, status) => this.runLifecycleRuntime.finish(runId, status),
       recordDirectFailure: (input, result) =>
         this.runFailureRuntime.recordDirect(input.sourceMessage, input.sessionId, input.runId, result),
-      recordDetachedFailure: (input, result) => this.runFailureRuntime.recordDetached(input.sessionId, input.runId, result),
-      sourceDirectoryAvailable: (sessionId) => this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
-      executeChildSession: (input, runDir, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+      recordDetachedFailure: (input, result) =>
+        this.runFailureRuntime.recordDetached(input.sessionId, input.runId, result),
+      sourceDirectoryAvailable: (sessionId) =>
+        this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
+      executeChildSession: (input, _runDir, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
         sessionId: input.sessionId,
         runId: input.runId,
         runDir: result.runDir,
@@ -414,18 +381,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         result.finalText,
         preparation.controller.signal,
       ),
-    }));
-    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime(createLocalWorkerExecutionPorts({
-      preparation: this.workerPreparationRuntime,
-      provider: this.workerProviderRuntime,
-      terminal: this.workerTerminalRuntime,
-      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
-      releaseClaim: (input) => this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId).then(() => undefined),
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
-      recordDirectFailure: (input, runDir, error) =>
+      recordDirectStartFailure: (input, runDir, error) =>
         this.recordTerminalFailureBestEffort(input.sourceMessage, input.sessionId, input.runId, runDir, error),
-      recordDetachedFailure: (input, runDir, error) => this.recordDetachedRunTerminal({
+      recordDetachedStartFailure: (input, runDir, error) => this.recordDetachedRunTerminal({
         sessionId: input.sessionId,
         body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
         systemEventKind: "run-not-started",
@@ -434,9 +394,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         error,
         status: "failed",
       }),
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+    });
+    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(workerWiring.dispatch);
+    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(workerWiring.preparation);
+    this.workerProviderRuntime = new LocalWorkerProviderRuntime(workerWiring.provider);
+    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime(workerWiring.terminal);
+    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime(workerWiring.execution({
+      preparation: this.workerPreparationRuntime,
+      provider: this.workerProviderRuntime,
+      terminal: this.workerTerminalRuntime,
     }));
     this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime({
       nowIso: () => this.nowIso(),
