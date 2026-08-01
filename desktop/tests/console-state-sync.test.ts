@@ -30,6 +30,7 @@ import {
   updatePendingSessionMessage,
   searchConsoleSessions,
 } from "../src/console-page/state-sync.js";
+import { createBrowserFetchPort } from "../src/console-page/browser-fetch.js";
 import {
   mergeSettledProcessOutput,
   ProcessOutputRequestError,
@@ -145,7 +146,7 @@ describe("sidebar conversation state sync", () => {
       entryTemplate: "session-analysis",
       writePolicy: "confirm-current-plan-before-write",
       textFragments: draft.fragments,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).rejects.toThrow("create failed");
     expect(draft).toEqual({
       body: "分析耗时",
@@ -187,7 +188,7 @@ describe("sidebar conversation state sync", () => {
       scope: "message",
       runId: "run/1",
       messageId: 17,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toEqual({
       fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
     });
@@ -196,12 +197,12 @@ describe("sidebar conversation state sync", () => {
       query: " 分析 ",
       includeArchived: true,
       signal: controller.signal,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toEqual([]);
     await expect(restoreConsoleSession({
       apiBase: "http://127.0.0.1:8787/",
       sessionId: "session/1",
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toMatchObject({ sessionId: "session/1", title: "分析" });
   });
 });

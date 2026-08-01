@@ -146,6 +146,7 @@ import {
   type SelectionMutationKind,
   type SelectionMutationToken,
 } from "./console-state-coordinator.js";
+import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import {
   activateConversationComposerDraft,

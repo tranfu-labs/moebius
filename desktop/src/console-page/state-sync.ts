@@ -14,7 +14,6 @@ import type {
   WorkspaceDiffData,
   WorkspaceFileContent,
 } from "@moebius/console-ui";
-import { invokeBrowserFetch } from "./browser-fetch.js";
 import {
   ConsoleStateCoordinator,
   type ConsoleSelection,
@@ -575,7 +574,8 @@ export async function createSidebarConversationSession(options: {
   if (options.initialMessage.trim() === "") {
     throw new Error("Message body must not be empty");
   }
-  const response = await invokeBrowserFetch(options.fetch, endpoint(options.apiBase, "/api/local-console/sessions"), {
+  const fetch = options.fetch;
+  const response = await fetch(endpoint(options.apiBase, "/api/local-console/sessions"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -616,7 +616,8 @@ export async function loadSessionReferenceText(options: {
   url.searchParams.set("scope", options.scope);
   if (options.runId != null) url.searchParams.set("runId", options.runId);
   if (options.messageId != null) url.searchParams.set("messageId", String(options.messageId));
-  const response = await invokeBrowserFetch(options.fetch, url);
+  const fetch = options.fetch;
+  const response = await fetch(url);
   const body = await response.json() as { fragment?: { id: string; label: string; text: string }; error?: string };
   if (!response.ok || body.fragment === undefined) {
     throw new Error(body.error ?? "session reference request failed");
@@ -641,8 +642,8 @@ export async function searchConsoleSessions(options: {
   const url = endpoint(options.apiBase, "/api/local-console/sessions/search");
   url.searchParams.set("query", options.query);
   url.searchParams.set("includeArchived", String(options.includeArchived));
-  const response = await invokeBrowserFetch(
-    options.fetch,
+  const fetch = options.fetch;
+  const response = await fetch(
     url,
     options.signal === undefined ? undefined : { signal: options.signal },
   );
@@ -658,7 +659,8 @@ export async function restoreConsoleSession(options: {
   sessionId: string;
   fetch: FetchLike;
 }): Promise<import("@moebius/console-ui").OperatorSession> {
-  const response = await invokeBrowserFetch(options.fetch, endpoint(
+  const fetch = options.fetch;
+  const response = await fetch(endpoint(
     options.apiBase,
     `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/restore`,
   ), { method: "POST" });
@@ -1162,8 +1164,8 @@ export class ConsoleStateActions {
     if (this.options.apiBase === null) {
       throw new Error(this.options.t("desktop.error.localConsoleUnavailable"));
     }
-    const response = await invokeBrowserFetch(
-      this.options.fetch,
+    const fetch = this.options.fetch;
+    const response = await fetch(
       endpoint(
         this.options.apiBase,
         `/api/local-console/sessions/${encodeURIComponent(sessionId)}/${action}`,
