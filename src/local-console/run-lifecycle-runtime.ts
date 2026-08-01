@@ -12,6 +12,12 @@ import type {
   LocalConsoleRunSnapshot,
   LocalConsoleRunTiming,
 } from "./types.js";
+import {
+  decideRunAttemptSource,
+  planExecutionProgressActivity,
+  planRunLifecycleRecord,
+  planRunStartedPhase,
+} from "./run-lifecycle-plan.js";
 
 export interface LocalRunLifecycleActiveRun {
   sessionId: string;
@@ -148,7 +154,7 @@ export class LocalRunLifecycleRuntime {
     const startedAt = this.input.nowIso();
     active.segmentStartedAt = startedAt;
     active.startedAt ??= startedAt;
-    await this.record(active, active.resuming ? "resumed" : "started", "running");
+    await this.record(active, planRunStartedPhase(active.resuming), "running");
   }
 
   updateStructuredActivity(runId: string, event: unknown): void {
@@ -159,16 +165,15 @@ export class LocalRunLifecycleRuntime {
   }
 
   updateExecutionProgress(runId: string, event: ExecutionProgressEvent): void {
-    if (event.kind !== "provider-retry") return;
+    const plan = planExecutionProgressActivity(event);
+    if (plan.kind === "skip") return;
     const active = this.input.activeRun(runId);
     if (active === undefined) return;
     this.acceptActivity(active, {
       cursor: ++active.activitySequence,
       kind: "progress",
       phase: "running",
-      action: event.attempt === undefined
-        ? "对方服务繁忙，正在重试"
-        : `对方服务繁忙，正在第 ${String(event.attempt)} 次重试`,
+      action: plan.action,
       object: null,
       occurredAt: this.input.nowIso(),
     });
@@ -205,7 +210,13 @@ export class LocalRunLifecycleRuntime {
     const store = this.input.lifecycleStore();
     if (store === null) return;
     const recordedAt = this.input.nowIso();
-    const elapsedMs = active.startedAt === null ? null : this.elapsedMs(active);
+    const plan = planRunLifecycleRecord({
+      phase,
+      status,
+      startedAt: active.startedAt,
+      elapsedMs: this.elapsedMs(active),
+      recordedAt,
+    });
     await this.input.storeCall("local-console-store-record-run-lifecycle", () =>
       store.recordRunLifecycleEvent({
         sessionId: active.sessionId,
@@ -218,8 +229,8 @@ export class LocalRunLifecycleRuntime {
         processOutputAvailable: active.processOutputAvailable,
         createdAt: active.createdAt,
         startedAt: active.startedAt,
-        elapsedMs: phase === "paused" || phase === "resumed" || phase === "terminal" ? elapsedMs : null,
-        completedAt: phase === "terminal" && status !== "paused" ? recordedAt : null,
+        elapsedMs: plan.elapsedMs,
+        completedAt: plan.completedAt,
         status,
         recordedAt,
       }));
@@ -245,11 +256,13 @@ export class LocalRunLifecycleRuntime {
         };
       }
     }
+    const attemptSource = decideRunAttemptSource(store !== null);
+    const attempt = attemptSource.kind === "fallback"
+      ? attemptSource.attempt
+      : await this.input.storeCall("local-console-store-next-run-attempt", () =>
+          store!.nextRunAttempt({ sessionId: input.sessionId, stepId: input.stepId }));
     return {
-      attempt: store === null
-        ? 1
-        : await this.input.storeCall("local-console-store-next-run-attempt", () =>
-            store.nextRunAttempt({ sessionId: input.sessionId, stepId: input.stepId })),
+      attempt,
       createdAt: this.input.nowIso(),
       startedAt: null,
       accumulatedMs: 0,

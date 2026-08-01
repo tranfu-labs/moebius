@@ -21,7 +21,7 @@ describe("session continuation plan", () => {
   });
 
   it("blocks deleted or repair-required teams from continuing", () => {
-    const source = { sessionId: "local:test" } as LocalConsoleSessionWorkspaceSource;
+    const source = { sessionId: "local:test" } as unknown as LocalConsoleSessionWorkspaceSource;
     expect(planContinuableWorkspace({ source, session: { agentTeamHealth: "deleted" } as LocalConsoleSessionSummary }))
       .toBeNull();
     expect(planContinuableWorkspace({ source, session: { agentTeamHealth: "usable" } as LocalConsoleSessionSummary }))

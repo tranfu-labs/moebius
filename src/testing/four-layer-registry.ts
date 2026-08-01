@@ -294,6 +294,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/prompt.ts",
   "src/local-console/run-activity.ts",
   "src/local-console/run-invocation-plan.ts",
+  "src/local-console/run-lifecycle-plan.ts",
   "src/local-console/run-recovery-plan.ts",
   "src/local-console/run-terminal-plan.ts",
   "src/local-console/runtime-domain.ts",
