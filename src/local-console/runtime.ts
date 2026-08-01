@@ -2114,6 +2114,7 @@ export class LocalConsoleRuntime {
 
           activeRunDir = this.options.makeRunDir(messages.length, this.now());
           const resolvedRunDir = path.resolve(activeRunDir);
+          const providerRunDir = activeRunDir;
           await this.storeCall("local-console-store-set-rundir", () =>
             this.options.store.setRunDir({
               id: claimedMessage.id,
@@ -2250,182 +2251,66 @@ export class LocalConsoleRuntime {
             await this.recordRunLifecycle(primaryActiveRun, "created", "created");
           }
 
-          let progressFactTail = Promise.resolve();
-          let observedExternalSessionId: string | null = null;
-          let executionTraceExternalSessionId: string | null = null;
-          await this.recordProviderInvocation({
+          const providerInvocation = await executeLocalProviderInvocationFlow({
             sessionId,
             runId: nextRunId,
-            invocationId: `${nextRunId}:${resolvedRunDir}`,
+            sourceMessageId: claimedMessage.id,
             role: triggerRole,
-            agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-            phase: "started",
-            mode: invocationPlan.providerMode.kind,
-            requestedExternalSessionId: invocationPlan.providerMode.kind === "resume"
-              ? invocationPlan.providerMode.externalSessionId
-              : null,
-            observedExternalSessionId: null,
-            outcome: "started",
-            recordedAt: this.nowIso(),
+            runDir: resolvedRunDir,
+            continuingSameRun,
+            executionContext,
+            invocationPlan,
+          }, {
+            nowIso: () => this.nowIso(),
+            releaseIfStopping: async () => false,
+            recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+            runProvider: (callbacks) => this.executionRunner({
+              prompt,
+              runDir: providerRunDir,
+              cwd: workspace.cwd,
+              profile: executionContext.profile,
+              mode: invocationPlan.providerMode,
+              signal: controller.signal,
+              ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
+              ...(this.toolInFlightTimeoutMs === undefined
+                ? {}
+                : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
+              ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
+              workspaceAccess: invocationPlan.workspaceAccess,
+              ...callbacks,
+            }),
+            onVisibleAgentMarkdown: (text) => {
+              const active = this.activeRuns.get(nextRunId);
+              if (active?.sessionId !== sessionId) return async () => undefined;
+              active.liveMarkdown = text;
+              this.updateAgentProgressActivity(nextRunId, text);
+              const recordedAt = this.nowIso();
+              return () => this.storeCall("local-console-store-record-progress", () =>
+                this.sessionFactStore().recordProgressEvent({
+                  sessionId,
+                  runId: nextRunId,
+                  role: triggerRole,
+                  body: text,
+                  now: recordedAt,
+                }));
+            },
+            onProcessStarted: () => this.markRunStarted(nextRunId),
+            onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
+            onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
+            setActiveExternalSessionId: (externalSessionId) => {
+              const active = this.activeRuns.get(nextRunId);
+              if (active?.runId === nextRunId) active.threadId = externalSessionId;
+            },
+            recordProviderSessionObserved: (fact) => this.recordProviderSessionObserved(fact),
+            recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
+            recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
+            recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
           });
-          let result = await (async () => {
-            try {
-              return await this.executionRunner({
-                prompt,
-                runDir: activeRunDir,
-                cwd: workspace.cwd,
-                profile: executionContext.profile,
-                mode: invocationPlan.providerMode,
-                signal: controller.signal,
-                ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-                ...(this.toolInFlightTimeoutMs === undefined
-                  ? {}
-                  : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-                ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
-                workspaceAccess: invocationPlan.workspaceAccess,
-                onVisibleAgentMarkdown: (text) => {
-                  const active = this.activeRuns.get(nextRunId);
-                  if (active?.sessionId === sessionId) {
-                    active.liveMarkdown = text;
-                    this.updateAgentProgressActivity(nextRunId, text);
-                    const recordedAt = this.nowIso();
-                    progressFactTail = progressFactTail.then(() =>
-                      this.storeCall("local-console-store-record-progress", () =>
-                        this.sessionFactStore().recordProgressEvent({
-                          sessionId,
-                          runId: nextRunId,
-                          role: triggerRole,
-                          body: text,
-                          now: recordedAt,
-                        })));
-                  }
-                },
-                onProcessStarted: () => this.markRunStarted(nextRunId),
-                onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
-                onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
-                onSessionStarted: async ({ engine, externalSessionId }) => {
-                  observedExternalSessionId = externalSessionId;
-                  const active = this.activeRuns.get(nextRunId);
-                  if (active?.runId === nextRunId) {
-                    active.threadId = externalSessionId;
-                  }
-                  if (continuingSameRun) {
-                    return;
-                  }
-                  await this.recordProviderSessionObserved({
-                    sessionId,
-                    runId: nextRunId,
-                    sourceMessageId: claimedMessage.id,
-                    role: triggerRole,
-                    engine,
-                    externalSessionId,
-                    observedAt: this.nowIso(),
-                    agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                    contextFingerprint: executionContext.contextFingerprint,
-                  });
-                  await this.recordAgentSessionLink({
-                    sessionId,
-                    agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                    role: triggerRole,
-                    engine,
-                    externalSessionId,
-                    profileFingerprint: executionContext.profileFingerprint,
-                    contextFingerprint: executionContext.contextFingerprint,
-                    linkedAt: this.nowIso(),
-                  });
-                },
-                onExecutionTraceReady: async ({ engine, externalSessionId }) => {
-                  if (observedExternalSessionId !== externalSessionId) {
-                    throw new Error("execution-trace-ready-session-mismatch");
-                  }
-                  if (
-                    executionTraceExternalSessionId !== null
-                    && executionTraceExternalSessionId !== externalSessionId
-                  ) {
-                    throw new Error("execution-trace-ready-session-conflict");
-                  }
-                  executionTraceExternalSessionId = externalSessionId;
-                  if (continuingSameRun) {
-                    return;
-                  }
-                  await this.recordExecutionSessionLink({
-                    sessionId,
-                    runId: nextRunId,
-                    sourceMessageId: claimedMessage.id,
-                    role: triggerRole,
-                    engine,
-                    externalSessionId,
-                    startedAt: this.nowIso(),
-                    profileFingerprint: executionContext.profileFingerprint,
-                    agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                    contextFingerprint: executionContext.contextFingerprint,
-                  });
-                  if (engine === "codex") {
-                    await this.recordCodexThreadLink({
-                      sessionId,
-                      runId: nextRunId,
-                      sourceMessageId: claimedMessage.id,
-                      role: triggerRole,
-                      threadId: externalSessionId,
-                      startedAt: this.nowIso(),
-                      contextFingerprint: executionContext.profile === null
-                        ? legacyCodexContextFingerprint(executionContext)
-                        : executionContext.contextFingerprint,
-                    });
-                  }
-                },
-              });
-            } finally {
-              await progressFactTail;
-            }
-          })();
-
-          if (
-            result.ok
-            && executionContext.engine === "kimi"
-            && result.threadId !== null
-            && !continuingSameRun
-          ) {
-            if (observedExternalSessionId === null) {
-              observedExternalSessionId = result.threadId;
-              await this.recordProviderSessionObserved({
-                sessionId,
-                runId: nextRunId,
-                sourceMessageId: claimedMessage.id,
-                role: triggerRole,
-                engine: executionContext.engine,
-                externalSessionId: result.threadId,
-                observedAt: this.nowIso(),
-                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                contextFingerprint: executionContext.contextFingerprint,
-              });
-              await this.recordAgentSessionLink({
-                sessionId,
-                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                role: triggerRole,
-                engine: executionContext.engine,
-                externalSessionId: result.threadId,
-                profileFingerprint: executionContext.profileFingerprint,
-                contextFingerprint: executionContext.contextFingerprint,
-                linkedAt: this.nowIso(),
-              });
-            }
-            if (executionTraceExternalSessionId === null) {
-              executionTraceExternalSessionId = result.threadId;
-              await this.recordExecutionSessionLink({
-                sessionId,
-                runId: nextRunId,
-                sourceMessageId: claimedMessage.id,
-                role: triggerRole,
-                engine: executionContext.engine,
-                externalSessionId: result.threadId,
-                startedAt: this.nowIso(),
-                profileFingerprint: executionContext.profileFingerprint,
-                agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                contextFingerprint: executionContext.contextFingerprint,
-              });
-            }
+          if (providerInvocation.kind === "stopped") {
+            return;
           }
+          let { result } = providerInvocation;
+          const { observedExternalSessionId } = providerInvocation;
 
           if (
             analysisGateEnabled
