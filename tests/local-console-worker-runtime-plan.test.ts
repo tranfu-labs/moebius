@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  decideWorkerActiveRunTarget,
   decideWorkerClaimRelease,
   decideWorkerAgentFileSource,
   decideWorkerAgentMarkdownSource,
@@ -21,11 +20,14 @@ import {
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
   planWorkerFinalization,
-  planWorkerProviderExecutionOptions,
   planWorkerAgentContents,
   planWorkerSnapshotAgents,
   planWorkerTimelineMessages,
 } from "../src/local-console/worker-runtime-plan.js";
+import {
+  decideLocalActiveRunTarget,
+  planLocalProviderExecutionOptions,
+} from "../src/local-console/provider-invocation-plan.js";
 import type { LocalConsoleMessage } from "../src/local-console/types.js";
 
 describe("worker runtime plan", () => {
@@ -115,12 +117,12 @@ describe("worker runtime plan", () => {
   });
 
   it("plans only configured provider execution options", () => {
-    expect(planWorkerProviderExecutionOptions({
+    expect(planLocalProviderExecutionOptions({
       idleTimeoutMs: undefined,
       toolTimeoutMs: 2_000,
       imagePaths: [],
     })).toEqual({ toolTimeoutMs: 2_000 });
-    expect(planWorkerProviderExecutionOptions({
+    expect(planLocalProviderExecutionOptions({
       idleTimeoutMs: 1_000,
       toolTimeoutMs: undefined,
       imagePaths: ["image.png"],
@@ -129,8 +131,8 @@ describe("worker runtime plan", () => {
 
   it("targets active-run updates only to the matching session", () => {
     const active = { sessionId: "session-a", value: 1 };
-    expect(decideWorkerActiveRunTarget(active, "session-a")).toEqual({ kind: "update", active });
-    expect(decideWorkerActiveRunTarget(active, "session-b")).toEqual({ kind: "skip" });
-    expect(decideWorkerActiveRunTarget(undefined, "session-a")).toEqual({ kind: "skip" });
+    expect(decideLocalActiveRunTarget(active, "session-a")).toEqual({ kind: "update", active });
+    expect(decideLocalActiveRunTarget(active, "session-b")).toEqual({ kind: "skip" });
+    expect(decideLocalActiveRunTarget(undefined, "session-a")).toEqual({ kind: "skip" });
   });
 });

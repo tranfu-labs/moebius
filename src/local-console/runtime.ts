@@ -107,6 +107,7 @@ import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
+import { createLocalPrimaryProviderPorts } from "./primary-provider-wiring.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
@@ -461,51 +462,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
       recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
     });
-    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime({
+    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(createLocalPrimaryProviderPorts({
+      storePorts: this.storePorts,
+      executionRunner: this.executionRunner,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
+      idleTimeoutMs: this.codexIdleTimeoutMs,
+      toolTimeoutMs: this.toolInFlightTimeoutMs,
       nowIso: () => this.nowIso(),
-      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
-      runProvider: (preparation, callbacks) => this.executionRunner({
-        prompt: preparation.prompt,
-        runDir: preparation.providerRunDir,
-        cwd: preparation.workspace.cwd,
-        profile: preparation.executionContext.profile,
-        mode: preparation.invocationPlan.providerMode,
-        signal: preparation.controller.signal,
-        ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-        ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-        ...(preparation.preparedAttachments.imagePaths.length === 0
-          ? {}
-          : { imagePaths: preparation.preparedAttachments.imagePaths }),
-        workspaceAccess: preparation.invocationPlan.workspaceAccess,
-        ...callbacks,
-      }),
-      onVisibleAgentMarkdown: (input, text) => {
-        const active = this.activeRunRegistry.get(input.runId);
-        if (active?.sessionId !== input.sessionId) return async () => undefined;
-        active.liveMarkdown = text;
-        this.runLifecycleRuntime.updateAgentProgress(input.runId, text);
-        const recordedAt = this.nowIso();
-        return () => this.storePorts.call("local-console-store-record-progress", () =>
-          this.storePorts.sessionFacts().recordProgressEvent({
-            sessionId: input.sessionId,
-            runId: input.runId,
-            role: input.role,
-            body: text,
-            now: recordedAt,
-          }));
-      },
-      onProcessStarted: (runId) => this.runLifecycleRuntime.markStarted(runId),
-      onStructuredActivity: (runId, event) => this.runLifecycleRuntime.updateStructuredActivity(runId, event),
-      onExecutionProgress: (runId, event) => this.runLifecycleRuntime.updateExecutionProgress(runId, event),
-      setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
-        const active = this.activeRunRegistry.get(runId);
-        if (active?.sessionId === sessionId) active.threadId = externalSessionId;
-      },
-      recordProviderSessionObserved: (fact) => this.storePorts.recordProviderSessionObserved(fact),
-      recordAgentSessionLink: (fact) => this.storePorts.recordAgentSessionLink(fact),
-      recordExecutionSessionLink: (fact) => this.storePorts.recordExecutionSessionLink(fact),
-      recordCodexThreadLink: (fact) => this.storePorts.recordCodexThreadLink(fact),
-    });
+    }));
     this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime({
       updateGate: async (input) => {
         await this.updateSessionAnalysisGate(input);

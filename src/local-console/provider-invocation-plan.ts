@@ -4,6 +4,31 @@ import type { LocalRunInvocationPlan } from "./run-invocation-plan.js";
 
 export type LocalProviderCheckpointDecision = { kind: "continue" } | { kind: "stop" };
 
+export function planLocalProviderExecutionOptions(input: {
+  idleTimeoutMs: number | undefined;
+  toolTimeoutMs: number | undefined;
+  imagePaths: string[];
+}): {
+  idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
+  imagePaths?: string[];
+} {
+  return {
+    ...(input.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: input.idleTimeoutMs }),
+    ...(input.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: input.toolTimeoutMs }),
+    ...(input.imagePaths.length === 0 ? {} : { imagePaths: input.imagePaths }),
+  };
+}
+
+export function decideLocalActiveRunTarget<T extends { sessionId: string }>(
+  active: T | undefined,
+  sessionId: string,
+): { kind: "skip" } | { kind: "update"; active: T } {
+  return active?.sessionId === sessionId
+    ? { kind: "update", active }
+    : { kind: "skip" };
+}
+
 export function decideLocalProviderCheckpoint(stopping: boolean): LocalProviderCheckpointDecision {
   return stopping ? { kind: "stop" } : { kind: "continue" };
 }
