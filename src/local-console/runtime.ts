@@ -16,7 +16,6 @@ import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import { resolveTrigger } from "../triggers/index.js";
-import type { LocalRunActivity } from "./run-activity.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import type { LocalAttachmentManager } from "./attachments.js";
@@ -120,6 +119,8 @@ import {
 } from "./worker-dispatch-runtime.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
+import type { ActiveLocalRun } from "./active-run.js";
+import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -176,7 +177,6 @@ import {
   type LocalCodexResumeConsumedFact,
   type LocalCodexResumeIntentFact,
   type LocalCodexRunUsageFact,
-  type LocalRunSourceDisposition,
 } from "./codex-resume.js";
 import {
   loadLocalProcessAppendPage,
@@ -278,41 +278,6 @@ interface CodexRecoveryFactStore extends LocalConsoleStore {
   recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void>;
 }
 
-interface ActiveLocalRun {
-  sessionId: string;
-  runId: string;
-  userMessageId: number;
-  role: string | null;
-  lane: "primary" | "worker";
-  sourceDisposition: LocalRunSourceDisposition;
-  runDir: string | null;
-  cwd: string | null;
-  workspaceMode: "direct" | "worktree" | null;
-  worktreeUnavailableReason: string | null;
-  branchName: string | null;
-  baseRef: string | null;
-  originalRepoRoot: string | null;
-  liveMarkdown: string | null;
-  activity: LocalRunActivity | null;
-  activitySequence: number;
-  activityFactTail: Promise<void>;
-  longRunReported: boolean;
-  createdAt: string;
-  startedAt: string | null;
-  segmentStartedAt: string | null;
-  accumulatedMs: number;
-  resuming: boolean;
-  stepId: string;
-  attempt: number;
-  engine: "codex" | "claude" | "kimi";
-  profile: LocalConsoleExecutionProfile | null;
-  processOutputAvailable: boolean;
-  terminalRecorded: boolean;
-  controller: AbortController;
-  threadId: string | null;
-  gracefulResumePrepared: boolean;
-}
-
 export class LocalConsoleRuntime {
   private readonly sessionId: string;
   private readonly storeTimeoutMs: number;
@@ -346,6 +311,7 @@ export class LocalConsoleRuntime {
   private readonly messageCommandRuntime: LocalConsoleMessageCommandRuntime;
   private readonly runRetryRuntime: LocalConsoleRunRetryRuntime;
   private readonly workerDispatchRuntime: LocalWorkerDispatchRuntime;
+  private readonly workerPreparationRuntime: LocalWorkerPreparationRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -471,6 +437,77 @@ export class LocalConsoleRuntime {
         return this.lastError;
       },
       log: (event, sessionId, role, error) => log({ event, sessionId, ...(role === null ? {} : { role }), error }),
+    });
+    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime({
+      nowIso: () => this.nowIso(),
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      releaseClaim: (message, sessionId) => this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
+      sessionSummary: (sessionId) => this.sessionSummary(sessionId),
+      makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
+      setSourceRunDir: (message, sessionId, runDir) =>
+        this.storeCall("local-console-store-set-worker-source-rundir", () => options.store.setRunDir({
+          id: message.id,
+          sessionId,
+          runDir,
+          now: this.nowIso(),
+        })),
+      resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
+      loadSelectedAgentMarkdown: (selectedAgent) => selectedAgent.agentMarkdown === undefined
+        ? fs.readFile(requireAgentFilePath(selectedAgent), "utf8")
+        : Promise.resolve(selectedAgent.agentMarkdown),
+      loadAgentContents: async (agentFiles, selectedAgent, selectedMarkdown) => {
+        return await Promise.all(agentFiles.map(async (agent) => ({
+          name: agent.name,
+          agentMarkdown: agent.name === selectedAgent.name
+            ? selectedMarkdown
+            : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
+          executionProfile: agent.executionProfile ?? null,
+        })));
+      },
+      loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
+        factLogPath: this.codexRecoveryFactStore()?.getSessionFactLogPath(sessionId) ?? null,
+        sessionId,
+      }),
+      isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
+      settleUnavailable: ({ sessionId, runId, sourceMessage, role, runDir, unavailable }) =>
+        this.settleUnavailableResume({
+          sessionId,
+          runId,
+          sourceMessage,
+          intent: unavailable.intent,
+          role,
+          engine: unavailable.context.engine,
+          reason: unavailable.reason,
+          runDir,
+        }),
+      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
+      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+      prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
+        ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
+      consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
+        this.storeCall("local-console-store-consume-worker-resume", () =>
+          this.requireCodexRecoveryFactStore().recordCodexResumeConsumed({
+            sessionId,
+            intentId,
+            resumedByRunId: runId,
+            mode,
+            reason,
+            consumedAt: this.nowIso(),
+          })),
+      recordDetachedStarted: (input, runDir) => {
+        const record = options.store.recordDetachedRunStarted;
+        if (record === undefined) throw new Error("local console detached run persistence capability unavailable");
+        return this.storeCall("local-console-store-record-worker-started", () => record.call(options.store, {
+          sessionId: input.sessionId,
+          role: input.role,
+          runId: input.runId,
+          runDir,
+          now: this.nowIso(),
+        }));
+      },
+      prepareLifecycle: (input) => this.runLifecycleRuntime.prepare(input),
+      setActiveRun: (runId, active) => { this.activeRuns.set(runId, active); },
+      recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -2041,94 +2078,11 @@ export class LocalConsoleRuntime {
       return;
     }
 
-    const runId = input.runId;
-    const workerPolicySession = await this.sessionSummary(input.sessionId);
-    const currentAgentMarkdown = input.selectedAgent.agentMarkdown
-      ?? await fs.readFile(requireAgentFilePath(input.selectedAgent), "utf8");
-
-    const runDir = path.resolve(this.options.makeRunDir(input.timelineMessages.length, this.now()));
-    if (input.origin === "user-direct") {
-      await this.storeCall("local-console-store-set-worker-source-rundir", () =>
-        this.options.store.setRunDir({
-          id: input.sourceMessage.id,
-          sessionId: input.sessionId,
-          runDir,
-          now: this.nowIso(),
-        }));
-    }
-    const controller = new AbortController();
-    const currentWorkspace = await this.resolveWorkspace(input.sessionId, input.workspaceSource, controller.signal);
-    if (this.closing || this.inactiveSessions.has(input.sessionId)) {
-      if (input.origin === "user-direct") {
-        await this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId);
-      }
-      return;
-    }
-    const agentContents = await Promise.all(input.agentFiles.map(async (agent) => ({
-      name: agent.name,
-      agentMarkdown: agent.name === input.selectedAgent.name
-        ? currentAgentMarkdown
-        : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
-      executionProfile: agent.executionProfile ?? null,
-    })));
-    const recoveryStore = this.codexRecoveryFactStore();
-    const preparation = await executeLocalRunPreparationFlow({
-      lane: "worker",
-      sessionId: input.sessionId,
-      runId,
-      sourceMessage: input.sourceMessage,
-      role: input.role,
-      defaultProfile: input.selectedAgent.executionProfile ?? null,
-      defaultWorkspace: currentWorkspace,
-      concurrentWorkspace: null,
-      team: agentContents,
-      timeline: input.timeline,
-      timelineMessages: input.timelineMessages,
-      readOnly: workerPolicySession.writePolicy === "confirm-current-plan-before-write",
-      promptContract: "",
-      runDir,
-    }, {
-      nowIso: () => this.nowIso(),
-      loadRecoverySnapshot: () => readLocalRunRecoverySnapshot({
-        factLogPath: recoveryStore?.getSessionFactLogPath(input.sessionId) ?? null,
-        sessionId: input.sessionId,
-      }),
-      isCodexThreadAvailable: this.options.isCodexThreadAvailable
-        ?? defaultCodexThreadAvailability,
-      settleUnavailable: (unavailable) => this.settleUnavailableResume({
-        sessionId: input.sessionId,
-        runId,
-        sourceMessage: input.sourceMessage,
-        intent: unavailable.intent,
-        role: input.role,
-        engine: unavailable.context.engine,
-        reason: unavailable.reason,
-        runDir,
-      }),
-      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
-      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
-      prepareAttachments: ({ messages, runDir: attachmentRunDir }) =>
-        this.options.attachmentManager?.prepareRunAttachments({
-          messages,
-          runDir: attachmentRunDir,
-        }) ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
-      consumeRecoveryIntent: ({ intentId, mode, reason }) => {
-        const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
-        return this.storeCall("local-console-store-consume-worker-resume", () =>
-          requiredRecoveryStore.recordCodexResumeConsumed({
-            sessionId: input.sessionId,
-            intentId,
-            resumedByRunId: runId,
-            mode,
-            reason,
-            consumedAt: this.nowIso(),
-          }));
-      },
-    });
-    if (preparation.kind === "settled-unavailable") {
-      return;
-    }
+    const preparation = await this.workerPreparationRuntime.prepare(input);
+    if (preparation.kind === "settled") return;
     const {
+      runDir,
+      controller,
       continuingSameRun,
       executionContext,
       recoveryPlan,
@@ -2137,69 +2091,8 @@ export class LocalConsoleRuntime {
       prompt,
       preparedAttachments,
     } = preparation;
-    if (input.origin === "primary-redirect") {
-      const recordDetachedRunStarted = this.options.store.recordDetachedRunStarted;
-      if (recordDetachedRunStarted === undefined) {
-        throw new Error("local console detached run persistence capability unavailable");
-      }
-      await this.storeCall("local-console-store-record-worker-started", () =>
-        recordDetachedRunStarted.call(this.options.store, {
-          sessionId: input.sessionId,
-          role: input.role,
-          runId,
-          runDir,
-          now: this.nowIso(),
-        }),
-      );
-    }
-    const workerStepId = `message:${String(input.sourceMessage.id)}`;
-    const workerLifecycle = await this.prepareRunLifecycle({
-      sessionId: input.sessionId,
-      runId,
-      stepId: workerStepId,
-      resumeExisting: continuingSameRun,
-    });
-    const workerActiveRun: ActiveLocalRun = {
-      sessionId: input.sessionId,
-      runId,
-      userMessageId: input.sourceMessage.id,
-      role: input.role,
-      lane: "worker",
-      sourceDisposition: input.origin === "user-direct" ? "user-direct" : "agent-handoff",
-      runDir,
-      cwd: workspace.cwd,
-      workspaceMode: workspace.mode,
-      worktreeUnavailableReason: workspace.worktreeUnavailableReason,
-      branchName: workspace.branchName,
-      baseRef: workspace.baseRef,
-      originalRepoRoot: workspace.originalRepoRoot,
-      liveMarkdown: null,
-      activity: null,
-      activitySequence: 0,
-      activityFactTail: Promise.resolve(),
-      longRunReported: false,
-      createdAt: workerLifecycle.createdAt,
-      startedAt: workerLifecycle.startedAt,
-      segmentStartedAt: null,
-      accumulatedMs: workerLifecycle.accumulatedMs,
-      resuming: workerLifecycle.resuming,
-      stepId: workerStepId,
-      attempt: workerLifecycle.attempt,
-      engine: executionContext.engine,
-      profile: executionContext.profile,
-      processOutputAvailable: true,
-      terminalRecorded: false,
-      controller,
-      threadId: null,
-      gracefulResumePrepared: false,
-    };
-    if (this.closing || this.inactiveSessions.has(input.sessionId)) {
-      if (input.origin === "user-direct") {
-        await this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId);
-      }
-      return;
-    }
-    this.activeRuns.set(runId, workerActiveRun);
+    const runId = input.runId;
+    const recoveryStore = this.codexRecoveryFactStore();
     const releaseDirectWorkerBeforeProviderWhenStopping = async (): Promise<boolean> => {
       if (
         input.origin !== "user-direct"
@@ -2211,10 +2104,6 @@ export class LocalConsoleRuntime {
       await this.finishRunLifecycle(runId, "interrupted");
       return true;
     };
-    if (!workerLifecycle.resuming) {
-      await this.recordRunLifecycle(workerActiveRun, "created", "created");
-    }
-
     try {
       const providerInvocation = await executeLocalProviderInvocationFlow({
         sessionId: input.sessionId,

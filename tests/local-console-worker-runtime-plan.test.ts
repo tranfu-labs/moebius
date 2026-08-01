@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   decideWorkerClaimRelease,
   decideWorkerOutstandingWork,
+  decideWorkerLifecycleCreation,
+  decideWorkerOriginEffect,
+  decideWorkerPreparation,
   decideWorkerRedirectAbort,
   decideWorkerRunId,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
+  planWorkerSourceDisposition,
 } from "../src/local-console/worker-runtime-plan.js";
 
 describe("worker runtime plan", () => {
@@ -33,5 +37,19 @@ describe("worker runtime plan", () => {
     expect(decideWorkerClaimRelease(true)).toEqual({ kind: "release" });
     expect(decideWorkerOutstandingWork(0, 0)).toEqual({ kind: "idle" });
     expect(decideWorkerOutstandingWork(0, 1)).toEqual({ kind: "pending" });
+  });
+
+  it("keeps direct and detached persistence effects distinct across preparation", () => {
+    expect(decideWorkerOriginEffect("user-direct")).toEqual({ kind: "direct" });
+    expect(decideWorkerOriginEffect("primary-redirect")).toEqual({ kind: "detached" });
+    expect(planWorkerSourceDisposition("user-direct")).toBe("user-direct");
+    expect(planWorkerSourceDisposition("primary-redirect")).toBe("agent-handoff");
+    expect(decideWorkerLifecycleCreation(false)).toEqual({ kind: "record" });
+    expect(decideWorkerLifecycleCreation(true)).toEqual({ kind: "skip" });
+    expect(decideWorkerPreparation({ kind: "settled-unavailable" })).toEqual({ kind: "settled" });
+    expect(decideWorkerPreparation({ kind: "ready", value: 1 })).toEqual({
+      kind: "continue",
+      preparation: { kind: "ready", value: 1 },
+    });
   });
 });
