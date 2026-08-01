@@ -55,6 +55,12 @@ export function decidePrimaryRecoveryFactSource<T>(store: T | null):
   return store === null ? { kind: "skip" } : { kind: "read", store };
 }
 
+export function decidePrimaryRunLookup(runId: string | null):
+  | { kind: "skip" }
+  | { kind: "read"; runId: string } {
+  return runId === null ? { kind: "skip" } : { kind: "read", runId };
+}
+
 export function decidePrimaryAnalysisContract(input: {
   analysisGateEnabled: boolean;
   role: string;

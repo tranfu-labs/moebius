@@ -114,6 +114,7 @@ import { createLocalPrimaryTerminalPorts } from "./primary-terminal-wiring.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { createLocalPrimaryDispatchPorts } from "./primary-dispatch-wiring.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
+import { createLocalPrimaryExecutionPorts } from "./primary-execution-wiring.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import {
   assertTextFragments,
@@ -506,24 +507,22 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       setError: (error) => { this.lastError = error; },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
     }));
-    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime({
+    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime(createLocalPrimaryExecutionPorts({
       dispatch: this.primaryDispatchRuntime,
       preparation: this.primaryPreparationRuntime,
       provider: this.primaryProviderRuntime,
       analysis: this.primaryAnalysisRuntime,
       terminal: this.primaryTerminalRuntime,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       report: (event, error) => log({ event, error }),
       recordFailure: (message, sessionId, runId, runDir, error) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, error),
-      activeRun: (runId) => runId === null ? undefined : this.activeRunRegistry.get(runId),
-      pauseLifecycle: (runId) => this.runLifecycleRuntime.pause(runId),
-      failLifecycle: (runId) => this.runLifecycleRuntime.finish(runId, "failed"),
-      deleteActiveRun: (runId) => { this.activeRunRegistry.delete(runId); },
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
-    });
+    }));
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },

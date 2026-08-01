@@ -4,6 +4,7 @@ import {
   decidePrimaryAgentFileSource,
   decidePrimaryAttachmentPreparation,
   decidePrimaryRecoveryFactSource,
+  decidePrimaryRunLookup,
   decidePrimaryAnalysisContract,
   decidePrimaryAnalysisConfirmation,
   decidePrimaryAnalysisControl,
@@ -58,6 +59,8 @@ describe("primary runtime plan", () => {
       executionProfile: null,
     }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
     expect(decidePrimaryRecoveryFactSource(null)).toEqual({ kind: "skip" });
+    expect(decidePrimaryRunLookup(null)).toEqual({ kind: "skip" });
+    expect(decidePrimaryRunLookup("run-1")).toEqual({ kind: "read", runId: "run-1" });
   });
 
   it("stops unavailable preparation and records lifecycle creation only for a fresh attempt", () => {
