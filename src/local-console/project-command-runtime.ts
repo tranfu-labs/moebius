@@ -1,6 +1,11 @@
-import path from "node:path";
-import { directoryAvailable } from "./runtime-file-support.js";
 import { formatLocalError } from "./runtime-domain.js";
+import {
+  decideProjectCommandCapability,
+  decideProjectFolderAvailability,
+  planProjectRemoval,
+  planProjectRemovalError,
+  planProjectRepairError,
+} from "./project-command-plan.js";
 import type {
   LocalConsoleProjectRemovalResult,
   LocalConsoleProjectSummary,
@@ -21,6 +26,8 @@ export class LocalProjectCommandRuntime {
     processPending(sessionId: string): void;
     activeRunsForSession(sessionId: string): Array<{ controller: AbortController }>;
     inactiveSessions: Set<string>;
+    resolvePath(folderPath: string): string;
+    directoryAvailable(folderPath: string): Promise<boolean>;
   }) {}
 
   async create(input: { folderPath: string; worktreeMode: boolean }): Promise<LocalConsoleProjectSummary> {
@@ -35,11 +42,13 @@ export class LocalProjectCommandRuntime {
   }
 
   async repairFolder(input: { projectId: string; folderPath: string }): Promise<LocalConsoleProjectSummary> {
-    if (this.input.store.repairProjectFolder === undefined) {
+    const capability = decideProjectCommandCapability(this.input.store.repairProjectFolder !== undefined);
+    if (capability.kind === "unavailable") {
       throw new Error("local console project folder repair unavailable");
     }
-    const folderPath = path.resolve(input.folderPath);
-    if (!(await directoryAvailable(folderPath))) {
+    const folderPath = this.input.resolvePath(input.folderPath);
+    const availability = decideProjectFolderAvailability(await this.input.directoryAvailable(folderPath));
+    if (availability.kind === "unavailable") {
       throw new LocalConsoleProjectFolderError("PROJECT_DIRECTORY_UNAVAILABLE", "所选文件夹不可访问，请重新选择");
     }
     try {
@@ -49,13 +58,14 @@ export class LocalProjectCommandRuntime {
       return await this.input.withDirectoryAvailability(repaired, true);
     } catch (error) {
       const message = formatLocalError(error);
-      if (message.includes("PROJECT_FOLDER_ALREADY_BOUND")) {
+      const plan = planProjectRepairError(message);
+      if (plan.kind === "already-bound") {
         throw new LocalConsoleProjectFolderError(
           "PROJECT_FOLDER_ALREADY_BOUND",
           "该文件夹已绑定其他项目，不能合并项目记录；请转到已有项目或重新选择",
         );
       }
-      if (message.includes("LOCAL_PROJECT_NOT_FOUND")) {
+      if (plan.kind === "not-found") {
         throw new LocalConsoleProjectFolderError("LOCAL_PROJECT_NOT_FOUND", "项目不存在或已移除");
       }
       throw error;
@@ -63,37 +73,25 @@ export class LocalProjectCommandRuntime {
   }
 
   async rename(input: { projectId: string; title: string }): Promise<LocalConsoleProjectSummary> {
-    if (this.input.store.renameProject === undefined) throw new Error("local console project rename unavailable");
+    const capability = decideProjectCommandCapability(this.input.store.renameProject !== undefined);
+    if (capability.kind === "unavailable") throw new Error("local console project rename unavailable");
     return await this.input.storeCall("local-console-store-rename-project", () =>
       this.input.store.renameProject!({ ...input, now: this.input.nowIso() }));
   }
 
   async remove(input: { projectId: string; force: boolean }): Promise<LocalConsoleProjectRemovalResult> {
-    if (this.input.store.removeProject === undefined) throw new Error("local console project removal unavailable");
+    const capability = decideProjectCommandCapability(this.input.store.removeProject !== undefined);
+    if (capability.kind === "unavailable") throw new Error("local console project removal unavailable");
     const project = (await this.input.storeCall("local-console-store-list-projects", () =>
       this.input.store.listProjects())).find((candidate) => candidate.projectId === input.projectId);
-    if (project === undefined) throw new Error(`local console project not found: ${input.projectId}`);
-    if (project.runningCount > 0 && !input.force) throw new LocalConsoleProjectRunningError();
-
     const allSessions = await this.input.storeCall("local-console-store-list-project-removal-sessions", () =>
       this.input.store.listSessions());
-    const removalSessionIds = new Set(project.sessions.map((session) => session.sessionId));
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const session of allSessions) {
-        if (session.analysisParentSessionId != null
-          && removalSessionIds.has(session.analysisParentSessionId)
-          && !removalSessionIds.has(session.sessionId)) {
-          removalSessionIds.add(session.sessionId);
-          changed = true;
-        }
-      }
-    }
-    const sessionIds = [...removalSessionIds];
-    for (const sessionId of sessionIds) {
+    const plan = planProjectRemoval({ project, allSessions, force: input.force });
+    if (plan.kind === "not-found") throw new Error(`local console project not found: ${input.projectId}`);
+    if (plan.kind === "running") throw new LocalConsoleProjectRunningError();
+    for (const sessionId of plan.sessionIds) {
       this.input.inactiveSessions.add(sessionId);
-      if (input.force) {
+      if (plan.abortActiveRuns) {
         for (const active of this.input.activeRunsForSession(sessionId)) active.controller.abort("project-removed");
       }
     }
@@ -101,10 +99,9 @@ export class LocalProjectCommandRuntime {
       return await this.input.storeCall("local-console-store-remove-project", () =>
         this.input.store.removeProject!({ ...input, now: this.input.nowIso() }));
     } catch (error) {
-      for (const sessionId of sessionIds) this.input.inactiveSessions.delete(sessionId);
-      if (error instanceof Error && error.message.includes("PROJECT_HAS_RUNNING_AGENTS")) {
-        throw new LocalConsoleProjectRunningError();
-      }
+      for (const sessionId of plan.sessionIds) this.input.inactiveSessions.delete(sessionId);
+      const errorPlan = planProjectRemovalError(formatLocalError(error));
+      if (errorPlan.kind === "running") throw new LocalConsoleProjectRunningError();
       throw error;
     }
   }

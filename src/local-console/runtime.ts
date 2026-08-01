@@ -436,6 +436,8 @@ export class LocalConsoleRuntime {
       processPending: (sessionId) => void this.processPending(sessionId),
       activeRunsForSession: (sessionId) => this.activeRunsForSession(sessionId),
       inactiveSessions: this.inactiveSessions,
+      resolvePath: path.resolve,
+      directoryAvailable,
     });
     this.sessionCreationRuntime = new LocalSessionCreationRuntime({
       store: options.store,
