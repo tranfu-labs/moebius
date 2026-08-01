@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  decidePrimaryMessageAdmission,
+  decideSubmittedMessageDispatch,
+  decideSubmittedMessageWake,
+  planSubmittedMessageContent,
+} from "../src/local-console/message-command-plan.js";
+import type { LocalConsoleSessionSummary } from "../src/local-console/types.js";
+
+describe("local console message command plan", () => {
+  it("validates and serializes the submitted body before persistence", () => {
+    expect(() => planSubmittedMessageContent({ body: "  ", attachmentIds: [], textFragments: [] }))
+      .toThrow("Message body must not be empty");
+    expect(() => planSubmittedMessageContent({ body: "ok", attachmentIds: ["a", "a"], textFragments: [] }))
+      .toThrow("Attachment ids must be unique");
+    expect(planSubmittedMessageContent({
+      body: "  inspect  ",
+      attachmentIds: ["a"],
+      textFragments: [{ id: "source", label: "Source", text: "record" }],
+    })).toEqual({
+      trimmed: "inspect",
+      persistedBody: "> 来源：\n> - record\n\ninspect",
+      attachmentIds: ["a"],
+    });
+  });
+
+  it("rejects only an orphaned persisted primary claim", () => {
+    expect(decidePrimaryMessageAdmission({ activePrimary: false, persistedPrimary: true }))
+      .toEqual({ kind: "busy" });
+    expect(decidePrimaryMessageAdmission({ activePrimary: true, persistedPrimary: true }))
+      .toEqual({ kind: "accept" });
+  });
+
+  it("holds messages for a pending team and wakes only worker dispatches", () => {
+    const session = { agentTeamPendingId: "team-next" } as LocalConsoleSessionSummary;
+    const decision = decideSubmittedMessageDispatch(session);
+    expect(decision).toMatchObject({ kind: "awaiting-team", dispatch: { lane: "awaiting-team", role: null } });
+    expect(decision.kind === "awaiting-team" && decideSubmittedMessageWake(decision.dispatch))
+      .toEqual({ kind: "primary" });
+    expect(decideSubmittedMessageWake({ lane: "worker", role: "qa", reason: "single-valid-mention" }))
+      .toEqual({ kind: "worker" });
+  });
+});

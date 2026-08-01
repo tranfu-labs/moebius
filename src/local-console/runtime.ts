@@ -114,6 +114,7 @@ import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
+import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -348,6 +349,7 @@ export class LocalConsoleRuntime {
   private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
   private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
   private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
+  private readonly messageCommandRuntime: LocalConsoleMessageCommandRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -620,6 +622,49 @@ export class LocalConsoleRuntime {
         if (options.store.renameSession === undefined) throw new Error("local console session rename unavailable");
         return options.store.renameSession(input);
       },
+    });
+    this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime({
+      defaultSessionId: this.sessionId,
+      nowIso: () => this.nowIso(),
+      assertSessionCanContinue: (sessionId) => this.assertSessionCanContinue(sessionId),
+      hasActivePrimary: (sessionId) => this.activeRunForLane(sessionId, "primary") !== undefined,
+      hasPersistedPrimary: (sessionId) => this.hasPersistedPrimaryRun(sessionId),
+      sessionSummary: (sessionId) => this.sessionSummary(sessionId),
+      resolveDispatch: (sessionId, body) => this.resolveUserMessageDispatch(sessionId, body),
+      appendUserMessage: (input) => options.store.appendUserMessage({ ...input, textFragments: [] }),
+      resolveResumeLink: async (sessionId, runId) => {
+        const recoveryStore = this.codexRecoveryFactStore();
+        if (recoveryStore === null) return undefined;
+        const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
+        const [executionLinks, codexLinks] = await Promise.all([
+          readExecutionSessionLinks(factLogPath, sessionId),
+          readCodexThreadLinks(factLogPath, sessionId),
+        ]);
+        return executionLinks.find((candidate) => candidate.runId === runId)
+          ?? codexLinks.find((candidate) => candidate.runId === runId);
+      },
+      recordEditResume: (input) => this.requireCodexRecoveryFactStore().recordCodexResumeIntent({
+        ...input,
+        intentId: crypto.randomUUID(),
+        reason: "edit-resend",
+      }),
+      scheduleWorkerWake: (sessionId) => this.schedulePendingWorkerWake(sessionId),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
+      markPendingReferenceError: (input) => {
+        if (options.store.markPendingReferenceError === undefined) throw new Error("pending message retry unavailable");
+        return options.store.markPendingReferenceError(input);
+      },
+      updatePendingUserMessage: (input) => {
+        if (options.store.updatePendingUserMessage === undefined) throw new Error("pending message editing unavailable");
+        return options.store.updatePendingUserMessage(input);
+      },
+      removePendingUserMessage: (input) => {
+        if (options.store.removePendingUserMessage === undefined) throw new Error("pending message removal unavailable");
+        return options.store.removePendingUserMessage(input);
+      },
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      setLastError: (error) => { this.lastError = error; },
+      schedulePendingProcessing: (sessionId) => this.schedulePendingProcessing(sessionId),
     });
   }
 
@@ -1046,87 +1091,11 @@ export class LocalConsoleRuntime {
     resumeRunId?: string,
     textFragments: LocalConsoleTextFragment[] = [],
   ): Promise<LocalConsoleMessage> {
-    const trimmed = body.trim();
-    if (trimmed === "" && attachmentIds.length === 0) {
-      throw new Error("Message body must not be empty");
-    }
-    if (new Set(attachmentIds).size !== attachmentIds.length) {
-      throw new Error("Attachment ids must be unique");
-    }
-    assertTextFragments(textFragments);
-    await this.assertSessionCanContinue(sessionId);
-    const persistedBody = serializeTextFragmentReferences(trimmed, textFragments);
-
-    const primaryRun = this.activeRunForLane(sessionId, "primary");
-    if (
-      primaryRun === undefined &&
-      (await this.hasPersistedPrimaryRun(sessionId))
-    ) {
-      throw new LocalConsoleBusyError();
-    }
-    const session = await this.sessionSummary(sessionId);
-    const dispatch = session.agentTeamPendingId !== null
-      ? {
-          lane: "awaiting-team" as const,
-          role: null,
-          reason: "no-valid-mention" as const,
-        }
-      : await this.resolveUserMessageDispatch(sessionId, trimmed);
-    const message = await this.storeCall("local-console-store-append-user", () =>
-      this.options.store.appendUserMessage({
-        sessionId,
-        body: persistedBody,
-        attachmentIds,
-        attachmentDraftKey: `draft:${sessionId}`,
-        textFragments: [],
-        dispatch,
-        now: this.nowIso(),
-      }),
-    );
-    if (resumeRunId !== undefined) {
-      const recoveryStore = this.codexRecoveryFactStore();
-      const [executionLinks, codexLinks] = recoveryStore === null
-        ? [[], []]
-        : await Promise.all([
-            readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-            readCodexThreadLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-          ]);
-      const link = executionLinks.find((candidate) => candidate.runId === resumeRunId)
-        ?? codexLinks.find((candidate) => candidate.runId === resumeRunId);
-      if (link !== undefined) {
-        await this.storeCall("local-console-store-record-edit-resume", () =>
-          recoveryStore!.recordCodexResumeIntent({
-            sessionId,
-            intentId: crypto.randomUUID(),
-            targetRunId: resumeRunId,
-            sourceMessageId: message.id,
-            role: link.role,
-            reason: "edit-resend",
-            createdAt: this.nowIso(),
-        }));
-      }
-    }
-    if (dispatch.lane === "worker") {
-      this.schedulePendingWorkerWake(sessionId);
-    }
-    void this.processPending(sessionId);
-    return message;
+    return await this.messageCommandRuntime.submit(body, sessionId, attachmentIds, resumeRunId, textFragments);
   }
 
   async retryPendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
-    const markPendingReferenceError = this.options.store.markPendingReferenceError;
-    if (markPendingReferenceError === undefined) {
-      throw new Error("pending message retry unavailable");
-    }
-    await this.storeCall("local-console-store-clear-pending-reference-error", () =>
-      markPendingReferenceError.call(this.options.store, {
-        sessionId: input.sessionId,
-        messageId: input.messageId,
-        error: null,
-        now: this.nowIso(),
-    }));
-    this.lastError = null;
-    this.schedulePendingProcessing(input.sessionId);
+    await this.messageCommandRuntime.retryPending(input);
   }
 
   async updatePendingUserMessage(input: {
@@ -1134,32 +1103,11 @@ export class LocalConsoleRuntime {
     messageId: number;
     body: string;
   }): Promise<LocalConsoleMessage> {
-    const updatePendingUserMessage = this.options.store.updatePendingUserMessage;
-    if (updatePendingUserMessage === undefined) {
-      throw new Error("pending message editing unavailable");
-    }
-    const message = await this.storeCall("local-console-store-update-pending-user", () =>
-      updatePendingUserMessage.call(this.options.store, {
-        ...input,
-        now: this.nowIso(),
-    }));
-    this.lastError = null;
-    this.schedulePendingProcessing(input.sessionId);
-    return message;
+    return await this.messageCommandRuntime.updatePending(input);
   }
 
   async removePendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
-    const removePendingUserMessage = this.options.store.removePendingUserMessage;
-    if (removePendingUserMessage === undefined) {
-      throw new Error("pending message removal unavailable");
-    }
-    await this.storeCall("local-console-store-remove-pending-user", () =>
-      removePendingUserMessage.call(this.options.store, {
-        ...input,
-        now: this.nowIso(),
-    }));
-    this.lastError = null;
-    this.schedulePendingProcessing(input.sessionId);
+    await this.messageCommandRuntime.removePending(input);
   }
 
   async retryRun(input: {
