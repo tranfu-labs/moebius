@@ -122,6 +122,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/run-lifecycle-runtime.ts",
   "src/local-console/pending-session-context-runtime.ts",
   "src/local-console/run-recovery-runtime.ts",
+  "src/local-console/project-command-runtime.ts",
   "src/local-console/run-terminal-flow.ts",
   "src/local-console/worker-dispatch-flow.ts",
   "src/retry.ts",
@@ -331,6 +332,7 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     "src/local-console/run-lifecycle-runtime.ts",
     "src/local-console/pending-session-context-runtime.ts",
     "src/local-console/run-recovery-runtime.ts",
+    "src/local-console/project-command-runtime.ts",
     "src/runner.ts",
   ],
   dependencyDebt: [

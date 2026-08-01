@@ -106,6 +106,7 @@ import {
 } from "./run-lifecycle-runtime.js";
 import { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
+import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -331,6 +332,7 @@ export class LocalConsoleRuntime {
   private readonly runLifecycleRuntime: LocalRunLifecycleRuntime;
   private readonly pendingSessionContextRuntime: LocalPendingSessionContextRuntime;
   private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
+  private readonly projectCommandRuntime: LocalProjectCommandRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -413,6 +415,17 @@ export class LocalConsoleRuntime {
       recoveryStore: () => this.codexRecoveryFactStore(),
       requireRecoveryStore: () => this.requireCodexRecoveryFactStore(),
       lifecycleStore: () => this.runLifecycleFactStore(),
+    });
+    this.projectCommandRuntime = new LocalProjectCommandRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      assertDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
+      withDirectoryAvailability: (project, knownAvailable) =>
+        this.withDirectoryAvailability(project, knownAvailable),
+      processPending: (sessionId) => void this.processPending(sessionId),
+      activeRunsForSession: (sessionId) => this.activeRunsForSession(sessionId),
+      inactiveSessions: this.inactiveSessions,
     });
   }
 
@@ -719,143 +732,27 @@ export class LocalConsoleRuntime {
   }
 
   async createProject(input: { folderPath: string; worktreeMode: boolean }): Promise<LocalConsoleProjectSummary> {
-    return await this.storeCall("local-console-store-create-project", () =>
-      this.options.store.createProject({
-        folderPath: input.folderPath,
-        worktreeMode: input.worktreeMode,
-        now: this.nowIso(),
-      }),
-    );
+    return await this.projectCommandRuntime.create(input);
   }
 
   async updateProject(input: { projectId: string; worktreeMode: boolean }): Promise<LocalConsoleProjectSummary> {
-    await this.assertProjectDirectoryAvailable(input.projectId);
-    return await this.storeCall("local-console-store-update-project", () =>
-      this.options.store.updateProject({
-        projectId: input.projectId,
-        worktreeMode: input.worktreeMode,
-        now: this.nowIso(),
-      }),
-    );
+    return await this.projectCommandRuntime.update(input);
   }
 
   async repairProjectFolder(input: { projectId: string; folderPath: string }): Promise<LocalConsoleProjectSummary> {
-    if (this.options.store.repairProjectFolder === undefined) {
-      throw new Error("local console project folder repair unavailable");
-    }
-    const folderPath = path.resolve(input.folderPath);
-    if (!(await directoryAvailable(folderPath))) {
-      throw new LocalConsoleProjectFolderError(
-        "PROJECT_DIRECTORY_UNAVAILABLE",
-        "所选文件夹不可访问，请重新选择",
-      );
-    }
-    try {
-      const repaired = await this.storeCall("local-console-store-repair-project-folder", () =>
-        this.options.store.repairProjectFolder!({
-          projectId: input.projectId,
-          folderPath,
-          now: this.nowIso(),
-        }),
-      );
-      for (const session of repaired.sessions) {
-        void this.processPending(session.sessionId);
-      }
-      return this.withDirectoryAvailability(repaired, true);
-    } catch (error) {
-      const message = formatLocalError(error);
-      if (message.includes("PROJECT_FOLDER_ALREADY_BOUND")) {
-        throw new LocalConsoleProjectFolderError(
-          "PROJECT_FOLDER_ALREADY_BOUND",
-          "该文件夹已绑定其他项目，不能合并项目记录；请转到已有项目或重新选择",
-        );
-      }
-      if (message.includes("LOCAL_PROJECT_NOT_FOUND")) {
-        throw new LocalConsoleProjectFolderError("LOCAL_PROJECT_NOT_FOUND", "项目不存在或已移除");
-      }
-      throw error;
-    }
+    return await this.projectCommandRuntime.repairFolder(input);
   }
 
   async renameProject(input: { projectId: string; title: string }): Promise<LocalConsoleProjectSummary> {
-    if (this.options.store.renameProject === undefined) {
-      throw new Error("local console project rename unavailable");
-    }
-    return await this.storeCall("local-console-store-rename-project", () =>
-      this.options.store.renameProject!({
-        projectId: input.projectId,
-        title: input.title,
-        now: this.nowIso(),
-      }),
-    );
+    return await this.projectCommandRuntime.rename(input);
   }
 
   async removeProject(input: { projectId: string; force: boolean }): Promise<LocalConsoleProjectRemovalResult> {
-    if (this.options.store.removeProject === undefined) {
-      throw new Error("local console project removal unavailable");
-    }
-    const project = (await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects()))
-      .find((candidate) => candidate.projectId === input.projectId);
-    if (project === undefined) {
-      throw new Error(`local console project not found: ${input.projectId}`);
-    }
-    if (project.runningCount > 0 && !input.force) {
-      throw new LocalConsoleProjectRunningError();
-    }
-
-    const allSessions = await this.storeCall(
-      "local-console-store-list-project-removal-sessions",
-      () => this.options.store.listSessions(),
-    );
-    const removalRoots = project.sessions.map((session) => session.sessionId);
-    const removalSessionIds = new Set(removalRoots);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const session of allSessions) {
-        if (
-          session.analysisParentSessionId !== null
-          && session.analysisParentSessionId !== undefined
-          && removalSessionIds.has(session.analysisParentSessionId)
-          && !removalSessionIds.has(session.sessionId)
-        ) {
-          removalSessionIds.add(session.sessionId);
-          changed = true;
-        }
-      }
-    }
-    const sessionIds = [...removalSessionIds];
-    for (const sessionId of sessionIds) {
-      this.inactiveSessions.add(sessionId);
-      if (input.force) {
-        for (const active of this.activeRunsForSession(sessionId)) {
-          active.controller.abort("project-removed");
-        }
-      }
-    }
-    try {
-      return await this.storeCall("local-console-store-remove-project", () =>
-        this.options.store.removeProject!({
-          projectId: input.projectId,
-          force: input.force,
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      for (const sessionId of sessionIds) {
-        this.inactiveSessions.delete(sessionId);
-      }
-      if (error instanceof Error && error.message.includes("PROJECT_HAS_RUNNING_AGENTS")) {
-        throw new LocalConsoleProjectRunningError();
-      }
-      throw error;
-    }
+    return await this.projectCommandRuntime.remove(input);
   }
 
   async reorderProjects(projectIds: string[]): Promise<LocalConsoleProjectSummary[]> {
-    return await this.storeCall("local-console-store-reorder-projects", () =>
-      this.options.store.reorderProjects(projectIds),
-    );
+    return await this.projectCommandRuntime.reorder(projectIds);
   }
 
   async createSession(
