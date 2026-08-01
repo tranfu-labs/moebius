@@ -67,12 +67,6 @@ import {
 } from "./execution-driver.js";
 import {
   legacyCodexContextFingerprint,
-  type LocalAgentSessionLinkFact,
-  type LocalAgentTimelineCursorFact,
-  type LocalExecutionSessionLinkFact,
-  type LocalProviderInvocationFact,
-  type LocalProviderSessionObservedFact,
-  type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import {
   readExecutionSessionLinks,
@@ -86,10 +80,7 @@ import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runt
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
 import { LocalRunFailureRuntime } from "./run-failure-runtime.js";
-import {
-  LocalRunLifecycleRuntime,
-  type LocalRunLifecycleFactStore,
-} from "./run-lifecycle-runtime.js";
+import { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalLegacyHandoffRecoveryRuntime } from "./legacy-handoff-recovery-runtime.js";
@@ -111,6 +102,7 @@ import {
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { ActiveLocalRun } from "./active-run.js";
+import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
@@ -146,7 +138,10 @@ import {
   fileAvailable,
   readOptionalTextFile,
 } from "./runtime-file-support.js";
-import { withLocalConsoleTimeout } from "./store-timeout.js";
+import {
+  LocalConsoleStorePorts,
+  type LocalSessionFactWritingStore,
+} from "./runtime-store-ports.js";
 import {
   generateLocalWorkspaceDiff,
   invalidateLocalWorkspaceFacts,
@@ -173,9 +168,7 @@ import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
 import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   readLocalCodexRecoveryFacts,
-  type LocalCodexResumeConsumedFact,
   type LocalCodexResumeIntentFact,
-  type LocalCodexRunUsageFact,
 } from "./codex-resume.js";
 import {
   loadLocalProcessAppendPage,
@@ -222,60 +215,6 @@ export interface LocalConsoleRuntimeOptions {
   now?: () => Date;
 }
 
-interface SessionFactWritingStore extends LocalConsoleStore {
-  getSessionFactLogPath(sessionId: string): string;
-  recordProgressEvent(input: {
-    sessionId: string;
-    runId: string;
-    role: string;
-    body: string;
-    now: string;
-  }): Promise<void>;
-  createChildSession(input: {
-    parentSessionId: string;
-    childSessionId: string;
-    projectId: string;
-    title: string;
-    relation: string;
-    hiddenKey: string;
-    initialBody: string;
-    initialRole: string | null;
-    now: string;
-  }): Promise<LocalConsoleSessionSummary>;
-  recordChildSessionCard(input: {
-    parentSessionId: string;
-    sourceId: string;
-    childSessionIds: string[];
-    runId: string;
-    runDir: string;
-    now: string;
-  }): Promise<void>;
-  recordWorkspaceDiff(input: {
-    sessionId: string;
-    runId: string;
-    originalRepoRoot: string | null;
-    baseRef: string;
-    branchName: string;
-    worktreePath: string;
-    patchPath: string;
-    affectedFiles: string[];
-    status: "generated" | "applied" | "failed" | "abandoned" | "rolled_back";
-    error: string | null;
-    now: string;
-  }): Promise<void>;
-}
-
-interface CodexRecoveryFactStore extends LocalConsoleStore {
-  getSessionFactLogPath(sessionId: string): string;
-  recordCodexResumeIntent(input: LocalCodexResumeIntentFact): Promise<void>;
-  recordCodexResumeConsumed(input: LocalCodexResumeConsumedFact): Promise<void>;
-  recordCodexRunUsage(input: LocalCodexRunUsageFact): Promise<void>;
-  recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void>;
-  recordProviderSessionObserved(input: LocalProviderSessionObservedFact): Promise<void>;
-  recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void>;
-  recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void>;
-}
-
 export class LocalConsoleRuntime {
   private readonly sessionId: string;
   private readonly storeTimeoutMs: number;
@@ -286,7 +225,8 @@ export class LocalConsoleRuntime {
   private readonly staleRunningGraceMs: number;
   private readonly now: () => Date;
   private readonly executionRunner: LocalExecutionRunner;
-  private readonly activeRuns = new Map<string, ActiveLocalRun>();
+  private readonly storePorts: LocalConsoleStorePorts;
+  private readonly activeRunRegistry = new LocalActiveRunRegistry();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
   private readonly conversationWorkspaceRuntime: LocalConversationWorkspaceRuntime;
@@ -331,13 +271,14 @@ export class LocalConsoleRuntime {
     this.routeTimeoutMs = options.routeTimeoutMs;
     this.staleRunningGraceMs = options.staleRunningGraceMs ?? 5_000;
     this.now = options.now ?? (() => new Date());
+    this.storePorts = new LocalConsoleStorePorts(options.store, this.storeTimeoutMs);
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
       dataRoot: options.dataRoot ?? options.projectRoot,
       runCodex: options.runCodex,
     });
     this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       baselineCommits: this.conversationBaselineCommits,
       workdirRoot: options.workdirRoot,
       ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
@@ -346,7 +287,7 @@ export class LocalConsoleRuntime {
     });
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       directoryAvailable,
       ...(options.resolveAgentTeamHealth === undefined
         ? {}
@@ -354,10 +295,10 @@ export class LocalConsoleRuntime {
     });
     this.sessionPresentationRuntime = new LocalSessionPresentationRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       withAgentTeamHealth: (session) => this.sessionContinuationRuntime.withAgentTeamHealth(session),
-      activeRuns: () => this.activeRuns.values(),
+      activeRuns: () => this.activeRunRegistry.values(),
       activeRunCount: (sessionId) => this.activeRunsForSession(sessionId).length,
       getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
       workdirRoot: options.workdirRoot,
@@ -372,13 +313,13 @@ export class LocalConsoleRuntime {
     });
     this.runFailureRuntime = new LocalRunFailureRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       timeoutKind: executionTimeoutKind,
       interrupted: isInterruptedCodexRunResult,
       interruptionCause: executionInterruptionCauseForResult,
       logTimeout: (input) => log(input),
-      activeRun: (runId) => this.activeRuns.get(runId),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
       recordStuck: (message, sessionId, runId, runDir, reason, terminal) =>
         this.recordStuckBestEffort(message, sessionId, runId, runDir, reason, terminal),
       recordInterrupted: (message, sessionId, runId, runDir, reason, cause, terminal) =>
@@ -388,10 +329,10 @@ export class LocalConsoleRuntime {
       recordDetached: (input) => this.recordDetachedRunTerminal(input),
     });
     this.runLifecycleRuntime = new LocalRunLifecycleRuntime({
-      activeRun: (runId) => this.activeRuns.get(runId),
-      activeRuns: () => this.activeRuns.values(),
-      lifecycleStore: () => this.runLifecycleFactStore(),
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
+      activeRuns: () => this.activeRunRegistry.values(),
+      lifecycleStore: () => this.storePorts.lifecycleFacts(),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       now: () => this.now(),
       nowIso: () => this.nowIso(),
       recordError: (error) => {
@@ -400,7 +341,7 @@ export class LocalConsoleRuntime {
     });
     this.workerDispatchRuntime = new LocalWorkerDispatchRuntime({
       hasClaimCapability: () => options.store.claimNextPendingWorkerMessage !== undefined,
-      listMessages: (sessionId, label) => this.storeCall(label, () => options.store.listMessages(sessionId)),
+      listMessages: (sessionId, label) => this.storePorts.call(label, () => options.store.listMessages(sessionId)),
       activeRunForRole: (sessionId, role) => this.activeRunForRole(sessionId, role),
       listAgentFiles: async (sessionId) => {
         const persisted = await options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
@@ -414,14 +355,14 @@ export class LocalConsoleRuntime {
       },
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       nextRunId: (sessionId, messageId) => this.gracefulResumeTargetForMessage(sessionId, messageId),
-      claim: (sessionId, role, runId) => this.storeCall("local-console-store-claim-worker", () =>
+      claim: (sessionId, role, runId) => this.storePorts.call("local-console-store-claim-worker", () =>
         options.store.claimNextPendingWorkerMessage!.call(options.store, {
           sessionId,
           role,
           runId,
           now: this.nowIso(),
         })),
-      release: (message, sessionId) => this.storeCall("local-console-store-release-stopped-worker-claim", () =>
+      release: (message, sessionId) => this.storePorts.call("local-console-store-release-stopped-worker-claim", () =>
         options.store.releaseMessageForRetry({ userMessageId: message.id, sessionId, now: this.nowIso() })),
       recordMissingAgent: (message, sessionId, runId, role) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
@@ -452,7 +393,7 @@ export class LocalConsoleRuntime {
       sessionSummary: (sessionId) => this.sessionSummary(sessionId),
       makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
       setSourceRunDir: (message, sessionId, runDir) =>
-        this.storeCall("local-console-store-set-worker-source-rundir", () => options.store.setRunDir({
+        this.storePorts.call("local-console-store-set-worker-source-rundir", () => options.store.setRunDir({
           id: message.id,
           sessionId,
           runDir,
@@ -472,7 +413,7 @@ export class LocalConsoleRuntime {
         })));
       },
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
-        factLogPath: this.codexRecoveryFactStore()?.getSessionFactLogPath(sessionId) ?? null,
+        factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
         sessionId,
       }),
       isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
@@ -487,13 +428,13 @@ export class LocalConsoleRuntime {
           reason: unavailable.reason,
           runDir,
         }),
-      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
-      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+      recordRunExecutionContext: (context) => this.storePorts.recordRunExecutionContext(context),
+      recordAgentSessionLink: (link) => this.storePorts.recordAgentSessionLink(link),
       prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
         ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
       consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
-        this.storeCall("local-console-store-consume-worker-resume", () =>
-          this.requireCodexRecoveryFactStore().recordCodexResumeConsumed({
+        this.storePorts.call("local-console-store-consume-worker-resume", () =>
+          this.storePorts.requireRecoveryFacts().recordCodexResumeConsumed({
             sessionId,
             intentId,
             resumedByRunId: runId,
@@ -504,7 +445,7 @@ export class LocalConsoleRuntime {
       recordDetachedStarted: (input, runDir) => {
         const record = options.store.recordDetachedRunStarted;
         if (record === undefined) throw new Error("local console detached run persistence capability unavailable");
-        return this.storeCall("local-console-store-record-worker-started", () => record.call(options.store, {
+        return this.storePorts.call("local-console-store-record-worker-started", () => record.call(options.store, {
           sessionId: input.sessionId,
           role: input.role,
           runId: input.runId,
@@ -513,7 +454,7 @@ export class LocalConsoleRuntime {
         }));
       },
       prepareLifecycle: (input) => this.runLifecycleRuntime.prepare(input),
-      setActiveRun: (runId, active) => { this.activeRuns.set(runId, active); },
+      setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
       recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
     });
     this.workerProviderRuntime = new LocalWorkerProviderRuntime({
@@ -524,7 +465,7 @@ export class LocalConsoleRuntime {
         await this.finishRunLifecycle(input.runId, "interrupted");
         return true;
       },
-      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       runProvider: (preparation, callbacks) => this.executionRunner({
         prompt: preparation.prompt,
         runDir: preparation.runDir,
@@ -541,13 +482,13 @@ export class LocalConsoleRuntime {
         ...callbacks,
       }),
       onVisibleAgentMarkdown: (input, text) => {
-        const active = this.activeRuns.get(input.runId);
+        const active = this.activeRunRegistry.get(input.runId);
         if (active?.sessionId !== input.sessionId) return async () => undefined;
         active.liveMarkdown = text;
         this.updateAgentProgressActivity(input.runId, text);
         const recordedAt = this.nowIso();
-        return () => this.storeCall("local-console-store-record-worker-progress", () =>
-          this.sessionFactStore().recordProgressEvent({
+        return () => this.storePorts.call("local-console-store-record-worker-progress", () =>
+          this.storePorts.sessionFacts().recordProgressEvent({
             sessionId: input.sessionId,
             runId: input.runId,
             role: input.role,
@@ -559,21 +500,21 @@ export class LocalConsoleRuntime {
       onStructuredActivity: (runId, event) => this.updateStructuredRunActivity(runId, event),
       onExecutionProgress: (runId, event) => this.updateExecutionProgressActivity(runId, event),
       setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
-        const active = this.activeRuns.get(runId);
+        const active = this.activeRunRegistry.get(runId);
         if (active?.sessionId === sessionId) active.threadId = externalSessionId;
       },
-      recordProviderSessionObserved: (fact) => this.recordProviderSessionObserved(fact),
-      recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
-      recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
-      recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
+      recordProviderSessionObserved: (fact) => this.storePorts.recordProviderSessionObserved(fact),
+      recordAgentSessionLink: (fact) => this.storePorts.recordAgentSessionLink(fact),
+      recordExecutionSessionLink: (fact) => this.storePorts.recordExecutionSessionLink(fact),
+      recordCodexThreadLink: (fact) => this.storePorts.recordCodexThreadLink(fact),
     });
     this.workerTerminalRuntime = new LocalWorkerTerminalRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
-      activeRun: (runId) => this.activeRuns.get(runId),
-      recoveryStore: () => this.codexRecoveryFactStore(),
-      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
+      recoveryStore: () => this.storePorts.recoveryFacts(),
+      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -600,7 +541,7 @@ export class LocalConsoleRuntime {
         preparation.controller.signal,
       ),
       recordTimelineCursor: (input, agentIdentityFingerprint, lastSeenIndex) =>
-        this.recordAgentTimelineCursor({
+        this.storePorts.recordAgentTimelineCursor({
           sessionId: input.sessionId,
           runId: input.runId,
           role: input.role,
@@ -609,8 +550,8 @@ export class LocalConsoleRuntime {
           recordedAt: this.nowIso(),
         }),
       recordChildSessionCard: (input, card, result) =>
-        this.storeCall("local-console-store-worker-child-session-card", () =>
-          this.sessionFactStore().recordChildSessionCard({
+        this.storePorts.call("local-console-store-worker-child-session-card", () =>
+          this.storePorts.sessionFacts().recordChildSessionCard({
             parentSessionId: input.sessionId,
             sourceId: card.sourceId,
             childSessionIds: card.childSessionIds,
@@ -638,10 +579,10 @@ export class LocalConsoleRuntime {
         error,
         status: "failed",
       }),
-      activeRun: (runId) => this.activeRuns.get(runId),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
       pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
       failLifecycle: (runId) => this.finishRunLifecycle(runId, "failed"),
-      deleteActiveRun: (runId) => { this.activeRuns.delete(runId); },
+      deleteActiveRun: (runId) => { this.activeRunRegistry.delete(runId); },
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     });
     this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime({
@@ -654,7 +595,7 @@ export class LocalConsoleRuntime {
         const providerRunDir = options.makeRunDir(messageCount, this.now());
         return { providerRunDir, resolvedRunDir: path.resolve(providerRunDir) };
       },
-      setSourceRunDir: (message, sessionId, runDir) => this.storeCall("local-console-store-set-rundir", () =>
+      setSourceRunDir: (message, sessionId, runDir) => this.storePorts.call("local-console-store-set-rundir", () =>
         options.store.setRunDir({ id: message.id, sessionId, runDir, now: this.nowIso() })),
       resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
       loadAgentContents: async (agents, selected, selectedMarkdown) => await Promise.all(agents.map(async (agent) => ({
@@ -667,7 +608,7 @@ export class LocalConsoleRuntime {
       concurrentRecoveryWorkspace: (sessionId) => this.concurrentAgentHandoffRecoveryWorkspace(sessionId),
       buildAnalysisContract: (proposalVersion) => buildSessionAnalysisReadOnlyContract(proposalVersion),
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
-        factLogPath: this.codexRecoveryFactStore()?.getSessionFactLogPath(sessionId) ?? null,
+        factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
         sessionId,
       }),
       isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
@@ -682,13 +623,13 @@ export class LocalConsoleRuntime {
           reason: unavailable.reason,
           runDir,
         }),
-      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
-      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+      recordRunExecutionContext: (context) => this.storePorts.recordRunExecutionContext(context),
+      recordAgentSessionLink: (link) => this.storePorts.recordAgentSessionLink(link),
       prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
         ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
       consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
-        this.storeCall("local-console-store-consume-resume", () =>
-          this.requireCodexRecoveryFactStore().recordCodexResumeConsumed({
+        this.storePorts.call("local-console-store-consume-resume", () =>
+          this.storePorts.requireRecoveryFacts().recordCodexResumeConsumed({
             sessionId,
             intentId,
             resumedByRunId: runId,
@@ -697,12 +638,12 @@ export class LocalConsoleRuntime {
             consumedAt: this.nowIso(),
           })),
       prepareLifecycle: (input) => this.prepareRunLifecycle(input),
-      setActiveRun: (runId, active) => { this.activeRuns.set(runId, active); },
+      setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
       recordLifecycle: (active) => this.recordRunLifecycle(active, "created", "created"),
     });
     this.primaryProviderRuntime = new LocalPrimaryProviderRuntime({
       nowIso: () => this.nowIso(),
-      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       runProvider: (preparation, callbacks) => this.executionRunner({
         prompt: preparation.prompt,
         runDir: preparation.providerRunDir,
@@ -719,13 +660,13 @@ export class LocalConsoleRuntime {
         ...callbacks,
       }),
       onVisibleAgentMarkdown: (input, text) => {
-        const active = this.activeRuns.get(input.runId);
+        const active = this.activeRunRegistry.get(input.runId);
         if (active?.sessionId !== input.sessionId) return async () => undefined;
         active.liveMarkdown = text;
         this.updateAgentProgressActivity(input.runId, text);
         const recordedAt = this.nowIso();
-        return () => this.storeCall("local-console-store-record-progress", () =>
-          this.sessionFactStore().recordProgressEvent({
+        return () => this.storePorts.call("local-console-store-record-progress", () =>
+          this.storePorts.sessionFacts().recordProgressEvent({
             sessionId: input.sessionId,
             runId: input.runId,
             role: input.role,
@@ -737,13 +678,13 @@ export class LocalConsoleRuntime {
       onStructuredActivity: (runId, event) => this.updateStructuredRunActivity(runId, event),
       onExecutionProgress: (runId, event) => this.updateExecutionProgressActivity(runId, event),
       setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
-        const active = this.activeRuns.get(runId);
+        const active = this.activeRunRegistry.get(runId);
         if (active?.sessionId === sessionId) active.threadId = externalSessionId;
       },
-      recordProviderSessionObserved: (fact) => this.recordProviderSessionObserved(fact),
-      recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
-      recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
-      recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
+      recordProviderSessionObserved: (fact) => this.storePorts.recordProviderSessionObserved(fact),
+      recordAgentSessionLink: (fact) => this.storePorts.recordAgentSessionLink(fact),
+      recordExecutionSessionLink: (fact) => this.storePorts.recordExecutionSessionLink(fact),
+      recordCodexThreadLink: (fact) => this.storePorts.recordCodexThreadLink(fact),
     });
     this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime({
       updateGate: async (input) => {
@@ -761,7 +702,7 @@ export class LocalConsoleRuntime {
           ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
           ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
           onVisibleAgentMarkdown: (text) => {
-            const active = this.activeRuns.get(run.runId);
+            const active = this.activeRunRegistry.get(run.runId);
             if (active?.sessionId === run.sessionId) {
               active.liveMarkdown = text;
               this.updateAgentProgressActivity(run.runId, text);
@@ -778,11 +719,11 @@ export class LocalConsoleRuntime {
     });
     this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
-      activeRun: (runId) => this.activeRuns.get(runId),
-      recoveryStore: () => this.codexRecoveryFactStore(),
-      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
+      recoveryStore: () => this.storePorts.recoveryFacts(),
+      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -808,7 +749,7 @@ export class LocalConsoleRuntime {
         preparation.controller.signal,
       ),
       recordTimelineCursor: (run, agentIdentityFingerprint, lastSeenIndex) =>
-        this.recordAgentTimelineCursor({
+        this.storePorts.recordAgentTimelineCursor({
           sessionId: run.sessionId,
           runId: run.runId,
           role: run.role,
@@ -817,8 +758,8 @@ export class LocalConsoleRuntime {
           recordedAt: this.nowIso(),
         }),
       recordChildSessionCard: (run, card, result) =>
-        this.storeCall("local-console-store-child-session-card", () =>
-          this.sessionFactStore().recordChildSessionCard({
+        this.storePorts.call("local-console-store-child-session-card", () =>
+          this.storePorts.sessionFacts().recordChildSessionCard({
             parentSessionId: run.sessionId,
             sourceId: card.sourceId,
             childSessionIds: card.childSessionIds,
@@ -834,7 +775,7 @@ export class LocalConsoleRuntime {
     });
     this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       nextRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
@@ -851,7 +792,7 @@ export class LocalConsoleRuntime {
       },
       sessionSummary: (sessionId) => this.sessionSummary(sessionId),
       loadRetryIntent: async (sessionId, sourceMessageId) => {
-        const recoveryStore = this.codexRecoveryFactStore();
+        const recoveryStore = this.storePorts.recoveryFacts();
         if (recoveryStore === null) return null;
         const recoveryFacts = await readLocalCodexRecoveryFacts(
           recoveryStore.getSessionFactLogPath(sessionId),
@@ -894,10 +835,10 @@ export class LocalConsoleRuntime {
       report: (event, error) => log({ event, error }),
       recordFailure: (message, sessionId, runId, runDir, error) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, error),
-      activeRun: (runId) => runId === null ? undefined : this.activeRuns.get(runId),
+      activeRun: (runId) => runId === null ? undefined : this.activeRunRegistry.get(runId),
       pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
       failLifecycle: (runId) => this.finishRunLifecycle(runId, "failed"),
-      deleteActiveRun: (runId) => { this.activeRuns.delete(runId); },
+      deleteActiveRun: (runId) => { this.activeRunRegistry.delete(runId); },
       applyPendingContext: (sessionId) => this.applyPendingSessionContextWhenIdle(sessionId),
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     });
@@ -909,14 +850,14 @@ export class LocalConsoleRuntime {
       dispatchWorkers: (sessionId, workspace) => this.workerDispatchRuntime.dispatch(sessionId, workspace),
       hasPersistedPrimary: (sessionId) => this.hasPersistedPrimaryRun(sessionId),
       executePrimary: (sessionId, workspace) => this.primaryExecutionRuntime.run(sessionId, workspace),
-      listSessions: () => this.storeCall("local-console-store-list-sessions", () => options.store.listSessions()),
+      listSessions: () => this.storePorts.call("local-console-store-list-sessions", () => options.store.listSessions()),
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       report: (event, error) => log({ event, error }),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
       hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
@@ -925,16 +866,16 @@ export class LocalConsoleRuntime {
     });
     this.runRecoveryRuntime = new LocalRunRecoveryRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
-      recoveryStore: () => this.codexRecoveryFactStore(),
-      requireRecoveryStore: () => this.requireCodexRecoveryFactStore(),
-      lifecycleStore: () => this.runLifecycleFactStore(),
+      recoveryStore: () => this.storePorts.recoveryFacts(),
+      requireRecoveryStore: () => this.storePorts.requireRecoveryFacts(),
+      lifecycleStore: () => this.storePorts.lifecycleFacts(),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
     });
     this.projectCommandRuntime = new LocalProjectCommandRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       assertDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
       withDirectoryAvailability: (project, knownAvailable) =>
@@ -947,7 +888,7 @@ export class LocalConsoleRuntime {
     });
     this.sessionCreationRuntime = new LocalSessionCreationRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       createSessionId: () => `local:${this.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`,
       nowIso: () => this.nowIso(),
       resolveProjectId: async (projectId) => projectId ?? (await this.defaultProjectId()),
@@ -983,7 +924,7 @@ export class LocalConsoleRuntime {
     });
     this.sessionSettingsRuntime = new LocalSessionSettingsRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
       ...(options.loadAgentTeamSnapshot === undefined
         ? {}
@@ -1000,12 +941,12 @@ export class LocalConsoleRuntime {
     });
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       randomId: () => crypto.randomUUID(),
     });
     this.stateQueryRuntime = new LocalConsoleStateQueryRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       defaultSessionId: this.sessionId,
       projectRoot: options.projectRoot,
       lastError: () => this.lastError,
@@ -1016,7 +957,7 @@ export class LocalConsoleRuntime {
       stopUnsafeRunsWithUnavailableContext: (projects) => this.stopUnsafeRunsWithUnavailableContext(projects),
       primaryRunId: (sessionId) => this.activeRunForLane(sessionId, "primary")?.runId ?? null,
       activeRunSnapshots: (sessionId) => this.activeRunSnapshots(sessionId),
-      listChildSessions: (parentSessionId) => this.storeCall("local-console-store-list-child-sessions", () =>
+      listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
         listLocalChildSessionSummaries({
           sqlitePath: options.store.sqlitePath,
           timeoutMs: this.storeTimeoutMs,
@@ -1027,13 +968,13 @@ export class LocalConsoleRuntime {
     });
     this.runOutputRuntime = new LocalConsoleRunOutputRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
-      activeRun: (runId) => this.activeRuns.get(runId),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
       activeRunIds: (sessionId) => new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
       readOptionalTextFile,
       sessionFactLogPath: (sessionId) => {
         const store = options.store as LocalConsoleStore
-          & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
+          & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
         const getSessionFactLogPath = store.getSessionFactLogPath;
         if (getSessionFactLogPath === undefined) {
           throw new Error("local console store does not provide the session fact log path");
@@ -1064,15 +1005,15 @@ export class LocalConsoleRuntime {
     });
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime({
       nowIso: () => this.nowIso(),
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       assertProjectDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
-      createChildSession: (input) => this.sessionFactStore().createChildSession(input),
+      createChildSession: (input) => this.storePorts.sessionFacts().createChildSession(input),
       recordVisibleChildFailure: (parentSessionId, reason) =>
         this.recordVisibleChildSessionFailureBestEffort(parentSessionId, reason),
       setLastError: (error) => { this.lastError = error; },
       sessionFactLogPath: (sessionId) => {
         const store = options.store as LocalConsoleStore
-          & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
+          & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
         const getSessionFactLogPath = store.getSessionFactLogPath;
         if (getSessionFactLogPath === undefined) {
           throw new Error("local console store does not provide the session fact log path");
@@ -1080,7 +1021,7 @@ export class LocalConsoleRuntime {
         return getSessionFactLogPath.call(store, sessionId);
       },
       interruptRun: ({ sessionId, runId }) => {
-        const active = this.activeRuns.get(runId);
+        const active = this.activeRunRegistry.get(runId);
         if (active === undefined || active.sessionId !== sessionId) return false;
         active.controller.abort("user-interrupted");
         return true;
@@ -1117,7 +1058,7 @@ export class LocalConsoleRuntime {
       resolveDispatch: (sessionId, body) => this.resolveUserMessageDispatch(sessionId, body),
       appendUserMessage: (input) => options.store.appendUserMessage({ ...input, textFragments: [] }),
       resolveResumeLink: async (sessionId, runId) => {
-        const recoveryStore = this.codexRecoveryFactStore();
+        const recoveryStore = this.storePorts.recoveryFacts();
         if (recoveryStore === null) return undefined;
         const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
         const [executionLinks, codexLinks] = await Promise.all([
@@ -1127,7 +1068,7 @@ export class LocalConsoleRuntime {
         return executionLinks.find((candidate) => candidate.runId === runId)
           ?? codexLinks.find((candidate) => candidate.runId === runId);
       },
-      recordEditResume: (input) => this.requireCodexRecoveryFactStore().recordCodexResumeIntent({
+      recordEditResume: (input) => this.storePorts.requireRecoveryFacts().recordCodexResumeIntent({
         ...input,
         intentId: crypto.randomUUID(),
         reason: "edit-resend",
@@ -1146,7 +1087,7 @@ export class LocalConsoleRuntime {
         if (options.store.removePendingUserMessage === undefined) throw new Error("pending message removal unavailable");
         return options.store.removePendingUserMessage(input);
       },
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       setLastError: (error) => { this.lastError = error; },
       schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
     });
@@ -1154,10 +1095,10 @@ export class LocalConsoleRuntime {
       nowIso: () => this.nowIso(),
       randomId: () => crypto.randomUUID(),
       assertSessionCanContinue: (sessionId) => this.assertSessionCanContinue(sessionId),
-      listMessages: (sessionId) => this.storeCall("local-console-store-list-retry-source", () =>
+      listMessages: (sessionId) => this.storePorts.call("local-console-store-list-retry-source", () =>
         options.store.listMessages(sessionId)),
       loadRecoveryBundle: async (sessionId) => {
-        const recoveryStore = this.codexRecoveryFactStore();
+        const recoveryStore = this.storePorts.recoveryFacts();
         if (recoveryStore === null) return emptyRetryRecoveryBundle();
         const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
         const [executionLinks, codexLinks, runContexts, recoveryFacts] = await Promise.all([
@@ -1169,32 +1110,32 @@ export class LocalConsoleRuntime {
         return { available: true, executionLinks, codexLinks, runContexts, recoveryFacts };
       },
       activeRunForRole: (sessionId, role) => this.activeRunForRole(sessionId, role) !== undefined,
-      recordRetryIntent: (input) => this.requireCodexRecoveryFactStore().recordCodexResumeIntent(input),
+      recordRetryIntent: (input) => this.storePorts.requireRecoveryFacts().recordCodexResumeIntent(input),
       releaseMessageForRetry: (input) => options.store.releaseMessageForRetry(input),
       processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
     });
     const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime({
       store: options.store,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       nowIso: () => this.nowIso(),
-      recoveryStore: () => this.codexRecoveryFactStore(),
+      recoveryStore: () => this.storePorts.recoveryFacts(),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
       readRunContexts: readRunExecutionContexts,
-      activeRunIds: () => new Set(this.activeRuns.keys()),
+      activeRunIds: () => new Set(this.activeRunRegistry.keys()),
       report: (input) => log(input),
     });
     this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime({
       store: options.store,
       defaultSessionId: this.sessionId,
-      storeCall: (label, operation) => this.storeCall(label, operation),
+      storeCall: (label, operation) => this.storePorts.call(label, operation),
       now: () => this.now(),
       nowIso: () => this.nowIso(),
       idleTimeoutMs: this.codexIdleTimeoutMs,
       maxDurationMs: this.codexMaxDurationMs,
       staleGraceMs: this.staleRunningGraceMs,
-      activeSessionIds: () => new Set([...this.activeRuns.values()].map((active) => active.sessionId)),
-      recoveryStore: () => this.codexRecoveryFactStore(),
+      activeSessionIds: () => new Set([...this.activeRunRegistry.values()].map((active) => active.sessionId)),
+      recoveryStore: () => this.storePorts.recoveryFacts(),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
       legacyRecovery: legacyHandoffRecoveryRuntime,
       recordError: (error) => {
@@ -1220,7 +1161,7 @@ export class LocalConsoleRuntime {
     }
     this.closing = true;
     this.pendingProcessingRuntime.beginClosing();
-    for (const active of [...this.activeRuns.values()]) {
+    for (const active of [...this.activeRunRegistry.values()]) {
       try {
         if (active.threadId !== null) {
           const intent: LocalCodexResumeIntentFact = {
@@ -1234,14 +1175,14 @@ export class LocalConsoleRuntime {
             createdAt: this.nowIso(),
           };
           if (intent.role !== "") {
-            const recoveryStore = this.requireCodexRecoveryFactStore();
-            await this.storeCall("local-console-store-record-graceful-resume", () =>
+            const recoveryStore = this.storePorts.requireRecoveryFacts();
+            await this.storePorts.call("local-console-store-record-graceful-resume", () =>
               recoveryStore.recordCodexResumeIntent(intent));
             const releaseMessageForResume = this.options.store.releaseMessageForResume;
             if (releaseMessageForResume === undefined) {
               throw new Error("local console graceful resume persistence capability unavailable");
             }
-            await this.storeCall("local-console-store-release-graceful-resume", () =>
+            await this.storePorts.call("local-console-store-release-graceful-resume", () =>
               releaseMessageForResume.call(this.options.store, {
                 userMessageId: active.userMessageId,
                 sessionId: active.sessionId,
@@ -1543,7 +1484,7 @@ export class LocalConsoleRuntime {
   }
 
   private async sessionSummary(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    const sessions = await this.storeCall(
+    const sessions = await this.storePorts.call(
       "local-console-store-list-session-policy",
       () => this.options.store.listSessions(),
     );
@@ -1562,7 +1503,7 @@ export class LocalConsoleRuntime {
     if (this.options.store.updateSessionAnalysisGate === undefined) {
       throw new Error("local console analysis gate persistence unavailable");
     }
-    return await this.storeCall("local-console-store-update-analysis-gate", () =>
+    return await this.storePorts.call("local-console-store-update-analysis-gate", () =>
       this.options.store.updateSessionAnalysisGate!({
         ...input,
         now: this.nowIso(),
@@ -1577,7 +1518,7 @@ export class LocalConsoleRuntime {
     if (!this.closing && !this.inactiveSessions.has(sessionId)) {
       return false;
     }
-    await this.storeCall("local-console-store-release-stopped-worker-claim", () =>
+    await this.storePorts.call("local-console-store-release-stopped-worker-claim", () =>
       this.options.store.releaseMessageForRetry({
         userMessageId: sourceMessage.id,
         sessionId,
@@ -1611,7 +1552,7 @@ export class LocalConsoleRuntime {
   }
 
   private async hasPersistedPrimaryRun(sessionId: string): Promise<boolean> {
-    const messages = await this.storeCall("local-console-store-list-primary-running", () =>
+    const messages = await this.storePorts.call("local-console-store-list-primary-running", () =>
       this.options.store.listMessages(sessionId),
     );
     return messages.some((message) =>
@@ -1709,7 +1650,7 @@ export class LocalConsoleRuntime {
       gitTimeoutMs: this.options.workspaceGitTimeoutMs,
       signal,
     });
-    await this.storeCall("local-console-store-record-workspace", () =>
+    await this.storePorts.call("local-console-store-record-workspace", () =>
       this.options.store.recordProjectWorkspaceStatus({
         projectId: source.projectId,
         cwd: workspace.cwd,
@@ -1725,7 +1666,7 @@ export class LocalConsoleRuntime {
   private concurrentAgentHandoffRecoveryWorkspace(
     sessionId: string,
   ): ResolvedLocalWorkspace | null {
-    const candidates = [...this.activeRuns.values()].filter((active) =>
+    const candidates = [...this.activeRunRegistry.values()].filter((active) =>
       active.sessionId === sessionId
       && active.sourceDisposition === "agent-handoff"
       && active.resuming
@@ -1781,7 +1722,7 @@ export class LocalConsoleRuntime {
 
   private async recordNoTrigger(message: LocalConsoleMessage, sessionId: string, runId: string): Promise<void> {
     if (message.speaker === "agent") {
-      await this.storeCall("local-console-store-no-trigger-agent", () =>
+      await this.storePorts.call("local-console-store-no-trigger-agent", () =>
         this.options.store.recordMessageProcessed({
           userMessageId: message.id,
           sessionId,
@@ -1792,7 +1733,7 @@ export class LocalConsoleRuntime {
       );
       return;
     }
-    await this.storeCall("local-console-store-no-trigger", () =>
+    await this.storePorts.call("local-console-store-no-trigger", () =>
       this.options.store.recordSystemAndComplete({
         userMessageId: message.id,
         sessionId,
@@ -1807,7 +1748,7 @@ export class LocalConsoleRuntime {
 
   private async releaseForRetryBestEffort(message: LocalConsoleMessage, sessionId: string): Promise<void> {
     try {
-      await this.storeCall("local-console-store-release-retry", () =>
+      await this.storePorts.call("local-console-store-release-retry", () =>
         this.options.store.releaseMessageForRetry({
           userMessageId: message.id,
           sessionId,
@@ -1921,7 +1862,7 @@ export class LocalConsoleRuntime {
     terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
-      await this.storeCall("local-console-store-record-failure", () =>
+      await this.storePorts.call("local-console-store-record-failure", () =>
         this.options.store.recordFailure({
           userMessageId: message.id,
           sessionId,
@@ -1963,7 +1904,7 @@ export class LocalConsoleRuntime {
     terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
-      await this.storeCall("local-console-store-record-interrupted", () =>
+      await this.storePorts.call("local-console-store-record-interrupted", () =>
         this.options.store.recordInterrupted({
           userMessageId: message.id,
           sessionId,
@@ -1990,7 +1931,7 @@ export class LocalConsoleRuntime {
     terminal?: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
-      await this.storeCall("local-console-store-record-stuck", () =>
+      await this.storePorts.call("local-console-store-record-stuck", () =>
         this.options.store.recordStuck({
           userMessageId: message.id,
           sessionId,
@@ -2009,7 +1950,7 @@ export class LocalConsoleRuntime {
 
   private async recordVisibleChildSessionFailureBestEffort(parentSessionId: string, reason: string): Promise<void> {
     try {
-      await this.storeCall("local-console-store-child-session-failure", () =>
+      await this.storePorts.call("local-console-store-child-session-failure", () =>
         this.options.store.recordSystemMessage({
           sessionId: parentSessionId,
           body: "子任务没有创建成功。你可以继续说话，或换一个成员接手。",
@@ -2059,7 +2000,7 @@ export class LocalConsoleRuntime {
       return null;
     }
 
-    const workspace = await this.storeCall("local-console-store-session-workspace", () => this.options.store.getSessionWorkspace(input.sessionId));
+    const workspace = await this.storePorts.call("local-console-store-session-workspace", () => this.options.store.getSessionWorkspace(input.sessionId));
     const created: LocalConsoleSessionSummary[] = [];
     for (const descriptor of descriptors.issues) {
       const group = descriptors.groups.find((entry) => entry.id === descriptor.groupId);
@@ -2133,8 +2074,8 @@ export class LocalConsoleRuntime {
         gitTimeoutMs: this.options.workspaceGitTimeoutMs,
         signal,
       });
-      await this.storeCall("local-console-store-record-workspace-diff", () =>
-        this.sessionFactStore().recordWorkspaceDiff({
+      await this.storePorts.call("local-console-store-record-workspace-diff", () =>
+        this.storePorts.sessionFacts().recordWorkspaceDiff({
           sessionId,
           runId,
           originalRepoRoot: workspace.originalRepoRoot,
@@ -2151,7 +2092,7 @@ export class LocalConsoleRuntime {
     } catch (error) {
       const message = formatLocalError(error);
       log({ event: "local-console-workspace-diff-failed", error: message, sessionId, runId });
-      await this.sessionFactStore().recordWorkspaceDiff({
+      await this.storePorts.sessionFacts().recordWorkspaceDiff({
         sessionId,
         runId,
         originalRepoRoot: workspace.originalRepoRoot,
@@ -2165,127 +2106,6 @@ export class LocalConsoleRuntime {
         now: this.nowIso(),
       });
     }
-  }
-
-  private async storeCall<T>(label: string, operation: () => Promise<T>): Promise<T> {
-    return await withLocalConsoleTimeout(Promise.resolve().then(operation), this.storeTimeoutMs, label);
-  }
-
-  private async recordRunExecutionContext(
-    input: LocalRunExecutionContextFact,
-  ): Promise<void> {
-    const record = this.options.store.recordRunExecutionContext;
-    if (record === undefined) {
-      return;
-    }
-    await this.storeCall("local-console-store-record-run-execution-context", () =>
-      record.call(this.options.store, input));
-  }
-
-  private async recordExecutionSessionLink(
-    input: LocalExecutionSessionLinkFact,
-  ): Promise<void> {
-    const record = this.options.store.recordExecutionSessionLink;
-    if (record === undefined) {
-      return;
-    }
-    await this.storeCall("local-console-store-record-execution-session-link", () =>
-      record.call(this.options.store, input));
-  }
-
-  private async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
-    const store = this.requireCodexRecoveryFactStore();
-    await this.storeCall("local-console-store-record-agent-session-link", () =>
-      store.recordAgentSessionLink(input));
-  }
-
-  private async recordProviderSessionObserved(
-    input: LocalProviderSessionObservedFact,
-  ): Promise<void> {
-    const store = this.requireCodexRecoveryFactStore();
-    await this.storeCall("local-console-store-record-provider-session-observed", () =>
-      store.recordProviderSessionObserved(input));
-  }
-
-  private async recordAgentTimelineCursor(input: LocalAgentTimelineCursorFact): Promise<void> {
-    const store = this.requireCodexRecoveryFactStore();
-    await this.storeCall("local-console-store-record-agent-timeline-cursor", () =>
-      store.recordAgentTimelineCursor(input));
-  }
-
-  private async recordProviderInvocation(input: LocalProviderInvocationFact): Promise<void> {
-    const store = this.requireCodexRecoveryFactStore();
-    await this.storeCall("local-console-store-record-provider-invocation", () =>
-      store.recordProviderInvocation(input));
-  }
-
-  private async recordCodexThreadLink(input: {
-    sessionId: string;
-    runId: string;
-    sourceMessageId: number;
-    role: string;
-    threadId: string;
-    startedAt: string;
-    contextFingerprint: string;
-  }): Promise<void> {
-    const record = this.options.store.recordCodexThreadLink;
-    if (record === undefined) {
-      throw new Error("local console store does not provide Codex thread link persistence");
-    }
-    await this.storeCall("local-console-store-record-codex-thread-link", () =>
-      record.call(this.options.store, input));
-  }
-
-  private sessionFactStore(): SessionFactWritingStore {
-    const store = this.options.store as Partial<SessionFactWritingStore> & LocalConsoleStore;
-    if (
-      typeof store.createChildSession !== "function" ||
-      typeof store.recordChildSessionCard !== "function" ||
-      typeof store.recordWorkspaceDiff !== "function" ||
-      typeof store.recordProgressEvent !== "function" ||
-      typeof store.getSessionFactLogPath !== "function"
-    ) {
-      throw new Error("local console store does not provide the session fact write funnel");
-    }
-    return store as SessionFactWritingStore;
-  }
-
-  private runLifecycleFactStore(): LocalRunLifecycleFactStore | null {
-    const store = this.options.store as Partial<LocalRunLifecycleFactStore> & LocalConsoleStore;
-    if (
-      typeof store.nextRunAttempt !== "function"
-      || typeof store.getRunTiming !== "function"
-      || typeof store.recordRunLifecycleEvent !== "function"
-      || typeof store.recordRunActivityEvent !== "function"
-    ) {
-      return null;
-    }
-    return store as LocalRunLifecycleFactStore;
-  }
-
-  private codexRecoveryFactStore(): CodexRecoveryFactStore | null {
-    const store = this.options.store as Partial<CodexRecoveryFactStore> & LocalConsoleStore;
-    if (
-      typeof store.getSessionFactLogPath !== "function" ||
-      typeof store.recordCodexResumeIntent !== "function" ||
-      typeof store.recordCodexResumeConsumed !== "function" ||
-      typeof store.recordCodexRunUsage !== "function" ||
-      typeof store.recordAgentSessionLink !== "function" ||
-      typeof store.recordProviderSessionObserved !== "function" ||
-      typeof store.recordAgentTimelineCursor !== "function" ||
-      typeof store.recordProviderInvocation !== "function"
-    ) {
-      return null;
-    }
-    return store as CodexRecoveryFactStore;
-  }
-
-  private requireCodexRecoveryFactStore(): CodexRecoveryFactStore {
-    const store = this.codexRecoveryFactStore();
-    if (store === null) {
-      throw new Error("local console store does not provide Codex recovery fact persistence");
-    }
-    return store;
   }
 
   private nowIso(): string {
