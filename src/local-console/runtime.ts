@@ -424,6 +424,7 @@ export class LocalConsoleRuntime {
       recoveryStore: () => this.codexRecoveryFactStore(),
       requireRecoveryStore: () => this.requireCodexRecoveryFactStore(),
       lifecycleStore: () => this.runLifecycleFactStore(),
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
     });
     this.projectCommandRuntime = new LocalProjectCommandRuntime({
       store: options.store,

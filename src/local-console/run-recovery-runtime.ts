@@ -1,8 +1,15 @@
-import {
-  readLocalCodexRecoveryFacts,
-  type LocalCodexResumeConsumedFact,
-  type LocalCodexResumeIntentFact,
+import type {
+  LocalCodexResumeConsumedFact,
+  LocalCodexResumeIntentFact,
 } from "./codex-resume.js";
+import {
+  decideLifecycleStoreUse,
+  decideRecoveryFactSource,
+  decideUnavailableIntentPersistence,
+  decideUnavailableTimingPersistence,
+  planGracefulResumeTarget,
+  planGracefulResumeTargets,
+} from "./run-recovery-plan.js";
 import type { LocalRunLifecycleFactStore } from "./run-lifecycle-runtime.js";
 import type { LocalConsoleMessage, LocalConsoleStore } from "./types.js";
 
@@ -19,41 +26,32 @@ export class LocalRunRecoveryRuntime {
     recoveryStore(): LocalRunRecoveryFactStore | null;
     requireRecoveryStore(): LocalRunRecoveryFactStore;
     lifecycleStore(): LocalRunLifecycleFactStore | null;
+    readRecoveryFacts(path: string, sessionId: string): Promise<{
+      intents: LocalCodexResumeIntentFact[];
+      consumedIntentIds: Set<string>;
+    }>;
   }) {}
 
   async targetsForClaim(sessionId: string): Promise<Array<{ sourceMessageId: number; targetRunId: string }>> {
     const store = this.input.recoveryStore();
-    if (store === null) return [];
-    const facts = await readLocalCodexRecoveryFacts(store.getSessionFactLogPath(sessionId), sessionId);
-    const bySource = new Map<number, Set<string>>();
-    for (const intent of facts.intents) {
-      if (intent.reason !== "graceful-shutdown" || facts.consumedIntentIds.has(intent.intentId)) continue;
-      const targets = bySource.get(intent.sourceMessageId) ?? new Set<string>();
-      targets.add(intent.targetRunId);
-      bySource.set(intent.sourceMessageId, targets);
-    }
-    return [...bySource.entries()]
-      .filter(([, targetRunIds]) => targetRunIds.size === 1)
-      .map(([sourceMessageId, targetRunIds]) => ({
-        sourceMessageId,
-        targetRunId: [...targetRunIds][0]!,
-      }));
+    const source = decideRecoveryFactSource({ known: false, storeAvailable: store !== null });
+    if (source.kind === "unavailable") return [];
+    const facts = await this.input.readRecoveryFacts(store!.getSessionFactLogPath(sessionId), sessionId);
+    return planGracefulResumeTargets(facts);
   }
 
   async targetForMessage(
     sessionId: string,
     sourceMessageId: number,
-    knownFacts?: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>,
+    knownFacts?: { intents: LocalCodexResumeIntentFact[]; consumedIntentIds: Set<string> },
   ): Promise<string | null> {
     const store = this.input.recoveryStore();
-    if (store === null) return null;
-    const facts = knownFacts
-      ?? await readLocalCodexRecoveryFacts(store.getSessionFactLogPath(sessionId), sessionId);
-    const intent = [...facts.intents].reverse().find((candidate) =>
-      candidate.reason === "graceful-shutdown"
-      && candidate.sourceMessageId === sourceMessageId
-      && !facts.consumedIntentIds.has(candidate.intentId));
-    return intent?.targetRunId ?? null;
+    const source = decideRecoveryFactSource({ known: knownFacts !== undefined, storeAvailable: store !== null });
+    if (source.kind === "unavailable") return null;
+    const facts = source.kind === "known"
+      ? knownFacts!
+      : await this.input.readRecoveryFacts(store!.getSessionFactLogPath(sessionId), sessionId);
+    return planGracefulResumeTarget(facts, sourceMessageId);
   }
 
   async settleUnavailable(input: {
@@ -66,12 +64,13 @@ export class LocalRunRecoveryRuntime {
     reason: string;
     runDir: string | null;
   }): Promise<void> {
-    if (input.intent !== null) {
+    const intentPlan = decideUnavailableIntentPersistence(input.intent);
+    if (intentPlan.kind === "record") {
       const store = this.input.requireRecoveryStore();
       await this.input.storeCall("local-console-store-consume-unavailable-resume", () =>
         store.recordCodexResumeConsumed({
           sessionId: input.sessionId,
-          intentId: input.intent!.intentId,
+          intentId: intentPlan.intent.intentId,
           resumedByRunId: input.runId,
           mode: "unavailable",
           reason: input.reason,
@@ -79,24 +78,27 @@ export class LocalRunRecoveryRuntime {
         }));
     }
     const lifecycleStore = this.input.lifecycleStore();
-    if (lifecycleStore !== null) {
+    const lifecyclePlan = decideLifecycleStoreUse(lifecycleStore !== null);
+    if (lifecyclePlan.kind === "use") {
       const timing = await this.input.storeCall("local-console-store-read-unavailable-resume-timing", () =>
-        lifecycleStore.getRunTiming({ sessionId: input.sessionId, runId: input.runId }));
-      if (timing !== null) {
+        lifecycleStore!.getRunTiming({ sessionId: input.sessionId, runId: input.runId }));
+      const timingPlan = decideUnavailableTimingPersistence(timing);
+      if (timingPlan.kind === "record") {
+        const persistedTiming = timingPlan.timing;
         const completedAt = this.input.nowIso();
         await this.input.storeCall("local-console-store-record-unavailable-resume-terminal", () =>
-          lifecycleStore.recordRunLifecycleEvent({
+          lifecycleStore!.recordRunLifecycleEvent({
             sessionId: input.sessionId,
             runId: input.runId,
-            stepId: timing.stepId,
-            attempt: timing.attempt,
+            stepId: persistedTiming.stepId,
+            attempt: persistedTiming.attempt,
             phase: "terminal",
             role: input.role,
             engine: input.engine,
-            processOutputAvailable: timing.processOutputAvailable,
-            createdAt: timing.createdAt,
-            startedAt: timing.startedAt,
-            elapsedMs: timing.elapsedMs,
+            processOutputAvailable: persistedTiming.processOutputAvailable,
+            createdAt: persistedTiming.createdAt,
+            startedAt: persistedTiming.startedAt,
+            elapsedMs: persistedTiming.elapsedMs,
             completedAt,
             status: "failed",
             recordedAt: completedAt,
