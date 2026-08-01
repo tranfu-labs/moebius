@@ -1,5 +1,7 @@
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleRunTiming } from "./types.js";
+import type { ActiveLocalRun } from "./active-run.js";
+import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 
 export function planRunStartedPhase(
   resuming: boolean,
@@ -37,4 +39,41 @@ export function decideRunAttemptSource(
   storeAvailable: boolean,
 ): { kind: "fallback"; attempt: 1 } | { kind: "persisted" } {
   return storeAvailable ? { kind: "persisted" } : { kind: "fallback", attempt: 1 };
+}
+
+export function decideRuntimeShutdownStart(closing: boolean): { kind: "skip" } | { kind: "close" } {
+  return closing ? { kind: "skip" } : { kind: "close" };
+}
+
+export function planGracefulShutdownResume(input: {
+  active: ActiveLocalRun;
+  intentId: string;
+  createdAt: string;
+}): { kind: "skip" } | { kind: "record"; intent: LocalCodexResumeIntentFact } {
+  if (input.active.threadId === null || input.active.role === null || input.active.role === "") {
+    return { kind: "skip" };
+  }
+  return {
+    kind: "record",
+    intent: {
+      sessionId: input.active.sessionId,
+      intentId: input.intentId,
+      targetRunId: input.active.runId,
+      sourceMessageId: input.active.userMessageId,
+      role: input.active.role,
+      reason: "graceful-shutdown",
+      sourceDisposition: input.active.sourceDisposition,
+      createdAt: input.createdAt,
+    },
+  };
+}
+
+export function decideShutdownDrain(input: {
+  pending: boolean;
+  workers: boolean;
+  beforeDeadline: boolean;
+}): { kind: "wait" } | { kind: "finish" } {
+  return (input.pending || input.workers) && input.beforeDeadline
+    ? { kind: "wait" }
+    : { kind: "finish" };
 }

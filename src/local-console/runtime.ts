@@ -29,7 +29,6 @@ import {
   type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionReferenceText,
   type LocalConsoleSessionReferenceScope,
-  type LocalConsoleSessionWorkspaceSource,
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
   type LocalConsoleAgentTeamSnapshot,
@@ -98,6 +97,7 @@ import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
+import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
@@ -134,7 +134,6 @@ import {
   readCachedLocalWorkspaceFacts,
   readLocalGitStatus,
   resolveLocalWorkspaceSource,
-  type ResolvedLocalWorkspace,
 } from "./workspace-source.js";
 import {
   readLocalConversationBaselineCommit,
@@ -153,7 +152,6 @@ import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
 import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   readLocalCodexRecoveryFacts,
-  type LocalCodexResumeIntentFact,
 } from "./codex-resume.js";
 import {
   loadLocalProcessAppendPage,
@@ -213,6 +211,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly primaryDispatchRuntime: LocalPrimaryDispatchRuntime;
   private readonly primaryExecutionRuntime: LocalPrimaryExecutionRuntime;
   private readonly pendingProcessingRuntime: LocalPendingProcessingRuntime;
+  private readonly shutdownRuntime: LocalRuntimeShutdownRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -246,6 +245,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       workspacePatchPath: (runDir) => path.join(runDir, "workspace.patch"),
       reportWorkspaceDiffError: (error, sessionId, runId) =>
         log({ event: "local-console-workspace-diff-failed", error, sessionId, runId }),
+      resolveWorkspaceSource: resolveLocalWorkspaceSource,
+      recordProjectWorkspaceStatus: (input) => options.store.recordProjectWorkspaceStatus(input),
     });
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
       store: options.store,
@@ -331,7 +332,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       toolTimeoutMs: this.toolInFlightTimeoutMs,
       now: () => this.now(),
       nowIso: () => this.nowIso(),
-      resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
+      resolveWorkspace: (sessionId, source, signal) =>
+        this.conversationWorkspaceRuntime.resolveSource(sessionId, source, signal),
       readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
         factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
@@ -574,6 +576,22 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime(
       startupRecoveryWiring.startup(legacyHandoffRecoveryRuntime),
     );
+    this.shutdownRuntime = new LocalRuntimeShutdownRuntime({
+      context: runtimeContext,
+      store: options.store,
+      activeRuns: this.activeRunRegistry,
+      timeoutMs: this.storeTimeoutMs,
+      isClosing: () => this.closing,
+      beginClosing: () => {
+        this.closing = true;
+        this.pendingProcessingRuntime.beginClosing();
+      },
+      pendingWork: () => this.pendingProcessingRuntime.hasOutstandingWork(),
+      workerWork: () => this.workerDispatchRuntime.hasOutstandingWork(),
+      randomId: () => crypto.randomUUID(),
+      reportFailure: (sessionId, runId, error) =>
+        log({ event: "local-console-prepare-graceful-resume-failed", sessionId, runId, error }),
+    });
     this.bindFacade({
       defaultSessionId: () => this.sessionId,
       projects: this.projectCommandRuntime,
@@ -598,66 +616,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   }
 
   async close(): Promise<void> {
-    if (this.closing) {
-      return;
-    }
-    this.closing = true;
-    this.pendingProcessingRuntime.beginClosing();
-    for (const active of [...this.activeRunRegistry.values()]) {
-      try {
-        if (active.threadId !== null) {
-          const intent: LocalCodexResumeIntentFact = {
-            sessionId: active.sessionId,
-            intentId: `graceful-shutdown:${active.runId}:${crypto.randomUUID()}`,
-            targetRunId: active.runId,
-            sourceMessageId: active.userMessageId,
-            role: active.role ?? "",
-            reason: "graceful-shutdown",
-            sourceDisposition: active.sourceDisposition,
-            createdAt: this.nowIso(),
-          };
-          if (intent.role !== "") {
-            const recoveryStore = this.storePorts.requireRecoveryFacts();
-            await this.storePorts.call("local-console-store-record-graceful-resume", () =>
-              recoveryStore.recordCodexResumeIntent(intent));
-            const releaseMessageForResume = this.options.store.releaseMessageForResume;
-            if (releaseMessageForResume === undefined) {
-              throw new Error("local console graceful resume persistence capability unavailable");
-            }
-            await this.storePorts.call("local-console-store-release-graceful-resume", () =>
-              releaseMessageForResume.call(this.options.store, {
-                userMessageId: active.userMessageId,
-                sessionId: active.sessionId,
-                sourceDisposition: active.sourceDisposition,
-                targetRunId: active.runId,
-                role: active.role ?? "",
-                now: this.nowIso(),
-              }));
-            active.gracefulResumePrepared = true;
-          }
-        }
-      } catch (error) {
-        this.lastError = formatLocalError(error);
-        log({
-          event: "local-console-prepare-graceful-resume-failed",
-          sessionId: active.sessionId,
-          runId: active.runId,
-          error: this.lastError,
-        });
-      }
-      active.controller.abort("runtime-closing");
-    }
-    const processingDeadline = Date.now() + this.storeTimeoutMs;
-    while (
-      (
-        this.pendingProcessingRuntime.hasOutstandingWork()
-        || this.workerDispatchRuntime.hasOutstandingWork()
-      )
-      && Date.now() < processingDeadline
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    await this.options.store.close();
+    await this.shutdownRuntime.close();
   }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
@@ -670,33 +629,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
 
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
-  }
-
-  private async resolveWorkspace(
-    sessionId: string,
-    source: LocalConsoleSessionWorkspaceSource,
-    signal: AbortSignal,
-  ): Promise<ResolvedLocalWorkspace> {
-    const workspace = await resolveLocalWorkspaceSource({
-      projectId: source.projectId,
-      sessionId,
-      folderPath: source.folderPath,
-      worktreeMode: source.workspaceMode === "worktree",
-      workdirRoot: this.options.workdirRoot,
-      gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      signal,
-    });
-    await this.storePorts.call("local-console-store-record-workspace", () =>
-      this.options.store.recordProjectWorkspaceStatus({
-        projectId: source.projectId,
-        cwd: workspace.cwd,
-        mode: workspace.mode,
-        worktreePath: workspace.worktreePath,
-        worktreeUnavailableReason: workspace.worktreeUnavailableReason,
-        now: this.nowIso(),
-      }),
-    );
-    return workspace;
   }
 
   private nowIso(): string {

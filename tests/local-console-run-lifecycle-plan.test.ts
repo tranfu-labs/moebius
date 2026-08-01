@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  decideRuntimeShutdownStart,
   decideRunAttemptSource,
+  decideShutdownDrain,
+  planGracefulShutdownResume,
   planExecutionProgressActivity,
   planRunLifecycleRecord,
   planRunStartedPhase,
 } from "../src/local-console/run-lifecycle-plan.js";
+import type { ActiveLocalRun } from "../src/local-console/active-run.js";
 
 describe("run lifecycle plan", () => {
   it("maps resumed segments and provider retry progress", () => {
@@ -34,5 +38,29 @@ describe("run lifecycle plan", () => {
   it("uses attempt one only when lifecycle persistence is unavailable", () => {
     expect(decideRunAttemptSource(false)).toEqual({ kind: "fallback", attempt: 1 });
     expect(decideRunAttemptSource(true)).toEqual({ kind: "persisted" });
+  });
+
+  it("plans idempotent shutdown and graceful resume persistence", () => {
+    const active = {
+      sessionId: "session-1",
+      runId: "run-1",
+      userMessageId: 7,
+      role: "dev",
+      threadId: "thread-1",
+      sourceDisposition: "primary",
+    } as ActiveLocalRun;
+
+    expect(decideRuntimeShutdownStart(true)).toEqual({ kind: "skip" });
+    expect(decideShutdownDrain({ pending: true, workers: false, beforeDeadline: true }))
+      .toEqual({ kind: "wait" });
+    expect(decideShutdownDrain({ pending: true, workers: true, beforeDeadline: false }))
+      .toEqual({ kind: "finish" });
+    expect(planGracefulShutdownResume({ active, intentId: "intent-1", createdAt: "now" }))
+      .toMatchObject({ kind: "record", intent: { role: "dev", targetRunId: "run-1" } });
+    expect(planGracefulShutdownResume({
+      active: { ...active, threadId: null },
+      intentId: "intent-2",
+      createdAt: "now",
+    })).toEqual({ kind: "skip" });
   });
 });

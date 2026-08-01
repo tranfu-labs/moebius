@@ -51,3 +51,7 @@ export function planOriginalRepoStatusRead(
 export function decideOriginalRepoStatus(status: string): { kind: "clean" } | { kind: "dirty"; status: string } {
   return status === "" ? { kind: "clean" } : { kind: "dirty", status };
 }
+
+export function planWorkspaceWorktreeMode(mode: LocalConsoleWorkspaceMode): boolean {
+  return mode === "worktree";
+}

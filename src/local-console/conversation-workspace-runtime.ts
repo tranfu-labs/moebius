@@ -7,11 +7,13 @@ import {
   planConversationWorkspaceContext,
   planOriginalRepoStatusRead,
   planWorkspaceDiffRecording,
+  planWorkspaceWorktreeMode,
 } from "./conversation-workspace-plan.js";
 import type {
   LocalConsoleStore,
   LocalConsoleWorkspaceDiffSummary,
   LocalConsoleWorkspaceMode,
+  LocalConsoleSessionWorkspaceSource,
 } from "./types.js";
 import type { LocalSessionFactWritingStore } from "./runtime-store-ports.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
@@ -53,7 +55,35 @@ export class LocalConversationWorkspaceRuntime {
     recordWorkspaceDiff(input: Parameters<LocalSessionFactWritingStore["recordWorkspaceDiff"]>[0]): Promise<void>;
     workspacePatchPath(runDir: string): string;
     reportWorkspaceDiffError(error: string, sessionId: string, runId: string): void;
+    resolveWorkspaceSource: typeof import("./workspace-source.js").resolveLocalWorkspaceSource;
+    recordProjectWorkspaceStatus: LocalConsoleStore["recordProjectWorkspaceStatus"];
   }) {}
+
+  async resolveSource(
+    sessionId: string,
+    source: LocalConsoleSessionWorkspaceSource,
+    signal: AbortSignal,
+  ): Promise<ResolvedLocalWorkspace> {
+    const workspace = await this.input.resolveWorkspaceSource({
+      projectId: source.projectId,
+      sessionId,
+      folderPath: source.folderPath,
+      worktreeMode: planWorkspaceWorktreeMode(source.workspaceMode),
+      workdirRoot: this.input.workdirRoot,
+      gitTimeoutMs: this.input.gitTimeoutMs,
+      signal,
+    });
+    await this.input.storeCall("local-console-store-record-workspace", () =>
+      this.input.recordProjectWorkspaceStatus({
+        projectId: source.projectId,
+        cwd: workspace.cwd,
+        mode: workspace.mode,
+        worktreePath: workspace.worktreePath,
+        worktreeUnavailableReason: workspace.worktreeUnavailableReason,
+        now: this.input.nowIso(),
+      }));
+    return workspace;
+  }
 
   async recordGeneratedDiffIfNeeded(input: {
     sessionId: string;
