@@ -5,11 +5,15 @@ import {
   decideWorkerLifecycleCreation,
   decideWorkerOriginEffect,
   decideWorkerPreparation,
+  decideWorkerRecoveryPersistence,
+  decideWorkerSuccessPersistence,
   decideWorkerRedirectAbort,
   decideWorkerRunId,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
   planWorkerSourceDisposition,
+  planWorkerGracefulResume,
+  planWorkerLastSeenIndex,
 } from "../src/local-console/worker-runtime-plan.js";
 
 describe("worker runtime plan", () => {
@@ -51,5 +55,14 @@ describe("worker runtime plan", () => {
       kind: "continue",
       preparation: { kind: "ready", value: 1 },
     });
+    expect(decideWorkerSuccessPersistence("processed")).toEqual({ kind: "processed" });
+    expect(decideWorkerSuccessPersistence("direct-response")).toEqual({ kind: "direct" });
+    expect(decideWorkerSuccessPersistence("detached-response")).toEqual({ kind: "detached" });
+    expect(decideWorkerRecoveryPersistence(false)).toEqual({ kind: "skip" });
+    expect(decideWorkerRecoveryPersistence(true)).toEqual({ kind: "record" });
+    expect(planWorkerGracefulResume(undefined)).toBe(false);
+    expect(planWorkerGracefulResume({ gracefulResumePrepared: true })).toBe(true);
+    expect(planWorkerLastSeenIndex([])).toBe(-1);
+    expect(planWorkerLastSeenIndex([{ index: 2 }, { index: 5 }])).toBe(5);
   });
 });

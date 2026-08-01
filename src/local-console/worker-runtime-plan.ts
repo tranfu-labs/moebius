@@ -81,3 +81,25 @@ export function decideWorkerProviderInvocation<T extends { kind: "stopped" | "co
     ? { kind: "stopped" }
     : { kind: "completed", invocation: invocation as Extract<T, { kind: "completed" }> };
 }
+
+export function decideWorkerSuccessPersistence(
+  kind: "processed" | "direct-response" | "detached-response",
+): { kind: "processed" } | { kind: "direct" } | { kind: "detached" } {
+  return kind === "processed" ? { kind: "processed" } : kind === "direct-response" ? { kind: "direct" } : { kind: "detached" };
+}
+
+export function decideWorkerRecoveryPersistence(available: boolean): { kind: "record" } | { kind: "skip" } {
+  return available ? { kind: "record" } : { kind: "skip" };
+}
+
+export function decideWorkerDetachedCapability(available: boolean): { kind: "record" } | { kind: "missing" } {
+  return available ? { kind: "record" } : { kind: "missing" };
+}
+
+export function planWorkerGracefulResume(active: { gracefulResumePrepared: boolean } | undefined): boolean {
+  return active?.gracefulResumePrepared ?? false;
+}
+
+export function planWorkerLastSeenIndex(timeline: readonly { index: number }[]): number {
+  return timeline.at(-1)?.index ?? -1;
+}

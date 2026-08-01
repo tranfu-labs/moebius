@@ -122,6 +122,7 @@ export type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { ActiveLocalRun } from "./active-run.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
+import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -314,6 +315,7 @@ export class LocalConsoleRuntime {
   private readonly workerDispatchRuntime: LocalWorkerDispatchRuntime;
   private readonly workerPreparationRuntime: LocalWorkerPreparationRuntime;
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
+  private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -561,6 +563,58 @@ export class LocalConsoleRuntime {
       recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
       recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
       recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
+    });
+    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      activeRun: (runId) => this.activeRuns.get(runId),
+      recoveryStore: () => this.codexRecoveryFactStore(),
+      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      classifyFailure: (result) => ({
+        runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
+        failureStatus: runTimingStatusForFailedResult(result),
+      }),
+      pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
+      finishLifecycle: (runId, status) => this.finishRunLifecycle(runId, status),
+      recordDirectFailure: (input, result) =>
+        this.recordFailedCodexResult(input.sourceMessage, input.sessionId, input.runId, result),
+      recordDetachedFailure: (input, result) => this.recordDetachedWorkerResult(input.sessionId, input.runId, result),
+      sourceDirectoryAvailable: (sessionId) => this.sessionProjectDirectoryAvailable(sessionId),
+      executeChildSession: (input, runDir, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        runDir: result.runDir,
+        finalText: result.finalText,
+        availableAgentNames: input.agentFiles.map((agent) => agent.name),
+      }),
+      recordWorkspaceDiff: (input, preparation, result) => this.recordWorkspaceDiffIfNeeded(
+        input.sessionId,
+        input.runId,
+        preparation.runDir,
+        preparation.workspace,
+        result.finalText,
+        preparation.controller.signal,
+      ),
+      recordTimelineCursor: (input, agentIdentityFingerprint, lastSeenIndex) =>
+        this.recordAgentTimelineCursor({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          role: input.role,
+          agentIdentityFingerprint,
+          lastSeenIndex,
+          recordedAt: this.nowIso(),
+        }),
+      recordChildSessionCard: (input, card, result) =>
+        this.storeCall("local-console-store-worker-child-session-card", () =>
+          this.sessionFactStore().recordChildSessionCard({
+            parentSessionId: input.sessionId,
+            sourceId: card.sourceId,
+            childSessionIds: card.childSessionIds,
+            runId: input.runId,
+            runDir: result.runDir,
+            now: this.nowIso(),
+          })),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -2133,15 +2187,8 @@ export class LocalConsoleRuntime {
 
     const preparation = await this.workerPreparationRuntime.prepare(input);
     if (preparation.kind === "settled") return;
-    const {
-      runDir,
-      controller,
-      executionContext,
-      recoveryPlan,
-      workspace,
-    } = preparation;
+    const { runDir } = preparation;
     const runId = input.runId;
-    const recoveryStore = this.codexRecoveryFactStore();
     try {
       const providerInvocation = await this.workerProviderRuntime.invoke(input, preparation);
       if (providerInvocation.kind === "stopped") return;
@@ -2150,128 +2197,9 @@ export class LocalConsoleRuntime {
         observedExternalSessionId,
       } = providerInvocation;
 
-      const activeAtTerminal = this.activeRuns.get(runId);
-      const terminalOutcome = await executeLocalRunTerminalFlow({
-        sessionId: input.sessionId,
-        runId,
-        runDir,
-        sourceMessageId: input.sourceMessage.id,
-        role: input.role,
-        sourceDisposition: input.origin === "user-direct" ? "user-direct" : "agent-handoff",
-        executionContext,
-        recoveryPlan,
-        observedExternalSessionId,
+      const terminalOutcome = await this.workerTerminalRuntime.complete(input, preparation, {
         result,
-        gracefulResumePrepared: activeAtTerminal?.gracefulResumePrepared ?? false,
-        lastSeenIndex: input.timeline.at(-1)?.index ?? -1,
-      }, {
-        nowIso: () => this.nowIso(),
-        recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
-        classifyFailure: (failedResult) => ({
-          runtimeClosing: executionInterruptionCauseForResult(failedResult) === "runtime-closing",
-          failureStatus: runTimingStatusForFailedResult(failedResult),
-        }),
-        pauseLifecycle: () => this.pauseRunLifecycle(runId),
-        finishLifecycle: (status) => this.finishRunLifecycle(runId, status),
-        recordFailed: (failedResult) => input.origin === "user-direct"
-          ? this.recordFailedCodexResult(input.sourceMessage, input.sessionId, runId, failedResult)
-          : this.recordDetachedWorkerResult(input.sessionId, runId, failedResult),
-        recordUsage: (cachedInputTokens) => recoveryStore === null
-          ? Promise.resolve()
-          : this.storeCall("local-console-store-record-worker-codex-usage", () =>
-              recoveryStore.recordCodexRunUsage({
-                sessionId: input.sessionId,
-                runId,
-                cachedInputTokens,
-                recordedAt: this.nowIso(),
-              })),
-        sourceDirectoryAvailable: () => this.sessionProjectDirectoryAvailable(input.sessionId),
-        executeChildSession: (successResult) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
-          sessionId: input.sessionId,
-          runId,
-          runDir: successResult.runDir,
-          finalText: successResult.finalText,
-          availableAgentNames: input.agentFiles.map((agent) => agent.name),
-        }),
-        recordWorkspaceDiff: (successResult) => this.recordWorkspaceDiffIfNeeded(
-          input.sessionId,
-          runId,
-          runDir,
-          workspace,
-          successResult.finalText,
-          controller.signal,
-        ),
-        recordSuccess: async (kind, successResult) => {
-          if (kind === "processed") {
-            await this.storeCall("local-console-store-record-worker-tool-only-complete", () =>
-              this.options.store.recordMessageProcessed({
-                userMessageId: input.sourceMessage.id,
-                sessionId: input.sessionId,
-                runId,
-                runDir: successResult.runDir,
-                now: this.nowIso(),
-              }));
-            return;
-          }
-          if (kind === "direct-response") {
-            await this.storeCall("local-console-store-record-direct-worker-response", () =>
-              this.options.store.recordAgentResponse({
-                userMessageId: input.sourceMessage.id,
-                sessionId: input.sessionId,
-                role: input.role,
-                body: successResult.finalText,
-                runId,
-                runDir: successResult.runDir,
-                now: this.nowIso(),
-              }));
-            return;
-          }
-          const recordDetachedAgentResponse = this.options.store.recordDetachedAgentResponse;
-          if (recordDetachedAgentResponse === undefined) {
-            throw new Error("local console detached agent response store capability unavailable");
-          }
-          await this.storeCall("local-console-store-record-worker-response", () =>
-            recordDetachedAgentResponse.call(this.options.store, {
-              sessionId: input.sessionId,
-              role: input.role,
-              body: successResult.finalText,
-              runId,
-              runDir: successResult.runDir,
-              now: this.nowIso(),
-            }));
-        },
-        onSuccessPersistenceError: async () => undefined,
-        recordTimelineCursor: (lastSeenIndex) => this.recordAgentTimelineCursor({
-          sessionId: input.sessionId,
-          runId,
-          role: input.role,
-          agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-          lastSeenIndex,
-          recordedAt: this.nowIso(),
-        }),
-        recordChildSessionCard: (childSessionCard, successResult) =>
-          this.storeCall("local-console-store-worker-child-session-card", () =>
-            this.sessionFactStore().recordChildSessionCard({
-              parentSessionId: input.sessionId,
-              sourceId: childSessionCard.sourceId,
-              childSessionIds: childSessionCard.childSessionIds,
-              runId,
-              runDir: successResult.runDir,
-              now: this.nowIso(),
-            })),
-        onChildSessionCardError: async () => undefined,
-        recordDirectoryWarning: (successResult) =>
-          this.storeCall("local-console-store-worker-directory-unavailable", () =>
-            this.options.store.recordSystemMessage({
-              sessionId: input.sessionId,
-              body: "项目文件夹不可用；隔离工作区已完成当前步骤，修复项目文件夹后才能继续。",
-              systemEventKind: "other",
-              runId,
-              runDir: successResult.runDir,
-              error: "PROJECT_DIRECTORY_UNAVAILABLE",
-              status: "failed",
-              now: this.nowIso(),
-            })),
+        observedExternalSessionId,
       });
       if (terminalOutcome === "failed") return;
       this.lastError = null;
