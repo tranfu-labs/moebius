@@ -4,11 +4,11 @@ import {
   activateConversationComposerDraft,
   clearConversationComposerDraft,
   conversationSubmissionBlockReason,
-  createConversationDraftStore,
   editConversationComposerDraft,
   NEW_CONVERSATION_DRAFT_KEY,
   sessionDraftKey,
-} from "../src/console-page/draft-store.js";
+} from "../src/console-page/conversation-draft-model.js";
+import { createConversationDraftStore } from "../src/console-page/draft-store.js";
 
 describe("conversation draft store", () => {
   it("keeps new-conversation and per-session drafts isolated across store instances", () => {

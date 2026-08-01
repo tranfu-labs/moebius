@@ -148,10 +148,10 @@ import {
   conversationSubmissionBlockReason,
   editConversationComposerDraft,
   type ConversationComposerDraftState,
-  createConversationDraftStore,
   NEW_CONVERSATION_DRAFT_KEY,
   sessionDraftKey,
-} from "./draft-store.js";
+} from "./conversation-draft-model.js";
+import { createConversationDraftStore } from "./draft-store.js";
 import {
   isFirstRunOnboarding,
   readSidebarVisibilityPreference,
