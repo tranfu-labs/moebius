@@ -2,9 +2,9 @@
 
 ## A · 护栏与对账
 
-- [ ] 冻结项目/会话、primary、worker、terminal/recovery 外部行为矩阵
-- [ ] 从系列 design 复制 10 批四条精确 test-name 映射，建立 ledger；补齐 duration、最终替代纯测试、等价分支、保留接缝和删除/保留结论
-- [ ] 生产迁移前先补缺失纯测试；不得读取源码文本做镜像断言
+- [x] 冻结项目/会话、primary、worker、terminal/recovery 外部行为矩阵
+- [x] 从系列 design 复制 10 批四条精确 test-name 映射，建立 ledger；补齐 duration、最终替代纯测试、等价分支、保留接缝和删除/保留结论
+- [x] 生产迁移前先补缺失纯测试；不得读取源码文本做镜像断言
 
 ## B · 纵切实现
 

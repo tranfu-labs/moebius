@@ -270,6 +270,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/session-analysis-gate.ts",
   "src/local-console/session-reference-text.ts",
   "src/local-console/session-status.ts",
+  "src/local-console/session-workspace-policy.ts",
   "src/local-console/timeline.ts",
   "src/local-console/title.ts",
   "src/local-console/types.ts",

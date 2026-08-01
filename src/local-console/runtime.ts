@@ -137,6 +137,7 @@ import {
 } from "./file-read.js";
 import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
 import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
+import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
 import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
 import { readCodexThreadLinks } from "./codex-thread-link.js";
 import {
@@ -929,20 +930,26 @@ export class LocalConsoleRuntime {
     const messages = await this.storeCall("local-console-store-list-session-messages", () =>
       this.options.store.listMessages(input.sessionId),
     );
-    if (messages.length > 0) {
+    const source = messages.length === 0
+      ? await this.storeCall("local-console-store-session-workspace", () =>
+          this.options.store.getSessionWorkspace(input.sessionId))
+      : null;
+    const facts = source !== null && input.workspaceMode === "worktree"
+      ? await readCachedLocalWorkspaceFacts({
+          folderPath: source.folderPath,
+          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
+        })
+      : null;
+    const decision = decideSessionWorkspaceSwitch({
+      messageCount: messages.length,
+      requestedMode: input.workspaceMode,
+      workspaceIsGitRepository: facts?.isGitRepository ?? true,
+    });
+    if (decision.kind === "reject" && decision.reason === "workspace-locked") {
       throw new LocalConsoleSessionWorkspaceLockedError();
     }
-    const source = await this.storeCall("local-console-store-session-workspace", () =>
-      this.options.store.getSessionWorkspace(input.sessionId),
-    );
-    if (input.workspaceMode === "worktree") {
-      const facts = await readCachedLocalWorkspaceFacts({
-        folderPath: source.folderPath,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      });
-      if (!facts.isGitRepository) {
-        throw new Error("not-git-repository");
-      }
+    if (decision.kind === "reject") {
+      throw new Error(decision.reason);
     }
     let session: LocalConsoleSessionSummary;
     try {
