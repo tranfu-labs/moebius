@@ -82,6 +82,7 @@ import { LocalPendingSessionContextRuntime } from "./pending-session-context-run
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalLegacyHandoffRecoveryRuntime } from "./legacy-handoff-recovery-runtime.js";
 import { LocalStartupRecoveryRuntime } from "./startup-recovery-runtime.js";
+import { LocalStartupRecoveryWiring } from "./startup-recovery-wiring.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
@@ -1088,17 +1089,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
       storeCall: (label, operation) => this.storePorts.call(label, operation),
     });
-    const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      recoveryStore: () => this.storePorts.recoveryFacts(),
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
-      readRunContexts: readRunExecutionContexts,
-      activeRunIds: () => new Set(this.activeRunRegistry.keys()),
-      report: (input) => log(input),
-    });
-    this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime({
+    const startupRecoveryWiring = new LocalStartupRecoveryWiring({
       store: options.store,
       defaultSessionId: this.sessionId,
       storeCall: (label, operation) => this.storePorts.call(label, operation),
@@ -1107,10 +1098,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       idleTimeoutMs: this.codexIdleTimeoutMs,
       maxDurationMs: this.codexMaxDurationMs,
       staleGraceMs: this.staleRunningGraceMs,
-      activeSessionIds: () => new Set([...this.activeRunRegistry.values()].map((active) => active.sessionId)),
       recoveryStore: () => this.storePorts.recoveryFacts(),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
-      legacyRecovery: legacyHandoffRecoveryRuntime,
+      readRunContexts: readRunExecutionContexts,
+      activeRunIds: () => new Set(this.activeRunRegistry.keys()),
+      activeSessionIds: () => new Set([...this.activeRunRegistry.values()].map((active) => active.sessionId)),
       recordError: (error) => {
         const formatted = formatLocalError(error);
         this.lastError = formatted;
@@ -1118,6 +1110,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       },
       report: (input) => log(input),
     });
+    const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime(startupRecoveryWiring.legacy());
+    this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime(
+      startupRecoveryWiring.startup(legacyHandoffRecoveryRuntime),
+    );
     this.bindFacade({
       defaultSessionId: () => this.sessionId,
       projects: this.projectCommandRuntime,

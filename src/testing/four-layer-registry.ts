@@ -137,6 +137,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/run-recovery-runtime.ts",
   "src/local-console/legacy-handoff-recovery-runtime.ts",
   "src/local-console/startup-recovery-runtime.ts",
+  "src/local-console/startup-recovery-wiring.ts",
   "src/local-console/project-command-runtime.ts",
   "src/local-console/session-creation-runtime.ts",
   "src/local-console/session-settings-runtime.ts",
