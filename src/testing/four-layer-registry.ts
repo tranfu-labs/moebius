@@ -97,6 +97,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/app.tsx",
   "desktop/src/console-page/settings-request-controller.ts",
   "desktop/src/console-page/team-save-controller.ts",
+  "desktop/src/console-page/use-desktop-settings.ts",
   "desktop/src/console-page/use-managed-attachments.ts",
   "desktop/src/console-page/state-sync.ts",
   "desktop/src/main.ts",
@@ -517,6 +518,7 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     { ruleId: "application-use-case-shape", file: "src/state-persister.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-30-github-runner" },
   ],
   conditionPermits: [
+    { ruleId: "application-use-case-shape", file: "desktop/src/console-page/use-desktop-settings.ts", exportName: "useDesktopSettingsBundle", fingerprint: "active", kind: "transport-control", contract: "unmounted renderer ignores a late application-info response" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/onboarding/cli-installer-manager.ts", exportName: "startTrusted", fingerprint: "!task.settled", kind: "transport-control", contract: "heartbeat publishes only while the child-process task remains active" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/onboarding/cli-installer-manager.ts", exportName: "execute", fingerprint: "installer.cli !== task.cli", kind: "external-contract", contract: "trusted installer registry result must retain the requested CLI identity" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/onboarding/cli-installer-manager.ts", exportName: "execute", fingerprint: "task.terminalIntent ?? \"failed\"", kind: "transport-control", contract: "child-process completion resolves to the requested terminal signal or safe failure" },
