@@ -31,11 +31,7 @@ import {
 } from "./run-activity.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
-import {
-  buildLocalAgentDeltaPrompt,
-  buildLocalAgentPrompt,
-  selectLocalTimelineDelta,
-} from "./prompt.js";
+import { buildLocalAgentPrompt } from "./prompt.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import {
   buildLocalConsoleRoutingTimeline,
@@ -108,6 +104,16 @@ import {
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
+import {
+  planPendingWorkerDispatches,
+  resolveClaimedControlAction,
+  selectSourceRetryIntent,
+} from "./control-dispatch.js";
+import {
+  planLocalRunContext,
+  planLocalRunInvocation,
+  selectExecutingAgent,
+} from "./run-invocation-plan.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import {
   generateLocalWorkspaceDiff,
@@ -134,7 +140,6 @@ import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./
 import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
 import { readCodexThreadLinks } from "./codex-thread-link.js";
 import {
-  buildLocalResumePrompt,
   readLocalCodexRecoveryFacts,
   type LocalCodexResumeConsumedFact,
   type LocalCodexResumeIntentFact,
@@ -1965,56 +1970,66 @@ export class LocalConsoleRuntime {
             availableAgentNames: agentFiles.map((agent) => agent.name),
           });
           const primaryAgent = agentFiles[0]?.name ?? null;
-          const trigger = claimedMessage.speaker === "user" && primaryAgent !== null
-            ? { kind: "run-agent" as const, role: primaryAgent, reason: "mention" as const }
-            : explicitTrigger.kind === "skip" && primaryAgent !== null
-              ? claimedMessage.speaker === "agent" && claimedMessage.role !== primaryAgent
-                ? { kind: "run-agent" as const, role: primaryAgent, reason: "mention" as const }
-                : explicitTrigger
-              : explicitTrigger;
-
-          if (trigger.kind !== "run-agent") {
-            if (claimedMessage.speaker === "agent") {
-              const recoveryStore = this.codexRecoveryFactStore();
-              const recoveryFacts = recoveryStore === null
-                ? null
-                : await readLocalCodexRecoveryFacts(
-                    recoveryStore.getSessionFactLogPath(sessionId),
-                    sessionId,
-                  );
-              const retryIntent = recoveryFacts === null
-                ? undefined
-                : [...recoveryFacts.intents].reverse().find((intent) =>
-                    intent.reason === "retry"
-                    && intent.sourceMessageId === claimedMessage.id
-                    && !recoveryFacts.consumedIntentIds.has(intent.intentId));
-              if (retryIntent !== undefined) {
-                await this.storeCall("local-console-store-record-retry-trigger-missing", () =>
-                  this.options.store.recordFailure({
-                    userMessageId: claimedMessage.id,
-                    sessionId,
-                    error: "retry-source-trigger-missing",
-                    runId: nextRunId,
-                    runDir: null,
-                    body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-                    systemEventKind: "run-not-started",
-                    sourceKind: "local-retry-intent",
-                    sourceId: retryIntent.intentId,
-                    now: this.nowIso(),
-                  }));
-                continue;
-              }
-              await this.storeCall("local-console-store-primary-closeout-complete", () =>
-                this.options.store.recordMessageProcessed({
-                  userMessageId: claimedMessage.id,
+          let controlAction = resolveClaimedControlAction({
+            source: claimedMessage,
+            primaryAgent,
+            explicitTrigger,
+            availableAgentNames: agentFiles.map((agent) => agent.name),
+            retryIntent: null,
+          });
+          if (controlAction.kind === "complete-source" && claimedMessage.speaker === "agent") {
+            const recoveryStore = this.codexRecoveryFactStore();
+            const recoveryFacts = recoveryStore === null
+              ? null
+              : await readLocalCodexRecoveryFacts(
+                  recoveryStore.getSessionFactLogPath(sessionId),
                   sessionId,
-                  runId: nextRunId,
-                  runDir: null,
-                  now: this.nowIso(),
-                }),
-              );
-              continue;
-            }
+                );
+            const retryIntent = recoveryFacts === null
+              ? null
+              : selectSourceRetryIntent({
+                  sourceMessageId: claimedMessage.id,
+                  intents: recoveryFacts.intents,
+                  consumedIntentIds: recoveryFacts.consumedIntentIds,
+                });
+            controlAction = resolveClaimedControlAction({
+              source: claimedMessage,
+              primaryAgent,
+              explicitTrigger,
+              availableAgentNames: agentFiles.map((agent) => agent.name),
+              retryIntent,
+            });
+          }
+
+          if (controlAction.kind === "record-retry-trigger-missing") {
+            await this.storeCall("local-console-store-record-retry-trigger-missing", () =>
+              this.options.store.recordFailure({
+                userMessageId: claimedMessage.id,
+                sessionId,
+                error: "retry-source-trigger-missing",
+                runId: nextRunId,
+                runDir: null,
+                body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+                systemEventKind: "run-not-started",
+                sourceKind: "local-retry-intent",
+                sourceId: controlAction.intent.intentId,
+                now: this.nowIso(),
+              }));
+            continue;
+          }
+          if (controlAction.kind === "complete-source") {
+            await this.storeCall("local-console-store-primary-closeout-complete", () =>
+              this.options.store.recordMessageProcessed({
+                userMessageId: claimedMessage.id,
+                sessionId,
+                runId: nextRunId,
+                runDir: null,
+                now: this.nowIso(),
+              }),
+            );
+            continue;
+          }
+          if (controlAction.kind === "route-without-primary-agent") {
             let route: Awaited<ReturnType<typeof maybeRouteLocalNoMentionMessage>>;
             try {
               route = await maybeRouteLocalNoMentionMessage({
@@ -2052,17 +2067,20 @@ export class LocalConsoleRuntime {
             continue;
           }
 
-          const selectedAgent = agentFiles.find((agent) => agent.name === trigger.role);
-          if (selectedAgent === undefined) {
-            await this.recordTerminalFailureBestEffort(claimedMessage, sessionId, nextRunId, null, `Agent not found: ${trigger.role}`);
+          if (controlAction.kind === "fail-missing-agent") {
+            await this.recordTerminalFailureBestEffort(
+              claimedMessage,
+              sessionId,
+              nextRunId,
+              null,
+              `Agent not found: ${controlAction.role}`,
+            );
             return;
           }
+          const triggerRole = controlAction.role;
+          const selectedAgent = agentFiles.find((agent) => agent.name === triggerRole)!;
 
-          if (
-            claimedMessage.speaker === "agent"
-            && primaryAgent !== null
-            && trigger.role !== primaryAgent
-          ) {
+          if (controlAction.kind === "schedule-worker") {
             await this.storeCall("local-console-store-detached-worker-source-processed", () =>
               this.options.store.recordMessageProcessed({
                 userMessageId: claimedMessage.id,
@@ -2078,7 +2096,7 @@ export class LocalConsoleRuntime {
               sessionId,
               runId: nextRunId,
               sourceMessage: claimedMessage,
-              role: trigger.role,
+              role: triggerRole,
               selectedAgent,
               agentFiles,
               timeline,
@@ -2120,7 +2138,7 @@ export class LocalConsoleRuntime {
             sessionId,
             runId: nextRunId,
             sourceMessageId: claimedMessage.id,
-            role: trigger.role,
+            role: triggerRole,
             profile: selectedAgent.executionProfile ?? null,
             workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
             team: agentContents,
@@ -2164,7 +2182,7 @@ export class LocalConsoleRuntime {
               sessionId,
               runId: nextRunId,
               sourceMessageId: claimedMessage.id,
-              role: trigger.role,
+              role: triggerRole,
               profile: executionOverrideIntent.executionOverride.profile,
               workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
               team: agentContents,
@@ -2178,7 +2196,7 @@ export class LocalConsoleRuntime {
             sessionId,
             runId: nextRunId,
             sourceMessageId: claimedMessage.id,
-            role: trigger.role,
+            role: triggerRole,
             intents: recoveryFacts.intents,
             consumedIntentIds: recoveryFacts.consumedIntentIds,
             contexts: runContexts,
@@ -2188,7 +2206,7 @@ export class LocalConsoleRuntime {
               sessionId,
               runId: nextRunId,
               sourceMessageId: claimedMessage.id,
-              role: trigger.role,
+              role: triggerRole,
               profile: persistedGracefulRecovery.context.profile,
               workspace: workspaceFromExecutionContext(persistedGracefulRecovery.context),
               team: agentContents,
@@ -2198,7 +2216,7 @@ export class LocalConsoleRuntime {
           }
           let recoveryPlan = planLocalExecutionRecovery({
             sourceMessageId: claimedMessage.id,
-            role: trigger.role,
+            role: triggerRole,
             currentContext,
             preferredIntentId: persistedGracefulRecovery?.intent.intentId,
             intents: recoveryFacts.intents,
@@ -2221,42 +2239,39 @@ export class LocalConsoleRuntime {
               };
             }
           }
-          if (recoveryPlan.kind === "unavailable") {
+          const contextPlan = planLocalRunContext({
+            recoveryPlan,
+            sessionId,
+            runId: nextRunId,
+            sourceMessageId: claimedMessage.id,
+            recordedAt: this.nowIso(),
+          });
+          if (contextPlan.kind === "unavailable") {
+            const unavailable = contextPlan.recoveryPlan;
             await this.settleUnavailableResume({
               sessionId,
               runId: nextRunId,
               sourceMessage: claimedMessage,
-              intent: recoveryPlan.intent,
-              role: trigger.role,
-              engine: recoveryPlan.context.engine,
-              reason: recoveryPlan.reason,
+              intent: unavailable.intent,
+              role: triggerRole,
+              engine: unavailable.context.engine,
+              reason: unavailable.reason,
               runDir: resolvedRunDir,
             });
             return;
           }
-          const continuingSameRun = recoveryPlan.kind === "resume"
-            && recoveryPlan.intent?.reason === "graceful-shutdown"
-            && recoveryPlan.intent.targetRunId === nextRunId;
-          const executionContext = continuingSameRun
-            ? recoveryPlan.context
-            : {
-                ...recoveryPlan.context,
-                sessionId,
-                runId: nextRunId,
-                sourceMessageId: claimedMessage.id,
-                recordedAt: this.nowIso(),
-              };
+          const { continuingSameRun, executionContext } = contextPlan;
           const workspace = workspaceFromExecutionContext(executionContext);
-          const executingAgent = executionContext.team.find((member) => member.name === trigger.role);
-          if (executingAgent === undefined) {
-            throw new Error(`Run execution context is missing Agent: ${trigger.role}`);
+          const executingAgentPlan = selectExecutingAgent(executionContext, triggerRole);
+          if (executingAgentPlan.kind === "missing") {
+            throw new Error(`Run execution context is missing Agent: ${triggerRole}`);
           }
-          const agentManifest = parseAgentManifest(executingAgent.agentMarkdown);
+          const agentManifest = parseAgentManifest(executingAgentPlan.agent.agentMarkdown);
           const fullPrompt = buildLocalAgentPrompt({
-            role: trigger.role,
+            role: triggerRole,
             agentMarkdown: agentManifest.body,
             timeline,
-            primaryAgent: executionContext.team[0]?.name ?? trigger.role,
+            primaryAgent: executionContext.team[0]?.name ?? triggerRole,
             availableAgentNames: executionContext.team.map((agent) => agent.name),
           });
           if (!continuingSameRun) {
@@ -2266,7 +2281,7 @@ export class LocalConsoleRuntime {
             await this.recordAgentSessionLink({
               sessionId,
               agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              role: trigger.role,
+              role: triggerRole,
               engine: executionContext.engine,
               externalSessionId: recoveryPlan.externalSessionId,
               profileFingerprint: executionContext.profileFingerprint,
@@ -2278,12 +2293,22 @@ export class LocalConsoleRuntime {
             timelineCursors,
             executionContext.agentIdentityFingerprint,
           );
-          const deltaTimeline = recoveryPlan.kind === "resume" && !continuingSameRun
-            ? selectLocalTimelineDelta(timeline, trigger.role, cursor?.lastSeenIndex ?? -1)
-            : timeline;
-          const deltaIndexes = new Set(deltaTimeline.map((message) => message.index));
+          const invocationPlan = planLocalRunInvocation({
+            lane: "primary",
+            role: triggerRole,
+            sourceBody: claimedMessage.body,
+            fullPrompt,
+            timeline,
+            cursorLastSeenIndex: cursor?.lastSeenIndex ?? -1,
+            contextPlan,
+            readOnly: analysisGateEnabled,
+          });
+          if (invocationPlan.kind === "unavailable") {
+            throw new Error("Ready run context unexpectedly produced an unavailable invocation");
+          }
           const attachmentMessages = recoveryPlan.kind === "resume" && !continuingSameRun
-            ? timelineMessages.filter((_message, index) => deltaIndexes.has(index))
+            ? timelineMessages.filter((_message, index) =>
+                invocationPlan.attachmentTimelineIndexes.has(index))
             : timelineMessages;
           const preparedAttachments = this.options.attachmentManager === undefined
             ? { promptSuffix: "", imagePaths: [] as string[] }
@@ -2291,23 +2316,8 @@ export class LocalConsoleRuntime {
                 messages: attachmentMessages,
                 runDir: resolvedRunDir,
               });
-          const continuingIntent = continuingSameRun && recoveryPlan.kind === "resume"
-            ? recoveryPlan.intent
-            : null;
-          let prompt = continuingIntent !== null
-            ? buildLocalResumePrompt({
-                reason: continuingIntent.reason,
-                ...(continuingIntent.reason === "edit-resend" ? { correctionBody: claimedMessage.body } : {}),
-              })
-            : recoveryPlan.kind === "resume"
-              ? recoveryPlan.intent?.reason === "edit-resend"
-                ? `${buildLocalResumePrompt({
-                    reason: "edit-resend",
-                    correctionBody: claimedMessage.body,
-                  })}\n\n${buildLocalAgentDeltaPrompt({ role: trigger.role, timeline: deltaTimeline })}`
-                : buildLocalAgentDeltaPrompt({ role: trigger.role, timeline: deltaTimeline })
-              : fullPrompt;
-          if (analysisGateEnabled && trigger.role === primaryAgent) {
+          let prompt = invocationPlan.prompt;
+          if (analysisGateEnabled && triggerRole === primaryAgent) {
             prompt += buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null);
           }
           prompt += preparedAttachments.promptSuffix;
@@ -2320,11 +2330,7 @@ export class LocalConsoleRuntime {
                 sessionId,
                 intentId: consumedIntent.intentId,
                 resumedByRunId: nextRunId,
-                mode: recoveryPlan.kind === "resume"
-                  ? "resume"
-                  : consumedIntent.executionOverride === undefined
-                    ? "unavailable"
-                    : "full-fallback",
+                mode: invocationPlan.consumeIntentMode!,
                 reason: recoveryPlan.reason,
                 consumedAt: this.nowIso(),
               }));
@@ -2340,7 +2346,7 @@ export class LocalConsoleRuntime {
             sessionId,
             runId: nextRunId,
             userMessageId: claimedMessage.id,
-            role: trigger.role,
+            role: triggerRole,
             lane: "primary",
             sourceDisposition: "primary",
             runDir: resolvedRunDir,
@@ -2382,12 +2388,12 @@ export class LocalConsoleRuntime {
             sessionId,
             runId: nextRunId,
             invocationId: `${nextRunId}:${resolvedRunDir}`,
-            role: trigger.role,
+            role: triggerRole,
             agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
             phase: "started",
-            mode: recoveryPlan.kind === "resume" ? "resume" : "full",
-            requestedExternalSessionId: recoveryPlan.kind === "resume"
-              ? recoveryPlan.externalSessionId
+            mode: invocationPlan.providerMode.kind,
+            requestedExternalSessionId: invocationPlan.providerMode.kind === "resume"
+              ? invocationPlan.providerMode.externalSessionId
               : null,
             observedExternalSessionId: null,
             outcome: "started",
@@ -2400,16 +2406,14 @@ export class LocalConsoleRuntime {
                 runDir: activeRunDir,
                 cwd: workspace.cwd,
                 profile: executionContext.profile,
-                mode: recoveryPlan.kind === "resume"
-                  ? { kind: "resume", externalSessionId: recoveryPlan.externalSessionId }
-                  : { kind: "full" },
+                mode: invocationPlan.providerMode,
                 signal: controller.signal,
                 ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
                 ...(this.toolInFlightTimeoutMs === undefined
                   ? {}
                   : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
                 ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
-                workspaceAccess: analysisGateEnabled ? "read-only" : "read-write",
+                workspaceAccess: invocationPlan.workspaceAccess,
                 onVisibleAgentMarkdown: (text) => {
                   const active = this.activeRuns.get(nextRunId);
                   if (active?.sessionId === sessionId) {
@@ -2421,7 +2425,7 @@ export class LocalConsoleRuntime {
                         this.sessionFactStore().recordProgressEvent({
                           sessionId,
                           runId: nextRunId,
-                          role: trigger.role,
+                          role: triggerRole,
                           body: text,
                           now: recordedAt,
                         })));
@@ -2443,7 +2447,7 @@ export class LocalConsoleRuntime {
                     sessionId,
                     runId: nextRunId,
                     sourceMessageId: claimedMessage.id,
-                    role: trigger.role,
+                    role: triggerRole,
                     engine,
                     externalSessionId,
                     observedAt: this.nowIso(),
@@ -2453,7 +2457,7 @@ export class LocalConsoleRuntime {
                   await this.recordAgentSessionLink({
                     sessionId,
                     agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                    role: trigger.role,
+                    role: triggerRole,
                     engine,
                     externalSessionId,
                     profileFingerprint: executionContext.profileFingerprint,
@@ -2479,7 +2483,7 @@ export class LocalConsoleRuntime {
                     sessionId,
                     runId: nextRunId,
                     sourceMessageId: claimedMessage.id,
-                    role: trigger.role,
+                    role: triggerRole,
                     engine,
                     externalSessionId,
                     startedAt: this.nowIso(),
@@ -2492,7 +2496,7 @@ export class LocalConsoleRuntime {
                       sessionId,
                       runId: nextRunId,
                       sourceMessageId: claimedMessage.id,
-                      role: trigger.role,
+                      role: triggerRole,
                       threadId: externalSessionId,
                       startedAt: this.nowIso(),
                       contextFingerprint: executionContext.profile === null
@@ -2519,7 +2523,7 @@ export class LocalConsoleRuntime {
                 sessionId,
                 runId: nextRunId,
                 sourceMessageId: claimedMessage.id,
-                role: trigger.role,
+                role: triggerRole,
                 engine: executionContext.engine,
                 externalSessionId: result.threadId,
                 observedAt: this.nowIso(),
@@ -2529,7 +2533,7 @@ export class LocalConsoleRuntime {
               await this.recordAgentSessionLink({
                 sessionId,
                 agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-                role: trigger.role,
+                role: triggerRole,
                 engine: executionContext.engine,
                 externalSessionId: result.threadId,
                 profileFingerprint: executionContext.profileFingerprint,
@@ -2543,7 +2547,7 @@ export class LocalConsoleRuntime {
                 sessionId,
                 runId: nextRunId,
                 sourceMessageId: claimedMessage.id,
-                role: trigger.role,
+                role: triggerRole,
                 engine: executionContext.engine,
                 externalSessionId: result.threadId,
                 startedAt: this.nowIso(),
@@ -2556,7 +2560,7 @@ export class LocalConsoleRuntime {
 
           if (
             analysisGateEnabled
-            && trigger.role === primaryAgent
+            && triggerRole === primaryAgent
             && result.ok
             && result.completionKind !== "terminal-tool-result"
           ) {
@@ -2631,7 +2635,7 @@ export class LocalConsoleRuntime {
             sessionId,
             runId: nextRunId,
             invocationId: `${nextRunId}:${resolvedRunDir}`,
-            role: trigger.role,
+            role: triggerRole,
             agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
             phase: "terminal",
             mode: recoveryPlan.kind === "resume" ? "resume" : "full",
@@ -2670,7 +2674,7 @@ export class LocalConsoleRuntime {
 
           const sourceDirectoryAvailable = await this.sessionProjectDirectoryAvailable(sessionId);
 
-          const childSessionCard = sourceDirectoryAvailable && !terminalToolOnly && trigger.role === "ceo"
+          const childSessionCard = sourceDirectoryAvailable && !terminalToolOnly && triggerRole === "ceo"
             ? await this.executeLocalCeoChildSessionOrchestrationIfNeeded({
               sessionId,
               runId: nextRunId,
@@ -2700,7 +2704,7 @@ export class LocalConsoleRuntime {
                 this.options.store.recordAgentResponse({
                   userMessageId: claimedMessage.id,
                   sessionId,
-                  role: trigger.role,
+                  role: triggerRole,
                   body: result.finalText,
                   runId: nextRunId,
                   runDir: result.runDir,
@@ -2711,7 +2715,7 @@ export class LocalConsoleRuntime {
             await this.recordAgentTimelineCursor({
               sessionId,
               runId: nextRunId,
-              role: trigger.role,
+              role: triggerRole,
               agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
               lastSeenIndex: timeline.at(-1)?.index ?? -1,
               recordedAt: this.nowIso(),
@@ -2870,16 +2874,20 @@ export class LocalConsoleRuntime {
     }
     const pendingMessages = await this.storeCall("local-console-store-list-worker-pending", () =>
       this.options.store.listMessages(sessionId));
-    const roles = [...new Set(
-      pendingMessages
-        .filter((message) =>
-          message.speaker === "user"
-          && message.status === "pending"
-          && message.dispatchLane === "worker"
-          && message.dispatchRole !== null)
-        .map((message) => message.dispatchRole!),
-    )];
-    if (roles.length === 0) {
+    const referencedRoles = new Set(
+      pendingMessages.flatMap((message) =>
+        message.dispatchRole == null ? [] : [message.dispatchRole]),
+    );
+    const workerCandidates = planPendingWorkerDispatches({
+      messages: pendingMessages,
+      activeRoles: new Set(
+        [...referencedRoles].filter((role) => this.activeRunForRole(sessionId, role) !== undefined),
+      ),
+      queuedRoles: new Set(
+        [...referencedRoles].filter((role) => this.workerLaneTails.has(workerLaneKey(sessionId, role))),
+      ),
+    });
+    if (workerCandidates.length === 0) {
       return;
     }
 
@@ -2892,24 +2900,10 @@ export class LocalConsoleRuntime {
           executionProfile: member.executionProfile ?? null,
         }));
 
-    for (const role of roles) {
+    for (const candidate of workerCandidates) {
+      const { role, message: pendingForRole } = candidate;
       if (this.closing || this.inactiveSessions.has(sessionId)) {
         return;
-      }
-      const laneKey = workerLaneKey(sessionId, role);
-      if (
-        this.activeRunForRole(sessionId, role) !== undefined
-        || this.workerLaneTails.has(laneKey)
-      ) {
-        continue;
-      }
-      const pendingForRole = pendingMessages.find((message) =>
-        message.speaker === "user"
-        && message.status === "pending"
-        && message.dispatchLane === "worker"
-        && message.dispatchRole === role);
-      if (pendingForRole === undefined) {
-        continue;
       }
       const runId = await this.gracefulResumeTargetForMessage(sessionId, pendingForRole.id)
         ?? `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -3215,37 +3209,34 @@ export class LocalConsoleRuntime {
         };
       }
     }
-    if (recoveryPlan.kind === "unavailable") {
+    const contextPlan = planLocalRunContext({
+      recoveryPlan,
+      sessionId: input.sessionId,
+      runId,
+      sourceMessageId: input.sourceMessage.id,
+      recordedAt: this.nowIso(),
+    });
+    if (contextPlan.kind === "unavailable") {
+      const unavailable = contextPlan.recoveryPlan;
       await this.settleUnavailableResume({
         sessionId: input.sessionId,
         runId,
         sourceMessage: input.sourceMessage,
-        intent: recoveryPlan.intent,
+        intent: unavailable.intent,
         role: input.role,
-        engine: recoveryPlan.context.engine,
-        reason: recoveryPlan.reason,
+        engine: unavailable.context.engine,
+        reason: unavailable.reason,
         runDir,
       });
       return;
     }
-    const continuingSameRun = recoveryPlan.kind === "resume"
-      && recoveryPlan.intent?.reason === "graceful-shutdown"
-      && recoveryPlan.intent.targetRunId === runId;
-    const executionContext = continuingSameRun
-      ? recoveryPlan.context
-      : {
-          ...recoveryPlan.context,
-          sessionId: input.sessionId,
-          runId,
-          sourceMessageId: input.sourceMessage.id,
-          recordedAt: this.nowIso(),
-        };
+    const { continuingSameRun, executionContext } = contextPlan;
     const workspace = workspaceFromExecutionContext(executionContext);
-    const executingAgent = executionContext.team.find((member) => member.name === input.role);
-    if (executingAgent === undefined) {
+    const executingAgentPlan = selectExecutingAgent(executionContext, input.role);
+    if (executingAgentPlan.kind === "missing") {
       throw new Error(`Run execution context is missing Agent: ${input.role}`);
     }
-    const agentManifest = parseAgentManifest(executingAgent.agentMarkdown);
+    const agentManifest = parseAgentManifest(executingAgentPlan.agent.agentMarkdown);
     const fullPrompt = buildLocalAgentPrompt({
       role: input.role,
       agentMarkdown: agentManifest.body,
@@ -3272,12 +3263,22 @@ export class LocalConsoleRuntime {
       timelineCursors,
       executionContext.agentIdentityFingerprint,
     );
-    const deltaTimeline = recoveryPlan.kind === "resume" && !continuingSameRun
-      ? selectLocalTimelineDelta(input.timeline, input.role, cursor?.lastSeenIndex ?? -1)
-      : input.timeline;
-    const deltaIndexes = new Set(deltaTimeline.map((message) => message.index));
+    const invocationPlan = planLocalRunInvocation({
+      lane: "worker",
+      role: input.role,
+      sourceBody: input.sourceMessage.body,
+      fullPrompt,
+      timeline: input.timeline,
+      cursorLastSeenIndex: cursor?.lastSeenIndex ?? -1,
+      contextPlan,
+      readOnly: workerPolicySession.writePolicy === "confirm-current-plan-before-write",
+    });
+    if (invocationPlan.kind === "unavailable") {
+      throw new Error("Ready run context unexpectedly produced an unavailable invocation");
+    }
     const attachmentMessages = recoveryPlan.kind === "resume" && !continuingSameRun
-      ? input.timelineMessages.filter((_message, index) => deltaIndexes.has(index))
+      ? input.timelineMessages.filter((_message, index) =>
+          invocationPlan.attachmentTimelineIndexes.has(index))
       : input.timelineMessages;
     const preparedAttachments = this.options.attachmentManager === undefined
       ? { promptSuffix: "", imagePaths: [] as string[] }
@@ -3285,19 +3286,7 @@ export class LocalConsoleRuntime {
           messages: attachmentMessages,
           runDir,
         });
-    const continuingIntent = continuingSameRun && recoveryPlan.kind === "resume"
-      ? recoveryPlan.intent
-      : null;
-    let prompt = continuingIntent !== null
-      ? buildLocalResumePrompt({ reason: continuingIntent.reason })
-      : recoveryPlan.kind === "resume"
-        ? recoveryPlan.intent?.reason === "edit-resend"
-          ? `${buildLocalResumePrompt({
-              reason: "edit-resend",
-              correctionBody: input.sourceMessage.body,
-            })}\n\n${buildLocalAgentDeltaPrompt({ role: input.role, timeline: deltaTimeline })}`
-          : buildLocalAgentDeltaPrompt({ role: input.role, timeline: deltaTimeline })
-        : fullPrompt;
+    let prompt = invocationPlan.prompt;
     prompt += preparedAttachments.promptSuffix;
     if (recoveryPlan.intent !== null) {
       const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
@@ -3306,7 +3295,7 @@ export class LocalConsoleRuntime {
           sessionId: input.sessionId,
           intentId: recoveryPlan.intent!.intentId,
           resumedByRunId: runId,
-          mode: recoveryPlan.kind === "resume" ? "resume" : "full-fallback",
+          mode: invocationPlan.consumeIntentMode!,
           reason: recoveryPlan.reason,
           consumedAt: this.nowIso(),
         }));
@@ -3403,9 +3392,9 @@ export class LocalConsoleRuntime {
         role: input.role,
         agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
         phase: "started",
-        mode: recoveryPlan.kind === "resume" ? "resume" : "full",
-        requestedExternalSessionId: recoveryPlan.kind === "resume"
-          ? recoveryPlan.externalSessionId
+        mode: invocationPlan.providerMode.kind,
+        requestedExternalSessionId: invocationPlan.providerMode.kind === "resume"
+          ? invocationPlan.providerMode.externalSessionId
           : null,
         observedExternalSessionId: null,
         outcome: "started",
@@ -3421,18 +3410,14 @@ export class LocalConsoleRuntime {
             runDir,
             cwd: workspace.cwd,
             profile: executionContext.profile,
-            mode: recoveryPlan.kind === "resume"
-              ? { kind: "resume", externalSessionId: recoveryPlan.externalSessionId }
-              : { kind: "full" },
+            mode: invocationPlan.providerMode,
             signal: controller.signal,
             ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
             ...(this.toolInFlightTimeoutMs === undefined
               ? {}
               : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
             ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
-            workspaceAccess: workerPolicySession.writePolicy === "confirm-current-plan-before-write"
-              ? "read-only"
-              : "read-write",
+            workspaceAccess: invocationPlan.workspaceAccess,
             onVisibleAgentMarkdown: (text) => {
               const active = this.activeRuns.get(runId);
               if (active?.sessionId === input.sessionId) {

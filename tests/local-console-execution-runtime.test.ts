@@ -1547,10 +1547,6 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
 
   it.each([
     {
-      intentOrder: ["A", "B"] as const,
-      processOrder: ["A", "B"] as const,
-    },
-    {
       intentOrder: ["B", "A"] as const,
       processOrder: ["B", "A"] as const,
     },

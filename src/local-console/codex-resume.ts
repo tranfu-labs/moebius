@@ -44,24 +44,6 @@ export interface LocalCodexRecoveryFacts {
   repairedIntentIds: Set<string>;
 }
 
-export function buildLocalResumePrompt(input: {
-  reason: LocalCodexResumeReason;
-  correctionBody?: string;
-}): string {
-  if (input.reason === "edit-resend") {
-    return [
-      "继续刚才未完成的同一次执行。",
-      "用户已修正原指令；下面的新指令覆盖与原指令冲突的部分。先检查当前工作空间状态，避免重复已经完成的副作用。",
-      "",
-      input.correctionBody?.trim() ?? "",
-    ].join("\n");
-  }
-  return [
-    "继续刚才未完成的同一次执行。",
-    "先检查当前工作空间状态，从中断处继续，避免重复已经完成的文件或外部副作用。",
-  ].join("\n");
-}
-
 export async function readLocalCodexRecoveryFacts(
   logPath: string,
   sessionId: string,

@@ -23,7 +23,7 @@ export interface TestCommand {
    * scope 模式专用：先跑它列出受影响的测试文件。
    *
    * 必要性在于 `vitest --changed` 找不到文件时会打印 "No test files found" 然后
-   * **退出 0**。三个 workspace 全都没命中时，`pnpm test --scope` 就会在一个测试都没跑的
+   * **退出 0**。三个 workspace 全都没命中时，`pnpm run test --scope` 就会在一个测试都没跑的
    * 情况下返回成功——这种绿比红更危险。先探测再决定跑不跑，才能把「没有受影响的测试」
    * 和「受影响的测试都通过了」区分开。
    */
@@ -36,6 +36,8 @@ export interface TestPlan {
   mode: TestMode;
   /** 只有完整闸门需要跨 worktree 互斥。 */
   requiresLock: boolean;
+  /** 正式闸门在测试选择之前执行的工程约束检查。 */
+  preflightCommands: TestCommand[];
   commands: TestCommand[];
   /** 全部命令跑完后打印的提示。 */
   footer?: string;
@@ -47,6 +49,7 @@ function fullPlan(): TestPlan {
   return {
     mode: "full",
     requiresLock: true,
+    preflightCommands: [{ label: "import boundaries", args: ["check:boundaries"] }],
     commands: [
       {
         label: "root (除慢测)",
@@ -67,6 +70,7 @@ function scopePlan(base: string | null): TestPlan {
   return {
     mode: "scope",
     requiresLock: false,
+    preflightCommands: [{ label: "import boundaries", args: ["check:boundaries"] }],
     commands: [
       {
         label: "root (scope)",
@@ -128,6 +132,7 @@ function directPlan(args: string[]): TestPlan {
   return {
     mode: "direct",
     requiresLock: false,
+    preflightCommands: [],
     commands: [{ label: "direct", args: ["exec", "vitest", "run", ...args] }],
   };
 }

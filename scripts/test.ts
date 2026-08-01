@@ -3,8 +3,8 @@
  * 测试入口。三种形态见 `src/testing/test-plan.ts`：
  *
  *   pnpm test                  完整闸门（跨 worktree 互斥，同机同时只跑一套）
- *   pnpm test --scope          只跑受未提交改动影响的测试
- *   pnpm test --scope <base>   只跑受 <base>..工作区 影响的测试
+ *   pnpm run test --scope          只跑受未提交改动影响的测试
+ *   pnpm run test --scope <base>   只跑受 <base>..工作区 影响的测试
  *   pnpm test <files...>       直通给 vitest
  *
  * 逃逸口：MOEBIUS_FULL_TEST_LOCK=0 跳过互斥（确认独占机器时用）。
@@ -111,6 +111,14 @@ async function main(): Promise<number> {
       release();
       process.exit(130);
     });
+  }
+
+  for (const command of plan.preflightCommands) {
+    const status = await run(command);
+    if (status !== 0) {
+      release();
+      return status;
+    }
   }
 
   // scope 模式先探测，避免「三个 workspace 都没命中」时静默返回成功。

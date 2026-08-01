@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="560" viewBox="0 0 1060 560" role="img" aria-labelledby="title desc">
+  <title id="title">Local console runtime after refactoring</title>
+  <desc id="desc">Runtime orchestration calls pure control and invocation planners, while an import boundary preflight protects module directions.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }
+    .title { font-size: 22px; font-weight: 700; }
+    .label { font-size: 16px; font-weight: 650; }
+    .body { font-size: 14px; }
+    .pure { fill: #ebf8ef; stroke: #2f8a4d; stroke-width: 2; }
+    .runtime { fill: #fff4df; stroke: #d88918; stroke-width: 2; }
+    .io { fill: #eef5ff; stroke: #4076b8; stroke-width: 2; }
+    .gate { fill: #f3efff; stroke: #7052b8; stroke-width: 2; }
+    .arrow { stroke: #526174; stroke-width: 2; marker-end: url(#arrow); }
+    .dash { stroke: #7052b8; stroke-width: 2; stroke-dasharray: 7 6; marker-end: url(#purpleArrow); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#526174"/>
+    </marker>
+    <marker id="purpleArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7052b8"/>
+    </marker>
+  </defs>
+  <text x="40" y="42" class="title">After: pure plans, narrow orchestration, enforced directions</text>
+  <rect x="50" y="92" width="300" height="120" rx="16" class="pure"/>
+  <text x="78" y="128" class="label">Control dispatch planner</text>
+  <text x="78" y="157" class="body">claimed source · retry intent</text>
+  <text x="78" y="181" class="body">worker FIFO · active lane skip</text>
+  <rect x="50" y="248" width="300" height="138" rx="16" class="pure"/>
+  <text x="78" y="284" class="label">Run invocation planner</text>
+  <text x="78" y="313" class="body">existing recovery truth</text>
+  <text x="78" y="337" class="body">mode · prompt · delta · access</text>
+  <text x="78" y="361" class="body">plain values only; no CLI / store / fs</text>
+  <rect x="425" y="132" width="280" height="220" rx="18" class="runtime"/>
+  <text x="458" y="170" class="label">LocalConsoleRuntime</text>
+  <text x="458" y="207" class="body">processPending orchestrates plan</text>
+  <text x="458" y="235" class="body">runWorker orchestrates plan</text>
+  <text x="458" y="278" class="body">claim · persist · callbacks</text>
+  <text x="458" y="306" class="body">lifecycle · failure cleanup</text>
+  <rect x="790" y="96" width="220" height="72" rx="14" class="io"/>
+  <rect x="790" y="202" width="220" height="72" rx="14" class="io"/>
+  <rect x="790" y="308" width="220" height="72" rx="14" class="io"/>
+  <text x="818" y="139" class="label">Store / JSONL</text>
+  <text x="818" y="245" class="label">Workspace / files</text>
+  <text x="818" y="351" class="label">Provider drivers</text>
+  <line x1="350" y1="152" x2="425" y2="188" class="arrow"/>
+  <line x1="350" y1="317" x2="425" y2="284" class="arrow"/>
+  <line x1="705" y1="185" x2="790" y2="132" class="arrow"/>
+  <line x1="705" y1="244" x2="790" y2="238" class="arrow"/>
+  <line x1="705" y1="303" x2="790" y2="344" class="arrow"/>
+  <rect x="270" y="440" width="520" height="72" rx="14" class="gate"/>
+  <text x="304" y="477" class="label">pnpm test preflight: import boundary graph</text>
+  <text x="304" y="499" class="body">deny rules + narrow exceptions + actionable diagnostics</text>
+  <line x1="530" y1="440" x2="530" y2="354" class="dash"/>
+</svg>

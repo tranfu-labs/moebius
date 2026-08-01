@@ -8,6 +8,9 @@ describe("parseTestPlan", () => {
 
     expect(plan.mode).toBe("full");
     expect(plan.requiresLock).toBe(true);
+    expect(plan.preflightCommands).toEqual([
+      { label: "import boundaries", args: ["check:boundaries"] },
+    ]);
     expect(plan.commands.map((command) => command.label)).toEqual([
       "root (除慢测)",
       "root (慢测)",
@@ -63,6 +66,14 @@ describe("parseTestPlan", () => {
 
     const labels = plan.commands.map((command) => command.label);
     expect(labels).toEqual(["root (scope)", "desktop (scope)", "console-ui (scope)"]);
+  });
+
+  it("完整与 scope 闸门都先检查 import 边界，直通定向测试不重复收税", () => {
+    expect(parseTestPlan([]).preflightCommands.map((command) => command.label))
+      .toEqual(["import boundaries"]);
+    expect(parseTestPlan(["--scope"]).preflightCommands.map((command) => command.label))
+      .toEqual(["import boundaries"]);
+    expect(parseTestPlan(["tests/foo.test.ts"]).preflightCommands).toEqual([]);
   });
 
   it("--scope 跑完必须提示它不是全量闸门", () => {

@@ -6,9 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { waitForValue } from "../src/testing/wait.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import {
-  buildLocalResumePrompt,
   readLocalCodexRecoveryFacts,
 } from "../src/local-console/codex-resume.js";
+import { buildLocalResumePrompt } from "../src/local-console/prompt.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
 import type { LocalConsoleMessage, LocalConsoleRunSnapshot } from "../src/local-console/types.js";
 

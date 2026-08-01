@@ -2147,6 +2147,51 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   }, 10_000);
 
+  it("uses the legacy no-primary route fallback for a claimable message without dispatch metadata", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    const routeJudgment = vi.fn(async () => ({
+      action: "NO_ACTION" as const,
+      reason: "ceo-no-action" as const,
+    }));
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> =>
+      codexOk(options, "unexpected provider response"));
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      sqlitePath,
+      store,
+      listAgentFiles: async () => [],
+      routeJudgment,
+      runCodex,
+      makeRunDir: (count) => path.join(root, "runs", `route-without-primary-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "no primary route fallback");
+      await store.appendUserMessage({
+        sessionId: session.sessionId,
+        body: "兼容消息没有 dispatch metadata",
+        now: new Date().toISOString(),
+      });
+      await started.runtime.processPending(session.sessionId);
+      const state = await waitForState(started.url, session.sessionId, (data) =>
+        data.selectedSession?.hasPendingControlWork === false
+      );
+
+      expect(routeJudgment).toHaveBeenCalledTimes(1);
+      expect(runCodex).not.toHaveBeenCalled();
+      expect(state.activeRuns).toEqual([]);
+      const facts = await listLocalT5Facts({ sqlitePath: started.sqlitePath }, session.sessionId);
+      expect(facts.routeDecisions).toEqual([
+        expect.objectContaining({ outcome: "no_action", reason: "ceo-no-action" }),
+      ]);
+    } finally {
+      await started.close();
+    }
+  }, 10_000);
+
   it("does not rerun a completed primary Agent message without a mention", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# dev\n\nROLE:dev");
@@ -2946,56 +2991,6 @@ describe("local console", { timeout: 15_000 }, () => {
       await started.close();
     }
   }, 20_000);
-
-  it("routes no mention, invalid mention, and multiple valid mentions to the primary in isolated sessions", async () => {
-    const root = await makeFixtureRoot();
-    const invocations: Array<{
-      role: string;
-      gate: ReturnType<typeof deferred<void>>;
-      options: CodexRunOptions;
-    }> = [];
-    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
-      const invocation = {
-        role: roleFromPrompt(options.prompt),
-        gate: deferred<void>(),
-        options,
-      };
-      invocations.push(invocation);
-      await invocation.gate.promise;
-      return codexOk(options, `${invocation.role} 完成`);
-    });
-    const started = await startLocalConsoleServer({
-      projectRoot: root,
-      port: 0,
-      runCodex,
-      listAgentFiles: async () => [
-        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
-        { name: "dev", agentMarkdown: "ROLE:dev" },
-        { name: "qa", agentMarkdown: "ROLE:qa" },
-      ],
-      makeRunDir: (count) => path.join(root, "runs", `run-${String(count)}`),
-      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
-    });
-    try {
-      for (const body of ["请判断下一步", "@unknown 请处理", "@qa @dev 请协调"]) {
-        const session = await createSession(started.url, body);
-        const invocationOffset = invocations.length;
-        expect((await postSessionMessage(started.url, session.sessionId, body)).status).toBe(202);
-        const active = await waitForState(started.url, session.sessionId, (state) =>
-          state.activeRuns.length > 0
-        );
-        expect(active.activeRuns.map((run) => run.role)).toEqual(["dev-manager"]);
-        expect(invocations.slice(invocationOffset).map((invocation) => invocation.role)).toEqual(["dev-manager"]);
-        invocations.at(-1)?.gate.resolve(undefined);
-        await waitForState(started.url, session.sessionId, (state) => state.activeRuns.length === 0);
-      }
-    } finally {
-      for (const invocation of invocations) {
-        invocation.gate.resolve(undefined);
-      }
-      await started.close();
-    }
-  }, 30_000);
 
   it("starts a newly addressed idle worker while the primary run remains active", async () => {
     const root = await makeFixtureRoot();

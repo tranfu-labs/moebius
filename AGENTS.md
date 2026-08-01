@@ -44,20 +44,21 @@
 - 组件库 Storybook：`pnpm --filter @moebius/console-ui storybook`（设计语言事实源是 `packages/console-ui/DESIGN.md`）
 - Storybook 门禁：`pnpm --filter @moebius/console-ui check:storybook`（检查 Component / Block / Page 分类并构建静态 Storybook）
 - 原型构建验证：`pnpm --filter @moebius/prototypes check`（沙盒规则见 `prototypes/AGENTS.md` 与 `openspec/specs/design-prototypes/spec.md`）
+- import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
 - 会话日志压缩：`pnpm exec tsx scripts/compact-session-facts.ts [路径...]`（默认体检数据根下的 `sessions/`，加 `--write` 才落盘；只在应用未运行时执行）
 - Provider 原生过程记录验收：`pnpm exec tsx scripts/acceptance/provider-native-process-traces.ts`（实际调用 Claude/Kimi CLI，断言原生 transcript/wire 在真实 Electron 页面中的展示、resume 同源语义与记录删除后的降级；evidence 写系统临时目录）
 - Kimi ACP 空响应验收：`pnpm exec tsx scripts/acceptance/kimi-empty-response.ts`（实际调用 Kimi CLI，以真实 Electron 页面断言空 `end_turn` 的安全失败、canonical resume、重启保持与过程记录不可用降级；evidence 写系统临时目录；额度状态不再复现时会明确报告前提不成立）
 - 定向测试：`pnpm exec vitest run tests/local-console-codex-resume.test.ts`
-- 测试：`pnpm test`（完整闸门）／`pnpm test --scope [基线]`（只跑受改动影响的测试）；类型检查：`pnpm typecheck`
+- 测试：`pnpm test`（完整闸门）／`pnpm run test --scope [基线]`（只跑受改动影响的测试）；类型检查：`pnpm typecheck`
 - lint/格式化：TODO: 尚未配置 ESLint / Prettier；改代码时至少跑测试与类型检查。
 
 ### 测试闸门的三种形态
 | 命令 | 跑什么 | 跨 worktree 互斥 |
 | --- | --- | --- |
 | `pnpm test` | 完整闸门（根套件 + 慢测 + desktop + console-ui） | **是** |
-| `pnpm test --scope [基线]` | 只跑受改动影响的测试（不带基线＝未提交改动） | 否 |
+| `pnpm run test --scope [基线]` | 只跑受改动影响的测试（不带基线＝未提交改动） | 否 |
 | `pnpm test <文件...>` | 直通给 vitest | 否 |
 
 **开发过程中的收口用 `--scope`，合并前必须跑一次完整 `pnpm test`。** `--scope` 靠 vitest 的 import 依赖图挑文件，是机器算出的依赖闭环——NEVER 自己凭直觉挑测试文件当闸门，那样闸门不可复现。
