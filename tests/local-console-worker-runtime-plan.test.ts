@@ -9,11 +9,14 @@ import {
   decideWorkerSuccessPersistence,
   decideWorkerRedirectAbort,
   decideWorkerRunId,
+  decideWorkerStopHandling,
+  decideWorkerTerminalContinuation,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
   planWorkerSourceDisposition,
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
+  planWorkerFinalization,
 } from "../src/local-console/worker-runtime-plan.js";
 
 describe("worker runtime plan", () => {
@@ -64,5 +67,18 @@ describe("worker runtime plan", () => {
     expect(planWorkerGracefulResume({ gracefulResumePrepared: true })).toBe(true);
     expect(planWorkerLastSeenIndex([])).toBe(-1);
     expect(planWorkerLastSeenIndex([{ index: 2 }, { index: 5 }])).toBe(5);
+    expect(decideWorkerStopHandling({ stopping: true, origin: "user-direct" }))
+      .toEqual({ kind: "release-and-stop" });
+    expect(decideWorkerStopHandling({ stopping: true, origin: "primary-redirect" }))
+      .toEqual({ kind: "stop" });
+    expect(decideWorkerStopHandling({ stopping: false, origin: "user-direct" }))
+      .toEqual({ kind: "continue" });
+    expect(decideWorkerTerminalContinuation("failed")).toEqual({ kind: "stop" });
+    expect(decideWorkerTerminalContinuation("succeeded")).toEqual({ kind: "clear-error" });
+    expect(planWorkerFinalization(undefined)).toEqual({ cwd: null, lifecycle: "none" });
+    expect(planWorkerFinalization({ cwd: "/tmp/work", terminalRecorded: false, gracefulResumePrepared: true }))
+      .toEqual({ cwd: "/tmp/work", lifecycle: "pause" });
+    expect(planWorkerFinalization({ cwd: "/tmp/work", terminalRecorded: false, gracefulResumePrepared: false }))
+      .toEqual({ cwd: "/tmp/work", lifecycle: "fail" });
   });
 });

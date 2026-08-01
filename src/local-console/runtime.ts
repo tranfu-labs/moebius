@@ -115,7 +115,6 @@ import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
 import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
   LocalWorkerDispatchRuntime,
-  type LocalWorkerRunInput,
 } from "./worker-dispatch-runtime.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
@@ -123,6 +122,7 @@ import type { ActiveLocalRun } from "./active-run.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
+import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -316,6 +316,7 @@ export class LocalConsoleRuntime {
   private readonly workerPreparationRuntime: LocalWorkerPreparationRuntime;
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
+  private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -432,7 +433,7 @@ export class LocalConsoleRuntime {
         };
       },
       nowRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
-      scheduleRun: (input) => this.runWorker(input),
+      scheduleRun: (input) => this.workerExecutionRuntime.run(input),
       continuableWorkspace: (sessionId) => this.continuableSessionWorkspace(sessionId),
       applyPendingContext: (sessionId) => this.applyPendingSessionContextWhenIdle(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
@@ -615,6 +616,31 @@ export class LocalConsoleRuntime {
             runDir: result.runDir,
             now: this.nowIso(),
           })),
+    });
+    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime({
+      preparation: this.workerPreparationRuntime,
+      provider: this.workerProviderRuntime,
+      terminal: this.workerTerminalRuntime,
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      releaseClaim: (input) => this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId).then(() => undefined),
+      formatError: (error) => formatLocalError(error),
+      setError: (error) => { this.lastError = error; },
+      recordDirectFailure: (input, runDir, error) =>
+        this.recordTerminalFailureBestEffort(input.sourceMessage, input.sessionId, input.runId, runDir, error),
+      recordDetachedFailure: (input, runDir, error) => this.recordDetachedRunTerminal({
+        sessionId: input.sessionId,
+        body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+        systemEventKind: "run-not-started",
+        runId: input.runId,
+        runDir,
+        error,
+        status: "failed",
+      }),
+      activeRun: (runId) => this.activeRuns.get(runId),
+      pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
+      failLifecycle: (runId) => this.finishRunLifecycle(runId, "failed"),
+      deleteActiveRun: (runId) => { this.activeRuns.delete(runId); },
+      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -2175,79 +2201,6 @@ export class LocalConsoleRuntime {
         now: this.nowIso(),
       }));
     return true;
-  }
-
-  private async runWorker(input: LocalWorkerRunInput): Promise<void> {
-    if (this.closing || this.inactiveSessions.has(input.sessionId)) {
-      if (input.origin === "user-direct") {
-        await this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId);
-      }
-      return;
-    }
-
-    const preparation = await this.workerPreparationRuntime.prepare(input);
-    if (preparation.kind === "settled") return;
-    const { runDir } = preparation;
-    const runId = input.runId;
-    try {
-      const providerInvocation = await this.workerProviderRuntime.invoke(input, preparation);
-      if (providerInvocation.kind === "stopped") return;
-      const {
-        result,
-        observedExternalSessionId,
-      } = providerInvocation;
-
-      const terminalOutcome = await this.workerTerminalRuntime.complete(input, preparation, {
-        result,
-        observedExternalSessionId,
-      });
-      if (terminalOutcome === "failed") return;
-      this.lastError = null;
-    } catch (error) {
-      this.lastError = formatLocalError(error);
-      try {
-        if (input.origin === "user-direct") {
-          await this.recordTerminalFailureBestEffort(
-            input.sourceMessage,
-            input.sessionId,
-            runId,
-            runDir,
-            this.lastError,
-          );
-        } else {
-          await this.recordDetachedRunTerminal({
-            sessionId: input.sessionId,
-            body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-            systemEventKind: "run-not-started",
-            runId,
-            runDir,
-            error: this.lastError,
-            status: "failed",
-          });
-        }
-      } catch {
-        // The original store failure remains the useful error.
-      }
-      throw error;
-    } finally {
-      const completedWorkspace = this.activeRuns.get(runId)?.cwd ?? null;
-      const unfinished = this.activeRuns.get(runId);
-      if (unfinished !== undefined && !unfinished.terminalRecorded) {
-        try {
-          if (unfinished.gracefulResumePrepared) {
-            await this.pauseRunLifecycle(runId);
-          } else {
-            await this.finishRunLifecycle(runId, "failed");
-          }
-        } catch (error) {
-          this.lastError = formatLocalError(error);
-        }
-      }
-      this.activeRuns.delete(runId);
-      if (completedWorkspace !== null) {
-        invalidateLocalWorkspaceFacts(completedWorkspace);
-      }
-    }
   }
 
   private async recordDetachedRunTerminal(input: {

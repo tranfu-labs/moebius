@@ -82,6 +82,14 @@ export function decideWorkerProviderInvocation<T extends { kind: "stopped" | "co
     : { kind: "completed", invocation: invocation as Extract<T, { kind: "completed" }> };
 }
 
+export function decideWorkerPreparedRun<T extends { kind: "settled" | "ready" }>(
+  preparation: T,
+): { kind: "settled" } | { kind: "ready"; preparation: Extract<T, { kind: "ready" }> } {
+  return preparation.kind === "settled"
+    ? { kind: "settled" }
+    : { kind: "ready", preparation: preparation as Extract<T, { kind: "ready" }> };
+}
+
 export function decideWorkerSuccessPersistence(
   kind: "processed" | "direct-response" | "detached-response",
 ): { kind: "processed" } | { kind: "direct" } | { kind: "detached" } {
@@ -102,4 +110,36 @@ export function planWorkerGracefulResume(active: { gracefulResumePrepared: boole
 
 export function planWorkerLastSeenIndex(timeline: readonly { index: number }[]): number {
   return timeline.at(-1)?.index ?? -1;
+}
+
+export function decideWorkerStopHandling(input: {
+  stopping: boolean;
+  origin: "primary-redirect" | "user-direct";
+}): { kind: "continue" } | { kind: "stop" } | { kind: "release-and-stop" } {
+  if (!input.stopping) return { kind: "continue" };
+  return input.origin === "user-direct" ? { kind: "release-and-stop" } : { kind: "stop" };
+}
+
+export function decideWorkerTerminalContinuation(
+  outcome: "failed" | "succeeded" | "succeeded-directory-unavailable",
+): { kind: "stop" } | { kind: "clear-error" } {
+  return outcome === "failed" ? { kind: "stop" } : { kind: "clear-error" };
+}
+
+export function planWorkerFinalization(active: {
+  cwd: string | null;
+  terminalRecorded: boolean;
+  gracefulResumePrepared: boolean;
+} | undefined): {
+  cwd: string | null;
+  lifecycle: "none" | "pause" | "fail";
+} {
+  return {
+    cwd: active?.cwd ?? null,
+    lifecycle: active === undefined || active.terminalRecorded
+      ? "none"
+      : active.gracefulResumePrepared
+        ? "pause"
+        : "fail",
+  };
 }
