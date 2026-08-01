@@ -106,6 +106,7 @@ import { createLocalWorkerPreparationPorts } from "./worker-preparation-wiring.j
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { createLocalWorkerProviderPorts } from "./worker-provider-wiring.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
+import { createLocalWorkerTerminalPorts } from "./worker-terminal-wiring.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -382,13 +383,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       onStructuredActivity: (runId, event) => this.runLifecycleRuntime.updateStructuredActivity(runId, event),
       onExecutionProgress: (runId, event) => this.runLifecycleRuntime.updateExecutionProgress(runId, event),
     }));
-    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime({
+    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime(createLocalWorkerTerminalPorts({
       store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
+      storePorts: this.storePorts,
       nowIso: () => this.nowIso(),
       activeRun: (runId) => this.activeRunRegistry.get(runId),
-      recoveryStore: () => this.storePorts.recoveryFacts(),
-      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -414,26 +413,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         result.finalText,
         preparation.controller.signal,
       ),
-      recordTimelineCursor: (input, agentIdentityFingerprint, lastSeenIndex) =>
-        this.storePorts.recordAgentTimelineCursor({
-          sessionId: input.sessionId,
-          runId: input.runId,
-          role: input.role,
-          agentIdentityFingerprint,
-          lastSeenIndex,
-          recordedAt: this.nowIso(),
-        }),
-      recordChildSessionCard: (input, card, result) =>
-        this.storePorts.call("local-console-store-worker-child-session-card", () =>
-          this.storePorts.sessionFacts().recordChildSessionCard({
-            parentSessionId: input.sessionId,
-            sourceId: card.sourceId,
-            childSessionIds: card.childSessionIds,
-            runId: input.runId,
-            runDir: result.runDir,
-            now: this.nowIso(),
-          })),
-    });
+    }));
     this.workerExecutionRuntime = new LocalWorkerExecutionRuntime({
       preparation: this.workerPreparationRuntime,
       provider: this.workerProviderRuntime,

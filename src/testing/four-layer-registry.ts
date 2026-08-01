@@ -152,6 +152,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/worker-provider-runtime.ts",
   "src/local-console/worker-provider-wiring.ts",
   "src/local-console/worker-terminal-runtime.ts",
+  "src/local-console/worker-terminal-wiring.ts",
   "src/local-console/workspace-query-runtime.ts",
   "src/retry.ts",
   "src/runner.ts",
