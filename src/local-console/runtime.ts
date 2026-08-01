@@ -105,6 +105,8 @@ import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.j
 import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
+import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
+import { LocalRunFailureRuntime } from "./run-failure-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -114,7 +116,6 @@ import {
   isPendingPrimaryMessage,
   isVisibleTimelineMessage,
   isWorkerRunPlaceholder,
-  localTerminalFromResult,
   noSessionWorkspaceDiff,
   normalizeTitle,
   projectPendingDispatch,
@@ -355,6 +356,8 @@ export class LocalConsoleRuntime {
   private readonly conversationBaselineCommits = new Map<string, string | null>();
   private readonly conversationWorkspaceRuntime: LocalConversationWorkspaceRuntime;
   private readonly sessionContinuationRuntime: LocalSessionContinuationRuntime;
+  private readonly sessionPresentationRuntime: LocalSessionPresentationRuntime;
+  private readonly runFailureRuntime: LocalRunFailureRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -384,6 +387,30 @@ export class LocalConsoleRuntime {
       ...(options.resolveAgentTeamHealth === undefined
         ? {}
         : { resolveAgentTeamHealth: options.resolveAgentTeamHealth }),
+    });
+    this.sessionPresentationRuntime = new LocalSessionPresentationRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      withAgentTeamHealth: (session) => this.sessionContinuationRuntime.withAgentTeamHealth(session),
+      activeRuns: () => this.activeRuns.values(),
+      activeRunCount: (sessionId) => this.activeRunsForSession(sessionId).length,
+      getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
+      workdirRoot: options.workdirRoot,
+      ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
+    });
+    this.runFailureRuntime = new LocalRunFailureRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      activeRun: (runId) => this.activeRuns.get(runId),
+      recordStuck: (message, sessionId, runId, runDir, reason, terminal) =>
+        this.recordStuckBestEffort(message, sessionId, runId, runDir, reason, terminal),
+      recordInterrupted: (message, sessionId, runId, runDir, reason, cause, terminal) =>
+        this.recordInterruptedBestEffort(message, sessionId, runId, runDir, reason, cause, terminal),
+      recordFailure: (message, sessionId, runId, runDir, reason, body, terminal) =>
+        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason, body, terminal),
+      recordDetached: (input) => this.recordDetachedRunTerminal(input),
     });
   }
 
@@ -3341,132 +3368,19 @@ export class LocalConsoleRuntime {
   }
 
   private async withSessionWorkspaceContext(project: LocalConsoleProjectSummary): Promise<LocalConsoleProjectSummary> {
-    const projectFacts = project.directoryAvailable === false
-      ? { isGitRepository: false, branchName: null }
-      : await readCachedLocalWorkspaceFacts({
-          folderPath: project.folderPath,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        });
-    const sessions = await Promise.all(project.sessions.map(async (session) => {
-      const healthySession = await this.withAgentTeamHealth(session);
-      const context = resolveSessionWorkspaceContext(session, projectFacts);
-      const analysisRecordAvailable = await fileAvailable(this.getSessionFactLogPath(session.sessionId));
-      let branchName = context.workspaceMode === "direct" ? projectFacts.branchName : null;
-      if (context.workspaceMode === "worktree") {
-        const worktreePath = localSessionWorktreePath(
-          this.options.workdirRoot,
-          project.projectId,
-          session.sessionId,
-        );
-        if (await directoryAvailable(worktreePath)) {
-          branchName = await readCachedLocalWorkspaceFacts({
-            folderPath: worktreePath,
-            gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-          }).then((facts) => facts.branchName, () => null);
-        }
-      }
-      const continuation = resolveLocalSessionContinuation({
-        projectDirectoryAvailable: project.directoryAvailable !== false,
-        agentTeamHealth: healthySession.agentTeamHealth,
-        agentTeamHealthReason: healthySession.agentTeamHealthReason,
-      });
-      const desiredAttentionKind = continuation.canContinue ? null : continuation.kind;
-      const syncedAttention = this.options.store.syncSessionContinuationAttention === undefined
-        || (healthySession.attentionKind ?? null) === desiredAttentionKind
-        ? healthySession
-        : await this.storeCall("local-console-store-sync-session-continuation-attention", () =>
-          this.options.store.syncSessionContinuationAttention!({
-            sessionId: session.sessionId,
-            kind: desiredAttentionKind,
-            now: this.nowIso(),
-          }),
-        );
-      return {
-        ...healthySession,
-        attentionRevision: syncedAttention.attentionRevision,
-        attentionAcknowledgedRevision: syncedAttention.attentionAcknowledgedRevision,
-        attentionKind: syncedAttention.attentionKind,
-        hasUnacknowledgedAttention: syncedAttention.hasUnacknowledgedAttention,
-        analysisRecordAvailable,
-        workspaceUnavailableReason: context.independentWorkspaceUnavailableReason,
-        branchName,
-        continuation,
-      };
-    }));
-    return {
-      ...project,
-      branchName: projectFacts.branchName,
-      isGitRepository: projectFacts.isGitRepository,
-      sessions,
-    };
+    return this.sessionPresentationRuntime.withSessionWorkspaceContext(project);
   }
 
   private withRuntimeActivity(project: LocalConsoleProjectSummary): LocalConsoleProjectSummary {
-    const sessions = project.sessions.map((session) => {
-      const runs = this.activeRunsForSession(session.sessionId);
-      const runningCount = Math.max(session.runningCount, runs.length);
-      return {
-        ...session,
-        status: runningCount > 0 ? "running" as const : session.status,
-        runningCount,
-        hasPendingControlWork: session.hasPendingControlWork === true || runningCount > 0,
-      };
-    });
-    return {
-      ...project,
-      sessions,
-      runningCount: sessions.reduce((total, session) => total + session.runningCount, 0),
-    };
+    return this.sessionPresentationRuntime.withRuntimeActivity(project);
   }
 
   private async synchronizeNonContinuableRecords(projects: LocalConsoleProjectSummary[]): Promise<void> {
-    for (const session of projects.flatMap((project) => project.sessions)) {
-      if (session.continuation === undefined || session.continuation.canContinue) {
-        continue;
-      }
-      const continuation = session.continuation;
-      const body = nonContinuableSystemMessage(continuation);
-      if (body === null) {
-        continue;
-      }
-      const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(session.sessionId));
-      if (messages.some((message) => message.speaker === "system" && message.body === body)) {
-        continue;
-      }
-      await this.storeCall("local-console-store-record-non-continuable", () => this.options.store.recordSystemMessage({
-        sessionId: session.sessionId,
-        body,
-        systemEventKind: "other",
-        runId: null,
-        runDir: null,
-        error: continuation.kind,
-        status: "displayed",
-        now: this.nowIso(),
-      }));
-    }
+    await this.sessionPresentationRuntime.synchronizeNonContinuableRecords(projects);
   }
 
   private async stopUnsafeRunsWithUnavailableContext(projects: LocalConsoleProjectSummary[]): Promise<void> {
-    const unavailableProjectIds = new Set(
-      projects.filter((project) => project.directoryAvailable === false).map((project) => project.projectId),
-    );
-    const sessions = new Map(projects.flatMap((project) => project.sessions.map((session) => [session.sessionId, session] as const)));
-    for (const active of this.activeRuns.values()) {
-      const source = await this.storeCall("local-console-store-session-workspace", () =>
-        this.options.store.getSessionWorkspace(active.sessionId),
-      );
-      if (active.workspaceMode === "direct" && unavailableProjectIds.has(source.projectId)) {
-        active.controller.abort("project-directory-unavailable");
-        continue;
-      }
-      const session = sessions.get(active.sessionId);
-      if (session?.agentTeamHealth === "deleted" || session?.agentTeamHealth === "needs-repair") {
-        const snapshot = await this.options.store.listSessionAgentTeamSnapshot?.(active.sessionId) ?? null;
-        if (snapshot === null) {
-          active.controller.abort("agent-team-unavailable");
-        }
-      }
-    }
+    await this.sessionPresentationRuntime.stopUnsafeRunsWithUnavailableContext(projects);
   }
 
   private async resolveWorkspace(
@@ -3542,67 +3456,7 @@ export class LocalConsoleRuntime {
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
   ): Promise<void> {
-    const timeoutKind = executionTimeoutKind(result);
-    if (timeoutKind !== null) {
-      log({
-        event: timeoutKind === "idle" ? "local-console-codex-idle-timeout" : "local-console-codex-watchdog-timeout",
-        runDir: result.runDir,
-        reason: result.reason,
-      });
-      await this.recordStuckBestEffort(
-        message,
-        sessionId,
-        runId,
-        result.runDir,
-        result.reason,
-        localTerminalFromResult(
-          result,
-          this.activeRuns.get(runId)?.liveMarkdown ?? null,
-          this.activeRuns.get(runId)?.profile ?? null,
-        ),
-      );
-      return;
-    }
-    if (isInterruptedCodexRunResult(result)) {
-      const active = this.activeRuns.get(runId);
-      const cause = executionInterruptionCauseForResult(result);
-      if (cause === "runtime-closing" && active?.runId === runId && active.gracefulResumePrepared) {
-        return;
-      }
-      await this.recordInterruptedBestEffort(
-        message,
-        sessionId,
-        runId,
-        result.runDir,
-        result.reason,
-        cause === "context-unavailable"
-          ? "context-unavailable"
-          : cause === "redirect"
-            ? "redirect"
-            : cause === "user"
-              ? "user"
-              : "system",
-        localTerminalFromResult(
-          result,
-          this.activeRuns.get(runId)?.liveMarkdown ?? null,
-          this.activeRuns.get(runId)?.profile ?? null,
-        ),
-      );
-      return;
-    }
-    await this.recordTerminalFailureBestEffort(
-      message,
-      sessionId,
-      runId,
-      result.runDir,
-      result.reason,
-      result.failure?.message,
-      localTerminalFromResult(
-        result,
-        this.activeRuns.get(runId)?.liveMarkdown ?? null,
-        this.activeRuns.get(runId)?.profile ?? null,
-      ),
-    );
+    await this.runFailureRuntime.recordDirect(message, sessionId, runId, result);
   }
 
   private async recordDetachedWorkerResult(
@@ -3610,94 +3464,7 @@ export class LocalConsoleRuntime {
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
   ): Promise<void> {
-    const active = this.activeRuns.get(runId);
-    if (
-      executionInterruptionCauseForResult(result) === "runtime-closing"
-      && active?.gracefulResumePrepared
-    ) {
-      const messages = await this.storeCall("local-console-store-list-graceful-worker-placeholder", () =>
-        this.options.store.listMessages(sessionId));
-      const placeholder = messages.find((message) =>
-        message.runId === runId
-        && message.sourceKind === "local-worker-run");
-      if (placeholder !== undefined) {
-        await this.storeCall("local-console-store-release-graceful-worker-placeholder", () =>
-          this.options.store.releaseMessageForRetry({
-            userMessageId: placeholder.id,
-            sessionId,
-            now: this.nowIso(),
-          }));
-      }
-      return;
-    }
-    const timeoutKind = executionTimeoutKind(result);
-    if (timeoutKind !== null) {
-      await this.storeCall("local-console-store-record-detached-worker-stuck", () =>
-        this.recordDetachedRunTerminal({
-          sessionId,
-          body: result.terminal?.kind === "timeout" && result.terminal.basis === "tool"
-            ? "这一步的工具调用运行过久，已经停下。你可以直接告诉主理人下一步怎么处理。"
-            : "这一步卡住了。你可以直接告诉主理人下一步怎么处理。",
-          systemEventKind: "run-stuck",
-          runId,
-          runDir: result.runDir,
-          error: result.reason,
-          status: "stuck",
-          terminal: localTerminalFromResult(
-            result,
-            active?.liveMarkdown ?? null,
-            active?.profile ?? null,
-          ),
-        }),
-      );
-      return;
-    }
-    if (isInterruptedCodexRunResult(result)) {
-      const cause = executionInterruptionCauseForResult(result);
-      const contextUnavailable = cause === "context-unavailable";
-      const redirected = cause === "redirect";
-      const systemStopped = cause === "runtime-closing" || cause === "system";
-      await this.storeCall("local-console-store-record-detached-worker-interrupted", () =>
-        this.recordDetachedRunTerminal({
-          sessionId,
-          body: contextUnavailable
-            ? "这一步依赖的项目或团队内容已经不可用，因此已停止。已经产生的文件改动会保留。"
-            : redirected
-              ? "主理人发来了新的指令，当前这一步已经停下；这个成员会带着新指令重新开始。"
-              : systemStopped
-                ? "这一步被系统停止了。已经产生的文件改动会保留。"
-              : "你让这一步停下了。已经产生的文件改动会保留。",
-          systemEventKind: redirected || contextUnavailable || systemStopped ? "other" : "user-stopped",
-          runId,
-          runDir: result.runDir,
-          error: result.reason,
-          status: "interrupted",
-          terminal: localTerminalFromResult(
-            result,
-            active?.liveMarkdown ?? null,
-            active?.profile ?? null,
-          ),
-        }),
-      );
-      return;
-    }
-    await this.storeCall("local-console-store-record-detached-worker-failed", () =>
-      this.recordDetachedRunTerminal({
-        sessionId,
-        body: result.failure?.message
-          ?? "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-        systemEventKind: "run-not-started",
-        runId,
-        runDir: result.runDir,
-        error: result.reason,
-        status: "failed",
-        terminal: localTerminalFromResult(
-          result,
-          active?.liveMarkdown ?? null,
-          active?.profile ?? null,
-        ),
-      }),
-    );
+    await this.runFailureRuntime.recordDetached(sessionId, runId, result);
   }
 
   private async recordNoTrigger(message: LocalConsoleMessage, sessionId: string, runId: string): Promise<void> {
