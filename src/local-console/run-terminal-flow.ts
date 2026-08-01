@@ -36,10 +36,10 @@ export interface LocalRunTerminalFlowPorts {
   recordProviderInvocation(fact: LocalProviderInvocationFact): Promise<void>;
   classifyFailure(result: Extract<CodexRunResult, { ok: false }>): {
     runtimeClosing: boolean;
-    failureStatus: "failed" | "interrupted" | "stuck";
+    failureStatus: "failed" | "interrupted" | "stuck" | "paused";
   };
   pauseLifecycle(): Promise<void>;
-  finishLifecycle(status: "completed" | "failed" | "interrupted" | "stuck"): Promise<void>;
+  finishLifecycle(status: "completed" | "failed" | "interrupted" | "stuck" | "paused"): Promise<void>;
   recordFailed(result: Extract<CodexRunResult, { ok: false }>): Promise<void>;
   recordUsage(cachedInputTokens: number | null): Promise<void>;
   sourceDirectoryAvailable(): Promise<boolean>;
@@ -56,7 +56,7 @@ export interface LocalRunTerminalFlowPorts {
 export async function executeLocalRunTerminalFlow(
   input: LocalRunTerminalFlowInput,
   ports: LocalRunTerminalFlowPorts,
-): Promise<void> {
+): Promise<"failed" | "succeeded"> {
   await ports.recordProviderInvocation(planLocalProviderInvocationTerminal({
     sessionId: input.sessionId,
     runId: input.runId,
@@ -78,7 +78,7 @@ export async function executeLocalRunTerminalFlow(
     if (lifecycle.kind === "pause") await ports.pauseLifecycle();
     else await ports.finishLifecycle(lifecycle.status);
     await ports.recordFailed(terminalOutcome.result);
-    return;
+    return "failed";
   }
 
   await ports.finishLifecycle("completed");
@@ -114,4 +114,5 @@ export async function executeLocalRunTerminalFlow(
     }
   }
   if (effects.recordDirectoryWarning) await ports.recordDirectoryWarning(terminalOutcome.result);
+  return "succeeded";
 }

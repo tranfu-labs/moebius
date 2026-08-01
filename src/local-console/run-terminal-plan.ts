@@ -22,12 +22,12 @@ export function planLocalRunTerminalOutcome(result: CodexRunResult): LocalRunTer
 
 export type LocalFailedRunLifecycleDecision =
   | { kind: "pause" }
-  | { kind: "finish"; status: "failed" | "interrupted" | "stuck" };
+  | { kind: "finish"; status: "failed" | "interrupted" | "stuck" | "paused" };
 
 export function decideLocalFailedRunLifecycle(input: {
   runtimeClosing: boolean;
   gracefulResumePrepared: boolean;
-  failureStatus: "failed" | "interrupted" | "stuck";
+  failureStatus: "failed" | "interrupted" | "stuck" | "paused";
 }): LocalFailedRunLifecycleDecision {
   return input.runtimeClosing && input.gracefulResumePrepared
     ? { kind: "pause" }
