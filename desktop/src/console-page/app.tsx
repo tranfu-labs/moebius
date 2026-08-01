@@ -112,7 +112,6 @@ import {
 import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
-  ConsoleStateCoordinator,
   loadProcessOutput,
   loadProcessOutputUpdate,
   loadProcessDebugInvocation,
@@ -123,8 +122,6 @@ import {
   loadSubSessionView,
   loadExecutionProfileRegistry,
   loadWorkspaceDiff,
-  ProcessInvocationRequestCoordinator,
-  SessionViewTransitionQueue,
   processOutputLocator,
   refreshConsoleState,
   subSessionIdFromSourceKey,
@@ -138,10 +135,15 @@ import {
   searchConsoleSessions,
   restoreConsoleSession,
   type SessionSearchResult,
+} from "./state-sync.js";
+import {
+  ConsoleStateCoordinator,
+  ProcessInvocationRequestCoordinator,
+  SessionViewTransitionQueue,
   type ConsoleSelection,
   type SelectionMutationKind,
   type SelectionMutationToken,
-} from "./state-sync.js";
+} from "./console-state-coordinator.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import {
   activateConversationComposerDraft,

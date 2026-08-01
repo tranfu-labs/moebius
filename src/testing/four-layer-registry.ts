@@ -302,6 +302,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/ai-team-builder/validator.ts",
   "desktop/src/console-page/attachment-preview.ts",
   "desktop/src/console-page/conversation-draft-model.ts",
+  "desktop/src/console-page/console-state-coordinator.ts",
   "desktop/src/console-page/conversation-reading-position.ts",
   "desktop/src/console-page/edit-resend.ts",
   "desktop/src/console-page/interrupt.ts",

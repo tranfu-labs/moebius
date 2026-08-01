@@ -8,7 +8,6 @@ import { TRUSTED_EXECUTION_REGISTRY } from "../../src/execution-profile-registry
 import {
   acknowledgeDisplayedResult,
   ConsoleStateActions,
-  ConsoleStateCoordinator,
   createSidebarConversationSession,
   loadEvidenceView,
   loadProcessDebugInvocation,
@@ -19,8 +18,6 @@ import {
   loadSubSessionView,
   loadSessionReferenceText,
   ProcessOutputRequestError,
-  ProcessInvocationRequestCoordinator,
-  SessionViewTransitionQueue,
   processOutputLocator,
   processOutputRunId,
   loadProjectFile,
@@ -37,9 +34,14 @@ import {
   submitSessionMessage,
   updatePendingSessionMessage,
   searchConsoleSessions,
+} from "../src/console-page/state-sync.js";
+import {
+  ConsoleStateCoordinator,
+  ProcessInvocationRequestCoordinator,
+  SessionViewTransitionQueue,
   type ConsoleSelection,
   type SelectionMutationKind,
-} from "../src/console-page/state-sync.js";
+} from "../src/console-page/console-state-coordinator.js";
 
 describe("execution profile registry state sync", () => {
   it("keeps server admission and the team-page registry in lockstep", () => {

@@ -1,4 +1,4 @@
-import type { ConsoleSelection } from "./state-sync.js";
+import type { ConsoleSelection } from "./console-state-coordinator.js";
 
 export const CONSOLE_SELECTION_STORAGE_KEY = "moebius.console.selection";
 
