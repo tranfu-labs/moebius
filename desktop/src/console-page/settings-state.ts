@@ -32,24 +32,10 @@ export const INITIAL_DESKTOP_SETTINGS_STATE: DesktopSettingsState = {
   copyRequestId: null,
 };
 
-export class SingleInFlightSettingsRequest {
-  private inFlight: Promise<void> | null = null;
-
-  get isRunning(): boolean {
-    return this.inFlight !== null;
-  }
-
-  start(run: () => Promise<void>): boolean {
-    if (this.inFlight !== null) {
-      return false;
-    }
-    const request = Promise.resolve().then(run);
-    this.inFlight = request.finally(() => {
-      this.inFlight = null;
-    });
-    void this.inFlight.catch(() => undefined);
-    return true;
-  }
+export function decideSettingsRequestAdmission(isRunning: boolean): {
+  kind: "start";
+} | { kind: "skip" } {
+  return isRunning ? { kind: "skip" } : { kind: "start" };
 }
 
 export function reduceDesktopSettings(

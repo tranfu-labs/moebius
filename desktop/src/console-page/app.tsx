@@ -250,9 +250,9 @@ import {
 } from "./language-state.js";
 import {
   INITIAL_DESKTOP_SETTINGS_STATE,
-  SingleInFlightSettingsRequest,
   reduceDesktopSettings,
 } from "./settings-state.js";
+import { SingleInFlightSettingsRequest } from "./settings-request-controller.js";
 import {
   createContext,
   useContext,

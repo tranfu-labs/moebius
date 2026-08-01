@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   INITIAL_DESKTOP_SETTINGS_STATE,
-  SingleInFlightSettingsRequest,
   reduceDesktopSettings,
 } from "../src/console-page/settings-state.js";
+import { SingleInFlightSettingsRequest } from "../src/console-page/settings-request-controller.js";
 
 describe("desktop settings state", () => {
   it("retains update results for the application session", () => {
