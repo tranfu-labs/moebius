@@ -1,4 +1,6 @@
 import type { LocalConsoleAgentFile } from "./agent-file.js";
+import type { ActiveLocalRun } from "./active-run.js";
+import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export function planPrimaryProfile<T>(profile: T | null | undefined): T | null {
   return profile ?? null;
@@ -257,4 +259,27 @@ export function planPrimaryFinalization<T extends {
       ? "pause"
       : "fail";
   return { kind: "finalize", runId: input.runId, cwd: active?.cwd ?? null, lifecycle };
+}
+
+export function planConcurrentPrimaryRecoveryWorkspace(
+  activeRuns: readonly ActiveLocalRun[],
+  sessionId: string,
+): ResolvedLocalWorkspace | null {
+  const candidates = activeRuns.filter((active) =>
+    active.sessionId === sessionId
+    && active.sourceDisposition === "agent-handoff"
+    && active.resuming
+    && active.cwd !== null
+    && active.workspaceMode !== null);
+  if (candidates.length !== 1) return null;
+  const active = candidates[0]!;
+  return {
+    cwd: active.cwd!,
+    mode: active.workspaceMode!,
+    worktreePath: active.workspaceMode === "worktree" ? active.cwd : null,
+    worktreeUnavailableReason: active.worktreeUnavailableReason,
+    branchName: active.branchName,
+    baseRef: active.baseRef,
+    originalRepoRoot: active.originalRepoRoot,
+  };
 }

@@ -27,7 +27,6 @@ import {
   LocalConsoleSessionRunningError,
   LocalConsoleSessionWorkspaceLockedError,
   type LocalConsoleRunOutput,
-  type LocalConsoleSessionSummary,
   type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionReferenceText,
   type LocalConsoleSessionReferenceScope,
@@ -102,17 +101,12 @@ import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
-import { createLocalPrimaryPreparationPorts } from "./primary-preparation-wiring.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
-import { createLocalPrimaryProviderPorts } from "./primary-provider-wiring.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
-import { createLocalPrimaryAnalysisPorts } from "./primary-analysis-wiring.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
-import { createLocalPrimaryTerminalPorts } from "./primary-terminal-wiring.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
-import { createLocalPrimaryDispatchPorts } from "./primary-dispatch-wiring.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
-import { createLocalPrimaryExecutionPorts } from "./primary-execution-wiring.js";
+import { createLocalPrimaryWiring } from "./primary-wiring.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import {
   assertTextFragments,
@@ -173,9 +167,6 @@ import {
 } from "./process-history.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
 import { resolveCodexRollout } from "./codex-rollout.js";
-import {
-  buildSessionAnalysisReadOnlyContract,
-} from "./session-analysis-gate.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
@@ -396,34 +387,21 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       provider: this.workerProviderRuntime,
       terminal: this.workerTerminalRuntime,
     }));
-    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(createLocalPrimaryPreparationPorts({
+    const primaryWiring = createLocalPrimaryWiring({
+      context: runtimeContext,
       options,
       ...sharedRunPorts,
-      inactive: (sessionId) => this.inactiveSessions.has(sessionId),
-      makeRunDir: (messageCount) => {
-        const providerRunDir = options.makeRunDir(messageCount, this.now());
-        return { providerRunDir, resolvedRunDir: path.resolve(providerRunDir) };
-      },
-      concurrentRecoveryWorkspace: (sessionId) => this.concurrentAgentHandoffRecoveryWorkspace(sessionId),
-      buildAnalysisContract: (proposalVersion) => buildSessionAnalysisReadOnlyContract(proposalVersion),
-    }));
-    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(createLocalPrimaryProviderPorts({
-      ...sharedRunPorts,
-    }));
-    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(createLocalPrimaryAnalysisPorts({
-      ...sharedRunPorts,
-      updateGate: async (input) => { await this.updateSessionAnalysisGate(input); },
-    }));
-    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(createLocalPrimaryTerminalPorts({
-      store: options.store,
-      ...sharedRunPorts,
+      routeTimeoutMs: this.routeTimeoutMs,
+      recovery: this.runRecoveryRuntime,
+      continuation: this.sessionContinuationRuntime,
+      pendingContext: this.pendingSessionContextRuntime,
+      failure: this.runFailureRuntime,
+      workspace: this.conversationWorkspaceRuntime,
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
       }),
-      recordFailure: (run, result) =>
-        this.runFailureRuntime.recordDirect(run.sourceMessage, run.sessionId, run.runId, result),
-      sourceDirectoryAvailable: (sessionId) => this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
       executeChildSession: (run, result) => this.sessionMetadataRuntime.executeChildOrchestration({
         sessionId: run.sessionId,
         runId: run.runId,
@@ -431,49 +409,26 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         finalText: result.finalText,
         availableAgentNames: run.agentFiles.map((agent) => agent.name),
       }),
-      recordWorkspaceDiff: (run, preparation, result) =>
-        this.conversationWorkspaceRuntime.recordGeneratedDiffIfNeeded({
-          sessionId: run.sessionId,
-          runId: run.runId,
-          runDir: preparation.resolvedRunDir,
-          workspace: preparation.workspace,
-          finalText: result.finalText,
-          signal: preparation.controller.signal,
-        }),
       recordChildSessionCardError: async (sessionId, error) => {
         const reason = formatLocalError(error);
         this.lastError = reason;
         await this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason);
       },
-    }));
-    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(createLocalPrimaryDispatchPorts({
-      options,
-      ...sharedRunPorts,
-      agentsDir: path.join(options.projectRoot, "agents"),
-      routeTimeoutMs: this.routeTimeoutMs,
-      inactive: (sessionId) => this.inactiveSessions.has(sessionId),
-      gracefulResumeTargets: (sessionId) => this.runRecoveryRuntime.targetsForClaim(sessionId),
-      sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
-      recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
-        this.runFailureRuntime.recordStartFailure(message, sessionId, runId, runDir, reason),
-      setError: (error) => { this.lastError = error; },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
-    }));
-    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime(createLocalPrimaryExecutionPorts({
+      report: (event, error) => log({ event, error }),
+      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+    });
+    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(primaryWiring.preparation);
+    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(primaryWiring.provider);
+    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(primaryWiring.analysis);
+    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(primaryWiring.terminal);
+    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(primaryWiring.dispatch);
+    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime(primaryWiring.execution({
       dispatch: this.primaryDispatchRuntime,
       preparation: this.primaryPreparationRuntime,
       provider: this.primaryProviderRuntime,
       analysis: this.primaryAnalysisRuntime,
       terminal: this.primaryTerminalRuntime,
-      ...sharedRunPorts,
-      formatError: (error) => formatLocalError(error),
-      setError: (error) => { this.lastError = error; },
-      report: (event, error) => log({ event, error }),
-      recordFailure: (message, sessionId, runId, runDir, error) =>
-        this.runFailureRuntime.recordStartFailure(message, sessionId, runId, runDir, error),
-      applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
-      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     }));
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
@@ -822,22 +777,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     await this.pendingProcessingRuntime.processAll();
   }
 
-  private async updateSessionAnalysisGate(input: {
-    sessionId: string;
-    proposalVersion: string | null;
-    writeLeaseVersion: string | null;
-  }): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.updateSessionAnalysisGate === undefined) {
-      throw new Error("local console analysis gate persistence unavailable");
-    }
-    return await this.storePorts.call("local-console-store-update-analysis-gate", () =>
-      this.options.store.updateSessionAnalysisGate!({
-        ...input,
-        now: this.nowIso(),
-      }),
-    );
-  }
-
   private async hasPersistedPrimaryRun(sessionId: string): Promise<boolean> {
     const messages = await this.storePorts.call("local-console-store-list-primary-running", () =>
       this.options.store.listMessages(sessionId),
@@ -893,30 +832,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       }),
     );
     return workspace;
-  }
-
-  private concurrentAgentHandoffRecoveryWorkspace(
-    sessionId: string,
-  ): ResolvedLocalWorkspace | null {
-    const candidates = [...this.activeRunRegistry.values()].filter((active) =>
-      active.sessionId === sessionId
-      && active.sourceDisposition === "agent-handoff"
-      && active.resuming
-      && active.cwd !== null
-      && active.workspaceMode !== null);
-    if (candidates.length !== 1) {
-      return null;
-    }
-    const active = candidates[0];
-    return {
-      cwd: active.cwd!,
-      mode: active.workspaceMode!,
-      worktreePath: active.workspaceMode === "worktree" ? active.cwd : null,
-      worktreeUnavailableReason: active.worktreeUnavailableReason,
-      branchName: active.branchName,
-      baseRef: active.baseRef,
-      originalRepoRoot: active.originalRepoRoot,
-    };
   }
 
   private async recordNoTrigger(message: LocalConsoleMessage, sessionId: string, runId: string): Promise<void> {

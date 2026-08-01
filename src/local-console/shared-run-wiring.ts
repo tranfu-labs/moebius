@@ -1,7 +1,7 @@
 import type { createLocalWorkerWiring } from "./worker-wiring.js";
 
 type WorkerWiringInput = Parameters<typeof createLocalWorkerWiring>[0];
-type SharedRunPorts = Pick<WorkerWiringInput,
+export type SharedRunPorts = Pick<WorkerWiringInput,
   | "storePorts"
   | "executionRunner"
   | "activeRuns"
