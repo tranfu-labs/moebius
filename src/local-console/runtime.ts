@@ -112,6 +112,7 @@ import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
+import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -344,6 +345,7 @@ export class LocalConsoleRuntime {
   private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
   private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
   private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
+  private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -544,6 +546,25 @@ export class LocalConsoleRuntime {
       sessionFactLogPath: (sessionId) => this.sessionFactStore().getSessionFactLogPath(sessionId),
       factReader: localProcessFactReader,
       traceDataRoot: options.dataRoot ?? options.projectRoot,
+    });
+    this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime({
+      readContext: (sessionId) => this.readConversationWorkspaceContext(sessionId),
+      readWorkspaceMode: (sessionId) => this.readWorkspaceModeBestEffort(sessionId),
+      readDiff: (context) => readLocalConversationWorkspaceDiffDetail({
+        workspacePath: context.workspacePath,
+        baselineCommit: context.baselineCommit,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      listFiles: listLocalWorkspaceFiles,
+      readDiffFile: (context, filePath) => readLocalConversationDiffFile({
+        workspacePath: context.workspacePath,
+        baselineCommit: context.baselineCommit,
+        filePath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      readWorkspaceFile: (workspacePath, filePath) => readLocalWorkspaceTextFile({ workspacePath, filePath }),
+      readFileReference: readLocalFileReferenceWindow,
+      log: (event) => log(event),
     });
   }
 
@@ -1445,121 +1466,22 @@ export class LocalConsoleRuntime {
   }
 
   async workspaceDiffDetail(sessionId: string): Promise<LocalConsoleWorkspaceDiffDetail> {
-    try {
-      const context = await this.readConversationWorkspaceContext(sessionId);
-      const diff = await readLocalConversationWorkspaceDiffDetail({
-        workspacePath: context.workspacePath,
-        baselineCommit: context.baselineCommit,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      });
-      return { ...diff, workspaceMode: context.workspaceMode };
-    } catch (error) {
-      log({ event: "local-console-workspace-diff-detail-unavailable", sessionId, error: formatLocalError(error) });
-      return {
-        available: false,
-        fileCount: null,
-        files: [],
-        reason: "workspace-unavailable",
-        workspaceMode: await this.readWorkspaceModeBestEffort(sessionId),
-      };
-    }
+    return await this.workspaceQueryRuntime.workspaceDiffDetail(sessionId);
   }
 
   async projectFiles(sessionId: string): Promise<LocalConsoleProjectFiles> {
-    try {
-      const context = await this.readConversationWorkspaceContext(sessionId);
-      const [filePaths, diff] = await Promise.all([
-        listLocalWorkspaceFiles(context.workspacePath),
-        readLocalConversationWorkspaceDiffDetail({
-          workspacePath: context.workspacePath,
-          baselineCommit: context.baselineCommit,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        }),
-      ]);
-      const changes = new Map(diff.available ? diff.files.map((file) => [file.path, file]) : []);
-      return {
-        available: true,
-        files: filePaths.map((filePath) => {
-          const change = changes.get(filePath);
-          return {
-            path: filePath,
-            additions: change?.additions ?? null,
-            deletions: change?.deletions ?? null,
-            changed: change !== undefined,
-          };
-        }),
-        reason: null,
-        workspaceMode: context.workspaceMode,
-      };
-    } catch (error) {
-      log({ event: "local-console-project-files-unavailable", sessionId, error: formatLocalError(error) });
-      return {
-        available: false,
-        files: [],
-        reason: "workspace-unavailable",
-        workspaceMode: await this.readWorkspaceModeBestEffort(sessionId),
-      };
-    }
+    return await this.workspaceQueryRuntime.projectFiles(sessionId);
   }
 
   async projectFile(sessionId: string, filePath: string): Promise<LocalConsoleFileContent> {
-    try {
-      const context = await this.readConversationWorkspaceContext(sessionId);
-      const diff = await readLocalConversationWorkspaceDiffDetail({
-        workspacePath: context.workspacePath,
-        baselineCommit: context.baselineCommit,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      });
-      if (diff.available && diff.files.some((file) => file.path === filePath)) {
-        return await readLocalConversationDiffFile({
-          workspacePath: context.workspacePath,
-          baselineCommit: context.baselineCommit,
-          filePath,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        });
-      }
-      return await readLocalWorkspaceTextFile({
-        workspacePath: context.workspacePath,
-        filePath,
-      });
-    } catch (error) {
-      log({ event: "local-console-project-file-unavailable", sessionId, filePath, error: formatLocalError(error) });
-      return {
-        available: false,
-        path: filePath,
-        lines: [],
-        reason: "workspace-unavailable",
-      };
-    }
+    return await this.workspaceQueryRuntime.projectFile(sessionId, filePath);
   }
 
   async fileReference(
     sessionId: string,
     input: { filePath: string; line: number; column: number | null },
   ): Promise<import("./types.js").LocalConsoleFileReferenceContent> {
-    try {
-      return await readLocalFileReferenceWindow({
-        filePath: input.filePath,
-        line: input.line,
-        column: input.column,
-      });
-    } catch (error) {
-      log({
-        event: "local-console-file-reference-unavailable",
-        sessionId,
-        filePath: input.filePath,
-        line: input.line,
-        error: formatLocalError(error),
-      });
-      return {
-        available: false,
-        path: input.filePath,
-        lines: [],
-        reason: "unavailable",
-        targetLine: input.line,
-        targetColumn: input.column,
-      };
-    }
+    return await this.workspaceQueryRuntime.fileReference(sessionId, input);
   }
 
   async processOutput(
