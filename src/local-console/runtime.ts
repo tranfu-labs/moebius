@@ -110,6 +110,7 @@ import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
+import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -340,6 +341,7 @@ export class LocalConsoleRuntime {
   private readonly sessionCreationRuntime: LocalSessionCreationRuntime;
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
   private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
+  private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -508,6 +510,28 @@ export class LocalConsoleRuntime {
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
       randomId: () => crypto.randomUUID(),
+    });
+    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      defaultSessionId: this.sessionId,
+      projectRoot: options.projectRoot,
+      lastError: () => this.lastError,
+      withDirectoryAvailability: (project) => this.withDirectoryAvailability(project),
+      withSessionWorkspaceContext: (project) => this.withSessionWorkspaceContext(project),
+      withRuntimeActivity: (project) => this.withRuntimeActivity(project),
+      synchronizeNonContinuableRecords: (projects) => this.synchronizeNonContinuableRecords(projects),
+      stopUnsafeRunsWithUnavailableContext: (projects) => this.stopUnsafeRunsWithUnavailableContext(projects),
+      primaryRunId: (sessionId) => this.activeRunForLane(sessionId, "primary")?.runId ?? null,
+      activeRunSnapshots: (sessionId) => this.activeRunSnapshots(sessionId),
+      listChildSessions: (parentSessionId) => this.storeCall("local-console-store-list-child-sessions", () =>
+        listLocalChildSessionSummaries({
+          sqlitePath: options.store.sqlitePath,
+          timeoutMs: this.storeTimeoutMs,
+        }, parentSessionId)),
+      readWorkspaceDiff: (sessionId) => this.readConversationWorkspaceDiff(sessionId),
+      loadTeamSnapshot: (sessionId) =>
+        options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null),
     });
   }
 
@@ -1393,123 +1417,15 @@ export class LocalConsoleRuntime {
   }
 
   async snapshot(sessionId = this.sessionId): Promise<LocalConsoleSnapshot> {
-    const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
-    const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
-    const activeRuns = await this.activeRunSnapshots(sessionId);
-    return {
-      sessionId,
-      status: activeRuns.length > 0 || messages.some((message) => message.status === "running")
-        ? "running"
-        : messages.some((message) => message.status === "stuck")
-          ? "stuck"
-          : messages.some((message) => message.status === "failed")
-            ? "failed"
-            : "idle",
-      messages: messages.filter(isVisibleTimelineMessage),
-      sqlitePath: this.options.store.sqlitePath,
-      lastError: this.lastError,
-      pendingDispatchMessages: messages.filter(isPendingDispatchMessage).map(projectPendingDispatch),
-      pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
-      activeRuns,
-      activeRun: activeRuns.find((run) => run.runId === primaryRunId) ?? null,
-    };
+    return await this.stateQueryRuntime.snapshot(sessionId);
   }
 
   async state(selected: string | { sessionId?: string; projectId?: string } = this.sessionId): Promise<LocalConsoleStateSnapshot> {
-    const selectedSessionId = typeof selected === "string" ? selected : (selected.sessionId ?? this.sessionId);
-    const requestedProjectId = typeof selected === "string" ? undefined : selected.projectId;
-    const storedProjects = await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects());
-    const availableProjects = await Promise.all(storedProjects.map((project) => this.withDirectoryAvailability(project)));
-    const projectsWithWorkspace = await Promise.all(
-      availableProjects.map((project) => this.withSessionWorkspaceContext(project)),
-    );
-    const projects = projectsWithWorkspace.map((project) => this.withRuntimeActivity(project));
-    await this.synchronizeNonContinuableRecords(projects);
-    await this.stopUnsafeRunsWithUnavailableContext(projects);
-    const sessions = projects.flatMap((project) => project.sessions);
-    const firstRootSession = sessions.find((session) =>
-      session.parentSessionId == null && session.analysisParentSessionId == null);
-    const requestedProject = requestedProjectId === undefined ? undefined : projects.find((project) => project.projectId === requestedProjectId);
-    const requestedSession = (requestedProject?.sessions ?? sessions).find((session) => session.sessionId === selectedSessionId);
-    const selectedProject =
-      requestedProject ??
-      (requestedSession === undefined ? undefined : projects.find((project) => project.projectId === requestedSession.projectId)) ??
-      (firstRootSession === undefined ? undefined : projects.find((project) => project.projectId === firstRootSession.projectId)) ??
-      projects[0] ??
-      buildFallbackProjectSummary(this.options.projectRoot);
-    const storedSelectedSession =
-      (requestedSession?.projectId === selectedProject.projectId ? requestedSession : undefined) ??
-      selectedProject.sessions.find((session) =>
-        session.parentSessionId == null && session.analysisParentSessionId == null) ??
-      (requestedProject === undefined ? firstRootSession : undefined) ??
-      null;
-    const selectedSession = storedSelectedSession;
-    const sessionId = selectedSession?.sessionId ?? selectedSessionId;
-    const messages = selectedSession === null
-      ? []
-      : await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
-    const childSessions = selectedSession === null
-      ? []
-      : await this.storeCall("local-console-store-list-child-sessions", () =>
-          listLocalChildSessionSummaries({
-            sqlitePath: this.options.store.sqlitePath,
-            timeoutMs: this.storeTimeoutMs,
-          }, selectedSession.sessionId));
-    const memberIdentities = selectedSession === null
-      ? []
-      : projectLocalConsoleMemberIdentities(
-          await this.storeCall("local-console-store-list-session-agent-team-snapshot", () =>
-            this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null)),
-        );
-    const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
-    const activeRuns = await this.activeRunSnapshots(sessionId);
-    const activeRun = activeRuns.find((run) => run.runId === primaryRunId) ?? null;
-    const workspaceDiff = selectedSession === null
-      ? noSessionWorkspaceDiff()
-      : await this.readConversationWorkspaceDiff(selectedSession.sessionId);
-    return {
-      projects,
-      project: selectedProject,
-      selectedProjectId: selectedProject.projectId,
-      selectedSessionId: sessionId,
-      selectedSession,
-      messages: messages.filter(isVisibleTimelineMessage),
-      pendingDispatchMessages: messages.filter(isPendingDispatchMessage).map(projectPendingDispatch),
-      pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
-      childSessions,
-      memberIdentities,
-      activeRuns,
-      activeRun,
-      workspaceDiff,
-      sqlitePath: this.options.store.sqlitePath,
-      lastError: this.lastError,
-    };
+    return await this.stateQueryRuntime.state(selected);
   }
 
   async sessionView(sessionId: string): Promise<LocalConsoleSessionView> {
-    const sessions = await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions());
-    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
-    if (session === undefined) {
-      throw new Error(`local console session not found: ${sessionId}`);
-    }
-    const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
-    const primaryRunId = this.activeRunForLane(sessionId, "primary")?.runId ?? null;
-    const activeRuns = await this.activeRunSnapshots(sessionId);
-    const activeRun = activeRuns.find((run) => run.runId === primaryRunId) ?? null;
-    const memberIdentities = projectLocalConsoleMemberIdentities(
-      await this.storeCall("local-console-store-list-session-agent-team-snapshot", () =>
-        this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null)),
-    );
-    return {
-      session,
-      messages: messages.filter(isVisibleTimelineMessage),
-      pendingDispatchMessages: messages.filter(isPendingDispatchMessage).map(projectPendingDispatch),
-      pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
-      memberIdentities,
-      activeRuns,
-      activeRun,
-      workspaceDiff: await this.readConversationWorkspaceDiff(sessionId),
-    };
+    return await this.stateQueryRuntime.sessionView(sessionId);
   }
 
   async runOutput(sessionId: string, runId: string): Promise<LocalConsoleRunOutput> {
@@ -1714,11 +1630,7 @@ export class LocalConsoleRuntime {
   }
 
   async childSessionSummaries(parentSessionId: string) {
-    return await this.storeCall("local-console-store-list-child-sessions", () =>
-      listLocalChildSessionSummaries({
-        sqlitePath: this.options.store.sqlitePath,
-        timeoutMs: this.storeTimeoutMs,
-      }, parentSessionId));
+    return await this.stateQueryRuntime.childSessionSummaries(parentSessionId);
   }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
