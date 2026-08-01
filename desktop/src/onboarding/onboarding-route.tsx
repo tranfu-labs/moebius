@@ -1,6 +1,5 @@
 import {
   OnboardingShell,
-  type OnboardingCli,
   type OnboardingInstallationState,
   type OnboardingMode,
   type OperatorAgentTeam,
@@ -8,7 +7,7 @@ import {
   type TeamBuilderViewState,
   useI18n,
 } from "@moebius/console-ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
@@ -18,22 +17,10 @@ import {
   toTeamBuilderIpcViewError,
   toTeamBuilderViewState,
 } from "../team-builder-view-state.js";
-import type {
-  OnboardingCliInstallSnapshot,
-  OnboardingCliInstallState,
-} from "./cli-installer-contract.js";
-import {
-  createOnboardingInstallationModel,
-  decideOnboardingInstallationSnapshot,
-} from "./onboarding-installation-model.js";
+import { useOnboardingInstallations } from "./use-onboarding-installations.js";
 import { useOnboardingReadiness } from "./use-onboarding-readiness.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
-const INITIAL_INSTALLATIONS: OnboardingInstallationState = {
-  codex: { cli: "codex", status: "idle", revision: 0 },
-  claude: { cli: "claude", status: "idle", revision: 0 },
-  kimi: { cli: "kimi", status: "idle", revision: 0 },
-};
 
 export function OnboardingRoute({
   mode = "first-run",
@@ -46,55 +33,19 @@ export function OnboardingRoute({
 }): JSX.Element {
   const { t } = useI18n();
   const api = window.moebius;
-  const [installations, setInstallations] = useState<OnboardingInstallationState>(
-    INITIAL_INSTALLATIONS,
-  );
   const [teamsState, setTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [teamBuilderState, setTeamBuilderState] = useState<TeamBuilderViewState>(
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
   const { environment, checkEnvironment, loadReadinessState } = useOnboardingReadiness(api);
-  const installationModelRef = useRef(createOnboardingInstallationModel());
-  const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
-  const installMutationPendingRef = useRef(new Set<OnboardingCli>());
-
-  const mergeInstallationSnapshot = useCallback((
-    snapshot: OnboardingCliInstallSnapshot,
-    options: { allowEqual?: boolean } = {},
-  ): { accepted: boolean; becameSucceeded: boolean } => {
-    const decision = decideOnboardingInstallationSnapshot(
-      installationModelRef.current,
-      snapshot,
-      options,
-    );
-    if (!decision.accepted) return decision;
-    installationModelRef.current = decision.model;
-    const next = toViewInstallation(snapshot);
-    previousInstallationsRef.current = {
-      ...previousInstallationsRef.current,
-      [snapshot.cli]: next,
-    };
-    setInstallations((current) => ({ ...current, [snapshot.cli]: next }));
-    return decision;
-  }, []);
-
-  const loadInstallState = useCallback(async () => {
-    if (api?.getOnboardingCliInstallState === undefined) {
-      return;
-    }
-    try {
-      const next = await api.getOnboardingCliInstallState();
-      const codex = mergeInstallationSnapshot(next.codex);
-      const claude = mergeInstallationSnapshot(next.claude);
-      const kimi = mergeInstallationSnapshot(next.kimi);
-      if (codex.becameSucceeded || claude.becameSucceeded || kimi.becameSucceeded) {
-        await loadReadinessState();
-      }
-    } catch {
-      // Polling failure does not erase the last known task state.
-    }
-  }, [api, loadReadinessState, mergeInstallationSnapshot]);
+  const {
+    installations,
+    loadInstallState,
+    install,
+    updateClaude,
+    cancel,
+  } = useOnboardingInstallations({ api, loadReadinessState, t });
 
   const loadTeams = useCallback(async (): Promise<OperatorAgentTeam[]> => {
     setTeamsState({ status: "loading" });
@@ -134,41 +85,6 @@ export function OnboardingRoute({
     });
     return unsubscribe;
   }, [api, checkEnvironment, loadInstallState, loadTeams]);
-
-  useEffect(() => {
-    if (api?.onOnboardingCliInstallSnapshot === undefined) {
-      return;
-    }
-    return api.onOnboardingCliInstallSnapshot((snapshot) => {
-      const merged = mergeInstallationSnapshot(snapshot);
-      if (merged.becameSucceeded) {
-        void loadReadinessState();
-      }
-    });
-  }, [api, loadReadinessState, mergeInstallationSnapshot]);
-
-  useEffect(() => {
-    if (
-      api?.getOnboardingCliInstallState === undefined
-      || (
-        installations.codex.status !== "running"
-        && installations.claude.status !== "running"
-        && installations.kimi.status !== "running"
-      )
-    ) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void loadInstallState();
-    }, 750);
-    return () => window.clearInterval(timer);
-  }, [
-    api,
-    installations.codex.status,
-    installations.claude.status,
-    installations.kimi.status,
-    loadInstallState,
-  ]);
 
   const applyBuilderResponse = useCallback((response: AiTeamBuilderIpcResponse): AiTeamBuilderState | null => {
     if (!response.ok) {
@@ -264,107 +180,9 @@ export function OnboardingRoute({
       teamBuilderState={teamBuilderState}
       createdTeamKey={createdTeamKey}
       onRecheckEnvironment={checkEnvironment}
-      onInstallCli={async (cli) => {
-        if (
-          api?.startOnboardingCliInstall === undefined
-          || installMutationPendingRef.current.has(cli)
-          || previousInstallationsRef.current[cli].status === "running"
-        ) {
-          return;
-        }
-        installMutationPendingRef.current.add(cli);
-        const optimistic: OnboardingInstallationState[OnboardingCli] = {
-          cli,
-          status: "running",
-          revision: previousInstallationsRef.current[cli].revision,
-          stage: "starting",
-        };
-        previousInstallationsRef.current = {
-          ...previousInstallationsRef.current,
-          [cli]: optimistic,
-        };
-        setInstallations((current) => ({
-          ...current,
-          [cli]: optimistic,
-        }));
-        try {
-          mergeInstallationSnapshot(await api.startOnboardingCliInstall(cli));
-        } catch {
-          const failed: OnboardingInstallationState[OnboardingCli] = {
-            cli,
-            status: "failed",
-            revision: previousInstallationsRef.current[cli].revision,
-          };
-          previousInstallationsRef.current = {
-            ...previousInstallationsRef.current,
-            [cli]: failed,
-          };
-          setInstallations((current) => ({ ...current, [cli]: failed }));
-          await loadInstallState();
-        } finally {
-          installMutationPendingRef.current.delete(cli);
-        }
-      }}
-      onUpdateClaude={async () => {
-        const cli = "claude";
-        if (
-          api?.startOnboardingClaudeUpdate === undefined
-          || installMutationPendingRef.current.has(cli)
-          || previousInstallationsRef.current.claude.status === "running"
-        ) {
-          return;
-        }
-        installMutationPendingRef.current.add(cli);
-        const optimistic: OnboardingInstallationState["claude"] = {
-          cli,
-          status: "running",
-          revision: previousInstallationsRef.current.claude.revision,
-          stage: "starting",
-        };
-        previousInstallationsRef.current = {
-          ...previousInstallationsRef.current,
-          claude: optimistic,
-        };
-        setInstallations((current) => ({ ...current, claude: optimistic }));
-        try {
-          mergeInstallationSnapshot(await api.startOnboardingClaudeUpdate());
-        } catch {
-          const failed: OnboardingInstallationState["claude"] = {
-            cli,
-            status: "failed",
-            revision: previousInstallationsRef.current.claude.revision,
-          };
-          previousInstallationsRef.current = {
-            ...previousInstallationsRef.current,
-            claude: failed,
-          };
-          setInstallations((current) => ({ ...current, claude: failed }));
-          await loadInstallState();
-        } finally {
-          installMutationPendingRef.current.delete(cli);
-        }
-      }}
-      onCancelCliInstallation={async (cli) => {
-        if (
-          api?.cancelOnboardingCliInstall === undefined
-          || installMutationPendingRef.current.has(cli)
-          || !window.confirm(
-            t("onboarding.cancelInstallConfirm", {
-              cli: cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi",
-            }),
-          )
-        ) {
-          return;
-        }
-        installMutationPendingRef.current.add(cli);
-        try {
-          mergeInstallationSnapshot(await api.cancelOnboardingCliInstall(cli));
-        } catch {
-          await loadInstallState();
-        } finally {
-          installMutationPendingRef.current.delete(cli);
-        }
-      }}
+      onInstallCli={install}
+      onUpdateClaude={updateClaude}
+      onCancelCliInstallation={cancel}
       onRetryTeams={async () => {
         await loadTeams();
       }}
@@ -404,27 +222,6 @@ function createInitialTeamBuilderState(initialPrompt: string): TeamBuilderViewSt
     proposal: null,
     proposalRevision: null,
     error: null,
-  };
-}
-
-function toViewInstallations(
-  state: OnboardingCliInstallState,
-): OnboardingInstallationState {
-  return {
-    codex: toViewInstallation(state.codex),
-    claude: toViewInstallation(state.claude),
-    kimi: toViewInstallation(state.kimi),
-  };
-}
-
-function toViewInstallation(
-  snapshot: OnboardingCliInstallSnapshot,
-): OnboardingInstallationState[OnboardingCli] {
-  return {
-    cli: snapshot.cli,
-    status: snapshot.status,
-    revision: snapshot.revision,
-    ...(snapshot.stage === null ? {} : { stage: snapshot.stage }),
   };
 }
 

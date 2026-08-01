@@ -47,3 +47,65 @@ export function decideOnboardingInstallationSnapshot(
     },
   };
 }
+
+export function planOnboardingInstallationStateLoad(
+  available: boolean,
+): { kind: "load" } | { kind: "skip" } {
+  return available ? { kind: "load" } : { kind: "skip" };
+}
+
+export function planOnboardingInstallationStateResult<T>(
+  state: T | undefined,
+): { kind: "merge"; state: T } | { kind: "skip" } {
+  return state === undefined ? { kind: "skip" } : { kind: "merge", state };
+}
+
+export function decideOnboardingReadinessRefresh(
+  decisions: readonly { becameSucceeded: boolean }[],
+): boolean {
+  return decisions.some((decision) => decision.becameSucceeded);
+}
+
+export function decideOnboardingInstallationMutation(input: {
+  transportAvailable: boolean;
+  pending: boolean;
+  status: OnboardingCliInstallSnapshot["status"];
+}): { kind: "run" } | { kind: "skip" } {
+  return input.transportAvailable && !input.pending && input.status !== "running"
+    ? { kind: "run" }
+    : { kind: "skip" };
+}
+
+export function decideOnboardingInstallationPolling(input: {
+  transportAvailable: boolean;
+  statuses: readonly OnboardingCliInstallSnapshot["status"][];
+}): { kind: "poll" } | { kind: "skip" } {
+  return input.transportAvailable && input.statuses.some((status) => status === "running")
+    ? { kind: "poll" }
+    : { kind: "skip" };
+}
+
+export function decideOnboardingInstallationCancellation(confirmed: boolean): {
+  kind: "cancel";
+} | { kind: "skip" } {
+  return confirmed ? { kind: "cancel" } : { kind: "skip" };
+}
+
+export function planOnboardingCliDisplayName(cli: OnboardingCli): string {
+  if (cli === "codex") return "Codex";
+  return cli === "claude" ? "Claude Code" : "Kimi";
+}
+
+export function planOnboardingInstallationView(snapshot: OnboardingCliInstallSnapshot): {
+  cli: OnboardingCli;
+  status: OnboardingCliInstallSnapshot["status"];
+  revision: number;
+  stage?: NonNullable<OnboardingCliInstallSnapshot["stage"]>;
+} {
+  return {
+    cli: snapshot.cli,
+    status: snapshot.status,
+    revision: snapshot.revision,
+    ...(snapshot.stage === null ? {} : { stage: snapshot.stage }),
+  };
+}
