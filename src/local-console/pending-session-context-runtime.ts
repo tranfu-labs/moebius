@@ -1,4 +1,9 @@
-import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
+import {
+  decidePendingAgentSource,
+  decidePendingDispatchCapability,
+  planAwaitingDispatchResolution,
+  planPendingSessionContextPromotion,
+} from "./pending-session-context-plan.js";
 import type { LocalConsoleStore } from "./types.js";
 
 export class LocalPendingSessionContextRuntime {
@@ -12,42 +17,33 @@ export class LocalPendingSessionContextRuntime {
   }) {}
 
   async applyWhenIdle(sessionId: string): Promise<void> {
-    if (this.input.hasActiveRun(sessionId) || this.input.hasScheduledWorker(sessionId)) return;
     const messages = await this.input.storeCall("local-console-store-list-before-context-promotion", () =>
       this.input.store.listMessages(sessionId));
-    const workerPending = messages.some((message) =>
-      message.speaker === "user"
-      && (message.status === "pending" || message.status === "running")
-      && message.dispatchLane === "worker");
-    if (workerPending) return;
+    const promotion = planPendingSessionContextPromotion({
+      hasActiveRun: this.input.hasActiveRun(sessionId),
+      hasScheduledWorker: this.input.hasScheduledWorker(sessionId),
+      messages,
+    });
+    if (promotion.kind === "blocked") return;
     await this.input.storeCall("local-console-store-apply-pending-session-context", () =>
       this.input.store.applyPendingSessionContext({ sessionId, now: this.input.nowIso() }));
-    const awaiting = messages.filter((message) =>
-      message.speaker === "user"
-      && message.status === "pending"
-      && message.dispatchLane === "awaiting-team");
-    if (awaiting.length === 0) return;
+    if (promotion.kind === "promote-only") return;
     const resolveAwaiting = this.input.store.resolveAwaitingUserMessageDispatches;
-    if (resolveAwaiting === undefined) {
+    const capability = decidePendingDispatchCapability(resolveAwaiting !== undefined);
+    if (capability.kind === "unavailable") {
       throw new Error("local console awaiting dispatch persistence capability unavailable");
     }
-    const persistedSnapshot = await this.input.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-    const agentNames = persistedSnapshot === null
+    const snapshot = await this.input.store.listSessionAgentTeamSnapshot?.(sessionId);
+    const source = decidePendingAgentSource(snapshot);
+    const agentNames = source.kind === "load"
       ? await this.input.listAgentNames(sessionId)
-      : persistedSnapshot.members.map((member) => member.name);
-    const primaryAgent = agentNames[0];
-    if (primaryAgent === undefined) return;
+      : source.agentNames;
+    const resolution = planAwaitingDispatchResolution(promotion.awaiting, agentNames);
+    if (resolution.kind === "skip") return;
     await this.input.storeCall("local-console-store-resolve-awaiting-dispatches", () =>
-      resolveAwaiting.call(this.input.store, {
+      resolveAwaiting!.call(this.input.store, {
         sessionId,
-        dispatches: awaiting.map((message) => ({
-          messageId: message.id,
-          ...resolveLocalUserMessageDispatch({
-            body: message.body,
-            availableAgentNames: agentNames,
-            primaryAgent,
-          }),
-        })),
+        dispatches: resolution.dispatches,
         now: this.input.nowIso(),
       }));
   }
