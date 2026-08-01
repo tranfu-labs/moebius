@@ -108,6 +108,7 @@ import { createLocalWorkerProviderPorts } from "./worker-provider-wiring.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { createLocalWorkerTerminalPorts } from "./worker-terminal-wiring.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
+import { createLocalWorkerExecutionPorts } from "./worker-execution-wiring.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
@@ -414,7 +415,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         preparation.controller.signal,
       ),
     }));
-    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime({
+    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime(createLocalWorkerExecutionPorts({
       preparation: this.workerPreparationRuntime,
       provider: this.workerProviderRuntime,
       terminal: this.workerTerminalRuntime,
@@ -433,12 +434,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         error,
         status: "failed",
       }),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      pauseLifecycle: (runId) => this.runLifecycleRuntime.pause(runId),
-      failLifecycle: (runId) => this.runLifecycleRuntime.finish(runId, "failed"),
-      deleteActiveRun: (runId) => { this.activeRunRegistry.delete(runId); },
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
-    });
+    }));
     this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime({
       nowIso: () => this.nowIso(),
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
