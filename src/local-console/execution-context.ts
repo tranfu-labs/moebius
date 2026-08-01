@@ -127,6 +127,21 @@ export type LocalExecutionRecoveryPlan =
         | "external-session-unavailable";
     };
 
+export interface LocalExecutionContextSeed {
+  profile: LocalConsoleExecutionProfile | null;
+  workspace: ResolvedLocalWorkspace;
+  identitySalt?: string;
+  preferredIntentId?: string;
+}
+
+export type LocalRecoveryAvailabilityCheck =
+  | {
+      kind: "required";
+      externalSessionId: string;
+      recoveryPlan: Extract<LocalExecutionRecoveryPlan, { kind: "resume" }>;
+    }
+  | { kind: "skip" };
+
 export function executionProfileFingerprint(
   profile: LocalConsoleExecutionProfile | null,
 ): string {
@@ -205,6 +220,184 @@ export function createRunExecutionContext(input: {
     })),
     recordedAt: input.recordedAt,
   };
+}
+
+export function planLocalRunExecutionContext(input: {
+  sessionId: string;
+  runId: string;
+  sourceMessageId: number;
+  role: string;
+  seed: LocalExecutionContextSeed;
+  team: Array<{
+    name: string;
+    agentMarkdown: string;
+    executionProfile: LocalConsoleExecutionProfile | null;
+  }>;
+  recordedAt: string;
+}): LocalRunExecutionContextFact {
+  return createRunExecutionContext({
+    sessionId: input.sessionId,
+    runId: input.runId,
+    sourceMessageId: input.sourceMessageId,
+    role: input.role,
+    profile: input.seed.profile,
+    workspace: input.seed.workspace,
+    team: input.team,
+    recordedAt: input.recordedAt,
+    ...(input.seed.identitySalt === undefined ? {} : { identitySalt: input.seed.identitySalt }),
+  });
+}
+
+export function planLocalExecutionRecoveryFromSeed(input: {
+  sourceMessageId: number;
+  role: string;
+  currentContext: LocalRunExecutionContextFact;
+  seed: LocalExecutionContextSeed;
+  intents: LocalCodexResumeIntentFact[];
+  consumedIntentIds: ReadonlySet<string>;
+  canonicalLinks?: LocalAgentSessionLinkFact[];
+  observations?: LocalProviderSessionObservedFact[];
+  executionLinks: LocalExecutionSessionLinkFact[];
+  legacyCodexLinks: LocalCodexThreadLinkFact[];
+  contexts: LocalRunExecutionContextFact[];
+}): LocalExecutionRecoveryPlan {
+  return planLocalExecutionRecovery({
+    sourceMessageId: input.sourceMessageId,
+    role: input.role,
+    currentContext: input.currentContext,
+    ...(input.seed.preferredIntentId === undefined
+      ? {}
+      : { preferredIntentId: input.seed.preferredIntentId }),
+    intents: input.intents,
+    consumedIntentIds: input.consumedIntentIds,
+    canonicalLinks: input.canonicalLinks,
+    observations: input.observations,
+    executionLinks: input.executionLinks,
+    legacyCodexLinks: input.legacyCodexLinks,
+    contexts: input.contexts,
+  });
+}
+
+export function planLocalExecutionContextSeed(input: {
+  lane: "primary" | "worker";
+  sessionId: string;
+  runId: string;
+  sourceMessageId: number;
+  role: string;
+  defaultProfile: LocalConsoleExecutionProfile | null;
+  defaultWorkspace: ResolvedLocalWorkspace;
+  concurrentWorkspace: ResolvedLocalWorkspace | null;
+  intents: readonly LocalCodexResumeIntentFact[];
+  consumedIntentIds: ReadonlySet<string>;
+  contexts: readonly LocalRunExecutionContextFact[];
+}): LocalExecutionContextSeed {
+  const exactRecovery = exactGracefulRecoveryContext(input);
+  if (exactRecovery !== null) {
+    return input.lane === "primary"
+      ? {
+          profile: exactRecovery.context.profile,
+          workspace: workspaceFromExecutionContext(exactRecovery.context),
+          ...(exactRecovery.context.identitySalt === undefined
+            ? {}
+            : { identitySalt: exactRecovery.context.identitySalt }),
+          preferredIntentId: exactRecovery.intent.intentId,
+        }
+      : {
+          profile: input.defaultProfile,
+          workspace: workspaceFromExecutionContext(exactRecovery.context),
+          preferredIntentId: exactRecovery.intent.intentId,
+        };
+  }
+
+  const overrideIntent = input.lane === "primary"
+    ? [...input.intents].reverse().find((intent) =>
+        intent.sourceMessageId === input.sourceMessageId
+        && intent.reason === "retry"
+        && intent.executionOverride !== undefined
+        && !input.consumedIntentIds.has(intent.intentId))
+    : undefined;
+  const baseWorkspace = input.concurrentWorkspace ?? input.defaultWorkspace;
+  if (overrideIntent?.executionOverride !== undefined) {
+    return {
+      profile: overrideIntent.executionOverride.profile,
+      workspace: baseWorkspace,
+      identitySalt: singleRunOverrideIdentitySalt(overrideIntent.executionOverride),
+    };
+  }
+  return {
+    profile: input.defaultProfile,
+    workspace: baseWorkspace,
+  };
+}
+
+export function planLocalRecoveryAvailabilityCheck(
+  recoveryPlan: LocalExecutionRecoveryPlan,
+): LocalRecoveryAvailabilityCheck {
+  return recoveryPlan.kind === "resume" && recoveryPlan.context.engine === "codex"
+    ? { kind: "required", externalSessionId: recoveryPlan.externalSessionId, recoveryPlan }
+    : { kind: "skip" };
+}
+
+export function decideLocalRecoveryAvailability(
+  recoveryPlan: Extract<LocalExecutionRecoveryPlan, { kind: "resume" }>,
+  available: boolean,
+): LocalExecutionRecoveryPlan {
+  return available
+    ? recoveryPlan
+    : {
+        kind: "unavailable",
+        intent: recoveryPlan.intent,
+        context: recoveryPlan.context,
+        reason: "rollout-unavailable",
+      };
+}
+
+export function workspaceFromExecutionContext(
+  context: LocalRunExecutionContextFact,
+): ResolvedLocalWorkspace {
+  return {
+    cwd: path.resolve(context.workspace.cwd),
+    mode: context.workspace.mode === "worktree" ? "worktree" : "direct",
+    worktreePath: context.workspace.worktreePath,
+    worktreeUnavailableReason: context.workspace.worktreeUnavailableReason,
+    branchName: context.workspace.branchName,
+    baseRef: context.workspace.baseRef,
+    originalRepoRoot: context.workspace.originalRepoRoot,
+  };
+}
+
+export function exactGracefulRecoveryContext(input: {
+  sessionId: string;
+  runId: string;
+  sourceMessageId: number;
+  role: string;
+  intents: readonly LocalCodexResumeIntentFact[];
+  consumedIntentIds: ReadonlySet<string>;
+  contexts: readonly LocalRunExecutionContextFact[];
+}): {
+  context: LocalRunExecutionContextFact;
+  intent: LocalCodexResumeIntentFact;
+} | null {
+  const intents = input.intents.filter((intent) =>
+    intent.reason === "graceful-shutdown"
+    && intent.targetRunId === input.runId
+    && intent.sourceMessageId === input.sourceMessageId
+    && intent.role === input.role
+    && !input.consumedIntentIds.has(intent.intentId));
+  if (intents.length !== 1) return null;
+  const relatedContexts = input.contexts.filter((context) =>
+    context.runId === input.runId
+    || context.sourceMessageId === input.sourceMessageId);
+  if (
+    relatedContexts.length !== 1
+    || relatedContexts[0]?.sessionId !== input.sessionId
+    || relatedContexts[0]?.runId !== input.runId
+    || relatedContexts[0]?.sourceMessageId !== input.sourceMessageId
+    || relatedContexts[0]?.role !== input.role
+  ) {
+    return null;
+  }
+  return { context: relatedContexts[0], intent: intents[0] };
 }
 
 export function localAgentIdentityFingerprint(input: {
@@ -476,6 +669,13 @@ export function latestAgentTimelineCursor(
   return [...cursors]
     .reverse()
     .find((cursor) => cursor.agentIdentityFingerprint === agentIdentityFingerprint) ?? null;
+}
+
+export function planLatestAgentTimelineIndex(
+  cursors: readonly LocalAgentTimelineCursorFact[],
+  agentIdentityFingerprint: string,
+): number {
+  return latestAgentTimelineCursor(cursors, agentIdentityFingerprint)?.lastSeenIndex ?? -1;
 }
 
 export function normalizeRunExecutionContext(

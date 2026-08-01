@@ -1,9 +1,11 @@
 import type { TimelineMessage } from "../conversation.js";
+import { parseAgentManifest } from "../agent-manifest.js";
 import type {
   LocalExecutionRecoveryPlan,
   LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import {
+  buildLocalAgentPrompt,
   buildLocalAgentDeltaPrompt,
   buildLocalResumePrompt,
   selectLocalTimelineDelta,
@@ -135,4 +137,40 @@ export function selectExecutingAgent(
   | { kind: "missing"; role: string } {
   const agent = context.team.find((candidate) => candidate.name === role);
   return agent === undefined ? { kind: "missing", role } : { kind: "found", agent };
+}
+
+export type LocalExecutingAgentPromptPlan =
+  | { kind: "missing"; role: string }
+  | { kind: "ready"; fullPrompt: string };
+
+export function planLocalExecutingAgentPrompt(input: {
+  context: LocalRunExecutionContextFact;
+  role: string;
+  timeline: TimelineMessage[];
+}): LocalExecutingAgentPromptPlan {
+  const selection = selectExecutingAgent(input.context, input.role);
+  if (selection.kind === "missing") return selection;
+  const manifest = parseAgentManifest(selection.agent.agentMarkdown);
+  return {
+    kind: "ready",
+    fullPrompt: buildLocalAgentPrompt({
+      role: input.role,
+      agentMarkdown: manifest.body,
+      timeline: input.timeline,
+      primaryAgent: input.context.team[0]?.name ?? input.role,
+      availableAgentNames: input.context.team.map((agent) => agent.name),
+    }),
+  };
+}
+
+export function planLocalRunAttachmentMessages<T>(input: {
+  recoveryPlan: Exclude<LocalExecutionRecoveryPlan, { kind: "unavailable" }>;
+  continuingSameRun: boolean;
+  timelineMessages: T[];
+  attachmentTimelineIndexes: ReadonlySet<number>;
+}): T[] {
+  return input.recoveryPlan.kind === "resume" && !input.continuingSameRun
+    ? input.timelineMessages.filter((_message, index) =>
+        input.attachmentTimelineIndexes.has(index))
+    : input.timelineMessages;
 }
