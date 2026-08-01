@@ -8,7 +8,6 @@ import {
   planLocalProviderInvocationStart,
   planLocalProviderSessionFacts,
 } from "./provider-invocation-plan.js";
-import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
 import {
   type LocalAgentSessionLinkFact,
   type LocalExecutionSessionLinkFact,
@@ -52,7 +51,15 @@ export interface LocalProviderInvocationFlowPorts {
   recordProviderSessionObserved(fact: LocalProviderSessionObservedFact): Promise<void>;
   recordAgentSessionLink(fact: LocalAgentSessionLinkFact): Promise<void>;
   recordExecutionSessionLink(fact: LocalExecutionSessionLinkFact): Promise<void>;
-  recordCodexThreadLink(fact: LocalCodexThreadLinkFact): Promise<void>;
+  recordCodexThreadLink(fact: {
+    sessionId: string;
+    runId: string;
+    sourceMessageId: number;
+    role: string;
+    threadId: string;
+    startedAt: string;
+    contextFingerprint: string;
+  }): Promise<void>;
 }
 
 export type LocalProviderInvocationFlowResult =
