@@ -1,12 +1,20 @@
-import { log } from "../log.js";
-import type { LocalAttachmentManager } from "./attachments.js";
-import { deriveSessionTitle } from "./title.js";
-import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
-import { assertTextFragments, formatLocalError, normalizeTitle } from "./runtime-domain.js";
-import { serializeTextFragmentReferences } from "./session-reference-text.js";
-import { readLocalConversationBaselineCommit } from "./workspace-diff.js";
-import { readCachedLocalWorkspaceFacts } from "./workspace-source.js";
+import { formatLocalError } from "./runtime-domain.js";
+import {
+  decideSessionCreationAgentNames,
+  decideSessionCreationAttachmentRead,
+  decideSessionCreationBaselineRead,
+  decideSessionCreationProcessing,
+  decideSessionCreationProject,
+  decideSessionCreationTeamLoad,
+  decideSessionCreationWorkspace,
+  decideSessionCreationWorkspaceRead,
+  planSessionCreationContent,
+  planSessionCreationDispatch,
+  planSessionCreationBaselineCacheValue,
+  planSessionCreationTitle,
+} from "./session-creation-plan.js";
 import type {
+  LocalAttachment,
   LocalConsoleAgentTeamSnapshot,
   LocalConsoleEntryTemplate,
   LocalConsoleProjectSummary,
@@ -21,15 +29,17 @@ export class LocalSessionCreationRuntime {
   constructor(private readonly input: {
     store: LocalConsoleStore;
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
-    now(): Date;
+    createSessionId(): string;
     nowIso(): string;
-    defaultProjectId(): Promise<string>;
+    resolveProjectId(projectId: string | undefined): Promise<string>;
     assertProjectDirectoryAvailable(projectId: string): Promise<void>;
     storedProject(projectId: string): Promise<LocalConsoleProjectSummary | undefined>;
     loadAgentTeamSnapshot?: (binding: { ownership: "system" | "user"; id: string }) => Promise<LocalConsoleAgentTeamSnapshot>;
     listAgentNames(sessionId: string): Promise<string[]>;
-    attachmentManager?: LocalAttachmentManager;
-    workspaceGitTimeoutMs?: number;
+    findDraftAttachment?: (draftKey: string, attachmentId: string) => Promise<LocalAttachment | undefined>;
+    readWorkspaceFacts(folderPath: string): Promise<{ isGitRepository: boolean }>;
+    readBaselineCommit(folderPath: string): Promise<string | null>;
+    logBaselineUnavailable(input: { projectId: string; error: string }): void;
     baselineCommits: Map<string, string | null>;
     processPending(sessionId: string): void;
   }) {}
@@ -50,82 +60,79 @@ export class LocalSessionCreationRuntime {
       attachmentDraftKey?: string;
     } = {},
   ): Promise<LocalConsoleSessionSummary> {
-    const sessionId = `local:${this.input.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
-    const resolvedProjectId = projectId ?? (await this.input.defaultProjectId());
-    const normalizedInitialMessage = initialMessage?.trim();
-    if (initialMessage !== undefined && normalizedInitialMessage === "" && attachmentIds.length === 0) {
-      throw new Error("Message body must not be empty");
-    }
-    if (new Set(attachmentIds).size !== attachmentIds.length) throw new Error("Attachment ids must be unique");
-    assertTextFragments(metadata.textFragments ?? []);
-    const persistedInitialMessage = normalizedInitialMessage === undefined
-      ? undefined
-      : serializeTextFragmentReferences(normalizedInitialMessage, metadata.textFragments ?? []);
+    const sessionId = this.input.createSessionId();
+    const resolvedProjectId = await this.input.resolveProjectId(projectId);
+    const content = planSessionCreationContent({
+      initialMessage,
+      attachmentIds,
+      textFragments: metadata.textFragments,
+      attachmentDraftKey: metadata.attachmentDraftKey,
+    });
     await this.input.assertProjectDirectoryAvailable(resolvedProjectId);
-    const project = await this.input.storedProject(resolvedProjectId);
-    if (project === undefined) throw new Error(`local console project not found: ${resolvedProjectId}`);
-    if (workspaceMode === "worktree") {
-      const facts = await readCachedLocalWorkspaceFacts({
-        folderPath: project.folderPath,
-        gitTimeoutMs: this.input.workspaceGitTimeoutMs,
-      });
-      if (!facts.isGitRepository) throw new Error("not-git-repository");
+    const projectDecision = decideSessionCreationProject(await this.input.storedProject(resolvedProjectId));
+    if (projectDecision.kind === "missing") throw new Error(`local console project not found: ${resolvedProjectId}`);
+    const project = projectDecision.project;
+    const workspaceRead = decideSessionCreationWorkspaceRead(workspaceMode);
+    if (workspaceRead.kind === "read") {
+      const workspace = decideSessionCreationWorkspace(
+        (await this.input.readWorkspaceFacts(project.folderPath)).isGitRepository,
+      );
+      if (workspace.kind === "reject") throw new Error("not-git-repository");
     }
     let baselineCommit: string | null | undefined;
-    if (normalizedInitialMessage !== undefined || attachmentIds.length > 0) {
+    const baselineRead = decideSessionCreationBaselineRead(content.hasInitialContent);
+    if (baselineRead.kind === "read") {
       try {
-        baselineCommit = await readLocalConversationBaselineCommit({
-          folderPath: project.folderPath,
-          gitTimeoutMs: this.input.workspaceGitTimeoutMs,
-        });
+        baselineCommit = await this.input.readBaselineCommit(project.folderPath);
       } catch (error) {
         baselineCommit = null;
-        log({
-          event: "local-console-conversation-baseline-unavailable",
+        this.input.logBaselineUnavailable({
           projectId: resolvedProjectId,
           error: formatLocalError(error),
         });
       }
     }
-    const snapshot = agentTeam === undefined || this.input.loadAgentTeamSnapshot === undefined
+    const teamLoad = decideSessionCreationTeamLoad({
+      agentTeam,
+      portAvailable: this.input.loadAgentTeamSnapshot !== undefined,
+    });
+    const snapshot = teamLoad.kind === "skip"
       ? undefined
-      : await this.input.loadAgentTeamSnapshot(agentTeam);
-    let routeAgentNames = snapshot?.members.map((member) => member.name) ?? [];
-    if (routeAgentNames.length === 0) {
+      : await this.input.loadAgentTeamSnapshot!(teamLoad.binding);
+    const agentNames = decideSessionCreationAgentNames(snapshot);
+    let routeAgentNames = agentNames.kind === "snapshot" ? agentNames.names : [];
+    if (agentNames.kind === "fallback") {
       try {
         routeAgentNames = await this.input.listAgentNames(sessionId);
       } catch {
         // Legacy/custom stores without an available team keep fail-safe primary dispatch.
       }
     }
-    const initialDispatch = normalizedInitialMessage === undefined && attachmentIds.length === 0
+    const initialDispatch = planSessionCreationDispatch({ content, routeAgentNames });
+    const attachmentRead = decideSessionCreationAttachmentRead({
+      firstAttachmentId: content.attachmentIds[0],
+      portAvailable: this.input.findDraftAttachment !== undefined,
+    });
+    const firstAttachment = attachmentRead.kind === "skip"
       ? undefined
-      : routeAgentNames[0] === undefined
-        ? undefined
-        : resolveLocalUserMessageDispatch({
-            body: normalizedInitialMessage ?? "",
-            availableAgentNames: routeAgentNames,
-            primaryAgent: routeAgentNames[0],
-          });
-    const firstAttachment = attachmentIds.length === 0
-      ? undefined
-      : (await this.input.attachmentManager?.listDraft("draft:new"))
-        ?.find((attachment) => attachment.attachmentId === attachmentIds[0]);
+      : await this.input.findDraftAttachment!("draft:new", attachmentRead.attachmentId);
     const session = await this.input.storeCall("local-console-store-create-session", () =>
       this.input.store.createSession({
         sessionId,
         projectId: resolvedProjectId,
-        title: normalizedInitialMessage
-          ? deriveSessionTitle(normalizedInitialMessage)
-          : firstAttachment === undefined ? normalizeTitle(title) : deriveSessionTitle(firstAttachment.displayName),
+        title: planSessionCreationTitle({
+          requestedTitle: title,
+          normalizedInitialMessage: content.normalizedInitialMessage,
+          firstAttachment,
+        }),
         agentTeamOwnership: agentTeam?.ownership,
         agentTeamId: agentTeam?.id,
         agentTeamSnapshot: snapshot,
         workspaceMode,
-        initialMessage: persistedInitialMessage,
+        initialMessage: content.persistedInitialMessage,
         initialDispatch,
-        initialAttachmentIds: attachmentIds,
-        attachmentDraftKey: metadata.attachmentDraftKey ?? "draft:new",
+        initialAttachmentIds: content.attachmentIds,
+        attachmentDraftKey: content.attachmentDraftKey,
         baselineCommit,
         originSessionId: metadata.originSessionId,
         analysisParentSessionId: metadata.analysisParentSessionId,
@@ -134,8 +141,9 @@ export class LocalSessionCreationRuntime {
         initialTextFragments: [],
         now: this.input.nowIso(),
       }));
-    this.input.baselineCommits.set(sessionId, baselineCommit ?? null);
-    if (normalizedInitialMessage !== undefined || attachmentIds.length > 0) this.input.processPending(sessionId);
+    this.input.baselineCommits.set(sessionId, planSessionCreationBaselineCacheValue(baselineCommit));
+    const processing = decideSessionCreationProcessing(content.hasInitialContent);
+    if (processing.kind === "start") this.input.processPending(sessionId);
     return session;
   }
 }

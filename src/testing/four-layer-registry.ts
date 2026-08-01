@@ -301,6 +301,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/runtime-domain.ts",
   "src/local-console/session-analysis-gate.ts",
   "src/local-console/session-continuation-plan.ts",
+  "src/local-console/session-creation-plan.ts",
   "src/local-console/session-reference-text.ts",
   "src/local-console/session-reference-plan.ts",
   "src/local-console/session-presentation-plan.ts",
@@ -339,7 +340,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     "desktop/src/runner-child.ts",
     "src/local-console/runtime.ts",
     "src/local-console/run-lifecycle-runtime.ts",
-    "src/local-console/session-creation-runtime.ts",
     "src/runner.ts",
   ],
   dependencyDebt: [

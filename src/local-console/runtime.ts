@@ -454,9 +454,9 @@ export class LocalConsoleRuntime {
     this.sessionCreationRuntime = new LocalSessionCreationRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
-      now: () => this.now(),
+      createSessionId: () => `local:${this.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`,
       nowIso: () => this.nowIso(),
-      defaultProjectId: () => this.defaultProjectId(),
+      resolveProjectId: async (projectId) => projectId ?? (await this.defaultProjectId()),
       assertProjectDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
       storedProject: (projectId) => this.storedProject(projectId),
       ...(options.loadAgentTeamSnapshot === undefined
@@ -464,8 +464,26 @@ export class LocalConsoleRuntime {
         : { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot }),
       listAgentNames: async (sessionId) =>
         (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
-      ...(options.attachmentManager === undefined ? {} : { attachmentManager: options.attachmentManager }),
-      ...(options.workspaceGitTimeoutMs === undefined ? {} : { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs }),
+      ...(options.attachmentManager === undefined
+        ? {}
+        : {
+            findDraftAttachment: async (draftKey: string, attachmentId: string) =>
+              (await options.attachmentManager!.listDraft(draftKey))
+                .find((attachment) => attachment.attachmentId === attachmentId),
+          }),
+      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
+        folderPath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      readBaselineCommit: async (folderPath) => await readLocalConversationBaselineCommit({
+        folderPath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      logBaselineUnavailable: ({ projectId, error }) => log({
+        event: "local-console-conversation-baseline-unavailable",
+        projectId,
+        error,
+      }),
       baselineCommits: this.conversationBaselineCommits,
       processPending: (sessionId) => void this.processPending(sessionId),
     });
