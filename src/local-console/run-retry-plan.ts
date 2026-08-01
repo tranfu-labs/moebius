@@ -189,3 +189,9 @@ export function emptyRetryRecoveryBundle(): RetryRecoveryBundle {
     recoveryFacts: { intents: [], consumedIntentIds: new Set(), repairedIntentIds: new Set() },
   };
 }
+
+export function decideRetryRecoveryStore<T>(store: T | null):
+  | { kind: "unavailable" }
+  | { kind: "available"; store: T } {
+  return store === null ? { kind: "unavailable" } : { kind: "available", store };
+}

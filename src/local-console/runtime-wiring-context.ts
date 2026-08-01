@@ -6,7 +6,7 @@ export interface LocalRuntimeWiringContext {
   now(): Date;
   nowIso(): string;
   stopping(sessionId: string): boolean;
-  setError(error: string): void;
+  setError(error: string | null): void;
   formatAndSetError(error: unknown): string;
 }
 
@@ -14,7 +14,7 @@ export function createLocalRuntimeWiringContext(input: {
   storePorts: LocalConsoleStorePorts;
   now(): Date;
   stopping(sessionId: string): boolean;
-  setError(error: string): void;
+  setError(error: string | null): void;
 }): LocalRuntimeWiringContext {
   return {
     ...input,

@@ -4,6 +4,7 @@ import {
   decideExistingOverrideRetry,
   decidePendingRetryAdmission,
   decideRetryAdmissionRelease,
+  decideRetryRecoveryStore,
   decideRetryRequest,
   emptyRetryRecoveryBundle,
   planRetryAcceptance,
@@ -23,6 +24,12 @@ const executionOverride: RetryExecutionOverride = {
 };
 
 describe("run retry plan", () => {
+  it("selects retry recovery persistence only when its port is available", () => {
+    const store = { getSessionFactLogPath: () => "/tmp/facts.jsonl" };
+    expect(decideRetryRecoveryStore(null)).toEqual({ kind: "unavailable" });
+    expect(decideRetryRecoveryStore(store)).toEqual({ kind: "available", store });
+  });
+
   it("rejects malformed overrides and recognizes a previously accepted override", () => {
     expect(decideRetryRequest(undefined)).toEqual({ kind: "valid" });
     expect(decideRetryRequest(executionOverride)).toEqual({ kind: "valid" });

@@ -113,6 +113,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/process-history.ts",
   "src/local-console/conversation-workspace-runtime.ts",
   "src/local-console/message-command-runtime.ts",
+  "src/local-console/message-retry-wiring.ts",
   "src/local-console/provider-invocation-flow.ts",
   "src/local-console/primary-preparation-runtime.ts",
   "src/local-console/primary-preparation-wiring.ts",

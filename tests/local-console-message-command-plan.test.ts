@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decideMessageAgentSource,
+  decideMessageRecoveryStore,
   decidePrimaryMessageAdmission,
   decideSubmittedMessageDispatch,
   decideSubmittedMessageWake,
+  planMessagePrimaryAgent,
+  planMessageResumeLink,
+  planPersistedPrimaryRun,
   planSubmittedMessageContent,
 } from "../src/local-console/message-command-plan.js";
-import type { LocalConsoleSessionSummary } from "../src/local-console/types.js";
+import type { LocalConsoleMessage, LocalConsoleSessionSummary } from "../src/local-console/types.js";
 
 describe("local console message command plan", () => {
   it("validates and serializes the submitted body before persistence", () => {
@@ -40,5 +45,18 @@ describe("local console message command plan", () => {
       .toEqual({ kind: "primary" });
     expect(decideSubmittedMessageWake({ lane: "worker", role: "qa", reason: "single-valid-mention" }))
       .toEqual({ kind: "worker" });
+  });
+
+  it("plans persisted-primary and recovery lookup inputs", () => {
+    const persisted = [{ speaker: "user", status: "running", dispatchLane: "primary" }] as LocalConsoleMessage[];
+    const execution = { runId: "run-1", role: "dev", engine: "codex" };
+    const codex = { runId: "run-2", role: "qa", threadId: "thread-1" };
+
+    expect(planPersistedPrimaryRun(persisted)).toBe(true);
+    expect(decideMessageAgentSource(null)).toEqual({ kind: "files" });
+    expect(planMessagePrimaryAgent([])).toEqual({ kind: "missing" });
+    expect(planMessagePrimaryAgent(["ceo", "dev"])).toEqual({ kind: "found", primaryAgent: "ceo" });
+    expect(decideMessageRecoveryStore(null)).toEqual({ kind: "unavailable" });
+    expect(planMessageResumeLink([execution], [codex], "run-2")).toBe(codex);
   });
 });

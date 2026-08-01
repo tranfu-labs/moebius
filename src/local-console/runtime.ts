@@ -18,7 +18,6 @@ import {
   LOCAL_CONSOLE_PROJECT_ID,
   LocalConsoleProjectFolderError,
   type LocalConsoleFileContent,
-  type LocalConsoleMessage,
   type LocalConsoleProjectFiles,
   type LocalConsoleProjectSummary,
   type LocalConsoleProjectRemovalResult,
@@ -61,7 +60,6 @@ import {
   readRunExecutionContexts,
 } from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
-import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
@@ -84,8 +82,8 @@ import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js"
 import { createLocalSessionReadWiring } from "./session-read-wiring.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
+import { createLocalMessageRetryWiring } from "./message-retry-wiring.js";
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
-import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
   LocalWorkerDispatchRuntime,
 } from "./worker-dispatch-runtime.js";
@@ -430,13 +428,29 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       analysis: this.primaryAnalysisRuntime,
       terminal: this.primaryTerminalRuntime,
     }));
+    const messageRetryWiring = createLocalMessageRetryWiring({
+      context: runtimeContext,
+      options,
+      defaultSessionId: this.sessionId,
+      lifecycle: this.runLifecycleRuntime,
+      continuation: this.sessionContinuationRuntime,
+      randomId: () => crypto.randomUUID(),
+      scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
+      schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
+      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
+      readExecutionSessionLinks,
+      readCodexThreadLinks,
+      readRunExecutionContexts,
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
+    });
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
       dispatchWorkers: (sessionId, workspace) => this.workerDispatchRuntime.dispatch(sessionId, workspace),
-      hasPersistedPrimary: (sessionId) => this.hasPersistedPrimaryRun(sessionId),
+      hasPersistedPrimary: messageRetryWiring.hasPersistedPrimary,
       executePrimary: (sessionId, workspace) => this.primaryExecutionRuntime.run(sessionId, workspace),
       listSessions: () => this.storePorts.call("local-console-store-list-sessions", () => options.store.listSessions()),
       formatError: (error) => formatLocalError(error),
@@ -591,73 +605,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         return options.store.renameSession(input);
       },
     });
-    this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime({
-      defaultSessionId: this.sessionId,
-      nowIso: () => this.nowIso(),
-      assertSessionCanContinue: (sessionId) => this.sessionContinuationRuntime.assertSessionCanContinue(sessionId),
-      hasActivePrimary: (sessionId) => this.runLifecycleRuntime.runForLane(sessionId, "primary") !== undefined,
-      hasPersistedPrimary: (sessionId) => this.hasPersistedPrimaryRun(sessionId),
-      sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
-      resolveDispatch: (sessionId, body) => this.resolveUserMessageDispatch(sessionId, body),
-      appendUserMessage: (input) => options.store.appendUserMessage({ ...input, textFragments: [] }),
-      resolveResumeLink: async (sessionId, runId) => {
-        const recoveryStore = this.storePorts.recoveryFacts();
-        if (recoveryStore === null) return undefined;
-        const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
-        const [executionLinks, codexLinks] = await Promise.all([
-          readExecutionSessionLinks(factLogPath, sessionId),
-          readCodexThreadLinks(factLogPath, sessionId),
-        ]);
-        return executionLinks.find((candidate) => candidate.runId === runId)
-          ?? codexLinks.find((candidate) => candidate.runId === runId);
-      },
-      recordEditResume: (input) => this.storePorts.requireRecoveryFacts().recordCodexResumeIntent({
-        ...input,
-        intentId: crypto.randomUUID(),
-        reason: "edit-resend",
-      }),
-      scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
-      processPending: (sessionId) => { void this.processPending(sessionId); },
-      markPendingReferenceError: (input) => {
-        if (options.store.markPendingReferenceError === undefined) throw new Error("pending message retry unavailable");
-        return options.store.markPendingReferenceError(input);
-      },
-      updatePendingUserMessage: (input) => {
-        if (options.store.updatePendingUserMessage === undefined) throw new Error("pending message editing unavailable");
-        return options.store.updatePendingUserMessage(input);
-      },
-      removePendingUserMessage: (input) => {
-        if (options.store.removePendingUserMessage === undefined) throw new Error("pending message removal unavailable");
-        return options.store.removePendingUserMessage(input);
-      },
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      setLastError: (error) => { this.lastError = error; },
-      schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
-    });
-    this.runRetryRuntime = new LocalConsoleRunRetryRuntime({
-      nowIso: () => this.nowIso(),
-      randomId: () => crypto.randomUUID(),
-      assertSessionCanContinue: (sessionId) => this.sessionContinuationRuntime.assertSessionCanContinue(sessionId),
-      listMessages: (sessionId) => this.storePorts.call("local-console-store-list-retry-source", () =>
-        options.store.listMessages(sessionId)),
-      loadRecoveryBundle: async (sessionId) => {
-        const recoveryStore = this.storePorts.recoveryFacts();
-        if (recoveryStore === null) return emptyRetryRecoveryBundle();
-        const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
-        const [executionLinks, codexLinks, runContexts, recoveryFacts] = await Promise.all([
-          readExecutionSessionLinks(factLogPath, sessionId),
-          readCodexThreadLinks(factLogPath, sessionId),
-          readRunExecutionContexts(factLogPath, sessionId),
-          readLocalCodexRecoveryFacts(factLogPath, sessionId),
-        ]);
-        return { available: true, executionLinks, codexLinks, runContexts, recoveryFacts };
-      },
-      activeRunForRole: (sessionId, role) => this.runLifecycleRuntime.runForRole(sessionId, role) !== undefined,
-      recordRetryIntent: (input) => this.storePorts.requireRecoveryFacts().recordCodexResumeIntent(input),
-      releaseMessageForRetry: (input) => options.store.releaseMessageForRetry(input),
-      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-    });
+    this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime(messageRetryWiring.message);
+    this.runRetryRuntime = new LocalConsoleRunRetryRuntime(messageRetryWiring.retry);
     const startupRecoveryWiring = new LocalStartupRecoveryWiring({
       store: options.store,
       defaultSessionId: this.sessionId,
@@ -777,32 +726,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     await this.pendingProcessingRuntime.processAll();
   }
 
-  private async hasPersistedPrimaryRun(sessionId: string): Promise<boolean> {
-    const messages = await this.storePorts.call("local-console-store-list-primary-running", () =>
-      this.options.store.listMessages(sessionId),
-    );
-    return messages.some((message) =>
-      message.speaker === "user"
-      && message.status === "running"
-      && message.dispatchLane !== "worker");
-  }
-
-  private async resolveUserMessageDispatch(sessionId: string, body: string) {
-    const persistedSnapshot = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-    const agentNames = persistedSnapshot === null
-      ? (await this.options.listAgentFiles(sessionId)).map((agent) => agent.name)
-      : persistedSnapshot.members.map((member) => member.name);
-    const primaryAgent = agentNames[0];
-    if (primaryAgent === undefined) {
-      throw new Error("Local console session has no primary Agent");
-    }
-    return resolveLocalUserMessageDispatch({
-      body,
-      availableAgentNames: agentNames,
-      primaryAgent,
-    });
-  }
-
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
@@ -832,32 +755,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       }),
     );
     return workspace;
-  }
-
-  private async recordNoTrigger(message: LocalConsoleMessage, sessionId: string, runId: string): Promise<void> {
-    if (message.speaker === "agent") {
-      await this.storePorts.call("local-console-store-no-trigger-agent", () =>
-        this.options.store.recordMessageProcessed({
-          userMessageId: message.id,
-          sessionId,
-          runId,
-          runDir: null,
-          now: this.nowIso(),
-        }),
-      );
-      return;
-    }
-    await this.storePorts.call("local-console-store-no-trigger", () =>
-      this.options.store.recordSystemAndComplete({
-        userMessageId: message.id,
-        sessionId,
-        body: "没有找到可以接手这条消息的团队成员。请改选一支可用团队后再试。",
-        systemEventKind: "other",
-        runId,
-        runDir: null,
-        now: this.nowIso(),
-      }),
-    );
   }
 
   private nowIso(): string {

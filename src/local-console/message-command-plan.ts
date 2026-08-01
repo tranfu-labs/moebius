@@ -68,3 +68,43 @@ export function planPendingMessageUpdate(
 ): LocalConsoleMessage {
   return message;
 }
+
+export function planPersistedPrimaryRun(messages: readonly LocalConsoleMessage[]): boolean {
+  return messages.some((message) =>
+    message.speaker === "user"
+    && message.status === "running"
+    && message.dispatchLane !== "worker");
+}
+
+export function decideMessageAgentSource<T>(snapshot: T | null | undefined):
+  | { kind: "files" }
+  | { kind: "snapshot"; snapshot: T } {
+  return snapshot == null ? { kind: "files" } : { kind: "snapshot", snapshot };
+}
+
+export function planMessagePrimaryAgent(agentNames: readonly string[]):
+  | { kind: "missing" }
+  | { kind: "found"; primaryAgent: string } {
+  const primaryAgent = agentNames[0];
+  return primaryAgent === undefined
+    ? { kind: "missing" }
+    : { kind: "found", primaryAgent };
+}
+
+export function decideMessageRecoveryStore<T>(store: T | null):
+  | { kind: "unavailable" }
+  | { kind: "available"; store: T } {
+  return store === null ? { kind: "unavailable" } : { kind: "available", store };
+}
+
+export function planMessageResumeLink<
+  TExecution extends { runId: string; role: string },
+  TCodex extends { runId: string; role: string },
+>(
+  executionLinks: readonly TExecution[],
+  codexLinks: readonly TCodex[],
+  runId: string,
+): TExecution | TCodex | undefined {
+  return executionLinks.find((candidate) => candidate.runId === runId)
+    ?? codexLinks.find((candidate) => candidate.runId === runId);
+}
