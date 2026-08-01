@@ -70,3 +70,25 @@ export function decidePrimaryAnalysisConfirmation(input: {
     ? { kind: "execute", externalSessionId }
     : { kind: "reject" };
 }
+
+export function decidePrimaryRecoveryPersistence(
+  available: boolean,
+): { kind: "record" } | { kind: "skip" } {
+  return available ? { kind: "record" } : { kind: "skip" };
+}
+
+export function decidePrimarySuccessPersistence(
+  kind: "processed" | "direct-response" | "detached-response",
+): { kind: "processed" } | { kind: "response" } {
+  return kind === "processed" ? { kind: "processed" } : { kind: "response" };
+}
+
+export function planPrimaryGracefulResume(
+  active: { gracefulResumePrepared: boolean } | undefined,
+): boolean {
+  return active?.gracefulResumePrepared ?? false;
+}
+
+export function planPrimaryLastSeenIndex(timeline: readonly { index: number }[]): number {
+  return timeline.at(-1)?.index ?? -1;
+}

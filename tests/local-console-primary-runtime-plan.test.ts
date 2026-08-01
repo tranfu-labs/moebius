@@ -8,6 +8,10 @@ import {
   decidePrimaryLifecycleCreation,
   decidePrimaryPreparation,
   decidePrimaryProviderInvocation,
+  decidePrimaryRecoveryPersistence,
+  decidePrimarySuccessPersistence,
+  planPrimaryGracefulResume,
+  planPrimaryLastSeenIndex,
   planPrimaryProfile,
 } from "../src/local-console/primary-runtime-plan.js";
 
@@ -70,5 +74,16 @@ describe("primary runtime plan", () => {
       observedExternalSessionId: "thread-1",
       resultExternalSessionId: null,
     })).toEqual({ kind: "reject" });
+  });
+
+  it("projects primary terminal persistence without reading runtime state", () => {
+    expect(decidePrimaryRecoveryPersistence(false)).toEqual({ kind: "skip" });
+    expect(decidePrimaryRecoveryPersistence(true)).toEqual({ kind: "record" });
+    expect(decidePrimarySuccessPersistence("processed")).toEqual({ kind: "processed" });
+    expect(decidePrimarySuccessPersistence("direct-response")).toEqual({ kind: "response" });
+    expect(planPrimaryGracefulResume(undefined)).toBe(false);
+    expect(planPrimaryGracefulResume({ gracefulResumePrepared: true })).toBe(true);
+    expect(planPrimaryLastSeenIndex([{ index: 2 }, { index: 7 }])).toBe(7);
+    expect(planPrimaryLastSeenIndex([])).toBe(-1);
   });
 });

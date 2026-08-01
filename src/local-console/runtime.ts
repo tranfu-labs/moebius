@@ -89,7 +89,6 @@ import {
 } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
-import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
@@ -129,6 +128,7 @@ import {
 } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
+import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -325,6 +325,7 @@ export class LocalConsoleRuntime {
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
   private readonly primaryAnalysisRuntime: LocalPrimaryAnalysisRuntime;
+  private readonly primaryTerminalRuntime: LocalPrimaryTerminalRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -781,6 +782,62 @@ export class LocalConsoleRuntime {
             }
           },
         }),
+    });
+    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      activeRun: (runId) => this.activeRuns.get(runId),
+      recoveryStore: () => this.codexRecoveryFactStore(),
+      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      classifyFailure: (result) => ({
+        runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
+        failureStatus: runTimingStatusForFailedResult(result),
+      }),
+      pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
+      finishLifecycle: (runId, status) => this.finishRunLifecycle(runId, status),
+      recordFailure: (run, result) =>
+        this.recordFailedCodexResult(run.sourceMessage, run.sessionId, run.runId, result),
+      sourceDirectoryAvailable: (sessionId) => this.sessionProjectDirectoryAvailable(sessionId),
+      executeChildSession: (run, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+        sessionId: run.sessionId,
+        runId: run.runId,
+        runDir: result.runDir,
+        finalText: result.finalText,
+        availableAgentNames: run.agentFiles.map((agent) => agent.name),
+      }),
+      recordWorkspaceDiff: (run, preparation, result) => this.recordWorkspaceDiffIfNeeded(
+        run.sessionId,
+        run.runId,
+        preparation.resolvedRunDir,
+        preparation.workspace,
+        result.finalText,
+        preparation.controller.signal,
+      ),
+      recordTimelineCursor: (run, agentIdentityFingerprint, lastSeenIndex) =>
+        this.recordAgentTimelineCursor({
+          sessionId: run.sessionId,
+          runId: run.runId,
+          role: run.role,
+          agentIdentityFingerprint,
+          lastSeenIndex,
+          recordedAt: this.nowIso(),
+        }),
+      recordChildSessionCard: (run, card, result) =>
+        this.storeCall("local-console-store-child-session-card", () =>
+          this.sessionFactStore().recordChildSessionCard({
+            parentSessionId: run.sessionId,
+            sourceId: card.sourceId,
+            childSessionIds: card.childSessionIds,
+            runId: run.runId,
+            runDir: result.runDir,
+            now: this.nowIso(),
+          })),
+      recordChildSessionCardError: async (sessionId, error) => {
+        const reason = formatLocalError(error);
+        this.lastError = reason;
+        await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
+      },
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -1648,14 +1705,6 @@ export class LocalConsoleRuntime {
             (runDir) => { activeRunDir = runDir; },
           );
           if (preparation.kind === "settled") return;
-          const {
-            resolvedRunDir,
-            controller,
-            executionContext,
-            recoveryPlan,
-            workspace,
-          } = preparation;
-          const recoveryStore = this.codexRecoveryFactStore();
           const providerInvocation = await this.primaryProviderRuntime.invoke(primaryRunInput, preparation);
           let { result } = providerInvocation;
           const { observedExternalSessionId } = providerInvocation;
@@ -1666,81 +1715,11 @@ export class LocalConsoleRuntime {
             observedExternalSessionId,
           });
 
-          const activeAtTerminal = this.activeRuns.get(nextRunId);
-          const terminalOutcome = await executeLocalRunTerminalFlow({
-            sessionId,
-            runId: nextRunId,
-            runDir: resolvedRunDir,
-            sourceMessageId: claimedMessage.id,
-            role: triggerRole,
-            sourceDisposition: "primary",
-            executionContext,
-            recoveryPlan,
-            observedExternalSessionId,
-            result,
-            gracefulResumePrepared: activeAtTerminal?.gracefulResumePrepared ?? false,
-            lastSeenIndex: timeline.at(-1)?.index ?? -1,
-          }, {
-            nowIso: () => this.nowIso(),
-            recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
-            classifyFailure: (failedResult) => ({
-              runtimeClosing: executionInterruptionCauseForResult(failedResult) === "runtime-closing",
-              failureStatus: runTimingStatusForFailedResult(failedResult),
-            }),
-            pauseLifecycle: () => this.pauseRunLifecycle(nextRunId),
-            finishLifecycle: (status) => this.finishRunLifecycle(nextRunId, status),
-            recordFailed: (failedResult) =>
-              this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, failedResult),
-            recordUsage: (cachedInputTokens) => recoveryStore === null
-              ? Promise.resolve()
-              : this.storeCall("local-console-store-record-codex-usage", () =>
-                  recoveryStore.recordCodexRunUsage({
-                    sessionId,
-                    runId: nextRunId,
-                    cachedInputTokens,
-                    recordedAt: this.nowIso(),
-                  })),
-            sourceDirectoryAvailable: () => this.sessionProjectDirectoryAvailable(sessionId),
-            executeChildSession: (successResult) =>
-              this.executeLocalCeoChildSessionOrchestrationIfNeeded({
-                sessionId,
-                runId: nextRunId,
-                runDir: successResult.runDir,
-                finalText: successResult.finalText,
-                availableAgentNames: agentFiles.map((agent) => agent.name),
-              }),
-            recordWorkspaceDiff: (successResult) => this.recordWorkspaceDiffIfNeeded(
-              sessionId,
-              nextRunId,
-              resolvedRunDir,
-              workspace,
-              successResult.finalText,
-              controller.signal,
-            ),
-            recordSuccess: async (kind, successResult) => {
-              if (kind === "processed") {
-                await this.storeCall("local-console-store-record-tool-only-complete", () =>
-                  this.options.store.recordMessageProcessed({
-                    userMessageId: claimedMessage.id,
-                    sessionId,
-                    runId: nextRunId,
-                    runDir: successResult.runDir,
-                    now: this.nowIso(),
-                  }));
-                return;
-              }
-              await this.storeCall("local-console-store-record-agent-response", () =>
-                this.options.store.recordAgentResponse({
-                  userMessageId: claimedMessage.id,
-                  sessionId,
-                  role: triggerRole,
-                  body: successResult.finalText,
-                  runId: nextRunId,
-                  runDir: successResult.runDir,
-                  now: this.nowIso(),
-                }));
-            },
-            onSuccessPersistenceError: async (error, successResult) => {
+          const terminalOutcome = await this.primaryTerminalRuntime.complete(
+            primaryRunInput,
+            preparation,
+            { result, observedExternalSessionId },
+            async (error, successResult) => {
               await this.recordTerminalFailureBestEffort(
                 claimedMessage,
                 sessionId,
@@ -1751,42 +1730,7 @@ export class LocalConsoleRuntime {
               activeMessage = null;
               activeRunDir = null;
             },
-            recordTimelineCursor: (lastSeenIndex) => this.recordAgentTimelineCursor({
-              sessionId,
-              runId: nextRunId,
-              role: triggerRole,
-              agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              lastSeenIndex,
-              recordedAt: this.nowIso(),
-            }),
-            recordChildSessionCard: (childSessionCard, successResult) =>
-              this.storeCall("local-console-store-child-session-card", () =>
-                this.sessionFactStore().recordChildSessionCard({
-                  parentSessionId: sessionId,
-                  sourceId: childSessionCard.sourceId,
-                  childSessionIds: childSessionCard.childSessionIds,
-                  runId: nextRunId,
-                  runDir: successResult.runDir,
-                  now: this.nowIso(),
-                })),
-            onChildSessionCardError: async (error) => {
-              const reason = formatLocalError(error);
-              this.lastError = reason;
-              await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
-            },
-            recordDirectoryWarning: (successResult) =>
-              this.storeCall("local-console-store-directory-unavailable", () =>
-                this.options.store.recordSystemMessage({
-                  sessionId,
-                  body: "项目文件夹不可用；隔离工作区已完成当前步骤，修复项目文件夹后才能继续。",
-                  systemEventKind: "other",
-                  runId: nextRunId,
-                  runDir: successResult.runDir,
-                  error: "PROJECT_DIRECTORY_UNAVAILABLE",
-                  status: "failed",
-                  now: this.nowIso(),
-                })),
-          });
+          );
           if (terminalOutcome === "failed") return;
           this.lastError = null;
           if (terminalOutcome === "succeeded-directory-unavailable") return;
