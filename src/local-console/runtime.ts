@@ -1,9 +1,3 @@
-import {
-  type CodexRunResult,
-  executionInterruptionCauseForResult,
-  executionTimeoutKind,
-  isInterruptedCodexRunResult,
-} from "../codex.js";
 import { log } from "../log.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -46,11 +40,10 @@ import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
-import { createLocalWorkerWiring } from "./worker-wiring.js";
-import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.js";
 import { createLocalRuntimeAdapters } from "./runtime-adapters.js";
+import { createLocalRuntimeRunWiring } from "./runtime-run-wiring.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -58,7 +51,6 @@ import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
-import { createLocalPrimaryWiring } from "./primary-wiring.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import { formatLocalError } from "./runtime-domain.js";
 import {
@@ -163,34 +155,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       foundationWiring.pendingContext(this.runLifecycleRuntime),
     );
     this.runRecoveryRuntime = new LocalRunRecoveryRuntime(foundationWiring.recovery);
-    const sharedRunPorts = createLocalSharedRunPorts({
-      storePorts: this.storePorts,
+    const runWiring = createLocalRuntimeRunWiring({
+      context: runtimeContext,
+      options,
+      adapters,
       executionRunner: this.executionRunner,
       activeRuns: this.activeRunRegistry,
       lifecycle: this.runLifecycleRuntime,
       idleTimeoutMs: this.codexIdleTimeoutMs,
       toolTimeoutMs: this.toolInFlightTimeoutMs,
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
-      resolveWorkspace: (sessionId, source, signal) =>
-        this.conversationWorkspaceRuntime.resolveSource(sessionId, source, signal),
-      ...adapters,
-      settleUnavailable: ({ sessionId, runId, sourceMessage, role, runDir, unavailable }) =>
-        this.runRecoveryRuntime.settleUnavailable({
-          sessionId,
-          runId,
-          sourceMessage,
-          intent: unavailable.intent,
-          role,
-          engine: unavailable.context.engine,
-          reason: unavailable.reason,
-          runDir,
-        }),
-    });
-    const workerWiring = createLocalWorkerWiring({
-      context: runtimeContext,
-      options,
-      ...sharedRunPorts,
+      routeTimeoutMs: this.routeTimeoutMs,
       recovery: this.runRecoveryRuntime,
       continuation: this.sessionContinuationRuntime,
       pendingContext: this.pendingSessionContextRuntime,
@@ -198,46 +172,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       workspace: this.conversationWorkspaceRuntime,
       scheduleRun: (input) => this.workerExecutionRuntime.run(input),
       processPending: (sessionId) => { void this.processPending(sessionId); },
-      report: (event, sessionId, role, error) =>
+      workerReport: (event, sessionId, role, error) =>
         log({ event, sessionId, ...(role === null ? {} : { role }), error }),
-      classifyFailure: (result) => ({
-        runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
-        failureStatus: runTimingStatusForFailedResult(result),
-      }),
-      executeChildSession: (input, _runDir, result) => this.sessionMetadataRuntime.executeChildOrchestration({
+      executeWorkerChildSession: (input, _runDir, result) => this.sessionMetadataRuntime.executeChildOrchestration({
         sessionId: input.sessionId,
         runId: input.runId,
         runDir: result.runDir,
         finalText: result.finalText,
         availableAgentNames: input.agentFiles.map((agent) => agent.name),
       }),
-      invalidateWorkspace: adapters.invalidateWorkspace,
-    });
-    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(workerWiring.dispatch);
-    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(workerWiring.preparation);
-    this.workerProviderRuntime = new LocalWorkerProviderRuntime(workerWiring.provider);
-    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime(workerWiring.terminal);
-    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime(workerWiring.execution({
-      preparation: this.workerPreparationRuntime,
-      provider: this.workerProviderRuntime,
-      terminal: this.workerTerminalRuntime,
-    }));
-    const primaryWiring = createLocalPrimaryWiring({
-      context: runtimeContext,
-      options,
-      ...sharedRunPorts,
-      routeTimeoutMs: this.routeTimeoutMs,
-      recovery: this.runRecoveryRuntime,
-      continuation: this.sessionContinuationRuntime,
-      pendingContext: this.pendingSessionContextRuntime,
-      failure: this.runFailureRuntime,
-      workspace: this.conversationWorkspaceRuntime,
-      readRecoveryFacts: adapters.readRecoveryFacts,
-      classifyFailure: (result) => ({
-        runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
-        failureStatus: runTimingStatusForFailedResult(result),
-      }),
-      executeChildSession: (run, result) => this.sessionMetadataRuntime.executeChildOrchestration({
+      executePrimaryChildSession: (run, result) => this.sessionMetadataRuntime.executeChildOrchestration({
         sessionId: run.sessionId,
         runId: run.runId,
         runDir: result.runDir,
@@ -250,15 +194,23 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         await this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason);
       },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
-      report: (event, error) => log({ event, error }),
-      invalidateWorkspace: adapters.invalidateWorkspace,
+      primaryReport: (event, error) => log({ event, error }),
     });
-    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(primaryWiring.preparation);
-    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(primaryWiring.provider);
-    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(primaryWiring.analysis);
-    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(primaryWiring.terminal);
-    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(primaryWiring.dispatch);
-    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime(primaryWiring.execution({
+    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(runWiring.worker.dispatch);
+    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(runWiring.worker.preparation);
+    this.workerProviderRuntime = new LocalWorkerProviderRuntime(runWiring.worker.provider);
+    this.workerTerminalRuntime = new LocalWorkerTerminalRuntime(runWiring.worker.terminal);
+    this.workerExecutionRuntime = new LocalWorkerExecutionRuntime(runWiring.worker.execution({
+      preparation: this.workerPreparationRuntime,
+      provider: this.workerProviderRuntime,
+      terminal: this.workerTerminalRuntime,
+    }));
+    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(runWiring.primary.preparation);
+    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(runWiring.primary.provider);
+    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(runWiring.primary.analysis);
+    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(runWiring.primary.terminal);
+    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(runWiring.primary.dispatch);
+    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime(runWiring.primary.execution({
       dispatch: this.primaryDispatchRuntime,
       preparation: this.primaryPreparationRuntime,
       provider: this.primaryProviderRuntime,
@@ -446,12 +398,4 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private nowIso(): string {
     return this.now().toISOString();
   }
-}
-
-function runTimingStatusForFailedResult(
-  result: Extract<CodexRunResult, { ok: false }>,
-): "failed" | "interrupted" | "stuck" | "paused" {
-  if (executionInterruptionCauseForResult(result) === "runtime-closing") return "paused";
-  if (executionTimeoutKind(result) !== null) return "stuck";
-  return isInterruptedCodexRunResult(result) ? "interrupted" : "failed";
 }

@@ -127,3 +127,5 @@ export function createLocalRuntimeAdapters(input: {
     }),
   };
 }
+
+export type LocalRuntimeAdapters = ReturnType<typeof createLocalRuntimeAdapters>;

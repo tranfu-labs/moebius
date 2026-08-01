@@ -6,8 +6,18 @@ import {
   executeLocalRunTerminalFlow,
   type LocalRunTerminalFlowPorts,
 } from "../src/local-console/run-terminal-flow.js";
+import { planLocalRunFailureStatus } from "../src/local-console/run-terminal-plan.js";
 
 describe("local run terminal application flow", () => {
+  it("classifies failed run timing by shutdown, timeout, and interruption precedence", () => {
+    expect([
+      planLocalRunFailureStatus({ runtimeClosing: true, timedOut: true, interrupted: true }),
+      planLocalRunFailureStatus({ runtimeClosing: false, timedOut: true, interrupted: true }),
+      planLocalRunFailureStatus({ runtimeClosing: false, timedOut: false, interrupted: true }),
+      planLocalRunFailureStatus({ runtimeClosing: false, timedOut: false, interrupted: false }),
+    ]).toEqual(["paused", "stuck", "interrupted", "failed"]);
+  });
+
   it("pauses a graceful runtime-closing failure before recording its terminal result", async () => {
     const events: string[] = [];
     await executeLocalRunTerminalFlow(input(failure(), "user-direct", true), ports(events, {

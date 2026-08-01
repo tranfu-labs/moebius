@@ -34,6 +34,16 @@ export function decideLocalFailedRunLifecycle(input: {
     : { kind: "finish", status: input.failureStatus };
 }
 
+export function planLocalRunFailureStatus(input: {
+  runtimeClosing: boolean;
+  timedOut: boolean;
+  interrupted: boolean;
+}): "failed" | "interrupted" | "stuck" | "paused" {
+  if (input.runtimeClosing) return "paused";
+  if (input.timedOut) return "stuck";
+  return input.interrupted ? "interrupted" : "failed";
+}
+
 export type LocalRunUsagePlan = { kind: "record" } | { kind: "skip" };
 
 export function planLocalRunUsage(engine: LocalExecutionEngine): LocalRunUsagePlan {
