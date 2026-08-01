@@ -149,6 +149,7 @@ import {
 import {
   readLocalConversationBaselineCommit,
   readLocalConversationDiffFile,
+  readLocalConversationWorkspaceDiff,
   readLocalConversationWorkspaceDiffDetail,
 } from "./workspace-diff.js";
 import {
@@ -361,6 +362,8 @@ export class LocalConsoleRuntime {
       baselineCommits: this.conversationBaselineCommits,
       workdirRoot: options.workdirRoot,
       ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
+      worktreePath: localSessionWorktreePath,
+      readWorkspaceDiff: readLocalConversationWorkspaceDiff,
     });
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
       store: options.store,
