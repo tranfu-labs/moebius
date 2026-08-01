@@ -1,16 +1,13 @@
-import {
-  readCodexThreadLinks,
-} from "./codex-thread-link.js";
+import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
 import {
   readCodexRolloutInvocation,
   type CodexRolloutPromptLayer,
   type CodexRolloutUnavailableReason,
   type ResolveCodexRolloutOptions,
 } from "./codex-rollout.js";
-import {
-  readExecutionSessionLinks,
-  readRunExecutionContexts,
-  type LocalRunExecutionContextFact,
+import type {
+  LocalExecutionSessionLinkFact,
+  LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import {
   readProviderTraceAppend,
@@ -142,6 +139,7 @@ export interface LoadLocalProcessHistoryOptions {
   sessionFactLogPath: string;
   messages: LocalConsoleMessage[];
   activeRunIds: ReadonlySet<string>;
+  factReader: LocalProcessFactReader;
   cursor?: string;
   rollout?: ResolveCodexRolloutOptions;
   trace?: ProviderTraceResolverOptions;
@@ -154,11 +152,18 @@ export interface LoadLocalProcessAppendOptions {
   requestedRunId: string;
   sessionFactLogPath: string;
   activeRunIds: ReadonlySet<string>;
+  factReader: LocalProcessFactReader;
   appendCursor: string;
   rollout?: ResolveCodexRolloutOptions;
   trace?: ProviderTraceResolverOptions;
   maxBytes?: number;
   maxEvents?: number;
+}
+
+export interface LocalProcessFactReader {
+  readCodexThreadLinks(logPath: string, sessionId: string): Promise<LocalCodexThreadLinkFact[]>;
+  readExecutionSessionLinks(logPath: string, sessionId: string): Promise<LocalExecutionSessionLinkFact[]>;
+  readRunExecutionContexts(logPath: string, sessionId: string): Promise<LocalRunExecutionContextFact[]>;
 }
 
 interface ResolvedAttempt {
@@ -221,6 +226,7 @@ export async function loadLocalProcessDebugInvocation(options: {
   sessionId: string;
   runId: string;
   sessionFactLogPath: string;
+  factReader: LocalProcessFactReader;
   rollout?: ResolveCodexRolloutOptions;
   trace?: ProviderTraceResolverOptions;
 }): Promise<LocalConsoleProcessDebugInvocation> {
@@ -228,8 +234,8 @@ export async function loadLocalProcessDebugInvocation(options: {
   let contexts: LocalRunExecutionContextFact[];
   try {
     [links, contexts] = await Promise.all([
-      readProcessLinks(options.sessionFactLogPath, options.sessionId),
-      readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
+      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
+      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
     ]);
   } catch {
     return unavailableInvocation(options, "link-invalid");
@@ -506,8 +512,8 @@ export async function loadLocalProcessAppendPage(
   let contexts: LocalRunExecutionContextFact[];
   try {
     [links, contexts] = await Promise.all([
-      readProcessLinks(options.sessionFactLogPath, options.sessionId),
-      readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
+      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
+      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
     ]);
   } catch {
     throw new ProcessCursorError();
@@ -593,8 +599,8 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
   let contexts: LocalRunExecutionContextFact[];
   try {
     [links, contexts] = await Promise.all([
-      readProcessLinks(options.sessionFactLogPath, options.sessionId),
-      readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
+      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
+      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
     ]);
   } catch {
     return { unavailableReason: "link-invalid", unavailableEngine: null };
@@ -949,12 +955,13 @@ function positiveInteger(value: number): number {
 }
 
 async function readProcessLinks(
+  factReader: LocalProcessFactReader,
   logPath: string,
   sessionId: string,
 ): Promise<ProviderTraceLink[]> {
   const [executionLinks, legacyLinks] = await Promise.all([
-    readExecutionSessionLinks(logPath, sessionId),
-    readCodexThreadLinks(logPath, sessionId),
+    factReader.readExecutionSessionLinks(logPath, sessionId),
+    factReader.readCodexThreadLinks(logPath, sessionId),
   ]);
   const links = new Map<string, ProviderTraceLink>();
   for (const link of executionLinks) {

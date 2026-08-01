@@ -16,6 +16,7 @@ import {
   loadLocalProcessHistoryPage,
   ProcessCursorError,
 } from "../src/local-console/process-history.js";
+import { localProcessFactReader } from "../src/local-console/process-fact-reader.js";
 
 describe("provider-native process traces", () => {
   it("locates a Claude transcript by exact session id and projects thinking/tools/results", async () => {
@@ -475,6 +476,7 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
         messages: [],
         activeRunIds: new Set(),
         trace: { claudeProjectsRoot: projectsRoot },
@@ -502,6 +504,7 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
         messages: [],
         activeRunIds: new Set(),
         trace: { claudeProjectsRoot: projectsRoot },
@@ -520,6 +523,7 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
         messages: [],
         activeRunIds: new Set(),
         cursor: tampered,
@@ -560,6 +564,7 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-kimi",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
         messages: [],
         activeRunIds: new Set(),
       })).resolves.toMatchObject({

@@ -1,4 +1,3 @@
-import { readSessionFactLog } from "./session-fact-log.js";
 import type { LocalConsoleMessage } from "./types.js";
 
 export interface LocalCodexThreadLinkFact {
@@ -29,17 +28,12 @@ export interface LocalProcessPublicMessage {
   timestamp: string;
 }
 
-export async function readCodexThreadLinks(
-  logPath: string,
+export function projectCodexThreadLinks(
+  values: readonly unknown[],
   sessionId: string,
-): Promise<LocalCodexThreadLinkFact[]> {
-  const snapshot = await readSessionFactLog(logPath, sessionId);
-  if (snapshot === null) {
-    return [];
-  }
-
+): LocalCodexThreadLinkFact[] {
   const links = new Map<string, LocalCodexThreadLinkFact>();
-  for (const [index, value] of snapshot.values.entries()) {
+  for (const [index, value] of values.entries()) {
     if (!isRecord(value) || value.sessionId !== sessionId) {
       throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
     }

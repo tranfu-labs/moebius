@@ -29,7 +29,7 @@ import {
   projectStructuredRunActivity,
   type LocalRunActivity,
 } from "./run-activity.js";
-import { listLocalChildSessionSummaries } from "./child-session-summary.js";
+import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import { buildLocalAgentPrompt } from "./prompt.js";
 import type { LocalAttachmentManager } from "./attachments.js";
@@ -91,11 +91,6 @@ import {
   latestAgentTimelineCursor,
   legacyCodexContextFingerprint,
   planLocalExecutionRecovery,
-  readAgentSessionLinks,
-  readAgentTimelineCursors,
-  readExecutionSessionLinks,
-  readProviderSessionObservations,
-  readRunExecutionContexts,
   type LocalAgentSessionLinkFact,
   type LocalAgentTimelineCursorFact,
   type LocalExecutionSessionLinkFact,
@@ -103,6 +98,13 @@ import {
   type LocalProviderSessionObservedFact,
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
+import {
+  readAgentSessionLinks,
+  readAgentTimelineCursors,
+  readExecutionSessionLinks,
+  readProviderSessionObservations,
+  readRunExecutionContexts,
+} from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
 import {
   planPendingWorkerDispatches,
@@ -139,7 +141,7 @@ import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
 import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
 import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
 import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
-import { readCodexThreadLinks } from "./codex-thread-link.js";
+import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   readLocalCodexRecoveryFacts,
   type LocalCodexResumeConsumedFact,
@@ -155,6 +157,7 @@ import {
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
+import { localProcessFactReader } from "./process-fact-reader.js";
 import { resolveCodexRollout } from "./codex-rollout.js";
 import {
   buildConfirmedPlanExecutionPrompt,
@@ -1847,6 +1850,7 @@ export class LocalConsoleRuntime {
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
       messages,
       activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
+      factReader: localProcessFactReader,
       trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
       ...(cursor === undefined ? {} : { cursor }),
     });
@@ -1862,6 +1866,7 @@ export class LocalConsoleRuntime {
       requestedRunId: runId,
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
       activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
+      factReader: localProcessFactReader,
       appendCursor,
       trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
     });
@@ -1875,6 +1880,7 @@ export class LocalConsoleRuntime {
       sessionId,
       runId,
       sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
+      factReader: localProcessFactReader,
       trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
     });
   }

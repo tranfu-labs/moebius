@@ -1,6 +1,9 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { canonicalJson } from "./canonical-json.js";
+
+export { canonicalJson } from "./canonical-json.js";
 
 const SAMPLE_BYTES = 64;
 const BACKWARD_SCAN_CHUNK_BYTES = 64 * 1024;
@@ -151,24 +154,6 @@ export function appendSessionFactLogLineSync(logPath: string, line: string): voi
   } finally {
     fsSync.closeSync(descriptor);
   }
-}
-
-/**
- * 键序无关的 JSON 序列化，用于比较两个结构是否等价。
- *
- * `JSON.stringify` 的输出随对象键序变化，直接拿它比较会把「等价但键序不同」判成变更。
- */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? "null";
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
 }
 
 function parseLine(line: string, sessionId: string, lineNumber: number): unknown {

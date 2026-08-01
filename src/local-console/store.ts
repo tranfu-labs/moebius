@@ -39,10 +39,8 @@ import {
   type LocalConsoleTextFragment,
   type LocalConsoleStore,
 } from "./types.js";
-import {
-  readCodexThreadLinks,
-  type LocalCodexThreadLinkFact,
-} from "./codex-thread-link.js";
+import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
+import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   appendSessionFactLogLine,
   invalidateSessionFactLog,
@@ -53,17 +51,19 @@ import type {
   LocalCodexResumeIntentFact,
   LocalCodexRunUsageFact,
 } from "./codex-resume.js";
+import type {
+  LocalAgentSessionLinkFact,
+  LocalAgentTimelineCursorFact,
+  LocalExecutionSessionLinkFact,
+  LocalProviderInvocationFact,
+  LocalProviderSessionObservedFact,
+  LocalRunExecutionContextFact,
+} from "./execution-context.js";
 import {
   readAgentSessionLinks,
   readExecutionSessionLinks,
   readRunExecutionContexts,
-  type LocalAgentSessionLinkFact,
-  type LocalAgentTimelineCursorFact,
-  type LocalExecutionSessionLinkFact,
-  type LocalProviderInvocationFact,
-  type LocalProviderSessionObservedFact,
-  type LocalRunExecutionContextFact,
-} from "./execution-context.js";
+} from "./execution-context-reader.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;

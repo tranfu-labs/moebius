@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  readCodexThreadLinks,
   restorePublicInput,
 } from "../src/local-console/codex-thread-link.js";
+import { readCodexThreadLinks } from "../src/local-console/codex-thread-link-reader.js";
 import {
   CodexRolloutCursorInvalidError,
   readCodexRolloutAppend,
@@ -22,6 +22,7 @@ import {
   loadLocalProcessAppendPage,
   loadLocalProcessHistoryPage,
 } from "../src/local-console/process-history.js";
+import { localProcessFactReader } from "../src/local-console/process-fact-reader.js";
 import type { LocalConsoleMessage } from "../src/local-console/types.js";
 import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "../src/local-console/types.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
@@ -485,6 +486,7 @@ describe("local process history aggregation", () => {
         sessionId: "session-a",
         requestedRunId: "run-2",
         sessionFactLogPath,
+        factReader: localProcessFactReader,
         messages,
         activeRunIds: new Set(),
         rollout: { sessionsRoot },
@@ -505,6 +507,7 @@ describe("local process history aggregation", () => {
           sessionId: "session-a",
           requestedRunId: "run-2",
           sessionFactLogPath,
+          factReader: localProcessFactReader,
           messages,
           activeRunIds: new Set(),
           cursor: page.previousCursor,
@@ -536,6 +539,7 @@ describe("local process history aggregation", () => {
         sessionId: "session-a",
         requestedRunId: "legacy-run",
         sessionFactLogPath,
+        factReader: localProcessFactReader,
         messages: [message({ id: 1, speaker: "user", body: "legacy" })],
         activeRunIds: new Set(),
       });
@@ -571,6 +575,7 @@ describe("local process history aggregation", () => {
         sessionId: "session-a",
         requestedRunId: "run-1",
         sessionFactLogPath,
+        factReader: localProcessFactReader,
         messages: [message({ id: 1, speaker: "user", body: "开始" })],
         activeRunIds: new Set(["run-1"]),
         rollout: { sessionsRoot },
@@ -585,6 +590,7 @@ describe("local process history aggregation", () => {
         sessionId: "session-a",
         requestedRunId: "run-1",
         sessionFactLogPath,
+        factReader: localProcessFactReader,
         activeRunIds: new Set(["run-1"]),
         appendCursor: initial.appendCursor!,
         rollout: { sessionsRoot },

@@ -3,7 +3,6 @@ import path from "node:path";
 
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
-import { readSessionFactLog } from "./session-fact-log.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
@@ -333,7 +332,7 @@ export function planLocalExecutionRecovery(input: {
     if (target === undefined) {
       return unavailable(input.currentContext, intent, "run-context-missing");
     }
-    context = normalizeContext(target);
+    context = normalizeRunExecutionContext(target);
     if (
       context.agentIdentityFingerprint !== localAgentIdentityFingerprint(context)
       || context.contextFingerprint !== executionContextFingerprint(context)
@@ -363,7 +362,7 @@ export function planLocalExecutionRecovery(input: {
 
   const contextByRun = new Map(input.contexts.map((candidate) => [
     candidate.runId,
-    normalizeContext(candidate),
+    normalizeRunExecutionContext(candidate),
   ]));
   const candidateIds = new Set(canonical.map((link) => link.externalSessionId));
 
@@ -455,40 +454,19 @@ export function planLocalExecutionRecovery(input: {
   };
 }
 
-export async function readRunExecutionContexts(
-  logPath: string,
+export function projectExecutionFactPayloads(
+  values: readonly unknown[],
   sessionId: string,
-): Promise<LocalRunExecutionContextFact[]> {
-  return (await readTypedFacts(logPath, sessionId, "run_execution_context"))
-    .map((value) => normalizeContext(value as LocalRunExecutionContextFact));
-}
-
-export async function readExecutionSessionLinks(
-  logPath: string,
-  sessionId: string,
-): Promise<LocalExecutionSessionLinkFact[]> {
-  return readTypedFacts(logPath, sessionId, "execution_session_link") as Promise<LocalExecutionSessionLinkFact[]>;
-}
-
-export async function readAgentSessionLinks(
-  logPath: string,
-  sessionId: string,
-): Promise<LocalAgentSessionLinkFact[]> {
-  return readTypedFacts(logPath, sessionId, "agent_session_link") as Promise<LocalAgentSessionLinkFact[]>;
-}
-
-export async function readProviderSessionObservations(
-  logPath: string,
-  sessionId: string,
-): Promise<LocalProviderSessionObservedFact[]> {
-  return readTypedFacts(logPath, sessionId, "provider_session_observed") as Promise<LocalProviderSessionObservedFact[]>;
-}
-
-export async function readAgentTimelineCursors(
-  logPath: string,
-  sessionId: string,
-): Promise<LocalAgentTimelineCursorFact[]> {
-  return readTypedFacts(logPath, sessionId, "agent_timeline_cursor") as Promise<LocalAgentTimelineCursorFact[]>;
+  type: string,
+): unknown[] {
+  const payloads: unknown[] = [];
+  for (const [index, event] of values.entries()) {
+    if (!isRecord(event) || event.sessionId !== sessionId) {
+      throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
+    }
+    if (event.type === type) payloads.push(event.payload);
+  }
+  return payloads;
 }
 
 export function latestAgentTimelineCursor(
@@ -500,24 +478,7 @@ export function latestAgentTimelineCursor(
     .find((cursor) => cursor.agentIdentityFingerprint === agentIdentityFingerprint) ?? null;
 }
 
-async function readTypedFacts(
-  logPath: string,
-  sessionId: string,
-  type: string,
-): Promise<unknown[]> {
-  const snapshot = await readSessionFactLog(logPath, sessionId);
-  if (snapshot === null) return [];
-  const values: unknown[] = [];
-  for (const [index, event] of snapshot.values.entries()) {
-    if (!isRecord(event) || event.sessionId !== sessionId) {
-      throw new Error(`invalid session fact event ${sessionId} line ${String(index + 1)}`);
-    }
-    if (event.type === type) values.push(event.payload);
-  }
-  return values;
-}
-
-function normalizeContext(
+export function normalizeRunExecutionContext(
   context: LocalRunExecutionContextFact,
 ): LocalRunExecutionContextFact {
   const normalized = {

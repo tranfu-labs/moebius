@@ -1,4 +1,4 @@
-import { canonicalJson } from "./session-fact-log.js";
+import { canonicalJson } from "./canonical-json.js";
 
 export interface SessionFactCompactionStats {
   events: number;
