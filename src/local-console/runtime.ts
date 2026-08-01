@@ -104,6 +104,7 @@ import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { createLocalWorkerPreparationPorts } from "./worker-preparation-wiring.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
+import { createLocalWorkerProviderPorts } from "./worker-provider-wiring.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
@@ -363,57 +364,24 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
       recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
     }));
-    this.workerProviderRuntime = new LocalWorkerProviderRuntime({
+    this.workerProviderRuntime = new LocalWorkerProviderRuntime(createLocalWorkerProviderPorts({
+      storePorts: this.storePorts,
+      executionRunner: this.executionRunner,
+      idleTimeoutMs: this.codexIdleTimeoutMs,
+      toolTimeoutMs: this.toolInFlightTimeoutMs,
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      releaseClaim: (input) => this.releaseClaimedUserDirectMessageWhenStopping(
+        input.sourceMessage,
+        input.sessionId,
+      ).then(() => undefined),
+      finishLifecycle: (runId) => this.runLifecycleRuntime.finish(runId, "interrupted"),
+      activeRun: (runId) => this.activeRunRegistry.get(runId),
       nowIso: () => this.nowIso(),
-      releaseIfStopping: async (input) => {
-        if (input.origin !== "user-direct" || (!this.closing && !this.inactiveSessions.has(input.sessionId))) return false;
-        await this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId);
-        await this.runLifecycleRuntime.finish(input.runId, "interrupted");
-        return true;
-      },
-      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
-      runProvider: (preparation, callbacks) => this.executionRunner({
-        prompt: preparation.prompt,
-        runDir: preparation.runDir,
-        cwd: preparation.workspace.cwd,
-        profile: preparation.executionContext.profile,
-        mode: preparation.invocationPlan.providerMode,
-        signal: preparation.controller.signal,
-        ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-        ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-        ...(preparation.preparedAttachments.imagePaths.length === 0
-          ? {}
-          : { imagePaths: preparation.preparedAttachments.imagePaths }),
-        workspaceAccess: preparation.invocationPlan.workspaceAccess,
-        ...callbacks,
-      }),
-      onVisibleAgentMarkdown: (input, text) => {
-        const active = this.activeRunRegistry.get(input.runId);
-        if (active?.sessionId !== input.sessionId) return async () => undefined;
-        active.liveMarkdown = text;
-        this.runLifecycleRuntime.updateAgentProgress(input.runId, text);
-        const recordedAt = this.nowIso();
-        return () => this.storePorts.call("local-console-store-record-worker-progress", () =>
-          this.storePorts.sessionFacts().recordProgressEvent({
-            sessionId: input.sessionId,
-            runId: input.runId,
-            role: input.role,
-            body: text,
-            now: recordedAt,
-          }));
-      },
       onProcessStarted: (runId) => this.runLifecycleRuntime.markStarted(runId),
+      updateAgentProgress: (runId, text) => this.runLifecycleRuntime.updateAgentProgress(runId, text),
       onStructuredActivity: (runId, event) => this.runLifecycleRuntime.updateStructuredActivity(runId, event),
       onExecutionProgress: (runId, event) => this.runLifecycleRuntime.updateExecutionProgress(runId, event),
-      setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
-        const active = this.activeRunRegistry.get(runId);
-        if (active?.sessionId === sessionId) active.threadId = externalSessionId;
-      },
-      recordProviderSessionObserved: (fact) => this.storePorts.recordProviderSessionObserved(fact),
-      recordAgentSessionLink: (fact) => this.storePorts.recordAgentSessionLink(fact),
-      recordExecutionSessionLink: (fact) => this.storePorts.recordExecutionSessionLink(fact),
-      recordCodexThreadLink: (fact) => this.storePorts.recordCodexThreadLink(fact),
-    });
+    }));
     this.workerTerminalRuntime = new LocalWorkerTerminalRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storePorts.call(label, operation),

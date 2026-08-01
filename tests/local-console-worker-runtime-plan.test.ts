@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decideWorkerActiveRunTarget,
   decideWorkerClaimRelease,
   decideWorkerAgentFileSource,
   decideWorkerAgentMarkdownSource,
@@ -20,6 +21,7 @@ import {
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
   planWorkerFinalization,
+  planWorkerProviderExecutionOptions,
   planWorkerAgentContents,
   planWorkerSnapshotAgents,
   planWorkerTimelineMessages,
@@ -110,5 +112,25 @@ describe("worker runtime plan", () => {
       "# qa",
       new Map([["dev", "# dev"]]),
     )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+  });
+
+  it("plans only configured provider execution options", () => {
+    expect(planWorkerProviderExecutionOptions({
+      idleTimeoutMs: undefined,
+      toolTimeoutMs: 2_000,
+      imagePaths: [],
+    })).toEqual({ toolTimeoutMs: 2_000 });
+    expect(planWorkerProviderExecutionOptions({
+      idleTimeoutMs: 1_000,
+      toolTimeoutMs: undefined,
+      imagePaths: ["image.png"],
+    })).toEqual({ idleTimeoutMs: 1_000, imagePaths: ["image.png"] });
+  });
+
+  it("targets active-run updates only to the matching session", () => {
+    const active = { sessionId: "session-a", value: 1 };
+    expect(decideWorkerActiveRunTarget(active, "session-a")).toEqual({ kind: "update", active });
+    expect(decideWorkerActiveRunTarget(active, "session-b")).toEqual({ kind: "skip" });
+    expect(decideWorkerActiveRunTarget(undefined, "session-a")).toEqual({ kind: "skip" });
   });
 });

@@ -170,6 +170,31 @@ export function decideWorkerStopHandling(input: {
   return input.origin === "user-direct" ? { kind: "release-and-stop" } : { kind: "stop" };
 }
 
+export function planWorkerProviderExecutionOptions(input: {
+  idleTimeoutMs: number | undefined;
+  toolTimeoutMs: number | undefined;
+  imagePaths: string[];
+}): {
+  idleTimeoutMs?: number;
+  toolTimeoutMs?: number;
+  imagePaths?: string[];
+} {
+  return {
+    ...(input.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: input.idleTimeoutMs }),
+    ...(input.toolTimeoutMs === undefined ? {} : { toolTimeoutMs: input.toolTimeoutMs }),
+    ...(input.imagePaths.length === 0 ? {} : { imagePaths: input.imagePaths }),
+  };
+}
+
+export function decideWorkerActiveRunTarget<T extends { sessionId: string }>(
+  active: T | undefined,
+  sessionId: string,
+): { kind: "skip" } | { kind: "update"; active: T } {
+  return active?.sessionId === sessionId
+    ? { kind: "update", active }
+    : { kind: "skip" };
+}
+
 export function decideWorkerTerminalContinuation(
   outcome: "failed" | "succeeded" | "succeeded-directory-unavailable",
 ): { kind: "stop" } | { kind: "clear-error" } {
