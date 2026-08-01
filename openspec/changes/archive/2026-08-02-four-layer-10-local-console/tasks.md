@@ -25,7 +25,7 @@
 - [x] `pnpm run test --scope <base>`、定向测试、typecheck、desktop build 全绿
 - [x] 执行 RA-01～RA-04，按真机协议记录页面入口和可见信号
 - [x] 报告纯比例、定向/完整闸门预期与实际、集成测试净变化
-- [ ] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
+- [x] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
 
 ## 交付记录
 
@@ -65,11 +65,15 @@
 - `pnpm run test --scope 161ee19`：64 files（63 pass / 1 skip），635 tests（631 pass /
   4 skip），另 desktop scope 1 file / 2 tests；退出码 0，74.18s + 0.617s。
 - `pnpm typecheck`、`pnpm --filter @moebius/desktop build`、定向 process/lifecycle/ledger
-  测试均退出码 0。完整 `pnpm test` 尚未运行，按合并点规则留给主理人复核通过后执行。
+  测试均退出码 0。
 - 首次合并点 `pnpm test`（Node 24.18.0）执行 80.15s 后红于上述镜像测试：121 files passed /
   1 failed / 1 skipped，1038 tests passed / 2 failed / 4 skipped；生产行为测试无失败。删除镜像测试后
   重跑其行为覆盖半径 7 files / 198 tests 全绿（9.60s），`pnpm check:boundaries` 与 `pnpm typecheck`
-  同步全绿；是否补跑第二次完整闸门由主理人重新点名。
+  同步全绿；主理人重新点名后执行修正闸门。
+- 修正后完整 `pnpm test`（Node 24.18.0）全绿：root 121 files / 1034 tests、slow 1 / 63、
+  desktop 66 / 431、console-ui 45 / 459，另 root 1 file / 4 tests skipped；总墙钟约 117s
+  （06:57:50–06:59:47），相对 Node 24 基线 119.24s 的单样本观察为 -2.24s。由于测试组合同时增长且
+  只有一次样本，不声明可归因速度收益，仍按 0 记账。
 
 ### RA-01～RA-04 真机记录
 
