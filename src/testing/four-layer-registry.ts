@@ -150,6 +150,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/session-creation-runtime.ts",
   "src/local-console/session-settings-runtime.ts",
   "src/local-console/session-reference-runtime.ts",
+  "src/local-console/session-read-wiring.ts",
   "src/local-console/run-terminal-flow.ts",
   "src/local-console/worker-dispatch-flow.ts",
   "src/local-console/worker-dispatch-runtime.ts",

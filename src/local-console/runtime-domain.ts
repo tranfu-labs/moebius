@@ -45,6 +45,18 @@ export function formatLocalError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function planRuntimeFallback<T>(value: T | null | undefined, fallback: T): T {
+  return value ?? fallback;
+}
+
+export function decideRuntimeCapability<T>(capability: T | undefined):
+  | { kind: "available"; capability: T }
+  | { kind: "unavailable" } {
+  return capability === undefined
+    ? { kind: "unavailable" }
+    : { kind: "available", capability };
+}
+
 export function localTerminalFromResult(
   result: Extract<CodexRunResult, { ok: false }>,
   fallbackPartialMarkdown: string | null,

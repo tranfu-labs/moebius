@@ -88,6 +88,7 @@ import { createLocalSessionCommandWiring } from "./session-command-wiring.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
+import { createLocalSessionReadWiring } from "./session-read-wiring.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
@@ -562,65 +563,65 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionCommandWiring.settings);
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionCommandWiring.reference);
 
-    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
+    const sessionReadWiring = createLocalSessionReadWiring({
+      options,
+      storePorts: this.storePorts,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
       defaultSessionId: this.sessionId,
-      projectRoot: options.projectRoot,
       lastError: () => this.lastError,
-      withDirectoryAvailability: (project) => this.sessionContinuationRuntime.withDirectoryAvailability(project),
-      withSessionWorkspaceContext: (project) => this.sessionPresentationRuntime.withSessionWorkspaceContext(project),
-      withRuntimeActivity: (project) => this.sessionPresentationRuntime.withRuntimeActivity(project),
-      synchronizeNonContinuableRecords: (projects) => this.sessionPresentationRuntime.synchronizeNonContinuableRecords(projects),
-      stopUnsafeRunsWithUnavailableContext: (projects) => this.sessionPresentationRuntime.stopUnsafeRunsWithUnavailableContext(projects),
-      primaryRunId: (sessionId) => this.runLifecycleRuntime.runForLane(sessionId, "primary")?.runId ?? null,
-      activeRunSnapshots: (sessionId) => this.runLifecycleRuntime.snapshots(sessionId),
-      listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
-        listLocalChildSessionSummaries({
-          sqlitePath: options.store.sqlitePath,
-          timeoutMs: this.storeTimeoutMs,
-        }, parentSessionId)),
-      readWorkspaceDiff: (sessionId) => this.conversationWorkspaceRuntime.readDiff(sessionId),
-      loadTeamSnapshot: (sessionId) =>
-        options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null),
-    });
-    this.runOutputRuntime = new LocalConsoleRunOutputRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      activeRunIds: (sessionId) => new Set(this.runLifecycleRuntime.runsForSession(sessionId).map((run) => run.runId)),
-      readOptionalTextFile,
-      sessionFactLogPath: (sessionId) => {
-        const store = options.store as LocalConsoleStore
-          & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
-        const getSessionFactLogPath = store.getSessionFactLogPath;
-        if (getSessionFactLogPath === undefined) {
-          throw new Error("local console store does not provide the session fact log path");
-        }
-        return getSessionFactLogPath.call(store, sessionId);
+      state: {
+        withDirectoryAvailability: (project) => this.sessionContinuationRuntime.withDirectoryAvailability(project),
+        withSessionWorkspaceContext: (project) => this.sessionPresentationRuntime.withSessionWorkspaceContext(project),
+        withRuntimeActivity: (project) => this.sessionPresentationRuntime.withRuntimeActivity(project),
+        synchronizeNonContinuableRecords: (projects) =>
+          this.sessionPresentationRuntime.synchronizeNonContinuableRecords(projects),
+        stopUnsafeRunsWithUnavailableContext: (projects) =>
+          this.sessionPresentationRuntime.stopUnsafeRunsWithUnavailableContext(projects),
+        listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
+          listLocalChildSessionSummaries({
+            sqlitePath: options.store.sqlitePath,
+            timeoutMs: this.storeTimeoutMs,
+          }, parentSessionId)),
+        readWorkspaceDiff: (sessionId) => this.conversationWorkspaceRuntime.readDiff(sessionId),
       },
-      factReader: localProcessFactReader,
-      traceDataRoot: options.dataRoot ?? options.projectRoot,
+      output: {
+        readOptionalTextFile,
+        sessionFactLogPath: (sessionId) => {
+          const store = options.store as LocalConsoleStore
+            & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
+          const getSessionFactLogPath = store.getSessionFactLogPath;
+          if (getSessionFactLogPath === undefined) {
+            throw new Error("local console store does not provide the session fact log path");
+          }
+          return getSessionFactLogPath.call(store, sessionId);
+        },
+        factReader: localProcessFactReader,
+      },
+      workspace: {
+        readContext: (sessionId) => this.conversationWorkspaceRuntime.readContext(sessionId),
+        readWorkspaceMode: (sessionId) => this.conversationWorkspaceRuntime.readModeBestEffort(sessionId),
+        readDiff: (context) => readLocalConversationWorkspaceDiffDetail({
+          workspacePath: context.workspacePath,
+          baselineCommit: context.baselineCommit,
+          gitTimeoutMs: options.workspaceGitTimeoutMs,
+        }),
+        listFiles: listLocalWorkspaceFiles,
+        readDiffFile: (context, filePath) => readLocalConversationDiffFile({
+          workspacePath: context.workspacePath,
+          baselineCommit: context.baselineCommit,
+          filePath,
+          gitTimeoutMs: options.workspaceGitTimeoutMs,
+        }),
+        readWorkspaceFile: (workspacePath, filePath) => readLocalWorkspaceTextFile({ workspacePath, filePath }),
+        readFileReference: readLocalFileReferenceWindow,
+        log: (event) => log(event),
+      },
     });
-    this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime({
-      readContext: (sessionId) => this.conversationWorkspaceRuntime.readContext(sessionId),
-      readWorkspaceMode: (sessionId) => this.conversationWorkspaceRuntime.readModeBestEffort(sessionId),
-      readDiff: (context) => readLocalConversationWorkspaceDiffDetail({
-        workspacePath: context.workspacePath,
-        baselineCommit: context.baselineCommit,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      listFiles: listLocalWorkspaceFiles,
-      readDiffFile: (context, filePath) => readLocalConversationDiffFile({
-        workspacePath: context.workspacePath,
-        baselineCommit: context.baselineCommit,
-        filePath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      readWorkspaceFile: (workspacePath, filePath) => readLocalWorkspaceTextFile({ workspacePath, filePath }),
-      readFileReference: readLocalFileReferenceWindow,
-      log: (event) => log(event),
-    });
+    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionReadWiring.state);
+    this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionReadWiring.output);
+    this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionReadWiring.workspace);
+
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime({
       nowIso: () => this.nowIso(),
       storeCall: (label, operation) => this.storePorts.call(label, operation),
