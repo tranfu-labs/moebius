@@ -23,6 +23,10 @@ import {
   readLocalWorkspaceTextFile,
 } from "./file-read.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
+import {
+  defaultLocalRouteJudgment,
+  validateLocalRouteAppend,
+} from "./local-route-adapter.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 import {
@@ -75,6 +79,8 @@ export function createLocalRuntimeAdapters(input: {
     timeoutKind: executionTimeoutKind,
     interrupted: isInterruptedCodexRunResult,
     interruptionCause: executionInterruptionCauseForResult,
+    defaultLocalRouteJudgment,
+    validateLocalRouteAppend,
     readAgentFile: async (agent: LocalConsoleAgentFile) =>
       await fs.readFile(requireAgentFilePath(agent), "utf8"),
     loadRecoverySnapshot: async (sessionId: string) => await readLocalRunRecoverySnapshot({

@@ -38,6 +38,8 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
   failure: LocalRunFailureRuntime;
   workspace: LocalConversationWorkspaceRuntime;
   readRecoveryFacts: DispatchInput["readRecoveryFacts"];
+  routeJudgment: DispatchInput["routeJudgment"];
+  validateRouteAppend: DispatchInput["validateRouteAppend"];
   classifyFailure: TerminalInput["classifyFailure"];
   executeChildSession: TerminalInput["executeChildSession"];
   recordChildSessionCardError: TerminalInput["recordChildSessionCardError"];
@@ -111,6 +113,8 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
       gracefulResumeTargets: (sessionId) => input.recovery.targetsForClaim(sessionId),
       sessionSummary: (sessionId) => input.continuation.sessionSummary(sessionId),
       readRecoveryFacts: input.readRecoveryFacts,
+      routeJudgment: input.routeJudgment,
+      validateRouteAppend: input.validateRouteAppend,
       recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
         input.failure.recordStartFailure(message, sessionId, runId, runDir, reason),
       setError: context.setError,

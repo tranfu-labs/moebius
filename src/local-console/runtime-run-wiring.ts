@@ -11,6 +11,7 @@ import { planLocalRunFailureStatus } from "./run-terminal-plan.js";
 import type { LocalRuntimeAdapters } from "./runtime-adapters.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 import type { LocalRuntimeWiringContext } from "./runtime-wiring-context.js";
+import { planRuntimeFallback } from "./runtime-domain.js";
 import type { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import type { createLocalWorkerWiring } from "./worker-wiring.js";
@@ -102,6 +103,11 @@ export function createLocalRuntimeRunWiring(input: {
       failure: input.failure,
       workspace: input.workspace,
       readRecoveryFacts: input.adapters.readRecoveryFacts,
+      routeJudgment: planRuntimeFallback(
+        input.options.routeJudgment,
+        input.adapters.defaultLocalRouteJudgment,
+      ),
+      validateRouteAppend: input.adapters.validateLocalRouteAppend,
       classifyFailure,
       executeChildSession: input.executePrimaryChildSession,
       recordChildSessionCardError: input.recordChildSessionCardError,

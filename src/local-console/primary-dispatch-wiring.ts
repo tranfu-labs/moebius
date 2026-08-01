@@ -5,6 +5,7 @@ import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 import { formatLocalError } from "./runtime-domain.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import type { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
+import type { LocalRouteJudgment, LocalNoMentionRouteInput } from "./route-bus.js";
 import {
   decidePrimaryAgentFileSource,
   decidePrimaryRecoveryFactSource,
@@ -15,8 +16,10 @@ type PrimaryDispatchPorts = ConstructorParameters<typeof LocalPrimaryDispatchRun
 
 export function createLocalPrimaryDispatchPorts(input: {
   options: Pick<LocalConsoleRuntimeOptions,
-    "store" | "listAgentFiles" | "routeJudgment" | "runCodex"
+    "store" | "listAgentFiles" | "runCodex"
   >;
+  routeJudgment: LocalRouteJudgment;
+  validateRouteAppend: LocalNoMentionRouteInput["validateAppend"];
   storePorts: Pick<LocalConsoleStorePorts, "call" | "recoveryFacts">;
   agentsDir: string;
   routeTimeoutMs: number | undefined;
@@ -69,7 +72,8 @@ export function createLocalPrimaryDispatchPorts(input: {
       runDir: routeInput.runDir,
       agentsDir: input.agentsDir,
       now: input.nowIso(),
-      routeJudgment: options.routeJudgment,
+      routeJudgment: input.routeJudgment,
+      validateAppend: input.validateRouteAppend,
       timeoutMs: input.routeTimeoutMs,
       runCodex: options.runCodex,
     }),
