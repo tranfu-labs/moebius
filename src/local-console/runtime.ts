@@ -107,7 +107,6 @@ import {
 } from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
 import {
-  planPendingWorkerDispatches,
   resolveClaimedControlAction,
   selectSourceRetryIntent,
 } from "./control-dispatch.js";
@@ -117,6 +116,7 @@ import {
   selectExecutingAgent,
 } from "./run-invocation-plan.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
+import { executePendingWorkerDispatchFlow } from "./worker-dispatch-flow.js";
 import {
   generateLocalWorkspaceDiff,
   invalidateLocalWorkspaceFacts,
@@ -2885,93 +2885,64 @@ export class LocalConsoleRuntime {
     if (claimWorker === undefined) {
       return;
     }
-    const pendingMessages = await this.storeCall("local-console-store-list-worker-pending", () =>
-      this.options.store.listMessages(sessionId));
-    const referencedRoles = new Set(
-      pendingMessages.flatMap((message) =>
-        message.dispatchRole == null ? [] : [message.dispatchRole]),
-    );
-    const workerCandidates = planPendingWorkerDispatches({
-      messages: pendingMessages,
-      activeRoles: new Set(
-        [...referencedRoles].filter((role) => this.activeRunForRole(sessionId, role) !== undefined),
+    await executePendingWorkerDispatchFlow({
+      listPending: async () => await this.storeCall("local-console-store-list-worker-pending", () =>
+        this.options.store.listMessages(sessionId)),
+      activeRoles: (roles) => new Set(
+        [...roles].filter((role) => this.activeRunForRole(sessionId, role) !== undefined),
       ),
-      queuedRoles: new Set(
-        [...referencedRoles].filter((role) => this.workerLaneTails.has(workerLaneKey(sessionId, role))),
+      queuedRoles: (roles) => new Set(
+        [...roles].filter((role) => this.workerLaneTails.has(workerLaneKey(sessionId, role))),
       ),
-    });
-    if (workerCandidates.length === 0) {
-      return;
-    }
-
-    const persistedSnapshot = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-    const agentFiles: LocalConsoleAgentFile[] = persistedSnapshot === null
-      ? await this.options.listAgentFiles(sessionId)
-      : persistedSnapshot.members.map((member) => ({
-          name: member.name,
-          agentMarkdown: member.agentMarkdown,
-          executionProfile: member.executionProfile ?? null,
-        }));
-
-    for (const candidate of workerCandidates) {
-      const { role, message: pendingForRole } = candidate;
-      if (this.closing || this.inactiveSessions.has(sessionId)) {
-        return;
-      }
-      const runId = await this.gracefulResumeTargetForMessage(sessionId, pendingForRole.id)
-        ?? `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
-      if (this.closing || this.inactiveSessions.has(sessionId)) {
-        return;
-      }
-      const sourceMessage = await this.storeCall("local-console-store-claim-worker", () =>
-        claimWorker.call(this.options.store, {
-          sessionId,
-          role,
-          runId,
-          now: this.nowIso(),
-        }));
-      if (sourceMessage === null) {
-        continue;
-      }
-      if (await this.releaseClaimedUserDirectMessageWhenStopping(sourceMessage, sessionId)) {
-        return;
-      }
-      const selectedAgent = agentFiles.find((agent) => agent.name === role);
-      if (selectedAgent === undefined) {
-        await this.recordTerminalFailureBestEffort(
-          sourceMessage,
-          sessionId,
-          runId,
-          null,
-          `Agent not found: ${role}`,
+      loadAgents: async () => {
+        const persisted = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
+        return persisted === null
+          ? await this.options.listAgentFiles(sessionId)
+          : persisted.members.map((member) => ({
+              name: member.name,
+              agentMarkdown: member.agentMarkdown,
+              executionProfile: member.executionProfile ?? null,
+            }));
+      },
+      isStopping: () => this.closing || this.inactiveSessions.has(sessionId),
+      nextRunId: async (messageId) => await this.gracefulResumeTargetForMessage(sessionId, messageId)
+        ?? `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
+      claim: async (role, runId) => await this.storeCall("local-console-store-claim-worker", () =>
+        claimWorker.call(this.options.store, { sessionId, role, runId, now: this.nowIso() })),
+      releaseIfStopping: async (message) =>
+        await this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId),
+      recordMissingAgent: async (message, runId, role) => await this.recordTerminalFailureBestEffort(
+        message,
+        sessionId,
+        runId,
+        null,
+        `Agent not found: ${role}`,
+      ),
+      prepareRun: async (_message, selectedAgent, agentFiles) => {
+        const messages = await this.storeCall("local-console-store-list-worker-timeline", () =>
+          this.options.store.listMessages(sessionId));
+        const timelineMessages = messages.filter(
+          (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
         );
-        continue;
-      }
-      const messages = await this.storeCall("local-console-store-list-worker-timeline", () =>
-        this.options.store.listMessages(sessionId));
-      const timelineMessages = messages.filter(
-        (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
-      );
-      const timeline = buildLocalConsoleTimeline(
-        timelineMessages,
-        agentFiles.map((agent) => agent.name),
-      );
-      if (await this.releaseClaimedUserDirectMessageWhenStopping(sourceMessage, sessionId)) {
-        return;
-      }
-      this.scheduleWorkerRun({
+        return {
+          selectedAgent,
+          timelineMessages,
+          timeline: buildLocalConsoleTimeline(timelineMessages, agentFiles.map((agent) => agent.name)),
+        };
+      },
+      schedule: ({ runId, sourceMessage, role, agents, prepared }) => this.scheduleWorkerRun({
         origin: "user-direct",
         sessionId,
         runId,
         sourceMessage,
         role,
-        selectedAgent,
-        agentFiles,
-        timeline,
-        timelineMessages,
+        selectedAgent: prepared.selectedAgent,
+        agentFiles: agents,
+        timeline: prepared.timeline,
+        timelineMessages: prepared.timelineMessages,
         workspaceSource,
-      });
-    }
+      }),
+    });
   }
 
   private schedulePendingWorkerWake(sessionId: string): void {
