@@ -306,6 +306,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/console-page/new-conversation.ts",
   "desktop/src/console-page/presentation-route.ts",
   "desktop/src/console-page/right-sidebar-preference.ts",
+  "desktop/src/console-page/right-sidebar-tabs-model.ts",
   "desktop/src/console-page/selection-preference.ts",
   "desktop/src/console-page/settings-state.ts",
   "desktop/src/console-page/team-state.ts",
@@ -432,7 +433,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   dependencyDebt: [
     { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/ai-team-builder-ipc.ts", target: "desktop/src/ai-team-builder/index.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/ai-team-builder/team-writer.ts", target: "desktop/src/team-onboarding-orchestration.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "architecture-layer-dependency-matrix", importer: "desktop/src/console-page/right-sidebar-tabs-store.ts", target: "packages/console-ui/src/console/right-sidebar-tabs.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-20-desktop-renderer" },
     { ruleId: "architecture-layer-dependency-matrix", importer: "desktop/src/console-page/state-sync.ts", target: "desktop/src/console-page/browser-fetch.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-20-desktop-renderer" },
     { ruleId: "application-no-view-dependency", importer: "desktop/src/console-page/state-sync.ts", target: "packages/console-ui/src/index.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-20-desktop-renderer" },
     { ruleId: "architecture-layer-dependency-matrix", importer: "desktop/src/console-page/use-managed-attachments.ts", target: "desktop/src/console-page/attachment-client.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-20-desktop-renderer" },
@@ -469,7 +469,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/claude-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/codex-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/kimi-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/console-page/right-sidebar-tabs-store.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-20-desktop-renderer" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-external-change.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-file-manager.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-management-store.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },

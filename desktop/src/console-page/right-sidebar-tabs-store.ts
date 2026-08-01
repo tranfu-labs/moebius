@@ -1,9 +1,19 @@
 import {
+  decidePromoteConversationDraft,
+  decideRemoveConversation,
+  decideRenameConversation,
   EMPTY_RIGHT_SIDEBAR_TABS,
-  parseRightSidebarTabsState,
-  serializeRightSidebarTabsState,
+  RIGHT_SIDEBAR_TAB_TYPES,
+  type RightSidebarTabState,
   type RightSidebarTabsState,
-} from "../../../packages/console-ui/src/console/right-sidebar-tabs.js";
+  type RightSidebarTabType,
+} from "./right-sidebar-tabs-model.js";
+
+export {
+  conversationDraftTabSourceKey,
+  conversationTabSourceKey,
+  parseConversationTabSourceKey,
+} from "./right-sidebar-tabs-model.js";
 
 export const RIGHT_SIDEBAR_TABS_DOCUMENT_KEY = "moebius.right-sidebar-tabs.v2";
 export type RightSidebarTabsKey = `tabs:${string}`;
@@ -14,7 +24,7 @@ export function rightSidebarTabsKey(sessionId: string): RightSidebarTabsKey {
 
 interface RightSidebarTabsDocument {
   version: 2;
-  hosts: Record<string, ReturnType<typeof serializeRightSidebarTabsState>>;
+  hosts: Record<string, RightSidebarTabsState>;
 }
 
 export interface RightSidebarTabsStore {
@@ -51,7 +61,7 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
       for (const [host, state] of Object.entries(
         (parsed as { hosts: Record<string, unknown> }).hosts,
       )) {
-        hosts[host] = serializeRightSidebarTabsState(parseStoredState(state));
+        hosts[host] = parseStoredState(state);
       }
       return { version: 2, hosts };
     } catch {
@@ -60,7 +70,11 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
   };
   const writeDocument = (document: RightSidebarTabsDocument): void => {
     try {
-      storage.setItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY, JSON.stringify(document));
+      const hosts = Object.fromEntries(Object.entries(document.hosts).map(([hostId, state]) => [
+        hostId,
+        serializeRightSidebarTabsState(state),
+      ]));
+      storage.setItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY, JSON.stringify({ version: 2, hosts }));
     } catch {
       // Persistence is best-effort; tab interactions remain available in memory.
     }
@@ -74,7 +88,7 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
         const legacy = storage.getItem(rightSidebarTabsKey(sessionId));
         if (legacy === null) return EMPTY_RIGHT_SIDEBAR_TABS;
         const migrated = parseRightSidebarTabsState(JSON.parse(legacy) as unknown);
-        document.hosts[sessionId] = serializeRightSidebarTabsState(migrated);
+        document.hosts[sessionId] = migrated;
         writeDocument(document);
         storage.removeItem(rightSidebarTabsKey(sessionId));
         return migrated;
@@ -84,82 +98,31 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
     },
     write(sessionId, state) {
       const document = readDocument();
-      document.hosts[sessionId] = serializeRightSidebarTabsState(state);
+      document.hosts[sessionId] = state;
       writeDocument(document);
     },
     promoteConversationDraft(input) {
       const document = readDocument();
-      const updatedHosts: string[] = [];
-      for (const [hostId, state] of Object.entries(document.hosts)) {
-        const parsed = parseStoredState(state);
-        let changed = false;
-        const tabs = parsed.tabs.map((tab) => {
-          if (tab.type !== "conversation") return tab;
-          const locator = parseConversationTabSourceKey(tab.sourceKey);
-          if (locator?.kind !== "draft" || locator.draftId !== input.draftId) return tab;
-          changed = true;
-          return {
-            ...tab,
-            sourceKey: conversationTabSourceKey(input.sessionId),
-            title: input.title,
-            conversationContext: input.conversationContext,
-            conversationCreatedAt: input.conversationCreatedAt,
-          };
-        });
-        if (!changed) continue;
-        updatedHosts.push(hostId);
-        document.hosts[hostId] = serializeRightSidebarTabsState({
-          tabs,
-          activeTabId: parsed.activeTabId,
-        });
+      const decision = decidePromoteConversationDraft(document.hosts, input);
+      if (decision.updatedHostIds.length > 0) {
+        writeDocument({ version: 2, hosts: decision.hosts });
       }
-      if (updatedHosts.length > 0) writeDocument(document);
-      return updatedHosts;
+      return decision.updatedHostIds;
     },
     renameConversation(sessionId, title) {
       const document = readDocument();
-      const updatedHosts: string[] = [];
-      for (const [hostId, state] of Object.entries(document.hosts)) {
-        const parsed = parseStoredState(state);
-        let changed = false;
-        const tabs = parsed.tabs.map((tab) => {
-          if (tab.type !== "conversation") return tab;
-          const locator = parseConversationTabSourceKey(tab.sourceKey);
-          if (locator?.kind !== "session" || locator.sessionId !== sessionId) return tab;
-          changed = true;
-          return { ...tab, title };
-        });
-        if (!changed) continue;
-        updatedHosts.push(hostId);
-        document.hosts[hostId] = serializeRightSidebarTabsState({
-          tabs,
-          activeTabId: parsed.activeTabId,
-        });
+      const decision = decideRenameConversation(document.hosts, sessionId, title);
+      if (decision.updatedHostIds.length > 0) {
+        writeDocument({ version: 2, hosts: decision.hosts });
       }
-      if (updatedHosts.length > 0) writeDocument(document);
-      return updatedHosts;
+      return decision.updatedHostIds;
     },
     removeSession(sessionId) {
       const document = readDocument();
-      let changed = false;
-      delete document.hosts[sessionId];
-      for (const [hostId, state] of Object.entries(document.hosts)) {
-        const parsed = parseStoredState(state);
-        const tabs = parsed.tabs.filter((tab) => {
-          if (tab.type !== "conversation") return true;
-          const locator = parseConversationTabSourceKey(tab.sourceKey);
-          return locator?.kind !== "session" || locator.sessionId !== sessionId;
-        });
-        if (tabs.length === parsed.tabs.length) continue;
-        changed = true;
-        document.hosts[hostId] = serializeRightSidebarTabsState({
-          tabs,
-          activeTabId: tabs.some((tab) => tab.id === parsed.activeTabId)
-            ? parsed.activeTabId
-            : tabs[0]?.id ?? null,
-        });
-      }
-      if (changed || document.hosts[sessionId] === undefined) writeDocument(document);
+      writeDocument({
+        version: 2,
+        hosts: decideRemoveConversation(document.hosts, sessionId),
+      });
     },
     clearHosts(hostSessionIds) {
       const document = readDocument();
@@ -178,34 +141,67 @@ function parseStoredState(value: unknown): RightSidebarTabsState {
   }
 }
 
-const CONVERSATION_SOURCE_PREFIX = "conversation:";
-const CONVERSATION_DRAFT_SOURCE_PREFIX = "conversation-draft:";
-
-export function conversationTabSourceKey(sessionId: string): string {
-  return `${CONVERSATION_SOURCE_PREFIX}${encodeURIComponent(sessionId)}`;
+function parseRightSidebarTabsState(value: unknown): RightSidebarTabsState {
+  if (!isRecord(value) || !Array.isArray(value.tabs)) return EMPTY_RIGHT_SIDEBAR_TABS;
+  const tabs = value.tabs.flatMap((entry): RightSidebarTabState[] => {
+    if (
+      !isRecord(entry)
+      || typeof entry.id !== "string"
+      || entry.id.trim() === ""
+      || !isRightSidebarTabType(entry.type)
+      || typeof entry.title !== "string"
+      || !(typeof entry.sourceKey === "string" || entry.sourceKey === null)
+    ) return [];
+    const conversationContext = entry.type === "conversation"
+      && typeof entry.conversationContext === "string"
+      && entry.conversationContext.trim() !== ""
+      ? entry.conversationContext.trim()
+      : undefined;
+    const conversationCreatedAt = entry.type === "conversation"
+      && typeof entry.conversationCreatedAt === "string"
+      && entry.conversationCreatedAt.trim() !== ""
+      ? entry.conversationCreatedAt
+      : undefined;
+    return [{
+      id: entry.id,
+      type: entry.type,
+      title: normalizeBuiltinTabTitle(entry.type, entry.title, entry.sourceKey),
+      sourceKey: entry.sourceKey,
+      closable: true,
+      ...(conversationContext === undefined ? {} : { conversationContext }),
+      ...(conversationCreatedAt === undefined ? {} : { conversationCreatedAt }),
+    }];
+  });
+  const uniqueTabs = tabs.filter(
+    (tab, index) => tabs.findIndex((candidate) => candidate.id === tab.id) === index,
+  );
+  const activeTabId = typeof value.activeTabId === "string"
+    && uniqueTabs.some((tab) => tab.id === value.activeTabId)
+    ? value.activeTabId
+    : uniqueTabs[0]?.id ?? null;
+  return { tabs: uniqueTabs, activeTabId };
 }
 
-export function conversationDraftTabSourceKey(draftId: string): string {
-  return `${CONVERSATION_DRAFT_SOURCE_PREFIX}${encodeURIComponent(draftId)}`;
+function serializeRightSidebarTabsState(state: RightSidebarTabsState): string {
+  return JSON.stringify(parseRightSidebarTabsState(state));
 }
 
-export function parseConversationTabSourceKey(
+function normalizeBuiltinTabTitle(
+  type: RightSidebarTabType,
+  title: string,
   sourceKey: string | null,
-): { kind: "session"; sessionId: string } | { kind: "draft"; draftId: string } | null {
-  if (sourceKey === null) return null;
-  const prefix = sourceKey.startsWith(CONVERSATION_SOURCE_PREFIX)
-    ? CONVERSATION_SOURCE_PREFIX
-    : sourceKey.startsWith(CONVERSATION_DRAFT_SOURCE_PREFIX)
-      ? CONVERSATION_DRAFT_SOURCE_PREFIX
-      : null;
-  if (prefix === null) return null;
-  try {
-    const value = decodeURIComponent(sourceKey.slice(prefix.length));
-    if (value === "") return null;
-    return prefix === CONVERSATION_SOURCE_PREFIX
-      ? { kind: "session", sessionId: value }
-      : { kind: "draft", draftId: value };
-  } catch {
-    return null;
-  }
+): string {
+  if (type === "blank") return "builtin:blank";
+  if (type === "workspace-diff") return "builtin:workspace-diff";
+  if (type === "project-files") return "builtin:project-files";
+  if (type === "conversation" && sourceKey === null) return "builtin:conversation";
+  return title;
+}
+
+function isRightSidebarTabType(value: unknown): value is RightSidebarTabType {
+  return typeof value === "string" && RIGHT_SIDEBAR_TAB_TYPES.some((type) => type === value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
