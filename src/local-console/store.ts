@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
 import { LOCAL_CONSOLE_SESSION_LOG_ROOT, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "../config.js";
-import { runSqliteStateCommand, type SqliteStateCommand } from "../sqlite-state.js";
+import {
+  closeSqliteStateWorkers,
+  runSqliteStateCommand,
+  type SqliteStateCommand,
+} from "../sqlite-state.js";
 import {
   LOCAL_CONSOLE_PROJECT_ID,
   LocalConsoleSessionProjectError,
@@ -99,7 +103,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     });
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    await this.operationTail;
+    await closeSqliteStateWorkers({ sqlitePath: this.sqlitePath });
+  }
 
   async createProject(input: { folderPath: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary> {
     return this.run({ kind: "local-create-project", ...input });

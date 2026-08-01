@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
@@ -472,6 +473,31 @@ export interface SqliteStateCommandOptions {
   readOnly?: boolean;
 }
 
+export interface SqliteStateWorkerConfiguration {
+  sqlitePath: string;
+  busyTimeoutMs: number;
+  readOnly: boolean;
+}
+
+export type SqliteStateWorkerRequest =
+  | { type: "command"; requestId: number; command: SqliteStateCommand }
+  | { type: "close" };
+
+export type SqliteStateWorkerResponse =
+  | { type: "ready" }
+  | { type: "result"; requestId: number; ok: true; result: unknown }
+  | { type: "result"; requestId: number; ok: false; error: { message: string; stack?: string } }
+  | { type: "initialization-error"; error: { message: string; stack?: string } }
+  | { type: "closed" };
+
+export interface SqliteStateWorkerDiagnostics {
+  readonly laneCount: number;
+  readonly workerCount: number;
+  readonly queuedRequestCount: number;
+  readonly activeRequestCount: number;
+  readonly createdWorkerCount: number;
+}
+
 export class SqliteStateTimeoutError extends Error {
   constructor(
     readonly commandKind: string,
@@ -496,85 +522,447 @@ export class SqliteStateWorkerError extends Error {
 export async function runSqliteStateCommand<T>(options: SqliteStateCommandOptions): Promise<T> {
   const timeoutMs = options.timeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS;
   const busyTimeoutMs = options.busyTimeoutMs ?? LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS;
-  const workerUrl = resolveWorkerUrl();
-  const worker = new Worker(workerUrl, {
-    ...(workerUrl.pathname.endsWith(".ts") ? { execArgv: ["--import", "tsx"] } : {}),
-    workerData: {
-      sqlitePath: path.resolve(options.sqlitePath),
-      busyTimeoutMs,
-      command: options.command,
-      readOnly: options.readOnly ?? false,
-    },
-  });
-
-  let timeout: NodeJS.Timeout | undefined;
-  let settled = false;
-
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      timeout = setTimeout(() => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        void worker.terminate();
-        reject(new SqliteStateTimeoutError(options.command.kind, timeoutMs));
-      }, timeoutMs);
-
-      worker.once("message", (message: unknown) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (isWorkerSuccess(message)) {
-          resolve(message.result as T);
-          return;
-        }
-        if (isWorkerFailure(message)) {
-          reject(new SqliteStateWorkerError(message.error.message, options.command.kind, message.error.stack));
-          return;
-        }
-        reject(new SqliteStateWorkerError("Invalid sqlite state worker response", options.command.kind));
-      });
-
-      worker.once("error", (error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        reject(error);
-      });
-
-      worker.once("exit", (code) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        reject(new SqliteStateWorkerError(`sqlite state worker exited before response: ${String(code)}`, options.command.kind));
-      });
-    });
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-    if (!settled) {
-      void worker.terminate();
-    }
+  const sqlitePath = path.resolve(options.sqlitePath);
+  const canonicalSqlitePath = canonicalizeSqlitePath(sqlitePath);
+  const readOnly = options.readOnly ?? false;
+  const key = laneKey(canonicalSqlitePath, readOnly, busyTimeoutMs);
+  let lane = workerLanes.get(key);
+  if (lane === undefined) {
+    lane = new SqliteStateWorkerLane({ sqlitePath, readOnly, busyTimeoutMs }, canonicalSqlitePath);
+    workerLanes.set(key, lane);
   }
+  return lane.enqueue<T>(options.command, timeoutMs);
+}
+
+export async function closeSqliteStateWorkers(options: { sqlitePath?: string } = {}): Promise<void> {
+  const canonicalPath = options.sqlitePath === undefined ? null : canonicalizeSqlitePath(options.sqlitePath);
+  const matching = [...workerLanes.entries()].filter(([, lane]) =>
+    canonicalPath === null || lane.canonicalSqlitePath === canonicalPath);
+  await Promise.all(matching.map(async ([key, lane]) => {
+    try {
+      await lane.close();
+    } finally {
+      if (workerLanes.get(key) === lane) {
+        workerLanes.delete(key);
+      }
+    }
+  }));
+}
+
+export function readSqliteStateWorkerDiagnostics(): SqliteStateWorkerDiagnostics {
+  let workerCount = 0;
+  let queuedRequestCount = 0;
+  let activeRequestCount = 0;
+  for (const lane of workerLanes.values()) {
+    workerCount += lane.hasWorker ? 1 : 0;
+    queuedRequestCount += lane.queueLength;
+    activeRequestCount += lane.hasActiveRequest ? 1 : 0;
+  }
+  return Object.freeze({
+    laneCount: workerLanes.size,
+    workerCount,
+    queuedRequestCount,
+    activeRequestCount,
+    createdWorkerCount,
+  });
 }
 
 function resolveWorkerUrl(): URL {
   return new URL(import.meta.url.endsWith(".ts") ? "./sqlite-state-worker.ts" : "./sqlite-state-worker.js", import.meta.url);
 }
 
-function isWorkerSuccess(value: unknown): value is { ok: true; result: unknown } {
-  return typeof value === "object" && value !== null && (value as { ok?: unknown }).ok === true;
+interface PendingSqliteStateCommand {
+  readonly requestId: number;
+  readonly command: SqliteStateCommand;
+  readonly timeoutMs: number;
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (error: unknown) => void;
+  timeout: NodeJS.Timeout;
+  settled: boolean;
 }
 
-function isWorkerFailure(value: unknown): value is { ok: false; error: { message: string; stack?: string } } {
-  if (typeof value !== "object" || value === null || (value as { ok?: unknown }).ok !== false) {
+const workerLanes = new Map<string, SqliteStateWorkerLane>();
+let nextRequestId = 0;
+let createdWorkerCount = 0;
+
+class SqliteStateWorkerLane {
+  readonly sqlitePath: string;
+  readonly canonicalSqlitePath: string;
+  private readonly readOnly: boolean;
+  private readonly busyTimeoutMs: number;
+  private readonly queue: PendingSqliteStateCommand[] = [];
+  private worker: Worker | undefined;
+  private generation = 0;
+  private ready = false;
+  private active: PendingSqliteStateCommand | undefined;
+  private restartPromise: Promise<void> | undefined;
+  private closing = false;
+  private closePromise: Promise<void> | undefined;
+  private closeResolve: (() => void) | undefined;
+  private closeRequested = false;
+  private closeTimeout: NodeJS.Timeout | undefined;
+
+  constructor(configuration: SqliteStateWorkerConfiguration, canonicalSqlitePath: string) {
+    this.sqlitePath = configuration.sqlitePath;
+    this.canonicalSqlitePath = canonicalSqlitePath;
+    this.readOnly = configuration.readOnly;
+    this.busyTimeoutMs = configuration.busyTimeoutMs;
+  }
+
+  get hasWorker(): boolean {
+    return this.worker !== undefined;
+  }
+
+  get queueLength(): number {
+    return this.queue.length;
+  }
+
+  get hasActiveRequest(): boolean {
+    return this.active !== undefined;
+  }
+
+  enqueue<T>(command: SqliteStateCommand, timeoutMs: number): Promise<T> {
+    if (this.closing) {
+      return Promise.reject(new SqliteStateWorkerError("sqlite state worker lane is closing", command.kind));
+    }
+    return new Promise<T>((resolve, reject) => {
+      const request: PendingSqliteStateCommand = {
+        requestId: ++nextRequestId,
+        command,
+        timeoutMs,
+        resolve: (value) => resolve(value as T),
+        reject,
+        timeout: setTimeout(() => this.onRequestTimeout(request), timeoutMs),
+        settled: false,
+      };
+      this.queue.push(request);
+      this.pump();
+    });
+  }
+
+  close(): Promise<void> {
+    if (this.closePromise !== undefined) {
+      return this.closePromise;
+    }
+    this.closing = true;
+    this.closePromise = new Promise<void>((resolve) => {
+      this.closeResolve = resolve;
+    });
+    this.pump();
+    return this.closePromise;
+  }
+
+  private pump(): void {
+    if (this.restartPromise !== undefined || this.active !== undefined || this.closeRequested) {
+      return;
+    }
+    while (this.queue[0]?.settled === true) {
+      this.queue.shift();
+    }
+    if (this.queue.length === 0) {
+      if (this.closing) {
+        this.beginClose();
+      } else {
+        this.worker?.unref();
+      }
+      return;
+    }
+    if (this.worker === undefined) {
+      this.startWorker();
+      return;
+    }
+    if (!this.ready) {
+      return;
+    }
+    const request = this.queue.shift();
+    if (request === undefined) {
+      return;
+    }
+    this.active = request;
+    this.worker.ref();
+    try {
+      this.worker.postMessage({
+        type: "command",
+        requestId: request.requestId,
+        command: request.command,
+      } satisfies SqliteStateWorkerRequest);
+    } catch (error) {
+      this.failCurrentWorker(error, false);
+    }
+  }
+
+  private startWorker(): void {
+    if (this.worker !== undefined || this.restartPromise !== undefined || this.queue.length === 0) {
+      return;
+    }
+    const workerUrl = resolveWorkerUrl();
+    const worker = new Worker(workerUrl, {
+      ...(workerUrl.pathname.endsWith(".ts") ? { execArgv: ["--import", "tsx"] } : {}),
+      workerData: {
+        sqlitePath: this.sqlitePath,
+        busyTimeoutMs: this.busyTimeoutMs,
+        readOnly: this.readOnly,
+      } satisfies SqliteStateWorkerConfiguration,
+    });
+    const generation = ++this.generation;
+    createdWorkerCount += 1;
+    this.worker = worker;
+    this.ready = false;
+    worker.ref();
+    worker.on("message", (message: unknown) => this.onWorkerMessage(worker, generation, message));
+    worker.on("error", (error) => this.onWorkerError(worker, generation, error));
+    worker.on("exit", (code) => this.onWorkerExit(worker, generation, code));
+  }
+
+  private onWorkerMessage(worker: Worker, generation: number, message: unknown): void {
+    if (this.worker !== worker || this.generation !== generation || !isWorkerResponse(message)) {
+      if (this.worker === worker && this.generation === generation) {
+        this.failCurrentWorker(new Error("Invalid sqlite state worker response"), false);
+      }
+      return;
+    }
+    if (message.type === "ready") {
+      if (this.ready) {
+        this.failCurrentWorker(new Error("Duplicate sqlite state worker ready response"), false);
+        return;
+      }
+      this.ready = true;
+      this.pump();
+      return;
+    }
+    if (message.type === "initialization-error") {
+      this.failCurrentWorker(
+        new SqliteStateWorkerError(message.error.message, this.queue[0]?.command.kind ?? "initialize", message.error.stack),
+        true,
+      );
+      return;
+    }
+    if (message.type === "closed") {
+      if (!this.closeRequested) {
+        this.failCurrentWorker(new Error("Unexpected sqlite state worker close response"), false);
+      }
+      return;
+    }
+    const request = this.active;
+    if (request === undefined || request.requestId !== message.requestId) {
+      this.failCurrentWorker(new Error("Mismatched sqlite state worker response"), false);
+      return;
+    }
+    this.active = undefined;
+    if (message.ok) {
+      this.resolveRequest(request, message.result);
+      this.pump();
+      return;
+    }
+    const error = new SqliteStateWorkerError(
+      message.error.message,
+      request.command.kind,
+      message.error.stack,
+    );
+    this.rejectRequest(request, error);
+    this.failCurrentWorker(error, false);
+  }
+
+  private onWorkerError(worker: Worker, generation: number, error: Error): void {
+    if (this.worker !== worker || this.generation !== generation) {
+      return;
+    }
+    this.failCurrentWorker(error, false);
+  }
+
+  private onWorkerExit(worker: Worker, generation: number, code: number): void {
+    if (this.worker !== worker || this.generation !== generation) {
+      return;
+    }
+    if (this.closeRequested) {
+      this.worker = undefined;
+      this.ready = false;
+      this.finishClose();
+      return;
+    }
+    this.failCurrentWorker(
+      new SqliteStateWorkerError(
+        `sqlite state worker exited before response: ${String(code)}`,
+        this.active?.command.kind ?? this.queue[0]?.command.kind ?? "idle",
+      ),
+      false,
+      true,
+    );
+  }
+
+  private onRequestTimeout(request: PendingSqliteStateCommand): void {
+    if (request.settled) {
+      return;
+    }
+    const error = new SqliteStateTimeoutError(request.command.kind, request.timeoutMs);
+    if (this.active === request) {
+      this.active = undefined;
+      this.rejectRequest(request, error);
+      this.failCurrentWorker(error, false);
+      return;
+    }
+    const index = this.queue.indexOf(request);
+    if (index >= 0) {
+      this.queue.splice(index, 1);
+      this.rejectRequest(request, error);
+      this.pump();
+    }
+  }
+
+  private failCurrentWorker(error: unknown, rejectQueued: boolean, alreadyExited = false): void {
+    const worker = this.worker;
+    if (worker === undefined) {
+      return;
+    }
+    this.worker = undefined;
+    this.ready = false;
+    this.closeRequested = false;
+    if (this.active !== undefined) {
+      const active = this.active;
+      this.active = undefined;
+      this.rejectRequest(active, asWorkerError(error, active.command.kind));
+    }
+    if (rejectQueued) {
+      for (const request of this.queue.splice(0)) {
+        this.rejectRequest(request, asWorkerError(error, request.command.kind));
+      }
+    }
+    this.restartPromise = alreadyExited
+      ? Promise.resolve()
+      : worker.terminate().then(() => undefined, () => undefined);
+    void this.restartPromise.finally(() => {
+      this.restartPromise = undefined;
+      this.pump();
+    });
+  }
+
+  private beginClose(): void {
+    if (this.worker === undefined) {
+      if (this.restartPromise === undefined) {
+        this.finishClose();
+      }
+      return;
+    }
+    if (!this.ready) {
+      return;
+    }
+    this.closeRequested = true;
+    this.worker.ref();
+    this.closeTimeout = setTimeout(() => {
+      const worker = this.worker;
+      this.worker = undefined;
+      this.ready = false;
+      this.closeRequested = false;
+      if (worker === undefined) {
+        this.finishClose();
+        return;
+      }
+      void worker.terminate().finally(() => this.finishClose());
+    }, LOCAL_CONSOLE_STORE_TIMEOUT_MS);
+    try {
+      this.worker.postMessage({ type: "close" } satisfies SqliteStateWorkerRequest);
+    } catch {
+      const worker = this.worker;
+      this.worker = undefined;
+      this.ready = false;
+      this.closeRequested = false;
+      void worker?.terminate().finally(() => this.finishClose());
+    }
+  }
+
+  private finishClose(): void {
+    if (this.closeTimeout !== undefined) {
+      clearTimeout(this.closeTimeout);
+      this.closeTimeout = undefined;
+    }
+    this.closeRequested = false;
+    this.closeResolve?.();
+    this.closeResolve = undefined;
+  }
+
+  private resolveRequest(request: PendingSqliteStateCommand, value: unknown): void {
+    if (request.settled) {
+      return;
+    }
+    request.settled = true;
+    clearTimeout(request.timeout);
+    request.resolve(value);
+  }
+
+  private rejectRequest(request: PendingSqliteStateCommand, error: unknown): void {
+    if (request.settled) {
+      return;
+    }
+    request.settled = true;
+    clearTimeout(request.timeout);
+    request.reject(error);
+  }
+}
+
+function laneKey(sqlitePath: string, readOnly: boolean, busyTimeoutMs: number): string {
+  return JSON.stringify([sqlitePath, readOnly, busyTimeoutMs]);
+}
+
+function canonicalizeSqlitePath(sqlitePath: string): string {
+  let candidate = path.resolve(sqlitePath);
+  const missingSegments: string[] = [];
+  while (true) {
+    try {
+      const realPath = fs.realpathSync.native(candidate);
+      return path.join(realPath, ...missingSegments.reverse());
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+      const parent = path.dirname(candidate);
+      if (parent === candidate) {
+        return path.resolve(sqlitePath);
+      }
+      missingSegments.push(path.basename(candidate));
+      candidate = parent;
+    }
+  }
+}
+
+function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error
+    && "code" in error
+    && ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "ENOTDIR");
+}
+
+function asWorkerError(error: unknown, commandKind: string): SqliteStateWorkerError {
+  if (error instanceof SqliteStateWorkerError) {
+    return error.commandKind === commandKind
+      ? error
+      : new SqliteStateWorkerError(error.message, commandKind, error.workerStack);
+  }
+  return new SqliteStateWorkerError(
+    error instanceof Error ? error.message : String(error),
+    commandKind,
+    error instanceof Error ? error.stack : undefined,
+  );
+}
+
+function isWorkerResponse(value: unknown): value is SqliteStateWorkerResponse {
+  if (typeof value !== "object" || value === null || typeof (value as { type?: unknown }).type !== "string") {
     return false;
   }
-  const error = (value as { error?: unknown }).error;
-  return typeof error === "object" && error !== null && typeof (error as { message?: unknown }).message === "string";
+  const response = value as Partial<SqliteStateWorkerResponse>;
+  if (response.type === "ready" || response.type === "closed") {
+    return true;
+  }
+  if (response.type === "initialization-error") {
+    return isSerializedWorkerError(response.error);
+  }
+  if (response.type !== "result" || typeof response.requestId !== "number" || typeof response.ok !== "boolean") {
+    return false;
+  }
+  return response.ok || isSerializedWorkerError((response as { error?: unknown }).error);
+}
+
+function isSerializedWorkerError(value: unknown): value is { message: string; stack?: string } {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as { message?: unknown }).message === "string"
+    && ((value as { stack?: unknown }).stack === undefined || typeof (value as { stack?: unknown }).stack === "string");
 }

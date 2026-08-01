@@ -15,7 +15,13 @@ import {
   type LocalConsoleTerminal,
   type MoveEmptySessionResult,
 } from "./local-console/types.js";
-import type { SqliteStateCommand, SqliteStateSource } from "./sqlite-state.js";
+import type {
+  SqliteStateCommand,
+  SqliteStateSource,
+  SqliteStateWorkerConfiguration,
+  SqliteStateWorkerRequest,
+  SqliteStateWorkerResponse,
+} from "./sqlite-state.js";
 import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
 import { appendSessionFactLogLineSync, canonicalJson } from "./local-console/session-fact-log.js";
 
@@ -37,11 +43,8 @@ interface SqliteDatabase {
   close(): void;
 }
 
-interface WorkerInput {
-  sqlitePath: string;
-  busyTimeoutMs: number;
+interface WorkerInput extends SqliteStateWorkerConfiguration {
   command: SqliteStateCommand;
-  readOnly: boolean;
 }
 
 interface WorkerLocalMessage {
@@ -72,33 +75,103 @@ interface WorkerLocalMessage {
 
 const SESSION_FACT_MIGRATION_VERSION = "session-jsonl-fact-log-v1";
 
+const configuration = workerData as SqliteStateWorkerConfiguration;
+if (parentPort === null) {
+  throw new Error("sqlite state worker requires a parent port");
+}
+const port = parentPort;
+
+let database: DatabaseSync | undefined;
 try {
-  const input = workerData as WorkerInput;
-  const result = runCommand(input);
-  parentPort?.postMessage({ ok: true, result });
+  if (!configuration.readOnly) {
+    fs.mkdirSync(path.dirname(configuration.sqlitePath), { recursive: true });
+  }
+  database = new DatabaseSync(configuration.sqlitePath, { readOnly: configuration.readOnly });
+  database.exec(`PRAGMA busy_timeout = ${String(configuration.busyTimeoutMs)}`);
+  database.exec("PRAGMA foreign_keys = ON");
+  if (!configuration.readOnly) {
+    ensureSchema(database, configuration.sqlitePath);
+    // Some legacy table-rebuild migrations intentionally preserve only the columns
+    // known at that migration boundary. A second idempotent pass reaches the same
+    // fixed point that consecutive one-shot workers previously guaranteed.
+    ensureSchema(database, configuration.sqlitePath);
+    migrateLocalMessages(database);
+  }
+  port.on("message", (message: unknown) => handleWorkerRequest(message));
+  postResponse({ type: "ready" });
 } catch (error) {
-  parentPort?.postMessage({
-    ok: false,
-    error: {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    },
-  });
+  database?.close();
+  database = undefined;
+  postResponse({ type: "initialization-error", error: serializeError(error) });
+  port.close();
 }
 
-function runCommand(input: WorkerInput): unknown {
-  if (!input.readOnly) {
-    fs.mkdirSync(path.dirname(input.sqlitePath), { recursive: true });
+function handleWorkerRequest(message: unknown): void {
+  if (!isWorkerRequest(message)) {
+    postResponse({
+      type: "result",
+      requestId: readRequestId(message),
+      ok: false,
+      error: serializeError(new Error("Invalid sqlite state worker request")),
+    });
+    return;
   }
-  const database = new DatabaseSync(input.sqlitePath, { readOnly: input.readOnly });
+  if (message.type === "close") {
+    database?.close();
+    database = undefined;
+    postResponse({ type: "closed" });
+    port.close();
+    return;
+  }
+  if (database === undefined) {
+    postResponse({
+      type: "result",
+      requestId: message.requestId,
+      ok: false,
+      error: serializeError(new Error("sqlite state worker database is not initialized")),
+    });
+    return;
+  }
   try {
-    database.exec(`PRAGMA busy_timeout = ${String(input.busyTimeoutMs)}`);
-    database.exec("PRAGMA foreign_keys = ON");
-    if (!input.readOnly) {
-      ensureSchema(database, input.sqlitePath);
-      migrateLocalMessages(database);
-    }
+    const result = runCommand(database, { ...configuration, command: message.command });
+    postResponse({ type: "result", requestId: message.requestId, ok: true, result });
+  } catch (error) {
+    postResponse({ type: "result", requestId: message.requestId, ok: false, error: serializeError(error) });
+  }
+}
 
+function postResponse(response: SqliteStateWorkerResponse): void {
+  port.postMessage(response);
+}
+
+function serializeError(error: unknown): { message: string; stack?: string } {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  };
+}
+
+function isWorkerRequest(value: unknown): value is SqliteStateWorkerRequest {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if ((value as { type?: unknown }).type === "close") {
+    return true;
+  }
+  return (value as { type?: unknown }).type === "command"
+    && typeof (value as { requestId?: unknown }).requestId === "number"
+    && typeof (value as { command?: { kind?: unknown } }).command?.kind === "string";
+}
+
+function readRequestId(value: unknown): number {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as { requestId?: unknown }).requestId === "number"
+    ? (value as { requestId: number }).requestId
+    : -1;
+}
+
+function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
     switch (input.command.kind) {
       case "get-migration-status":
         return getMigrationStatus(database, input.command.source);
@@ -284,9 +357,6 @@ function runCommand(input: WorkerInput): unknown {
       default:
         assertNever(input.command);
     }
-  } finally {
-    database.close();
-  }
 }
 
 function rejectDirectSessionMessageWrite(command: SqliteStateCommand): never {

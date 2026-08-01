@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { waitForValue } from "../src/testing/wait.js";
 
 const startedServers: StartedLocalConsoleServer[] = [];
 const fixtureRoots: string[] = [];
@@ -29,16 +30,29 @@ describe("POST /api/local-console/sessions with initialMessage", () => {
     const body = await response.json() as { session: { sessionId: string; title: string } };
     expect(body.session.title).toBe("帮我 完成登录页");
 
-    const state = await fetch(new URL(
-      `/api/local-console/state?projectId=local&sessionId=${encodeURIComponent(body.session.sessionId)}`,
-      started.url,
-    ));
-    await expect(state.json()).resolves.toMatchObject({
-      selectedSession: { sessionId: body.session.sessionId, title: "帮我 完成登录页" },
-      pendingPrimaryMessages: [
-        expect.objectContaining({ speaker: "user", body: "帮我   完成登录页\n这一行不进标题" }),
-      ],
+    let lastState: SessionState | undefined;
+    const state = await waitForValue(async () => {
+      const response = await fetch(new URL(
+        `/api/local-console/state?projectId=local&sessionId=${encodeURIComponent(body.session.sessionId)}`,
+        started.url,
+      ));
+      expect(response.status).toBe(200);
+      lastState = await response.json() as SessionState;
+      return lastState.messages.some((message) => message.speaker === "user") ? lastState : undefined;
+    }, {
+      describe: "initial message to appear in the public session timeline",
+      kind: "io",
+      snapshot: () => lastState,
     });
+    expect(state).toMatchObject({
+      selectedSession: { sessionId: body.session.sessionId, title: "帮我 完成登录页" },
+    });
+    expect(state.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        speaker: "user",
+        body: "帮我   完成登录页\n这一行不进标题",
+      }),
+    ]));
   });
 
   it("rolls back the session when inserting the initial message fails", async () => {
@@ -134,4 +148,9 @@ function codexOk(options: CodexRunOptions): CodexRunResult {
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),
     stderrPath: path.join(options.runDir, "stderr.log"),
   };
+}
+
+interface SessionState {
+  selectedSession: { sessionId: string; title: string } | null;
+  messages: Array<{ speaker: string; body: string }>;
 }

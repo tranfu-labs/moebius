@@ -84,6 +84,7 @@ import {
 } from "./issue-dispatcher.js";
 import { runIntakeScan } from "./scanner.js";
 import { createStatePersister, type StatePersister } from "./state-persister.js";
+import { closeSqliteStateWorkers } from "./sqlite-state.js";
 import {
   appendCeoReviewedMetadata,
   CEO_CORRECTED_METADATA,
@@ -2482,6 +2483,7 @@ export async function start(options: StartOptions = {}): Promise<StartedRuntime>
     mode,
     async close() {
       dependencies.clearInterval(timer);
+      await closeSqliteStateWorkers();
     },
   };
 }

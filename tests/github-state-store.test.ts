@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadAgentContextStateStore } from "../src/agent-context-state.js";
 import {
   githubRunnerSqlitePathForStateFile,
@@ -14,10 +14,18 @@ import type { GitHubResponseIntakeState } from "../src/github-response-intake.js
 import { createEmptyGoalLedgerState } from "../src/goal-ledger.js";
 import { loadGoalLedgerState } from "../src/goal-ledger-state.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
-import { runSqliteStateCommand, SqliteStateTimeoutError } from "../src/sqlite-state.js";
+import {
+  closeSqliteStateWorkers,
+  runSqliteStateCommand,
+  SqliteStateTimeoutError,
+} from "../src/sqlite-state.js";
 import { loadRoleThreadStateStore } from "../src/state.js";
 
 describe("GitHub runner state store isolation", () => {
+  afterEach(async () => {
+    await closeSqliteStateWorkers();
+  });
+
   it("keeps fresh local messages and GitHub intake writes in separate stores", async () => {
     const stateDir = path.join(await makeTempDir(), ".state");
     const intakePath = path.join(stateDir, "github-response-intake.json");

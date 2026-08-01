@@ -450,11 +450,14 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     );
 
     const resumedRun = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
-      await options.onThreadStarted?.("thread-legacy-handoff");
+      const isQaRun = options.mode?.kind === "resume"
+        && options.mode.threadId === "thread-legacy-handoff";
+      const threadId = isQaRun ? "thread-legacy-handoff" : "thread-legacy-manager";
+      await options.onThreadStarted?.(threadId);
       return {
         ok: true,
-        finalText: "legacy QA recovered",
-        threadId: "thread-legacy-handoff",
+        finalText: isQaRun ? "legacy QA recovered" : "legacy manager closeout",
+        threadId,
         cachedInputTokens: 8,
         runDir: options.runDir,
         stdoutPath: path.join(options.runDir, "stdout.jsonl"),
@@ -466,7 +469,10 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
       messages.find((message) =>
         message.speaker === "agent" && message.body === "legacy QA recovered") ?? null);
     expect(recovered.runId).toBe(originalActive.runId);
-    expect(resumedRun).toHaveBeenCalledTimes(1);
+    await waitForState(second.url, (messages) =>
+      messages.find((message) =>
+        message.speaker === "agent" && message.body === "legacy manager closeout") ?? null);
+    expect(resumedRun).toHaveBeenCalledTimes(2);
     expect(resumedRun.mock.calls[0]?.[0].mode).toEqual({
       kind: "resume",
       threadId: "thread-legacy-handoff",
@@ -480,6 +486,16 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     expect(firstRepairFacts[0]?.payload).toMatchObject({
       sourceMessageId: handoffSource.id,
       targetRunId: originalActive.runId,
+    });
+    await waitForValue(async () => {
+      const snapshot = await getSnapshot(second.url);
+      return snapshot.activeRuns.length === 0 && snapshot.pendingDispatchMessages.length === 0
+        ? true
+        : undefined;
+    }, {
+      describe: "recovered legacy handoff to finish before restart",
+      kind: "io",
+      timeoutMs: 8_000,
     });
     await second.close();
     cleanupServers.splice(cleanupServers.indexOf(second), 1);

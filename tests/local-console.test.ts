@@ -1197,7 +1197,7 @@ describe("local console", { timeout: 15_000 }, () => {
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
     const targetFolder = path.join(root, "workspace-target");
     await fs.mkdir(targetFolder, { recursive: true });
-    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    let store = await createSqliteLocalConsoleStore({ sqlitePath });
     await store.init();
     const target = await store.createProject({
       folderPath: targetFolder,
@@ -1218,6 +1218,7 @@ describe("local console", { timeout: 15_000 }, () => {
       now: "2026-07-09T01:00:02.000Z",
     });
 
+    await store.close();
     const database = new DatabaseSync(sqlitePath);
     try {
       database.prepare("UPDATE sessions SET parent_session_id = ? WHERE session_id = ?")
@@ -1245,6 +1246,7 @@ describe("local console", { timeout: 15_000 }, () => {
     } finally {
       database.close();
     }
+    store = await createSqliteLocalConsoleStore({ sqlitePath });
 
     await expect(store.moveEmptySessionToProject({
       sessionId: "local:movable",
@@ -1435,11 +1437,11 @@ describe("local console", { timeout: 15_000 }, () => {
       const session = await createSession(started.url, "ordinary acceptance words");
       await postSessionMessage(started.url, session.sessionId, "@qa 请报数，并说明通过或不通过");
       const state = await waitForState(started.url, session.sessionId, (data) =>
-        data.messages.filter((entry) => entry.speaker === "agent").length === 1,
+        data.messages.filter((entry) => entry.speaker === "agent").length === 2,
       );
-      expect(calls).toEqual(["qa"]);
+      expect(calls).toEqual(["qa", "dev-manager"]);
       expect(state.messages.filter((entry) => entry.speaker === "agent").map((entry) => entry.role))
-        .toEqual(["qa"]);
+        .toEqual(["qa", "dev-manager"]);
       expect(state.messages.filter((entry) => entry.speaker === "system")).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ body: expect.stringContaining("formal acceptance statements") }),
       ]));
@@ -3580,6 +3582,7 @@ describe("local console", { timeout: 15_000 }, () => {
     (started.runtime as unknown as { storeTimeoutMs: number }).storeTimeoutMs = 50;
     const lock = new DatabaseSync(sqlitePath);
     try {
+      lock.exec("PRAGMA busy_timeout = 2000");
       lock.exec("BEGIN EXCLUSIVE");
       const locked = await postMessage(started.url, "@dev locked");
       const lockedBody = (await locked.json()) as { error: string };
@@ -4225,7 +4228,7 @@ exit 0
 }
 
 function roleFromPrompt(prompt: string): string {
-  for (const role of ["ceo", "dev-manager", "dev", "qa"]) {
+  for (const role of ["ceo", "dev-manager", "manager", "dev", "qa"]) {
     if (
       prompt.includes(`ROLE:${role}`)
       || prompt.includes(`不是你自己 <${role}> 发出的消息`)

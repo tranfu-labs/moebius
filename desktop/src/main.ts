@@ -16,6 +16,7 @@ import {
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { startObserverServer, type StartedObserverServer } from "../../src/observer/server.js";
+import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
 import {
   buildSeedCopyPlan,
   executeSeedCopyPlan,
@@ -646,6 +647,7 @@ async function shutdownAndQuit(): Promise<void> {
     runnerSupervisor?.stop();
     await closeObserver();
     await closeLocalConsole();
+    await closeSqliteStateWorkers();
     shutdownComplete = true;
     app.quit();
   })();
