@@ -23,7 +23,7 @@
 | `project-command-runtime.ts` | 12 | L38、L42、L52、L58、L66、L72、L75、L105（capability/I/O/error guard） | L82（descendant closure 迭代） | L76、L85、L96（running/descendant/force removal） | **use case**；removal plan 下沉并按 command 拆分后移出 allowlist |
 | `session-creation-runtime.ts` | 15 | L66、L90（project/load-team port guard） | L75、L138（baseline 读取与启动 processing 顺序） | L56、L59、L61、L67、L72、L94、L101、L103、L110、L118、L120（输入、workspace、routing、title） | **use case**；creation plan 下沉后移出 allowlist |
 | `session-settings-runtime.ts` | 9 | L63、L75、L83、L96（error/capability guard） | — | L38、L42、L53、L56、L84（workspace/team/running policy） | **use case**；已下沉 workspace/archive/capability plans、注入 workspace adapter 并移出 allowlist |
-| `session-reference-runtime.ts` | 8 | L20、L34、L44（capability/missing record guard） | — | L35、L39、L40、L47、L53（scope/target/role projection） | **use case**；reference plan 下沉后移出 allowlist |
+| `session-reference-runtime.ts` | 8 | L20、L34、L44（capability/missing record guard） | — | L35、L39、L40、L47、L53（scope/target/role projection） | **use case**；已下沉 reference read/target/text plans、注入 UUID adapter 并移出 allowlist |
 
 合计：wiring 49、timing 17、business 59，共 125。
 

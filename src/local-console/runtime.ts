@@ -475,6 +475,7 @@ export class LocalConsoleRuntime {
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
+      randomId: () => crypto.randomUUID(),
     });
   }
 
