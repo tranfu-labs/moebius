@@ -71,6 +71,15 @@ export function decidePrimaryAnalysisConfirmation(input: {
     : { kind: "reject" };
 }
 
+export function decidePrimaryResumedSession(
+  observedExternalSessionId: string,
+  expectedExternalSessionId: string,
+): { kind: "accept" } | { kind: "reject" } {
+  return observedExternalSessionId === expectedExternalSessionId
+    ? { kind: "accept" }
+    : { kind: "reject" };
+}
+
 export function decidePrimaryRecoveryPersistence(
   available: boolean,
 ): { kind: "record" } | { kind: "skip" } {

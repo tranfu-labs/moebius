@@ -109,6 +109,7 @@ import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { createLocalPrimaryProviderPorts } from "./primary-provider-wiring.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
+import { createLocalPrimaryAnalysisPorts } from "./primary-analysis-wiring.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
@@ -179,7 +180,6 @@ import {
 import { localProcessFactReader } from "./process-fact-reader.js";
 import { resolveCodexRollout } from "./codex-rollout.js";
 import {
-  buildConfirmedPlanExecutionPrompt,
   buildSessionAnalysisReadOnlyContract,
 } from "./session-analysis-gate.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
@@ -471,37 +471,14 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       toolTimeoutMs: this.toolInFlightTimeoutMs,
       nowIso: () => this.nowIso(),
     }));
-    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime({
-      updateGate: async (input) => {
-        await this.updateSessionAnalysisGate(input);
-      },
-      resumeConfirmed: async ({ run, preparation, confirmedVersion, externalSessionId }) =>
-        await this.executionRunner({
-          prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
-          runDir: preparation.providerRunDir,
-          cwd: preparation.workspace.cwd,
-          profile: preparation.executionContext.profile,
-          mode: { kind: "resume", externalSessionId },
-          signal: preparation.controller.signal,
-          workspaceAccess: "read-write",
-          ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-          ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-          onVisibleAgentMarkdown: (text) => {
-            const active = this.activeRunRegistry.get(run.runId);
-            if (active?.sessionId === run.sessionId) {
-              active.liveMarkdown = text;
-              this.runLifecycleRuntime.updateAgentProgress(run.runId, text);
-            }
-          },
-          onStructuredActivity: (event) => this.runLifecycleRuntime.updateStructuredActivity(run.runId, event),
-          onExecutionProgress: (event) => this.runLifecycleRuntime.updateExecutionProgress(run.runId, event),
-          onSessionStarted: async ({ externalSessionId: resumedSessionId }) => {
-            if (resumedSessionId !== externalSessionId) {
-              throw new Error("analysis-write-lease-provider-session-mismatch");
-            }
-          },
-        }),
-    });
+    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(createLocalPrimaryAnalysisPorts({
+      executionRunner: this.executionRunner,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
+      idleTimeoutMs: this.codexIdleTimeoutMs,
+      toolTimeoutMs: this.toolInFlightTimeoutMs,
+      updateGate: async (input) => { await this.updateSessionAnalysisGate(input); },
+    }));
     this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storePorts.call(label, operation),
