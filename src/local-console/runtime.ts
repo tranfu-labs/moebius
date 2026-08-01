@@ -10,7 +10,6 @@ import {
   isInterruptedCodexRunResult,
 } from "../codex.js";
 import { log } from "../log.js";
-import { parseTrailingStageMarker } from "../stages.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import { deriveSessionTitle } from "./title.js";
@@ -248,8 +247,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       baselineCommits: this.conversationBaselineCommits,
       workdirRoot: options.workdirRoot,
       ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
+      nowIso: () => this.nowIso(),
       worktreePath: localSessionWorktreePath,
       readWorkspaceDiff: readLocalConversationWorkspaceDiff,
+      readGitStatus: readLocalGitStatus,
+      generateWorkspaceDiff: generateLocalWorkspaceDiff,
+      recordWorkspaceDiff: (input) => this.storePorts.sessionFacts().recordWorkspaceDiff(input),
+      workspacePatchPath: (runDir) => path.join(runDir, "workspace.patch"),
+      reportWorkspaceDiffError: (error, sessionId, runId) =>
+        log({ event: "local-console-workspace-diff-failed", error, sessionId, runId }),
     });
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
       store: options.store,
@@ -368,14 +374,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         finalText: result.finalText,
         availableAgentNames: input.agentFiles.map((agent) => agent.name),
       }),
-      recordWorkspaceDiff: (input, preparation, result) => this.recordWorkspaceDiffIfNeeded(
-        input.sessionId,
-        input.runId,
-        preparation.runDir,
-        preparation.workspace,
-        result.finalText,
-        preparation.controller.signal,
-      ),
+      recordWorkspaceDiff: (input, preparation, result) =>
+        this.conversationWorkspaceRuntime.recordGeneratedDiffIfNeeded({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          runDir: preparation.runDir,
+          workspace: preparation.workspace,
+          finalText: result.finalText,
+          signal: preparation.controller.signal,
+        }),
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       recordDirectStartFailure: (input, runDir, error) =>
@@ -433,14 +440,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         finalText: result.finalText,
         availableAgentNames: run.agentFiles.map((agent) => agent.name),
       }),
-      recordWorkspaceDiff: (run, preparation, result) => this.recordWorkspaceDiffIfNeeded(
-        run.sessionId,
-        run.runId,
-        preparation.resolvedRunDir,
-        preparation.workspace,
-        result.finalText,
-        preparation.controller.signal,
-      ),
+      recordWorkspaceDiff: (run, preparation, result) =>
+        this.conversationWorkspaceRuntime.recordGeneratedDiffIfNeeded({
+          sessionId: run.sessionId,
+          runId: run.runId,
+          runDir: preparation.resolvedRunDir,
+          workspace: preparation.workspace,
+          finalText: result.finalText,
+          signal: preparation.controller.signal,
+        }),
       recordChildSessionCardError: async (sessionId, error) => {
         const reason = formatLocalError(error);
         this.lastError = reason;
@@ -978,74 +986,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         now: this.nowIso(),
       }),
     );
-  }
-
-  private async recordWorkspaceDiffIfNeeded(
-    sessionId: string,
-    runId: string,
-    runDir: string,
-    workspace: ResolvedLocalWorkspace,
-    finalText: string,
-    signal: AbortSignal,
-  ): Promise<void> {
-    if (workspace.mode !== "worktree" || workspace.worktreePath === null) {
-      return;
-    }
-    if (parseTrailingStageMarker(finalText) !== "code-verified") {
-      return;
-    }
-    try {
-      const originalStatus = workspace.originalRepoRoot === null
-        ? ""
-        : await readLocalGitStatus({
-          folderPath: workspace.originalRepoRoot,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-          signal,
-        });
-      if (originalStatus !== "") {
-        throw new Error(`original-repo-dirty-before-diff:${originalStatus}`);
-      }
-      const diff = await generateLocalWorkspaceDiff({
-        worktreePath: workspace.worktreePath,
-        runDir,
-        baseRef: workspace.baseRef,
-        branchName: workspace.branchName,
-        originalRepoRoot: workspace.originalRepoRoot,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        signal,
-      });
-      await this.storePorts.call("local-console-store-record-workspace-diff", () =>
-        this.storePorts.sessionFacts().recordWorkspaceDiff({
-          sessionId,
-          runId,
-          originalRepoRoot: workspace.originalRepoRoot,
-          baseRef: diff.baseRef,
-          branchName: diff.branchName,
-          worktreePath: diff.worktreePath,
-          patchPath: diff.patchPath,
-          affectedFiles: diff.affectedFiles,
-          status: "generated",
-          error: null,
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      const message = formatLocalError(error);
-      log({ event: "local-console-workspace-diff-failed", error: message, sessionId, runId });
-      await this.storePorts.sessionFacts().recordWorkspaceDiff({
-        sessionId,
-        runId,
-        originalRepoRoot: workspace.originalRepoRoot,
-        baseRef: workspace.baseRef ?? "unknown",
-        branchName: workspace.branchName ?? "unknown",
-        worktreePath: workspace.worktreePath,
-        patchPath: path.join(runDir, "workspace.patch"),
-        affectedFiles: [],
-        status: "failed",
-        error: message,
-        now: this.nowIso(),
-      });
-    }
   }
 
   private nowIso(): string {

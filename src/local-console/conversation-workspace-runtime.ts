@@ -1,15 +1,20 @@
 import { log } from "../log.js";
-import { formatLocalError } from "./runtime-domain.js";
+import { formatLocalError, planRuntimeFallback } from "./runtime-domain.js";
 import {
+  decideOriginalRepoStatus,
   decideConversationBaselineRead,
   decideConversationDiffRead,
   planConversationWorkspaceContext,
+  planOriginalRepoStatusRead,
+  planWorkspaceDiffRecording,
 } from "./conversation-workspace-plan.js";
 import type {
   LocalConsoleStore,
   LocalConsoleWorkspaceDiffSummary,
   LocalConsoleWorkspaceMode,
 } from "./types.js";
+import type { LocalSessionFactWritingStore } from "./runtime-store-ports.js";
+import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export class LocalConversationWorkspaceRuntime {
   constructor(private readonly input: {
@@ -18,13 +23,104 @@ export class LocalConversationWorkspaceRuntime {
     baselineCommits: Map<string, string | null>;
     workdirRoot: string;
     gitTimeoutMs?: number;
+    nowIso(): string;
     worktreePath(workdirRoot: string, projectId: string, sessionId: string): string;
     readWorkspaceDiff(input: {
       workspacePath: string;
       baselineCommit: string | null;
       gitTimeoutMs?: number;
     }): Promise<LocalConsoleWorkspaceDiffSummary>;
+    readGitStatus(input: {
+      folderPath: string;
+      gitTimeoutMs?: number;
+      signal: AbortSignal;
+    }): Promise<string>;
+    generateWorkspaceDiff(input: {
+      worktreePath: string;
+      runDir: string;
+      baseRef: string | null;
+      branchName: string | null;
+      originalRepoRoot: string | null;
+      gitTimeoutMs?: number;
+      signal: AbortSignal;
+    }): Promise<{
+      baseRef: string;
+      branchName: string;
+      worktreePath: string;
+      patchPath: string;
+      affectedFiles: string[];
+    }>;
+    recordWorkspaceDiff(input: Parameters<LocalSessionFactWritingStore["recordWorkspaceDiff"]>[0]): Promise<void>;
+    workspacePatchPath(runDir: string): string;
+    reportWorkspaceDiffError(error: string, sessionId: string, runId: string): void;
   }) {}
+
+  async recordGeneratedDiffIfNeeded(input: {
+    sessionId: string;
+    runId: string;
+    runDir: string;
+    workspace: ResolvedLocalWorkspace;
+    finalText: string;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const recording = planWorkspaceDiffRecording({
+      workspaceMode: input.workspace.mode,
+      worktreePath: input.workspace.worktreePath,
+      finalText: input.finalText,
+    });
+    if (recording.kind === "skip") return;
+    try {
+      const statusRead = planOriginalRepoStatusRead(input.workspace.originalRepoRoot);
+      const originalStatus = statusRead.kind === "clean"
+        ? ""
+        : await this.input.readGitStatus({
+            folderPath: statusRead.folderPath,
+            gitTimeoutMs: this.input.gitTimeoutMs,
+            signal: input.signal,
+          });
+      const status = decideOriginalRepoStatus(originalStatus);
+      if (status.kind === "dirty") throw new Error(`original-repo-dirty-before-diff:${status.status}`);
+      const diff = await this.input.generateWorkspaceDiff({
+        worktreePath: recording.worktreePath,
+        runDir: input.runDir,
+        baseRef: input.workspace.baseRef,
+        branchName: input.workspace.branchName,
+        originalRepoRoot: input.workspace.originalRepoRoot,
+        gitTimeoutMs: this.input.gitTimeoutMs,
+        signal: input.signal,
+      });
+      await this.input.storeCall("local-console-store-record-workspace-diff", () =>
+        this.input.recordWorkspaceDiff({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          originalRepoRoot: input.workspace.originalRepoRoot,
+          baseRef: diff.baseRef,
+          branchName: diff.branchName,
+          worktreePath: diff.worktreePath,
+          patchPath: diff.patchPath,
+          affectedFiles: diff.affectedFiles,
+          status: "generated",
+          error: null,
+          now: this.input.nowIso(),
+        }));
+    } catch (error) {
+      const message = formatLocalError(error);
+      this.input.reportWorkspaceDiffError(message, input.sessionId, input.runId);
+      await this.input.recordWorkspaceDiff({
+        sessionId: input.sessionId,
+        runId: input.runId,
+        originalRepoRoot: input.workspace.originalRepoRoot,
+        baseRef: planRuntimeFallback(input.workspace.baseRef, "unknown"),
+        branchName: planRuntimeFallback(input.workspace.branchName, "unknown"),
+        worktreePath: recording.worktreePath,
+        patchPath: this.input.workspacePatchPath(input.runDir),
+        affectedFiles: [],
+        status: "failed",
+        error: message,
+        now: this.input.nowIso(),
+      });
+    }
+  }
 
   async readDiff(sessionId: string): Promise<LocalConsoleWorkspaceDiffSummary> {
     try {
