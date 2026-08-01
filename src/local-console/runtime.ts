@@ -181,38 +181,11 @@ import {
   buildConfirmedPlanExecutionPrompt,
   buildSessionAnalysisReadOnlyContract,
 } from "./session-analysis-gate.js";
+import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
+import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
+export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 
-export interface LocalConsoleRuntimeOptions {
-  store: LocalConsoleStore;
-  listAgentFiles: (sessionId: string) => Promise<LocalConsoleAgentFile[]>;
-  loadAgentTeamSnapshot?: (
-    binding: { ownership: LocalConsoleAgentTeamOwnership; id: string },
-  ) => Promise<LocalConsoleAgentTeamSnapshot>;
-  resolveAgentTeamHealth?: (
-    session: LocalConsoleSessionSummary,
-  ) => Promise<{ health: "usable" | "deleted" | "needs-repair"; reason: string | null }>;
-  runCodex: (options: CodexRunOptions) => Promise<CodexRunResult>;
-  runExecution?: LocalExecutionRunner;
-  makeRunDir: (count: number, now?: Date) => string;
-  dataRoot?: string;
-  projectRoot: string;
-  workdirRoot: string;
-  sessionId?: string;
-  storeTimeoutMs?: number;
-  codexIdleTimeoutMs?: number;
-  toolInFlightTimeoutMs?: number;
-  codexMaxDurationMs?: number;
-  workspaceGitTimeoutMs?: number;
-  staleRunningGraceMs?: number;
-  routeJudgment?: LocalRouteJudgment;
-  routeTimeoutMs?: number;
-  failureRetryLimit?: number;
-  attachmentManager?: LocalAttachmentManager;
-  isCodexThreadAvailable?: (threadId: string) => Promise<boolean>;
-  now?: () => Date;
-}
-
-export class LocalConsoleRuntime {
+export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly sessionId: string;
   private readonly storeTimeoutMs: number;
   private readonly codexIdleTimeoutMs?: number;
@@ -260,6 +233,7 @@ export class LocalConsoleRuntime {
   private lastError: string | null = null;
 
   constructor(private readonly options: LocalConsoleRuntimeOptions) {
+    super();
     this.sessionId = options.sessionId ?? LOCAL_CONSOLE_DEFAULT_SESSION_ID;
     this.storeTimeoutMs = options.storeTimeoutMs ?? 2_000;
     this.codexIdleTimeoutMs = options.codexIdleTimeoutMs;
@@ -1144,6 +1118,19 @@ export class LocalConsoleRuntime {
       },
       report: (input) => log(input),
     });
+    this.bindFacade({
+      defaultSessionId: () => this.sessionId,
+      projects: this.projectCommandRuntime,
+      sessions: this.sessionCreationRuntime,
+      settings: this.sessionSettingsRuntime,
+      references: this.sessionReferenceRuntime,
+      metadata: this.sessionMetadataRuntime,
+      messages: this.messageCommandRuntime,
+      retries: this.runRetryRuntime,
+      state: this.stateQueryRuntime,
+      output: this.runOutputRuntime,
+      workspace: this.workspaceQueryRuntime,
+    });
   }
 
   get sqlitePath(): string {
@@ -1215,263 +1202,6 @@ export class LocalConsoleRuntime {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     await this.options.store.close();
-  }
-
-  async createProject(input: { folderPath: string; worktreeMode: boolean }): Promise<LocalConsoleProjectSummary> {
-    return await this.projectCommandRuntime.create(input);
-  }
-
-  async updateProject(input: { projectId: string; worktreeMode: boolean }): Promise<LocalConsoleProjectSummary> {
-    return await this.projectCommandRuntime.update(input);
-  }
-
-  async repairProjectFolder(input: { projectId: string; folderPath: string }): Promise<LocalConsoleProjectSummary> {
-    return await this.projectCommandRuntime.repairFolder(input);
-  }
-
-  async renameProject(input: { projectId: string; title: string }): Promise<LocalConsoleProjectSummary> {
-    return await this.projectCommandRuntime.rename(input);
-  }
-
-  async removeProject(input: { projectId: string; force: boolean }): Promise<LocalConsoleProjectRemovalResult> {
-    return await this.projectCommandRuntime.remove(input);
-  }
-
-  async reorderProjects(projectIds: string[]): Promise<LocalConsoleProjectSummary[]> {
-    return await this.projectCommandRuntime.reorder(projectIds);
-  }
-
-  async createSession(
-    title?: string,
-    projectId?: string,
-    agentTeam?: { ownership: "system" | "user"; id: string },
-    initialMessage?: string,
-    workspaceMode?: LocalConsoleWorkspaceMode,
-    attachmentIds: string[] = [],
-    metadata: {
-      originSessionId?: string | null;
-      analysisParentSessionId?: string | null;
-      entryTemplate?: LocalConsoleEntryTemplate | null;
-      writePolicy?: LocalConsoleWritePolicy;
-      textFragments?: LocalConsoleTextFragment[];
-      attachmentDraftKey?: string;
-    } = {},
-  ): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionCreationRuntime.create(
-      title,
-      projectId,
-      agentTeam,
-      initialMessage,
-      workspaceMode,
-      attachmentIds,
-      metadata,
-    );
-  }
-
-  async moveEmptySessionToProject(input: {
-    sessionId: string;
-    projectId: string;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionSettingsRuntime.moveEmpty(input);
-  }
-
-  async switchSessionWorkspace(input: {
-    sessionId: string;
-    workspaceMode: LocalConsoleWorkspaceMode;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionSettingsRuntime.switchWorkspace(input);
-  }
-
-  async switchSessionTeam(input: {
-    sessionId: string;
-    agentTeamOwnership: LocalConsoleAgentTeamOwnership;
-    agentTeamId: string;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionSettingsRuntime.switchTeam(input);
-  }
-
-  async archiveSession(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {
-    return await this.sessionSettingsRuntime.archive(sessionId);
-  }
-
-  async restoreSession(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionSettingsRuntime.restore(sessionId);
-  }
-
-  async searchSessions(input: {
-    query: string;
-    includeArchived: boolean;
-  }): Promise<LocalConsoleSessionSearchResult[]> {
-    return await this.sessionReferenceRuntime.search(input);
-  }
-
-  async sessionReferenceText(input: {
-    sessionId: string;
-    scope: LocalConsoleSessionReferenceScope;
-    runId?: string | null;
-    messageId?: number | null;
-  }): Promise<LocalConsoleSessionReferenceText> {
-    return await this.sessionReferenceRuntime.referenceText(input);
-  }
-
-  async createChildSession(input: {
-    parentSessionId: string;
-    childSessionId: string;
-    projectId: string;
-    title: string;
-    relation?: string;
-    hiddenKey: string;
-    initialBody: string;
-    initialRole?: string | null;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.createChildSession(input);
-  }
-
-  getSessionFactLogPath(sessionId: string): string {
-    return this.sessionMetadataRuntime.getSessionFactLogPath(sessionId);
-  }
-
-  async submitUserMessage(
-    body: string,
-    sessionId = this.sessionId,
-    attachmentIds: string[] = [],
-    resumeRunId?: string,
-    textFragments: LocalConsoleTextFragment[] = [],
-  ): Promise<LocalConsoleMessage> {
-    return await this.messageCommandRuntime.submit(body, sessionId, attachmentIds, resumeRunId, textFragments);
-  }
-
-  async retryPendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
-    await this.messageCommandRuntime.retryPending(input);
-  }
-
-  async updatePendingUserMessage(input: {
-    sessionId: string;
-    messageId: number;
-    body: string;
-  }): Promise<LocalConsoleMessage> {
-    return await this.messageCommandRuntime.updatePending(input);
-  }
-
-  async removePendingUserMessage(input: { sessionId: string; messageId: number }): Promise<void> {
-    await this.messageCommandRuntime.removePending(input);
-  }
-
-  async retryRun(input: {
-    sessionId: string;
-    runId: string;
-    executionOverride?: {
-      overrideId: string;
-      profile: LocalConsoleExecutionProfile;
-      scope: "single-run";
-    };
-  }): Promise<boolean> {
-    return await this.runRetryRuntime.retry(input);
-  }
-
-  async interruptRun(input: { sessionId: string; runId: string }): Promise<boolean> {
-    return await this.sessionMetadataRuntime.interruptRun(input);
-  }
-
-  async markSessionResultRead(input: { sessionId: string; unreadSince: string }): Promise<boolean> {
-    return await this.sessionMetadataRuntime.markSessionResultRead(input);
-  }
-
-  async updateSessionReadState(input: {
-    sessionId: string;
-    action: "mark-read-attention" | "mark-read-unread" | "mark-unread";
-    expectedAttentionRevision: number;
-    expectedReadStateRevision: number;
-    expectedTitleRevision: number;
-    isCurrent: boolean;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.updateSessionReadState(input);
-  }
-
-  async armSessionManualUnread(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.armSessionManualUnread(sessionId);
-  }
-
-  async markSessionViewed(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.markSessionViewed(sessionId);
-  }
-
-  async setSessionPinned(input: {
-    sessionId: string;
-    pinned: boolean;
-    expectedPinnedAt: string | null;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.setSessionPinned(input);
-  }
-
-  async renameSession(input: {
-    sessionId: string;
-    title: string;
-    expectedTitleRevision: number;
-  }): Promise<LocalConsoleSessionSummary> {
-    return await this.sessionMetadataRuntime.renameSession(input);
-  }
-
-  async snapshot(sessionId = this.sessionId): Promise<LocalConsoleSnapshot> {
-    return await this.stateQueryRuntime.snapshot(sessionId);
-  }
-
-  async state(selected: string | { sessionId?: string; projectId?: string } = this.sessionId): Promise<LocalConsoleStateSnapshot> {
-    return await this.stateQueryRuntime.state(selected);
-  }
-
-  async sessionView(sessionId: string): Promise<LocalConsoleSessionView> {
-    return await this.stateQueryRuntime.sessionView(sessionId);
-  }
-
-  async runOutput(sessionId: string, runId: string): Promise<LocalConsoleRunOutput> {
-    return await this.runOutputRuntime.runOutput(sessionId, runId);
-  }
-
-  async workspaceDiffDetail(sessionId: string): Promise<LocalConsoleWorkspaceDiffDetail> {
-    return await this.workspaceQueryRuntime.workspaceDiffDetail(sessionId);
-  }
-
-  async projectFiles(sessionId: string): Promise<LocalConsoleProjectFiles> {
-    return await this.workspaceQueryRuntime.projectFiles(sessionId);
-  }
-
-  async projectFile(sessionId: string, filePath: string): Promise<LocalConsoleFileContent> {
-    return await this.workspaceQueryRuntime.projectFile(sessionId, filePath);
-  }
-
-  async fileReference(
-    sessionId: string,
-    input: { filePath: string; line: number; column: number | null },
-  ): Promise<import("./types.js").LocalConsoleFileReferenceContent> {
-    return await this.workspaceQueryRuntime.fileReference(sessionId, input);
-  }
-
-  async processOutput(
-    sessionId: string,
-    runId: string,
-    cursor?: string,
-  ): Promise<LocalConsoleProcessHistoryPage> {
-    return await this.runOutputRuntime.processOutput(sessionId, runId, cursor);
-  }
-
-  async processOutputAppend(
-    sessionId: string,
-    runId: string,
-    appendCursor: string,
-  ): Promise<LocalConsoleProcessAppendPage> {
-    return await this.runOutputRuntime.processOutputAppend(sessionId, runId, appendCursor);
-  }
-
-  async processDebugInvocation(
-    sessionId: string,
-    runId: string,
-  ): Promise<LocalConsoleProcessDebugInvocation> {
-    return await this.runOutputRuntime.processDebugInvocation(sessionId, runId);
-  }
-
-  async childSessionSummaries(parentSessionId: string) {
-    return await this.stateQueryRuntime.childSessionSummaries(parentSessionId);
   }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
