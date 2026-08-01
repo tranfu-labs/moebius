@@ -100,6 +100,8 @@ import {
 } from "./run-lifecycle-runtime.js";
 import { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
+import { LocalLegacyHandoffRecoveryRuntime } from "./legacy-handoff-recovery-runtime.js";
+import { LocalStartupRecoveryRuntime } from "./startup-recovery-runtime.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
@@ -172,7 +174,6 @@ import {
 import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
 import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
 import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
-import { ORPHAN_RUN_STUCK_REASON, identifyOrphanRuns } from "./orphan-runs.js";
 import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   readLocalCodexRecoveryFacts,
@@ -302,6 +303,7 @@ export class LocalConsoleRuntime {
   private readonly runLifecycleRuntime: LocalRunLifecycleRuntime;
   private readonly pendingSessionContextRuntime: LocalPendingSessionContextRuntime;
   private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
+  private readonly startupRecoveryRuntime: LocalStartupRecoveryRuntime;
   private readonly projectCommandRuntime: LocalProjectCommandRuntime;
   private readonly sessionCreationRuntime: LocalSessionCreationRuntime;
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
@@ -1005,6 +1007,36 @@ export class LocalConsoleRuntime {
       processAfterCurrent: (sessionId) => { void this.processAfterCurrent(sessionId); },
       storeCall: (label, operation) => this.storeCall(label, operation),
     });
+    const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      recoveryStore: () => this.codexRecoveryFactStore(),
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
+      readRunContexts: readRunExecutionContexts,
+      activeRunIds: () => new Set(this.activeRuns.keys()),
+      report: (input) => log(input),
+    });
+    this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime({
+      store: options.store,
+      defaultSessionId: this.sessionId,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      now: () => this.now(),
+      nowIso: () => this.nowIso(),
+      idleTimeoutMs: this.codexIdleTimeoutMs,
+      maxDurationMs: this.codexMaxDurationMs,
+      staleGraceMs: this.staleRunningGraceMs,
+      activeSessionIds: () => new Set([...this.activeRuns.values()].map((active) => active.sessionId)),
+      recoveryStore: () => this.codexRecoveryFactStore(),
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
+      legacyRecovery: legacyHandoffRecoveryRuntime,
+      recordError: (error) => {
+        const formatted = formatLocalError(error);
+        this.lastError = formatted;
+        return formatted;
+      },
+      report: (input) => log(input),
+    });
   }
 
   get sqlitePath(): string {
@@ -1012,237 +1044,7 @@ export class LocalConsoleRuntime {
   }
 
   async init(): Promise<void> {
-    await this.options.store.init();
-    const sessions = await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions());
-    const sessionIds = sessions.length === 0
-      ? [this.sessionId]
-      : sessions.map((session) => session.sessionId);
-    const pendingSessionIds = new Set(
-      sessions.filter(hasPendingStartupControlWork).map((session) => session.sessionId),
-    );
-    await Promise.all(sessionIds.map(async (sessionId) => {
-      let startupMessages: LocalConsoleMessage[] | undefined;
-      let knownRecoveryFacts:
-        | Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>
-        | undefined;
-      const hasProjectedStartupWork = sessions.length === 0 || pendingSessionIds.has(sessionId);
-      let hasLegacyRepairCandidate = hasProjectedStartupWork;
-      if (!hasProjectedStartupWork) {
-        const recoveryStore = this.codexRecoveryFactStore();
-        if (recoveryStore !== null) {
-          knownRecoveryFacts = await readLocalCodexRecoveryFacts(
-            recoveryStore.getSessionFactLogPath(sessionId),
-            sessionId,
-          );
-          const recoveryFacts = knownRecoveryFacts;
-          hasLegacyRepairCandidate = recoveryFacts.intents.some((intent) =>
-            intent.reason === "graceful-shutdown"
-            && intent.sourceDisposition === undefined
-            && !recoveryFacts.consumedIntentIds.has(intent.intentId)
-            && !recoveryFacts.repairedIntentIds.has(intent.intentId));
-        }
-      }
-      if (hasProjectedStartupWork) {
-        try {
-          startupMessages = await this.claimOrphanRuns(sessionId);
-        } catch (error) {
-          this.lastError = formatLocalError(error);
-          log({ event: "local-console-claim-orphan-runs-failed", sessionId, error: this.lastError });
-        }
-      }
-      if (hasLegacyRepairCandidate) {
-        try {
-          await this.repairLegacyAgentHandoffResumeSources(
-            sessionId,
-            startupMessages,
-            knownRecoveryFacts,
-          );
-        } catch (error) {
-          this.lastError = formatLocalError(error);
-          log({ event: "local-console-repair-agent-handoff-resume-failed", sessionId, error: this.lastError });
-        }
-      }
-      if (hasProjectedStartupWork) {
-        try {
-          await this.repairStaleRunning(sessionId);
-        } catch (error) {
-          this.lastError = formatLocalError(error);
-          log({ event: "local-console-repair-stale-failed", sessionId, error: this.lastError });
-        }
-      }
-    }));
-  }
-
-  private async claimOrphanRuns(sessionId: string): Promise<LocalConsoleMessage[]> {
-    const messages = await this.storeCall("local-console-store-list-messages", () =>
-      this.options.store.listMessages(sessionId),
-    );
-    const activeSessionIds = new Set(
-      [...this.activeRuns.values()].map((active) => active.sessionId),
-    );
-    const orphans = identifyOrphanRuns({ sessionId, messages, activeSessionIds });
-    const recoveryStore = this.codexRecoveryFactStore();
-    const recoveryFacts = recoveryStore === null
-      ? { intents: [], consumedIntentIds: new Set<string>(), repairedIntentIds: new Set<string>() }
-      : await readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(sessionId), sessionId);
-    for (const orphan of orphans) {
-      try {
-        const gracefulIntent = recoveryFacts.intents.find((intent) =>
-          intent.targetRunId === orphan.runId
-          && intent.reason === "graceful-shutdown"
-          && !recoveryFacts.consumedIntentIds.has(intent.intentId));
-        if (gracefulIntent !== undefined) {
-          if (orphan.userMessageId !== gracefulIntent.sourceMessageId) {
-            await this.storeCall("local-console-store-release-graceful-worker-placeholder", () =>
-              this.options.store.releaseMessageForRetry({
-                userMessageId: orphan.userMessageId,
-                sessionId,
-                now: this.nowIso(),
-              }));
-          }
-          const source = messages.find((message) => message.id === gracefulIntent.sourceMessageId);
-          const sourceDisposition = gracefulIntent.sourceDisposition;
-          if (sourceDisposition !== undefined) {
-            const releaseMessageForResume = this.options.store.releaseMessageForResume;
-            if (releaseMessageForResume === undefined) {
-              throw new Error("local console graceful resume persistence capability unavailable");
-            }
-            await this.storeCall("local-console-store-release-graceful-resume", () =>
-              releaseMessageForResume.call(this.options.store, {
-                userMessageId: gracefulIntent.sourceMessageId,
-                sessionId,
-                sourceDisposition,
-                targetRunId: gracefulIntent.targetRunId,
-                role: gracefulIntent.role,
-                now: this.nowIso(),
-              }));
-          }
-          continue;
-        }
-        await this.storeCall("local-console-store-record-stuck", () =>
-          this.options.store.recordStuck({
-            userMessageId: orphan.userMessageId,
-            sessionId,
-            reason: ORPHAN_RUN_STUCK_REASON,
-            runId: orphan.runId,
-            runDir: orphan.runDir,
-            now: this.nowIso(),
-          }),
-        );
-      } catch (error) {
-        this.lastError = formatLocalError(error);
-        log({
-          event: "local-console-record-orphan-stuck-failed",
-          sessionId,
-          userMessageId: orphan.userMessageId,
-          error: this.lastError,
-        });
-      }
-    }
-    return messages;
-  }
-
-  private async repairLegacyAgentHandoffResumeSources(
-    sessionId: string,
-    startupMessages?: LocalConsoleMessage[],
-    knownRecoveryFacts?: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>,
-  ): Promise<void> {
-    const recoveryStore = this.codexRecoveryFactStore();
-    const repairSource = this.options.store.repairAgentHandoffResumeSource;
-    if (recoveryStore === null || repairSource === undefined) {
-      return;
-    }
-    const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
-    const [messages, recoveryFacts, runContexts] = await Promise.all([
-      startupMessages ?? this.storeCall("local-console-store-list-messages", () =>
-        this.options.store.listMessages(sessionId)),
-      knownRecoveryFacts ?? readLocalCodexRecoveryFacts(factLogPath, sessionId),
-      readRunExecutionContexts(factLogPath, sessionId),
-    ]);
-    const unconsumedIntents = recoveryFacts.intents.filter((intent) =>
-      !recoveryFacts.consumedIntentIds.has(intent.intentId));
-    const unconsumedGracefulIntents = unconsumedIntents.filter((intent) =>
-      intent.reason === "graceful-shutdown");
-
-    for (const intent of unconsumedGracefulIntents) {
-      if (
-        recoveryFacts.repairedIntentIds.has(intent.intentId)
-      ) {
-        continue;
-      }
-      const source = messages.find((message) => message.id === intent.sourceMessageId);
-      if (source?.status === "displayed") {
-        continue;
-      }
-      if (
-        intent.sourceDisposition !== undefined
-        && intent.sourceDisposition !== "agent-handoff"
-        && source?.speaker !== "agent"
-      ) {
-        continue;
-      }
-      const rejection = (() => {
-        if (
-          intent.sourceDisposition !== undefined
-          && intent.sourceDisposition !== "agent-handoff"
-        ) {
-          return "source disposition is not agent-handoff";
-        }
-        const competingIntents = unconsumedGracefulIntents.filter((candidate) =>
-          candidate.sourceMessageId === intent.sourceMessageId
-          || candidate.targetRunId === intent.targetRunId);
-        if (
-          competingIntents.length !== 1
-          || competingIntents[0]?.intentId !== intent.intentId
-        ) {
-          return "resume intent is not unique for its source and run";
-        }
-        if (
-          source === undefined
-          || source.speaker !== "agent"
-          || source.sourceKind !== "local-message"
-          || source.status !== "pending"
-        ) {
-          return "exact source is not an Agent pending local message";
-        }
-        const relatedContexts = runContexts.filter((context) =>
-          context.runId === intent.targetRunId
-          || context.sourceMessageId === intent.sourceMessageId);
-        if (
-          relatedContexts.length !== 1
-          || relatedContexts[0]?.sessionId !== sessionId
-          || relatedContexts[0]?.runId !== intent.targetRunId
-          || relatedContexts[0]?.sourceMessageId !== intent.sourceMessageId
-          || relatedContexts[0]?.role !== intent.role
-        ) {
-          return "run execution context is missing, conflicting, or not exact";
-        }
-        if (this.activeRuns.has(intent.targetRunId)) {
-          return "target run is active in this process";
-        }
-        return null;
-      })();
-      if (rejection !== null) {
-        log({
-          event: "local-console-agent-handoff-resume-repair-rejected",
-          sessionId,
-          intentId: intent.intentId,
-          targetRunId: intent.targetRunId,
-          sourceMessageId: intent.sourceMessageId,
-          reason: rejection,
-        });
-        continue;
-      }
-      await this.storeCall("local-console-store-repair-agent-handoff-resume-source", () =>
-        repairSource.call(this.options.store, {
-          sessionId,
-          intentId: intent.intentId,
-          targetRunId: intent.targetRunId,
-          sourceMessageId: intent.sourceMessageId,
-          role: intent.role,
-          now: this.nowIso(),
-        }));
-    }
+    await this.startupRecoveryRuntime.init();
   }
 
   async close(): Promise<void> {
@@ -2195,16 +1997,7 @@ export class LocalConsoleRuntime {
   }
 
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
-    const staleThresholdMs = this.codexMaxDurationMs ?? this.codexIdleTimeoutMs ?? 10 * 60 * 1000;
-    const cutoffIso = new Date(this.now().getTime() - staleThresholdMs - this.staleRunningGraceMs).toISOString();
-    return await this.storeCall("local-console-store-mark-stale", () =>
-      this.options.store.markStaleRunning({
-        sessionId,
-        cutoffIso,
-        now: this.nowIso(),
-        reason: `stale-running>${String(staleThresholdMs + this.staleRunningGraceMs)}ms`,
-      }),
-    );
+    return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
 
   private async defaultProjectId(): Promise<string> {
