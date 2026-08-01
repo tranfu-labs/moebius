@@ -37,11 +37,11 @@ import {
   type LocalConsoleStore,
 } from "./types.js";
 import {
-  formatLocalError,
   LocalConsoleRuntime,
   type LocalConsoleAgentFile,
   type LocalConsoleRuntimeOptions,
 } from "./runtime.js";
+import { formatLocalError } from "./runtime-domain.js";
 
 export interface LocalConsoleServerOptions {
   host?: string;

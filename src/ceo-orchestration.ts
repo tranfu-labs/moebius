@@ -3,9 +3,9 @@ import { parseAgentMentions } from "./conversation.js";
 import type { CeoScript } from "./ceo-scripts.js";
 import { getCeoScriptById } from "./ceo-scripts.js";
 import type { IssueSource } from "./issue-source.js";
-import { parseTrailingStageMarker } from "./stages.js";
+import { CEO_ORCHESTRATION_STAGE, parseTrailingStageMarker } from "./stages.js";
 
-export const CEO_ORCHESTRATION_STAGE = "in-progress";
+export { CEO_ORCHESTRATION_STAGE } from "./stages.js";
 export const CEO_ORCHESTRATION_KEY_PREFIX = "moebius-orchestration-key";
 export const CEO_ROUNDTABLE_KEY_PREFIX = "moebius-roundtable-key";
 export const CEO_ROUNDTABLE_COMPLETION_KEY_PREFIX = "moebius-roundtable-completion-key";

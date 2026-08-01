@@ -3,10 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { loadCeoScripts } from "../ceo-scripts.js";
 import {
-  CEO_ORCHESTRATION_STAGE,
   parseCeoOrchestrationOutput,
-  type CeoChildIssueDescriptor,
-  type CeoOrchestrationGroup,
 } from "../ceo-orchestration.js";
 import {
   type CodexRunOptions,
@@ -41,7 +38,6 @@ import {
   LOCAL_CONSOLE_PROJECT_ID,
   LocalConsoleBusyError,
   LocalConsoleProjectFolderError,
-  LocalConsoleStoreTimeoutError,
   type LocalConsoleFileContent,
   type LocalConsoleMessage,
   type LocalConsoleProjectFiles,
@@ -107,6 +103,34 @@ import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.js";
 import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
+import {
+  assertTextFragments,
+  buildFallbackProjectSummary,
+  formatLocalError,
+  hasPendingStartupControlWork,
+  isPendingDispatchMessage,
+  isPendingPrimaryMessage,
+  isVisibleTimelineMessage,
+  isWorkerRunPlaceholder,
+  localTerminalFromResult,
+  noSessionWorkspaceDiff,
+  normalizeTitle,
+  projectPendingDispatch,
+  requireAgentFilePath,
+  workerLaneKey,
+} from "./runtime-domain.js";
+import {
+  collectLocalCeoLedgerTaskIds,
+  localChildSessionId,
+  localOrchestrationKey,
+  renderLocalChildSessionInitialBody,
+} from "./local-child-session-plan.js";
+import {
+  directoryAvailable,
+  fileAvailable,
+  readOptionalTextFile,
+} from "./runtime-file-support.js";
+import { withLocalConsoleTimeout } from "./store-timeout.js";
 import {
   generateLocalWorkspaceDiff,
   invalidateLocalWorkspaceFacts,
@@ -4606,326 +4630,10 @@ async function defaultCodexThreadAvailability(threadId: string): Promise<boolean
   return (await resolveCodexRollout(threadId)).status === "available";
 }
 
-function buildFallbackProjectSummary(projectRoot: string): LocalConsoleProjectSummary {
-  return {
-    projectId: "local",
-    sourceType: "local-folder",
-    title: path.basename(projectRoot) || projectRoot,
-    folderPath: projectRoot,
-    worktreeMode: false,
-    workspaceCwd: projectRoot,
-    workspaceMode: "direct",
-    worktreePath: null,
-    worktreeUnavailableReason: null,
-    workspaceUpdatedAt: null,
-    sessions: [],
-    runningCount: 0,
-    waitingCount: 0,
-    stuckCount: 0,
-    errorCount: 0,
-  };
-}
-
-function noSessionWorkspaceDiff(): LocalConsoleWorkspaceDiffSummary {
-  return { available: false, fileCount: null, reason: "no-session" };
-}
-
-async function readOptionalTextFile(filePath: string): Promise<string | null> {
-  try {
-    return await fs.readFile(filePath, "utf8");
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function normalizeTitle(title: string | undefined): string {
-  const trimmed = title?.trim();
-  if (trimmed === undefined || trimmed === "") {
-    return "新会话";
-  }
-  return trimmed.length > 48 ? `${trimmed.slice(0, 48)}...` : trimmed;
-}
-
-export async function withLocalConsoleTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  let timeout: NodeJS.Timeout | null = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => reject(new LocalConsoleStoreTimeoutError(label, timeoutMs)), timeoutMs);
-        timeout.unref();
-      }),
-    ]);
-  } finally {
-    if (timeout !== null) {
-      clearTimeout(timeout);
-    }
-  }
-}
-
-export function formatLocalError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function runTimingStatusForFailedResult(
   result: Extract<CodexRunResult, { ok: false }>,
 ): "failed" | "interrupted" | "stuck" | "paused" {
   if (executionInterruptionCauseForResult(result) === "runtime-closing") return "paused";
   if (executionTimeoutKind(result) !== null) return "stuck";
   return isInterruptedCodexRunResult(result) ? "interrupted" : "failed";
-}
-
-function localTerminalFromResult(
-  result: Extract<CodexRunResult, { ok: false }>,
-  fallbackPartialMarkdown: string | null,
-  actualProfile: LocalConsoleExecutionProfile | null,
-): LocalConsoleTerminal {
-  const partialMarkdown = result.terminal?.partialText.trim().length
-    ? result.terminal.partialText
-    : fallbackPartialMarkdown ?? "";
-  if (result.terminal === undefined) {
-    return {
-      kind: "crashed",
-      subkind: null,
-      safeCode: "legacy-run-failure",
-      retryable: null,
-      partialMarkdown,
-      contentIncomplete: true,
-      actualProfile,
-    };
-  }
-  switch (result.terminal.kind) {
-    case "interrupted":
-      return {
-        kind: "interrupted",
-        subkind: result.terminal.actor,
-        safeCode: null,
-        retryable: null,
-        partialMarkdown,
-        contentIncomplete: true,
-        actualProfile,
-      };
-    case "timeout":
-      return {
-        kind: "timeout",
-        subkind: result.terminal.basis,
-        safeCode: null,
-        retryable: null,
-        partialMarkdown,
-        contentIncomplete: true,
-        actualProfile,
-      };
-    case "quota-exhausted":
-    case "rate-limited":
-    case "auth":
-      return {
-        kind: result.terminal.kind,
-        subkind: null,
-        safeCode: result.terminal.safeCode,
-        retryable: result.terminal.retryable,
-        partialMarkdown,
-        contentIncomplete: true,
-        actualProfile,
-      };
-    case "crashed":
-      return {
-        kind: "crashed",
-        subkind: null,
-        safeCode: result.terminal.safeCode,
-        retryable: null,
-        partialMarkdown,
-        contentIncomplete: true,
-        actualProfile,
-      };
-    default:
-      return assertNeverExecutionTerminal(result.terminal);
-  }
-}
-
-function assertNeverExecutionTerminal(value: never): never {
-  throw new Error(`Unhandled local execution terminal: ${String(value)}`);
-}
-
-function workerLaneKey(sessionId: string, role: string): string {
-  return `${sessionId}\u0000${role}`;
-}
-
-function isPendingPrimaryMessage(message: LocalConsoleMessage): boolean {
-  return isPendingDispatchMessage(message)
-    && message.dispatchLane !== "worker"
-    && message.dispatchLane !== "awaiting-team";
-}
-
-function isPendingDispatchMessage(message: LocalConsoleMessage): boolean {
-  return message.speaker === "user" && message.status === "pending";
-}
-
-function projectPendingDispatch(message: LocalConsoleMessage) {
-  const targetLane = message.dispatchLane ?? "primary";
-  return {
-    message,
-    targetLane,
-    targetRole: message.dispatchRole ?? null,
-    waitingForTeam: targetLane === "awaiting-team",
-  };
-}
-
-function hasPendingStartupControlWork(session: LocalConsoleSessionSummary): boolean {
-  return session.hasPendingControlWork === true || session.runningCount > 0;
-}
-
-function isWorkerRunPlaceholder(message: LocalConsoleMessage): boolean {
-  return message.sourceKind === "local-worker-run";
-}
-
-function isVisibleTimelineMessage(message: LocalConsoleMessage): boolean {
-  return message.sourceKind !== "pending-removed"
-    && !isPendingDispatchMessage(message)
-    && !isWorkerRunPlaceholder(message);
-}
-
-function assertTextFragments(fragments: readonly LocalConsoleTextFragment[]): void {
-  const ids = new Set<string>();
-  for (const fragment of fragments) {
-    if (
-      fragment.id.trim() === ""
-      || fragment.label.trim() === ""
-      || fragment.text.trim() === ""
-    ) {
-      throw new Error("Text fragments require non-empty id, label, and text");
-    }
-    if (ids.has(fragment.id)) {
-      throw new Error("Text fragment ids must be unique");
-    }
-    ids.add(fragment.id);
-  }
-}
-
-function requireAgentFilePath(agent: LocalConsoleAgentFile): string {
-  if (agent.path === undefined) {
-    throw new Error(`Agent snapshot has no content: ${agent.name}`);
-  }
-  return agent.path;
-}
-
-async function directoryAvailable(folderPath: string): Promise<boolean> {
-  try {
-    const stat = await fs.stat(folderPath);
-    if (!stat.isDirectory()) {
-      return false;
-    }
-    await fs.access(folderPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fileAvailable(filePath: string): Promise<boolean> {
-  try {
-    const stat = await fs.stat(filePath);
-    return stat.isFile();
-  } catch {
-    return false;
-  }
-}
-
-function collectLocalCeoLedgerTaskIds(finalText: string): string[] {
-  const jsonText = stripLocalCeoJson(finalText);
-  if (jsonText === null) {
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    return [];
-  }
-  if (!isPlainObject(parsed)) {
-    return [];
-  }
-  const issues = parsed["issues"];
-  if (!Array.isArray(issues)) {
-    return [];
-  }
-  return issues
-    .map((issue) => (isPlainObject(issue) && typeof issue["ledgerTaskId"] === "string" ? issue["ledgerTaskId"] : null))
-    .filter((value): value is string => value !== null && value.trim() !== "");
-}
-
-function stripLocalCeoJson(finalText: string): string | null {
-  const marker = `<!-- moebius:stage=${CEO_ORCHESTRATION_STAGE} -->`;
-  const withoutMarker = finalText.includes(marker) ? finalText.slice(0, finalText.lastIndexOf(marker)).trim() : finalText.trim();
-  const fenced = withoutMarker.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/u);
-  return (fenced?.[1] ?? withoutMarker).trim();
-}
-
-function localOrchestrationKey(input: {
-  parentSessionId: string;
-  workflowId: string;
-  ledgerTaskId: string;
-}): string {
-  const digest = crypto
-    .createHash("sha256")
-    .update(`${input.parentSessionId}|${input.workflowId}|${input.ledgerTaskId}`)
-    .digest("hex")
-    .slice(0, 32);
-  return `moebius-local-orchestration-key:${digest}`;
-}
-
-function localChildSessionId(parentSessionId: string, ledgerTaskId: string): string {
-  const digest = crypto.createHash("sha256").update(`${parentSessionId}|${ledgerTaskId}`).digest("hex").slice(0, 12);
-  return `local:child:${slugForLocalSessionId(ledgerTaskId)}:${digest}`;
-}
-
-function slugForLocalSessionId(value: string): string {
-  const slug = value.toLowerCase().replace(/[^a-z0-9_-]+/gu, "-").replace(/^-+|-+$/gu, "");
-  return slug === "" ? "task" : slug.slice(0, 40);
-}
-
-function renderLocalChildSessionInitialBody(input: {
-  parentSessionId: string;
-  workflowId: string;
-  group: CeoOrchestrationGroup;
-  descriptor: CeoChildIssueDescriptor;
-  orchestrationKey: string;
-}): string {
-  const taskChecks = input.descriptor.acceptanceStatements.map((statement, index) => `${String(index + 1)}. ${statement}`).join("\n");
-  const dependencies =
-    input.descriptor.dependencies.length === 0
-      ? "- none"
-      : input.descriptor.dependencies.map((dependency) => `- ${dependency}`).join("\n");
-
-  return `${input.descriptor.description.trimEnd()}
-
-Parent session: ${input.parentSessionId}
-Ledger task id: ${input.descriptor.ledgerTaskId}
-Workflow id: ${input.workflowId}
-Quality baseline: ${input.descriptor.qualityBaseline}
-
-Dependencies:
-${dependencies}
-${taskChecks === "" ? "" : `\n任务检查参考:\n${taskChecks}\n`}
-
-Initial handoff:
-@${input.descriptor.initialRole} 请按任务描述、质量基准和现有上下文推进。
-
-Conflict group: ${input.group.id}
-Conflict reason: ${input.group.reason}
-
-Provenance:
-${input.descriptor.provenance}
-
-<!-- ${input.orchestrationKey} -->`;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
