@@ -99,6 +99,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/state-sync.ts",
   "desktop/src/main.ts",
   "desktop/src/onboarding/onboarding-route.tsx",
+  "desktop/src/onboarding/use-onboarding-readiness.ts",
   "desktop/src/runner-child.ts",
   "desktop/src/runner-launch.ts",
   "desktop/src/team-onboarding-orchestration.ts",

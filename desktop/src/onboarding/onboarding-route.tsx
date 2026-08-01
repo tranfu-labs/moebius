@@ -1,7 +1,6 @@
 import {
   OnboardingShell,
   type OnboardingCli,
-  type OnboardingEnvironmentState,
   type OnboardingInstallationState,
   type OnboardingMode,
   type OperatorAgentTeam,
@@ -20,10 +19,6 @@ import {
   toTeamBuilderViewState,
 } from "../team-builder-view-state.js";
 import type {
-  OnboardingCliReadinessSnapshot,
-  OnboardingCliReadinessState,
-} from "./cli-readiness-contract.js";
-import type {
   OnboardingCliInstallSnapshot,
   OnboardingCliInstallState,
 } from "./cli-installer-contract.js";
@@ -31,19 +26,9 @@ import {
   createOnboardingInstallationModel,
   decideOnboardingInstallationSnapshot,
 } from "./onboarding-installation-model.js";
-import {
-  createOnboardingReadinessModel,
-  decideOnboardingReadinessSnapshot,
-  isCurrentOnboardingReadinessCheck,
-  planOnboardingReadinessCheck,
-} from "./onboarding-readiness-model.js";
+import { useOnboardingReadiness } from "./use-onboarding-readiness.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
-const INITIAL_ENVIRONMENT: OnboardingEnvironmentState = {
-  codex: { status: "checking", revision: 0 },
-  claude: { status: "checking", revision: 0 },
-  kimi: { status: "checking", revision: 0 },
-};
 const INITIAL_INSTALLATIONS: OnboardingInstallationState = {
   codex: { cli: "codex", status: "idle", revision: 0 },
   claude: { cli: "claude", status: "idle", revision: 0 },
@@ -61,7 +46,6 @@ export function OnboardingRoute({
 }): JSX.Element {
   const { t } = useI18n();
   const api = window.moebius;
-  const [environment, setEnvironment] = useState<OnboardingEnvironmentState>(INITIAL_ENVIRONMENT);
   const [installations, setInstallations] = useState<OnboardingInstallationState>(
     INITIAL_INSTALLATIONS,
   );
@@ -70,25 +54,10 @@ export function OnboardingRoute({
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
-  const readinessModelRef = useRef(createOnboardingReadinessModel());
+  const { environment, checkEnvironment, loadReadinessState } = useOnboardingReadiness(api);
   const installationModelRef = useRef(createOnboardingInstallationModel());
   const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
   const installMutationPendingRef = useRef(new Set<OnboardingCli>());
-
-  const mergeReadinessSnapshot = useCallback((
-    snapshot: OnboardingCliReadinessSnapshot,
-  ): boolean => {
-    const decision = decideOnboardingReadinessSnapshot(readinessModelRef.current, snapshot);
-    if (!decision.accepted) {
-      return false;
-    }
-    readinessModelRef.current = decision.model;
-    setEnvironment((current) => ({
-      ...current,
-      [snapshot.cli]: toViewReadiness(snapshot),
-    }));
-    return true;
-  }, []);
 
   const mergeInstallationSnapshot = useCallback((
     snapshot: OnboardingCliInstallSnapshot,
@@ -109,81 +78,6 @@ export function OnboardingRoute({
     setInstallations((current) => ({ ...current, [snapshot.cli]: next }));
     return decision;
   }, []);
-
-  const checkCli = useCallback(async (cli: OnboardingCli) => {
-    const check = planOnboardingReadinessCheck(readinessModelRef.current, cli);
-    readinessModelRef.current = check.model;
-    const { sequence } = check;
-    setEnvironment((current) => ({
-      ...current,
-      [cli]: {
-        status: "checking",
-        revision: current[cli].revision + 1,
-        lastKnownReady: current[cli].status === "ready"
-          || current[cli].lastKnownReady === true,
-      },
-    }));
-    try {
-      if (api?.checkOnboardingCliReadiness !== undefined) {
-        const result = await api.checkOnboardingCliReadiness(cli);
-        if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
-          return;
-        }
-        mergeReadinessSnapshot(result);
-        return;
-      }
-      if (cli !== "codex") {
-        setEnvironment((current) => ({
-          ...current,
-          [cli]: { status: "missing", revision: current[cli].revision },
-        }));
-        return;
-      }
-      const legacy = await api?.checkOnboardingCodex?.();
-      if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
-        return;
-      }
-      setEnvironment((current) => ({
-        ...current,
-        codex: legacy?.status === "ok"
-          ? {
-              status: "ready",
-              revision: current.codex.revision,
-              ...(legacy.detail === undefined ? {} : { version: legacy.detail }),
-            }
-          : {
-              status: legacy?.message === "Codex 未找到" ? "missing" : "unavailable", // i18n-exempt: legacy-protocol-value
-              revision: current.codex.revision,
-            },
-      }));
-    } catch {
-      if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
-        return;
-      }
-      setEnvironment((current) => ({
-        ...current,
-        [cli]: { status: "unavailable", revision: current[cli].revision },
-      }));
-    }
-  }, [api, mergeReadinessSnapshot]);
-
-  const checkEnvironment = useCallback(async () => {
-    await Promise.all([checkCli("codex"), checkCli("claude"), checkCli("kimi")]);
-  }, [checkCli]);
-
-  const loadReadinessState = useCallback(async () => {
-    if (api?.getOnboardingCliReadinessState === undefined) {
-      return;
-    }
-    try {
-      const next = await api.getOnboardingCliReadinessState();
-      mergeReadinessSnapshot(next.codex);
-      mergeReadinessSnapshot(next.claude);
-      mergeReadinessSnapshot(next.kimi);
-    } catch {
-      // Keep the last safe renderer state; manual recheck remains available.
-    }
-  }, [api, mergeReadinessSnapshot]);
 
   const loadInstallState = useCallback(async () => {
     if (api?.getOnboardingCliInstallState === undefined) {
@@ -510,27 +404,6 @@ function createInitialTeamBuilderState(initialPrompt: string): TeamBuilderViewSt
     proposal: null,
     proposalRevision: null,
     error: null,
-  };
-}
-
-function toViewEnvironment(
-  state: OnboardingCliReadinessState,
-): OnboardingEnvironmentState {
-  return {
-    codex: toViewReadiness(state.codex),
-    claude: toViewReadiness(state.claude),
-    kimi: toViewReadiness(state.kimi),
-  };
-}
-
-function toViewReadiness(
-  snapshot: OnboardingCliReadinessSnapshot,
-): OnboardingEnvironmentState[OnboardingCli] {
-  return {
-    status: snapshot.status,
-    revision: snapshot.revision,
-    code: snapshot.code,
-    ...(snapshot.version === null ? {} : { version: snapshot.version }),
   };
 }
 

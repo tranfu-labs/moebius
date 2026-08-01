@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { OnboardingCliReadinessSnapshot } from "../src/onboarding/cli-readiness-contract.js";
 import {
   createOnboardingReadinessModel,
+  decideOnboardingReadinessCheckCurrent,
   decideOnboardingReadinessSnapshot,
-  isCurrentOnboardingReadinessCheck,
   planOnboardingReadinessCheck,
 } from "../src/onboarding/onboarding-readiness-model.js";
 
@@ -14,8 +14,8 @@ describe("onboarding readiness controller", () => {
     const first = planOnboardingReadinessCheck(initial, "codex");
     const recheck = planOnboardingReadinessCheck(first.model, "codex");
 
-    expect(isCurrentOnboardingReadinessCheck(recheck.model, "codex", first.sequence)).toBe(false);
-    expect(isCurrentOnboardingReadinessCheck(recheck.model, "codex", recheck.sequence)).toBe(true);
+    expect(decideOnboardingReadinessCheckCurrent(recheck.model, "codex", first.sequence)).toBe(false);
+    expect(decideOnboardingReadinessCheckCurrent(recheck.model, "codex", recheck.sequence)).toBe(true);
   });
 
   it("merges newer per-CLI results without accepting an older full snapshot", () => {
