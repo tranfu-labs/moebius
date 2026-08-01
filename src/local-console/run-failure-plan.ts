@@ -3,6 +3,7 @@ import type {
   LocalConsoleExecutionProfile,
   LocalConsoleMessage,
   LocalConsoleSystemEventKind,
+  LocalConsoleTerminal,
 } from "./types.js";
 
 type FailedResult = Extract<CodexRunResult, { ok: false }>;
@@ -121,4 +122,28 @@ export function planGracefulWorkerPlaceholder(
   const placeholder = messages.find((message) =>
     message.runId === runId && message.sourceKind === "local-worker-run");
   return placeholder === undefined ? { kind: "missing" } : { kind: "release", messageId: placeholder.id };
+}
+
+export function planFailureRecordFields(
+  body: string | undefined,
+  terminal: LocalConsoleTerminal | null | undefined,
+): { body?: string; terminal?: LocalConsoleTerminal } {
+  return {
+    ...(body === undefined ? {} : { body }),
+    ...(terminal == null ? {} : { terminal }),
+  };
+}
+
+export function planTerminalRecordField(
+  terminal: LocalConsoleTerminal | null | undefined,
+): {} | { terminal: LocalConsoleTerminal } {
+  return terminal == null ? {} : { terminal };
+}
+
+export function decideDetachedTerminalCapability<T>(capability: T | undefined):
+  | { kind: "fallback" }
+  | { kind: "record"; capability: T } {
+  return capability === undefined
+    ? { kind: "fallback" }
+    : { kind: "record", capability };
 }

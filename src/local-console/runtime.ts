@@ -297,13 +297,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       interruptionCause: executionInterruptionCauseForResult,
       logTimeout: (input) => log(input),
       activeRun: (runId) => this.activeRunRegistry.get(runId),
-      recordStuck: (message, sessionId, runId, runDir, reason, terminal) =>
-        this.recordStuckBestEffort(message, sessionId, runId, runDir, reason, terminal),
-      recordInterrupted: (message, sessionId, runId, runDir, reason, cause, terminal) =>
-        this.recordInterruptedBestEffort(message, sessionId, runId, runDir, reason, cause, terminal),
-      recordFailure: (message, sessionId, runId, runDir, reason, body, terminal) =>
-        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason, body, terminal),
-      recordDetached: (input) => this.recordDetachedRunTerminal(input),
+      recordError: (event, error, originalError) => {
+        this.lastError = formatLocalError(error);
+        log({ event, error: this.lastError, ...(originalError === undefined ? {} : { originalError }) });
+      },
     });
     this.runLifecycleRuntime = new LocalRunLifecycleRuntime({
       activeRun: (runId) => this.activeRunRegistry.get(runId),
@@ -1060,59 +1057,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     }
   }
 
-  private async recordInterruptedBestEffort(
-    message: LocalConsoleMessage,
-    sessionId: string,
-    runId: string | null,
-    runDir: string | null,
-    reason: string,
-    interruptionKind: "user" | "redirect" | "context-unavailable" | "system" = "user",
-    terminal?: LocalConsoleTerminal | null,
-  ): Promise<void> {
-    try {
-      await this.storePorts.call("local-console-store-record-interrupted", () =>
-        this.options.store.recordInterrupted({
-          userMessageId: message.id,
-          sessionId,
-          reason,
-          interruptionKind,
-          runId,
-          runDir,
-          now: this.nowIso(),
-          ...(terminal == null ? {} : { terminal }),
-        }),
-      );
-    } catch (recordError) {
-      this.lastError = formatLocalError(recordError);
-      log({ event: "local-console-record-interrupted-failed", error: this.lastError, originalError: reason });
-    }
-  }
-
-  private async recordStuckBestEffort(
-    message: LocalConsoleMessage,
-    sessionId: string,
-    runId: string | null,
-    runDir: string | null,
-    reason: string,
-    terminal?: LocalConsoleTerminal | null,
-  ): Promise<void> {
-    try {
-      await this.storePorts.call("local-console-store-record-stuck", () =>
-        this.options.store.recordStuck({
-          userMessageId: message.id,
-          sessionId,
-          reason,
-          runId,
-          runDir,
-          now: this.nowIso(),
-          ...(terminal == null ? {} : { terminal }),
-        }),
-      );
-    } catch (recordError) {
-      this.lastError = formatLocalError(recordError);
-      log({ event: "local-console-record-stuck-failed", error: this.lastError, originalError: reason });
-    }
-  }
 
   private async recordVisibleChildSessionFailureBestEffort(parentSessionId: string, reason: string): Promise<void> {
     try {

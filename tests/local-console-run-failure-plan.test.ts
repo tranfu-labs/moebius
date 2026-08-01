@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CodexRunResult } from "../src/codex.js";
+import type { LocalConsoleTerminal } from "../src/local-console/types.js";
 import {
+  decideDetachedTerminalCapability,
   planDetachedRunFailure,
   planDirectRunFailure,
+  planFailureRecordFields,
+  planTerminalRecordField,
 } from "../src/local-console/run-failure-plan.js";
 
 const failed = (input: Partial<Extract<CodexRunResult, { ok: false }>> = {}) => ({
@@ -55,5 +59,32 @@ describe("run failure plan", () => {
       interrupted: true,
       cause: "user",
     })).toMatchObject({ kind: "interrupted", systemEventKind: "user-stopped" });
+  });
+
+  it("plans optional terminal persistence without inventing absent fields", () => {
+    const terminal = {
+      kind: "crashed",
+      subkind: null,
+      safeCode: null,
+      retryable: null,
+      partialMarkdown: "",
+      contentIncomplete: true,
+      actualProfile: null,
+    } satisfies LocalConsoleTerminal;
+
+    expect(planFailureRecordFields(undefined, undefined)).toEqual({});
+    expect(planFailureRecordFields("visible failure", terminal)).toEqual({
+      body: "visible failure",
+      terminal,
+    });
+    expect(planTerminalRecordField(null)).toEqual({});
+    expect(planTerminalRecordField(terminal)).toEqual({ terminal });
+  });
+
+  it("chooses the detached terminal persistence capability when available", () => {
+    const capability = async () => undefined;
+
+    expect(decideDetachedTerminalCapability(undefined)).toEqual({ kind: "fallback" });
+    expect(decideDetachedTerminalCapability(capability)).toEqual({ kind: "record", capability });
   });
 });

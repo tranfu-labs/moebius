@@ -3,8 +3,11 @@ import { localTerminalFromResult } from "./runtime-domain.js";
 import {
   planActiveFailureContext,
   planDetachedRunFailure,
+  decideDetachedTerminalCapability,
   planDirectRunFailure,
+  planFailureRecordFields,
   planGracefulWorkerPlaceholder,
+  planTerminalRecordField,
 } from "./run-failure-plan.js";
 import type {
   LocalConsoleExecutionProfile,
@@ -31,19 +34,7 @@ export class LocalRunFailureRuntime {
     interruptionCause(result: Extract<CodexRunResult, { ok: false }>): "user" | "redirect" | "context-unavailable" | "runtime-closing" | "system" | null;
     logTimeout(input: { event: string; runDir: string; reason: string }): void;
     activeRun(runId: string): ActiveFailureContext | undefined;
-    recordStuck(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string, reason: string, terminal: LocalConsoleTerminal): Promise<void>;
-    recordInterrupted(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string, reason: string, cause: "context-unavailable" | "redirect" | "user" | "system", terminal: LocalConsoleTerminal): Promise<void>;
-    recordFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string, reason: string, body: string | undefined, terminal: LocalConsoleTerminal): Promise<void>;
-    recordDetached(input: {
-      sessionId: string;
-      body: string;
-      systemEventKind: LocalConsoleSystemEventKind;
-      runId: string;
-      runDir: string;
-      error: string;
-      status: "failed" | "interrupted" | "stuck";
-      terminal: LocalConsoleTerminal;
-    }): Promise<void>;
+    recordError(event: string, error: unknown, originalError?: string): void;
   }) {}
 
   async recordDirect(
@@ -65,12 +56,12 @@ export class LocalRunFailureRuntime {
     });
     if (plan.kind === "stuck") {
       this.input.logTimeout({ event: plan.logEvent, runDir: result.runDir, reason: result.reason });
-      await this.input.recordStuck(message, sessionId, runId, result.runDir, result.reason, terminal);
+      await this.recordStuck(message, sessionId, runId, result.runDir, result.reason, terminal);
       return;
     }
     if (plan.kind === "skip-graceful") return;
     if (plan.kind === "interrupted") {
-      await this.input.recordInterrupted(
+      await this.recordInterrupted(
         message,
         sessionId,
         runId,
@@ -81,7 +72,7 @@ export class LocalRunFailureRuntime {
       );
       return;
     }
-    await this.input.recordFailure(message, sessionId, runId, result.runDir, result.reason, plan.body, terminal);
+    await this.recordFailure(message, sessionId, runId, result.runDir, result.reason, plan.body, terminal);
   }
 
   async recordDetached(
@@ -109,7 +100,7 @@ export class LocalRunFailureRuntime {
       return;
     }
     if (plan.kind === "stuck") {
-      await this.input.recordDetached({
+      await this.recordDetachedTerminal({
         sessionId,
         body: plan.body,
         systemEventKind: plan.systemEventKind,
@@ -122,7 +113,7 @@ export class LocalRunFailureRuntime {
       return;
     }
     if (plan.kind === "interrupted") {
-      await this.input.recordDetached({
+      await this.recordDetachedTerminal({
         sessionId,
         body: plan.body,
         systemEventKind: plan.systemEventKind,
@@ -134,7 +125,7 @@ export class LocalRunFailureRuntime {
       });
       return;
     }
-    await this.input.recordDetached({
+    await this.recordDetachedTerminal({
       sessionId,
       body: plan.body,
       systemEventKind: plan.systemEventKind,
@@ -144,5 +135,108 @@ export class LocalRunFailureRuntime {
       status: plan.status,
       terminal,
     });
+  }
+
+  private async recordFailure(
+    message: LocalConsoleMessage,
+    sessionId: string,
+    runId: string,
+    runDir: string,
+    error: string,
+    body: string | undefined,
+    terminal: LocalConsoleTerminal,
+  ): Promise<void> {
+    try {
+      await this.input.storeCall("local-console-store-record-failure", () => this.input.store.recordFailure({
+        userMessageId: message.id,
+        sessionId,
+        error,
+        runId,
+        runDir,
+        now: this.input.nowIso(),
+        ...planFailureRecordFields(body, terminal),
+      }));
+    } catch (recordError) {
+      this.input.recordError("local-console-record-retryable-failure-failed", recordError, error);
+      await this.releaseForRetry(message, sessionId);
+    }
+  }
+
+  private async recordInterrupted(
+    message: LocalConsoleMessage,
+    sessionId: string,
+    runId: string,
+    runDir: string,
+    reason: string,
+    interruptionKind: "user" | "redirect" | "context-unavailable" | "system",
+    terminal: LocalConsoleTerminal,
+  ): Promise<void> {
+    try {
+      await this.input.storeCall("local-console-store-record-interrupted", () => this.input.store.recordInterrupted({
+        userMessageId: message.id,
+        sessionId,
+        reason,
+        interruptionKind,
+        runId,
+        runDir,
+        now: this.input.nowIso(),
+        ...planTerminalRecordField(terminal),
+      }));
+    } catch (recordError) {
+      this.input.recordError("local-console-record-interrupted-failed", recordError, reason);
+    }
+  }
+
+  private async recordStuck(
+    message: LocalConsoleMessage,
+    sessionId: string,
+    runId: string,
+    runDir: string,
+    reason: string,
+    terminal: LocalConsoleTerminal,
+  ): Promise<void> {
+    try {
+      await this.input.storeCall("local-console-store-record-stuck", () => this.input.store.recordStuck({
+        userMessageId: message.id,
+        sessionId,
+        reason,
+        runId,
+        runDir,
+        now: this.input.nowIso(),
+        ...planTerminalRecordField(terminal),
+      }));
+    } catch (recordError) {
+      this.input.recordError("local-console-record-stuck-failed", recordError, reason);
+    }
+  }
+
+  private async releaseForRetry(message: LocalConsoleMessage, sessionId: string): Promise<void> {
+    try {
+      await this.input.storeCall("local-console-store-release-retry", () => this.input.store.releaseMessageForRetry({
+        userMessageId: message.id,
+        sessionId,
+        now: this.input.nowIso(),
+      }));
+    } catch (error) {
+      this.input.recordError("local-console-release-retry-failed", error);
+    }
+  }
+
+  private async recordDetachedTerminal(input: {
+    sessionId: string;
+    body: string;
+    systemEventKind: LocalConsoleSystemEventKind;
+    runId: string;
+    runDir: string;
+    error: string;
+    status: "failed" | "interrupted" | "stuck";
+    terminal: LocalConsoleTerminal;
+  }): Promise<void> {
+    const decision = decideDetachedTerminalCapability(this.input.store.recordDetachedRunTerminal);
+    if (decision.kind === "fallback") {
+      await this.input.store.recordSystemMessage({ ...input, now: this.input.nowIso() });
+      return;
+    }
+    await decision.capability.call(this.input.store, { ...input, now: this.input.nowIso() });
   }
 }
