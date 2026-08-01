@@ -30,6 +30,52 @@ export interface ImportBoundaryViolation {
   specifier: string;
   resolvedTarget: string;
   dependencyPath?: string[];
+  line?: number;
+  detail?: string;
+}
+
+export type ArchitectureLayer = "view" | "application" | "domain" | "adapter";
+
+export interface ArchitectureLayerAssignment {
+  layer: ArchitectureLayer;
+  scope: ImportBoundaryScope;
+}
+
+export interface ArchitectureDependencyDebt {
+  ruleId:
+    | "architecture-layer-dependency-matrix"
+    | "domain-pure-runtime-closure"
+    | "view-no-side-effect-adapters"
+    | "application-no-view-dependency"
+    | "adapter-no-use-case-reentry";
+  importer: string;
+  target: string;
+  reason: string;
+  removalChange: string;
+}
+
+export interface ArchitectureFileDebt {
+  ruleId: "application-use-case-shape" | "adapter-boundary-branch-total";
+  file: string;
+  reason: string;
+  removalChange: string;
+}
+
+export interface ArchitectureConditionPermit {
+  ruleId: "application-use-case-shape" | "adapter-boundary-branch-total";
+  file: string;
+  exportName: string;
+  fingerprint: string;
+  kind: "transport-control" | "external-contract";
+  contract: string;
+}
+
+export interface FourLayerArchitectureConfig {
+  assignments: readonly ArchitectureLayerAssignment[];
+  compositionRoots: readonly string[];
+  dependencyDebt: readonly ArchitectureDependencyDebt[];
+  fileDebt: readonly ArchitectureFileDebt[];
+  conditionPermits: readonly ArchitectureConditionPermit[];
 }
 
 type ResolvedImportTarget =
@@ -40,6 +86,7 @@ interface ResolvedImportReference {
   specifier: string;
   runtime: boolean;
   target: ResolvedImportTarget;
+  line: number;
 }
 
 const exact = (value: string): ImportBoundaryScope => ({ kind: "exact", value });
@@ -274,6 +321,7 @@ export function analyzeImportBoundaries(input: {
           importer,
           specifier: reference.specifier,
           resolvedTarget: "<unresolved>",
+          line: reference.line,
         });
         continue;
       }
@@ -287,6 +335,7 @@ export function analyzeImportBoundaries(input: {
           importer,
           specifier: reference.specifier,
           resolvedTarget: target.kind === "repository" ? target.path : target.specifier,
+          line: reference.line,
         });
       }
     }
@@ -310,6 +359,7 @@ export function analyzeImportBoundaries(input: {
 export function validateBoundaryDocumentation(input: {
   markdown: string;
   rules?: readonly ImportBoundaryRule[];
+  additionalRuleIds?: readonly string[];
 }): string[] {
   const errors: string[] = [];
   const ids = new Map<string, number>();
@@ -342,7 +392,10 @@ export function validateBoundaryDocumentation(input: {
   for (const [id, count] of ids) {
     if (count !== 1) errors.push(`boundary marker must be unique: ${id} appears ${String(count)} times`);
   }
-  const registryIds = new Set((input.rules ?? IMPORT_BOUNDARY_RULES).map((rule) => rule.id));
+  const registryIds = new Set([
+    ...(input.rules ?? IMPORT_BOUNDARY_RULES).map((rule) => rule.id),
+    ...(input.additionalRuleIds ?? []),
+  ]);
   for (const id of documentedImportRules) {
     if (!registryIds.has(id)) errors.push(`documented IB rule is missing from registry: ${id}`);
   }
@@ -356,7 +409,7 @@ function collectModuleSpecifiers(
   filePath: string,
   source: string,
 ): {
-  references: Array<{ specifier: string; runtime: boolean }>;
+  references: Array<{ specifier: string; runtime: boolean; line: number }>;
   nonLiteralDynamicImports: number;
 } {
   const sourceFile = ts.createSourceFile(
@@ -366,7 +419,7 @@ function collectModuleSpecifiers(
     true,
     filePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
-  const references: Array<{ specifier: string; runtime: boolean }> = [];
+  const references: Array<{ specifier: string; runtime: boolean; line: number }> = [];
   let nonLiteralDynamicImports = 0;
   const visit = (node: ts.Node): void => {
     if (
@@ -379,10 +432,15 @@ function collectModuleSpecifiers(
         runtime: ts.isImportDeclaration(node)
           ? isRuntimeImportDeclaration(node)
           : isRuntimeExportDeclaration(node),
+        line: sourceFile.getLineAndCharacterOfPosition(node.moduleSpecifier.getStart(sourceFile)).line + 1,
       });
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       if (node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0]!)) {
-        references.push({ specifier: node.arguments[0]!.text, runtime: true });
+        references.push({
+          specifier: node.arguments[0]!.text,
+          runtime: true,
+          line: sourceFile.getLineAndCharacterOfPosition(node.arguments[0]!.getStart(sourceFile)).line + 1,
+        });
       } else {
         nonLiteralDynamicImports += 1;
       }
@@ -391,7 +449,11 @@ function collectModuleSpecifiers(
       && ts.isLiteralTypeNode(node.argument)
       && ts.isStringLiteralLike(node.argument.literal)
     ) {
-      references.push({ specifier: node.argument.literal.text, runtime: false });
+      references.push({
+        specifier: node.argument.literal.text,
+        runtime: false,
+        line: sourceFile.getLineAndCharacterOfPosition(node.argument.literal.getStart(sourceFile)).line + 1,
+      });
     }
     ts.forEachChild(node, visit);
   };
@@ -437,6 +499,7 @@ function findTransitiveViolations(
           specifier: reference.specifier,
           resolvedTarget: targetLabel,
           dependencyPath: [...dependencyPath, targetLabel],
+          line: reference.line,
         });
         continue;
       }

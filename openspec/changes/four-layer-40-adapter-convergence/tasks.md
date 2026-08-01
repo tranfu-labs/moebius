@@ -1,0 +1,13 @@
+# 任务：four-layer-40-adapter-convergence
+
+- [ ] 导出 30 change 后剩余 layer debt，按外部边界分组并逐项归属
+- [ ] 开工前逐项核对 Codex/Claude/Kimi 认证与额度、Electron 页面可达性和网络前提；记录用户/主理人对缺失前提的合并/归档策略
+- [ ] 建 parser/classifier test-name ledger，列明不可删除 IO 接缝
+- [ ] 清理 desktop main/team/onboarding/IPC/browser storage 共居判据
+- [ ] 清理 provider/files/trusted JSONL/workspace/attachment 共居判据
+- [ ] 清理 GitHub/media/state/ledger/observer/server 共居判据
+- [ ] 保持 `LocalConsoleStore` API/schema 不变，删除本 change 对应 debt
+- [ ] scope、定向测试、typecheck、desktop build 全绿
+- [ ] 执行 RA-13～RA-15，报告环境前提和真实观察
+- [ ] 报告纯比例、闸门耗时与速度净收益（允许为零）
+- [ ] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
