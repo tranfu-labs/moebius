@@ -1,8 +1,5 @@
 import { log } from "../log.js";
-import {
-  LOCAL_CONSOLE_DEFAULT_SESSION_ID,
-  type LocalConsoleStore,
-} from "./types.js";
+import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "./types.js";
 import {
   createLocalExecutionRunner,
   type LocalExecutionRunner,
@@ -21,15 +18,11 @@ import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
-import { createLocalSessionCommandWiring } from "./session-command-wiring.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
-import { createLocalSessionReadWiring } from "./session-read-wiring.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
-import { createLocalSessionMetadataWiring } from "./session-metadata-wiring.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
-import { createLocalMessageRetryWiring } from "./message-retry-wiring.js";
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
 import {
   LocalWorkerDispatchRuntime,
@@ -44,6 +37,7 @@ import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.js";
 import { createLocalRuntimeAdapters } from "./runtime-adapters.js";
 import { createLocalRuntimeRunWiring } from "./runtime-run-wiring.js";
+import { createLocalRuntimeSessionWiring } from "./runtime-session-wiring.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -53,10 +47,7 @@ import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import { formatLocalError } from "./runtime-domain.js";
-import {
-  LocalConsoleStorePorts,
-  type LocalSessionFactWritingStore,
-} from "./runtime-store-ports.js";
+import { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
@@ -217,104 +208,41 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       analysis: this.primaryAnalysisRuntime,
       terminal: this.primaryTerminalRuntime,
     }));
-    const messageRetryWiring = createLocalMessageRetryWiring({
+    const sessionWiring = createLocalRuntimeSessionWiring({
       context: runtimeContext,
       options,
-      defaultSessionId: this.sessionId,
-      lifecycle: this.runLifecycleRuntime,
-      continuation: this.sessionContinuationRuntime,
-      scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
-      processPending: (sessionId) => { void this.processPending(sessionId); },
-      schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
-      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
-      ...adapters,
-    });
-    this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
-      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
-      repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
-      applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
-      continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
-      dispatchWorkers: (sessionId, workspace) => this.workerDispatchRuntime.dispatch(sessionId, workspace),
-      hasPersistedPrimary: messageRetryWiring.hasPersistedPrimary,
-      executePrimary: (sessionId, workspace) => this.primaryExecutionRuntime.run(sessionId, workspace),
-      listSessions: () => this.storePorts.call("local-console-store-list-sessions", () => options.store.listSessions()),
-      formatError: (error) => formatLocalError(error),
-      setError: (error) => { this.lastError = error; },
-      report: (event, error) => log({ event, error }),
-    });
-    const sessionCommandWiring = createLocalSessionCommandWiring({
-      options,
-      context: runtimeContext,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
-      continuation: this.sessionContinuationRuntime,
-      inactiveSessions: this.inactiveSessions,
-      baselineCommits: this.conversationBaselineCommits,
-      processPending: (sessionId) => { void this.processPending(sessionId); },
-      ...adapters,
-      invalidateWorkspaceFacts: adapters.invalidateWorkspace,
-      logBaselineUnavailable: ({ projectId, error }) => log({
-        event: "local-console-conversation-baseline-unavailable",
-        projectId,
-        error,
-      }),
-    });
-    this.projectCommandRuntime = new LocalProjectCommandRuntime(sessionCommandWiring.project);
-    this.sessionCreationRuntime = new LocalSessionCreationRuntime(sessionCommandWiring.creation);
-    this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionCommandWiring.settings);
-    this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionCommandWiring.reference);
-
-    const sessionReadWiring = createLocalSessionReadWiring({
-      options,
-      context: runtimeContext,
+      adapters,
       activeRuns: this.activeRunRegistry,
       lifecycle: this.runLifecycleRuntime,
       continuation: this.sessionContinuationRuntime,
       presentation: this.sessionPresentationRuntime,
       conversationWorkspace: this.conversationWorkspaceRuntime,
       defaultSessionId: this.sessionId,
+      inactiveSessions: this.inactiveSessions,
+      baselineCommits: this.conversationBaselineCommits,
       lastError: () => this.lastError,
-      listChildSessions: (parentSessionId) => this.storePorts.call(
-        "local-console-store-list-child-sessions",
-        () => adapters.listChildSessions(parentSessionId),
-      ),
-      output: {
-        readOptionalTextFile: adapters.readOptionalTextFile,
-        sessionFactLogPath: (sessionId) => {
-          const store = options.store as LocalConsoleStore
-            & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
-          const getSessionFactLogPath = store.getSessionFactLogPath;
-          if (getSessionFactLogPath === undefined) {
-            throw new Error("local console store does not provide the session fact log path");
-          }
-          return getSessionFactLogPath.call(store, sessionId);
-        },
-        factReader: adapters.factReader,
-      },
-      workspace: {
-        readDiff: adapters.readDiff,
-        listFiles: adapters.listFiles,
-        readDiffFile: adapters.readDiffFile,
-        readWorkspaceFile: adapters.readWorkspaceFile,
-        readFileReference: adapters.readFileReference,
-        log: adapters.report,
-      },
-    });
-    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionReadWiring.state);
-    this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionReadWiring.output);
-    this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionReadWiring.workspace);
-
-    this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(createLocalSessionMetadataWiring({
-      context: runtimeContext,
-      options,
-      activeRuns: this.activeRunRegistry,
-      continuation: this.sessionContinuationRuntime,
-      loadCeoScripts: adapters.loadCeoScripts,
+      scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
-      reportError: (event, error, originalError) => log({ event, error, originalError }),
-    }));
-    this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime(messageRetryWiring.message);
-    this.runRetryRuntime = new LocalConsoleRunRetryRuntime(messageRetryWiring.retry);
+      schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
+      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
+      repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
+      applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
+      continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
+      dispatchWorkers: (sessionId, workspace) => this.workerDispatchRuntime.dispatch(sessionId, workspace),
+      executePrimary: (sessionId, workspace) => this.primaryExecutionRuntime.run(sessionId, workspace),
+      loadCeoScripts: adapters.loadCeoScripts,
+    });
+    this.pendingProcessingRuntime = new LocalPendingProcessingRuntime(sessionWiring.pending);
+    this.projectCommandRuntime = new LocalProjectCommandRuntime(sessionWiring.command.project);
+    this.sessionCreationRuntime = new LocalSessionCreationRuntime(sessionWiring.command.creation);
+    this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionWiring.command.settings);
+    this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionWiring.command.reference);
+    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionWiring.read.state);
+    this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionWiring.read.output);
+    this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionWiring.read.workspace);
+    this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(sessionWiring.metadata);
+    this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime(sessionWiring.messageRetry.message);
+    this.runRetryRuntime = new LocalConsoleRunRetryRuntime(sessionWiring.messageRetry.retry);
     const startupRecoveryWiring = new LocalStartupRecoveryWiring({
       store: options.store,
       defaultSessionId: this.sessionId,

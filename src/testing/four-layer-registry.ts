@@ -144,6 +144,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/runtime-facade.ts",
   "src/local-console/runtime-foundation-wiring.ts",
   "src/local-console/runtime-run-wiring.ts",
+  "src/local-console/runtime-session-wiring.ts",
   "src/local-console/runtime-shutdown-runtime.ts",
   "src/local-console/runtime-wiring-context.ts",
   "src/local-console/run-failure-runtime.ts",
