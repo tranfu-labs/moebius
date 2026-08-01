@@ -1,11 +1,11 @@
-import {
-  executionInterruptionCauseForResult,
-  executionTimeoutKind,
-  isInterruptedCodexRunResult,
-  type CodexRunResult,
-} from "../codex.js";
-import { log } from "../log.js";
+import type { CodexRunResult } from "../codex.js";
 import { localTerminalFromResult } from "./runtime-domain.js";
+import {
+  planActiveFailureContext,
+  planDetachedRunFailure,
+  planDirectRunFailure,
+  planGracefulWorkerPlaceholder,
+} from "./run-failure-plan.js";
 import type {
   LocalConsoleExecutionProfile,
   LocalConsoleMessage,
@@ -26,6 +26,10 @@ export class LocalRunFailureRuntime {
     store: LocalConsoleStore;
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
     nowIso(): string;
+    timeoutKind(result: Extract<CodexRunResult, { ok: false }>): "idle" | "tool" | "max-duration" | null;
+    interrupted(result: Extract<CodexRunResult, { ok: false }>): boolean;
+    interruptionCause(result: Extract<CodexRunResult, { ok: false }>): "user" | "redirect" | "context-unavailable" | "runtime-closing" | "system" | null;
+    logTimeout(input: { event: string; runDir: string; reason: string }): void;
     activeRun(runId: string): ActiveFailureContext | undefined;
     recordStuck(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string, reason: string, terminal: LocalConsoleTerminal): Promise<void>;
     recordInterrupted(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string, reason: string, cause: "context-unavailable" | "redirect" | "user" | "system", terminal: LocalConsoleTerminal): Promise<void>;
@@ -48,33 +52,36 @@ export class LocalRunFailureRuntime {
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
   ): Promise<void> {
-    const active = this.input.activeRun(runId);
-    const terminal = localTerminalFromResult(result, active?.liveMarkdown ?? null, active?.profile ?? null);
-    const timeoutKind = executionTimeoutKind(result);
-    if (timeoutKind !== null) {
-      log({
-        event: timeoutKind === "idle" ? "local-console-codex-idle-timeout" : "local-console-codex-watchdog-timeout",
-        runDir: result.runDir,
-        reason: result.reason,
-      });
+    const active = planActiveFailureContext(this.input.activeRun(runId));
+    const terminal = localTerminalFromResult(result, active.liveMarkdown, active.profile);
+    const plan = planDirectRunFailure({
+      result,
+      runId,
+      activeRunId: active.runId,
+      gracefulResumePrepared: active.gracefulResumePrepared,
+      timeoutKind: this.input.timeoutKind(result),
+      interrupted: this.input.interrupted(result),
+      cause: this.input.interruptionCause(result),
+    });
+    if (plan.kind === "stuck") {
+      this.input.logTimeout({ event: plan.logEvent, runDir: result.runDir, reason: result.reason });
       await this.input.recordStuck(message, sessionId, runId, result.runDir, result.reason, terminal);
       return;
     }
-    if (isInterruptedCodexRunResult(result)) {
-      const cause = executionInterruptionCauseForResult(result);
-      if (cause === "runtime-closing" && active?.runId === runId && active.gracefulResumePrepared) return;
+    if (plan.kind === "skip-graceful") return;
+    if (plan.kind === "interrupted") {
       await this.input.recordInterrupted(
         message,
         sessionId,
         runId,
         result.runDir,
         result.reason,
-        cause === "context-unavailable" ? "context-unavailable" : cause === "redirect" ? "redirect" : cause === "user" ? "user" : "system",
+        plan.cause,
         terminal,
       );
       return;
     }
-    await this.input.recordFailure(message, sessionId, runId, result.runDir, result.reason, result.failure?.message, terminal);
+    await this.input.recordFailure(message, sessionId, runId, result.runDir, result.reason, plan.body, terminal);
   }
 
   async recordDetached(
@@ -82,65 +89,59 @@ export class LocalRunFailureRuntime {
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
   ): Promise<void> {
-    const active = this.input.activeRun(runId);
-    const terminal = localTerminalFromResult(result, active?.liveMarkdown ?? null, active?.profile ?? null);
-    const cause = executionInterruptionCauseForResult(result);
-    if (cause === "runtime-closing" && active?.gracefulResumePrepared) {
+    const active = planActiveFailureContext(this.input.activeRun(runId));
+    const terminal = localTerminalFromResult(result, active.liveMarkdown, active.profile);
+    const plan = planDetachedRunFailure({
+      result,
+      gracefulResumePrepared: active.gracefulResumePrepared,
+      timeoutKind: this.input.timeoutKind(result),
+      interrupted: this.input.interrupted(result),
+      cause: this.input.interruptionCause(result),
+    });
+    if (plan.kind === "release-graceful-placeholder") {
       const messages = await this.input.storeCall("local-console-store-list-graceful-worker-placeholder", () =>
         this.input.store.listMessages(sessionId));
-      const placeholder = messages.find((message) => message.runId === runId && message.sourceKind === "local-worker-run");
-      if (placeholder !== undefined) {
+      const placeholder = planGracefulWorkerPlaceholder(messages, runId);
+      if (placeholder.kind === "release") {
         await this.input.storeCall("local-console-store-release-graceful-worker-placeholder", () =>
-          this.input.store.releaseMessageForRetry({ userMessageId: placeholder.id, sessionId, now: this.input.nowIso() }));
+          this.input.store.releaseMessageForRetry({ userMessageId: placeholder.messageId, sessionId, now: this.input.nowIso() }));
       }
       return;
     }
-    const timeoutKind = executionTimeoutKind(result);
-    if (timeoutKind !== null) {
+    if (plan.kind === "stuck") {
       await this.input.recordDetached({
         sessionId,
-        body: result.terminal?.kind === "timeout" && result.terminal.basis === "tool"
-          ? "这一步的工具调用运行过久，已经停下。你可以直接告诉主理人下一步怎么处理。"
-          : "这一步卡住了。你可以直接告诉主理人下一步怎么处理。",
-        systemEventKind: "run-stuck",
+        body: plan.body,
+        systemEventKind: plan.systemEventKind,
         runId,
         runDir: result.runDir,
         error: result.reason,
-        status: "stuck",
+        status: plan.status,
         terminal,
       });
       return;
     }
-    if (isInterruptedCodexRunResult(result)) {
-      const contextUnavailable = cause === "context-unavailable";
-      const redirected = cause === "redirect";
-      const systemStopped = cause === "runtime-closing" || cause === "system";
+    if (plan.kind === "interrupted") {
       await this.input.recordDetached({
         sessionId,
-        body: contextUnavailable
-          ? "这一步依赖的项目或团队内容已经不可用，因此已停止。已经产生的文件改动会保留。"
-          : redirected
-            ? "主理人发来了新的指令，当前这一步已经停下；这个成员会带着新指令重新开始。"
-            : systemStopped
-              ? "这一步被系统停止了。已经产生的文件改动会保留。"
-              : "你让这一步停下了。已经产生的文件改动会保留。",
-        systemEventKind: redirected || contextUnavailable || systemStopped ? "other" : "user-stopped",
+        body: plan.body,
+        systemEventKind: plan.systemEventKind,
         runId,
         runDir: result.runDir,
         error: result.reason,
-        status: "interrupted",
+        status: plan.status,
         terminal,
       });
       return;
     }
     await this.input.recordDetached({
       sessionId,
-      body: result.failure?.message ?? "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-      systemEventKind: "run-not-started",
+      body: plan.body,
+      systemEventKind: plan.systemEventKind,
       runId,
       runDir: result.runDir,
       error: result.reason,
-      status: "failed",
+      status: plan.status,
       terminal,
     });
   }

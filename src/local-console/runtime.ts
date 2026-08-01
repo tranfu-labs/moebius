@@ -388,6 +388,10 @@ export class LocalConsoleRuntime {
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
       nowIso: () => this.nowIso(),
+      timeoutKind: executionTimeoutKind,
+      interrupted: isInterruptedCodexRunResult,
+      interruptionCause: executionInterruptionCauseForResult,
+      logTimeout: (input) => log(input),
       activeRun: (runId) => this.activeRuns.get(runId),
       recordStuck: (message, sessionId, runId, runDir, reason, terminal) =>
         this.recordStuckBestEffort(message, sessionId, runId, runDir, reason, terminal),
