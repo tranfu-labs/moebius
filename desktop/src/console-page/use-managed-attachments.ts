@@ -366,8 +366,13 @@ export function useManagedAttachmentDrafts(input: {
     }
   }, []);
 
+  const hasDraftAttachments = useCallback((draftKey: string) => (
+    (draftsRef.current[draftKey]?.length ?? 0) > 0
+  ), []);
+
   return {
     attachments: drafts[input.currentDraftKey] ?? [],
+    hasDraftAttachments,
     addFiles,
     remove,
     retry,

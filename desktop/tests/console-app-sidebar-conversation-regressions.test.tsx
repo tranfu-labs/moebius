@@ -68,6 +68,8 @@ describe("desktop App sidebar conversation regressions", () => {
     mediaType: string;
     byteSize: number;
   }>>;
+  let attachmentResponseOverrides: Map<string, () => Promise<Response>>;
+  let attachmentRequestKeys: string[];
 
   beforeEach(() => {
     sessions = [createSession("source-a", "来源会话")];
@@ -88,6 +90,8 @@ describe("desktop App sidebar conversation regressions", () => {
     messageRequests = [];
     attachmentCapability = null;
     attachmentDrafts = new Map();
+    attachmentResponseOverrides = new Map();
+    attachmentRequestKeys = [];
     operatorConsoleHarness.onSend = null;
     window.localStorage.clear();
     window.localStorage.setItem(
@@ -128,8 +132,12 @@ describe("desktop App sidebar conversation regressions", () => {
         return Promise.resolve(jsonResponse(createState(url.searchParams.get("sessionId") ?? "source-a")));
       }
       if (url.pathname === "/api/local-console/attachments" && (init?.method ?? "GET") === "GET") {
+        const draftKey = url.searchParams.get("draftKey") ?? "";
+        attachmentRequestKeys.push(draftKey);
+        const override = attachmentResponseOverrides.get(draftKey);
+        if (override !== undefined) return override();
         return Promise.resolve(jsonResponse({
-          attachments: attachmentDrafts.get(url.searchParams.get("draftKey") ?? "") ?? [],
+          attachments: attachmentDrafts.get(draftKey) ?? [],
         }));
       }
       if (url.pathname.endsWith("/reference-text")) {
@@ -598,6 +606,124 @@ describe("desktop App sidebar conversation regressions", () => {
       activeTabId: "draft-tab",
     });
   });
+
+  it("confirms before closing an inactive attachment-only analysis draft", async () => {
+    attachmentCapability = "test-attachment-capability";
+    const draftA = createSidebarConversationDraft({
+      draftId: "draft-a",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "local",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    const draftB = createSidebarConversationDraft({
+      draftId: "draft-b",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "local",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:01.000Z",
+    });
+    const draftStore = createSidebarConversationDraftStore(window.localStorage);
+    draftStore.write(draftA);
+    draftStore.write(draftB);
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [
+        {
+          id: "draft-a-tab",
+          type: "conversation",
+          title: "分析草稿 A",
+          sourceKey: conversationDraftTabSourceKey(draftA.draftId),
+          closable: true,
+        },
+        {
+          id: "draft-b-tab",
+          type: "conversation",
+          title: "分析草稿 B",
+          sourceKey: conversationDraftTabSourceKey(draftB.draftId),
+          closable: true,
+        },
+      ],
+      activeTabId: "draft-a-tab",
+    });
+    attachmentDrafts.set(draftA.attachmentDraftKey, [{
+      attachmentId: "attachment-a",
+      kind: "file",
+      displayName: "仅附件.txt",
+      mediaType: "text/plain",
+      byteSize: 12,
+    }]);
+
+    let resolveDraftAAttachments!: (response: Response) => void;
+    const delayedDraftAAttachments = new Promise<Response>((resolve) => {
+      resolveDraftAAttachments = resolve;
+    });
+    let resolveDraftBAttachments!: (response: Response) => void;
+    const delayedDraftBAttachments = new Promise<Response>((resolve) => {
+      resolveDraftBAttachments = resolve;
+    });
+    attachmentResponseOverrides.set(draftA.attachmentDraftKey, () => delayedDraftAAttachments);
+    attachmentResponseOverrides.set(draftB.attachmentDraftKey, () => delayedDraftBAttachments);
+    const confirm = vi.spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+
+    await act(async () => root.render(<App />));
+    await waitFor(() => attachmentRequestKeys.includes(draftA.attachmentDraftKey));
+    await act(async () => root.render(<App />));
+    attachmentResponseOverrides.delete(draftA.attachmentDraftKey);
+    await act(async () => resolveDraftAAttachments(jsonResponse({
+      attachments: attachmentDrafts.get(draftA.attachmentDraftKey),
+    })));
+    await findElement<HTMLElement>('[aria-label^="仅附件.txt，"]');
+
+    const tabB = await findElement<HTMLButtonElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("分析草稿 B") === true);
+    await act(async () => tabB.click());
+    await waitFor(() => attachmentRequestKeys.includes(draftB.attachmentDraftKey));
+    await act(async () => resolveDraftBAttachments(
+      jsonResponse({ error: "attachment list unavailable" }, 500),
+    ));
+
+    const closeA = await findElement<HTMLButtonElement>('button[aria-label="关闭标签：分析草稿 A"]');
+    closeA.focus();
+    await act(async () => closeA.click());
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(closeA);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toMatchObject({
+      tabs: [{ id: "draft-a-tab" }, { id: "draft-b-tab" }],
+      activeTabId: "draft-b-tab",
+    });
+    expect(createSidebarConversationDraftStore(window.localStorage).read(draftA.draftId)).not.toBeNull();
+
+    const tabA = await findElement<HTMLButtonElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("分析草稿 A") === true);
+    await act(async () => tabA.click());
+    await findElement<HTMLElement>('[aria-label^="仅附件.txt，"]');
+    await act(async () => tabB.click());
+
+    const closeAAfterCancel = await findElement<HTMLButtonElement>(
+      'button[aria-label="关闭标签：分析草稿 A"]',
+    );
+    await act(async () => closeAAfterCancel.click());
+
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toMatchObject({
+      tabs: [{ id: "draft-b-tab" }],
+      activeTabId: "draft-b-tab",
+    });
+    expect(createSidebarConversationDraftStore(window.localStorage).read(draftA.draftId)).toBeNull();
+  }, 15_000);
 
   it("projects canonical session titles and hides unresolved stored titles", async () => {
     createRightSidebarTabsStore(window.localStorage).write("source-a", {

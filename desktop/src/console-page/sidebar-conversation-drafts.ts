@@ -132,6 +132,13 @@ export function sidebarConversationDraftHasUserChanges(draft: SidebarConversatio
     || draft.context.teamKey !== draft.initialContext.teamKey;
 }
 
+export function sidebarConversationDraftRequiresDiscardConfirmation(
+  draft: SidebarConversationDraft,
+  hasAttachments: boolean,
+): boolean {
+  return sidebarConversationDraftHasUserChanges(draft) || hasAttachments;
+}
+
 function parseSidebarConversationDraft(value: unknown): SidebarConversationDraft | null {
   if (typeof value !== "object" || value === null) return null;
   const draft = value as Partial<SidebarConversationDraft>;

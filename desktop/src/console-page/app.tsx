@@ -189,7 +189,7 @@ import {
 import {
   createSidebarConversationDraft,
   createSidebarConversationDraftStore,
-  sidebarConversationDraftHasUserChanges,
+  sidebarConversationDraftRequiresDiscardConfirmation,
   type SidebarConversationDraft,
 } from "./sidebar-conversation-drafts.js";
 import {
@@ -4674,10 +4674,10 @@ export function OperatorConsoleApp({
         if (locator?.kind !== "draft") return true;
         const draft = sidebarConversationDraftStoreRef.current.read(locator.draftId);
         if (draft === null) return true;
-        const hasAttachments = activeSidebarConversationDraftId === draft.draftId
-          && managedSidebarConversationAttachments.attachments.length > 0;
+        const hasAttachments = managedSidebarConversationAttachments
+          .hasDraftAttachments(draft.attachmentDraftKey);
         if (
-          (sidebarConversationDraftHasUserChanges(draft) || hasAttachments)
+          sidebarConversationDraftRequiresDiscardConfirmation(draft, hasAttachments)
             && !window.confirm(t("console.sessionAnalysis.discardDraft"))
         ) {
           return false;

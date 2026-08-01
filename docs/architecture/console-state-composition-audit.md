@@ -4,7 +4,7 @@
 
 审计基准为 `cf85d0b`，对象是 `desktop/src/console-page/app.tsx` 及同目录 22 个邻近文件。本轮只做静态状态组合审计，不修改实现、不运行应用，也不把“未证伪的可能性”表述成已复现缺陷。
 
-共登记 13 个可独立开 change 的候选：2 个已确认缺陷、11 个未证伪的可能性。最高优先级不是“hook 多”，而是 owner / generation / phase 没有进入状态模型，导致迟到提交或错误清理可能越过用户已经切换的现场。另有 6 类现有保护，经 86 条 hook 完整性表登记为“已有保护待登记”。
+共登记 15 个可独立开 change 的候选。当前有 4 条标记为已确认缺陷（其中 R-02 为部分消解的父条目，剩余重启子集由 R-14 独立跟踪）、11 个未证伪的可能性；可独立执行的已确认缺陷是 R-08、R-14、R-15。最高优先级不是“hook 多”，而是 owner / generation / phase 没有进入状态模型，导致迟到提交或错误清理可能越过用户已经切换的现场。现有保护共 6 类，经 86 条 hook 完整性表登记为“已有保护待登记”。
 
 ## 机械基线
 
@@ -41,13 +41,15 @@ Total 86
 | ID | 主题 | 判定性质 | W/U/P/S/B | R | 等级 | 动作类型 |
 | --- | --- | --- | --- | ---: | --- | --- |
 | R-01 | 项目 mutation 的裸 boolean 不能表达并发 owner | 未证伪的可能性 | 1/4/3/1/2 | 15 | 高 | 显式化 |
-| R-02 | 关闭非当前分析草稿只检查当前附件 | 已确认缺陷 | 3/3/3/2/1 | 15 | 高 | 显式化 |
+| R-02 | 关闭非当前分析草稿只检查当前附件 | 已确认缺陷（部分消解） | 3/3/3/2/1 | 15 | 高；剩余风险见 R-14 | 显式化（部分完成） |
+| R-14 | 重启后未激活草稿的附件事实不可见 | 已确认缺陷 | 2/3/3/2/1 | 14 | 高 | 显式化（跨重启附件 owner） |
 | R-03 | AI 建队提交没有 request owner / generation | 未证伪的可能性 | 2/3/3/1/1 | 13 | 高 | 显式化 |
 | R-04 | 来源迁移的迟到结果可覆盖新 route | 未证伪的可能性 | 2/3/2/1/2 | 13 | 高 | 显式化 |
 | R-05 | 分析草稿创建完成后无条件切换 route | 未证伪的可能性 | 2/3/2/1/2 | 13 | 高 | 显式化 |
 | R-06 | 归档完成后用旧 render 的 route 决定回退 | 未证伪的可能性 | 1/3/2/1/2 | 12 | 中 | 显式化 |
 | R-07 | 搜索结果导航先写 route、selection gate 可拒绝 | 未证伪的可能性 | 1/3/2/1/2 | 12 | 中 | 显式化 |
 | R-08 | 分析通知没有 route / session owner | 已确认缺陷 | 3/2/1/1/2 | 11 | 中 | 显式化 |
+| R-15 | `clearDraft` 不清理服务端草稿附件 | 已确认缺陷 | 3/0/3/2/2 | 10 | 中 | 显式化（资源生命周期） |
 | R-09 | 主 Agent 切换状态只容纳一个 team owner | 未证伪的可能性 | 2/2/1/1/1 | 9 | 中 | 显式化 |
 | R-10 | Save-all failures 没有 team owner | 未证伪的可能性 | 1/2/1/1/1 | 8 | 中 | 显式化 |
 | R-11 | 重命名完成后可用旧搜索条件覆盖新条件 | 未证伪的可能性 | 2/2/0/1/1 | 8 | 中 | 显式化 |
@@ -66,13 +68,14 @@ Total 86
 
 ### R-02 · 关闭非当前分析草稿只检查当前附件
 
-- **判定与评分**：`已确认缺陷`；`W/U/P/S/B = 3/3/3/2/1`，`R=15`（高）；动作类型为`显式化`。
+- **判定与评分**：`已确认缺陷（部分消解）`；`W/U/P/S/B = 3/3/3/2/1`，`R=15`（高）；动作类型为`显式化（部分完成）`，剩余风险由 R-14 独立执行。
 - **涉及状态**：右栏 tabs（H-029）、sidebar conversation drafts（H-027）、外部附件 drafts（X-22）及当前 draft locator。
-- **不变量**：若被关闭的分析草稿含任一正文、来源片段或附件，则必须在删除该草稿和附件前得到用户确认。
-- **坐标**：关闭目标由 `app.tsx:4670–4676` 解析；正文判断在 `4680`；附件判断在 `4677–4678`，明确要求 `activeSidebarConversationDraftId === draft.draftId`，因此非当前 tab 的附件恒不计入；随后 `4685–4688` 删除草稿并清附件。附件 hook 实际按 draft key 保存所有草稿，见 `use-managed-attachments.ts:30–40,179–188,369–375`。
-- **反例时序**：草稿 A 只添加附件 → 切到 tab B → 点击 A 的关闭按钮 → A 不是 active，`hasAttachments=false` 且正文未改 → 无确认执行 remove + clear。
-- **用户后果**：用户未确认即失去 A 的未发送附件；oracle：`docs/product/pages/main-right-sidebar.md#关闭标签`、`openspec/specs/console-ui/spec.md`「composer 支持纯附件与附件草稿恢复」。
-- **独立 change 边界**：只覆盖分析草稿关闭前的未发送内容确认不变量。
+- **不变量**：若被关闭的分析草稿含任一正文、文本胶囊（代码字段 `textFragments`）或附件，则必须在删除该草稿和附件前得到用户确认。
+- **历史反例**：草稿 A 只添加附件 → 切到 tab B → 点击 A 的关闭按钮 → A 不是 active，旧实现令 `hasAttachments=false` 且正文未改 → 无确认执行 remove + clear。
+- **用户后果**：旧实现会让用户未确认即失去 A 的未发送附件；oracle：`docs/product/pages/main-right-sidebar.md#关闭标签`、`docs/product/pages/main-right-sidebar.md#指标与验收`（验收 34）、`openspec/specs/console-ui/spec.md`「composer 支持纯附件与附件草稿恢复」。
+- **部分保护坐标**：`sidebar-conversation-drafts.ts:135–140` 以纯函数统一正文、文本胶囊、上下文与附件判定；`use-managed-attachments.ts:369–375` 从 renderer keyed ref 暴露目标 draft 查询；`app.tsx:4670–4688` 按被关闭 draft 的 `attachmentDraftKey` 查询，并在确认取消时先于 remove / clear 返回。纯逻辑测试见 `desktop/tests/sidebar-conversation-drafts.test.ts:52–85`，慢成功、失败、重渲染、取消与确认接缝见 `desktop/tests/console-app-sidebar-conversation-regressions.test.tsx:610–727`。
+- **已消解子集**：`fix-inactive-analysis-draft-close-confirmation` 消解“附件事实已经进入 renderer keyed record”时关闭非当前草稿的同会话反例；该保护真实存在，但不代表无条件不变量已经消解。
+- **未覆盖子集**：重启后从未激活的草稿没有进入 renderer keyed record，按-key 查询仍返回 false；该已确认反例由 R-14 跟踪。
 
 ### R-03 · AI 建队提交没有 request owner / generation
 
@@ -184,6 +187,26 @@ Total 86
 - **用户后果**：目标 tab 已打开但不获得预期焦点；oracle：`docs/product/pages/main-right-sidebar.md#标签条`、`docs/product/pages/main-right-sidebar.md#页面状态`。
 - **独立 change 边界**：只收紧 focus acknowledgement identity。
 
+### R-14 · 重启后未激活草稿的附件事实不可见
+
+- **判定与评分**：`已确认缺陷`；`W/U/P/S/B = 2/3/3/2/1`，`R=14`（高）；动作类型为`显式化（跨重启附件 owner）`。W=2，因为需要“重启后不先打开 A 而直接关闭”的多步但正常操作；U=3，因为用户失去未发送附件的可找回入口；P=3，因为服务端附件成为无 UI owner 的持久孤儿；S=2，因为无确认、无错误；B=1，因为单次作用于一个目标草稿。
+- **涉及状态**：sidebar conversation draft / tabs 的 localStorage 恢复（H-023/H-027/H-029）、renderer attachment keyed record（X-22）和服务端 managed draft attachment。
+- **不变量**：若重启后恢复的未发送草稿在服务端仍有附件，则该草稿即使从未在本次 renderer 生命周期中激活，关闭判定也必须能识别附件存在。
+- **坐标**：`use-managed-attachments.ts:30` 的 `drafts` 挂载初始为 `{}`；`listManagedDraftAttachments` 全仓唯一调用点在 `:300`，参数为 `input.currentDraftKey`，恢复 effect 为 `:296–351`；`hasDraftAttachments` 在 `:369–371` 只读 renderer keyed ref；草稿与 tabs 分别由 `app.tsx:648` 附近的 localStorage stores 恢复。
+- **窗口**：A 仅添加附件并上传成功 → 切到 B → 退出并重启 → A 从未成为 `currentDraftKey` → 直接关闭 A；A 的服务端附件未恢复到 keyed record，关闭判定得到 `false`。
+- **用户后果**：`app.tsx:4685–4687` 无确认删除草稿并调用只清 renderer 的 `clearDraft`，A 的标签和草稿消失，服务端附件成为无 UI 可找回路径的孤儿；oracle：`docs/product/pages/main-right-sidebar.md#指标与验收`（验收 34：重启不视为丢弃、普通附件触发确认）。
+- **独立 change 边界**：只声明并补齐未发送草稿附件事实的跨重启 owner / 可见性，不改 R-02 已验证的同会话关闭接线，也不顺带处理服务端资源删除（见 R-15）。
+
+### R-15 · `clearDraft` 不清理服务端草稿附件
+
+- **判定与评分**：`已确认缺陷`；`W/U/P/S/B = 3/0/3/2/2`，`R=10`（中）；动作类型为`显式化（资源生命周期）`。W=3，因为正常确认丢弃或发送后清理都会进入该 helper；U=0，因为现有坐标不能推出即时用户可见变化；P=3，因为服务端记录没有本地清理路径；S=2，因为 UI 不报告残留；B=2，因为每个附件草稿都可累积资源。
+- **涉及状态**：renderer attachment keyed record / upload handles（X-22）与服务端 managed draft attachments。
+- **不变量**：若 `clearDraft(draftKey)` 表示该 managed attachment draft 的生命周期已经结束，则不存在 renderer 记录已清空而同一 key 的服务端附件仍无 owner 地保留的时刻。
+- **坐标**：`use-managed-attachments.ts:179–188` 的 `clearDraft` 只 abort handle、revoke preview URL 并把 renderer key 置为空数组；`attachment-client.ts:106` 已有 `removeManagedDraftAttachment`，但全仓没有生产调用点。
+- **窗口**：附件上传到服务端 → 用户确认丢弃草稿或发送后进入既有清理 → `clearDraft` 清空 renderer → 服务端附件未删除。
+- **用户后果**：当前没有可从代码坐标推出的即时可见信号，因此 U=0；确定后果是服务端草稿附件脱离 UI owner 并持续累积。oracle：`docs/product/pages/main-right-sidebar.md#指标与验收`（验收 34 的“确认后草稿不再恢复”界定生命周期终点）。
+- **独立 change 边界**：只闭合 managed draft attachment 的服务端删除生命周期，复用已有 remove API；不承担 R-14 的跨重启附件发现。
+
 ## 86 条 hook 完整性表
 
 坐标列给出声明和主要写 / 读点；需要复查全部引用时使用 `rg -n '\b<state-or-ref>|\b<setter-or-dispatch>' desktop/src/console-page/app.tsx`。`G-*` 的依据见下一节；每行 disposition 只属于开放风险或登记类之一。
@@ -212,13 +235,13 @@ Total 86
 | H-020 | OperatorConsoleApp | ref `stateRef` :644 | 同步写 2101,2565；异步读 | R-04 |
 | H-021 | OperatorConsoleApp | ref `conversationDraftStoreRef` :645 | key-owned store，正文/发送多处 | G-03 |
 | H-022 | OperatorConsoleApp | ref `rightSidebarTabsStoreRef` :646 | host-owned store，多处 read/write | G-03 |
-| H-023 | OperatorConsoleApp | ref `sidebarConversationDraftStoreRef` :647 | draft-owned store 3345–3607,4675–4686 | R-02 |
+| H-023 | OperatorConsoleApp | ref `sidebarConversationDraftStoreRef` :647 | draft-owned store 3345–3607,4675–4686 | R-02/R-14 |
 | H-024 | OperatorConsoleApp | ref `presentationRouteStoreRef` :650 | 统一写 2040–2044 | G-03 |
 | H-025 | OperatorConsoleApp | state `presentationRoute` :651 | 统一写 2040–2044；异步收尾多处 | R-04/R-05/R-06/R-07 |
 | H-026 | OperatorConsoleApp | ref `presentationRouteRef` :654 | 同步写 2042；异步读 3407,3601,4490 | R-04/R-05/R-06/R-07 |
-| H-027 | OperatorConsoleApp | state `sidebarConversationDrafts` :655 | store list 投影 3346,3491,3607,4686 | R-02/R-05 |
+| H-027 | OperatorConsoleApp | state `sidebarConversationDrafts` :655 | store list 投影 3346,3491,3607,4686 | R-02/R-05/R-14 |
 | H-028 | OperatorConsoleApp | ref `conversationReadingPositionStoreRef` :658 | session-keyed read/write 881–890,2772 | G-03 |
-| H-029 | OperatorConsoleApp | state `rightSidebarTabs` :661 | host store 投影 2107–2115 及路由入口 | R-02/R-04/R-05/R-06 |
+| H-029 | OperatorConsoleApp | state `rightSidebarTabs` :661 | host store 投影 2107–2115 及路由入口 | R-02/R-04/R-05/R-06/R-14 |
 | H-030 | OperatorConsoleApp | state `rightSidebarFocusRequest` :666 | 写 2744；读/清 4652–4659 | R-13 |
 | H-031 | OperatorConsoleApp | state `conversationMessageNavigation` :670 | 写 2774–2778；按 session+requestId 读 | G-03 |
 | H-032 | OperatorConsoleApp | ref `conversationMessageNavigationIdRef` :675 | 单调写 2773 | G-03 |
@@ -338,11 +361,11 @@ Total 86
 | `right-sidebar-tabs-store.ts` | hostSessionId-keyed document；H-022/H-029 / G-03 |
 | `selection-preference.ts` | remembered selection 纯决策 + store；H-012–H-017 / G-05 |
 | `settings-state.ts` | reducer requestId + single-flight coordinator；H-059–H-062 / G-01 |
-| `sidebar-conversation-drafts.ts` | draftId-owned localStorage document；H-023/H-027，附件确认缺口见 R-02 |
+| `sidebar-conversation-drafts.ts` | draftId-owned localStorage document；H-023/H-027；R-02 同会话子集已有局部保护，跨重启附件事实见 R-14 |
 | `sidebar-preference.ts` | state + localStorage 同步 helper；H-082 / G-05 |
 | `state-sync.ts` | selection / refresh lease / request coordinator / actions；H-018/H-037/H-057，原子导航缺口见 R-07 |
 | `team-state.ts` | teamKey+memberSlug 纯状态转换；H-076–H-079，ownerless failures 见 R-10 |
-| `use-managed-attachments.ts` | hook 内部 `drafts`、handles、revision、queue、current key；异步加载由 draft key + revision + AbortController 保护，但返回 API 只暴露当前 draft attachments，形成 R-02 的跨模块盲区 |
+| `use-managed-attachments.ts` | hook 内部 `drafts`、handles、revision、queue、current key；异步加载由 draft key + revision + AbortController 保护；按-key 窄查询只覆盖已进入 renderer record 的附件（R-02 部分保护），跨重启可见性与服务端清理分别见 R-14/R-15 |
 
 ## `02c1604^` 回溯自校验
 
@@ -360,11 +383,12 @@ Total 86
 本轮不修改 `docs/architecture/invariants.md`。以下仅建议未来经人类裁决后提升：
 
 - **候选 V2：迟到异步结果不得夺取用户已经切换的现场。** R-04、R-05、R-06、R-07 共享同一故障类，横跨 route、selection、tabs 与 localStorage，已不再是单入口局部规则。
-- **候选 S2：删除未发送内容前必须按被删除 owner 检查全部内容种类。** R-02 同时涉及正文、来源片段和托管附件，错误会静默删除用户内容。
+- **候选 S2：删除未发送内容前必须按被删除 owner 检查全部内容种类。** R-02 同时涉及正文、文本胶囊和托管附件；同一 renderer 生命周期内已有局部保护，但 R-14 证明跨重启附件事实仍未进入 owner 模型，该规则是否提升为系统级不变量仍需人类裁决。
 
 ## 限制与未验证项
 
-- 本轮没有运行 Electron 或组件测试；所有“未证伪的可能性”都需要后续独立 change 先验证入口是否能在窗口内并发。
+- 原审计没有运行 Electron 或组件测试；所有“未证伪的可能性”仍需要后续独立 change 先验证入口是否能在窗口内并发。R-02 同会话子集另有 `fix-inactive-analysis-draft-close-confirmation` 的纯逻辑、renderer 与真机证据；这些证据不覆盖 R-14 的重启窗口，也不外推到其他条目。
+- **未验证观察**：归档入口 `removeSession`（`app.tsx:3070/4493`）会删除宿主会话的 draft tabs，但没有同步删除 sidebar conversation draft store 本体；草稿内容未由该路径删除，但标签消失后的可找回路径尚未验证。本项形状不同且归档自身通常有确认，本轮不评分、不并入 R-02/R-14/R-15。
 - 动态 callback 是否被 console-ui 在 busy 状态禁用，只作为触发性评分依据，不用展示禁用替代 app handler 的 correctness guard。
 - 行号以 `cf85d0b` 为准；后续代码变化必须重建 86-hook / 22-effect 基线。
-- 未发现需要修改当前 PRD、spec、ADR 或 module import 边界的事实；本文是候选审计，不是已实现行为事实源。
+- 未发现需要修改当前 PRD、spec、ADR 或 module import 边界的事实；除 R-02 标注的已验证局部保护外，本文仍是候选审计，不是已实现行为事实源。

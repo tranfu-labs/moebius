@@ -4,6 +4,7 @@ import {
   createSidebarConversationDraft,
   createSidebarConversationDraftStore,
   sidebarConversationDraftHasUserChanges,
+  sidebarConversationDraftRequiresDiscardConfirmation,
 } from "../src/console-page/sidebar-conversation-drafts.js";
 
 describe("sidebar conversation draft store", () => {
@@ -63,6 +64,8 @@ describe("sidebar conversation draft store", () => {
       now: "2026-07-29T00:00:00.000Z",
     });
     expect(sidebarConversationDraftHasUserChanges(draft)).toBe(false);
+    expect(sidebarConversationDraftRequiresDiscardConfirmation(draft, false)).toBe(false);
+    expect(sidebarConversationDraftRequiresDiscardConfirmation(draft, true)).toBe(true);
     expect(sidebarConversationDraftHasUserChanges({
       ...draft,
       context: { ...draft.context, teamKey: "user:custom" },
@@ -75,6 +78,10 @@ describe("sidebar conversation draft store", () => {
       ...draft,
       textFragments: [{ id: "f", label: "文本片段 1", text: "线索" }],
     })).toBe(true);
+    expect(sidebarConversationDraftRequiresDiscardConfirmation({
+      ...draft,
+      body: "需要确认",
+    }, false)).toBe(true);
   });
 });
 
