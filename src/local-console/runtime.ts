@@ -108,6 +108,7 @@ import { LocalPendingSessionContextRuntime } from "./pending-session-context-run
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
+import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -335,6 +336,7 @@ export class LocalConsoleRuntime {
   private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
   private readonly projectCommandRuntime: LocalProjectCommandRuntime;
   private readonly sessionCreationRuntime: LocalSessionCreationRuntime;
+  private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -445,6 +447,18 @@ export class LocalConsoleRuntime {
       ...(options.attachmentManager === undefined ? {} : { attachmentManager: options.attachmentManager }),
       ...(options.workspaceGitTimeoutMs === undefined ? {} : { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs }),
       baselineCommits: this.conversationBaselineCommits,
+      processPending: (sessionId) => void this.processPending(sessionId),
+    });
+    this.sessionSettingsRuntime = new LocalSessionSettingsRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      ...(options.loadAgentTeamSnapshot === undefined
+        ? {}
+        : { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot }),
+      ...(options.workspaceGitTimeoutMs === undefined ? {} : { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs }),
+      hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
+      inactiveSessions: this.inactiveSessions,
       processPending: (sessionId) => void this.processPending(sessionId),
     });
   }
@@ -806,59 +820,14 @@ export class LocalConsoleRuntime {
     sessionId: string;
     projectId: string;
   }): Promise<LocalConsoleSessionSummary> {
-    return await this.storeCall("local-console-store-move-empty-session", () =>
-      this.options.store.moveEmptySessionToProject({
-        ...input,
-        now: this.nowIso(),
-      }),
-    );
+    return await this.sessionSettingsRuntime.moveEmpty(input);
   }
 
   async switchSessionWorkspace(input: {
     sessionId: string;
     workspaceMode: LocalConsoleWorkspaceMode;
   }): Promise<LocalConsoleSessionSummary> {
-    const messages = await this.storeCall("local-console-store-list-session-messages", () =>
-      this.options.store.listMessages(input.sessionId),
-    );
-    const source = messages.length === 0
-      ? await this.storeCall("local-console-store-session-workspace", () =>
-          this.options.store.getSessionWorkspace(input.sessionId))
-      : null;
-    const facts = source !== null && input.workspaceMode === "worktree"
-      ? await readCachedLocalWorkspaceFacts({
-          folderPath: source.folderPath,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        })
-      : null;
-    const decision = decideSessionWorkspaceSwitch({
-      messageCount: messages.length,
-      requestedMode: input.workspaceMode,
-      workspaceIsGitRepository: facts?.isGitRepository ?? true,
-    });
-    if (decision.kind === "reject" && decision.reason === "workspace-locked") {
-      throw new LocalConsoleSessionWorkspaceLockedError();
-    }
-    if (decision.kind === "reject") {
-      throw new Error(decision.reason);
-    }
-    let session: LocalConsoleSessionSummary;
-    try {
-      session = await this.storeCall("local-console-store-switch-session-workspace", () =>
-        this.options.store.switchSessionWorkspace({
-          sessionId: input.sessionId,
-          workspaceMode: input.workspaceMode,
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      if (formatLocalError(error) === "SESSION_WORKSPACE_LOCKED") {
-        throw new LocalConsoleSessionWorkspaceLockedError();
-      }
-      throw error;
-    }
-    invalidateLocalWorkspaceFacts();
-    return session;
+    return await this.sessionSettingsRuntime.switchWorkspace(input);
   }
 
   async switchSessionTeam(input: {
@@ -866,45 +835,15 @@ export class LocalConsoleRuntime {
     agentTeamOwnership: LocalConsoleAgentTeamOwnership;
     agentTeamId: string;
   }): Promise<LocalConsoleSessionSummary> {
-    const agentTeamSnapshot = this.options.loadAgentTeamSnapshot === undefined
-      ? undefined
-      : await this.options.loadAgentTeamSnapshot({
-          ownership: input.agentTeamOwnership,
-          id: input.agentTeamId,
-        });
-    return await this.storeCall("local-console-store-switch-session-team", () =>
-      this.options.store.switchSessionTeam({ ...input, agentTeamSnapshot, now: this.nowIso() }),
-    );
+    return await this.sessionSettingsRuntime.switchTeam(input);
   }
 
   async archiveSession(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {
-    if (this.options.store.archiveSession === undefined) {
-      throw new Error("local console session archive unavailable");
-    }
-    if (this.hasActiveRunForSession(sessionId)) {
-      throw new LocalConsoleSessionRunningError();
-    }
-    this.inactiveSessions.add(sessionId);
-    try {
-      return await this.storeCall("local-console-store-archive-session", () =>
-        this.options.store.archiveSession!({ sessionId, now: this.nowIso() }),
-      );
-    } catch (error) {
-      this.inactiveSessions.delete(sessionId);
-      throw error;
-    }
+    return await this.sessionSettingsRuntime.archive(sessionId);
   }
 
   async restoreSession(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.restoreSession === undefined) {
-      throw new Error("local console session restore unavailable");
-    }
-    const session = await this.storeCall("local-console-store-restore-session", () =>
-      this.options.store.restoreSession!({ sessionId, now: this.nowIso() }),
-    );
-    this.inactiveSessions.delete(sessionId);
-    void this.processPending(sessionId);
-    return session;
+    return await this.sessionSettingsRuntime.restore(sessionId);
   }
 
   async searchSessions(input: {
