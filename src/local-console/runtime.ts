@@ -97,6 +97,7 @@ import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
+import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -230,99 +231,47 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       dataRoot: options.dataRoot ?? options.projectRoot,
       runCodex: options.runCodex,
     });
-    this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      baselineCommits: this.conversationBaselineCommits,
-      workdirRoot: options.workdirRoot,
-      ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
-      nowIso: () => this.nowIso(),
-      worktreePath: localSessionWorktreePath,
-      readWorkspaceDiff: readLocalConversationWorkspaceDiff,
-      readGitStatus: readLocalGitStatus,
-      generateWorkspaceDiff: generateLocalWorkspaceDiff,
-      recordWorkspaceDiff: (input) => this.storePorts.sessionFacts().recordWorkspaceDiff(input),
-      workspacePatchPath: (runDir) => path.join(runDir, "workspace.patch"),
-      reportWorkspaceDiffError: (error, sessionId, runId) =>
-        log({ event: "local-console-workspace-diff-failed", error, sessionId, runId }),
-      resolveWorkspaceSource: resolveLocalWorkspaceSource,
-      recordProjectWorkspaceStatus: (input) => options.store.recordProjectWorkspaceStatus(input),
-    });
-    this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      directoryAvailable,
-      ...(options.resolveAgentTeamHealth === undefined
-        ? {}
-        : { resolveAgentTeamHealth: options.resolveAgentTeamHealth }),
-    });
-    this.sessionPresentationRuntime = new LocalSessionPresentationRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      withAgentTeamHealth: (session) => this.sessionContinuationRuntime.withAgentTeamHealth(session),
-      activeRuns: () => this.activeRunRegistry.values(),
-      activeRunCount: (sessionId) => this.runLifecycleRuntime.runsForSession(sessionId).length,
-      getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
-      workdirRoot: options.workdirRoot,
-      ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
-      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
-        folderPath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      worktreePath: localSessionWorktreePath,
-      directoryAvailable,
-      fileAvailable,
-    });
-    this.runFailureRuntime = new LocalRunFailureRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      timeoutKind: executionTimeoutKind,
-      interrupted: isInterruptedCodexRunResult,
-      interruptionCause: executionInterruptionCauseForResult,
-      logTimeout: (input) => log(input),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      recordError: (event, error, originalError) => {
-        this.lastError = formatLocalError(error);
-        log({ event, error: this.lastError, ...(originalError === undefined ? {} : { originalError }) });
-      },
-    });
-    this.runLifecycleRuntime = new LocalRunLifecycleRuntime({
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      activeRuns: () => this.activeRunRegistry.values(),
-      lifecycleStore: () => this.storePorts.lifecycleFacts(),
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
-      recordError: (error) => {
-        this.lastError = formatLocalError(error);
-      },
-    });
-    this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      hasActiveRun: (sessionId) => this.runLifecycleRuntime.runsForSession(sessionId).length > 0,
-      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
-      listAgentNames: async (sessionId) =>
-        (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
-    });
-    this.runRecoveryRuntime = new LocalRunRecoveryRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      recoveryStore: () => this.storePorts.recoveryFacts(),
-      requireRecoveryStore: () => this.storePorts.requireRecoveryFacts(),
-      lifecycleStore: () => this.storePorts.lifecycleFacts(),
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
-    });
     const runtimeContext = createLocalRuntimeWiringContext({
       storePorts: this.storePorts,
       now: () => this.now(),
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       setError: (error) => { this.lastError = error; },
     });
+    const foundationWiring = createLocalRuntimeFoundationWiring({
+      context: runtimeContext,
+      options,
+      activeRuns: this.activeRunRegistry,
+      baselineCommits: this.conversationBaselineCommits,
+      worktreePath: localSessionWorktreePath,
+      readWorkspaceDiff: readLocalConversationWorkspaceDiff,
+      readGitStatus: readLocalGitStatus,
+      generateWorkspaceDiff: generateLocalWorkspaceDiff,
+      resolveWorkspaceSource: resolveLocalWorkspaceSource,
+      directoryAvailable,
+      fileAvailable,
+      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
+        folderPath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
+      timeoutKind: executionTimeoutKind,
+      interrupted: isInterruptedCodexRunResult,
+      interruptionCause: executionInterruptionCauseForResult,
+      getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
+      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
+      report: (input) => log(input),
+    });
+    this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime(foundationWiring.conversation);
+    this.sessionContinuationRuntime = new LocalSessionContinuationRuntime(foundationWiring.continuation);
+    this.runFailureRuntime = new LocalRunFailureRuntime(foundationWiring.failure);
+    this.runLifecycleRuntime = new LocalRunLifecycleRuntime(foundationWiring.lifecycle);
+    this.sessionPresentationRuntime = new LocalSessionPresentationRuntime(
+      foundationWiring.presentation(this.sessionContinuationRuntime, this.runLifecycleRuntime),
+    );
+    this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime(
+      foundationWiring.pendingContext(this.runLifecycleRuntime),
+    );
+    this.runRecoveryRuntime = new LocalRunRecoveryRuntime(foundationWiring.recovery);
     const sharedRunPorts = createLocalSharedRunPorts({
       storePorts: this.storePorts,
       executionRunner: this.executionRunner,
