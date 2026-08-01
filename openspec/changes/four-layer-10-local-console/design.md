@@ -30,14 +30,16 @@ terminal 分类或项目/会话 policy。完成判据是依赖与测试，而不
 
 基线样本命令：`pnpm exec vitest run tests/local-console.test.ts tests/local-console-pending-switch.test.ts tests/local-console-codex-resume.test.ts --reporter=verbose`（Node 24.18.0，2026-08-02）。duration 只用于本 change 前后对账，不外推为完整闸门收益。
 
-| 当前集成测试 | 基线 duration | 最终纯测试责任 | 等价分支 | 必须保留接缝 | 当前结论 |
+| 当前集成测试 | 三次成功样本 / 中位数 | 最终纯测试责任 | 等价分支 | 必须保留接缝 | 最终结论 |
 | --- | ---: | --- | --- | --- | --- |
-| `tests/local-console.test.ts` · `routes a user message without mention directly to the session primary Agent` | 188ms | `tests/local-console-user-message-routing.test.ts` · `routes 没有点名` | 无/无效 mention → primary、单一有效 mention → 对应 lane、多个有效 mention → primary | 保留同文件一条 HTTP+SQLite 发送→claim→run→fact 链 | 先保留；routing use case 落地后再判合并 |
-| `tests/local-console.test.ts` · `claims worker dispatches atomically per role while preserving per-role FIFO` | 128ms | `tests/local-console-control-dispatch.test.ts` · `keeps one FIFO head per idle role and skips active or queued roles` | 同 role 只取 FIFO 头、active/queued role 跳过、其他 role 独立 | 保留真实 store 原子 claim + 并发 worker lane | 先保留；worker flow 落地后再判合并 |
-| `tests/local-console-pending-switch.test.ts` · `rejects a workspace switch after the first message while preserving the running team switch` | 528ms | `tests/local-console-session-policy.test.ts` · `rejects workspace mutation after the first message without changing the selected team` | messageCount>0 在任何 workspace 探测/写入前拒绝，pending team 不被触碰 | 保留 restart 后 workspace/team snapshot 恢复 | 先保留；session flow 落地后再判合并 |
-| `tests/local-console-codex-resume.test.ts` · `continues an interrupted thread with the edited resend as an overriding delta` | 299ms | `tests/local-console-run-invocation-plan.test.ts` · `includes an edited resend and unseen delta in a resumed invocation` | interrupted + canonical context + edit-resend → resume、正文覆盖、只带 unseen delta | 保留真实 provider continuation/link/cursor + restart | 先保留；primary/worker flow 落地后再判合并 |
+| `tests/local-console.test.ts` · `routes a user message without mention directly to the session primary Agent` | 331/322/353ms；**331ms** | `tests/local-console-user-message-routing.test.ts` · `routes 没有点名` | 无/无效 mention → primary、单一有效 mention → 对应 lane、多个有效 mention → primary | 保留同文件一条 HTTP+SQLite 发送→claim→run→fact 链 | 保留：这是 routing 纯决策与真实 claim/fact 接缝的唯一对账，不剪枝 |
+| `tests/local-console.test.ts` · `claims worker dispatches atomically per role while preserving per-role FIFO` | 175/179/174ms；**175ms** | `tests/local-console-control-dispatch.test.ts` · `keeps one FIFO head per idle role and skips active or queued roles` | 同 role 只取 FIFO 头、active/queued role 跳过、其他 role 独立 | 保留真实 store 原子 claim + 并发 worker lane | 保留：内存 planner 不能替代真实 store 原子 claim 与并发 lane 接缝 |
+| `tests/local-console-pending-switch.test.ts` · `rejects a workspace switch after the first message while preserving the running team switch` | 607/626/621ms；**621ms** | `tests/local-console-session-policy.test.ts` · `rejects workspace mutation after the first message without changing the selected team` | messageCount>0 在任何 workspace 探测/写入前拒绝，pending team 不被触碰 | 保留 restart 后 workspace/team snapshot 恢复 | 保留：真实 workspace/team 持久状态恢复是纯 policy 不覆盖的接缝 |
+| `tests/local-console-codex-resume.test.ts` · `continues an interrupted thread with the edited resend as an overriding delta` | 357/347/341ms；**347ms** | `tests/local-console-run-invocation-plan.test.ts` · `includes an edited resend and unseen delta in a resumed invocation` | interrupted + canonical context + edit-resend → resume、正文覆盖、只带 unseen delta | 保留真实 provider continuation/link/cursor + restart | 保留：真实 provider continuation/link/cursor 与 restart 是唯一接缝 |
 
-实现前在 `tasks.md` 交付记录补全 test-name ledger。初始候选：
+三次样本由 Node 24.18.0 在 2026-08-02 以精确 test-name filter 取得；四个纯测试先于对应
+runtime 迁移落地并已单独运行（31 项，8ms）。逐条对账后四条集成测试均承担唯一接缝，故本批
+不删除或合并它们，集成测试净变化与可归因速度收益均记零。初始候选：
 
 - `tests/local-console.test.ts` 中只证明 routing/lane/policy 参数组合的重型用例；
 - `tests/local-console-execution-runtime.test.ts` 中 retry/prompt/terminal 纯分支组合；
