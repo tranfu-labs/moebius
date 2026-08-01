@@ -190,6 +190,7 @@ import {
   createSidebarConversationDraft,
   createSidebarConversationDraftStore,
   sidebarConversationDraftRequiresDiscardConfirmation,
+  type SidebarConversationDraftAttachmentPresence,
   type SidebarConversationDraft,
 } from "./sidebar-conversation-drafts.js";
 import {
@@ -806,6 +807,15 @@ export function OperatorConsoleApp({
       ? "draft:sidebar:__inactive__"
       : sessionDraftKey(activeSidebarConversationSessionId));
   const reportAttachmentError = useCallback((error: string) => setClientError(error), []);
+  const recordSidebarDraftAttachmentPresence = useCallback((
+    draftKey: string,
+    presence: SidebarConversationDraftAttachmentPresence,
+  ) => {
+    if (!sidebarConversationDraftStoreRef.current.setManagedAttachmentPresence(draftKey, presence)) {
+      return;
+    }
+    setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
+  }, []);
   const managedAttachments = useManagedAttachmentDrafts({
     apiBase,
     capability: attachmentCapability,
@@ -823,6 +833,7 @@ export function OperatorConsoleApp({
     capability: attachmentCapability,
     currentDraftKey: activeSidebarConversationAttachmentDraftKey,
     onError: reportAttachmentError,
+    onDraftAttachmentPresenceChange: recordSidebarDraftAttachmentPresence,
   });
 
   useEffect(() => {

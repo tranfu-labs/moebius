@@ -18,6 +18,7 @@ import {
   createRightSidebarTabsStore,
 } from "../src/console-page/right-sidebar-tabs-store.js";
 import {
+  SIDEBAR_CONVERSATION_DRAFTS_KEY,
   createSidebarConversationDraft,
   createSidebarConversationDraftStore,
 } from "../src/console-page/sidebar-conversation-drafts.js";
@@ -724,6 +725,146 @@ describe("desktop App sidebar conversation regressions", () => {
     });
     expect(createSidebarConversationDraftStore(window.localStorage).read(draftA.draftId)).toBeNull();
   }, 15_000);
+
+  it("confirms after restart before closing an unvisited attachment-only analysis draft", async () => {
+    attachmentCapability = "test-attachment-capability";
+    const draftA = createSidebarConversationDraft({
+      draftId: "restart-draft-a",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "local",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    const draftB = createSidebarConversationDraft({
+      draftId: "restart-draft-b",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "local",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:01.000Z",
+    });
+    const draftStore = createSidebarConversationDraftStore(window.localStorage);
+    draftStore.write(draftA);
+    draftStore.write(draftB);
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [
+        {
+          id: "restart-draft-a-tab",
+          type: "conversation",
+          title: "重启草稿 A",
+          sourceKey: conversationDraftTabSourceKey(draftA.draftId),
+          closable: true,
+        },
+        {
+          id: "restart-draft-b-tab",
+          type: "conversation",
+          title: "重启草稿 B",
+          sourceKey: conversationDraftTabSourceKey(draftB.draftId),
+          closable: true,
+        },
+      ],
+      activeTabId: "restart-draft-a-tab",
+    });
+    attachmentDrafts.set(draftA.attachmentDraftKey, [{
+      attachmentId: "restart-attachment-a",
+      kind: "file",
+      displayName: "跨重启附件.txt",
+      mediaType: "text/plain",
+      byteSize: 18,
+    }]);
+
+    await act(async () => root.render(<App />));
+    await findElement<HTMLElement>('[aria-label^="跨重启附件.txt，"]');
+    await waitFor(() => draftStore.read(draftA.draftId)?.managedAttachmentPresence === "present");
+    const tabB = await findElement<HTMLButtonElement>('[role="tab"]', (element) =>
+      element.textContent?.includes("重启草稿 B") === true);
+    await act(async () => tabB.click());
+    await waitFor(() => createRightSidebarTabsStore(window.localStorage).read("source-a").activeTabId
+      === "restart-draft-b-tab");
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    attachmentRequestKeys = [];
+    const confirm = vi.spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    await act(async () => root.render(<App />));
+    await findElement<HTMLElement>('[role="tab"][aria-selected="true"]', (element) =>
+      element.textContent?.includes("重启草稿 B") === true);
+    await waitFor(() => attachmentRequestKeys.includes(draftB.attachmentDraftKey));
+    expect(attachmentRequestKeys).not.toContain(draftA.attachmentDraftKey);
+
+    const closeA = await findElement<HTMLButtonElement>('button[aria-label="关闭标签：重启草稿 A"]');
+    closeA.focus();
+    await act(async () => closeA.click());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(closeA);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toMatchObject({
+      tabs: [{ id: "restart-draft-a-tab" }, { id: "restart-draft-b-tab" }],
+      activeTabId: "restart-draft-b-tab",
+    });
+    expect(draftStore.read(draftA.draftId)?.managedAttachmentPresence).toBe("present");
+
+    await act(async () => closeA.click());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(draftStore.read(draftA.draftId)).toBeNull();
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(<App />));
+    expect(host.querySelector('button[aria-label="关闭标签：重启草稿 A"]')).toBeNull();
+  }, 15_000);
+
+  it("converges a legacy unknown empty draft to absent after a successful attachment list", async () => {
+    attachmentCapability = "test-attachment-capability";
+    const draft = createSidebarConversationDraft({
+      draftId: "legacy-empty-draft",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "local",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    const { managedAttachmentPresence: _presence, ...legacyDraft } = draft;
+    window.localStorage.setItem(SIDEBAR_CONVERSATION_DRAFTS_KEY, JSON.stringify({
+      version: 1,
+      drafts: [legacyDraft],
+    }));
+    createRightSidebarTabsStore(window.localStorage).write("source-a", {
+      tabs: [{
+        id: "legacy-empty-tab",
+        type: "conversation",
+        title: "旧空草稿",
+        sourceKey: conversationDraftTabSourceKey(draft.draftId),
+        closable: true,
+      }],
+      activeTabId: "legacy-empty-tab",
+    });
+    const confirm = vi.spyOn(window, "confirm");
+
+    expect(createSidebarConversationDraftStore(window.localStorage).read(draft.draftId))
+      .toMatchObject({ managedAttachmentPresence: "unknown" });
+    await act(async () => root.render(<App />));
+    await waitFor(() => createSidebarConversationDraftStore(window.localStorage)
+      .read(draft.draftId)?.managedAttachmentPresence === "absent");
+    const close = await findElement<HTMLButtonElement>('button[aria-label="关闭标签：旧空草稿"]');
+    await act(async () => close.click());
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(createSidebarConversationDraftStore(window.localStorage).read(draft.draftId)).toBeNull();
+  });
 
   it("projects canonical session titles and hides unresolved stored titles", async () => {
     createRightSidebarTabsStore(window.localStorage).write("source-a", {

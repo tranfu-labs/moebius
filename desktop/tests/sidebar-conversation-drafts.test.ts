@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SIDEBAR_CONVERSATION_DRAFTS_KEY,
   createSidebarConversationDraft,
   createSidebarConversationDraftStore,
   sidebarConversationDraftHasUserChanges,
@@ -23,6 +24,7 @@ describe("sidebar conversation draft store", () => {
       },
       now: "2026-07-29T00:00:00.000Z",
     });
+    expect(draft.managedAttachmentPresence).toBe("absent");
     store.write({
       ...draft,
       textFragments: [
@@ -66,6 +68,14 @@ describe("sidebar conversation draft store", () => {
     expect(sidebarConversationDraftHasUserChanges(draft)).toBe(false);
     expect(sidebarConversationDraftRequiresDiscardConfirmation(draft, false)).toBe(false);
     expect(sidebarConversationDraftRequiresDiscardConfirmation(draft, true)).toBe(true);
+    expect(sidebarConversationDraftRequiresDiscardConfirmation({
+      ...draft,
+      managedAttachmentPresence: "unknown",
+    }, false)).toBe(true);
+    expect(sidebarConversationDraftRequiresDiscardConfirmation({
+      ...draft,
+      managedAttachmentPresence: "present",
+    }, false)).toBe(true);
     expect(sidebarConversationDraftHasUserChanges({
       ...draft,
       context: { ...draft.context, teamKey: "user:custom" },
@@ -83,7 +93,62 @@ describe("sidebar conversation draft store", () => {
       body: "需要确认",
     }, false)).toBe(true);
   });
+
+  it("migrates missing or invalid attachment presence to unknown", () => {
+    const storage = new MemoryStorage();
+    const draft = omitManagedAttachmentPresence(createSidebarConversationDraft({
+      draftId: "legacy-a",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "project-a",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:00.000Z",
+    }));
+    storage.setItem(SIDEBAR_CONVERSATION_DRAFTS_KEY, JSON.stringify({
+      version: 1,
+      drafts: [draft, { ...draft, draftId: "legacy-b", managedAttachmentPresence: "stale" }],
+    }));
+
+    expect(createSidebarConversationDraftStore(storage).list()).toMatchObject([
+      { draftId: "legacy-a", managedAttachmentPresence: "unknown" },
+      { draftId: "legacy-b", managedAttachmentPresence: "unknown" },
+    ]);
+  });
+
+  it("updates attachment presence only for the matching attachment draft key", () => {
+    const storage = new MemoryStorage();
+    const store = createSidebarConversationDraftStore(storage);
+    const draft = createSidebarConversationDraft({
+      draftId: "draft-a",
+      hostSessionId: "source-a",
+      originSessionId: "source-a",
+      entryTemplate: "session-analysis",
+      context: {
+        projectId: "project-a",
+        workspaceMode: "worktree",
+        teamKey: "system:general-assistant",
+      },
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    store.write(draft);
+
+    expect(store.setManagedAttachmentPresence(draft.attachmentDraftKey, "present")).toBe(true);
+    expect(store.read(draft.draftId)?.managedAttachmentPresence).toBe("present");
+    expect(store.setManagedAttachmentPresence(draft.attachmentDraftKey, "present")).toBe(false);
+    expect(store.setManagedAttachmentPresence("draft:sidebar:missing", "unknown")).toBe(false);
+  });
 });
+
+function omitManagedAttachmentPresence<T extends { managedAttachmentPresence: unknown }>(
+  draft: T,
+): Omit<T, "managedAttachmentPresence"> {
+  const { managedAttachmentPresence: _presence, ...legacy } = draft;
+  return legacy;
+}
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();

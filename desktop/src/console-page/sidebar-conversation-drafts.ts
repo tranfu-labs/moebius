@@ -12,6 +12,8 @@ export interface SidebarConversationDraftContext {
   teamKey: string | null;
 }
 
+export type SidebarConversationDraftAttachmentPresence = "absent" | "unknown" | "present";
+
 export interface SidebarConversationDraft {
   draftId: string;
   hostSessionId: string;
@@ -23,6 +25,7 @@ export interface SidebarConversationDraft {
   textFragments: SidebarConversationTextFragment[];
   body: string;
   attachmentDraftKey: `draft:sidebar:${string}`;
+  managedAttachmentPresence: SidebarConversationDraftAttachmentPresence;
   updatedAt: string;
 }
 
@@ -35,6 +38,10 @@ export interface SidebarConversationDraftStore {
   list(): SidebarConversationDraft[];
   read(draftId: string): SidebarConversationDraft | null;
   write(draft: SidebarConversationDraft): void;
+  setManagedAttachmentPresence(
+    attachmentDraftKey: string,
+    presence: SidebarConversationDraftAttachmentPresence,
+  ): boolean;
   remove(draftId: string): void;
   findMergeable(input: {
     hostSessionId: string;
@@ -86,6 +93,21 @@ export function createSidebarConversationDraftStore(storage: Storage): SidebarCo
       else document.drafts[index] = draft;
       writeDocument(document);
     },
+    setManagedAttachmentPresence(attachmentDraftKey, presence) {
+      const document = readDocument();
+      const index = document.drafts.findIndex(
+        (draft) => draft.attachmentDraftKey === attachmentDraftKey,
+      );
+      if (index < 0 || document.drafts[index]?.managedAttachmentPresence === presence) {
+        return false;
+      }
+      document.drafts[index] = {
+        ...document.drafts[index]!,
+        managedAttachmentPresence: presence,
+      };
+      writeDocument(document);
+      return true;
+    },
     remove(draftId) {
       const document = readDocument();
       document.drafts = document.drafts.filter((draft) => draft.draftId !== draftId);
@@ -120,6 +142,7 @@ export function createSidebarConversationDraft(input: {
     textFragments: [],
     body: "",
     attachmentDraftKey: `draft:sidebar:${input.draftId}`,
+    managedAttachmentPresence: "absent",
     updatedAt: input.now,
   };
 }
@@ -136,7 +159,9 @@ export function sidebarConversationDraftRequiresDiscardConfirmation(
   draft: SidebarConversationDraft,
   hasAttachments: boolean,
 ): boolean {
-  return sidebarConversationDraftHasUserChanges(draft) || hasAttachments;
+  return sidebarConversationDraftHasUserChanges(draft)
+    || hasAttachments
+    || draft.managedAttachmentPresence !== "absent";
 }
 
 function parseSidebarConversationDraft(value: unknown): SidebarConversationDraft | null {
@@ -158,7 +183,18 @@ function parseSidebarConversationDraft(value: unknown): SidebarConversationDraft
   ) {
     return null;
   }
-  return draft as SidebarConversationDraft;
+  return {
+    ...(draft as SidebarConversationDraft),
+    managedAttachmentPresence: isManagedAttachmentPresence(draft.managedAttachmentPresence)
+      ? draft.managedAttachmentPresence
+      : "unknown",
+  };
+}
+
+function isManagedAttachmentPresence(
+  value: unknown,
+): value is SidebarConversationDraftAttachmentPresence {
+  return value === "absent" || value === "unknown" || value === "present";
 }
 
 function isContext(value: unknown): value is SidebarConversationDraftContext {

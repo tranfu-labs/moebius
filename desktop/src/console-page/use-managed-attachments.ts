@@ -13,12 +13,14 @@ import {
   uploadManagedAttachment,
 } from "./attachment-client.js";
 import { createBoundedPngPreview } from "./attachment-preview.js";
+import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
 
 interface PendingHandle {
   draftKey: string;
   file: File;
   controller: AbortController | null;
   previewUrl: string | null;
+  presenceGeneration: number;
 }
 
 export function useManagedAttachmentDrafts(input: {
@@ -26,18 +28,41 @@ export function useManagedAttachmentDrafts(input: {
   capability: string | null;
   currentDraftKey: string;
   onError(error: string): void;
+  onDraftAttachmentPresenceChange?(
+    draftKey: string,
+    presence: SidebarConversationDraftAttachmentPresence,
+  ): void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, ComposerAttachment[]>>({});
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const handlesRef = useRef(new Map<string, PendingHandle>());
   const draftRevisionRef = useRef(new Map<string, number>());
+  const attachmentPresenceGenerationRef = useRef(new Map<string, number>());
+  const onDraftAttachmentPresenceChangeRef = useRef(input.onDraftAttachmentPresenceChange);
+  onDraftAttachmentPresenceChangeRef.current = input.onDraftAttachmentPresenceChange;
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const currentDraftKeyRef = useRef(input.currentDraftKey);
   currentDraftKeyRef.current = input.currentDraftKey;
 
   const updateDraft = useCallback((draftKey: string, update: (items: ComposerAttachment[]) => ComposerAttachment[]) => {
     setDrafts((current) => ({ ...current, [draftKey]: update(current[draftKey] ?? []) }));
+  }, []);
+
+  const beginAttachmentPresenceMutation = useCallback((draftKey: string): number => {
+    const generation = (attachmentPresenceGenerationRef.current.get(draftKey) ?? 0) + 1;
+    attachmentPresenceGenerationRef.current.set(draftKey, generation);
+    onDraftAttachmentPresenceChangeRef.current?.(draftKey, "unknown");
+    return generation;
+  }, []);
+
+  const commitAttachmentPresence = useCallback((
+    draftKey: string,
+    generation: number,
+    presence: SidebarConversationDraftAttachmentPresence,
+  ): void => {
+    if ((attachmentPresenceGenerationRef.current.get(draftKey) ?? 0) !== generation) return;
+    onDraftAttachmentPresenceChangeRef.current?.(draftKey, presence);
   }, []);
 
   const runUpload = useCallback(async (clientId: string, handle: PendingHandle) => {
@@ -100,6 +125,7 @@ export function useManagedAttachmentDrafts(input: {
             ...(handle.previewUrl === null ? {} : { previewUrl: handle.previewUrl }),
           }
         : item));
+      commitAttachmentPresence(handle.draftKey, handle.presenceGeneration, "present");
       handle.controller = null;
     } catch (error) {
       if (controller.signal.aborted || handlesRef.current.get(clientId) !== handle) return;
@@ -108,7 +134,7 @@ export function useManagedAttachmentDrafts(input: {
         : item));
       handle.controller = null;
     }
-  }, [input.apiBase, input.capability, updateDraft]);
+  }, [commitAttachmentPresence, input.apiBase, input.capability, updateDraft]);
 
   const enqueueUpload = useCallback((clientId: string, handle: PendingHandle) => {
     const queued = uploadQueueRef.current
@@ -122,6 +148,8 @@ export function useManagedAttachmentDrafts(input: {
   }, [runUpload]);
 
   const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    const presenceGeneration = beginAttachmentPresenceMutation(input.currentDraftKey);
     for (const file of files) {
       const clientId = crypto.randomUUID();
       const handle: PendingHandle = {
@@ -129,6 +157,7 @@ export function useManagedAttachmentDrafts(input: {
         file,
         controller: null,
         previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+        presenceGeneration,
       };
       handlesRef.current.set(clientId, handle);
       updateDraft(handle.draftKey, (items) => [...items, {
@@ -142,12 +171,15 @@ export function useManagedAttachmentDrafts(input: {
       }]);
       enqueueUpload(clientId, handle);
     }
-  }, [enqueueUpload, input.currentDraftKey, updateDraft]);
+  }, [beginAttachmentPresenceMutation, enqueueUpload, input.currentDraftKey, updateDraft]);
 
   const remove = useCallback((clientId: string) => {
     const handle = handlesRef.current.get(clientId);
     const draftKey = handle?.draftKey ?? input.currentDraftKey;
     const item = (drafts[draftKey] ?? []).find((candidate) => candidate.clientId === clientId);
+    if (handle !== undefined || item !== undefined) {
+      beginAttachmentPresenceMutation(draftKey);
+    }
     handle?.controller?.abort("attachment-removed");
     handlesRef.current.delete(clientId);
     if (handle?.previewUrl !== null && handle?.previewUrl !== undefined) URL.revokeObjectURL(handle.previewUrl);
@@ -162,11 +194,12 @@ export function useManagedAttachmentDrafts(input: {
         attachmentId: item.attachmentId,
       }).catch((error: unknown) => input.onError(formatError(error)));
     }
-  }, [drafts, input.apiBase, input.capability, input.currentDraftKey, input.onError, updateDraft]);
+  }, [beginAttachmentPresenceMutation, drafts, input.apiBase, input.capability, input.currentDraftKey, input.onError, updateDraft]);
 
   const retry = useCallback((clientId: string) => {
     const handle = handlesRef.current.get(clientId);
     if (handle === undefined || handle.controller !== null) return;
+    handle.presenceGeneration = beginAttachmentPresenceMutation(handle.draftKey);
     updateDraft(handle.draftKey, (items) => {
       const item = items.find((candidate) => candidate.clientId === clientId);
       return item === undefined
@@ -174,7 +207,7 @@ export function useManagedAttachmentDrafts(input: {
         : [...items.filter((candidate) => candidate.clientId !== clientId), { ...item, status: "pending", error: undefined }];
     });
     enqueueUpload(clientId, handle);
-  }, [enqueueUpload, updateDraft]);
+  }, [beginAttachmentPresenceMutation, enqueueUpload, updateDraft]);
 
   const clearDraft = useCallback((draftKey: string) => {
     const items = drafts[draftKey] ?? [];
@@ -201,6 +234,7 @@ export function useManagedAttachmentDrafts(input: {
 
     const revision = (draftRevisionRef.current.get(draftKey) ?? 0) + 1;
     draftRevisionRef.current.set(draftKey, revision);
+    const presenceGeneration = beginAttachmentPresenceMutation(draftKey);
     const currentItems = draftsRef.current[draftKey] ?? [];
     for (const item of currentItems) {
       const handle = handlesRef.current.get(item.clientId);
@@ -261,7 +295,12 @@ export function useManagedAttachmentDrafts(input: {
           return withoutPreview;
         });
     setDrafts((current) => ({ ...current, [draftKey]: visibleRestored }));
-  }, [input.apiBase, input.capability, input.currentDraftKey]);
+    commitAttachmentPresence(
+      draftKey,
+      presenceGeneration,
+      cloned.length > 0 ? "present" : "absent",
+    );
+  }, [beginAttachmentPresenceMutation, commitAttachmentPresence, input.apiBase, input.capability, input.currentDraftKey]);
 
   const releaseDraftPreviewUrls = useCallback((draftKey: string) => {
     setDrafts((current) => {
@@ -297,6 +336,7 @@ export function useManagedAttachmentDrafts(input: {
     if (input.apiBase === null || input.capability === null) return;
     const controller = new AbortController();
     const draftRevision = draftRevisionRef.current.get(input.currentDraftKey) ?? 0;
+    const presenceGeneration = attachmentPresenceGenerationRef.current.get(input.currentDraftKey) ?? 0;
     void listManagedDraftAttachments({
       apiBase: input.apiBase,
       capability: input.capability,
@@ -304,6 +344,12 @@ export function useManagedAttachmentDrafts(input: {
       draftKey: input.currentDraftKey,
       signal: controller.signal,
     }).then(async (attachments) => {
+      if (controller.signal.aborted) return;
+      commitAttachmentPresence(
+        input.currentDraftKey,
+        presenceGeneration,
+        attachments.length > 0 ? "present" : "absent",
+      );
       const restored = await Promise.all(attachments.map(async (attachment): Promise<ComposerAttachment> => {
         let previewUrl: string | undefined;
         if (attachment.kind === "image") {
@@ -348,7 +394,7 @@ export function useManagedAttachmentDrafts(input: {
       if (!controller.signal.aborted) input.onError(formatError(error));
     });
     return () => controller.abort("draft-changed");
-  }, [input.apiBase, input.capability, input.currentDraftKey, input.onError, updateDraft]);
+  }, [commitAttachmentPresence, input.apiBase, input.capability, input.currentDraftKey, input.onError, updateDraft]);
 
   useEffect(() => () => {
     const released = new Set<string>();
