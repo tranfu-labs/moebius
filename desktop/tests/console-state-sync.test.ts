@@ -14,12 +14,8 @@ import {
   loadProcessOutput,
   loadProcessOutputAppend,
   loadProcessOutputUpdate,
-  mergeSettledProcessOutput,
   loadSubSessionView,
   loadSessionReferenceText,
-  ProcessOutputRequestError,
-  processOutputLocator,
-  processOutputRunId,
   loadProjectFile,
   loadFileReference,
   loadExecutionProfileRegistry,
@@ -30,11 +26,17 @@ import {
   retryPendingSessionMessage,
   retrySessionRun,
   removePendingSessionMessage,
-  subSessionIdFromSourceKey,
   submitSessionMessage,
   updatePendingSessionMessage,
   searchConsoleSessions,
 } from "../src/console-page/state-sync.js";
+import {
+  mergeSettledProcessOutput,
+  ProcessOutputRequestError,
+  processOutputLocator,
+  processOutputRunId,
+  subSessionIdFromSourceKey,
+} from "../src/console-page/console-process-model.js";
 import {
   ConsoleStateCoordinator,
   ProcessInvocationRequestCoordinator,

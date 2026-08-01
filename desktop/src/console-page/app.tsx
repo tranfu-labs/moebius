@@ -115,16 +115,13 @@ import {
   loadProcessOutput,
   loadProcessOutputUpdate,
   loadProcessDebugInvocation,
-  mergeSettledProcessOutput,
   loadFileReference,
   loadProjectFile,
   loadProjectFiles,
   loadSubSessionView,
   loadExecutionProfileRegistry,
   loadWorkspaceDiff,
-  processOutputLocator,
   refreshConsoleState,
-  subSessionIdFromSourceKey,
   submitSessionMessage,
   retryPendingSessionMessage,
   updatePendingSessionMessage,
@@ -136,6 +133,11 @@ import {
   restoreConsoleSession,
   type SessionSearchResult,
 } from "./state-sync.js";
+import {
+  mergeSettledProcessOutput,
+  processOutputLocator,
+  subSessionIdFromSourceKey,
+} from "./console-process-model.js";
 import {
   ConsoleStateCoordinator,
   ProcessInvocationRequestCoordinator,
