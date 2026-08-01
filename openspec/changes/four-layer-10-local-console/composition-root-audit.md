@@ -14,7 +14,7 @@
 | 文件 | 总数 | wiring 装配 | timing 时序控制 | business 业务判据 | 处置结论 |
 | --- | ---: | --- | --- | --- | --- |
 | `conversation-workspace-runtime.ts` | 4 | L74（cache/port 能力） | — | L23（baseline 存在性）、L32（diff 可用性）、L54（workspace mode） | **use case**；已下沉 `decide*`/`plan*`，注入 adapter port，并移出 allowlist |
-| `session-continuation-runtime.ts` | 13 | L30、L33、L42、L51、L63、L76、L81、L109（记录/目录/port guard） | — | L70、L83、L100、L101、L106（continuation、team health、availability） | **use case**；拆 decision 后移出 allowlist |
+| `session-continuation-runtime.ts` | 13 | L30、L33、L42、L51、L63、L76、L81、L109（记录/目录/port guard） | — | L70、L83、L100、L101、L106（continuation、team health、availability） | **use case**；已下沉 continuation/directory/team-health plans、注入 fs adapter 并移出 allowlist |
 | `session-presentation-runtime.ts` | 13 | L54、L67、L113、L147（目录/同步 port/空结果 guard） | L110、L116、L140、L145（去重写入与 abort 顺序） | L37、L47、L48、L66、L96（目录、workspace、continuation、running 显示） | **use case**；拆 projection/stop decision 后移出 allowlist |
 | `run-failure-runtime.ts` | 16 | L92（placeholder 存在性） | L65、L88（graceful shutdown 先于 terminal 写入） | L54、L56、L63、L72×3、L99、L102、L114、L120、L122、L124、L127（timeout/interruption/文案与终局） | **use case**；终局映射下沉 domain 后移出 allowlist |
 | `run-lifecycle-runtime.ts` | 23 | L147、L156、L158、L164、L179、L181、L186、L194、L206、L262、L265（active/store/projector guard） | L102、L103、L235、L238、L273（elapsed、长运行、resume timing） | L151、L162、L169、L208、L221、L222、L249（phase/status/attempt/activity 信号） | **保留 composition root**；它拥有 active-run 内存及时序，7 条业务判据必须改由 domain plan 给出 |

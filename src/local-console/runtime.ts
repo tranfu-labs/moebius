@@ -368,6 +368,7 @@ export class LocalConsoleRuntime {
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
+      directoryAvailable,
       ...(options.resolveAgentTeamHealth === undefined
         ? {}
         : { resolveAgentTeamHealth: options.resolveAgentTeamHealth }),
