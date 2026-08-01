@@ -1,21 +1,21 @@
-import {
-  parseRunOutputSourceKey,
-  type Translate,
-  type TranslationKey,
-  type OperatorEvidenceOpenIntent,
-  type OperatorEvidenceView,
-  type OperatorProcessAppendOutput,
-  type OperatorProcessDebugInvocation,
-  type OperatorProcessOutput,
-  type OperatorSession,
-  type OperatorSubSessionView,
-  type ExecutionModelRegistry,
-  type FileReferenceContent,
-  type ProjectFilesData,
-  type WorkspaceDiffData,
-  type WorkspaceFileContent,
+import type {
+  Translate,
+  TranslationKey,
+  OperatorEvidenceOpenIntent,
+  OperatorEvidenceView,
+  OperatorProcessAppendOutput,
+  OperatorProcessDebugInvocation,
+  OperatorProcessOutput,
+  OperatorSession,
+  OperatorSubSessionView,
+  ExecutionModelRegistry,
+  FileReferenceContent,
+  ProjectFilesData,
+  WorkspaceDiffData,
+  WorkspaceFileContent,
 } from "@moebius/console-ui";
 import { invokeBrowserFetch } from "./browser-fetch.js";
+import { parseProcessOutputSourceKey } from "./process-output-locator.js";
 
 export interface ConsoleSelection {
   projectId: string;
@@ -661,7 +661,7 @@ export function processOutputLocator(
   sourceKey: string | null,
   legacySessionId?: string,
 ): { sessionId: string; runId: string } | null {
-  return parseRunOutputSourceKey(sourceKey, legacySessionId);
+  return parseProcessOutputSourceKey(sourceKey, legacySessionId);
 }
 
 export async function loadWorkspaceDiff(options: {
@@ -1391,8 +1391,7 @@ export class ConsoleStateActions {
     if (this.options.apiBase === null) {
       throw new Error(this.options.t("desktop.error.localConsoleUnavailable"));
     }
-    const response = await invokeBrowserFetch(
-      this.options.fetch,
+    const response = await this.options.fetch(
       endpoint(
         this.options.apiBase,
         `/api/local-console/sessions/${encodeURIComponent(sessionId)}/${action}`,
