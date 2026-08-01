@@ -109,6 +109,7 @@ import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
+import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -337,6 +338,7 @@ export class LocalConsoleRuntime {
   private readonly projectCommandRuntime: LocalProjectCommandRuntime;
   private readonly sessionCreationRuntime: LocalSessionCreationRuntime;
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
+  private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -460,6 +462,10 @@ export class LocalConsoleRuntime {
       hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
       inactiveSessions: this.inactiveSessions,
       processPending: (sessionId) => void this.processPending(sessionId),
+    });
+    this.sessionReferenceRuntime = new LocalSessionReferenceRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
     });
   }
 
@@ -850,12 +856,7 @@ export class LocalConsoleRuntime {
     query: string;
     includeArchived: boolean;
   }): Promise<LocalConsoleSessionSearchResult[]> {
-    if (this.options.store.searchSessions === undefined) {
-      throw new Error("local console session search unavailable");
-    }
-    return await this.storeCall("local-console-store-search-sessions", () =>
-      this.options.store.searchSessions!(input),
-    );
+    return await this.sessionReferenceRuntime.search(input);
   }
 
   async sessionReferenceText(input: {
@@ -864,49 +865,7 @@ export class LocalConsoleRuntime {
     runId?: string | null;
     messageId?: number | null;
   }): Promise<LocalConsoleSessionReferenceText> {
-    const sessions = await this.storeCall(
-      "local-console-store-list-sessions-for-reference",
-      () => this.options.store.listSessions(),
-    );
-    const session = sessions.find((candidate) => candidate.sessionId === input.sessionId);
-    if (session === undefined) {
-      throw new Error(`local console session not found: ${input.sessionId}`);
-    }
-    const messages = input.scope === "message"
-      ? await this.storeCall("local-console-store-list-reference-messages", () =>
-          this.options.store.listMessages(input.sessionId))
-      : [];
-    const targetMessage = input.scope === "message"
-      ? (input.messageId == null
-          ? [...messages].reverse().find((message) => message.runId === (input.runId ?? null))
-          : messages.find((message) => message.id === input.messageId))
-      : undefined;
-    if (input.scope === "message" && targetMessage === undefined) {
-      throw new Error(`local console source message not found: ${input.sessionId}`);
-    }
-    const text = input.scope === "conversation"
-      ? buildMoebiusReferenceText({
-          scope: "conversation",
-          sessionId: input.sessionId,
-          title: session.title,
-        })
-      : buildMoebiusReferenceText({
-          scope: "message",
-          sessionId: input.sessionId,
-          messageId: targetMessage!.id,
-          role: targetMessage!.role ?? (targetMessage!.speaker === "user" ? "用户" : "协作者"),
-          excerpt: plainTextExcerpt(targetMessage!.body),
-        });
-    return {
-      sessionId: input.sessionId,
-      runId: input.runId ?? null,
-      scope: input.scope,
-      fragment: {
-        id: crypto.randomUUID(),
-        label: "文本片段",
-        text,
-      },
-    };
+    return await this.sessionReferenceRuntime.referenceText(input);
   }
 
   async createChildSession(input: {
