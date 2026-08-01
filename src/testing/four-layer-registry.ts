@@ -123,6 +123,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/primary-execution-runtime.ts",
   "src/local-console/pending-processing-runtime.ts",
   "src/local-console/primary-terminal-runtime.ts",
+  "src/local-console/primary-terminal-wiring.ts",
   "src/local-console/route-bus.ts",
   "src/local-console/runtime.ts",
   "src/local-console/session-continuation-runtime.ts",

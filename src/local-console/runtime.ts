@@ -111,6 +111,7 @@ import { createLocalPrimaryProviderPorts } from "./primary-provider-wiring.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { createLocalPrimaryAnalysisPorts } from "./primary-analysis-wiring.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
+import { createLocalPrimaryTerminalPorts } from "./primary-terminal-wiring.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
@@ -479,19 +480,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       toolTimeoutMs: this.toolInFlightTimeoutMs,
       updateGate: async (input) => { await this.updateSessionAnalysisGate(input); },
     }));
-    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime({
+    this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(createLocalPrimaryTerminalPorts({
       store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
+      storePorts: this.storePorts,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
       nowIso: () => this.nowIso(),
-      activeRun: (runId) => this.activeRunRegistry.get(runId),
-      recoveryStore: () => this.storePorts.recoveryFacts(),
-      recordProviderInvocation: (fact) => this.storePorts.recordProviderInvocation(fact),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
       }),
-      pauseLifecycle: (runId) => this.runLifecycleRuntime.pause(runId),
-      finishLifecycle: (runId, status) => this.runLifecycleRuntime.finish(runId, status),
       recordFailure: (run, result) =>
         this.runFailureRuntime.recordDirect(run.sourceMessage, run.sessionId, run.runId, result),
       sourceDirectoryAvailable: (sessionId) => this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
@@ -510,31 +508,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         result.finalText,
         preparation.controller.signal,
       ),
-      recordTimelineCursor: (run, agentIdentityFingerprint, lastSeenIndex) =>
-        this.storePorts.recordAgentTimelineCursor({
-          sessionId: run.sessionId,
-          runId: run.runId,
-          role: run.role,
-          agentIdentityFingerprint,
-          lastSeenIndex,
-          recordedAt: this.nowIso(),
-        }),
-      recordChildSessionCard: (run, card, result) =>
-        this.storePorts.call("local-console-store-child-session-card", () =>
-          this.storePorts.sessionFacts().recordChildSessionCard({
-            parentSessionId: run.sessionId,
-            sourceId: card.sourceId,
-            childSessionIds: card.childSessionIds,
-            runId: run.runId,
-            runDir: result.runDir,
-            now: this.nowIso(),
-          })),
       recordChildSessionCardError: async (sessionId, error) => {
         const reason = formatLocalError(error);
         this.lastError = reason;
         await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
       },
-    });
+    }));
     this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storePorts.call(label, operation),
