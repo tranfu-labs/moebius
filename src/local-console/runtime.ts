@@ -104,6 +104,8 @@ import {
   LocalRunLifecycleRuntime,
   type LocalRunLifecycleFactStore,
 } from "./run-lifecycle-runtime.js";
+import { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
+import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -327,6 +329,8 @@ export class LocalConsoleRuntime {
   private readonly sessionPresentationRuntime: LocalSessionPresentationRuntime;
   private readonly runFailureRuntime: LocalRunFailureRuntime;
   private readonly runLifecycleRuntime: LocalRunLifecycleRuntime;
+  private readonly pendingSessionContextRuntime: LocalPendingSessionContextRuntime;
+  private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -391,6 +395,24 @@ export class LocalConsoleRuntime {
       recordError: (error) => {
         this.lastError = formatLocalError(error);
       },
+    });
+    this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
+      hasScheduledWorker: (sessionId) => [...this.workerLaneTails.keys()].some((key) =>
+        key.startsWith(`${sessionId}\u0000`)),
+      listAgentNames: async (sessionId) =>
+        (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
+    });
+    this.runRecoveryRuntime = new LocalRunRecoveryRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      recoveryStore: () => this.codexRecoveryFactStore(),
+      requireRecoveryStore: () => this.requireCodexRecoveryFactStore(),
+      lifecycleStore: () => this.runLifecycleFactStore(),
     });
   }
 
@@ -3511,30 +3533,7 @@ export class LocalConsoleRuntime {
   private async gracefulResumeTargetsForClaim(
     sessionId: string,
   ): Promise<Array<{ sourceMessageId: number; targetRunId: string }>> {
-    const recoveryStore = this.codexRecoveryFactStore();
-    if (recoveryStore === null) return [];
-    const recoveryFacts = await readLocalCodexRecoveryFacts(
-      recoveryStore.getSessionFactLogPath(sessionId),
-      sessionId,
-    );
-    const bySource = new Map<number, Set<string>>();
-    for (const intent of recoveryFacts.intents) {
-      if (
-        intent.reason !== "graceful-shutdown"
-        || recoveryFacts.consumedIntentIds.has(intent.intentId)
-      ) {
-        continue;
-      }
-      const targets = bySource.get(intent.sourceMessageId) ?? new Set<string>();
-      targets.add(intent.targetRunId);
-      bySource.set(intent.sourceMessageId, targets);
-    }
-    return [...bySource.entries()]
-      .filter(([, targetRunIds]) => targetRunIds.size === 1)
-      .map(([sourceMessageId, targetRunIds]) => ({
-        sourceMessageId,
-        targetRunId: [...targetRunIds][0]!,
-      }));
+    return await this.runRecoveryRuntime.targetsForClaim(sessionId);
   }
 
   private async gracefulResumeTargetForMessage(
@@ -3542,15 +3541,7 @@ export class LocalConsoleRuntime {
     sourceMessageId: number,
     knownRecoveryFacts?: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>,
   ): Promise<string | null> {
-    const recoveryStore = this.codexRecoveryFactStore();
-    if (recoveryStore === null) return null;
-    const recoveryFacts = knownRecoveryFacts
-      ?? await readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(sessionId), sessionId);
-    const intent = [...recoveryFacts.intents].reverse().find((candidate) =>
-      candidate.reason === "graceful-shutdown"
-      && candidate.sourceMessageId === sourceMessageId
-      && !recoveryFacts.consumedIntentIds.has(candidate.intentId));
-    return intent?.targetRunId ?? null;
+    return await this.runRecoveryRuntime.targetForMessage(sessionId, sourceMessageId, knownRecoveryFacts);
   }
 
   private async markRunStarted(runId: string): Promise<void> {
@@ -3607,55 +3598,7 @@ export class LocalConsoleRuntime {
   }
 
   private async applyPendingSessionContextWhenIdle(sessionId: string): Promise<void> {
-    const hasScheduledWorker = [...this.workerLaneTails.keys()].some((key) =>
-      key.startsWith(`${sessionId}\u0000`),
-    );
-    if (this.hasActiveRunForSession(sessionId) || hasScheduledWorker) {
-      return;
-    }
-    const messages = await this.storeCall("local-console-store-list-before-context-promotion", () =>
-      this.options.store.listMessages(sessionId));
-    if (messages.some((message) =>
-      message.speaker === "user"
-      && (message.status === "pending" || message.status === "running")
-      && message.dispatchLane === "worker")) {
-      return;
-    }
-    await this.storeCall("local-console-store-apply-pending-session-context", () =>
-      this.options.store.applyPendingSessionContext({ sessionId, now: this.nowIso() }),
-    );
-    const awaiting = messages.filter((message) =>
-      message.speaker === "user"
-      && message.status === "pending"
-      && message.dispatchLane === "awaiting-team");
-    if (awaiting.length === 0) {
-      return;
-    }
-    const resolveAwaiting = this.options.store.resolveAwaitingUserMessageDispatches;
-    if (resolveAwaiting === undefined) {
-      throw new Error("local console awaiting dispatch persistence capability unavailable");
-    }
-    const persistedSnapshot = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-    const agentNames = persistedSnapshot === null
-      ? (await this.options.listAgentFiles(sessionId)).map((agent) => agent.name)
-      : persistedSnapshot.members.map((member) => member.name);
-    const primaryAgent = agentNames[0];
-    if (primaryAgent === undefined) {
-      return;
-    }
-    await this.storeCall("local-console-store-resolve-awaiting-dispatches", () =>
-      resolveAwaiting.call(this.options.store, {
-        sessionId,
-        dispatches: awaiting.map((message) => ({
-          messageId: message.id,
-          ...resolveLocalUserMessageDispatch({
-            body: message.body,
-            availableAgentNames: agentNames,
-            primaryAgent,
-          }),
-        })),
-        now: this.nowIso(),
-      }));
+    await this.pendingSessionContextRuntime.applyWhenIdle(sessionId);
   }
 
   private async recordTerminalFailureBestEffort(
@@ -3697,61 +3640,7 @@ export class LocalConsoleRuntime {
     reason: string;
     runDir: string | null;
   }): Promise<void> {
-    if (input.intent !== null) {
-      const recoveryStore = this.requireCodexRecoveryFactStore();
-      await this.storeCall("local-console-store-consume-unavailable-resume", () =>
-        recoveryStore.recordCodexResumeConsumed({
-          sessionId: input.sessionId,
-          intentId: input.intent!.intentId,
-          resumedByRunId: input.runId,
-          mode: "unavailable",
-          reason: input.reason,
-          consumedAt: this.nowIso(),
-        }));
-    }
-    const lifecycleStore = this.runLifecycleFactStore();
-    if (lifecycleStore !== null) {
-      const timing = await this.storeCall(
-        "local-console-store-read-unavailable-resume-timing",
-        () => lifecycleStore.getRunTiming({
-          sessionId: input.sessionId,
-          runId: input.runId,
-        }),
-      );
-      if (timing !== null) {
-        const completedAt = this.nowIso();
-        await this.storeCall("local-console-store-record-unavailable-resume-terminal", () =>
-          lifecycleStore.recordRunLifecycleEvent({
-            sessionId: input.sessionId,
-            runId: input.runId,
-            stepId: timing.stepId,
-            attempt: timing.attempt,
-            phase: "terminal",
-            role: input.role,
-            engine: input.engine,
-            processOutputAvailable: timing.processOutputAvailable,
-            createdAt: timing.createdAt,
-            startedAt: timing.startedAt,
-            elapsedMs: timing.elapsedMs,
-            completedAt,
-            status: "failed",
-            recordedAt: completedAt,
-          }));
-      }
-    }
-    await this.storeCall("local-console-store-record-unavailable-resume", () =>
-      this.options.store.recordFailure({
-        userMessageId: input.sourceMessage.id,
-        sessionId: input.sessionId,
-        error: `resume-unavailable:${input.reason}`,
-        runId: input.runId,
-        runDir: input.runDir,
-        body: "原执行已经无法继续。你可以重新运行，或直接说话、换一个成员接手。",
-        // SQLite keeps the legacy bounded enum; the public DTO derives the
-        // specific recovery fact from this stable error prefix.
-        systemEventKind: "other",
-        now: this.nowIso(),
-      }));
+    await this.runRecoveryRuntime.settleUnavailable(input);
   }
 
   private async recordInterruptedBestEffort(
