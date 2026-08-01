@@ -139,6 +139,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/run-output-runtime.ts",
   "src/local-console/run-retry-runtime.ts",
   "src/local-console/runtime-facade.ts",
+  "src/local-console/runtime-wiring-context.ts",
   "src/local-console/run-failure-runtime.ts",
   "src/local-console/run-lifecycle-runtime.ts",
   "src/local-console/pending-session-context-runtime.ts",

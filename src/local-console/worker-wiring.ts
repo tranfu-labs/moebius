@@ -1,9 +1,18 @@
+import path from "node:path";
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { ActiveLocalRun } from "./active-run.js";
+import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
+import type { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
+import type { LocalRunFailureRuntime } from "./run-failure-runtime.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
+import type { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
+import type { LocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
+import type { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
+import { formatLocalError } from "./runtime-domain.js";
+import { decideWorkerClaimRelease } from "./worker-runtime-plan.js";
 import type { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerExecutionPorts } from "./worker-execution-wiring.js";
 import type { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
@@ -21,6 +30,7 @@ type TerminalInput = Parameters<typeof createLocalWorkerTerminalPorts>[0];
 type ExecutionInput = Parameters<typeof createLocalWorkerExecutionPorts>[0];
 
 export function createLocalWorkerWiring(input: {
+  context: LocalRuntimeWiringContext;
   options: LocalConsoleRuntimeOptions;
   storePorts: LocalConsoleStorePorts;
   executionRunner: LocalExecutionRunner;
@@ -28,63 +38,63 @@ export function createLocalWorkerWiring(input: {
   lifecycle: LocalRunLifecycleRuntime;
   idleTimeoutMs: number | undefined;
   toolTimeoutMs: number | undefined;
-  stopping: DispatchInput["stopping"];
   now(): Date;
-  nowIso: DispatchInput["nowIso"];
-  nextRunId: DispatchInput["nextRunId"];
-  recordMissingAgent: DispatchInput["recordMissingAgent"];
+  nowIso(): string;
+  recovery: LocalRunRecoveryRuntime;
+  continuation: LocalSessionContinuationRuntime;
+  pendingContext: LocalPendingSessionContextRuntime;
+  failure: LocalRunFailureRuntime;
+  workspace: LocalConversationWorkspaceRuntime;
   scheduleRun: DispatchInput["scheduleRun"];
-  continuableWorkspace: DispatchInput["continuableWorkspace"];
-  applyPendingContext: DispatchInput["applyPendingContext"];
   processPending: DispatchInput["processPending"];
-  recordError: DispatchInput["setError"];
   report: DispatchInput["report"];
-  releaseClaim: PreparationInput["releaseClaim"];
-  sessionSummary: PreparationInput["sessionSummary"];
-  makeRunDir: PreparationInput["makeRunDir"];
   resolveWorkspace: PreparationInput["resolveWorkspace"];
   readAgentFile: PreparationInput["readAgentFile"];
   loadRecoverySnapshot: PreparationInput["loadRecoverySnapshot"];
   isCodexThreadAvailable: PreparationInput["isCodexThreadAvailable"];
   settleUnavailable: PreparationInput["settleUnavailable"];
   classifyFailure: TerminalInput["classifyFailure"];
-  recordDirectFailure: TerminalInput["recordDirectFailure"];
-  recordDetachedFailure: TerminalInput["recordDetachedFailure"];
-  sourceDirectoryAvailable: TerminalInput["sourceDirectoryAvailable"];
   executeChildSession: TerminalInput["executeChildSession"];
-  recordWorkspaceDiff: TerminalInput["recordWorkspaceDiff"];
-  formatError: ExecutionInput["formatError"];
-  setError: ExecutionInput["setError"];
-  recordDirectStartFailure: ExecutionInput["recordDirectFailure"];
-  recordDetachedStartFailure: ExecutionInput["recordDetachedFailure"];
   invalidateWorkspace: ExecutionInput["invalidateWorkspace"];
 }) {
+  const { context } = input;
+  const releaseClaim: PreparationInput["releaseClaim"] = async (message, sessionId) => {
+    const decision = decideWorkerClaimRelease(context.stopping(sessionId));
+    if (decision.kind === "keep") return;
+    await context.storePorts.call("local-console-store-release-stopped-worker-claim", () =>
+      input.options.store.releaseMessageForRetry({
+        userMessageId: message.id,
+        sessionId,
+        now: context.nowIso(),
+      }));
+  };
   return {
     dispatch: createLocalWorkerDispatchPorts({
       options: input.options,
-      storePorts: input.storePorts,
+      storePorts: context.storePorts,
       activeRunForRole: (sessionId, role) =>
         input.lifecycle.runForRole(sessionId, role) as ActiveLocalRun | undefined,
-      stopping: input.stopping,
-      nextRunId: input.nextRunId,
-      recordMissingAgent: input.recordMissingAgent,
-      nowIso: input.nowIso,
-      nowRunId: () => `local-${input.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
+      stopping: context.stopping,
+      nextRunId: (sessionId, messageId) => input.recovery.targetForMessage(sessionId, messageId),
+      recordMissingAgent: (message, sessionId, runId, role) =>
+        input.failure.recordStartFailure(message, sessionId, runId, null, `Agent not found: ${role}`),
+      nowIso: context.nowIso,
+      nowRunId: () => `local-${context.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       scheduleRun: input.scheduleRun,
-      continuableWorkspace: input.continuableWorkspace,
-      applyPendingContext: input.applyPendingContext,
+      continuableWorkspace: (sessionId) => input.continuation.continuableSessionWorkspace(sessionId),
+      applyPendingContext: (sessionId) => input.pendingContext.applyWhenIdle(sessionId),
       processPending: input.processPending,
-      setError: input.recordError,
+      setError: context.formatAndSetError,
       report: input.report,
     }),
     preparation: createLocalWorkerPreparationPorts({
       options: input.options,
-      storePorts: input.storePorts,
-      nowIso: input.nowIso,
-      stopping: input.stopping,
-      releaseClaim: input.releaseClaim,
-      sessionSummary: input.sessionSummary,
-      makeRunDir: input.makeRunDir,
+      storePorts: context.storePorts,
+      nowIso: context.nowIso,
+      stopping: context.stopping,
+      releaseClaim,
+      sessionSummary: (sessionId) => input.continuation.sessionSummary(sessionId),
+      makeRunDir: (messageCount) => path.resolve(input.options.makeRunDir(messageCount, context.now())),
       resolveWorkspace: input.resolveWorkspace,
       readAgentFile: input.readAgentFile,
       loadRecoverySnapshot: input.loadRecoverySnapshot,
@@ -95,15 +105,15 @@ export function createLocalWorkerWiring(input: {
       recordLifecycle: (active) => input.lifecycle.record(active, "created", "created"),
     }),
     provider: createLocalWorkerProviderPorts({
-      storePorts: input.storePorts,
+      storePorts: context.storePorts,
       executionRunner: input.executionRunner,
       idleTimeoutMs: input.idleTimeoutMs,
       toolTimeoutMs: input.toolTimeoutMs,
-      stopping: input.stopping,
-      releaseClaim: (workerInput) => input.releaseClaim(workerInput.sourceMessage, workerInput.sessionId),
+      stopping: context.stopping,
+      releaseClaim: (workerInput) => releaseClaim(workerInput.sourceMessage, workerInput.sessionId),
       finishLifecycle: (runId) => input.lifecycle.finish(runId, "interrupted"),
       activeRun: (runId) => input.activeRuns.get(runId),
-      nowIso: input.nowIso,
+      nowIso: context.nowIso,
       onProcessStarted: (runId) => input.lifecycle.markStarted(runId),
       updateAgentProgress: (runId, text) => input.lifecycle.updateAgentProgress(runId, text),
       onStructuredActivity: (runId, event) => input.lifecycle.updateStructuredActivity(runId, event),
@@ -111,17 +121,27 @@ export function createLocalWorkerWiring(input: {
     }),
     terminal: createLocalWorkerTerminalPorts({
       store: input.options.store,
-      storePorts: input.storePorts,
-      nowIso: input.nowIso,
+      storePorts: context.storePorts,
+      nowIso: context.nowIso,
       activeRun: (runId) => input.activeRuns.get(runId),
       classifyFailure: input.classifyFailure,
       pauseLifecycle: (runId) => input.lifecycle.pause(runId),
       finishLifecycle: (runId, status) => input.lifecycle.finish(runId, status),
-      recordDirectFailure: input.recordDirectFailure,
-      recordDetachedFailure: input.recordDetachedFailure,
-      sourceDirectoryAvailable: input.sourceDirectoryAvailable,
+      recordDirectFailure: (workerInput, result) =>
+        input.failure.recordDirect(workerInput.sourceMessage, workerInput.sessionId, workerInput.runId, result),
+      recordDetachedFailure: (workerInput, result) =>
+        input.failure.recordDetached(workerInput.sessionId, workerInput.runId, result),
+      sourceDirectoryAvailable: (sessionId) => input.continuation.sessionProjectDirectoryAvailable(sessionId),
       executeChildSession: input.executeChildSession,
-      recordWorkspaceDiff: input.recordWorkspaceDiff,
+      recordWorkspaceDiff: (workerInput, preparation, result) =>
+        input.workspace.recordGeneratedDiffIfNeeded({
+          sessionId: workerInput.sessionId,
+          runId: workerInput.runId,
+          runDir: preparation.runDir,
+          workspace: preparation.workspace,
+          finalText: result.finalText,
+          signal: preparation.controller.signal,
+        }),
     }),
     execution(runtimes: {
       preparation: LocalWorkerPreparationRuntime;
@@ -130,12 +150,25 @@ export function createLocalWorkerWiring(input: {
     }): ConstructorParameters<typeof LocalWorkerExecutionRuntime>[0] {
       return createLocalWorkerExecutionPorts({
         ...runtimes,
-        stopping: input.stopping,
-        releaseClaim: (workerInput) => input.releaseClaim(workerInput.sourceMessage, workerInput.sessionId),
-        formatError: input.formatError,
-        setError: input.setError,
-        recordDirectFailure: input.recordDirectStartFailure,
-        recordDetachedFailure: input.recordDetachedStartFailure,
+        stopping: context.stopping,
+        releaseClaim: (workerInput) => releaseClaim(workerInput.sourceMessage, workerInput.sessionId),
+        formatError: (error) => formatLocalError(error),
+        setError: context.setError,
+        recordDirectFailure: (workerInput, runDir, error) =>
+          input.failure.recordStartFailure(
+            workerInput.sourceMessage,
+            workerInput.sessionId,
+            workerInput.runId,
+            runDir,
+            error,
+          ),
+        recordDetachedFailure: (workerInput, runDir, error) =>
+          input.failure.recordDetachedStartFailure({
+            sessionId: workerInput.sessionId,
+            runId: workerInput.runId,
+            runDir,
+            error,
+          }),
         activeRuns: input.activeRuns,
         lifecycle: input.lifecycle,
         invalidateWorkspace: input.invalidateWorkspace,
