@@ -4,6 +4,8 @@ import {
   decidePrimaryAnalysisConfirmation,
   decidePrimaryAnalysisControl,
   decidePrimaryAnalysisHandling,
+  decidePrimaryClaim,
+  decidePrimaryControlRetryLookup,
   decidePrimaryInactive,
   decidePrimaryLifecycleCreation,
   decidePrimaryPreparation,
@@ -11,6 +13,7 @@ import {
   decidePrimaryRecoveryPersistence,
   decidePrimarySuccessPersistence,
   planPrimaryGracefulResume,
+  planPrimaryRunId,
   planPrimaryLastSeenIndex,
   planPrimaryProfile,
 } from "../src/local-console/primary-runtime-plan.js";
@@ -85,5 +88,17 @@ describe("primary runtime plan", () => {
     expect(planPrimaryGracefulResume({ gracefulResumePrepared: true })).toBe(true);
     expect(planPrimaryLastSeenIndex([{ index: 2 }, { index: 7 }])).toBe(7);
     expect(planPrimaryLastSeenIndex([])).toBe(-1);
+  });
+
+  it("keeps primary claim identity and retry lookup source-scoped", () => {
+    expect(decidePrimaryClaim(null)).toEqual({ kind: "stop" });
+    expect(decidePrimaryClaim({ id: 3 })).toEqual({ kind: "claimed", message: { id: 3 } });
+    expect(planPrimaryRunId([{ sourceMessageId: 3, targetRunId: "resume-3" }], 3, "fresh"))
+      .toBe("resume-3");
+    expect(planPrimaryRunId([], 3, "fresh")).toBe("fresh");
+    expect(decidePrimaryControlRetryLookup({ actionKind: "complete-source", sourceSpeaker: "agent" }))
+      .toEqual({ kind: "read" });
+    expect(decidePrimaryControlRetryLookup({ actionKind: "complete-source", sourceSpeaker: "user" }))
+      .toEqual({ kind: "skip" });
   });
 });

@@ -15,14 +15,10 @@ import {
 import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
-import { resolveTrigger } from "../triggers/index.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import type { LocalAttachmentManager } from "./attachments.js";
-import {
-  buildLocalConsoleRoutingTimeline,
-  buildLocalConsoleTimeline,
-} from "./timeline.js";
+import { buildLocalConsoleTimeline } from "./timeline.js";
 import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -83,10 +79,7 @@ import {
   readRunExecutionContexts,
 } from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
-import {
-  resolveClaimedControlAction,
-  selectSourceRetryIntent,
-} from "./control-dispatch.js";
+import { selectSourceRetryIntent } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
@@ -122,13 +115,11 @@ import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
-import {
-  LocalPrimaryPreparationRuntime,
-  type LocalPrimaryRunInput,
-} from "./primary-preparation-runtime.js";
+import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
+import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -326,6 +317,7 @@ export class LocalConsoleRuntime {
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
   private readonly primaryAnalysisRuntime: LocalPrimaryAnalysisRuntime;
   private readonly primaryTerminalRuntime: LocalPrimaryTerminalRuntime;
+  private readonly primaryDispatchRuntime: LocalPrimaryDispatchRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -838,6 +830,57 @@ export class LocalConsoleRuntime {
         this.lastError = reason;
         await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
       },
+    });
+    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      nowIso: () => this.nowIso(),
+      nextRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
+      inactive: (sessionId) => this.inactiveSessions.has(sessionId),
+      gracefulResumeTargets: (sessionId) => this.gracefulResumeTargetsForClaim(sessionId),
+      loadAgentFiles: async (sessionId) => {
+        const persisted = await options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
+        return persisted === null
+          ? await options.listAgentFiles(sessionId)
+          : persisted.members.map((member) => ({
+              name: member.name,
+              agentMarkdown: member.agentMarkdown,
+              executionProfile: member.executionProfile ?? null,
+            }));
+      },
+      sessionSummary: (sessionId) => this.sessionSummary(sessionId),
+      loadRetryIntent: async (sessionId, sourceMessageId) => {
+        const recoveryStore = this.codexRecoveryFactStore();
+        if (recoveryStore === null) return null;
+        const recoveryFacts = await readLocalCodexRecoveryFacts(
+          recoveryStore.getSessionFactLogPath(sessionId),
+          sessionId,
+        );
+        return selectSourceRetryIntent({
+          sourceMessageId,
+          intents: recoveryFacts.intents,
+          consumedIntentIds: recoveryFacts.consumedIntentIds,
+        });
+      },
+      routeWithoutPrimary: (input) => maybeRouteLocalNoMentionMessage({
+        store: options.store,
+        message: input.message,
+        sessionId: input.sessionId,
+        timeline: input.timeline,
+        availableAgentNames: input.availableAgentNames,
+        runId: input.runId,
+        runDir: input.runDir,
+        agentsDir: path.join(options.projectRoot, "agents"),
+        now: this.nowIso(),
+        routeJudgment: options.routeJudgment,
+        timeoutMs: this.routeTimeoutMs,
+        runCodex: options.runCodex,
+      }),
+      recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
+        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason),
+      formatError: (error) => formatLocalError(error),
+      setError: (error) => { this.lastError = error; },
+      scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -1490,216 +1533,24 @@ export class LocalConsoleRuntime {
         let activeRunDir: string | null = null;
 
         try {
-          const gracefulResumeTargets = await this.gracefulResumeTargetsForClaim(sessionId);
-          const freshRunId = `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
-          activeMessage = await this.storeCall("local-console-store-claim", () =>
-            this.options.store.claimNextPendingMessage({
-              sessionId,
-              runId: freshRunId,
-              gracefulResumeTargets,
-              now: this.nowIso(),
-            }),
-          );
-          if (activeMessage === null) {
-            return;
-          }
-          if (this.inactiveSessions.has(sessionId)) {
-            return;
-          }
-          const claimedMessage = activeMessage;
-          const nextRunId = gracefulResumeTargets.find((target) =>
-            target.sourceMessageId === claimedMessage.id)?.targetRunId ?? freshRunId;
-          activeRunId = nextRunId;
-          if (this.inactiveSessions.has(sessionId)) {
-            return;
-          }
-
-          const persistedSnapshot = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-          const agentFiles: LocalConsoleAgentFile[] = persistedSnapshot === null
-            ? await this.options.listAgentFiles(sessionId)
-            : persistedSnapshot.members.map((member) => ({
-                name: member.name,
-                agentMarkdown: member.agentMarkdown,
-                executionProfile: member.executionProfile ?? null,
-              }));
-          if (this.inactiveSessions.has(sessionId)) {
-            return;
-          }
-          const messages = await this.storeCall("local-console-store-list", () => this.options.store.listMessages(sessionId));
-          const policySession = await this.sessionSummary(sessionId);
-          const analysisGateEnabled =
-            policySession.writePolicy === "confirm-current-plan-before-write";
-          const timelineMessages = messages.filter(
-            (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
-          );
-          const timeline = buildLocalConsoleTimeline(
-            timelineMessages,
-            agentFiles.map((agent) => agent.name),
-          );
-          const routingTimeline = buildLocalConsoleRoutingTimeline(
-            timelineMessages,
-            claimedMessage.id,
-            agentFiles.map((agent) => agent.name),
-          );
-          const explicitTrigger = resolveTrigger({
-            // Runs can complete out of submission order when roles execute in parallel.
-            // Keep the public context through the claimed source, but never route from
-            // whichever later message currently sorts last in the shared timeline.
-            timeline: routingTimeline,
-            availableAgentNames: agentFiles.map((agent) => agent.name),
-          });
-          const primaryAgent = agentFiles[0]?.name ?? null;
-          let controlAction = resolveClaimedControlAction({
-            source: claimedMessage,
-            primaryAgent,
-            explicitTrigger,
-            availableAgentNames: agentFiles.map((agent) => agent.name),
-            retryIntent: null,
-          });
-          if (controlAction.kind === "complete-source" && claimedMessage.speaker === "agent") {
-            const recoveryStore = this.codexRecoveryFactStore();
-            const recoveryFacts = recoveryStore === null
-              ? null
-              : await readLocalCodexRecoveryFacts(
-                  recoveryStore.getSessionFactLogPath(sessionId),
-                  sessionId,
-                );
-            const retryIntent = recoveryFacts === null
-              ? null
-              : selectSourceRetryIntent({
-                  sourceMessageId: claimedMessage.id,
-                  intents: recoveryFacts.intents,
-                  consumedIntentIds: recoveryFacts.consumedIntentIds,
-                });
-            controlAction = resolveClaimedControlAction({
-              source: claimedMessage,
-              primaryAgent,
-              explicitTrigger,
-              availableAgentNames: agentFiles.map((agent) => agent.name),
-              retryIntent,
-            });
-          }
-
-          if (controlAction.kind === "record-retry-trigger-missing") {
-            await this.storeCall("local-console-store-record-retry-trigger-missing", () =>
-              this.options.store.recordFailure({
-                userMessageId: claimedMessage.id,
-                sessionId,
-                error: "retry-source-trigger-missing",
-                runId: nextRunId,
-                runDir: null,
-                body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-                systemEventKind: "run-not-started",
-                sourceKind: "local-retry-intent",
-                sourceId: controlAction.intent.intentId,
-                now: this.nowIso(),
-              }));
-            continue;
-          }
-          if (controlAction.kind === "complete-source") {
-            await this.storeCall("local-console-store-primary-closeout-complete", () =>
-              this.options.store.recordMessageProcessed({
-                userMessageId: claimedMessage.id,
-                sessionId,
-                runId: nextRunId,
-                runDir: null,
-                now: this.nowIso(),
-              }),
-            );
-            continue;
-          }
-          if (controlAction.kind === "route-without-primary-agent") {
-            let route: Awaited<ReturnType<typeof maybeRouteLocalNoMentionMessage>>;
-            try {
-              route = await maybeRouteLocalNoMentionMessage({
-                store: this.options.store,
-                message: claimedMessage,
-                sessionId,
-                timeline,
-                availableAgentNames: agentFiles.map((agent) => agent.name),
-                runId: nextRunId,
-                runDir: activeRunDir,
-                agentsDir: path.join(this.options.projectRoot, "agents"),
-                now: this.nowIso(),
-                routeJudgment: this.options.routeJudgment,
-                timeoutMs: this.routeTimeoutMs,
-                runCodex: this.options.runCodex,
-              });
-            } catch (error) {
-              await this.recordTerminalFailureBestEffort(
-                claimedMessage,
-                sessionId,
-                nextRunId,
-                activeRunDir,
-                formatLocalError(error),
-              );
+          const dispatch = await this.primaryDispatchRuntime.claim(
+            sessionId,
+            workspaceSource,
+            (message, runId) => {
+              activeMessage = message;
+              activeRunId = runId;
+            },
+            () => {
               activeMessage = null;
               activeRunId = null;
               activeRunDir = null;
-              throw error;
-            }
-            if (route.kind === "retry") {
-              this.lastError = `local-route-retry:${route.reason}`;
-              await this.recordTerminalFailureBestEffort(claimedMessage, sessionId, nextRunId, activeRunDir, this.lastError);
-              return;
-            }
-            continue;
-          }
-
-          if (controlAction.kind === "fail-missing-agent") {
-            await this.recordTerminalFailureBestEffort(
-              claimedMessage,
-              sessionId,
-              nextRunId,
-              null,
-              `Agent not found: ${controlAction.role}`,
-            );
-            return;
-          }
-          const triggerRole = controlAction.role;
-          const selectedAgent = agentFiles.find((agent) => agent.name === triggerRole)!;
-
-          if (controlAction.kind === "schedule-worker") {
-            await this.storeCall("local-console-store-detached-worker-source-processed", () =>
-              this.options.store.recordMessageProcessed({
-                userMessageId: claimedMessage.id,
-                sessionId,
-                runId: nextRunId,
-                runDir: null,
-                now: this.nowIso(),
-              }),
-            );
-            activeMessage = null;
-            this.workerDispatchRuntime.schedule({
-              origin: "primary-redirect",
-              sessionId,
-              runId: nextRunId,
-              sourceMessage: claimedMessage,
-              role: triggerRole,
-              selectedAgent,
-              agentFiles,
-              timeline,
-              timelineMessages,
-              workspaceSource,
-            });
-            activeRunId = null;
-            continue;
-          }
-
-          const primaryRunInput: LocalPrimaryRunInput = {
-            sessionId,
-            runId: nextRunId,
-            sourceMessage: claimedMessage,
-            role: triggerRole,
-            primaryAgent,
-            selectedAgent,
-            agentFiles,
-            timeline,
-            timelineMessages,
-            workspaceSource,
-            analysisGateEnabled,
-            proposalVersion: policySession.proposalVersion ?? null,
-          };
+            },
+          );
+          if (dispatch.kind === "stop") return;
+          if (dispatch.kind === "continue") continue;
+          const primaryRunInput = dispatch.run;
+          const claimedMessage = primaryRunInput.sourceMessage;
+          const nextRunId = primaryRunInput.runId;
           const preparation = await this.primaryPreparationRuntime.prepare(
             primaryRunInput,
             (runDir) => { activeRunDir = runDir; },

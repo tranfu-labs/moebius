@@ -92,3 +92,46 @@ export function planPrimaryGracefulResume(
 export function planPrimaryLastSeenIndex(timeline: readonly { index: number }[]): number {
   return timeline.at(-1)?.index ?? -1;
 }
+
+export function decidePrimaryClaim<T>(message: T | null): { kind: "stop" } | { kind: "claimed"; message: T } {
+  return message === null ? { kind: "stop" } : { kind: "claimed", message };
+}
+
+export function planPrimaryRunId(
+  targets: readonly { sourceMessageId: number; targetRunId: string }[],
+  sourceMessageId: number,
+  freshRunId: string,
+): string {
+  return targets.find((target) => target.sourceMessageId === sourceMessageId)?.targetRunId ?? freshRunId;
+}
+
+export function planPrimaryAgentName(agents: readonly { name: string }[]): string | null {
+  return agents[0]?.name ?? null;
+}
+
+export function planPrimaryTimelineMessages<T extends { status: string; sourceKind?: string | null }>(
+  messages: readonly T[],
+): T[] {
+  return messages.filter((message) => message.status !== "pending" && message.sourceKind !== "local-worker-run");
+}
+
+export function planPrimaryControlAction<T>(action: T): T {
+  return action;
+}
+
+export function decidePrimaryControlRetryLookup(input: {
+  actionKind: string;
+  sourceSpeaker: string;
+}): { kind: "read" } | { kind: "skip" } {
+  return input.actionKind === "complete-source" && input.sourceSpeaker === "agent"
+    ? { kind: "read" }
+    : { kind: "skip" };
+}
+
+export function decidePrimaryRouteResult(kind: string): { kind: "stop" } | { kind: "continue" } {
+  return kind === "retry" ? { kind: "stop" } : { kind: "continue" };
+}
+
+export function planPrimaryProposalVersion(version: string | null | undefined): string | null {
+  return version ?? null;
+}
