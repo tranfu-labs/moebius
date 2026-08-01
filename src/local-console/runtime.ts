@@ -102,6 +102,7 @@ export type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { ActiveLocalRun } from "./active-run.js";
 import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
+import { createLocalWorkerPreparationPorts } from "./worker-preparation-wiring.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
@@ -332,32 +333,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       report: (event, sessionId, role, error) =>
         log({ event, sessionId, ...(role === null ? {} : { role }), error }),
     }));
-    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime({
+    this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(createLocalWorkerPreparationPorts({
+      options,
+      storePorts: this.storePorts,
       nowIso: () => this.nowIso(),
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       releaseClaim: (message, sessionId) => this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
       sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
       makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
-      setSourceRunDir: (message, sessionId, runDir) =>
-        this.storePorts.call("local-console-store-set-worker-source-rundir", () => options.store.setRunDir({
-          id: message.id,
-          sessionId,
-          runDir,
-          now: this.nowIso(),
-        })),
       resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
-      loadSelectedAgentMarkdown: (selectedAgent) => selectedAgent.agentMarkdown === undefined
-        ? fs.readFile(requireAgentFilePath(selectedAgent), "utf8")
-        : Promise.resolve(selectedAgent.agentMarkdown),
-      loadAgentContents: async (agentFiles, selectedAgent, selectedMarkdown) => {
-        return await Promise.all(agentFiles.map(async (agent) => ({
-          name: agent.name,
-          agentMarkdown: agent.name === selectedAgent.name
-            ? selectedMarkdown
-            : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
-          executionProfile: agent.executionProfile ?? null,
-        })));
-      },
+      readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
         factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
         sessionId,
@@ -374,35 +359,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
           reason: unavailable.reason,
           runDir,
         }),
-      recordRunExecutionContext: (context) => this.storePorts.recordRunExecutionContext(context),
-      recordAgentSessionLink: (link) => this.storePorts.recordAgentSessionLink(link),
-      prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
-        ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
-      consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
-        this.storePorts.call("local-console-store-consume-worker-resume", () =>
-          this.storePorts.requireRecoveryFacts().recordCodexResumeConsumed({
-            sessionId,
-            intentId,
-            resumedByRunId: runId,
-            mode,
-            reason,
-            consumedAt: this.nowIso(),
-          })),
-      recordDetachedStarted: (input, runDir) => {
-        const record = options.store.recordDetachedRunStarted;
-        if (record === undefined) throw new Error("local console detached run persistence capability unavailable");
-        return this.storePorts.call("local-console-store-record-worker-started", () => record.call(options.store, {
-          sessionId: input.sessionId,
-          role: input.role,
-          runId: input.runId,
-          runDir,
-          now: this.nowIso(),
-        }));
-      },
       prepareLifecycle: (input) => this.runLifecycleRuntime.prepare(input),
       setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
       recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
-    });
+    }));
     this.workerProviderRuntime = new LocalWorkerProviderRuntime({
       nowIso: () => this.nowIso(),
       releaseIfStopping: async (input) => {

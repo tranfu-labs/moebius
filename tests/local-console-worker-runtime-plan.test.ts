@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   decideWorkerClaimRelease,
   decideWorkerAgentFileSource,
+  decideWorkerAgentMarkdownSource,
+  decideWorkerAttachmentPreparation,
   decideWorkerOutstandingWork,
   decideWorkerLifecycleCreation,
   decideWorkerOriginEffect,
@@ -18,6 +20,7 @@ import {
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
   planWorkerFinalization,
+  planWorkerAgentContents,
   planWorkerSnapshotAgents,
   planWorkerTimelineMessages,
 } from "../src/local-console/worker-runtime-plan.js";
@@ -99,5 +102,13 @@ describe("worker runtime plan", () => {
       { id: 3, status: "completed", sourceKind: null },
     ] as LocalConsoleMessage[];
     expect(planWorkerTimelineMessages(messages).map((message) => message.id)).toEqual([3]);
+    expect(decideWorkerAgentMarkdownSource(undefined)).toEqual({ kind: "file" });
+    expect(decideWorkerAttachmentPreparation(false)).toEqual({ kind: "empty" });
+    expect(planWorkerAgentContents(
+      [{ name: "dev", agentMarkdown: undefined, executionProfile: null }],
+      "qa",
+      "# qa",
+      new Map([["dev", "# dev"]]),
+    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
   });
 });

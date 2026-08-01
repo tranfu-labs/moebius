@@ -63,6 +63,31 @@ export function planWorkerTimelineMessages(messages: readonly LocalConsoleMessag
     && message.sourceKind !== "local-worker-run");
 }
 
+export function decideWorkerAgentMarkdownSource(markdown: string | undefined):
+  | { kind: "inline"; markdown: string }
+  | { kind: "file" } {
+  return markdown === undefined ? { kind: "file" } : { kind: "inline", markdown };
+}
+
+export function planWorkerAgentContents(
+  agents: readonly LocalConsoleAgentFile[],
+  selectedName: string,
+  selectedMarkdown: string,
+  fileMarkdown: ReadonlyMap<string, string>,
+) {
+  return agents.map((agent) => ({
+    name: agent.name,
+    agentMarkdown: agent.name === selectedName
+      ? selectedMarkdown
+      : agent.agentMarkdown ?? fileMarkdown.get(agent.name)!,
+    executionProfile: agent.executionProfile ?? null,
+  }));
+}
+
+export function decideWorkerAttachmentPreparation(available: boolean): { kind: "prepare" } | { kind: "empty" } {
+  return available ? { kind: "prepare" } : { kind: "empty" };
+}
+
 export function planWorkerActiveLane(lane: "primary" | "worker" | null | undefined): "primary" | "worker" | null {
   return lane ?? null;
 }
