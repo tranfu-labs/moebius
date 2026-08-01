@@ -527,7 +527,7 @@ export function RoleComposer({
           </Button>
         </div>
       </div>
-      {statusText ? <p className="mt-1.5 px-2 text-xs text-hint">{statusText}</p> : null}
+      {statusText ? <p role="status" className="mt-1.5 px-2 text-xs text-hint">{statusText}</p> : null}
     </div>
   );
 }

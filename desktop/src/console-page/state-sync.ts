@@ -22,6 +22,35 @@ export interface ConsoleSelection {
   sessionId: string;
 }
 
+export interface SessionViewTransitionTicket {
+  readonly generation: number;
+  readonly completion: Promise<void>;
+}
+
+export class SessionViewTransitionQueue {
+  private tail: Promise<void> = Promise.resolve();
+  private latestGeneration = 0;
+  private latestSettledGeneration = 0;
+
+  enqueue(task: () => Promise<void>): SessionViewTransitionTicket {
+    const generation = ++this.latestGeneration;
+    const execution = this.tail.then(task);
+    this.tail = execution.catch(() => undefined);
+    const completion = execution.finally(() => {
+      this.latestSettledGeneration = Math.max(this.latestSettledGeneration, generation);
+    });
+    return { generation, completion };
+  }
+
+  get isPending(): boolean {
+    return this.latestSettledGeneration < this.latestGeneration;
+  }
+
+  isLatest(generation: number): boolean {
+    return generation === this.latestGeneration;
+  }
+}
+
 export class ProcessInvocationRequestCoordinator {
   private readonly controllers = new Map<string, AbortController>();
 
@@ -1233,18 +1262,21 @@ export class ConsoleStateActions {
   readonly transitionSessionView = async (
     previousSessionId: string,
     nextSessionId: string,
-  ): Promise<void> => {
+  ): Promise<string | null> => {
     if (
       this.options.apiBase === null
       || previousSessionId === nextSessionId
     ) {
-      return;
+      return null;
     }
     try {
       await this.postSessionMutation(previousSessionId, "arm-manual-unread", undefined);
       await this.postSessionMutation(nextSessionId, "viewed", undefined);
+      return null;
     } catch (error) {
-      this.options.setError(formatError(error));
+      const message = formatError(error);
+      this.options.setError(message);
+      return message;
     }
   };
 

@@ -20,6 +20,7 @@ import {
   loadSessionReferenceText,
   ProcessOutputRequestError,
   ProcessInvocationRequestCoordinator,
+  SessionViewTransitionQueue,
   processOutputLocator,
   processOutputRunId,
   loadProjectFile,
@@ -227,6 +228,54 @@ describe("ProcessInvocationRequestCoordinator", () => {
     coordinator.abortAll();
     expect(requestC.signal.aborted).toBe(true);
     expect(coordinator.isCurrent("session-c:run-c", requestC)).toBe(false);
+  });
+});
+
+describe("SessionViewTransitionQueue", () => {
+  it("serializes requests and keeps the latest generation pending", async () => {
+    const queue = new SessionViewTransitionQueue();
+    const firstTask = deferred<void>();
+    const secondTask = deferred<void>();
+    const started: string[] = [];
+    const first = queue.enqueue(async () => {
+      started.push("first");
+      await firstTask.promise;
+    });
+    const second = queue.enqueue(async () => {
+      started.push("second");
+      await secondTask.promise;
+    });
+
+    await vi.waitFor(() => expect(started).toEqual(["first"]));
+    expect(queue.isPending).toBe(true);
+    expect(queue.isLatest(first.generation)).toBe(false);
+    expect(queue.isLatest(second.generation)).toBe(true);
+
+    firstTask.resolve(undefined);
+    await first.completion;
+    expect(queue.isPending).toBe(true);
+    await vi.waitFor(() => expect(started).toEqual(["first", "second"]));
+
+    secondTask.resolve(undefined);
+    await second.completion;
+    expect(queue.isPending).toBe(false);
+  });
+
+  it("continues with the next request after a failure", async () => {
+    const queue = new SessionViewTransitionQueue();
+    const started: string[] = [];
+    const failed = queue.enqueue(async () => {
+      started.push("failed");
+      throw new Error("mutation failed");
+    });
+    const continued = queue.enqueue(async () => {
+      started.push("continued");
+    });
+
+    await expect(failed.completion).rejects.toThrow("mutation failed");
+    await continued.completion;
+    expect(started).toEqual(["failed", "continued"]);
+    expect(queue.isPending).toBe(false);
   });
 });
 
@@ -844,6 +893,23 @@ describe("process output reads", () => {
 });
 
 describe("ConsoleStateActions", () => {
+  it("arms the previous session before marking the next session viewed", async () => {
+    const armResponse = deferred<Response>();
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => armResponse.promise)
+      .mockResolvedValueOnce(jsonResponse({ session: { sessionId: "session-b" } }));
+    const harness = actionHarness({ coordinator: new ConsoleStateCoordinator(), fetch });
+
+    const transition = harness.actions.transitionSessionView("session-a", "session-b");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("/sessions/session-a/arm-manual-unread");
+
+    armResponse.resolve(jsonResponse({ session: { sessionId: "session-a" } }));
+    await transition;
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(String(fetch.mock.calls[1]?.[0])).toContain("/sessions/session-b/viewed");
+  });
+
   it("blocks every selection handler and duplicate mutation while create is pending", async () => {
     const coordinator = new ConsoleStateCoordinator();
     const createResponse = deferred<Response>();

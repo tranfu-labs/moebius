@@ -86,6 +86,8 @@ export const en = {
   "desktop.error.localConsoleUnavailable": "The local console is unavailable.",
   "desktop.error.folderPickerUnavailable": "The desktop folder picker is unavailable.",
   "desktop.error.folderAlreadyUsed": "This folder is already in use. Select the existing project instead.",
+  "desktop.composer.transitionPending": "Switching conversations. Your draft is preserved and can be sent when the switch finishes.",
+  "desktop.composer.ownerMismatch": "The draft owner is not synchronized. Select the conversation again.",
   "desktop.fileManager": "Open in file manager",
   "desktop.fileManager.finder": "Open in Finder",
   "desktop.fileManager.windowsExplorer": "Show in File Explorer",

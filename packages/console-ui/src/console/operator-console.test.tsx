@@ -25,6 +25,21 @@ afterEach(() => {
 });
 
 describe("OperatorConsole", () => {
+  it("keeps the composer editable while a host-provided submission block disables send", () => {
+    const onSend = vi.fn();
+    renderConsole({
+      composerSubmissionBlockReason: "草稿归属尚未同步，请重新选择对话。",
+      onSend,
+    });
+
+    const composer = screen.getByRole("textbox", { name: "消息内容" });
+    expect(composer).toBeEnabled();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+    expect(screen.getByRole("status")).toBeVisible();
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("reuses the ordinary conversation layout without the application shell when embedded", () => {
     renderConsole({ presentation: "conversation" });
 

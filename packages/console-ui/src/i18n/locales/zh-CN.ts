@@ -85,6 +85,8 @@ export const zhCN = {
   "desktop.error.localConsoleUnavailable": "本地操作台暂时不可用。",
   "desktop.error.folderPickerUnavailable": "桌面文件夹选择器暂时不可用。",
   "desktop.error.folderAlreadyUsed": "该文件夹已被使用，请直接选择已有项目。",
+  "desktop.composer.transitionPending": "正在切换对话，草稿已保留，完成后即可发送。",
+  "desktop.composer.ownerMismatch": "草稿归属尚未同步，请重新选择对话。",
   "desktop.fileManager": "在文件管理器中打开",
   "desktop.fileManager.finder": "在 Finder 中打开",
   "desktop.fileManager.windowsExplorer": "在文件资源管理器中显示",

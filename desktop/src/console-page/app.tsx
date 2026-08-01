@@ -124,6 +124,7 @@ import {
   loadExecutionProfileRegistry,
   loadWorkspaceDiff,
   ProcessInvocationRequestCoordinator,
+  SessionViewTransitionQueue,
   processOutputLocator,
   refreshConsoleState,
   subSessionIdFromSourceKey,
@@ -141,6 +142,16 @@ import {
   type SelectionMutationKind,
   type SelectionMutationToken,
 } from "./state-sync.js";
+import {
+  activateConversationComposerDraft,
+  clearConversationComposerDraft,
+  conversationSubmissionBlockReason,
+  editConversationComposerDraft,
+  type ConversationComposerDraftState,
+  createConversationDraftStore,
+  NEW_CONVERSATION_DRAFT_KEY,
+  sessionDraftKey,
+} from "./draft-store.js";
 import {
   isFirstRunOnboarding,
   readSidebarVisibilityPreference,
@@ -162,11 +173,6 @@ import {
   reduceNewConversationDraft,
   submitNewConversation,
 } from "./new-conversation.js";
-import {
-  createConversationDraftStore,
-  NEW_CONVERSATION_DRAFT_KEY,
-  sessionDraftKey,
-} from "./draft-store.js";
 import {
   readRightSidebarVisibilityPreference,
   readRightSidebarWidthPreference,
@@ -696,9 +702,32 @@ export function OperatorConsoleApp({
   const sourceMigrationRef = useRef<string | null>(null);
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [subSessionSendingId, setSubSessionSendingId] = useState<string | null>(null);
-  const [composerValue, setComposerValue] = useState(() =>
-    conversationDraftStoreRef.current.read(sessionDraftKey(selection.sessionId)),
-  );
+  const [composerDraft, setComposerDraft] = useState<ConversationComposerDraftState>(() => {
+    const key = sessionDraftKey(selection.sessionId);
+    return { key, value: conversationDraftStoreRef.current.read(key) };
+  });
+  const composerDraftRef = useRef(composerDraft);
+  const commitComposerDraft = useCallback((next: ConversationComposerDraftState) => {
+    composerDraftRef.current = next;
+    setComposerDraft(next);
+  }, []);
+  const activateComposerDraft = useCallback((sessionId: string) => {
+    const key = sessionDraftKey(sessionId);
+    commitComposerDraft(activateConversationComposerDraft(
+      composerDraftRef.current,
+      key,
+      conversationDraftStoreRef.current.read(key),
+    ));
+  }, [commitComposerDraft]);
+  const clearComposerDraft = useCallback((sessionId: string) => {
+    const key = sessionDraftKey(sessionId);
+    conversationDraftStoreRef.current.clear(key);
+    commitComposerDraft(clearConversationComposerDraft(composerDraftRef.current, key));
+  }, [commitComposerDraft]);
+  const sessionViewTransitionQueueRef = useRef(new SessionViewTransitionQueue());
+  const sessionViewTransitionPendingRef = useRef(false);
+  const [sessionViewTransitionPending, setSessionViewTransitionPending] = useState(false);
+  const [sessionViewTransitionError, setSessionViewTransitionError] = useState<string | null>(null);
   const [runnerStatus, setRunnerStatus] = useState<OperatorRunnerStatus>("stopped");
   const [isSending, setIsSending] = useState(false);
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
@@ -769,7 +798,7 @@ export function OperatorConsoleApp({
     ? null
     : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
   const currentAttachmentDraftKey = newConversation?.isOpen !== true
-    ? sessionDraftKey(selection.sessionId)
+    ? composerDraft.key
     : NEW_CONVERSATION_DRAFT_KEY;
   const activeSubSessionDraftKey = sessionDraftKey(activeSubSessionId ?? "__inactive-sub-session__");
   const activeSidebarConversationAttachmentDraftKey = activeSidebarConversationDraft?.attachmentDraftKey
@@ -2410,9 +2439,9 @@ export function OperatorConsoleApp({
 
   useEffect(() => {
     if (newConversation?.isOpen !== true) {
-      setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(selection.sessionId)));
+      activateComposerDraft(selection.sessionId);
     }
-  }, [newConversation?.isOpen, selection.sessionId]);
+  }, [activateComposerDraft, newConversation?.isOpen, selection.sessionId]);
 
   useEffect(() => {
     if (apiBase === null || state === null || state.selectedSession === null || state.selectedSession.unreadSince === null) {
@@ -2442,7 +2471,7 @@ export function OperatorConsoleApp({
 
   const project = state?.project ?? emptyProject;
   const projects = state?.projects ?? [project];
-  const lastError = clientError ?? state?.lastError ?? null;
+  const lastError = sessionViewTransitionError ?? clientError ?? state?.lastError ?? null;
   const selectedSession = state?.selectedSession ?? null;
   const messages = state?.messages ?? [];
   const messagesWithPreviews = useMessagesWithAttachmentPreviews({
@@ -2545,11 +2574,10 @@ export function OperatorConsoleApp({
     getSelection: () => selectionRef.current,
     commitSelection,
     refresh,
-    composerValue,
+    composerValue: composerDraft.value,
     clearComposer: (sessionId) => {
       const targetSessionId = sessionId ?? selectionRef.current.sessionId;
-      conversationDraftStoreRef.current.clear(sessionDraftKey(targetSessionId));
-      if (selectionRef.current.sessionId === targetSessionId) setComposerValue("");
+      clearComposerDraft(targetSessionId);
     },
     getAttachmentIds: () => readyComposerAttachmentIds(managedAttachments.attachments),
     getResumeRunId: (sessionId) =>
@@ -2568,11 +2596,61 @@ export function OperatorConsoleApp({
     apiBase,
     commitSelection,
     commitSidebarSessionMetadata,
-    composerValue,
+    clearComposerDraft,
+    composerDraft.value,
     managedAttachments,
     refresh,
     t,
   ]);
+
+  const queueSessionViewTransition = useCallback((
+    previousSessionId: string,
+    viewedSessionId: string,
+  ) => {
+    const queue = sessionViewTransitionQueueRef.current;
+    sessionViewTransitionPendingRef.current = true;
+    setSessionViewTransitionPending(true);
+    setSessionViewTransitionError(null);
+    const ticket = queue.enqueue(async () => {
+      const error = await actions.transitionSessionView(previousSessionId, viewedSessionId);
+      if (error !== null) {
+        setSessionViewTransitionError(error);
+      }
+    });
+    void ticket.completion.finally(() => {
+      if (!queue.isLatest(ticket.generation)) {
+        return;
+      }
+      sessionViewTransitionPendingRef.current = queue.isPending;
+      setSessionViewTransitionPending(queue.isPending);
+    });
+  }, [actions]);
+
+  const composerSubmissionBlock = conversationSubmissionBlockReason({
+    ownerKey: composerDraft.key,
+    selectedSessionId: selection.sessionId,
+    transitionPending: sessionViewTransitionPending,
+  });
+  const composerSubmissionBlockText = composerSubmissionBlock === "transition-pending"
+    ? t("desktop.composer.transitionPending")
+    : composerSubmissionBlock === "owner-mismatch"
+      ? t("desktop.composer.ownerMismatch")
+      : null;
+  const sendMainComposer = useCallback(() => {
+    const reason = conversationSubmissionBlockReason({
+      ownerKey: composerDraftRef.current.key,
+      selectedSessionId: selectionRef.current.sessionId,
+      transitionPending: sessionViewTransitionPendingRef.current,
+    });
+    if (reason !== null) {
+      const message = reason === "transition-pending"
+        ? t("desktop.composer.transitionPending")
+        : t("desktop.composer.ownerMismatch");
+      setClientError(message);
+      return;
+    }
+    void actions.sendMessage();
+  }, [actions, t]);
 
   const allSidebarSessions = useMemo(
     () => projects.flatMap((candidate) => candidate.sessions),
@@ -2760,12 +2838,12 @@ export function OperatorConsoleApp({
         if (target.runId !== null) {
           conversationDraftStoreRef.current.writeResumeRunId(draftKey, target.runId);
         }
-        if (selectionRef.current.sessionId === targetSessionId) {
-          setComposerValue(body);
+        if (composerDraftRef.current.key === draftKey) {
+          commitComposerDraft(editConversationComposerDraft(composerDraftRef.current, body));
         }
       },
     }).catch((error: unknown) => setClientError(formatError(error)));
-  }, [managedAttachments.replaceWithMessageAttachments, state]);
+  }, [commitComposerDraft, managedAttachments.replaceWithMessageAttachments, state]);
 
   const preferredNewConversationTeamKey = useMemo(() => resolveNewConversationAgentTeamKey(
     agentTeamsState.status === "ready" ? agentTeamsState.teams : [],
@@ -2896,7 +2974,7 @@ export function OperatorConsoleApp({
     commitPresentationRoute(ordinaryPresentationRoute(createdSelection));
     conversationDraftStoreRef.current.clear(NEW_CONVERSATION_DRAFT_KEY);
     managedAttachments.clearDraft(NEW_CONVERSATION_DRAFT_KEY);
-    setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(result.sessionId)));
+    activateComposerDraft(result.sessionId);
     dispatchNewConversation({ type: "consume" });
     if (result.preferenceRecorded) {
       setLastUsedAgentTeamKey(team.teamKey);
@@ -2908,6 +2986,7 @@ export function OperatorConsoleApp({
     }
   }, [
     actions,
+    activateComposerDraft,
     agentTeamsState,
     commitPresentationRoute,
     managedAttachments,
@@ -3428,7 +3507,7 @@ export function OperatorConsoleApp({
         commitSelection(targetSelection);
         rememberConfirmedSelection(targetSelection);
         commitPresentationRoute(ordinaryPresentationRoute(targetSelection));
-        setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(input.sessionId)));
+        activateComposerDraft(input.sessionId);
       }
       rightSidebarTabsStoreRef.current.write(sourceRootSession.sessionId, nextTabs);
       setRightSidebarTabs(nextTabs);
@@ -3446,6 +3525,7 @@ export function OperatorConsoleApp({
   }, [
     agentTeamsState,
     apiBase,
+    activateComposerDraft,
     commitConsoleState,
     commitSelection,
     commitPresentationRoute,
@@ -4211,7 +4291,7 @@ export function OperatorConsoleApp({
             onOpenChange: (open) => setAnalysisPanelOpen(selectedSession.sessionId, open),
             onOpenEntry: (entry) => openAnalysisPanelEntry(selectedSession.sessionId, entry),
           }}
-      conversationNotice={sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
+      conversationNotice={sessionViewTransitionError ?? sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
         ? t("console.sessionAnalysis.sourceUnavailable")
         : null)}
       messages={messagesWithPreviews}
@@ -4244,8 +4324,9 @@ export function OperatorConsoleApp({
       activeRun={activeRun}
       activeRuns={activeRuns}
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
-      composerValue={composerValue}
+      composerValue={composerDraft.value}
       composerAttachments={managedAttachments.attachments}
+      composerSubmissionBlockReason={composerSubmissionBlockText}
       runnerStatus={runnerStatus}
       sqlitePath={sqlitePath}
       lastError={lastError}
@@ -4276,13 +4357,14 @@ export function OperatorConsoleApp({
       }}
       activeCliInstallations={activeCliInstallations}
       onComposerChange={(value) => {
-        conversationDraftStoreRef.current.write(sessionDraftKey(selectionRef.current.sessionId), value);
-        setComposerValue(value);
+        const current = composerDraftRef.current;
+        conversationDraftStoreRef.current.write(current.key, value);
+        commitComposerDraft(editConversationComposerDraft(current, value));
       }}
       onComposerFilesAdded={managedAttachments.addFiles}
       onComposerAttachmentRemove={managedAttachments.remove}
       onComposerAttachmentRetry={managedAttachments.retry}
-      onSend={actions.sendMessage}
+      onSend={sendMainComposer}
       onSubSessionComposerChange={(sessionId, value) => {
         conversationDraftStoreRef.current.write(sessionDraftKey(sessionId), value);
         setSubSessionComposerValues((current) => ({ ...current, [sessionId]: value }));
@@ -4335,6 +4417,9 @@ export function OperatorConsoleApp({
         id: team.id,
       })}
       onSelectSession={(nextSelection) => {
+        if (coordinatorRef.current.isSelectionMutationPending) {
+          return;
+        }
         const previousSessionId = selectionRef.current.sessionId;
         selectionPersistenceEnabledRef.current = true;
         dispatchNewConversation({ type: "hide" });
@@ -4354,7 +4439,8 @@ export function OperatorConsoleApp({
             originAvailable: true,
           });
           commitPresentationRoute(route);
-          setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(origin.sessionId)));
+          activateComposerDraft(origin.sessionId);
+          actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
           const tabs = openRightSidebarSourceTab(
             rightSidebarTabsStoreRef.current.read(origin.sessionId),
             {
@@ -4372,9 +4458,7 @@ export function OperatorConsoleApp({
           rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
           setRightSidebarTabs(tabs);
           setRightSidebarOpen(true);
-          void actions.transitionSessionView(previousSessionId, target.sessionId).finally(() => {
-            actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
-          });
+          queueSessionViewTransition(previousSessionId, target.sessionId);
           return;
         }
         const route = target?.originSessionId != null
@@ -4386,14 +4470,13 @@ export function OperatorConsoleApp({
             })
           : ordinaryPresentationRoute(nextSelection);
         commitPresentationRoute(route);
-        setComposerValue(conversationDraftStoreRef.current.read(sessionDraftKey(nextSelection.sessionId)));
+        activateComposerDraft(nextSelection.sessionId);
+        actions.selectSession(nextSelection);
         setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(nextSelection.sessionId));
         if (target?.originSessionId != null) {
           setRightSidebarOpen(false);
         }
-        void actions.transitionSessionView(previousSessionId, nextSelection.sessionId).finally(() => {
-          actions.selectSession(nextSelection);
-        });
+        queueSessionViewTransition(previousSessionId, nextSelection.sessionId);
       }}
       onChangeSessionProject={actions.rebindSessionProject}
       onShowProjectInFolder={showProjectInFolder}

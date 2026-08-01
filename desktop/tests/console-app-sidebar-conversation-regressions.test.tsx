@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
 import { App } from "../src/console-page/app.js";
+import * as draftStore from "../src/console-page/draft-store.js";
 import {
   ordinaryPresentationRoute,
   sidebarPresentationRoute,
@@ -21,6 +22,22 @@ import {
   createSidebarConversationDraftStore,
 } from "../src/console-page/sidebar-conversation-drafts.js";
 import { writeRightSidebarVisibilityPreference } from "../src/console-page/right-sidebar-preference.js";
+
+const operatorConsoleHarness = vi.hoisted(() => ({
+  onSend: null as null | (() => void),
+}));
+
+vi.mock("@moebius/console-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@moebius/console-ui")>();
+  const React = await import("react");
+  return {
+    ...actual,
+    OperatorConsole: (props: Parameters<typeof actual.OperatorConsole>[0]) => {
+      operatorConsoleHarness.onSend = props.onSend;
+      return React.createElement(actual.OperatorConsole, props);
+    },
+  };
+});
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,6 +57,17 @@ describe("desktop App sidebar conversation regressions", () => {
   let preferenceRecordFailure: boolean;
   let preferenceRecordAttemptCount: number;
   let pinRequestCount: number;
+  let deferSessionViewMutations: boolean;
+  let sessionViewMutationRequests: SessionViewMutationRequest[];
+  let messageRequests: Array<{ sessionId: string; body: string }>;
+  let attachmentCapability: string | null;
+  let attachmentDrafts: Map<string, Array<{
+    attachmentId: string;
+    kind: "file";
+    displayName: string;
+    mediaType: string;
+    byteSize: number;
+  }>>;
 
   beforeEach(() => {
     sessions = [createSession("source-a", "来源会话")];
@@ -55,6 +83,12 @@ describe("desktop App sidebar conversation regressions", () => {
     preferenceRecordFailure = false;
     preferenceRecordAttemptCount = 0;
     pinRequestCount = 0;
+    deferSessionViewMutations = false;
+    sessionViewMutationRequests = [];
+    messageRequests = [];
+    attachmentCapability = null;
+    attachmentDrafts = new Map();
+    operatorConsoleHarness.onSend = null;
     window.localStorage.clear();
     window.localStorage.setItem(
       "moebius.console.selection",
@@ -66,7 +100,7 @@ describe("desktop App sidebar conversation regressions", () => {
     Object.defineProperty(window, "moebius", {
       configurable: true,
       value: {
-        getLocalConsoleAttachmentCapability: async () => null,
+        getLocalConsoleAttachmentCapability: async () => attachmentCapability,
         listAgentTeams: async () => ({ status: "ready", teams: [generalAssistantTeam] }),
         readLastUsedAgentTeam: async () => ({ ownership: "system", teamId: "general-assistant" }),
         recordSuccessfulConversationAgentTeam: async () => {
@@ -92,6 +126,11 @@ describe("desktop App sidebar conversation regressions", () => {
       if (url.pathname === "/api/local-console/state") {
         stateRequestCount += 1;
         return Promise.resolve(jsonResponse(createState(url.searchParams.get("sessionId") ?? "source-a")));
+      }
+      if (url.pathname === "/api/local-console/attachments" && (init?.method ?? "GET") === "GET") {
+        return Promise.resolve(jsonResponse({
+          attachments: attachmentDrafts.get(url.searchParams.get("draftKey") ?? "") ?? [],
+        }));
       }
       if (url.pathname.endsWith("/reference-text")) {
         referenceUrls.push(url);
@@ -156,6 +195,37 @@ describe("desktop App sidebar conversation regressions", () => {
         pinRequestCount += 1;
         return Promise.resolve(jsonResponse({ session: updated }));
       }
+      const viewMutationMatch = /^\/api\/local-console\/sessions\/(.+)\/(arm-manual-unread|viewed)$/u.exec(
+        url.pathname,
+      );
+      if (viewMutationMatch !== null && init?.method === "POST") {
+        const request = createSessionViewMutationRequest(
+          decodeURIComponent(viewMutationMatch[1]!),
+          viewMutationMatch[2] as SessionViewMutationRequest["action"],
+        );
+        sessionViewMutationRequests.push(request);
+        if (!deferSessionViewMutations) {
+          if (request.action === "viewed") {
+            sessions = sessions.map((session) => session.sessionId === request.sessionId
+              ? { ...session, unreadSince: null }
+              : session);
+          }
+          settleSessionViewMutation(
+            request,
+            sessions.find((session) => session.sessionId === request.sessionId),
+          );
+        }
+        return request.promise;
+      }
+      const messageMatch = /^\/api\/local-console\/sessions\/(.+)\/messages$/u.exec(url.pathname);
+      if (messageMatch !== null && init?.method === "POST") {
+        const request = JSON.parse(String(init.body)) as { body?: unknown };
+        messageRequests.push({
+          sessionId: decodeURIComponent(messageMatch[1]!),
+          body: typeof request.body === "string" ? request.body : "",
+        });
+        return Promise.resolve(jsonResponse({ accepted: true }, 202));
+      }
       return Promise.resolve(jsonResponse({ error: `unexpected request: ${url.pathname}` }, 404));
     }));
 
@@ -167,6 +237,7 @@ describe("desktop App sidebar conversation regressions", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     host.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -211,6 +282,219 @@ describe("desktop App sidebar conversation regressions", () => {
     await act(async () => createdRow.click());
     await waitFor(() => host.querySelector("main h1")?.textContent === "新会话 B");
     expectSelectedMainConversation("created-b", "新会话 B");
+  });
+
+  it("keeps a target-owned draft editable across a slow switch and parent rerender while blocking send", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    deferSessionViewMutations = true;
+    window.localStorage.setItem("draft:source-a", "草稿 A");
+
+    await act(async () => root.render(<App />));
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => targetRow.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "来源会话 B"
+      && sessionViewMutationRequests.length === 1);
+
+    const composer = await findElement<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    expect(composer.disabled).toBe(false);
+    await act(async () => setInputValue(composer, "草稿 B"));
+    await act(async () => root.render(<App />));
+
+    expect(composer.value).toBe("草稿 B");
+    expect(window.localStorage.getItem("draft:source-a")).toBe("草稿 A");
+    expect(window.localStorage.getItem("draft:source-b")).toBe("草稿 B");
+    const send = await findElement<HTMLButtonElement>('button[aria-label="发送消息"]');
+    expect(send.disabled).toBe(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("草稿已保留");
+    await act(async () => {
+      composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      send.click();
+    });
+    expect(messageRequests).toEqual([]);
+
+    await resolveSessionViewMutation(0);
+    await waitFor(() => sessionViewMutationRequests.length === 2);
+    await resolveSessionViewMutation(1);
+    await waitFor(() => send.disabled === false && host.querySelector('[role="status"]') === null);
+    expect(composer.value).toBe("草稿 B");
+    expectSelectedMainConversation("source-b", "来源会话 B");
+  });
+
+  it("fails closed with accessible feedback when the composer owner no longer matches selection", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    timelineMessages = [{
+      id: 9,
+      sessionId: "source-a",
+      speaker: "agent",
+      role: "assistant",
+      body: "[打开会话 B](moebius-ref:conversation/source-b)",
+      status: "displayed",
+      runId: "run-9",
+      runDir: null,
+      error: null,
+      systemEventKind: "other",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:01.000Z",
+    }];
+    attachmentCapability = "test-attachment-capability";
+    attachmentDrafts.set("draft:source-a", [{
+      attachmentId: "attachment-a",
+      kind: "file",
+      displayName: "owner-a.txt",
+      mediaType: "text/plain",
+      byteSize: 7,
+    }]);
+    window.localStorage.setItem("draft:source-a", "属于 A 的正文");
+
+    await act(async () => root.render(<App />));
+    const composer = await findElement<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    const send = await findElement<HTMLButtonElement>('button[aria-label="发送消息"]');
+    await waitFor(() => host.querySelector('[aria-label*="owner-a.txt"]') !== null && send.disabled === false);
+
+    const activateDraft = vi.spyOn(draftStore, "activateConversationComposerDraft")
+      .mockImplementation((current) => current);
+    const openSessionB = await findElement<HTMLButtonElement>("button", (element) =>
+      element.textContent?.trim() === "打开会话 B");
+    await act(async () => openSessionB.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "来源会话 B"
+      && host.querySelector('[data-testid="main-role-composer"] [role="status"]') !== null);
+
+    const status = host.querySelector<HTMLElement>('[data-testid="main-role-composer"] [role="status"]');
+    expect(status?.textContent?.trim()).not.toBe("");
+    expect(send.disabled).toBe(true);
+    expect(composer.value).toBe("属于 A 的正文");
+    expect(host.querySelector('[aria-label*="owner-a.txt"]')).not.toBeNull();
+
+    await act(async () => operatorConsoleHarness.onSend?.());
+    await waitFor(() => host.querySelector('[role="alert"]') !== null);
+    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).not.toBe("");
+    expect(composer.value).toBe("属于 A 的正文");
+    expect(host.querySelector('[aria-label*="owner-a.txt"]')).not.toBeNull();
+    expect(window.localStorage.getItem("draft:source-a")).toBe("属于 A 的正文");
+    expect(window.localStorage.getItem("draft:source-b")).toBeNull();
+    expect(messageRequests).toEqual([]);
+    activateDraft.mockRestore();
+  });
+
+  it("keeps the selected draft and reports a failed read-state transition", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    deferSessionViewMutations = true;
+
+    await act(async () => root.render(<App />));
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => targetRow.click());
+    const composer = await findElement<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    await act(async () => setInputValue(composer, "失败也保留"));
+    await resolveSessionViewMutation(0, "read-state rejected");
+
+    await waitFor(() => host.querySelector('[role="status"]') !== null
+      && host.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')?.disabled === false, 2_000);
+    expectSelectedMainConversation("source-b", "来源会话 B");
+    expect(composer.value).toBe("失败也保留");
+    expect(window.localStorage.getItem("draft:source-b")).toBe("失败也保留");
+    expect(messageRequests).toEqual([]);
+  });
+
+  it("serializes rapid round trips and clears both unread badges without stale selection writes", async () => {
+    sessions = [
+      { ...createSession("source-a", "来源会话 A"), unreadSince: "2026-07-29T01:00:00.000Z" },
+      { ...createSession("source-b", "来源会话 B"), unreadSince: "2026-07-29T01:00:01.000Z" },
+    ];
+    deferSessionViewMutations = true;
+
+    await act(async () => root.render(<App />));
+    const row = (sessionId: string) => host.querySelector<HTMLButtonElement>(
+      `[data-testid="conversation-sidebar-session"][data-session-id="${sessionId}"]`,
+    )!;
+    await waitFor(() => row("source-b") !== null);
+    await act(async () => row("source-b").click());
+    await act(async () => row("source-a").click());
+    expect(sessionViewMutationRequests.map(({ sessionId, action }) => `${action}:${sessionId}`))
+      .toEqual(["arm-manual-unread:source-a"]);
+
+    await resolveSessionViewMutation(0);
+    await waitFor(() => sessionViewMutationRequests.length === 2);
+    await resolveSessionViewMutation(1);
+    await waitFor(() => sessionViewMutationRequests.length === 3);
+    await resolveSessionViewMutation(2);
+    await waitFor(() => sessionViewMutationRequests.length === 4);
+    await resolveSessionViewMutation(3);
+    expect(sessionViewMutationRequests.map(({ sessionId, action }) => `${action}:${sessionId}`))
+      .toEqual([
+        "arm-manual-unread:source-a",
+        "viewed:source-b",
+        "arm-manual-unread:source-b",
+        "viewed:source-a",
+      ]);
+    expectSelectedMainConversation("source-a", "来源会话 A");
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    deferSessionViewMutations = false;
+    await act(async () => root.render(<App />));
+    await waitFor(() => row("source-a") !== null && row("source-b") !== null);
+    expect(row("source-a").dataset.statusDot).toBe("none");
+    expect(row("source-b").dataset.statusDot).toBe("none");
+    expectSelectedMainConversation("source-a", "来源会话 A");
+  });
+
+  it("maps a sidebar conversation to its origin composer without letting queued work pull selection back", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+      createSession("analysis-b", "分析会话 B", "source-b"),
+    ];
+    deferSessionViewMutations = true;
+    window.localStorage.setItem("draft:source-a", "草稿 A");
+    window.localStorage.setItem("draft:source-b", "草稿 B");
+
+    await act(async () => root.render(<App />));
+    const analysisRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="analysis-b"]',
+    );
+    await act(async () => analysisRow.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "来源会话 B"
+      && host.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.includes("分析会话 B") === true);
+
+    const composer = await findElement<HTMLTextAreaElement>('textarea[aria-label="消息内容"]');
+    expect(composer.value).toBe("草稿 B");
+    await act(async () => setInputValue(composer, "更新后的草稿 B"));
+    expect(window.localStorage.getItem("draft:source-b")).toBe("更新后的草稿 B");
+    expect(window.localStorage.getItem("draft:analysis-b")).toBeNull();
+
+    const sourceARow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+    await act(async () => sourceARow.click());
+    expectSelectedMainConversation("source-a", "来源会话 A");
+    expect(composer.value).toBe("草稿 A");
+
+    for (let index = 0; index < 4; index += 1) {
+      await waitFor(() => sessionViewMutationRequests.length > index);
+      await resolveSessionViewMutation(index);
+    }
+    expect(sessionViewMutationRequests.map(({ sessionId, action }) => `${action}:${sessionId}`))
+      .toEqual([
+        "arm-manual-unread:source-a",
+        "viewed:analysis-b",
+        "arm-manual-unread:source-b",
+        "viewed:source-a",
+      ]);
+    expectSelectedMainConversation("source-a", "来源会话 A");
+    expect(composer.value).toBe("草稿 A");
   });
 
   it("keeps the previous route and draft when ordinary conversation creation fails", async () => {
@@ -791,6 +1075,26 @@ describe("desktop App sidebar conversation regressions", () => {
     };
   }
 
+  async function resolveSessionViewMutation(index: number, error?: string): Promise<void> {
+    const request = sessionViewMutationRequests[index];
+    if (request === undefined) {
+      throw new Error(`missing session-view mutation ${String(index)}`);
+    }
+    if (error === undefined && request.action === "viewed") {
+      sessions = sessions.map((session) => session.sessionId === request.sessionId
+        ? { ...session, unreadSince: null }
+        : session);
+    }
+    await act(async () => {
+      settleSessionViewMutation(
+        request,
+        sessions.find((session) => session.sessionId === request.sessionId),
+        error,
+      );
+      await request.promise.catch(() => undefined);
+    });
+  }
+
   function expectSelectedMainConversation(sessionId: string, title: string): void {
     const selected = host.querySelectorAll<HTMLButtonElement>(
       '[data-testid="conversation-sidebar-session"][aria-current="page"]',
@@ -837,7 +1141,7 @@ function createSession(sessionId: string, title: string, originSessionId: string
     title,
     status: "idle",
     awaitsHumanReason: null,
-    unreadSince: null,
+    unreadSince: null as string | null,
     unresolvedSystemEventKind: null,
     lastMessageMentionsAgent: false,
     hasPendingControlWork: false,
@@ -851,6 +1155,34 @@ function createSession(sessionId: string, title: string, originSessionId: string
     createdAt: "2026-07-29T00:00:00.000Z",
     updatedAt: "2026-07-29T00:00:00.000Z",
   };
+}
+
+interface SessionViewMutationRequest {
+  sessionId: string;
+  action: "arm-manual-unread" | "viewed";
+  promise: Promise<Response>;
+  resolve(response: Response): void;
+}
+
+function createSessionViewMutationRequest(
+  sessionId: string,
+  action: SessionViewMutationRequest["action"],
+): SessionViewMutationRequest {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  return { sessionId, action, promise, resolve };
+}
+
+function settleSessionViewMutation(
+  request: SessionViewMutationRequest,
+  session: ReturnType<typeof createSession> | undefined,
+  error?: string,
+): void {
+  request.resolve(error === undefined
+    ? jsonResponse({ session: session ?? createSession(request.sessionId, request.sessionId) })
+    : jsonResponse({ error }, 500));
 }
 
 function createSessionView(session: ReturnType<typeof createSession>) {

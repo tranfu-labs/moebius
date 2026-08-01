@@ -438,6 +438,7 @@ export interface OperatorConsoleProps {
   workspaceDiff?: OperatorWorkspaceDiffSummary;
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
+  composerSubmissionBlockReason?: string | null;
   runnerStatus?: OperatorRunnerStatus;
   sqlitePath?: string;
   lastError?: string | null;
@@ -643,6 +644,7 @@ export function OperatorConsole({
   workspaceDiff = { available: false, fileCount: null, reason: "unavailable" },
   composerValue,
   composerAttachments = [],
+  composerSubmissionBlockReason = null,
   lastError,
   projectListState = "ready",
   agentTeamsState = { status: "loading" },
@@ -938,6 +940,7 @@ export function OperatorConsole({
   const canSend = (composerValue.trim() !== "" || readyComposerAttachmentIds(composerAttachments).length > 0)
     && !hasBlockingComposerAttachment(composerAttachments)
     && !isSending
+    && composerSubmissionBlockReason === null
     && !isSelectionMutationPending
     && !isSessionProjectUpdating
     && !activeProjectUnavailable
@@ -1952,7 +1955,7 @@ export function OperatorConsole({
                     ) : null}
 
                     {lastError ? (
-                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-line py-3 text-sm text-danger">
+                      <div role="alert" className="mt-4 flex items-center justify-between gap-3 border-t border-line py-3 text-sm text-danger">
                         <span>{t("console.operator.consoleError")}</span>
                         {onOpenDiagnostics ? (
                           <Button type="button" variant="outline" size="sm" onClick={onOpenDiagnostics}>
@@ -2131,6 +2134,7 @@ export function OperatorConsole({
                     : undefined}
                   roles={roleCompletionsForTeam(displayedConversationAgentTeam)}
                   disabled={isSending || isSelectionMutationPending || isSessionProjectUpdating || activeProjectUnavailable || selectedAgentTeamUnavailable || continuationBlocked}
+                  submitDisabled={composerSubmissionBlockReason !== null}
                   placeholder={activeProjectUnavailable
                     ? t("console.operator.projectUnavailable")
                     : selectedSession?.agentTeamHealth === "deleted"
@@ -2150,7 +2154,7 @@ export function OperatorConsole({
                         ? t("console.operator.readOnlyRepairOrTeam")
                         : continuationBlocked
                           ? selectedSession?.continuation?.reason ?? t("console.operator.readOnly")
-                      : undefined}
+                          : composerSubmissionBlockReason ?? undefined}
                   context={
                     <ComposerContext
                       project={activeProject}

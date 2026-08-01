@@ -160,6 +160,10 @@ async function sendFromMainConversation(
   const sessionEntry = page.getByText(session.title, { exact: true }).first();
   await sessionEntry.waitFor();
   await sessionEntry.click();
+  await page
+    .getByTestId("conversation-title-header")
+    .getByRole("heading", { name: session.title, exact: true })
+    .waitFor();
   const composer = page.getByLabel("消息内容");
   await composer.fill(body);
   await page.getByRole("button", { name: "发送消息" }).click();

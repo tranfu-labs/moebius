@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activateConversationComposerDraft,
+  clearConversationComposerDraft,
+  conversationSubmissionBlockReason,
   createConversationDraftStore,
+  editConversationComposerDraft,
   NEW_CONVERSATION_DRAFT_KEY,
   sessionDraftKey,
 } from "../src/console-page/draft-store.js";
@@ -46,6 +50,46 @@ describe("conversation draft store", () => {
     restarted.clearResumeRunId(key);
     expect(restarted.read(key)).toBe("修正后的指令");
     expect(restarted.readResumeRunId(key)).toBeNull();
+  });
+
+  it("keeps the live value owned by the activated session", () => {
+    const sessionA = sessionDraftKey("session-a");
+    const sessionB = sessionDraftKey("session-b");
+    const activated = activateConversationComposerDraft(
+      { key: sessionA, value: "session A draft" },
+      sessionB,
+      "persisted B draft",
+    );
+    const edited = editConversationComposerDraft(activated, "live B draft");
+
+    expect(edited).toEqual({ key: sessionB, value: "live B draft" });
+    expect(activateConversationComposerDraft(edited, sessionB, "")).toBe(edited);
+    expect(clearConversationComposerDraft(edited, sessionA)).toBe(edited);
+    expect(clearConversationComposerDraft(edited, sessionB)).toEqual({
+      key: sessionB,
+      value: "",
+    });
+  });
+
+  it("returns semantic submission blocks without changing the draft", () => {
+    const draft = { key: sessionDraftKey("session-b"), value: "keep me" };
+
+    expect(conversationSubmissionBlockReason({
+      ownerKey: draft.key,
+      selectedSessionId: "session-b",
+      transitionPending: true,
+    })).toBe("transition-pending");
+    expect(conversationSubmissionBlockReason({
+      ownerKey: draft.key,
+      selectedSessionId: "session-a",
+      transitionPending: false,
+    })).toBe("owner-mismatch");
+    expect(conversationSubmissionBlockReason({
+      ownerKey: draft.key,
+      selectedSessionId: "session-b",
+      transitionPending: false,
+    })).toBeNull();
+    expect(draft).toEqual({ key: sessionDraftKey("session-b"), value: "keep me" });
   });
 });
 
