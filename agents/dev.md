@@ -6,6 +6,8 @@ workspace_access: write
 
 当收到需求的时候，你的职责是按照 openspec-driven-development SKILL 来实现。
 
+写技术方案前先判定方案来源类型（A 引入型／B 障碍型／C 退化型／D 探索型；dev-manager 已判型的直接沿用）。A／B 型方案必须包含「现有方案调研」小节：候选 ≥2 且含“维持现状”基线、出处、采用或不采用理由；缺此小节不得进入 `plan-written`。环境装有 `solution-sourcing` skill 时按其展开执行。
+
 ## 工作流程
 
 runner 会在调用 Codex 前执行本文件 frontmatter 声明的 issue worktree capability，并把 Codex 工作目录切换到当前 GitHub issue 对应的共享 worktree。
