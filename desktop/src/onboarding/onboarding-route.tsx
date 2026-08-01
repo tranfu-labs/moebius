@@ -28,6 +28,10 @@ import type {
   OnboardingCliInstallState,
 } from "./cli-installer-contract.js";
 import {
+  createOnboardingInstallationModel,
+  decideOnboardingInstallationSnapshot,
+} from "./onboarding-installation-model.js";
+import {
   createOnboardingReadinessModel,
   decideOnboardingReadinessSnapshot,
   isCurrentOnboardingReadinessCheck,
@@ -67,12 +71,8 @@ export function OnboardingRoute({
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
   const readinessModelRef = useRef(createOnboardingReadinessModel());
+  const installationModelRef = useRef(createOnboardingInstallationModel());
   const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
-  const installationRevisionRef = useRef<Record<OnboardingCli, number>>({
-    codex: -1,
-    claude: -1,
-    kimi: -1,
-  });
   const installMutationPendingRef = useRef(new Set<OnboardingCli>());
 
   const mergeReadinessSnapshot = useCallback((
@@ -94,25 +94,20 @@ export function OnboardingRoute({
     snapshot: OnboardingCliInstallSnapshot,
     options: { allowEqual?: boolean } = {},
   ): { accepted: boolean; becameSucceeded: boolean } => {
-    const previousRevision = installationRevisionRef.current[snapshot.cli];
-    if (
-      snapshot.revision < previousRevision
-      || (snapshot.revision === previousRevision && options.allowEqual !== true)
-    ) {
-      return { accepted: false, becameSucceeded: false };
-    }
-    installationRevisionRef.current[snapshot.cli] = snapshot.revision;
-    const previous = previousInstallationsRef.current[snapshot.cli];
+    const decision = decideOnboardingInstallationSnapshot(
+      installationModelRef.current,
+      snapshot,
+      options,
+    );
+    if (!decision.accepted) return decision;
+    installationModelRef.current = decision.model;
     const next = toViewInstallation(snapshot);
     previousInstallationsRef.current = {
       ...previousInstallationsRef.current,
       [snapshot.cli]: next,
     };
     setInstallations((current) => ({ ...current, [snapshot.cli]: next }));
-    return {
-      accepted: true,
-      becameSucceeded: previous.status === "running" && next.status === "succeeded",
-    };
+    return decision;
   }, []);
 
   const checkCli = useCallback(async (cli: OnboardingCli) => {
