@@ -13,7 +13,6 @@ import { LocalPendingSessionContextRuntime } from "./pending-session-context-run
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalLegacyHandoffRecoveryRuntime } from "./legacy-handoff-recovery-runtime.js";
 import { LocalStartupRecoveryRuntime } from "./startup-recovery-runtime.js";
-import { LocalStartupRecoveryWiring } from "./startup-recovery-wiring.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
@@ -38,6 +37,7 @@ import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.
 import { createLocalRuntimeAdapters } from "./runtime-adapters.js";
 import { createLocalRuntimeRunWiring } from "./runtime-run-wiring.js";
 import { createLocalRuntimeSessionWiring } from "./runtime-session-wiring.js";
+import { createLocalRuntimeLifecycleWiring } from "./runtime-lifecycle-wiring.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -243,35 +243,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(sessionWiring.metadata);
     this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime(sessionWiring.messageRetry.message);
     this.runRetryRuntime = new LocalConsoleRunRetryRuntime(sessionWiring.messageRetry.retry);
-    const startupRecoveryWiring = new LocalStartupRecoveryWiring({
-      store: options.store,
+    const lifecycleWiring = createLocalRuntimeLifecycleWiring({
+      context: runtimeContext,
+      options,
+      adapters,
+      activeRuns: this.activeRunRegistry,
       defaultSessionId: this.sessionId,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
       idleTimeoutMs: this.codexIdleTimeoutMs,
       maxDurationMs: this.codexMaxDurationMs,
       staleGraceMs: this.staleRunningGraceMs,
-      recoveryStore: () => this.storePorts.recoveryFacts(),
-      readRecoveryFacts: adapters.readRecoveryFacts,
-      readRunContexts: adapters.readRunExecutionContexts,
-      activeRunIds: () => new Set(this.activeRunRegistry.keys()),
-      activeSessionIds: () => new Set([...this.activeRunRegistry.values()].map((active) => active.sessionId)),
-      recordError: (error) => {
-        const formatted = formatLocalError(error);
-        this.lastError = formatted;
-        return formatted;
-      },
-      report: (input) => log(input),
-    });
-    const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime(startupRecoveryWiring.legacy());
-    this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime(
-      startupRecoveryWiring.startup(legacyHandoffRecoveryRuntime),
-    );
-    this.shutdownRuntime = new LocalRuntimeShutdownRuntime({
-      context: runtimeContext,
-      store: options.store,
-      activeRuns: this.activeRunRegistry,
       timeoutMs: this.storeTimeoutMs,
       isClosing: () => this.closing,
       beginClosing: () => {
@@ -280,10 +260,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       },
       pendingWork: () => this.pendingProcessingRuntime.hasOutstandingWork(),
       workerWork: () => this.workerDispatchRuntime.hasOutstandingWork(),
-      randomId: adapters.randomId,
-      reportFailure: (sessionId, runId, error) =>
-        log({ event: "local-console-prepare-graceful-resume-failed", sessionId, runId, error }),
     });
+    const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime(lifecycleWiring.startup.legacy());
+    this.startupRecoveryRuntime = new LocalStartupRecoveryRuntime(
+      lifecycleWiring.startup.startup(legacyHandoffRecoveryRuntime),
+    );
+    this.shutdownRuntime = new LocalRuntimeShutdownRuntime(lifecycleWiring.shutdown);
     this.bindFacade({
       defaultSessionId: () => this.sessionId,
       projects: this.projectCommandRuntime,
@@ -323,7 +305,4 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
 
-  private nowIso(): string {
-    return this.now().toISOString();
-  }
 }
