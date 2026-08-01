@@ -253,6 +253,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "src/local-console/process-fact-reader.ts",
   "src/local-console/provider-process-trace.ts",
   "src/local-console/run-recovery-reader.ts",
+  "src/local-console/runtime-adapters.ts",
   "src/local-console/runtime-file-support.ts",
   "src/local-console/runtime-store-ports.ts",
   "src/local-console/server.ts",

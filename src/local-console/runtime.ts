@@ -1,65 +1,18 @@
-import fs from "node:fs/promises";
-import crypto from "node:crypto";
-import path from "node:path";
-import { loadCeoScripts } from "../ceo-scripts.js";
 import {
-  type CodexRunOptions,
   type CodexRunResult,
   executionInterruptionCauseForResult,
   executionTimeoutKind,
   isInterruptedCodexRunResult,
 } from "../codex.js";
 import { log } from "../log.js";
-import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
-import type { LocalAttachmentManager } from "./attachments.js";
-import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
-  LOCAL_CONSOLE_PROJECT_ID,
-  LocalConsoleProjectFolderError,
-  type LocalConsoleFileContent,
-  type LocalConsoleProjectFiles,
-  type LocalConsoleProjectSummary,
-  type LocalConsoleProjectRemovalResult,
-  LocalConsoleProjectRunningError,
-  type LocalConsoleSessionArchiveResult,
-  LocalConsoleSessionRunningError,
-  LocalConsoleSessionWorkspaceLockedError,
-  type LocalConsoleRunOutput,
-  type LocalConsoleSessionSearchResult,
-  type LocalConsoleSessionReferenceText,
-  type LocalConsoleSessionReferenceScope,
-  type LocalConsoleWorkspaceMode,
-  type LocalConsoleAgentTeamOwnership,
-  type LocalConsoleAgentTeamSnapshot,
-  type LocalConsoleExecutionProfile,
-  type LocalConsoleSnapshot,
-  type LocalConsoleStateSnapshot,
-  type LocalConsoleSessionView,
-  type LocalConsoleWorkspaceDiffDetail,
   type LocalConsoleStore,
-  type LocalConsoleEntryTemplate,
-  type LocalConsoleWritePolicy,
-  type LocalConsoleTextFragment,
 } from "./types.js";
-import {
-  buildMoebiusReferenceText,
-  plainTextExcerpt,
-  serializeTextFragmentReferences,
-} from "./session-reference-text.js";
 import {
   createLocalExecutionRunner,
   type LocalExecutionRunner,
 } from "./execution-driver.js";
-import {
-  legacyCodexContextFingerprint,
-} from "./execution-context.js";
-import {
-  readExecutionSessionLinks,
-  readRunExecutionContexts,
-} from "./execution-context-reader.js";
-import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
-import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
@@ -87,7 +40,6 @@ import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
 import {
   LocalWorkerDispatchRuntime,
 } from "./worker-dispatch-runtime.js";
-import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
 import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
@@ -98,6 +50,7 @@ import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.js";
+import { createLocalRuntimeAdapters } from "./runtime-adapters.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -107,63 +60,11 @@ import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
 import { createLocalPrimaryWiring } from "./primary-wiring.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
-import {
-  assertTextFragments,
-  buildFallbackProjectSummary,
-  formatLocalError,
-  isPendingDispatchMessage,
-  isPendingPrimaryMessage,
-  isVisibleTimelineMessage,
-  noSessionWorkspaceDiff,
-  normalizeTitle,
-  projectPendingDispatch,
-  requireAgentFilePath,
-} from "./runtime-domain.js";
-import {
-  directoryAvailable,
-  fileAvailable,
-  readOptionalTextFile,
-} from "./runtime-file-support.js";
+import { formatLocalError } from "./runtime-domain.js";
 import {
   LocalConsoleStorePorts,
   type LocalSessionFactWritingStore,
 } from "./runtime-store-ports.js";
-import {
-  generateLocalWorkspaceDiff,
-  invalidateLocalWorkspaceFacts,
-  localSessionWorktreePath,
-  readCachedLocalWorkspaceFacts,
-  readLocalGitStatus,
-  resolveLocalWorkspaceSource,
-} from "./workspace-source.js";
-import {
-  readLocalConversationBaselineCommit,
-  readLocalConversationDiffFile,
-  readLocalConversationWorkspaceDiff,
-  readLocalConversationWorkspaceDiffDetail,
-} from "./workspace-diff.js";
-import {
-  listLocalWorkspaceFiles,
-  readLocalFileReferenceWindow,
-  readLocalWorkspaceTextFile,
-} from "./file-read.js";
-import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
-import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
-import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
-import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
-import {
-  readLocalCodexRecoveryFacts,
-} from "./codex-resume.js";
-import {
-  loadLocalProcessAppendPage,
-  loadLocalProcessDebugInvocation,
-  loadLocalProcessHistoryPage,
-  type LocalConsoleProcessDebugInvocation,
-  type LocalConsoleProcessAppendPage,
-  type LocalConsoleProcessHistoryPage,
-} from "./process-history.js";
-import { localProcessFactReader } from "./process-fact-reader.js";
-import { resolveCodexRollout } from "./codex-rollout.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
@@ -231,6 +132,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       dataRoot: options.dataRoot ?? options.projectRoot,
       runCodex: options.runCodex,
     });
+    const adapters = createLocalRuntimeAdapters({
+      options,
+      storePorts: this.storePorts,
+      storeTimeoutMs: this.storeTimeoutMs,
+    });
     const runtimeContext = createLocalRuntimeWiringContext({
       storePorts: this.storePorts,
       now: () => this.now(),
@@ -242,24 +148,9 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       options,
       activeRuns: this.activeRunRegistry,
       baselineCommits: this.conversationBaselineCommits,
-      worktreePath: localSessionWorktreePath,
-      readWorkspaceDiff: readLocalConversationWorkspaceDiff,
-      readGitStatus: readLocalGitStatus,
-      generateWorkspaceDiff: generateLocalWorkspaceDiff,
-      resolveWorkspaceSource: resolveLocalWorkspaceSource,
-      directoryAvailable,
-      fileAvailable,
-      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
-        folderPath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
-      timeoutKind: executionTimeoutKind,
-      interrupted: isInterruptedCodexRunResult,
-      interruptionCause: executionInterruptionCauseForResult,
+      ...adapters,
       getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
       hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
-      report: (input) => log(input),
     });
     this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime(foundationWiring.conversation);
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime(foundationWiring.continuation);
@@ -283,12 +174,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       nowIso: () => this.nowIso(),
       resolveWorkspace: (sessionId, source, signal) =>
         this.conversationWorkspaceRuntime.resolveSource(sessionId, source, signal),
-      readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
-      loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
-        factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
-        sessionId,
-      }),
-      isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
+      ...adapters,
       settleUnavailable: ({ sessionId, runId, sourceMessage, role, runDir, unavailable }) =>
         this.runRecoveryRuntime.settleUnavailable({
           sessionId,
@@ -325,7 +211,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         finalText: result.finalText,
         availableAgentNames: input.agentFiles.map((agent) => agent.name),
       }),
-      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+      invalidateWorkspace: adapters.invalidateWorkspace,
     });
     this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(workerWiring.dispatch);
     this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(workerWiring.preparation);
@@ -346,7 +232,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       pendingContext: this.pendingSessionContextRuntime,
       failure: this.runFailureRuntime,
       workspace: this.conversationWorkspaceRuntime,
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
+      readRecoveryFacts: adapters.readRecoveryFacts,
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -365,7 +251,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
       report: (event, error) => log({ event, error }),
-      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+      invalidateWorkspace: adapters.invalidateWorkspace,
     });
     this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(primaryWiring.preparation);
     this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(primaryWiring.provider);
@@ -385,15 +271,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       defaultSessionId: this.sessionId,
       lifecycle: this.runLifecycleRuntime,
       continuation: this.sessionContinuationRuntime,
-      randomId: () => crypto.randomUUID(),
       scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
       processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
-      readExecutionSessionLinks,
-      readCodexThreadLinks,
-      readRunExecutionContexts,
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
+      ...adapters,
     });
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
@@ -417,17 +299,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       inactiveSessions: this.inactiveSessions,
       baselineCommits: this.conversationBaselineCommits,
       processPending: (sessionId) => { void this.processPending(sessionId); },
-      directoryAvailable,
-      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
-        folderPath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      readBaselineCommit: async (folderPath) => await readLocalConversationBaselineCommit({
-        folderPath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      invalidateWorkspaceFacts: invalidateLocalWorkspaceFacts,
-      randomId: () => crypto.randomUUID(),
+      ...adapters,
+      invalidateWorkspaceFacts: adapters.invalidateWorkspace,
       logBaselineUnavailable: ({ projectId, error }) => log({
         event: "local-console-conversation-baseline-unavailable",
         projectId,
@@ -449,13 +322,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       conversationWorkspace: this.conversationWorkspaceRuntime,
       defaultSessionId: this.sessionId,
       lastError: () => this.lastError,
-      listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
-        listLocalChildSessionSummaries({
-          sqlitePath: options.store.sqlitePath,
-          timeoutMs: this.storeTimeoutMs,
-        }, parentSessionId)),
+      listChildSessions: (parentSessionId) => this.storePorts.call(
+        "local-console-store-list-child-sessions",
+        () => adapters.listChildSessions(parentSessionId),
+      ),
       output: {
-        readOptionalTextFile,
+        readOptionalTextFile: adapters.readOptionalTextFile,
         sessionFactLogPath: (sessionId) => {
           const store = options.store as LocalConsoleStore
             & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
@@ -465,24 +337,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
           }
           return getSessionFactLogPath.call(store, sessionId);
         },
-        factReader: localProcessFactReader,
+        factReader: adapters.factReader,
       },
       workspace: {
-        readDiff: (context) => readLocalConversationWorkspaceDiffDetail({
-          workspacePath: context.workspacePath,
-          baselineCommit: context.baselineCommit,
-          gitTimeoutMs: options.workspaceGitTimeoutMs,
-        }),
-        listFiles: listLocalWorkspaceFiles,
-        readDiffFile: (context, filePath) => readLocalConversationDiffFile({
-          workspacePath: context.workspacePath,
-          baselineCommit: context.baselineCommit,
-          filePath,
-          gitTimeoutMs: options.workspaceGitTimeoutMs,
-        }),
-        readWorkspaceFile: (workspacePath, filePath) => readLocalWorkspaceTextFile({ workspacePath, filePath }),
-        readFileReference: readLocalFileReferenceWindow,
-        log: (event) => log(event),
+        readDiff: adapters.readDiff,
+        listFiles: adapters.listFiles,
+        readDiffFile: adapters.readDiffFile,
+        readWorkspaceFile: adapters.readWorkspaceFile,
+        readFileReference: adapters.readFileReference,
+        log: adapters.report,
       },
     });
     this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionReadWiring.state);
@@ -494,7 +357,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       options,
       activeRuns: this.activeRunRegistry,
       continuation: this.sessionContinuationRuntime,
-      loadCeoScripts: () => loadCeoScripts({ agentsDir: path.join(options.projectRoot, "agents"), required: false }),
+      loadCeoScripts: adapters.loadCeoScripts,
       processPending: (sessionId) => { void this.processPending(sessionId); },
       reportError: (event, error, originalError) => log({ event, error, originalError }),
     }));
@@ -510,8 +373,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       maxDurationMs: this.codexMaxDurationMs,
       staleGraceMs: this.staleRunningGraceMs,
       recoveryStore: () => this.storePorts.recoveryFacts(),
-      readRecoveryFacts: readLocalCodexRecoveryFacts,
-      readRunContexts: readRunExecutionContexts,
+      readRecoveryFacts: adapters.readRecoveryFacts,
+      readRunContexts: adapters.readRunExecutionContexts,
       activeRunIds: () => new Set(this.activeRunRegistry.keys()),
       activeSessionIds: () => new Set([...this.activeRunRegistry.values()].map((active) => active.sessionId)),
       recordError: (error) => {
@@ -537,7 +400,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       },
       pendingWork: () => this.pendingProcessingRuntime.hasOutstandingWork(),
       workerWork: () => this.workerDispatchRuntime.hasOutstandingWork(),
-      randomId: () => crypto.randomUUID(),
+      randomId: adapters.randomId,
       reportFailure: (sessionId, runId, error) =>
         log({ event: "local-console-prepare-graceful-resume-failed", sessionId, runId, error }),
     });
@@ -583,10 +446,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private nowIso(): string {
     return this.now().toISOString();
   }
-}
-
-async function defaultCodexThreadAvailability(threadId: string): Promise<boolean> {
-  return (await resolveCodexRollout(threadId)).status === "available";
 }
 
 function runTimingStatusForFailedResult(
