@@ -73,3 +73,11 @@ export function decideWorkerPreparation<T extends { kind: "settled-unavailable" 
     ? { kind: "settled" }
     : { kind: "continue", preparation: preparation as Extract<T, { kind: "ready" }> };
 }
+
+export function decideWorkerProviderInvocation<T extends { kind: "stopped" | "completed" }>(
+  invocation: T,
+): { kind: "stopped" } | { kind: "completed"; invocation: Extract<T, { kind: "completed" }> } {
+  return invocation.kind === "stopped"
+    ? { kind: "stopped" }
+    : { kind: "completed", invocation: invocation as Extract<T, { kind: "completed" }> };
+}
