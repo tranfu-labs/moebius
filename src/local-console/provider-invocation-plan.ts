@@ -1,5 +1,5 @@
 import type { LocalExecutionEngine } from "./execution-driver.js";
-import { legacyCodexContextFingerprint, type LocalProviderInvocationFact, type LocalRunExecutionContextFact } from "./execution-context.js";
+import { legacyCodexContextFingerprint, type LocalExecutionRecoveryPlan, type LocalProviderInvocationFact, type LocalRunExecutionContextFact } from "./execution-context.js";
 import type { LocalRunInvocationPlan } from "./run-invocation-plan.js";
 
 export type LocalProviderCheckpointDecision = { kind: "continue" } | { kind: "stop" };
@@ -30,6 +30,34 @@ export function planLocalProviderInvocationStart(input: {
       : null,
     observedExternalSessionId: null,
     outcome: "started",
+    recordedAt: input.recordedAt,
+  };
+}
+
+export function planLocalProviderInvocationTerminal(input: {
+  sessionId: string;
+  runId: string;
+  runDir: string;
+  role: string;
+  executionContext: LocalRunExecutionContextFact;
+  recoveryPlan: Exclude<LocalExecutionRecoveryPlan, { kind: "unavailable" }>;
+  observedExternalSessionId: string | null;
+  resultOk: boolean;
+  recordedAt: string;
+}): LocalProviderInvocationFact {
+  return {
+    sessionId: input.sessionId,
+    runId: input.runId,
+    invocationId: `${input.runId}:${input.runDir}`,
+    role: input.role,
+    agentIdentityFingerprint: input.executionContext.agentIdentityFingerprint,
+    phase: "terminal",
+    mode: input.recoveryPlan.kind === "resume" ? "resume" : "full",
+    requestedExternalSessionId: input.recoveryPlan.kind === "resume"
+      ? input.recoveryPlan.externalSessionId
+      : null,
+    observedExternalSessionId: input.observedExternalSessionId,
+    outcome: input.resultOk ? "succeeded" : "failed",
     recordedAt: input.recordedAt,
   };
 }
