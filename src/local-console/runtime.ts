@@ -84,6 +84,7 @@ import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
+import { createLocalSessionCommandWiring } from "./session-command-wiring.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
@@ -521,40 +522,25 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       lifecycleStore: () => this.storePorts.lifecycleFacts(),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
     });
-    this.projectCommandRuntime = new LocalProjectCommandRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
+    const sessionCommandWiring = createLocalSessionCommandWiring({
+      options,
+      storePorts: this.storePorts,
+      inactiveSessions: this.inactiveSessions,
+      baselineCommits: this.conversationBaselineCommits,
+      now: () => this.now(),
       nowIso: () => this.nowIso(),
-      assertDirectoryAvailable: (projectId) => this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
-      withDirectoryAvailability: (project, knownAvailable) =>
-        this.sessionContinuationRuntime.withDirectoryAvailability(project, knownAvailable),
-      processPending: (sessionId) => void this.processPending(sessionId),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
       activeRunsForSession: (sessionId) =>
         this.runLifecycleRuntime.runsForSession(sessionId) as ActiveLocalRun[],
-      inactiveSessions: this.inactiveSessions,
+      hasActiveRun: (sessionId) => this.runLifecycleRuntime.runsForSession(sessionId).length > 0,
+      defaultProjectId: () => this.sessionContinuationRuntime.defaultProjectId(),
+      assertProjectDirectoryAvailable: (projectId) =>
+        this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
+      withDirectoryAvailability: (project, knownAvailable) =>
+        this.sessionContinuationRuntime.withDirectoryAvailability(project, knownAvailable),
+      storedProject: (projectId) => this.sessionContinuationRuntime.storedProject(projectId),
       resolvePath: path.resolve,
       directoryAvailable,
-    });
-    this.sessionCreationRuntime = new LocalSessionCreationRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      createSessionId: () => `local:${this.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`,
-      nowIso: () => this.nowIso(),
-      resolveProjectId: async (projectId) => projectId ?? (await this.sessionContinuationRuntime.defaultProjectId()),
-      assertProjectDirectoryAvailable: (projectId) => this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
-      storedProject: (projectId) => this.sessionContinuationRuntime.storedProject(projectId),
-      ...(options.loadAgentTeamSnapshot === undefined
-        ? {}
-        : { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot }),
-      listAgentNames: async (sessionId) =>
-        (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
-      ...(options.attachmentManager === undefined
-        ? {}
-        : {
-            findDraftAttachment: async (draftKey: string, attachmentId: string) =>
-              (await options.attachmentManager!.listDraft(draftKey))
-                .find((attachment) => attachment.attachmentId === attachmentId),
-          }),
       readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
         folderPath,
         gitTimeoutMs: options.workspaceGitTimeoutMs,
@@ -563,36 +549,19 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         folderPath,
         gitTimeoutMs: options.workspaceGitTimeoutMs,
       }),
+      invalidateWorkspaceFacts: invalidateLocalWorkspaceFacts,
+      randomId: () => crypto.randomUUID(),
       logBaselineUnavailable: ({ projectId, error }) => log({
         event: "local-console-conversation-baseline-unavailable",
         projectId,
         error,
       }),
-      baselineCommits: this.conversationBaselineCommits,
-      processPending: (sessionId) => void this.processPending(sessionId),
     });
-    this.sessionSettingsRuntime = new LocalSessionSettingsRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      nowIso: () => this.nowIso(),
-      ...(options.loadAgentTeamSnapshot === undefined
-        ? {}
-        : { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot }),
-      ...(options.workspaceGitTimeoutMs === undefined ? {} : { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs }),
-      hasActiveRun: (sessionId) => this.runLifecycleRuntime.runsForSession(sessionId).length > 0,
-      inactiveSessions: this.inactiveSessions,
-      processPending: (sessionId) => void this.processPending(sessionId),
-      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
-        folderPath,
-        gitTimeoutMs: options.workspaceGitTimeoutMs,
-      }),
-      invalidateWorkspaceFacts: invalidateLocalWorkspaceFacts,
-    });
-    this.sessionReferenceRuntime = new LocalSessionReferenceRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      randomId: () => crypto.randomUUID(),
-    });
+    this.projectCommandRuntime = new LocalProjectCommandRuntime(sessionCommandWiring.project);
+    this.sessionCreationRuntime = new LocalSessionCreationRuntime(sessionCommandWiring.creation);
+    this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionCommandWiring.settings);
+    this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionCommandWiring.reference);
+
     this.stateQueryRuntime = new LocalConsoleStateQueryRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storePorts.call(label, operation),

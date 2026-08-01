@@ -50,6 +50,14 @@ export function decideSessionCreationProject(
   return project === undefined ? { kind: "missing" } : { kind: "available", project };
 }
 
+export function decideSessionCreationProjectId(projectId: string | undefined):
+  | { kind: "requested"; projectId: string }
+  | { kind: "default" } {
+  return projectId === undefined
+    ? { kind: "default" }
+    : { kind: "requested", projectId };
+}
+
 export function decideSessionCreationWorkspaceRead(
   workspaceMode: LocalConsoleWorkspaceMode | undefined,
 ): { kind: "skip" } | { kind: "read" } {
