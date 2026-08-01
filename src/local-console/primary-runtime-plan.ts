@@ -25,3 +25,11 @@ export function decidePrimaryLifecycleCreation(resuming: boolean): { kind: "reco
 export function decidePrimaryInactive(inactive: boolean): { kind: "stop" } | { kind: "continue" } {
   return inactive ? { kind: "stop" } : { kind: "continue" };
 }
+
+export function decidePrimaryProviderInvocation<T extends { kind: "stopped" | "completed" }>(
+  invocation: T,
+): { kind: "invalid-stop" } | { kind: "completed"; invocation: Extract<T, { kind: "completed" }> } {
+  return invocation.kind === "stopped"
+    ? { kind: "invalid-stop" }
+    : { kind: "completed", invocation: invocation as Extract<T, { kind: "completed" }> };
+}

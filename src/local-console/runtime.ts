@@ -89,7 +89,6 @@ import {
 } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
-import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.js";
 import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
@@ -123,6 +122,7 @@ import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
+import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -318,6 +318,7 @@ export class LocalConsoleRuntime {
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
+  private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -698,6 +699,51 @@ export class LocalConsoleRuntime {
       prepareLifecycle: (input) => this.prepareRunLifecycle(input),
       setActiveRun: (runId, active) => { this.activeRuns.set(runId, active); },
       recordLifecycle: (active) => this.recordRunLifecycle(active, "created", "created"),
+    });
+    this.primaryProviderRuntime = new LocalPrimaryProviderRuntime({
+      nowIso: () => this.nowIso(),
+      recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+      runProvider: (preparation, callbacks) => this.executionRunner({
+        prompt: preparation.prompt,
+        runDir: preparation.providerRunDir,
+        cwd: preparation.workspace.cwd,
+        profile: preparation.executionContext.profile,
+        mode: preparation.invocationPlan.providerMode,
+        signal: preparation.controller.signal,
+        ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
+        ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
+        ...(preparation.preparedAttachments.imagePaths.length === 0
+          ? {}
+          : { imagePaths: preparation.preparedAttachments.imagePaths }),
+        workspaceAccess: preparation.invocationPlan.workspaceAccess,
+        ...callbacks,
+      }),
+      onVisibleAgentMarkdown: (input, text) => {
+        const active = this.activeRuns.get(input.runId);
+        if (active?.sessionId !== input.sessionId) return async () => undefined;
+        active.liveMarkdown = text;
+        this.updateAgentProgressActivity(input.runId, text);
+        const recordedAt = this.nowIso();
+        return () => this.storeCall("local-console-store-record-progress", () =>
+          this.sessionFactStore().recordProgressEvent({
+            sessionId: input.sessionId,
+            runId: input.runId,
+            role: input.role,
+            body: text,
+            now: recordedAt,
+          }));
+      },
+      onProcessStarted: (runId) => this.markRunStarted(runId),
+      onStructuredActivity: (runId, event) => this.updateStructuredRunActivity(runId, event),
+      onExecutionProgress: (runId, event) => this.updateExecutionProgressActivity(runId, event),
+      setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
+        const active = this.activeRuns.get(runId);
+        if (active?.sessionId === sessionId) active.threadId = externalSessionId;
+      },
+      recordProviderSessionObserved: (fact) => this.recordProviderSessionObserved(fact),
+      recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
+      recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
+      recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -1765,74 +1811,25 @@ export class LocalConsoleRuntime {
             resolvedRunDir,
             providerRunDir,
             controller,
-            continuingSameRun,
             executionContext,
             recoveryPlan,
-            invocationPlan,
             workspace,
-            prompt,
-            preparedAttachments,
           } = preparation;
           const recoveryStore = this.codexRecoveryFactStore();
-
-          const providerInvocation = await executeLocalProviderInvocationFlow({
+          const providerInvocation = await this.primaryProviderRuntime.invoke({
             sessionId,
             runId: nextRunId,
-            sourceMessageId: claimedMessage.id,
+            sourceMessage: claimedMessage,
             role: triggerRole,
-            runDir: resolvedRunDir,
-            continuingSameRun,
-            executionContext,
-            invocationPlan,
-          }, {
-            nowIso: () => this.nowIso(),
-            releaseIfStopping: async () => false,
-            recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
-            runProvider: (callbacks) => this.executionRunner({
-              prompt,
-              runDir: providerRunDir,
-              cwd: workspace.cwd,
-              profile: executionContext.profile,
-              mode: invocationPlan.providerMode,
-              signal: controller.signal,
-              ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-              ...(this.toolInFlightTimeoutMs === undefined
-                ? {}
-                : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-              ...(preparedAttachments.imagePaths.length === 0 ? {} : { imagePaths: preparedAttachments.imagePaths }),
-              workspaceAccess: invocationPlan.workspaceAccess,
-              ...callbacks,
-            }),
-            onVisibleAgentMarkdown: (text) => {
-              const active = this.activeRuns.get(nextRunId);
-              if (active?.sessionId !== sessionId) return async () => undefined;
-              active.liveMarkdown = text;
-              this.updateAgentProgressActivity(nextRunId, text);
-              const recordedAt = this.nowIso();
-              return () => this.storeCall("local-console-store-record-progress", () =>
-                this.sessionFactStore().recordProgressEvent({
-                  sessionId,
-                  runId: nextRunId,
-                  role: triggerRole,
-                  body: text,
-                  now: recordedAt,
-                }));
-            },
-            onProcessStarted: () => this.markRunStarted(nextRunId),
-            onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
-            onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
-            setActiveExternalSessionId: (externalSessionId) => {
-              const active = this.activeRuns.get(nextRunId);
-              if (active?.runId === nextRunId) active.threadId = externalSessionId;
-            },
-            recordProviderSessionObserved: (fact) => this.recordProviderSessionObserved(fact),
-            recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
-            recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
-            recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
-          });
-          if (providerInvocation.kind === "stopped") {
-            return;
-          }
+            primaryAgent,
+            selectedAgent,
+            agentFiles,
+            timeline,
+            timelineMessages,
+            workspaceSource,
+            analysisGateEnabled,
+            proposalVersion: policySession.proposalVersion ?? null,
+          }, preparation);
           let { result } = providerInvocation;
           const { observedExternalSessionId } = providerInvocation;
 

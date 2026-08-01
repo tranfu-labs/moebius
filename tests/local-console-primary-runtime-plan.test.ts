@@ -4,6 +4,7 @@ import {
   decidePrimaryInactive,
   decidePrimaryLifecycleCreation,
   decidePrimaryPreparation,
+  decidePrimaryProviderInvocation,
   planPrimaryProfile,
 } from "../src/local-console/primary-runtime-plan.js";
 
@@ -32,5 +33,10 @@ describe("primary runtime plan", () => {
     });
     expect(decidePrimaryLifecycleCreation(false)).toEqual({ kind: "record" });
     expect(decidePrimaryLifecycleCreation(true)).toEqual({ kind: "skip" });
+    expect(decidePrimaryProviderInvocation({ kind: "stopped" })).toEqual({ kind: "invalid-stop" });
+    expect(decidePrimaryProviderInvocation({ kind: "completed", value: 1 })).toEqual({
+      kind: "completed",
+      invocation: { kind: "completed", value: 1 },
+    });
   });
 });
