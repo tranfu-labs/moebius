@@ -33,3 +33,40 @@ export function decidePrimaryProviderInvocation<T extends { kind: "stopped" | "c
     ? { kind: "invalid-stop" }
     : { kind: "completed", invocation: invocation as Extract<T, { kind: "completed" }> };
 }
+
+export function decidePrimaryAnalysisHandling<T extends {
+  analysisGateEnabled: boolean;
+  role: string;
+  primaryAgent: string | null;
+  result: { ok: boolean; completionKind?: string };
+}>(input: T): { kind: "skip" } | { kind: "apply"; result: T["result"] } {
+  return input.analysisGateEnabled
+    && input.role === input.primaryAgent
+    && input.result.ok
+    && input.result.completionKind !== "terminal-tool-result"
+    ? { kind: "apply", result: input.result }
+    : { kind: "skip" };
+}
+
+export function decidePrimaryAnalysisControl(
+  control: { action: "proposal" | "confirm"; version: string } | null | undefined,
+):
+  | { kind: "proposal"; version: string }
+  | { kind: "confirm"; version: string }
+  | { kind: "skip" } {
+  if (control?.action === "proposal") return { kind: "proposal", version: control.version };
+  if (control?.action === "confirm") return { kind: "confirm", version: control.version };
+  return { kind: "skip" };
+}
+
+export function decidePrimaryAnalysisConfirmation(input: {
+  currentVersion: string | null;
+  confirmedVersion: string;
+  observedExternalSessionId: string | null;
+  resultExternalSessionId: string | null;
+}): { kind: "reject" } | { kind: "execute"; externalSessionId: string } {
+  const externalSessionId = input.observedExternalSessionId ?? input.resultExternalSessionId;
+  return input.currentVersion === input.confirmedVersion && externalSessionId !== null
+    ? { kind: "execute", externalSessionId }
+    : { kind: "reject" };
+}

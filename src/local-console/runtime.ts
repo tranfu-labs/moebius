@@ -123,8 +123,12 @@ import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
-import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
+import {
+  LocalPrimaryPreparationRuntime,
+  type LocalPrimaryRunInput,
+} from "./primary-preparation-runtime.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
+import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -194,7 +198,6 @@ import { resolveCodexRollout } from "./codex-rollout.js";
 import {
   buildConfirmedPlanExecutionPrompt,
   buildSessionAnalysisReadOnlyContract,
-  parseSessionAnalysisResponse,
 } from "./session-analysis-gate.js";
 
 export interface LocalConsoleRuntimeOptions {
@@ -321,6 +324,7 @@ export class LocalConsoleRuntime {
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
+  private readonly primaryAnalysisRuntime: LocalPrimaryAnalysisRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -746,6 +750,37 @@ export class LocalConsoleRuntime {
       recordAgentSessionLink: (fact) => this.recordAgentSessionLink(fact),
       recordExecutionSessionLink: (fact) => this.recordExecutionSessionLink(fact),
       recordCodexThreadLink: (fact) => this.recordCodexThreadLink(fact),
+    });
+    this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime({
+      updateGate: async (input) => {
+        await this.updateSessionAnalysisGate(input);
+      },
+      resumeConfirmed: async ({ run, preparation, confirmedVersion, externalSessionId }) =>
+        await this.executionRunner({
+          prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
+          runDir: preparation.providerRunDir,
+          cwd: preparation.workspace.cwd,
+          profile: preparation.executionContext.profile,
+          mode: { kind: "resume", externalSessionId },
+          signal: preparation.controller.signal,
+          workspaceAccess: "read-write",
+          ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
+          ...(this.toolInFlightTimeoutMs === undefined ? {} : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
+          onVisibleAgentMarkdown: (text) => {
+            const active = this.activeRuns.get(run.runId);
+            if (active?.sessionId === run.sessionId) {
+              active.liveMarkdown = text;
+              this.updateAgentProgressActivity(run.runId, text);
+            }
+          },
+          onStructuredActivity: (event) => this.updateStructuredRunActivity(run.runId, event),
+          onExecutionProgress: (event) => this.updateExecutionProgressActivity(run.runId, event),
+          onSessionStarted: async ({ externalSessionId: resumedSessionId }) => {
+            if (resumedSessionId !== externalSessionId) {
+              throw new Error("analysis-write-lease-provider-session-mismatch");
+            }
+          },
+        }),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -1594,7 +1629,7 @@ export class LocalConsoleRuntime {
             continue;
           }
 
-          const preparation = await this.primaryPreparationRuntime.prepare({
+          const primaryRunInput: LocalPrimaryRunInput = {
             sessionId,
             runId: nextRunId,
             sourceMessage: claimedMessage,
@@ -1607,106 +1642,29 @@ export class LocalConsoleRuntime {
             workspaceSource,
             analysisGateEnabled,
             proposalVersion: policySession.proposalVersion ?? null,
-          }, (runDir) => { activeRunDir = runDir; });
+          };
+          const preparation = await this.primaryPreparationRuntime.prepare(
+            primaryRunInput,
+            (runDir) => { activeRunDir = runDir; },
+          );
           if (preparation.kind === "settled") return;
           const {
             resolvedRunDir,
-            providerRunDir,
             controller,
             executionContext,
             recoveryPlan,
             workspace,
           } = preparation;
           const recoveryStore = this.codexRecoveryFactStore();
-          const providerInvocation = await this.primaryProviderRuntime.invoke({
-            sessionId,
-            runId: nextRunId,
-            sourceMessage: claimedMessage,
-            role: triggerRole,
-            primaryAgent,
-            selectedAgent,
-            agentFiles,
-            timeline,
-            timelineMessages,
-            workspaceSource,
-            analysisGateEnabled,
-            proposalVersion: policySession.proposalVersion ?? null,
-          }, preparation);
+          const providerInvocation = await this.primaryProviderRuntime.invoke(primaryRunInput, preparation);
           let { result } = providerInvocation;
           const { observedExternalSessionId } = providerInvocation;
-
-          if (
-            analysisGateEnabled
-            && triggerRole === primaryAgent
-            && result.ok
-            && result.completionKind !== "terminal-tool-result"
-          ) {
-            const parsedControl = parseSessionAnalysisResponse(result.finalText);
-            if (parsedControl.control?.action === "proposal") {
-              await this.updateSessionAnalysisGate({
-                sessionId,
-                proposalVersion: parsedControl.control.version,
-                writeLeaseVersion: null,
-              });
-              result = { ...result, finalText: parsedControl.visibleText };
-            } else if (parsedControl.control?.action === "confirm") {
-              const confirmedVersion = parsedControl.control.version;
-              const externalSessionId = observedExternalSessionId ?? result.threadId;
-              if (
-                policySession.proposalVersion !== confirmedVersion
-                || externalSessionId === null
-              ) {
-                result = {
-                  ...result,
-                  finalText: [
-                    parsedControl.visibleText,
-                    "这次确认没有与当前方案版本精确匹配，或当前 provider 会话无法安全继续；我保持只读，没有修改文件。请先重新确认当前完整方案。",
-                  ].filter((part) => part.trim() !== "").join("\n\n"),
-                };
-              } else {
-                await this.updateSessionAnalysisGate({
-                  sessionId,
-                  proposalVersion: confirmedVersion,
-                  writeLeaseVersion: confirmedVersion,
-                });
-                try {
-                  result = await this.executionRunner({
-                    prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
-                    runDir: providerRunDir,
-                    cwd: workspace.cwd,
-                    profile: executionContext.profile,
-                    mode: { kind: "resume", externalSessionId },
-                    signal: controller.signal,
-                    workspaceAccess: "read-write",
-                    ...(this.codexIdleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.codexIdleTimeoutMs }),
-                    ...(this.toolInFlightTimeoutMs === undefined
-                      ? {}
-                      : { toolTimeoutMs: this.toolInFlightTimeoutMs }),
-                    onVisibleAgentMarkdown: (text) => {
-                      const active = this.activeRuns.get(nextRunId);
-                      if (active?.sessionId === sessionId) {
-                        active.liveMarkdown = text;
-                        this.updateAgentProgressActivity(nextRunId, text);
-                      }
-                    },
-                    onStructuredActivity: (event) => this.updateStructuredRunActivity(nextRunId, event),
-                    onExecutionProgress: (event) => this.updateExecutionProgressActivity(nextRunId, event),
-                    onSessionStarted: async ({ externalSessionId: resumedSessionId }) => {
-                      if (resumedSessionId !== externalSessionId) {
-                        throw new Error("analysis-write-lease-provider-session-mismatch");
-                      }
-                    },
-                  });
-                } finally {
-                  await this.updateSessionAnalysisGate({
-                    sessionId,
-                    proposalVersion: confirmedVersion,
-                    writeLeaseVersion: null,
-                  });
-                }
-              }
-            }
-          }
+          result = await this.primaryAnalysisRuntime.apply({
+            run: primaryRunInput,
+            preparation,
+            result,
+            observedExternalSessionId,
+          });
 
           const activeAtTerminal = this.activeRuns.get(nextRunId);
           const terminalOutcome = await executeLocalRunTerminalFlow({

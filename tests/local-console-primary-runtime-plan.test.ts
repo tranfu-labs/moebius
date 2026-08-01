@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   decidePrimaryAnalysisContract,
+  decidePrimaryAnalysisConfirmation,
+  decidePrimaryAnalysisControl,
+  decidePrimaryAnalysisHandling,
   decidePrimaryInactive,
   decidePrimaryLifecycleCreation,
   decidePrimaryPreparation,
@@ -38,5 +41,34 @@ describe("primary runtime plan", () => {
       kind: "completed",
       invocation: { kind: "completed", value: 1 },
     });
+  });
+
+  it("opens a write lease only for an exact primary confirmation", () => {
+    expect(decidePrimaryAnalysisHandling({
+      analysisGateEnabled: true,
+      role: "dev-manager",
+      primaryAgent: "dev-manager",
+      result: { ok: true, completionKind: "response" },
+    })).toEqual({ kind: "apply", result: { ok: true, completionKind: "response" } });
+    expect(decidePrimaryAnalysisHandling({
+      analysisGateEnabled: true,
+      role: "dev-manager",
+      primaryAgent: "dev-manager",
+      result: { ok: true, completionKind: "terminal-tool-result" },
+    })).toEqual({ kind: "skip" });
+    expect(decidePrimaryAnalysisControl({ action: "confirm", version: "plan-v2" }))
+      .toEqual({ kind: "confirm", version: "plan-v2" });
+    expect(decidePrimaryAnalysisConfirmation({
+      currentVersion: "plan-v2",
+      confirmedVersion: "plan-v2",
+      observedExternalSessionId: "thread-1",
+      resultExternalSessionId: null,
+    })).toEqual({ kind: "execute", externalSessionId: "thread-1" });
+    expect(decidePrimaryAnalysisConfirmation({
+      currentVersion: "plan-v1",
+      confirmedVersion: "plan-v2",
+      observedExternalSessionId: "thread-1",
+      resultExternalSessionId: null,
+    })).toEqual({ kind: "reject" });
   });
 });
