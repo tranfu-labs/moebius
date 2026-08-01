@@ -141,7 +141,6 @@ function baseInput(): LocalRunPreparationInput {
     readOnly: true,
     promptContract: "\nREAD-ONLY CONTRACT",
     runDir: "/tmp/run-a",
-    recordedAt,
   };
 }
 
@@ -150,6 +149,7 @@ function basePorts(
   overrides: Partial<LocalRunPreparationPorts>,
 ): LocalRunPreparationPorts {
   return {
+    nowIso: () => recordedAt,
     loadRecoverySnapshot: async () => snapshot,
     isCodexThreadAvailable: async () => true,
     settleUnavailable: async () => undefined,

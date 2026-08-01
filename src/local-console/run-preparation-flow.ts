@@ -58,10 +58,10 @@ export interface LocalRunPreparationInput {
   readOnly: boolean;
   promptContract: string;
   runDir: string;
-  recordedAt: string;
 }
 
 export interface LocalRunPreparationPorts {
+  nowIso(): string;
   loadRecoverySnapshot(): Promise<LocalRunRecoverySnapshot>;
   isCodexThreadAvailable(externalSessionId: string): Promise<boolean>;
   settleUnavailable(plan: Extract<LocalExecutionRecoveryPlan, { kind: "unavailable" }>): Promise<void>;
@@ -116,7 +116,7 @@ export async function executeLocalRunPreparationFlow(
     role: input.role,
     seed: contextSeed,
     team: input.team,
-    recordedAt: input.recordedAt,
+    recordedAt: ports.nowIso(),
   });
   let recoveryPlan = planLocalExecutionRecoveryFromSeed({
     sourceMessageId: input.sourceMessage.id,
@@ -143,7 +143,7 @@ export async function executeLocalRunPreparationFlow(
     sessionId: input.sessionId,
     runId: input.runId,
     sourceMessageId: input.sourceMessage.id,
-    recordedAt: input.recordedAt,
+    recordedAt: ports.nowIso(),
   });
   if (contextPlan.kind === "unavailable") {
     await ports.settleUnavailable(contextPlan.recoveryPlan);
@@ -169,7 +169,7 @@ export async function executeLocalRunPreparationFlow(
       externalSessionId: recoveryPlan.externalSessionId,
       profileFingerprint: executionContext.profileFingerprint,
       contextFingerprint: executionContext.contextFingerprint,
-      linkedAt: input.recordedAt,
+      linkedAt: ports.nowIso(),
     });
   }
   const cursorLastSeenIndex = planLatestAgentTimelineIndex(

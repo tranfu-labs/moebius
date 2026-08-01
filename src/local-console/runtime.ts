@@ -117,6 +117,8 @@ import {
 } from "./run-invocation-plan.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { executePendingWorkerDispatchFlow } from "./worker-dispatch-flow.js";
+import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
+import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import {
   generateLocalWorkspaceDiff,
   invalidateLocalWorkspaceFacts,
@@ -3088,121 +3090,31 @@ export class LocalConsoleRuntime {
         : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
       executionProfile: agent.executionProfile ?? null,
     })));
-    let currentContext = createRunExecutionContext({
-      sessionId: input.sessionId,
-      runId,
-      sourceMessageId: input.sourceMessage.id,
-      role: input.role,
-      profile: input.selectedAgent.executionProfile ?? null,
-      workspace: currentWorkspace,
-      team: agentContents,
-      recordedAt: this.nowIso(),
-    });
     const recoveryStore = this.codexRecoveryFactStore();
-    const [
-      recoveryFacts,
-      threadLinks,
-      executionLinks,
-      runContexts,
-      canonicalLinks,
-      observations,
-      timelineCursors,
-    ] = recoveryStore === null
-      ? [
-          { intents: [], consumedIntentIds: new Set<string>(), repairedIntentIds: new Set<string>() },
-          [],
-          [],
-          [],
-          [],
-          [],
-          [],
-        ]
-      : await Promise.all([
-          readLocalCodexRecoveryFacts(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readCodexThreadLinks(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readExecutionSessionLinks(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readRunExecutionContexts(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readAgentSessionLinks(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readProviderSessionObservations(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-          readAgentTimelineCursors(
-            recoveryStore.getSessionFactLogPath(input.sessionId),
-            input.sessionId,
-          ),
-        ]);
-    const persistedGracefulRecovery = exactGracefulRecoveryContext({
+    const preparation = await executeLocalRunPreparationFlow({
+      lane: "worker",
       sessionId: input.sessionId,
       runId,
-      sourceMessageId: input.sourceMessage.id,
+      sourceMessage: input.sourceMessage,
       role: input.role,
-      intents: recoveryFacts.intents,
-      consumedIntentIds: recoveryFacts.consumedIntentIds,
-      contexts: runContexts,
-    });
-    if (persistedGracefulRecovery !== null) {
-      currentContext = createRunExecutionContext({
+      defaultProfile: input.selectedAgent.executionProfile ?? null,
+      defaultWorkspace: currentWorkspace,
+      concurrentWorkspace: null,
+      team: agentContents,
+      timeline: input.timeline,
+      timelineMessages: input.timelineMessages,
+      readOnly: workerPolicySession.writePolicy === "confirm-current-plan-before-write",
+      promptContract: "",
+      runDir,
+    }, {
+      nowIso: () => this.nowIso(),
+      loadRecoverySnapshot: () => readLocalRunRecoverySnapshot({
+        factLogPath: recoveryStore?.getSessionFactLogPath(input.sessionId) ?? null,
         sessionId: input.sessionId,
-        runId,
-        sourceMessageId: input.sourceMessage.id,
-        role: input.role,
-        profile: input.selectedAgent.executionProfile ?? null,
-        workspace: workspaceFromExecutionContext(persistedGracefulRecovery.context),
-        team: agentContents,
-        recordedAt: this.nowIso(),
-      });
-    }
-    let recoveryPlan = planLocalExecutionRecovery({
-      sourceMessageId: input.sourceMessage.id,
-      role: input.role,
-      currentContext,
-      preferredIntentId: persistedGracefulRecovery?.intent.intentId,
-      intents: recoveryFacts.intents,
-      consumedIntentIds: recoveryFacts.consumedIntentIds,
-      canonicalLinks,
-      observations,
-      executionLinks,
-      legacyCodexLinks: threadLinks,
-      contexts: runContexts,
-    });
-    if (recoveryPlan.kind === "resume" && recoveryPlan.context.engine === "codex") {
-      const available = await (this.options.isCodexThreadAvailable
-        ?? defaultCodexThreadAvailability)(recoveryPlan.externalSessionId);
-      if (!available) {
-        recoveryPlan = {
-          kind: "unavailable",
-          intent: recoveryPlan.intent,
-          context: recoveryPlan.context,
-          reason: "rollout-unavailable",
-        };
-      }
-    }
-    const contextPlan = planLocalRunContext({
-      recoveryPlan,
-      sessionId: input.sessionId,
-      runId,
-      sourceMessageId: input.sourceMessage.id,
-      recordedAt: this.nowIso(),
-    });
-    if (contextPlan.kind === "unavailable") {
-      const unavailable = contextPlan.recoveryPlan;
-      await this.settleUnavailableResume({
+      }),
+      isCodexThreadAvailable: this.options.isCodexThreadAvailable
+        ?? defaultCodexThreadAvailability,
+      settleUnavailable: (unavailable) => this.settleUnavailableResume({
         sessionId: input.sessionId,
         runId,
         sourceMessage: input.sourceMessage,
@@ -3211,79 +3123,39 @@ export class LocalConsoleRuntime {
         engine: unavailable.context.engine,
         reason: unavailable.reason,
         runDir,
-      });
+      }),
+      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
+      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+      prepareAttachments: ({ messages, runDir: attachmentRunDir }) =>
+        this.options.attachmentManager?.prepareRunAttachments({
+          messages,
+          runDir: attachmentRunDir,
+        }) ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
+      consumeRecoveryIntent: ({ intentId, mode, reason }) => {
+        const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
+        return this.storeCall("local-console-store-consume-worker-resume", () =>
+          requiredRecoveryStore.recordCodexResumeConsumed({
+            sessionId: input.sessionId,
+            intentId,
+            resumedByRunId: runId,
+            mode,
+            reason,
+            consumedAt: this.nowIso(),
+          }));
+      },
+    });
+    if (preparation.kind === "settled-unavailable") {
       return;
     }
-    const { continuingSameRun, executionContext } = contextPlan;
-    const workspace = workspaceFromExecutionContext(executionContext);
-    const executingAgentPlan = selectExecutingAgent(executionContext, input.role);
-    if (executingAgentPlan.kind === "missing") {
-      throw new Error(`Run execution context is missing Agent: ${input.role}`);
-    }
-    const agentManifest = parseAgentManifest(executingAgentPlan.agent.agentMarkdown);
-    const fullPrompt = buildLocalAgentPrompt({
-      role: input.role,
-      agentMarkdown: agentManifest.body,
-      timeline: input.timeline,
-      primaryAgent: executionContext.team[0]?.name ?? input.role,
-      availableAgentNames: executionContext.team.map((agent) => agent.name),
-    });
-    if (!continuingSameRun) {
-      await this.recordRunExecutionContext(executionContext);
-    }
-    if (recoveryPlan.kind === "resume" && recoveryPlan.canonicalLinkMissing) {
-      await this.recordAgentSessionLink({
-        sessionId: input.sessionId,
-        agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-        role: input.role,
-        engine: executionContext.engine,
-        externalSessionId: recoveryPlan.externalSessionId,
-        profileFingerprint: executionContext.profileFingerprint,
-        contextFingerprint: executionContext.contextFingerprint,
-        linkedAt: this.nowIso(),
-      });
-    }
-    const cursor = latestAgentTimelineCursor(
-      timelineCursors,
-      executionContext.agentIdentityFingerprint,
-    );
-    const invocationPlan = planLocalRunInvocation({
-      lane: "worker",
-      role: input.role,
-      sourceBody: input.sourceMessage.body,
-      fullPrompt,
-      timeline: input.timeline,
-      cursorLastSeenIndex: cursor?.lastSeenIndex ?? -1,
-      contextPlan,
-      readOnly: workerPolicySession.writePolicy === "confirm-current-plan-before-write",
-    });
-    if (invocationPlan.kind === "unavailable") {
-      throw new Error("Ready run context unexpectedly produced an unavailable invocation");
-    }
-    const attachmentMessages = recoveryPlan.kind === "resume" && !continuingSameRun
-      ? input.timelineMessages.filter((_message, index) =>
-          invocationPlan.attachmentTimelineIndexes.has(index))
-      : input.timelineMessages;
-    const preparedAttachments = this.options.attachmentManager === undefined
-      ? { promptSuffix: "", imagePaths: [] as string[] }
-      : await this.options.attachmentManager.prepareRunAttachments({
-          messages: attachmentMessages,
-          runDir,
-        });
-    let prompt = invocationPlan.prompt;
-    prompt += preparedAttachments.promptSuffix;
-    if (recoveryPlan.intent !== null) {
-      const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
-      await this.storeCall("local-console-store-consume-worker-resume", () =>
-        requiredRecoveryStore.recordCodexResumeConsumed({
-          sessionId: input.sessionId,
-          intentId: recoveryPlan.intent!.intentId,
-          resumedByRunId: runId,
-          mode: invocationPlan.consumeIntentMode!,
-          reason: recoveryPlan.reason,
-          consumedAt: this.nowIso(),
-        }));
-    }
+    const {
+      continuingSameRun,
+      executionContext,
+      recoveryPlan,
+      invocationPlan,
+      workspace,
+      prompt,
+      preparedAttachments,
+    } = preparation;
     if (input.origin === "primary-redirect") {
       const recordDetachedRunStarted = this.options.store.recordDetachedRunStarted;
       if (recordDetachedRunStarted === undefined) {
