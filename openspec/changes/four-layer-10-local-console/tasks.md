@@ -52,11 +52,22 @@
 - 四条 ledger 集成测试三次成功样本中位数：routing 331ms、worker atomic claim 175ms、
   workspace/team switch 621ms、edited-resend resume 347ms；对应四组纯测试 31 项 / 8ms 全绿。
 - 四条集成测试均承担 HTTP+SQLite、真实原子 claim、restart 持久状态或 provider link/cursor
-  唯一接缝，最终全部保留；本批测试删除 0、合并 0、集成测试净变化 0、可归因速度收益记 0。
+  唯一接缝，最终全部保留；集成测试净变化 0、可归因速度收益记 0。
+- 合并点完整闸门暴露 `tests/desktop-runtime-provider-scope.test.ts` 的 6 条源码镜像断言：它们递归读取
+  生产源码并冻结 provider import 文件名、调用字面量与 helper 名称，重构后只能靠复制新路径/文本修绿，
+  不断言外部行为，故按即时剪枝规则整文件删除。provider full/resume 与身份失败关闭继续由
+  `codex.test.ts`、`kimi.test.ts`、`claude.test.ts`、`local-console-execution-driver.test.ts` 和
+  `local-console-execution-runtime.test.ts` 覆盖；外部路由与数据根分别由 `format-ceo.test.ts` / runner
+  行为测试和 `runtime-start.test.ts` / 配置路径行为测试覆盖。本批最终删除 6 条镜像测试，不以新实现
+  文本改写旧断言。
 - `pnpm run test --scope 161ee19`：64 files（63 pass / 1 skip），635 tests（631 pass /
   4 skip），另 desktop scope 1 file / 2 tests；退出码 0，74.18s + 0.617s。
 - `pnpm typecheck`、`pnpm --filter @moebius/desktop build`、定向 process/lifecycle/ledger
   测试均退出码 0。完整 `pnpm test` 尚未运行，按合并点规则留给主理人复核通过后执行。
+- 首次合并点 `pnpm test`（Node 24.18.0）执行 80.15s 后红于上述镜像测试：121 files passed /
+  1 failed / 1 skipped，1038 tests passed / 2 failed / 4 skipped；生产行为测试无失败。删除镜像测试后
+  重跑其行为覆盖半径 7 files / 198 tests 全绿（9.60s），`pnpm check:boundaries` 与 `pnpm typecheck`
+  同步全绿；是否补跑第二次完整闸门由主理人重新点名。
 
 ### RA-01～RA-04 真机记录
 
