@@ -27,6 +27,12 @@ import type {
   OnboardingCliInstallSnapshot,
   OnboardingCliInstallState,
 } from "./cli-installer-contract.js";
+import {
+  createOnboardingReadinessModel,
+  decideOnboardingReadinessSnapshot,
+  isCurrentOnboardingReadinessCheck,
+  planOnboardingReadinessCheck,
+} from "./onboarding-readiness-model.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
 const INITIAL_ENVIRONMENT: OnboardingEnvironmentState = {
@@ -60,20 +66,8 @@ export function OnboardingRoute({
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
   );
   const [createdTeamKey, setCreatedTeamKey] = useState<string | null>(null);
-  const checkSequenceRef = useRef<Record<OnboardingCli, number>>({
-    codex: 0,
-    claude: 0,
-    kimi: 0,
-  });
+  const readinessModelRef = useRef(createOnboardingReadinessModel());
   const previousInstallationsRef = useRef<OnboardingInstallationState>(INITIAL_INSTALLATIONS);
-  const readinessMergeRef = useRef<Record<
-    OnboardingCli,
-    { revision: number; status: OnboardingCliReadinessSnapshot["status"] }
-  >>({
-    codex: { revision: -1, status: "checking" },
-    claude: { revision: -1, status: "checking" },
-    kimi: { revision: -1, status: "checking" },
-  });
   const installationRevisionRef = useRef<Record<OnboardingCli, number>>({
     codex: -1,
     claude: -1,
@@ -84,27 +78,11 @@ export function OnboardingRoute({
   const mergeReadinessSnapshot = useCallback((
     snapshot: OnboardingCliReadinessSnapshot,
   ): boolean => {
-    const previous = readinessMergeRef.current[snapshot.cli];
-    const sameRevisionCanAdvance = snapshot.revision === previous.revision
-      && previous.status === "checking"
-      && snapshot.status !== "checking";
-    const sameTerminalIsIdempotent = snapshot.revision === previous.revision
-      && previous.status === snapshot.status
-      && snapshot.status !== "checking";
-    if (
-      snapshot.revision < previous.revision
-      || (
-        snapshot.revision === previous.revision
-        && !sameRevisionCanAdvance
-        && !sameTerminalIsIdempotent
-      )
-    ) {
+    const decision = decideOnboardingReadinessSnapshot(readinessModelRef.current, snapshot);
+    if (!decision.accepted) {
       return false;
     }
-    readinessMergeRef.current[snapshot.cli] = {
-      revision: snapshot.revision,
-      status: snapshot.status,
-    };
+    readinessModelRef.current = decision.model;
     setEnvironment((current) => ({
       ...current,
       [snapshot.cli]: toViewReadiness(snapshot),
@@ -138,7 +116,9 @@ export function OnboardingRoute({
   }, []);
 
   const checkCli = useCallback(async (cli: OnboardingCli) => {
-    const sequence = ++checkSequenceRef.current[cli];
+    const check = planOnboardingReadinessCheck(readinessModelRef.current, cli);
+    readinessModelRef.current = check.model;
+    const { sequence } = check;
     setEnvironment((current) => ({
       ...current,
       [cli]: {
@@ -151,7 +131,7 @@ export function OnboardingRoute({
     try {
       if (api?.checkOnboardingCliReadiness !== undefined) {
         const result = await api.checkOnboardingCliReadiness(cli);
-        if (sequence !== checkSequenceRef.current[cli]) {
+        if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
           return;
         }
         mergeReadinessSnapshot(result);
@@ -165,7 +145,7 @@ export function OnboardingRoute({
         return;
       }
       const legacy = await api?.checkOnboardingCodex?.();
-      if (sequence !== checkSequenceRef.current[cli]) {
+      if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
         return;
       }
       setEnvironment((current) => ({
@@ -182,7 +162,7 @@ export function OnboardingRoute({
             },
       }));
     } catch {
-      if (sequence !== checkSequenceRef.current[cli]) {
+      if (!isCurrentOnboardingReadinessCheck(readinessModelRef.current, cli, sequence)) {
         return;
       }
       setEnvironment((current) => ({

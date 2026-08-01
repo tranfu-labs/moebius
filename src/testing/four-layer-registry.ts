@@ -312,6 +312,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/onboarding/cli-readiness-contract.ts",
   "desktop/src/onboarding/contract.ts",
   "desktop/src/onboarding/onboarding-completion.ts",
+  "desktop/src/onboarding/onboarding-readiness-model.ts",
   "desktop/src/onboarding/shutdown-coordination.ts",
   "desktop/src/runner-supervisor.ts",
   "desktop/src/settings-contract.ts",
