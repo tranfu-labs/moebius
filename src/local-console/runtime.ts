@@ -466,6 +466,11 @@ export class LocalConsoleRuntime {
       hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
       inactiveSessions: this.inactiveSessions,
       processPending: (sessionId) => void this.processPending(sessionId),
+      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
+        folderPath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      invalidateWorkspaceFacts: invalidateLocalWorkspaceFacts,
     });
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime({
       store: options.store,
