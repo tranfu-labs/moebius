@@ -24,6 +24,7 @@ import {
   readLocalWorkspaceTextFile,
 } from "./file-read.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
+import { localProcessTraceReader } from "./process-trace-reader.js";
 import { readLocalConsoleOutputTail } from "./output-tail.js";
 import {
   defaultLocalRouteJudgment,
@@ -112,6 +113,7 @@ export function createLocalRuntimeAdapters(input: {
     }, parentSessionId),
     readOptionalTextFile,
     factReader: localProcessFactReader,
+    traceReader: localProcessTraceReader,
     readDiff: async (context: { workspacePath: string; baselineCommit: string | null }) =>
       await readLocalConversationWorkspaceDiffDetail({
         workspacePath: context.workspacePath,

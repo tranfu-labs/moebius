@@ -1,31 +1,26 @@
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
-import {
-  readCodexRolloutInvocation,
-  type CodexRolloutPromptLayer,
-  type CodexRolloutUnavailableReason,
-  type ResolveCodexRolloutOptions,
+import type {
+  CodexRolloutPromptLayer,
+  CodexRolloutUnavailableReason,
+  ResolveCodexRolloutOptions,
 } from "./codex-rollout.js";
 import type {
   LocalExecutionSessionLinkFact,
   LocalRunExecutionContextFact,
 } from "./execution-context.js";
-import {
-  readProviderTraceAppend,
-  readProviderTraceContext,
-  readProviderTracePage,
-  resolveProviderTrace,
-  type ProviderContextSection,
-  type ProviderTraceLink,
-  type ProviderTraceResolution,
-  type ProviderTraceResolverOptions,
+import type {
+  ProviderContextSection,
+  ProviderTraceLink,
+  ProviderTraceResolution,
+  ProviderTraceResolverOptions,
 } from "./provider-process-trace.js";
 import type { LocalConsoleProcessEvent } from "./process-event-projector.js";
 import type { LocalConsoleMessage, LocalConsoleRunTiming } from "./types.js";
+import type { TrustedJsonlIdentity } from "../trusted-jsonl.js";
 import {
-  TrustedJsonlCursorInvalidError,
-  type TrustedJsonlIdentity,
-} from "../trusted-jsonl.js";
-import { ProcessCursorError } from "./process-history-contracts.js";
+  ProcessCursorError,
+  type LocalProcessTraceReader,
+} from "./process-history-contracts.js";
 
 export interface LocalConsoleProcessAttemptMeta {
   runId: string;
@@ -167,13 +162,13 @@ export interface LocalProcessFactReader {
   readRunExecutionContexts(logPath: string, sessionId: string): Promise<LocalRunExecutionContextFact[]>;
 }
 
-interface ResolvedAttempt {
+export interface ResolvedAttempt {
   link: ProviderTraceLink;
   meta: LocalConsoleProcessAttemptMeta;
   resolution: ProviderTraceResolution;
 }
 
-type PreviousCursorState =
+export type PreviousCursorState =
   | {
       v: 1;
       kind: "previous";
@@ -201,7 +196,7 @@ type PreviousCursorState =
       identity: null;
     };
 
-interface AppendCursorState {
+export interface AppendCursorState {
   v: 1;
   kind: "append";
   sessionId: string;
@@ -214,142 +209,163 @@ interface AppendCursorState {
   identity: CursorIdentity;
 }
 
-interface CursorIdentity {
+export interface CursorIdentity {
   device: number;
   inode: number;
   minimumSize: number;
 }
 
-const DEFAULT_PAGE_BYTES = 256 * 1024;
-const DEFAULT_PAGE_EVENTS = 80;
+export interface ProcessHistoryAccumulator {
+  state: PreviousCursorState;
+  remainingEvents: number;
+  remainingBytes: number;
+  pageEvents: LocalConsoleProcessTimelineEvent[];
+  previousCursor: string | null;
+  latestAppendState: AppendCursorState | null;
+  done: boolean;
+}
 
-export async function loadLocalProcessDebugInvocation(options: {
-  sessionId: string;
-  runId: string;
-  sessionFactLogPath: string;
-  factReader: LocalProcessFactReader;
-  rollout?: ResolveCodexRolloutOptions;
-  trace?: ProviderTraceResolverOptions;
-}): Promise<LocalConsoleProcessDebugInvocation> {
-  let links: ProviderTraceLink[];
-  let contexts: LocalRunExecutionContextFact[];
-  try {
-    [links, contexts] = await Promise.all([
-      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
-      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
-    ]);
-  } catch {
-    return unavailableInvocation(options, "link-invalid");
-  }
-  const link = links.find((candidate) => candidate.runId === options.runId);
-  if (link === undefined) {
-    return unavailableInvocation(options, "link-missing");
-  }
-  const context = contexts.find((candidate) => candidate.runId === options.runId);
-  const resolution = await resolveProviderTrace({
-    link,
-    context,
-    options: traceOptions(options),
-  });
-  if (resolution.status !== "available") {
-    return unavailableInvocation(options, resolution.reason);
-  }
-  const fallbackModel = context?.profile?.model ?? null;
-  const fallbackEffort = context?.profile?.effort ?? null;
-  if (resolution.engine === "codex") {
-    let invocation;
-    try {
-      invocation = await readCodexRolloutInvocation({ resolution: resolution.codex });
-    } catch {
-      return unavailableInvocation(options, "cursor-invalid");
+export type ProcessAttemptsPreparation =
+  | {
+      kind: "available";
+      attempts: ResolvedAttempt[];
+      meta: LocalConsoleProcessAttemptMeta[];
+      anchor: ProviderTraceLink;
+      sourceMessageId: number;
     }
-    if (invocation.status === "malformed") {
-      return {
-        status: "malformed",
-        sessionId: options.sessionId,
-        runId: options.runId,
-        reason: invocation.reason,
-      };
-    }
-    const usedProviderMetadata = Object.values(invocation.metadata).some((value) => value !== null);
-    const usedContextMetadata = !usedProviderMetadata
-      && (fallbackModel !== null || fallbackEffort !== null || context?.workspace.cwd !== undefined);
-    return {
-      status: "available",
-      sessionId: options.sessionId,
-      runId: options.runId,
-      engine: "codex",
-      sections: [
-        {
-          key: "system",
-          label: "SYSTEM_PROMPT",
-          source: "codex-rollout",
-          ...invocation.prompts.system,
-        },
-        {
-          key: "developer",
-          label: "DEVELOPER_PROMPT",
-          source: "codex-rollout",
-          ...invocation.prompts.developer,
-        },
-        {
-          key: "user",
-          label: "USER_INPUT",
-          source: "codex-rollout",
-          ...invocation.prompts.user,
-        },
-      ],
-      prompts: invocation.prompts,
-      metadata: {
-        model: invocation.metadata.model ?? fallbackModel,
-        effort: invocation.metadata.effort ?? fallbackEffort,
-        provider: invocation.metadata.provider,
-        cliVersion: invocation.metadata.cliVersion,
-        cwd: invocation.metadata.cwd ?? context?.workspace.cwd ?? null,
-        externalSessionId: link.externalSessionId,
-        identityLabel: "thread",
-        threadId: link.externalSessionId,
-        metadataSource: usedProviderMetadata
-          ? "rollout"
-          : usedContextMetadata
-            ? "immutable-context"
-            : "not-recorded",
-      },
+  | {
+      kind: "unavailable";
+      unavailableReason: LocalConsoleProcessUnavailableReason;
+      unavailableEngine: "codex" | "claude" | "kimi" | null;
     };
-  }
-  const providerContext = await readProviderTraceContext(resolution);
-  if ("status" in providerContext) {
+
+export function decideProcessAttemptsAvailability(
+  prepared: ProcessAttemptsPreparation,
+):
+  | { kind: "unavailable"; prepared: Extract<ProcessAttemptsPreparation, { kind: "unavailable" }> }
+  | { kind: "available"; prepared: Extract<ProcessAttemptsPreparation, { kind: "available" }> } {
+  return prepared.kind === "unavailable"
+    ? { kind: "unavailable", prepared }
+    : { kind: "available", prepared };
+}
+
+export function planDebugProcessSource(input: {
+  links: ProviderTraceLink[];
+  contexts: LocalRunExecutionContextFact[];
+  runId: string;
+}):
+  | { kind: "unavailable" }
+  | { kind: "selected"; link: ProviderTraceLink; context: LocalRunExecutionContextFact | undefined } {
+  const link = input.links.find((candidate) => candidate.runId === input.runId);
+  return link === undefined
+    ? { kind: "unavailable" }
+    : {
+        kind: "selected",
+        link,
+        context: input.contexts.find((candidate) => candidate.runId === input.runId),
+      };
+}
+
+export function planDebugTraceResolution(
+  resolution: ProviderTraceResolution,
+):
+  | { kind: "unavailable"; reason: string }
+  | { kind: "codex"; resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "codex" }> }
+  | { kind: "native"; resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" }> } {
+  if (resolution.status !== "available") return { kind: "unavailable", reason: resolution.reason };
+  return resolution.engine === "codex"
+    ? { kind: "codex", resolution }
+    : { kind: "native", resolution };
+}
+
+export function planCodexDebugInvocation(input: {
+  options: { sessionId: string; runId: string };
+  link: ProviderTraceLink;
+  context: LocalRunExecutionContextFact | undefined;
+  invocation: Awaited<ReturnType<LocalProcessTraceReader["readCodexInvocation"]>>;
+}): LocalConsoleProcessDebugInvocation {
+  if (input.invocation.status === "malformed") {
     return {
       status: "malformed",
-      sessionId: options.sessionId,
-      runId: options.runId,
-      reason: providerContext.reason,
+      sessionId: input.options.sessionId,
+      runId: input.options.runId,
+      reason: input.invocation.reason,
     };
   }
-  const usedProviderMetadata = Object.values(providerContext.metadata)
-    .some((value) => value !== null);
+  const fallbackModel = input.context?.profile?.model ?? null;
+  const fallbackEffort = input.context?.profile?.effort ?? null;
+  const usedProviderMetadata = Object.values(input.invocation.metadata).some((value) => value !== null);
   const usedContextMetadata = !usedProviderMetadata
-    && (fallbackModel !== null || fallbackEffort !== null || context?.workspace.cwd !== undefined);
+    && (fallbackModel !== null || fallbackEffort !== null || input.context?.workspace.cwd !== undefined);
   return {
     status: "available",
-    sessionId: options.sessionId,
-    runId: options.runId,
-    engine: resolution.engine,
-    sections: providerContext.sections,
+    sessionId: input.options.sessionId,
+    runId: input.options.runId,
+    engine: "codex",
+    sections: [
+      { key: "system", label: "SYSTEM_PROMPT", source: "codex-rollout", ...input.invocation.prompts.system },
+      { key: "developer", label: "DEVELOPER_PROMPT", source: "codex-rollout", ...input.invocation.prompts.developer },
+      { key: "user", label: "USER_INPUT", source: "codex-rollout", ...input.invocation.prompts.user },
+    ],
+    prompts: input.invocation.prompts,
+    metadata: {
+      model: input.invocation.metadata.model ?? fallbackModel,
+      effort: input.invocation.metadata.effort ?? fallbackEffort,
+      provider: input.invocation.metadata.provider,
+      cliVersion: input.invocation.metadata.cliVersion,
+      cwd: input.invocation.metadata.cwd ?? input.context?.workspace.cwd ?? null,
+      externalSessionId: input.link.externalSessionId,
+      identityLabel: "thread",
+      threadId: input.link.externalSessionId,
+      metadataSource: usedProviderMetadata
+        ? "rollout"
+        : usedContextMetadata
+          ? "immutable-context"
+          : "not-recorded",
+    },
+  };
+}
+
+export function planNativeDebugInvocation(input: {
+  options: { sessionId: string; runId: string };
+  link: ProviderTraceLink;
+  context: LocalRunExecutionContextFact | undefined;
+  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" }>;
+  providerContext: Awaited<ReturnType<LocalProcessTraceReader["readContext"]>>;
+}): LocalConsoleProcessDebugInvocation {
+  if ("status" in input.providerContext) {
+    return {
+      status: "malformed",
+      sessionId: input.options.sessionId,
+      runId: input.options.runId,
+      reason: input.providerContext.reason,
+    };
+  }
+  const fallbackModel = input.context?.profile?.model ?? null;
+  const fallbackEffort = input.context?.profile?.effort ?? null;
+  const usedProviderMetadata = Object.values(input.providerContext.metadata).some((value) => value !== null);
+  const usedContextMetadata = !usedProviderMetadata
+    && (fallbackModel !== null || fallbackEffort !== null || input.context?.workspace.cwd !== undefined);
+  return {
+    status: "available",
+    sessionId: input.options.sessionId,
+    runId: input.options.runId,
+    engine: input.resolution.engine,
+    sections: input.providerContext.sections,
     prompts: {
-      system: promptFromSections(providerContext.sections, ["system"]),
+      system: planPromptFromSections(input.providerContext.sections, ["system"]),
       developer: { status: "not-recorded", contents: [] },
-      user: promptFromSections(providerContext.sections, ["user", "turn"]),
+      user: planPromptFromSections(input.providerContext.sections, ["user", "turn"]),
     },
     metadata: {
-      model: providerContext.metadata.model ?? fallbackModel,
-      effort: providerContext.metadata.effort ?? fallbackEffort,
-      provider: providerContext.metadata.provider,
-      cliVersion: providerContext.metadata.cliVersion,
-      cwd: providerContext.metadata.cwd ?? context?.workspace.cwd ?? null,
-      externalSessionId: link.externalSessionId,
+      model: input.providerContext.metadata.model ?? fallbackModel,
+      effort: input.providerContext.metadata.effort ?? fallbackEffort,
+      provider: input.providerContext.metadata.provider,
+      cliVersion: input.providerContext.metadata.cliVersion,
+      cwd: input.providerContext.metadata.cwd ?? input.context?.workspace.cwd ?? null,
+      externalSessionId: input.link.externalSessionId,
       identityLabel: "session",
-      threadId: link.externalSessionId,
+      threadId: input.link.externalSessionId,
       metadataSource: usedProviderMetadata
         ? "provider-native"
         : usedContextMetadata
@@ -359,261 +375,330 @@ export async function loadLocalProcessDebugInvocation(options: {
   };
 }
 
-export async function loadLocalProcessHistoryPage(
-  options: LoadLocalProcessHistoryOptions,
-): Promise<LocalConsoleProcessHistoryPage> {
-  const prepared = await prepareAttempts(options);
-  if ("unavailableReason" in prepared) {
-    return unavailablePage(options, prepared.unavailableReason, prepared.unavailableEngine);
-  }
-  const { attempts, sourceMessageId } = prepared;
-  const maxEvents = positiveInteger(options.maxEvents ?? DEFAULT_PAGE_EVENTS);
-  const maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_PAGE_BYTES);
-  let remainingEvents = maxEvents;
-  let remainingBytes = maxBytes;
-  let state: PreviousCursorState = options.cursor === undefined
-    ? previousOutputState(options, sourceMessageId, attempts.length - 1, attempts.at(-1)!.link, null, null)
-    : decodePreviousCursor(options.cursor, options, sourceMessageId, attempts);
-  const pageEvents: LocalConsoleProcessTimelineEvent[] = [];
-  let previousCursor: string | null = null;
-  let latestAppendState: AppendCursorState | null = null;
+export function planAppendProcessSelection(input: {
+  links: ProviderTraceLink[];
+  options: LoadLocalProcessAppendOptions;
+}):
+  | { kind: "invalid" }
+  | { kind: "selected"; anchor: ProviderTraceLink; link: ProviderTraceLink; cursor: AppendCursorState } {
+  const anchor = input.links.find((link) => link.runId === input.options.requestedRunId);
+  if (anchor === undefined) return { kind: "invalid" };
+  const grouped = planProcessLinkGroup(input.links, anchor.sourceMessageId);
+  if (!decideSameProcessStepIdentity(grouped, anchor)) return { kind: "invalid" };
+  const cursor = planDecodeAppendCursor(
+    input.options.appendCursor,
+    input.options,
+    anchor.sourceMessageId,
+    grouped,
+  );
+  const link = grouped[cursor.attemptIndex];
+  return link === undefined || link.runId !== grouped.at(-1)?.runId
+    ? { kind: "invalid" }
+    : { kind: "selected", anchor, link, cursor };
+}
 
-  while (remainingEvents > 0 && (remainingBytes > 0 || state.stage === "intro")) {
-    const attempt = attempts[state.attemptIndex];
-    if (attempt === undefined) {
-      throw new ProcessCursorError();
-    }
-    if (state.stage === "output") {
-      if (attempt.resolution.status !== "available") {
-        state = previousIntroState(
-          options,
-          sourceMessageId,
-          state.attemptIndex,
-          attempt.link,
-          introEvents(attempt).length,
-        );
-        continue;
-      }
-      let slice;
-      try {
-        slice = await readProviderTracePage({
-          resolution: attempt.resolution,
-          runId: attempt.link.runId,
-          ...(state.position === null ? {} : { endOffset: state.position }),
-          ...(state.identity === null
-            ? {}
-            : {
-                expectedIdentity: expectedIdentity(attempt.resolution, state.identity),
-                minimumSize: state.identity.minimumSize,
-              }),
-          maxBytes: remainingBytes,
-          maxEvents: remainingEvents,
-        });
-      } catch (error) {
-        if (error instanceof TrustedJsonlCursorInvalidError) {
-          throw new ProcessCursorError();
-        }
-        throw error;
-      }
-      pageEvents.unshift(...slice.events);
-      remainingEvents -= slice.events.length;
-      remainingBytes -= Math.max(1, slice.rawBytes);
-      if (options.cursor === undefined && state.attemptIndex === attempts.length - 1) {
-        latestAppendState = appendState(
-          options,
-          sourceMessageId,
-          state.attemptIndex,
-          attempt.link,
-          slice.completeEndOffset,
-          slice.identity,
-        );
-      }
-      if (slice.previousOffset !== null) {
-        previousCursor = encodeCursor(previousOutputState(
-          options,
-          sourceMessageId,
-          state.attemptIndex,
-          attempt.link,
-          slice.previousOffset,
-          slice.identity,
-        ));
-        break;
-      }
-      state = previousIntroState(
-        options,
-        sourceMessageId,
-        state.attemptIndex,
-        attempt.link,
-        introEvents(attempt).length,
-      );
-      if (remainingEvents <= 0) {
-        previousCursor = encodeCursor(state);
-        break;
-      }
-      continue;
-    }
+export function decideAvailableProviderTrace(
+  resolution: ProviderTraceResolution,
+):
+  | { kind: "invalid" }
+  | { kind: "available"; resolution: Extract<ProviderTraceResolution, { status: "available" }> } {
+  return resolution.status === "available"
+    ? { kind: "available", resolution }
+    : { kind: "invalid" };
+}
 
-    const intro = introEvents(attempt);
-    const start = Math.max(0, state.position - remainingEvents);
-    const selected = intro.slice(start, state.position);
-    pageEvents.unshift(...selected);
-    remainingEvents -= selected.length;
-    if (start > 0) {
-      previousCursor = encodeCursor(previousIntroState(
-        options,
-        sourceMessageId,
-        state.attemptIndex,
-        attempt.link,
-        start,
-      ));
-      break;
-    }
-    if (state.attemptIndex === 0) {
-      previousCursor = null;
-      break;
-    }
-    const previousAttempt = attempts[state.attemptIndex - 1];
-    if (previousAttempt === undefined) {
-      throw new ProcessCursorError();
-    }
-    state = previousOutputState(
-      options,
-      sourceMessageId,
-      state.attemptIndex - 1,
-      previousAttempt.link,
-      null,
-      null,
-    );
-    if (remainingEvents <= 0 || remainingBytes <= 0) {
-      previousCursor = encodeCursor(state);
-      break;
-    }
-  }
-
-  const active = prepared.meta.some((attempt) => attempt.status === "running");
+export function planProcessAppendResult(input: {
+  options: LoadLocalProcessAppendOptions;
+  selection: { anchor: ProviderTraceLink; link: ProviderTraceLink; cursor: AppendCursorState };
+  slice: Awaited<ReturnType<LocalProcessTraceReader["readAppend"]>>;
+}): LocalConsoleProcessAppendPage {
+  const next = planAppendState(
+    input.options,
+    input.selection.anchor.sourceMessageId,
+    input.selection.cursor.attemptIndex,
+    input.selection.link,
+    input.slice.nextOffset,
+    input.slice.identity,
+  );
   return {
-    sessionId: options.sessionId,
-    requestedRunId: options.requestedRunId,
-    role: prepared.anchor.role,
+    events: planDedupeTimelineEvents(input.slice.events),
+    appendCursor: planEncodeProcessCursor(next),
+    atLatest: input.slice.nextOffset === input.slice.completeEndOffset,
+    status: input.options.activeRunIds.has(input.selection.link.runId) ? "running" : "settled",
+  };
+}
+
+export function planProcessHistoryStart(input: {
+  options: LoadLocalProcessHistoryOptions;
+  attempts: ResolvedAttempt[];
+  sourceMessageId: number;
+  defaultPageBytes: number;
+  defaultPageEvents: number;
+}): ProcessHistoryAccumulator {
+  const remainingEvents = planPositiveInteger(input.options.maxEvents ?? input.defaultPageEvents);
+  const remainingBytes = planPositiveInteger(input.options.maxBytes ?? input.defaultPageBytes);
+  return {
+    state: input.options.cursor === undefined
+      ? planPreviousOutputState(
+          input.options,
+          input.sourceMessageId,
+          input.attempts.length - 1,
+          input.attempts.at(-1)!.link,
+          null,
+          null,
+        )
+      : planDecodePreviousCursor(
+          input.options.cursor,
+          input.options,
+          input.sourceMessageId,
+          input.attempts,
+        ),
+    remainingEvents,
+    remainingBytes,
+    pageEvents: [],
+    previousCursor: null,
+    latestAppendState: null,
+    done: false,
+  };
+}
+
+export function decideProcessHistoryContinuation(accumulator: ProcessHistoryAccumulator): boolean {
+  return !accumulator.done
+    && accumulator.remainingEvents > 0
+    && (accumulator.remainingBytes > 0 || accumulator.state.stage === "intro");
+}
+
+export function planProcessHistoryStep(
+  attempt: ResolvedAttempt | undefined,
+  state: PreviousCursorState,
+): { kind: "invalid" } | { kind: "output"; attempt: ResolvedAttempt } | { kind: "intro"; attempt: ResolvedAttempt } {
+  if (attempt === undefined) return { kind: "invalid" };
+  return state.stage === "output" ? { kind: "output", attempt } : { kind: "intro", attempt };
+}
+
+export function planProcessOutputRequest(input: {
+  attempt: ResolvedAttempt;
+  state: Extract<PreviousCursorState, { stage: "output" }>;
+  remainingBytes: number;
+  remainingEvents: number;
+}):
+  | { kind: "intro" }
+  | { kind: "read"; request: Parameters<LocalProcessTraceReader["readPage"]>[0] } {
+  if (input.attempt.resolution.status !== "available") return { kind: "intro" };
+  return {
+    kind: "read",
+    request: {
+      resolution: input.attempt.resolution,
+      runId: input.attempt.link.runId,
+      ...(input.state.position === null ? {} : { endOffset: input.state.position }),
+      ...(input.state.identity === null
+        ? {}
+        : {
+            expectedIdentity: planExpectedIdentity(input.attempt.resolution, input.state.identity),
+            minimumSize: input.state.identity.minimumSize,
+          }),
+      maxBytes: input.remainingBytes,
+      maxEvents: input.remainingEvents,
+    },
+  };
+}
+
+export function planUnavailableProcessOutput(input: {
+  accumulator: ProcessHistoryAccumulator;
+  options: LoadLocalProcessHistoryOptions;
+  attempt: ResolvedAttempt;
+  sourceMessageId: number;
+}): ProcessHistoryAccumulator {
+  return {
+    ...input.accumulator,
+    state: planPreviousIntroState(
+      input.options,
+      input.sourceMessageId,
+      input.accumulator.state.attemptIndex,
+      input.attempt.link,
+      planProcessIntroEvents(input.attempt).length,
+    ),
+  };
+}
+
+export function planProcessOutputSlice(input: {
+  accumulator: ProcessHistoryAccumulator;
+  options: LoadLocalProcessHistoryOptions;
+  attempt: ResolvedAttempt;
+  sourceMessageId: number;
+  slice: Awaited<ReturnType<LocalProcessTraceReader["readPage"]>>;
+  attemptCount: number;
+}): ProcessHistoryAccumulator {
+  const remainingEvents = input.accumulator.remainingEvents - input.slice.events.length;
+  const remainingBytes = input.accumulator.remainingBytes - Math.max(1, input.slice.rawBytes);
+  const pageEvents = [...input.slice.events, ...input.accumulator.pageEvents];
+  const latestAppendState = input.options.cursor === undefined
+    && input.accumulator.state.attemptIndex === input.attemptCount - 1
+    ? planAppendState(
+        input.options,
+        input.sourceMessageId,
+        input.accumulator.state.attemptIndex,
+        input.attempt.link,
+        input.slice.completeEndOffset,
+        input.slice.identity,
+      )
+    : input.accumulator.latestAppendState;
+  if (input.slice.previousOffset !== null) {
+    return {
+      ...input.accumulator,
+      remainingEvents,
+      remainingBytes,
+      pageEvents,
+      latestAppendState,
+      previousCursor: planEncodeProcessCursor(planPreviousOutputState(
+        input.options,
+        input.sourceMessageId,
+        input.accumulator.state.attemptIndex,
+        input.attempt.link,
+        input.slice.previousOffset,
+        input.slice.identity,
+      )),
+      done: true,
+    };
+  }
+  const state = planPreviousIntroState(
+    input.options,
+    input.sourceMessageId,
+    input.accumulator.state.attemptIndex,
+    input.attempt.link,
+    planProcessIntroEvents(input.attempt).length,
+  );
+  return {
+    ...input.accumulator,
+    state,
+    remainingEvents,
+    remainingBytes,
+    pageEvents,
+    latestAppendState,
+    previousCursor: remainingEvents <= 0 ? planEncodeProcessCursor(state) : input.accumulator.previousCursor,
+    done: remainingEvents <= 0,
+  };
+}
+
+export function planProcessIntroSlice(input: {
+  accumulator: ProcessHistoryAccumulator;
+  options: LoadLocalProcessHistoryOptions;
+  attempts: ResolvedAttempt[];
+  attempt: ResolvedAttempt;
+  sourceMessageId: number;
+}): ProcessHistoryAccumulator {
+  const intro = planProcessIntroEvents(input.attempt);
+  const start = Math.max(0, input.accumulator.state.position! - input.accumulator.remainingEvents);
+  const selected = intro.slice(start, input.accumulator.state.position!);
+  const remainingEvents = input.accumulator.remainingEvents - selected.length;
+  const pageEvents = [...selected, ...input.accumulator.pageEvents];
+  if (start > 0) {
+    return {
+      ...input.accumulator,
+      remainingEvents,
+      pageEvents,
+      previousCursor: planEncodeProcessCursor(planPreviousIntroState(
+        input.options,
+        input.sourceMessageId,
+        input.accumulator.state.attemptIndex,
+        input.attempt.link,
+        start,
+      )),
+      done: true,
+    };
+  }
+  if (input.accumulator.state.attemptIndex === 0) {
+    return { ...input.accumulator, remainingEvents, pageEvents, previousCursor: null, done: true };
+  }
+  const previousAttempt = input.attempts[input.accumulator.state.attemptIndex - 1];
+  if (previousAttempt === undefined) throw new ProcessCursorError();
+  const state = planPreviousOutputState(
+    input.options,
+    input.sourceMessageId,
+    input.accumulator.state.attemptIndex - 1,
+    previousAttempt.link,
+    null,
+    null,
+  );
+  const done = remainingEvents <= 0 || input.accumulator.remainingBytes <= 0;
+  return {
+    ...input.accumulator,
+    state,
+    remainingEvents,
+    pageEvents,
+    previousCursor: done ? planEncodeProcessCursor(state) : input.accumulator.previousCursor,
+    done,
+  };
+}
+
+export function planProcessHistoryResult(input: {
+  options: LoadLocalProcessHistoryOptions;
+  prepared: {
+    meta: LocalConsoleProcessAttemptMeta[];
+    anchor: ProviderTraceLink;
+  };
+  accumulator: ProcessHistoryAccumulator;
+}): LocalConsoleProcessHistoryPage {
+  const active = input.prepared.meta.some((attempt) => attempt.status === "running");
+  return {
+    sessionId: input.options.sessionId,
+    requestedRunId: input.options.requestedRunId,
+    role: input.prepared.anchor.role,
     status: active ? "running" : "settled",
     unavailableReason: null,
     unavailableEngine: null,
-    attempts: prepared.meta,
-    events: dedupeTimelineEvents(pageEvents),
-    previousCursor,
-    appendCursor: latestAppendState === null ? null : encodeCursor(latestAppendState),
-    atLatest: options.cursor === undefined,
+    attempts: input.prepared.meta,
+    events: planDedupeTimelineEvents(input.accumulator.pageEvents),
+    previousCursor: input.accumulator.previousCursor,
+    appendCursor: input.accumulator.latestAppendState === null
+      ? null
+      : planEncodeProcessCursor(input.accumulator.latestAppendState),
+    atLatest: input.options.cursor === undefined,
   };
 }
 
-export async function loadLocalProcessAppendPage(
-  options: LoadLocalProcessAppendOptions,
-): Promise<LocalConsoleProcessAppendPage> {
-  let links: ProviderTraceLink[];
-  let contexts: LocalRunExecutionContextFact[];
-  try {
-    [links, contexts] = await Promise.all([
-      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
-      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
-    ]);
-  } catch {
-    throw new ProcessCursorError();
-  }
-  const anchor = links.find((link) => link.runId === options.requestedRunId);
-  if (anchor === undefined) {
-    throw new ProcessCursorError();
-  }
-  const grouped = groupLinks(links, anchor.sourceMessageId);
-  if (!sameStepIdentity(grouped, anchor)) {
-    throw new ProcessCursorError();
-  }
-  const cursor = decodeAppendCursor(options.appendCursor, options, anchor.sourceMessageId, grouped);
-  const link = grouped[cursor.attemptIndex];
-  if (link === undefined || link.runId !== grouped.at(-1)?.runId) {
-    throw new ProcessCursorError();
-  }
-  const resolution = await resolveProviderTrace({
-    link,
-    context: contexts.find((candidate) => candidate.runId === link.runId),
-    options: traceOptions(options),
-  });
-  if (resolution.status !== "available") {
-    throw new ProcessCursorError();
-  }
-  let slice;
-  try {
-    slice = await readProviderTraceAppend({
-      resolution,
-      runId: link.runId,
-      startOffset: cursor.position,
-      expectedIdentity: {
-        realPath: resolution.identity.realPath,
-        device: cursor.identity.device,
-        inode: cursor.identity.inode,
-      },
-      minimumSize: cursor.identity.minimumSize,
-      maxBytes: options.maxBytes,
-      maxEvents: options.maxEvents,
-    });
-  } catch (error) {
-    if (error instanceof TrustedJsonlCursorInvalidError) {
-      throw new ProcessCursorError();
-    }
-    throw error;
-  }
-  const next = appendState(
-    options,
-    anchor.sourceMessageId,
-    cursor.attemptIndex,
-    link,
-    slice.nextOffset,
-    slice.identity,
-  );
-  return {
-    events: dedupeTimelineEvents(slice.events),
-    appendCursor: encodeCursor(next),
-    atLatest: slice.nextOffset === slice.completeEndOffset,
-    status: options.activeRunIds.has(link.runId) ? "running" : "settled",
-  };
+export function planProcessLinkGroup(links: ProviderTraceLink[], sourceMessageId: number): ProviderTraceLink[] {
+  return links
+    .filter((link) => link.sourceMessageId === sourceMessageId)
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId));
 }
 
-async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise<
-  | {
-      attempts: ResolvedAttempt[];
-      meta: LocalConsoleProcessAttemptMeta[];
-      anchor: ProviderTraceLink;
-      sourceMessageId: number;
-    }
-  | {
-      unavailableReason: LocalConsoleProcessUnavailableReason;
-      unavailableEngine: "codex" | "claude" | "kimi" | null;
-    }
-> {
-  let links: ProviderTraceLink[];
-  let contexts: LocalRunExecutionContextFact[];
-  try {
-    [links, contexts] = await Promise.all([
-      readProcessLinks(options.factReader, options.sessionFactLogPath, options.sessionId),
-      options.factReader.readRunExecutionContexts(options.sessionFactLogPath, options.sessionId),
-    ]);
-  } catch {
-    return { unavailableReason: "link-invalid", unavailableEngine: null };
-  }
-  const anchor = links.find((link) => link.runId === options.requestedRunId);
+export function decideSameProcessStepIdentity(links: ProviderTraceLink[], anchor: ProviderTraceLink): boolean {
+  return links.every((link) =>
+    link.engine === anchor.engine
+    && link.role === anchor.role);
+}
+
+export function planProcessAttemptSelection(input: {
+  links: ProviderTraceLink[];
+  contexts: LocalRunExecutionContextFact[];
+  requestedRunId: string;
+}):
+  | { kind: "selected"; anchor: ProviderTraceLink; grouped: ProviderTraceLink[] }
+  | { kind: "unavailable"; reason: LocalConsoleProcessUnavailableReason; engine: "codex" | "claude" | "kimi" | null } {
+  const anchor = input.links.find((link) => link.runId === input.requestedRunId);
   if (anchor === undefined) {
     return {
-      unavailableReason: "link-missing",
-      unavailableEngine: contexts.find((context) =>
-        context.runId === options.requestedRunId)?.engine ?? null,
+      kind: "unavailable",
+      reason: "link-missing",
+      engine: input.contexts.find((context) => context.runId === input.requestedRunId)?.engine ?? null,
     };
   }
-  const grouped = groupLinks(links, anchor.sourceMessageId);
-  if (!sameStepIdentity(grouped, anchor)) {
-    return { unavailableReason: "identity-invalid", unavailableEngine: anchor.engine };
-  }
-  const meta = grouped.map((link, index) => {
-    const timing = options.messages.find((message) => message.runId === link.runId)?.runTiming;
-    const context = contexts.find((candidate) => candidate.runId === link.runId);
+  const grouped = planProcessLinkGroup(input.links, anchor.sourceMessageId);
+  return decideSameProcessStepIdentity(grouped, anchor)
+    ? { kind: "selected", anchor, grouped }
+    : { kind: "unavailable", reason: "identity-invalid", engine: anchor.engine };
+}
+
+export function planProcessAttemptMetadata(input: {
+  grouped: ProviderTraceLink[];
+  contexts: LocalRunExecutionContextFact[];
+  messages: LocalConsoleMessage[];
+  activeRunIds: ReadonlySet<string>;
+}): LocalConsoleProcessAttemptMeta[] {
+  return input.grouped.map((link, index) => {
+    const timing = input.messages.find((message) => message.runId === link.runId)?.runTiming;
+    const context = input.contexts.find((candidate) => candidate.runId === link.runId);
     const model = context?.profile?.model ?? null;
     const effort = context?.profile?.effort ?? null;
     return {
@@ -625,44 +710,19 @@ async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise
       effort,
       provider: null,
       cliVersion: null,
-      metadataSource: model !== null || effort !== null
-        ? "immutable-context" as const
-        : "not-recorded" as const,
+      metadataSource: model !== null || effort !== null ? "immutable-context" : "not-recorded",
       externalSessionId: link.externalSessionId,
-      identityLabel: link.engine === "codex" ? "thread" as const : "session" as const,
+      identityLabel: link.engine === "codex" ? "thread" : "session",
       threadId: link.externalSessionId,
       startedAt: timing?.startedAt ?? link.startedAt,
-      status: timing?.status
-        ?? (options.activeRunIds.has(link.runId) ? "running" as const : "completed" as const),
+      status: timing?.status ?? (input.activeRunIds.has(link.runId) ? "running" : "completed"),
       elapsedMs: timing?.elapsedMs ?? null,
       completedAt: timing?.completedAt ?? null,
     };
   });
-  const attempts: ResolvedAttempt[] = [];
-  for (const [index, link] of grouped.entries()) {
-    const resolution = await resolveProviderTrace({
-      link,
-      context: contexts.find((candidate) => candidate.runId === link.runId),
-      options: traceOptions(options),
-    });
-    attempts.push({ link, meta: meta[index]!, resolution });
-  }
-  return { attempts, meta, anchor, sourceMessageId: anchor.sourceMessageId };
 }
 
-function groupLinks(links: ProviderTraceLink[], sourceMessageId: number): ProviderTraceLink[] {
-  return links
-    .filter((link) => link.sourceMessageId === sourceMessageId)
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId));
-}
-
-function sameStepIdentity(links: ProviderTraceLink[], anchor: ProviderTraceLink): boolean {
-  return links.every((link) =>
-    link.engine === anchor.engine
-    && link.role === anchor.role);
-}
-
-function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent[] {
+export function planProcessIntroEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent[] {
   return [
     {
       key: `${attempt.link.runId}:attempt`,
@@ -693,7 +753,7 @@ function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent
           timestamp: attempt.meta.completedAt,
           protocolType: `moebius · ${attempt.meta.engine}_trace_unavailable`,
           rawPayload: "",
-          message: `${providerDisplayName(attempt.meta.engine)} 过程记录已不可用`,
+          message: `${planProviderDisplayName(attempt.meta.engine)} 过程记录已不可用`,
           detail: null,
         }]),
     {
@@ -705,7 +765,7 @@ function introEvents(attempt: ResolvedAttempt): LocalConsoleProcessTimelineEvent
   ];
 }
 
-function unavailableInvocation(
+export function planUnavailableProcessInvocation(
   options: { sessionId: string; runId: string },
   reason: string,
 ): LocalConsoleProcessDebugInvocation {
@@ -717,7 +777,7 @@ function unavailableInvocation(
   };
 }
 
-function unavailablePage(
+export function planUnavailableProcessPage(
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   reason: LocalConsoleProcessUnavailableReason,
   engine: "codex" | "claude" | "kimi" | null,
@@ -738,7 +798,7 @@ function unavailablePage(
   };
 }
 
-function previousOutputState(
+export function planPreviousOutputState(
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   sourceMessageId: number,
   attemptIndex: number,
@@ -757,11 +817,11 @@ function previousOutputState(
     engine: link.engine,
     stage: "output",
     position,
-    identity: identity === null ? null : cursorIdentity(identity),
+    identity: identity === null ? null : planCursorIdentity(identity),
   };
 }
 
-function previousIntroState(
+export function planPreviousIntroState(
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   sourceMessageId: number,
   attemptIndex: number,
@@ -783,7 +843,7 @@ function previousIntroState(
   };
 }
 
-function appendState(
+export function planAppendState(
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   sourceMessageId: number,
   attemptIndex: number,
@@ -801,11 +861,11 @@ function appendState(
     runId: link.runId,
     engine: link.engine,
     position,
-    identity: cursorIdentity(identity),
+    identity: planCursorIdentity(identity),
   };
 }
 
-function cursorIdentity(identity: TrustedJsonlIdentity): CursorIdentity {
+function planCursorIdentity(identity: TrustedJsonlIdentity): CursorIdentity {
   return {
     device: identity.device,
     inode: identity.inode,
@@ -813,7 +873,7 @@ function cursorIdentity(identity: TrustedJsonlIdentity): CursorIdentity {
   };
 }
 
-function expectedIdentity(
+export function planExpectedIdentity(
   resolution: Extract<ProviderTraceResolution, { status: "available" }>,
   identity: CursorIdentity,
 ): TrustedJsonlIdentity {
@@ -825,17 +885,17 @@ function expectedIdentity(
   };
 }
 
-function encodeCursor(value: PreviousCursorState | AppendCursorState): string {
+export function planEncodeProcessCursor(value: PreviousCursorState | AppendCursorState): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
-function decodePreviousCursor(
+export function planDecodePreviousCursor(
   cursor: string,
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   sourceMessageId: number,
   attempts: ResolvedAttempt[],
 ): PreviousCursorState {
-  const value = decodeCursor(cursor);
+  const value = planDecodeProcessCursor(cursor);
   if (
     value.kind !== "previous"
     || value.sessionId !== options.sessionId
@@ -851,13 +911,13 @@ function decodePreviousCursor(
   return value;
 }
 
-function decodeAppendCursor(
+export function planDecodeAppendCursor(
   cursor: string,
   options: Pick<LoadLocalProcessAppendOptions, "sessionId" | "requestedRunId">,
   sourceMessageId: number,
   links: ProviderTraceLink[],
 ): AppendCursorState {
-  const value = decodeCursor(cursor);
+  const value = planDecodeProcessCursor(cursor);
   if (
     value.kind !== "append"
     || value.sessionId !== options.sessionId
@@ -873,7 +933,7 @@ function decodeAppendCursor(
   return value;
 }
 
-function decodeCursor(cursor: string): PreviousCursorState | AppendCursorState {
+function planDecodeProcessCursor(cursor: string): PreviousCursorState | AppendCursorState {
   let value: unknown;
   try {
     value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
@@ -930,7 +990,7 @@ function validInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-function dedupeTimelineEvents<T extends { key: string }>(events: T[]): T[] {
+export function planDedupeTimelineEvents<T extends { key: string }>(events: T[]): T[] {
   const seen = new Set<string>();
   return events.filter((event) => {
     if (seen.has(event.key)) {
@@ -941,22 +1001,17 @@ function dedupeTimelineEvents<T extends { key: string }>(events: T[]): T[] {
   });
 }
 
-function positiveInteger(value: number): number {
+export function planPositiveInteger(value: number): number {
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error("page limit must be a positive integer");
   }
   return value;
 }
 
-async function readProcessLinks(
-  factReader: LocalProcessFactReader,
-  logPath: string,
-  sessionId: string,
-): Promise<ProviderTraceLink[]> {
-  const [executionLinks, legacyLinks] = await Promise.all([
-    factReader.readExecutionSessionLinks(logPath, sessionId),
-    factReader.readCodexThreadLinks(logPath, sessionId),
-  ]);
+export function planProcessLinks(
+  executionLinks: LocalExecutionSessionLinkFact[],
+  legacyLinks: LocalCodexThreadLinkFact[],
+): ProviderTraceLink[] {
   const links = new Map<string, ProviderTraceLink>();
   for (const link of executionLinks) {
     const normalized: ProviderTraceLink = {
@@ -1008,7 +1063,7 @@ function sameProcessLink(left: ProviderTraceLink, right: ProviderTraceLink): boo
     && left.startedAt === right.startedAt;
 }
 
-function traceOptions(options: {
+export function planTraceOptions(options: {
   rollout?: ResolveCodexRolloutOptions;
   trace?: ProviderTraceResolverOptions;
 }): ProviderTraceResolverOptions {
@@ -1018,7 +1073,7 @@ function traceOptions(options: {
   };
 }
 
-function promptFromSections(
+export function planPromptFromSections(
   sections: ProviderContextSection[],
   keys: string[],
 ): CodexRolloutPromptLayer {
@@ -1031,7 +1086,7 @@ function promptFromSections(
   };
 }
 
-function providerDisplayName(engine: "codex" | "claude" | "kimi"): string {
+function planProviderDisplayName(engine: "codex" | "claude" | "kimi"): string {
   return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : "Kimi";
 }
 

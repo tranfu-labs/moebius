@@ -73,6 +73,7 @@ export function createLocalSessionReadWiring(input: {
         return capability.capability.call(options.store, sessionId);
       },
       factReader: input.adapters.factReader,
+      traceReader: input.adapters.traceReader,
       traceDataRoot: planRuntimeFallback(options.dataRoot, options.projectRoot),
     },
     workspace: {

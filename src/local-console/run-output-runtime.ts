@@ -1,14 +1,15 @@
 import path from "node:path";
 
 import {
-  loadLocalProcessAppendPage,
-  loadLocalProcessDebugInvocation,
-  loadLocalProcessHistoryPage,
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessDebugInvocation,
   type LocalConsoleProcessHistoryPage,
   type LocalProcessFactReader,
 } from "./process-history.js";
+import { loadLocalProcessAppendPage } from "./process-append-page-runtime.js";
+import { loadLocalProcessDebugInvocation } from "./process-debug-invocation-runtime.js";
+import { loadLocalProcessHistoryPage } from "./process-history-page-runtime.js";
+import type { LocalProcessTraceReader } from "./process-history-contracts.js";
 import {
   decideRunOutputFileRead,
   planProcessCursor,
@@ -27,6 +28,7 @@ export class LocalConsoleRunOutputRuntime {
     readOptionalTextFile(filePath: string): Promise<string | null>;
     sessionFactLogPath(sessionId: string): string;
     factReader: LocalProcessFactReader;
+    traceReader: LocalProcessTraceReader;
     traceDataRoot: string;
   }) {}
 
@@ -63,6 +65,7 @@ export class LocalConsoleRunOutputRuntime {
       messages,
       activeRunIds: this.input.activeRunIds(sessionId),
       factReader: this.input.factReader,
+      traceReader: this.input.traceReader,
       trace: { dataRoot: this.input.traceDataRoot },
       ...planProcessCursor(cursor),
     });
@@ -79,6 +82,7 @@ export class LocalConsoleRunOutputRuntime {
       sessionFactLogPath: this.input.sessionFactLogPath(sessionId),
       activeRunIds: this.input.activeRunIds(sessionId),
       factReader: this.input.factReader,
+      traceReader: this.input.traceReader,
       appendCursor,
       trace: { dataRoot: this.input.traceDataRoot },
     });
@@ -93,6 +97,7 @@ export class LocalConsoleRunOutputRuntime {
       runId,
       sessionFactLogPath: this.input.sessionFactLogPath(sessionId),
       factReader: this.input.factReader,
+      traceReader: this.input.traceReader,
       trace: { dataRoot: this.input.traceDataRoot },
     });
   }
