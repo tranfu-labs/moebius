@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 
-import type { CeoChildIssueDescriptor, CeoOrchestrationGroup } from "../ceo-orchestration.js";
+import type {
+  CeoChildIssueDescriptor,
+  CeoOrchestrationGroup,
+  ParseCeoOrchestrationResult,
+} from "../ceo-orchestration.js";
 import { CEO_ORCHESTRATION_STAGE } from "../stages.js";
 
 export function collectLocalCeoLedgerTaskIds(finalText: string): string[] {
@@ -18,6 +22,41 @@ export function collectLocalCeoLedgerTaskIds(finalText: string): string[] {
   return issues
     .map((issue) => (isPlainObject(issue) && typeof issue["ledgerTaskId"] === "string" ? issue["ledgerTaskId"] : null))
     .filter((value): value is string => value !== null && value.trim() !== "");
+}
+
+export function planLocalCeoVisibleTaskIds(finalText: string): string[] {
+  return collectLocalCeoLedgerTaskIds(finalText);
+}
+
+export function planLocalChildDescriptors(parsed: ParseCeoOrchestrationResult):
+  | { kind: "skip" }
+  | {
+      kind: "create";
+      workflowId: string;
+      groups: CeoOrchestrationGroup[];
+      issues: CeoChildIssueDescriptor[];
+    } {
+  if (!parsed.ok) return { kind: "skip" };
+  const value = parsed.value;
+  if (value.action === "spawn_child_issues") {
+    return value.issues.length === 0
+      ? { kind: "skip" }
+      : { kind: "create", workflowId: value.workflowId, groups: value.groups, issues: value.issues };
+  }
+  if (value.action === "goal_intake" && value.mode === "confirm") {
+    return value.issues.length === 0
+      ? { kind: "skip" }
+      : { kind: "create", workflowId: value.workflowId, groups: value.groups, issues: value.issues };
+  }
+  return { kind: "skip" };
+}
+
+export function planLocalChildGroup(
+  groups: readonly CeoOrchestrationGroup[],
+  groupId: string,
+): { kind: "missing" } | { kind: "found"; group: CeoOrchestrationGroup } {
+  const group = groups.find((entry) => entry.id === groupId);
+  return group === undefined ? { kind: "missing" } : { kind: "found", group };
 }
 
 export function localOrchestrationKey(input: {

@@ -3,9 +3,6 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { loadCeoScripts } from "../ceo-scripts.js";
 import {
-  parseCeoOrchestrationOutput,
-} from "../ceo-orchestration.js";
-import {
   type CodexRunOptions,
   type CodexRunResult,
   executionInterruptionCauseForResult,
@@ -129,12 +126,6 @@ import {
   projectPendingDispatch,
   requireAgentFilePath,
 } from "./runtime-domain.js";
-import {
-  collectLocalCeoLedgerTaskIds,
-  localChildSessionId,
-  localOrchestrationKey,
-  renderLocalChildSessionInitialBody,
-} from "./local-child-session-plan.js";
 import {
   directoryAvailable,
   fileAvailable,
@@ -370,7 +361,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         this.runFailureRuntime.recordDetached(input.sessionId, input.runId, result),
       sourceDirectoryAvailable: (sessionId) =>
         this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
-      executeChildSession: (input, _runDir, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+      executeChildSession: (input, _runDir, result) => this.sessionMetadataRuntime.executeChildOrchestration({
         sessionId: input.sessionId,
         runId: input.runId,
         runDir: result.runDir,
@@ -435,7 +426,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       recordFailure: (run, result) =>
         this.runFailureRuntime.recordDirect(run.sourceMessage, run.sessionId, run.runId, result),
       sourceDirectoryAvailable: (sessionId) => this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId),
-      executeChildSession: (run, result) => this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+      executeChildSession: (run, result) => this.sessionMetadataRuntime.executeChildOrchestration({
         sessionId: run.sessionId,
         runId: run.runId,
         runDir: result.runDir,
@@ -453,7 +444,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       recordChildSessionCardError: async (sessionId, error) => {
         const reason = formatLocalError(error);
         this.lastError = reason;
-        await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
+        await this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason);
       },
     }));
     this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(createLocalPrimaryDispatchPorts({
@@ -616,12 +607,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionReadWiring.workspace);
 
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime({
+      now: () => this.now(),
       nowIso: () => this.nowIso(),
       storeCall: (label, operation) => this.storePorts.call(label, operation),
       assertProjectDirectoryAvailable: (projectId) => this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
       createChildSession: (input) => this.storePorts.sessionFacts().createChildSession(input),
-      recordVisibleChildFailure: (parentSessionId, reason) =>
-        this.recordVisibleChildSessionFailureBestEffort(parentSessionId, reason),
+      recordSystemMessage: (input) => options.store.recordSystemMessage(input),
+      getSessionWorkspace: (sessionId) => options.store.getSessionWorkspace(sessionId),
+      loadCeoScripts: () => loadCeoScripts({ agentsDir: path.join(options.projectRoot, "agents"), required: false }),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
+      reportError: (event, error, originalError) => log({ event, error, originalError }),
       setLastError: (error) => { this.lastError = error; },
       sessionFactLogPath: (sessionId) => {
         const store = options.store as LocalConsoleStore
@@ -983,98 +978,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         now: this.nowIso(),
       }),
     );
-  }
-
-  private async recordVisibleChildSessionFailureBestEffort(parentSessionId: string, reason: string): Promise<void> {
-    try {
-      await this.storePorts.call("local-console-store-child-session-failure", () =>
-        this.options.store.recordSystemMessage({
-          sessionId: parentSessionId,
-          body: "子任务没有创建成功。你可以继续说话，或换一个成员接手。",
-          systemEventKind: "run-not-started",
-          runId: `local-child-session-${this.now().toISOString()}`,
-          runDir: null,
-          error: reason,
-          status: "failed",
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      this.lastError = formatLocalError(error);
-      log({ event: "local-console-child-session-failure-record-failed", error: this.lastError, originalError: reason });
-    }
-  }
-
-  private async executeLocalCeoChildSessionOrchestrationIfNeeded(input: {
-    sessionId: string;
-    runId: string;
-    runDir: string;
-    finalText: string;
-    availableAgentNames: string[];
-  }): Promise<{ sourceId: string; childSessionIds: string[] } | null> {
-    const visibleTaskIds = collectLocalCeoLedgerTaskIds(input.finalText);
-    if (visibleTaskIds.length === 0) {
-      return null;
-    }
-    const scripts = await loadCeoScripts({ agentsDir: path.join(this.options.projectRoot, "agents"), required: false });
-    const parsed = parseCeoOrchestrationOutput({
-      output: input.finalText,
-      scripts,
-      availableAgentNames: input.availableAgentNames,
-      visibleTaskIds,
-      childTaskCheckPolicy: "local-optional",
-    });
-    if (!parsed.ok) {
-      return null;
-    }
-    const descriptors =
-      parsed.value.action === "spawn_child_issues"
-        ? { workflowId: parsed.value.workflowId, groups: parsed.value.groups, issues: parsed.value.issues }
-        : parsed.value.action === "goal_intake" && parsed.value.mode === "confirm"
-          ? { workflowId: parsed.value.workflowId, groups: parsed.value.groups, issues: parsed.value.issues }
-          : null;
-    if (descriptors === null || descriptors.issues.length === 0) {
-      return null;
-    }
-
-    const workspace = await this.storePorts.call("local-console-store-session-workspace", () => this.options.store.getSessionWorkspace(input.sessionId));
-    const created: LocalConsoleSessionSummary[] = [];
-    for (const descriptor of descriptors.issues) {
-      const group = descriptors.groups.find((entry) => entry.id === descriptor.groupId);
-      if (group === undefined) {
-        throw new Error(`local child orchestration missing group: ${descriptor.groupId}`);
-      }
-      const hiddenKey = localOrchestrationKey({
-        parentSessionId: input.sessionId,
-        workflowId: descriptors.workflowId,
-        ledgerTaskId: descriptor.ledgerTaskId,
-      });
-      created.push(
-        await this.createChildSession({
-          parentSessionId: input.sessionId,
-          childSessionId: localChildSessionId(input.sessionId, descriptor.ledgerTaskId),
-          projectId: workspace.projectId,
-          title: descriptor.title,
-          relation: "task",
-          hiddenKey,
-          initialRole: descriptor.initialRole,
-          initialBody: renderLocalChildSessionInitialBody({
-            parentSessionId: input.sessionId,
-            workflowId: descriptors.workflowId,
-            group,
-            descriptor,
-            orchestrationKey: hiddenKey,
-          }),
-        }),
-      );
-    }
-    for (const child of created) {
-      void this.processPending(child.sessionId);
-    }
-    return {
-      sourceId: `workflow:${descriptors.workflowId}`,
-      childSessionIds: created.map((child) => child.sessionId),
-    };
   }
 
   private async recordWorkspaceDiffIfNeeded(
