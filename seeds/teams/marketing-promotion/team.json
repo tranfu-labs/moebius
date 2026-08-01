@@ -1,0 +1,12 @@
+{
+  "name": "营销推广团队",
+  "description": "通用营销推广团队：先调研形成定位简报，再驱动内容创作、渠道运营与效果复盘，服务任意项目的推广目标",
+  "primaryAgentSlug": "marketing-lead",
+  "memberOrder": [
+    "marketing-lead",
+    "market-researcher",
+    "content-creator",
+    "channel-operator",
+    "campaign-analyst"
+  ]
+}
