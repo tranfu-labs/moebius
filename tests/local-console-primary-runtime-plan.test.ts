@@ -6,6 +6,7 @@ import {
   decidePrimaryAnalysisHandling,
   decidePrimaryClaim,
   decidePrimaryControlRetryLookup,
+  decidePrimaryDispatchContinuation,
   decidePrimaryInactive,
   decidePrimaryLifecycleCreation,
   decidePrimaryPreparation,
@@ -14,6 +15,7 @@ import {
   decidePrimarySuccessPersistence,
   planPrimaryGracefulResume,
   planPrimaryRunId,
+  planPrimaryFinalization,
   planPrimaryLastSeenIndex,
   planPrimaryProfile,
 } from "../src/local-console/primary-runtime-plan.js";
@@ -100,5 +102,18 @@ describe("primary runtime plan", () => {
       .toEqual({ kind: "read" });
     expect(decidePrimaryControlRetryLookup({ actionKind: "complete-source", sourceSpeaker: "user" }))
       .toEqual({ kind: "skip" });
+  });
+
+  it("finalizes only an owned active primary run", () => {
+    expect(decidePrimaryDispatchContinuation({ kind: "continue" })).toEqual({ kind: "continue" });
+    expect(planPrimaryFinalization({ runId: null, active: undefined })).toEqual({ kind: "skip" });
+    expect(planPrimaryFinalization({
+      runId: "run-1",
+      active: { cwd: "/tmp/work", terminalRecorded: false, gracefulResumePrepared: true },
+    })).toEqual({ kind: "finalize", runId: "run-1", cwd: "/tmp/work", lifecycle: "pause" });
+    expect(planPrimaryFinalization({
+      runId: "run-2",
+      active: { cwd: null, terminalRecorded: true, gracefulResumePrepared: false },
+    })).toEqual({ kind: "finalize", runId: "run-2", cwd: null, lifecycle: "none" });
   });
 });

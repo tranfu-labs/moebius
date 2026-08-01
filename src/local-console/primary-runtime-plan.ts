@@ -135,3 +135,58 @@ export function decidePrimaryRouteResult(kind: string): { kind: "stop" } | { kin
 export function planPrimaryProposalVersion(version: string | null | undefined): string | null {
   return version ?? null;
 }
+
+export function decidePrimaryDispatchContinuation<T extends { kind: "stop" | "continue" | "run" }>(
+  outcome: T,
+):
+  | { kind: "stop" }
+  | { kind: "continue" }
+  | { kind: "run"; outcome: Extract<T, { kind: "run" }> } {
+  if (outcome.kind === "stop") return { kind: "stop" };
+  if (outcome.kind === "continue") return { kind: "continue" };
+  return { kind: "run", outcome: outcome as Extract<T, { kind: "run" }> };
+}
+
+export function decidePrimaryExecutionPreparation<T extends { kind: "settled" | "ready" }>(
+  preparation: T,
+): { kind: "stop" } | { kind: "run"; preparation: Extract<T, { kind: "ready" }> } {
+  return preparation.kind === "settled"
+    ? { kind: "stop" }
+    : { kind: "run", preparation: preparation as Extract<T, { kind: "ready" }> };
+}
+
+export function decidePrimaryTerminalContinuation(
+  outcome: "failed" | "succeeded" | "succeeded-directory-unavailable",
+): { kind: "continue" } | { kind: "stop" } {
+  return outcome === "succeeded" ? { kind: "continue" } : { kind: "stop" };
+}
+
+export function planPrimaryFailurePersistence<T>(input: {
+  message: T | null;
+  runId: string | null;
+  runDir: string | null;
+}): { kind: "skip" } | { kind: "record"; message: T; runId: string; runDir: string | null } {
+  return input.message === null || input.runId === null
+    ? { kind: "skip" }
+    : { kind: "record", message: input.message, runId: input.runId, runDir: input.runDir };
+}
+
+export function planPrimaryFinalization<T extends {
+  cwd: string | null;
+  terminalRecorded: boolean;
+  gracefulResumePrepared: boolean;
+}>(input: {
+  runId: string | null;
+  active: T | undefined;
+}):
+  | { kind: "skip" }
+  | { kind: "finalize"; runId: string; cwd: string | null; lifecycle: "none" | "pause" | "fail" } {
+  if (input.runId === null) return { kind: "skip" };
+  const active = input.active;
+  const lifecycle = active === undefined || active.terminalRecorded
+    ? "none"
+    : active.gracefulResumePrepared
+      ? "pause"
+      : "fail";
+  return { kind: "finalize", runId: input.runId, cwd: active?.cwd ?? null, lifecycle };
+}

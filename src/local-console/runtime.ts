@@ -120,11 +120,12 @@ import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
+import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
+import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
   formatLocalError,
-  hasPendingStartupControlWork,
   isPendingDispatchMessage,
   isPendingPrimaryMessage,
   isVisibleTimelineMessage,
@@ -285,8 +286,6 @@ export class LocalConsoleRuntime {
   private readonly staleRunningGraceMs: number;
   private readonly now: () => Date;
   private readonly executionRunner: LocalExecutionRunner;
-  private readonly processingSessions = new Set<string>();
-  private readonly pendingProcessSessions = new Set<string>();
   private readonly activeRuns = new Map<string, ActiveLocalRun>();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
@@ -318,6 +317,8 @@ export class LocalConsoleRuntime {
   private readonly primaryAnalysisRuntime: LocalPrimaryAnalysisRuntime;
   private readonly primaryTerminalRuntime: LocalPrimaryTerminalRuntime;
   private readonly primaryDispatchRuntime: LocalPrimaryDispatchRuntime;
+  private readonly primaryExecutionRuntime: LocalPrimaryExecutionRuntime;
+  private readonly pendingProcessingRuntime: LocalPendingProcessingRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -882,6 +883,37 @@ export class LocalConsoleRuntime {
       setError: (error) => { this.lastError = error; },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
     });
+    this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime({
+      dispatch: this.primaryDispatchRuntime,
+      preparation: this.primaryPreparationRuntime,
+      provider: this.primaryProviderRuntime,
+      analysis: this.primaryAnalysisRuntime,
+      terminal: this.primaryTerminalRuntime,
+      formatError: (error) => formatLocalError(error),
+      setError: (error) => { this.lastError = error; },
+      report: (event, error) => log({ event, error }),
+      recordFailure: (message, sessionId, runId, runDir, error) =>
+        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, error),
+      activeRun: (runId) => runId === null ? undefined : this.activeRuns.get(runId),
+      pauseLifecycle: (runId) => this.pauseRunLifecycle(runId),
+      failLifecycle: (runId) => this.finishRunLifecycle(runId, "failed"),
+      deleteActiveRun: (runId) => { this.activeRuns.delete(runId); },
+      applyPendingContext: (sessionId) => this.applyPendingSessionContextWhenIdle(sessionId),
+      invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+    });
+    this.pendingProcessingRuntime = new LocalPendingProcessingRuntime({
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
+      applyPendingContext: (sessionId) => this.applyPendingSessionContextWhenIdle(sessionId),
+      continuableWorkspace: (sessionId) => this.continuableSessionWorkspace(sessionId),
+      dispatchWorkers: (sessionId, workspace) => this.workerDispatchRuntime.dispatch(sessionId, workspace),
+      hasPersistedPrimary: (sessionId) => this.hasPersistedPrimaryRun(sessionId),
+      executePrimary: (sessionId, workspace) => this.primaryExecutionRuntime.run(sessionId, workspace),
+      listSessions: () => this.storeCall("local-console-store-list-sessions", () => options.store.listSessions()),
+      formatError: (error) => formatLocalError(error),
+      setError: (error) => { this.lastError = error; },
+      report: (event, error) => log({ event, error }),
+    });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
@@ -1116,7 +1148,7 @@ export class LocalConsoleRuntime {
       },
       storeCall: (label, operation) => this.storeCall(label, operation),
       setLastError: (error) => { this.lastError = error; },
-      schedulePendingProcessing: (sessionId) => this.schedulePendingProcessing(sessionId),
+      schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
     });
     this.runRetryRuntime = new LocalConsoleRunRetryRuntime({
       nowIso: () => this.nowIso(),
@@ -1139,7 +1171,7 @@ export class LocalConsoleRuntime {
       activeRunForRole: (sessionId, role) => this.activeRunForRole(sessionId, role) !== undefined,
       recordRetryIntent: (input) => this.requireCodexRecoveryFactStore().recordCodexResumeIntent(input),
       releaseMessageForRetry: (input) => options.store.releaseMessageForRetry(input),
-      processAfterCurrent: (sessionId) => { void this.processAfterCurrent(sessionId); },
+      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
       storeCall: (label, operation) => this.storeCall(label, operation),
     });
     const legacyHandoffRecoveryRuntime = new LocalLegacyHandoffRecoveryRuntime({
@@ -1187,7 +1219,7 @@ export class LocalConsoleRuntime {
       return;
     }
     this.closing = true;
-    this.pendingProcessSessions.clear();
+    this.pendingProcessingRuntime.beginClosing();
     for (const active of [...this.activeRuns.values()]) {
       try {
         if (active.threadId !== null) {
@@ -1235,7 +1267,7 @@ export class LocalConsoleRuntime {
     const processingDeadline = Date.now() + this.storeTimeoutMs;
     while (
       (
-        this.processingSessions.size > 0
+        this.pendingProcessingRuntime.hasOutstandingWork()
         || this.workerDispatchRuntime.hasOutstandingWork()
       )
       && Date.now() < processingDeadline
@@ -1503,156 +1535,11 @@ export class LocalConsoleRuntime {
   }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
-    if (this.closing || this.inactiveSessions.has(sessionId)) {
-      return;
-    }
-    if (this.processingSessions.has(sessionId)) {
-      this.pendingProcessSessions.add(sessionId);
-      return;
-    }
-
-    this.processingSessions.add(sessionId);
-
-    try {
-      await this.repairStaleRunning(sessionId);
-      await this.applyPendingSessionContextWhenIdle(sessionId);
-      while (true) {
-        if (this.closing || this.inactiveSessions.has(sessionId)) {
-          return;
-        }
-        const workspaceSource = await this.continuableSessionWorkspace(sessionId);
-        if (workspaceSource === null) {
-          return;
-        }
-        await this.workerDispatchRuntime.dispatch(sessionId, workspaceSource);
-        if (await this.hasPersistedPrimaryRun(sessionId)) {
-          return;
-        }
-        let activeMessage: LocalConsoleMessage | null = null;
-        let activeRunId: string | null = null;
-        let activeRunDir: string | null = null;
-
-        try {
-          const dispatch = await this.primaryDispatchRuntime.claim(
-            sessionId,
-            workspaceSource,
-            (message, runId) => {
-              activeMessage = message;
-              activeRunId = runId;
-            },
-            () => {
-              activeMessage = null;
-              activeRunId = null;
-              activeRunDir = null;
-            },
-          );
-          if (dispatch.kind === "stop") return;
-          if (dispatch.kind === "continue") continue;
-          const primaryRunInput = dispatch.run;
-          const claimedMessage = primaryRunInput.sourceMessage;
-          const nextRunId = primaryRunInput.runId;
-          const preparation = await this.primaryPreparationRuntime.prepare(
-            primaryRunInput,
-            (runDir) => { activeRunDir = runDir; },
-          );
-          if (preparation.kind === "settled") return;
-          const providerInvocation = await this.primaryProviderRuntime.invoke(primaryRunInput, preparation);
-          let { result } = providerInvocation;
-          const { observedExternalSessionId } = providerInvocation;
-          result = await this.primaryAnalysisRuntime.apply({
-            run: primaryRunInput,
-            preparation,
-            result,
-            observedExternalSessionId,
-          });
-
-          const terminalOutcome = await this.primaryTerminalRuntime.complete(
-            primaryRunInput,
-            preparation,
-            { result, observedExternalSessionId },
-            async (error, successResult) => {
-              await this.recordTerminalFailureBestEffort(
-                claimedMessage,
-                sessionId,
-                nextRunId,
-                successResult.runDir,
-                formatLocalError(error),
-              );
-              activeMessage = null;
-              activeRunDir = null;
-            },
-          );
-          if (terminalOutcome === "failed") return;
-          this.lastError = null;
-          if (terminalOutcome === "succeeded-directory-unavailable") return;
-        } catch (error) {
-          this.lastError = formatLocalError(error);
-          if (activeMessage !== null && activeRunId !== null) {
-            await this.recordTerminalFailureBestEffort(activeMessage, sessionId, activeRunId, activeRunDir, this.lastError);
-          }
-          log({ event: "local-console-processing-failed", error: this.lastError });
-          return;
-        } finally {
-          const completedWorkspace = activeRunId === null
-            ? null
-            : this.activeRuns.get(activeRunId)?.cwd ?? null;
-          if (activeRunId !== null) {
-            const unfinished = this.activeRuns.get(activeRunId);
-            if (unfinished !== undefined && !unfinished.terminalRecorded) {
-              try {
-                if (unfinished.gracefulResumePrepared) {
-                  await this.pauseRunLifecycle(activeRunId);
-                } else {
-                  await this.finishRunLifecycle(activeRunId, "failed");
-                }
-              } catch (error) {
-                this.lastError = formatLocalError(error);
-              }
-            }
-            this.activeRuns.delete(activeRunId);
-          }
-          await this.applyPendingSessionContextWhenIdle(sessionId);
-          if (completedWorkspace !== null) {
-            invalidateLocalWorkspaceFacts(completedWorkspace);
-          }
-        }
-      }
-    } catch (error) {
-      this.lastError = formatLocalError(error);
-      log({ event: "local-console-processing-failed", error: this.lastError });
-    } finally {
-      this.processingSessions.delete(sessionId);
-      if (!this.closing && this.pendingProcessSessions.delete(sessionId)) {
-        void this.processPending(sessionId);
-      } else if (this.closing) {
-        this.pendingProcessSessions.delete(sessionId);
-      }
-    }
+    await this.pendingProcessingRuntime.process(sessionId);
   }
 
   async processAllPending(): Promise<void> {
-    const sessions = await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions());
-    const sessionIds = sessions
-      .filter(hasPendingStartupControlWork)
-      .map((session) => session.sessionId);
-    for (const sessionId of sessionIds) {
-      await this.processPending(sessionId);
-    }
-  }
-
-  private async processAfterCurrent(sessionId: string): Promise<void> {
-    while (!this.closing && this.processingSessions.has(sessionId)) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    if (!this.closing) {
-      await this.processPending(sessionId);
-    }
-  }
-
-  private schedulePendingProcessing(sessionId: string): void {
-    setTimeout(() => {
-      if (!this.closing) void this.processPending(sessionId);
-    }, 25);
+    await this.pendingProcessingRuntime.processAll();
   }
 
   private async sessionSummary(sessionId: string): Promise<LocalConsoleSessionSummary> {
