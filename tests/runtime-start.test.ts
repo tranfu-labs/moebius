@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../src/testing/wait.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import { resolveRuntimeMode } from "../src/runtime-mode.js";
 import { start, type Runner, type StartDependencies } from "../src/runner.js";
 import type { GitHubResponseIntakeState } from "../src/github-response-intake.js";

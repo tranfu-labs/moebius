@@ -9,7 +9,7 @@ import {
   readLocalCodexRecoveryFacts,
 } from "../src/local-console/codex-resume.js";
 import { buildLocalResumePrompt } from "../src/local-console/prompt.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import type { LocalConsoleMessage, LocalConsoleRunSnapshot } from "../src/local-console/types.js";
 import { rewriteAsLegacyAgentHandoffFootprint } from "../src/testing/legacy-agent-handoff-fixture.js";
 

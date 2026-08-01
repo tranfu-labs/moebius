@@ -7,7 +7,7 @@ import { waitForValue } from "../src/testing/wait.js";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
   type LocalConsoleMessage,

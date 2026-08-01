@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "../src/local-console/types.js";
 import { runSqliteStateCommand } from "../src/sqlite-state.js";

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
-import { startLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 
 const roots: string[] = [];
 const LEGACY_ATTACHMENT_CAPABILITY_HEADER = ["x", "agent", "moebius", "attachment", "capability"].join("-");

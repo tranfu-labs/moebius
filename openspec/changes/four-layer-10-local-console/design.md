@@ -62,3 +62,19 @@ primary/worker 并发 lane 和 process output 接缝。预计累计纯比例 48�
 - 调用顺序漂移：保留主链顺序测试与 provider/store 接缝，任一差异回滚该用例纵切。
 - port 膨胀：只把现有依赖收成窄接口，不新增 repository、schema 或通用 service locator。
 - primary/worker 过度统一：共享 pure plan，不共享有真实差异的 persistence/lane application flow。
+
+## 新增 composition root 条件分类审计
+
+`src/local-console/start.ts` 是从 HTTP adapter `server.ts` 中分离出的进程启动 root；AST 控制分支共
+5 条，全部属于装配选择，无 timing 或 business 判据：
+
+| 行 | 条件 | 分类 | 处置 |
+| ---: | --- | --- | --- |
+| 84 | `options.projectRoot === undefined` | wiring | 选择默认 data root 或显式 project root 派生路径 |
+| 89 | `options.projectRoot === undefined` | wiring | 选择默认 SQLite 路径或显式 project root 派生路径 |
+| 93 | `options.store ?? createSqliteLocalConsoleStore(...)` | wiring | 选择注入端口或构造默认 adapter |
+| 97 | `options.projectRoot === undefined` | wiring | 选择默认 session log root 或显式 project root 派生路径 |
+| 102 | `supportsManagedAttachments(store)` | wiring | 按 store capability 决定是否装配附件 adapter |
+
+复算：wiring 5 + timing 0 + business 0 = AST 控制分支 5。该文件不持有领域判据；若后续新增
+business 条件，必须先下沉具名 domain decision 或退出 composition-root allowlist。

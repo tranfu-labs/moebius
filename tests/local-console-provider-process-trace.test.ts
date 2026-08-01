@@ -14,8 +14,8 @@ import {
 } from "../src/local-console/provider-process-trace.js";
 import {
   loadLocalProcessHistoryPage,
-  ProcessCursorError,
 } from "../src/local-console/process-history.js";
+import { ProcessCursorError } from "../src/local-console/process-history-contracts.js";
 import { localProcessFactReader } from "../src/local-console/process-fact-reader.js";
 
 describe("provider-native process traces", () => {

@@ -10,7 +10,7 @@ import {
   summarizeChildSessions,
   type ChildSessionSummarySource,
 } from "../src/local-console/child-session-summary.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 
 const roots: string[] = [];
 const servers: StartedLocalConsoleServer[] = [];

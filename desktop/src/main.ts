@@ -13,7 +13,7 @@ import {
   type OpenDialogOptions,
   type UtilityProcess,
 } from "electron";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { startObserverServer, type StartedObserverServer } from "../../src/observer/server.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";

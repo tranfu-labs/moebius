@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
-import { startLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore, type SqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { runSqliteStateCommand } from "../src/sqlite-state.js";
 import {

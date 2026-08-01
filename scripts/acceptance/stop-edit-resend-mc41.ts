@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
-import { startLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer } from "../../src/local-console/start.js";
 
 const attachmentCapability = "stop-edit-resend-mc41";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");

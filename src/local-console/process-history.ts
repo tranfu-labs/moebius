@@ -25,6 +25,7 @@ import {
   TrustedJsonlCursorInvalidError,
   type TrustedJsonlIdentity,
 } from "../trusted-jsonl.js";
+import { ProcessCursorError } from "./process-history-contracts.js";
 
 export interface LocalConsoleProcessAttemptMeta {
   runId: string;
@@ -574,13 +575,6 @@ export async function loadLocalProcessAppendPage(
     atLatest: slice.nextOffset === slice.completeEndOffset,
     status: options.activeRunIds.has(link.runId) ? "running" : "settled",
   };
-}
-
-export class ProcessCursorError extends Error {
-  constructor() {
-    super("invalid process history cursor");
-    this.name = "ProcessCursorError";
-  }
 }
 
 async function prepareAttempts(options: LoadLocalProcessHistoryOptions): Promise<

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { startLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 
 const roots: string[] = [];

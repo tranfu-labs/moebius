@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../src/testing/wait.js";
 
-import { startLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { localSessionWorktreePath } from "../src/local-console/workspace-source.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";

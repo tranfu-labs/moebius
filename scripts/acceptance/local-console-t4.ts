@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface Evidence {

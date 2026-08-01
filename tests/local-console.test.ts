@@ -16,7 +16,7 @@ import {
   startLocalConsoleServer as startLocalConsoleServerImpl,
   type LocalConsoleServerOptions,
   type StartedLocalConsoleServer,
-} from "../src/local-console/server.js";
+} from "../src/local-console/start.js";
 import { LocalConsoleRuntime, type LocalConsoleAgentFile } from "../src/local-console/runtime.js";
 import { readLocalConsoleOutputTail } from "../src/local-console/output-tail.js";
 import { buildLocalAgentPrompt } from "../src/local-console/prompt.js";

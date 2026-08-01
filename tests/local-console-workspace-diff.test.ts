@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { waitForValue } from "../src/testing/wait.js";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import type { LocalConsoleStateSnapshot } from "../src/local-console/types.js";
 
 const execFileAsync = promisify(execFile);

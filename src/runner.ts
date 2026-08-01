@@ -136,7 +136,7 @@ import {
 import { loadGitHubResponseIntakeState, saveGitHubResponseIntakeState } from "./github-intake-state.js";
 import { makeIssueSource, type IssueSource, type RepositoryRef } from "./issue-source.js";
 import { log } from "./log.js";
-import { startLocalConsoleServer } from "./local-console/server.js";
+import { startLocalConsoleServer } from "./local-console/start.js";
 import { resolveRuntimeMode, type RuntimeMode } from "./runtime-mode.js";
 import { maybeProcessIntegrationAcceptancePrePass } from "./runner/acceptance-prepass.js";
 import { addCodexExecutionReaction, resolveCodexExecutionReactionTarget } from "./runner/codex-execution-reaction.js";
