@@ -15,16 +15,9 @@ import {
 import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
 import { isTrustedExecutionProfile } from "../execution-profile-registry.js";
-import { LOCAL_LONG_RUN_REPORT_MS } from "../config.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import { resolveTrigger } from "../triggers/index.js";
-import { readLocalConsoleOutputTail } from "./output-tail.js";
-import {
-  chooseLatestRunActivity,
-  projectAgentProgressActivity,
-  projectStructuredRunActivity,
-  type LocalRunActivity,
-} from "./run-activity.js";
+import type { LocalRunActivity } from "./run-activity.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import type { LocalAttachmentManager } from "./attachments.js";
@@ -107,6 +100,10 @@ import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runt
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
 import { LocalRunFailureRuntime } from "./run-failure-runtime.js";
+import {
+  LocalRunLifecycleRuntime,
+  type LocalRunLifecycleFactStore,
+} from "./run-lifecycle-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -216,35 +213,6 @@ export interface LocalConsoleRuntimeOptions {
   attachmentManager?: LocalAttachmentManager;
   isCodexThreadAvailable?: (threadId: string) => Promise<boolean>;
   now?: () => Date;
-}
-
-interface RunLifecycleFactStore extends LocalConsoleStore {
-  nextRunAttempt(input: { sessionId: string; stepId: string }): Promise<number>;
-  getRunTiming(input: {
-    sessionId: string;
-    runId: string;
-  }): Promise<import("./types.js").LocalConsoleRunTiming | null>;
-  recordRunLifecycleEvent(input: {
-    sessionId: string;
-    runId: string;
-    stepId: string;
-    attempt: number;
-    phase: "created" | "started" | "paused" | "resumed" | "terminal";
-    role: string | null;
-    engine: "codex" | "claude" | "kimi";
-    processOutputAvailable: boolean;
-    createdAt: string;
-    startedAt: string | null;
-    elapsedMs: number | null;
-    completedAt: string | null;
-    status: import("./types.js").LocalConsoleRunTiming["status"];
-    recordedAt: string;
-  }): Promise<void>;
-  recordRunActivityEvent(input: {
-    sessionId: string;
-    runId: string;
-    activity: LocalRunActivity;
-  }): Promise<void>;
 }
 
 interface SessionFactWritingStore extends LocalConsoleStore {
@@ -358,6 +326,7 @@ export class LocalConsoleRuntime {
   private readonly sessionContinuationRuntime: LocalSessionContinuationRuntime;
   private readonly sessionPresentationRuntime: LocalSessionPresentationRuntime;
   private readonly runFailureRuntime: LocalRunFailureRuntime;
+  private readonly runLifecycleRuntime: LocalRunLifecycleRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -411,6 +380,17 @@ export class LocalConsoleRuntime {
       recordFailure: (message, sessionId, runId, runDir, reason, body, terminal) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason, body, terminal),
       recordDetached: (input) => this.recordDetachedRunTerminal(input),
+    });
+    this.runLifecycleRuntime = new LocalRunLifecycleRuntime({
+      activeRun: (runId) => this.activeRuns.get(runId),
+      activeRuns: () => this.activeRuns.values(),
+      lifecycleStore: () => this.runLifecycleFactStore(),
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      now: () => this.now(),
+      nowIso: () => this.nowIso(),
+      recordError: (error) => {
+        this.lastError = formatLocalError(error);
+      },
     });
   }
 
@@ -3509,9 +3489,7 @@ export class LocalConsoleRuntime {
   }
 
   private activeRunsForSession(sessionId: string): ActiveLocalRun[] {
-    return [...this.activeRuns.values()]
-      .filter((active) => active.sessionId === sessionId)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.runId.localeCompare(right.runId));
+    return this.runLifecycleRuntime.runsForSession(sessionId) as ActiveLocalRun[];
   }
 
   private hasActiveRunForSession(sessionId: string): boolean {
@@ -3519,17 +3497,15 @@ export class LocalConsoleRuntime {
   }
 
   private activeRunForLane(sessionId: string, lane: ActiveLocalRun["lane"]): ActiveLocalRun | undefined {
-    return this.activeRunsForSession(sessionId).find((active) => active.lane === lane);
+    return this.runLifecycleRuntime.runForLane(sessionId, lane) as ActiveLocalRun | undefined;
   }
 
   private activeRunForRole(sessionId: string, role: string): ActiveLocalRun | undefined {
-    return this.activeRunsForSession(sessionId).find((active) => active.role === role);
+    return this.runLifecycleRuntime.runForRole(sessionId, role) as ActiveLocalRun | undefined;
   }
 
   private async activeRunSnapshots(sessionId: string): Promise<LocalConsoleRunSnapshot[]> {
-    return await Promise.all(
-      this.activeRunsForSession(sessionId).map((active) => this.snapshotActiveRun(active)),
-    );
+    return await this.runLifecycleRuntime.snapshots(sessionId);
   }
 
   private async gracefulResumeTargetsForClaim(
@@ -3577,138 +3553,34 @@ export class LocalConsoleRuntime {
     return intent?.targetRunId ?? null;
   }
 
-  private async snapshotActiveRun(active: ActiveLocalRun): Promise<LocalConsoleRunSnapshot> {
-    const tail = await readLocalConsoleOutputTail(active.runDir);
-    const elapsedMs = active.startedAt === null ? null : this.activeRunElapsedMs(active);
-    if (
-      !active.longRunReported
-      && elapsedMs !== null
-      && elapsedMs >= LOCAL_LONG_RUN_REPORT_MS
-    ) {
-      active.longRunReported = true;
-      const cursor = ++active.activitySequence;
-      const elapsedMinutes = Math.max(1, Math.floor(elapsedMs / 60_000));
-      const previousActivity = active.activity;
-      this.acceptRunActivity(active, {
-        cursor,
-        kind: "progress",
-        phase: "running",
-        action: `已经运行 ${String(elapsedMinutes)} 分钟，${previousActivity?.action ?? "仍在继续"}`,
-        object: previousActivity?.object ?? null,
-        occurredAt: this.nowIso(),
-      });
-    }
-    return {
-      sessionId: active.sessionId,
-      runId: active.runId,
-      role: active.role,
-      status: "running",
-      createdAt: active.createdAt,
-      startedAt: active.startedAt,
-      elapsedMs,
-      stepId: active.stepId,
-      attempt: active.attempt,
-      engine: active.engine,
-      processOutputAvailable: active.processOutputAvailable,
-      activity: active.activity,
-      runDir: active.runDir,
-      cwd: active.cwd,
-      workspaceMode: active.workspaceMode,
-      worktreeUnavailableReason: active.worktreeUnavailableReason,
-      branchName: active.branchName,
-      baseRef: active.baseRef,
-      stdoutTail: tail.stdoutTail,
-      stderrTail: tail.stderrTail,
-      liveMarkdown: active.liveMarkdown,
-      lastOutputSummary: tail.lastOutputSummary,
-      tailDiagnostic: tail.tailDiagnostic,
-      interruptible: true,
-    };
-  }
-
   private async markRunStarted(runId: string): Promise<void> {
-    const active = this.activeRuns.get(runId);
-    if (active === undefined || active.segmentStartedAt !== null) return;
-    const startedAt = this.nowIso();
-    active.segmentStartedAt = startedAt;
-    active.startedAt ??= startedAt;
-    await this.recordRunLifecycle(
-      active,
-      active.resuming ? "resumed" : "started",
-      "running",
-    );
+    await this.runLifecycleRuntime.markStarted(runId);
   }
 
   private updateStructuredRunActivity(runId: string, event: unknown): void {
-    const active = this.activeRuns.get(runId);
-    if (active === undefined) return;
-    const cursor = ++active.activitySequence;
-    const activity = projectStructuredRunActivity(event, cursor, this.nowIso());
-    if (activity !== null) this.acceptRunActivity(active, activity);
+    this.runLifecycleRuntime.updateStructuredActivity(runId, event);
   }
 
   private updateExecutionProgressActivity(
     runId: string,
     event: ExecutionProgressEvent,
   ): void {
-    if (event.kind !== "provider-retry") return;
-    const active = this.activeRuns.get(runId);
-    if (active === undefined) return;
-    const cursor = ++active.activitySequence;
-    this.acceptRunActivity(active, {
-      cursor,
-      kind: "progress",
-      phase: "running",
-      action: event.attempt === undefined
-        ? "对方服务繁忙，正在重试"
-        : `对方服务繁忙，正在第 ${String(event.attempt)} 次重试`,
-      object: null,
-      occurredAt: this.nowIso(),
-    });
+    this.runLifecycleRuntime.updateExecutionProgress(runId, event);
   }
 
   private updateAgentProgressActivity(runId: string, markdown: string): void {
-    const active = this.activeRuns.get(runId);
-    if (active === undefined) return;
-    const cursor = ++active.activitySequence;
-    const activity = projectAgentProgressActivity(markdown, cursor, this.nowIso());
-    if (activity !== null) this.acceptRunActivity(active, activity);
-  }
-
-  private acceptRunActivity(active: ActiveLocalRun, activity: LocalRunActivity): void {
-    const next = chooseLatestRunActivity(active.activity, activity);
-    if (next === active.activity) return;
-    active.activity = next;
-    const lifecycleStore = this.runLifecycleFactStore();
-    if (lifecycleStore === null) return;
-    active.activityFactTail = active.activityFactTail.then(() =>
-      this.storeCall("local-console-store-record-run-activity", () =>
-        lifecycleStore.recordRunActivityEvent({
-          sessionId: active.sessionId,
-          runId: active.runId,
-          activity: next,
-        }))).catch((error: unknown) => {
-          this.lastError = formatLocalError(error);
-        });
+    this.runLifecycleRuntime.updateAgentProgress(runId, markdown);
   }
 
   private async finishRunLifecycle(
     runId: string,
     status: import("./types.js").LocalConsoleRunTiming["status"],
   ): Promise<void> {
-    const active = this.activeRuns.get(runId);
-    if (active === undefined || active.terminalRecorded) return;
-    active.terminalRecorded = true;
-    await active.activityFactTail;
-    await this.recordRunLifecycle(active, "terminal", status);
+    await this.runLifecycleRuntime.finish(runId, status);
   }
 
   private async pauseRunLifecycle(runId: string): Promise<void> {
-    const active = this.activeRuns.get(runId);
-    if (active === undefined || active.terminalRecorded) return;
-    active.terminalRecorded = true;
-    await active.activityFactTail;
-    await this.recordRunLifecycle(active, "paused", "paused");
+    await this.runLifecycleRuntime.pause(runId);
   }
 
   private async recordRunLifecycle(
@@ -3716,36 +3588,7 @@ export class LocalConsoleRuntime {
     phase: "created" | "started" | "paused" | "resumed" | "terminal",
     status: import("./types.js").LocalConsoleRunTiming["status"],
   ): Promise<void> {
-    const lifecycleStore = this.runLifecycleFactStore();
-    if (lifecycleStore === null) return;
-    const recordedAt = this.nowIso();
-    const elapsedMs = active.startedAt === null ? null : this.activeRunElapsedMs(active);
-    await this.storeCall("local-console-store-record-run-lifecycle", () =>
-      lifecycleStore.recordRunLifecycleEvent({
-        sessionId: active.sessionId,
-        runId: active.runId,
-        stepId: active.stepId,
-        attempt: active.attempt,
-        phase,
-        role: active.role,
-        engine: active.engine,
-        processOutputAvailable: active.processOutputAvailable,
-        createdAt: active.createdAt,
-        startedAt: active.startedAt,
-        elapsedMs: phase === "paused" || phase === "resumed" || phase === "terminal"
-          ? elapsedMs
-          : null,
-        completedAt: phase === "terminal" && status !== "paused" ? recordedAt : null,
-        status,
-        recordedAt,
-      }));
-  }
-
-  private activeRunElapsedMs(active: ActiveLocalRun): number {
-    const segmentElapsedMs = active.segmentStartedAt === null
-      ? 0
-      : Math.max(0, this.now().getTime() - Date.parse(active.segmentStartedAt));
-    return active.accumulatedMs + segmentElapsedMs;
+    await this.runLifecycleRuntime.record(active, phase, status);
   }
 
   private async prepareRunLifecycle(input: {
@@ -3760,45 +3603,7 @@ export class LocalConsoleRuntime {
     accumulatedMs: number;
     resuming: boolean;
   }> {
-    const lifecycleStore = this.runLifecycleFactStore();
-    if (input.resumeExisting && lifecycleStore !== null) {
-      const timing = await this.storeCall(
-        "local-console-store-get-run-timing",
-        () => lifecycleStore.getRunTiming({
-          sessionId: input.sessionId,
-          runId: input.runId,
-        }),
-      );
-      if (timing !== null && timing.stepId === input.stepId) {
-        return {
-          attempt: timing.attempt,
-          createdAt: timing.createdAt,
-          startedAt: timing.startedAt,
-          accumulatedMs: timing.elapsedMs ?? 0,
-          resuming: true,
-        };
-      }
-    }
-    return {
-      attempt: await this.nextRunAttempt({
-        sessionId: input.sessionId,
-        stepId: input.stepId,
-      }),
-      createdAt: this.nowIso(),
-      startedAt: null,
-      accumulatedMs: 0,
-      resuming: false,
-    };
-  }
-
-  private async nextRunAttempt(input: { sessionId: string; stepId: string }): Promise<number> {
-    const lifecycleStore = this.runLifecycleFactStore();
-    return lifecycleStore === null
-      ? 1
-      : await this.storeCall(
-          "local-console-store-next-run-attempt",
-          () => lifecycleStore.nextRunAttempt(input),
-        );
+    return await this.runLifecycleRuntime.prepare(input);
   }
 
   private async applyPendingSessionContextWhenIdle(sessionId: string): Promise<void> {
@@ -4246,8 +4051,8 @@ export class LocalConsoleRuntime {
     return store as SessionFactWritingStore;
   }
 
-  private runLifecycleFactStore(): RunLifecycleFactStore | null {
-    const store = this.options.store as Partial<RunLifecycleFactStore> & LocalConsoleStore;
+  private runLifecycleFactStore(): LocalRunLifecycleFactStore | null {
+    const store = this.options.store as Partial<LocalRunLifecycleFactStore> & LocalConsoleStore;
     if (
       typeof store.nextRunAttempt !== "function"
       || typeof store.getRunTiming !== "function"
@@ -4256,7 +4061,7 @@ export class LocalConsoleRuntime {
     ) {
       return null;
     }
-    return store as RunLifecycleFactStore;
+    return store as LocalRunLifecycleFactStore;
   }
 
   private codexRecoveryFactStore(): CodexRecoveryFactStore | null {
