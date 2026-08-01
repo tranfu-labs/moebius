@@ -24,7 +24,6 @@ import {
   type LocalConsoleFileContent,
   type LocalConsoleMessage,
   type LocalConsoleProjectFiles,
-  type LocalConsoleSystemEventKind,
   type LocalConsoleProjectSummary,
   type LocalConsoleProjectRemovalResult,
   LocalConsoleProjectRunningError,
@@ -49,7 +48,6 @@ import {
   type LocalConsoleEntryTemplate,
   type LocalConsoleWritePolicy,
   type LocalConsoleTextFragment,
-  type LocalConsoleTerminal,
 } from "./types.js";
 import {
   buildMoebiusReferenceText,
@@ -347,7 +345,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       nextRunId: (sessionId, messageId) => this.runRecoveryRuntime.targetForMessage(sessionId, messageId),
       recordMissingAgent: (message, sessionId, runId, role) =>
-        this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
+        this.runFailureRuntime.recordStartFailure(message, sessionId, runId, null, `Agent not found: ${role}`),
       scheduleRun: (input) => this.workerExecutionRuntime.run(input),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
@@ -390,16 +388,14 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       recordDirectStartFailure: (input, runDir, error) =>
-        this.recordTerminalFailureBestEffort(input.sourceMessage, input.sessionId, input.runId, runDir, error),
-      recordDetachedStartFailure: (input, runDir, error) => this.recordDetachedRunTerminal({
-        sessionId: input.sessionId,
-        body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
-        systemEventKind: "run-not-started",
-        runId: input.runId,
-        runDir,
-        error,
-        status: "failed",
-      }),
+        this.runFailureRuntime.recordStartFailure(input.sourceMessage, input.sessionId, input.runId, runDir, error),
+      recordDetachedStartFailure: (input, runDir, error) =>
+        this.runFailureRuntime.recordDetachedStartFailure({
+          sessionId: input.sessionId,
+          runId: input.runId,
+          runDir,
+          error,
+        }),
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     });
     this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(workerWiring.dispatch);
@@ -470,7 +466,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
       readRecoveryFacts: readLocalCodexRecoveryFacts,
       recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
-        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason),
+        this.runFailureRuntime.recordStartFailure(message, sessionId, runId, runDir, reason),
       setError: (error) => { this.lastError = error; },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
     }));
@@ -485,7 +481,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       setError: (error) => { this.lastError = error; },
       report: (event, error) => log({ event, error }),
       recordFailure: (message, sessionId, runId, runDir, error) =>
-        this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, error),
+        this.runFailureRuntime.recordStartFailure(message, sessionId, runId, runDir, error),
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
     }));
@@ -882,30 +878,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     return true;
   }
 
-  private async recordDetachedRunTerminal(input: {
-    sessionId: string;
-    body: string;
-    systemEventKind: LocalConsoleSystemEventKind;
-    runId: string;
-    runDir: string | null;
-    error: string;
-    status: "failed" | "interrupted" | "stuck";
-    terminal?: LocalConsoleTerminal | null;
-  }): Promise<void> {
-    const recordDetachedRunTerminal = this.options.store.recordDetachedRunTerminal;
-    if (recordDetachedRunTerminal === undefined) {
-      await this.options.store.recordSystemMessage({
-        ...input,
-        now: this.nowIso(),
-      });
-      return;
-    }
-    await recordDetachedRunTerminal.call(this.options.store, {
-      ...input,
-      now: this.nowIso(),
-    });
-  }
-
   private async hasPersistedPrimaryRun(sessionId: string): Promise<boolean> {
     const messages = await this.storePorts.call("local-console-store-list-primary-running", () =>
       this.options.store.listMessages(sessionId),
@@ -1012,51 +984,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       }),
     );
   }
-
-  private async releaseForRetryBestEffort(message: LocalConsoleMessage, sessionId: string): Promise<void> {
-    try {
-      await this.storePorts.call("local-console-store-release-retry", () =>
-        this.options.store.releaseMessageForRetry({
-          userMessageId: message.id,
-          sessionId,
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      this.lastError = formatLocalError(error);
-      log({ event: "local-console-release-retry-failed", error: this.lastError });
-    }
-  }
-
-  private async recordTerminalFailureBestEffort(
-    message: LocalConsoleMessage,
-    sessionId: string,
-    runId: string | null,
-    runDir: string | null,
-    error: string,
-    body?: string,
-    terminal?: LocalConsoleTerminal | null,
-  ): Promise<void> {
-    try {
-      await this.storePorts.call("local-console-store-record-failure", () =>
-        this.options.store.recordFailure({
-          userMessageId: message.id,
-          sessionId,
-          error,
-          runId,
-          runDir,
-          now: this.nowIso(),
-          ...(body === undefined ? {} : { body }),
-          ...(terminal == null ? {} : { terminal }),
-        }),
-      );
-    } catch (recordError) {
-      this.lastError = formatLocalError(recordError);
-      log({ event: "local-console-record-retryable-failure-failed", error: this.lastError, originalError: error });
-      await this.releaseForRetryBestEffort(message, sessionId);
-    }
-  }
-
 
   private async recordVisibleChildSessionFailureBestEffort(parentSessionId: string, reason: string): Promise<void> {
     try {

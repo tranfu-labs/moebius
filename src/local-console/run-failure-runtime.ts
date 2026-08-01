@@ -137,14 +137,38 @@ export class LocalRunFailureRuntime {
     });
   }
 
-  private async recordFailure(
+  async recordStartFailure(
     message: LocalConsoleMessage,
     sessionId: string,
     runId: string,
-    runDir: string,
+    runDir: string | null,
+    error: string,
+  ): Promise<void> {
+    await this.recordFailure(message, sessionId, runId, runDir, error, undefined, null);
+  }
+
+  async recordDetachedStartFailure(input: {
+    sessionId: string;
+    runId: string;
+    runDir: string | null;
+    error: string;
+  }): Promise<void> {
+    await this.recordDetachedTerminal({
+      ...input,
+      body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+      systemEventKind: "run-not-started",
+      status: "failed",
+    });
+  }
+
+  private async recordFailure(
+    message: LocalConsoleMessage,
+    sessionId: string,
+    runId: string | null,
+    runDir: string | null,
     error: string,
     body: string | undefined,
-    terminal: LocalConsoleTerminal,
+    terminal: LocalConsoleTerminal | null,
   ): Promise<void> {
     try {
       await this.input.storeCall("local-console-store-record-failure", () => this.input.store.recordFailure({
@@ -227,10 +251,10 @@ export class LocalRunFailureRuntime {
     body: string;
     systemEventKind: LocalConsoleSystemEventKind;
     runId: string;
-    runDir: string;
+    runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
-    terminal: LocalConsoleTerminal;
+    terminal?: LocalConsoleTerminal | null;
   }): Promise<void> {
     const decision = decideDetachedTerminalCapability(this.input.store.recordDetachedRunTerminal);
     if (decision.kind === "fallback") {
