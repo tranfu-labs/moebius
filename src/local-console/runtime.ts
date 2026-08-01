@@ -103,6 +103,8 @@ import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.js";
 import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
+import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -143,7 +145,6 @@ import {
 import {
   readLocalConversationBaselineCommit,
   readLocalConversationDiffFile,
-  readLocalConversationWorkspaceDiff,
   readLocalConversationWorkspaceDiffDetail,
 } from "./workspace-diff.js";
 import {
@@ -352,6 +353,8 @@ export class LocalConsoleRuntime {
   private readonly retryAdmissions = new Map<string, Promise<boolean>>();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
+  private readonly conversationWorkspaceRuntime: LocalConversationWorkspaceRuntime;
+  private readonly sessionContinuationRuntime: LocalSessionContinuationRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -367,6 +370,20 @@ export class LocalConsoleRuntime {
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
       dataRoot: options.dataRoot ?? options.projectRoot,
       runCodex: options.runCodex,
+    });
+    this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      baselineCommits: this.conversationBaselineCommits,
+      workdirRoot: options.workdirRoot,
+      ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
+    });
+    this.sessionContinuationRuntime = new LocalSessionContinuationRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      ...(options.resolveAgentTeamHealth === undefined
+        ? {}
+        : { resolveAgentTeamHealth: options.resolveAgentTeamHealth }),
     });
   }
 
@@ -3285,115 +3302,42 @@ export class LocalConsoleRuntime {
   }
 
   private async defaultProjectId(): Promise<string> {
-    const projects = await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects());
-    return projects[0]?.projectId ?? LOCAL_CONSOLE_PROJECT_ID;
+    return this.sessionContinuationRuntime.defaultProjectId();
   }
 
   private async assertProjectDirectoryAvailable(projectId: string): Promise<void> {
-    const project = await this.storedProject(projectId);
-    if (project === undefined) {
-      throw new LocalConsoleProjectFolderError("LOCAL_PROJECT_NOT_FOUND", "项目不存在或已移除");
-    }
-    if (!(await directoryAvailable(project.folderPath))) {
-      throw new LocalConsoleProjectFolderError(
-        "PROJECT_DIRECTORY_UNAVAILABLE",
-        "当前项目本地文件夹不可用，请先使用红色扳手修复",
-      );
-    }
+    await this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId);
   }
 
   private async storedProject(projectId: string): Promise<LocalConsoleProjectSummary | undefined> {
-    if (this.options.store.getProject !== undefined) {
-      return (await this.storeCall("local-console-store-get-project", () =>
-        this.options.store.getProject!(projectId)
-      )) ?? undefined;
-    }
-    return (await this.storeCall("local-console-store-list-projects", () => this.options.store.listProjects()))
-      .find((candidate) => candidate.projectId === projectId);
+    return this.sessionContinuationRuntime.storedProject(projectId);
   }
 
   private async assertSessionProjectDirectoryAvailable(sessionId: string): Promise<void> {
-    if (!(await this.sessionProjectDirectoryAvailable(sessionId))) {
-      throw new LocalConsoleProjectFolderError(
-        "PROJECT_DIRECTORY_UNAVAILABLE",
-        "当前项目本地文件夹不可用，请先使用红色扳手修复",
-      );
-    }
+    await this.sessionContinuationRuntime.assertSessionProjectDirectoryAvailable(sessionId);
   }
 
   private async assertSessionCanContinue(sessionId: string): Promise<void> {
-    await this.assertSessionProjectDirectoryAvailable(sessionId);
-    const session = (await this.storeCall("local-console-store-list-sessions", () => this.options.store.listSessions()))
-      .find((candidate) => candidate.sessionId === sessionId);
-    if (session === undefined) {
-      throw new Error(`local console session not found: ${sessionId}`);
-    }
-    const healthy = await this.withAgentTeamHealth(session);
-    const continuation = resolveLocalSessionContinuation({
-      projectDirectoryAvailable: true,
-      agentTeamHealth: healthy.agentTeamHealth,
-      agentTeamHealthReason: healthy.agentTeamHealthReason,
-    });
-    if (!continuation.canContinue) {
-      throw new Error(continuation.reason);
-    }
+    await this.sessionContinuationRuntime.assertSessionCanContinue(sessionId);
   }
 
   private async continuableSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource | null> {
-    const source = await this.storeCall("local-console-store-session-workspace", () =>
-      this.options.store.getSessionWorkspace(sessionId),
-    );
-    if (!(await directoryAvailable(source.folderPath))) {
-      return null;
-    }
-    const session = source.session ?? (await this.storeCall(
-      "local-console-store-list-sessions",
-      () => this.options.store.listSessions(),
-    )).find((candidate) => candidate.sessionId === sessionId);
-    if (session === undefined) {
-      return null;
-    }
-    const healthy = await this.withAgentTeamHealth(session);
-    return healthy.agentTeamHealth === "deleted" || healthy.agentTeamHealth === "needs-repair" ? null : source;
+    return this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId);
   }
 
   private async sessionProjectDirectoryAvailable(sessionId: string): Promise<boolean> {
-    const source = await this.storeCall("local-console-store-session-workspace", () =>
-      this.options.store.getSessionWorkspace(sessionId),
-    );
-    return directoryAvailable(source.folderPath);
+    return this.sessionContinuationRuntime.sessionProjectDirectoryAvailable(sessionId);
   }
 
   private async withDirectoryAvailability(
     project: LocalConsoleProjectSummary,
     knownAvailable?: boolean,
   ): Promise<LocalConsoleProjectSummary> {
-    const available = knownAvailable ?? await directoryAvailable(project.folderPath);
-    return {
-      ...project,
-      directoryAvailable: available,
-      directoryUnavailableReason: available ? null : "当前项目本地文件夹未找到，可以指定新的文件夹",
-      newConversationDisabledReason: available ? null : "当前项目本地文件夹不可用，无法新建对话",
-    };
+    return this.sessionContinuationRuntime.withDirectoryAvailability(project, knownAvailable);
   }
 
   private async withAgentTeamHealth(session: LocalConsoleSessionSummary): Promise<LocalConsoleSessionSummary> {
-    if (session.agentTeamOwnership == null || session.agentTeamId == null) {
-      return { ...session, agentTeamHealth: null, agentTeamHealthReason: null };
-    }
-    if (this.options.resolveAgentTeamHealth === undefined) {
-      return session;
-    }
-    try {
-      const result = await this.options.resolveAgentTeamHealth(session);
-      return { ...session, agentTeamHealth: result.health, agentTeamHealthReason: result.reason };
-    } catch (error) {
-      return {
-        ...session,
-        agentTeamHealth: "needs-repair",
-        agentTeamHealthReason: formatLocalError(error),
-      };
-    }
+    return this.sessionContinuationRuntime.withAgentTeamHealth(session);
   }
 
   private async withSessionWorkspaceContext(project: LocalConsoleProjectSummary): Promise<LocalConsoleProjectSummary> {
@@ -3577,29 +3521,7 @@ export class LocalConsoleRuntime {
   }
 
   private async readConversationWorkspaceDiff(sessionId: string): Promise<LocalConsoleWorkspaceDiffSummary> {
-    try {
-      if (!this.conversationBaselineCommits.has(sessionId) && this.options.store.getSessionBaselineCommit !== undefined) {
-        const baselineCommit = await this.storeCall("local-console-store-session-baseline", () =>
-          this.options.store.getSessionBaselineCommit!(sessionId),
-        );
-        this.conversationBaselineCommits.set(sessionId, baselineCommit);
-      }
-      if (this.conversationBaselineCommits.get(sessionId) === null) {
-        return { available: false, fileCount: null, reason: "missing-baseline" };
-      }
-      const context = await this.readConversationWorkspaceContext(sessionId);
-      const diff = await readLocalConversationWorkspaceDiff({
-        workspacePath: context.workspacePath,
-        baselineCommit: context.baselineCommit,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      });
-      return diff.available
-        ? { available: true, fileCount: diff.fileCount, reason: null }
-        : { available: false, fileCount: null, reason: diff.reason };
-    } catch (error) {
-      log({ event: "local-console-workspace-diff-count-unavailable", sessionId, error: formatLocalError(error) });
-      return { available: false, fileCount: null, reason: "workspace-unavailable" };
-    }
+    return this.conversationWorkspaceRuntime.readDiff(sessionId);
   }
 
   private async readConversationWorkspaceContext(sessionId: string): Promise<{
@@ -3607,37 +3529,11 @@ export class LocalConsoleRuntime {
     workspaceMode: LocalConsoleWorkspaceMode;
     baselineCommit: string | null;
   }> {
-    if (!this.conversationBaselineCommits.has(sessionId) && this.options.store.getSessionBaselineCommit !== undefined) {
-      const baselineCommit = await this.storeCall("local-console-store-session-baseline", () =>
-        this.options.store.getSessionBaselineCommit!(sessionId),
-      );
-      this.conversationBaselineCommits.set(sessionId, baselineCommit);
-    }
-    const source = await this.storeCall("local-console-store-session-workspace-files", () =>
-      this.options.store.getSessionWorkspace(sessionId),
-    );
-    const baselineCommit = source.baselineCommit
-      ?? this.conversationBaselineCommits.get(sessionId)
-      ?? null;
-    this.conversationBaselineCommits.set(sessionId, baselineCommit);
-    return {
-      workspacePath: source.workspaceMode === "worktree"
-        ? localSessionWorktreePath(this.options.workdirRoot, source.projectId, sessionId)
-        : source.folderPath,
-      workspaceMode: source.workspaceMode,
-      baselineCommit,
-    };
+    return this.conversationWorkspaceRuntime.readContext(sessionId);
   }
 
   private async readWorkspaceModeBestEffort(sessionId: string): Promise<LocalConsoleWorkspaceMode> {
-    try {
-      const source = await this.storeCall("local-console-store-session-workspace-mode", () =>
-        this.options.store.getSessionWorkspace(sessionId),
-      );
-      return source.workspaceMode;
-    } catch {
-      return "direct";
-    }
+    return this.conversationWorkspaceRuntime.readModeBestEffort(sessionId);
   }
 
   private async recordFailedCodexResult(
