@@ -247,6 +247,7 @@ import {
   type LanguageState,
 } from "./language-state.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
+import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
 import {
   createContext,
   useContext,
@@ -731,17 +732,7 @@ export function OperatorConsoleApp({
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const [agentTeamsState, setAgentTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
-  const [activeCliInstallations, setActiveCliInstallations] = useState<OnboardingCli[]>([]);
-  const cliInstallRevisionRef = useRef<Record<OnboardingCli, number>>({
-    codex: -1,
-    claude: -1,
-    kimi: -1,
-  });
-  const cliInstallStatusRef = useRef<Record<OnboardingCli, OnboardingCliInstallSnapshot["status"]>>({
-    codex: "idle",
-    claude: "idle",
-    kimi: "idle",
-  });
+  const cliInstallationsBundle = useActiveCliInstallationsBundle(window.moebius);
   const [lastUsedAgentTeamKey, setLastUsedAgentTeamKey] = useState<string | null>(null);
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,
@@ -898,64 +889,6 @@ export function OperatorConsoleApp({
       }
     };
   }, [agentTeamsRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let pollTimer: number | undefined;
-
-    const recheckAfterInstall = async (cli: OnboardingCli) => {
-      await window.moebius?.checkOnboardingCliReadiness?.(cli).catch(() => undefined);
-    };
-
-    const applyInstallSnapshot = (snapshot: OnboardingCliInstallSnapshot): boolean => {
-      if (snapshot.revision <= cliInstallRevisionRef.current[snapshot.cli]) {
-        return false;
-      }
-      cliInstallRevisionRef.current[snapshot.cli] = snapshot.revision;
-      cliInstallStatusRef.current[snapshot.cli] = snapshot.status;
-      setActiveCliInstallations((["codex", "claude", "kimi"] as const).filter(
-        (cli) => cliInstallStatusRef.current[cli] === "running",
-      ));
-      return true;
-    };
-
-    const pollInstallations = async () => {
-      const next = await window.moebius?.getOnboardingCliInstallState?.().catch(() => undefined);
-      if (cancelled || next === undefined) {
-        return;
-      }
-      const completed = (["codex", "claude", "kimi"] as const).filter(
-        (cli) => cliInstallStatusRef.current[cli] === "running" && next[cli].status !== "running",
-      );
-      applyInstallSnapshot(next.codex);
-      applyInstallSnapshot(next.claude);
-      applyInstallSnapshot(next.kimi);
-      await Promise.all(completed.map(recheckAfterInstall));
-      const active = (["codex", "claude", "kimi"] as const).filter(
-        (cli) => cliInstallStatusRef.current[cli] === "running",
-      );
-      if (active.length > 0) {
-        pollTimer = window.setTimeout(() => void pollInstallations(), 750);
-      }
-    };
-
-    void pollInstallations();
-    const unsubscribeInstall = window.moebius?.onOnboardingCliInstallSnapshot?.((snapshot) => {
-      if (cancelled || !applyInstallSnapshot(snapshot)) {
-        return;
-      }
-      if (snapshot.status !== "running") {
-        void recheckAfterInstall(snapshot.cli);
-      }
-    });
-    return () => {
-      cancelled = true;
-      unsubscribeInstall?.();
-      if (pollTimer !== undefined) {
-        window.clearTimeout(pollTimer);
-      }
-    };
-  }, []);
 
   const loadAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string) => {
     const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
@@ -4284,7 +4217,7 @@ export function OperatorConsoleApp({
         isSubmitting: newConversation.isSubmitting,
         error: sessionAnalysisNotice ?? newConversation.error ?? clientError,
       }}
-      activeCliInstallations={activeCliInstallations}
+      {...cliInstallationsBundle}
       onComposerChange={(value) => {
         const current = composerDraftRef.current;
         conversationDraftStoreRef.current.write(current.key, value);

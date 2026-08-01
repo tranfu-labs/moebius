@@ -48,6 +48,34 @@ export function decideOnboardingInstallationSnapshot(
   };
 }
 
+export function decideConsoleInstallationSnapshot(
+  model: OnboardingInstallationModel,
+  snapshot: OnboardingCliInstallSnapshot,
+): ReturnType<typeof decideOnboardingInstallationSnapshot> & {
+  cli: OnboardingCli;
+  leftRunning: boolean;
+  shouldRecheckEvent: boolean;
+} {
+  const previousStatus = model.accepted[snapshot.cli].status;
+  const decision = decideOnboardingInstallationSnapshot(model, snapshot);
+  return {
+    ...decision,
+    cli: snapshot.cli,
+    leftRunning: decision.accepted
+      && previousStatus === "running"
+      && snapshot.status !== "running",
+    shouldRecheckEvent: decision.accepted && snapshot.status !== "running",
+  };
+}
+
+export function planActiveOnboardingInstallations(
+  model: OnboardingInstallationModel,
+): OnboardingCli[] {
+  return (["codex", "claude", "kimi"] as const).filter(
+    (cli) => model.accepted[cli].status === "running",
+  );
+}
+
 export function planOnboardingInstallationStateLoad(
   available: boolean,
 ): { kind: "load" } | { kind: "skip" } {
