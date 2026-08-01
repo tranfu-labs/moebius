@@ -23,7 +23,7 @@
 ## D · 验证与真机
 
 - [x] `pnpm run test --scope <base>`、定向测试、typecheck、desktop build 全绿
-- [ ] 执行 RA-01～RA-04，按真机协议记录页面入口和可见信号
+- [x] 执行 RA-01～RA-04，按真机协议记录页面入口和可见信号
 - [x] 报告纯比例、定向/完整闸门预期与实际、集成测试净变化
 - [ ] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
 
@@ -32,7 +32,8 @@
 ### 架构与 debt
 
 - `runtime.ts`：5535 物理行基线 → 308 物理行 / 299 逻辑行；满足 composition root ≤300
-  逻辑行，保留 façade、对象装配和 active-run 状态所有权。
+  逻辑行，保留 façade、对象装配和 active-run 状态所有权。当前只剩 1 逻辑行余量；20/40 批若需
+  修改该 root，必须同步挤出空间，或在对应 change 中显式重审 root 方案，不得放宽门禁。
 - composition root exact allowlist 最终 8 条；新增 `start.ts` 后，把原
   `run-lifecycle-runtime.ts` 收回 application shape，未扩大豁免区。
 - `four-layer-10-local-console` 绑定的 15 条 debt 全部清零；`pnpm check:boundaries` 通过
@@ -59,15 +60,36 @@
 
 ### RA-01～RA-04 真机记录
 
-环境：`pnpm desktop` 启动了真实 Electron，并连接生产 local server / SQLite
-（`http://127.0.0.1:49905/`，工作区 `.state/local-console.sqlite`，无 mock/stub）。当前 session
-没有暴露 Electron CDP 控制后端；macOS System Events 又返回 assistive access `-1728`，无法从
-真实窗口执行或观察用户动作。按真机协议，不以 Chrome 本地页、HTTP 直调或自动化测试抵扣：
+环境（QA 补齐）：dev Electron（`desktop/node_modules/.bin/electron .`，`MOEBIUS_DATA_ROOT=/tmp/moebius-ra10-zT1Ozl`
+临时数据根，零 mock），经 ADR-0002 dev-only CDP 9222 通道 attach 真实窗口操作与断言；Node v24.18.0；
+provider 为真实 Codex CLI（codex-cli 0.146.0，ChatGPT 订阅登录）。驱动脚本与四次启动日志留于临时数据根
+`driver/` 与 `electron-restart*.log`。
 
-- **RA-01**：入口＝真实 Moebius 主窗口；操作＝未执行；屏幕观察＝未取得；与承诺一致否＝未验证。
-- **RA-02**：入口＝真实 Moebius 主窗口；操作＝未执行；屏幕观察＝未取得；与承诺一致否＝未验证。
-- **RA-03**：入口＝真实 Moebius 主窗口；操作＝未执行；屏幕观察＝未取得；与承诺一致否＝未验证。
-- **RA-04**：入口＝真实 Moebius 左侧栏；操作＝未执行；屏幕观察＝未取得；与承诺一致否＝未验证。
+- **RA-01**：入口＝主页面新建对话；操作＝选择 project-alpha 后发送「请只回复 RA01-OK…」；屏幕观察＝依次出现
+  用户消息（`timeline-message-1`）、运行中事实（`active-run-block`「已进行 00:10 · 正在处理」）、同一会话
+  内容生产总控终局（「耗时 00:11」+ 正文 `RA01-OK!`）。重启后两条消息与「耗时 00:11」终局仍在，
+  服务端 `messageCount=2`（user+agent）、`activeRuns=0`，无重复 Agent 回复；与承诺一致。
+- **RA-02**：入口＝同会话运行中；操作＝发送长输出任务后点击「停下主理人」，随后点击「重试」；屏幕观察＝
+  停下后出现非成功终局「你让这一步停下了。已经产生的文件改动会保留。」（耗时 00:15，重试/换执行配置/
+  改一改重发入口齐）；重试后同一会话重新运行并完成（耗时 00:22，输出 1–400）。服务端对账：中断终局记录
+  归属原 run（`…c5ln06oz`，`terminal.kind=interrupted/subkind=user`），重试正文归属新 run（`…wekhl42e`），
+  attempt 归属正确；与承诺一致。备注：本次中断发生在 agent 产出正文之前（`partialMarkdown=""`），
+  「保留中断前正文」只以空样本验证，非空保留路径未取到样本。
+- **RA-03**：入口＝主页面 composer；操作＝①直接 `@内容情报与证据`；②要求总控把任务交给 `@内容创作与编辑`；
+  ③一条消息同时 `@内容情报与证据 @视觉内容生产`；④两个会话分别向不同成员发长任务形成跨会话并行。
+  屏幕观察＝被提及成员身份正确出现（内容情报与证据回复 `RA03-INTEL`）；handoff 链完整（总控 →
+  内容创作与编辑 `RA03-WRITE` → 总控「交接已完成。」），每条消息的身份与过程标签按对应成员/attempt
+  归属；跨会话并行窗口约 14 秒（22:38:04–22:38:18，A 会话 visual-production 与 B 会话
+  editorial-production/总控收尾重叠），双方消息角色归属互不串扰；与承诺一致。备注：同一消息双提及由
+  总控串行派发（未形成会话内并行 lane），并行以跨会话方式验证。
+- **RA-04**：入口＝左侧栏会话菜单/项目菜单/搜索；操作与观察＝「标记为已读」（未读徽标消失，服务端
+  `unreadSince=null`）→「置顶」（`pinnedAt` 落库）→「重命名对话」为 `RA04-归档演练`；重启后标题、置顶
+  （侧栏「置顶」分组）、已读全部保持。「归档」后会话从列表消失，经「搜索 → 包含已归档对话」找到并
+  「恢复并打开」；再「标记为未读」；重启后恢复可见与未读均保持。「移除项目」弹确认框（明示对话将归档、
+  磁盘文件夹保留），确认后项目从侧栏消失（`projects=[]`），重启后仍消失；与承诺一致。备注：项目修复
+  不在本批行为矩阵（矩阵只含归档/移除边界），未执行；归档会顺带清除置顶状态（恢复后不再置顶），
+  操作语义如此，非持久化缺陷。
 
-因此本 change 当前不能声明 `code-verified`；须由具备 Electron CDP 或 macOS 无障碍权限的 QA/
-主理人补齐四条真机记录后再进入完整闸门合并点。
+四条 RA 全部通过；`code-verified` 的 RA 前置已补齐，剩余唯一一次完整 `pnpm test` 按合并点规则
+留给主理人复核通过后执行。RA-02 未取得非空 `partialMarkdown` 真机样本；该缺口由纯测试覆盖至
+50 批，并要求在 RA-16 联合 smoke 中取得一次非空样本后关闭。
