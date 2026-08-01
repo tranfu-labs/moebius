@@ -98,6 +98,13 @@ provider 或 IPC 实现。具体实现只在 composition root 装配。
 permit 或修改 fixture 来修绿。新增 permit 必须点名外部协议字段与对应 adapter contract test；checker
 拒绝不存在条件的 stale permit。composition root 仍由 exact allowlist 管理，不计为 use case。
 
+每个子 change 新增 composition root 时，必须在该 change 内附同规格的条件分类审计，并把审计结论
+同步回系列交付证据：逐文件、逐行列出全部控制分支，归为 wiring 装配、timing 时序控制或 business
+业务判据，三类计数之和必须等于 AST 控制分支总数。business 条目不得留在 allowlist 豁免区：要么
+下沉到 domain 的具名 `decide*` / `plan*`，要么把文件登记为 application use case 并接受
+`[IB:application-use-case-shape]`。没有这份可复算审计，composition root 不得进入 exact allowlist；后续
+20/30/40 批均适用，不以“文件少于 300 行”代替语义检查。
+
 现有 25 条 `[IB:*]` 不删除；新矩阵比旧规则更强时，旧稳定 ID 保留到最终 convergence change，
 再只删除完全重复且有 git 留痕的规则，不在迁移中途同时换 oracle。
 
