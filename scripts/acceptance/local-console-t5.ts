@@ -994,17 +994,21 @@ async function runPrimaryAgentCloseoutCase(): Promise<EvidenceItem[]> {
   await writeAgent(root, "dev-manager", "# 技术负责人\n\nROLE:dev-manager");
   await writeAgent(root, "qa", "# 测试\n\nROLE:qa");
   const calls: string[] = [];
+  const providerSessions: Array<{ role: string; threadId: string }> = [];
   const server = await startFixtureServer(
     root,
     async (options) => {
       const role = options.prompt.includes("ROLE:qa") ? "qa" : "dev-manager";
       calls.push(role);
-      return codexOk(
+      const threadId = threadIdFor(options);
+      const result = await codexOk(
         options,
         role === "qa"
           ? "测试报数：3。验收结论：通过。"
           : "报数完毕，还有什么指示？",
       );
+      providerSessions.push({ role, threadId });
+      return result;
     },
     {
       listAgentFiles: async () => [
@@ -1027,12 +1031,18 @@ async function runPrimaryAgentCloseoutCase(): Promise<EvidenceItem[]> {
     const facts = await listLocalT5Facts({ sqlitePath: server.sqlitePath }, session.sessionId);
     assert(calls.join(",") === "qa,dev-manager", `unexpected call order: ${calls.join(",")}`);
     assert(roles.join(",") === "qa,dev-manager", `unexpected response order: ${roles.join(",")}`);
+    assert(
+      providerSessions.length === 2
+        && new Set(providerSessions.map((entry) => entry.threadId)).size === 2,
+      `provider sessions were not isolated: ${JSON.stringify(providerSessions)}`,
+    );
     assert(facts.acceptanceFacts.length === 0, "natural-language acceptance words wrote a local acceptance fact");
     assert(facts.integrationEvents.length === 0, "natural-language acceptance words wrote a local integration event");
     return [
       item(16, "primary-agent-closeout", "直接 @专员 后由团队主理人收尾；正文中的验收、通过、不通过只作为普通内容，不触发程序化验收。", {
         calls,
         roles,
+        providerSessions,
         finalMessage: state.messages.filter((message) => message.speaker === "agent").at(-1),
         acceptanceFacts: facts.acceptanceFacts,
         integrationEvents: facts.integrationEvents,
@@ -1170,16 +1180,24 @@ function workspaceDiffRecord(
   };
 }
 
-function codexOk(options: CodexRunOptions, finalText: string): CodexRunResult {
+async function codexOk(options: CodexRunOptions, finalText: string): Promise<CodexRunResult> {
+  const threadId = threadIdFor(options);
+  await options.onThreadStarted?.(threadId);
   return {
     ok: true,
     finalText,
-    threadId: null,
+    threadId,
     cachedInputTokens: null,
     runDir: options.runDir,
     stdoutPath: path.join(options.runDir, "stdout.jsonl"),
     stderrPath: path.join(options.runDir, "stderr.log"),
   };
+}
+
+function threadIdFor(options: CodexRunOptions): string {
+  return options.mode?.kind === "resume"
+    ? options.mode.threadId
+    : `thread-local-console-t5-${path.basename(options.runDir)}`;
 }
 
 function codexFailed(options: CodexRunOptions, reason: string): CodexRunResult {

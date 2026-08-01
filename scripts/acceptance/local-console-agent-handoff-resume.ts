@@ -10,6 +10,10 @@ import {
   type ElectronApplication,
   type Page,
 } from "playwright";
+import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
+import { startLocalConsoleServer } from "../../src/local-console/server.js";
+import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
+import { rewriteAsLegacyAgentHandoffFootprint } from "../../src/testing/legacy-agent-handoff-fixture.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface Invocation {
@@ -60,17 +64,11 @@ interface FactEvent {
   messageUpserts?: MessageSnapshot[];
 }
 
-const sourceDataRoot = "/Users/wing/Develop/agent-moebius";
-const targetSessionId = "local:2026-07-29T09:16:04.958Z-5hsb8c";
-const targetSessionFile = "bG9jYWw6MjAyNi0wNy0yOVQwOToxNjowNC45NThaLTVoc2I4Yw.jsonl";
-const targetRunId = "local-2026-07-29T12:57:06.414Z-ua0g4yza";
-const targetSourceMessageId = 404;
-const targetProviderId = "019fad8a-983e-7941-a87d-c97845683e3c";
-const managerProviderId = "019fad28-f1c4-7151-a559-cfeda0a4f2f3";
-const preservedMessageIds = [412, 413, 414, 415];
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const desktopRoot = path.join(projectRoot, "desktop");
 const evidenceRoot = await createAcceptanceOutputDirectory("local-console-agent-handoff-resume");
+const sourceParent = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-agent-handoff-source-"));
+const sourceDataRoot = path.join(sourceParent, "data-root");
 const copyParent = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-agent-handoff-data-copy-"));
 const copiedDataRoot = path.join(copyParent, "data-root");
 const controlRoot = path.join(copyParent, "control");
@@ -85,6 +83,17 @@ const managerRelease = path.join(controlRoot, "release-fresh-manager");
 const assertions: Array<{ id: string; passed: boolean; observed: unknown }> = [];
 let desktop: { application: ElectronApplication; page: Page; apiBase: string } | null = null;
 let passed = false;
+
+const preparedFixture = await prepareSourceFixture(sourceDataRoot);
+const {
+  targetSessionId,
+  targetSessionFile,
+  targetRunId,
+  targetSourceMessageId,
+  targetProviderId,
+  managerProviderId,
+  preservedMessageIds,
+} = preparedFixture;
 
 function assertEvidence(id: string, condition: boolean, observed: unknown): void {
   assertions.push({ id, passed: condition, observed });
@@ -107,6 +116,217 @@ function historicalStableSummary(messages: readonly MessageSnapshot[]): Array<{
     runId: message.runId,
     error: message.error,
   }));
+}
+
+async function prepareSourceFixture(dataRoot: string): Promise<{
+  targetSessionId: string;
+  targetSessionFile: string;
+  targetRunId: string;
+  targetSourceMessageId: number;
+  targetProviderId: string;
+  managerProviderId: string;
+  preservedMessageIds: number[];
+}> {
+  const targetSessionId = `local:portable-handoff-${crypto.randomUUID()}`;
+  const targetProviderId = `thread-handoff-qa-${crypto.randomUUID()}`;
+  const managerProviderId = `thread-handoff-manager-${crypto.randomUUID()}`;
+  await Promise.all([
+    fs.mkdir(path.join(dataRoot, "agents"), { recursive: true }),
+    fs.mkdir(path.join(dataRoot, ".state"), { recursive: true }),
+    fs.mkdir(path.join(dataRoot, "sessions"), { recursive: true }),
+  ]);
+  await Promise.all([
+    fs.writeFile(
+      path.join(dataRoot, "agents", "dev-manager.md"),
+      "# Dev Manager\n\nROLE:dev-manager\n",
+      "utf8",
+    ),
+    fs.writeFile(path.join(dataRoot, "agents", "qa.md"), "# QA\n\nROLE:qa\n", "utf8"),
+    fs.writeFile(path.join(dataRoot, ".onboarding-completed"), `${new Date().toISOString()}\n`, "utf8"),
+  ]);
+
+  const fixtureStore = await createSqliteLocalConsoleStore({
+    sqlitePath: path.join(dataRoot, ".state", "local-console.sqlite"),
+    sessionLogRoot: path.join(dataRoot, "sessions"),
+  });
+  await fixtureStore.init();
+  await fixtureStore.createSession({
+    sessionId: targetSessionId,
+    projectId: "local",
+    title: "Portable legacy handoff",
+    agentTeamOwnership: "system",
+    agentTeamId: "development",
+    agentTeamSnapshot: {
+      members: [
+        {
+          name: "dev-manager",
+          agentMarkdown: "# Dev Manager\n\nROLE:dev-manager",
+          executionProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+        },
+        {
+          name: "qa",
+          agentMarkdown: "# QA\n\nROLE:qa",
+          executionProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+        },
+      ],
+    },
+    now: new Date().toISOString(),
+  });
+  await fixtureStore.close();
+
+  let qaStarted!: () => void;
+  const qaReady = new Promise<void>((resolve) => {
+    qaStarted = resolve;
+  });
+  const server = await startLocalConsoleServer({
+    projectRoot: dataRoot,
+    dataRoot,
+    sqlitePath: path.join(dataRoot, ".state", "local-console.sqlite"),
+    sessionLogRoot: path.join(dataRoot, "sessions"),
+    listAgentFiles: async () => [
+      { name: "dev-manager", agentMarkdown: "# Dev Manager\n\nROLE:dev-manager" },
+      { name: "qa", agentMarkdown: "# QA\n\nROLE:qa" },
+    ],
+    runCodex: async (options) => {
+      if (options.prompt.includes("ROLE:qa")) {
+        await options.onThreadStarted?.(targetProviderId);
+        qaStarted();
+        return await new Promise<CodexRunResult>((resolve) => {
+          options.signal?.addEventListener("abort", () => resolve(failedFixtureRun(options)), { once: true });
+        });
+      }
+      await options.onThreadStarted?.(managerProviderId);
+      return successfulFixtureRun(options, "@qa legacy handoff", managerProviderId);
+    },
+    isCodexThreadAvailable: async () => true,
+    codexIdleTimeoutMs: 5_000,
+    codexMaxDurationMs: 10_000,
+  });
+
+  let closed = false;
+  try {
+    const response = await fetch(new URL(
+      `/api/local-console/sessions/${encodeURIComponent(targetSessionId)}/messages`,
+      server.url,
+    ), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "create portable legacy handoff" }),
+    });
+    if (response.status !== 202) {
+      throw new Error(`fixture message was rejected with ${String(response.status)}`);
+    }
+    await qaReady;
+    const active = await waitFor(async () => {
+      const state = await readFixtureState(server.url, targetSessionId);
+      return state.activeRuns.find((run) => run.role === "qa") ?? null;
+    });
+    const beforeClose = await readFixtureState(server.url, targetSessionId);
+    const source = beforeClose.messages.find((message) =>
+      message.speaker === "agent"
+      && message.role === "dev-manager"
+      && message.body === "@qa legacy handoff");
+    if (source === undefined || source.status !== "displayed") {
+      throw new Error(`fixture Agent handoff source is invalid: ${JSON.stringify(source)}`);
+    }
+    const factLogPath = server.runtime.getSessionFactLogPath(targetSessionId);
+    await server.close();
+    closed = true;
+    await rewriteAsLegacyAgentHandoffFootprint({
+      factLogPath,
+      sessionId: targetSessionId,
+      sourceMessageId: source.id,
+      targetRunId: active.runId,
+    });
+
+    const facts = parseFacts(await fs.readFile(factLogPath));
+    const gracefulIntents = facts.filter((event) =>
+      event.type === "codex_resume_intent"
+      && event.payload?.targetRunId === active.runId
+      && event.payload?.sourceMessageId === source.id
+      && event.payload?.role === "qa"
+      && event.payload?.reason === "graceful-shutdown");
+    const contexts = facts.filter((event) =>
+      event.type === "run_execution_context"
+      && event.payload?.runId === active.runId
+      && event.payload?.sourceMessageId === source.id
+      && event.payload?.role === "qa");
+    const providerObservations = facts.filter((event) =>
+      event.type === "provider_session_observed"
+      && event.payload?.runId === active.runId
+      && event.payload?.externalSessionId === targetProviderId);
+    const agentLinks = facts.filter((event) =>
+      event.type === "agent_session_link"
+      && event.payload?.role === "qa"
+      && event.payload?.externalSessionId === targetProviderId);
+    const latestSource = latestMessages(facts, [source.id])[0];
+    if (
+      gracefulIntents.length !== 1
+      || contexts.length !== 1
+      || providerObservations.length !== 1
+      || agentLinks.length !== 1
+      || latestSource?.speaker !== "agent"
+      || latestSource.status !== "pending"
+    ) {
+      throw new Error(`portable legacy fixture failed preflight: ${JSON.stringify({
+        gracefulIntents: gracefulIntents.length,
+        contexts: contexts.length,
+        providerObservations: providerObservations.length,
+        agentLinks: agentLinks.length,
+        latestSource,
+      })}`);
+    }
+
+    return {
+      targetSessionId,
+      targetSessionFile: path.basename(factLogPath),
+      targetRunId: active.runId,
+      targetSourceMessageId: source.id,
+      targetProviderId,
+      managerProviderId,
+      preservedMessageIds: latestAllMessages(facts)
+        .filter((message) => message.id !== source.id)
+        .map((message) => message.id),
+    };
+  } finally {
+    if (!closed) await server.close().catch(() => undefined);
+  }
+}
+
+async function readFixtureState(apiBase: string, sessionId: string): Promise<StateSnapshot> {
+  const url = new URL("/api/local-console/state", apiBase);
+  url.searchParams.set("sessionId", sessionId);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`fixture state failed with ${String(response.status)}`);
+  }
+  return await response.json() as StateSnapshot;
+}
+
+function successfulFixtureRun(
+  options: CodexRunOptions,
+  finalText: string,
+  threadId: string,
+): CodexRunResult {
+  return {
+    ok: true,
+    finalText,
+    threadId,
+    cachedInputTokens: 0,
+    runDir: options.runDir,
+    stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+    stderrPath: path.join(options.runDir, "stderr.log"),
+  };
+}
+
+function failedFixtureRun(options: CodexRunOptions): CodexRunResult {
+  return {
+    ok: false,
+    reason: `interrupted:${String(options.signal?.reason ?? "shutdown")}`,
+    runDir: options.runDir,
+    stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+    stderrPath: path.join(options.runDir, "stderr.log"),
+  };
 }
 
 const originalManifestBefore = await persistentManifest(sourceDataRoot);
@@ -150,6 +370,16 @@ const targetIntent = factsBefore.find((event) =>
   event.type === "codex_resume_intent"
   && event.payload?.targetRunId === targetRunId
   && event.payload?.reason === "graceful-shutdown")?.payload;
+const targetStartedFullCountBefore = factsBefore.filter((event) =>
+  event.type === "provider_invocation"
+  && event.payload?.runId === targetRunId
+  && event.payload?.phase === "started"
+  && event.payload?.mode === "full").length;
+const targetStartedResumeCountBefore = factsBefore.filter((event) =>
+  event.type === "provider_invocation"
+  && event.payload?.runId === targetRunId
+  && event.payload?.phase === "started"
+  && event.payload?.mode === "resume").length;
 
 try {
   desktop = await launchDesktop();
@@ -171,7 +401,15 @@ try {
     latestMessages(factsAfterRepair, preservedMessageIds),
   );
 
-  assertEvidence("complete-copy-used", copiedDataRoot.startsWith(os.tmpdir()), copiedDataRoot);
+  assertEvidence(
+    "complete-copy-used",
+    sourceDataRoot.startsWith(os.tmpdir())
+      && copiedDataRoot.startsWith(os.tmpdir())
+      && sourceDataRoot !== copiedDataRoot
+      && sourceDataRoot !== projectRoot
+      && copiedDataRoot !== projectRoot,
+    { sourceDataRoot, copiedDataRoot, projectRoot },
+  );
   assertEvidence("repair-fact-once", repairFacts.length === 1, repairFacts);
   assertEvidence(
     "exact-source-restored-without-history-rewrite",
@@ -244,11 +482,18 @@ try {
     "provider-and-context-identity",
     freshContext?.sourceMessageId === freshUser?.id
       && freshContext?.role === "dev-manager"
-      && targetStartedInvocations.filter((event) => event.payload?.mode === "full").length === 0
+      && targetStartedInvocations.filter((event) => event.payload?.mode === "full").length
+        === targetStartedFullCountBefore
       && targetStartedInvocations.filter((event) =>
         event.payload?.mode === "resume"
-        && event.payload?.requestedExternalSessionId === targetProviderId).length >= 1,
-    { freshContext, targetStartedInvocations },
+        && event.payload?.requestedExternalSessionId === targetProviderId).length
+        === targetStartedResumeCountBefore + 1,
+    {
+      freshContext,
+      targetStartedInvocations,
+      targetStartedFullCountBefore,
+      targetStartedResumeCountBefore,
+    },
   );
   assertEvidence(
     "visible-completion-without-conflict",
@@ -300,6 +545,7 @@ try {
     generatedAt: new Date().toISOString(),
     sourceDataRoot,
     copiedDataRoot,
+    preparedFixture,
     targetSessionId,
     targetRunId,
     targetSourceMessageId,
@@ -331,7 +577,7 @@ try {
       runNotStartedCount: completed.messages.filter((message) =>
         message.body.includes("这一步没跑起来")).length,
       replacementFullCount: targetStartedInvocations.filter((event) =>
-        event.payload?.mode === "full").length,
+        event.payload?.mode === "full").length - targetStartedFullCountBefore,
     },
     assertions,
   };
@@ -341,6 +587,7 @@ try {
   console.log(JSON.stringify({
     passed,
     evidencePath,
+    sourceDataRoot,
     copiedDataRoot,
     assertionCount: assertions.length,
   }));
@@ -465,7 +712,7 @@ async function persistentManifest(dataRoot: string): Promise<Array<{ path: strin
   const files = [
     path.join("sessions", targetSessionFile),
   ];
-  for (const relativeRoot of [path.join(".state", "agent-teams"), "teams"]) {
+  for (const relativeRoot of ["agents", path.join(".state", "agent-teams"), "teams"]) {
     await collectFiles(path.join(dataRoot, relativeRoot), relativeRoot, files);
   }
   for (const name of [".onboarding-completed", "last-used-team.json"]) {
@@ -592,7 +839,7 @@ async function writeProviderRollouts(): Promise<void> {
         type: "session_meta",
         payload: {
           id: providerId,
-          cwd: projectRoot,
+          cwd: sourceDataRoot,
           model_provider: "shim",
           cli_version: "0.145.0",
           base_instructions: { text: "agent handoff acceptance" },

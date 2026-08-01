@@ -129,11 +129,15 @@ try {
   assertEvidence(
     "A2-empty-end-turn-is-not-success",
     emptyTerminal.terminal?.kind === "crashed"
-      && emptyTerminal.body.includes("可能是额度或服务问题")
+      && emptyTerminal.terminal.safeCode === "kimi-empty-response"
+      && emptyTerminal.body.includes("终端直接运行 kimi")
+      && !emptyTerminal.body.includes("额度")
+      && !emptyTerminal.body.includes("服务问题")
       && !emptyState.messages.some((message) => message.speaker === "agent")
       && await emptySidebarRow.getAttribute("data-status-dot") === "red",
     {
       terminal: terminalEvidence(emptyTerminal),
+      safeBody: emptyTerminal.body,
       agentMessages: emptyState.messages.filter((message) => message.speaker === "agent"),
       sidebarStatusDot: await emptySidebarRow.getAttribute("data-status-dot"),
     },
