@@ -142,6 +142,7 @@ import {
   type SelectionMutationKind,
   type SelectionMutationToken,
 } from "./state-sync.js";
+import { managedAttachmentClient } from "./attachment-client.js";
 import {
   activateConversationComposerDraft,
   clearConversationComposerDraft,
@@ -817,18 +818,21 @@ export function OperatorConsoleApp({
     setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
   }, []);
   const managedAttachments = useManagedAttachmentDrafts({
+    client: managedAttachmentClient,
     apiBase,
     capability: attachmentCapability,
     currentDraftKey: currentAttachmentDraftKey,
     onError: reportAttachmentError,
   });
   const managedSubSessionAttachments = useManagedAttachmentDrafts({
+    client: managedAttachmentClient,
     apiBase,
     capability: attachmentCapability,
     currentDraftKey: activeSubSessionDraftKey,
     onError: reportAttachmentError,
   });
   const managedSidebarConversationAttachments = useManagedAttachmentDrafts({
+    client: managedAttachmentClient,
     apiBase,
     capability: attachmentCapability,
     currentDraftKey: activeSidebarConversationAttachmentDraftKey,
@@ -2486,6 +2490,7 @@ export function OperatorConsoleApp({
   const selectedSession = state?.selectedSession ?? null;
   const messages = state?.messages ?? [];
   const messagesWithPreviews = useMessagesWithAttachmentPreviews({
+    client: managedAttachmentClient,
     messages,
     apiBase,
     capability: attachmentCapability,
@@ -2495,6 +2500,7 @@ export function OperatorConsoleApp({
     ? activeSubSessionState.view.messages
     : NO_OPERATOR_MESSAGES;
   const activeSubSessionMessagesWithPreviews = useMessagesWithAttachmentPreviews({
+    client: managedAttachmentClient,
     messages: activeSubSessionMessages,
     apiBase,
     capability: attachmentCapability,

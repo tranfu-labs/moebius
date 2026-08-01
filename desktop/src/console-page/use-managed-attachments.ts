@@ -4,15 +4,8 @@ import type {
   StructuredAttachment,
 } from "@moebius/console-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  cloneManagedMessageAttachments,
-  listManagedDraftAttachments,
-  loadManagedAttachmentPreview,
-  managedAttachmentFetch,
-  removeManagedDraftAttachment,
-  uploadManagedAttachment,
-} from "./attachment-client.js";
 import { createBoundedPngPreview } from "./attachment-preview.js";
+import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
 
 interface PendingHandle {
@@ -24,6 +17,7 @@ interface PendingHandle {
 }
 
 export function useManagedAttachmentDrafts(input: {
+  client: ManagedAttachmentClient;
   apiBase: string | null;
   capability: string | null;
   currentDraftKey: string;
@@ -94,20 +88,18 @@ export function useManagedAttachmentDrafts(input: {
           ? { ...item, kind: "file", previewUrl: undefined }
           : item));
       }
-      const attachment = await uploadManagedAttachment({
+      const attachment = await input.client.upload({
         apiBase: input.apiBase,
         capability: input.capability,
-        fetch: managedAttachmentFetch,
         draftKey: handle.draftKey,
         file: handle.file,
         preview,
         signal: controller.signal,
       });
       if (controller.signal.aborted || handlesRef.current.get(clientId) !== handle) {
-        await removeManagedDraftAttachment({
+        await input.client.removeDraft({
           apiBase: input.apiBase,
           capability: input.capability,
-          fetch: managedAttachmentFetch,
           draftKey: handle.draftKey,
           attachmentId: attachment.attachmentId,
         }).catch(() => undefined);
@@ -186,10 +178,9 @@ export function useManagedAttachmentDrafts(input: {
     if (item?.previewUrl && item.previewUrl !== handle?.previewUrl) URL.revokeObjectURL(item.previewUrl);
     updateDraft(draftKey, (items) => items.filter((candidate) => candidate.clientId !== clientId));
     if (item?.attachmentId && input.apiBase !== null && input.capability !== null) {
-      void removeManagedDraftAttachment({
+      void input.client.removeDraft({
         apiBase: input.apiBase,
         capability: input.capability,
-        fetch: managedAttachmentFetch,
         draftKey,
         attachmentId: item.attachmentId,
       }).catch((error: unknown) => input.onError(formatError(error)));
@@ -242,19 +233,17 @@ export function useManagedAttachmentDrafts(input: {
       handlesRef.current.delete(item.clientId);
     }
     await Promise.all(currentItems.flatMap((item) => item.attachmentId === undefined ? [] : [
-      removeManagedDraftAttachment({
+      input.client.removeDraft({
         apiBase: input.apiBase!,
         capability: input.capability!,
-        fetch: managedAttachmentFetch,
         draftKey,
         attachmentId: item.attachmentId,
       }),
     ]));
 
-    const cloned = await cloneManagedMessageAttachments({
+    const cloned = await input.client.cloneMessage({
       apiBase: input.apiBase,
       capability: input.capability,
-      fetch: managedAttachmentFetch,
       sessionId: source.sessionId,
       sourceMessageId: source.sourceMessageId,
       targetDraftKey: draftKey,
@@ -262,10 +251,9 @@ export function useManagedAttachmentDrafts(input: {
     const restored = await Promise.all(cloned.map(async (attachment): Promise<ComposerAttachment> => {
       let previewUrl: string | undefined;
       if (attachment.kind === "image") {
-        const preview = await loadManagedAttachmentPreview({
+        const preview = await input.client.loadPreview({
           apiBase: input.apiBase!,
           capability: input.capability!,
-          fetch: managedAttachmentFetch,
           draftKey,
           attachmentId: attachment.attachmentId,
         });
@@ -337,10 +325,9 @@ export function useManagedAttachmentDrafts(input: {
     const controller = new AbortController();
     const draftRevision = draftRevisionRef.current.get(input.currentDraftKey) ?? 0;
     const presenceGeneration = attachmentPresenceGenerationRef.current.get(input.currentDraftKey) ?? 0;
-    void listManagedDraftAttachments({
+    void input.client.listDraft({
       apiBase: input.apiBase,
       capability: input.capability,
-      fetch: managedAttachmentFetch,
       draftKey: input.currentDraftKey,
       signal: controller.signal,
     }).then(async (attachments) => {
@@ -353,10 +340,9 @@ export function useManagedAttachmentDrafts(input: {
       const restored = await Promise.all(attachments.map(async (attachment): Promise<ComposerAttachment> => {
         let previewUrl: string | undefined;
         if (attachment.kind === "image") {
-          const preview = await loadManagedAttachmentPreview({
+          const preview = await input.client.loadPreview({
             apiBase: input.apiBase!,
             capability: input.capability!,
-            fetch: managedAttachmentFetch,
             draftKey: input.currentDraftKey,
             attachmentId: attachment.attachmentId,
             signal: controller.signal,
@@ -428,6 +414,7 @@ export function useManagedAttachmentDrafts(input: {
 }
 
 export function useMessagesWithAttachmentPreviews(input: {
+  client: ManagedAttachmentClient;
   messages: OperatorMessage[];
   apiBase: string | null;
   capability: string | null;
@@ -455,10 +442,9 @@ export function useMessagesWithAttachmentPreviews(input: {
     });
     for (const { attachment, sessionId } of images) {
       if (urlsRef.current[attachment.attachmentId] !== undefined) continue;
-      void loadManagedAttachmentPreview({
+      void input.client.loadPreview({
         apiBase: input.apiBase,
         capability: input.capability,
-        fetch: managedAttachmentFetch,
         sessionId,
         attachmentId: attachment.attachmentId,
         signal: controller.signal,

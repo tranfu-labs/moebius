@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
+import { managedAttachmentClient } from "../src/console-page/attachment-client.js";
 import { useManagedAttachmentDrafts } from "../src/console-page/use-managed-attachments.js";
 import type { SidebarConversationDraftAttachmentPresence } from "../src/console-page/sidebar-conversation-drafts.js";
 
@@ -123,6 +124,7 @@ function AttachmentHarness({
   onError(error: string): void;
 }): JSX.Element {
   const managed = useManagedAttachmentDrafts({
+    client: managedAttachmentClient,
     apiBase: "http://127.0.0.1:8787/",
     capability: "test-capability",
     currentDraftKey: draftKey,

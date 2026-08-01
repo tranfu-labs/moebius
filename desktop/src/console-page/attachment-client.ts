@@ -1,10 +1,19 @@
 import type { StructuredAttachment } from "@moebius/console-ui";
+import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 
 export const ATTACHMENT_CAPABILITY_HEADER = "x-moebius-attachment-capability";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export const managedAttachmentFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
+
+export const managedAttachmentClient: ManagedAttachmentClient = {
+  upload: (input) => uploadManagedAttachment({ ...input, fetch: managedAttachmentFetch }),
+  listDraft: (input) => listManagedDraftAttachments({ ...input, fetch: managedAttachmentFetch }),
+  cloneMessage: (input) => cloneManagedMessageAttachments({ ...input, fetch: managedAttachmentFetch }),
+  removeDraft: (input) => removeManagedDraftAttachment({ ...input, fetch: managedAttachmentFetch }),
+  loadPreview: (input) => loadManagedAttachmentPreview({ ...input, fetch: managedAttachmentFetch }),
+};
 
 export interface AttachmentClientOptions {
   apiBase: string;
