@@ -17,7 +17,6 @@ import { parseTrailingStageMarker } from "../stages.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import type { LocalAttachmentManager } from "./attachments.js";
-import { buildLocalConsoleTimeline } from "./timeline.js";
 import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -97,6 +96,7 @@ import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
   LocalWorkerDispatchRuntime,
 } from "./worker-dispatch-runtime.js";
+import { createLocalWorkerDispatchPorts } from "./worker-dispatch-wiring.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { ActiveLocalRun } from "./active-run.js";
@@ -119,7 +119,6 @@ import {
   isPendingDispatchMessage,
   isPendingPrimaryMessage,
   isVisibleTimelineMessage,
-  isWorkerRunPlaceholder,
   noSessionWorkspaceDiff,
   normalizeTitle,
   projectPendingDispatch,
@@ -311,43 +310,16 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         this.lastError = formatLocalError(error);
       },
     });
-    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime({
-      hasClaimCapability: () => options.store.claimNextPendingWorkerMessage !== undefined,
-      listMessages: (sessionId, label) => this.storePorts.call(label, () => options.store.listMessages(sessionId)),
+    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(createLocalWorkerDispatchPorts({
+      options,
+      storePorts: this.storePorts,
       activeRunForRole: (sessionId, role) =>
         this.runLifecycleRuntime.runForRole(sessionId, role) as ActiveLocalRun | undefined,
-      listAgentFiles: async (sessionId) => {
-        const persisted = await options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-        return persisted === null
-          ? await options.listAgentFiles(sessionId)
-          : persisted.members.map((member) => ({
-              name: member.name,
-              agentMarkdown: member.agentMarkdown,
-              executionProfile: member.executionProfile ?? null,
-            }));
-      },
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       nextRunId: (sessionId, messageId) => this.runRecoveryRuntime.targetForMessage(sessionId, messageId),
-      claim: (sessionId, role, runId) => this.storePorts.call("local-console-store-claim-worker", () =>
-        options.store.claimNextPendingWorkerMessage!.call(options.store, {
-          sessionId,
-          role,
-          runId,
-          now: this.nowIso(),
-        })),
-      release: (message, sessionId) => this.storePorts.call("local-console-store-release-stopped-worker-claim", () =>
-        options.store.releaseMessageForRetry({ userMessageId: message.id, sessionId, now: this.nowIso() })),
       recordMissingAgent: (message, sessionId, runId, role) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
-      prepareTimeline: (messages, agents) => {
-        const timelineMessages = messages.filter(
-          (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
-        );
-        return {
-          timelineMessages,
-          timeline: buildLocalConsoleTimeline(timelineMessages, agents.map((agent) => agent.name)),
-        };
-      },
+      nowIso: () => this.nowIso(),
       nowRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       scheduleRun: (input) => this.workerExecutionRuntime.run(input),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
@@ -357,8 +329,9 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         this.lastError = formatLocalError(error);
         return this.lastError;
       },
-      log: (event, sessionId, role, error) => log({ event, sessionId, ...(role === null ? {} : { role }), error }),
-    });
+      report: (event, sessionId, role, error) =>
+        log({ event, sessionId, ...(role === null ? {} : { role }), error }),
+    }));
     this.workerPreparationRuntime = new LocalWorkerPreparationRuntime({
       nowIso: () => this.nowIso(),
       stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),

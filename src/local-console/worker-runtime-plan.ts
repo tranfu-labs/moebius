@@ -1,3 +1,6 @@
+import type { LocalConsoleAgentFile } from "./agent-file.js";
+import type { LocalConsoleAgentTeamSnapshot, LocalConsoleMessage } from "./types.js";
+
 export function decideWorkerClaimCapability(available: boolean): { kind: "dispatch" } | { kind: "skip" } {
   return available ? { kind: "dispatch" } : { kind: "skip" };
 }
@@ -36,6 +39,28 @@ export function decideWorkerOutstandingWork(wakeCount: number, laneCount: number
 
 export function decideWorkerRunId(resumeRunId: string | null): { kind: "resume"; runId: string } | { kind: "fresh" } {
   return resumeRunId === null ? { kind: "fresh" } : { kind: "resume", runId: resumeRunId };
+}
+
+export function decideWorkerAgentFileSource<T>(snapshot: T | null | undefined):
+  | { kind: "fallback" }
+  | { kind: "snapshot"; snapshot: T } {
+  return snapshot == null ? { kind: "fallback" } : { kind: "snapshot", snapshot };
+}
+
+export function planWorkerSnapshotAgents(
+  members: LocalConsoleAgentTeamSnapshot["members"],
+): LocalConsoleAgentFile[] {
+  return members.map((member) => ({
+    name: member.name,
+    agentMarkdown: member.agentMarkdown,
+    executionProfile: member.executionProfile ?? null,
+  }));
+}
+
+export function planWorkerTimelineMessages(messages: readonly LocalConsoleMessage[]): LocalConsoleMessage[] {
+  return messages.filter((message) =>
+    message.status !== "pending"
+    && message.sourceKind !== "local-worker-run");
 }
 
 export function planWorkerActiveLane(lane: "primary" | "worker" | null | undefined): "primary" | "worker" | null {

@@ -145,6 +145,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/run-terminal-flow.ts",
   "src/local-console/worker-dispatch-flow.ts",
   "src/local-console/worker-dispatch-runtime.ts",
+  "src/local-console/worker-dispatch-wiring.ts",
   "src/local-console/worker-execution-runtime.ts",
   "src/local-console/worker-preparation-runtime.ts",
   "src/local-console/worker-provider-runtime.ts",

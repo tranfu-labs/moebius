@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decideWorkerClaimRelease,
+  decideWorkerAgentFileSource,
   decideWorkerOutstandingWork,
   decideWorkerLifecycleCreation,
   decideWorkerOriginEffect,
@@ -17,7 +18,10 @@ import {
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
   planWorkerFinalization,
+  planWorkerSnapshotAgents,
+  planWorkerTimelineMessages,
 } from "../src/local-console/worker-runtime-plan.js";
+import type { LocalConsoleMessage } from "../src/local-console/types.js";
 
 describe("worker runtime plan", () => {
   it("aborts only an active worker redirected by the primary lane", () => {
@@ -80,5 +84,20 @@ describe("worker runtime plan", () => {
       .toEqual({ cwd: "/tmp/work", lifecycle: "pause" });
     expect(planWorkerFinalization({ cwd: "/tmp/work", terminalRecorded: false, gracefulResumePrepared: false }))
       .toEqual({ cwd: "/tmp/work", lifecycle: "fail" });
+  });
+
+  it("prefers persisted team members and removes non-timeline worker placeholders", () => {
+    expect(decideWorkerAgentFileSource(undefined)).toEqual({ kind: "fallback" });
+    expect(planWorkerSnapshotAgents([{
+      name: "dev",
+      agentMarkdown: "# dev",
+      executionProfile: null,
+    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    const messages = [
+      { id: 1, status: "pending", sourceKind: null },
+      { id: 2, status: "completed", sourceKind: "local-worker-run" },
+      { id: 3, status: "completed", sourceKind: null },
+    ] as LocalConsoleMessage[];
+    expect(planWorkerTimelineMessages(messages).map((message) => message.id)).toEqual([3]);
   });
 });
