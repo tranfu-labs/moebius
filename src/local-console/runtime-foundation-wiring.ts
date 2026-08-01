@@ -36,6 +36,8 @@ export function createLocalRuntimeFoundationWiring(input: {
   timeoutKind: FailurePorts["timeoutKind"];
   interrupted: FailurePorts["interrupted"];
   interruptionCause: FailurePorts["interruptionCause"];
+  readOutputTail: LifecyclePorts["readOutputTail"];
+  longRunReportMs: LifecyclePorts["longRunReportMs"];
   getSessionFactLogPath(sessionId: string): string;
   hasScheduledWorker(sessionId: string): boolean;
   report(input: { event: string; [key: string]: unknown }): void;
@@ -88,6 +90,8 @@ export function createLocalRuntimeFoundationWiring(input: {
       now: context.now,
       nowIso: context.nowIso,
       recordError: (error) => { context.formatAndSetError(error); },
+      readOutputTail: input.readOutputTail,
+      longRunReportMs: input.longRunReportMs,
     } satisfies LifecyclePorts,
     presentation(
       continuation: LocalSessionContinuationRuntime,

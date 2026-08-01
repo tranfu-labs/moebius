@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { LOCAL_LONG_RUN_REPORT_MS } from "../config.js";
 import { loadCeoScripts } from "../ceo-scripts.js";
 import {
   executionInterruptionCauseForResult,
@@ -23,6 +24,7 @@ import {
   readLocalWorkspaceTextFile,
 } from "./file-read.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
+import { readLocalConsoleOutputTail } from "./output-tail.js";
 import {
   defaultLocalRouteJudgment,
   validateLocalRouteAppend,
@@ -76,6 +78,8 @@ export function createLocalRuntimeAdapters(input: {
     fileAvailable,
     readWorkspaceFacts,
     readRecoveryFacts: readLocalCodexRecoveryFacts,
+    readOutputTail: readLocalConsoleOutputTail,
+    longRunReportMs: LOCAL_LONG_RUN_REPORT_MS,
     timeoutKind: executionTimeoutKind,
     interrupted: isInterruptedCodexRunResult,
     interruptionCause: executionInterruptionCauseForResult,

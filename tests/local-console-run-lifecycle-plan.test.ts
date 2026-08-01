@@ -5,10 +5,13 @@ import {
   decideShutdownDrain,
   planGracefulShutdownResume,
   planExecutionProgressActivity,
+  planLongRunActivity,
   planRunLifecycleRecord,
+  planRunsForSession,
   planRunStartedPhase,
 } from "../src/local-console/run-lifecycle-plan.js";
 import type { ActiveLocalRun } from "../src/local-console/active-run.js";
+import type { LocalRunLifecycleActiveRun } from "../src/local-console/run-lifecycle-contracts.js";
 
 describe("run lifecycle plan", () => {
   it("maps resumed segments and provider retry progress", () => {
@@ -38,6 +41,34 @@ describe("run lifecycle plan", () => {
   it("uses attempt one only when lifecycle persistence is unavailable", () => {
     expect(decideRunAttemptSource(false)).toEqual({ kind: "fallback", attempt: 1 });
     expect(decideRunAttemptSource(true)).toEqual({ kind: "persisted" });
+  });
+
+  it("orders session runs deterministically and reports long-running work once eligible", () => {
+    const runs = [
+      { sessionId: "other", runId: "run-0", createdAt: "2026-01-01T00:00:00.000Z" },
+      { sessionId: "session-1", runId: "run-b", createdAt: "2026-01-01T00:00:01.000Z" },
+      { sessionId: "session-1", runId: "run-a", createdAt: "2026-01-01T00:00:01.000Z" },
+    ] as LocalRunLifecycleActiveRun[];
+    expect(planRunsForSession(runs, "session-1").map((run) => run.runId)).toEqual(["run-a", "run-b"]);
+
+    expect(planLongRunActivity({
+      reported: false,
+      elapsedMs: 120_000,
+      reportMs: 60_000,
+      cursor: 3,
+      previousActivity: { cursor: 2, kind: "progress", phase: "running", action: "整理资料", object: "spec", occurredAt: "before" },
+      occurredAt: "now",
+    })).toEqual({
+      kind: "record",
+      activity: {
+        cursor: 3,
+        kind: "progress",
+        phase: "running",
+        action: "已经运行 2 分钟，整理资料",
+        object: "spec",
+        occurredAt: "now",
+      },
+    });
   });
 
   it("plans idempotent shutdown and graceful resume persistence", () => {
