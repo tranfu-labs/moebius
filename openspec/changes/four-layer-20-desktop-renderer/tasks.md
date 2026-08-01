@@ -48,3 +48,18 @@
 | 同文件 · `keeps the previous route and draft when ordinary conversation creation fails` | 18/18/18ms · **18ms** | `console-navigation-controller.test.ts` · `rolls back pending creation to the previous route and draft on failure` | create pending → failure 回滚 | mounted fetch failure → 可见反馈 | 待建纯测试；保留原接缝 |
 | `onboarding-app-routing.test.tsx` · `keeps the later shell PATH recheck when the initial check resolves last` | 24/24/24ms · **24ms** | `onboarding-readiness-controller.test.ts` · `rejects an older initial readiness result after a newer PATH recheck` | request sequence 丢弃初始迟到结果 | mounted onboarding + PATH status receiver | 纯测试已建；原接缝保留 |
 | 同文件 · `does not let an older full readiness response overwrite newer per-CLI results` | 6/6/6ms · **6ms** | `onboarding-readiness-controller.test.ts` · `merges newer per-CLI results without accepting an older full snapshot` | revision 合并拒绝旧 full snapshot | preload readiness/install receiver | 纯测试已建；原接缝保留 |
+
+## 实施检查点 1
+
+- 20 批 exact debt：15 → **9**。已清 onboarding route shape、onboarding IPC dependency/adapter、
+  settings adapter、team adapter、draft adapter；剩余集中在 `app.tsx`、`state-sync.ts`、
+  `use-managed-attachments.ts`、right-sidebar tabs 与 CLI installer manager。
+- `onboarding-route.tsx`：603 → **248** 物理行；readiness state/generation、installation state sync 与
+  mutation commands 已进入受 shape 门禁的 application controllers，纯 model 直接覆盖迟到/单调合并。
+- 新增 `onboarding/register.ts` composition root；条件审计为 wiring 4 / timing 0 / business 0，AST
+  合计 4。root 只装配 readiness、installer、team builder 与 channel map。
+- settings/team/draft 不再被误登记为 adapter：纯 reducer/owner 判据归 domain，异步 single-flight 与
+  save-all 时序归 application，`localStorage` 仍只在 draft adapter。
+- `app.tsx` 仍为 4,988 行，本检查点尚未开始 façade 收薄，不把外围 debt 下降计作主 root 完成。
+- `pnpm run test --scope fb5081d`：13 files / 89 tests 全绿，6.12s；同轮
+  `pnpm check:boundaries` 通过（470 source / 384 production / 3 roots）。desktop typecheck 在各纵切后全绿。
