@@ -351,42 +351,26 @@ export function removeAgentTeamDrafts(state: AgentTeamDraftState, teamKey: strin
     : { membersByKey };
 }
 
-export async function saveAllAgentTeamDrafts(input: {
-  state: AgentTeamDraftState;
-  teamKey: string;
-  saveMember: (memberSlug: string, agentMarkdown: string) => Promise<string>;
-  onTransition?: (state: AgentTeamDraftState) => void;
-}): Promise<{ state: AgentTeamDraftState; failures: AgentTeamSaveAllFailure[] }> {
-  let state = input.state;
-  const failures: AgentTeamSaveAllFailure[] = [];
-  const memberSlugs = getDirtyAgentTeamMemberSlugs(state, input.teamKey);
-
-  for (const memberSlug of memberSlugs) {
-    const current = getAgentTeamMemberDraft(state, input.teamKey, memberSlug);
-    if (current?.saveStatus === "saving") {
-      failures.push({ memberSlug, reason: "该成员仍在保存，请稍后重试。" });
-      continue;
-    }
-    state = startAgentTeamMemberSave(state, input.teamKey, memberSlug);
-    input.onTransition?.(state);
-    const savingMember = getAgentTeamMemberDraft(state, input.teamKey, memberSlug);
-    const requestedMarkdown = savingMember?.saveRequestedMarkdown;
-    if (requestedMarkdown === null || requestedMarkdown === undefined) {
-      continue;
-    }
-
-    try {
-      const persistedMarkdown = await input.saveMember(memberSlug, requestedMarkdown);
-      state = finishAgentTeamMemberSave(state, input.teamKey, memberSlug, persistedMarkdown);
-    } catch (error) {
-      const reason = formatStateError(error);
-      state = failAgentTeamMemberSave(state, input.teamKey, memberSlug, reason);
-      failures.push({ memberSlug, reason });
-    }
-    input.onTransition?.(state);
+export function decideAgentTeamSaveAdmission(member: AgentTeamMemberDraft | undefined):
+  | { kind: "already-saving"; reason: string }
+  | { kind: "start" } {
+  if (member?.saveStatus === "saving") {
+    return { kind: "already-saving", reason: "该成员仍在保存，请稍后重试。" };
   }
+  return { kind: "start" };
+}
 
-  return { state, failures };
+export function planAgentTeamRequestedSave(member: AgentTeamMemberDraft | undefined):
+  | { kind: "skip" }
+  | { kind: "save"; markdown: string } {
+  const requestedMarkdown = member?.saveRequestedMarkdown;
+  return requestedMarkdown === null || requestedMarkdown === undefined
+    ? { kind: "skip" }
+    : { kind: "save", markdown: requestedMarkdown };
+}
+
+export function planAgentTeamSaveFailureReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function reconcileAgentTeamSelection(
@@ -430,8 +414,4 @@ function setMember(state: AgentTeamDraftState, member: AgentTeamMemberDraft): Ag
       [key]: member,
     },
   };
-}
-
-function formatStateError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

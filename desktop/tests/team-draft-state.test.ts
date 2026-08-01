@@ -10,11 +10,11 @@ import {
   getDirtyAgentTeamMemberSlugs,
   isAgentTeamMemberDirty,
   loadAgentTeamMemberExternalVersion,
-  saveAllAgentTeamDrafts,
   startAgentTeamMemberSave,
   startAgentTeamMemberExternalOverwrite,
   updateAgentTeamMemberDraft,
 } from "../src/console-page/team-state.js";
+import { saveAllAgentTeamDrafts } from "../src/console-page/team-save-controller.js";
 
 const teamKey = "user:development";
 

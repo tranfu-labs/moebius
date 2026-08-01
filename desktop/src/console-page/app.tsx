@@ -218,7 +218,6 @@ import {
   reconcileAgentTeamSelection,
   removeAgentTeamDrafts,
   removeAgentTeamMemberDraft,
-  saveAllAgentTeamDrafts,
   startAgentTeamMemberLoad,
   startAgentTeamMemberExternalOverwrite,
   startAgentTeamMemberSave,
@@ -227,6 +226,7 @@ import {
   type AgentTeamSaveAllFailure,
   type AgentTeamSelection,
 } from "./team-state.js";
+import { saveAllAgentTeamDrafts } from "./team-save-controller.js";
 import {
   useManagedAttachmentDrafts,
   useMessagesWithAttachmentPreviews,
