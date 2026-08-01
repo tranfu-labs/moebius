@@ -7,9 +7,7 @@ import {
 import { TRUSTED_EXECUTION_REGISTRY } from "../../src/execution-profile-registry.js";
 import {
   acknowledgeDisplayedResult,
-  ConsoleStateActions,
   createSidebarConversationSession,
-  loadEvidenceView,
   loadProcessDebugInvocation,
   loadProcessOutput,
   loadProcessOutputAppend,
@@ -21,7 +19,6 @@ import {
   loadExecutionProfileRegistry,
   loadProjectFiles,
   loadWorkspaceDiff,
-  refreshConsoleState,
   restoreConsoleSession,
   retryPendingSessionMessage,
   retrySessionRun,
@@ -29,8 +26,12 @@ import {
   submitSessionMessage,
   updatePendingSessionMessage,
   searchConsoleSessions,
-} from "../src/console-page/state-sync.js";
+} from "../src/console-page/console-api-client.js";
+import { ConsoleStateActions } from "../src/console-page/console-state-actions.js";
+import { loadEvidenceView } from "../src/console-page/load-evidence-view.js";
+import { refreshConsoleState } from "../src/console-page/refresh-console-state.js";
 import { createBrowserFetchPort } from "../src/console-page/browser-fetch.js";
+import { createConsoleCommandPort } from "../src/console-page/console-command-client.js";
 import {
   mergeSettledProcessOutput,
   ProcessOutputRequestError,
@@ -1174,8 +1175,8 @@ describe("ConsoleStateActions", () => {
       }));
     const actions = new ConsoleStateActions({
       apiBase: "http://127.0.0.1:8787/",
+      commands: createConsoleCommandPort(fetch),
       coordinator,
-      fetch,
       t: zhT,
       getSelection: () => selection,
       commitSelection: (nextSelection) => {
@@ -1184,9 +1185,14 @@ describe("ConsoleStateActions", () => {
       refresh,
       composerValue: "draft",
       clearComposer: vi.fn(),
+      getAttachmentIds: () => [],
+      getResumeRunId: () => null,
+      clearAttachments: vi.fn(),
+      clearResumeRunId: vi.fn(),
       setMutationKind: vi.fn(),
       setSending: vi.fn(),
       setError: vi.fn(),
+      commitSessionMetadata: vi.fn(),
     });
 
     const rebind = actions.rebindSessionProject("session-a", "project-b");
@@ -1496,8 +1502,8 @@ function actionHarness(input: {
   const clearAttachments = vi.fn();
   const actions = new ConsoleStateActions({
     apiBase: "http://127.0.0.1:8787/",
+    commands: createConsoleCommandPort(input.fetch),
     coordinator: input.coordinator,
-    fetch: input.fetch,
     t: zhT,
     getSelection: () => selection,
     commitSelection: (nextSelection) => {
@@ -1507,11 +1513,13 @@ function actionHarness(input: {
     composerValue: input.composerValue ?? "draft",
     clearComposer,
     getAttachmentIds: () => input.attachmentIds ?? [],
+    getResumeRunId: () => null,
     clearAttachments,
+    clearResumeRunId: vi.fn(),
     setMutationKind: (kind) => mutationKinds.push(kind),
     setSending: (value) => sending.push(value),
     setError: (error) => errors.push(error),
-    commitSessionMetadata: input.commitSessionMetadata,
+    commitSessionMetadata: input.commitSessionMetadata ?? vi.fn(),
     selectProjectFolder: input.selectProjectFolder,
   });
   return {

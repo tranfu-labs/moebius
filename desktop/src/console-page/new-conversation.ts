@@ -1,5 +1,5 @@
 import type { TeamOwnership } from "../team-model.js";
-import type { CreatedSession } from "./state-sync.js";
+import type { CreatedSession } from "./console-state-action-contract.js";
 
 export interface ConversationAgentTeamIdentity {
   teamId: string;

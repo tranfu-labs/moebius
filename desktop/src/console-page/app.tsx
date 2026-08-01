@@ -111,7 +111,6 @@ import {
 } from "react-router-dom";
 import {
   acknowledgeDisplayedResult,
-  ConsoleStateActions,
   loadProcessOutput,
   loadProcessOutputUpdate,
   loadProcessDebugInvocation,
@@ -121,7 +120,6 @@ import {
   loadSubSessionView,
   loadExecutionProfileRegistry,
   loadWorkspaceDiff,
-  refreshConsoleState,
   submitSessionMessage,
   retryPendingSessionMessage,
   updatePendingSessionMessage,
@@ -132,7 +130,10 @@ import {
   searchConsoleSessions,
   restoreConsoleSession,
   type SessionSearchResult,
-} from "./state-sync.js";
+} from "./console-api-client.js";
+import { ConsoleStateActions } from "./console-state-actions.js";
+import { browserConsoleCommandPort } from "./console-command-client.js";
+import { refreshConsoleState } from "./refresh-console-state.js";
 import {
   mergeSettledProcessOutput,
   processOutputLocator,
@@ -2457,8 +2458,8 @@ export function OperatorConsoleApp({
 
   const actions = useMemo(() => new ConsoleStateActions({
     apiBase,
+    commands: browserConsoleCommandPort,
     coordinator: coordinatorRef.current,
-    fetch,
     t,
     getSelection: () => selectionRef.current,
     commitSelection,
