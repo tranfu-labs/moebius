@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  decidePrimaryAgentMarkdownSource,
+  decidePrimaryAttachmentPreparation,
   decidePrimaryAnalysisContract,
   decidePrimaryAnalysisConfirmation,
   decidePrimaryAnalysisControl,
@@ -18,6 +20,7 @@ import {
   planPrimaryFinalization,
   planPrimaryLastSeenIndex,
   planPrimaryProfile,
+  planPrimaryAgentContents,
 } from "../src/local-console/primary-runtime-plan.js";
 
 describe("primary runtime plan", () => {
@@ -33,6 +36,18 @@ describe("primary runtime plan", () => {
       primaryAgent: "dev-manager",
     })).toEqual({ kind: "omit" });
     expect(planPrimaryProfile(undefined)).toBeNull();
+  });
+
+  it("selects primary markdown and attachment sources without IO", () => {
+    expect(decidePrimaryAgentMarkdownSource("# inline")).toEqual({ kind: "inline", markdown: "# inline" });
+    expect(decidePrimaryAgentMarkdownSource(undefined)).toEqual({ kind: "file" });
+    expect(decidePrimaryAttachmentPreparation(false)).toEqual({ kind: "empty" });
+    expect(planPrimaryAgentContents(
+      [{ name: "dev", agentMarkdown: undefined, executionProfile: null }],
+      "qa",
+      "# qa",
+      new Map([["dev", "# dev"]]),
+    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
   });
 
   it("stops unavailable preparation and records lifecycle creation only for a fresh attempt", () => {

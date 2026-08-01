@@ -115,6 +115,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/message-command-runtime.ts",
   "src/local-console/provider-invocation-flow.ts",
   "src/local-console/primary-preparation-runtime.ts",
+  "src/local-console/primary-preparation-wiring.ts",
   "src/local-console/primary-provider-runtime.ts",
   "src/local-console/primary-provider-wiring.ts",
   "src/local-console/primary-analysis-runtime.ts",

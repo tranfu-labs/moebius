@@ -1,5 +1,32 @@
+import type { LocalConsoleAgentFile } from "./agent-file.js";
+
 export function planPrimaryProfile<T>(profile: T | null | undefined): T | null {
   return profile ?? null;
+}
+
+export function decidePrimaryAgentMarkdownSource(markdown: string | undefined):
+  | { kind: "inline"; markdown: string }
+  | { kind: "file" } {
+  return markdown === undefined ? { kind: "file" } : { kind: "inline", markdown };
+}
+
+export function planPrimaryAgentContents(
+  agents: readonly LocalConsoleAgentFile[],
+  selectedName: string,
+  selectedMarkdown: string,
+  fileMarkdown: ReadonlyMap<string, string>,
+) {
+  return agents.map((agent) => ({
+    name: agent.name,
+    agentMarkdown: agent.name === selectedName
+      ? selectedMarkdown
+      : agent.agentMarkdown ?? fileMarkdown.get(agent.name)!,
+    executionProfile: agent.executionProfile ?? null,
+  }));
+}
+
+export function decidePrimaryAttachmentPreparation(available: boolean): { kind: "prepare" } | { kind: "empty" } {
+  return available ? { kind: "prepare" } : { kind: "empty" };
 }
 
 export function decidePrimaryAnalysisContract(input: {

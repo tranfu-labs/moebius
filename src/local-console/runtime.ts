@@ -106,6 +106,7 @@ import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerWiring } from "./worker-wiring.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
+import { createLocalPrimaryPreparationPorts } from "./primary-preparation-wiring.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
 import { createLocalPrimaryProviderPorts } from "./primary-provider-wiring.js";
 import { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
@@ -407,26 +408,19 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       provider: this.workerProviderRuntime,
       terminal: this.workerTerminalRuntime,
     }));
-    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime({
+    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(createLocalPrimaryPreparationPorts({
+      options,
+      storePorts: this.storePorts,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
       nowIso: () => this.nowIso(),
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
-      loadSelectedAgentMarkdown: (agent) => agent.agentMarkdown === undefined
-        ? fs.readFile(requireAgentFilePath(agent), "utf8")
-        : Promise.resolve(agent.agentMarkdown),
+      readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
       makeRunDir: (messageCount) => {
         const providerRunDir = options.makeRunDir(messageCount, this.now());
         return { providerRunDir, resolvedRunDir: path.resolve(providerRunDir) };
       },
-      setSourceRunDir: (message, sessionId, runDir) => this.storePorts.call("local-console-store-set-rundir", () =>
-        options.store.setRunDir({ id: message.id, sessionId, runDir, now: this.nowIso() })),
       resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
-      loadAgentContents: async (agents, selected, selectedMarkdown) => await Promise.all(agents.map(async (agent) => ({
-        name: agent.name,
-        agentMarkdown: agent.name === selected.name
-          ? selectedMarkdown
-          : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
-        executionProfile: agent.executionProfile ?? null,
-      }))),
       concurrentRecoveryWorkspace: (sessionId) => this.concurrentAgentHandoffRecoveryWorkspace(sessionId),
       buildAnalysisContract: (proposalVersion) => buildSessionAnalysisReadOnlyContract(proposalVersion),
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
@@ -445,24 +439,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
           reason: unavailable.reason,
           runDir,
         }),
-      recordRunExecutionContext: (context) => this.storePorts.recordRunExecutionContext(context),
-      recordAgentSessionLink: (link) => this.storePorts.recordAgentSessionLink(link),
-      prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
-        ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
-      consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
-        this.storePorts.call("local-console-store-consume-resume", () =>
-          this.storePorts.requireRecoveryFacts().recordCodexResumeConsumed({
-            sessionId,
-            intentId,
-            resumedByRunId: runId,
-            mode,
-            reason,
-            consumedAt: this.nowIso(),
-          })),
-      prepareLifecycle: (input) => this.runLifecycleRuntime.prepare(input),
-      setActiveRun: (runId, active) => { this.activeRunRegistry.set(runId, active); },
-      recordLifecycle: (active) => this.runLifecycleRuntime.record(active, "created", "created"),
-    });
+    }));
     this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(createLocalPrimaryProviderPorts({
       storePorts: this.storePorts,
       executionRunner: this.executionRunner,
