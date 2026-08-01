@@ -55,7 +55,9 @@
   唯一接缝，最终全部保留；集成测试净变化 0、可归因速度收益记 0。
 - 合并点完整闸门暴露 `tests/desktop-runtime-provider-scope.test.ts` 的 6 条源码镜像断言：它们递归读取
   生产源码并冻结 provider import 文件名、调用字面量与 helper 名称，重构后只能靠复制新路径/文本修绿，
-  不断言外部行为，故按即时剪枝规则整文件删除。provider full/resume 与身份失败关闭继续由
+  不断言外部行为，故按即时剪枝规则整文件删除。它试图约束的 provider 具体实现扩散已由
+  `[IB:architecture-layer-dependency-matrix]`、`[IB:adapter-boundary-branch-total]` 和
+  `[IB:domain-pure-runtime-closure]` 的 AST/传递闭包门禁接管。provider full/resume 与身份失败关闭继续由
   `codex.test.ts`、`kimi.test.ts`、`claude.test.ts`、`local-console-execution-driver.test.ts` 和
   `local-console-execution-runtime.test.ts` 覆盖；外部路由与数据根分别由 `format-ceo.test.ts` / runner
   行为测试和 `runtime-start.test.ts` / 配置路径行为测试覆盖。本批最终删除 6 条镜像测试，不以新实现
