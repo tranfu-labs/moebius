@@ -8,7 +8,7 @@ import {
   ONBOARDING_IPC_CHANNELS,
   registerOnboardingIpc,
   type OnboardingIpcMain,
-} from "../src/onboarding/ipc.js";
+} from "../src/onboarding/register.js";
 import { OnboardingCliInstallManager } from "../src/onboarding/cli-installer-manager.js";
 import { OnboardingCliReadinessService } from "../src/onboarding/cli-readiness.js";
 import {

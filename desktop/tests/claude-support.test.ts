@@ -13,7 +13,7 @@ import {
   ONBOARDING_IPC_CHANNELS,
   registerOnboardingIpc,
   type OnboardingIpcMain,
-} from "../src/onboarding/ipc.js";
+} from "../src/onboarding/register.js";
 
 describe("Claude readiness capabilities", () => {
   it("uses the static official registry only after a valid logged-in auth response", async () => {

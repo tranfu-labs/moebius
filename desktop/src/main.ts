@@ -84,7 +84,7 @@ import {
   openValidatedExternalLink,
 } from "./external-link.js";
 import { registerSessionLogClipboardIpc } from "./session-log-clipboard.js";
-import { registerOnboardingIpc } from "./onboarding/ipc.js";
+import { registerOnboardingIpc } from "./onboarding/register.js";
 import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
