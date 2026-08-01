@@ -39,6 +39,9 @@
   （460 source files / 374 production files / 3 roots）。
 - `server.ts` 1345 物理行、`store.ts` 1878 物理行；runtime 规则没有位移到这两个 adapter。
   `server.ts` 的下降来自把进程启动 composition 搬到 `start.ts`，存储端口抽象未重画。
+- fact-path 接线回归由本批 `814e26d` 引入（run-output 提取后仍经完整 session fact write
+  funnel 取路径），由 `998f734` 修复（改注入窄 `getSessionFactLogPath` capability）；这是本批
+  重构接线错误的修正，不是顺手改变存量产品行为。
 - 按 00 批同一 logical-line 脚本，domain closure 从 74 文件 / 10,024 行增至 113 文件 /
   15,032 行，增加 5,008 行。用 00 批人工基线 10,301 行、34–41% 校准后，本批累计纯逻辑/
   业务规则约 **51–61%**；区间覆盖方案目标 48–57%，不把 contracts 与规则混算成单点精度。
