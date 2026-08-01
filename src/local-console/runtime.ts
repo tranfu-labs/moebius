@@ -107,6 +107,7 @@ import {
 import { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import { LocalRunRecoveryRuntime } from "./run-recovery-runtime.js";
 import { LocalProjectCommandRuntime } from "./project-command-runtime.js";
+import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -333,6 +334,7 @@ export class LocalConsoleRuntime {
   private readonly pendingSessionContextRuntime: LocalPendingSessionContextRuntime;
   private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
   private readonly projectCommandRuntime: LocalProjectCommandRuntime;
+  private readonly sessionCreationRuntime: LocalSessionCreationRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -426,6 +428,24 @@ export class LocalConsoleRuntime {
       processPending: (sessionId) => void this.processPending(sessionId),
       activeRunsForSession: (sessionId) => this.activeRunsForSession(sessionId),
       inactiveSessions: this.inactiveSessions,
+    });
+    this.sessionCreationRuntime = new LocalSessionCreationRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      now: () => this.now(),
+      nowIso: () => this.nowIso(),
+      defaultProjectId: () => this.defaultProjectId(),
+      assertProjectDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
+      storedProject: (projectId) => this.storedProject(projectId),
+      ...(options.loadAgentTeamSnapshot === undefined
+        ? {}
+        : { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot }),
+      listAgentNames: async (sessionId) =>
+        (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
+      ...(options.attachmentManager === undefined ? {} : { attachmentManager: options.attachmentManager }),
+      ...(options.workspaceGitTimeoutMs === undefined ? {} : { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs }),
+      baselineCommits: this.conversationBaselineCommits,
+      processPending: (sessionId) => void this.processPending(sessionId),
     });
   }
 
@@ -771,104 +791,15 @@ export class LocalConsoleRuntime {
       attachmentDraftKey?: string;
     } = {},
   ): Promise<LocalConsoleSessionSummary> {
-    const sessionId = `local:${this.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
-    const resolvedProjectId = projectId ?? (await this.defaultProjectId());
-    const normalizedInitialMessage = initialMessage?.trim();
-    if (initialMessage !== undefined && normalizedInitialMessage === "" && attachmentIds.length === 0) {
-      throw new Error("Message body must not be empty");
-    }
-    if (new Set(attachmentIds).size !== attachmentIds.length) {
-      throw new Error("Attachment ids must be unique");
-    }
-    assertTextFragments(metadata.textFragments ?? []);
-    const persistedInitialMessage = normalizedInitialMessage === undefined
-      ? undefined
-      : serializeTextFragmentReferences(normalizedInitialMessage, metadata.textFragments ?? []);
-    await this.assertProjectDirectoryAvailable(resolvedProjectId);
-    const project = await this.storedProject(resolvedProjectId);
-    if (project === undefined) {
-      throw new Error(`local console project not found: ${resolvedProjectId}`);
-    }
-    if (workspaceMode === "worktree") {
-      const facts = await readCachedLocalWorkspaceFacts({
-        folderPath: project.folderPath,
-        gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-      });
-      if (!facts.isGitRepository) {
-        throw new Error("not-git-repository");
-      }
-    }
-    let baselineCommit: string | null | undefined;
-    if (normalizedInitialMessage !== undefined || attachmentIds.length > 0) {
-      try {
-        baselineCommit = await readLocalConversationBaselineCommit({
-          folderPath: project.folderPath,
-          gitTimeoutMs: this.options.workspaceGitTimeoutMs,
-        });
-      } catch (error) {
-        baselineCommit = null;
-        log({
-          event: "local-console-conversation-baseline-unavailable",
-          projectId: resolvedProjectId,
-          error: formatLocalError(error),
-        });
-      }
-    }
-    const agentTeamSnapshot = agentTeam === undefined || this.options.loadAgentTeamSnapshot === undefined
-      ? undefined
-      : await this.options.loadAgentTeamSnapshot(agentTeam);
-    let routeAgentNames = agentTeamSnapshot?.members.map((member) => member.name) ?? [];
-    if (routeAgentNames.length === 0) {
-      try {
-        routeAgentNames = (await this.options.listAgentFiles(sessionId)).map((agent) => agent.name);
-      } catch {
-        // Legacy/custom stores without an available team keep the fail-safe primary dispatch.
-      }
-    }
-    const initialDispatch = normalizedInitialMessage === undefined && attachmentIds.length === 0
-      ? undefined
-      : routeAgentNames[0] === undefined
-        ? undefined
-        : resolveLocalUserMessageDispatch({
-            body: normalizedInitialMessage ?? "",
-            availableAgentNames: routeAgentNames,
-            primaryAgent: routeAgentNames[0],
-          });
-    const firstAttachment = attachmentIds.length === 0
-      ? undefined
-      : (await this.options.attachmentManager?.listDraft("draft:new"))
-        ?.find((attachment) => attachment.attachmentId === attachmentIds[0]);
-    const session = await this.storeCall("local-console-store-create-session", () =>
-      this.options.store.createSession({
-        sessionId,
-        projectId: resolvedProjectId,
-        title: normalizedInitialMessage
-          ? deriveSessionTitle(normalizedInitialMessage)
-          : firstAttachment === undefined
-            ? normalizeTitle(title)
-            : deriveSessionTitle(firstAttachment.displayName),
-        agentTeamOwnership: agentTeam?.ownership,
-        agentTeamId: agentTeam?.id,
-        agentTeamSnapshot,
-        workspaceMode,
-        initialMessage: persistedInitialMessage,
-        initialDispatch,
-        initialAttachmentIds: attachmentIds,
-        attachmentDraftKey: metadata.attachmentDraftKey ?? "draft:new",
-        baselineCommit,
-        originSessionId: metadata.originSessionId,
-        analysisParentSessionId: metadata.analysisParentSessionId,
-        entryTemplate: metadata.entryTemplate,
-        writePolicy: metadata.writePolicy,
-        initialTextFragments: [],
-        now: this.nowIso(),
-      }),
+    return await this.sessionCreationRuntime.create(
+      title,
+      projectId,
+      agentTeam,
+      initialMessage,
+      workspaceMode,
+      attachmentIds,
+      metadata,
     );
-    this.conversationBaselineCommits.set(sessionId, baselineCommit ?? null);
-    if (normalizedInitialMessage !== undefined || attachmentIds.length > 0) {
-      void this.processPending(sessionId);
-    }
-    return session;
   }
 
   async moveEmptySessionToProject(input: {
