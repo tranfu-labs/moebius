@@ -31,6 +31,17 @@ export class LocalSessionContinuationRuntime {
     directoryAvailable(folderPath: string): Promise<boolean>;
   }) {}
 
+  async sessionSummary(sessionId: string): Promise<LocalConsoleSessionSummary> {
+    const sessions = await this.input.storeCall(
+      "local-console-store-list-session-policy",
+      () => this.input.store.listSessions(),
+    );
+    return requireStoredSession(
+      sessions.find((candidate) => candidate.sessionId === sessionId),
+      sessionId,
+    );
+  }
+
   async defaultProjectId(): Promise<string> {
     const projects = await this.input.storeCall("local-console-store-list-projects", () =>
       this.input.store.listProjects());
