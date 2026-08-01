@@ -180,7 +180,7 @@ export async function executeLocalRunPreparationFlow(
     lane: input.lane,
     role: input.role,
     sourceBody: input.sourceMessage.body,
-    fullPrompt: `${promptPlan.fullPrompt}${input.promptContract}`,
+    fullPrompt: promptPlan.fullPrompt,
     timeline: input.timeline,
     cursorLastSeenIndex,
     contextPlan,
@@ -213,7 +213,7 @@ export async function executeLocalRunPreparationFlow(
     recoveryPlan: invocationPlan.recoveryPlan,
     invocationPlan,
     workspace: workspaceFromExecutionContext(executionContext),
-    prompt: `${invocationPlan.prompt}${preparedAttachments.promptSuffix}`,
+    prompt: `${invocationPlan.prompt}${input.promptContract}${preparedAttachments.promptSuffix}`,
     preparedAttachments,
   };
 }

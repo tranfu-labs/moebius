@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
-import { parseAgentManifest } from "../agent-manifest.js";
 import { loadCeoScripts } from "../ceo-scripts.js";
 import {
   CEO_ORCHESTRATION_STAGE,
@@ -31,7 +30,6 @@ import {
 } from "./run-activity.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
 import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
-import { buildLocalAgentPrompt } from "./prompt.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import {
   buildLocalConsoleRoutingTimeline,
@@ -86,11 +84,7 @@ import {
   type LocalExecutionRunner,
 } from "./execution-driver.js";
 import {
-  createRunExecutionContext,
-  singleRunOverrideIdentitySalt,
-  latestAgentTimelineCursor,
   legacyCodexContextFingerprint,
-  planLocalExecutionRecovery,
   type LocalAgentSessionLinkFact,
   type LocalAgentTimelineCursorFact,
   type LocalExecutionSessionLinkFact,
@@ -99,10 +93,7 @@ import {
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import {
-  readAgentSessionLinks,
-  readAgentTimelineCursors,
   readExecutionSessionLinks,
-  readProviderSessionObservations,
   readRunExecutionContexts,
 } from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
@@ -110,11 +101,6 @@ import {
   resolveClaimedControlAction,
   selectSourceRetryIntent,
 } from "./control-dispatch.js";
-import {
-  planLocalRunContext,
-  planLocalRunInvocation,
-  selectExecutingAgent,
-} from "./run-invocation-plan.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { executePendingWorkerDispatchFlow } from "./worker-dispatch-flow.js";
 import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
@@ -2149,121 +2135,33 @@ export class LocalConsoleRuntime {
             executionProfile: agent.executionProfile ?? null,
           })));
           const concurrentRecoveryWorkspace = this.concurrentAgentHandoffRecoveryWorkspace(sessionId);
-          let currentContext = createRunExecutionContext({
-            sessionId,
-            runId: nextRunId,
-            sourceMessageId: claimedMessage.id,
-            role: triggerRole,
-            profile: selectedAgent.executionProfile ?? null,
-            workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
-            team: agentContents,
-            recordedAt: this.nowIso(),
-          });
           const recoveryStore = this.codexRecoveryFactStore();
-          const [
-            recoveryFacts,
-            threadLinks,
-            executionLinks,
-            runContexts,
-            canonicalLinks,
-            observations,
-            timelineCursors,
-          ] = recoveryStore === null
-            ? [
-                { intents: [], consumedIntentIds: new Set<string>(), repairedIntentIds: new Set<string>() },
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-              ]
-            : await Promise.all([
-                readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readCodexThreadLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readRunExecutionContexts(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readAgentSessionLinks(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readProviderSessionObservations(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-                readAgentTimelineCursors(recoveryStore.getSessionFactLogPath(sessionId), sessionId),
-              ]);
-          const executionOverrideIntent = [...recoveryFacts.intents].reverse().find((intent) =>
-            intent.sourceMessageId === claimedMessage.id
-            && intent.reason === "retry"
-            && intent.executionOverride !== undefined
-            && !recoveryFacts.consumedIntentIds.has(intent.intentId));
-          if (executionOverrideIntent?.executionOverride !== undefined) {
-            currentContext = createRunExecutionContext({
-              sessionId,
-              runId: nextRunId,
-              sourceMessageId: claimedMessage.id,
-              role: triggerRole,
-              profile: executionOverrideIntent.executionOverride.profile,
-              workspace: concurrentRecoveryWorkspace ?? currentWorkspace,
-              team: agentContents,
-              recordedAt: this.nowIso(),
-              identitySalt: singleRunOverrideIdentitySalt(
-                executionOverrideIntent.executionOverride,
-              ),
-            });
-          }
-          const persistedGracefulRecovery = exactGracefulRecoveryContext({
+          const preparation = await executeLocalRunPreparationFlow({
+            lane: "primary",
             sessionId,
             runId: nextRunId,
-            sourceMessageId: claimedMessage.id,
+            sourceMessage: claimedMessage,
             role: triggerRole,
-            intents: recoveryFacts.intents,
-            consumedIntentIds: recoveryFacts.consumedIntentIds,
-            contexts: runContexts,
-          });
-          if (persistedGracefulRecovery !== null) {
-            currentContext = createRunExecutionContext({
+            defaultProfile: selectedAgent.executionProfile ?? null,
+            defaultWorkspace: currentWorkspace,
+            concurrentWorkspace: concurrentRecoveryWorkspace,
+            team: agentContents,
+            timeline,
+            timelineMessages,
+            readOnly: analysisGateEnabled,
+            promptContract: analysisGateEnabled && triggerRole === primaryAgent
+              ? buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null)
+              : "",
+            runDir: resolvedRunDir,
+          }, {
+            nowIso: () => this.nowIso(),
+            loadRecoverySnapshot: () => readLocalRunRecoverySnapshot({
+              factLogPath: recoveryStore?.getSessionFactLogPath(sessionId) ?? null,
               sessionId,
-              runId: nextRunId,
-              sourceMessageId: claimedMessage.id,
-              role: triggerRole,
-              profile: persistedGracefulRecovery.context.profile,
-              workspace: workspaceFromExecutionContext(persistedGracefulRecovery.context),
-              team: agentContents,
-              recordedAt: this.nowIso(),
-              identitySalt: persistedGracefulRecovery.context.identitySalt,
-            });
-          }
-          let recoveryPlan = planLocalExecutionRecovery({
-            sourceMessageId: claimedMessage.id,
-            role: triggerRole,
-            currentContext,
-            preferredIntentId: persistedGracefulRecovery?.intent.intentId,
-            intents: recoveryFacts.intents,
-            consumedIntentIds: recoveryFacts.consumedIntentIds,
-            canonicalLinks,
-            observations,
-            executionLinks,
-            legacyCodexLinks: threadLinks,
-            contexts: runContexts,
-          });
-          if (recoveryPlan.kind === "resume" && recoveryPlan.context.engine === "codex") {
-            const available = await (this.options.isCodexThreadAvailable
-              ?? defaultCodexThreadAvailability)(recoveryPlan.externalSessionId);
-            if (!available) {
-              recoveryPlan = {
-                kind: "unavailable",
-                intent: recoveryPlan.intent,
-                context: recoveryPlan.context,
-                reason: "rollout-unavailable",
-              };
-            }
-          }
-          const contextPlan = planLocalRunContext({
-            recoveryPlan,
-            sessionId,
-            runId: nextRunId,
-            sourceMessageId: claimedMessage.id,
-            recordedAt: this.nowIso(),
-          });
-          if (contextPlan.kind === "unavailable") {
-            const unavailable = contextPlan.recoveryPlan;
-            await this.settleUnavailableResume({
+            }),
+            isCodexThreadAvailable: this.options.isCodexThreadAvailable
+              ?? defaultCodexThreadAvailability,
+            settleUnavailable: (unavailable) => this.settleUnavailableResume({
               sessionId,
               runId: nextRunId,
               sourceMessage: claimedMessage,
@@ -2272,84 +2170,39 @@ export class LocalConsoleRuntime {
               engine: unavailable.context.engine,
               reason: unavailable.reason,
               runDir: resolvedRunDir,
-            });
+            }),
+            recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
+            recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+            prepareAttachments: ({ messages, runDir: attachmentRunDir }) =>
+              this.options.attachmentManager?.prepareRunAttachments({
+                messages,
+                runDir: attachmentRunDir,
+              }) ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
+            consumeRecoveryIntent: ({ intentId, mode, reason }) => {
+              const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
+              return this.storeCall("local-console-store-consume-resume", () =>
+                requiredRecoveryStore.recordCodexResumeConsumed({
+                  sessionId,
+                  intentId,
+                  resumedByRunId: nextRunId,
+                  mode,
+                  reason,
+                  consumedAt: this.nowIso(),
+                }));
+            },
+          });
+          if (preparation.kind === "settled-unavailable") {
             return;
           }
-          const { continuingSameRun, executionContext } = contextPlan;
-          const workspace = workspaceFromExecutionContext(executionContext);
-          const executingAgentPlan = selectExecutingAgent(executionContext, triggerRole);
-          if (executingAgentPlan.kind === "missing") {
-            throw new Error(`Run execution context is missing Agent: ${triggerRole}`);
-          }
-          const agentManifest = parseAgentManifest(executingAgentPlan.agent.agentMarkdown);
-          const fullPrompt = buildLocalAgentPrompt({
-            role: triggerRole,
-            agentMarkdown: agentManifest.body,
-            timeline,
-            primaryAgent: executionContext.team[0]?.name ?? triggerRole,
-            availableAgentNames: executionContext.team.map((agent) => agent.name),
-          });
-          if (!continuingSameRun) {
-            await this.recordRunExecutionContext(executionContext);
-          }
-          if (recoveryPlan.kind === "resume" && recoveryPlan.canonicalLinkMissing) {
-            await this.recordAgentSessionLink({
-              sessionId,
-              agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              role: triggerRole,
-              engine: executionContext.engine,
-              externalSessionId: recoveryPlan.externalSessionId,
-              profileFingerprint: executionContext.profileFingerprint,
-              contextFingerprint: executionContext.contextFingerprint,
-              linkedAt: this.nowIso(),
-            });
-          }
-          const cursor = latestAgentTimelineCursor(
-            timelineCursors,
-            executionContext.agentIdentityFingerprint,
-          );
-          const invocationPlan = planLocalRunInvocation({
-            lane: "primary",
-            role: triggerRole,
-            sourceBody: claimedMessage.body,
-            fullPrompt,
-            timeline,
-            cursorLastSeenIndex: cursor?.lastSeenIndex ?? -1,
-            contextPlan,
-            readOnly: analysisGateEnabled,
-          });
-          if (invocationPlan.kind === "unavailable") {
-            throw new Error("Ready run context unexpectedly produced an unavailable invocation");
-          }
-          const attachmentMessages = recoveryPlan.kind === "resume" && !continuingSameRun
-            ? timelineMessages.filter((_message, index) =>
-                invocationPlan.attachmentTimelineIndexes.has(index))
-            : timelineMessages;
-          const preparedAttachments = this.options.attachmentManager === undefined
-            ? { promptSuffix: "", imagePaths: [] as string[] }
-            : await this.options.attachmentManager.prepareRunAttachments({
-                messages: attachmentMessages,
-                runDir: resolvedRunDir,
-              });
-          let prompt = invocationPlan.prompt;
-          if (analysisGateEnabled && triggerRole === primaryAgent) {
-            prompt += buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null);
-          }
-          prompt += preparedAttachments.promptSuffix;
-
-          if (recoveryPlan.intent !== null) {
-            const consumedIntent = recoveryPlan.intent;
-            const recoveryStore = this.requireCodexRecoveryFactStore();
-            await this.storeCall("local-console-store-consume-resume", () =>
-              recoveryStore.recordCodexResumeConsumed({
-                sessionId,
-                intentId: consumedIntent.intentId,
-                resumedByRunId: nextRunId,
-                mode: invocationPlan.consumeIntentMode!,
-                reason: recoveryPlan.reason,
-                consumedAt: this.nowIso(),
-              }));
-          }
+          const {
+            continuingSameRun,
+            executionContext,
+            recoveryPlan,
+            invocationPlan,
+            workspace,
+            prompt,
+            preparedAttachments,
+          } = preparation;
           const primaryStepId = `message:${String(claimedMessage.id)}`;
           const primaryLifecycle = await this.prepareRunLifecycle({
             sessionId,
@@ -5007,59 +4860,6 @@ export class LocalConsoleRuntime {
   private nowIso(): string {
     return this.now().toISOString();
   }
-}
-
-function workspaceFromExecutionContext(
-  context: LocalRunExecutionContextFact,
-): ResolvedLocalWorkspace {
-  return {
-    cwd: path.resolve(context.workspace.cwd),
-    mode: context.workspace.mode === "worktree" ? "worktree" : "direct",
-    worktreePath: context.workspace.worktreePath,
-    worktreeUnavailableReason: context.workspace.worktreeUnavailableReason,
-    branchName: context.workspace.branchName,
-    baseRef: context.workspace.baseRef,
-    originalRepoRoot: context.workspace.originalRepoRoot,
-  };
-}
-
-function exactGracefulRecoveryContext(input: {
-  sessionId: string;
-  runId: string;
-  sourceMessageId: number;
-  role: string;
-  intents: readonly LocalCodexResumeIntentFact[];
-  consumedIntentIds: ReadonlySet<string>;
-  contexts: readonly LocalRunExecutionContextFact[];
-}): {
-  context: LocalRunExecutionContextFact;
-  intent: LocalCodexResumeIntentFact;
-} | null {
-  const intents = input.intents.filter((intent) =>
-    intent.reason === "graceful-shutdown"
-    && intent.targetRunId === input.runId
-    && intent.sourceMessageId === input.sourceMessageId
-    && intent.role === input.role
-    && !input.consumedIntentIds.has(intent.intentId));
-  if (intents.length !== 1) {
-    return null;
-  }
-  const relatedContexts = input.contexts.filter((context) =>
-    context.runId === input.runId
-    || context.sourceMessageId === input.sourceMessageId);
-  if (
-    relatedContexts.length !== 1
-    || relatedContexts[0]?.sessionId !== input.sessionId
-    || relatedContexts[0]?.runId !== input.runId
-    || relatedContexts[0]?.sourceMessageId !== input.sourceMessageId
-    || relatedContexts[0]?.role !== input.role
-  ) {
-    return null;
-  }
-  return {
-    context: relatedContexts[0],
-    intent: intents[0],
-  };
 }
 
 async function defaultCodexThreadAvailability(threadId: string): Promise<boolean> {
