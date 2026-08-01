@@ -1,10 +1,15 @@
+import path from "node:path";
+import type { LocalActiveRunRegistry } from "./active-run-registry.js";
+import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
-import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
+import type { LocalRuntimeWiringContext } from "./runtime-wiring-context.js";
+import type { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import type { LocalProjectCommandRuntime } from "./project-command-runtime.js";
 import type { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import type { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import type { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
-import { decideTeamSnapshotLoad } from "./session-settings-plan.js";
+import { planProjectSessionActiveRuns } from "./project-command-plan.js";
+import { decideTeamSnapshotLoad, planSessionHasActiveRun } from "./session-settings-plan.js";
 import { decideSessionCreationProjectId } from "./session-creation-plan.js";
 
 type ProjectPorts = ConstructorParameters<typeof LocalProjectCommandRuntime>[0];
@@ -14,19 +19,13 @@ type ReferencePorts = ConstructorParameters<typeof LocalSessionReferenceRuntime>
 
 export function createLocalSessionCommandWiring(input: {
   options: LocalConsoleRuntimeOptions;
-  storePorts: LocalConsoleStorePorts;
+  context: LocalRuntimeWiringContext;
+  activeRuns: LocalActiveRunRegistry;
+  lifecycle: LocalRunLifecycleRuntime;
+  continuation: LocalSessionContinuationRuntime;
   inactiveSessions: Set<string>;
   baselineCommits: Map<string, string | null>;
-  now(): Date;
-  nowIso(): string;
   processPending(sessionId: string): void;
-  activeRunsForSession: ProjectPorts["activeRunsForSession"];
-  hasActiveRun: SettingsPorts["hasActiveRun"];
-  defaultProjectId(): Promise<string>;
-  assertProjectDirectoryAvailable: ProjectPorts["assertDirectoryAvailable"];
-  withDirectoryAvailability: ProjectPorts["withDirectoryAvailability"];
-  storedProject: CreationPorts["storedProject"];
-  resolvePath: ProjectPorts["resolvePath"];
   directoryAvailable: ProjectPorts["directoryAvailable"];
   readWorkspaceFacts: CreationPorts["readWorkspaceFacts"];
   readBaselineCommit: CreationPorts["readBaselineCommit"];
@@ -34,34 +33,36 @@ export function createLocalSessionCommandWiring(input: {
   randomId: ReferencePorts["randomId"];
   logBaselineUnavailable: CreationPorts["logBaselineUnavailable"];
 }) {
-  const { options, storePorts } = input;
+  const { context, options } = input;
   const snapshot = decideTeamSnapshotLoad(options.loadAgentTeamSnapshot !== undefined);
   const attachment = decideTeamSnapshotLoad(options.attachmentManager !== undefined);
   const workspaceTimeout = decideTeamSnapshotLoad(options.workspaceGitTimeoutMs !== undefined);
   return {
     project: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
-      nowIso: input.nowIso,
-      assertDirectoryAvailable: input.assertProjectDirectoryAvailable,
-      withDirectoryAvailability: input.withDirectoryAvailability,
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
+      nowIso: context.nowIso,
+      assertDirectoryAvailable: (projectId) => input.continuation.assertProjectDirectoryAvailable(projectId),
+      withDirectoryAvailability: (project, knownAvailable) =>
+        input.continuation.withDirectoryAvailability(project, knownAvailable),
       processPending: input.processPending,
-      activeRunsForSession: input.activeRunsForSession,
+      activeRunsForSession: (sessionId) =>
+        planProjectSessionActiveRuns([...input.activeRuns.values()], sessionId),
       inactiveSessions: input.inactiveSessions,
-      resolvePath: input.resolvePath,
+      resolvePath: path.resolve,
       directoryAvailable: input.directoryAvailable,
     } satisfies ProjectPorts,
     creation: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
-      createSessionId: () => `local:${input.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`,
-      nowIso: input.nowIso,
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
+      createSessionId: () => `local:${context.now().toISOString()}-${Math.random().toString(36).slice(2, 8)}`,
+      nowIso: context.nowIso,
       resolveProjectId: async (projectId) => {
         const decision = decideSessionCreationProjectId(projectId);
-        return decision.kind === "requested" ? decision.projectId : await input.defaultProjectId();
+        return decision.kind === "requested" ? decision.projectId : await input.continuation.defaultProjectId();
       },
-      assertProjectDirectoryAvailable: input.assertProjectDirectoryAvailable,
-      storedProject: input.storedProject,
+      assertProjectDirectoryAvailable: (projectId) => input.continuation.assertProjectDirectoryAvailable(projectId),
+      storedProject: (projectId) => input.continuation.storedProject(projectId),
       ...(snapshot.kind === "load" ? { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot! } : {}),
       listAgentNames: async (sessionId) =>
         (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
@@ -80,13 +81,13 @@ export function createLocalSessionCommandWiring(input: {
     } satisfies CreationPorts,
     settings: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
-      nowIso: input.nowIso,
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
+      nowIso: context.nowIso,
       ...(snapshot.kind === "load" ? { loadAgentTeamSnapshot: options.loadAgentTeamSnapshot! } : {}),
       ...(workspaceTimeout.kind === "load"
         ? { workspaceGitTimeoutMs: options.workspaceGitTimeoutMs! }
         : {}),
-      hasActiveRun: input.hasActiveRun,
+      hasActiveRun: (sessionId) => planSessionHasActiveRun(input.lifecycle.runsForSession(sessionId).length),
       inactiveSessions: input.inactiveSessions,
       processPending: input.processPending,
       readWorkspaceFacts: input.readWorkspaceFacts,
@@ -94,7 +95,7 @@ export function createLocalSessionCommandWiring(input: {
     } satisfies SettingsPorts,
     reference: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
       randomId: input.randomId,
     } satisfies ReferencePorts,
   };

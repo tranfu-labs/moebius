@@ -21,3 +21,10 @@ export function planChildSessionCreation(input: {
     now: input.now,
   };
 }
+
+export function decideSessionInterrupt(
+  activeSessionId: string | undefined,
+  requestedSessionId: string,
+): { kind: "reject" } | { kind: "abort" } {
+  return activeSessionId === requestedSessionId ? { kind: "abort" } : { kind: "reject" };
+}

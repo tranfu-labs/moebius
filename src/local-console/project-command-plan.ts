@@ -1,5 +1,12 @@
 import type { LocalConsoleProjectSummary, LocalConsoleSessionSummary } from "./types.js";
 
+export function planProjectSessionActiveRuns<T extends { sessionId: string }>(
+  activeRuns: readonly T[],
+  sessionId: string,
+): T[] {
+  return activeRuns.filter((active) => active.sessionId === sessionId);
+}
+
 export function decideProjectCommandCapability(
   available: boolean,
 ): { kind: "available" } | { kind: "unavailable" } {

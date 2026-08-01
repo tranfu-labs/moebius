@@ -135,6 +135,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/session-command-wiring.ts",
   "src/local-console/shared-run-wiring.ts",
   "src/local-console/session-metadata-runtime.ts",
+  "src/local-console/session-metadata-wiring.ts",
   "src/local-console/session-presentation-runtime.ts",
   "src/local-console/state-query-runtime.ts",
   "src/local-console/run-preparation-flow.ts",

@@ -81,6 +81,7 @@ import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import { createLocalSessionReadWiring } from "./session-read-wiring.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
+import { createLocalSessionMetadataWiring } from "./session-metadata-wiring.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
 import { createLocalMessageRetryWiring } from "./message-retry-wiring.js";
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
@@ -89,7 +90,6 @@ import {
 } from "./worker-dispatch-runtime.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 export type { LocalConsoleAgentFile } from "./agent-file.js";
-import type { ActiveLocalRun } from "./active-run.js";
 import { LocalActiveRunRegistry } from "./active-run-registry.js";
 import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
@@ -459,22 +459,13 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     });
     const sessionCommandWiring = createLocalSessionCommandWiring({
       options,
-      storePorts: this.storePorts,
+      context: runtimeContext,
+      activeRuns: this.activeRunRegistry,
+      lifecycle: this.runLifecycleRuntime,
+      continuation: this.sessionContinuationRuntime,
       inactiveSessions: this.inactiveSessions,
       baselineCommits: this.conversationBaselineCommits,
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
       processPending: (sessionId) => { void this.processPending(sessionId); },
-      activeRunsForSession: (sessionId) =>
-        this.runLifecycleRuntime.runsForSession(sessionId) as ActiveLocalRun[],
-      hasActiveRun: (sessionId) => this.runLifecycleRuntime.runsForSession(sessionId).length > 0,
-      defaultProjectId: () => this.sessionContinuationRuntime.defaultProjectId(),
-      assertProjectDirectoryAvailable: (projectId) =>
-        this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
-      withDirectoryAvailability: (project, knownAvailable) =>
-        this.sessionContinuationRuntime.withDirectoryAvailability(project, knownAvailable),
-      storedProject: (projectId) => this.sessionContinuationRuntime.storedProject(projectId),
-      resolvePath: path.resolve,
       directoryAvailable,
       readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
         folderPath,
@@ -499,26 +490,19 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
 
     const sessionReadWiring = createLocalSessionReadWiring({
       options,
-      storePorts: this.storePorts,
+      context: runtimeContext,
       activeRuns: this.activeRunRegistry,
       lifecycle: this.runLifecycleRuntime,
+      continuation: this.sessionContinuationRuntime,
+      presentation: this.sessionPresentationRuntime,
+      conversationWorkspace: this.conversationWorkspaceRuntime,
       defaultSessionId: this.sessionId,
       lastError: () => this.lastError,
-      state: {
-        withDirectoryAvailability: (project) => this.sessionContinuationRuntime.withDirectoryAvailability(project),
-        withSessionWorkspaceContext: (project) => this.sessionPresentationRuntime.withSessionWorkspaceContext(project),
-        withRuntimeActivity: (project) => this.sessionPresentationRuntime.withRuntimeActivity(project),
-        synchronizeNonContinuableRecords: (projects) =>
-          this.sessionPresentationRuntime.synchronizeNonContinuableRecords(projects),
-        stopUnsafeRunsWithUnavailableContext: (projects) =>
-          this.sessionPresentationRuntime.stopUnsafeRunsWithUnavailableContext(projects),
-        listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
-          listLocalChildSessionSummaries({
-            sqlitePath: options.store.sqlitePath,
-            timeoutMs: this.storeTimeoutMs,
-          }, parentSessionId)),
-        readWorkspaceDiff: (sessionId) => this.conversationWorkspaceRuntime.readDiff(sessionId),
-      },
+      listChildSessions: (parentSessionId) => this.storePorts.call("local-console-store-list-child-sessions", () =>
+        listLocalChildSessionSummaries({
+          sqlitePath: options.store.sqlitePath,
+          timeoutMs: this.storeTimeoutMs,
+        }, parentSessionId)),
       output: {
         readOptionalTextFile,
         sessionFactLogPath: (sessionId) => {
@@ -533,8 +517,6 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         factReader: localProcessFactReader,
       },
       workspace: {
-        readContext: (sessionId) => this.conversationWorkspaceRuntime.readContext(sessionId),
-        readWorkspaceMode: (sessionId) => this.conversationWorkspaceRuntime.readModeBestEffort(sessionId),
         readDiff: (context) => readLocalConversationWorkspaceDiffDetail({
           workspacePath: context.workspacePath,
           baselineCommit: context.baselineCommit,
@@ -556,55 +538,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionReadWiring.output);
     this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionReadWiring.workspace);
 
-    this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime({
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
-      assertProjectDirectoryAvailable: (projectId) => this.sessionContinuationRuntime.assertProjectDirectoryAvailable(projectId),
-      createChildSession: (input) => this.storePorts.sessionFacts().createChildSession(input),
-      recordSystemMessage: (input) => options.store.recordSystemMessage(input),
-      getSessionWorkspace: (sessionId) => options.store.getSessionWorkspace(sessionId),
+    this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(createLocalSessionMetadataWiring({
+      context: runtimeContext,
+      options,
+      activeRuns: this.activeRunRegistry,
+      continuation: this.sessionContinuationRuntime,
       loadCeoScripts: () => loadCeoScripts({ agentsDir: path.join(options.projectRoot, "agents"), required: false }),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       reportError: (event, error, originalError) => log({ event, error, originalError }),
-      setLastError: (error) => { this.lastError = error; },
-      sessionFactLogPath: (sessionId) => {
-        const store = options.store as LocalConsoleStore
-          & Partial<Pick<LocalSessionFactWritingStore, "getSessionFactLogPath">>;
-        const getSessionFactLogPath = store.getSessionFactLogPath;
-        if (getSessionFactLogPath === undefined) {
-          throw new Error("local console store does not provide the session fact log path");
-        }
-        return getSessionFactLogPath.call(store, sessionId);
-      },
-      interruptRun: ({ sessionId, runId }) => {
-        const active = this.activeRunRegistry.get(runId);
-        if (active === undefined || active.sessionId !== sessionId) return false;
-        active.controller.abort("user-interrupted");
-        return true;
-      },
-      markSessionResultRead: (input) => options.store.markSessionResultRead(input),
-      updateSessionReadState: (input) => {
-        if (options.store.updateSessionReadState === undefined) throw new Error("local console session read state unavailable");
-        return options.store.updateSessionReadState(input);
-      },
-      armSessionManualUnread: (input) => {
-        if (options.store.armSessionManualUnread === undefined) throw new Error("local console manual unread unavailable");
-        return options.store.armSessionManualUnread(input);
-      },
-      markSessionViewed: (input) => {
-        if (options.store.markSessionViewed === undefined) throw new Error("local console session view state unavailable");
-        return options.store.markSessionViewed(input);
-      },
-      setSessionPinned: (input) => {
-        if (options.store.setSessionPinned === undefined) throw new Error("local console session pin unavailable");
-        return options.store.setSessionPinned(input);
-      },
-      renameSession: (input) => {
-        if (options.store.renameSession === undefined) throw new Error("local console session rename unavailable");
-        return options.store.renameSession(input);
-      },
-    });
+    }));
     this.messageCommandRuntime = new LocalConsoleMessageCommandRuntime(messageRetryWiring.message);
     this.runRetryRuntime = new LocalConsoleRunRetryRuntime(messageRetryWiring.retry);
     const startupRecoveryWiring = new LocalStartupRecoveryWiring({

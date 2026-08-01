@@ -1,8 +1,11 @@
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
+import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 import { decideRuntimeCapability, planRuntimeFallback } from "./runtime-domain.js";
-import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
+import type { LocalRuntimeWiringContext } from "./runtime-wiring-context.js";
+import type { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
+import type { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
 import type { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import type { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import type { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
@@ -13,32 +16,33 @@ type WorkspacePorts = ConstructorParameters<typeof LocalConsoleWorkspaceQueryRun
 
 export function createLocalSessionReadWiring(input: {
   options: LocalConsoleRuntimeOptions;
-  storePorts: LocalConsoleStorePorts;
+  context: LocalRuntimeWiringContext;
   activeRuns: LocalActiveRunRegistry;
   lifecycle: LocalRunLifecycleRuntime;
+  continuation: LocalSessionContinuationRuntime;
+  presentation: LocalSessionPresentationRuntime;
+  conversationWorkspace: LocalConversationWorkspaceRuntime;
   defaultSessionId: string;
   lastError(): string | null;
-  state: Pick<StatePorts,
-    | "withDirectoryAvailability"
-    | "withSessionWorkspaceContext"
-    | "withRuntimeActivity"
-    | "synchronizeNonContinuableRecords"
-    | "stopUnsafeRunsWithUnavailableContext"
-    | "listChildSessions"
-    | "readWorkspaceDiff"
-  >;
+  listChildSessions: StatePorts["listChildSessions"];
   output: Pick<OutputPorts, "readOptionalTextFile" | "sessionFactLogPath" | "factReader">;
-  workspace: WorkspacePorts;
+  workspace: Omit<WorkspacePorts, "readContext" | "readWorkspaceMode">;
 }): { state: StatePorts; output: OutputPorts; workspace: WorkspacePorts } {
-  const { options, storePorts } = input;
+  const { context, options } = input;
   return {
     state: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
       defaultSessionId: input.defaultSessionId,
       projectRoot: options.projectRoot,
       lastError: input.lastError,
-      ...input.state,
+      withDirectoryAvailability: (project) => input.continuation.withDirectoryAvailability(project),
+      withSessionWorkspaceContext: (project) => input.presentation.withSessionWorkspaceContext(project),
+      withRuntimeActivity: (project) => input.presentation.withRuntimeActivity(project),
+      synchronizeNonContinuableRecords: (projects) => input.presentation.synchronizeNonContinuableRecords(projects),
+      stopUnsafeRunsWithUnavailableContext: (projects) => input.presentation.stopUnsafeRunsWithUnavailableContext(projects),
+      listChildSessions: input.listChildSessions,
+      readWorkspaceDiff: (sessionId) => input.conversationWorkspace.readDiff(sessionId),
       primaryRunId: (sessionId) => planRuntimeFallback(
         input.lifecycle.runForLane(sessionId, "primary")?.runId,
         null as string | null,
@@ -53,12 +57,16 @@ export function createLocalSessionReadWiring(input: {
     },
     output: {
       store: options.store,
-      storeCall: (label, operation) => storePorts.call(label, operation),
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
       activeRun: (runId) => input.activeRuns.get(runId),
       activeRunIds: (sessionId) => new Set(input.lifecycle.runsForSession(sessionId).map((run) => run.runId)),
       ...input.output,
       traceDataRoot: planRuntimeFallback(options.dataRoot, options.projectRoot),
     },
-    workspace: input.workspace,
+    workspace: {
+      readContext: (sessionId) => input.conversationWorkspace.readContext(sessionId),
+      readWorkspaceMode: (sessionId) => input.conversationWorkspace.readModeBestEffort(sessionId),
+      ...input.workspace,
+    },
   };
 }

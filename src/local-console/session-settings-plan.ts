@@ -18,6 +18,10 @@ export function decideTeamSnapshotLoad(
   return available ? { kind: "load" } : { kind: "skip" };
 }
 
+export function planSessionHasActiveRun(activeRunCount: number): boolean {
+  return activeRunCount > 0;
+}
+
 export function decideSessionArchive(input: {
   capabilityAvailable: boolean;
   activeRun: boolean;
