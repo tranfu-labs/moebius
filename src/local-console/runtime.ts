@@ -89,7 +89,6 @@ import {
   selectSourceRetryIntent,
 } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
-import { executePendingWorkerDispatchFlow } from "./worker-dispatch-flow.js";
 import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.js";
@@ -116,6 +115,12 @@ import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js"
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
 import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
+  LocalWorkerDispatchRuntime,
+  type LocalWorkerRunInput,
+} from "./worker-dispatch-runtime.js";
+import type { LocalConsoleAgentFile } from "./agent-file.js";
+export type { LocalConsoleAgentFile } from "./agent-file.js";
+import {
   assertTextFragments,
   buildFallbackProjectSummary,
   formatLocalError,
@@ -128,7 +133,6 @@ import {
   normalizeTitle,
   projectPendingDispatch,
   requireAgentFilePath,
-  workerLaneKey,
 } from "./runtime-domain.js";
 import {
   collectLocalCeoLedgerTaskIds,
@@ -189,13 +193,6 @@ import {
   buildSessionAnalysisReadOnlyContract,
   parseSessionAnalysisResponse,
 } from "./session-analysis-gate.js";
-
-export interface LocalConsoleAgentFile {
-  name: string;
-  path?: string;
-  agentMarkdown?: string;
-  executionProfile?: LocalConsoleExecutionProfile | null;
-}
 
 export interface LocalConsoleRuntimeOptions {
   store: LocalConsoleStore;
@@ -328,8 +325,6 @@ export class LocalConsoleRuntime {
   private readonly executionRunner: LocalExecutionRunner;
   private readonly processingSessions = new Set<string>();
   private readonly pendingProcessSessions = new Set<string>();
-  private readonly workerWakeTasks = new Set<Promise<void>>();
-  private readonly workerLaneTails = new Map<string, Promise<void>>();
   private readonly activeRuns = new Map<string, ActiveLocalRun>();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
@@ -350,6 +345,7 @@ export class LocalConsoleRuntime {
   private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
   private readonly messageCommandRuntime: LocalConsoleMessageCommandRuntime;
   private readonly runRetryRuntime: LocalConsoleRunRetryRuntime;
+  private readonly workerDispatchRuntime: LocalWorkerDispatchRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -429,13 +425,59 @@ export class LocalConsoleRuntime {
         this.lastError = formatLocalError(error);
       },
     });
+    this.workerDispatchRuntime = new LocalWorkerDispatchRuntime({
+      hasClaimCapability: () => options.store.claimNextPendingWorkerMessage !== undefined,
+      listMessages: (sessionId, label) => this.storeCall(label, () => options.store.listMessages(sessionId)),
+      activeRunForRole: (sessionId, role) => this.activeRunForRole(sessionId, role),
+      listAgentFiles: async (sessionId) => {
+        const persisted = await options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
+        return persisted === null
+          ? await options.listAgentFiles(sessionId)
+          : persisted.members.map((member) => ({
+              name: member.name,
+              agentMarkdown: member.agentMarkdown,
+              executionProfile: member.executionProfile ?? null,
+            }));
+      },
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      nextRunId: (sessionId, messageId) => this.gracefulResumeTargetForMessage(sessionId, messageId),
+      claim: (sessionId, role, runId) => this.storeCall("local-console-store-claim-worker", () =>
+        options.store.claimNextPendingWorkerMessage!.call(options.store, {
+          sessionId,
+          role,
+          runId,
+          now: this.nowIso(),
+        })),
+      release: (message, sessionId) => this.storeCall("local-console-store-release-stopped-worker-claim", () =>
+        options.store.releaseMessageForRetry({ userMessageId: message.id, sessionId, now: this.nowIso() })),
+      recordMissingAgent: (message, sessionId, runId, role) =>
+        this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
+      prepareTimeline: (messages, agents) => {
+        const timelineMessages = messages.filter(
+          (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
+        );
+        return {
+          timelineMessages,
+          timeline: buildLocalConsoleTimeline(timelineMessages, agents.map((agent) => agent.name)),
+        };
+      },
+      nowRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
+      scheduleRun: (input) => this.runWorker(input),
+      continuableWorkspace: (sessionId) => this.continuableSessionWorkspace(sessionId),
+      applyPendingContext: (sessionId) => this.applyPendingSessionContextWhenIdle(sessionId),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
+      setError: (error) => {
+        this.lastError = formatLocalError(error);
+        return this.lastError;
+      },
+      log: (event, sessionId, role, error) => log({ event, sessionId, ...(role === null ? {} : { role }), error }),
+    });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
       storeCall: (label, operation) => this.storeCall(label, operation),
       nowIso: () => this.nowIso(),
       hasActiveRun: (sessionId) => this.hasActiveRunForSession(sessionId),
-      hasScheduledWorker: (sessionId) => [...this.workerLaneTails.keys()].some((key) =>
-        key.startsWith(`${sessionId}\u0000`)),
+      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
       listAgentNames: async (sessionId) =>
         (await options.listAgentFiles(sessionId)).map((agent) => agent.name),
     });
@@ -648,7 +690,7 @@ export class LocalConsoleRuntime {
         intentId: crypto.randomUUID(),
         reason: "edit-resend",
       }),
-      scheduleWorkerWake: (sessionId) => this.schedulePendingWorkerWake(sessionId),
+      scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       markPendingReferenceError: (input) => {
         if (options.store.markPendingReferenceError === undefined) throw new Error("pending message retry unavailable");
@@ -984,8 +1026,7 @@ export class LocalConsoleRuntime {
     while (
       (
         this.processingSessions.size > 0
-        || this.workerWakeTasks.size > 0
-        || this.workerLaneTails.size > 0
+        || this.workerDispatchRuntime.hasOutstandingWork()
       )
       && Date.now() < processingDeadline
     ) {
@@ -1273,7 +1314,7 @@ export class LocalConsoleRuntime {
         if (workspaceSource === null) {
           return;
         }
-        await this.dispatchPendingWorkerMessages(sessionId, workspaceSource);
+        await this.workerDispatchRuntime.dispatch(sessionId, workspaceSource);
         if (await this.hasPersistedPrimaryRun(sessionId)) {
           return;
         }
@@ -1462,7 +1503,7 @@ export class LocalConsoleRuntime {
               }),
             );
             activeMessage = null;
-            this.scheduleWorkerRun({
+            this.workerDispatchRuntime.schedule({
               origin: "primary-redirect",
               sessionId,
               runId: nextRunId,
@@ -1976,102 +2017,6 @@ export class LocalConsoleRuntime {
     );
   }
 
-  private async dispatchPendingWorkerMessages(
-    sessionId: string,
-    workspaceSource: LocalConsoleSessionWorkspaceSource,
-  ): Promise<void> {
-    const claimWorker = this.options.store.claimNextPendingWorkerMessage;
-    if (claimWorker === undefined) {
-      return;
-    }
-    await executePendingWorkerDispatchFlow({
-      listPending: async () => await this.storeCall("local-console-store-list-worker-pending", () =>
-        this.options.store.listMessages(sessionId)),
-      activeRoles: (roles) => new Set(
-        [...roles].filter((role) => this.activeRunForRole(sessionId, role) !== undefined),
-      ),
-      queuedRoles: (roles) => new Set(
-        [...roles].filter((role) => this.workerLaneTails.has(workerLaneKey(sessionId, role))),
-      ),
-      loadAgents: async () => {
-        const persisted = await this.options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-        return persisted === null
-          ? await this.options.listAgentFiles(sessionId)
-          : persisted.members.map((member) => ({
-              name: member.name,
-              agentMarkdown: member.agentMarkdown,
-              executionProfile: member.executionProfile ?? null,
-            }));
-      },
-      isStopping: () => this.closing || this.inactiveSessions.has(sessionId),
-      nextRunId: async (messageId) => await this.gracefulResumeTargetForMessage(sessionId, messageId)
-        ?? `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
-      claim: async (role, runId) => await this.storeCall("local-console-store-claim-worker", () =>
-        claimWorker.call(this.options.store, { sessionId, role, runId, now: this.nowIso() })),
-      releaseIfStopping: async (message) =>
-        await this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId),
-      recordMissingAgent: async (message, runId, role) => await this.recordTerminalFailureBestEffort(
-        message,
-        sessionId,
-        runId,
-        null,
-        `Agent not found: ${role}`,
-      ),
-      prepareRun: async (_message, selectedAgent, agentFiles) => {
-        const messages = await this.storeCall("local-console-store-list-worker-timeline", () =>
-          this.options.store.listMessages(sessionId));
-        const timelineMessages = messages.filter(
-          (message) => message.status !== "pending" && !isWorkerRunPlaceholder(message),
-        );
-        return {
-          selectedAgent,
-          timelineMessages,
-          timeline: buildLocalConsoleTimeline(timelineMessages, agentFiles.map((agent) => agent.name)),
-        };
-      },
-      schedule: ({ runId, sourceMessage, role, agents, prepared }) => this.scheduleWorkerRun({
-        origin: "user-direct",
-        sessionId,
-        runId,
-        sourceMessage,
-        role,
-        selectedAgent: prepared.selectedAgent,
-        agentFiles: agents,
-        timeline: prepared.timeline,
-        timelineMessages: prepared.timelineMessages,
-        workspaceSource,
-      }),
-    });
-  }
-
-  private schedulePendingWorkerWake(sessionId: string): void {
-    const task = this.wakePendingWorkerMessages(sessionId)
-      .finally(() => {
-        this.workerWakeTasks.delete(task);
-      });
-    this.workerWakeTasks.add(task);
-  }
-
-  private async wakePendingWorkerMessages(sessionId: string): Promise<void> {
-    if (this.closing || this.inactiveSessions.has(sessionId)) {
-      return;
-    }
-    try {
-      const workspaceSource = await this.continuableSessionWorkspace(sessionId);
-      if (workspaceSource === null) {
-        return;
-      }
-      await this.dispatchPendingWorkerMessages(sessionId, workspaceSource);
-    } catch (error) {
-      this.lastError = formatLocalError(error);
-      log({
-        event: "local-console-worker-dispatch-failed",
-        sessionId,
-        error: this.lastError,
-      });
-    }
-  }
-
   private async releaseClaimedUserDirectMessageWhenStopping(
     sourceMessage: LocalConsoleMessage,
     sessionId: string,
@@ -2088,68 +2033,7 @@ export class LocalConsoleRuntime {
     return true;
   }
 
-  private scheduleWorkerRun(input: {
-    origin: "primary-redirect" | "user-direct";
-    sessionId: string;
-    runId: string;
-      sourceMessage: LocalConsoleMessage;
-    role: string;
-    selectedAgent: LocalConsoleAgentFile;
-    agentFiles: LocalConsoleAgentFile[];
-    timeline: ReturnType<typeof buildLocalConsoleTimeline>;
-    timelineMessages: LocalConsoleMessage[];
-    workspaceSource: LocalConsoleSessionWorkspaceSource;
-  }): void {
-    const laneKey = workerLaneKey(input.sessionId, input.role);
-    const active = this.activeRunForRole(input.sessionId, input.role);
-    if (input.origin === "primary-redirect" && active?.lane === "worker") {
-      active.controller.abort("primary-redirected-active-agent");
-    }
-
-    const previous = this.workerLaneTails.get(laneKey) ?? Promise.resolve();
-    const task = previous
-      .catch(() => undefined)
-      .then(() => this.runWorker(input))
-      .catch((error: unknown) => {
-        this.lastError = formatLocalError(error);
-        log({
-          event: "local-console-worker-run-failed",
-          sessionId: input.sessionId,
-          role: input.role,
-          error: this.lastError,
-        });
-      })
-      .finally(() => {
-        if (this.workerLaneTails.get(laneKey) === task) {
-          this.workerLaneTails.delete(laneKey);
-        }
-        void this.applyPendingSessionContextWhenIdle(input.sessionId).catch((error: unknown) => {
-          if (!this.closing && !this.inactiveSessions.has(input.sessionId)) {
-            this.lastError = formatLocalError(error);
-            log({
-              event: "local-console-apply-pending-context-failed",
-              sessionId: input.sessionId,
-              error: this.lastError,
-            });
-          }
-        });
-        void this.processPending(input.sessionId);
-      });
-    this.workerLaneTails.set(laneKey, task);
-  }
-
-  private async runWorker(input: {
-    origin: "primary-redirect" | "user-direct";
-    sessionId: string;
-    runId: string;
-    sourceMessage: LocalConsoleMessage;
-    role: string;
-    selectedAgent: LocalConsoleAgentFile;
-    agentFiles: LocalConsoleAgentFile[];
-    timeline: ReturnType<typeof buildLocalConsoleTimeline>;
-    timelineMessages: LocalConsoleMessage[];
-    workspaceSource: LocalConsoleSessionWorkspaceSource;
-  }): Promise<void> {
+  private async runWorker(input: LocalWorkerRunInput): Promise<void> {
     if (this.closing || this.inactiveSessions.has(input.sessionId)) {
       if (input.origin === "user-direct") {
         await this.releaseClaimedUserDirectMessageWhenStopping(input.sourceMessage, input.sessionId);
