@@ -130,6 +130,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/route-bus.ts",
   "src/local-console/runtime.ts",
   "src/local-console/session-continuation-runtime.ts",
+  "src/local-console/shared-run-wiring.ts",
   "src/local-console/session-metadata-runtime.ts",
   "src/local-console/session-presentation-runtime.ts",
   "src/local-console/state-query-runtime.ts",

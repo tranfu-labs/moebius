@@ -103,6 +103,7 @@ import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
 import { createLocalWorkerWiring } from "./worker-wiring.js";
+import { createLocalSharedRunPorts } from "./shared-run-wiring.js";
 import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import { createLocalPrimaryPreparationPorts } from "./primary-preparation-wiring.js";
 import { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
@@ -313,34 +314,15 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         this.lastError = formatLocalError(error);
       },
     });
-    const workerWiring = createLocalWorkerWiring({
-      options,
+    const sharedRunPorts = createLocalSharedRunPorts({
       storePorts: this.storePorts,
       executionRunner: this.executionRunner,
       activeRuns: this.activeRunRegistry,
       lifecycle: this.runLifecycleRuntime,
       idleTimeoutMs: this.codexIdleTimeoutMs,
       toolTimeoutMs: this.toolInFlightTimeoutMs,
-      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
       now: () => this.now(),
       nowIso: () => this.nowIso(),
-      nextRunId: (sessionId, messageId) => this.runRecoveryRuntime.targetForMessage(sessionId, messageId),
-      recordMissingAgent: (message, sessionId, runId, role) =>
-        this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
-      scheduleRun: (input) => this.workerExecutionRuntime.run(input),
-      continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
-      applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
-      processPending: (sessionId) => { void this.processPending(sessionId); },
-      recordError: (error) => {
-        this.lastError = formatLocalError(error);
-        return this.lastError;
-      },
-      report: (event, sessionId, role, error) =>
-        log({ event, sessionId, ...(role === null ? {} : { role }), error }),
-      releaseClaim: (message, sessionId) =>
-        this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
-      sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
-      makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
       resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
       readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
       loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
@@ -359,6 +341,28 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
           reason: unavailable.reason,
           runDir,
         }),
+    });
+    const workerWiring = createLocalWorkerWiring({
+      options,
+      ...sharedRunPorts,
+      stopping: (sessionId) => this.closing || this.inactiveSessions.has(sessionId),
+      nextRunId: (sessionId, messageId) => this.runRecoveryRuntime.targetForMessage(sessionId, messageId),
+      recordMissingAgent: (message, sessionId, runId, role) =>
+        this.recordTerminalFailureBestEffort(message, sessionId, runId, null, `Agent not found: ${role}`),
+      scheduleRun: (input) => this.workerExecutionRuntime.run(input),
+      continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
+      applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
+      processPending: (sessionId) => { void this.processPending(sessionId); },
+      recordError: (error) => {
+        this.lastError = formatLocalError(error);
+        return this.lastError;
+      },
+      report: (event, sessionId, role, error) =>
+        log({ event, sessionId, ...(role === null ? {} : { role }), error }),
+      releaseClaim: (message, sessionId) =>
+        this.releaseClaimedUserDirectMessageWhenStopping(message, sessionId).then(() => undefined),
+      sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
+      makeRunDir: (messageCount) => path.resolve(options.makeRunDir(messageCount, this.now())),
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -410,59 +414,25 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     }));
     this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime(createLocalPrimaryPreparationPorts({
       options,
-      storePorts: this.storePorts,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
-      nowIso: () => this.nowIso(),
+      ...sharedRunPorts,
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
-      readAgentFile: (agent) => fs.readFile(requireAgentFilePath(agent), "utf8"),
       makeRunDir: (messageCount) => {
         const providerRunDir = options.makeRunDir(messageCount, this.now());
         return { providerRunDir, resolvedRunDir: path.resolve(providerRunDir) };
       },
-      resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
       concurrentRecoveryWorkspace: (sessionId) => this.concurrentAgentHandoffRecoveryWorkspace(sessionId),
       buildAnalysisContract: (proposalVersion) => buildSessionAnalysisReadOnlyContract(proposalVersion),
-      loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
-        factLogPath: this.storePorts.recoveryFacts()?.getSessionFactLogPath(sessionId) ?? null,
-        sessionId,
-      }),
-      isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
-      settleUnavailable: ({ sessionId, runId, sourceMessage, role, runDir, unavailable }) =>
-        this.runRecoveryRuntime.settleUnavailable({
-          sessionId,
-          runId,
-          sourceMessage,
-          intent: unavailable.intent,
-          role,
-          engine: unavailable.context.engine,
-          reason: unavailable.reason,
-          runDir,
-        }),
     }));
     this.primaryProviderRuntime = new LocalPrimaryProviderRuntime(createLocalPrimaryProviderPorts({
-      storePorts: this.storePorts,
-      executionRunner: this.executionRunner,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
-      idleTimeoutMs: this.codexIdleTimeoutMs,
-      toolTimeoutMs: this.toolInFlightTimeoutMs,
-      nowIso: () => this.nowIso(),
+      ...sharedRunPorts,
     }));
     this.primaryAnalysisRuntime = new LocalPrimaryAnalysisRuntime(createLocalPrimaryAnalysisPorts({
-      executionRunner: this.executionRunner,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
-      idleTimeoutMs: this.codexIdleTimeoutMs,
-      toolTimeoutMs: this.toolInFlightTimeoutMs,
+      ...sharedRunPorts,
       updateGate: async (input) => { await this.updateSessionAnalysisGate(input); },
     }));
     this.primaryTerminalRuntime = new LocalPrimaryTerminalRuntime(createLocalPrimaryTerminalPorts({
       store: options.store,
-      storePorts: this.storePorts,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
-      nowIso: () => this.nowIso(),
+      ...sharedRunPorts,
       classifyFailure: (result) => ({
         runtimeClosing: executionInterruptionCauseForResult(result) === "runtime-closing",
         failureStatus: runTimingStatusForFailedResult(result),
@@ -493,11 +463,9 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     }));
     this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(createLocalPrimaryDispatchPorts({
       options,
-      storePorts: this.storePorts,
+      ...sharedRunPorts,
       agentsDir: path.join(options.projectRoot, "agents"),
       routeTimeoutMs: this.routeTimeoutMs,
-      now: () => this.now(),
-      nowIso: () => this.nowIso(),
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
       gracefulResumeTargets: (sessionId) => this.runRecoveryRuntime.targetsForClaim(sessionId),
       sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
@@ -513,8 +481,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       provider: this.primaryProviderRuntime,
       analysis: this.primaryAnalysisRuntime,
       terminal: this.primaryTerminalRuntime,
-      activeRuns: this.activeRunRegistry,
-      lifecycle: this.runLifecycleRuntime,
+      ...sharedRunPorts,
       formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       report: (event, error) => log({ event, error }),
