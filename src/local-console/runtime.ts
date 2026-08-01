@@ -14,7 +14,6 @@ import {
 } from "../codex.js";
 import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
-import { isTrustedExecutionProfile } from "../execution-profile-registry.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import { resolveTrigger } from "../triggers/index.js";
 import type { LocalRunActivity } from "./run-activity.js";
@@ -29,7 +28,6 @@ import { deriveSessionTitle } from "./title.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
   LOCAL_CONSOLE_PROJECT_ID,
-  LocalConsoleBusyError,
   LocalConsoleProjectFolderError,
   type LocalConsoleFileContent,
   type LocalConsoleMessage,
@@ -115,6 +113,8 @@ import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
+import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
+import { emptyRetryRecoveryBundle } from "./run-retry-plan.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -331,7 +331,6 @@ export class LocalConsoleRuntime {
   private readonly workerWakeTasks = new Set<Promise<void>>();
   private readonly workerLaneTails = new Map<string, Promise<void>>();
   private readonly activeRuns = new Map<string, ActiveLocalRun>();
-  private readonly retryAdmissions = new Map<string, Promise<boolean>>();
   private readonly inactiveSessions = new Set<string>();
   private readonly conversationBaselineCommits = new Map<string, string | null>();
   private readonly conversationWorkspaceRuntime: LocalConversationWorkspaceRuntime;
@@ -350,6 +349,7 @@ export class LocalConsoleRuntime {
   private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
   private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
   private readonly messageCommandRuntime: LocalConsoleMessageCommandRuntime;
+  private readonly runRetryRuntime: LocalConsoleRunRetryRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -665,6 +665,30 @@ export class LocalConsoleRuntime {
       storeCall: (label, operation) => this.storeCall(label, operation),
       setLastError: (error) => { this.lastError = error; },
       schedulePendingProcessing: (sessionId) => this.schedulePendingProcessing(sessionId),
+    });
+    this.runRetryRuntime = new LocalConsoleRunRetryRuntime({
+      nowIso: () => this.nowIso(),
+      randomId: () => crypto.randomUUID(),
+      assertSessionCanContinue: (sessionId) => this.assertSessionCanContinue(sessionId),
+      listMessages: (sessionId) => this.storeCall("local-console-store-list-retry-source", () =>
+        options.store.listMessages(sessionId)),
+      loadRecoveryBundle: async (sessionId) => {
+        const recoveryStore = this.codexRecoveryFactStore();
+        if (recoveryStore === null) return emptyRetryRecoveryBundle();
+        const factLogPath = recoveryStore.getSessionFactLogPath(sessionId);
+        const [executionLinks, codexLinks, runContexts, recoveryFacts] = await Promise.all([
+          readExecutionSessionLinks(factLogPath, sessionId),
+          readCodexThreadLinks(factLogPath, sessionId),
+          readRunExecutionContexts(factLogPath, sessionId),
+          readLocalCodexRecoveryFacts(factLogPath, sessionId),
+        ]);
+        return { available: true, executionLinks, codexLinks, runContexts, recoveryFacts };
+      },
+      activeRunForRole: (sessionId, role) => this.activeRunForRole(sessionId, role) !== undefined,
+      recordRetryIntent: (input) => this.requireCodexRecoveryFactStore().recordCodexResumeIntent(input),
+      releaseMessageForRetry: (input) => options.store.releaseMessageForRetry(input),
+      processAfterCurrent: (sessionId) => { void this.processAfterCurrent(sessionId); },
+      storeCall: (label, operation) => this.storeCall(label, operation),
     });
   }
 
@@ -1119,232 +1143,7 @@ export class LocalConsoleRuntime {
       scope: "single-run";
     };
   }): Promise<boolean> {
-    if (
-      input.executionOverride !== undefined
-      && (
-        input.executionOverride.scope !== "single-run"
-        || input.executionOverride.overrideId.trim().length === 0
-        || !isTrustedExecutionProfile(input.executionOverride.profile)
-      )
-    ) {
-      return false;
-    }
-    if (input.executionOverride !== undefined) {
-      const recoveryStore = this.codexRecoveryFactStore();
-      if (recoveryStore !== null) {
-        const recoveryFacts = await readLocalCodexRecoveryFacts(
-          recoveryStore.getSessionFactLogPath(input.sessionId),
-          input.sessionId,
-        );
-        if (recoveryFacts.intents.some((intent) =>
-          intent.targetRunId === input.runId
-          && intent.reason === "retry"
-          && intent.executionOverride?.overrideId === input.executionOverride?.overrideId)) {
-          return true;
-        }
-      }
-    }
-    const admission = await this.prepareRetryAdmission(input);
-    if (admission === null) {
-      return false;
-    }
-    const key = [
-      admission.sessionId,
-      admission.targetRunId,
-      String(admission.source.id),
-      admission.role ?? "",
-      admission.executionOverride?.overrideId ?? "retry",
-    ].join("\u0000");
-    const pending = this.retryAdmissions.get(key);
-    if (pending !== undefined) {
-      return await pending;
-    }
-    const accepted = this.acceptRetryAdmission(admission);
-    this.retryAdmissions.set(key, accepted);
-    try {
-      return await accepted;
-    } finally {
-      if (this.retryAdmissions.get(key) === accepted) {
-        this.retryAdmissions.delete(key);
-      }
-    }
-  }
-
-  private async prepareRetryAdmission(input: {
-    sessionId: string;
-    runId: string;
-    executionOverride?: {
-      overrideId: string;
-      profile: LocalConsoleExecutionProfile;
-      scope: "single-run";
-    };
-  }): Promise<{
-    sessionId: string;
-    targetRunId: string;
-    source: LocalConsoleMessage;
-    role: string | null;
-    recoveryStore: CodexRecoveryFactStore | null;
-    recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
-    executionOverride?: {
-      overrideId: string;
-      profile: LocalConsoleExecutionProfile;
-      scope: "single-run";
-    };
-  } | null> {
-    await this.assertSessionCanContinue(input.sessionId);
-    const messages = await this.storeCall("local-console-store-list-retry-source", () =>
-      this.options.store.listMessages(input.sessionId));
-    const terminal = messages.find((message) =>
-      message.runId === input.runId
-      && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"));
-    if (terminal === undefined) {
-      return null;
-    }
-    if (input.executionOverride !== undefined) {
-      const structuredTerminal = messages.find((message) =>
-        message.runId === input.runId
-        && message.speaker === "system"
-        && message.terminal !== null
-        && message.terminal !== undefined);
-      if (
-        structuredTerminal?.terminal === null
-        || structuredTerminal?.terminal === undefined
-        || (
-          structuredTerminal.terminal.kind !== "interrupted"
-          && structuredTerminal.terminal.kind !== "timeout"
-          && structuredTerminal.terminal.kind !== "quota-exhausted"
-          && structuredTerminal.terminal.kind !== "rate-limited"
-          && structuredTerminal.terminal.kind !== "auth"
-          && structuredTerminal.terminal.kind !== "crashed"
-        )
-      ) {
-        return null;
-      }
-    }
-    const recoveryStore = this.codexRecoveryFactStore();
-    const [executionLinks, codexLinks, runContexts, recoveryFacts] = recoveryStore === null
-      ? [[], [], [], {
-          intents: [],
-          consumedIntentIds: new Set<string>(),
-          repairedIntentIds: new Set<string>(),
-        }]
-      : await Promise.all([
-          readExecutionSessionLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
-          readCodexThreadLinks(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
-          readRunExecutionContexts(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
-          readLocalCodexRecoveryFacts(recoveryStore.getSessionFactLogPath(input.sessionId), input.sessionId),
-        ]);
-    const link = executionLinks.find((candidate) => candidate.runId === input.runId)
-      ?? codexLinks.find((candidate) => candidate.runId === input.runId);
-    const runContext = runContexts.find((candidate) => candidate.runId === input.runId);
-    const linkedRetryIntent = terminal.error === "retry-source-trigger-missing"
-      && terminal.sourceKind === "local-retry-intent"
-      && terminal.sourceId !== null
-      ? recoveryFacts.intents.find((intent) =>
-          intent.sessionId === input.sessionId
-          && intent.intentId === terminal.sourceId
-          && intent.reason === "retry"
-          && !recoveryFacts.consumedIntentIds.has(intent.intentId))
-      : undefined;
-    if (
-      terminal.error === "retry-source-trigger-missing"
-      && linkedRetryIntent === undefined
-    ) {
-      return null;
-    }
-    const source = link === undefined
-      ? linkedRetryIntent === undefined
-        ? runContext === undefined
-          ? messages.find((message) =>
-              message.runId === input.runId
-              && message.speaker !== "system"
-              && (message.status === "stuck" || message.status === "failed" || message.status === "interrupted"))
-          : messages.find((message) =>
-              message.id === runContext.sourceMessageId
-              && message.speaker !== "system")
-        : messages.find((message) =>
-            message.id === linkedRetryIntent.sourceMessageId
-            && message.speaker !== "system")
-      : messages.find((message) =>
-          message.id === link.sourceMessageId
-          && message.speaker !== "system");
-    if (source === undefined) {
-      return null;
-    }
-    const role = link?.role
-      ?? linkedRetryIntent?.role
-      ?? runContext?.role
-      ?? source.dispatchRole
-      ?? terminal.role
-      ?? source.role;
-    return {
-      sessionId: input.sessionId,
-      targetRunId: linkedRetryIntent?.targetRunId ?? input.runId,
-      source,
-      role,
-      recoveryStore,
-      recoveryFacts,
-      ...(input.executionOverride === undefined
-        ? {}
-        : { executionOverride: input.executionOverride }),
-    };
-  }
-
-  private async acceptRetryAdmission(input: {
-    sessionId: string;
-    targetRunId: string;
-    source: LocalConsoleMessage;
-    role: string | null;
-    recoveryStore: CodexRecoveryFactStore | null;
-    recoveryFacts: Awaited<ReturnType<typeof readLocalCodexRecoveryFacts>>;
-    executionOverride?: {
-      overrideId: string;
-      profile: LocalConsoleExecutionProfile;
-      scope: "single-run";
-    };
-  }): Promise<boolean> {
-    const matchingIntent = input.recoveryFacts.intents.find((intent) =>
-      intent.targetRunId === input.targetRunId
-      && intent.sourceMessageId === input.source.id
-      && intent.role === input.role
-      && intent.reason === "retry"
-      && intent.executionOverride?.overrideId === input.executionOverride?.overrideId);
-    if (input.executionOverride !== undefined && matchingIntent !== undefined) {
-      return true;
-    }
-    if (
-      input.role !== null
-      && this.activeRunForRole(input.sessionId, input.role) !== undefined
-    ) {
-      throw new LocalConsoleBusyError();
-    }
-    const existingIntent = matchingIntent !== undefined
-      && !input.recoveryFacts.consumedIntentIds.has(matchingIntent.intentId)
-      ? matchingIntent
-      : undefined;
-    if (input.recoveryStore !== null && input.role !== null && existingIntent === undefined) {
-      await this.storeCall("local-console-store-record-user-retry", () =>
-        input.recoveryStore!.recordCodexResumeIntent({
-          sessionId: input.sessionId,
-          intentId: crypto.randomUUID(),
-          targetRunId: input.targetRunId,
-          sourceMessageId: input.source.id,
-          role: input.role!,
-          reason: "retry",
-          ...(input.executionOverride === undefined
-            ? {}
-            : { executionOverride: input.executionOverride }),
-          createdAt: this.nowIso(),
-        }));
-    }
-    await this.storeCall("local-console-store-release-user-retry", () =>
-      this.options.store.releaseMessageForRetry({
-        userMessageId: input.source.id,
-        sessionId: input.sessionId,
-        now: this.nowIso(),
-      }));
-    void this.processAfterCurrent(input.sessionId);
-    return true;
+    return await this.runRetryRuntime.retry(input);
   }
 
   async interruptRun(input: { sessionId: string; runId: string }): Promise<boolean> {
