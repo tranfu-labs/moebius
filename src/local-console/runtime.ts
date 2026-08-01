@@ -88,7 +88,6 @@ import {
   selectSourceRetryIntent,
 } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
-import { executeLocalRunPreparationFlow } from "./run-preparation-flow.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { executeLocalProviderInvocationFlow } from "./provider-invocation-flow.js";
 import { executeLocalRunTerminalFlow } from "./run-terminal-flow.js";
@@ -123,6 +122,7 @@ import { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
 import { LocalWorkerTerminalRuntime } from "./worker-terminal-runtime.js";
 import { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
+import { LocalPrimaryPreparationRuntime } from "./primary-preparation-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -317,6 +317,7 @@ export class LocalConsoleRuntime {
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
+  private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -641,6 +642,62 @@ export class LocalConsoleRuntime {
       failLifecycle: (runId) => this.finishRunLifecycle(runId, "failed"),
       deleteActiveRun: (runId) => { this.activeRuns.delete(runId); },
       invalidateWorkspace: (cwd) => invalidateLocalWorkspaceFacts(cwd),
+    });
+    this.primaryPreparationRuntime = new LocalPrimaryPreparationRuntime({
+      nowIso: () => this.nowIso(),
+      inactive: (sessionId) => this.inactiveSessions.has(sessionId),
+      loadSelectedAgentMarkdown: (agent) => agent.agentMarkdown === undefined
+        ? fs.readFile(requireAgentFilePath(agent), "utf8")
+        : Promise.resolve(agent.agentMarkdown),
+      makeRunDir: (messageCount) => {
+        const providerRunDir = options.makeRunDir(messageCount, this.now());
+        return { providerRunDir, resolvedRunDir: path.resolve(providerRunDir) };
+      },
+      setSourceRunDir: (message, sessionId, runDir) => this.storeCall("local-console-store-set-rundir", () =>
+        options.store.setRunDir({ id: message.id, sessionId, runDir, now: this.nowIso() })),
+      resolveWorkspace: (sessionId, source, signal) => this.resolveWorkspace(sessionId, source, signal),
+      loadAgentContents: async (agents, selected, selectedMarkdown) => await Promise.all(agents.map(async (agent) => ({
+        name: agent.name,
+        agentMarkdown: agent.name === selected.name
+          ? selectedMarkdown
+          : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
+        executionProfile: agent.executionProfile ?? null,
+      }))),
+      concurrentRecoveryWorkspace: (sessionId) => this.concurrentAgentHandoffRecoveryWorkspace(sessionId),
+      buildAnalysisContract: (proposalVersion) => buildSessionAnalysisReadOnlyContract(proposalVersion),
+      loadRecoverySnapshot: (sessionId) => readLocalRunRecoverySnapshot({
+        factLogPath: this.codexRecoveryFactStore()?.getSessionFactLogPath(sessionId) ?? null,
+        sessionId,
+      }),
+      isCodexThreadAvailable: options.isCodexThreadAvailable ?? defaultCodexThreadAvailability,
+      settleUnavailable: ({ sessionId, runId, sourceMessage, role, runDir, unavailable }) =>
+        this.settleUnavailableResume({
+          sessionId,
+          runId,
+          sourceMessage,
+          intent: unavailable.intent,
+          role,
+          engine: unavailable.context.engine,
+          reason: unavailable.reason,
+          runDir,
+        }),
+      recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
+      recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
+      prepareAttachments: ({ messages, runDir }) => options.attachmentManager?.prepareRunAttachments({ messages, runDir })
+        ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
+      consumeRecoveryIntent: ({ sessionId, runId, intentId, mode, reason }) =>
+        this.storeCall("local-console-store-consume-resume", () =>
+          this.requireCodexRecoveryFactStore().recordCodexResumeConsumed({
+            sessionId,
+            intentId,
+            resumedByRunId: runId,
+            mode,
+            reason,
+            consumedAt: this.nowIso(),
+          })),
+      prepareLifecycle: (input) => this.prepareRunLifecycle(input),
+      setActiveRun: (runId, active) => { this.activeRuns.set(runId, active); },
+      recordLifecycle: (active) => this.recordRunLifecycle(active, "created", "created"),
     });
     this.pendingSessionContextRuntime = new LocalPendingSessionContextRuntime({
       store: options.store,
@@ -1689,94 +1746,25 @@ export class LocalConsoleRuntime {
             continue;
           }
 
-          const currentAgentMarkdown = selectedAgent.agentMarkdown
-            ?? await fs.readFile(requireAgentFilePath(selectedAgent), "utf8");
-
-          activeRunDir = this.options.makeRunDir(messages.length, this.now());
-          const resolvedRunDir = path.resolve(activeRunDir);
-          const providerRunDir = activeRunDir;
-          await this.storeCall("local-console-store-set-rundir", () =>
-            this.options.store.setRunDir({
-              id: claimedMessage.id,
-              sessionId,
-              runDir: resolvedRunDir,
-              now: this.nowIso(),
-            }),
-          );
-
-          const controller = new AbortController();
-          const currentWorkspace = await this.resolveWorkspace(sessionId, workspaceSource, controller.signal);
-          if (this.inactiveSessions.has(sessionId)) {
-            return;
-          }
-          const agentContents = await Promise.all(agentFiles.map(async (agent) => ({
-            name: agent.name,
-            agentMarkdown: agent.name === selectedAgent.name
-              ? currentAgentMarkdown
-              : agent.agentMarkdown ?? await fs.readFile(requireAgentFilePath(agent), "utf8"),
-            executionProfile: agent.executionProfile ?? null,
-          })));
-          const concurrentRecoveryWorkspace = this.concurrentAgentHandoffRecoveryWorkspace(sessionId);
-          const recoveryStore = this.codexRecoveryFactStore();
-          const preparation = await executeLocalRunPreparationFlow({
-            lane: "primary",
+          const preparation = await this.primaryPreparationRuntime.prepare({
             sessionId,
             runId: nextRunId,
             sourceMessage: claimedMessage,
             role: triggerRole,
-            defaultProfile: selectedAgent.executionProfile ?? null,
-            defaultWorkspace: currentWorkspace,
-            concurrentWorkspace: concurrentRecoveryWorkspace,
-            team: agentContents,
+            primaryAgent,
+            selectedAgent,
+            agentFiles,
             timeline,
             timelineMessages,
-            readOnly: analysisGateEnabled,
-            promptContract: analysisGateEnabled && triggerRole === primaryAgent
-              ? buildSessionAnalysisReadOnlyContract(policySession.proposalVersion ?? null)
-              : "",
-            runDir: resolvedRunDir,
-          }, {
-            nowIso: () => this.nowIso(),
-            loadRecoverySnapshot: () => readLocalRunRecoverySnapshot({
-              factLogPath: recoveryStore?.getSessionFactLogPath(sessionId) ?? null,
-              sessionId,
-            }),
-            isCodexThreadAvailable: this.options.isCodexThreadAvailable
-              ?? defaultCodexThreadAvailability,
-            settleUnavailable: (unavailable) => this.settleUnavailableResume({
-              sessionId,
-              runId: nextRunId,
-              sourceMessage: claimedMessage,
-              intent: unavailable.intent,
-              role: triggerRole,
-              engine: unavailable.context.engine,
-              reason: unavailable.reason,
-              runDir: resolvedRunDir,
-            }),
-            recordRunExecutionContext: (context) => this.recordRunExecutionContext(context),
-            recordAgentSessionLink: (link) => this.recordAgentSessionLink(link),
-            prepareAttachments: ({ messages, runDir: attachmentRunDir }) =>
-              this.options.attachmentManager?.prepareRunAttachments({
-                messages,
-                runDir: attachmentRunDir,
-              }) ?? Promise.resolve({ promptSuffix: "", imagePaths: [] }),
-            consumeRecoveryIntent: ({ intentId, mode, reason }) => {
-              const requiredRecoveryStore = this.requireCodexRecoveryFactStore();
-              return this.storeCall("local-console-store-consume-resume", () =>
-                requiredRecoveryStore.recordCodexResumeConsumed({
-                  sessionId,
-                  intentId,
-                  resumedByRunId: nextRunId,
-                  mode,
-                  reason,
-                  consumedAt: this.nowIso(),
-                }));
-            },
-          });
-          if (preparation.kind === "settled-unavailable") {
-            return;
-          }
+            workspaceSource,
+            analysisGateEnabled,
+            proposalVersion: policySession.proposalVersion ?? null,
+          }, (runDir) => { activeRunDir = runDir; });
+          if (preparation.kind === "settled") return;
           const {
+            resolvedRunDir,
+            providerRunDir,
+            controller,
             continuingSameRun,
             executionContext,
             recoveryPlan,
@@ -1785,51 +1773,7 @@ export class LocalConsoleRuntime {
             prompt,
             preparedAttachments,
           } = preparation;
-          const primaryStepId = `message:${String(claimedMessage.id)}`;
-          const primaryLifecycle = await this.prepareRunLifecycle({
-            sessionId,
-            runId: nextRunId,
-            stepId: primaryStepId,
-            resumeExisting: continuingSameRun,
-          });
-          const primaryActiveRun: ActiveLocalRun = {
-            sessionId,
-            runId: nextRunId,
-            userMessageId: claimedMessage.id,
-            role: triggerRole,
-            lane: "primary",
-            sourceDisposition: "primary",
-            runDir: resolvedRunDir,
-            cwd: workspace.cwd,
-            workspaceMode: workspace.mode,
-            worktreeUnavailableReason: workspace.worktreeUnavailableReason,
-            branchName: workspace.branchName,
-            baseRef: workspace.baseRef,
-            originalRepoRoot: workspace.originalRepoRoot,
-            liveMarkdown: null,
-            activity: null,
-            activitySequence: 0,
-            activityFactTail: Promise.resolve(),
-            longRunReported: false,
-            createdAt: primaryLifecycle.createdAt,
-            startedAt: primaryLifecycle.startedAt,
-            segmentStartedAt: null,
-            accumulatedMs: primaryLifecycle.accumulatedMs,
-            resuming: primaryLifecycle.resuming,
-            stepId: primaryStepId,
-            attempt: primaryLifecycle.attempt,
-            engine: executionContext.engine,
-            profile: executionContext.profile,
-            processOutputAvailable: true,
-            terminalRecorded: false,
-            controller,
-            threadId: null,
-            gracefulResumePrepared: false,
-          };
-          this.activeRuns.set(nextRunId, primaryActiveRun);
-          if (!primaryLifecycle.resuming) {
-            await this.recordRunLifecycle(primaryActiveRun, "created", "created");
-          }
+          const recoveryStore = this.codexRecoveryFactStore();
 
           const providerInvocation = await executeLocalProviderInvocationFlow({
             sessionId,
@@ -1929,7 +1873,7 @@ export class LocalConsoleRuntime {
                 try {
                   result = await this.executionRunner({
                     prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
-                    runDir: activeRunDir,
+                    runDir: providerRunDir,
                     cwd: workspace.cwd,
                     profile: executionContext.profile,
                     mode: { kind: "resume", externalSessionId },
