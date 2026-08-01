@@ -111,6 +111,7 @@ import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
+import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -342,6 +343,7 @@ export class LocalConsoleRuntime {
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
   private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
   private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
+  private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -532,6 +534,16 @@ export class LocalConsoleRuntime {
       readWorkspaceDiff: (sessionId) => this.readConversationWorkspaceDiff(sessionId),
       loadTeamSnapshot: (sessionId) =>
         options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? Promise.resolve(null),
+    });
+    this.runOutputRuntime = new LocalConsoleRunOutputRuntime({
+      store: options.store,
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      activeRun: (runId) => this.activeRuns.get(runId),
+      activeRunIds: (sessionId) => new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
+      readOptionalTextFile,
+      sessionFactLogPath: (sessionId) => this.sessionFactStore().getSessionFactLogPath(sessionId),
+      factReader: localProcessFactReader,
+      traceDataRoot: options.dataRoot ?? options.projectRoot,
     });
   }
 
@@ -1429,37 +1441,7 @@ export class LocalConsoleRuntime {
   }
 
   async runOutput(sessionId: string, runId: string): Promise<LocalConsoleRunOutput> {
-    const messages = await this.storeCall("local-console-store-list-run-output", () =>
-      this.options.store.listMessages(sessionId),
-    );
-    const matching = messages.filter((message) => message.runId === runId);
-    const active = this.activeRuns.get(runId);
-    const matchingActive = active?.sessionId === sessionId ? active : undefined;
-    const historicalWithRunDir = [...matching].reverse().find((message) => message.runDir !== null);
-    const runDir = matchingActive?.runDir ?? historicalWithRunDir?.runDir ?? null;
-    const [stdout, stderr] = runDir === null
-      ? [null, null]
-      : await Promise.all([
-          readOptionalTextFile(path.join(runDir, "stdout.jsonl")),
-          readOptionalTextFile(path.join(runDir, "stderr.log")),
-        ]);
-    const fallback = matching
-      .map((message) => message.error ?? message.body)
-      .filter((value) => value.trim() !== "")
-      .join("\n\n") || null;
-    if (matching.length === 0 && matchingActive === undefined) {
-      throw new Error(`local console run not found: ${sessionId}/${runId}`);
-    }
-    return {
-      sessionId,
-      runId,
-      role: matchingActive !== undefined
-        ? matchingActive.role
-        : [...matching].reverse().find((message) => message.role !== null)?.role ?? null,
-      stdout,
-      stderr,
-      fallback,
-    };
+    return await this.runOutputRuntime.runOutput(sessionId, runId);
   }
 
   async workspaceDiffDetail(sessionId: string): Promise<LocalConsoleWorkspaceDiffDetail> {
@@ -1585,19 +1567,7 @@ export class LocalConsoleRuntime {
     runId: string,
     cursor?: string,
   ): Promise<LocalConsoleProcessHistoryPage> {
-    const messages = await this.storeCall("local-console-store-list-process-history", () =>
-      this.options.store.listMessages(sessionId),
-    );
-    return await loadLocalProcessHistoryPage({
-      sessionId,
-      requestedRunId: runId,
-      sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
-      messages,
-      activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
-      factReader: localProcessFactReader,
-      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
-      ...(cursor === undefined ? {} : { cursor }),
-    });
+    return await this.runOutputRuntime.processOutput(sessionId, runId, cursor);
   }
 
   async processOutputAppend(
@@ -1605,28 +1575,14 @@ export class LocalConsoleRuntime {
     runId: string,
     appendCursor: string,
   ): Promise<LocalConsoleProcessAppendPage> {
-    return await loadLocalProcessAppendPage({
-      sessionId,
-      requestedRunId: runId,
-      sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
-      activeRunIds: new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
-      factReader: localProcessFactReader,
-      appendCursor,
-      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
-    });
+    return await this.runOutputRuntime.processOutputAppend(sessionId, runId, appendCursor);
   }
 
   async processDebugInvocation(
     sessionId: string,
     runId: string,
   ): Promise<LocalConsoleProcessDebugInvocation> {
-    return await loadLocalProcessDebugInvocation({
-      sessionId,
-      runId,
-      sessionFactLogPath: this.sessionFactStore().getSessionFactLogPath(sessionId),
-      factReader: localProcessFactReader,
-      trace: { dataRoot: this.options.dataRoot ?? this.options.projectRoot },
-    });
+    return await this.runOutputRuntime.processDebugInvocation(sessionId, runId);
   }
 
   async childSessionSummaries(parentSessionId: string) {
