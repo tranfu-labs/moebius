@@ -29,6 +29,32 @@ export function decidePrimaryAttachmentPreparation(available: boolean): { kind: 
   return available ? { kind: "prepare" } : { kind: "empty" };
 }
 
+export function decidePrimaryAgentFileSource<T>(snapshot: T | null | undefined):
+  | { kind: "fallback" }
+  | { kind: "snapshot"; snapshot: T } {
+  return snapshot == null ? { kind: "fallback" } : { kind: "snapshot", snapshot };
+}
+
+export function planPrimarySnapshotAgents(
+  members: readonly {
+    name: string;
+    agentMarkdown: string;
+    executionProfile?: LocalConsoleAgentFile["executionProfile"];
+  }[],
+): LocalConsoleAgentFile[] {
+  return members.map((member) => ({
+    name: member.name,
+    agentMarkdown: member.agentMarkdown,
+    executionProfile: member.executionProfile ?? null,
+  }));
+}
+
+export function decidePrimaryRecoveryFactSource<T>(store: T | null):
+  | { kind: "skip" }
+  | { kind: "read"; store: T } {
+  return store === null ? { kind: "skip" } : { kind: "read", store };
+}
+
 export function decidePrimaryAnalysisContract(input: {
   analysisGateEnabled: boolean;
   role: string;

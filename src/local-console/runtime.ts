@@ -15,7 +15,6 @@ import {
 import { log } from "../log.js";
 import { parseTrailingStageMarker } from "../stages.js";
 import { listLocalChildSessionSummaries } from "./child-session-summary-reader.js";
-import { maybeRouteLocalNoMentionMessage, type LocalRouteJudgment } from "./route-bus.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import { deriveSessionTitle } from "./title.js";
 import {
@@ -69,7 +68,6 @@ import {
   readRunExecutionContexts,
 } from "./execution-context-reader.js";
 import { projectLocalConsoleMemberIdentities } from "./member-identity.js";
-import { selectSourceRetryIntent } from "./control-dispatch.js";
 import { resolveLocalUserMessageDispatch } from "./user-message-routing.js";
 import { readLocalRunRecoverySnapshot } from "./run-recovery-reader.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
@@ -114,6 +112,7 @@ import { createLocalPrimaryAnalysisPorts } from "./primary-analysis-wiring.js";
 import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { createLocalPrimaryTerminalPorts } from "./primary-terminal-wiring.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
+import { createLocalPrimaryDispatchPorts } from "./primary-dispatch-wiring.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
 import {
@@ -491,57 +490,22 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
       },
     }));
-    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime({
-      store: options.store,
-      storeCall: (label, operation) => this.storePorts.call(label, operation),
+    this.primaryDispatchRuntime = new LocalPrimaryDispatchRuntime(createLocalPrimaryDispatchPorts({
+      options,
+      storePorts: this.storePorts,
+      agentsDir: path.join(options.projectRoot, "agents"),
+      routeTimeoutMs: this.routeTimeoutMs,
+      now: () => this.now(),
       nowIso: () => this.nowIso(),
-      nextRunId: () => `local-${this.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       inactive: (sessionId) => this.inactiveSessions.has(sessionId),
       gracefulResumeTargets: (sessionId) => this.runRecoveryRuntime.targetsForClaim(sessionId),
-      loadAgentFiles: async (sessionId) => {
-        const persisted = await options.store.listSessionAgentTeamSnapshot?.(sessionId) ?? null;
-        return persisted === null
-          ? await options.listAgentFiles(sessionId)
-          : persisted.members.map((member) => ({
-              name: member.name,
-              agentMarkdown: member.agentMarkdown,
-              executionProfile: member.executionProfile ?? null,
-            }));
-      },
       sessionSummary: (sessionId) => this.sessionContinuationRuntime.sessionSummary(sessionId),
-      loadRetryIntent: async (sessionId, sourceMessageId) => {
-        const recoveryStore = this.storePorts.recoveryFacts();
-        if (recoveryStore === null) return null;
-        const recoveryFacts = await readLocalCodexRecoveryFacts(
-          recoveryStore.getSessionFactLogPath(sessionId),
-          sessionId,
-        );
-        return selectSourceRetryIntent({
-          sourceMessageId,
-          intents: recoveryFacts.intents,
-          consumedIntentIds: recoveryFacts.consumedIntentIds,
-        });
-      },
-      routeWithoutPrimary: (input) => maybeRouteLocalNoMentionMessage({
-        store: options.store,
-        message: input.message,
-        sessionId: input.sessionId,
-        timeline: input.timeline,
-        availableAgentNames: input.availableAgentNames,
-        runId: input.runId,
-        runDir: input.runDir,
-        agentsDir: path.join(options.projectRoot, "agents"),
-        now: this.nowIso(),
-        routeJudgment: options.routeJudgment,
-        timeoutMs: this.routeTimeoutMs,
-        runCodex: options.runCodex,
-      }),
+      readRecoveryFacts: readLocalCodexRecoveryFacts,
       recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
         this.recordTerminalFailureBestEffort(message, sessionId, runId, runDir, reason),
-      formatError: (error) => formatLocalError(error),
       setError: (error) => { this.lastError = error; },
       scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
-    });
+    }));
     this.primaryExecutionRuntime = new LocalPrimaryExecutionRuntime({
       dispatch: this.primaryDispatchRuntime,
       preparation: this.primaryPreparationRuntime,

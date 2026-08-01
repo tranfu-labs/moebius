@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   decidePrimaryAgentMarkdownSource,
+  decidePrimaryAgentFileSource,
   decidePrimaryAttachmentPreparation,
+  decidePrimaryRecoveryFactSource,
   decidePrimaryAnalysisContract,
   decidePrimaryAnalysisConfirmation,
   decidePrimaryAnalysisControl,
@@ -21,6 +23,7 @@ import {
   planPrimaryLastSeenIndex,
   planPrimaryProfile,
   planPrimaryAgentContents,
+  planPrimarySnapshotAgents,
 } from "../src/local-console/primary-runtime-plan.js";
 
 describe("primary runtime plan", () => {
@@ -48,6 +51,13 @@ describe("primary runtime plan", () => {
       "# qa",
       new Map([["dev", "# dev"]]),
     )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    expect(decidePrimaryAgentFileSource(undefined)).toEqual({ kind: "fallback" });
+    expect(planPrimarySnapshotAgents([{
+      name: "dev",
+      agentMarkdown: "# dev",
+      executionProfile: null,
+    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    expect(decidePrimaryRecoveryFactSource(null)).toEqual({ kind: "skip" });
   });
 
   it("stops unavailable preparation and records lifecycle creation only for a fresh attempt", () => {

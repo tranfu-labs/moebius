@@ -121,6 +121,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/primary-analysis-runtime.ts",
   "src/local-console/primary-analysis-wiring.ts",
   "src/local-console/primary-dispatch-runtime.ts",
+  "src/local-console/primary-dispatch-wiring.ts",
   "src/local-console/primary-execution-runtime.ts",
   "src/local-console/pending-processing-runtime.ts",
   "src/local-console/primary-terminal-runtime.ts",
