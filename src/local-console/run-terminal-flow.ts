@@ -56,7 +56,7 @@ export interface LocalRunTerminalFlowPorts {
 export async function executeLocalRunTerminalFlow(
   input: LocalRunTerminalFlowInput,
   ports: LocalRunTerminalFlowPorts,
-): Promise<"failed" | "succeeded"> {
+): Promise<"failed" | "succeeded" | "succeeded-directory-unavailable"> {
   await ports.recordProviderInvocation(planLocalProviderInvocationTerminal({
     sessionId: input.sessionId,
     runId: input.runId,
@@ -114,5 +114,5 @@ export async function executeLocalRunTerminalFlow(
     }
   }
   if (effects.recordDirectoryWarning) await ports.recordDirectoryWarning(terminalOutcome.result);
-  return "succeeded";
+  return effects.recordDirectoryWarning ? "succeeded-directory-unavailable" : "succeeded";
 }

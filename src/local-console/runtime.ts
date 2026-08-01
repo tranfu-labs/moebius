@@ -2386,141 +2386,130 @@ export class LocalConsoleRuntime {
             }
           }
 
-          await this.recordProviderInvocation({
+          const activeAtTerminal = this.activeRuns.get(nextRunId);
+          const terminalOutcome = await executeLocalRunTerminalFlow({
             sessionId,
             runId: nextRunId,
-            invocationId: `${nextRunId}:${resolvedRunDir}`,
+            runDir: resolvedRunDir,
+            sourceMessageId: claimedMessage.id,
             role: triggerRole,
-            agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-            phase: "terminal",
-            mode: recoveryPlan.kind === "resume" ? "resume" : "full",
-            requestedExternalSessionId: recoveryPlan.kind === "resume"
-              ? recoveryPlan.externalSessionId
-              : null,
+            sourceDisposition: "primary",
+            executionContext,
+            recoveryPlan,
             observedExternalSessionId,
-            outcome: result.ok ? "succeeded" : "failed",
-            recordedAt: this.nowIso(),
-          });
-
-          if (!result.ok) {
-            const active = this.activeRuns.get(nextRunId);
-            if (
-              executionInterruptionCauseForResult(result) === "runtime-closing"
-              && active?.gracefulResumePrepared
-            ) {
-              await this.pauseRunLifecycle(nextRunId);
-            } else {
-              await this.finishRunLifecycle(nextRunId, runTimingStatusForFailedResult(result));
-            }
-            await this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, result);
-            return;
-          }
-          const terminalToolOnly = result.completionKind === "terminal-tool-result";
-          await this.finishRunLifecycle(nextRunId, "completed");
-          if (recoveryStore !== null && executionContext.engine === "codex") {
-            await this.storeCall("local-console-store-record-codex-usage", () =>
-              recoveryStore.recordCodexRunUsage({
+            result,
+            gracefulResumePrepared: activeAtTerminal?.gracefulResumePrepared ?? false,
+            lastSeenIndex: timeline.at(-1)?.index ?? -1,
+          }, {
+            nowIso: () => this.nowIso(),
+            recordProviderInvocation: (fact) => this.recordProviderInvocation(fact),
+            classifyFailure: (failedResult) => ({
+              runtimeClosing: executionInterruptionCauseForResult(failedResult) === "runtime-closing",
+              failureStatus: runTimingStatusForFailedResult(failedResult),
+            }),
+            pauseLifecycle: () => this.pauseRunLifecycle(nextRunId),
+            finishLifecycle: (status) => this.finishRunLifecycle(nextRunId, status),
+            recordFailed: (failedResult) =>
+              this.recordFailedCodexResult(claimedMessage, sessionId, nextRunId, failedResult),
+            recordUsage: (cachedInputTokens) => recoveryStore === null
+              ? Promise.resolve()
+              : this.storeCall("local-console-store-record-codex-usage", () =>
+                  recoveryStore.recordCodexRunUsage({
+                    sessionId,
+                    runId: nextRunId,
+                    cachedInputTokens,
+                    recordedAt: this.nowIso(),
+                  })),
+            sourceDirectoryAvailable: () => this.sessionProjectDirectoryAvailable(sessionId),
+            executeChildSession: (successResult) =>
+              this.executeLocalCeoChildSessionOrchestrationIfNeeded({
                 sessionId,
                 runId: nextRunId,
-                cachedInputTokens: result.cachedInputTokens,
-                recordedAt: this.nowIso(),
-              }));
-          }
-
-          const sourceDirectoryAvailable = await this.sessionProjectDirectoryAvailable(sessionId);
-
-          const childSessionCard = sourceDirectoryAvailable && !terminalToolOnly && triggerRole === "ceo"
-            ? await this.executeLocalCeoChildSessionOrchestrationIfNeeded({
+                runDir: successResult.runDir,
+                finalText: successResult.finalText,
+                availableAgentNames: agentFiles.map((agent) => agent.name),
+              }),
+            recordWorkspaceDiff: (successResult) => this.recordWorkspaceDiffIfNeeded(
               sessionId,
-              runId: nextRunId,
-              runDir: result.runDir,
-              finalText: result.finalText,
-              availableAgentNames: agentFiles.map((agent) => agent.name),
-            })
-            : null;
-
-          if (sourceDirectoryAvailable) {
-            await this.recordWorkspaceDiffIfNeeded(sessionId, nextRunId, resolvedRunDir, workspace, result.finalText, controller.signal);
-          }
-
-          try {
-            if (terminalToolOnly) {
-              await this.storeCall("local-console-store-record-tool-only-complete", () =>
-                this.options.store.recordMessageProcessed({
-                  userMessageId: claimedMessage.id,
-                  sessionId,
-                  runId: nextRunId,
-                  runDir: result.runDir,
-                  now: this.nowIso(),
-                }),
-              );
-            } else {
+              nextRunId,
+              resolvedRunDir,
+              workspace,
+              successResult.finalText,
+              controller.signal,
+            ),
+            recordSuccess: async (kind, successResult) => {
+              if (kind === "processed") {
+                await this.storeCall("local-console-store-record-tool-only-complete", () =>
+                  this.options.store.recordMessageProcessed({
+                    userMessageId: claimedMessage.id,
+                    sessionId,
+                    runId: nextRunId,
+                    runDir: successResult.runDir,
+                    now: this.nowIso(),
+                  }));
+                return;
+              }
               await this.storeCall("local-console-store-record-agent-response", () =>
                 this.options.store.recordAgentResponse({
                   userMessageId: claimedMessage.id,
                   sessionId,
                   role: triggerRole,
-                  body: result.finalText,
+                  body: successResult.finalText,
                   runId: nextRunId,
-                  runDir: result.runDir,
+                  runDir: successResult.runDir,
                   now: this.nowIso(),
-                }),
+                }));
+            },
+            onSuccessPersistenceError: async (error, successResult) => {
+              await this.recordTerminalFailureBestEffort(
+                claimedMessage,
+                sessionId,
+                nextRunId,
+                successResult.runDir,
+                formatLocalError(error),
               );
-            }
-            await this.recordAgentTimelineCursor({
+              activeMessage = null;
+              activeRunDir = null;
+            },
+            recordTimelineCursor: (lastSeenIndex) => this.recordAgentTimelineCursor({
               sessionId,
               runId: nextRunId,
               role: triggerRole,
               agentIdentityFingerprint: executionContext.agentIdentityFingerprint,
-              lastSeenIndex: timeline.at(-1)?.index ?? -1,
+              lastSeenIndex,
               recordedAt: this.nowIso(),
-            });
-          } catch (error) {
-            await this.recordTerminalFailureBestEffort(
-              claimedMessage,
-              sessionId,
-              nextRunId,
-              result.runDir,
-              formatLocalError(error),
-            );
-            activeMessage = null;
-            activeRunDir = null;
-            throw error;
-          }
-          if (childSessionCard !== null) {
-            try {
-              await this.storeCall("local-console-store-child-session-card", () =>
+            }),
+            recordChildSessionCard: (childSessionCard, successResult) =>
+              this.storeCall("local-console-store-child-session-card", () =>
                 this.sessionFactStore().recordChildSessionCard({
                   parentSessionId: sessionId,
                   sourceId: childSessionCard.sourceId,
                   childSessionIds: childSessionCard.childSessionIds,
                   runId: nextRunId,
-                  runDir: result.runDir,
+                  runDir: successResult.runDir,
                   now: this.nowIso(),
-                }));
-            } catch (error) {
+                })),
+            onChildSessionCardError: async (error) => {
               const reason = formatLocalError(error);
               this.lastError = reason;
               await this.recordVisibleChildSessionFailureBestEffort(sessionId, reason);
-              throw error;
-            }
-          }
+            },
+            recordDirectoryWarning: (successResult) =>
+              this.storeCall("local-console-store-directory-unavailable", () =>
+                this.options.store.recordSystemMessage({
+                  sessionId,
+                  body: "项目文件夹不可用；隔离工作区已完成当前步骤，修复项目文件夹后才能继续。",
+                  systemEventKind: "other",
+                  runId: nextRunId,
+                  runDir: successResult.runDir,
+                  error: "PROJECT_DIRECTORY_UNAVAILABLE",
+                  status: "failed",
+                  now: this.nowIso(),
+                })),
+          });
+          if (terminalOutcome === "failed") return;
           this.lastError = null;
-          if (!sourceDirectoryAvailable) {
-            await this.storeCall("local-console-store-directory-unavailable", () =>
-              this.options.store.recordSystemMessage({
-                sessionId,
-                body: "项目文件夹不可用；隔离工作区已完成当前步骤，修复项目文件夹后才能继续。",
-                systemEventKind: "other",
-                runId: nextRunId,
-                runDir: result.runDir,
-                error: "PROJECT_DIRECTORY_UNAVAILABLE",
-                status: "failed",
-                now: this.nowIso(),
-              }),
-            );
-            return;
-          }
+          if (terminalOutcome === "succeeded-directory-unavailable") return;
         } catch (error) {
           this.lastError = formatLocalError(error);
           if (activeMessage !== null && activeRunId !== null) {
