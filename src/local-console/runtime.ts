@@ -113,6 +113,7 @@ import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
+import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import {
   assertTextFragments,
   buildFallbackProjectSummary,
@@ -346,6 +347,7 @@ export class LocalConsoleRuntime {
   private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
   private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
   private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
+  private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
   private closing = false;
   private lastError: string | null = null;
 
@@ -543,7 +545,15 @@ export class LocalConsoleRuntime {
       activeRun: (runId) => this.activeRuns.get(runId),
       activeRunIds: (sessionId) => new Set(this.activeRunsForSession(sessionId).map((run) => run.runId)),
       readOptionalTextFile,
-      sessionFactLogPath: (sessionId) => this.sessionFactStore().getSessionFactLogPath(sessionId),
+      sessionFactLogPath: (sessionId) => {
+        const store = options.store as LocalConsoleStore
+          & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
+        const getSessionFactLogPath = store.getSessionFactLogPath;
+        if (getSessionFactLogPath === undefined) {
+          throw new Error("local console store does not provide the session fact log path");
+        }
+        return getSessionFactLogPath.call(store, sessionId);
+      },
       factReader: localProcessFactReader,
       traceDataRoot: options.dataRoot ?? options.projectRoot,
     });
@@ -565,6 +575,51 @@ export class LocalConsoleRuntime {
       readWorkspaceFile: (workspacePath, filePath) => readLocalWorkspaceTextFile({ workspacePath, filePath }),
       readFileReference: readLocalFileReferenceWindow,
       log: (event) => log(event),
+    });
+    this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime({
+      nowIso: () => this.nowIso(),
+      storeCall: (label, operation) => this.storeCall(label, operation),
+      assertProjectDirectoryAvailable: (projectId) => this.assertProjectDirectoryAvailable(projectId),
+      createChildSession: (input) => this.sessionFactStore().createChildSession(input),
+      recordVisibleChildFailure: (parentSessionId, reason) =>
+        this.recordVisibleChildSessionFailureBestEffort(parentSessionId, reason),
+      setLastError: (error) => { this.lastError = error; },
+      sessionFactLogPath: (sessionId) => {
+        const store = options.store as LocalConsoleStore
+          & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
+        const getSessionFactLogPath = store.getSessionFactLogPath;
+        if (getSessionFactLogPath === undefined) {
+          throw new Error("local console store does not provide the session fact log path");
+        }
+        return getSessionFactLogPath.call(store, sessionId);
+      },
+      interruptRun: ({ sessionId, runId }) => {
+        const active = this.activeRuns.get(runId);
+        if (active === undefined || active.sessionId !== sessionId) return false;
+        active.controller.abort("user-interrupted");
+        return true;
+      },
+      markSessionResultRead: (input) => options.store.markSessionResultRead(input),
+      updateSessionReadState: (input) => {
+        if (options.store.updateSessionReadState === undefined) throw new Error("local console session read state unavailable");
+        return options.store.updateSessionReadState(input);
+      },
+      armSessionManualUnread: (input) => {
+        if (options.store.armSessionManualUnread === undefined) throw new Error("local console manual unread unavailable");
+        return options.store.armSessionManualUnread(input);
+      },
+      markSessionViewed: (input) => {
+        if (options.store.markSessionViewed === undefined) throw new Error("local console session view state unavailable");
+        return options.store.markSessionViewed(input);
+      },
+      setSessionPinned: (input) => {
+        if (options.store.setSessionPinned === undefined) throw new Error("local console session pin unavailable");
+        return options.store.setSessionPinned(input);
+      },
+      renameSession: (input) => {
+        if (options.store.renameSession === undefined) throw new Error("local console session rename unavailable");
+        return options.store.renameSession(input);
+      },
     });
   }
 
@@ -977,37 +1032,11 @@ export class LocalConsoleRuntime {
     initialBody: string;
     initialRole?: string | null;
   }): Promise<LocalConsoleSessionSummary> {
-    await this.assertProjectDirectoryAvailable(input.projectId);
-    try {
-      return await this.storeCall("local-console-store-create-child-session", () =>
-        this.sessionFactStore().createChildSession({
-          parentSessionId: input.parentSessionId,
-          childSessionId: input.childSessionId,
-          projectId: input.projectId,
-          title: input.title,
-          relation: input.relation ?? "task",
-          hiddenKey: input.hiddenKey,
-          initialBody: input.initialBody,
-          initialRole: input.initialRole ?? null,
-          now: this.nowIso(),
-        }),
-      );
-    } catch (error) {
-      const message = formatLocalError(error);
-      this.lastError = message;
-      await this.recordVisibleChildSessionFailureBestEffort(input.parentSessionId, message);
-      throw error;
-    }
+    return await this.sessionMetadataRuntime.createChildSession(input);
   }
 
   getSessionFactLogPath(sessionId: string): string {
-    const store = this.options.store as LocalConsoleStore
-      & Partial<Pick<SessionFactWritingStore, "getSessionFactLogPath">>;
-    const getSessionFactLogPath = store.getSessionFactLogPath;
-    if (getSessionFactLogPath === undefined) {
-      throw new Error("local console store does not provide the session fact log path");
-    }
-    return getSessionFactLogPath.call(store, sessionId);
+    return this.sessionMetadataRuntime.getSessionFactLogPath(sessionId);
   }
 
   async submitUserMessage(
@@ -1371,22 +1400,11 @@ export class LocalConsoleRuntime {
   }
 
   async interruptRun(input: { sessionId: string; runId: string }): Promise<boolean> {
-    const active = this.activeRuns.get(input.runId);
-    if (active === undefined || active.sessionId !== input.sessionId) {
-      return false;
-    }
-    active.controller.abort("user-interrupted");
-    return true;
+    return await this.sessionMetadataRuntime.interruptRun(input);
   }
 
   async markSessionResultRead(input: { sessionId: string; unreadSince: string }): Promise<boolean> {
-    return await this.storeCall("local-console-store-mark-session-result-read", () =>
-      this.options.store.markSessionResultRead({
-        sessionId: input.sessionId,
-        unreadSince: input.unreadSince,
-        now: this.nowIso(),
-      }),
-    );
+    return await this.sessionMetadataRuntime.markSessionResultRead(input);
   }
 
   async updateSessionReadState(input: {
@@ -1397,30 +1415,15 @@ export class LocalConsoleRuntime {
     expectedTitleRevision: number;
     isCurrent: boolean;
   }): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.updateSessionReadState === undefined) {
-      throw new Error("local console session read state unavailable");
-    }
-    return await this.storeCall("local-console-store-update-session-read-state", () =>
-      this.options.store.updateSessionReadState!({ ...input, now: this.nowIso() }),
-    );
+    return await this.sessionMetadataRuntime.updateSessionReadState(input);
   }
 
   async armSessionManualUnread(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.armSessionManualUnread === undefined) {
-      throw new Error("local console manual unread unavailable");
-    }
-    return await this.storeCall("local-console-store-arm-session-manual-unread", () =>
-      this.options.store.armSessionManualUnread!({ sessionId, now: this.nowIso() }),
-    );
+    return await this.sessionMetadataRuntime.armSessionManualUnread(sessionId);
   }
 
   async markSessionViewed(sessionId: string): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.markSessionViewed === undefined) {
-      throw new Error("local console session view state unavailable");
-    }
-    return await this.storeCall("local-console-store-mark-session-viewed", () =>
-      this.options.store.markSessionViewed!({ sessionId, now: this.nowIso() }),
-    );
+    return await this.sessionMetadataRuntime.markSessionViewed(sessionId);
   }
 
   async setSessionPinned(input: {
@@ -1428,12 +1431,7 @@ export class LocalConsoleRuntime {
     pinned: boolean;
     expectedPinnedAt: string | null;
   }): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.setSessionPinned === undefined) {
-      throw new Error("local console session pin unavailable");
-    }
-    return await this.storeCall("local-console-store-set-session-pinned", () =>
-      this.options.store.setSessionPinned!({ ...input, now: this.nowIso() }),
-    );
+    return await this.sessionMetadataRuntime.setSessionPinned(input);
   }
 
   async renameSession(input: {
@@ -1441,12 +1439,7 @@ export class LocalConsoleRuntime {
     title: string;
     expectedTitleRevision: number;
   }): Promise<LocalConsoleSessionSummary> {
-    if (this.options.store.renameSession === undefined) {
-      throw new Error("local console session rename unavailable");
-    }
-    return await this.storeCall("local-console-store-rename-session", () =>
-      this.options.store.renameSession!({ ...input, now: this.nowIso() }),
-    );
+    return await this.sessionMetadataRuntime.renameSession(input);
   }
 
   async snapshot(sessionId = this.sessionId): Promise<LocalConsoleSnapshot> {
