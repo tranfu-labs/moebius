@@ -1,10 +1,16 @@
-import { nonContinuableSystemMessage, resolveLocalSessionContinuation } from "./session-status.js";
+import { resolveLocalSessionContinuation } from "./session-status.js";
 import { resolveSessionWorkspaceContext } from "./workspace-resolution.js";
 import {
-  localSessionWorktreePath,
-  readCachedLocalWorkspaceFacts,
-} from "./workspace-source.js";
-import { directoryAvailable, fileAvailable } from "./runtime-file-support.js";
+  decideNonContinuableRecordWrite,
+  decideProjectWorkspaceFactsRead,
+  decideUnavailableTeamStop,
+  decideWorktreeBranchRead,
+  planAttentionSynchronization,
+  planNonContinuableRecord,
+  planRuntimeActivity,
+  planSessionBranchRead,
+  planUnsafeRunContext,
+} from "./session-presentation-plan.js";
 import type {
   LocalConsoleProjectSummary,
   LocalConsoleSessionSummary,
@@ -31,31 +37,35 @@ export class LocalSessionPresentationRuntime {
     getSessionFactLogPath(sessionId: string): string;
     workdirRoot: string;
     gitTimeoutMs?: number;
+    readWorkspaceFacts(folderPath: string): Promise<{ isGitRepository: boolean; branchName: string | null }>;
+    worktreePath(workdirRoot: string, projectId: string, sessionId: string): string;
+    directoryAvailable(folderPath: string): Promise<boolean>;
+    fileAvailable(filePath: string): Promise<boolean>;
   }) {}
 
   async withSessionWorkspaceContext(project: LocalConsoleProjectSummary): Promise<LocalConsoleProjectSummary> {
-    const projectFacts = project.directoryAvailable === false
+    const factsRead = decideProjectWorkspaceFactsRead(project.directoryAvailable);
+    const projectFacts = factsRead.kind === "fallback"
       ? { isGitRepository: false, branchName: null }
-      : await readCachedLocalWorkspaceFacts({
-          folderPath: project.folderPath,
-          gitTimeoutMs: this.input.gitTimeoutMs,
-        });
+      : await this.input.readWorkspaceFacts(project.folderPath);
     const sessions = await Promise.all(project.sessions.map(async (session) => {
       const healthySession = await this.input.withAgentTeamHealth(session);
       const context = resolveSessionWorkspaceContext(session, projectFacts);
-      const analysisRecordAvailable = await fileAvailable(this.input.getSessionFactLogPath(session.sessionId));
-      let branchName = context.workspaceMode === "direct" ? projectFacts.branchName : null;
-      if (context.workspaceMode === "worktree") {
-        const worktreePath = localSessionWorktreePath(
+      const analysisRecordAvailable = await this.input.fileAvailable(this.input.getSessionFactLogPath(session.sessionId));
+      const branchRead = planSessionBranchRead({
+        workspaceMode: context.workspaceMode,
+        projectBranchName: projectFacts.branchName,
+      });
+      let branchName = branchRead.kind === "direct" ? branchRead.branchName : null;
+      if (branchRead.kind === "worktree") {
+        const worktreePath = this.input.worktreePath(
           this.input.workdirRoot,
           project.projectId,
           session.sessionId,
         );
-        if (await directoryAvailable(worktreePath)) {
-          branchName = await readCachedLocalWorkspaceFacts({
-            folderPath: worktreePath,
-            gitTimeoutMs: this.input.gitTimeoutMs,
-          }).then((facts) => facts.branchName, () => null);
+        const worktreeRead = decideWorktreeBranchRead(await this.input.directoryAvailable(worktreePath));
+        if (worktreeRead.kind === "read") {
+          branchName = await this.input.readWorkspaceFacts(worktreePath).then((facts) => facts.branchName, () => null);
         }
       }
       const continuation = resolveLocalSessionContinuation({
@@ -63,14 +73,17 @@ export class LocalSessionPresentationRuntime {
         agentTeamHealth: healthySession.agentTeamHealth,
         agentTeamHealthReason: healthySession.agentTeamHealthReason,
       });
-      const desiredAttentionKind = continuation.canContinue ? null : continuation.kind;
-      const syncedAttention = this.input.store.syncSessionContinuationAttention === undefined
-        || (healthySession.attentionKind ?? null) === desiredAttentionKind
+      const attentionPlan = planAttentionSynchronization({
+        continuation,
+        currentKind: healthySession.attentionKind,
+        portAvailable: this.input.store.syncSessionContinuationAttention !== undefined,
+      });
+      const syncedAttention = attentionPlan.kind === "preserve"
         ? healthySession
         : await this.input.storeCall("local-console-store-sync-session-continuation-attention", () =>
           this.input.store.syncSessionContinuationAttention!({
             sessionId: session.sessionId,
-            kind: desiredAttentionKind,
+            kind: attentionPlan.desiredKind,
             now: this.input.nowIso(),
           }));
       return {
@@ -89,39 +102,27 @@ export class LocalSessionPresentationRuntime {
   }
 
   withRuntimeActivity(project: LocalConsoleProjectSummary): LocalConsoleProjectSummary {
-    const sessions = project.sessions.map((session) => {
-      const runningCount = Math.max(session.runningCount, this.input.activeRunCount(session.sessionId));
-      return {
-        ...session,
-        status: runningCount > 0 ? "running" as const : session.status,
-        runningCount,
-        hasPendingControlWork: session.hasPendingControlWork === true || runningCount > 0,
-      };
-    });
-    return {
-      ...project,
-      sessions,
-      runningCount: sessions.reduce((total, session) => total + session.runningCount, 0),
-    };
+    return planRuntimeActivity(project, Object.fromEntries(
+      project.sessions.map((session) => [session.sessionId, this.input.activeRunCount(session.sessionId)]),
+    ));
   }
 
   async synchronizeNonContinuableRecords(projects: LocalConsoleProjectSummary[]): Promise<void> {
     for (const session of projects.flatMap((project) => project.sessions)) {
-      if (session.continuation === undefined || session.continuation.canContinue) continue;
-      const continuation = session.continuation;
-      const body = nonContinuableSystemMessage(continuation);
-      if (body === null) continue;
+      const plan = planNonContinuableRecord(session);
+      if (plan.kind === "skip") continue;
       const messages = await this.input.storeCall("local-console-store-list", () =>
         this.input.store.listMessages(session.sessionId));
-      if (messages.some((message) => message.speaker === "system" && message.body === body)) continue;
+      const write = decideNonContinuableRecordWrite(messages, plan.body);
+      if (write.kind === "skip") continue;
       await this.input.storeCall("local-console-store-record-non-continuable", () =>
         this.input.store.recordSystemMessage({
           sessionId: session.sessionId,
-          body,
+          body: plan.body,
           systemEventKind: "other",
           runId: null,
           runDir: null,
-          error: continuation.kind,
+          error: plan.error,
           status: "displayed",
           now: this.input.nowIso(),
         }));
@@ -137,14 +138,20 @@ export class LocalSessionPresentationRuntime {
     for (const active of this.input.activeRuns()) {
       const source = await this.input.storeCall("local-console-store-session-workspace", () =>
         this.input.store.getSessionWorkspace(active.sessionId));
-      if (active.workspaceMode === "direct" && unavailableProjectIds.has(source.projectId)) {
+      const action = planUnsafeRunContext({
+        workspaceMode: active.workspaceMode,
+        sourceProjectId: source.projectId,
+        unavailableProjectIds,
+        sessionHealth: sessions.get(active.sessionId)?.agentTeamHealth,
+      });
+      if (action.kind === "abort-project") {
         active.controller.abort("project-directory-unavailable");
         continue;
       }
-      const session = sessions.get(active.sessionId);
-      if (session?.agentTeamHealth === "deleted" || session?.agentTeamHealth === "needs-repair") {
-        const snapshot = await this.input.store.listSessionAgentTeamSnapshot?.(active.sessionId) ?? null;
-        if (snapshot === null) active.controller.abort("agent-team-unavailable");
+      if (action.kind === "inspect-team") {
+        const snapshot = await this.input.store.listSessionAgentTeamSnapshot?.(active.sessionId);
+        const stop = decideUnavailableTeamStop(snapshot);
+        if (stop.kind === "abort") active.controller.abort("agent-team-unavailable");
       }
     }
   }

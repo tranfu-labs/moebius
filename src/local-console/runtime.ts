@@ -383,6 +383,13 @@ export class LocalConsoleRuntime {
       getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
       workdirRoot: options.workdirRoot,
       ...(options.workspaceGitTimeoutMs === undefined ? {} : { gitTimeoutMs: options.workspaceGitTimeoutMs }),
+      readWorkspaceFacts: async (folderPath) => await readCachedLocalWorkspaceFacts({
+        folderPath,
+        gitTimeoutMs: options.workspaceGitTimeoutMs,
+      }),
+      worktreePath: localSessionWorktreePath,
+      directoryAvailable,
+      fileAvailable,
     });
     this.runFailureRuntime = new LocalRunFailureRuntime({
       store: options.store,
