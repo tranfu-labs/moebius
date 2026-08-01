@@ -1,4 +1,5 @@
 import { runSqliteStateCommand } from "../sqlite-state.js";
+import { planRuntimeFallback } from "./runtime-domain.js";
 
 export interface LocalT5CommandOptions {
   sqlitePath: string;
@@ -30,7 +31,7 @@ export async function recordLocalRouteDecision(
   await runLocalT5Command(options, {
     kind: "local-record-route-decision",
     ...input,
-    targetRole: input.targetRole ?? null,
+    targetRole: planRuntimeFallback(input.targetRole, null as string | null),
   });
 }
 
