@@ -1,8 +1,4 @@
-import {
-  spawn,
-  type ChildProcess,
-  type SpawnOptions,
-} from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import path from "node:path";
 
 import type {
@@ -17,22 +13,25 @@ import {
   type TrustedInstallerCommand,
 } from "./cli-installer-registry.js";
 import type { OnboardingCli } from "./cli-readiness-contract.js";
+import {
+  createOnboardingCliInstallState,
+  ONBOARDING_INSTALLER_CLIS,
+  planOnboardingCliInstallSnapshot,
+} from "./cli-installer-state.js";
+import {
+  spawnInstallerProcess,
+  terminateInstallerProcess,
+  waitForSuccessfulInstallerClose,
+  type InstallerProcessSpawner,
+  type InstallerProcessTerminator,
+} from "./cli-installer-process.js";
+
+export type { InstallerProcessSpawner, InstallerProcessTerminator } from "./cli-installer-process.js";
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_HEARTBEAT_MS = 1_000;
 const DEFAULT_TERMINATE_GRACE_MS = 1_000;
 const DEFAULT_KILL_GRACE_MS = 1_000;
-
-export type InstallerProcessSpawner = (
-  command: string,
-  args: readonly string[],
-  options: SpawnOptions,
-) => ChildProcess;
-
-export type InstallerProcessTerminator = (
-  child: ChildProcess,
-  signal: NodeJS.Signals,
-) => void;
 
 export interface OnboardingCliInstallManagerOptions {
   spawnProcess?: InstallerProcessSpawner;
@@ -78,8 +77,7 @@ export class OnboardingCliInstallManager {
   private readonly state: OnboardingCliInstallState;
 
   constructor(options: OnboardingCliInstallManagerOptions = {}) {
-    this.spawnProcess = options.spawnProcess ?? ((command, args, spawnOptions) =>
-      spawn(command, [...args], spawnOptions));
+    this.spawnProcess = options.spawnProcess ?? spawnInstallerProcess;
     this.terminateProcess = options.terminateProcess ?? terminateInstallerProcess;
     this.installerForCli = options.installerForCli ?? getTrustedCliInstaller;
     this.onInstallSucceeded = options.onInstallSucceeded ?? (() => undefined);
@@ -88,11 +86,12 @@ export class OnboardingCliInstallManager {
     this.heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.terminateGraceMs = options.terminateGraceMs ?? DEFAULT_TERMINATE_GRACE_MS;
     this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
-    this.state = {
-      codex: this.initialSnapshot("codex"),
-      claude: this.initialSnapshot("claude"),
-      kimi: this.initialSnapshot("kimi"),
-    };
+    const updatedAt = this.now().toISOString();
+    this.state = createOnboardingCliInstallState({
+      codex: this.installerForCli("codex").displayCommand,
+      claude: this.installerForCli("claude").displayCommand,
+      kimi: this.installerForCli("kimi").displayCommand,
+    }, updatedAt);
   }
 
   getSnapshot(cli: OnboardingCli): OnboardingCliInstallSnapshot {
@@ -108,7 +107,7 @@ export class OnboardingCliInstallManager {
   }
 
   getRunningClis(): OnboardingCli[] {
-    return (["codex", "claude", "kimi"] as const).filter((cli) => this.running.has(cli));
+    return ONBOARDING_INSTALLER_CLIS.filter((cli) => this.running.has(cli));
   }
 
   subscribe(listener: (snapshot: OnboardingCliInstallSnapshot) => void): () => void {
@@ -242,7 +241,7 @@ export class OnboardingCliInstallManager {
       detached: process.platform !== "win32",
     });
     task.children.add(child);
-    await waitForSuccessfulClose(child).finally(() => this.releaseChild(task, child));
+    await waitForSuccessfulInstallerClose(child).finally(() => this.releaseChild(task, child));
   }
 
   private async executePipeline(
@@ -269,8 +268,8 @@ export class OnboardingCliInstallManager {
     }
     source.stdout.pipe(destination.stdin);
     await Promise.all([
-      waitForSuccessfulClose(source).finally(() => this.releaseChild(task, source)),
-      waitForSuccessfulClose(destination).finally(() => this.releaseChild(task, destination)),
+      waitForSuccessfulInstallerClose(source).finally(() => this.releaseChild(task, source)),
+      waitForSuccessfulInstallerClose(destination).finally(() => this.releaseChild(task, destination)),
     ]);
   }
 
@@ -351,18 +350,6 @@ export class OnboardingCliInstallManager {
     }
   }
 
-  private initialSnapshot(cli: OnboardingCli): OnboardingCliInstallSnapshot {
-    return {
-      cli,
-      status: "idle",
-      stage: null,
-      revision: 0,
-      displayCommand: this.installerForCli(cli).displayCommand,
-      startedAt: null,
-      updatedAt: this.now().toISOString(),
-    };
-  }
-
   private publish(
     cli: OnboardingCli,
     status: OnboardingCliInstallStatus,
@@ -370,47 +357,21 @@ export class OnboardingCliInstallManager {
     startedAt: string | null,
     displayCommand?: string,
   ): OnboardingCliInstallSnapshot {
-    const snapshot: OnboardingCliInstallSnapshot = {
-      cli,
+    const snapshot = planOnboardingCliInstallSnapshot(this.state[cli], {
       status,
       stage,
-      revision: this.state[cli].revision + 1,
       displayCommand: displayCommand
         ?? this.running.get(cli)?.installer.displayCommand
         ?? this.installerForCli(cli).displayCommand,
       startedAt,
       updatedAt: this.now().toISOString(),
-    };
+    });
     this.state[cli] = snapshot;
     for (const listener of this.listeners) {
       listener({ ...snapshot });
     }
     return { ...snapshot };
   }
-}
-
-function waitForSuccessfulClose(child: ChildProcess): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (error?: Error): void => {
-      if (settled) return;
-      settled = true;
-      child.off("error", onError);
-      child.off("close", onClose);
-      if (error === undefined) resolve();
-      else reject(error);
-    };
-    const onError = (): void => finish(new Error("trusted installer failed to start"));
-    const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
-      if (code === 0) {
-        finish();
-      } else {
-        finish(new Error(signal === null ? "trusted installer failed" : "trusted installer stopped"));
-      }
-    };
-    child.once("error", onError);
-    child.once("close", onClose);
-  });
 }
 
 export class OnboardingCliInstallReapError extends Error {
@@ -420,16 +381,4 @@ export class OnboardingCliInstallReapError extends Error {
     super(`Installer cleanup for ${cli} could not be confirmed.`);
     this.name = "OnboardingCliInstallReapError";
   }
-}
-
-function terminateInstallerProcess(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch {
-      // The child may have exited between the task snapshot and the signal.
-    }
-  }
-  child.kill(signal);
 }
