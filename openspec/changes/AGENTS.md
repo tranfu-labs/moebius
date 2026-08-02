@@ -36,7 +36,7 @@ MUST 按 采访 → proposal → design（+ 必要时 wireframes.md）→ tasks 
 MUST 同时完成下面五步，缺一不算归档：
 
 1. **移动 change 目录**：`openspec/changes/<change-id>/` → `openspec/changes/archive/<YYYY-MM-DD>-<change-id>/`（日期为归档日）。
-2. **合并 spec-delta → specs**：把 `spec-delta/` 下对应业务域的增删改合并进 `openspec/specs/<domain>/spec.md`，让事实规格反映改完之后的现状。
+2. **合并 spec-delta → specs**：把 `spec-delta/` 下对应业务域的增删改合并进 `openspec/specs/<domain>/spec.md`，让事实规格反映改完之后的现状。回流前 MUST 逐条筛掉**过程约束条**：检查归档后该条主语是否仍成立，以及验收对象是产品行为还是变更评审动作；主语为 `This change`、验收对象为变更文件清单/依赖检查/评审动作的条目随 change 留在 archive，不得进入事实源。反面例子：`Humanization composites remain isolated` 中的 `This change MUST NOT ...` 和 “changed file list ... inspected” 只约束一次 change 审查，归档后不再是现行行为。
 3. **回流 wireframes.md**（仅当本 change 有 `wireframes.md` 时）：**先看该页面是否已建 `docs/product/pages/<page>.md`**——已建则字符图回流至该页面 PRD 的「页面结构」节，NEVER 再写入 `docs/wireframes/`（页面 PRD 已接管，向旧 Wireframe 追加新事实会制造双源）；未建才回填 `docs/wireframes/pages/<page>.md`，流转变化同步进 `docs/wireframes/flow.md`。
 4. **回流 architecture/after.svg → docs/architecture/**（仅当本 change 有 `architecture/after.svg` 时）：把 `after.svg` 复制为 `docs/architecture/<topic>.svg`（成为现状架构事实源），并在 `docs/architecture/module-map.md` 相应小节添加 `![<topic>](<topic>.svg)` 引用；`before.svg` 不回流，保留在 archive 目录作为历史快照。
 5. **核对 PRD**：按 `proposal.md`「需求基线」节列出的锚点，逐条确认 `docs/product/` 里的表述与最终实现一致。PRD 在采访后、落盘时就已写入，本步只做核对与必要修正，NEVER 留到归档才第一次写——那会让产品事实源在整个实现期间处于过时状态。

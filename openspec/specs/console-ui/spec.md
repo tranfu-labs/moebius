@@ -2970,3 +2970,223 @@ console-ui MUST 保持 presentational：它只消费 registry DTO、loading/erro
 - **THEN** panel 原位显示可理解失败和重新加载动作
 - **AND** 普通重试、继续说话与历史内容仍可用
 - **AND** 不提交默认或未经校验的 profile。
+
+### Requirement: Agent messages use progressive disclosure
+
+The console UI component library MUST provide an independent agent message component that defaults to a collapsed summary containing the localized role name, localized stage, conclusion, and handoff line.
+
+The component MUST derive conclusion, stage marker, and handoff line from the raw agent Markdown by default.
+
+The component MUST allow explicit conclusion, stage, and handoff fields to override the derived values.
+
+The collapsed summary MUST NOT expose the English stage marker or other raw protocol metadata.
+
+The expanded view MUST preserve the complete raw Markdown without deleting protocol metadata.
+
+#### Scenario: Agent message is concise by default and auditable on demand
+
+Given a raw agent response contains `## 结论`, a legal stage marker, and a handoff line
+When the agent message Story first renders
+Then the user sees the localized role, localized stage, conclusion, and handoff summary
+And the complete raw response is not expanded by default
+When the user expands the message
+Then the complete original response is visible.
+
+#### Scenario: Explicit structured fields override parsing
+
+Given raw Markdown can be parsed and the caller also supplies explicit summary fields
+When the agent message renders
+Then each explicit field is shown in preference to its parsed counterpart
+And the original raw Markdown remains unchanged in the expanded view.
+
+### Requirement: Run blocks support steps and a no-step fallback
+
+The console UI component library MUST provide an independent run block component with a presentation-only model that does not depend on local-console runtime types.
+
+The run block MUST show the localized role name, human-readable elapsed time, and an accessible interrupt button whether or not step data exists.
+
+When elapsed time is missing, empty, or whitespace-only, the run block MUST show「耗时未知」.
+
+When steps exist, the run block MUST show each step as completed, running, or pending and MUST make each available raw step output expandable.
+
+When steps do not exist, the run block MUST show a non-empty single-line human summary and MUST make available raw run output expandable.
+
+When both steps and a usable summary are absent, the run block MUST show「正在运行，等待进展」instead of an empty card.
+
+Raw output MUST remain collapsed by default.
+
+#### Scenario: Planned run shows step progress
+
+Given a run has completed, running, and pending steps
+When its Story renders
+Then every step and status is visible
+And the localized role, elapsed time, and interrupt button are visible
+And raw output is available through collapsed details.
+
+#### Scenario: Unplanned run degrades to one useful line
+
+Given a run has no step data but has a human summary and raw output
+When its Story renders
+Then the summary appears instead of an empty step area
+And the localized role, elapsed time, and interrupt button are visible
+And the raw output is available only after expanding details.
+
+#### Scenario: Missing presentation data has a deterministic fallback
+
+Given step data is absent and summary and elapsed time are missing, empty, or whitespace-only
+When the run block renders
+Then it shows「正在运行，等待进展」
+And it shows「耗时未知」
+And the run block is not blank.
+
+### Requirement: Terminal run outcomes are humanized without losing evidence
+
+The console UI component library MUST map failed to「运行失败」, stuck to「运行长时间无响应」, interrupted to「运行已中断」, and dead-letter to「多次尝试仍失败，已停止自动重试」in the user-visible summary.
+
+The collapsed summary MUST NOT expose raw machine reasons such as `exit`, `idle-timeout`, or `dead-letter`.
+
+The component MUST preserve the original machine reason and raw output in collapsed details that the user can expand.
+
+The expanded content MUST preserve line breaks, angle brackets, ampersands, and machine strings such as `exit:42` as text without interpreting or altering them.
+
+#### Scenario: Four terminal outcomes are understandable and auditable
+
+Given Stories exist for failed, stuck, interrupted, and dead-letter outcomes with raw machine reasons
+When each Story first renders
+Then its user-visible area contains the confirmed Chinese summary
+And raw `exit`, `idle-timeout`, and dead-letter strings are not visible
+When the user expands details
+Then the corresponding original machine reason is visible unchanged.
+
+### Requirement: Disclosure and interrupt controls are keyboard-operable
+
+Agent message, run step output, and run outcome disclosure controls MUST toggle within one Enter or Space activation.
+
+Machine text inside each disclosure MUST be invisible to the user while collapsed and fully visible after expansion.
+
+The run block interrupt button MUST invoke `onInterrupt` exactly once for one mouse activation and exactly once for one keyboard activation without crashing the component.
+
+Visibility verification MUST use rendered browser visibility rather than treating text presence in the DOM as visible content.
+
+#### Scenario: Keyboard toggles every disclosure once
+
+Given agent message, run step output, and run outcome details are collapsed
+When the user focuses each disclosure control and activates it once with Enter or Space
+Then that disclosure toggles to expanded
+And its complete machine text becomes visible
+When the user activates it once again
+Then it returns to collapsed
+And its machine text is not visible.
+
+#### Scenario: Interrupt fires once per activation
+
+Given a run block receives an `onInterrupt` counting spy
+When the user activates the interrupt button once with a mouse
+Then the count increases by one
+When the user activates the interrupt button once with a keyboard
+Then the count increases by one again
+And the component remains rendered.
+
+#### Scenario: Special machine text is preserved behind disclosure
+
+Given raw output contains line breaks, angle brackets, ampersands, and `exit:42`
+When the component first renders collapsed
+Then that raw content is not visible
+When the user expands the disclosure
+Then the rendered text content equals the original value.
+
+### Requirement: Project and session sidebar
+
+The console UI MUST provide an independent project and session sidebar component that derives each visible project label from the final directory name of its project path.
+
+The sidebar MUST order sessions by waiting, running, idle, and completed status, in that order, while preserving caller order within the same status.
+
+The sidebar MUST classify goal sessions by their actual status and MUST NOT introduce a special goal-session priority tier.
+
+The sidebar MUST keep completed sessions in a completed group that is collapsed by default.
+
+The selected session style MUST NOT change session ordering.
+
+#### Scenario: Sidebar Story shows four status tiers
+
+Given a Story supplies a project path and sessions in mixed status order
+When the sidebar Story opens
+Then the project displays the final directory name
+And waiting sessions appear before running sessions
+And running sessions appear before idle sessions
+And the completed group appears last and is collapsed by default.
+
+#### Scenario: Selection does not reorder sessions
+
+Given an idle session is selected and a waiting session is not selected
+When the sidebar renders
+Then the waiting session remains before the selected idle session
+And the selected session is indicated only as an interaction state.
+
+### Requirement: Protocol-safe role composer
+
+The console UI MUST provide an independent controlled composer that opens a completion panel for the seven legal roles: ceo, dev, qa, dev-manager, product-manager, hermes-user, and secretary.
+
+The completion panel MUST present a neutral avatar, Chinese role name, and concise responsibility for each role.
+
+Selecting a role MUST replace the active completion token with exactly one legal `@<handle>` mention and MUST preserve surrounding ordinary text.
+
+When the message already contains one legal role mention outside the active completion token, the composer MUST NOT insert a second legal role mention.
+
+The completion panel MUST support pointer selection and keyboard selection.
+
+#### Scenario: Role selection generates a legal mention
+
+Given the composer contains an active `@` completion token and no other legal role mention
+When the user selects the displayed 开发 role
+Then the controlled composer value contains `@dev`
+And the user did not need to type the complete protocol handle.
+
+#### Scenario: Existing mention blocks a second insertion
+
+Given the composer value already contains `@qa`
+When the user attempts to open another completion and select 开发
+Then the composer does not insert `@dev`
+And the original value remains unchanged.
+
+### Requirement: Empty conversation state
+
+The console UI MUST provide an independent empty conversation state with an invitation to describe a goal and choose a role through the role composer.
+
+The empty state MUST NOT use an illustration, unread language, urgency language, or more than one solid emphasis action.
+
+#### Scenario: Empty state invites a protocol-safe start
+
+Given a conversation has no messages
+When the empty-state Story opens
+Then it invites the user to describe a goal and choose a role
+And the embedded composer can open the legal role completion panel
+And the surface remains flat except for the completion overlay.
+
+### Requirement: Current session context header
+
+The console UI MUST provide an independent current-session header that renders an optional parent-session breadcrumb, the current task status, and a compact progress summary.
+
+The current-session header MUST NOT render global waiting counts, global running counts, a new-session action, or the global waiting-list overlay.
+
+#### Scenario: Header Story stays within current-session context
+
+Given a task session has a parent session, status, and progress counts
+When the session-context header Story opens
+Then the parent breadcrumb, task status, and progress summary are visible
+And global counts, a new-session action, and a global waiting-list control are absent.
+
+### Requirement: Linear flat visual boundary
+
+The sidebar, composer, empty state, and session header MUST use existing console semantic tokens, thin borders, near-square radii, compact spacing, and flat solid controls.
+
+The role completion overlay MAY use one soft shadow, but non-overlay component surfaces MUST NOT use shadows.
+
+Waiting presentation MUST remain neutral, and runtime state colors MUST NOT be used as decoration.
+
+#### Scenario: Component Stories match the conversation-console source
+
+Given the four component Stories are rendered in light or dark mode
+When they are compared with the conversation-console design source and the AcceptCard component-library reference
+Then borders, radii, spacing, buttons, and neutral status presentation use the same flat visual language
+And only the open role-completion overlay has a shadow.

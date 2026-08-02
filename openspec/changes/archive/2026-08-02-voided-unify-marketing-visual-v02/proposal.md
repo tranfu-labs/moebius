@@ -1,5 +1,7 @@
 # 提案：unify-marketing-visual-v02
 
+> **作废归档（2026-08-02）**：本 change 作废，不执行其 19 条未完成任务。它依赖的事实源与对照物已失效：2026-07-29 用户确认正式 `sites/marketeam/index.html` 为深色工作台首页，2026-07-30 又由 `sites/marketeam/rebrand-narrative-plan.md` 建立新的品牌叙事候选链；旧的 v0.2 三路线收敛程序不再代表当前产品决策。候选文件与旧 spec-delta 保留在 archive 作为历史快照，不回流 `openspec/specs/`。未来若继续推进营销方向，必须以当前正式页和 `rebrand-narrative-plan.md` 为事实源另起 change，不得复用本 change。
+
 ## 背景
 当前 marketing-site 存在四层视觉事实漂移：`openspec/specs/marketing-site/spec.md` 仍要求旧的新野兽派规则，正式 `index.html` 已改为低饱和细线台账，未提交的 `docs/marketing-site/视觉宪法.md` 与 `style.html` 又演进到 v0.2，但 v0.2 的三声部、中心作品、参数化肌理和关系型悬停尚未进入正式页。
 
