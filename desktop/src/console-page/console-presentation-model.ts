@@ -1,4 +1,5 @@
 import type {
+  AnalysisPanelEntry,
   OperatorProject,
   OperatorSession,
   RightSidebarTabsState,
@@ -135,4 +136,102 @@ export function planAnalysisRootSession(
     current = byId.get(current.analysisParentSessionId);
   }
   return current ?? null;
+}
+
+export function planAnalysisPanelEntries(
+  sessions: readonly OperatorSession[],
+  parentSessionId: string,
+  locale: string,
+): AnalysisPanelEntry[] {
+  const children = sessions
+    .filter((session) => session.analysisParentSessionId === parentSessionId)
+    .sort((left, right) =>
+      right.createdAt.localeCompare(left.createdAt) || left.sessionId.localeCompare(right.sessionId));
+  const titleCounts = new Map<string, number>();
+  for (const child of children) {
+    titleCounts.set(child.title, (titleCounts.get(child.title) ?? 0) + 1);
+  }
+  const formatter = new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium" });
+  const baseLabels = children.map((child) =>
+    titleCounts.get(child.title) === 1 ? null : formatter.format(new Date(child.createdAt)));
+  const labelCounts = new Map<string, number>();
+  children.forEach((child, index) => {
+    const label = baseLabels[index];
+    if (label === null) return;
+    const key = `${child.title}\u0000${label}`;
+    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
+  });
+  const labelOccurrences = new Map<string, number>();
+  return children.map((child, index) => {
+    const label = baseLabels[index];
+    if (label === null) return { sessionId: child.sessionId, title: child.title };
+    const key = `${child.title}\u0000${label}`;
+    const occurrence = (labelOccurrences.get(key) ?? 0) + 1;
+    labelOccurrences.set(key, occurrence);
+    return {
+      sessionId: child.sessionId,
+      title: child.title,
+      createdLabel: (labelCounts.get(key) ?? 0) > 1
+        ? `${label} · ${occurrence <= 26 ? String.fromCharCode(64 + occurrence) : `#${String(occurrence)}`}`
+        : label,
+    };
+  });
+}
+
+export type AnalysisNavigationPlan =
+  | { kind: "error"; reason: "source-missing" | "source-unavailable" | "open-failed" }
+  | { kind: "direct"; root: OperatorSession }
+  | {
+      kind: "sidebar";
+      root: OperatorSession;
+      target: OperatorSession;
+      selectRoot: boolean;
+      focusTab: boolean;
+    };
+
+export function planConversationReferencePosition(reference:
+  | { scope: "conversation"; sessionId: string }
+  | { scope: "message"; sessionId: string; messageId: number }
+): { sessionId: string; messageId: number } | null {
+  return reference.scope === "message"
+    ? { sessionId: reference.sessionId, messageId: reference.messageId }
+    : null;
+}
+
+export function planHandledConversationMessageNavigation<T extends { requestId: number }>(
+  current: T | null,
+  handledRequestId: number,
+): T | null {
+  return current?.requestId === handledRequestId ? null : current;
+}
+
+export function planAnalysisNavigation(
+  sessions: readonly OperatorSession[],
+  currentSessionId: string,
+  request:
+    | { kind: "panel-entry"; parentSessionId: string; sessionId: string }
+    | { kind: "reference"; sessionId: string },
+): AnalysisNavigationPlan {
+  const target = sessions.find((session) => session.sessionId === request.sessionId);
+  if (
+    target === undefined
+    || (request.kind === "panel-entry" && target.analysisParentSessionId !== request.parentSessionId)
+  ) {
+    return {
+      kind: "error",
+      reason: request.kind === "panel-entry" ? "source-missing" : "source-unavailable",
+    };
+  }
+  const root = planAnalysisRootSession(sessions, target.sessionId);
+  if (root === null) return { kind: "error", reason: "open-failed" };
+  if (request.kind === "reference" && target.analysisParentSessionId == null) {
+    return { kind: "direct", root };
+  }
+  return {
+    kind: "sidebar",
+    root,
+    target,
+    selectRoot: currentSessionId !== root.sessionId,
+    focusTab: request.kind === "panel-entry",
+  };
 }

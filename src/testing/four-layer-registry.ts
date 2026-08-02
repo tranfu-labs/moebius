@@ -112,6 +112,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/team-save-controller.ts",
   "desktop/src/console-page/use-desktop-settings.ts",
   "desktop/src/console-page/use-active-cli-installations.ts",
+  "desktop/src/console-page/use-analysis-panel-navigation.ts",
   "desktop/src/console-page/use-agent-team-builder.ts",
   "desktop/src/console-page/use-agent-team-builder-commands.ts",
   "desktop/src/console-page/use-agent-team-builder-finalization.ts",

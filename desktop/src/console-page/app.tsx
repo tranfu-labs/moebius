@@ -9,7 +9,6 @@ import {
   type OperatorPendingDispatch,
   type OperatorMemberIdentity,
   type OperatorAgentTeam,
-  type AnalysisPanelEntry,
   type OperatorChildSessionSummary,
   type OperatorEditAndResendTarget,
   type OperatorProject,
@@ -202,6 +201,7 @@ import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
 import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
 import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
 import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
+import { useAnalysisPanelNavigation } from "./use-analysis-panel-navigation.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -388,12 +388,6 @@ export function OperatorConsoleApp({
   const conversationReadingPositionStoreRef = useRef(
     createConversationReadingPositionStore(window.localStorage),
   );
-  const [conversationMessageNavigation, setConversationMessageNavigation] = useState<{
-    sessionId: string;
-    messageId: number;
-    requestId: number;
-  } | null>(null);
-  const conversationMessageNavigationIdRef = useRef(0);
   const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
     useState<Record<string, string>>({});
   const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
@@ -450,8 +444,6 @@ export function OperatorConsoleApp({
   const [sidebarVisibilityPreference, setSidebarVisibilityPreference] = useState<SidebarVisibilityPreference>(() =>
     readSidebarVisibilityPreference(window.localStorage),
   );
-  const [analysisPanelOpenBySession, setAnalysisPanelOpenBySession] =
-    useState<Record<string, boolean>>({});
   const resultAcknowledgementsRef = useRef(new Set<string>());
   const rightSidebarBundle = useRightSidebarConsole(
     window.localStorage, rightSidebarTabsStore, apiBase,
@@ -834,169 +826,18 @@ export function OperatorConsoleApp({
     () => projects.flatMap((candidate) => candidate.sessions),
     [projects],
   );
-  const analysisEntriesFor = useCallback((parentSessionId: string): AnalysisPanelEntry[] => {
-    const children = allSidebarSessions
-      .filter((session) => session.analysisParentSessionId === parentSessionId)
-      .sort((left, right) =>
-        right.createdAt.localeCompare(left.createdAt) || left.sessionId.localeCompare(right.sessionId));
-    const titleCounts = new Map<string, number>();
-    for (const child of children) {
-      titleCounts.set(child.title, (titleCounts.get(child.title) ?? 0) + 1);
-    }
-    const formatter = new Intl.DateTimeFormat(language.activeLocale, {
-      dateStyle: "short",
-      timeStyle: "medium",
-    });
-    const baseLabels = children.map((child) =>
-      titleCounts.get(child.title) === 1 ? null : formatter.format(new Date(child.createdAt)));
-    const labelCounts = new Map<string, number>();
-    children.forEach((child, index) => {
-      const label = baseLabels[index];
-      if (label === null) return;
-      const key = `${child.title}\u0000${label}`;
-      labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
-    });
-    const labelOccurrences = new Map<string, number>();
-    return children.map((child, index) => {
-      const label = baseLabels[index];
-      if (label === null) {
-        return { sessionId: child.sessionId, title: child.title };
-      }
-      const key = `${child.title}\u0000${label}`;
-      const occurrence = (labelOccurrences.get(key) ?? 0) + 1;
-      labelOccurrences.set(key, occurrence);
-      return {
-        sessionId: child.sessionId,
-        title: child.title,
-        createdLabel: (labelCounts.get(key) ?? 0) > 1
-          ? `${label} · ${occurrence <= 26 ? String.fromCharCode(64 + occurrence) : `#${String(occurrence)}`}`
-          : label,
-      };
-    });
-  }, [allSidebarSessions, language.activeLocale]);
-  const setAnalysisPanelOpen = useCallback((sessionId: string, open: boolean) => {
-    setAnalysisPanelOpenBySession((current) => ({
-      ...current,
-      [sessionId]: open,
-    }));
-  }, []);
-  const openAnalysisPanelEntry = useCallback((
-    parentSessionId: string,
-    entry: AnalysisPanelEntry,
-  ) => {
-    const target = allSidebarSessions.find((session) =>
-      session.sessionId === entry.sessionId
-      && session.analysisParentSessionId === parentSessionId);
-    if (target === undefined) {
-      setClientError(t("console.sessionAnalysis.sourceMissing"));
-      return;
-    }
-    const root = planAnalysisRootSession(allSidebarSessions, target.sessionId);
-    if (root === null) {
-      setClientError(t("console.sessionAnalysis.openFailed"));
-      return;
-    }
-    const nextTabs = openRightSidebarSourceTab(
-      rightSidebarTabsBundle.store.read(root.sessionId),
-      {
-        id: `conversation-${target.sessionId}`,
-        type: "conversation",
-        title: target.title,
-        sourceKey: conversationTabSourceKey(target.sessionId),
-      },
-    );
-    rightSidebarTabsBundle.store.write(root.sessionId, nextTabs);
-    if (selectionRef.current.sessionId !== root.sessionId) {
-      void actions.selectSession({
-        projectId: root.projectId,
-        sessionId: root.sessionId,
-      });
-    }
-    commitPresentationRoute(ordinaryPresentationRoute({
-      projectId: root.projectId,
-      sessionId: root.sessionId,
-    }));
-    rightSidebarTabsBundle.commitCurrent(nextTabs);
-    setRightSidebarOpen(true);
-    if (nextTabs.activeTabId !== null) {
-      rightSidebarTabsBundle.requestFocus({
-        hostSessionId: root.sessionId,
-        tabId: nextTabs.activeTabId,
-      });
-    }
-    setClientError(null);
-  }, [
-    actions,
-    allSidebarSessions,
-    commitPresentationRoute,
-    setRightSidebarOpen,
-    t,
-  ]);
-  const openConversationReference = useCallback((reference:
-    | { scope: "conversation"; sessionId: string }
-    | { scope: "message"; sessionId: string; messageId: number }
-  ) => {
-    const target = allSidebarSessions.find((session) => session.sessionId === reference.sessionId);
-    if (target === undefined) {
-      setClientError(t("console.sessionAnalysis.sourceUnavailable"));
-      return;
-    }
-    const root = planAnalysisRootSession(allSidebarSessions, target.sessionId);
-    if (root === null) {
-      setClientError(t("console.sessionAnalysis.openFailed"));
-      return;
-    }
-    if (reference.scope === "message") {
-      conversationReadingPositionStoreRef.current.write(target.sessionId, reference.messageId);
-      conversationMessageNavigationIdRef.current += 1;
-      setConversationMessageNavigation({
-        sessionId: target.sessionId,
-        messageId: reference.messageId,
-        requestId: conversationMessageNavigationIdRef.current,
-      });
-    }
-    if (target.analysisParentSessionId == null) {
-      commitPresentationRoute(ordinaryPresentationRoute({
-        projectId: root.projectId,
-        sessionId: root.sessionId,
-      }));
-      void actions.selectSession({
-        projectId: root.projectId,
-        sessionId: root.sessionId,
-      });
-      setClientError(null);
-      return;
-    }
-    const nextTabs = openRightSidebarSourceTab(
-      rightSidebarTabsBundle.store.read(root.sessionId),
-      {
-        id: `conversation-${target.sessionId}`,
-        type: "conversation",
-        title: target.title,
-        sourceKey: conversationTabSourceKey(target.sessionId),
-      },
-    );
-    rightSidebarTabsBundle.store.write(root.sessionId, nextTabs);
-    commitPresentationRoute(ordinaryPresentationRoute({
-      projectId: root.projectId,
-      sessionId: root.sessionId,
-    }));
-    if (selectionRef.current.sessionId !== root.sessionId) {
-      void actions.selectSession({
-        projectId: root.projectId,
-        sessionId: root.sessionId,
-      });
-    }
-    rightSidebarTabsBundle.commitCurrent(nextTabs);
-    setRightSidebarOpen(true);
-    setClientError(null);
-  }, [
-    actions,
-    allSidebarSessions,
-    commitPresentationRoute,
-    setRightSidebarOpen,
-    t,
-  ]);
+  const analysisNavigationBundle = useAnalysisPanelNavigation(
+    allSidebarSessions, language.activeLocale, selectionRef, actions, commitPresentationRoute,
+    rightSidebarTabsBundle, openRightSidebarSourceTab,
+    (sessionId, messageId) => conversationReadingPositionStoreRef.current.write(sessionId, messageId),
+    setClientError, t,
+  );
+  const analysisEntriesFor = analysisNavigationBundle.entriesFor;
+  const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
+  const setAnalysisPanelOpen = analysisNavigationBundle.setPanelOpen;
+  const openAnalysisPanelEntry = analysisNavigationBundle.openEntry;
+  const openConversationReference = analysisNavigationBundle.openReference;
+  const conversationMessageNavigation = analysisNavigationBundle.messageNavigation;
 
   const editAndResend = useCallback((target: OperatorEditAndResendTarget) => {
     if (state === null) {
@@ -2033,8 +1874,7 @@ export function OperatorConsoleApp({
             }
           : null}
         onMessageNavigationHandled={(requestId) => {
-          setConversationMessageNavigation((current) =>
-            current?.requestId === requestId ? null : current);
+          analysisNavigationBundle.handleMessageNavigation(requestId);
         }}
         onReadingMessageChange={(sessionId, messageId) => {
           conversationReadingPositionStoreRef.current.write(sessionId, messageId);
@@ -2201,8 +2041,7 @@ export function OperatorConsoleApp({
           : null
       }
       onMessageNavigationHandled={(requestId) => {
-        setConversationMessageNavigation((current) =>
-          current?.requestId === requestId ? null : current);
+        analysisNavigationBundle.handleMessageNavigation(requestId);
       }}
       onReadingMessageChange={(sessionId, messageId) => {
         conversationReadingPositionStoreRef.current.write(sessionId, messageId);
