@@ -20,7 +20,6 @@ import {
   type OperatorRunSnapshot,
   type OperatorRunnerStatus,
   type OperatorSession,
-  type OperatorSubSessionViewState,
   type RightSidebarTabsState,
   type TranslationKey,
   type ExecutionRegistryState,
@@ -220,6 +219,8 @@ import { useNewConversationSubmission } from "./use-new-conversation-submission.
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
 import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
+import { useRightSidebarConversationViews } from "./use-right-sidebar-conversation-views.js";
+import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -425,9 +426,6 @@ export function OperatorConsoleApp({
   >({});
   const processInvocationStatesRef = useRef(processInvocationStates);
   const processInvocationRequestsRef = useRef(new ProcessInvocationRequestCoordinator());
-  const [subSessionViews, setSubSessionViews] = useState<Record<string, OperatorSubSessionViewState>>({});
-  const [sidebarConversationViews, setSidebarConversationViews] =
-    useState<Record<string, OperatorSubSessionViewState>>({});
   const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
     useState<Record<string, string>>({});
   const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
@@ -510,6 +508,14 @@ export function OperatorConsoleApp({
   const activeSidebarConversationDraft = activeSidebarConversationDraftId === null
     ? null
     : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
+  const conversationViewsBundle = useRightSidebarConversationViews(
+    apiBase, activeSubSessionId, activeSidebarConversationSessionId, browserConversationViewSyncPort,
+  );
+  const subSessionViews = conversationViewsBundle.subSessionViews;
+  const sidebarConversationViews = conversationViewsBundle.sidebarConversationViews;
+  const setSidebarConversationViews = conversationViewsBundle.setSidebarConversationViews;
+  const refreshSubSessionNow = conversationViewsBundle.refreshSubSessionNow;
+  const clearSubSessionViews = conversationViewsBundle.clearSubSessionViews;
   const currentAttachmentDraftKey = newConversation?.isOpen !== true
     ? composerDraft.key
     : NEW_CONVERSATION_DRAFT_KEY;
@@ -709,8 +715,8 @@ export function OperatorConsoleApp({
     setProcessOutputs({});
     processInvocationStatesRef.current = {};
     setProcessInvocationStates({});
-    setSubSessionViews({});
-  }, [presentationRoute?.hostSessionId, selection.sessionId]);
+    clearSubSessionViews();
+  }, [clearSubSessionViews, presentationRoute?.hostSessionId, selection.sessionId]);
 
   const activeProcessSourceKey = activeRightSidebarTab?.type === "run-output"
     ? activeRightSidebarTab.sourceKey
@@ -890,114 +896,6 @@ export function OperatorConsoleApp({
       controller.abort("process-output-tab-changed");
     };
   }, [activeProcessSourceKey, apiBase, commitProcessOutputs, selection.sessionId]);
-
-  useEffect(() => {
-    if (apiBase === null || activeSubSessionId === null) {
-      return;
-    }
-    const controller = new AbortController();
-    let inFlight = false;
-    let timer: number | null = null;
-    setSubSessionViews((current) => ({
-      ...current,
-      [activeSubSessionId]: current[activeSubSessionId]?.status === "ready"
-        ? current[activeSubSessionId]!
-        : { status: "loading" },
-    }));
-    const refreshSubSessionView = async (): Promise<void> => {
-      if (inFlight) {
-        return;
-      }
-      inFlight = true;
-      try {
-        const view = await loadSubSessionView({
-          apiBase,
-          sessionId: activeSubSessionId,
-          fetch,
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted) {
-          setSubSessionViews((current) => ({
-            ...current,
-            [activeSubSessionId]: { status: "ready", view },
-          }));
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setSubSessionViews((current) => ({
-            ...current,
-            [activeSubSessionId]: { status: "error", message: formatError(error) },
-          }));
-        }
-      } finally {
-        inFlight = false;
-        if (!controller.signal.aborted) {
-          timer = window.setTimeout(() => void refreshSubSessionView(), 1_000);
-        }
-      }
-    };
-    void refreshSubSessionView();
-    return () => {
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-      controller.abort("sub-session-tab-changed");
-    };
-  }, [activeSubSessionId, apiBase]);
-
-  useEffect(() => {
-    if (
-      apiBase === null
-      || activeSidebarConversationSessionId === null
-    ) {
-      return;
-    }
-    const sessionId = activeSidebarConversationSessionId;
-    const controller = new AbortController();
-    let timer: number | null = null;
-    let inFlight = false;
-    setSidebarConversationViews((current) => ({
-      ...current,
-      [sessionId]: current[sessionId]?.status === "ready"
-        ? current[sessionId]!
-        : { status: "loading" },
-    }));
-    const refreshView = async (): Promise<void> => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const view = await loadSubSessionView({
-          apiBase,
-          sessionId,
-          fetch,
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted) {
-          setSidebarConversationViews((current) => ({
-            ...current,
-            [sessionId]: { status: "ready", view },
-          }));
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setSidebarConversationViews((current) => ({
-            ...current,
-            [sessionId]: { status: "error", message: formatError(error) },
-          }));
-        }
-      } finally {
-        inFlight = false;
-        if (!controller.signal.aborted) {
-          timer = window.setTimeout(() => void refreshView(), 1_000);
-        }
-      }
-    };
-    void refreshView();
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-      controller.abort("sidebar-conversation-tab-changed");
-    };
-  }, [activeSidebarConversationSessionId, apiBase]);
 
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinatorRef.current, selectionRef, commitConsoleState, commitSelection,
@@ -1571,17 +1469,6 @@ export function OperatorConsoleApp({
       setIsProjectMutationPending(false);
     }
   }, [apiBase, refresh]);
-
-  const refreshSubSessionNow = useCallback(async (sessionId: string): Promise<void> => {
-    if (apiBase === null) {
-      return;
-    }
-    const view = await loadSubSessionView({ apiBase, sessionId, fetch });
-    setSubSessionViews((current) => ({
-      ...current,
-      [sessionId]: { status: "ready", view },
-    }));
-  }, [apiBase]);
 
   const interrupt = useCallback(async (sessionId: string, runId: string) => {
     if (apiBase === null) {

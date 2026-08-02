@@ -62,6 +62,29 @@ export function planDisplayedResultAcknowledgement(
     : { kind: "acknowledge", key, sessionId: state.selectedSession.sessionId, unreadSince, apiBase };
 }
 
+export function planRemoteConversationView(
+  apiBase: string | null,
+  sessionId: string | null,
+): { kind: "skip" } | { kind: "load"; apiBase: string; sessionId: string } {
+  return apiBase === null || sessionId === null
+    ? { kind: "skip" }
+    : { kind: "load", apiBase, sessionId };
+}
+
+export function decideRemoteViewRequest(inFlight: boolean): "load" | "wait" {
+  return inFlight ? "wait" : "load";
+}
+
+export function decideRemoteViewCommit(aborted: boolean): "commit" | "ignore" {
+  return aborted ? "ignore" : "commit";
+}
+
+export function planRemoteViewLoadingState<T extends { status: string }>(
+  current: T | undefined,
+): T | { status: "loading" } {
+  return current?.status === "ready" ? current : { status: "loading" };
+}
+
 export function decideEvidenceIntent(kind: "workspace-diff" | "run-output"):
   "workspace-diff" | "run-output" {
   return kind;
