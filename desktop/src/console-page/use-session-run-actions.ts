@@ -33,6 +33,12 @@ export function useSessionRunActions(
   const inputRef = useRef(input);
   inputRef.current = input;
 
+  const editComposer = useCallback((sessionId: string, value: string) => {
+    const current = inputRef.current;
+    current.draftStore.write(sessionDraftKey(sessionId), value);
+    current.setComposerValues((values) => ({ ...values, [sessionId]: value }));
+  }, []);
+
   const interrupt = useCallback(async (sessionId: string, runId: string) => {
     const current = inputRef.current;
     const availability = decideSessionRunAvailability({ apiBase: current.apiBase, sending: false });
@@ -139,9 +145,10 @@ export function useSessionRunActions(
 
   return useMemo(() => ({
     isSending: sendingSessionId !== null,
+    editComposer,
     interrupt,
     sendSubSessionMessage,
     retryRun,
     interruptSubSession,
-  }), [interrupt, interruptSubSession, retryRun, sendSubSessionMessage, sendingSessionId]);
+  }), [editComposer, interrupt, interruptSubSession, retryRun, sendSubSessionMessage, sendingSessionId]);
 }

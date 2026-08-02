@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useMemo, useState, type MutableRefObject } from "react";
 import type { OperatorProject, TranslationKey } from "@moebius/console-ui";
 
 import type { ConversationDraftStore } from "./draft-store.js";
@@ -18,18 +18,12 @@ import { useSidebarMessageActions } from "./use-sidebar-message-actions.js";
 
 export function useSessionConsole(
   apiBase: string | null,
-  subSessionComposerValues: Readonly<Record<string, string>>,
-  setSubSessionComposerValues: Dispatch<SetStateAction<Record<string, string>>>,
   subSessionAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
   draftStore: ConversationDraftStore,
   selectionRef: MutableRefObject<ConsoleSelection>,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   refreshSubSession: (sessionId: string) => Promise<unknown>,
   runPort: SessionRunPort,
-  sidebarSendingId: string | null,
-  setSidebarSendingId: (sessionId: string | null) => void,
-  sidebarComposerValues: Readonly<Record<string, string>>,
-  setSidebarComposerValues: Dispatch<SetStateAction<Record<string, string>>>,
   sidebarAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
   projects: readonly OperatorProject[],
   catalog: AgentTeamCatalogBundle,
@@ -46,6 +40,9 @@ export function useSessionConsole(
   sidebarPort: SidebarMessagePort,
   setError: (error: string | null) => void,
 ) {
+  const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
+  const [sidebarSendingId, setSidebarSendingId] = useState<string | null>(null);
+  const [sidebarComposerValues, setSidebarComposerValues] = useState<Record<string, string>>({});
   const runs = useSessionRunActions(
     apiBase, subSessionComposerValues, setSubSessionComposerValues,
     planReadyAttachmentIds(subSessionAttachments.attachments), subSessionAttachments.clearDraft, draftStore,
@@ -65,7 +62,13 @@ export function useSessionConsole(
     draftTransport, draftPort, setError, t,
   );
   return useMemo(
-    () => ({ runs, sidebarMessages, sidebarDrafts }),
-    [runs, sidebarDrafts, sidebarMessages],
+    () => ({
+      runs,
+      sidebarMessages,
+      sidebarDrafts,
+      subSessionComposerValues,
+      sidebarComposerValues,
+    }),
+    [runs, sidebarComposerValues, sidebarDrafts, sidebarMessages, subSessionComposerValues],
   );
 }

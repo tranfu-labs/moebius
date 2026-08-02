@@ -41,6 +41,12 @@ export function useSidebarMessageActions(
   const inputRef = useRef(input);
   inputRef.current = input;
 
+  const editComposer = useCallback((sessionId: string, value: string) => {
+    const current = inputRef.current;
+    current.draftStore.write(sessionDraftKey(sessionId), value);
+    current.setComposerValues((values) => ({ ...values, [sessionId]: value }));
+  }, []);
+
   const sendMessage = useCallback(async (sessionId: string) => {
     const current = inputRef.current;
     const availability = decideSidebarMessageAvailability({
@@ -136,9 +142,10 @@ export function useSidebarMessageActions(
   }, [refreshAfterPendingMutation]);
 
   return useMemo(() => ({
+    editComposer,
     sendMessage,
     retryPendingMessage,
     editPendingMessage,
     removePendingMessage,
-  }), [editPendingMessage, removePendingMessage, retryPendingMessage, sendMessage]);
+  }), [editComposer, editPendingMessage, removePendingMessage, retryPendingMessage, sendMessage]);
 }

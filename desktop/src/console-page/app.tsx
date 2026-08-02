@@ -353,12 +353,8 @@ export function OperatorConsoleApp({
   const conversationReadingPositionStoreRef = useRef(
     createConversationReadingPositionStore(window.localStorage),
   );
-  const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
-    useState<Record<string, string>>({});
-  const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
   const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
     useState<Set<string>>(() => new Set());
-  const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [composerDraft, setComposerDraft] = useState<ConversationComposerDraftState>(() => {
     const key = sessionDraftKey(selection.sessionId);
     return { key, value: conversationDraftStoreRef.current.read(key) };
@@ -679,10 +675,6 @@ export function OperatorConsoleApp({
     subSessionViews,
   ]);
   const activeRun = state?.activeRun ?? null;
-  const activeSubSessionComposerValue = activeSubSessionId === null
-    ? ""
-    : subSessionComposerValues[activeSubSessionId]
-      ?? conversationDraftStoreRef.current.read(sessionDraftKey(activeSubSessionId));
   const activeRuns = state?.activeRuns ?? (activeRun === null ? [] : [activeRun]);
   const sqlitePath = state?.sqlitePath;
   const projectListState = state !== null ? "ready" : clientError === null ? "loading" : "error";
@@ -815,11 +807,8 @@ export function OperatorConsoleApp({
   const repairProjectFolder = projectMutationsBundle.repairProjectFolder;
 
   const sessionControllersBundle = useSessionConsole(
-    apiBase, subSessionComposerValues, setSubSessionComposerValues,
-    managedSubSessionAttachments, conversationDraftStoreRef.current,
+    apiBase, managedSubSessionAttachments, conversationDraftStoreRef.current,
     selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort,
-    sidebarConversationSendingId, setSidebarConversationSendingId,
-    sidebarConversationComposerValues, setSidebarConversationComposerValues,
     managedSidebarConversationAttachments, projects, agentTeamCatalogBundle,
     sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
     rightSidebarTabsBundle, presentationRouteRef, commitPresentationRoute,
@@ -827,6 +816,10 @@ export function OperatorConsoleApp({
     setSidebarConversationViews, browserSidebarMessagePort, setClientError,
   );
   const sessionRunActionsBundle = sessionControllersBundle.runs;
+  const activeSubSessionComposerValue = activeSubSessionId === null
+    ? ""
+    : sessionControllersBundle.subSessionComposerValues[activeSubSessionId]
+      ?? conversationDraftStoreRef.current.read(sessionDraftKey(activeSubSessionId));
   const interrupt = sessionRunActionsBundle.interrupt;
   const sendSubSessionMessage = sessionRunActionsBundle.sendSubSessionMessage;
   const retryRun = sessionRunActionsBundle.retryRun;
@@ -866,12 +859,9 @@ export function OperatorConsoleApp({
         actions={actions}
         executionRegistryState={executionRegistryState}
         reloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
-        readComposerValue={(sessionId) => sidebarConversationComposerValues[sessionId]
+        readComposerValue={(sessionId) => sessionControllersBundle.sidebarComposerValues[sessionId]
           ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId))}
-        writeComposerValue={(sessionId, value) => {
-          conversationDraftStoreRef.current.write(sessionDraftKey(sessionId), value);
-          setSidebarConversationComposerValues((current) => ({ ...current, [sessionId]: value }));
-        }}
+        writeComposerValue={sessionControllersBundle.sidebarMessages.editComposer}
         readReadingMessageId={(sessionId) => conversationReadingPositionStoreRef.current.read(sessionId)}
         writeReadingMessageId={(sessionId, messageId) =>
           conversationReadingPositionStoreRef.current.write(sessionId, messageId)}
@@ -906,7 +896,6 @@ export function OperatorConsoleApp({
     projects,
     rightSidebarBundle,
     rightSidebarTabs,
-    sidebarConversationComposerValues,
     sessionControllersBundle,
     t,
   ]);
@@ -1021,10 +1010,7 @@ export function OperatorConsoleApp({
       onComposerAttachmentRemove={managedAttachments.remove}
       onComposerAttachmentRetry={managedAttachments.retry}
       onSend={conversationTransitionBundle.sendMainComposer}
-      onSubSessionComposerChange={(sessionId, value) => {
-        conversationDraftStoreRef.current.write(sessionDraftKey(sessionId), value);
-        setSubSessionComposerValues((current) => ({ ...current, [sessionId]: value }));
-      }}
+      onSubSessionComposerChange={sessionRunActionsBundle.editComposer}
       onSubSessionComposerFilesAdded={managedSubSessionAttachments.addFiles}
       onSubSessionComposerAttachmentRemove={managedSubSessionAttachments.remove}
       onSubSessionComposerAttachmentRetry={managedSubSessionAttachments.retry}
