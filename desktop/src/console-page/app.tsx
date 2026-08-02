@@ -82,12 +82,7 @@ import type {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  loadSubSessionView,
   loadExecutionProfileRegistry,
-  submitSessionMessage,
-  retryPendingSessionMessage,
-  updatePendingSessionMessage,
-  removePendingSessionMessage,
   createSidebarConversationSession,
   restoreConsoleSession,
   type SessionSearchResult,
@@ -194,7 +189,8 @@ import { useConversationConsole } from "./use-conversation-console.js";
 import { browserProjectMutationPort } from "./project-mutation-browser-port.js";
 import { useProjectMutations } from "./use-project-mutations.js";
 import { browserSessionRunPort } from "./session-run-browser-port.js";
-import { useSessionRunActions } from "./use-session-run-actions.js";
+import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
+import { useSessionConsole } from "./use-session-console.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -924,16 +920,27 @@ export function OperatorConsoleApp({
   const selectFolderForRepair = projectMutationsBundle.selectFolderForRepair;
   const repairProjectFolder = projectMutationsBundle.repairProjectFolder;
 
-  const sessionRunActionsBundle = useSessionRunActions(
+  const sessionControllersBundle = useSessionConsole(
     apiBase, subSessionComposerValues, setSubSessionComposerValues,
     readyComposerAttachmentIds(managedSubSessionAttachments.attachments),
     managedSubSessionAttachments.clearDraft, conversationDraftStoreRef.current,
-    selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort, setClientError,
+    selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort,
+    sidebarConversationSendingId, setSidebarConversationSendingId,
+    sidebarConversationComposerValues, setSidebarConversationComposerValues,
+    readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
+    managedSidebarConversationAttachments.clearDraft, sidebarConversationViews,
+    setSidebarConversationViews, browserSidebarMessagePort, setClientError,
   );
+  const sessionRunActionsBundle = sessionControllersBundle.runs;
   const interrupt = sessionRunActionsBundle.interrupt;
   const sendSubSessionMessage = sessionRunActionsBundle.sendSubSessionMessage;
   const retryRun = sessionRunActionsBundle.retryRun;
   const interruptSubSession = sessionRunActionsBundle.interruptSubSession;
+  const sidebarMessageActionsBundle = sessionControllersBundle.sidebarMessages;
+  const sendSidebarConversationMessage = sidebarMessageActionsBundle.sendMessage;
+  const retryPendingMessage = sidebarMessageActionsBundle.retryPendingMessage;
+  const editPendingMessage = sidebarMessageActionsBundle.editPendingMessage;
+  const removePendingMessage = sidebarMessageActionsBundle.removePendingMessage;
 
   const openDiagnostics = useMemo(() => {
     if (window.moebius?.openStatusPage === undefined) {
@@ -1108,93 +1115,6 @@ export function OperatorConsoleApp({
     sidebarConversationSendingId,
     t,
   ]);
-
-  const sendSidebarConversationMessage = useCallback(async (sessionId: string) => {
-    const body = sidebarConversationComposerValues[sessionId]
-      ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId));
-    if (
-      apiBase === null
-      || sidebarConversationSendingId !== null
-      || (body.trim() === "" && readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments).length === 0)
-    ) {
-      return;
-    }
-    setSidebarConversationSendingId(sessionId);
-    try {
-      await submitSessionMessage({
-        apiBase,
-        sessionId,
-        body,
-        attachmentIds: readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
-        fetch,
-      });
-      conversationDraftStoreRef.current.clear(sessionDraftKey(sessionId));
-      setSidebarConversationComposerValues((current) => ({ ...current, [sessionId]: "" }));
-      managedSidebarConversationAttachments.clearDraft(sessionDraftKey(sessionId));
-      const view = await loadSubSessionView({ apiBase, sessionId, fetch });
-      setSidebarConversationViews((current) => ({
-        ...current,
-        [sessionId]: { status: "ready", view },
-      }));
-      await refresh(selectionRef.current);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    } finally {
-      setSidebarConversationSendingId(null);
-    }
-  }, [
-    apiBase,
-    managedSidebarConversationAttachments.attachments,
-    managedSidebarConversationAttachments.clearDraft,
-    refresh,
-    sidebarConversationComposerValues,
-    sidebarConversationSendingId,
-  ]);
-
-  const refreshSessionAfterPendingMutation = useCallback(async (sessionId: string) => {
-    await refresh(selectionRef.current);
-    if (sidebarConversationViews[sessionId] !== undefined && apiBase !== null) {
-      const view = await loadSubSessionView({ apiBase, sessionId, fetch });
-      setSidebarConversationViews((current) => ({
-        ...current,
-        [sessionId]: { status: "ready", view },
-      }));
-    }
-  }, [apiBase, refresh, sidebarConversationViews]);
-
-  const retryPendingMessage = useCallback(async (sessionId: string, messageId: number) => {
-    if (apiBase === null) return;
-    try {
-      await retryPendingSessionMessage({ apiBase, sessionId, messageId, fetch });
-      await refreshSessionAfterPendingMutation(sessionId);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, [apiBase, refreshSessionAfterPendingMutation]);
-
-  const editPendingMessage = useCallback(async (sessionId: string, messageId: number, body: string) => {
-    if (apiBase === null) return;
-    try {
-      await updatePendingSessionMessage({ apiBase, sessionId, messageId, body, fetch });
-      await refreshSessionAfterPendingMutation(sessionId);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, [apiBase, refreshSessionAfterPendingMutation]);
-
-  const removePendingMessage = useCallback(async (sessionId: string, messageId: number) => {
-    if (apiBase === null) return;
-    try {
-      await removePendingSessionMessage({ apiBase, sessionId, messageId, fetch });
-      await refreshSessionAfterPendingMutation(sessionId);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, [apiBase, refreshSessionAfterPendingMutation]);
 
   const openSearchedSession = useCallback(async (
     result: SessionSearchResult,
