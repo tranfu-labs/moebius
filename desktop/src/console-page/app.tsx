@@ -10,7 +10,6 @@ import {
   type OperatorMemberIdentity,
   type OperatorAgentTeam,
   type OperatorChildSessionSummary,
-  type OperatorEditAndResendTarget,
   type OperatorProject,
   type OperatorProcessOutput,
   type OperatorProcessTimelineEvent,
@@ -155,7 +154,6 @@ import {
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
-import { refillStoppedRunDraft } from "./edit-resend.js";
 import type { CopySessionLogPathResult } from "../session-log-clipboard.js";
 import type { DesktopLocale } from "../language-preference-contract.js";
 import type {
@@ -772,7 +770,8 @@ export function OperatorConsoleApp({
   ]);
 
   const conversationControllersBundle = useConversationConsole(
-    composerDraft, selection, projects, actions, setClientError, t, coordinatorRef.current,
+    composerDraft, composerDraftRef, commitComposerDraft,
+    selection, projects, actions, setClientError, t, coordinatorRef.current,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
     activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
     agentTeamCatalogBundle, pendingAgentTeamKey, setPendingAgentTeamKey,
@@ -792,6 +791,7 @@ export function OperatorConsoleApp({
   const analyzeConversation = conversationControllersBundle.analysis.analyze;
   const openSearchedSession = conversationControllersBundle.searchedSession.openSearchedSession;
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
+  const editAndResend = conversationControllersBundle.editResend.editAndResend;
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
@@ -799,31 +799,6 @@ export function OperatorConsoleApp({
   const openAnalysisPanelEntry = analysisNavigationBundle.openEntry;
   const openConversationReference = analysisNavigationBundle.openReference;
   const conversationMessageNavigation = analysisNavigationBundle.messageNavigation;
-
-  const editAndResend = useCallback((target: OperatorEditAndResendTarget) => {
-    if (state === null) {
-      return;
-    }
-    const targetSessionId = target.sessionId;
-    setClientError(null);
-    void refillStoppedRunDraft({
-      messages: state.messages,
-      stoppedMessageId: target.stoppedMessageId,
-      stoppedRunId: target.runId,
-      sessionId: targetSessionId,
-      replaceAttachments: managedAttachments.replaceWithMessageAttachments,
-      persistBody: (body) => {
-        const draftKey = sessionDraftKey(targetSessionId);
-        conversationDraftStoreRef.current.write(draftKey, body);
-        if (target.runId !== null) {
-          conversationDraftStoreRef.current.writeResumeRunId(draftKey, target.runId);
-        }
-        if (composerDraftRef.current.key === draftKey) {
-          commitComposerDraft(editConversationComposerDraft(composerDraftRef.current, body));
-        }
-      },
-    }).catch((error: unknown) => setClientError(formatError(error)));
-  }, [commitComposerDraft, managedAttachments.replaceWithMessageAttachments, state]);
 
   const projectMutationsBundle = useProjectMutations(
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,

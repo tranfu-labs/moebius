@@ -23,6 +23,7 @@ import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 import { useConversationAnalysis } from "./use-conversation-analysis.js";
 import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
+import { useEditResend } from "./use-edit-resend.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
 import { useNewConversationLauncher } from "./use-new-conversation-launcher.js";
@@ -38,6 +39,8 @@ type ConversationActions = Parameters<typeof useConversationTransition>[2]
 
 export function useConversationConsole(
   composerDraft: Pick<ConversationComposerDraftState, "key">,
+  composerDraftRef: MutableRefObject<ConversationComposerDraftState>,
+  commitComposerDraft: (draft: ConversationComposerDraftState) => void,
   selection: ConsoleSelection,
   projects: readonly OperatorProject[],
   actions: ConversationActions,
@@ -85,6 +88,10 @@ export function useConversationConsole(
   const transition = useConversationTransition(
     composerDraft.key, selection.sessionId, actions, setError, t,
   );
+  const editResend = useEditResend(
+    stateRef, managedAttachments.replaceWithMessageAttachments, conversationDraftStore,
+    composerDraftRef, commitComposerDraft, setError,
+  );
   const navigation = useConversationNavigation(
     projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
     commitRoute, activateComposer, actions, tabs.store, openTab, tabs.commitCurrent, tabs.setOpen,
@@ -120,11 +127,12 @@ export function useConversationConsole(
   );
   return useMemo(() => ({
     transition,
+    editResend,
     navigation,
     submission,
     launcher,
     analysisNavigation,
     analysis,
     searchedSession,
-  }), [analysis, analysisNavigation, launcher, navigation, searchedSession, submission, transition]);
+  }), [analysis, analysisNavigation, editResend, launcher, navigation, searchedSession, submission, transition]);
 }
