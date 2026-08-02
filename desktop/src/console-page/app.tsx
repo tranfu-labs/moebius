@@ -164,10 +164,8 @@ import {
   writeConsoleSelectionPreference,
 } from "./selection-preference.js";
 import {
-  canSubmitNewConversation,
   createNewConversationDraft,
   reduceNewConversationDraft,
-  submitNewConversation,
 } from "./new-conversation.js";
 import {
   readRightSidebarVisibilityPreference,
@@ -223,6 +221,7 @@ import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
 import { useConversationSearch } from "./use-conversation-search.js";
 import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
+import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -1227,6 +1226,13 @@ export function OperatorConsoleApp({
     commitPresentationRoute, activateComposerDraft, actions, rightSidebarTabsStoreRef.current,
     openRightSidebarSourceTab, setRightSidebarTabs, setRightSidebarOpen, conversationTransitionBundle,
   );
+  const newConversationSubmissionBundle = useNewConversationSubmission(
+    newConversation, dispatchNewConversation, agentTeamCatalogBundle, managedAttachments,
+    readyComposerAttachmentIds(managedAttachments.attachments),
+    hasBlockingComposerAttachment(managedAttachments.attachments), actions,
+    selectionPersistenceEnabledRef, rememberConfirmedSelection, commitPresentationRoute,
+    conversationDraftStoreRef.current, activateComposerDraft, window.moebius, setClientError, t,
+  );
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
 
   const allSidebarSessions = useMemo(
@@ -1496,81 +1502,6 @@ export function OperatorConsoleApp({
       }),
     });
   }, [newConversation, preferredNewConversationTeamKey, projects]);
-
-  const createConversation = useCallback(async (): Promise<void> => {
-    if (newConversation === null || !newConversation.isOpen || !canSubmitNewConversation({
-      projectId: newConversation.projectId,
-      workspaceMode: newConversation.workspaceMode,
-      teamKey: newConversation.teamKey,
-      draft: newConversation.draft,
-      isSubmitting: newConversation.isSubmitting,
-      error: newConversation.error,
-      readyAttachmentCount: readyComposerAttachmentIds(managedAttachments.attachments).length,
-      hasBlockingAttachments: hasBlockingComposerAttachment(managedAttachments.attachments),
-    })) {
-      return;
-    }
-    const projectId = newConversation.projectId!;
-    const teamKey = newConversation.teamKey!;
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    if (team === undefined || !team.canCreateConversation) {
-      dispatchNewConversation({
-        type: "submit-failed",
-        error: t("desktop.error.teamUnavailable"),
-      });
-      return;
-    }
-
-    dispatchNewConversation({ type: "submit-started" });
-    const recordSuccessfulTeam = window.moebius?.recordSuccessfulConversationAgentTeam;
-    const result = await submitNewConversation({
-      projectId,
-      workspaceMode: newConversation.workspaceMode,
-      initialMessage: newConversation.draft,
-      team: { teamId: team.id, ownership: team.ownership },
-      createSessionWithFirstMessage: (targetProjectId, initialMessage, selectedTeam, workspaceMode) =>
-        actions.createSessionWithFirstMessage(targetProjectId, initialMessage, {
-          ownership: selectedTeam.ownership,
-          id: selectedTeam.teamId,
-        }, workspaceMode, readyComposerAttachmentIds(managedAttachments.attachments)),
-      recordSuccessfulTeam: recordSuccessfulTeam === undefined
-        ? async () => undefined
-        : (request) => recordSuccessfulTeam(request),
-    });
-    if (!result.created) {
-      dispatchNewConversation({
-        type: "submit-failed",
-        error: t("desktop.error.conversationCreate"),
-      });
-      return;
-    }
-
-    const createdSelection = { projectId, sessionId: result.sessionId };
-    selectionPersistenceEnabledRef.current = true;
-    rememberConfirmedSelection(createdSelection);
-    commitPresentationRoute(ordinaryPresentationRoute(createdSelection));
-    conversationDraftStoreRef.current.clear(NEW_CONVERSATION_DRAFT_KEY);
-    managedAttachments.clearDraft(NEW_CONVERSATION_DRAFT_KEY);
-    activateComposerDraft(result.sessionId);
-    dispatchNewConversation({ type: "consume" });
-    if (result.preferenceRecorded) {
-      agentTeamCatalogBundle.setLastUsedTeamKey(team.teamKey);
-      setClientError(null);
-    } else {
-      setClientError(t("desktop.error.preferenceRecord", {
-        error: formatError(result.preferenceError),
-      }));
-    }
-  }, [
-    actions,
-    activateComposerDraft,
-    agentTeamCatalogBundle.state,
-    commitPresentationRoute,
-    managedAttachments,
-    newConversation,
-    rememberConfirmedSelection,
-    t,
-  ]);
 
   const showProjectInFolder = useCallback(async (folderPath: string) => {
     try {
@@ -2876,7 +2807,7 @@ export function OperatorConsoleApp({
         conversationDraftStoreRef.current.write(NEW_CONVERSATION_DRAFT_KEY, value);
         dispatchNewConversation({ type: "edit-draft", draft: value });
       }}
-      onSubmitNewConversation={() => void createConversation()}
+      onSubmitNewConversation={() => void newConversationSubmissionBundle.createConversation()}
       onAddNewConversationProject={() => {
         void actions.addProject(projects.map((candidate) => candidate.projectId)).then((added) => {
           if (added !== null) {

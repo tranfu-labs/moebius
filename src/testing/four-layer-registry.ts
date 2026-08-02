@@ -131,6 +131,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-desktop-language.ts",
   "desktop/src/console-page/use-managed-attachments.ts",
   "desktop/src/console-page/use-message-attachment-previews.ts",
+  "desktop/src/console-page/use-new-conversation-submission.ts",
   "desktop/src/console-page/use-attachment-upload-queue.ts",
   "desktop/src/console-page/use-attachment-draft-actions.ts",
   "desktop/src/console-page/use-attachment-replacement.ts",
