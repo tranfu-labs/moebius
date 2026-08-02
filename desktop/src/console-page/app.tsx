@@ -229,6 +229,7 @@ import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
 import { useConversationSearch } from "./use-conversation-search.js";
+import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
 import {
   DesktopApplicationRoot,
@@ -1282,6 +1283,24 @@ export function OperatorConsoleApp({
     t,
   };
   const conversationTransitionBundle = useConversationTransition(conversationTransitionInput);
+  const conversationNavigationInput = {
+    projects,
+    selectionMutationPending: () => coordinatorRef.current.isSelectionMutationPending,
+    getSelection: () => selectionRef.current,
+    enableSelectionPersistence: () => { selectionPersistenceEnabledRef.current = true; },
+    hideNewConversation: () => dispatchNewConversation({ type: "hide" }),
+    commitRoute: commitPresentationRoute,
+    activateComposer: activateComposerDraft,
+    selectSession: actions.selectSession,
+    readTabs: (hostSessionId: string) => rightSidebarTabsStoreRef.current.read(hostSessionId),
+    writeTabs: (hostSessionId: string, tabs: RightSidebarTabsState) =>
+      rightSidebarTabsStoreRef.current.write(hostSessionId, tabs),
+    openTab: openRightSidebarSourceTab,
+    commitTabs: setRightSidebarTabs,
+    setRightSidebarOpen,
+    queueTransition: conversationTransitionBundle.queueTransition,
+  };
+  const conversationNavigationBundle = useConversationNavigation(conversationNavigationInput);
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
 
   const allSidebarSessions = useMemo(
@@ -2947,68 +2966,7 @@ export function OperatorConsoleApp({
         ownership: team.ownership,
         id: team.id,
       })}
-      onSelectSession={(nextSelection) => {
-        if (coordinatorRef.current.isSelectionMutationPending) {
-          return;
-        }
-        const previousSessionId = selectionRef.current.sessionId;
-        selectionPersistenceEnabledRef.current = true;
-        dispatchNewConversation({ type: "hide" });
-        const target = projects
-          .flatMap((candidate) => candidate.sessions)
-          .find((session) => session.sessionId === nextSelection.sessionId);
-        const origin = target?.originSessionId == null
-          ? undefined
-          : projects
-            .flatMap((candidate) => candidate.sessions)
-            .find((session) => session.sessionId === target.originSessionId);
-        if (target?.originSessionId != null && origin !== undefined) {
-          const route = sidebarPresentationRoute({
-            sidebarProjectId: target.projectId,
-            sidebarSessionId: target.sessionId,
-            originSessionId: origin.sessionId,
-            originAvailable: true,
-          });
-          commitPresentationRoute(route);
-          activateComposerDraft(origin.sessionId);
-          actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
-          const tabs = openRightSidebarSourceTab(
-            rightSidebarTabsStoreRef.current.read(origin.sessionId),
-            {
-              id: `conversation-${target.sessionId}`,
-              type: "conversation",
-              title: target.title,
-              sourceKey: conversationTabSourceKey(target.sessionId),
-              conversationContext: planConversationProjectContext(
-                projects.find((project) => project.projectId === target.projectId),
-                target,
-              ),
-              conversationCreatedAt: target.createdAt,
-            },
-          );
-          rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
-          setRightSidebarTabs(tabs);
-          setRightSidebarOpen(true);
-          conversationTransitionBundle.queueTransition(previousSessionId, target.sessionId);
-          return;
-        }
-        const route = target?.originSessionId != null
-          ? sidebarPresentationRoute({
-              sidebarProjectId: target.projectId,
-              sidebarSessionId: target.sessionId,
-              originSessionId: target.originSessionId,
-              originAvailable: false,
-            })
-          : ordinaryPresentationRoute(nextSelection);
-        commitPresentationRoute(route);
-        activateComposerDraft(nextSelection.sessionId);
-        actions.selectSession(nextSelection);
-        setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(nextSelection.sessionId));
-        if (target?.originSessionId != null) {
-          setRightSidebarOpen(false);
-        }
-        conversationTransitionBundle.queueTransition(previousSessionId, nextSelection.sessionId);
-      }}
+      onSelectSession={conversationNavigationBundle.selectConversation}
       onChangeSessionProject={actions.rebindSessionProject}
       onShowProjectInFolder={showProjectInFolder}
       onRenameProject={renameProject}
