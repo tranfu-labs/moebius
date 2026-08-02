@@ -2,8 +2,6 @@ import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
 import { createLocalMessageRetryWiring } from "./message-retry-wiring.js";
 import type { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
-import { LocalSessionSettlementRuntime } from "./session-settlement-runtime.js";
-import type { LocalWorkerDispatchRuntime } from "./worker-dispatch-runtime.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import type { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
 import type { LocalRuntimeAdapters } from "./runtime-adapters.js";
@@ -59,8 +57,6 @@ export function createLocalRuntimeSessionWiring(input: {
     ...input.adapters,
   });
   return {
-    settlement: (pending: LocalPendingProcessingRuntime, workers: LocalWorkerDispatchRuntime) =>
-      new LocalSessionSettlementRuntime({ pending, workers, activeRuns: input.activeRuns }),
     messageRetry,
     pending: {
       stopping: input.context.stopping,

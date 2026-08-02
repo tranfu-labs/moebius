@@ -57,32 +57,6 @@ export function decideRuntimeCapability<T>(capability: T | undefined):
     : { kind: "available", capability };
 }
 
-export function decideSessionSettlement(input: {
-  pending: boolean;
-  workers: boolean;
-  activeRuns: boolean;
-}): { kind: "settled" } | { kind: "wait" } {
-  return input.pending || input.workers || input.activeRuns
-    ? { kind: "wait" }
-    : { kind: "settled" };
-}
-
-export function decideSessionIdleBucket(hasEntries: boolean): { kind: "create" } | { kind: "reuse" } {
-  return hasEntries ? { kind: "reuse" } : { kind: "create" };
-}
-
-export function decideSessionIdleRemoval(hasEntries: boolean): { kind: "remove" } | { kind: "ignore" } {
-  return hasEntries ? { kind: "remove" } : { kind: "ignore" };
-}
-
-export function decideSessionIdleCleanup(empty: boolean): { kind: "delete" } | { kind: "keep" } {
-  return empty ? { kind: "delete" } : { kind: "keep" };
-}
-
-export function decideSessionIdleWait(input: { tracked: boolean; otherWork: boolean }): { kind: "return" } | { kind: "wait" } {
-  return input.tracked || input.otherWork ? { kind: "wait" } : { kind: "return" };
-}
-
 export function localTerminalFromResult(
   result: Extract<CodexRunResult, { ok: false }>,
   fallbackPartialMarkdown: string | null,

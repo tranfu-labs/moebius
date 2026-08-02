@@ -1,9 +1,3 @@
-# 作废归档（2026-08-02）
-
-本 change 于 2026-08-02 作废归档。原因是事实源 `openspec/specs/github-issue-runner/spec.md` 已随产品收敛到本地 console 单形态而退役，“parity”已失去对照物；依赖该事实源的 MUST 矩阵逐条对照骨架也随之失效。本 change 的九条任务全部未开工，以下内容仅作为历史快照保留，未并入任何现行事实规格或产品文档。
-
-六个能力面中，只有子会话编排、dead-letter 可见性、worktree 三点回流在本地形态下仍独立成立；将来如需实现，必须以 `openspec/specs/local-console/spec.md` 为事实源重新起 change，不得复用本 change。
-
 # 提案：local-console-t5-full-parity
 
 ## Why
