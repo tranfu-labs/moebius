@@ -136,6 +136,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-attachment-draft-restoration.ts",
   "desktop/src/console-page/use-attachment-preview-lifecycle.ts",
   "desktop/src/console-page/use-conversation-search.ts",
+  "desktop/src/console-page/use-conversation-transition.ts",
   "desktop/src/main.ts",
   "desktop/src/onboarding/onboarding-route.tsx",
   "desktop/src/onboarding/register.ts",

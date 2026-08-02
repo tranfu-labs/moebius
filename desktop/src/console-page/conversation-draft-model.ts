@@ -1,3 +1,5 @@
+import type { Translate } from "@moebius/console-ui";
+
 export const NEW_CONVERSATION_DRAFT_KEY = "draft:new";
 
 export type ConversationDraftKey = typeof NEW_CONVERSATION_DRAFT_KEY | `draft:${string}`;
@@ -46,4 +48,25 @@ export function conversationSubmissionBlockReason(input: {
   return input.ownerKey === sessionDraftKey(input.selectedSessionId)
     ? null
     : "owner-mismatch";
+}
+
+export function planConversationSubmissionAction(input: {
+  ownerKey: ConversationDraftKey;
+  selectedSessionId: string;
+  transitionPending: boolean;
+}): "send" | ConversationSubmissionBlockReason {
+  return conversationSubmissionBlockReason(input) ?? "send";
+}
+
+export function planConversationSubmissionBlockText(
+  action: "send" | ConversationSubmissionBlockReason,
+  t: Translate,
+): string | null {
+  if (action === "transition-pending") return t("desktop.composer.transitionPending");
+  if (action === "owner-mismatch") return t("desktop.composer.ownerMismatch");
+  return null;
+}
+
+export function planSessionTransitionSettlement(latest: boolean): "commit" | "stale" {
+  return latest ? "commit" : "stale";
 }

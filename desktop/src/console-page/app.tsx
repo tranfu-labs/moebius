@@ -136,7 +136,6 @@ import { planConsoleEndpoint } from "./console-state-plan.js";
 import {
   ConsoleStateCoordinator,
   ProcessInvocationRequestCoordinator,
-  SessionViewTransitionQueue,
   type ConsoleSelection,
   type SelectionMutationKind,
   type SelectionMutationToken,
@@ -146,7 +145,6 @@ import { managedAttachmentClient } from "./attachment-client.js";
 import {
   activateConversationComposerDraft,
   clearConversationComposerDraft,
-  conversationSubmissionBlockReason,
   editConversationComposerDraft,
   type ConversationComposerDraftState,
   NEW_CONVERSATION_DRAFT_KEY,
@@ -231,6 +229,7 @@ import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
 import { useConversationSearch } from "./use-conversation-search.js";
+import { useConversationTransition } from "./use-conversation-transition.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -471,10 +470,6 @@ export function OperatorConsoleApp({
     conversationDraftStoreRef.current.clear(key);
     commitComposerDraft(clearConversationComposerDraft(composerDraftRef.current, key));
   }, [commitComposerDraft]);
-  const sessionViewTransitionQueueRef = useRef(new SessionViewTransitionQueue());
-  const sessionViewTransitionPendingRef = useRef(false);
-  const [sessionViewTransitionPending, setSessionViewTransitionPending] = useState(false);
-  const [sessionViewTransitionError, setSessionViewTransitionError] = useState<string | null>(null);
   const [runnerStatus, setRunnerStatus] = useState<OperatorRunnerStatus>("stopped");
   const [isSending, setIsSending] = useState(false);
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
@@ -1145,7 +1140,6 @@ export function OperatorConsoleApp({
 
   const project = state?.project ?? EMPTY_CONSOLE_PROJECT;
   const projects = state?.projects ?? [project];
-  const lastError = sessionViewTransitionError ?? clientError ?? state?.lastError ?? null;
   const selectedSession = state?.selectedSession ?? null;
   const messages = state?.messages ?? [];
   const messagesWithPreviews = useMessagesWithAttachmentPreviews({
@@ -1279,54 +1273,16 @@ export function OperatorConsoleApp({
     t,
   ]);
 
-  const queueSessionViewTransition = useCallback((
-    previousSessionId: string,
-    viewedSessionId: string,
-  ) => {
-    const queue = sessionViewTransitionQueueRef.current;
-    sessionViewTransitionPendingRef.current = true;
-    setSessionViewTransitionPending(true);
-    setSessionViewTransitionError(null);
-    const ticket = queue.enqueue(async () => {
-      const error = await actions.transitionSessionView(previousSessionId, viewedSessionId);
-      if (error !== null) {
-        setSessionViewTransitionError(error);
-      }
-    });
-    void ticket.completion.finally(() => {
-      if (!queue.isLatest(ticket.generation)) {
-        return;
-      }
-      sessionViewTransitionPendingRef.current = queue.isPending;
-      setSessionViewTransitionPending(queue.isPending);
-    });
-  }, [actions]);
-
-  const composerSubmissionBlock = conversationSubmissionBlockReason({
-    ownerKey: composerDraft.key,
+  const conversationTransitionInput = {
+    composerOwnerKey: composerDraft.key,
     selectedSessionId: selection.sessionId,
-    transitionPending: sessionViewTransitionPending,
-  });
-  const composerSubmissionBlockText = composerSubmissionBlock === "transition-pending"
-    ? t("desktop.composer.transitionPending")
-    : composerSubmissionBlock === "owner-mismatch"
-      ? t("desktop.composer.ownerMismatch")
-      : null;
-  const sendMainComposer = useCallback(() => {
-    const reason = conversationSubmissionBlockReason({
-      ownerKey: composerDraftRef.current.key,
-      selectedSessionId: selectionRef.current.sessionId,
-      transitionPending: sessionViewTransitionPendingRef.current,
-    });
-    if (reason !== null) {
-      const message = reason === "transition-pending"
-        ? t("desktop.composer.transitionPending")
-        : t("desktop.composer.ownerMismatch");
-      setClientError(message);
-      return;
-    }
-    void actions.sendMessage();
-  }, [actions, t]);
+    transitionSessionView: actions.transitionSessionView,
+    sendMessage: actions.sendMessage,
+    setError: setClientError,
+    t,
+  };
+  const conversationTransitionBundle = useConversationTransition(conversationTransitionInput);
+  const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
 
   const allSidebarSessions = useMemo(
     () => projects.flatMap((candidate) => candidate.sessions),
@@ -2873,7 +2829,7 @@ export function OperatorConsoleApp({
             onOpenChange: (open) => setAnalysisPanelOpen(selectedSession.sessionId, open),
             onOpenEntry: (entry) => openAnalysisPanelEntry(selectedSession.sessionId, entry),
           }}
-      conversationNotice={sessionViewTransitionError ?? sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
+      conversationNotice={conversationTransitionBundle.transitionError ?? sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
         ? t("console.sessionAnalysis.sourceUnavailable")
         : null)}
       messages={messagesWithPreviews}
@@ -2908,7 +2864,7 @@ export function OperatorConsoleApp({
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={composerDraft.value}
       composerAttachments={managedAttachments.attachments}
-      composerSubmissionBlockReason={composerSubmissionBlockText}
+      composerSubmissionBlockReason={conversationTransitionBundle.submissionBlockText}
       runnerStatus={runnerStatus}
       sqlitePath={sqlitePath}
       lastError={lastError}
@@ -2939,7 +2895,7 @@ export function OperatorConsoleApp({
       onComposerFilesAdded={managedAttachments.addFiles}
       onComposerAttachmentRemove={managedAttachments.remove}
       onComposerAttachmentRetry={managedAttachments.retry}
-      onSend={sendMainComposer}
+      onSend={conversationTransitionBundle.sendMainComposer}
       onSubSessionComposerChange={(sessionId, value) => {
         conversationDraftStoreRef.current.write(sessionDraftKey(sessionId), value);
         setSubSessionComposerValues((current) => ({ ...current, [sessionId]: value }));
@@ -3033,7 +2989,7 @@ export function OperatorConsoleApp({
           rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
           setRightSidebarTabs(tabs);
           setRightSidebarOpen(true);
-          queueSessionViewTransition(previousSessionId, target.sessionId);
+          conversationTransitionBundle.queueTransition(previousSessionId, target.sessionId);
           return;
         }
         const route = target?.originSessionId != null
@@ -3051,7 +3007,7 @@ export function OperatorConsoleApp({
         if (target?.originSessionId != null) {
           setRightSidebarOpen(false);
         }
-        queueSessionViewTransition(previousSessionId, nextSelection.sessionId);
+        conversationTransitionBundle.queueTransition(previousSessionId, nextSelection.sessionId);
       }}
       onChangeSessionProject={actions.rebindSessionProject}
       onShowProjectInFolder={showProjectInFolder}
