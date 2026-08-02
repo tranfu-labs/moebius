@@ -4,7 +4,6 @@ import {
   useI18n,
   OperatorConsole,
   resolveNewConversationAgentTeamKey,
-  type OperatorSession,
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
   processInvocationKey,
@@ -19,19 +18,9 @@ import {
 import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import {
-  planCanonicalConversationTabTitles,
-  planConversationTabDiscriminators,
-} from "./console-presentation-model.js";
-import {
   planAgentTeamFileManagerTranslationKey,
   planGeneralAssistantTeamKey,
-  planAgentTeamDetailState,
 } from "./agent-team-console-model.js";
-import {
-  EMPTY_CONSOLE_PROJECT,
-  NO_OPERATOR_MESSAGES,
-} from "./console-default-state.js";
-import { type SelectionMutationKind } from "./console-state-coordinator.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import {
@@ -66,7 +55,6 @@ import {
   discardAllAgentTeamDrafts,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
-import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
 export type { DesktopApi } from "./desktop-api-contract.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
@@ -81,7 +69,6 @@ import { browserConversationViewSyncPort } from "./conversation-view-browser-por
 import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
 import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import { browserProjectFilePort } from "./project-file-browser-port.js";
-import type { LocalConsoleState } from "./console-state-contract.js";
 import { browserConversationAnalysisReferencePort } from "./conversation-analysis-browser-port.js";
 import { useConversationConsole } from "./use-conversation-console.js";
 import { browserProjectMutationPort } from "./project-mutation-browser-port.js";
@@ -95,6 +82,7 @@ import { SidebarConversationView } from "./sidebar-conversation-view.js";
 import { useDesktopRuntimeBridge } from "./use-desktop-runtime-bridge.js";
 import { useConsoleSelectionState } from "./use-console-selection-state.js";
 import { useConsoleStateActions } from "./use-console-state-actions.js";
+import { useConsolePresentation } from "./use-console-presentation.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -262,22 +250,6 @@ export function OperatorConsoleApp({
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
   const managedSidebarConversationAttachments = attachmentDraftsBundle.sidebar;
 
-  const agentTeamDetailState = useMemo(() => planAgentTeamDetailState({
-    activeTeamKey: agentTeamNavigationBundle.activeTeamKey,
-    catalog: agentTeamCatalogBundle.state,
-    selection: agentTeamCatalogBundle.selection,
-    drafts: agentTeamMemberBundle.drafts,
-    saveAllFailures: agentTeamMemberBundle.saveAllFailures,
-    primaryAgentChange: agentTeamProfileBundle.primaryAgentChange,
-  }), [
-    agentTeamNavigationBundle.activeTeamKey,
-    agentTeamMemberBundle.drafts,
-    agentTeamMemberBundle.saveAllFailures,
-    agentTeamCatalogBundle.selection,
-    agentTeamCatalogBundle.state,
-    agentTeamProfileBundle.primaryAgentChange,
-  ]);
-
   const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
@@ -286,76 +258,14 @@ export function OperatorConsoleApp({
   );
   const refresh = stateSyncBundle.refresh;
 
-  const project = state?.project ?? EMPTY_CONSOLE_PROJECT;
-  const projects = state?.projects ?? [project];
-  const selectedSession = state?.selectedSession ?? null;
-  const messages = state?.messages ?? [];
-  const messagesWithPreviews = useMessagesWithAttachmentPreviews({
-    client: managedAttachmentClient,
-    messages,
-    apiBase,
-    capability: attachmentCapability,
-  });
-  const activeSubSessionState = activeSubSessionId === null ? undefined : subSessionViews[activeSubSessionId];
-  const activeSubSessionMessages = activeSubSessionState?.status === "ready"
-    ? activeSubSessionState.view.messages
-    : NO_OPERATOR_MESSAGES;
-  const activeSubSessionMessagesWithPreviews = useMessagesWithAttachmentPreviews({
-    client: managedAttachmentClient,
-    messages: activeSubSessionMessages,
-    apiBase,
-    capability: attachmentCapability,
-  });
-  const subSessionViewsWithPreviews = useMemo(() => {
-    if (
-      activeSubSessionId === null
-      || activeSubSessionState?.status !== "ready"
-    ) {
-      return subSessionViews;
-    }
-    return {
-      ...subSessionViews,
-      [activeSubSessionId]: {
-        status: "ready" as const,
-        view: {
-          ...activeSubSessionState.view,
-          messages: activeSubSessionMessagesWithPreviews,
-        },
-      },
-    };
-  }, [
-    activeSubSessionId,
-    activeSubSessionMessagesWithPreviews,
-    activeSubSessionState,
-    subSessionViews,
-  ]);
-  const activeRun = state?.activeRun ?? null;
-  const activeRuns = state?.activeRuns ?? (activeRun === null ? [] : [activeRun]);
-  const sqlitePath = state?.sqlitePath;
-  const projectListState = state !== null ? "ready" : clientError === null ? "loading" : "error";
-  const resolvedRightSidebarTabs = planCanonicalConversationTabTitles(
-    rightSidebarTabs,
-    state?.projects ?? [],
+  const presentationBundle = useConsolePresentation(
+    state, clientError, activeSubSessionId, subSessionViews, rightSidebarTabs,
+    updatingConversationTitleSessionIds, managedAttachmentClient, apiBase,
+    attachmentCapability, t,
   );
-  const rightSidebarUpdatingTabIds = resolvedRightSidebarTabs.unresolvedTabIds.concat(
-    resolvedRightSidebarTabs.state.tabs.flatMap((tab) => {
-      if (tab.type !== "conversation") return [];
-      const locator = parseConversationTabSourceKey(tab.sourceKey);
-      return locator?.kind === "session"
-        && updatingConversationTitleSessionIds.has(locator.sessionId)
-        ? [tab.id]
-        : [];
-    }),
-  );
-  const rightSidebarTabDiscriminators = planConversationTabDiscriminators(
-    resolvedRightSidebarTabs.state,
-    state?.projects ?? [],
-    new Set(rightSidebarUpdatingTabIds),
-    {
-      fallback: t("console.rightSidebar.conversationDiscriminatorFallback"),
-      sameMomentIndex: (index) => t("console.rightSidebar.sameMomentIndex", { index }),
-    },
-  );
+  const project = presentationBundle.project;
+  const projects = presentationBundle.projects;
+  const selectedSession = presentationBundle.selectedSession;
   const stateActionsBundle = useConsoleStateActions(
     apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
     refresh, composerDraft.value, clearComposerDraft, managedAttachments,
@@ -554,7 +464,7 @@ export function OperatorConsoleApp({
       conversationNotice={conversationTransitionBundle.transitionError ?? sessionAnalysisNotice ?? (presentationRoute?.notice === "source-unavailable"
         ? t("console.sessionAnalysis.sourceUnavailable")
         : null)}
-      messages={messagesWithPreviews}
+      messages={presentationBundle.messages}
       initialReadingMessageId={selectedSession === null
         ? null
         : conversationReadingPositionStoreRef.current.read(selectedSession.sessionId)}
@@ -577,19 +487,19 @@ export function OperatorConsoleApp({
       pendingPrimaryMessages={state?.pendingPrimaryMessages ?? []}
       childSessions={state?.childSessions ?? []}
       memberIdentities={state?.memberIdentities ?? []}
-      subSessionViews={subSessionViewsWithPreviews}
+      subSessionViews={presentationBundle.subSessionViews}
       subSessionComposerValue={activeSubSessionComposerValue}
       subSessionComposerAttachments={managedSubSessionAttachments.attachments}
-      activeRun={activeRun}
-      activeRuns={activeRuns}
+      activeRun={presentationBundle.activeRun}
+      activeRuns={presentationBundle.activeRuns}
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={composerDraft.value}
       composerAttachments={managedAttachments.attachments}
       composerSubmissionBlockReason={conversationTransitionBundle.submissionBlockText}
       runnerStatus={runtimeBridgeBundle.runnerStatus}
-      sqlitePath={sqlitePath}
+      sqlitePath={presentationBundle.sqlitePath}
       lastError={lastError}
-      projectListState={projectListState}
+      projectListState={presentationBundle.projectListState}
       agentTeamsState={agentTeamCatalogBundle.state}
       lastUsedAgentTeamKey={agentTeamCatalogBundle.lastUsedTeamKey}
       conversationAgentTeamKey={selectedSession?.agentTeamOwnership != null && selectedSession.agentTeamId != null
@@ -597,7 +507,7 @@ export function OperatorConsoleApp({
         : null}
       selectedAgentTeamKey={agentTeamCatalogBundle.selection?.teamKey}
       selectedAgentTeamMemberSlug={agentTeamCatalogBundle.selection?.memberSlug}
-      agentTeamDetailState={agentTeamDetailState}
+      agentTeamDetailState={agentTeamControllersBundle.detailState}
       agentTeamBuilder={agentTeamBuilderBundle}
       newConversation={newConversation?.isOpen !== true ? null : {
         selectedProjectId: newConversation.projectId,
@@ -780,9 +690,9 @@ export function OperatorConsoleApp({
       onSidebarOpenChange={setSidebarOpen}
       rightSidebarOpen={rightSidebarTabsBundle.visibilityPreference === "open"}
       rightSidebarWidth={rightSidebarTabsBundle.width}
-      rightSidebarTabs={resolvedRightSidebarTabs.state}
-      rightSidebarTabDiscriminators={rightSidebarTabDiscriminators}
-      rightSidebarUpdatingTabIds={rightSidebarUpdatingTabIds}
+      rightSidebarTabs={presentationBundle.rightSidebarTabs}
+      rightSidebarTabDiscriminators={presentationBundle.rightSidebarTabDiscriminators}
+      rightSidebarUpdatingTabIds={presentationBundle.rightSidebarUpdatingTabIds}
       onRetryRightSidebarTitles={() => {
         setClientError(null);
         void refresh(selectionRef.current);

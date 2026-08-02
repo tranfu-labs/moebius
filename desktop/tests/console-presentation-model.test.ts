@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { OperatorSession } from "@moebius/console-ui";
+import type {
+  OperatorMessage,
+  OperatorSession,
+  OperatorSubSessionViewState,
+} from "@moebius/console-ui";
 
 import {
+  planActiveSubSessionMessages,
   planAnalysisNavigation,
   planAnalysisPanelEntries,
+  planConsolePresentationState,
+  planSubSessionViewsWithPreviews,
+  planUpdatingConversationTabIds,
 } from "../src/console-page/console-presentation-model.js";
 
 describe("console analysis presentation model", () => {
@@ -55,6 +63,69 @@ describe("console analysis presentation model", () => {
       kind: "reference",
       sessionId: "cycle-a",
     })).toEqual({ kind: "error", reason: "open-failed" });
+  });
+});
+
+describe("console shell presentation model", () => {
+  it("maps unavailable, loading, and ready shell data without manufacturing remote state", () => {
+    expect(planConsolePresentationState(null, null)).toMatchObject({
+      projectListState: "loading",
+      selectedSession: null,
+      activeRuns: [],
+    });
+    expect(planConsolePresentationState(null, "offline").projectListState).toBe("error");
+    const activeRun = { runId: "run-1" } as never;
+    const state = {
+      project: { projectId: "project-a" },
+      projects: [{ projectId: "project-a" }],
+      selectedSession: session("session-a", "Session"),
+      messages: [{ id: 1 }],
+      activeRun,
+      sqlitePath: "/tmp/state.sqlite",
+    } as never;
+
+    expect(planConsolePresentationState(state, null)).toMatchObject({
+      projectListState: "ready",
+      activeRuns: [activeRun],
+      sqlitePath: "/tmp/state.sqlite",
+    });
+  });
+
+  it("replaces only the active ready sub-session messages with attachment previews", () => {
+    const original = [{ messageId: 1 }] as unknown as OperatorMessage[];
+    const previews = [{ messageId: 1, body: "previewed" }] as unknown as OperatorMessage[];
+    const views: Record<string, OperatorSubSessionViewState> = {
+      ready: { status: "ready", view: { messages: original } as never },
+      loading: { status: "loading" },
+    };
+
+    expect(planActiveSubSessionMessages(null, views)).toEqual([]);
+    expect(planActiveSubSessionMessages("loading", views)).toEqual([]);
+    expect(planActiveSubSessionMessages("ready", views)).toBe(original);
+    expect(planSubSessionViewsWithPreviews("loading", views, previews)).toBe(views);
+    expect(planSubSessionViewsWithPreviews("ready", views, previews)).toEqual({
+      ...views,
+      ready: { status: "ready", view: { messages: previews } },
+    });
+  });
+
+  it("combines unresolved and actively renamed conversation tabs", () => {
+    const resolved = {
+      state: {
+        activeTabId: "conversation-a",
+        tabs: [
+          { id: "conversation-a", type: "conversation", title: "A", sourceKey: "conversation:a" },
+          { id: "process-a", type: "process", title: "Process", sourceKey: "run:a" },
+        ],
+      },
+      unresolvedTabIds: ["conversation-missing"],
+    } as never;
+
+    expect(planUpdatingConversationTabIds(resolved, new Set(["a"]))).toEqual([
+      "conversation-missing",
+      "conversation-a",
+    ]);
+    expect(planUpdatingConversationTabIds(resolved, new Set())).toEqual(["conversation-missing"]);
   });
 });
 

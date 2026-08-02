@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Translate } from "@moebius/console-ui";
 
-import type { DesktopApi } from "./app.js";
+import type { DesktopApi } from "./desktop-api-contract.js";
 import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
 import { useAgentTeamCatalog } from "./use-agent-team-catalog.js";
 import { useAgentTeamCopy } from "./use-agent-team-copy.js";
@@ -11,7 +11,10 @@ import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
 import { useAgentTeamProfile } from "./use-agent-team-profile.js";
 import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
-import { AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY } from "./agent-team-console-model.js";
+import {
+  AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
+  planAgentTeamDetailState,
+} from "./agent-team-console-model.js";
 
 export function useAgentTeamConsole(
   api: DesktopApi | undefined,
@@ -44,6 +47,15 @@ export function useAgentTeamConsole(
     replaceTeams: catalog.replaceTeams,
     t,
   });
+  const detailState = useMemo(() => planAgentTeamDetailState({
+    activeTeamKey: navigation.activeTeamKey,
+    catalog: catalog.state,
+    selection: catalog.selection,
+    drafts: member.drafts,
+    saveAllFailures: member.saveAllFailures,
+    primaryAgentChange: profile.primaryAgentChange,
+  }), [catalog.selection, catalog.state, member.drafts, member.saveAllFailures,
+    navigation.activeTeamKey, profile.primaryAgentChange]);
   return useMemo(() => ({
     catalog,
     member,
@@ -54,5 +66,7 @@ export function useAgentTeamConsole(
     memberMutations,
     recordMutations,
     builder,
-  }), [builder, catalog, copy, member, memberMutations, navigation, profile, recordMutations, registration]);
+    detailState,
+  }), [builder, catalog, copy, detailState, member, memberMutations, navigation, profile,
+    recordMutations, registration]);
 }

@@ -163,6 +163,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-console-state-sync.ts",
   "desktop/src/console-page/use-console-selection-state.ts",
   "desktop/src/console-page/use-console-state-actions.ts",
+  "desktop/src/console-page/use-console-presentation.ts",
   "desktop/src/console-page/use-conversation-navigation.ts",
   "desktop/src/console-page/use-conversation-analysis.ts",
   "desktop/src/console-page/use-conversation-console.ts",

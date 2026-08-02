@@ -1,11 +1,85 @@
 import type {
   AnalysisPanelEntry,
+  OperatorMessage,
   OperatorProject,
+  OperatorProjectListState,
+  OperatorRunSnapshot,
   OperatorSession,
+  OperatorSubSessionViewState,
   RightSidebarTabsState,
 } from "@moebius/console-ui";
 
+import type { LocalConsoleState } from "./console-state-contract.js";
+import { EMPTY_CONSOLE_PROJECT, NO_OPERATOR_MESSAGES } from "./console-default-state.js";
 import { parseConversationTabSourceKey } from "./right-sidebar-tabs-model.js";
+
+export interface ConsolePresentationState {
+  project: OperatorProject;
+  projects: OperatorProject[];
+  selectedSession: OperatorSession | null;
+  messages: OperatorMessage[];
+  activeRun: OperatorRunSnapshot | null;
+  activeRuns: OperatorRunSnapshot[];
+  sqlitePath: string | undefined;
+  projectListState: OperatorProjectListState;
+}
+
+export function planConsolePresentationState(
+  state: LocalConsoleState | null,
+  clientError: string | null,
+): ConsolePresentationState {
+  const project = state?.project ?? EMPTY_CONSOLE_PROJECT;
+  const activeRun = state?.activeRun ?? null;
+  return {
+    project,
+    projects: state?.projects ?? [project],
+    selectedSession: state?.selectedSession ?? null,
+    messages: state?.messages ?? NO_OPERATOR_MESSAGES,
+    activeRun,
+    activeRuns: state?.activeRuns ?? (activeRun === null ? [] : [activeRun]),
+    sqlitePath: state?.sqlitePath,
+    projectListState: state !== null ? "ready" : clientError === null ? "loading" : "error",
+  };
+}
+
+export function planActiveSubSessionMessages(
+  activeSubSessionId: string | null,
+  views: Readonly<Record<string, OperatorSubSessionViewState>>,
+): OperatorMessage[] {
+  if (activeSubSessionId === null) return NO_OPERATOR_MESSAGES;
+  const state = views[activeSubSessionId];
+  return state?.status === "ready" ? state.view.messages : NO_OPERATOR_MESSAGES;
+}
+
+export function planSubSessionViewsWithPreviews(
+  activeSubSessionId: string | null,
+  views: Readonly<Record<string, OperatorSubSessionViewState>>,
+  messages: OperatorMessage[],
+): Readonly<Record<string, OperatorSubSessionViewState>> {
+  if (activeSubSessionId === null) return views;
+  const state = views[activeSubSessionId];
+  if (state?.status !== "ready") return views;
+  return {
+    ...views,
+    [activeSubSessionId]: {
+      status: "ready",
+      view: { ...state.view, messages },
+    },
+  };
+}
+
+export function planUpdatingConversationTabIds(
+  resolved: { state: RightSidebarTabsState; unresolvedTabIds: string[] },
+  updatingSessionIds: ReadonlySet<string>,
+): string[] {
+  return resolved.unresolvedTabIds.concat(resolved.state.tabs.flatMap((tab) => {
+    if (tab.type !== "conversation") return [];
+    const locator = parseConversationTabSourceKey(tab.sourceKey);
+    return locator?.kind === "session" && updatingSessionIds.has(locator.sessionId)
+      ? [tab.id]
+      : [];
+  }));
+}
 
 export function planConversationTabDiscriminators(
   tabsState: RightSidebarTabsState,
