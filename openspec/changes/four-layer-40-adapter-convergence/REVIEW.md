@@ -203,3 +203,38 @@ FAIL tests/status-page-update-entry.test.ts
    （剩余 layer debt 导出、provider 前提核对记录、parser/classifier test-name ledger）需补齐内容。
 3. **QA 写入的 `tasks.md` 尚未提交**，工作区不干净。
 4. 修复后**重跑完整 `pnpm test` 全量**（不接受只补跑 desktop scope），并把闸门实测数据写入 tasks.md。
+
+---
+
+## 簇 3 返工复核 — 裁决：**通过，40 批归档**（`03dab61`）
+
+### 断言修法
+
+采纳了推荐方案而非最小方案，且做得更彻底：
+
+- 原测试保留四条「已废弃表面不存在」的否定断言（证明缺席只能用文本断言，处理正确）。
+- 新增 `registers the migrated settings update capability through desktop IPC`：传入 fake `ipcMain` 调用
+  `registerDesktopCoreIpc`，断言三个 settings channel 已注册，**并实际调用 `checkForUpdates` handler、
+  断言其带正确版本号委派**。使用 `SETTINGS_IPC_CHANNELS` 常量而非字符串字面量，channel 改名不会静默通过。
+- 该测试导入注册函数本身，后续把注册实现挪到任何文件都不会再断——源码镜像脆性已消除，不是重指了事。
+
+### 主理人独立复核
+
+- 完整 `pnpm test` 全绿 **122s**：root 99/713（另 1 file / 4 tests skipped）、slow 1/63、
+  **desktop 128/566**、console-ui 45/460，与 dev 报告逐项一致，无失败标记。
+- **`four-layer-registry.ts` 的 `fileDebt` 与 `dependencyDebt` 已完全清空**——不止 40 批，00/10/20/30/40
+  五批的四层架构债务全部归零。
+- condition permits **193**、composition roots **9**，全程净增 0。
+- `tasks.md` 未勾项 **0**；test-name ledger 已补齐；工作区干净。
+
+### 40 批实绩
+
+| 簇 | 结果 |
+| --- | --- |
+| provider / infra | 分支 1,502 → 1,428；150 条 exact permit（棘轮，双向反证已验）；8 条 debt 清零 |
+| ai-team-builder | `index.ts` 454 → 84；五文件 1,252 → 799；permit 净增 0；7 条 debt 清零 |
+| desktop team-* | `main.ts` 586 → 248、AST 条件 50 → **0**；18 条 debt 清零 |
+
+QA 的 RA-13～RA-15 三条全部真机通过，三家 provider 均可用、无「待真机验收」项。
+
+单样本不声明可归因速度收益，记 0。
