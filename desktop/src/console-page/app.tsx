@@ -10,7 +10,6 @@ import {
   type AgentTeamDetailState,
   type AgentTeamMemberEditorState,
   type AgentTeamSaveAllFailureView,
-  type TeamBuilderViewState,
   type OperatorMessage,
   type OperatorPendingDispatch,
   type OperatorMemberIdentity,
@@ -91,11 +90,6 @@ import type {
   AgentTeamExternalChangeRequest,
   AgentTeamExternalChangeResponse,
 } from "../team-external-change-contract.js";
-import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
-import {
-  toTeamBuilderIpcViewError,
-  toTeamBuilderViewState,
-} from "../team-builder-view-state.js";
 import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -138,7 +132,6 @@ import {
   planConversationTabDiscriminators,
 } from "./console-presentation-model.js";
 import {
-  decideSafeAiTeamBuilderDraftId,
   planAgentTeamFileManagerTranslationKey,
   planAgentTeamIdentityKey,
   planFindOperatorAgentTeam,
@@ -256,6 +249,7 @@ import type {
 } from "../settings-contract.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
+import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -529,9 +523,6 @@ export function OperatorConsoleApp({
   );
   const [agentTeamSelection, setAgentTeamSelection] = useState<AgentTeamSelection | null>(null);
   const [activeAgentTeamKey, setActiveAgentTeamKey] = useState<string | null>(null);
-  const [agentTeamBuilderState, setAgentTeamBuilderState] = useState<TeamBuilderViewState | null>(null);
-  const agentTeamBuilderStartedRef = useRef(false);
-  const agentTeamBuilderDraftIdRef = useRef<string | null>(null);
   const [agentTeamDraftState, setAgentTeamDraftState] = useState<AgentTeamDraftState>(EMPTY_AGENT_TEAM_DRAFT_STATE);
   const agentTeamDraftStateRef = useRef(agentTeamDraftState);
   const checkingAgentTeamExternalChangesRef = useRef(new Set<string>());
@@ -1110,239 +1101,15 @@ export function OperatorConsoleApp({
     return copiedTeam.teamKey;
   }, [commitAgentTeamDraftState, t]);
 
-  const getAgentTeamBuilderDraftId = useCallback((): string => {
-    if (agentTeamBuilderDraftIdRef.current !== null) {
-      return agentTeamBuilderDraftIdRef.current;
-    }
-    const stored = window.localStorage.getItem(AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY);
-    const draftId = stored !== null && decideSafeAiTeamBuilderDraftId(stored)
-      ? stored
-      : createAgentTeamBuilderDraftId();
-    agentTeamBuilderDraftIdRef.current = draftId;
-    window.localStorage.setItem(AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY, draftId);
-    return draftId;
-  }, []);
-
-  const failAgentTeamBuilder = useCallback((
-    error: { code: string; humanMessage: string; canRetry: boolean },
-  ) => {
-    setAgentTeamBuilderState((current) => ({
-      phase: "failed",
-      messages: current?.messages ?? [],
-      proposal: current?.proposal ?? null,
-      proposalRevision: current?.proposalRevision ?? null,
-      error,
-    }));
-  }, []);
-
-  const acceptAgentTeamBuilderResponse = useCallback((
-    response: AiTeamBuilderIpcResponse,
-  ): AiTeamBuilderState | null => {
-    if (!response.ok) {
-      agentTeamBuilderStartedRef.current = false;
-      failAgentTeamBuilder(toTeamBuilderIpcViewError(response.error, t));
-      return null;
-    }
-    agentTeamBuilderStartedRef.current = true;
-    setAgentTeamBuilderState(toTeamBuilderViewState(response.state, t));
-    return response.state;
-  }, [failAgentTeamBuilder, t]);
-
-  const activateAiBuiltAgentTeam = useCallback(async (teamId: string): Promise<OperatorAgentTeam> => {
-    const listTeams = window.moebius?.listAgentTeams;
-    if (listTeams === undefined) {
-      throw new Error(t("desktop.error.teamCreatedDetail"));
-    }
-    const result = await listTeams();
-    if (result.status !== "ready") {
-      throw new Error(t("desktop.error.teamCreatedDetail"));
-    }
-    const selectedItem = result.teams.find((team) => team.ownership === "user" && team.id === teamId);
-    if (selectedItem === undefined) {
-      throw new Error(t("desktop.error.teamCreatedDetail"));
-    }
-    const selectedTeam = planOperatorAgentTeam(selectedItem);
-    await activateCopiedAgentTeam(selectedItem);
-    setAgentTeamsState({ status: "ready", teams: result.teams.map(planOperatorAgentTeam) });
-    window.localStorage.removeItem(AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY);
-    agentTeamBuilderDraftIdRef.current = null;
-    agentTeamBuilderStartedRef.current = false;
-    return selectedTeam;
-  }, [activateCopiedAgentTeam, t]);
-
-  const activateSelectedAiTeamBuilderState = useCallback(async (
-    builderState: AiTeamBuilderState,
-  ): Promise<OperatorAgentTeam | null> => {
-    if (builderState.phase !== "selected" || builderState.selectedTeamId === null) {
-      return null;
-    }
-    try {
-      return await activateAiBuiltAgentTeam(builderState.selectedTeamId);
-    } catch (error) {
-      agentTeamBuilderStartedRef.current = false;
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: formatError(error),
-        canRetry: true,
-      });
-      return null;
-    }
-  }, [activateAiBuiltAgentTeam, failAgentTeamBuilder]);
-
-  const startAgentTeamBuilder = useCallback(async (): Promise<OperatorAgentTeam | null> => {
-    const start = window.moebius?.startAiTeamBuilder;
-    if (start === undefined) {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return null;
-    }
-    try {
-      const state = acceptAgentTeamBuilderResponse(await start(getAgentTeamBuilderDraftId()));
-      return state === null ? null : activateSelectedAiTeamBuilderState(state);
-    } catch {
-      agentTeamBuilderStartedRef.current = false;
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return null;
-    }
-  }, [
-    acceptAgentTeamBuilderResponse,
-    activateSelectedAiTeamBuilderState,
-    failAgentTeamBuilder,
-    getAgentTeamBuilderDraftId,
+  const agentTeamBuilderBundle = useAgentTeamBuilderController({
+    api: window.moebius,
+    storage: window.localStorage,
+    storageKey: AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
+    createDraftId: createAgentTeamBuilderDraftId,
+    activateCopiedTeam: activateCopiedAgentTeam,
+    replaceTeams: (teams) => setAgentTeamsState({ status: "ready", teams }),
     t,
-  ]);
-
-  const submitAgentTeamBuilder = useCallback(async (text: string): Promise<void> => {
-    const submit = window.moebius?.submitAiTeamBuilder;
-    if (submit === undefined) {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return;
-    }
-    setAgentTeamBuilderState((current) => current === null
-      ? current
-      : { ...current, phase: "running", error: null });
-    try {
-      acceptAgentTeamBuilderResponse(await submit(getAgentTeamBuilderDraftId(), text));
-    } catch {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderPreserved"),
-        canRetry: true,
-      });
-    }
-  }, [acceptAgentTeamBuilderResponse, failAgentTeamBuilder, getAgentTeamBuilderDraftId, t]);
-
-  const adjustAgentTeamBuilder = useCallback(async (text: string): Promise<void> => {
-    const adjust = window.moebius?.adjustAiTeamBuilder;
-    if (adjust === undefined) {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return;
-    }
-    setAgentTeamBuilderState((current) => current === null
-      ? current
-      : { ...current, phase: "running", error: null });
-    try {
-      acceptAgentTeamBuilderResponse(await adjust(getAgentTeamBuilderDraftId(), text));
-    } catch {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderPreserved"),
-        canRetry: true,
-      });
-    }
-  }, [acceptAgentTeamBuilderResponse, failAgentTeamBuilder, getAgentTeamBuilderDraftId, t]);
-
-  const retryAgentTeamBuilder = useCallback(async (): Promise<OperatorAgentTeam | null> => {
-    if (!agentTeamBuilderStartedRef.current) {
-      return startAgentTeamBuilder();
-    }
-    const retry = window.moebius?.retryAiTeamBuilder;
-    if (retry === undefined) {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return null;
-    }
-    setAgentTeamBuilderState((current) => current === null
-      ? current
-      : {
-          ...current,
-          phase: current.proposal === null ? "running" : "committing",
-          error: null,
-        });
-    try {
-      const state = acceptAgentTeamBuilderResponse(await retry(getAgentTeamBuilderDraftId()));
-      return state === null ? null : activateSelectedAiTeamBuilderState(state);
-    } catch {
-      agentTeamBuilderStartedRef.current = false;
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderPreserved"),
-        canRetry: true,
-      });
-      return null;
-    }
-  }, [
-    acceptAgentTeamBuilderResponse,
-    activateSelectedAiTeamBuilderState,
-    failAgentTeamBuilder,
-    getAgentTeamBuilderDraftId,
-    startAgentTeamBuilder,
-    t,
-  ]);
-
-  const commitAgentTeamBuilder = useCallback(async (
-    proposalRevision: number,
-  ): Promise<OperatorAgentTeam | null> => {
-    const commit = window.moebius?.commitAiTeamBuilder;
-    if (commit === undefined) {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.builderUnavailable"),
-        canRetry: true,
-      });
-      return null;
-    }
-    setAgentTeamBuilderState((current) => current === null
-      ? current
-      : { ...current, phase: "committing", error: null });
-    try {
-      const state = acceptAgentTeamBuilderResponse(
-        await commit(getAgentTeamBuilderDraftId(), proposalRevision),
-      );
-      return state === null ? null : activateSelectedAiTeamBuilderState(state);
-    } catch {
-      failAgentTeamBuilder({
-        code: "temporarily-unavailable",
-        humanMessage: t("desktop.error.teamCreatePreserved"),
-        canRetry: true,
-      });
-      return null;
-    }
-  }, [
-    acceptAgentTeamBuilderResponse,
-    activateSelectedAiTeamBuilderState,
-    failAgentTeamBuilder,
-    getAgentTeamBuilderDraftId,
-    t,
-  ]);
+  });
 
   const duplicateBuiltInAgentTeam = useCallback(async (teamKey: string): Promise<string> => {
     const source = planFindOperatorAgentTeam(agentTeamsState, teamKey);
@@ -3991,14 +3758,7 @@ export function OperatorConsoleApp({
       selectedAgentTeamKey={agentTeamSelection?.teamKey}
       selectedAgentTeamMemberSlug={agentTeamSelection?.memberSlug}
       agentTeamDetailState={agentTeamDetailState}
-      agentTeamBuilder={{
-        state: agentTeamBuilderState,
-        onStart: startAgentTeamBuilder,
-        onSubmit: submitAgentTeamBuilder,
-        onAdjust: adjustAgentTeamBuilder,
-        onRetry: retryAgentTeamBuilder,
-        onCommit: commitAgentTeamBuilder,
-      }}
+      agentTeamBuilder={agentTeamBuilderBundle}
       newConversation={newConversation?.isOpen !== true ? null : {
         selectedProjectId: newConversation.projectId,
         selectedWorkspaceMode: newConversation.workspaceMode,
