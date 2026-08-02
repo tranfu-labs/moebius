@@ -8,7 +8,7 @@ import {
   ipcMain,
   shell,
 } from "electron";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
+import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
 import {
@@ -19,6 +19,7 @@ import {
 } from "./data-root.js";
 import { checkCodex } from "./env-doctor.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
+import { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
 import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
@@ -133,9 +134,6 @@ if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
 }
 
-let localConsoleServer: StartedLocalConsoleServer | null = null;
-let localConsoleAttachmentCapability: string | null = null;
-
 const teamRuntimeBinding = createTeamRuntimeBindingService({
   listSharedAgents: listSharedAgentFiles,
   resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
@@ -208,6 +206,40 @@ const windows = new DesktopWindowRuntime({
   hasRunningInstallers: () => (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0,
   requestShutdown,
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
+});
+
+const localConsole = new DesktopLocalConsoleRuntime({
+  status,
+  paths: {
+    dataRoot: status.dataRoot,
+    sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
+    sessionLogRoot: path.join(status.dataRoot, "sessions"),
+    workdirRoot: path.join(status.dataRoot, "workdir"),
+    attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments"),
+  },
+  createStore: () => createSqliteLocalConsoleStore({
+    sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
+    sessionLogRoot: path.join(status.dataRoot, "sessions"),
+  }),
+  startServer: startLocalConsoleServer,
+  createCapability: () => randomBytes(32).toString("base64url"),
+  createTeamOptions: (findSession) => ({
+    listAgentFiles: async (sessionId) => teamRuntimeBinding.listSessionAgentFiles({
+      dataRoot: status.dataRoot,
+      session: await findSession(sessionId),
+    }),
+    loadAgentTeamSnapshot: async (binding) => teamRuntimeBinding.loadAgentTeamSnapshot({
+      dataRoot: status.dataRoot,
+      ownership: binding.ownership,
+      teamId: binding.id,
+    }),
+    resolveAgentTeamHealth: async (session) => teamRuntimeBinding.resolveSessionAgentTeamHealth({
+      dataRoot: status.dataRoot,
+      session,
+    }),
+  }),
+  publishStatus: () => windows.publishStatus(),
+  formatError,
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -310,7 +342,7 @@ async function boot(): Promise<void> {
   }
   windows.publishStatus();
 
-  await startLocalConsole();
+  await localConsole.start();
 }
 
 function registerLanguagePreferenceIpc(): void {
@@ -329,57 +361,6 @@ function registerLanguagePreferenceIpc(): void {
   );
 }
 
-async function startLocalConsole(): Promise<void> {
-  try {
-    localConsoleAttachmentCapability = randomBytes(32).toString("base64url");
-    const store = await createSqliteLocalConsoleStore({
-      sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
-      // Electron's process-wide single-instance lock above makes this main-process store
-      // the only production writer for per-session fact logs under the data root.
-      sessionLogRoot: path.join(status.dataRoot, "sessions"),
-    });
-    const findSession = async (sessionId: string) => {
-      const session = (await store.listSessions()).find((candidate) => candidate.sessionId === sessionId);
-      if (session === undefined) {
-        throw new Error(`local console session not found: ${sessionId}`);
-      }
-      return session;
-    };
-    localConsoleServer = await startLocalConsoleServer({
-      host: "127.0.0.1",
-      port: 0,
-      dataRoot: status.dataRoot,
-      projectRoot: status.dataRoot,
-      workdirRoot: path.join(status.dataRoot, "workdir"),
-      store,
-      attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments"),
-      attachmentCapability: localConsoleAttachmentCapability,
-      listAgentFiles: async (sessionId) => teamRuntimeBinding.listSessionAgentFiles({
-        dataRoot: status.dataRoot,
-        session: await findSession(sessionId),
-      }),
-      loadAgentTeamSnapshot: async (binding) => teamRuntimeBinding.loadAgentTeamSnapshot({
-        dataRoot: status.dataRoot,
-        ownership: binding.ownership,
-        teamId: binding.id,
-      }),
-      resolveAgentTeamHealth: async (session) => teamRuntimeBinding.resolveSessionAgentTeamHealth({
-        dataRoot: status.dataRoot,
-        session,
-      }),
-    });
-    status.localConsole = {
-      status: "running",
-      url: localConsoleServer.url,
-      sqlitePath: localConsoleServer.sqlitePath,
-    };
-  } catch (error) {
-    localConsoleAttachmentCapability = null;
-    status.localConsole = { status: "error", error: formatError(error) };
-  }
-  windows.publishStatus();
-}
-
 ipcMain.handle("action:open-status-page", async () => {
   windows.openStatusPage();
   status.doctor = null;
@@ -389,11 +370,11 @@ ipcMain.handle("action:open-status-page", async () => {
 });
 
 ipcMain.handle("local-console:get-url", async () => status.localConsole.url ?? null);
-ipcMain.handle("local-console:get-attachment-capability", async () => localConsoleAttachmentCapability);
+ipcMain.handle("local-console:get-attachment-capability", async () => localConsole.attachmentCapability);
 
 registerSessionLogClipboardIpc({
   ipcMain,
-  getPathSource: () => localConsoleServer?.runtime ?? null,
+  getPathSource: () => localConsole.pathSource,
   clipboard,
   access: (targetPath) => fs.promises.access(targetPath, fs.constants.R_OK),
 });
@@ -438,7 +419,7 @@ registerTeamIpc({
   recordPreference: (request) => teamConversationPreference.recordSuccessfulConversationAgentTeam(
     status.dataRoot,
     request,
-    sessionExists,
+    (sessionId) => localConsole.sessionExists(sessionId),
   ),
   service: agentTeamService,
   moveToTrash: (targetPath) => shell.trashItem(targetPath),
@@ -480,7 +461,7 @@ async function shutdownAndQuit(): Promise<void> {
   }
   isQuitting = true;
   shutdownPromise = (async () => {
-    await closeLocalConsole();
+    await localConsole.close();
     await closeSqliteStateWorkers();
     shutdownComplete = true;
     app.quit();
@@ -517,24 +498,6 @@ async function requestShutdown(): Promise<void> {
     quitCoordinationPromise = null;
   });
   return quitCoordinationPromise;
-}
-
-async function closeLocalConsole(): Promise<void> {
-  if (localConsoleServer === null) {
-    return;
-  }
-  await localConsoleServer.close();
-  localConsoleServer = null;
-  localConsoleAttachmentCapability = null;
-  status.localConsole = { status: "stopped" };
-}
-
-async function sessionExists(sessionId: string): Promise<boolean> {
-  if (localConsoleServer === null) {
-    return false;
-  }
-  const localState = await localConsoleServer.runtime.state({ sessionId });
-  return localState.selectedSession?.sessionId === sessionId;
 }
 
 function resolveSeedRoot(): string {
