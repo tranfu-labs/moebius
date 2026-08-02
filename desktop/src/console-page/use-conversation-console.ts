@@ -1,0 +1,102 @@
+import { useMemo, type Dispatch, type MutableRefObject } from "react";
+import {
+  type OperatorProject,
+  type RightSidebarSourceTab,
+  type RightSidebarTabsState,
+  type TranslationKey,
+} from "@moebius/console-ui";
+
+import type { LocalConsoleState } from "./console-state-contract.js";
+import type { ConversationAnalysisReferencePort } from "./conversation-analysis-contract.js";
+import type { ConsoleSelection, ConsoleStateCoordinator } from "./console-state-coordinator.js";
+import type { ConversationComposerDraftState } from "./conversation-draft-model.js";
+import type { NewConversationDraftEvent } from "./new-conversation.js";
+import type { ConsolePresentationRoute } from "./presentation-route.js";
+import type {
+  SidebarConversationDraft,
+  SidebarConversationDraftStore,
+} from "./sidebar-conversation-drafts.js";
+import { useAnalysisPanelNavigation } from "./use-analysis-panel-navigation.js";
+import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
+import { useConversationAnalysis } from "./use-conversation-analysis.js";
+import { useConversationNavigation } from "./use-conversation-navigation.js";
+import { useConversationTransition } from "./use-conversation-transition.js";
+import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
+import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
+import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
+
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type ConversationActions = Parameters<typeof useConversationTransition>[2]
+  & Parameters<typeof useConversationNavigation>[7]
+  & Parameters<typeof useNewConversationSubmission>[6]
+  & Parameters<typeof useAnalysisPanelNavigation>[3];
+
+export function useConversationConsole(
+  composerDraft: Pick<ConversationComposerDraftState, "key">,
+  selection: ConsoleSelection,
+  projects: readonly OperatorProject[],
+  actions: ConversationActions,
+  setError: (error: string | null) => void,
+  t: (key: TranslationKey, values?: Record<string, string | number>) => string,
+  coordinator: ConsoleStateCoordinator,
+  selectionRef: MutableRefObject<ConsoleSelection>,
+  selectionPersistenceEnabledRef: MutableRefObject<boolean>,
+  dispatchNewConversation: Dispatch<NewConversationDraftEvent>,
+  commitRoute: (route: ConsolePresentationRoute) => void,
+  activateComposer: (sessionId: string) => void,
+  tabs: RightSidebarTabsBundle,
+  openTab: (state: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
+  newConversation: Parameters<typeof useNewConversationSubmission>[0],
+  agentTeams: AgentTeamCatalogBundle,
+  managedAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
+  readyAttachmentIds: readonly string[],
+  attachmentsBlocked: boolean,
+  rememberSelection: (selection: ConsoleSelection) => void,
+  conversationDraftStore: Parameters<typeof useNewConversationSubmission>[10],
+  desktopApi: Parameters<typeof useNewConversationSubmission>[12],
+  locale: string,
+  writeReadingPosition: (sessionId: string, messageId: number) => void,
+  apiBase: string | null,
+  stateRef: MutableRefObject<LocalConsoleState | null>,
+  presentationRouteRef: MutableRefObject<ConsolePresentationRoute | null>,
+  sidebarDraftStore: SidebarConversationDraftStore,
+  commitSidebarDrafts: (drafts: SidebarConversationDraft[]) => void,
+  commitState: (state: LocalConsoleState) => void,
+  commitSelection: (selection: ConsoleSelection) => void,
+  referencePort: ConversationAnalysisReferencePort,
+  fetch: FetchLike,
+  setNotice: (notice: string | null) => void,
+) {
+  const transition = useConversationTransition(
+    composerDraft.key, selection.sessionId, actions, setError, t,
+  );
+  const navigation = useConversationNavigation(
+    projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
+    commitRoute, activateComposer, actions, tabs.store, openTab, tabs.commitCurrent, tabs.setOpen,
+    transition,
+  );
+  const submission = useNewConversationSubmission(
+    newConversation, dispatchNewConversation, agentTeams, managedAttachments,
+    readyAttachmentIds, attachmentsBlocked, actions,
+    selectionPersistenceEnabledRef, rememberSelection, commitRoute, conversationDraftStore,
+    activateComposer, desktopApi, setError, t,
+  );
+  const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
+  const analysisNavigation = useAnalysisPanelNavigation(
+    sessions, locale, selectionRef, actions, commitRoute, tabs, openTab,
+    writeReadingPosition, setError, t,
+  );
+  const analysis = useConversationAnalysis(
+    apiBase, stateRef, presentationRouteRef, coordinator, agentTeams, sidebarDraftStore,
+    commitSidebarDrafts, tabs, selectionRef, selectionPersistenceEnabledRef,
+    dispatchNewConversation, commitState, commitSelection, rememberSelection, commitRoute,
+    activateComposer, openTab, referencePort, fetch, setError, setNotice, t,
+  );
+  return useMemo(() => ({
+    transition,
+    navigation,
+    submission,
+    analysisNavigation,
+    analysis,
+  }), [analysis, analysisNavigation, navigation, submission, transition]);
+}

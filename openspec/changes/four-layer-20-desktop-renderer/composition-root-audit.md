@@ -57,3 +57,11 @@ business 0 = AST 控制分支 0。文件只装配 `useProcessOutputData` 与
 process data 三个具名 bundle，并在 host 切换时清空旧 sub-session view；active tab 类型与 source
 解析由 `right-sidebar-tabs-model.ts` 的 `planRightSidebarActiveSources` 持有。该 facade 仍登记为
 application file，接受比 composition-root allowlist 更强的 shape 门禁。
+
+## `desktop/src/console-page/use-conversation-console.ts`
+
+该 conversation 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
+business 0 = AST 控制分支 0。文件只装配 transition、navigation、new-submission、analysis
+navigation 与 conversation-analysis 五个具名 application bundle；目标预加载、异步 reference、
+草稿规划和 selection mutation 仍分别由独立 controller/domain modules 持有。该 facade 继续登记为
+application file，不进入 composition-root allowlist。

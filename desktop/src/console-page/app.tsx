@@ -94,13 +94,11 @@ import {
   removePendingSessionMessage,
   retrySessionRun,
   createSidebarConversationSession,
-  loadSessionReferenceText,
   restoreConsoleSession,
   type SessionSearchResult,
 } from "./console-api-client.js";
 import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
-import { refreshConsoleState } from "./refresh-console-state.js";
 import {
   planAnalysisRootSession,
   planCanonicalConversationTabTitles,
@@ -151,13 +149,11 @@ import {
   reduceNewConversationDraft,
 } from "./new-conversation.js";
 import {
-  conversationDraftTabSourceKey,
   conversationTabSourceKey,
   createRightSidebarTabsStore,
   parseConversationTabSourceKey,
 } from "./right-sidebar-tabs-store.js";
 import {
-  createSidebarConversationDraft,
   createSidebarConversationDraftStore,
   sidebarConversationDraftRequiresDiscardConfirmation,
   type SidebarConversationDraftAttachmentPresence,
@@ -192,16 +188,15 @@ import { useAgentTeamConsole } from "./use-agent-team-console.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
 import { useConversationSearch } from "./use-conversation-search.js";
-import { useConversationNavigation } from "./use-conversation-navigation.js";
-import { useConversationTransition } from "./use-conversation-transition.js";
-import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
 import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
 import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
 import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
 import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
-import { useAnalysisPanelNavigation } from "./use-analysis-panel-navigation.js";
+import type { LocalConsoleState } from "./console-state-contract.js";
+import { browserConversationAnalysisReferencePort } from "./conversation-analysis-browser-port.js";
+import { useConversationConsole } from "./use-conversation-console.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -306,24 +301,6 @@ interface DesktopStatusSnapshot {
   };
   shellPath?: { status: "ok" | "fallback"; path: string; detail?: string } | null;
   seed?: { status: "pending" | "ok" | "error" };
-}
-
-interface LocalConsoleState {
-  projects: OperatorProject[];
-  project: OperatorProject;
-  selectedProjectId: string;
-  selectedSessionId: string;
-  selectedSession: OperatorSession | null;
-  messages: OperatorMessage[];
-  pendingDispatchMessages?: OperatorPendingDispatch[];
-  pendingPrimaryMessages: OperatorMessage[];
-  childSessions: OperatorChildSessionSummary[];
-  memberIdentities: OperatorMemberIdentity[];
-  activeRun: OperatorRunSnapshot | null;
-  activeRuns: OperatorRunSnapshot[];
-  workspaceDiff: OperatorWorkspaceDiffSummary;
-  sqlitePath: string;
-  lastError: string | null;
 }
 
 declare global {
@@ -804,34 +781,29 @@ export function OperatorConsoleApp({
     t,
   ]);
 
-  const conversationTransitionBundle = useConversationTransition(
-    composerDraft.key, selection.sessionId, actions, setClientError, t,
-  );
-  const conversationNavigationBundle = useConversationNavigation(
-    projects, coordinatorRef.current, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
-    commitPresentationRoute, activateComposerDraft, actions, rightSidebarTabsBundle.store,
-    openRightSidebarSourceTab, rightSidebarTabsBundle.commitCurrent, setRightSidebarOpen,
-    conversationTransitionBundle,
-  );
-  const newConversationSubmissionBundle = useNewConversationSubmission(
-    newConversation, dispatchNewConversation, agentTeamCatalogBundle, managedAttachments,
-    readyComposerAttachmentIds(managedAttachments.attachments),
-    hasBlockingComposerAttachment(managedAttachments.attachments), actions,
-    selectionPersistenceEnabledRef, rememberConfirmedSelection, commitPresentationRoute,
-    conversationDraftStoreRef.current, activateComposerDraft, window.moebius, setClientError, t,
-  );
-  const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
-
   const allSidebarSessions = useMemo(
     () => projects.flatMap((candidate) => candidate.sessions),
     [projects],
   );
-  const analysisNavigationBundle = useAnalysisPanelNavigation(
-    allSidebarSessions, language.activeLocale, selectionRef, actions, commitPresentationRoute,
-    rightSidebarTabsBundle, openRightSidebarSourceTab,
+  const conversationControllersBundle = useConversationConsole(
+    composerDraft, selection, projects, actions, setClientError, t, coordinatorRef.current,
+    selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
+    activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
+    agentTeamCatalogBundle, managedAttachments,
+    readyComposerAttachmentIds(managedAttachments.attachments),
+    hasBlockingComposerAttachment(managedAttachments.attachments), rememberConfirmedSelection,
+    conversationDraftStoreRef.current, window.moebius, language.activeLocale,
     (sessionId, messageId) => conversationReadingPositionStoreRef.current.write(sessionId, messageId),
-    setClientError, t,
+    apiBase, stateRef, presentationRouteRef, sidebarConversationDraftStoreRef.current,
+    setSidebarConversationDrafts, commitConsoleState, commitSelection,
+    browserConversationAnalysisReferencePort, fetch, setSessionAnalysisNotice,
   );
+  const conversationTransitionBundle = conversationControllersBundle.transition;
+  const conversationNavigationBundle = conversationControllersBundle.navigation;
+  const newConversationSubmissionBundle = conversationControllersBundle.submission;
+  const analysisNavigationBundle = conversationControllersBundle.analysisNavigation;
+  const analyzeConversation = conversationControllersBundle.analysis.analyze;
+  const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
   const setAnalysisPanelOpen = analysisNavigationBundle.setPanelOpen;
@@ -1244,185 +1216,6 @@ export function OperatorConsoleApp({
     refresh,
     setRightSidebarOpen,
     state,
-  ]);
-
-  const analyzeConversation = useCallback(async (input:
-    | {
-        kind: "message";
-        sessionId: string;
-        runId: string | null;
-        messageId: number | null;
-      }
-    | {
-        kind: "conversation";
-        sessionId: string;
-        projectId: string;
-      }
-  ) => {
-    if (apiBase === null) return;
-    const currentState = stateRef.current;
-    if (currentState === null) {
-      setClientError(t("console.sessionAnalysis.sourceMissing"));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
-      return;
-    }
-    const sourceSession = currentState.projects
-      .flatMap((project) => project.sessions)
-      .find((session) => session.sessionId === input.sessionId);
-    if (sourceSession === undefined) {
-      setClientError(t("console.sessionAnalysis.sourceMissing"));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
-      return;
-    }
-    const sourceRootSession = planAnalysisRootSession(
-      currentState.projects.flatMap((project) => project.sessions),
-      sourceSession.sessionId,
-    );
-    if (sourceRootSession === null) {
-      setClientError(t("console.sessionAnalysis.sourceMissing"));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
-      return;
-    }
-    if (input.kind === "conversation" && sourceSession.analysisRecordAvailable === false) {
-      setClientError(t("console.sessionAnalysis.recordUnavailable"));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.recordUnavailable"));
-      return;
-    }
-    const targetSelection = {
-      projectId: sourceSession.projectId,
-      sessionId: sourceSession.sessionId,
-    };
-    const shouldLoadTarget = input.kind === "conversation"
-      && currentState.selectedSessionId !== input.sessionId;
-    const shouldCommitConversationRoute = input.kind === "conversation"
-      && presentationRouteRef.current?.selectedSessionId !== input.sessionId;
-    const mutation = shouldLoadTarget || shouldCommitConversationRoute
-      ? coordinatorRef.current.beginSelectionMutation("analyze-conversation")
-      : null;
-    if ((shouldLoadTarget || shouldCommitConversationRoute) && mutation === null) {
-      setClientError(t("console.sessionAnalysis.navigationBusy"));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.navigationBusy"));
-      return;
-    }
-    const generalAssistant = agentTeamCatalogBundle.state.status === "ready"
-      ? agentTeamCatalogBundle.state.teams.find((team) =>
-          team.ownership === "system" && team.id === "general-assistant")
-      : undefined;
-    try {
-      const reference = await loadSessionReferenceText({
-        apiBase,
-        sessionId: input.sessionId,
-        scope: input.kind,
-        runId: input.kind === "message" ? input.runId : null,
-        messageId: input.kind === "message" ? input.messageId : null,
-        fetch,
-      });
-      let preparedState: LocalConsoleState | null = null;
-      if (shouldLoadTarget) {
-        const loaded = await refreshConsoleState<LocalConsoleState>({
-          apiBase,
-          selection: targetSelection,
-          coordinator: coordinatorRef.current,
-          fetch,
-          readSelection: (nextState) => ({
-            projectId: nextState.selectedProjectId,
-            sessionId: nextState.selectedSessionId,
-          }),
-          commitState: (nextState) => {
-            preparedState = nextState;
-          },
-          commitSelection: () => undefined,
-          setError: setClientError,
-          mutationOwner: mutation ?? undefined,
-        });
-        if (!loaded || preparedState === null) {
-          setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
-          return;
-        }
-        const preparedSource = (preparedState as LocalConsoleState).projects
-          .flatMap((project) => project.sessions)
-          .find((session) => session.sessionId === input.sessionId);
-        if (preparedSource === undefined) {
-          throw new Error(t("console.sessionAnalysis.sourceMissing"));
-        }
-      }
-      const existing = sidebarConversationDraftStoreRef.current.findMergeable({
-        hostSessionId: input.sessionId,
-        originSessionId: input.sessionId,
-        initialProjectId: sourceSession.projectId,
-        initialWorkspaceMode: sourceSession.workspaceMode,
-        entryTemplate: "session-analysis",
-      });
-      const draft = existing ?? createSidebarConversationDraft({
-        draftId: crypto.randomUUID(),
-        hostSessionId: input.sessionId,
-        originSessionId: input.sessionId,
-        entryTemplate: "session-analysis",
-        context: {
-          projectId: sourceSession.projectId,
-          workspaceMode: sourceSession.workspaceMode,
-          teamKey: generalAssistant?.teamKey ?? null,
-        },
-        now: new Date().toISOString(),
-      });
-      const nextDraft: SidebarConversationDraft = {
-        ...draft,
-        textFragments: [
-          ...draft.textFragments,
-          {
-            ...reference.fragment,
-            label: t("console.sessionAnalysis.fragmentLabel", {
-              index: draft.textFragments.length + 1,
-            }),
-          },
-        ],
-        updatedAt: new Date().toISOString(),
-      };
-      sidebarConversationDraftStoreRef.current.write(nextDraft);
-      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-      const nextTabs = openRightSidebarSourceTab(
-        rightSidebarTabsBundle.store.read(sourceRootSession.sessionId),
-        {
-          id: `conversation-draft-${nextDraft.draftId}`,
-          type: "conversation",
-          title: t("console.sessionAnalysis.newConversation"),
-          sourceKey: conversationDraftTabSourceKey(nextDraft.draftId),
-        },
-      );
-      if (input.kind === "conversation") {
-        selectionPersistenceEnabledRef.current = true;
-        dispatchNewConversation({ type: "hide" });
-        if (preparedState !== null) {
-          commitConsoleState(preparedState);
-        }
-        commitSelection(targetSelection);
-        rememberConfirmedSelection(targetSelection);
-        commitPresentationRoute(ordinaryPresentationRoute(targetSelection));
-        activateComposerDraft(input.sessionId);
-      }
-      rightSidebarTabsBundle.store.write(sourceRootSession.sessionId, nextTabs);
-      rightSidebarTabsBundle.commitCurrent(nextTabs);
-      setRightSidebarOpen(true);
-      setClientError(null);
-      setSessionAnalysisNotice(null);
-    } catch (error) {
-      setClientError(formatError(error));
-      setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
-    } finally {
-      if (mutation !== null) {
-        coordinatorRef.current.endSelectionMutation(mutation);
-      }
-    }
-  }, [
-    agentTeamCatalogBundle.state,
-    apiBase,
-    activateComposerDraft,
-    commitConsoleState,
-    commitSelection,
-    commitPresentationRoute,
-    rememberConfirmedSelection,
-    setRightSidebarOpen,
-    t,
   ]);
 
   const updateSidebarConversationDraft = useCallback((
