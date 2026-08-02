@@ -82,12 +82,8 @@ import type {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  loadFileReference,
-  loadProjectFile,
-  loadProjectFiles,
   loadSubSessionView,
   loadExecutionProfileRegistry,
-  loadWorkspaceDiff,
   submitSessionMessage,
   retryPendingSessionMessage,
   updatePendingSessionMessage,
@@ -191,6 +187,7 @@ import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
 import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
 import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
 import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
+import { browserProjectFilePort } from "./project-file-browser-port.js";
 import type { LocalConsoleState } from "./console-state-contract.js";
 import { browserConversationAnalysisReferencePort } from "./conversation-analysis-browser-port.js";
 import { useConversationConsole } from "./use-conversation-console.js";
@@ -427,7 +424,7 @@ export function OperatorConsoleApp({
     selection.sessionId, state?.selectedSession ?? null, selection.projectId,
     planGeneralAssistantTeamKey(agentTeamCatalogBundle.state), sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, browserConversationViewSyncPort, browserProcessDataSyncPort,
-    processInvocationKey, setClientError,
+    browserProjectFilePort, processInvocationKey, setClientError,
   );
   const rightSidebarTabsBundle = rightSidebarBundle.tabs;
   const rightSidebarTabs = rightSidebarTabsBundle.state;
@@ -452,6 +449,10 @@ export function OperatorConsoleApp({
   const processInvocationStates = processDataBundle.invocations;
   const readProcessDebugInvocation = processDataBundle.readInvocation;
   const loadPreviousProcessOutput = processDataBundle.loadPrevious;
+  const readWorkspaceDiff = rightSidebarBundle.files.readWorkspaceDiff;
+  const readProjectFiles = rightSidebarBundle.files.readProjectFiles;
+  const readProjectFile = rightSidebarBundle.files.readProjectFile;
+  const readFileReference = rightSidebarBundle.files.readFileReference;
   const currentAttachmentDraftKey = newConversation?.isOpen !== true
     ? composerDraft.key
     : NEW_CONVERSATION_DRAFT_KEY;
@@ -1194,39 +1195,6 @@ export function OperatorConsoleApp({
       setClientError(formatError(error));
     }
   }, [apiBase, refreshSessionAfterPendingMutation]);
-
-  const readWorkspaceDiff = useCallback((sessionId: string) => {
-    if (apiBase === null) {
-      return Promise.reject(new Error("local console is unavailable"));
-    }
-    return loadWorkspaceDiff({ apiBase, sessionId, fetch });
-  }, [apiBase]);
-
-  const readProjectFiles = useCallback((sessionId: string) => {
-    if (apiBase === null) {
-      return Promise.reject(new Error("local console is unavailable"));
-    }
-    return loadProjectFiles({ apiBase, sessionId, fetch });
-  }, [apiBase]);
-
-  const readProjectFile = useCallback((sessionId: string, filePath: string) => {
-    if (apiBase === null) {
-      return Promise.reject(new Error("local console is unavailable"));
-    }
-    return loadProjectFile({ apiBase, sessionId, filePath, fetch });
-  }, [apiBase]);
-
-  const readFileReference = useCallback((
-    sessionId: string,
-    filePath: string,
-    line: number,
-    column: number | null,
-  ) => {
-    if (apiBase === null) {
-      return Promise.reject(new Error("local console is unavailable"));
-    }
-    return loadFileReference({ apiBase, sessionId, filePath, line, column, fetch });
-  }, [apiBase]);
 
   const openSearchedSession = useCallback(async (
     result: SessionSearchResult,

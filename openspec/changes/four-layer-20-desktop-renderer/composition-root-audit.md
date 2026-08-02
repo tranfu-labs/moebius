@@ -51,10 +51,10 @@ business 0 = AST 控制分支 0。文件只装配 `useProcessOutputData` 与
 
 | 行 | 条件 | 分类 | 处置 |
 | --- | --- | --- | --- |
-| 46 | `active.conversation?.kind === "session"` | wiring | domain planner 已把 active tab 解析为具名 source；facade 只把 session source 接入 conversation-view controller |
+| 49 | `active.conversation?.kind === "session"` | wiring | domain planner 已把 active tab 解析为具名 source；facade 只把 session source 接入 conversation-view controller |
 
 复算：wiring 1 + timing 0 + business 0 = AST 控制分支 1。文件只装配 tabs、conversation views 与
-process data 三个具名 bundle，并在 host 切换时清空旧 sub-session view；active tab 类型与 source
+process data、project files 四个具名 bundle，并在 host 切换时清空旧 sub-session view；active tab 类型与 source
 解析由 `right-sidebar-tabs-model.ts` 的 `planRightSidebarActiveSources` 持有。该 facade 仍登记为
 application file，接受比 composition-root allowlist 更强的 shape 门禁。
 

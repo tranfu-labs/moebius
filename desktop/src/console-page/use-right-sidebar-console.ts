@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import { subSessionIdFromSourceKey } from "./console-process-model.js";
 import type { ConversationViewSyncPort } from "./conversation-view-sync-contract.js";
 import type { ProcessDataSyncPort } from "./process-data-sync-contract.js";
+import type { ProjectFilePort } from "./project-file-contract.js";
 import { planRightSidebarActiveSources } from "./right-sidebar-tabs-model.js";
 import type { RightSidebarTabsStore } from "./right-sidebar-tabs-store.js";
 import type {
@@ -12,6 +13,7 @@ import type {
 import { useRightSidebarConversationViews } from "./use-right-sidebar-conversation-views.js";
 import { useRightSidebarProcessData } from "./use-right-sidebar-process-data.js";
 import { useRightSidebarTabs } from "./use-right-sidebar-tabs.js";
+import { useProjectFileReader } from "./use-project-file-reader.js";
 
 interface SelectedSidebarSession {
   sessionId: string;
@@ -32,6 +34,7 @@ export function useRightSidebarConsole(
   commitDrafts: (drafts: SidebarConversationDraft[]) => void,
   conversationPort: ConversationViewSyncPort,
   processPort: ProcessDataSyncPort,
+  projectFilePort: ProjectFilePort,
   invocationKey: (sessionId: string, runId: string) => string,
   setError: (error: string | null) => void,
 ) {
@@ -50,6 +53,7 @@ export function useRightSidebarConsole(
     apiBase, active.processSourceKey, selectedSessionId, hostSessionId,
     processPort, invocationKey, setError,
   );
+  const files = useProjectFileReader(apiBase, projectFilePort);
   useEffect(() => {
     conversationViews.clearSubSessionViews();
   }, [conversationViews.clearSubSessionViews, hostSessionId]);
@@ -58,5 +62,6 @@ export function useRightSidebarConsole(
     active,
     conversationViews,
     processData,
-  }), [active, conversationViews, processData, tabs]);
+    files,
+  }), [active, conversationViews, files, processData, tabs]);
 }
