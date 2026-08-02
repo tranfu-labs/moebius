@@ -68,9 +68,58 @@ business 的兜底桶」，该结论即失去信息量。本簇收口复算与�
 
 ---
 
-## 簇 3：desktop team-* — 待簇 2 完成后开
+## 簇 2 实施检查点 — 裁决：**通过**（`949cb02`）
 
-12 个文件（`team-store` / `team-ipc` / `team-official-*` / `team-record-store` / `team-runtime-binding` 等），加 `desktop/src/main.ts`。
+独立复核：
+
+| 文件 | 基线 → 实际 | 目标 | |
+| --- | --- | --- | --- |
+| `index.ts` | 454 → **84** | <=180 | 低于目标 96 行 |
+| `team-writer.ts` | 232 → 119 | <=180 | |
+| `claude-spawner.ts` | 129 → 134 | <=129 | 超 5 |
+| `codex-spawner.ts` | 263 → 277 | <=263 | 超 14 |
+| `kimi-spawner.ts` | 174 → 185 | <=174 | 超 11 |
+| 合计 | 1,252 → **799** | <=926 | |
+
+- debt 25 → **18**（7 条清零）；**permit 仍为 193（净增 0）**；composition root 仍 9 个，ai-team-builder
+  下仍只有 `index.ts` 一个，无新增。
+- `check:boundaries` 585 source / 499 production / 3 roots 全绿。
+- 独立跑完整 `pnpm test` 全绿 126s：root 99/713、slow 1/63、**desktop 114/529**（较基线 +5 文件 / +18 用例，
+  与新增纯测试逐项吻合）、console-ui 45/460。测试删除 0。
+
+**三个 spawner 超标 30 行的处置予以肯定。** 超标原因是具名 plan 调用接缝本身占行（`selectXxxSession(...)`
+比内联 `??` 链长），这是提纯的固有成本。可选的另一条路是把调用点压成一行以守住预算——那正是本系列
+一直在防的修饰行为。**选择如实披露而非压行，是正确的**；且总量 799 远低于 926，`index.ts` 少用的 96 行
+已充分吸收。
+
+---
+
+## 簇 3：desktop team-* — **已放行，出账后直接实施**
+
+范围：12 个 `desktop/src/team-*.ts`（`team-store` / `team-ipc` / `team-official-management` /
+`team-official-update` / `team-record-store` / `team-runtime-binding` / `team-repair-ipc` /
+`team-management-store` / `team-file-manager` / `team-external-change` / `team-conversation-preference` /
+`team-seed` / `team-onboarding-orchestration`）加 `desktop/src/main.ts`，对应 40 批剩余 18 条 debt。
+
+### 约束
+
+1. **计数口径分两栏**（原始 AST / 去重 violation），沿用簇 2 写法。
+2. **wiring / timing / business 三分按严格口径**——这是对簇 2 那处偏差的修正：`wiring` 仅指依赖装配，
+   数据解释、版本迁移、格式解码归 business 或 codec，不得当兜底桶。`main.ts` 是 composition root，
+   其「timing 0 / business 0」的结论必须建立在严格标注上才有分量。
+3. **层级改登记必须与能力抽离同提交完成**——沿用簇 2 `team-writer.ts` 的自缚条款。本簇 12 个 team-*
+   文件里若有同类「伪 adapter」，改登记为 application 时必须同批把 fs/path/Electron 能力抽成注入 port，
+   否则不允许摘 debt。
+4. `branch-total` 判据不变：分支搬去 domain，不得拆成两个 adapter 分摊计数。
+5. 不先抽公共抽象。
+
+### 40 批收口条件
+
+- 18 条 debt 全部清零，permit 与 composition root 净增为 0（如需新增须单独报批并附条件审计）。
+- **RA-15 真机验收**：三家 provider 新调用与 resume；缺失环境按既定规则逐家标记「待真机验收」，
+  **不以另一家结果抵扣**。
+- 合并点跑本 change 唯一一次完整 `pnpm test`；红了修完重跑全量。
+- 归档前把全簇实绩（行数、条件数、debt、permit、闸门数据）写入 tasks.md，单样本不声明可归因速度收益。
 
 ## 当前闸门基线
 
