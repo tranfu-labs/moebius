@@ -379,6 +379,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/ai-team-builder/instructions.ts",
   "desktop/src/ai-team-builder/output-schema.ts",
   "desktop/src/ai-team-builder/state-machine.ts",
+  "desktop/src/ai-team-builder/team-write-plan.ts",
   "desktop/src/ai-team-builder/validator.ts",
   "desktop/src/team-builder-view-state.ts",
   "desktop/src/console-page/attachment-preview.ts",
