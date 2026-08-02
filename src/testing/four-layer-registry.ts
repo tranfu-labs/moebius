@@ -407,6 +407,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/console-page/agent-team-console-model.ts",
   "desktop/src/console-page/console-default-state.ts",
   "desktop/src/console-page/desktop-routing-model.ts",
+  "desktop/src/console-page/desktop-api-contract.ts",
   "desktop/src/console-page/console-state-plan.ts",
   "desktop/src/console-page/conversation-reading-position.ts",
   "desktop/src/console-page/edit-resend.ts",
