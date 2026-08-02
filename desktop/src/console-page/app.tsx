@@ -92,7 +92,6 @@ import {
   retryPendingSessionMessage,
   updatePendingSessionMessage,
   removePendingSessionMessage,
-  retrySessionRun,
   createSidebarConversationSession,
   restoreConsoleSession,
   type SessionSearchResult,
@@ -172,7 +171,6 @@ import {
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
-import { interruptLocalConsoleRun } from "./interrupt.js";
 import { refillStoppedRunDraft } from "./edit-resend.js";
 import type { CopySessionLogPathResult } from "../session-log-clipboard.js";
 import type { DesktopLocale } from "../language-preference-contract.js";
@@ -198,6 +196,8 @@ import { browserConversationAnalysisReferencePort } from "./conversation-analysi
 import { useConversationConsole } from "./use-conversation-console.js";
 import { browserProjectMutationPort } from "./project-mutation-browser-port.js";
 import { useProjectMutations } from "./use-project-mutations.js";
+import { browserSessionRunPort } from "./session-run-browser-port.js";
+import { useSessionRunActions } from "./use-session-run-actions.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -373,7 +373,6 @@ export function OperatorConsoleApp({
     useState<Set<string>>(() => new Set());
   const sourceMigrationRef = useRef<string | null>(null);
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
-  const [subSessionSendingId, setSubSessionSendingId] = useState<string | null>(null);
   const [composerDraft, setComposerDraft] = useState<ConversationComposerDraftState>(() => {
     const key = sessionDraftKey(selection.sessionId);
     return { key, value: conversationDraftStoreRef.current.read(key) };
@@ -924,112 +923,16 @@ export function OperatorConsoleApp({
   const selectFolderForRepair = projectMutationsBundle.selectFolderForRepair;
   const repairProjectFolder = projectMutationsBundle.repairProjectFolder;
 
-  const interrupt = useCallback(async (sessionId: string, runId: string) => {
-    if (apiBase === null) {
-      return;
-    }
-    try {
-      await interruptLocalConsoleRun({
-        apiBase,
-        sessionId,
-        runId,
-        fetch,
-        refresh: () => refresh(selectionRef.current),
-      });
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, [apiBase, refresh]);
-
-  const sendSubSessionMessage = useCallback(async (sessionId: string) => {
-    if (apiBase === null || subSessionSendingId !== null) {
-      return;
-    }
-    const body = subSessionComposerValues[sessionId]
-      ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId));
-    const attachmentIds = readyComposerAttachmentIds(managedSubSessionAttachments.attachments);
-    if (body.trim() === "" && attachmentIds.length === 0) {
-      return;
-    }
-    setSubSessionSendingId(sessionId);
-    try {
-      await submitSessionMessage({ apiBase, sessionId, body, attachmentIds, fetch });
-      conversationDraftStoreRef.current.clear(sessionDraftKey(sessionId));
-      setSubSessionComposerValues((current) => ({ ...current, [sessionId]: "" }));
-      managedSubSessionAttachments.clearDraft(sessionDraftKey(sessionId));
-      await Promise.all([
-        refreshSubSessionNow(sessionId),
-        refresh(selectionRef.current),
-      ]);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    } finally {
-      setSubSessionSendingId(null);
-    }
-  }, [
-    apiBase,
-    managedSubSessionAttachments.attachments,
-    managedSubSessionAttachments.clearDraft,
-    refresh,
-    refreshSubSessionNow,
-    subSessionComposerValues,
-    subSessionSendingId,
-  ]);
-
-  const retryRun = useCallback(async (
-    sessionId: string,
-    runId: string,
-    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
-  ) => {
-    if (apiBase === null || subSessionSendingId !== null) {
-      throw new Error("retry unavailable");
-    }
-    setSubSessionSendingId(sessionId);
-    try {
-      await retrySessionRun({
-        apiBase,
-        sessionId,
-        runId,
-        fetch,
-        ...(executionOverride === undefined ? {} : { executionOverride }),
-      });
-      await Promise.all([
-        refreshSubSessionNow(sessionId),
-        refresh(selectionRef.current),
-      ]);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-      throw error;
-    } finally {
-      setSubSessionSendingId(null);
-    }
-  }, [apiBase, refresh, refreshSubSessionNow, subSessionSendingId]);
-
-  const interruptSubSession = useCallback(async (sessionId: string, runId: string) => {
-    if (apiBase === null) {
-      return;
-    }
-    try {
-      await interruptLocalConsoleRun({
-        apiBase,
-        sessionId,
-        runId,
-        fetch,
-        refresh: async () => {
-          await Promise.all([
-            refreshSubSessionNow(sessionId),
-            refresh(selectionRef.current),
-          ]);
-        },
-      });
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, [apiBase, refresh, refreshSubSessionNow]);
+  const sessionRunActionsBundle = useSessionRunActions(
+    apiBase, subSessionComposerValues, setSubSessionComposerValues,
+    readyComposerAttachmentIds(managedSubSessionAttachments.attachments),
+    managedSubSessionAttachments.clearDraft, conversationDraftStoreRef.current,
+    selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort, setClientError,
+  );
+  const interrupt = sessionRunActionsBundle.interrupt;
+  const sendSubSessionMessage = sessionRunActionsBundle.sendSubSessionMessage;
+  const retryRun = sessionRunActionsBundle.retryRun;
+  const interruptSubSession = sessionRunActionsBundle.interruptSubSession;
 
   const openDiagnostics = useMemo(() => {
     if (window.moebius?.openStatusPage === undefined) {
@@ -1949,7 +1852,7 @@ export function OperatorConsoleApp({
       onShowAgentTeamRegistrationConflictLocation={agentTeamRegistrationBundle.showConflictLocation}
       onPreserveAgentTeamRegistrationConflicts={agentTeamRegistrationBundle.preserveConflicts}
       isSending={isSending}
-      isSubSessionSending={subSessionSendingId !== null}
+      isSubSessionSending={sessionRunActionsBundle.isSending}
       isSelectionMutationPending={selectionMutationKind !== null}
       isSessionProjectUpdating={selectionMutationKind === "rebind-session"}
       isProjectMutationPending={isProjectMutationPending}
