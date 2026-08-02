@@ -1,0 +1,448 @@
+import type {
+  AgentTeamDetailState,
+  AgentTeamMemberEditorState,
+  OperatorAgentTeam,
+  OperatorAgentTeamsState,
+  TeamBuilderViewState,
+  TranslationKey,
+} from "@moebius/console-ui";
+
+import type { LastUsedAgentTeam } from "../team-conversation-preference-contract.js";
+import type { AgentTeamFileManagerKind } from "../team-file-manager-contract.js";
+import type { AgentTeamListItem, AgentTeamMemberDocument } from "../team-ipc-contract.js";
+import type { AgentTeamListResponse } from "../team-ipc-contract.js";
+import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
+import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
+import type { AgentTeamExternalChangeResponse } from "../team-external-change-contract.js";
+import { tryParseAgentMarkdownIdentity } from "../team-model.js";
+import { getAgentTeamKey } from "./team-state.js";
+import {
+  getAgentTeamMemberDraft,
+  isAgentTeamMemberDirty,
+  type AgentTeamDraftState,
+  type AgentTeamMemberDraft,
+  type AgentTeamSaveAllFailure,
+  type AgentTeamSelection,
+} from "./team-state.js";
+
+export const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
+
+export function planAgentTeamFileManagerTranslationKey(
+  kind: AgentTeamFileManagerKind | undefined,
+): TranslationKey {
+  if (kind === "finder") return "desktop.fileManager.finder";
+  if (kind === "windows-explorer") return "desktop.fileManager.windowsExplorer";
+  return "desktop.fileManager.generic";
+}
+
+export function decideSafeAiTeamBuilderDraftId(value: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(value);
+}
+
+export function planOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTeam {
+  return {
+    teamKey: getAgentTeamKey(team),
+    id: team.id,
+    ownership: team.ownership,
+    createdAt: team.createdAt,
+    officialSourceName: team.officialSourceName,
+    name: team.definition?.name ?? null,
+    description: team.definition?.description ?? null,
+    primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,
+    memberOrder: team.definition?.memberOrder ?? [],
+    members: team.members.map((member) => ({
+      ...member,
+      available: member.available !== false,
+      executionProfile: member.executionProfile,
+    })),
+    status: team.status,
+    canCreateConversation: team.canCreateConversation,
+    canEditContent: team.capabilities?.canEditContent ?? true,
+    canDeleteTeam: team.capabilities?.canDeleteTeam ?? team.ownership === "user",
+    issues: team.issues,
+    officialManagement: team.officialManagement,
+  };
+}
+
+export function planAgentTeamIdentityKey(team: LastUsedAgentTeam): string {
+  return `${team.ownership}:${team.teamId}`;
+}
+
+export function planFindOperatorAgentTeam(
+  state: OperatorAgentTeamsState,
+  teamKey: string,
+): OperatorAgentTeam | undefined {
+  return state.status === "ready"
+    ? state.teams.find((team) => team.teamKey === teamKey)
+    : undefined;
+}
+
+export function planGeneralAssistantTeamKey(state: OperatorAgentTeamsState): string | null {
+  return state.status === "ready"
+    ? state.teams.find((team) => team.ownership === "system" && team.id === "general-assistant")
+      ?.teamKey ?? null
+    : null;
+}
+
+export function planAgentTeamBuilderDraftSource(
+  current: string | null,
+  stored: string | null,
+): "current" | "stored" | "create" {
+  if (current !== null) return "current";
+  return stored !== null && decideSafeAiTeamBuilderDraftId(stored) ? "stored" : "create";
+}
+
+export function planAgentTeamBuilderResponse(response: AiTeamBuilderIpcResponse):
+  | { kind: "accepted"; state: AiTeamBuilderState }
+  | { kind: "rejected"; error: Extract<AiTeamBuilderIpcResponse, { ok: false }>["error"] } {
+  return response.ok
+    ? { kind: "accepted", state: response.state }
+    : { kind: "rejected", error: response.error };
+}
+
+export function planSelectedBuilderTeamId(state: AiTeamBuilderState | null): string | null {
+  return state?.phase === "selected" ? state.selectedTeamId : null;
+}
+
+export function planBuilderOperation(hasPort: boolean): "run" | "unavailable" {
+  return hasPort ? "run" : "unavailable";
+}
+
+export function planBuilderRetry(started: boolean): "start" | "retry" {
+  return started ? "retry" : "start";
+}
+
+export function planBuiltAgentTeam(
+  teams: readonly AgentTeamListItem[] | null,
+  teamId: string,
+): AgentTeamListItem | null {
+  return teams?.find((team) => team.ownership === "user" && team.id === teamId) ?? null;
+}
+
+export function planBuilderPendingState(
+  current: TeamBuilderViewState | null,
+  phase: "running" | "committing",
+): TeamBuilderViewState | null {
+  return current === null ? null : { ...current, phase, error: null };
+}
+
+export function planBuilderRetryPhase(current: TeamBuilderViewState | null): "running" | "committing" {
+  return current?.proposal === null ? "running" : "committing";
+}
+
+export function planBuilderFailureState(
+  current: TeamBuilderViewState | null,
+  error: NonNullable<TeamBuilderViewState["error"]>,
+): TeamBuilderViewState {
+  return {
+    phase: "failed",
+    messages: current?.messages ?? [],
+    proposal: current?.proposal ?? null,
+    proposalRevision: current?.proposalRevision ?? null,
+    error,
+  };
+}
+
+export function planAgentTeamCatalogPort(hasPort: boolean): "load" | "unavailable" {
+  return hasPort ? "load" : "unavailable";
+}
+
+export function planActiveAgentTeamCatalogCommit(cancelled: boolean): boolean {
+  return !cancelled;
+}
+
+export type AgentTeamCatalogLoadPlan =
+  | { kind: "retry" }
+  | { kind: "configuration-error" }
+  | {
+      kind: "ready";
+      state: OperatorAgentTeamsState;
+      lastUsedTeamKey: string | null;
+      teams: AgentTeamListItem[];
+    };
+
+export function planAgentTeamCatalogLoad(
+  response: AgentTeamListResponse,
+  lastUsedTeam: LastUsedAgentTeam | null,
+): AgentTeamCatalogLoadPlan {
+  if (response.status === "loading") return { kind: "retry" };
+  if (response.status === "configuration-error") return { kind: "configuration-error" };
+  return {
+    kind: "ready",
+    state: {
+      status: "ready",
+      teams: response.teams.map(planOperatorAgentTeam),
+      registrationIssues: response.registrationIssues,
+    },
+    lastUsedTeamKey: lastUsedTeam === null ? null : planAgentTeamIdentityKey(lastUsedTeam),
+    teams: response.teams,
+  };
+}
+
+export function planAgentTeamDetailState(input: {
+  activeTeamKey: string | null;
+  catalog: OperatorAgentTeamsState;
+  selection: AgentTeamSelection | null;
+  drafts: AgentTeamDraftState;
+  saveAllFailures: AgentTeamSaveAllFailure[];
+  primaryAgentChange: {
+    teamKey: string;
+    status: "saving" | "saved" | "failed";
+    error: string | null;
+  } | null;
+}): AgentTeamDetailState | null {
+  if (input.activeTeamKey === null) return null;
+  const team = planFindOperatorAgentTeam(input.catalog, input.activeTeamKey);
+  if (team === undefined) return null;
+  const selectedMemberSlug = input.selection?.teamKey === input.activeTeamKey
+    ? input.selection.memberSlug
+    : null;
+  const memberEditors: Record<string, AgentTeamMemberEditorState | undefined> = {};
+  for (const member of team.members) {
+    const editor = getAgentTeamMemberDraft(input.drafts, input.activeTeamKey, member.slug);
+    if (editor === undefined) continue;
+    const identity = editor.loadStatus === "ready"
+      ? tryParseAgentMarkdownIdentity(editor.draftMarkdown, {
+          displayName: member.displayName,
+          description: member.description,
+        })
+      : { displayName: member.displayName, description: member.description };
+    memberEditors[member.slug] = {
+      memberSlug: member.slug,
+      loadStatus: editor.loadStatus,
+      loadError: editor.loadError,
+      draftMarkdown: editor.draftMarkdown,
+      isDirty: isAgentTeamMemberDirty(editor),
+      saveStatus: editor.saveStatus,
+      saveError: editor.saveError,
+      externalChangeStatus: editor.externalChangeStatus,
+      displayName: identity.displayName,
+      description: identity.description,
+    };
+  }
+  return {
+    teamKey: input.activeTeamKey,
+    selectedMemberSlug,
+    memberEditors,
+    saveAllFailures: input.saveAllFailures,
+    primaryAgentChangeStatus: input.primaryAgentChange?.teamKey === input.activeTeamKey
+      ? input.primaryAgentChange.status
+      : "idle",
+    primaryAgentChangeError: input.primaryAgentChange?.teamKey === input.activeTeamKey
+      ? input.primaryAgentChange.error
+      : null,
+  };
+}
+
+export function planAgentTeamMemberSummary(
+  state: OperatorAgentTeamsState,
+  teamKey: string,
+  document: AgentTeamMemberDocument,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready") return state;
+  return {
+    status: "ready",
+    teams: state.teams.map((team) => team.teamKey !== teamKey
+      ? team
+      : {
+          ...team,
+          members: team.members.map((member) => member.slug === document.slug
+            ? {
+                slug: document.slug,
+                displayName: document.displayName,
+                description: document.description,
+              }
+            : member),
+        }),
+  };
+}
+
+export function planAgentTeamMemberLoad(current: AgentTeamMemberDraft | undefined): "load" | "skip" {
+  return current?.loadStatus === "ready" || current?.loadStatus === "loading" ? "skip" : "load";
+}
+
+export function planAgentTeamExternalCheck(inFlight: boolean): "check" | "skip" {
+  return inFlight ? "skip" : "check";
+}
+
+export function planAgentTeamExternalResult(response: AgentTeamExternalChangeResponse):
+  | { action: "clear" }
+  | { action: "ignore" }
+  | { action: "apply"; document: AgentTeamMemberDocument } {
+  if (response.status === "unchanged") return { action: "clear" };
+  if (response.status === "changed") return { action: "apply", document: response.document };
+  return { action: "ignore" };
+}
+
+export function planAgentTeamExternalReloaded(current: AgentTeamMemberDraft | undefined): boolean {
+  return current?.externalChangeStatus === "reloaded";
+}
+
+export function planAgentTeamExternalMarkdown(current: AgentTeamMemberDraft | undefined): string | null {
+  return current?.externalChangeStatus === "conflict" ? current.externalMarkdown : null;
+}
+
+export function planAgentTeamSaveRequest(current: AgentTeamMemberDraft | undefined): "save" | "skip" {
+  return isAgentTeamMemberDirty(current) && current?.saveStatus !== "saving" ? "save" : "skip";
+}
+
+export function planAgentTeamRequestedMarkdown(current: AgentTeamMemberDraft | undefined): string | null {
+  return current?.saveStatus === "saving" ? current.saveRequestedMarkdown : null;
+}
+
+export function planAgentTeamMemberSelection(
+  team: OperatorAgentTeam,
+  current: AgentTeamSelection | null,
+): string | null {
+  if (current?.teamKey === team.teamKey && current.memberSlug !== null
+    && team.members.some((member) => member.slug === current.memberSlug)) {
+    return current.memberSlug;
+  }
+  if (team.primaryAgentSlug !== null
+    && team.members.some((member) => member.slug === team.primaryAgentSlug)) {
+    return team.primaryAgentSlug;
+  }
+  return team.members[0]?.slug ?? null;
+}
+
+export function planAgentTeamMemberTarget(team: OperatorAgentTeam | undefined, memberSlug: string): boolean {
+  return team?.members.some((member) => member.slug === memberSlug) === true;
+}
+
+export function planAgentTeamMemberLoadTarget(memberSlug: string | null): boolean {
+  return memberSlug !== null;
+}
+
+export function planAgentTeamPrimaryChange(team: OperatorAgentTeam | undefined, memberSlug: string): "save" | "skip" {
+  return team !== undefined
+    && team.primaryAgentSlug !== memberSlug
+    && team.members.some((member) => member.slug === memberSlug)
+    ? "save"
+    : "skip";
+}
+
+export function planAgentTeamPrimaryOperation(
+  team: OperatorAgentTeam | undefined,
+  memberSlug: string,
+  hasOperation: boolean,
+): "save" | "skip" {
+  return hasOperation && planAgentTeamPrimaryChange(team, memberSlug) === "save" ? "save" : "skip";
+}
+
+export function planAgentTeamProfileOperation(
+  team: OperatorAgentTeam | undefined,
+  hasOperation: boolean,
+): "run" | "unavailable" {
+  return team !== undefined && hasOperation ? "run" : "unavailable";
+}
+
+export function planAgentTeamOfficialUpdate(
+  team: OperatorAgentTeam | undefined,
+  hasPrepare: boolean,
+  hasApply: boolean,
+): "run" | "unavailable" {
+  return team?.ownership === "system" && hasPrepare && hasApply ? "run" : "unavailable";
+}
+
+export function planAgentTeamCatalogReplace(
+  state: OperatorAgentTeamsState,
+  updated: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready") return state;
+  return {
+    status: "ready",
+    teams: state.teams.map((candidate) => candidate.teamKey === updated.teamKey ? updated : candidate),
+  };
+}
+
+export function planAgentTeamCatalogAddIfMissing(
+  state: OperatorAgentTeamsState,
+  added: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready" || state.teams.some((candidate) => candidate.teamKey === added.teamKey)) {
+    return state;
+  }
+  return { status: "ready", teams: [...state.teams, added] };
+}
+
+export function planOptionalOperatorAgentTeam(
+  item: AgentTeamListItem | null,
+): OperatorAgentTeam | null {
+  return item === null ? null : planOperatorAgentTeam(item);
+}
+
+export function planAgentTeamMutation(
+  team: OperatorAgentTeam | undefined,
+  ownership: "any" | "system" | "user",
+  hasOperation: boolean,
+): "run" | "unavailable" {
+  if (team === undefined || !hasOperation) return "unavailable";
+  return ownership === "any" || team.ownership === ownership ? "run" : "unavailable";
+}
+
+export function planAgentTeamDirtyGuard(dirtyCount: number): "continue" | "reject" {
+  return dirtyCount === 0 ? "continue" : "reject";
+}
+
+export function planAgentTeamCatalogAppend(
+  state: OperatorAgentTeamsState,
+  added: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  return state.status === "ready"
+    ? { status: "ready", teams: [...state.teams, added] }
+    : state;
+}
+
+export function planAgentTeamMemberRemoval(
+  team: OperatorAgentTeam | undefined,
+  memberSlug: string,
+  hasOperation: boolean,
+): "remove" | "primary" | "unavailable" {
+  if (team === undefined || !hasOperation) return "unavailable";
+  return team.primaryAgentSlug === memberSlug ? "primary" : "remove";
+}
+
+export function planAgentTeamCatalogRemove(
+  state: OperatorAgentTeamsState,
+  teamKey: string,
+): OperatorAgentTeamsState {
+  return state.status === "ready"
+    ? { status: "ready", teams: state.teams.filter((candidate) => candidate.teamKey !== teamKey) }
+    : { status: "ready", teams: [] };
+}
+
+export function planAgentTeamCatalogTeams(state: OperatorAgentTeamsState): OperatorAgentTeam[] {
+  return state.status === "ready" ? state.teams : [];
+}
+
+export function planAgentTeamFallbackSelection(
+  teams: readonly OperatorAgentTeam[],
+): AgentTeamSelection | null {
+  const team = teams[0];
+  return team === undefined
+    ? null
+    : { teamKey: team.teamKey, memberSlug: planAgentTeamMemberSelection(team, null) };
+}
+
+export function planAgentTeamSelectionAfterRemoval(
+  selection: AgentTeamSelection | null,
+  teamKey: string,
+): AgentTeamSelection | null {
+  return selection?.teamKey === teamKey ? null : selection;
+}
+
+export function planAgentTeamShouldClose(activeTeamKey: string | null, teamKey: string): boolean {
+  return activeTeamKey === teamKey;
+}
+
+export function planAgentTeamRelocationDirectory(directory: string | null): "relocate" | "cancel" {
+  return directory === null ? "cancel" : "relocate";
+}
+
+export function planAgentTeamRelocation(
+  team: OperatorAgentTeam | undefined,
+  hasFolderSelection: boolean,
+  hasRelocation: boolean,
+): "run" | "unavailable" {
+  return team?.ownership === "user" && hasFolderSelection && hasRelocation ? "run" : "unavailable";
+}

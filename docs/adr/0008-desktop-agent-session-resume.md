@@ -7,9 +7,9 @@ accepted
 ## 背景
 
 ADR-0007 让 local-console 的普通步骤每轮 full，只允许同一次未完成 run 在退出恢复时
-resume。Desktop 当前实际可达的持久 Agent 还有 AI 建队草稿和后台 GitHub issue role：
-三条链路对 provider session 连续性的处理不一致，local 普通步骤持续 full，AI 建队与
-GitHub role 在 resume 失败后还会静默 full 重建。
+resume。Desktop 当前实际可达的持久 Agent 还有 AI 建队草稿；两条链路对 provider
+session 连续性的处理不一致，local 普通步骤持续 full，AI 建队在 resume 失败后还会
+静默 full 重建。
 
 用户确认的新产品契约是：Desktop 当前使用的持久 Agent 在一次会话身份中第一次允许
 创建 provider session；取得 ID 后所有后续运行都必须 resume。ID 缺失、不兼容或
@@ -17,11 +17,10 @@ resume 失败必须明确失败，不能用完整历史静默重建。Codex 与 
 
 ## 决策
 
-1. Desktop 持久 Agent 范围只包含 local 对话 Agent、AI 建队草稿与 Desktop 后台
-   GitHub mention role。local / GitHub 无 mention 路由和 CEO guardrail 没有持久 Agent
-   身份，继续作为一次性 full 辅助推理。
+1. Desktop 持久 Agent 范围只包含 local 对话 Agent与 AI 建队草稿。local 无 mention
+   路由没有持久 Agent 身份，继续作为一次性 full 辅助推理。
 2. local 身份是 `session + teamSnapshotFingerprint + role`；AI 建队身份是 `draftId`；
-   GitHub 身份是 `issueKey + role`。切换 local 团队快照或创建新 draft 都产生新身份。
+   切换 local 团队快照或创建新 draft 都产生新身份。
 3. 每个身份第一次允许 full / `session/new`。一旦观察到 external ID，立即持久化
    canonical link；后续普通轮次、接力、重试、修复与恢复只 resume 同一 ID。
 4. resume 失败、ID 缺失/冲突、provider 返回不同 ID或上下文归属不兼容时 fail closed。

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="650" viewBox="0 0 1180 650" role="img" aria-labelledby="title desc">
+  <title id="title">Moebius technical layers before the four-layer migration</title>
+  <desc id="desc">Package boundaries exist, but runtime and renderer containers mix decisions, orchestration, and adapters.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }
+    .title { font-size: 24px; font-weight: 700; }
+    .label { font-size: 17px; font-weight: 650; }
+    .body { font-size: 14px; }
+    .mixed { fill: #fff0e2; stroke: #d67824; stroke-width: 2; }
+    .clean { fill: #eaf7ee; stroke: #2e8a4c; stroke-width: 2; }
+    .adapter { fill: #eaf2ff; stroke: #4076b8; stroke-width: 2; }
+    .gate { fill: #f2edff; stroke: #7052b8; stroke-width: 2; }
+    .arrow { stroke: #536174; stroke-width: 2; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#536174"/>
+    </marker>
+  </defs>
+  <text x="42" y="44" class="title">Before: hard package seams, soft internal layers</text>
+  <rect x="55" y="92" width="330" height="160" rx="18" class="clean"/>
+  <text x="82" y="128" class="label">console-ui</text>
+  <text x="82" y="160" class="body">View components and view models</text>
+  <text x="82" y="186" class="body">Protected from runtime internals</text>
+  <text x="82" y="218" class="body">One of the existing hard seams</text>
+  <rect x="430" y="92" width="330" height="220" rx="18" class="mixed"/>
+  <text x="458" y="128" class="label">desktop app.tsx · 4,988 lines</text>
+  <text x="458" y="160" class="body">JSX · state decisions · HTTP · IPC</text>
+  <text x="458" y="186" class="body">localStorage · async ownership</text>
+  <text x="458" y="218" class="body">View and application concerns overlap</text>
+  <text x="458" y="250" class="body">Rules require component/Electron seams</text>
+  <rect x="805" y="92" width="320" height="220" rx="18" class="mixed"/>
+  <text x="832" y="128" class="label">local runtime · 5,535 lines</text>
+  <text x="832" y="160" class="body">routing · recovery · lifecycle</text>
+  <text x="832" y="186" class="body">store · files · provider callbacks</text>
+  <text x="832" y="218" class="body">processPending + runWorker</text>
+  <text x="832" y="250" class="body">Decisions require SQLite/HTTP tests</text>
+  <rect x="55" y="365" width="330" height="145" rx="18" class="clean"/>
+  <text x="82" y="401" class="label">Pure islands · 10,301 lines</text>
+  <text x="82" y="433" class="body">34–41% of business rules</text>
+  <text x="82" y="459" class="body">Only two planner closures enforced</text>
+  <rect x="430" y="365" width="330" height="145" rx="18" class="adapter"/>
+  <text x="458" y="401" class="label">Adapters and data ports</text>
+  <text x="458" y="433" class="body">LocalConsoleStore seam exists</text>
+  <text x="458" y="459" class="body">fs · SQLite · provider · IPC</text>
+  <rect x="805" y="365" width="320" height="145" rx="18" class="gate"/>
+  <text x="832" y="401" class="label">check:boundaries</text>
+  <text x="832" y="433" class="body">Package rules + two transitive rules</text>
+  <text x="832" y="459" class="body">No total four-layer assignment</text>
+  <line x1="385" y1="172" x2="430" y2="172" class="arrow"/>
+  <line x1="760" y1="202" x2="805" y2="202" class="arrow"/>
+  <line x1="760" y1="438" x2="805" y2="438" class="arrow"/>
+  <text x="55" y="574" class="label">Measured consequence</text>
+  <text x="55" y="604" class="body">pnpm test = 131.26s; unambiguous real SQLite / HTTP / process / Electron tests ≥ 68.5s (52.2%)</text>
+</svg>

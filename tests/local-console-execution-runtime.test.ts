@@ -11,7 +11,7 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
 import { invalidateSessionFactLog } from "../src/local-console/session-fact-log.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import type {
   LocalConsoleAgentTeamSnapshot,

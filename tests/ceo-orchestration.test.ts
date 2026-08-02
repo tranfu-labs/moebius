@@ -1,43 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentMentions } from "../src/conversation.js";
 import {
-  buildCeoOrchestrationKey,
-  buildCeoRoundtableCompletionKey,
-  buildCeoRoundtableKey,
-  buildGoalIntakeProposalKey,
   parseCeoOrchestrationOutput,
-  renderCeoChildIssueBody,
-  renderCeoRoundtableChildIssueBody,
-  renderCeoRoundtableParentSummaryBody,
-  renderCeoRoundtableRouteBody,
-  renderGoalIntakeProposalBody,
   type CeoChildIssueDescriptor,
   type CeoOrchestrationGroup,
-} from "../src/ceo-orchestration.js";
-import type { CeoScript } from "../src/ceo-scripts.js";
-import { makeIssueSource } from "../src/issue-source.js";
+  type CeoOrchestrationScript,
+} from "../src/local-console/ceo-orchestration-parser.js";
 
-const source = makeIssueSource({ owner: "tranfu-labs", repo: "moebius", issueNumber: 67 });
-const scripts: CeoScript[] = [
-  { id: "default-plan-chain", action: "route", body: "default plan chain", fileName: "default-plan-chain.md" },
-  { id: "plan-review", action: "route", body: "route", fileName: "plan-review.md" },
+const scripts: CeoOrchestrationScript[] = [
+  { id: "default-plan-chain", action: "route" },
+  { id: "plan-review", action: "route" },
   {
     id: "milestone-spawn-child-issues",
     action: "spawn_child_issues",
-    body: "spawn",
-    fileName: "milestone-spawn-child-issues.md",
   },
   {
     id: "roundtable-plan-review",
     action: "roundtable",
-    body: "roundtable",
-    fileName: "roundtable-plan-review.md",
   },
   {
     id: "goal-intake",
     action: "goal_intake",
-    body: "goal intake",
-    fileName: "goal-intake.md",
   },
 ];
 const descriptor: CeoChildIssueDescriptor = {
@@ -185,35 +167,6 @@ ${JSON.stringify({
     });
   });
 
-  it("builds a stable orchestration key that ignores title and description drift", () => {
-    expect(buildCeoOrchestrationKey({ source, workflowId: "milestone-spawn-child-issues", ledgerTaskId: "task-1" })).toBe(
-      buildCeoOrchestrationKey({ source, workflowId: "milestone-spawn-child-issues", ledgerTaskId: "task-1" }),
-    );
-    expect(buildCeoOrchestrationKey({ source, workflowId: "milestone-spawn-child-issues", ledgerTaskId: "task-1" })).not.toBe(
-      buildCeoOrchestrationKey({ source, workflowId: "milestone-spawn-child-issues", ledgerTaskId: "task-2" }),
-    );
-  });
-
-  it("renders child issue body with required fields and exactly one handoff mention", () => {
-    const key = buildCeoOrchestrationKey({ source, workflowId: "milestone-spawn-child-issues", ledgerTaskId: "task-1" });
-    const body = renderCeoChildIssueBody({
-      source,
-      parentIssueUrl: "https://github.com/tranfu-labs/moebius/issues/67",
-      workflowId: "milestone-spawn-child-issues",
-      group,
-      descriptor,
-      orchestrationKey: key,
-    });
-
-    expect(body).toContain("Parent issue: https://github.com/tranfu-labs/moebius/issues/67");
-    expect(body).toContain("Ledger task id: task-1");
-    expect(body).toContain("Quality baseline: data-correct");
-    expect(body).toContain("跑 pnpm test → 应退出码 0");
-    expect(body).toContain("来自当前阶段 projection");
-    expect(body).toContain(key);
-    expect(parseAgentMentions(body).map((mention) => mention.name)).toEqual(["dev"]);
-  });
-
   it("parses roundtable start, route, and complete outputs", () => {
     const participants = ["qa", "dev-manager", "hermes-user"];
     const parse = (payload: unknown) =>
@@ -344,7 +297,7 @@ ${JSON.stringify({
         availableAgentNames: ["ceo", "dev", "qa", "product-manager"],
         visibleTaskIds: [],
       });
-    const proposalKey = buildGoalIntakeProposalKey({ source, proposalId: "proposal-1" });
+    const proposalKey = "moebius-goal-intake-proposal-key:0123456789abcdef0123456789abcdef";
 
     expect(
       parse({
@@ -378,7 +331,6 @@ ${JSON.stringify({
       }),
     ).toMatchObject({ ok: true, value: { action: "goal_intake", mode: "confirm", proposalKey } });
 
-    expect(renderGoalIntakeProposalBody({ confirmationBody: "请确认。", proposalKey })).toContain(proposalKey);
   });
 
   it("rejects unbounded goal-intake interviews, oversized task acceptance, and missing payment disclaimers", () => {
@@ -419,69 +371,6 @@ ${JSON.stringify({
     ).toMatchObject({ ok: false, reason: "goal-intake-payment-disclaimer-missing" });
   });
 
-  it("renders roundtable child, route, and parent summary bodies with stable keys", () => {
-    const participants = ["qa", "dev-manager", "hermes-user"];
-    const roundtableKey = buildCeoRoundtableKey({ source, workflowId: "roundtable-plan-review", roundtableId: "rt-1" });
-    const childBody = renderCeoRoundtableChildIssueBody({
-      parentIssueUrl: "https://github.com/tranfu-labs/moebius/issues/67",
-      workflowId: "roundtable-plan-review",
-      ledgerTaskId: "task-1",
-      roundtableKey,
-      title: "Plan review",
-      topic: "Review topic",
-      inputSummary: "Plan summary",
-      participants,
-      firstRole: "qa",
-      qualityBaseline: "data-correct",
-      provenance: "parent issue",
-    });
-
-    expect(childBody).toContain("Parent issue: https://github.com/tranfu-labs/moebius/issues/67");
-    expect(childBody).toContain("Workflow id: roundtable-plan-review");
-    expect(childBody).toContain("Ledger task id: task-1");
-    expect(childBody).toContain(roundtableKey);
-    expect(childBody).toContain("qa");
-    expect(childBody).toContain("dev-manager");
-    expect(childBody).toContain("hermes-user");
-    expect(parseAgentMentions(childBody).map((mention) => mention.name)).toEqual(["qa"]);
-
-    const route = renderCeoRoundtableRouteBody({ nextRole: "dev-manager", body: "@dev-manager 请给出技术评审。" });
-    expect(route).toMatchObject({ ok: true });
-    expect(route.ok ? route.body : "").toContain("CEO 主持人");
-    expect(parseAgentMentions(route.ok ? route.body : "").map((mention) => mention.name)).toEqual(["dev-manager"]);
-
-    const firstCompletionKey = buildCeoRoundtableCompletionKey({
-      roundtableKey,
-      participants,
-      participantMessageIndexes: [2, 4, 6],
-    });
-    const secondCompletionKey = buildCeoRoundtableCompletionKey({
-      roundtableKey,
-      participants,
-      participantMessageIndexes: [2, 4, 6],
-    });
-    expect(firstCompletionKey).toBe(secondCompletionKey);
-
-    const summary = renderCeoRoundtableParentSummaryBody({
-      childIssueUrl: "https://github.com/tranfu-labs/moebius/issues/101",
-      topic: "Review topic",
-      summary: "Consensus with caveats",
-      contributions: participants.map((role) => ({
-        role,
-        position: `${role} position`,
-        evidence: `${role} evidence`,
-        disagreements: role === "hermes-user" ? ["needs clearer UX evidence"] : [],
-      })),
-      decision: "Proceed",
-      provenance: "child issue",
-      completionKey: firstCompletionKey,
-    });
-    expect(summary).toContain("### qa");
-    expect(summary).toContain("### dev-manager");
-    expect(summary).toContain("### hermes-user");
-    expect(summary).toContain("needs clearer UX evidence");
-    expect(summary).toContain(firstCompletionKey);
-  });
 });
 
 function makeGoalIntakeProposePayload() {

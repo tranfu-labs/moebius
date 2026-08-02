@@ -6,15 +6,19 @@ import { once } from "node:events";
 import { CODEX_EXEC_OPTIONS } from "./config.js";
 import {
   createProviderToolProjectionState,
-  projectCodexProgress,
   projectCodexToolLifecycle,
+  selectCodexExecutionProgress,
   executionInterruptionActor,
   executionInterruptionCause,
-  type ExecutionFailureTerminal,
   type ExecutionInterruptionCause,
+  type ExecutionFailureTerminal,
   type ExecutionProgressEvent,
   type ExecutionTerminal,
 } from "./execution-contract.js";
+import {
+  planExecutionFailureTerminal,
+  type CodexRunFailure,
+} from "./execution-failure-plan.js";
 import {
   createRunSupervisorState,
   observeRunProgress,
@@ -50,39 +54,8 @@ export interface CodexRunWatchdogs {
   clear(): void;
 }
 
-export interface CodexRunFailure {
-  code:
-    | "codex-cli-upgrade-required"
-    | "kimi-cli-not-found"
-    | "kimi-cli-not-executable"
-    | "kimi-cli-spawn-failed"
-    | "kimi-cli-exited"
-    | "kimi-acp-timeout"
-    | "kimi-acp-interrupted"
-    | "kimi-quota-exhausted"
-    | "kimi-rate-limited"
-    | "kimi-no-complete-result"
-    | "kimi-empty-response"
-    | "claude-cli-not-found"
-    | "claude-cli-not-executable"
-    | "claude-cli-unsupported-version"
-    | "claude-cli-spawn-failed"
-    | "claude-auth-required"
-    | "claude-profile-invalid"
-    | "claude-permission-denied"
-    | "claude-rate-limited"
-    | "claude-billing-unavailable"
-    | "claude-service-unavailable"
-    | "claude-resume-unavailable"
-    | "claude-protocol-invalid"
-    | "claude-timeout"
-    | "claude-cancelled";
-  message: string;
-  action?: "update-claude";
-}
-
 // 单次 run 的可选双看门狗：idle 只由调用方记录的语义进展重置，并可在工具
-// 在途时暂停；max-duration 无视活动，保留给 GitHub runner 等显式启用的模式。
+// 在途时暂停；max-duration 无视活动，保留给显式启用硬截止的调用方。
 // 至多触发一次回调；clear 后不再触发。
 export function createRunWatchdogs(options: {
   idleTimeoutMs?: number;
@@ -422,7 +395,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     const sequence = ++progressSequence;
     const toolLifecycle = projectCodexToolLifecycle(event, sequence, toolProjection);
     toolProjection = toolLifecycle.state;
-    const progress = toolLifecycle.progress ?? projectCodexProgress(event, sequence);
+    const progress = selectCodexExecutionProgress(toolLifecycle.progress, event, sequence);
     if (progress !== null) {
       const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
       progressSupervisor = supervision.state;
@@ -599,7 +572,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
         ok: false,
         reason: failureState.classified.code,
         failure: failureState.classified,
-        terminal: terminalForFailure(failureState.classified, visibleMarkdown),
+        terminal: planExecutionFailureTerminal(failureState.classified, visibleMarkdown),
         runDir,
         stdoutPath,
         stderrPath,
@@ -843,68 +816,8 @@ export function executionInterruptionCauseForResult(
     : null;
 }
 
-export function terminalForFailure(
-  failure: CodexRunFailure,
-  partialText: string,
-): ExecutionFailureTerminal {
-  switch (failure.code) {
-    case "claude-auth-required":
-      return {
-        kind: "auth",
-        retryable: false,
-        partialText,
-        safeCode: failure.code,
-      };
-    case "claude-billing-unavailable":
-    case "kimi-quota-exhausted":
-      return {
-        kind: "quota-exhausted",
-        retryable: false,
-        partialText,
-        safeCode: failure.code,
-      };
-    case "claude-rate-limited":
-    case "claude-service-unavailable":
-    case "kimi-rate-limited":
-      return {
-        kind: "rate-limited",
-        retryable: true,
-        partialText,
-        safeCode: failure.code,
-      };
-    case "claude-cancelled":
-    case "kimi-acp-interrupted":
-      return { kind: "interrupted", actor: "user", cause: "user", partialText };
-    case "claude-timeout":
-    case "kimi-acp-timeout":
-      return { kind: "timeout", basis: "idle", partialText };
-    case "codex-cli-upgrade-required":
-    case "kimi-cli-not-found":
-    case "kimi-cli-not-executable":
-    case "kimi-cli-spawn-failed":
-    case "kimi-cli-exited":
-    case "kimi-no-complete-result":
-    case "kimi-empty-response":
-    case "claude-cli-not-found":
-    case "claude-cli-not-executable":
-    case "claude-cli-unsupported-version":
-    case "claude-cli-spawn-failed":
-    case "claude-profile-invalid":
-    case "claude-permission-denied":
-    case "claude-resume-unavailable":
-    case "claude-protocol-invalid":
-      return crashedTerminal(failure.code, partialText);
-    default:
-      return assertFailureNever(failure.code);
-  }
-}
-
 function crashedTerminal(safeCode: string, partialText: string): ExecutionFailureTerminal {
   return { kind: "crashed", partialText, safeCode };
-}
-
-function assertFailureNever(value: never): never {
-  throw new Error(`Unhandled execution failure: ${String(value)}`);
 }
 
 function parseJsonLine(line: string): unknown | null {

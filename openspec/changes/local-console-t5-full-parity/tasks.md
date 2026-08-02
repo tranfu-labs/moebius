@@ -146,3 +146,11 @@
 | LC:T4.5 | 已对等 | handoff drain / cursor / restart catch-up。 |
 | LC:T4.6 | 已对等 | project/workspace source / worktree on-off。 |
 | LC:spec L48-L50 | 本任务补齐 | replace T5 prohibition with positive T5 rules through current `specs/local-console/spec.md` delta。 |
+
+---
+
+## 30 批处置（阻塞：待重写）
+
+本 change 以 `github-issue-runner` spec 作为 full-parity 的 MUST 矩阵事实源，而该 spec 已于 `four-layer-30-github-runner` 退役删除。**"parity" 已无对照物，本 change 不能按原样继续实施。**
+
+处置：目录保留、不作废、不归档。其中 9 条未完成任务描述的是本地能力本身（而非对 GitHub 的对等），是否仍需要属于产品范围决定，需由需求方确认后**以 `local-console` spec 为事实源重写**，而不是继续对照一个已不存在的域。已完成的 1 项 local 事实保持有效。

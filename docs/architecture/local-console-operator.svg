@@ -38,8 +38,8 @@
   <text x="394" y="336" class="muted">AbortSignal interrupt</text>
   <line x1="700" y1="302" x2="600" y2="302" class="line"/>
   <rect x="40" y="250" width="230" height="104" class="box"/>
-  <text x="64" y="286">Runner child</text>
-  <text x="64" y="314" class="muted">GitHub heartbeat unchanged</text>
-  <text x="64" y="336" class="muted">local server disabled</text>
+  <text x="64" y="286">Provider child processes</text>
+  <text x="64" y="314" class="muted">Codex · Claude · Kimi</text>
+  <text x="64" y="336" class="muted">started only for an active run</text>
   <text x="40" y="406" class="muted">Desktop renderer sees live run snapshots, can interrupt active runs, and shows visible local errors.</text>
 </svg>

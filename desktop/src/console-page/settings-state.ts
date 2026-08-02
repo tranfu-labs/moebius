@@ -3,6 +3,11 @@ import type {
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
+import {
+  SETTINGS_RELEASES_URL,
+  SETTINGS_REPOSITORY_URL,
+  createSettingsFeedbackUrl,
+} from "../settings-contract.js";
 
 export type DesktopUpdateStatus = "idle" | "checking" | "latest" | "available" | "failed";
 export type DesktopCopyStatus = "idle" | "copied" | "failed";
@@ -32,24 +37,35 @@ export const INITIAL_DESKTOP_SETTINGS_STATE: DesktopSettingsState = {
   copyRequestId: null,
 };
 
-export class SingleInFlightSettingsRequest {
-  private inFlight: Promise<void> | null = null;
+export function decideSettingsRequestAdmission(isRunning: boolean): {
+  kind: "start";
+} | { kind: "skip" } {
+  return isRunning ? { kind: "skip" } : { kind: "start" };
+}
 
-  get isRunning(): boolean {
-    return this.inFlight !== null;
-  }
+export function decideSettingsPortAvailability(available: boolean): {
+  kind: "available";
+} | { kind: "unavailable" } {
+  return available ? { kind: "available" } : { kind: "unavailable" };
+}
 
-  start(run: () => Promise<void>): boolean {
-    if (this.inFlight !== null) {
-      return false;
-    }
-    const request = Promise.resolve().then(run);
-    this.inFlight = request.finally(() => {
-      this.inFlight = null;
-    });
-    void this.inFlight.catch(() => undefined);
-    return true;
-  }
+export function planDesktopSettingsView(state: DesktopSettingsState) {
+  return {
+    settingsAbout: {
+      currentVersion: state.applicationInfo?.version ?? "—",
+      updateStatus: state.updateStatus,
+      latestVersion: state.latestVersion,
+      downloadUrl: state.downloadUrl,
+      copyStatus: state.copyStatus,
+    },
+    settingsExternalLinks: {
+      releaseNotes: SETTINGS_RELEASES_URL,
+      feedback: state.applicationInfo === null
+        ? "https://github.com/tranfu-labs/moebius/issues/new"
+        : createSettingsFeedbackUrl(state.applicationInfo),
+      repository: SETTINGS_REPOSITORY_URL,
+    },
+  };
 }
 
 export function reduceDesktopSettings(

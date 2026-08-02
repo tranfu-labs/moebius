@@ -7,13 +7,34 @@ import type { LocalConsoleSessionSummary } from "../../src/local-console/types.j
 import { serializeTeamDefinition } from "../src/team-model.js";
 import {
   AgentTeamRosterUnavailableError,
+  createTeamRuntimeBindingService,
+} from "../src/team-runtime-binding.js";
+import { listSharedAgentFiles } from "../src/team-shared-agent-store.js";
+import { resolveRecordedTeamLocation } from "../src/team-record-store.js";
+import {
+  readOfficialTeamStateDocument,
+  readTeamExecutionBindings,
+} from "../src/team-management-store.js";
+import { readTeamSnapshot, resolveTeamLocation } from "../src/team-store.js";
+
+const roots: string[] = [];
+const runtimeBinding = createTeamRuntimeBindingService({
+  listSharedAgents: listSharedAgentFiles,
+  resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
+    dataRoot,
+    teamId,
+    ownership: "system",
+  }),
+  resolveUserLocation: resolveRecordedTeamLocation,
+  readSnapshot: readTeamSnapshot,
+  readBindings: readTeamExecutionBindings,
+  readOfficialState: readOfficialTeamStateDocument,
+});
+const {
   listSessionAgentFiles,
   loadAgentTeamSnapshot,
   resolveSessionAgentTeamHealth,
-} from "../src/team-runtime-binding.js";
-import { resolveTeamLocation } from "../src/team-store.js";
-
-const roots: string[] = [];
+} = runtimeBinding;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));

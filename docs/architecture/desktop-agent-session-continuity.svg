@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
   <title id="title">Desktop Agent provider sessions after the change</title>
-  <desc id="desc">Local, AI team builder, and GitHub roles use stable identities, one canonical provider session, delta prompts, and fail closed resume.</desc>
+  <desc id="desc">Local Agents and AI team builder drafts use stable identities, one canonical provider session, delta prompts, and fail closed resume.</desc>
   <defs>
     <style>
       .bg{fill:#111318}.box{fill:#1b1f27;stroke:#596273;stroke-width:2}.good{fill:#173128;stroke:#62b58c;stroke-width:2}.warn{fill:#342d1c;stroke:#c9a854;stroke-width:2}.txt{fill:#f3f5f7;font:16px system-ui,sans-serif}.sub{fill:#aeb6c2;font:13px system-ui,sans-serif}.arrow{stroke:#8b95a5;stroke-width:2;fill:none;marker-end:url(#m)}.green{stroke:#62b58c;stroke-width:2;fill:none;marker-end:url(#g)}
@@ -11,7 +11,7 @@
   <rect class="bg" width="1200" height="700"/>
   <text class="txt" x="48" y="52">After: one state machine for every Desktop persistent Agent</text>
   <rect class="box" x="48" y="92" width="310" height="106" rx="12"/>
-  <text class="txt" x="70" y="126">Stable identity</text><text class="sub" x="70" y="154">local: session + snapshot + role</text><text class="sub" x="70" y="178">builder: draft · GitHub: issue + role</text>
+  <text class="txt" x="70" y="126">Stable identity</text><text class="sub" x="70" y="154">local: session + snapshot + role</text><text class="sub" x="70" y="178">builder: draft + provider profile</text>
   <rect class="good" x="452" y="82" width="320" height="126" rx="12"/>
   <text class="txt" x="474" y="116">first</text><text class="sub" x="474" y="144">full / session-new once</text><text class="sub" x="474" y="170">observe ID → persist immediately</text><text class="sub" x="474" y="194">canonical link</text>
   <path class="green" d="M358 145H452"/>
@@ -29,8 +29,8 @@
   <path class="arrow" d="M772 340H842"/>
   <rect class="box" x="48" y="488" width="1104" height="132" rx="12"/>
   <text class="txt" x="70" y="524">Boundaries</text>
-  <text class="sub" x="70" y="554">Persistent: local Agent · AI team builder draft · Desktop background GitHub mention role</text>
-  <text class="sub" x="70" y="582">Auxiliary full: local/GitHub no-mention routing · CEO guardrail</text>
+  <text class="sub" x="70" y="554">Persistent: local Agent · AI team builder draft</text>
+  <text class="sub" x="70" y="582">Auxiliary full: local no-mention route judgment</text>
   <text class="sub" x="70" y="606">Renderer sees safe failure text only; provider IDs and manifests remain internal</text>
   <path class="arrow" d="M203 406V488"/><path class="arrow" d="M612 406V488"/><path class="arrow" d="M997 406V488"/>
 </svg>

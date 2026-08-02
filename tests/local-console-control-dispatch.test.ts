@@ -6,6 +6,12 @@ import {
   resolveClaimedControlAction,
   selectSourceRetryIntent,
 } from "../src/local-console/control-dispatch.js";
+import {
+  decideLocalRouteFailure,
+  planLocalRouteAction,
+  planLocalRouteAdmission,
+} from "../src/local-console/local-route-plan.js";
+import type { LocalConsoleMessage } from "../src/local-console/types.js";
 
 function retryIntent(
   intentId: string,
@@ -24,6 +30,17 @@ function retryIntent(
 }
 
 describe("local claimed control planning", () => {
+  it("classifies the legacy route admission, result, and retry boundary", () => {
+    const user = { speaker: "user", body: "please continue with dev" } as LocalConsoleMessage;
+    expect([
+      planLocalRouteAdmission(user.speaker).kind,
+      planLocalRouteAction("APPEND").kind,
+      planLocalRouteAction("NO_ACTION").kind,
+      decideLocalRouteFailure(user, ["dev"]).kind,
+      decideLocalRouteFailure({ ...user, body: "ordinary update" }, ["dev"]).kind,
+    ]).toEqual(["route", "append", "no-action", "retry", "fail-open"]);
+  });
+
   it.each([
     {
       name: "routes every user source to the available primary",

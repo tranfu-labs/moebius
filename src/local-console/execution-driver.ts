@@ -10,6 +10,7 @@ import {
 import { runClaude, type ClaudeRunOptions } from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
+import { planRuntimeFallback } from "./runtime-domain.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
@@ -139,7 +140,7 @@ export function createLocalExecutionRunner(input: {
       if (result.ok && observedExternalSessionId !== null) {
         await markExecutionTraceReady(
           observedEngine,
-          result.threadId ?? observedExternalSessionId,
+          planRuntimeFallback(result.threadId, observedExternalSessionId),
         );
       }
       return result;
@@ -262,7 +263,7 @@ function assertSuccessfulSessionIdentity(
   result: CodexRunResult,
 ): void {
   if (!result.ok) return;
-  const resultExternalSessionId = result.threadId ?? observedExternalSessionId;
+  const resultExternalSessionId = planRuntimeFallback(result.threadId, observedExternalSessionId);
   if (resultExternalSessionId === null) {
     throw new Error("provider-session-id-missing");
   }

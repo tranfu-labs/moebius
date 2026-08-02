@@ -3,11 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  LAST_USED_AGENT_TEAM_FILE,
-  AgentTeamPreferenceError,
-  readLastUsedAgentTeam,
-  recordSuccessfulConversationAgentTeam,
+  createTeamConversationPreferenceService,
 } from "../src/team-conversation-preference.js";
+import { AgentTeamPreferenceError } from "../src/team-conversation-preference-plan.js";
+import {
+  LAST_USED_AGENT_TEAM_FILE,
+  readLastUsedAgentTeamStore,
+  writeLastUsedAgentTeamStore,
+} from "../src/team-conversation-preference-store.js";
+import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import { serializeTeamDefinition, type TeamDefinition, type TeamOwnership } from "../src/team-model.js";
 import { resolveTeamLocation } from "../src/team-store.js";
 
@@ -17,6 +21,13 @@ const usableDefinition: TeamDefinition = {
   primaryAgentSlug: "manager",
   memberOrder: ["manager"],
 };
+const { listAgentTeams } = createTestAgentTeamService();
+const preferenceService = createTeamConversationPreferenceService({
+  read: readLastUsedAgentTeamStore,
+  write: writeLastUsedAgentTeamStore,
+  list: listAgentTeams,
+});
+const { readLastUsedAgentTeam, recordSuccessfulConversationAgentTeam } = preferenceService;
 
 describe("last-used conversation Agent team preference", () => {
   it("treats a missing or malformed record as no history", async () => {

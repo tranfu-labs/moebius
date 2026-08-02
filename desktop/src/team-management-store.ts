@@ -2,30 +2,27 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { TeamOwnership } from "./team-model.js";
+import type { ExecutionProfileBinding } from "./team-execution-profile.js";
 import {
-  normalizeExecutionProfile,
-  type ExecutionProfile,
-  type ExecutionProfileBinding,
-} from "./team-execution-profile.js";
-import type { AppliedOfficialTeamState } from "./team-official-management.js";
+  assertStateKeySegment,
+  normalizeExecutionBinding,
+  normalizeOfficialTeamStateDocument,
+  normalizeTeamExecutionBindingDocument,
+  selectStoredTeamBindings,
+  TeamManagementDocumentError as TeamManagementStoreError,
+  type OfficialTeamStateDocumentV1,
+  type TeamExecutionBindingDocumentV1,
+} from "./team-management-document-codec.js";
+
+export type {
+  OfficialTeamStateDocumentV1,
+  TeamExecutionBindingDocumentV1,
+} from "./team-management-document-codec.js";
 
 const STATE_DIRECTORY = path.join(".state", "agent-teams");
 const OFFICIAL_STATE_FILE = "official-state-v1.json";
 const EXECUTION_BINDINGS_FILE = "execution-bindings-v1.json";
 const PACKAGED_TEAMS_DIRECTORY = "packaged";
-
-export interface OfficialTeamStateDocumentV1 {
-  schemaVersion: 1;
-  teams: Record<string, AppliedOfficialTeamState>;
-}
-
-export interface TeamExecutionBindingDocumentV1 {
-  schemaVersion: 1;
-  teams: Record<string, {
-    ownership: TeamOwnership;
-    members: Record<string, ExecutionProfileBinding>;
-  }>;
-}
 
 export function getAgentTeamsStateRoot(dataRoot: string): string {
   return path.join(path.resolve(dataRoot), STATE_DIRECTORY);
@@ -52,7 +49,7 @@ export async function readOfficialTeamStateDocument(
   if (value === null) {
     return { schemaVersion: 1, teams: {} };
   }
-  return normalizeOfficialDocument(value);
+  return normalizeOfficialTeamStateDocument(value);
 }
 
 export async function writeOfficialTeamStateDocument(
@@ -61,7 +58,7 @@ export async function writeOfficialTeamStateDocument(
 ): Promise<void> {
   await writeJsonAtomically(
     path.join(getAgentTeamsStateRoot(dataRoot), OFFICIAL_STATE_FILE),
-    normalizeOfficialDocument(document),
+    normalizeOfficialTeamStateDocument(document),
   );
 }
 
@@ -72,7 +69,7 @@ export async function readExecutionBindingDocument(
   if (value === null) {
     return { schemaVersion: 1, teams: {} };
   }
-  return normalizeBindingDocument(value);
+  return normalizeTeamExecutionBindingDocument(value);
 }
 
 export async function writeExecutionBindingDocument(
@@ -81,7 +78,7 @@ export async function writeExecutionBindingDocument(
 ): Promise<void> {
   await writeJsonAtomically(
     path.join(getAgentTeamsStateRoot(dataRoot), EXECUTION_BINDINGS_FILE),
-    normalizeBindingDocument(document),
+    normalizeTeamExecutionBindingDocument(document),
   );
 }
 
@@ -91,7 +88,9 @@ export async function readTeamExecutionBindings(input: {
   teamId: string;
 }): Promise<Record<string, ExecutionProfileBinding>> {
   const document = await readExecutionBindingDocument(input.dataRoot);
-  return document.teams[teamBindingKey(input.ownership, input.teamId)]?.members ?? {};
+  return selectStoredTeamBindings(
+    document.teams[teamBindingKey(input.ownership, input.teamId)]?.members,
+  );
 }
 
 export async function saveTeamExecutionBinding(input: {
@@ -109,7 +108,7 @@ export async function saveTeamExecutionBinding(input: {
     ownership: input.ownership,
     members: {
       ...existing?.members,
-      [input.memberSlug]: normalizeBinding(input.binding),
+      [input.memberSlug]: normalizeExecutionBinding(input.binding),
     },
   };
   await writeExecutionBindingDocument(input.dataRoot, document);
@@ -126,7 +125,7 @@ export async function replaceTeamExecutionBindings(input: {
     ownership: input.ownership,
     members: Object.fromEntries(Object.entries(input.bindings).map(([slug, binding]) => {
       assertStateKeySegment(slug);
-      return [slug, normalizeBinding(binding)];
+      return [slug, normalizeExecutionBinding(binding)];
     })),
   };
   await writeExecutionBindingDocument(input.dataRoot, document);
@@ -159,84 +158,6 @@ export async function cachePackagedTeam(input: {
   await fs.rm(destination, { recursive: true, force: true });
   await fs.rename(staging, destination);
   return destination;
-}
-
-function normalizeOfficialDocument(value: unknown): OfficialTeamStateDocumentV1 {
-  if (!isPlainObject(value) || value.schemaVersion !== 1 || !isPlainObject(value.teams)) {
-    throw new TeamManagementStoreError("官方团队状态文件格式无效。");
-  }
-  const teams: Record<string, AppliedOfficialTeamState> = {};
-  for (const [teamId, raw] of Object.entries(value.teams)) {
-    assertStateKeySegment(teamId);
-    if (!isPlainObject(raw)) {
-      throw new TeamManagementStoreError(`官方团队 ${teamId} 的状态无效。`);
-    }
-    const recommendations = normalizeRecommendations(raw.appliedRecommendations);
-    const confidence = raw.baselineConfidence;
-    if (
-      typeof raw.appliedOfficialVersion !== "string"
-      || typeof raw.appliedContentFingerprint !== "string"
-      || typeof raw.appliedRecommendationFingerprint !== "string"
-      || (confidence !== "verified" && confidence !== "conservative")
-    ) {
-      throw new TeamManagementStoreError(`官方团队 ${teamId} 的状态无效。`);
-    }
-    teams[teamId] = {
-      appliedOfficialVersion: raw.appliedOfficialVersion,
-      appliedContentFingerprint: raw.appliedContentFingerprint,
-      appliedRecommendationFingerprint: raw.appliedRecommendationFingerprint,
-      appliedRecommendations: recommendations,
-      baselineConfidence: confidence,
-    };
-  }
-  return { schemaVersion: 1, teams };
-}
-
-function normalizeBindingDocument(value: unknown): TeamExecutionBindingDocumentV1 {
-  if (!isPlainObject(value) || value.schemaVersion !== 1 || !isPlainObject(value.teams)) {
-    throw new TeamManagementStoreError("Agent 运行配置状态文件格式无效。");
-  }
-  const teams: TeamExecutionBindingDocumentV1["teams"] = {};
-  for (const [key, raw] of Object.entries(value.teams)) {
-    if (!isPlainObject(raw) || (raw.ownership !== "system" && raw.ownership !== "user")
-      || !isPlainObject(raw.members)) {
-      throw new TeamManagementStoreError(`团队 ${key} 的运行配置无效。`);
-    }
-    teams[key] = {
-      ownership: raw.ownership,
-      members: Object.fromEntries(Object.entries(raw.members).map(([slug, binding]) => {
-        assertStateKeySegment(slug);
-        return [slug, normalizeBinding(binding)];
-      })),
-    };
-  }
-  return { schemaVersion: 1, teams };
-}
-
-function normalizeBinding(value: unknown): ExecutionProfileBinding {
-  if (!isPlainObject(value)) {
-    throw new TeamManagementStoreError("Agent 运行配置无效。");
-  }
-  if (value.source === "recommended") {
-    return { source: "recommended" };
-  }
-  if (value.source === "override" || value.source === "explicit") {
-    return {
-      source: value.source,
-      profile: normalizeExecutionProfile(value.profile),
-    };
-  }
-  throw new TeamManagementStoreError("Agent 运行配置来源无效。");
-}
-
-function normalizeRecommendations(value: unknown): Record<string, ExecutionProfile> {
-  if (!isPlainObject(value)) {
-    throw new TeamManagementStoreError("官方推荐运行配置无效。");
-  }
-  return Object.fromEntries(Object.entries(value).map(([slug, profile]) => {
-    assertStateKeySegment(slug);
-    return [slug, normalizeExecutionProfile(profile)];
-  }));
 }
 
 async function readOptionalJson(filePath: string): Promise<unknown | null> {
@@ -272,25 +193,8 @@ async function writeJsonAtomically(filePath: string, value: unknown): Promise<vo
   }
 }
 
-function assertStateKeySegment(value: string): void {
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,127})$/u.test(value)) {
-    throw new TeamManagementStoreError(`状态 key 无效：${value}`);
-  }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
 
-export class TeamManagementStoreError extends Error {
-  readonly code = "TEAM_MANAGEMENT_STORE_INVALID";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "TeamManagementStoreError";
-  }
-}
+export { TeamManagementStoreError };

@@ -42,7 +42,7 @@ proposed
 2. Worker 持有并复用 SQLite connection，按队列串行执行命令和事务。
 3. 主线程继续为每条命令维护 timeout；命令超时、Worker 崩溃或无响应时终止整个 Worker。
 4. 失败后的下一条操作按需创建新 Worker、重新打开数据库并执行幂等 schema migration。
-5. Worker 重建期间不得伪造成功，不得永久占用 local session、GitHub issue in-flight 或 observer 读取。
+5. Worker 重建期间不得伪造成功，不得永久占用 local session、active run 或状态读取。
 
 持久 Worker 改造落地时，应把警告屏蔽收窄到 SQLite Worker 边界，并移除根启动脚本的全局 `NODE_OPTIONS`。不得把上述临时例外当成持久 Worker
 改造的替代品，也不得因此屏蔽其他类型的运行时 warning。

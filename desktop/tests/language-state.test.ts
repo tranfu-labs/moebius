@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createLanguageState, reduceLanguageState } from "../src/console-page/language-state.js";
+import {
+  createLanguageState,
+  planInitialDesktopLocale,
+  planLanguagePersistence,
+  planLanguageRetry,
+  reduceLanguageState,
+} from "../src/console-page/language-state.js";
 
 describe("desktop language state", () => {
   it("does not commit a selected locale until persistence succeeds", () => {
@@ -44,5 +50,17 @@ describe("desktop language state", () => {
       activeLocale: "en",
       status: "idle",
     });
+  });
+
+  it("plans the initial, persistence, and retry boundaries without renderer IO", () => {
+    expect(planInitialDesktopLocale("?locale=en")).toBe("en");
+    expect(planInitialDesktopLocale("?locale=fr")).toBe("zh-CN");
+    expect(planLanguagePersistence(false)).toBe("commit-local");
+    expect(planLanguagePersistence(true)).toBe("persist");
+    expect(planLanguageRetry({
+      ...createLanguageState("zh-CN"),
+      pendingLocale: "en",
+      status: "failed",
+    })).toBe("en");
   });
 });

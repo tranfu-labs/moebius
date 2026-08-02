@@ -39,10 +39,8 @@ import {
   type LocalConsoleTextFragment,
   type LocalConsoleStore,
 } from "./types.js";
-import {
-  readCodexThreadLinks,
-  type LocalCodexThreadLinkFact,
-} from "./codex-thread-link.js";
+import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
+import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   appendSessionFactLogLine,
   invalidateSessionFactLog,
@@ -53,17 +51,20 @@ import type {
   LocalCodexResumeIntentFact,
   LocalCodexRunUsageFact,
 } from "./codex-resume.js";
+import type {
+  LocalAgentSessionLinkFact,
+  LocalAgentTimelineCursorFact,
+  LocalExecutionSessionLinkFact,
+  LocalProviderInvocationFact,
+  LocalProviderSessionObservedFact,
+  LocalRunExecutionContextFact,
+} from "./execution-context.js";
 import {
   readAgentSessionLinks,
   readExecutionSessionLinks,
   readRunExecutionContexts,
-  type LocalAgentSessionLinkFact,
-  type LocalAgentTimelineCursorFact,
-  type LocalExecutionSessionLinkFact,
-  type LocalProviderInvocationFact,
-  type LocalProviderSessionObservedFact,
-  type LocalRunExecutionContextFact,
-} from "./execution-context.js";
+} from "./execution-context-reader.js";
+import { planRuntimeFallback } from "./runtime-domain.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;
@@ -78,7 +79,7 @@ export async function createSqliteLocalConsoleStore(
   await fs.mkdir(path.dirname(options.sqlitePath), { recursive: true });
   return new SqliteLocalConsoleStore(
     options.sqlitePath,
-    options.sessionLogRoot ?? defaultSessionLogRoot(options.sqlitePath),
+    planRuntimeFallback(options.sessionLogRoot, defaultSessionLogRoot(options.sqlitePath)),
     options.busyTimeoutMs ?? 2_000,
     options.timeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS,
   );
@@ -227,7 +228,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     now: string;
   }): Promise<LocalConsoleSessionSummary> {
     return this.runFact(
-      { kind: "local-create-session", ...input, projectId: input.projectId ?? LOCAL_CONSOLE_PROJECT_ID },
+      { kind: "local-create-session", ...input, projectId: planRuntimeFallback(input.projectId, LOCAL_CONSOLE_PROJECT_ID) },
       [input.sessionId],
       new Set([input.sessionId]),
     );
@@ -494,10 +495,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
 
   async setRunDir(input: { id: number; sessionId?: string; runDir: string; now: string }): Promise<void> {
     await this.enqueue(async () => {
-      const sessionId = input.sessionId ?? (await this.runDirect<{ sessionId: string } | null>({
+      const discovered = (await this.runDirect<{ sessionId: string } | null>({
         kind: "local-find-message-session",
         messageId: input.id,
       }))?.sessionId;
+      const sessionId = planRuntimeFallback(input.sessionId, discovered);
       if (sessionId === undefined) {
         throw new Error(`local console message not found: ${String(input.id)}`);
       }
@@ -1139,7 +1141,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
             type: event.type,
             recordedAt: event.recordedAt,
             payload: event.payload,
-            beforeMessages: before.get(sessionId) ?? [],
+            beforeMessages: planRuntimeFallback(before.get(sessionId), []),
           };
         }),
       });
@@ -1159,7 +1161,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       const childIdsByParent = new Map<string, string[]>();
       for (const index of indexes) {
         if (index.parentSessionId !== null) {
-          const childIds = childIdsByParent.get(index.parentSessionId) ?? [];
+          const childIds = planRuntimeFallback(childIdsByParent.get(index.parentSessionId), []);
           childIds.push(index.sessionId);
           childIdsByParent.set(index.parentSessionId, childIds);
         }
@@ -1179,7 +1181,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
           payload: {
             source: "session_messages",
             parentSessionId: index.parentSessionId,
-            childSessionIds: childIdsByParent.get(index.sessionId) ?? [],
+            childSessionIds: planRuntimeFallback(childIdsByParent.get(index.sessionId), []),
           },
           messageUpserts: index.messages,
         });
@@ -1392,7 +1394,7 @@ async function readFactEvents(logPath: string, sessionId: string, allowMissing: 
     await fs.truncate(logPath, snapshot.parsedLength);
     invalidateSessionFactLog(logPath);
   }
-  const projected = factEventProjections.get(snapshot.values) ?? [];
+  const projected = planRuntimeFallback(factEventProjections.get(snapshot.values), []);
   for (let index = projected.length; index < snapshot.values.length; index += 1) {
     projected.push(parseFactEvent(snapshot.values[index], sessionId, index + 1));
   }

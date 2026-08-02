@@ -1,4 +1,4 @@
-import { startLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer } from "../../src/local-console/start.js";
 
 const host = process.env.WEB_SHELL_LOCAL_CONSOLE_HOST ?? "127.0.0.1";
 const port = Number(process.env.WEB_SHELL_LOCAL_CONSOLE_PORT ?? 5181);

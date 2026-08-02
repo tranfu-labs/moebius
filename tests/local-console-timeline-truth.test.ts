@@ -7,22 +7,44 @@ import { waitForValue } from "../src/testing/wait.js";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
   type LocalConsoleMessage,
   type LocalConsoleSessionSummary,
 } from "../src/local-console/types.js";
-import { addAgentTeamMember, createAgentTeam, trashUserAgentTeam } from "../desktop/src/team-ipc.js";
+import { createTestAgentTeamService } from "../desktop/tests/helpers/agent-team-service.js";
 import { serializeTeamDefinition } from "../desktop/src/team-model.js";
 import {
+  createTeamRuntimeBindingService,
+} from "../desktop/src/team-runtime-binding.js";
+import { listSharedAgentFiles } from "../desktop/src/team-shared-agent-store.js";
+import { resolveRecordedTeamLocation } from "../desktop/src/team-record-store.js";
+import {
+  readOfficialTeamStateDocument,
+  readTeamExecutionBindings,
+} from "../desktop/src/team-management-store.js";
+import { readTeamSnapshot, resolveTeamLocation } from "../desktop/src/team-store.js";
+
+const roots: string[] = [];
+const { addAgentTeamMember, createAgentTeam, trashUserAgentTeam } = createTestAgentTeamService();
+const runtimeBinding = createTeamRuntimeBindingService({
+  listSharedAgents: listSharedAgentFiles,
+  resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
+    dataRoot,
+    teamId,
+    ownership: "system",
+  }),
+  resolveUserLocation: resolveRecordedTeamLocation,
+  readSnapshot: readTeamSnapshot,
+  readBindings: readTeamExecutionBindings,
+  readOfficialState: readOfficialTeamStateDocument,
+});
+const {
   listSessionAgentFiles,
   loadAgentTeamSnapshot,
   resolveSessionAgentTeamHealth,
-} from "../desktop/src/team-runtime-binding.js";
-import { resolveTeamLocation } from "../desktop/src/team-store.js";
-
-const roots: string[] = [];
+} = runtimeBinding;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, {

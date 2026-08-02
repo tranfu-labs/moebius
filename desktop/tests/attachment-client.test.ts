@@ -3,7 +3,9 @@ import {
   cloneManagedMessageAttachments,
   listManagedDraftAttachments,
   managedAttachmentFetch,
+  uploadManagedAttachment,
 } from "../src/console-page/attachment-client.js";
+import { ManagedAttachmentFailure } from "../src/console-page/managed-attachment-model.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -72,4 +74,32 @@ describe("managed attachment client", () => {
       }),
     );
   });
+
+  it("preserves a server error but exposes a stable code for the upload fallback", async () => {
+    const file = new File(["body"], "brief.txt", { type: "text/plain" });
+    const options = {
+      apiBase: "http://127.0.0.1:8788/",
+      capability: "test-capability",
+      draftKey: "draft:new",
+      file,
+      preview: null,
+      signal: new AbortController().signal,
+    };
+
+    await expect(uploadManagedAttachment({
+      ...options,
+      fetch: vi.fn(async () => jsonResponse({ error: "server-sentinel" }, 500)),
+    })).rejects.toThrow("server-sentinel");
+    await expect(uploadManagedAttachment({
+      ...options,
+      fetch: vi.fn(async () => jsonResponse({}, 500)),
+    })).rejects.toEqual(new ManagedAttachmentFailure("attachment-upload"));
+  });
 });
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

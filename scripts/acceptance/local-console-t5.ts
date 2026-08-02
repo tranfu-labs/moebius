@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { LocalConsoleRuntime } from "../../src/local-console/runtime.js";
 import {
@@ -57,18 +57,14 @@ interface WorkspaceDiffFact {
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const changeDir = path.join(projectRoot, "openspec", "changes", "local-console-t5-full-parity");
 const artifactDir = await createAcceptanceOutputDirectory("local-console-t5");
 const evidencePath = path.join(artifactDir, "t5-evidence.json");
-const prBodyDraftPath = path.join(artifactDir, "t5-pr-body.md");
 const selectedCase = readCaseArg(process.argv);
 
 async function main(): Promise<void> {
   await fs.mkdir(artifactDir, { recursive: true });
   const runners: Record<string, () => Promise<EvidenceItem[]>> = {
     openspec: runOpenSpecCase,
-    "must-matrix": runMustMatrixCase,
-    "delta-shape": runDeltaShapeCase,
     "multi-child-goal": runMultiChildGoalCase,
     "route-hang-l1": runRouteHangL1Case,
     "visible-write-s1-v1": runVisibleWriteS1V1Case,
@@ -76,7 +72,6 @@ async function main(): Promise<void> {
     "worktree-return-rollback": runWorktreeReturnRollbackCase,
     "worktree-rollback-hang": runWorktreeRollbackHangCase,
     "worktree-abandon": runWorktreeAbandonCase,
-    "worktree-issue-parity": runWorktreeIssueParityCase,
     "worktree-parity-suite": runWorktreeParitySuiteCase,
     "diff-apply-failure-l1": runDiffApplyFailureL1Case,
     "deadletter-recovery-suite": runDeadLetterRecoverySuiteCase,
@@ -88,8 +83,6 @@ async function main(): Promise<void> {
     "dead-letter-no-mention": runDeadLetterNoMentionCase,
     "primary-agent-closeout": runPrimaryAgentCloseoutCase,
     "fake-gh-zero": () => runFakeGhZeroCase(runners),
-    "roadmap-evidence": runRoadmapEvidenceCase,
-    "pr-evidence": runPrEvidenceCase,
     "child-session-acceptance": runChildSessionAcceptanceCase,
     "child-session-orchestration": runChildSessionOrchestrationCase,
     "child-session-sidebar-tree": runChildSessionSidebarTreeCase,
@@ -122,54 +115,12 @@ async function runOpenSpecCase(): Promise<EvidenceItem[]> {
   ];
 }
 
-async function runMustMatrixCase(): Promise<EvidenceItem[]> {
-  const source = await fs.readFile(path.join(projectRoot, "openspec", "specs", "github-issue-runner", "spec.md"), "utf8");
-  const mustLines = source.split(/\n/u).flatMap((line, index) => (line.includes("MUST") ? [index + 1] : []));
-  const bulletMustCount = source.split(/\n/u).filter((line) => /^\s*-\s+MUST/u.test(line)).length;
-  const coverage = await Promise.all(["proposal.md", "tasks.md"].map(async (file) => {
-    const text = await fs.readFile(path.join(changeDir, file), "utf8");
-    const covered = new Set<number>();
-    for (const match of text.matchAll(/GIR:L(\d+)(?:-L?(\d+))?/gu)) {
-      const start = Number(match[1]);
-      const end = match[2] === undefined ? start : Number(match[2]);
-      for (let line = start; line <= end; line += 1) {
-        covered.add(line);
-      }
-    }
-    const missing = mustLines.filter((line) => !covered.has(line));
-    return { file, covered: mustLines.length - missing.length, total: mustLines.length, missing };
-  }));
-  assert(coverage.every((entry) => entry.missing.length === 0), JSON.stringify(coverage));
-  return [
-    item(2, "must-matrix", `查看 \`proposal.md\` 与 \`tasks.md\` → 应看到 ${String(mustLines.length)} 行含 \`MUST\` 源行均映射为三类，并说明 ${String(bulletMustCount)} 行项目符号 \`- MUST\` 不是本任务验收口径。`, {
-      coverage,
-      bulletMustCount,
-    }),
-  ];
-}
-
-async function runDeltaShapeCase(): Promise<EvidenceItem[]> {
-  const files = await listFiles(changeDir);
-  const oldDelta = files.filter((file) => file.includes(`${path.sep}spec-delta${path.sep}`));
-  const githubDelta = files.filter((file) => file.endsWith(path.join("specs", "github-issue-runner", "spec.md")));
-  assert(oldDelta.length === 0, `old spec-delta files exist: ${oldDelta.join(",")}`);
-  assert(githubDelta.length === 0, `github delta exists: ${githubDelta.join(",")}`);
-  return [
-    item(3, "delta-shape", "查看 `specs/local-console/spec.md` 与 `specs/console-ui/spec.md` → 应看到当前 OpenSpec CLI 识别的 delta，且没有 `github-issue-runner` delta。", {
-      files: files.map(relativeToProject),
-      oldDeltaCount: oldDelta.length,
-      githubDeltaCount: githubDelta.length,
-    }),
-  ];
-}
-
 async function runWorktreeParitySuiteCase(): Promise<EvidenceItem[]> {
   return await runCasesSequentially([
     runWorktreeDiffCase,
     runWorktreeReturnRollbackCase,
     runWorktreeRollbackHangCase,
     runWorktreeAbandonCase,
-    runWorktreeIssueParityCase,
     runDiffApplyFailureL1Case,
   ]);
 }
@@ -625,35 +576,6 @@ async function runWorktreeRollbackHangCase(): Promise<EvidenceItem[]> {
   ];
 }
 
-async function runWorktreeIssueParityCase(): Promise<EvidenceItem[]> {
-  const localSource = await fs.readFile(path.join(projectRoot, "src", "local-console", "workspace-source.ts"), "utf8");
-  const issueSource = await fs.readFile(path.join(projectRoot, "src", "agent-prescripts", "issue-worktree.ts"), "utf8");
-  const localChecks = {
-    stableBranch: localSource.includes("worktree\", \"add\", \"-B\", branchName"),
-    cwdWorktree: localSource.includes("cwd: worktreePath"),
-    noRemoteFetch: !localSource.includes("fetchRemoteMain"),
-    diffReturnLocalOnly: localSource.includes("applyLocalWorkspaceDiff"),
-  };
-  const issueChecks = {
-    stableIssueBranch: issueSource.includes("buildIssueLocalBranchName(input)"),
-    cwdWorktree: issueSource.includes("codexCwd: paths.worktreePath") || issueSource.includes("codexCwd: state.worktreePath"),
-    refreshOnlyOnReuse: issueSource.includes("refreshAndCheckMainStatus"),
-    noDiffReturn: !issueSource.includes("applyLocalWorkspaceDiff") && !issueSource.includes("workspace.patch"),
-  };
-  assert(Object.values(localChecks).every(Boolean), JSON.stringify(localChecks));
-  assert(Object.values(issueChecks).every(Boolean), JSON.stringify(issueChecks));
-  return [
-    item(24, "worktree-issue-parity", "跑 `pnpm exec tsx scripts/acceptance/local-console-t5.ts --case worktree-issue-parity` → 应输出本地 workspace source 与 issue-worktree 三点对照，且 GitHub issue-worktree 无 diff 回流漂移。", {
-      localChecks,
-      issueChecks,
-      files: [
-        "src/local-console/workspace-source.ts",
-        "src/agent-prescripts/issue-worktree.ts",
-      ],
-    }),
-  ];
-}
-
 async function runDiffApplyFailureL1Case(): Promise<EvidenceItem[]> {
   const root = await makeRoot("diff-failure");
   const repo = path.join(root, "repo");
@@ -1063,53 +985,6 @@ async function runFakeGhZeroCase(runners: Record<string, () => Promise<EvidenceI
   return [fakeGhZeroItem(result.fakeGhCalls, result.fakeGhLog)];
 }
 
-async function runRoadmapEvidenceCase(): Promise<EvidenceItem[]> {
-  const roadmap = await fs.readFile(path.join(projectRoot, "docs", "roadmap", "milestone-4-local-console.md"), "utf8");
-  const t5Section = extractMarkdownSection(roadmap, "### - [x] T5 · 本地全功能对等");
-  assert(t5Section.includes("artifacts/acceptance/t5-evidence.json"), "roadmap missing T5 evidence path");
-  assert(t5Section.includes("--case all"), "roadmap missing all-case evidence");
-  assert(t5Section.includes("MUST") && t5Section.includes("564") && t5Section.includes("475"), "roadmap missing MUST matrix counts");
-  assert(t5Section.includes("pnpm test") && t5Section.includes("退出码 0"), "roadmap missing pnpm test exit code");
-  assert(t5Section.includes("pnpm typecheck") && t5Section.includes("退出码 0"), "roadmap missing pnpm typecheck exit code");
-  assert(t5Section.includes("T6") && t5Section.includes("M3") && t5Section.includes("A-K"), "roadmap missing T6/M3 non-goal note");
-  return [
-    item(14, "roadmap-evidence", "查看 roadmap → 应看到 T5 勾选 `[x]`、验收证据、MUST 文档勾选说明、测试/typecheck 退出码，并明确 T6 flag 与 M3 A-K 不在 T5。", {
-      t5Checked: true,
-      evidencePath: t5Section.includes("artifacts/acceptance/t5-evidence.json"),
-      allCase: t5Section.includes("--case all"),
-      mustMatrixCounts: { mustLines: 564, bulletMustCount: 475 },
-      testExitCode: t5Section.includes("pnpm test") && t5Section.includes("退出码 0"),
-      typecheckExitCode: t5Section.includes("pnpm typecheck") && t5Section.includes("退出码 0"),
-      nonGoals: { t6: t5Section.includes("T6"), m3: t5Section.includes("M3") && t5Section.includes("A-K") },
-    }),
-  ];
-}
-
-async function runPrEvidenceCase(): Promise<EvidenceItem[]> {
-  const body = await fs.readFile(prBodyDraftPath, "utf8");
-  for (const required of [
-    "Closes #109",
-    "Closes #116",
-    "artifacts/acceptance/t5-evidence.json",
-    "openspec/changes/local-console-t5-full-parity/proposal.md",
-    "pnpm test",
-    "pnpm typecheck",
-  ]) {
-    assert(body.includes(required), `PR body draft missing ${required}`);
-  }
-  assert(!body.includes("Closes #..."), "PR body draft still contains placeholder Closes #...");
-  return [
-    item(15, "pr-evidence", "查看 T5 PR body draft → 应看到关闭锚点、T5 证据、测试/typecheck 退出码、MUST 矩阵路径和证据摘要。", {
-      draftPath: relativeToProject(prBodyDraftPath),
-      closesParent: body.includes("Closes #109"),
-      closesChild: body.includes("Closes #116"),
-      evidencePath: body.includes("artifacts/acceptance/t5-evidence.json"),
-      mustMatrixPath: body.includes("openspec/changes/local-console-t5-full-parity/proposal.md"),
-      testSummary: body.includes("pnpm test") && body.includes("pnpm typecheck"),
-    }),
-  ];
-}
-
 async function startFixtureServer(
   root: string,
   runCodex: (options: CodexRunOptions) => Promise<CodexRunResult>,
@@ -1370,20 +1245,6 @@ async function runCommand(cwd: string, command: string, args: string[]): Promise
   });
 }
 
-async function listFiles(root: string): Promise<string[]> {
-  const entries = await fs.readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-  for (const entry of entries) {
-    const full = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await listFiles(full)));
-    } else if (entry.isFile()) {
-      files.push(full);
-    }
-  }
-  return files;
-}
-
 async function installFakeCommand(binDir: string, name: string, logPath: string): Promise<void> {
   await fs.mkdir(binDir, { recursive: true });
   await fs.writeFile(
@@ -1509,14 +1370,6 @@ async function writeAgent(root: string, name: string, body: string): Promise<voi
 
 function relativeToProject(targetPath: string): string {
   return path.relative(projectRoot, targetPath);
-}
-
-function extractMarkdownSection(markdown: string, heading: string): string {
-  const start = markdown.indexOf(heading);
-  assert(start !== -1, `missing heading: ${heading}`);
-  const rest = markdown.slice(start);
-  const nextHeading = rest.slice(heading.length).search(/\n### /u);
-  return nextHeading === -1 ? rest : rest.slice(0, heading.length + nextHeading);
 }
 
 function assert(condition: unknown, message: string): asserts condition {

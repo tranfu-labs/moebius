@@ -11,7 +11,7 @@ import {
   type Page,
 } from "playwright";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
-import { startLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { rewriteAsLegacyAgentHandoffFootprint } from "../../src/testing/legacy-agent-handoff-fixture.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";

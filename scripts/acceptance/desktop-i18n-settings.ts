@@ -60,7 +60,7 @@ async function openStatusWindow(application: ElectronApplication, page: Page): P
   });
   const statusPage = await opened;
   await statusPage.waitForLoadState("domcontentloaded");
-  await statusPage.locator("[data-i18n='section.runtime']").waitFor();
+  await statusPage.locator("[data-i18n='section.environment']").waitFor();
   return statusPage;
 }
 
@@ -121,10 +121,10 @@ try {
   record(
     "existing-status-window-starts-zh-CN",
     await readLocale(statusPage) === "zh-CN"
-      && await statusPage.locator("[data-i18n='section.runtime']").textContent() === "运行状态",
+      && await statusPage.locator("[data-i18n='section.environment']").textContent() === "环境自检",
     {
       locale: await readLocale(statusPage),
-      runtimeHeading: await statusPage.locator("[data-i18n='section.runtime']").textContent(),
+      environmentHeading: await statusPage.locator("[data-i18n='section.environment']").textContent(),
     },
   );
   const legacyUpdateEntry = {
@@ -226,10 +226,10 @@ try {
   record(
     "existing-status-window-receives-en",
     await readLocale(statusPage) === "en"
-      && await statusPage.locator("[data-i18n='section.runtime']").textContent() === "Runtime status",
+      && await statusPage.locator("[data-i18n='section.environment']").textContent() === "Environment checks",
     {
       locale: await readLocale(statusPage),
-      runtimeHeading: await statusPage.locator("[data-i18n='section.runtime']").textContent(),
+      environmentHeading: await statusPage.locator("[data-i18n='section.environment']").textContent(),
     },
   );
 
@@ -687,10 +687,10 @@ try {
   record(
     "new-status-window-starts-en",
     await readLocale(newStatusPage) === "en"
-      && await newStatusPage.locator("[data-i18n='section.runtime']").textContent() === "Runtime status",
+      && await newStatusPage.locator("[data-i18n='section.environment']").textContent() === "Environment checks",
     {
       locale: await readLocale(newStatusPage),
-      runtimeHeading: await newStatusPage.locator("[data-i18n='section.runtime']").textContent(),
+      environmentHeading: await newStatusPage.locator("[data-i18n='section.environment']").textContent(),
     },
   );
 

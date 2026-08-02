@@ -38,7 +38,7 @@ export function reduceLanguageState(
     return state;
   }
   if (action.type === "select") {
-    if (action.locale === state.activeLocale) {
+    if (action.locale === state.activeLocale) { // i18n-exempt: locale-state-reducer
       return {
         ...state,
         pendingLocale: null,
@@ -66,4 +66,20 @@ export function reduceLanguageState(
     status: "failed",
     requestId: action.requestId,
   };
+}
+
+export function planInitialDesktopLocale(search: string): DesktopLocale {
+  return new URLSearchParams(search).get("locale") === "en" ? "en" : "zh-CN";
+}
+
+export function planLanguagePersistence(hasPersistencePort: boolean): "persist" | "commit-local" {
+  return hasPersistencePort ? "persist" : "commit-local";
+}
+
+export function planLanguageRetry(state: LanguageState): DesktopLocale | null {
+  return state.pendingLocale;
+}
+
+export function planActiveLanguageCommit(active: boolean): boolean {
+  return active;
 }

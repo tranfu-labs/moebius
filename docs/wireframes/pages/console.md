@@ -3,7 +3,7 @@
 > 本文是历史线框参考；新对话入口、页面态、首发创建和草稿行为已由
 > `docs/product/pages/main-conversation.md` 接管。与该页面 PRD 冲突时，以页面 PRD 为准。
 
-The console page is the Electron desktop shell's default main window. It is a local operator console backed by the local console server and SQLite. Status and observer pages remain auxiliary diagnostics, and their current presentation facts are documented in this file rather than a separate observer page fact source.
+The console page is the Electron desktop shell's default main window. It is a local operator console backed by the local console server and SQLite. The auxiliary status page remains available for local environment and update diagnostics; the former GitHub-state observer has been retired.
 
 ## Running
 
@@ -140,16 +140,15 @@ Requirements:
 ```text
 [诊断]
   打开状态页
-  打开观察页
   打开数据目录
 ```
 
 Requirements:
-- Status and observer pages are reachable as diagnostics, but the operator console is the default main window.
+- The status page is reachable as a diagnostic surface, but the operator console is the default main window.
 
-## Auxiliary Read-only Observer
+## Retired Read-only Observer Reference
 
-The observer remains a separate, local read-only diagnostic page reachable from the console or through `pnpm observer`. It uses `.state/goal-ledger.json` as the primary data source when available, rendering a goal -> milestone -> task tree with phase summaries, gate visibility, task evidence, unlinked runs, diagnostics, and legacy issue/run records as a secondary area.
+The following sketches are retained only as historical wireframe reference. The observer command, server, navigation entry, and GitHub-state presentation were removed with the GitHub runner and are not reachable product behavior.
 
 Desktop:
 
@@ -249,11 +248,7 @@ Mobile / narrow viewport:
 └────────────────────────────────────┘
 ```
 
-Requirements:
-- The observer remains auxiliary and read-only; it is not the default desktop main-window experience.
-- The primary diagnostic view is ledger-first when the ledger is valid, while malformed, missing, or timed-out ledger reads preserve legacy issue/run records.
-- Goal filtering, owner phase states, gate visibility, explicit run evidence, unlinked runs, artifact links, and malformed-state diagnostics remain visible without exposing full issue bodies, hidden keys, secrets, or full run manifest JSON.
-- The observer provides no operation buttons, file watcher, GitHub/Codex/publisher calls, state writes, or runner control capability.
+Historical requirements below this heading are non-operative and must not be used as acceptance criteria for the current application.
 
 ## Codex-native Stream Anchor
 

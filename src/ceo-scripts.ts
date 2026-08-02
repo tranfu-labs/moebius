@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AGENTS_DIR } from "./config.js";
 
 export const CEO_SCRIPTS_DIRNAME = "ceo-scripts";
 export const REQUIRED_CEO_SCRIPT_IDS = [
@@ -25,12 +24,12 @@ export interface CeoScript {
 }
 
 export interface LoadCeoScriptsOptions {
-  agentsDir?: string;
+  agentsDir: string;
   required?: boolean;
 }
 
-export async function loadCeoScripts(options: LoadCeoScriptsOptions = {}): Promise<CeoScript[]> {
-  const dir = path.join(options.agentsDir ?? AGENTS_DIR, CEO_SCRIPTS_DIRNAME);
+export async function loadCeoScripts(options: LoadCeoScriptsOptions): Promise<CeoScript[]> {
+  const dir = path.join(options.agentsDir, CEO_SCRIPTS_DIRNAME);
   let entries: Array<{ name: string; isFile(): boolean }>;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });

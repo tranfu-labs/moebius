@@ -1,0 +1,76 @@
+import type { LocalActiveRunRegistry } from "./active-run-registry.js";
+import type { LocalExecutionRunner } from "./execution-driver.js";
+import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
+import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
+import type { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
+import {
+  decideLocalActiveRunTarget,
+  planLocalProviderExecutionOptions,
+} from "./provider-invocation-plan.js";
+
+type PrimaryProviderPorts = ConstructorParameters<typeof LocalPrimaryProviderRuntime>[0];
+
+export function createLocalPrimaryProviderPorts(input: {
+  storePorts: Pick<LocalConsoleStorePorts,
+    | "call"
+    | "sessionFacts"
+    | "recordProviderInvocation"
+    | "recordProviderSessionObserved"
+    | "recordAgentSessionLink"
+    | "recordExecutionSessionLink"
+    | "recordCodexThreadLink"
+  >;
+  executionRunner: LocalExecutionRunner;
+  activeRuns: LocalActiveRunRegistry;
+  lifecycle: LocalRunLifecycleRuntime;
+  idleTimeoutMs: number | undefined;
+  toolTimeoutMs: number | undefined;
+  nowIso: PrimaryProviderPorts["nowIso"];
+}): PrimaryProviderPorts {
+  const { storePorts } = input;
+  return {
+    nowIso: input.nowIso,
+    recordProviderInvocation: (fact) => storePorts.recordProviderInvocation(fact),
+    runProvider: (preparation, callbacks) => input.executionRunner({
+      prompt: preparation.prompt,
+      runDir: preparation.providerRunDir,
+      cwd: preparation.workspace.cwd,
+      profile: preparation.executionContext.profile,
+      mode: preparation.invocationPlan.providerMode,
+      signal: preparation.controller.signal,
+      ...planLocalProviderExecutionOptions({
+        idleTimeoutMs: input.idleTimeoutMs,
+        toolTimeoutMs: input.toolTimeoutMs,
+        imagePaths: preparation.preparedAttachments.imagePaths,
+      }),
+      workspaceAccess: preparation.invocationPlan.workspaceAccess,
+      ...callbacks,
+    }),
+    onVisibleAgentMarkdown: (run, text) => {
+      const target = decideLocalActiveRunTarget(input.activeRuns.get(run.runId), run.sessionId);
+      if (target.kind === "skip") return async () => undefined;
+      target.active.liveMarkdown = text;
+      input.lifecycle.updateAgentProgress(run.runId, text);
+      const recordedAt = input.nowIso();
+      return () => storePorts.call("local-console-store-record-progress", () =>
+        storePorts.sessionFacts().recordProgressEvent({
+          sessionId: run.sessionId,
+          runId: run.runId,
+          role: run.role,
+          body: text,
+          now: recordedAt,
+        }));
+    },
+    onProcessStarted: (runId) => input.lifecycle.markStarted(runId),
+    onStructuredActivity: (runId, event) => input.lifecycle.updateStructuredActivity(runId, event),
+    onExecutionProgress: (runId, event) => input.lifecycle.updateExecutionProgress(runId, event),
+    setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
+      const target = decideLocalActiveRunTarget(input.activeRuns.get(runId), sessionId);
+      if (target.kind === "update") target.active.threadId = externalSessionId;
+    },
+    recordProviderSessionObserved: (fact) => storePorts.recordProviderSessionObserved(fact),
+    recordAgentSessionLink: (fact) => storePorts.recordAgentSessionLink(fact),
+    recordExecutionSessionLink: (fact) => storePorts.recordExecutionSessionLink(fact),
+    recordCodexThreadLink: (fact) => storePorts.recordCodexThreadLink(fact),
+  };
+}

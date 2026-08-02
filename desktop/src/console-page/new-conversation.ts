@@ -1,5 +1,5 @@
 import type { TeamOwnership } from "../team-model.js";
-import type { CreatedSession } from "./state-sync.js";
+import type { CreatedSession } from "./console-state-action-contract.js";
 
 export interface ConversationAgentTeamIdentity {
   teamId: string;
@@ -19,6 +19,11 @@ export interface NewConversationDraftState {
 export interface NewConversationSubmissionState extends Omit<NewConversationDraftState, "isOpen"> {
   readyAttachmentCount?: number;
   hasBlockingAttachments?: boolean;
+}
+
+export interface ReadyNewConversationSubmission extends NewConversationDraftState {
+  projectId: string;
+  teamKey: string;
 }
 
 export type NewConversationDraftEvent =
@@ -126,4 +131,36 @@ export async function submitNewConversation(input: {
   } catch (preferenceError) {
     return { created: true, sessionId: session.sessionId, preferenceRecorded: false, preferenceError };
   }
+}
+
+export function planNewConversationSubmission(
+  state: NewConversationDraftState | null,
+  readyAttachmentCount: number,
+  hasBlockingAttachments: boolean,
+): ReadyNewConversationSubmission | null {
+  if (state === null || !state.isOpen || state.projectId === null || state.teamKey === null) return null;
+  if (!canSubmitNewConversation({ ...state, readyAttachmentCount, hasBlockingAttachments })) return null;
+  return { ...state, projectId: state.projectId, teamKey: state.teamKey };
+}
+
+export function planNewConversationCreation(
+  result: SubmitNewConversationResult,
+): { kind: "failed" } | { kind: "created"; sessionId: string } {
+  return result.created
+    ? { kind: "created", sessionId: result.sessionId }
+    : { kind: "failed" };
+}
+
+export function planNewConversationPreferenceResult(
+  result: SubmitNewConversationResult,
+): "recorded" | "failed" | "not-created" {
+  if (!result.created) return "not-created";
+  return result.preferenceRecorded ? "recorded" : "failed";
+}
+
+export function planNewConversationPreferenceError(
+  result: SubmitNewConversationResult,
+): unknown {
+  if (!result.created || result.preferenceRecorded) return null;
+  return result.preferenceError;
 }

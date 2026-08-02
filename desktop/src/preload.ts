@@ -90,7 +90,6 @@ export interface MoebiusDesktopApi {
   getLocalConsoleUrl(): Promise<string | null>;
   getLocalConsoleAttachmentCapability(): Promise<string | null>;
   copySessionLogPath(sessionId: string): Promise<CopySessionLogPathResult>;
-  openObserver(): Promise<void>;
   openStatusPage(): Promise<void>;
   openDataRoot(): Promise<void>;
   readApplicationInfo(): Promise<SettingsApplicationInfo>;
@@ -197,9 +196,6 @@ const api: MoebiusDesktopApi = {
   },
   copySessionLogPath(sessionId) {
     return ipcRenderer.invoke(COPY_SESSION_LOG_PATH_IPC_CHANNEL, sessionId) as Promise<CopySessionLogPathResult>;
-  },
-  openObserver() {
-    return ipcRenderer.invoke("action:open-observer") as Promise<void>;
   },
   openStatusPage() {
     return ipcRenderer.invoke("action:open-status-page") as Promise<void>;

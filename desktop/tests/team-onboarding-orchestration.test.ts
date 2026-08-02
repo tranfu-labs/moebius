@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   TEAM_ONBOARDING_ORCHESTRATION_FILE,
   parseTeamOnboardingOrchestrationJson,
+} from "../src/team-onboarding-orchestration.js";
+import {
   readTeamOnboardingOrchestration,
   writeTeamOnboardingOrchestration,
-} from "../src/team-onboarding-orchestration.js";
+} from "../src/team-onboarding-orchestration-store.js";
 import { resolveTeamLocation, writeTeamDefinition } from "../src/team-store.js";
 
 const temporaryRoots: string[] = [];

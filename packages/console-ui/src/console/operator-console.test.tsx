@@ -3108,7 +3108,6 @@ function baseProps(overrides: Partial<OperatorConsoleProps> = {}): OperatorConso
     messages: [message({ id: 1, body: "@dev hello" })],
     activeRun: null,
     composerValue: "@dev next",
-    runnerStatus: "running",
     sqlitePath: "/tmp/local-console.sqlite",
     lastError: null,
     onComposerChange: vi.fn(),

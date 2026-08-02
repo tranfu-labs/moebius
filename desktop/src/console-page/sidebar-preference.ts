@@ -2,6 +2,10 @@ export const SIDEBAR_VISIBILITY_STORAGE_KEY = "moebius.sidebar.visibility";
 
 export type SidebarVisibilityPreference = "open" | "closed";
 
+export function planSidebarVisibilityPreference(open: boolean): SidebarVisibilityPreference {
+  return open ? "open" : "closed";
+}
+
 interface SidebarPreferenceStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

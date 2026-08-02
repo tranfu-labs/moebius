@@ -1,4 +1,4 @@
-import type { ConsoleSelection } from "./state-sync.js";
+import type { ConsoleSelection } from "./console-state-coordinator.js";
 
 export const CONSOLE_SELECTION_STORAGE_KEY = "moebius.console.selection";
 
@@ -75,6 +75,26 @@ export function isSameConsoleSelection(
   right: ConsoleSelection,
 ): boolean {
   return left?.projectId === right.projectId && left.sessionId === right.sessionId;
+}
+
+export function decideConsoleSelectionPersistence(
+  current: ConsoleSelection | null,
+  next: ConsoleSelection,
+): "skip" | "write" {
+  return isSameConsoleSelection(current, next) ? "skip" : "write";
+}
+
+export function planInitialConsoleSelection(selection: ConsoleSelection | null): ConsoleSelection {
+  return selection ?? { projectId: "local", sessionId: "default" };
+}
+
+export function decideConsoleSessionIsRoot(session: {
+  parentSessionId?: string | null;
+  analysisParentSessionId?: string | null;
+} | null): boolean {
+  return session !== null
+    && session.parentSessionId == null
+    && session.analysisParentSessionId == null;
 }
 
 export function decideConsoleSelectionCommit(input: {

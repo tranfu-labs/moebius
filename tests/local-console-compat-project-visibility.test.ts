@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
-import { startLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore, type SqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { runSqliteStateCommand } from "../src/sqlite-state.js";
 import {
@@ -210,22 +210,6 @@ const factTableCases: VisibilityCase[] = [
         (session_id, speaker, body, status, created_at, updated_at)
        VALUES (?, 'user', '历史消息', 'completed', ?, ?)`,
     ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW, NOW),
-  },
-  {
-    name: "session_role_threads contains history",
-    mutate: (database) => database.prepare(
-      `INSERT INTO session_role_threads
-        (session_id, role, thread_id, last_seen_index, updated_at)
-       VALUES (?, 'dev', 'thread-1', 0, ?)`,
-    ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW),
-  },
-  {
-    name: "session_agent_contexts contains history",
-    mutate: (database) => database.prepare(
-      `INSERT INTO session_agent_contexts
-        (session_id, context_key, json, updated_at)
-       VALUES (?, 'context-1', '{}', ?)`,
-    ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW),
   },
   {
     name: "local_route_decisions contains history",

@@ -1,12 +1,11 @@
 {
   "name": "moebius",
   "version": "0.2.0",
-  "description": "Local-first multi-agent collaboration for Codex, with an optional Electron desktop app and GitHub Issue runner.",
+  "description": "Local-first multi-agent collaboration for Codex, with an optional Electron desktop app.",
   "keywords": [
     "ai-agents",
     "codex",
     "electron",
-    "github-issues",
     "multi-agent",
     "typescript"
   ],
@@ -26,7 +25,6 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "start": "cross-env NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx src/runner.ts",
-    "observer": "tsx src/observer/server.ts",
     "desktop": "cross-env NODE_OPTIONS=--disable-warning=ExperimentalWarning pnpm --filter @moebius/desktop dev",
     "brand:generate": "node scripts/generate-brand-assets.mjs",
     "brand:check": "node scripts/generate-brand-assets.mjs --check",

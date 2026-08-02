@@ -15,15 +15,17 @@ import {
 } from "./claude-executable.js";
 import {
   createRunWatchdogs,
-  terminalForFailure,
-  type CodexRunFailure,
   type CodexRunResult,
 } from "./codex.js";
 import {
+  planExecutionFailureTerminal,
+  type CodexRunFailure,
+} from "./execution-failure-plan.js";
+import {
   createClaudeToolProjectionState,
   executionInterruptionCause,
-  projectClaudeProgress,
   projectClaudeToolLifecycle,
+  selectClaudeExecutionProgress,
   type ExecutionInterruptionCause,
   type ExecutionProgressEvent,
 } from "./execution-contract.js";
@@ -394,7 +396,7 @@ async function runClaudeProcess(
     const sequence = ++progressSequence;
     const toolLifecycle = projectClaudeToolLifecycle(event, sequence, toolProjection);
     toolProjection = toolLifecycle.state;
-    const progress = toolLifecycle.progress ?? projectClaudeProgress(event, sequence);
+    const progress = selectClaudeExecutionProgress(toolLifecycle.progress, event, sequence);
     if (progress !== null) {
       const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
       progressSupervisor = supervision.state;
@@ -476,7 +478,8 @@ async function runClaudeProcess(
         failProtocol("Claude Code 在 session 初始化前返回了内容。");
         return;
       }
-      if (!sessionReady) {
+      const streamSessionPending = !sessionReady;
+      if (streamSessionPending) {
         pendingSessionEvents.push(event);
         return;
       }
@@ -502,7 +505,8 @@ async function runClaudeProcess(
         failProtocol("Claude Code 在 session 初始化前结束。");
         return;
       }
-      if (!sessionReady) {
+      const resultSessionPending = !sessionReady;
+      if (resultSessionPending) {
         pendingSessionEvents.push(event);
         return;
       }
@@ -638,7 +642,7 @@ async function runClaudeProcess(
       ok: false,
       reason: terminalProtocolFailure.code,
       failure: terminalProtocolFailure,
-      terminal: terminalForFailure(terminalProtocolFailure, finalText),
+      terminal: planExecutionFailureTerminal(terminalProtocolFailure, finalText),
       ...(initObserved ? { threadId: sessionId } : {}),
       runDir,
       stdoutPath,
@@ -671,7 +675,7 @@ async function runClaudeProcess(
       ok: false,
       reason: terminalClassifiedFailure.code,
       failure: terminalClassifiedFailure,
-      terminal: terminalForFailure(terminalClassifiedFailure, finalText),
+      terminal: planExecutionFailureTerminal(terminalClassifiedFailure, finalText),
       ...(initObserved ? { threadId: sessionId } : {}),
       runDir,
       stdoutPath,
@@ -791,7 +795,7 @@ function failed(
     reason: code,
     failure,
     terminal: interruptionCause === undefined
-      ? terminalForFailure(failure, partialText)
+      ? planExecutionFailureTerminal(failure, partialText)
       : {
           kind: "interrupted",
           actor: interruptionCause === "user" ? "user" : "system",

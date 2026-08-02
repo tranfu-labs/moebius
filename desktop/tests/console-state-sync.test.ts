@@ -7,39 +7,49 @@ import {
 import { TRUSTED_EXECUTION_REGISTRY } from "../../src/execution-profile-registry.js";
 import {
   acknowledgeDisplayedResult,
-  ConsoleStateActions,
-  ConsoleStateCoordinator,
   createSidebarConversationSession,
-  loadEvidenceView,
   loadProcessDebugInvocation,
   loadProcessOutput,
   loadProcessOutputAppend,
   loadProcessOutputUpdate,
-  mergeSettledProcessOutput,
   loadSubSessionView,
   loadSessionReferenceText,
-  ProcessOutputRequestError,
-  ProcessInvocationRequestCoordinator,
-  SessionViewTransitionQueue,
-  processOutputLocator,
-  processOutputRunId,
   loadProjectFile,
   loadFileReference,
   loadExecutionProfileRegistry,
   loadProjectFiles,
   loadWorkspaceDiff,
-  refreshConsoleState,
   restoreConsoleSession,
   retryPendingSessionMessage,
   retrySessionRun,
   removePendingSessionMessage,
-  subSessionIdFromSourceKey,
   submitSessionMessage,
   updatePendingSessionMessage,
   searchConsoleSessions,
+} from "../src/console-page/console-api-client.js";
+import { ConsoleStateActions } from "../src/console-page/console-state-actions.js";
+import { loadEvidenceView } from "../src/console-page/load-evidence-view.js";
+import { refreshConsoleState } from "../src/console-page/refresh-console-state.js";
+import { createBrowserFetchPort } from "../src/console-page/browser-fetch.js";
+import { createConsoleCommandPort } from "../src/console-page/console-command-client.js";
+import {
+  mergeSettledProcessOutput,
+  ProcessOutputRequestError,
+  processOutputLocator,
+  processOutputRunId,
+  subSessionIdFromSourceKey,
+} from "../src/console-page/console-process-model.js";
+import {
+  ConsoleStateCoordinator,
+  ProcessInvocationRequestCoordinator,
+  SessionViewTransitionQueue,
   type ConsoleSelection,
   type SelectionMutationKind,
-} from "../src/console-page/state-sync.js";
+} from "../src/console-page/console-state-coordinator.js";
+import {
+  createModelConsoleErrorController,
+  createTestConsoleErrorController,
+} from "./console-error-test-controller.js";
 
 describe("execution profile registry state sync", () => {
   it("keeps server admission and the team-page registry in lockstep", () => {
@@ -141,7 +151,7 @@ describe("sidebar conversation state sync", () => {
       entryTemplate: "session-analysis",
       writePolicy: "confirm-current-plan-before-write",
       textFragments: draft.fragments,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).rejects.toThrow("create failed");
     expect(draft).toEqual({
       body: "分析耗时",
@@ -183,7 +193,7 @@ describe("sidebar conversation state sync", () => {
       scope: "message",
       runId: "run/1",
       messageId: 17,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toEqual({
       fragment: { id: "fragment", label: "文本片段", text: "服务端生成" },
     });
@@ -192,12 +202,12 @@ describe("sidebar conversation state sync", () => {
       query: " 分析 ",
       includeArchived: true,
       signal: controller.signal,
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toEqual([]);
     await expect(restoreConsoleSession({
       apiBase: "http://127.0.0.1:8787/",
       sessionId: "session/1",
-      fetch,
+      fetch: createBrowserFetchPort(fetch),
     })).resolves.toMatchObject({ sessionId: "session/1", title: "分析" });
   });
 });
@@ -280,6 +290,48 @@ describe("SessionViewTransitionQueue", () => {
 });
 
 describe("refreshConsoleState", () => {
+  it("does not clear another source after three successful polls", async () => {
+    const errors = createModelConsoleErrorController();
+    errors.controller.report({ family: "project", scope: "project-a:rename" }, "rename failed");
+    const committed: TestState[] = [];
+    const options = refreshOptions({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch: vi.fn(async () => jsonResponse({
+        selectedProjectId: "project-a",
+        selectedSessionId: "session-a",
+      })),
+      committed,
+      errors: errors.controller,
+    });
+
+    await refreshConsoleState(options);
+    await refreshConsoleState(options);
+    await refreshConsoleState(options);
+
+    expect(errors.visibleMessage()).toBe("rename failed");
+  });
+
+  it("clears only its own failure after the next successful refresh", async () => {
+    const errors = createModelConsoleErrorController();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "unavailable" }, 503))
+      .mockResolvedValueOnce(jsonResponse({
+        selectedProjectId: "project-a",
+        selectedSessionId: "session-a",
+      }));
+    const options = refreshOptions({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch,
+      committed: [],
+      errors: errors.controller,
+    });
+
+    await expect(refreshConsoleState(options)).resolves.toBe(false);
+    expect(errors.visibleMessage()).toBe("unavailable");
+    await expect(refreshConsoleState(options)).resolves.toBe(true);
+    expect(errors.visibleMessage()).toBeNull();
+  });
+
   it("keeps a slow periodic refresh single-flight and eventually commits it", async () => {
     const coordinator = new ConsoleStateCoordinator();
     const response = deferred<Response>();
@@ -1169,8 +1221,8 @@ describe("ConsoleStateActions", () => {
       }));
     const actions = new ConsoleStateActions({
       apiBase: "http://127.0.0.1:8787/",
+      commands: createConsoleCommandPort(fetch),
       coordinator,
-      fetch,
       t: zhT,
       getSelection: () => selection,
       commitSelection: (nextSelection) => {
@@ -1179,9 +1231,14 @@ describe("ConsoleStateActions", () => {
       refresh,
       composerValue: "draft",
       clearComposer: vi.fn(),
+      getAttachmentIds: () => [],
+      getResumeRunId: () => null,
+      clearAttachments: vi.fn(),
+      clearResumeRunId: vi.fn(),
       setMutationKind: vi.fn(),
       setSending: vi.fn(),
-      setError: vi.fn(),
+      errors: createTestConsoleErrorController().controller,
+      commitSessionMetadata: vi.fn(),
     });
 
     const rebind = actions.rebindSessionProject("session-a", "project-b");
@@ -1451,6 +1508,7 @@ function refreshOptions(input: {
   selection?: ConsoleSelection;
   mutationOwner?: Parameters<ConsoleStateCoordinator["beginRefresh"]>[0];
   commitSelection?: (selection: ConsoleSelection) => void;
+  errors?: ReturnType<typeof createTestConsoleErrorController>["controller"];
 }) {
   return {
     apiBase: "http://127.0.0.1:8787/",
@@ -1464,7 +1522,7 @@ function refreshOptions(input: {
     }),
     commitState: (state: TestState) => input.committed.push(state),
     commitSelection: input.commitSelection ?? vi.fn(),
-    setError: vi.fn(),
+    errors: input.errors ?? createTestConsoleErrorController().controller,
     mutationOwner: input.mutationOwner ?? undefined,
   };
 }
@@ -1491,8 +1549,8 @@ function actionHarness(input: {
   const clearAttachments = vi.fn();
   const actions = new ConsoleStateActions({
     apiBase: "http://127.0.0.1:8787/",
+    commands: createConsoleCommandPort(input.fetch),
     coordinator: input.coordinator,
-    fetch: input.fetch,
     t: zhT,
     getSelection: () => selection,
     commitSelection: (nextSelection) => {
@@ -1502,11 +1560,13 @@ function actionHarness(input: {
     composerValue: input.composerValue ?? "draft",
     clearComposer,
     getAttachmentIds: () => input.attachmentIds ?? [],
+    getResumeRunId: () => null,
     clearAttachments,
+    clearResumeRunId: vi.fn(),
     setMutationKind: (kind) => mutationKinds.push(kind),
     setSending: (value) => sending.push(value),
-    setError: (error) => errors.push(error),
-    commitSessionMetadata: input.commitSessionMetadata,
+    errors: createTestConsoleErrorControllerWithMessages(errors),
+    commitSessionMetadata: input.commitSessionMetadata ?? vi.fn(),
     selectProjectFolder: input.selectProjectFolder,
   });
   return {
@@ -1518,6 +1578,13 @@ function actionHarness(input: {
     selection: () => selection,
     sending,
   };
+}
+
+function createTestConsoleErrorControllerWithMessages(messages: string[]) {
+  const harness = createTestConsoleErrorController();
+  harness.fail.mockImplementation((_operation, message) => { messages.push(message); });
+  harness.report.mockImplementation((_source, message) => { messages.push(message); });
+  return harness.controller;
 }
 
 function receiverSensitiveFetch(...responses: Response[]) {

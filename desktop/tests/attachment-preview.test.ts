@@ -4,6 +4,7 @@ import {
   createBoundedPngPreview,
   fitWithin,
 } from "../src/console-page/attachment-preview.js";
+import { ManagedAttachmentFailure } from "../src/console-page/managed-attachment-model.js";
 
 describe("managed attachment preview", () => {
   it("fits an image inside the bounded edge while preserving its ratio", () => {
@@ -36,6 +37,18 @@ describe("managed attachment preview", () => {
     );
     expect(result).toBeNull();
     expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("reports stable failure codes for invalid dimensions and an exhausted preview budget", async () => {
+    expect(() => fitWithin(Number.NaN, 64, 512))
+      .toThrow(new ManagedAttachmentFailure("image-dimensions-invalid"));
+
+    await expect(createBoundedPngPreview(pngFile(), {
+      decode: async () => ({ width: 1, height: 1, source: {} as CanvasImageSource, close: vi.fn() }),
+      encode: async () => new Blob([
+        new Uint8Array(ATTACHMENT_PREVIEW_MAX_BYTES + 1),
+      ], { type: "image/png" }),
+    })).rejects.toEqual(new ManagedAttachmentFailure("image-preview-budget"));
   });
 });
 

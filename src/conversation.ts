@@ -1,11 +1,3 @@
-export function countMessages(commentCount: number): number {
-  if (!Number.isInteger(commentCount) || commentCount < 0) {
-    throw new Error("commentCount must be a non-negative integer");
-  }
-
-  return 1 + commentCount;
-}
-
 export interface AgentMention {
   name: string;
   index: number;
@@ -15,7 +7,7 @@ export interface TimelineComment {
   body: string;
 }
 
-export type TimelineSource = "issue-body" | "comment";
+export type TimelineSource = "initial-message" | "message";
 
 export interface TimelineMessage {
   index: number;
@@ -24,55 +16,23 @@ export interface TimelineMessage {
   source: TimelineSource;
 }
 
-export interface RoleThreadState {
-  threadId: string;
-  lastSeenIndex: number;
-  provider?: "codex";
-  contextFingerprint?: string;
-  workspaceFingerprint?: string;
-  personaFingerprint?: string;
-}
-
-export type RolePromptPlan =
-  | {
-      kind: "run";
-      mode: "full";
-      role: string;
-      prompt: string;
-      latestIndex: number;
-    }
-  | {
-      kind: "run";
-      mode: "resume";
-      role: string;
-      threadId: string;
-      prompt: string;
-      latestIndex: number;
-      deltaMessages: TimelineMessage[];
-    }
-  | {
-      kind: "skip";
-      reason: "empty-timeline" | "no-new-external-messages";
-      role: string;
-    };
-
 export function buildTimeline(
-  issueBody: string,
-  comments: TimelineComment[],
+  initialMessage: string,
+  messages: TimelineComment[],
   availableAgentNames: string[],
 ): TimelineMessage[] {
   return [
     {
       index: 0,
       speaker: "user",
-      body: issueBody,
-      source: "issue-body",
+      body: initialMessage,
+      source: "initial-message",
     },
-    ...comments.map((comment, commentIndex) => {
-      const normalized = normalizeComment(comment.body, availableAgentNames);
+    ...messages.map((message, messageIndex) => {
+      const normalized = normalizeComment(message.body, availableAgentNames);
       return {
-        index: commentIndex + 1,
-        source: "comment" as const,
+        index: messageIndex + 1,
+        source: "message" as const,
         ...normalized,
       };
     }),
@@ -85,67 +45,6 @@ export function getLatestTimelineMessage(timeline: TimelineMessage[]): TimelineM
 
 export function formatAgentComment(role: string, finalText: string): string {
   return `&lt;${role}&gt;:\n${finalText.trimEnd()}\n\n<!-- moebius:role=${role} -->`;
-}
-
-export function buildRolePromptPlan(input: {
-  role: string;
-  agentMarkdown: string;
-  timeline: TimelineMessage[];
-  state: RoleThreadState | null;
-}): RolePromptPlan {
-  const latestIndex = getLatestTimelineMessage(input.timeline)?.index;
-  if (latestIndex === undefined) {
-    return { kind: "skip", reason: "empty-timeline", role: input.role };
-  }
-
-  if (input.state === null) {
-    return {
-      kind: "run",
-      mode: "full",
-      role: input.role,
-      latestIndex,
-      prompt: buildFullPrompt(input.agentMarkdown, input.timeline),
-    };
-  }
-
-  const deltaMessages = selectDeltaMessages(input.timeline, input.role, input.state.lastSeenIndex);
-  if (deltaMessages.length === 0) {
-    return { kind: "skip", reason: "no-new-external-messages", role: input.role };
-  }
-
-  return {
-    kind: "run",
-    mode: "resume",
-    role: input.role,
-    threadId: input.state.threadId,
-    latestIndex,
-    deltaMessages,
-    prompt: buildDeltaPrompt(input.role, deltaMessages),
-  };
-}
-
-export function selectDeltaMessages(
-  timeline: TimelineMessage[],
-  role: string,
-  lastSeenIndex: number,
-): TimelineMessage[] {
-  return timeline.filter((message) => message.index > lastSeenIndex && message.speaker !== role);
-}
-
-export function resolveNextRoleThreadState(input: {
-  currentThreadId: string | null;
-  resultThreadId: string | null;
-  latestIndex: number;
-}): RoleThreadState | null {
-  const threadId = input.resultThreadId ?? input.currentThreadId;
-  if (threadId === null) {
-    return null;
-  }
-
-  return {
-    threadId,
-    lastSeenIndex: input.latestIndex,
-  };
 }
 
 export function parseAgentMentions(text: string): AgentMention[] {
@@ -167,6 +66,16 @@ export function parseAgentMentions(text: string): AgentMention[] {
   }
 
   return mentions;
+}
+
+export function selectMentionedAgent(text: string, availableAgentNames: string[]): string | null {
+  const availableAgents = new Set(availableAgentNames);
+
+  for (const mention of parseAgentMentions(text)) {
+    if (availableAgents.has(mention.name)) return mention.name;
+  }
+
+  return null;
 }
 
 function maskMarkdownCodeAreas(text: string): string {
@@ -233,18 +142,6 @@ function maskRange(masked: boolean[], start: number, end: number): void {
   }
 }
 
-export function selectMentionedAgent(text: string, availableAgentNames: string[]): string | null {
-  const availableAgents = new Set(availableAgentNames);
-
-  for (const mention of parseAgentMentions(text)) {
-    if (availableAgents.has(mention.name)) {
-      return mention.name;
-    }
-  }
-
-  return null;
-}
-
 function normalizeComment(body: string, availableAgentNames: string[]): Pick<TimelineMessage, "speaker" | "body"> {
   const availableAgents = new Set(availableAgentNames);
   const metadataRole = parseMetadataRole(body);
@@ -305,29 +202,6 @@ function stripRoleEnvelope(body: string, role: string): string {
   const escapedRole = escapeRegex(role);
   const pattern = new RegExp(`^(?:${escapedRole}|&lt;${escapedRole}&gt;|<${escapedRole}>):\\s*`);
   return body.replace(pattern, "").trim();
-}
-
-function buildFullPrompt(agentMarkdown: string, timeline: TimelineMessage[]): string {
-  return `${agentMarkdown.trimEnd()}
-
-你正在参与一个 GitHub Issue 共享时间线。请基于你的角色设定和公开时间线继续回复。
-消息格式为 #<index> <speaker>: 后接正文。你的最终回复会由 runner 使用 <role>: 可见前缀写回 GitHub。
-
-当前共享时间线：
-${formatTimelineMessages(timeline)}`;
-}
-
-function buildDeltaPrompt(role: string, deltaMessages: TimelineMessage[]): string {
-  return `以下是共享 GitHub Issue 时间线中，你上次处理后新增、且不是你自己 <${role}> 发出的消息。请基于你当前 Codex thread 的既有上下文继续回复。
-
-新增公开消息：
-${formatTimelineMessages(deltaMessages)}`;
-}
-
-function formatTimelineMessages(messages: TimelineMessage[]): string {
-  return messages
-    .map((message) => `#${message.index} <${message.speaker}>:\n${message.body.trimEnd()}`)
-    .join("\n\n");
 }
 
 function escapeRegex(value: string): string {

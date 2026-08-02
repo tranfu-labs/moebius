@@ -1,32 +1,16 @@
 import http from "node:http";
-import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  DATA_ROOT,
-  LOCAL_CONSOLE_HOST,
-  LOCAL_CONSOLE_PORT,
-  LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS,
-  LOCAL_CONSOLE_SQLITE_PATH,
-  LOCAL_CONSOLE_SESSION_LOG_ROOT,
-  LOCAL_CONSOLE_STORE_TIMEOUT_MS,
-  LOCAL_RUN_IDLE_TIMEOUT_MS,
-  LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
-  PROJECT_ROOT,
-  TMP_ROOT,
-} from "../config.js";
-import { run as runCodex } from "../codex.js";
+import { TMP_ROOT } from "../config.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
-import { createSqliteLocalConsoleStore } from "./store.js";
 import {
   LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES,
   LocalAttachmentManager,
-  supportsManagedAttachments,
 } from "./attachments.js";
 import { listLocalT5Facts } from "./t5-store.js";
-import type { LocalRouteJudgment } from "./route-bus.js";
-import { ProcessCursorError } from "./process-history.js";
+import { ProcessCursorError } from "./process-history-contracts.js";
+import { formatLocalError } from "./runtime-domain.js";
 import {
   LocalConsoleBusyError,
   LocalConsoleProjectFolderError,
@@ -34,121 +18,8 @@ import {
   LocalConsoleSessionProjectError,
   LocalConsoleSessionRunningError,
   LocalConsoleSessionWorkspaceLockedError,
-  type LocalConsoleStore,
 } from "./types.js";
-import {
-  formatLocalError,
-  LocalConsoleRuntime,
-  type LocalConsoleAgentFile,
-  type LocalConsoleRuntimeOptions,
-} from "./runtime.js";
-
-export interface LocalConsoleServerOptions {
-  host?: string;
-  port?: number;
-  dataRoot?: string;
-  projectRoot?: string;
-  workdirRoot?: string;
-  store?: LocalConsoleStore;
-  sqlitePath?: string;
-  sessionLogRoot?: string;
-  listAgentFiles?: (sessionId: string) => Promise<LocalConsoleAgentFile[]>;
-  loadAgentTeamSnapshot?: LocalConsoleRuntimeOptions["loadAgentTeamSnapshot"];
-  resolveAgentTeamHealth?: LocalConsoleRuntimeOptions["resolveAgentTeamHealth"];
-  runCodex?: typeof runCodex;
-  runExecution?: LocalConsoleRuntimeOptions["runExecution"];
-  makeRunDir?: (count: number, now?: Date) => string;
-  storeTimeoutMs?: number;
-  sqliteBusyTimeoutMs?: number;
-  codexIdleTimeoutMs?: number;
-  toolInFlightTimeoutMs?: number;
-  codexMaxDurationMs?: number;
-  workspaceGitTimeoutMs?: number;
-  routeJudgment?: LocalRouteJudgment;
-  routeTimeoutMs?: number;
-  failureRetryLimit?: number;
-  isCodexThreadAvailable?: LocalConsoleRuntimeOptions["isCodexThreadAvailable"];
-  attachmentRoot?: string;
-  attachmentCapability?: string;
-}
-
-export interface StartedLocalConsoleServer {
-  server: http.Server;
-  runtime: LocalConsoleRuntime;
-  url: string;
-  sqlitePath: string;
-  close(): Promise<void>;
-}
-
-export async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> {
-  const host = options.host ?? LOCAL_CONSOLE_HOST;
-  const requestedPort = options.port ?? LOCAL_CONSOLE_PORT;
-  const projectRoot = options.projectRoot ?? PROJECT_ROOT;
-  const dataRoot = options.dataRoot
-    ?? (options.projectRoot === undefined ? DATA_ROOT : projectRoot);
-  const workdirRoot = options.workdirRoot ?? path.join(projectRoot, "workdir");
-  const sqlitePath = options.sqlitePath ?? (options.projectRoot === undefined ? LOCAL_CONSOLE_SQLITE_PATH : path.join(projectRoot, ".state", "local-console.sqlite"));
-  const store =
-    options.store ??
-    (await createSqliteLocalConsoleStore({
-      sqlitePath,
-      sessionLogRoot: options.sessionLogRoot
-        ?? (options.projectRoot === undefined ? LOCAL_CONSOLE_SESSION_LOG_ROOT : path.join(projectRoot, "sessions")),
-      busyTimeoutMs: options.sqliteBusyTimeoutMs ?? LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS,
-      timeoutMs: options.storeTimeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS,
-    }));
-  const attachmentManager = supportsManagedAttachments(store)
-    ? new LocalAttachmentManager(
-        options.attachmentRoot ?? path.join(path.dirname(sqlitePath), "local-console-attachments"),
-        store,
-      )
-    : undefined;
-  await attachmentManager?.init();
-  const attachmentCapability = options.attachmentCapability ?? randomBytes(32).toString("base64url");
-  const runtime = new LocalConsoleRuntime({
-    store,
-    listAgentFiles: options.listAgentFiles ?? (() => listLocalAgentFiles(path.join(projectRoot, "agents"))),
-    loadAgentTeamSnapshot: options.loadAgentTeamSnapshot,
-    resolveAgentTeamHealth: options.resolveAgentTeamHealth,
-    runCodex: options.runCodex ?? runCodex,
-    runExecution: options.runExecution,
-    makeRunDir: options.makeRunDir ?? makeLocalConsoleRunDir,
-    dataRoot,
-    projectRoot,
-    workdirRoot,
-    storeTimeoutMs: options.storeTimeoutMs ?? LOCAL_CONSOLE_STORE_TIMEOUT_MS,
-    codexIdleTimeoutMs: options.codexIdleTimeoutMs ?? LOCAL_RUN_IDLE_TIMEOUT_MS,
-    toolInFlightTimeoutMs: options.toolInFlightTimeoutMs ?? LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
-    codexMaxDurationMs: options.codexMaxDurationMs,
-    workspaceGitTimeoutMs: options.workspaceGitTimeoutMs,
-    routeJudgment: options.routeJudgment,
-    routeTimeoutMs: options.routeTimeoutMs,
-    failureRetryLimit: options.failureRetryLimit,
-    isCodexThreadAvailable: options.isCodexThreadAvailable,
-    attachmentManager,
-  });
-  await runtime.init();
-
-  const server = createLocalConsoleHttpServer(runtime, attachmentManager, attachmentCapability);
-  const { port } = await listenWithFallback(server, host, requestedPort);
-  void runtime.processAllPending().catch((error) => {
-    log({ event: "local-console-startup-catch-up-failed", error: formatLocalError(error) });
-  });
-
-  const url = `http://${host}:${String(port)}/`;
-  log({ event: "local-console-started", url, sqlitePath: store.sqlitePath });
-
-  return {
-    server,
-    runtime,
-    url,
-    sqlitePath: store.sqlitePath,
-    async close() {
-      await closeServer(server);
-      await runtime.close();
-    },
-  };
-}
+import type { LocalConsoleRuntime, LocalConsoleAgentFile } from "./runtime.js";
 
 let localRunDirSequence = 0;
 
@@ -1139,7 +1010,7 @@ function renderLocalConsolePage(): string {
 </html>`;
 }
 
-async function listenWithFallback(
+export async function listenWithFallback(
   server: http.Server,
   host: string,
   requestedPort: number,
@@ -1180,7 +1051,7 @@ function isListenAddressInUse(error: unknown): boolean {
   return isRecord(error) && error.code === "EADDRINUSE";
 }
 
-async function closeServer(server: http.Server): Promise<void> {
+export async function closeLocalConsoleHttpServer(server: http.Server): Promise<void> {
   if (!server.listening) {
     return;
   }
@@ -1197,7 +1068,7 @@ async function closeServer(server: http.Server): Promise<void> {
   });
 }
 
-async function listLocalAgentFiles(dir: string): Promise<LocalConsoleAgentFile[]> {
+export async function listLocalAgentFiles(dir: string): Promise<LocalConsoleAgentFile[]> {
   const entries = await fsReaddir(dir);
   return entries
     .filter((entry) => entry.name.endsWith(".md"))

@@ -173,3 +173,16 @@ export type AgentTeamOfficialUpdatePrepareResponse = PreparedOfficialTeamUpdate;
 export type AgentTeamOfficialUpdateCommitResponse = AppliedOfficialTeamUpdate & {
   copiedTeam: AgentTeamListItem | null;
 };
+
+export class AgentTeamIpcRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      | "AGENT_TEAM_IPC_REQUEST_INVALID"
+      | "CAPABILITY_SNAPSHOT_STALE"
+      | "EXECUTION_PROFILE_UNAVAILABLE" = "AGENT_TEAM_IPC_REQUEST_INVALID",
+  ) {
+    super(message);
+    this.name = "AgentTeamIpcRequestError";
+  }
+}

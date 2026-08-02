@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
 import { App } from "../src/console-page/app.js";
-import * as draftStore from "../src/console-page/draft-store.js";
+import * as draftStore from "../src/console-page/conversation-draft-model.js";
 import {
   ordinaryPresentationRoute,
   sidebarPresentationRoute,

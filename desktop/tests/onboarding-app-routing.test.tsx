@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
 import type { AiTeamBuilderIpcResponse } from "../src/ai-team-builder/contract.js";
-import { App, type DesktopApi } from "../src/console-page/app.js";
+import { App } from "../src/console-page/app.js";
+import type { DesktopApi } from "../src/console-page/desktop-api-contract.js";
 import type { DoctorCheck } from "../src/env-doctor.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -89,6 +90,36 @@ describe("desktop onboarding routing", () => {
     expect(window.location.hash).toBe("#/");
   });
 
+  it("follows a replaced status port, ignores its slow predecessor, and exposes current failure", async () => {
+    const staleStatus = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["getOnboardingStatus"]>
+    >>>();
+    installApi({ getOnboardingStatus: () => staleStatus.promise });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="desktop-route-loading"]');
+
+    installApi({
+      getOnboardingStatus: async () => ({
+        completed: true,
+        completedAt: "2026-07-24T00:00:00.000Z",
+      }),
+    });
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="operator-sidebar"]');
+
+    await act(async () => staleStatus.resolve({ completed: false, completedAt: null }));
+    expect(document.querySelector('[data-testid="operator-sidebar"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid^="onboarding-step-"]')).toBeNull();
+
+    installApi({
+      getOnboardingStatus: async () => Promise.reject(new Error("status unavailable")),
+    });
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    expect(document.querySelector('[data-testid="operator-sidebar"]')).toBeNull();
+  });
+
   it.each([
     "checking",
     "ready",
@@ -127,7 +158,6 @@ describe("desktop onboarding routing", () => {
     await act(async () => root.render(<App />));
     await findElement('[data-testid="operator-sidebar"]');
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "ok" },
     }));
@@ -205,7 +235,6 @@ describe("desktop onboarding routing", () => {
     )).toBe(true);
 
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "pending" },
     }));
@@ -240,7 +269,6 @@ describe("desktop onboarding routing", () => {
     await waitFor(() => statusListener !== null);
 
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "pending" },
     }));

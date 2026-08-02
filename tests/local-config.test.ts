@@ -6,32 +6,27 @@ import { resolveRuntimePaths } from "../src/config.js";
 import { DEFAULT_LOCAL_CONFIG, loadLocalConfig, loadMergedLocalConfig, parseLocalConfig } from "../src/local-config.js";
 
 describe("local config", () => {
-  it("uses an empty repository whitelist when config.local.toml does not exist", async () => {
+  it("uses an empty local config when config.local.toml does not exist", async () => {
     const filePath = path.join(await makeTempDir(), "config.local.toml");
 
     expect(loadLocalConfig(filePath)).toEqual(DEFAULT_LOCAL_CONFIG);
   });
 
-  it("parses TOML repository whitelist entries", () => {
+  it("accepts and ignores the retired repository whitelist while preserving provider settings", () => {
     expect(
       parseLocalConfig(`
 [[watchRepositories]]
 owner = " tranfu-labs "
 repo = " tranfu-agents-app "
 
-[[watchRepositories]]
-owner = "tranfu-labs"
-repo = "moebius"
+[codex]
+provider = " internal "
+model = " gpt-local "
 `),
-    ).toEqual({
-      watchRepositories: [
-        { owner: "tranfu-labs", repo: "tranfu-agents-app" },
-        { owner: "tranfu-labs", repo: "moebius" },
-      ],
-    });
+    ).toEqual({ codex: { provider: "internal", model: "gpt-local" } });
   });
 
-  it("treats a pure-comment config as an empty repository whitelist", () => {
+  it("treats a pure-comment config as empty", () => {
     expect(parseLocalConfig("# example only\n")).toEqual(DEFAULT_LOCAL_CONFIG);
   });
 
@@ -49,24 +44,7 @@ repo = "moebius"
     ).toThrow(/Invalid local config shape/);
   });
 
-  it("loads config.local.toml from disk", async () => {
-    const filePath = path.join(await makeTempDir(), "config.local.toml");
-    await fs.writeFile(
-      filePath,
-      `
-[[watchRepositories]]
-owner = "tranfu-labs"
-repo = "moebius"
-`,
-      "utf8",
-    );
-
-    expect(loadLocalConfig(filePath)).toEqual({
-      watchRepositories: [{ owner: "tranfu-labs", repo: "moebius" }],
-    });
-  });
-
-  it("loads config.toml defaults and lets config.local.toml override them", async () => {
+  it("loads provider defaults and lets config.local.toml override them", async () => {
     const dir = await makeTempDir();
     const configPath = path.join(dir, "config.toml");
     const localConfigPath = path.join(dir, "config.local.toml");
@@ -74,30 +52,28 @@ repo = "moebius"
     await fs.writeFile(
       configPath,
       `
-[[watchRepositories]]
-owner = "tranfu-labs"
-repo = "default-repo"
+[codex]
+provider = "default-provider"
+model = "default-model"
 `,
       "utf8",
     );
 
-    expect(loadMergedLocalConfig({ configPath, localConfigPath })).toEqual({
-      watchRepositories: [{ owner: "tranfu-labs", repo: "default-repo" }],
-    });
+    expect(loadMergedLocalConfig({ configPath, localConfigPath }))
+      .toEqual({ codex: { provider: "default-provider", model: "default-model" } });
 
     await fs.writeFile(
       localConfigPath,
       `
-[[watchRepositories]]
-owner = "tranfu-labs"
-repo = "local-repo"
+[codex]
+provider = "local-provider"
+model = "local-model"
 `,
       "utf8",
     );
 
-    expect(loadMergedLocalConfig({ configPath, localConfigPath })).toEqual({
-      watchRepositories: [{ owner: "tranfu-labs", repo: "local-repo" }],
-    });
+    expect(loadMergedLocalConfig({ configPath, localConfigPath }))
+      .toEqual({ codex: { provider: "local-provider", model: "local-model" } });
   });
 
   it("resolves runtime config and agents paths from the data root override", () => {

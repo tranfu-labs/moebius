@@ -228,6 +228,14 @@ export function projectCodexProgress(
   return statusProgress(sequence);
 }
 
+export function selectCodexExecutionProgress(
+  toolProgress: ExecutionProgressEvent | null,
+  value: unknown,
+  sequence: number,
+): ExecutionProgressEvent | null {
+  return toolProgress ?? projectCodexProgress(value, sequence);
+}
+
 export function projectCodexToolLifecycle(
   value: unknown,
   sequence: number,
@@ -288,6 +296,14 @@ export function projectClaudeProgress(
   return statusProgress(sequence);
 }
 
+export function selectClaudeExecutionProgress(
+  toolProgress: ExecutionProgressEvent | null,
+  value: unknown,
+  sequence: number,
+): ExecutionProgressEvent | null {
+  return toolProgress ?? projectClaudeProgress(value, sequence);
+}
+
 export function projectKimiProgress(
   value: unknown,
   sequence: number,
@@ -321,6 +337,14 @@ export function projectKimiProgress(
   }
   const retry = readProviderRetry(update, sequence);
   return retry ?? statusProgress(sequence);
+}
+
+export function selectKimiExecutionProgress(
+  toolProgress: ExecutionProgressEvent | null,
+  value: unknown,
+  sequence: number,
+): ExecutionProgressEvent | null {
+  return toolProgress ?? projectKimiProgress(value, sequence);
 }
 
 export function projectKimiToolLifecycle(

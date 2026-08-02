@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
-import type { RepositoryRef } from "./issue-source.js";
 
 export interface CodexLocalConfig {
   provider?: string;
@@ -8,19 +7,14 @@ export interface CodexLocalConfig {
 }
 
 export interface LocalConfig {
-  watchRepositories: RepositoryRef[];
   codex?: CodexLocalConfig;
 }
 
-export const DEFAULT_LOCAL_CONFIG: LocalConfig = {
-  watchRepositories: [],
-};
+export const DEFAULT_LOCAL_CONFIG: LocalConfig = {};
 
 export function loadMergedLocalConfig(input: { configPath: string; localConfigPath: string }): LocalConfig {
   const defaultConfig = loadLocalConfig(input.configPath);
-  const localConfig = loadOptionalLocalConfig(input.localConfigPath);
-
-  return localConfig ?? defaultConfig;
+  return loadOptionalLocalConfig(input.localConfigPath) ?? defaultConfig;
 }
 
 export function loadLocalConfig(filePath: string): LocalConfig {
@@ -35,10 +29,8 @@ function loadOptionalLocalConfig(filePath: string): LocalConfig | null {
     if (isNodeError(error) && error.code === "ENOENT") {
       return null;
     }
-
     throw error;
   }
-
   return parseLocalConfig(raw, filePath);
 }
 
@@ -49,99 +41,54 @@ export function parseLocalConfig(raw: string, source = "config.toml"): LocalConf
   } catch (error) {
     throw new Error(`Invalid local config TOML at ${source}: ${formatError(error)}`);
   }
-
-  if (!isLocalConfigShape(parsed)) {
+  if (!isPlainObject(parsed) || !hasSupportedShape(parsed)) {
     throw new Error(`Invalid local config shape at ${source}`);
   }
 
-  const result: LocalConfig = {
-    watchRepositories: parsed.watchRepositories.map((repository) => ({
-      owner: repository.owner.trim(),
-      repo: repository.repo.trim(),
-    })),
-  };
-
-  if (parsed.codex !== undefined) {
-    const codex: CodexLocalConfig = {};
-    if (parsed.codex.provider !== undefined) {
-      codex.provider = parsed.codex.provider.trim();
-    }
-    if (parsed.codex.model !== undefined) {
-      codex.model = parsed.codex.model.trim();
-    }
-    result.codex = codex;
+  const result: LocalConfig = {};
+  if (parsed["codex"] !== undefined) {
+    const codex = parsed["codex"] as Record<string, unknown>;
+    result.codex = {
+      ...(codex["provider"] === undefined ? {} : { provider: String(codex["provider"]).trim() }),
+      ...(codex["model"] === undefined ? {} : { model: String(codex["model"]).trim() }),
+    };
   }
-
   return result;
 }
 
-function isLocalConfigShape(value: unknown): value is {
-  watchRepositories: Array<{ owner: string; repo: string }>;
-  codex?: { provider?: string; model?: string };
-} {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
+function hasSupportedShape(config: Record<string, unknown>): boolean {
+  for (const key of Object.keys(config)) {
+    if (key !== "codex" && key !== "watchRepositories") {
+      return false;
+    }
   }
-
-  const config = value as Partial<{
-    watchRepositories: unknown;
-    codex: unknown;
-  }>;
-
-  if (config.watchRepositories === undefined) {
-    config.watchRepositories = [];
-  }
-
-  if (!Array.isArray(config.watchRepositories) || !config.watchRepositories.every(isRepositoryRefShape)) {
-    return false;
-  }
-
-  if (config.codex !== undefined && !isCodexShape(config.codex)) {
-    return false;
-  }
-
-  return true;
+  return isLegacyRepositories(config["watchRepositories"]) && isCodexShape(config["codex"]);
 }
 
-function isCodexShape(value: unknown): value is { provider?: string; model?: string } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const codex = value as Record<string, unknown>;
-  for (const key of Object.keys(codex)) {
-    if (key !== "provider" && key !== "model") {
-      return false;
-    }
-  }
-
-  if (codex.provider !== undefined) {
-    if (typeof codex.provider !== "string" || codex.provider.trim().length === 0) {
-      return false;
-    }
-  }
-
-  if (codex.model !== undefined) {
-    if (typeof codex.model !== "string") {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function isRepositoryRefShape(value: unknown): value is RepositoryRef {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const repository = value as Partial<RepositoryRef>;
-  return (
-    typeof repository.owner === "string" &&
-    repository.owner.trim().length > 0 &&
-    typeof repository.repo === "string" &&
-    repository.repo.trim().length > 0
+function isLegacyRepositories(value: unknown): boolean {
+  return value === undefined || (
+    Array.isArray(value)
+    && value.every((entry) => isPlainObject(entry)
+      && typeof entry["owner"] === "string"
+      && entry["owner"].trim() !== ""
+      && typeof entry["repo"] === "string"
+      && entry["repo"].trim() !== "")
   );
+}
+
+function isCodexShape(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isPlainObject(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (key !== "provider" && key !== "model") return false;
+  }
+  return (value["provider"] === undefined
+      || (typeof value["provider"] === "string" && value["provider"].trim() !== ""))
+    && (value["model"] === undefined || typeof value["model"] === "string");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

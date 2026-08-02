@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData } from "node:worker_threads";
-import { issueKeyToSessionId, parseIssueKey, sessionIdToIssueKey } from "./session-key.js";
+import { parseIssueKey } from "./session-key.js";
 import { parseAgentMentions } from "./conversation.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -17,13 +17,51 @@ import {
 } from "./local-console/types.js";
 import type {
   SqliteStateCommand,
-  SqliteStateSource,
   SqliteStateWorkerConfiguration,
   SqliteStateWorkerRequest,
   SqliteStateWorkerResponse,
 } from "./sqlite-state.js";
 import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
 import { appendSessionFactLogLineSync, canonicalJson } from "./local-console/session-fact-log.js";
+import {
+  assertCompleteProjectOrder,
+  assertProjectRemovalIdle,
+  decideDefaultProjectIdentity,
+  decideDefaultSessionIdentity,
+  planPersistedProjectTitle,
+} from "./local-console/project-command-plan.js";
+import {
+  assertSessionArchiveIdle,
+  assertSessionWorkspaceMutable,
+  planArchivedSessionSelection,
+  planPendingTeamPromotion,
+  planSessionTeamWrite,
+} from "./local-console/session-settings-plan.js";
+import {
+  assertAnalysisParent,
+  assertChildProject,
+  planChildAgentTeam,
+  planInitialDispatchRole,
+} from "./local-console/session-creation-plan.js";
+import {
+  decidePendingAttentionState,
+  planPendingAttentionRunningCount,
+  planSessionSearchMatch,
+} from "./local-console/state-query-plan.js";
+import {
+  planFallbackSessionTitle,
+  planPersistedSessionTitle,
+} from "./local-console/session-presentation-plan.js";
+import {
+  assertAttachmentCloneTarget,
+  planAttachmentContentScopeValue,
+  planAttachmentDraftKey,
+} from "./local-console/attachment-plan.js";
+import { assertUserDirectResumeIdentity } from "./local-console/startup-recovery-plan.js";
+import {
+  decidePendingControlWorkInspection,
+  planHasPendingControlWork,
+} from "./local-console/pending-processing-plan.js";
 
 interface SqliteRunResult {
   changes?: number | bigint;
@@ -173,36 +211,6 @@ function readRequestId(value: unknown): number {
 
 function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
     switch (input.command.kind) {
-      case "get-migration-status":
-        return getMigrationStatus(database, input.command.source);
-      case "import-role-threads":
-        return importRoleThreads(database, input.command.store, input.command.legacyDigest);
-      case "load-role-threads":
-        return loadRoleThreads(database);
-      case "save-role-threads":
-        return replaceRoleThreads(database, input.command.store, true);
-      case "save-role-thread-entry":
-        return saveRoleThreadEntry(database, input.command.issueKey, input.command.role, input.command.state);
-      case "import-agent-contexts":
-        return importAgentContexts(database, input.command.store, input.command.legacyDigest);
-      case "load-agent-contexts":
-        return loadAgentContexts(database);
-      case "save-agent-contexts":
-        return replaceAgentContexts(database, input.command.store, true);
-      case "save-agent-context-entry":
-        return saveAgentContextEntry(database, input.command.issueKey, input.command.role, input.command.state);
-      case "import-github-intake":
-        return importGitHubIntake(database, input.command.state, input.command.legacyDigest);
-      case "load-github-intake":
-        return loadGitHubIntake(database);
-      case "save-github-intake":
-        return replaceGitHubIntake(database, input.command.state, true);
-      case "import-goal-ledger":
-        return importGoalLedger(database, input.command.state, input.command.legacyDigest);
-      case "load-goal-ledger":
-        return loadGoalLedger(database);
-      case "save-goal-ledger":
-        return saveGoalLedger(database, input.command.state, true);
       case "local-init":
         return initLocalConsole(database);
       case "local-session-fact-migration-status":
@@ -531,41 +539,6 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       active_run_id TEXT,
       updated_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS session_role_threads (
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      thread_id TEXT NOT NULL,
-      last_seen_index INTEGER NOT NULL,
-      provider TEXT,
-      context_fingerprint TEXT,
-      workspace_fingerprint TEXT,
-      persona_fingerprint TEXT,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(session_id, role)
-    );
-    CREATE TABLE IF NOT EXISTS session_agent_contexts (
-      session_id TEXT NOT NULL,
-      context_key TEXT NOT NULL,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(session_id, context_key)
-    );
-    CREATE TABLE IF NOT EXISTS github_intake_repositories (
-      repo_key TEXT PRIMARY KEY,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS github_intake_issues (
-      session_id TEXT PRIMARY KEY,
-      issue_key TEXT NOT NULL UNIQUE,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS goal_ledger_documents (
-      document_key TEXT PRIMARY KEY,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS local_route_decisions (
       session_id TEXT NOT NULL,
       message_id INTEGER NOT NULL,
@@ -641,7 +614,6 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionsProjectId(database, now);
   ensureSessionAgentTeamColumns(database);
   ensureSessionAgentTeamProfileColumns(database);
-  ensureRoleThreadContextColumns(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
@@ -929,21 +901,6 @@ function readTableRowCount(database: SqliteDatabase, tableName: string): number 
     throw new Error("Unable to read session Agent team member row count");
   }
   return row.row_count;
-}
-
-function ensureRoleThreadContextColumns(database: SqliteDatabase): void {
-  for (const column of [
-    ["provider", "TEXT"],
-    ["context_fingerprint", "TEXT"],
-    ["workspace_fingerprint", "TEXT"],
-    ["persona_fingerprint", "TEXT"],
-  ] as const) {
-    if (!tableHasColumn(database, "session_role_threads", column[0])) {
-      database.exec(
-        `ALTER TABLE session_role_threads ADD COLUMN ${column[0]} ${column[1]}`,
-      );
-    }
-  }
 }
 
 function migrateSessionWorkspaceContext(database: SqliteDatabase): void {
@@ -1322,289 +1279,6 @@ function migrateLocalMessages(database: SqliteDatabase): void {
   });
 }
 
-function getMigrationStatus(database: SqliteDatabase, source: SqliteStateSource): { status: string | null } {
-  const row = database.prepare("SELECT status FROM legacy_migration_sources WHERE source = ?").get(source);
-  if (!isRecord(row)) {
-    return { status: null };
-  }
-  return { status: readString(row.status, "status") };
-}
-
-function importRoleThreads(database: SqliteDatabase, store: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "role-threads", "SELECT COUNT(*) AS count FROM session_role_threads");
-    replaceRoleThreadsRaw(database, store, false);
-    markMigrationImported(database, "role-threads", legacyDigest);
-    return null;
-  });
-}
-
-function loadRoleThreads(database: SqliteDatabase): unknown {
-  const rows = database.prepare("SELECT * FROM session_role_threads ORDER BY session_id ASC, role ASC").all();
-  const store: Record<string, Record<string, unknown>> = {};
-  for (const row of rows) {
-    if (!isRecord(row)) {
-      continue;
-    }
-    const issueKey = sessionIdToIssueKey(readString(row.session_id, "session_id"));
-    const role = readString(row.role, "role");
-    store[issueKey] = {
-      ...(store[issueKey] ?? {}),
-      [role]: {
-        threadId: readString(row.thread_id, "thread_id"),
-        lastSeenIndex: readNumber(row.last_seen_index, "last_seen_index"),
-        ...readNullableString(row.provider, "provider") === null
-          ? {}
-          : { provider: readString(row.provider, "provider") },
-        ...readNullableString(row.context_fingerprint, "context_fingerprint") === null
-          ? {}
-          : { contextFingerprint: readString(row.context_fingerprint, "context_fingerprint") },
-        ...readNullableString(row.workspace_fingerprint, "workspace_fingerprint") === null
-          ? {}
-          : { workspaceFingerprint: readString(row.workspace_fingerprint, "workspace_fingerprint") },
-        ...readNullableString(row.persona_fingerprint, "persona_fingerprint") === null
-          ? {}
-          : { personaFingerprint: readString(row.persona_fingerprint, "persona_fingerprint") },
-      },
-    };
-  }
-  return store;
-}
-
-function replaceRoleThreads(database: SqliteDatabase, store: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceRoleThreadsRaw(database, store, markImported);
-    return null;
-  });
-}
-
-function replaceRoleThreadsRaw(database: SqliteDatabase, store: unknown, markImported: boolean): void {
-  database.exec("DELETE FROM session_role_threads");
-  const now = new Date().toISOString();
-  for (const [issueKey, roles] of entriesObject(store)) {
-    for (const [role, state] of entriesObject(roles)) {
-      saveRoleThreadEntryRaw(database, issueKey, role, state, now);
-    }
-  }
-  if (markImported) {
-    markMigrationImported(database, "role-threads", null);
-  }
-}
-
-function saveRoleThreadEntry(database: SqliteDatabase, issueKey: string, role: string, state: unknown): null {
-  return transaction(database, () => {
-    saveRoleThreadEntryRaw(database, issueKey, role, state, new Date().toISOString());
-    markMigrationImported(database, "role-threads", null);
-    return null;
-  });
-}
-
-function saveRoleThreadEntryRaw(database: SqliteDatabase, issueKey: string, role: string, state: unknown, now: string): void {
-  if (!isRecord(state)) {
-    throw new Error("Invalid role thread state payload");
-  }
-  const sessionId = issueKeyToSessionId(issueKey);
-  ensureSession(database, sessionId, now);
-  database
-    .prepare(
-      `INSERT INTO session_role_threads (
-         session_id, role, thread_id, last_seen_index, provider,
-         context_fingerprint, workspace_fingerprint, persona_fingerprint, updated_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(session_id, role)
-       DO UPDATE SET
-         thread_id = excluded.thread_id,
-         last_seen_index = excluded.last_seen_index,
-         provider = excluded.provider,
-         context_fingerprint = excluded.context_fingerprint,
-         workspace_fingerprint = excluded.workspace_fingerprint,
-         persona_fingerprint = excluded.persona_fingerprint,
-         updated_at = excluded.updated_at`,
-    )
-    .run(
-      sessionId,
-      role,
-      readString(state.threadId, "threadId"),
-      readNumber(state.lastSeenIndex, "lastSeenIndex"),
-      readOptionalString(state.provider),
-      readOptionalString(state.contextFingerprint),
-      readOptionalString(state.workspaceFingerprint),
-      readOptionalString(state.personaFingerprint),
-      now,
-    );
-}
-
-function importAgentContexts(database: SqliteDatabase, store: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "agent-contexts", "SELECT COUNT(*) AS count FROM session_agent_contexts");
-    replaceAgentContextsRaw(database, store, false);
-    markMigrationImported(database, "agent-contexts", legacyDigest);
-    return null;
-  });
-}
-
-function loadAgentContexts(database: SqliteDatabase): unknown {
-  const rows = database.prepare("SELECT * FROM session_agent_contexts ORDER BY session_id ASC, context_key ASC").all();
-  const store: Record<string, Record<string, unknown>> = {};
-  for (const row of rows) {
-    if (!isRecord(row)) {
-      continue;
-    }
-    const issueKey = sessionIdToIssueKey(readString(row.session_id, "session_id"));
-    const key = readString(row.context_key, "context_key");
-    store[issueKey] = {
-      ...(store[issueKey] ?? {}),
-      [key]: JSON.parse(readString(row.json, "json")),
-    };
-  }
-  return store;
-}
-
-function replaceAgentContexts(database: SqliteDatabase, store: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceAgentContextsRaw(database, store, markImported);
-    return null;
-  });
-}
-
-function replaceAgentContextsRaw(database: SqliteDatabase, store: unknown, markImported: boolean): void {
-  database.exec("DELETE FROM session_agent_contexts");
-  const now = new Date().toISOString();
-  for (const [issueKey, contexts] of entriesObject(store)) {
-    for (const [key, state] of entriesObject(contexts)) {
-      saveAgentContextEntryRaw(database, issueKey, key, state, now);
-    }
-  }
-  if (markImported) {
-    markMigrationImported(database, "agent-contexts", null);
-  }
-}
-
-function saveAgentContextEntry(database: SqliteDatabase, issueKey: string, role: string, state: unknown): null {
-  return transaction(database, () => {
-    saveAgentContextEntryRaw(database, issueKey, role, state, new Date().toISOString());
-    markMigrationImported(database, "agent-contexts", null);
-    return null;
-  });
-}
-
-function saveAgentContextEntryRaw(database: SqliteDatabase, issueKey: string, key: string, state: unknown, now: string): void {
-  const sessionId = issueKeyToSessionId(issueKey);
-  ensureSession(database, sessionId, now);
-  database
-    .prepare(
-      `INSERT INTO session_agent_contexts (session_id, context_key, json, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(session_id, context_key)
-       DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`,
-    )
-    .run(sessionId, key, JSON.stringify(state), now);
-}
-
-function importGitHubIntake(database: SqliteDatabase, state: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "github-intake", "SELECT COUNT(*) AS count FROM github_intake_repositories UNION ALL SELECT COUNT(*) AS count FROM github_intake_issues");
-    replaceGitHubIntakeRaw(database, state, false);
-    markMigrationImported(database, "github-intake", legacyDigest);
-    return null;
-  });
-}
-
-function loadGitHubIntake(database: SqliteDatabase): unknown {
-  const repositories: Record<string, unknown> = {};
-  for (const row of database.prepare("SELECT repo_key, json FROM github_intake_repositories ORDER BY repo_key ASC").all()) {
-    if (isRecord(row)) {
-      repositories[readString(row.repo_key, "repo_key")] = JSON.parse(readString(row.json, "json"));
-    }
-  }
-
-  const issues: Record<string, unknown> = {};
-  for (const row of database.prepare("SELECT issue_key, json FROM github_intake_issues ORDER BY issue_key ASC").all()) {
-    if (isRecord(row)) {
-      issues[readString(row.issue_key, "issue_key")] = JSON.parse(readString(row.json, "json"));
-    }
-  }
-
-  return { repositories, issues };
-}
-
-function replaceGitHubIntake(database: SqliteDatabase, state: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceGitHubIntakeRaw(database, state, markImported);
-    return null;
-  });
-}
-
-function replaceGitHubIntakeRaw(database: SqliteDatabase, state: unknown, markImported: boolean): void {
-  if (!isRecord(state)) {
-    throw new Error("Invalid GitHub intake payload");
-  }
-  database.exec("DELETE FROM github_intake_repositories");
-  database.exec("DELETE FROM github_intake_issues");
-  const now = new Date().toISOString();
-  for (const [repoKey, repositoryState] of entriesObject(state.repositories)) {
-    database
-      .prepare(
-        `INSERT INTO github_intake_repositories (repo_key, json, updated_at)
-         VALUES (?, ?, ?)`,
-      )
-      .run(repoKey, JSON.stringify(repositoryState), now);
-  }
-  for (const [issueKey, issueState] of entriesObject(state.issues)) {
-    const sessionId = issueKeyToSessionId(issueKey);
-    ensureSession(database, sessionId, now);
-    database
-      .prepare(
-        `INSERT INTO github_intake_issues (session_id, issue_key, json, updated_at)
-         VALUES (?, ?, ?, ?)`,
-      )
-      .run(sessionId, issueKey, JSON.stringify(issueState), now);
-  }
-  if (markImported) {
-    markMigrationImported(database, "github-intake", null);
-  }
-}
-
-function importGoalLedger(database: SqliteDatabase, state: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "goal-ledger", "SELECT COUNT(*) AS count FROM goal_ledger_documents");
-    saveGoalLedgerRaw(database, state, false);
-    markMigrationImported(database, "goal-ledger", legacyDigest);
-    return null;
-  });
-}
-
-function loadGoalLedger(database: SqliteDatabase): unknown | null {
-  const row = database.prepare("SELECT json FROM goal_ledger_documents WHERE document_key = 'default'").get();
-  if (!isRecord(row)) {
-    return null;
-  }
-  return JSON.parse(readString(row.json, "json"));
-}
-
-function saveGoalLedger(database: SqliteDatabase, state: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    saveGoalLedgerRaw(database, state, markImported);
-    return null;
-  });
-}
-
-function saveGoalLedgerRaw(database: SqliteDatabase, state: unknown, markImported: boolean): void {
-  const now = new Date().toISOString();
-  database
-    .prepare(
-      `INSERT INTO goal_ledger_documents (document_key, json, updated_at)
-       VALUES ('default', ?, ?)
-       ON CONFLICT(document_key)
-       DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`,
-    )
-    .run(JSON.stringify(state), now);
-  if (markImported) {
-    markMigrationImported(database, "goal-ledger", null);
-  }
-}
-
 function initLocalConsole(database: SqliteDatabase): null {
   const now = new Date().toISOString();
   ensureSession(database, LOCAL_CONSOLE_DEFAULT_SESSION_ID, now, "默认会话", LOCAL_CONSOLE_PROJECT_ID);
@@ -1970,7 +1644,10 @@ function renameLocalProject(
     if (!isRecord(project)) {
       throw new Error(`local console project not found: ${input.projectId}`);
     }
-    const title = input.title.trim() || projectTitleFromFolder(readString(project.folder_path, "folder_path"));
+    const title = planPersistedProjectTitle(
+      input.title,
+      projectTitleFromFolder(readString(project.folder_path, "folder_path")),
+    );
     database
       .prepare("UPDATE projects SET title = ?, updated_at = ? WHERE project_id = ?")
       .run(title, input.now, input.projectId);
@@ -2037,9 +1714,7 @@ function removeLocalProject(
     const archivedSessionIds = listActiveAnalysisSubtreeIds(database, projectSessionIds);
     const hasPendingControlWorkInProject = archivedSessionIds.some((sessionId) =>
       hasPendingLocalControlWork(database, sessionId));
-    if (hasPendingControlWorkInProject && !input.force) {
-      throw new Error("PROJECT_HAS_RUNNING_AGENTS");
-    }
+    assertProjectRemovalIdle({ hasPendingControlWork: hasPendingControlWorkInProject, force: input.force });
     const originalFolderPath = readString(project.folder_path, "folder_path");
     const releasedFolderPath = `${originalFolderPath}#removed:${input.projectId}:${input.now}`;
     database
@@ -2099,14 +1774,7 @@ function reorderLocalProjects(
       }
       return readString(row.project_id, "project_id");
     });
-    const requested = new Set(projectIds);
-    if (
-      requested.size !== projectIds.length
-      || projectIds.length !== storedIds.length
-      || storedIds.some((projectId) => !requested.has(projectId))
-    ) {
-      throw new Error("project order must contain every active project exactly once");
-    }
+    assertCompleteProjectOrder(projectIds, storedIds);
     const update = database.prepare("UPDATE projects SET sort_order = ? WHERE project_id = ?");
     projectIds.forEach((projectId, index) => update.run(index, projectId));
     return listLocalProjects(database, defaultProjectFolderPath);
@@ -2130,17 +1798,30 @@ function isUnusedDefaultLocalProject(
   }
   const normalizedDefaultFolderPath = path.resolve(defaultProjectFolderPath);
   if (
-    readString(row.project_id, "project_id") !== LOCAL_CONSOLE_PROJECT_ID
-    || readString(row.source_type, "source_type") !== LOCAL_CONSOLE_PROJECT_SOURCE_TYPE
-    || readString(row.title, "title") !== projectTitleFromFolder(normalizedDefaultFolderPath)
-    || path.resolve(readString(row.folder_path, "folder_path")) !== normalizedDefaultFolderPath
-    || readBooleanNumber(row.worktree_mode, "worktree_mode")
-    || readNullableString(row.original_folder_path, "original_folder_path") !== null
+    readNullableString(row.original_folder_path, "original_folder_path") !== null
     || readNullableString(row.removed_at, "removed_at") !== null
   ) {
     return false;
   }
+  const projectIdentity = decideDefaultProjectIdentity({
+    projectId: readString(row.project_id, "project_id"),
+    sourceType: readString(row.source_type, "source_type"),
+    title: readString(row.title, "title"),
+    folderPath: path.resolve(readString(row.folder_path, "folder_path")),
+    worktreeMode: readBooleanNumber(row.worktree_mode, "worktree_mode"),
+    expectedProjectId: LOCAL_CONSOLE_PROJECT_ID,
+    expectedSourceType: LOCAL_CONSOLE_PROJECT_SOURCE_TYPE,
+    expectedTitle: projectTitleFromFolder(normalizedDefaultFolderPath),
+    expectedFolderPath: normalizedDefaultFolderPath,
+  });
+  const inspectProject = {
+    used: () => false,
+    "inspect-session": () => readUnusedDefaultLocalProjectSession(database),
+  } satisfies Record<typeof projectIdentity, () => boolean>;
+  return inspectProject[projectIdentity]();
+}
 
+function readUnusedDefaultLocalProjectSession(database: SqliteDatabase): boolean {
   const sessionRows = database
     .prepare("SELECT * FROM sessions WHERE project_id = ?")
     .all(LOCAL_CONSOLE_PROJECT_ID);
@@ -2148,10 +1829,24 @@ function isUnusedDefaultLocalProject(
     return false;
   }
   const session = sessionRows[0];
+  const sessionIdentity = decideDefaultSessionIdentity({
+    sessionId: readString(session.session_id, "session_id"),
+    sourceType: readString(session.source_type, "source_type"),
+    expectedSessionId: LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+  });
+  const inspectSession = {
+    used: () => false,
+    "inspect-facts": () => readUnusedDefaultLocalSessionFacts(database, session),
+  } satisfies Record<typeof sessionIdentity, () => boolean>;
+  return inspectSession[sessionIdentity]();
+}
+
+function readUnusedDefaultLocalSessionFacts(
+  database: SqliteDatabase,
+  session: Record<string, unknown>,
+): boolean {
   if (
-    readString(session.session_id, "session_id") !== LOCAL_CONSOLE_DEFAULT_SESSION_ID
-    || readString(session.source_type, "source_type") !== "local"
-    || readNullableString(session.source_owner, "source_owner") !== null
+    readNullableString(session.source_owner, "source_owner") !== null
     || readNullableString(session.source_repo, "source_repo") !== null
     || session.source_issue_number !== null
     || readNullableString(session.parent_session_id, "parent_session_id") !== null
@@ -2212,8 +1907,6 @@ function isUnusedDefaultLocalProject(
   const factQueries = [
     "SELECT 1 AS found FROM session_agent_team_members WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM session_messages WHERE session_id = ? LIMIT 1",
-    "SELECT 1 AS found FROM session_role_threads WHERE session_id = ? LIMIT 1",
-    "SELECT 1 AS found FROM session_agent_contexts WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_route_decisions WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_acceptance_facts WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_integration_events WHERE session_id = ? LIMIT 1",
@@ -2253,9 +1946,7 @@ function switchLocalSessionWorkspace(
 ): unknown {
   return transaction(database, () => {
     requireLocalSession(database, input.sessionId);
-    if (hasSessionMessage(database, input.sessionId)) {
-      throw new Error("SESSION_WORKSPACE_LOCKED");
-    }
+    assertSessionWorkspaceMutable(hasSessionMessage(database, input.sessionId));
     database.prepare(
       "UPDATE sessions SET workspace_mode = ?, updated_at = ? WHERE session_id = ? AND source_type = 'local'",
     ).run(input.workspaceMode, input.now, input.sessionId);
@@ -2280,14 +1971,15 @@ function switchLocalSessionTeam(
          LIMIT 1`,
       )
       .get(input.sessionId) !== undefined;
-    if (hasRunningMessage(database, input.sessionId) || hasQueuedWorker) {
+    const writePending = () => {
       database.prepare(
         `UPDATE sessions
          SET agent_team_pending_ownership = ?, agent_team_pending_id = ?, updated_at = ?
          WHERE session_id = ? AND source_type = 'local'`,
       ).run(input.agentTeamOwnership, input.agentTeamId, input.now, input.sessionId);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "pending", input.agentTeamSnapshot);
-    } else {
+    };
+    const writeEffective = () => {
       database.prepare(
         `UPDATE sessions
          SET agent_team_ownership = ?, agent_team_id = ?,
@@ -2296,7 +1988,12 @@ function switchLocalSessionTeam(
       ).run(input.agentTeamOwnership, input.agentTeamId, input.now, input.sessionId);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "effective", input.agentTeamSnapshot);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "pending", undefined);
-    }
+    };
+    const teamWrite = planSessionTeamWrite({
+      hasRunningMessage: hasRunningMessage(database, input.sessionId),
+      hasQueuedWorker,
+    });
+    ({ pending: writePending, effective: writeEffective })[teamWrite]();
     return requireLocalSession(database, input.sessionId);
   });
 }
@@ -2340,14 +2037,15 @@ function applyPendingLocalSessionContext(
            END
        WHERE session_id = ? AND source_type = 'local'`,
     ).run(input.now, input.sessionId);
-    if (hasPendingTeam) {
+    const promotePendingTeam = () => {
       database.prepare(
         "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'effective'",
       ).run(input.sessionId);
       database.prepare(
         "UPDATE session_agent_team_members SET slot = 'effective' WHERE session_id = ? AND slot = 'pending'",
       ).run(input.sessionId);
-    }
+    };
+    ({ promote: promotePendingTeam, skip: () => undefined })[planPendingTeamPromotion(hasPendingTeam)]();
     return requireLocalSession(database, input.sessionId);
   });
 }
@@ -2480,9 +2178,7 @@ function createLocalSession(
       if (input.entryTemplate !== "session-analysis") {
         throw new Error("analysis parent requires session-analysis entry template");
       }
-      if (input.analysisParentSessionId === input.sessionId) {
-        throw new Error("analysis session cannot parent itself");
-      }
+      assertAnalysisParent({ sessionId: input.sessionId, analysisParentSessionId: input.analysisParentSessionId });
       const parent = database
         .prepare(
           "SELECT 1 AS found FROM sessions WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL",
@@ -2538,7 +2234,10 @@ function createLocalSession(
           persistedBody,
           "[]",
           input.initialDispatch?.lane ?? "primary",
-          input.initialDispatch?.role ?? input.agentTeamSnapshot?.members[0]?.name ?? null,
+          planInitialDispatchRole({
+            requestedRole: input.initialDispatch?.role,
+            firstTeamMemberName: input.agentTeamSnapshot?.members[0]?.name,
+          }),
           input.initialDispatch?.reason ?? "no-valid-mention",
           input.now,
           input.now,
@@ -2617,9 +2316,7 @@ function archiveLocalSession(
       throw new Error(`local console session already archived: ${input.sessionId}`);
     }
     const archivedSessionIds = listActiveAnalysisSubtreeIds(database, [input.sessionId]);
-    if (archivedSessionIds.some((sessionId) => hasPendingLocalControlWork(database, sessionId))) {
-      throw new Error("SESSION_HAS_RUNNING_AGENT");
-    }
+    assertSessionArchiveIdle(archivedSessionIds.some((sessionId) => hasPendingLocalControlWork(database, sessionId)));
 
     const projectId = readString(row.project_id, "project_id");
     const visibleSessionIds = database
@@ -2640,9 +2337,7 @@ function archiveLocalSession(
     if (archivedIndex < 0) {
       throw new Error(`local console session is not visible: ${input.sessionId}`);
     }
-    const selectedSessionId = visibleSessionIds[archivedIndex + 1]
-      ?? visibleSessionIds[archivedIndex - 1]
-      ?? null;
+    const selectedSessionId = planArchivedSessionSelection(visibleSessionIds, archivedIndex);
 
     updateSessionsArchivedAt(database, archivedSessionIds, input.now, input.now);
     for (const sessionId of archivedSessionIds) {
@@ -2744,9 +2439,7 @@ function createLocalChildSession(
       throw new Error(`local parent session not found: ${input.parentSessionId}`);
     }
     const parentProjectId = readString(parent.project_id, "project_id");
-    if (input.projectId !== parentProjectId) {
-      throw new Error(`local child project mismatch: parent=${parentProjectId} input=${input.projectId}`);
-    }
+    assertChildProject({ requestedProjectId: input.projectId, parentProjectId });
 
     const existing = database
       .prepare(
@@ -2765,10 +2458,14 @@ function createLocalChildSession(
 
     const parentAgentTeamOwnership = readNullableAgentTeamOwnership(parent.agent_team_ownership);
     const parentAgentTeamId = readNullableString(parent.agent_team_id, "agent_team_id");
-    ensureSession(database, input.childSessionId, input.now, input.title, parentProjectId, {
-      ownership: parentAgentTeamOwnership ?? undefined,
-      id: parentAgentTeamId ?? undefined,
-    });
+    ensureSession(
+      database,
+      input.childSessionId,
+      input.now,
+      input.title,
+      parentProjectId,
+      planChildAgentTeam({ ownership: parentAgentTeamOwnership, id: parentAgentTeamId }),
+    );
     database.prepare(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
@@ -2936,8 +2633,8 @@ function searchLocalSessions(
     )
     .all(input.includeArchived ? 1 : 0);
   return rows
-    .filter((row) => isRecord(row)
-      && normalizeSessionSearchText(readNullableString(row.title, "title") ?? "").includes(normalizedQuery))
+    .filter(isRecord)
+    .filter((row) => planSessionSearchMatch(readNullableString(row.title, "title"), normalizedQuery))
     .map((row) => {
       if (!isRecord(row)) {
         throw new Error("Invalid local session search row");
@@ -3175,16 +2872,17 @@ function localSessionVisibleAttentionState(
   if (hasCurrentAttention && attentionRevision > acknowledgedRevision) {
     return "red";
   }
-  if (hasPendingLocalControlWork(database, sessionId)) {
-    return "blink";
-  }
-  if (
-    readNullableString(row.unread_since, "unread_since") !== null
-    || readNullableString(row.manual_unread_at, "manual_unread_at") !== null
-  ) {
-    return "blue";
-  }
-  return "none";
+  const inspectUnread = (): "blue" | "none" => {
+    if (
+      readNullableString(row.unread_since, "unread_since") !== null
+      || readNullableString(row.manual_unread_at, "manual_unread_at") !== null
+    ) {
+      return "blue";
+    }
+    return "none";
+  };
+  const pendingAttention = decidePendingAttentionState(hasPendingLocalControlWork(database, sessionId));
+  return ({ blink: () => "blink" as const, "inspect-unread": inspectUnread })[pendingAttention]();
 }
 
 function appendUserMessage(
@@ -3225,7 +2923,7 @@ function appendUserMessage(
     const messageId = toNumberId(result.lastInsertRowid);
     claimAttachmentRefs(
       database,
-      input.attachmentDraftKey ?? `draft:${input.sessionId}`,
+      planAttachmentDraftKey({ requestedDraftKey: input.attachmentDraftKey, sessionId: input.sessionId }),
       attachmentIds,
       messageId,
       input.now,
@@ -3410,9 +3108,7 @@ function cloneMessageAttachments(
   input: Extract<SqliteStateCommand, { kind: "local-clone-message-attachments" }>,
 ): unknown[] {
   return transaction(database, () => {
-    if (input.targetDraftKey !== `draft:${input.sessionId}`) {
-      throw new Error("Attachment target draft does not belong to the session");
-    }
+    assertAttachmentCloneTarget({ targetDraftKey: input.targetDraftKey, sessionId: input.sessionId });
     const source = database.prepare(
       "SELECT speaker FROM session_messages WHERE id = ? AND session_id = ?",
     ).get(input.sourceMessageId, input.sessionId);
@@ -3465,7 +3161,7 @@ function getAttachmentContentRecord(
   const scopeSql = input.draftKey !== undefined
     ? "r.draft_key = ?"
     : "r.message_id IN (SELECT id FROM session_messages WHERE session_id = ?)";
-  const scopeValue = input.draftKey ?? input.sessionId ?? "";
+  const scopeValue = planAttachmentContentScopeValue(input);
   const row = database.prepare(
     `${attachmentContentSelectSql()}
      WHERE r.attachment_id = ? AND ${scopeSql}`,
@@ -3620,10 +3316,7 @@ function hasRunningMessage(database: SqliteDatabase, sessionId: string): boolean
 }
 
 function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string): boolean {
-  if (hasRunningMessage(database, sessionId)) {
-    return true;
-  }
-  if (database
+  const hasQueuedControlMessage = database
     .prepare(
       `SELECT 1 AS found
        FROM session_messages
@@ -3633,39 +3326,43 @@ function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string)
          AND dispatch_lane IN ('worker', 'awaiting-team')
        LIMIT 1`,
     )
-    .get(sessionId) !== undefined) {
-    return true;
-  }
-  const cursor = database
-    .prepare(
-      `SELECT processed_through_message_id, active_message_id
-       FROM local_message_cursors
-       WHERE session_id = ?`,
-    )
-    .get(sessionId);
-  if (!isRecord(cursor)) {
-    return false;
-  }
-  if (cursor.active_message_id !== null) {
-    return true;
-  }
-  const processedThroughMessageId = readNumber(
-    cursor.processed_through_message_id,
-    "processed_through_message_id",
-  );
-  return database
-    .prepare(
-      `SELECT 1 AS found
-       FROM session_messages
-       WHERE session_id = ?
-         AND id > ?
-         AND (
-           (speaker = 'user' AND status IN ('pending', 'running'))
-           OR (speaker = 'agent' AND status = 'displayed')
-         )
-       LIMIT 1`,
-    )
-    .get(sessionId, processedThroughMessageId) !== undefined;
+    .get(sessionId) !== undefined;
+  const inspectCursor = (): boolean => {
+    const cursor = database
+      .prepare(
+        `SELECT processed_through_message_id, active_message_id
+         FROM local_message_cursors
+         WHERE session_id = ?`,
+      )
+      .get(sessionId);
+    if (!isRecord(cursor)) return false;
+    const processedThroughMessageId = readNumber(
+      cursor.processed_through_message_id,
+      "processed_through_message_id",
+    );
+    const hasMessageAfterCursor = database
+      .prepare(
+        `SELECT 1 AS found
+         FROM session_messages
+         WHERE session_id = ?
+           AND id > ?
+           AND (
+             (speaker = 'user' AND status IN ('pending', 'running'))
+             OR (speaker = 'agent' AND status = 'displayed')
+           )
+         LIMIT 1`,
+      )
+      .get(sessionId, processedThroughMessageId) !== undefined;
+    return planHasPendingControlWork({
+      activeMessage: cursor.active_message_id !== null,
+      hasMessageAfterCursor,
+    });
+  };
+  const inspection = decidePendingControlWorkInspection({
+    hasRunningMessage: hasRunningMessage(database, sessionId),
+    hasQueuedControlMessage,
+  });
+  return ({ pending: () => true, "inspect-cursor": inspectCursor })[inspection]();
 }
 
 function hasSessionMessage(database: SqliteDatabase, sessionId: string): boolean {
@@ -4127,12 +3824,12 @@ function releaseMessageForResume(
     if (source.speaker !== "user") {
       throw new Error(`${input.sourceDisposition} resume source must be a user message`);
     }
-    if (
-      input.sourceDisposition === "user-direct"
-      && (source.dispatchLane !== "worker" || source.dispatchRole !== input.role)
-    ) {
-      throw new Error("User-direct resume source dispatch does not match the active role");
-    }
+    assertUserDirectResumeIdentity({
+      sourceDisposition: input.sourceDisposition,
+      dispatchLane: source.dispatchLane,
+      dispatchRole: source.dispatchRole,
+      requestedRole: input.role,
+    });
     if (input.sourceDisposition === "primary" && source.dispatchLane === "worker") {
       throw new Error("Primary resume source cannot use the worker dispatch lane");
     }
@@ -4939,7 +4636,10 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
   const hasPendingControlWork = hasPendingLocalControlWork(database, sessionId);
   const effectiveCounts = {
     ...counts,
-    running: hasPendingControlWork ? Math.max(1, counts.running) : counts.running,
+    running: planPendingAttentionRunningCount({
+      persistedRunningCount: counts.running,
+      hasPendingControlWork,
+    }),
   };
   const awaitsHumanReason = null;
   counts.waiting = 0;
@@ -4966,7 +4666,10 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     agentTeamPendingId: readNullableString(row.agent_team_pending_id, "agent_team_pending_id"),
     workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
     workspacePendingMode: null,
-    title: readNullableString(row.title, "title") ?? fallbackSessionTitle(sessionId),
+    title: planPersistedSessionTitle(
+      readNullableString(row.title, "title"),
+      fallbackSessionTitle(sessionId),
+    ),
     titleRevision: readNumber(row.title_revision, "title_revision"),
     pinnedAt: readNullableString(row.pinned_at, "pinned_at"),
     status: sessionStatusFromCounts(effectiveCounts),
@@ -5415,7 +5118,7 @@ function projectTitleFromFolder(folderPath: string): string {
 }
 
 function fallbackSessionTitle(sessionId: string): string {
-  return sessionId === LOCAL_CONSOLE_DEFAULT_SESSION_ID ? "默认会话" : sessionId.replace(/^local:/u, "会话 ");
+  return planFallbackSessionTitle(sessionId, LOCAL_CONSOLE_DEFAULT_SESSION_ID);
 }
 
 function markSchemaMigration(database: SqliteDatabase, version: string): void {
@@ -5424,7 +5127,7 @@ function markSchemaMigration(database: SqliteDatabase, version: string): void {
     .run(version, new Date().toISOString());
 }
 
-function markMigrationImported(database: SqliteDatabase, source: SqliteStateSource | "local-messages", legacyDigest: string | null): void {
+function markMigrationImported(database: SqliteDatabase, source: "local-messages", legacyDigest: string | null): void {
   database
     .prepare(
       `INSERT INTO legacy_migration_sources (source, legacy_digest, status, imported_at, error)
@@ -5433,19 +5136,6 @@ function markMigrationImported(database: SqliteDatabase, source: SqliteStateSour
        DO UPDATE SET legacy_digest = excluded.legacy_digest, status = 'imported', imported_at = excluded.imported_at, error = NULL`,
     )
     .run(source, legacyDigest, new Date().toISOString());
-}
-
-function assertTargetEmptyForImport(database: SqliteDatabase, source: SqliteStateSource, sql: string): void {
-  const rows = database.prepare(sql).all();
-  const count = rows.reduce<number>((sum, row) => {
-    if (!isRecord(row)) {
-      return sum;
-    }
-    return sum + readNumber(row.count, "count");
-  }, 0);
-  if (count > 0) {
-    throw new Error(`Cannot import legacy ${source}: SQLite target already has unmarked state`);
-  }
 }
 
 function transaction<T>(database: SqliteDatabase, body: () => T): T {
@@ -5478,13 +5168,6 @@ function transaction<T>(database: SqliteDatabase, body: () => T): T {
     }
     throw error;
   }
-}
-
-function entriesObject(value: unknown): Array<[string, unknown]> {
-  if (!isRecord(value) || Array.isArray(value)) {
-    return [];
-  }
-  return Object.entries(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -12,6 +12,20 @@ export interface ConversationReadingPositionStore {
   retain(sessionIds: readonly string[]): void;
 }
 
+export function planRetainedConversationSessionIds(state: {
+  projects: readonly {
+    sessions: readonly {
+      sessionId: string;
+      parentSessionId?: string | null;
+      analysisParentSessionId?: string | null;
+    }[];
+  }[];
+} | null): string[] {
+  return state?.projects.flatMap((project) => project.sessions
+    .filter((session) => session.parentSessionId == null && session.analysisParentSessionId == null)
+    .map((session) => session.sessionId)) ?? [];
+}
+
 export function createConversationReadingPositionStore(
   storage: Pick<Storage, "getItem" | "setItem" | "removeItem">,
 ): ConversationReadingPositionStore {

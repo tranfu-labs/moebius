@@ -131,12 +131,24 @@ Agent 团队是一组围绕同类任务协作的 Agent，是产品中由用户�
 
 切换团队时保留当前会话及已有上下文，由新团队接管切换后的任务推进；系统不新建会话，也不重新执行已经完成的历史步骤。
 
+## 产品运行形态
+
+Moebius 只提供本地对话操作台：用户可以通过桌面应用使用，也可以在开发或高级使用场景中通过
+`pnpm start` 启动同一套本地服务。两种入口共享 local console 的会话、团队、provider 与恢复语义，
+不形成第二套远程任务运行时。
+
+产品不再提供后台 GitHub issue runner、GitHub issue mention 扫描或独立 GitHub 状态 observer；桌面
+应用也不再启动、监管或展示这些后台进程。删除运行形态不等于删除 GitHub 作为外部协作与发行平台：
+版本检查、Release 下载、源码仓库链接等用户主动打开的外链能力继续保留。
+
+已有数据目录中的历史 GitHub runner 状态不是本次产品能力的一部分。应用不得为了移除运行形态而
+主动删除用户磁盘上的历史状态；它只停止读取、迁移和写入这些状态。
+
 ### Desktop 持久 Agent 的执行会话连续性
 
-Desktop 当前实际使用的持久 Agent 只有三类：主操作台中的 local 对话 Agent、首次引导
-或 Agent 团队页中的 AI 建队草稿，以及 Desktop 自动启动的后台 GitHub issue mention
-role。三类身份分别由 local 的「会话 + 团队快照 + 角色」、AI 建队的 draft、GitHub 的
-「issue + role」隔离。
+Desktop 当前实际使用的持久 Agent 只有两类：主操作台中的 local 对话 Agent，以及首次引导
+或 Agent 团队页中的 AI 建队草稿。两类身份分别由 local 的「会话 + 团队快照 + 角色」和
+AI 建队的 draft 隔离。
 
 每个持久 Agent 身份第一次执行时允许创建一个 Codex thread、Claude Code session
 或 Kimi session；取得
@@ -148,8 +160,8 @@ local Agent 首次接收完整共享时间线，后续接收自己尚未看到�
 保留 provider 内的工作记忆，同时仍能看到其他成员离开期间形成的公开结论。明确切换
 团队快照后，同名角色也属于新 Agent 身份。AI 建队跨 draft 不共享 provider session。
 
-local / GitHub 无 mention 路由与 CEO guardrail 是一次性辅助推理，没有持久 Agent 身份，
-不纳入上述连续性契约。readiness、版本检查、安装与 observer 不产生 Agent 推理会话。
+local 无 mention 路由与 CEO guardrail 是一次性辅助推理，没有持久 Agent 身份，不纳入上述
+连续性契约。readiness、版本检查与安装不产生 Agent 推理会话。
 
 ## 视觉语言原则
 

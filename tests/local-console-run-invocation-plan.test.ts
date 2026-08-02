@@ -13,9 +13,9 @@ import {
 } from "../src/local-console/run-invocation-plan.js";
 
 const timeline: TimelineMessage[] = [
-  { index: 0, speaker: "user", body: "old", source: "comment" },
-  { index: 1, speaker: "dev", body: "self", source: "comment" },
-  { index: 2, speaker: "user", body: "new", source: "comment" },
+  { index: 0, speaker: "user", body: "old", source: "message" },
+  { index: 1, speaker: "dev", body: "self", source: "message" },
+  { index: 2, speaker: "user", body: "new", source: "message" },
 ];
 
 describe("local run invocation planning", () => {

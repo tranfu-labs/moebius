@@ -30,6 +30,52 @@ export interface ImportBoundaryViolation {
   specifier: string;
   resolvedTarget: string;
   dependencyPath?: string[];
+  line?: number;
+  detail?: string;
+}
+
+export type ArchitectureLayer = "view" | "application" | "domain" | "adapter";
+
+export interface ArchitectureLayerAssignment {
+  layer: ArchitectureLayer;
+  scope: ImportBoundaryScope;
+}
+
+export interface ArchitectureDependencyDebt {
+  ruleId:
+    | "architecture-layer-dependency-matrix"
+    | "domain-pure-runtime-closure"
+    | "view-no-side-effect-adapters"
+    | "application-no-view-dependency"
+    | "adapter-no-use-case-reentry";
+  importer: string;
+  target: string;
+  reason: string;
+  removalChange: string;
+}
+
+export interface ArchitectureFileDebt {
+  ruleId: "application-use-case-shape" | "adapter-boundary-branch-total";
+  file: string;
+  reason: string;
+  removalChange: string;
+}
+
+export interface ArchitectureConditionPermit {
+  ruleId: "application-use-case-shape" | "adapter-boundary-branch-total";
+  file: string;
+  exportName: string;
+  fingerprint: string;
+  kind: "transport-control" | "external-contract";
+  contract: string;
+}
+
+export interface FourLayerArchitectureConfig {
+  assignments: readonly ArchitectureLayerAssignment[];
+  compositionRoots: readonly string[];
+  dependencyDebt: readonly ArchitectureDependencyDebt[];
+  fileDebt: readonly ArchitectureFileDebt[];
+  conditionPermits: readonly ArchitectureConditionPermit[];
 }
 
 type ResolvedImportTarget =
@@ -40,12 +86,12 @@ interface ResolvedImportReference {
   specifier: string;
   runtime: boolean;
   target: ResolvedImportTarget;
+  line: number;
 }
 
 const exact = (value: string): ImportBoundaryScope => ({ kind: "exact", value });
 const prefix = (value: string): ImportBoundaryScope => ({ kind: "prefix", value });
 
-const githubAdapter = [exact("src/github.ts")];
 const codexAdapter = [exact("src/codex.ts"), exact("src/codex-rollout.ts")];
 const filesystemAdapters = ["node:fs", "node:fs/promises"];
 const plannerDeniedTargets = [
@@ -70,35 +116,14 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     importers: [prefix("packages/console-ui/src/")],
     deniedRepositoryTargets: [
       exact("src/runner.ts"),
-      prefix("src/runner/"),
-      prefix("src/observer/"),
       prefix("src/local-console/"),
-      exact("src/goal-ledger.ts"),
-      exact("src/goal-ledger-state.ts"),
-      exact("src/state.ts"),
-      exact("src/agent-context-state.ts"),
-      exact("src/github-intake-state.ts"),
     ],
   },
   {
     id: "console-ui-no-side-effect-adapters",
     importers: [prefix("packages/console-ui/src/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: ["node:child_process"],
-  },
-  {
-    id: "local-console-no-github-runtime",
-    importers: [prefix("src/local-console/")],
-    deniedRepositoryTargets: [
-      exact("src/github.ts"),
-      exact("src/scanner.ts"),
-      exact("src/issue-dispatcher.ts"),
-      exact("src/github-response-intake.ts"),
-      exact("src/github-intake-state.ts"),
-      exact("src/runner.ts"),
-      prefix("src/runner/"),
-      exact("src/media-assets.ts"),
-    ],
   },
   {
     id: "local-control-planner-pure-closure",
@@ -117,128 +142,36 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
   {
     id: "stages-no-side-effect-adapters",
     importers: [exact("src/stages.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "ceo-format-no-github-adapter",
-    importers: [exact("src/format-ceo.ts")],
-    deniedRepositoryTargets: githubAdapter,
   },
   {
     id: "ceo-scripts-no-provider-adapters",
     importers: [exact("src/ceo-scripts.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
   },
   {
-    id: "ceo-orchestration-no-side-effect-adapters",
-    importers: [exact("src/ceo-orchestration.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    id: "local-ceo-orchestration-no-side-effect-adapters",
+    importers: [exact("src/local-console/ceo-orchestration-parser.ts")],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: [...filesystemAdapters, "node:child_process"],
   },
   {
     id: "triggers-no-side-effect-adapters",
     importers: [prefix("src/triggers/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "response-intake-no-side-effect-adapters",
-    importers: [exact("src/github-response-intake.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "driver-pool-no-side-effect-adapters",
-    importers: [exact("src/driver-pool.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: filesystemAdapters,
   },
   {
     id: "local-config-no-provider-adapters",
     importers: [exact("src/local-config.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-  },
-  {
-    id: "observer-no-main-chain-dependents",
-    importers: [
-      exact("src/runner.ts"),
-      prefix("src/runner/"),
-      exact("src/scanner.ts"),
-      exact("src/issue-dispatcher.ts"),
-      exact("src/state-persister.ts"),
-      exact("src/github.ts"),
-      exact("src/codex.ts"),
-    ],
-    deniedRepositoryTargets: [prefix("src/observer/")],
-  },
-  {
-    id: "observer-no-write-adapters",
-    importers: [prefix("src/observer/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter, exact("src/media-assets.ts")],
-    deniedExternalSpecifiers: ["node:child_process"],
-  },
-  {
-    id: "runner-no-reverse-dependencies",
-    importers: [
-      exact("src/goal-ledger.ts"),
-      exact("src/conversation.ts"),
-      exact("src/github-response-intake.ts"),
-      exact("src/driver-pool.ts"),
-      prefix("src/triggers/"),
-      prefix("src/observer/"),
-    ],
-    deniedRepositoryTargets: [exact("src/runner.ts"), prefix("src/runner/")],
-  },
-  {
-    id: "scanner-no-codex-adapter",
-    importers: [exact("src/scanner.ts")],
     deniedRepositoryTargets: codexAdapter,
-  },
-  {
-    id: "dispatcher-no-side-effect-adapters",
-    importers: [exact("src/issue-dispatcher.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "state-persister-no-domain-adapters",
-    importers: [exact("src/state-persister.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter, prefix("src/triggers/")],
   },
   {
     id: "conversation-no-side-effect-adapters",
     importers: [exact("src/conversation.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "issue-media-no-side-effect-adapters",
-    importers: [exact("src/issue-media.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "media-assets-no-codex-adapter",
-    importers: [exact("src/media-assets.ts")],
     deniedRepositoryTargets: codexAdapter,
-  },
-  {
-    id: "conversation-interrupt-no-side-effect-adapters",
-    importers: [exact("src/conversation-interrupt.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
     deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "goal-ledger-no-side-effect-adapters",
-    importers: [exact("src/goal-ledger.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: [...filesystemAdapters, "node:child_process"],
-  },
-  {
-    id: "goal-ledger-state-no-provider-adapters",
-    importers: [exact("src/goal-ledger-state.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
   },
 ] as const;
 
@@ -274,6 +207,7 @@ export function analyzeImportBoundaries(input: {
           importer,
           specifier: reference.specifier,
           resolvedTarget: "<unresolved>",
+          line: reference.line,
         });
         continue;
       }
@@ -287,6 +221,7 @@ export function analyzeImportBoundaries(input: {
           importer,
           specifier: reference.specifier,
           resolvedTarget: target.kind === "repository" ? target.path : target.specifier,
+          line: reference.line,
         });
       }
     }
@@ -310,6 +245,7 @@ export function analyzeImportBoundaries(input: {
 export function validateBoundaryDocumentation(input: {
   markdown: string;
   rules?: readonly ImportBoundaryRule[];
+  additionalRuleIds?: readonly string[];
 }): string[] {
   const errors: string[] = [];
   const ids = new Map<string, number>();
@@ -342,7 +278,10 @@ export function validateBoundaryDocumentation(input: {
   for (const [id, count] of ids) {
     if (count !== 1) errors.push(`boundary marker must be unique: ${id} appears ${String(count)} times`);
   }
-  const registryIds = new Set((input.rules ?? IMPORT_BOUNDARY_RULES).map((rule) => rule.id));
+  const registryIds = new Set([
+    ...(input.rules ?? IMPORT_BOUNDARY_RULES).map((rule) => rule.id),
+    ...(input.additionalRuleIds ?? []),
+  ]);
   for (const id of documentedImportRules) {
     if (!registryIds.has(id)) errors.push(`documented IB rule is missing from registry: ${id}`);
   }
@@ -356,7 +295,7 @@ function collectModuleSpecifiers(
   filePath: string,
   source: string,
 ): {
-  references: Array<{ specifier: string; runtime: boolean }>;
+  references: Array<{ specifier: string; runtime: boolean; line: number }>;
   nonLiteralDynamicImports: number;
 } {
   const sourceFile = ts.createSourceFile(
@@ -366,7 +305,7 @@ function collectModuleSpecifiers(
     true,
     filePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
-  const references: Array<{ specifier: string; runtime: boolean }> = [];
+  const references: Array<{ specifier: string; runtime: boolean; line: number }> = [];
   let nonLiteralDynamicImports = 0;
   const visit = (node: ts.Node): void => {
     if (
@@ -379,10 +318,15 @@ function collectModuleSpecifiers(
         runtime: ts.isImportDeclaration(node)
           ? isRuntimeImportDeclaration(node)
           : isRuntimeExportDeclaration(node),
+        line: sourceFile.getLineAndCharacterOfPosition(node.moduleSpecifier.getStart(sourceFile)).line + 1,
       });
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       if (node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0]!)) {
-        references.push({ specifier: node.arguments[0]!.text, runtime: true });
+        references.push({
+          specifier: node.arguments[0]!.text,
+          runtime: true,
+          line: sourceFile.getLineAndCharacterOfPosition(node.arguments[0]!.getStart(sourceFile)).line + 1,
+        });
       } else {
         nonLiteralDynamicImports += 1;
       }
@@ -391,7 +335,11 @@ function collectModuleSpecifiers(
       && ts.isLiteralTypeNode(node.argument)
       && ts.isStringLiteralLike(node.argument.literal)
     ) {
-      references.push({ specifier: node.argument.literal.text, runtime: false });
+      references.push({
+        specifier: node.argument.literal.text,
+        runtime: false,
+        line: sourceFile.getLineAndCharacterOfPosition(node.argument.literal.getStart(sourceFile)).line + 1,
+      });
     }
     ts.forEachChild(node, visit);
   };
@@ -437,6 +385,7 @@ function findTransitiveViolations(
           specifier: reference.specifier,
           resolvedTarget: targetLabel,
           dependencyPath: [...dependencyPath, targetLabel],
+          line: reference.line,
         });
         continue;
       }

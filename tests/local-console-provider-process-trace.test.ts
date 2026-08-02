@@ -12,10 +12,10 @@ import {
   resolveProviderTrace,
   type ProviderTraceLink,
 } from "../src/local-console/provider-process-trace.js";
-import {
-  loadLocalProcessHistoryPage,
-  ProcessCursorError,
-} from "../src/local-console/process-history.js";
+import { loadLocalProcessHistoryPage } from "../src/local-console/process-history-page-runtime.js";
+import { ProcessCursorError } from "../src/local-console/process-history-contracts.js";
+import { localProcessFactReader } from "../src/local-console/process-fact-reader.js";
+import { localProcessTraceReader } from "../src/local-console/process-trace-reader.js";
 
 describe("provider-native process traces", () => {
   it("locates a Claude transcript by exact session id and projects thinking/tools/results", async () => {
@@ -475,6 +475,8 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
+        traceReader: localProcessTraceReader,
         messages: [],
         activeRunIds: new Set(),
         trace: { claudeProjectsRoot: projectsRoot },
@@ -502,6 +504,8 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
+        traceReader: localProcessTraceReader,
         messages: [],
         activeRunIds: new Set(),
         trace: { claudeProjectsRoot: projectsRoot },
@@ -520,6 +524,8 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-b",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
+        traceReader: localProcessTraceReader,
         messages: [],
         activeRunIds: new Set(),
         cursor: tampered,
@@ -560,6 +566,8 @@ describe("provider-native process traces", () => {
         sessionId: "session-a",
         requestedRunId: "run-kimi",
         sessionFactLogPath: factLog,
+        factReader: localProcessFactReader,
+        traceReader: localProcessTraceReader,
         messages: [],
         activeRunIds: new Set(),
       })).resolves.toMatchObject({

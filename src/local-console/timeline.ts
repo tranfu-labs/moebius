@@ -10,9 +10,9 @@ export function buildLocalConsoleTimeline(
   }
 
   const bodies = messages.map(formatLocalMessageBody);
-  const issueBody = bodies[0] ?? "";
+  const initialMessage = bodies[0] ?? "";
   return buildTimeline(
-    issueBody,
+    initialMessage,
     bodies.slice(1).map((body) => ({ body })),
     [...availableAgentNames],
   );

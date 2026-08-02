@@ -38,3 +38,4 @@ export function parseTrailingStageMarker(text: string, allowedStages: readonly s
   }
   return stage;
 }
+export const CEO_ORCHESTRATION_STAGE = "in-progress";

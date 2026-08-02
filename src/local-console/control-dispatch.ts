@@ -68,6 +68,39 @@ export interface LocalPendingWorkerCandidate {
   role: string;
 }
 
+export type LocalWorkerDispatchCheckpoint = { kind: "continue" } | { kind: "stop" };
+
+export function decideWorkerDispatchCheckpoint(stopping: boolean): LocalWorkerDispatchCheckpoint {
+  return stopping ? { kind: "stop" } : { kind: "continue" };
+}
+
+export type LocalWorkerClaimDecision =
+  | { kind: "claimed"; message: LocalConsoleMessage }
+  | { kind: "empty" };
+
+export function decideWorkerClaim(message: LocalConsoleMessage | null): LocalWorkerClaimDecision {
+  return message === null ? { kind: "empty" } : { kind: "claimed", message };
+}
+
+export function planPendingWorkerRoles(
+  messages: readonly Pick<LocalConsoleMessage, "dispatchRole">[],
+): ReadonlySet<string> {
+  return new Set(messages.flatMap((message) =>
+    message.dispatchRole == null ? [] : [message.dispatchRole]));
+}
+
+export type LocalWorkerAgentSelection =
+  | { kind: "found"; index: number }
+  | { kind: "missing"; role: string };
+
+export function planWorkerAgentSelection(
+  agentNames: readonly string[],
+  role: string,
+): LocalWorkerAgentSelection {
+  const index = agentNames.indexOf(role);
+  return index < 0 ? { kind: "missing", role } : { kind: "found", index };
+}
+
 export function planPendingWorkerDispatches(input: {
   messages: readonly LocalPendingWorkerCandidate["message"][];
   activeRoles: ReadonlySet<string>;

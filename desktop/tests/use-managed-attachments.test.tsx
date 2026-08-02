@@ -3,8 +3,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { StructuredAttachment } from "@moebius/console-ui";
 
 import { waitForCondition } from "../../src/testing/wait.js";
+import { managedAttachmentClient } from "../src/console-page/attachment-client.js";
+import type { ManagedAttachmentFailureCode } from "../src/console-page/managed-attachment-contract.js";
+import type { ManagedAttachmentClient } from "../src/console-page/managed-attachment-port.js";
+import { ManagedAttachmentFailure } from "../src/console-page/managed-attachment-model.js";
 import { useManagedAttachmentDrafts } from "../src/console-page/use-managed-attachments.js";
 import type { SidebarConversationDraftAttachmentPresence } from "../src/console-page/sidebar-conversation-drafts.js";
 
@@ -111,23 +116,136 @@ describe("managed attachment draft presence", () => {
     ]);
     expect(onError).not.toHaveBeenCalled();
   });
+
+  it("commits a slow failure through the latest translator and error callback", async () => {
+    const slow = deferred<StructuredAttachment[]>();
+    const client = attachmentClient({ listDraft: vi.fn(async () => await slow.promise) });
+    const firstError = vi.fn();
+    const latestError = vi.fn();
+    const firstTranslate = vi.fn(() => "first-language");
+    const latestTranslate = vi.fn(() => "latest-language");
+
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:a"
+        onPresence={vi.fn()}
+        onError={firstError}
+        translateFailure={firstTranslate}
+      />,
+    ));
+    await waitFor(() => vi.mocked(client.listDraft).mock.calls.length === 1);
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:a"
+        onPresence={vi.fn()}
+        onError={latestError}
+        translateFailure={latestTranslate}
+      />,
+    ));
+    await act(async () => slow.reject(new ManagedAttachmentFailure("attachment-draft-restore")));
+    await waitFor(() => latestError.mock.calls.length === 1);
+
+    expect(firstTranslate).not.toHaveBeenCalled();
+    expect(firstError).not.toHaveBeenCalled();
+    expect(latestTranslate).toHaveBeenCalledWith("attachment-draft-restore");
+    expect(latestError).toHaveBeenCalledWith("latest-language");
+  });
+
+  it("renders a slow upload failure with the latest translator after a parent rerender", async () => {
+    const slow = deferred<StructuredAttachment>();
+    const client = attachmentClient({
+      upload: vi.fn(async () => await slow.promise),
+    });
+    const firstTranslate = vi.fn(() => "first-upload-language");
+    const latestTranslate = vi.fn(() => "latest-upload-language");
+
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:a"
+        onPresence={vi.fn()}
+        onError={vi.fn()}
+        translateFailure={firstTranslate}
+      />,
+    ));
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="add"]')!.click());
+    await waitFor(() => vi.mocked(client.upload).mock.calls.length === 1);
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:a"
+        onPresence={vi.fn()}
+        onError={vi.fn()}
+        translateFailure={latestTranslate}
+      />,
+    ));
+    await act(async () => slow.reject(new ManagedAttachmentFailure("attachment-upload")));
+    await waitFor(() => host.textContent?.includes("latest-upload-language") === true);
+
+    expect(firstTranslate).not.toHaveBeenCalled();
+    expect(latestTranslate).toHaveBeenCalledWith("attachment-upload");
+  });
+
+  it("ignores an aborted slow failure after the draft owner changes", async () => {
+    const slow = deferred<StructuredAttachment[]>();
+    const client = attachmentClient({
+      listDraft: vi.fn(async ({ draftKey }) => draftKey === "draft:sidebar:a"
+        ? await slow.promise
+        : []),
+    });
+    const onError = vi.fn();
+    const translateFailure = vi.fn(() => "should-not-commit");
+
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:a"
+        onPresence={vi.fn()}
+        onError={onError}
+        translateFailure={translateFailure}
+      />,
+    ));
+    await waitFor(() => vi.mocked(client.listDraft).mock.calls.length === 1);
+    await act(async () => root.render(
+      <AttachmentHarness
+        client={client}
+        draftKey="draft:sidebar:b"
+        onPresence={vi.fn()}
+        onError={onError}
+        translateFailure={translateFailure}
+      />,
+    ));
+    await waitFor(() => vi.mocked(client.listDraft).mock.calls.length === 2);
+    await act(async () => slow.reject(new ManagedAttachmentFailure("attachment-draft-restore")));
+
+    expect(translateFailure).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });
 
 function AttachmentHarness({
   draftKey,
   onPresence,
   onError,
+  client = managedAttachmentClient,
+  translateFailure = (code) => code,
 }: {
   draftKey: string;
   onPresence(draftKey: string, presence: SidebarConversationDraftAttachmentPresence): void;
   onError(error: string): void;
+  client?: ManagedAttachmentClient;
+  translateFailure?: (code: ManagedAttachmentFailureCode) => string;
 }): JSX.Element {
   const managed = useManagedAttachmentDrafts({
+    client,
     apiBase: "http://127.0.0.1:8787/",
     capability: "test-capability",
     currentDraftKey: draftKey,
     onDraftAttachmentPresenceChange: onPresence,
     onError,
+    translateFailure,
   });
   return <div>
     <button aria-label="add" onClick={() => managed.addFiles([
@@ -135,6 +253,7 @@ function AttachmentHarness({
     ])}>add</button>
     {managed.attachments.map((item) => <div key={item.clientId}>
       <span>{item.displayName}</span>
+      <span>{item.error}</span>
       <button aria-label={`remove-${item.displayName}`} onClick={() => managed.remove(item.clientId)}>
         remove
       </button>
@@ -167,4 +286,29 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
     describe: "managed attachment harness condition",
     snapshot: () => ({ text: document.body.textContent }),
   });
+}
+
+function attachmentClient(overrides: Partial<ManagedAttachmentClient>): ManagedAttachmentClient {
+  return {
+    upload: vi.fn(async () => attachment("uploaded", "uploaded.txt")),
+    listDraft: vi.fn(async () => []),
+    cloneMessage: vi.fn(async () => []),
+    removeDraft: vi.fn(async () => undefined),
+    loadPreview: vi.fn(async () => new Blob()),
+    ...overrides,
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
 }

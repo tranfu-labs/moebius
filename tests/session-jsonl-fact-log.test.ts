@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { runSqliteStateCommand, type SqliteStateCommand } from "../src/sqlite-state.js";
 

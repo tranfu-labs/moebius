@@ -28,6 +28,7 @@ export async function refillStoppedRunDraft(input: {
   stoppedMessageId: number;
   stoppedRunId: string | null;
   sessionId: string;
+  missingSourceMessage: string;
   replaceAttachments(source: { sessionId: string; sourceMessageId: number }): Promise<void>;
   persistBody(body: string): void;
 }): Promise<OperatorMessage> {
@@ -39,7 +40,7 @@ export async function refillStoppedRunDraft(input: {
     || stopped?.sessionId !== input.sessionId
     || stopped.runId !== input.stoppedRunId
   ) {
-    throw new Error("找不到这轮开始时的用户消息，请刷新后重试");
+    throw new Error(input.missingSourceMessage);
   }
   await input.replaceAttachments({
     sessionId: source.sessionId,

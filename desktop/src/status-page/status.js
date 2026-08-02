@@ -5,12 +5,8 @@ import {
 
 const elements = {
   version: document.getElementById("version"),
-  runnerDot: document.getElementById("runner-dot"),
-  runnerStatus: document.getElementById("runner-status"),
-  runnerDetail: document.getElementById("runner-detail"),
-  observerDot: document.getElementById("observer-dot"),
-  observerStatus: document.getElementById("observer-status"),
-  openObserver: document.getElementById("open-observer"),
+  localConsoleDot: document.getElementById("local-console-dot"),
+  localConsoleStatus: document.getElementById("local-console-status"),
   codexDot: document.getElementById("codex-dot"),
   codexStatus: document.getElementById("codex-status"),
   configDot: document.getElementById("config-dot"),
@@ -42,9 +38,6 @@ applyLocale(locale);
 void window.moebius.readLanguagePreference?.().then(applyLocale);
 window.moebius.onLanguagePreferenceChanged?.(applyLocale);
 
-elements.openObserver.addEventListener("click", () => {
-  void window.moebius.openObserver();
-});
 elements.openDataRoot.addEventListener("click", () => {
   void window.moebius.openDataRoot();
 });
@@ -57,58 +50,18 @@ window.moebius.onStatus((snapshot) => {
 function renderSnapshot(snapshot) {
   elements.version.textContent = `v${snapshot.appVersion}`;
   elements.dataRoot.textContent = snapshot.dataRoot;
-  renderRunner(snapshot.runner);
-  renderObserver(snapshot.observer);
+  renderLocalConsole(snapshot.localConsole);
   renderDoctor(snapshot);
 }
 
-function renderRunner(runner) {
-  const dot = elements.runnerDot;
-  dot.className = "dot";
-  if (runner.status === "running") {
-    dot.classList.add("ok");
-    elements.runnerStatus.textContent = t("running");
-  } else if (runner.status === "starting") {
-    dot.classList.add("warn");
-    elements.runnerStatus.textContent = t("starting");
-  } else if (runner.status === "crashed" && runner.nextRestartDelayMs !== undefined) {
-    dot.classList.add("warn");
-    elements.runnerStatus.textContent = t("crashedRestarting", {
-      current: runner.crashCount,
-      maximum: runner.maxCrashCount,
-    });
-  } else if (runner.status === "crashed") {
-    dot.classList.add("error");
-    elements.runnerStatus.textContent = t("crashedStopped", { count: runner.crashCount });
-  } else {
-    dot.classList.add("muted");
-    elements.runnerStatus.textContent = t("stopped");
-  }
-
-  if (runner.logPath !== undefined && runner.status === "crashed") {
-    elements.runnerDetail.textContent = t("log", { path: runner.logPath });
-    elements.runnerDetail.classList.remove("hidden");
-  } else {
-    elements.runnerDetail.textContent = "";
-    elements.runnerDetail.classList.add("hidden");
-  }
-}
-
-function renderObserver(observer) {
-  elements.observerDot.className = "dot";
-  if (observer.status === "running") {
-    elements.observerDot.classList.add("ok");
-    elements.observerStatus.textContent = observer.url?.replace("http://", "") ?? t("running");
-    elements.openObserver.disabled = false;
-  } else if (observer.status === "error") {
-    elements.observerDot.classList.add("error");
-    elements.observerStatus.textContent = observer.error ?? t("startFailed");
-    elements.openObserver.disabled = true;
-  } else {
-    elements.observerDot.classList.add("warn");
-    elements.observerStatus.textContent = t("starting");
-    elements.openObserver.disabled = true;
-  }
+function renderLocalConsole(localConsole) {
+  elements.localConsoleDot.className = "dot";
+  elements.localConsoleDot.classList.add(localConsole.status === "running" ? "ok" : localConsole.status === "error" ? "error" : "muted");
+  elements.localConsoleStatus.textContent = localConsole.status === "running"
+    ? t("running")
+    : localConsole.status === "error"
+      ? localConsole.error ?? t("unavailable")
+      : t(localConsole.status);
 }
 
 function renderDoctor(snapshot) {

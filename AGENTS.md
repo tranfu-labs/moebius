@@ -5,15 +5,15 @@
 ## 项目概览
 产品品牌统一为 `Moebius`：技术 slug / 协议 namespace 使用 `moebius`，workspace package scope 使用 `@moebius`，环境变量前缀使用 `MOEBIUS`，打包态默认数据根为 `~/.moebius`。这是一条硬切换契约，不读取或接受此前产品标识对应的目录、环境变量或运行协议；当前 worktree 路径与 git remote 属于外部仓库状态，不由应用代码修改。
 
-本项目是一个 Node.js + TypeScript 常驻脚本，并提供可选 Electron 桌面壳（正式发行只有 macOS Apple Silicon）。两种运行形态：`pnpm start` 缺省进入本地对话操作台（local console）；`pnpm start -- --github-mode` 进入纯 GitHub issue runner，扫描白名单仓库的 issue、按 mention 触发本机 `codex` 并回写评论。桌面形态以本地操作台为主窗口，内嵌 local console server、GitHub-mode runner 子进程与只读 observer。本地会话以数据根 `sessions/*.jsonl` 为唯一事实源，SQLite 只存可变流转状态与可重建索引。
+本项目是一个 Node.js + TypeScript 本地对话操作台，并提供可选 Electron 桌面壳（正式发行只有 macOS Apple Silicon）。`pnpm start` 启动 loopback local console；桌面形态在主进程内拥有同一 local console server，不派生后台 runner 或 observer。GitHub 只用于源码托管、问题反馈与 Release 分发，不是产品运行入口。本地会话以数据根 `sessions/*.jsonl` 为唯一事实源，SQLite 只存可变流转状态与可重建索引。
 
 ## 项目结构
 ```text
 .
 ├── agents/                 # 可被 mention 寻址的 agent 角色素材（dev / qa / ceo / secretary 等），frontmatter 声明机器元数据
 ├── assets/brand/           # 品牌唯一母版、生成产物与哈希 manifest
-├── src/                    # 运行时代码：runner 心跳编排、GitHub intake、目标账本、会话、Codex/gh 适配、local-console、observer、triggers、agent-prescripts
-├── desktop/                # Electron 桌面壳：主进程、preload、操作台/状态页 renderer、runner 子进程监管、打包配置
+├── src/                    # 运行时代码：local-console、会话/mention 纯逻辑、Codex/Claude/Kimi 适配、SQLite worker、目标账本纯模型
+├── desktop/                # Electron 桌面壳：主进程、preload、操作台/状态页 renderer、团队与 onboarding、打包配置
 ├── packages/console-ui/    # shadcn/Radix + Tailwind 的 React 操作台组件库与 Storybook
 ├── prototypes/             # 与生产代码双向隔离的高保真原型沙盒（规则见 prototypes/AGENTS.md）
 ├── seeds/teams/            # 打包进桌面应用的只读内置团队种子
@@ -25,7 +25,7 @@
 │   ├── architecture/       # module-map.md（模块职责与依赖边界）、invariants.md
 │   ├── adr/                # 架构决策记录
 │   ├── wireframes/         # 历史版式参考；已建页面 PRD 的页面以 docs/product/pages/ 为准
-│   └── protocols/          # github-interaction.md：issue 交互协议；real-app-acceptance.md：真机验收协议，均为唯一事实源
+│   └── protocols/          # real-app-acceptance.md：真机验收协议；其余文件仅在对应活跃域指针明确引用时生效
 └── openspec/
     ├── specs/              # 当前行为事实规格（落后于实现，只记录已实现并验证的）
     └── changes/            # 先设计再实现的变更工作区（规则见 openspec/changes/AGENTS.md）
@@ -36,8 +36,6 @@
 - 安装：`pnpm install`
 - 品牌资产：`pnpm brand:generate` 生成 / `pnpm brand:check` 只读校验（管线与门禁见 `openspec/specs/product-identity/spec.md`）
 - 本地模式：`pnpm start`（干净环境可冷启动；只在真正调用 Codex 时需要本机 `codex` CLI）
-- 纯 GitHub runner：`pnpm start -- --github-mode`（flag 必须 exact，见下方红线；需要 `codex` CLI 与 `gh auth login`）
-- 只读观察页：`pnpm observer`（默认 `127.0.0.1:8787`，`OBSERVER_PORT` 覆盖端口；只读旁路，行为见 `openspec/specs/local-console/spec.md` observer 节）
 - 桌面开发态：`pnpm desktop`（数据根、种子拷贝、附件 capability 等行为见 `openspec/specs/desktop-shell/spec.md`；dev 期开放 CDP `9222` 供 AI 调试，见 ADR-0002，首选 `.mcp.json` 的 `electron` MCP server）
 - 桌面构建：`pnpm --filter @moebius/desktop build`（构建门禁见 desktop-shell spec）
 - 桌面打包：`pnpm --filter @moebius/desktop dist`（只产 macOS arm64 DMG/ZIP；正式发行使用 `v*` tag，红线见 desktop-shell spec）
@@ -88,9 +86,8 @@
 
 | 域 | 行为事实源 | 补充 |
 |---|---|---|
-| GitHub issue runner（intake / 心跳派发 / worktree / CEO 编排与 guardrail / stage marker / 媒体与 artifact / codex provider 切换） | `openspec/specs/github-issue-runner/spec.md` | 交互协议 `docs/protocols/github-interaction.md`；agent 素材约定见 `agents/*.md` frontmatter |
 | 目标账本（goal / milestone / task / 验收 fact） | `openspec/specs/goal-ledger/spec.md` | |
-| 本地会话运行时（jsonl 事实源 / 主 Agent 控制 / 恢复 resume / 附件 / observer） | `openspec/specs/local-console/spec.md` | |
+| 本地会话运行时（jsonl 事实源 / 主 Agent 控制 / 恢复 resume / 附件 / 运行过程） | `openspec/specs/local-console/spec.md` | |
 | 桌面壳（数据根 / 种子 / 团队 / preload 边界 / 打包发布 / 更新） | `openspec/specs/desktop-shell/spec.md` | ADR-0002（CDP 调试通道） |
 | 操作台 UI（时间线 / composer / 侧栏 / onboarding / RelayDemo / Markdown 渲染） | `openspec/specs/console-ui/spec.md` | 设计语言 `packages/console-ui/DESIGN.md` |
 | 设计原型沙盒 | `openspec/specs/design-prototypes/spec.md` | `prototypes/AGENTS.md` |
@@ -100,9 +97,9 @@
 ## 编码规范
 - TypeScript `strict`，ESM + `moduleResolution: NodeNext`，相对导入运行时代码使用 `.js` 后缀。
 - 运行入口 `tsx src/runner.ts`；自动化测试使用 Vitest。
-- 业务纯逻辑与 IO 适配分层：`github.ts` / `codex.ts` / `*-state.ts` 等做适配，纯业务模块不得引入 GitHub / Codex / shell 依赖；边界以 `docs/architecture/module-map.md` 为准。
-- 间隔、上限、路径等运行参数集中在 `src/config.ts`；repository 白名单用被 `.gitignore` 忽略的 `config.local.toml` 覆盖，提交版 `config.toml` 只是示例、默认白名单为空。
-- GitHub 认证复用本机 `gh auth login`；Codex 默认走本机订阅登录，provider / model 切换配置见 github-issue-runner spec。
+- 业务纯逻辑与 IO 适配按 view / application / domain / adapter 四层登记；纯 domain 不得引入文件系统、SQLite、provider、Electron、HTTP/IPC 或 shell，边界以 `docs/architecture/module-map.md` 为准。
+- 间隔、上限、路径等运行参数集中在 `src/config.ts`；被 `.gitignore` 忽略的 `config.local.toml` 只覆盖本机 provider / model，不保存运行时状态。
+- Codex 默认走本机订阅登录；provider / model 切换配置见 local-console 与 desktop-shell spec。
 
 ## 会话上下文纪律（AI 执行时）
 长会话的主要开销来自工具输出灌大上下文（实测一次 33 分钟会话中工具输出占上下文 73%，其中截图、构建日志、批量读文件、全量 diff 是四个大头）。在本仓库执行任务时遵守：
@@ -127,10 +124,10 @@
 ## 禁止事项
 - MUST NOT 把 `artifacts/` 当作事实源或长期交付目录；验收截图、evidence JSON、静态构建等临时证据必须写入系统临时目录并由运行结果报告路径，仓库内 `artifacts/` 不得提交。
 - MUST NOT 提交 GitHub token、个人访问令牌、本地绝对路径、执行日志中的敏感内容或 `.env` 文件。
-- MUST NOT 提交本机 `config.local.toml`；它用于本地 repository 白名单。
-- MUST NOT 把 issue title/body/author 等外部输入直接拼接到 shell 命令中执行；调用外部命令必须 `child_process.spawn(cmd, args[])`，不得使用 `exec` / `execSync` / `shell: true`。
+- MUST NOT 提交本机 `config.local.toml`；它用于本机 provider / model 覆盖。
+- MUST NOT 把用户消息、Agent Markdown、附件文本或其他外部输入直接拼接到 shell 命令中执行；调用外部命令必须 `child_process.spawn(cmd, args[])`，不得使用 `exec` / `execSync` / `shell: true`。
 - MUST NOT 把 `agents/` 当作运行时状态目录；它只存放可被 mention 寻址的 Markdown 角色素材。
-- MUST NOT 允许 issue body/comment 或 agent Markdown 正文指定任意可执行脚本；只有 frontmatter 中指向 `src/agent-prescripts/` 的受信任 registry 脚本可执行。
+- MUST NOT 允许用户消息或 Agent Markdown/frontmatter 指定任意可执行脚本；Agent 素材只提供 persona 文本与静态团队元数据。
 - MUST NOT 编造尚未存在的运行命令；新增脚本后同步更新本文件、模块地图和相关 OpenSpec。
-- 启动 flag 红线：GitHub-mode 的确切名称是 `--github-mode` 且只接受 exact flag；`pnpm start` 缺省 local。local 与 GitHub 两条运行时数据链路（`local-console.sqlite` / `github-runner.sqlite`）互不可见，同一启动流程不并发启用。
+- 启动红线：`pnpm start` 只启动 local console；`--github-mode` 已退役，必须在 server 启动前以可读错误 fail closed。local CLI 与 Desktop 启动不得读取、迁移、清空或重写既有 GitHub runner state。
 - 发布红线：桌面正式发行只有 macOS Apple Silicon（arm64）DMG 与 ZIP；不得生成 Windows、Linux、macOS x64 或 universal 产物。

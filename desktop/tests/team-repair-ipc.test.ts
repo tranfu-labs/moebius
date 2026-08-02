@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { serializeTeamDefinition, type TeamDefinition } from "../src/team-model.js";
-import { listAgentTeams } from "../src/team-ipc.js";
+import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import { relocateAgentTeamRecord, removeAgentTeamRecord } from "../src/team-repair-ipc.js";
 import { resolveTeamLocation } from "../src/team-store.js";
+
+const { listAgentTeams } = createTestAgentTeamService();
 
 const temporaryRoots: string[] = [];
 const definition: TeamDefinition = {

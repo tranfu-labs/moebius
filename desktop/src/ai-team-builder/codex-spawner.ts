@@ -22,6 +22,11 @@ import type {
   AiTeamBuilderDriverRequest,
   AiTeamBuilderDriverResult,
 } from "./driver.js";
+import {
+  selectCodexAiTeamBuilderFailedSession,
+  selectCodexAiTeamBuilderFailureResponseSession,
+  selectCodexAiTeamBuilderSession,
+} from "./driver-session-plan.js";
 import { AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS } from "./instructions.js";
 import { serializeAiTeamBuilderOutputSchema } from "./output-schema.js";
 
@@ -150,8 +155,10 @@ export class AiTeamBuilderCodexSpawner implements AiTeamBuilderDriverPort {
     }
 
     if (!result.ok) {
-      const failedObservedExternalSessionId =
-        observedExternalSessionId ?? result.threadId ?? null;
+      const failedObservedExternalSessionId = selectCodexAiTeamBuilderFailedSession({
+        observedExternalSessionId,
+        threadId: result.threadId,
+      });
       await writeInvocationManifest(runDir, {
         version: 1,
         identityType: "ai-team-builder-draft",
@@ -164,10 +171,17 @@ export class AiTeamBuilderCodexSpawner implements AiTeamBuilderDriverPort {
         ok: false,
         reason: result.reason,
         resumeFailed: request.externalSessionId !== null,
-        externalSessionId: request.externalSessionId ?? failedObservedExternalSessionId,
+        externalSessionId: selectCodexAiTeamBuilderFailureResponseSession({
+          requestedExternalSessionId: request.externalSessionId,
+          failedObservedExternalSessionId,
+        }),
       };
     }
-    const externalSessionId = result.threadId ?? observedExternalSessionId ?? request.externalSessionId;
+    const externalSessionId = selectCodexAiTeamBuilderSession({
+      threadId: result.threadId,
+      observedExternalSessionId,
+      requestedExternalSessionId: request.externalSessionId,
+    });
     if (externalSessionId === null) {
       await writeInvocationManifest(runDir, {
         version: 1,

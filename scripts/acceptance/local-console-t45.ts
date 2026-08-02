@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/server.js";
+import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import type {
   LocalConsoleMessage,

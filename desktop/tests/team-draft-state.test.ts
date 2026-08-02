@@ -10,11 +10,11 @@ import {
   getDirtyAgentTeamMemberSlugs,
   isAgentTeamMemberDirty,
   loadAgentTeamMemberExternalVersion,
-  saveAllAgentTeamDrafts,
   startAgentTeamMemberSave,
   startAgentTeamMemberExternalOverwrite,
   updateAgentTeamMemberDraft,
 } from "../src/console-page/team-state.js";
+import { saveAllAgentTeamDrafts } from "../src/console-page/team-save-controller.js";
 
 const teamKey = "user:development";
 
@@ -57,6 +57,7 @@ describe("Agent team per-member draft state", () => {
     const result = await saveAllAgentTeamDrafts({
       state: loadDirtyMembers(),
       teamKey,
+      alreadySavingReason: "already-saving-sentinel",
       saveMember,
       onTransition: (state) => transitions.push(getDirtyAgentTeamMemberSlugs(state, teamKey)),
     });
@@ -89,12 +90,17 @@ describe("Agent team per-member draft state", () => {
     state = startAgentTeamMemberSave(state, teamKey, "manager");
     const saveMember = vi.fn(async (_memberSlug: string, markdown: string) => markdown);
 
-    const result = await saveAllAgentTeamDrafts({ state, teamKey, saveMember });
+    const result = await saveAllAgentTeamDrafts({
+      state,
+      teamKey,
+      alreadySavingReason: "already-saving-sentinel",
+      saveMember,
+    });
 
     expect(saveMember.mock.calls.map(([memberSlug]) => memberSlug)).toEqual(["dev"]);
     expect(result.failures).toContainEqual({
       memberSlug: "manager",
-      reason: "该成员仍在保存，请稍后重试。",
+      reason: "already-saving-sentinel",
     });
   });
 
