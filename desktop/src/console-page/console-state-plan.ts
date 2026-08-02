@@ -30,6 +30,38 @@ export function decideRefreshCommit(canCommit: boolean): "commit" | "ignore" {
   return canCommit ? "commit" : "ignore";
 }
 
+export function decideConsoleStatePoll(selectionMutationPending: boolean): "refresh" | "wait" {
+  return selectionMutationPending ? "wait" : "refresh";
+}
+
+export function decideComposerDraftActivation(newConversationOpen: boolean): "activate" | "keep" {
+  return newConversationOpen ? "keep" : "activate";
+}
+
+export function planDisplayedResultAcknowledgement(
+  apiBase: string | null,
+  state: {
+    selectedSession: { sessionId: string; unreadSince?: string | null } | null;
+    messages: readonly { speaker: string; createdAt: string }[];
+  } | null,
+  acknowledged: ReadonlySet<string>,
+):
+  | { kind: "skip" }
+  | { kind: "acknowledge"; key: string; sessionId: string; unreadSince: string; apiBase: string } {
+  const unreadSince = state?.selectedSession?.unreadSince;
+  if (apiBase === null || state === null || state.selectedSession === null || unreadSince == null) {
+    return { kind: "skip" };
+  }
+  const displayed = state.messages.some(
+    (message) => message.speaker === "agent" && message.createdAt >= unreadSince,
+  );
+  if (!displayed) return { kind: "skip" };
+  const key = `${state.selectedSession.sessionId}:${unreadSince}`;
+  return acknowledged.has(key)
+    ? { kind: "skip" }
+    : { kind: "acknowledge", key, sessionId: state.selectedSession.sessionId, unreadSince, apiBase };
+}
+
 export function decideEvidenceIntent(kind: "workspace-diff" | "run-output"):
   "workspace-diff" | "run-output" {
   return kind;

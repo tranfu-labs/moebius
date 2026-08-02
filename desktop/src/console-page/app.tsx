@@ -87,7 +87,6 @@ import type {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  acknowledgeDisplayedResult,
   loadProcessOutput,
   loadProcessOutputUpdate,
   loadProcessDebugInvocation,
@@ -138,7 +137,6 @@ import {
   ProcessInvocationRequestCoordinator,
   type ConsoleSelection,
   type SelectionMutationKind,
-  type SelectionMutationToken,
 } from "./console-state-coordinator.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
@@ -222,6 +220,8 @@ import { useConversationSearch } from "./use-conversation-search.js";
 import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
+import { useConsoleStateSync } from "./use-console-state-sync.js";
+import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -1015,73 +1015,12 @@ export function OperatorConsoleApp({
     };
   }, [activeSidebarConversationSessionId, apiBase]);
 
-  const refresh = useCallback(async (
-    targetSelection: ConsoleSelection,
-    mutationOwner?: SelectionMutationToken,
-  ): Promise<boolean> => {
-    if (apiBase === null) {
-      return false;
-    }
-    return refreshConsoleState<LocalConsoleState>({
-      apiBase,
-      selection: targetSelection,
-      coordinator: coordinatorRef.current,
-      fetch,
-      readSelection: (nextState) => ({
-        projectId: nextState.selectedProjectId,
-        sessionId: nextState.selectedSessionId,
-      }),
-      commitState: commitConsoleState,
-      commitSelection,
-      setError: setClientError,
-      mutationOwner,
-    });
-  }, [apiBase, commitConsoleState, commitSelection]);
-
-  useEffect(() => {
-    void refresh(selectionRef.current);
-    const timer = window.setInterval(() => {
-      if (!coordinatorRef.current.isSelectionMutationPending) {
-        void refresh(selectionRef.current);
-      }
-    }, 1_000);
-    return () => {
-      window.clearInterval(timer);
-      coordinatorRef.current.invalidateRefresh();
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    if (newConversation?.isOpen !== true) {
-      activateComposerDraft(selection.sessionId);
-    }
-  }, [activateComposerDraft, newConversation?.isOpen, selection.sessionId]);
-
-  useEffect(() => {
-    if (apiBase === null || state === null || state.selectedSession === null || state.selectedSession.unreadSince === null) {
-      return;
-    }
-    const { sessionId, unreadSince } = state.selectedSession;
-    const latestResultIsDisplayed = state.messages.some(
-      (message) => message.speaker === "agent" && message.createdAt >= unreadSince,
-    );
-    if (!latestResultIsDisplayed) {
-      return;
-    }
-    const acknowledgementKey = `${sessionId}:${unreadSince}`;
-    if (resultAcknowledgementsRef.current.has(acknowledgementKey)) {
-      return;
-    }
-    resultAcknowledgementsRef.current.add(acknowledgementKey);
-    void acknowledgeDisplayedResult({ apiBase, sessionId, unreadSince, fetch })
-      .then(async () => {
-        await refresh(selectionRef.current);
-      })
-      .catch((error: unknown) => {
-        resultAcknowledgementsRef.current.delete(acknowledgementKey);
-        setClientError(formatError(error));
-      });
-  }, [apiBase, refresh, state]);
+  const stateSyncBundle = useConsoleStateSync(
+    apiBase, state, coordinatorRef.current, selectionRef, commitConsoleState, commitSelection,
+    setClientError, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
+    resultAcknowledgementsRef, browserConsoleStateSyncPort,
+  );
+  const refresh = stateSyncBundle.refresh;
 
   const project = state?.project ?? EMPTY_CONSOLE_PROJECT;
   const projects = state?.projects ?? [project];
