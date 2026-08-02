@@ -359,7 +359,6 @@ export function OperatorConsoleApp({
   const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
   const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
     useState<Set<string>>(() => new Set());
-  const sourceMigrationRef = useRef<string | null>(null);
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [composerDraft, setComposerDraft] = useState<ConversationComposerDraftState>(() => {
     const key = sessionDraftKey(selection.sessionId);
@@ -781,8 +780,8 @@ export function OperatorConsoleApp({
     hasBlockingComposerAttachment(managedAttachments.attachments), rememberConfirmedSelection,
     conversationDraftStoreRef.current, window.moebius, language.activeLocale,
     (sessionId, messageId) => conversationReadingPositionStoreRef.current.write(sessionId, messageId),
-    apiBase, stateRef, presentationRouteRef, sidebarConversationDraftStoreRef.current,
-    setSidebarConversationDrafts, commitConsoleState, commitSelection,
+    apiBase, stateRef, presentationRouteRef, presentationRoute, sidebarConversationDraftStoreRef.current,
+    setSidebarConversationDrafts, commitConsoleState, commitSelection, refresh,
     browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
   );
   const conversationTransitionBundle = conversationControllersBundle.transition;
@@ -951,45 +950,6 @@ export function OperatorConsoleApp({
     setSidebarVisibilityPreference(preference);
     writeSidebarVisibilityPreference(window.localStorage, preference);
   }, []);
-
-  useEffect(() => {
-    if (
-      state === null
-      || presentationRoute?.rightConversationSessionId === null
-      || presentationRoute === null
-    ) {
-      return;
-    }
-    const sessions = state.projects.flatMap((candidate) => candidate.sessions);
-    const sourceAvailable = sessions.some(
-      (session) => session.sessionId === presentationRoute.mainSessionId,
-    );
-    if (sourceAvailable) return;
-    const target = sessions.find(
-      (session) => session.sessionId === presentationRoute.rightConversationSessionId,
-    );
-    if (target === undefined || sourceMigrationRef.current === target.sessionId) return;
-    sourceMigrationRef.current = target.sessionId;
-    void refresh({ projectId: target.projectId, sessionId: target.sessionId }).then((migrated) => {
-      if (!migrated) return;
-      commitPresentationRoute(sidebarPresentationRoute({
-        sidebarProjectId: target.projectId,
-        sidebarSessionId: target.sessionId,
-        originSessionId: target.originSessionId ?? presentationRoute.mainSessionId,
-        originAvailable: false,
-      }));
-      setRightSidebarOpen(false);
-      rightSidebarTabsBundle.showHost(target.sessionId);
-    }).finally(() => {
-      sourceMigrationRef.current = null;
-    });
-  }, [
-    commitPresentationRoute,
-    presentationRoute,
-    refresh,
-    setRightSidebarOpen,
-    state,
-  ]);
 
   const renderSidebarConversation = useCallback(() => {
     if (activeSidebarConversationDraft !== null) {

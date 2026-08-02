@@ -25,6 +25,7 @@ import { useConversationTransition } from "./use-conversation-transition.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
 import { useSearchedSessionNavigation } from "./use-searched-session-navigation.js";
+import { useSidebarSourceMigration } from "./use-sidebar-source-migration.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -61,10 +62,12 @@ export function useConversationConsole(
   apiBase: string | null,
   stateRef: MutableRefObject<LocalConsoleState | null>,
   presentationRouteRef: MutableRefObject<ConsolePresentationRoute | null>,
+  presentationRoute: ConsolePresentationRoute | null,
   sidebarDraftStore: SidebarConversationDraftStore,
   commitSidebarDrafts: (drafts: SidebarConversationDraft[]) => void,
   commitState: (state: LocalConsoleState) => void,
   commitSelection: (selection: ConsoleSelection) => void,
+  refresh: (selection: ConsoleSelection) => Promise<boolean>,
   referencePort: ConversationAnalysisReferencePort,
   searchedSessionPort: SearchedSessionPort,
   fetch: FetchLike,
@@ -98,6 +101,9 @@ export function useConversationConsole(
   const searchedSession = useSearchedSessionNavigation(
     apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
     tabs.setOpen, actions.selectSession, searchedSessionPort, setError,
+  );
+  useSidebarSourceMigration(
+    projects, presentationRoute, refresh, commitRoute, tabs.setOpen, tabs.showHost,
   );
   return useMemo(() => ({
     transition,
