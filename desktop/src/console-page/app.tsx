@@ -30,11 +30,9 @@ import {
 import { reduceNewConversationDraft } from "./new-conversation.js";
 import {
   createRightSidebarTabsStore,
-  parseConversationTabSourceKey,
 } from "./right-sidebar-tabs-store.js";
 import {
   createSidebarConversationDraftStore,
-  sidebarConversationDraftRequiresDiscardConfirmation,
   type SidebarConversationDraftAttachmentPresence,
   type SidebarConversationDraft,
 } from "./sidebar-conversation-drafts.js";
@@ -69,6 +67,7 @@ import { useConsoleSelectionState } from "./use-console-selection-state.js";
 import { useConsoleStateActions } from "./use-console-state-actions.js";
 import { useConsolePresentation } from "./use-console-presentation.js";
 import { useConversationComposer } from "./use-conversation-composer.js";
+import { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -223,6 +222,13 @@ export function OperatorConsoleApp({
   const managedAttachments = attachmentDraftsBundle.main;
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
   const managedSidebarConversationAttachments = attachmentDraftsBundle.sidebar;
+  const sidebarDraftCloseBundle = useSidebarDraftClose(
+    sidebarConversationDraftStoreRef.current,
+    setSidebarConversationDrafts,
+    managedSidebarConversationAttachments,
+    window.confirm,
+    t,
+  );
 
   const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
@@ -617,26 +623,7 @@ export function OperatorConsoleApp({
       onRightSidebarOpenChange={setRightSidebarOpen}
       onRightSidebarWidthChange={rightSidebarTabsBundle.changeWidth}
       onRightSidebarTabsChange={rightSidebarTabsBundle.changeTabs}
-      onBeforeCloseRightSidebarTab={(tab) => {
-        const locator = tab.type === "conversation"
-          ? parseConversationTabSourceKey(tab.sourceKey)
-          : null;
-        if (locator?.kind !== "draft") return true;
-        const draft = sidebarConversationDraftStoreRef.current.read(locator.draftId);
-        if (draft === null) return true;
-        const hasAttachments = managedSidebarConversationAttachments
-          .hasDraftAttachments(draft.attachmentDraftKey);
-        if (
-          sidebarConversationDraftRequiresDiscardConfirmation(draft, hasAttachments)
-            && !window.confirm(t("console.sessionAnalysis.discardDraft"))
-        ) {
-          return false;
-        }
-        sidebarConversationDraftStoreRef.current.remove(draft.draftId);
-        setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-        managedSidebarConversationAttachments.clearDraft(draft.attachmentDraftKey);
-        return true;
-      }}
+      onBeforeCloseRightSidebarTab={sidebarDraftCloseBundle.beforeClose}
       onLoadWorkspaceDiff={readWorkspaceDiff}
       onLoadProjectFiles={readProjectFiles}
       onLoadProjectFile={readProjectFile}

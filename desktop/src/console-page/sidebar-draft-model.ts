@@ -4,6 +4,7 @@ import type {
   OperatorProject,
   OperatorSession,
 } from "@moebius/console-ui";
+import type { RightSidebarTab } from "@moebius/console-ui";
 
 import { planFindOperatorAgentTeam } from "./agent-team-console-model.js";
 import {
@@ -12,7 +13,11 @@ import {
 } from "./console-presentation-model.js";
 import type { ConsolePresentationRoute } from "./presentation-route.js";
 import { sidebarPresentationRoute } from "./presentation-route.js";
-import type { SidebarConversationDraft } from "./sidebar-conversation-drafts.js";
+import {
+  sidebarConversationDraftRequiresDiscardConfirmation,
+  type SidebarConversationDraft,
+} from "./sidebar-conversation-drafts.js";
+import { parseConversationTabSourceKey } from "./right-sidebar-tabs-model.js";
 
 export function planSidebarDraftSubmission(input: {
   apiBase: string | null;
@@ -109,4 +114,26 @@ export function planSidebarCurrentHostSessionId(
   selectionSessionId: string,
 ): string {
   return route?.hostSessionId ?? selectionSessionId;
+}
+
+export function planSidebarConversationDraftId(tab: RightSidebarTab): string | null {
+  if (tab.type !== "conversation") return null;
+  const locator = parseConversationTabSourceKey(tab.sourceKey);
+  return locator?.kind === "draft" ? locator.draftId : null;
+}
+
+export function planSidebarDraftCloseDecision(
+  draft: SidebarConversationDraft | null,
+  hasAttachments: boolean,
+): "retain" | "confirm" | "close" {
+  if (draft === null) return "retain";
+  return sidebarConversationDraftRequiresDiscardConfirmation(draft, hasAttachments)
+    ? "confirm"
+    : "close";
+}
+
+export function planSidebarAttachmentDraftKey(
+  draft: SidebarConversationDraft | null,
+): string | null {
+  return draft?.attachmentDraftKey ?? null;
 }

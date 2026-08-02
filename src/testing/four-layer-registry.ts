@@ -113,6 +113,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-session-console.ts",
   "desktop/src/console-page/use-sidebar-message-actions.ts",
   "desktop/src/console-page/use-sidebar-draft-actions.ts",
+  "desktop/src/console-page/use-sidebar-draft-close.ts",
   "desktop/src/console-page/use-session-mutation-intents.ts",
   "desktop/src/console-page/refresh-console-state.ts",
   "desktop/src/console-page/selection-mutation-lifecycle.ts",

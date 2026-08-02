@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { OperatorAgentTeamsState, OperatorProject, OperatorSession } from "@moebius/console-ui";
 
 import {
+  planSidebarAttachmentDraftKey,
+  planSidebarConversationDraftId,
+  planSidebarDraftCloseDecision,
   planSidebarDraftPromotion,
   planSidebarDraftSubmission,
 } from "../src/console-page/sidebar-draft-model.js";
@@ -104,6 +107,28 @@ describe("sidebar draft model", () => {
       textFragments: [{ id: "keep", label: "Keep", text: "one" }],
       updatedAt: "suggestion-time",
     });
+  });
+
+  it("classifies conversation draft tabs and preserves the existing discard contract", () => {
+    const draft = analysisDraft();
+    expect(planSidebarConversationDraftId({
+      id: "draft-tab",
+      type: "conversation",
+      title: "Draft",
+      sourceKey: "conversation-draft:draft-a",
+      closable: true,
+    })).toBe("draft-a");
+    expect(planSidebarConversationDraftId({
+      id: "run-tab",
+      type: "run-output",
+      title: "Run",
+      sourceKey: "run:a",
+      closable: true,
+    })).toBeNull();
+    expect(planSidebarAttachmentDraftKey(draft)).toBe(draft.attachmentDraftKey);
+    expect(planSidebarDraftCloseDecision(draft, false)).toBe("confirm");
+    expect(planSidebarDraftCloseDecision(null, true)).toBe("retain");
+    expect(planSidebarDraftCloseDecision({ ...draft, body: "" }, false)).toBe("close");
   });
 });
 
