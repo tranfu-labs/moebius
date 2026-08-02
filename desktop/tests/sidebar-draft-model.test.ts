@@ -6,6 +6,14 @@ import {
   planSidebarDraftSubmission,
 } from "../src/console-page/sidebar-draft-model.js";
 import { createSidebarConversationDraft } from "../src/console-page/sidebar-conversation-drafts.js";
+import {
+  planSidebarDraftBodyChange,
+  planSidebarDraftFragmentRemoval,
+  planSidebarDraftProjectChange,
+  planSidebarDraftSuggestionSelection,
+  planSidebarDraftTeamChange,
+  planSidebarDraftWorkspaceChange,
+} from "../src/console-page/sidebar-conversation-view-model.js";
 
 describe("sidebar draft model", () => {
   it("requires a usable team and complete draft before submission", () => {
@@ -51,6 +59,50 @@ describe("sidebar draft model", () => {
         rightConversationSessionId: "analysis",
         hostSessionId: "root",
       },
+    });
+  });
+
+  it("updates only the requested sidebar draft field while retaining its identity", () => {
+    const base = {
+      ...analysisDraft(),
+      textFragments: [
+        { id: "keep", label: "Keep", text: "one" },
+        { id: "remove", label: "Remove", text: "two" },
+      ],
+    };
+    const selectedProject = planSidebarDraftProjectChange(
+      base,
+      "project-worktree",
+      [{ ...project(), projectId: "project-worktree", worktreeMode: true }],
+      "2026-08-02T00:01:00.000Z",
+    );
+    expect(selectedProject).toMatchObject({
+      draftId: "draft-a",
+      context: { projectId: "project-worktree", workspaceMode: "worktree" },
+    });
+    const updated = planSidebarDraftSuggestionSelection(
+      planSidebarDraftFragmentRemoval(
+        planSidebarDraftBodyChange(
+          planSidebarDraftTeamChange(
+            planSidebarDraftWorkspaceChange(selectedProject, "direct", "workspace-time"),
+            "user:team-a",
+            "team-time",
+          ),
+          "Existing body ",
+          "body-time",
+        ),
+        "remove",
+        "fragment-time",
+      ),
+      { prompt: "Suggested follow-up" },
+      "suggestion-time",
+    );
+    expect(updated).toMatchObject({
+      draftId: "draft-a",
+      context: { projectId: "project-worktree", workspaceMode: "direct", teamKey: "user:team-a" },
+      body: "Existing body\nSuggested follow-up",
+      textFragments: [{ id: "keep", label: "Keep", text: "one" }],
+      updatedAt: "suggestion-time",
     });
   });
 });

@@ -184,6 +184,7 @@ import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
+import { SidebarConversationView } from "./sidebar-conversation-view.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -831,12 +832,9 @@ export function OperatorConsoleApp({
   const retryRun = sessionRunActionsBundle.retryRun;
   const interruptSubSession = sessionRunActionsBundle.interruptSubSession;
   const sidebarMessageActionsBundle = sessionControllersBundle.sidebarMessages;
-  const sendSidebarConversationMessage = sidebarMessageActionsBundle.sendMessage;
   const retryPendingMessage = sidebarMessageActionsBundle.retryPendingMessage;
   const editPendingMessage = sidebarMessageActionsBundle.editPendingMessage;
   const removePendingMessage = sidebarMessageActionsBundle.removePendingMessage;
-  const updateSidebarConversationDraft = sessionControllersBundle.sidebarDrafts.updateDraft;
-  const submitSidebarConversationDraft = sessionControllersBundle.sidebarDrafts.submitDraft;
 
   const openDiagnostics = useMemo(() => {
     if (window.moebius?.openStatusPage === undefined) {
@@ -854,200 +852,30 @@ export function OperatorConsoleApp({
   }, []);
 
   const renderSidebarConversation = useCallback(() => {
-    if (activeSidebarConversationDraft !== null) {
-      const draft = activeSidebarConversationDraft;
-      const draftProject = projects.find((candidate) => candidate.projectId === draft.context.projectId) ?? project;
-      const promptSuggestions = draft.entryTemplate === "session-analysis"
-        ? [
-            {
-              id: "unexpected-agent-run",
-              label: t("console.sessionAnalysis.unexpectedLabel"),
-              prompt: t("console.sessionAnalysis.unexpectedPrompt"),
-            },
-            {
-              id: "long-agent-run",
-              label: t("console.sessionAnalysis.slowLabel"),
-              prompt: t("console.sessionAnalysis.slowPrompt"),
-            },
-          ]
-        : [];
-      return (
-        <OperatorConsole
-          presentation="conversation"
-          project={draftProject}
-          projects={projects}
-          selectedProjectId={draft.context.projectId ?? draftProject.projectId}
-          selectedSessionId={draft.hostSessionId}
-          selectedSession={null}
-          messages={[]}
-          activeRun={null}
-          composerValue=""
-          composerAttachments={managedSidebarConversationAttachments.attachments}
-          agentTeamsState={agentTeamCatalogBundle.state}
-          executionRegistryState={executionRegistryState}
-          onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
-          newConversation={{
-            selectedProjectId: draft.context.projectId,
-            selectedWorkspaceMode: draft.context.workspaceMode,
-            selectedTeamKey: draft.context.teamKey,
-            draft: draft.body,
-            isSubmitting: sidebarConversationSendingId === draft.draftId,
-            error: null,
-            textFragments: draft.textFragments,
-            promptSuggestions,
-          }}
-          onComposerChange={() => undefined}
-          onComposerFilesAdded={managedSidebarConversationAttachments.addFiles}
-          onComposerAttachmentRemove={managedSidebarConversationAttachments.remove}
-          onComposerAttachmentRetry={managedSidebarConversationAttachments.retry}
-          onSend={() => undefined}
-          onSelectSession={() => undefined}
-          onInterrupt={() => undefined}
-          onNewConversationProjectChange={(projectId) => {
-            const nextProject = projects.find((candidate) => candidate.projectId === projectId);
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              context: {
-                ...current.context,
-                projectId,
-                workspaceMode: nextProject?.worktreeMode === true ? "worktree" : "direct",
-              },
-              updatedAt: new Date().toISOString(),
-            }));
-          }}
-          onNewConversationWorkspaceChange={(workspaceMode) =>
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              context: { ...current.context, workspaceMode },
-              updatedAt: new Date().toISOString(),
-            }))}
-          onNewConversationTeamChange={(teamKey) =>
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              context: { ...current.context, teamKey },
-              updatedAt: new Date().toISOString(),
-            }))}
-          onNewConversationDraftChange={(body) =>
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              body,
-              updatedAt: new Date().toISOString(),
-            }))}
-          onNewConversationTextFragmentRemove={(fragmentId) =>
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              textFragments: current.textFragments.filter((fragment) => fragment.id !== fragmentId),
-              updatedAt: new Date().toISOString(),
-            }))}
-          onNewConversationPromptSuggestionSelect={(suggestion) =>
-            updateSidebarConversationDraft(draft.draftId, (current) => ({
-              ...current,
-              body: current.body.trim() === ""
-                ? suggestion.prompt
-                : `${current.body.trimEnd()}\n${suggestion.prompt}`,
-              updatedAt: new Date().toISOString(),
-            }))}
-          onSubmitNewConversation={() => void submitSidebarConversationDraft(draft.draftId)}
-          onAddNewConversationProject={() => void actions.addProject(
-            projects.map((candidate) => candidate.projectId),
-          )}
-        />
-      );
-    }
-
-    if (activeSidebarConversationSessionId === null) {
-      return null;
-    }
-    const viewState = sidebarConversationViews[activeSidebarConversationSessionId];
-    if (viewState?.status !== "ready") {
-      return (
-        <div className="grid min-h-full place-items-center p-6 text-sm text-sub" role="status">
-            {viewState?.status === "error"
-              ? viewState.message
-              : t("console.sessionAnalysis.loadingConversation")}
-        </div>
-      );
-    }
-    const view = viewState.view;
-    const conversationProject = projects.find((candidate) =>
-      candidate.projectId === view.session.projectId) ?? project;
-    const composerValue = sidebarConversationComposerValues[view.session.sessionId]
-      ?? conversationDraftStoreRef.current.read(sessionDraftKey(view.session.sessionId));
     return (
-      <OperatorConsole
-        presentation="conversation"
-        project={conversationProject}
+      <SidebarConversationView
+        activeDraft={activeSidebarConversationDraft}
+        activeSessionId={activeSidebarConversationSessionId}
+        project={project}
         projects={projects}
-        selectedProjectId={view.session.projectId}
-        selectedSessionId={view.session.sessionId}
-        selectedSession={view.session}
-        analysisPanel={{
-          open: analysisPanelOpenBySession[view.session.sessionId] === true,
-          state: {
-            status: "ready",
-            entries: analysisEntriesFor(view.session.sessionId),
-          },
-          onOpenChange: (open) => setAnalysisPanelOpen(view.session.sessionId, open),
-          onOpenEntry: (entry) => openAnalysisPanelEntry(view.session.sessionId, entry),
-        }}
-        messages={view.messages}
-        pendingDispatchMessages={view.pendingDispatchMessages ?? []}
-        initialReadingMessageId={conversationReadingPositionStoreRef.current.read(view.session.sessionId)}
-        messageNavigationRequest={conversationMessageNavigation?.sessionId === view.session.sessionId
-          ? {
-              messageId: conversationMessageNavigation.messageId,
-              requestId: conversationMessageNavigation.requestId,
-            }
-          : null}
-        onMessageNavigationHandled={(requestId) => {
-          analysisNavigationBundle.handleMessageNavigation(requestId);
-        }}
-        onReadingMessageChange={(sessionId, messageId) => {
-          conversationReadingPositionStoreRef.current.write(sessionId, messageId);
-        }}
-        pendingPrimaryMessages={view.pendingPrimaryMessages ?? []}
-        memberIdentities={view.memberIdentities ?? []}
-        activeRun={view.activeRun}
-        activeRuns={view.activeRuns ?? (view.activeRun === null ? [] : [view.activeRun])}
-        workspaceDiff={view.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
-        composerValue={composerValue}
+        rightSidebar={rightSidebarBundle}
+        sessions={sessionControllersBundle}
+        conversations={conversationControllersBundle}
+        attachments={managedSidebarConversationAttachments}
+        agentTeams={agentTeamCatalogBundle}
+        actions={actions}
         executionRegistryState={executionRegistryState}
-        onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
-        composerAttachments={managedSidebarConversationAttachments.attachments}
-        agentTeamsState={agentTeamCatalogBundle.state}
-        conversationAgentTeamKey={view.session.agentTeamOwnership != null && view.session.agentTeamId != null
-          ? `${view.session.agentTeamOwnership}:${view.session.agentTeamId}`
-          : null}
-        isSending={sidebarConversationSendingId === view.session.sessionId}
-        onComposerChange={(value) => {
-          conversationDraftStoreRef.current.write(sessionDraftKey(view.session.sessionId), value);
-          setSidebarConversationComposerValues((current) => ({
-            ...current,
-            [view.session.sessionId]: value,
-          }));
+        reloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
+        readComposerValue={(sessionId) => sidebarConversationComposerValues[sessionId]
+          ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId))}
+        writeComposerValue={(sessionId, value) => {
+          conversationDraftStoreRef.current.write(sessionDraftKey(sessionId), value);
+          setSidebarConversationComposerValues((current) => ({ ...current, [sessionId]: value }));
         }}
-        onComposerFilesAdded={managedSidebarConversationAttachments.addFiles}
-        onComposerAttachmentRemove={managedSidebarConversationAttachments.remove}
-        onComposerAttachmentRetry={managedSidebarConversationAttachments.retry}
-        onSend={() => void sendSidebarConversationMessage(view.session.sessionId)}
-        onSelectSession={() => undefined}
-        onInterrupt={(sessionId, runId) => void interruptSubSession(sessionId, runId)}
-        onRetryRun={(sessionId, runId, executionOverride) =>
-          retryRun(sessionId, runId, executionOverride)}
-        onRetryPendingMessage={(sessionId, messageId) => void retryPendingMessage(sessionId, messageId)}
-        onEditPendingMessage={(sessionId, messageId, body) => void editPendingMessage(sessionId, messageId, body)}
-        onRemovePendingMessage={(sessionId, messageId) => void removePendingMessage(sessionId, messageId)}
-        onAnalyzeConversation={(input) => void analyzeConversation({
-          kind: "message",
-          ...input,
-        })}
-        onOpenConversationReference={openConversationReference}
-        onChangeSessionWorkspace={actions.changeSessionWorkspace}
-        onChangeSessionTeam={(sessionId, team) => actions.changeSessionTeam(sessionId, {
-          ownership: team.ownership,
-          id: team.id,
-        })}
-        onOpenEvidence={(intent) => {
+        readReadingMessageId={(sessionId) => conversationReadingPositionStoreRef.current.read(sessionId)}
+        writeReadingMessageId={(sessionId, messageId) =>
+          conversationReadingPositionStoreRef.current.write(sessionId, messageId)}
+        openEvidence={(intent) => {
           rightSidebarTabsBundle.changeTabs(openRightSidebarSourceTab(rightSidebarTabs, intent.kind === "workspace-diff"
             ? {
                 id: `sidebar-workspace-${intent.sessionId}`,
@@ -1062,48 +890,25 @@ export function OperatorConsoleApp({
                 sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId, intent.stepId),
               }));
         }}
-        onLoadWorkspaceDiff={readWorkspaceDiff}
-        onLoadProjectFiles={readProjectFiles}
-        onLoadProjectFile={readProjectFile}
-        onLoadFileReference={readFileReference}
+        t={t}
       />
     );
   }, [
     activeSidebarConversationDraft,
     activeSidebarConversationSessionId,
     agentTeamCatalogBundle.state,
-    analysisEntriesFor,
-    analysisPanelOpenBySession,
-    analyzeConversation,
+    actions,
     rightSidebarTabsBundle,
-    conversationMessageNavigation,
+    conversationControllersBundle,
     executionRegistryState,
-    interruptSubSession,
-    managedSidebarConversationAttachments.addFiles,
-    managedSidebarConversationAttachments.attachments,
-    managedSidebarConversationAttachments.remove,
-    managedSidebarConversationAttachments.retry,
+    managedSidebarConversationAttachments,
     project,
     projects,
-    openAnalysisPanelEntry,
-    openConversationReference,
-    readFileReference,
-    readProjectFile,
-    readProjectFiles,
-    readWorkspaceDiff,
-    retryRun,
+    rightSidebarBundle,
     rightSidebarTabs,
-    sendSidebarConversationMessage,
-    retryPendingMessage,
-    editPendingMessage,
-    removePendingMessage,
     sidebarConversationComposerValues,
-    sidebarConversationSendingId,
-    sidebarConversationViews,
-    setAnalysisPanelOpen,
-    submitSidebarConversationDraft,
+    sessionControllersBundle,
     t,
-    updateSidebarConversationDraft,
   ]);
 
   return (

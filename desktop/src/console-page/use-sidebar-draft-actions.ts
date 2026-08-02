@@ -129,5 +129,8 @@ export function useSidebarDraftActions(
     }
   }, []);
 
-  return useMemo(() => ({ updateDraft, submitDraft }), [submitDraft, updateDraft]);
+  return useMemo(
+    () => ({ sendingId, updateDraft, submitDraft }),
+    [sendingId, submitDraft, updateDraft],
+  );
 }

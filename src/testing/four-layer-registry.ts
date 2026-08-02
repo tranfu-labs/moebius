@@ -90,6 +90,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ui/popover.tsx",
   "packages/console-ui/src/ui/tooltip.tsx",
   "desktop/src/console-page/conversation-search-overlay.tsx",
+  "desktop/src/console-page/sidebar-conversation-view.tsx",
   "src/observer/render.ts",
 ] as const;
 
@@ -425,6 +426,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/console-page/settings-state.ts",
   "desktop/src/console-page/team-state.ts",
   "desktop/src/console-page/sidebar-conversation-drafts.ts",
+  "desktop/src/console-page/sidebar-conversation-view-model.ts",
   "desktop/src/console-page/sidebar-preference.ts",
   "desktop/src/i18n/index.ts",
   "desktop/src/i18n/locales/en.ts",
