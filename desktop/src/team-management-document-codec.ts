@@ -89,6 +89,12 @@ export function normalizeExecutionBinding(value: unknown): ExecutionProfileBindi
   throw new TeamManagementDocumentError("Agent 运行配置来源无效。");
 }
 
+export function selectStoredTeamBindings(
+  members: Record<string, ExecutionProfileBinding> | undefined,
+): Record<string, ExecutionProfileBinding> {
+  return members ?? {};
+}
+
 export function assertStateKeySegment(value: string): void {
   if (!/^[a-z0-9](?:[a-z0-9-]{0,127})$/u.test(value)) {
     throw new TeamManagementDocumentError(`状态 key 无效：${value}`);

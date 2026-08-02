@@ -22,6 +22,13 @@ import {
   type OfficialTeamUpdateState,
 } from "./team-official-management.js";
 import {
+  assertOfficialContentFingerprint,
+  createOfficialUpdatePlanId,
+  selectBindingMembers,
+  selectPersistedDocumentSource,
+  selectSnapshotMemberSlugs,
+} from "./team-official-update-plan.js";
+import {
   materializeExplicitBindings,
   migrateOfficialMemberBindings,
   type ExecutionProfileBinding,
@@ -109,9 +116,11 @@ export async function prepareOfficialTeamUpdate(input: {
     : null;
   return {
     schemaVersion: 1,
-    planId: createHash("sha256")
-      .update(`moebius-official-update-plan-v1\0${input.teamId}\0${inputFingerprint}\0${copyTeamId ?? ""}`)
-      .digest("hex"),
+    planId: createOfficialUpdatePlanId({
+      teamId: input.teamId,
+      inputFingerprint,
+      copyTeamId,
+    }),
     teamId: input.teamId,
     inputFingerprint,
     state: stateInput.state,
@@ -144,8 +153,13 @@ export async function commitOfficialTeamUpdate(input: {
   const officialDocument = await readOfficialTeamStateDocument(input.dataRoot);
   const bindingDocument = await readExecutionBindingDocument(input.dataRoot);
   const previousUserTeamRecordsDocument = await readPersistedUserTeamRecordsDocument(input.dataRoot);
-  const baseUserTeamRecordsDocument = previousUserTeamRecordsDocument
-    ?? await buildUserTeamRecordsDocument(input.dataRoot);
+  const userTeamRecordLoaders = {
+    persisted: async () => previousUserTeamRecordsDocument as UserTeamRecordsDocument,
+    rebuild: async () => await buildUserTeamRecordsDocument(input.dataRoot),
+  };
+  const baseUserTeamRecordsDocument = await userTeamRecordLoaders[
+    selectPersistedDocumentSource(previousUserTeamRecordsDocument)
+  ]();
   const officialDirectory = resolveTeamLocation({
     dataRoot: input.dataRoot,
     teamId: plan.teamId,
@@ -216,10 +230,14 @@ export async function commitOfficialTeamUpdate(input: {
       errorOnExist: true,
     });
     await fs.rm(path.join(officialStagingDirectory, "official.json"), { force: true });
-    if (await computeOfficialTeamContentFingerprint(officialStagingDirectory)
-      !== current.packaged.contentFingerprint) {
-      throw new OfficialTeamUpdateError("官方团队更新包校验失败。", "OFFICIAL_UPDATE_UNAVAILABLE");
-    }
+    assertOfficialContentFingerprint(
+      await computeOfficialTeamContentFingerprint(officialStagingDirectory),
+      current.packaged.contentFingerprint,
+      () => new OfficialTeamUpdateError(
+        "官方团队更新包校验失败。",
+        "OFFICIAL_UPDATE_UNAVAILABLE",
+      ),
+    );
   }
 
   await writeJournal(input.dataRoot, journal);
@@ -353,7 +371,10 @@ async function readUpdateInputs(input: {
   const officialDocument = await readOfficialTeamStateDocument(input.dataRoot);
   const applied = getApplied(officialDocument, input.teamId);
   const bindingDocument = await readExecutionBindingDocument(input.dataRoot);
-  const bindings = bindingDocument.teams[teamBindingKey("system", input.teamId)]?.members ?? {};
+  const bindings = selectBindingMembers(
+    bindingDocument.teams[teamBindingKey("system", input.teamId)]?.members,
+    {},
+  );
   const location = resolveTeamLocation({
     dataRoot: input.dataRoot,
     teamId: input.teamId,
@@ -370,7 +391,10 @@ async function readUpdateInputs(input: {
     contentFingerprint: await computeOfficialTeamContentFingerprint(packagedDirectory),
   };
   const packagedRecommendations = recommendationsFromManifest(manifest);
-  const currentMemberSlugs = snapshot.definition?.memberOrder ?? snapshot.members.map((member) => member.slug);
+  const currentMemberSlugs = selectSnapshotMemberSlugs({
+    memberOrder: snapshot.definition?.memberOrder,
+    members: snapshot.members,
+  });
   const state = deriveOfficialTeamUpdateState({
     applied,
     currentContentFingerprint,

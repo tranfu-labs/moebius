@@ -10,13 +10,17 @@ export function createOfficialUpdatePlanId(input: {
     .digest("hex");
 }
 
-export function selectPersistedOrRebuiltDocument<T>(persisted: T | null, rebuilt: T): T {
-  return persisted ?? rebuilt;
+export function selectPersistedDocumentSource<T>(persisted: T | null): "persisted" | "rebuild" {
+  return persisted === null ? "rebuild" : "persisted";
 }
 
-export function assertOfficialContentFingerprint(actual: string, expected: string): void {
+export function assertOfficialContentFingerprint(
+  actual: string,
+  expected: string,
+  createError: () => Error,
+): void {
   if (actual !== expected) {
-    throw new OfficialUpdatePlanError("官方团队更新包校验失败。");
+    throw createError();
   }
 }
 
@@ -29,8 +33,4 @@ export function selectSnapshotMemberSlugs(input: {
   members: ReadonlyArray<{ slug: string }>;
 }): string[] {
   return input.memberOrder ?? input.members.map((member) => member.slug);
-}
-
-export class OfficialUpdatePlanError extends Error {
-  readonly code = "OFFICIAL_UPDATE_UNAVAILABLE";
 }

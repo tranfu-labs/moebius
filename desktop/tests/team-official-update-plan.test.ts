@@ -4,7 +4,7 @@ import {
   assertOfficialContentFingerprint,
   createOfficialUpdatePlanId,
   selectBindingMembers,
-  selectPersistedOrRebuiltDocument,
+  selectPersistedDocumentSource,
   selectSnapshotMemberSlugs,
 } from "../src/team-official-update-plan.js";
 
@@ -27,8 +27,8 @@ describe("official team update plan", () => {
   });
 
   it("selects persisted records, bindings, and snapshot members with explicit fallbacks", () => {
-    expect(selectPersistedOrRebuiltDocument(null, "rebuilt")).toBe("rebuilt");
-    expect(selectPersistedOrRebuiltDocument("persisted", "rebuilt")).toBe("persisted");
+    expect(selectPersistedDocumentSource(null)).toBe("rebuild");
+    expect(selectPersistedDocumentSource("persisted")).toBe("persisted");
     expect(selectBindingMembers(undefined, { manager: 1 })).toEqual({ manager: 1 });
     expect(selectSnapshotMemberSlugs({
       memberOrder: undefined,
@@ -37,7 +37,11 @@ describe("official team update plan", () => {
   });
 
   it("rejects a staged content fingerprint mismatch", () => {
-    expect(() => assertOfficialContentFingerprint("actual", "expected"))
+    expect(() => assertOfficialContentFingerprint(
+      "actual",
+      "expected",
+      () => new Error("官方团队更新包校验失败。"),
+    ))
       .toThrow("更新包校验失败");
   });
 });

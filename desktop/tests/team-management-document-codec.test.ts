@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeOfficialTeamStateDocument,
   normalizeTeamExecutionBindingDocument,
+  selectStoredTeamBindings,
 } from "../src/team-management-document-codec.js";
 
 describe("team management document codec", () => {
@@ -41,5 +42,11 @@ describe("team management document codec", () => {
       schemaVersion: 1,
       teams: { "../development": {} },
     })).toThrow("状态 key 无效");
+  });
+
+  it("defaults missing execution bindings without leaking the fallback into storage", () => {
+    expect(selectStoredTeamBindings(undefined)).toEqual({});
+    expect(selectStoredTeamBindings({ dev: { source: "recommended" } }))
+      .toEqual({ dev: { source: "recommended" } });
   });
 });
