@@ -2,33 +2,33 @@
 
 ## A · 基线与护栏
 
-- [ ] 固定基线 `ec57cd5`：531 production = view 77 / application 171 / domain 182 / adapter 101；
+- [x] 固定基线 `ec57cd5`：531 production = view 77 / application 171 / domain 182 / adapter 101；
   file/dependency debt 0、root 9、permit 193；copy debt 6 files / 16 lines / 15 unique semantics
-- [ ] 先补行为测试：attachment failure code、edit-resend/team-save sentinel copy；不得断言 locale 文件包含某句原文
-- [ ] 异步 attachment 测试覆盖父级 rerender、translator 回调身份变化、慢失败、Abort/stale 返回与恢复
-- [ ] 建生产 diff 500 行闸门：`ec57cd5..工作区` 的 `src`/`desktop/src`/`packages/console-ui/src`
+- [x] 先补行为测试：attachment failure code、edit-resend/team-save sentinel copy；不得断言 locale 文件包含某句原文
+- [x] 异步 attachment 测试覆盖父级 rerender、translator 回调身份变化、慢失败、Abort/stale 返回与恢复
+- [x] 建生产 diff 500 行闸门：`ec57cd5..工作区` 的 `src`/`desktop/src`/`packages/console-ui/src`
   additions+deletions >500 时停止并交回主理人
 
 ## B · 唯一生产代码任务
 
-- [ ] 在 zh-CN/en locale resources 增加 15 个对齐 key，覆盖 16 条静态 fallback（service unavailable 共用）
-- [ ] attachment client/preview/replacement/upload queue 改为局部稳定 failure code；application commit 使用最新 translator
-- [ ] edit-resend 注入 missing-source copy；team-state 只返回 admission 状态，team save 注入 already-saving copy
-- [ ] 删除 6 条 `productionCopyDebt` 登记与 debt-only guard 测试；不得增加 `i18n-exempt` 或修改 debt 数字修绿
-- [ ] 运行 production-copy guard 与 locale parity：自动发现生产文件无 CJK fallback、无 locale 分支、key/插值一致
+- [x] 在 zh-CN/en locale resources 增加 15 个对齐 key，覆盖 16 条静态 fallback（service unavailable 共用）
+- [x] attachment client/preview/replacement/upload queue 改为局部稳定 failure code；application commit 使用最新 translator
+- [x] edit-resend 注入 missing-source copy；team-state 只返回 admission 状态，team save 注入 already-saving copy
+- [x] 删除 6 条 `productionCopyDebt` 登记与 debt-only guard 测试；不得增加 `i18n-exempt` 或修改 debt 数字修绿
+- [x] 运行 production-copy guard 与 locale parity：自动发现生产文件无 CJK fallback、无 locale 分支、key/插值一致
 
 ## C · 最终核账
 
-- [ ] 写 `convergence-report.md`：全生产 layer 数、零未归属/多归属/debt/stale root、permit 与 domain closure 指标
-- [ ] 写 `boundary-oracle-ledger.md`：19 个具体 IB 与 checker stable ID 双向一致；17 个 NI 各有精确 test/RA/data-flow oracle
-- [ ] 写 `final-test-ledger.md`：00～50 六批逐 test-name/断言对账，30 契约删除与重构替代分列，空列为 0
-- [ ] 对 `docs/architecture/invariants.md` 做 L1/S1/V1/S2 符合度核对；现行 local 不变量不因 GitHub 退役再次删除
-- [ ] 按固定 logical-line/职责抽样复测纯逻辑比例，列 domain files/lines、比例区间与剩余非纯分支，不制造单点精度
+- [x] 写 `convergence-report.md`：全生产 layer 数、零未归属/多归属/debt/stale root、permit 与 domain closure 指标
+- [x] 写 `boundary-oracle-ledger.md`：19 个具体 IB 与 checker stable ID 双向一致；17 个 NI 各有精确 test/RA/data-flow oracle
+- [x] 写 `final-test-ledger.md`：00～50 六批逐 test-name/断言对账，30 契约删除与重构替代分列，空列为 0
+- [x] 对 `docs/architecture/invariants.md` 做 L1/S1/V1/S2 符合度核对；现行 local 不变量不因 GitHub 退役再次删除
+- [x] 按固定 logical-line/职责抽样复测纯逻辑比例，列 domain files/lines、比例区间与剩余非纯分支，不制造单点精度
 - [ ] 从同一次完整闸门日志按 final ledger 的真实 I/O 文件集合求 duration 下限；未打印 duration 按 0
 
 ## D · 验证与真机
 
-- [ ] `pnpm run test --scope ec57cd5`、相关定向测试、`pnpm check:boundaries`、`pnpm typecheck`、
+- [x] `pnpm run test --scope ec57cd5`、相关定向测试、`pnpm check:boundaries`、`pnpm typecheck`、
   desktop build、`pnpm brand:check` 全绿
 - [ ] 执行 RA-16：语言错误 fallback、附件失败恢复与发送、停下/重试、A/B 快切、搜索、分析、右栏、
   团队编辑保存、重启持久事实；记录入口、操作、屏幕信号和临时 evidence 路径
@@ -38,10 +38,10 @@
 
 ## E · 事实源回流准备
 
-- [ ] 按最终机器事实更新 `architecture/after.svg`，回流为 `docs/architecture/four-layer-runtime.svg`
-- [ ] 更新 `docs/architecture/module-map.md` 的四层图引用、最终归属/边界说明；IB/NI 与 checker 双向复核
-- [ ] 核对 `docs/product/pages/settings.md`、desktop-shell/console-ui specs 与最终行为一致；无产品差异则保持零 spec-delta
-- [ ] 最终确认生产 diff additions+deletions ≤500，测试剪枝只有已登记的失义 debt test，工作区无未记录制品
+- [x] 按最终机器事实更新 `architecture/after.svg`，回流为 `docs/architecture/four-layer-runtime.svg`
+- [x] 更新 `docs/architecture/module-map.md` 的四层图引用、最终归属/边界说明；IB/NI 与 checker 双向复核
+- [x] 核对 `docs/product/pages/settings.md`、desktop-shell/console-ui specs 与最终行为一致；无产品差异则保持零 spec-delta
+- [x] 最终确认生产 diff additions+deletions ≤500，测试剪枝只有已登记的失义 debt test，工作区无未记录制品
 
 ## 验收语句
 
