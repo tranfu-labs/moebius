@@ -68,9 +68,12 @@ import {
   TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS,
 } from "./team-conversation-preference-contract.js";
 import {
-  readLastUsedAgentTeam,
-  recordSuccessfulConversationAgentTeam,
+  createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
+import {
+  readLastUsedAgentTeamStore,
+  writeLastUsedAgentTeamStore,
+} from "./team-conversation-preference-store.js";
 import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
 import { registerSettingsIpc } from "./settings-ipc.js";
 import {
@@ -477,17 +480,27 @@ ipcMain.handle(TEAM_IPC_CHANNELS.applyOfficialUpdate, async (_event, request: un
 ipcMain.handle(TEAM_EXTERNAL_CHANGE_IPC_CHANNEL, async (_event, request: unknown) =>
   checkAgentTeamMemberExternalChange(status.dataRoot, request));
 
+const teamConversationPreference = createTeamConversationPreferenceService({
+  read: readLastUsedAgentTeamStore,
+  write: writeLastUsedAgentTeamStore,
+  list: listAgentTeams,
+});
+
 ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.readLastUsed, async () =>
-  readLastUsedAgentTeam(status.dataRoot));
+  teamConversationPreference.readLastUsedAgentTeam(status.dataRoot));
 
 ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.recordSuccessful, async (_event, request: unknown) =>
-  recordSuccessfulConversationAgentTeam(status.dataRoot, request, async (sessionId) => {
+  teamConversationPreference.recordSuccessfulConversationAgentTeam(
+    status.dataRoot,
+    request,
+    async (sessionId) => {
     if (localConsoleServer === null) {
       return false;
     }
     const localState = await localConsoleServer.runtime.state({ sessionId });
     return localState.selectedSession?.sessionId === sessionId;
-  }));
+    },
+  ));
 
 ipcMain.handle("project:select-folder", async () => {
   const options: OpenDialogOptions = {
