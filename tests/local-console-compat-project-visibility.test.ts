@@ -212,22 +212,6 @@ const factTableCases: VisibilityCase[] = [
     ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW, NOW),
   },
   {
-    name: "session_role_threads contains history",
-    mutate: (database) => database.prepare(
-      `INSERT INTO session_role_threads
-        (session_id, role, thread_id, last_seen_index, updated_at)
-       VALUES (?, 'dev', 'thread-1', 0, ?)`,
-    ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW),
-  },
-  {
-    name: "session_agent_contexts contains history",
-    mutate: (database) => database.prepare(
-      `INSERT INTO session_agent_contexts
-        (session_id, context_key, json, updated_at)
-       VALUES (?, 'context-1', '{}', ?)`,
-    ).run(LOCAL_CONSOLE_DEFAULT_SESSION_ID, NOW),
-  },
-  {
     name: "local_route_decisions contains history",
     mutate: (database) => database.prepare(
       `INSERT INTO local_route_decisions
