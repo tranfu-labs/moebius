@@ -31,7 +31,9 @@ describe("team storage plans", () => {
       ownership: "system",
       override: "development.official",
       teamId: "development",
-    })).toEqual({ root: "system", directoryName: "development.official" });
+      systemRoot: "/teams/.system",
+      userRoot: "/teams",
+    })).toEqual({ rootDirectory: "/teams/.system", directoryName: "development.official" });
     expect(classifyTeamOwnership(".system")).toBe("system");
   });
 
@@ -42,7 +44,8 @@ describe("team storage plans", () => {
       .toThrow("Only a built-in team");
     expect(() => assertMemberIsNotPrimary("manager", "manager")).toThrow("删除主 Agent");
     expect(() => assertDirectUserTeamDirectory({
-      isDirectChild: false,
+      parentDirectory: "/external",
+      teamsRoot: "/teams",
       directoryName: "development",
     })).toThrow("direct children");
   });

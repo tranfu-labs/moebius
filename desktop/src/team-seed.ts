@@ -25,6 +25,11 @@ import {
 } from "./team-official-management.js";
 import { recoverOfficialTeamUpdateTransactions } from "./team-official-update.js";
 import {
+  assertSeedEntryIsNotReserved,
+  deriveBuiltInTeamSeedStatus,
+  selectSeedConflictRecoveryDirectory,
+} from "./team-seed-plan.js";
+import {
   getSystemTeamsRoot,
   getTeamsRoot,
   readSystemTeamLocationOverrides,
@@ -145,12 +150,13 @@ export async function seedBuiltInTeams(input: {
     if (!existed) {
       await copyEditableTeamContent(sourceDirectory, location.directory);
       copiedTeamCount += 1;
-      if (
-        teamId === GENERAL_ASSISTANT_TEAM_ID
-        && input.preserveGeneralAssistantConflicts === true
-      ) {
-        conflictRecoveryDirectory = location.directory;
-      }
+      conflictRecoveryDirectory = selectSeedConflictRecoveryDirectory({
+        current: conflictRecoveryDirectory,
+        copiedDirectory: location.directory,
+        teamId,
+        generalAssistantTeamId: GENERAL_ASSISTANT_TEAM_ID,
+        preserveConflicts: input.preserveGeneralAssistantConflicts,
+      });
     }
 
     const currentFingerprint = await tryComputeContentFingerprint(location.directory);
@@ -201,7 +207,7 @@ export async function seedBuiltInTeams(input: {
   }
   return {
     fingerprint,
-    status: conflicts.length > 0 ? "conflict" : copiedTeamCount > 0 ? "seeded" : "skipped",
+    status: deriveBuiltInTeamSeedStatus(conflicts.length, copiedTeamCount),
     conflicts,
   };
 }
@@ -331,9 +337,7 @@ async function collectSeedEntries(root: string, current = root): Promise<SeedEnt
   for (const directoryEntry of directoryEntries.sort((left, right) => compareNames(left.name, right.name))) {
     const absolutePath = path.join(current, directoryEntry.name);
     const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
-    if (relativePath === TEAMS_SEED_MARKER_FILE) {
-      throw new Error(`${TEAMS_SEED_MARKER_FILE} is reserved and cannot be packaged as team seed content`);
-    }
+    assertSeedEntryIsNotReserved(relativePath, TEAMS_SEED_MARKER_FILE);
     if (directoryEntry.isDirectory()) {
       collected.push({ absolutePath, relativePath, type: "directory" });
       collected.push(...await collectSeedEntries(root, absolutePath));

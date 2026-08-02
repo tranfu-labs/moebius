@@ -6,10 +6,12 @@ export function selectTeamDirectoryName(input: {
   ownership: TeamOwnership;
   override: string | null | undefined;
   teamId: string;
-}): { root: "system" | "user"; directoryName: string } {
+  systemRoot: string;
+  userRoot: string;
+}): { rootDirectory: string; directoryName: string } {
   return input.ownership === "system"
-    ? { root: "system", directoryName: input.override ?? input.teamId }
-    : { root: "user", directoryName: input.teamId };
+    ? { rootDirectory: input.systemRoot, directoryName: input.override ?? input.teamId }
+    : { rootDirectory: input.userRoot, directoryName: input.teamId };
 }
 
 export function classifyTeamOwnership(topLevelSegment: string | undefined): TeamOwnership {
@@ -29,6 +31,33 @@ export function assertValidTeamId(teamId: string): void {
   if (!isValidPathSegment(teamId) || teamId.trim() !== teamId || teamId === SYSTEM_TEAMS_DIRECTORY) {
     throw new TeamPathError(`Invalid team id: ${teamId}`);
   }
+}
+
+export function assertValidMemberSlug(slug: string): void {
+  if (!isValidPathSegment(slug) || slug.trim() !== slug) {
+    throw new TeamPathError(`Invalid member slug: ${slug}`);
+  }
+}
+
+export function normalizeSystemTeamLocationOverrides(
+  value: Record<string, unknown>,
+): Record<string, string | null> {
+  const normalized: Record<string, string | null> = {};
+  for (const [teamId, rawDirectoryName] of Object.entries(value)) {
+    if (!isValidPathSegment(teamId)) continue;
+    if (rawDirectoryName === null) {
+      normalized[teamId] = null;
+      continue;
+    }
+    if (
+      typeof rawDirectoryName === "string"
+      && isValidPathSegment(rawDirectoryName)
+      && rawDirectoryName !== SYSTEM_TEAMS_DIRECTORY
+    ) {
+      normalized[teamId] = rawDirectoryName;
+    }
+  }
+  return normalized;
 }
 
 export function selectPrimaryAgentSlug(current: string | null, addedSlug: string): string {
@@ -75,8 +104,9 @@ export function assertLocationLayout(input: {
   ownership: TeamOwnership;
   teamId: string;
   directory: string;
+  resolvedDirectory: string;
+  expectedSystemDirectory: string;
   userPathIsAbsolute: boolean;
-  systemPathMatches: boolean;
 }): void {
   if (input.ownership === "user") {
     assertValidTeamId(input.teamId);
@@ -85,16 +115,17 @@ export function assertLocationLayout(input: {
     }
     return;
   }
-  if (!input.systemPathMatches) {
+  if (input.resolvedDirectory !== input.expectedSystemDirectory) {
     throw new TeamPathError(`Built-in team path does not match its id: ${input.directory}`);
   }
 }
 
 export function assertDirectUserTeamDirectory(input: {
-  isDirectChild: boolean;
+  parentDirectory: string;
+  teamsRoot: string;
   directoryName: string;
 }): void {
-  if (!input.isDirectChild || input.directoryName === SYSTEM_TEAMS_DIRECTORY) {
+  if (input.parentDirectory !== input.teamsRoot || input.directoryName === SYSTEM_TEAMS_DIRECTORY) {
     throw new TeamPathError("User team folders must be direct children of the Agent teams folder.");
   }
   assertValidTeamId(input.directoryName);

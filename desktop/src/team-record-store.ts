@@ -20,12 +20,17 @@ import {
   serializeLegacyRelayInclusiveTeamDefinition,
   type TeamRelayBeat,
 } from "./team-onboarding-orchestration.js";
+import {
+  assertUserTeamRecordOwnership,
+  classifyUserTeamRecordLocation,
+  TeamRecordError,
+  type UserTeamRecordLocation,
+} from "./team-record-plan.js";
+
+export { TeamRecordError } from "./team-record-plan.js";
+export type { UserTeamRecordLocation } from "./team-record-plan.js";
 
 export const USER_TEAM_RECORDS_FILE = ".agent-team-records.json";
-
-export type UserTeamRecordLocation =
-  | { kind: "managed"; directoryName: string }
-  | { kind: "external"; absolutePath: string };
 
 export interface UserTeamRecord {
   id: string;
@@ -77,9 +82,7 @@ export async function resolveRecordedTeamLocation(dataRoot: string, teamId: stri
 }
 
 export async function registerUserTeamSnapshot(snapshot: TeamSnapshot): Promise<void> {
-  if (snapshot.location.ownership !== "user") {
-    throw new TeamRecordError("只有用户团队需要应用记录。");
-  }
+  assertUserTeamRecordOwnership(snapshot.location.ownership);
   const dataRoot = snapshot.location.dataRoot;
   const document = await loadOrBootstrapRecords(dataRoot);
   const location = recordLocationFromDirectory(dataRoot, snapshot.location.directory);
@@ -138,9 +141,7 @@ export function upsertUserTeamRecord(
   document: UserTeamRecordsDocument,
   snapshot: TeamSnapshot,
 ): UserTeamRecordsDocument {
-  if (snapshot.location.ownership !== "user") {
-    throw new TeamRecordError("只有用户团队需要应用记录。");
-  }
+  assertUserTeamRecordOwnership(snapshot.location.ownership);
   const location = recordLocationFromDirectory(
     snapshot.location.dataRoot,
     snapshot.location.directory,
@@ -280,15 +281,6 @@ export function createTeamIdentityFingerprint(
   return hash.digest("hex");
 }
 
-export class TeamRecordError extends Error {
-  readonly code = "TEAM_RECORD_INVALID";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "TeamRecordError";
-  }
-}
-
 export class TeamRelocationError extends Error {
   readonly code = "TEAM_RELOCATION_REJECTED";
 
@@ -336,9 +328,11 @@ function locationForRecord(dataRoot: string, record: UserTeamRecord): TeamLocati
 function recordLocationFromDirectory(dataRoot: string, directory: string): UserTeamRecordLocation {
   const resolvedDirectory = path.resolve(directory);
   const teamsRoot = getTeamsRoot(dataRoot);
-  return path.dirname(resolvedDirectory) === teamsRoot
-    ? { kind: "managed", directoryName: path.basename(resolvedDirectory) }
-    : { kind: "external", absolutePath: resolvedDirectory };
+  return classifyUserTeamRecordLocation({
+    isManagedDirectory: path.dirname(resolvedDirectory) === teamsRoot,
+    directoryName: path.basename(resolvedDirectory),
+    absolutePath: resolvedDirectory,
+  });
 }
 
 function explainRejectedCandidate(snapshot: TeamSnapshot): string {

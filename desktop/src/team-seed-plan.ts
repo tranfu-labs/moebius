@@ -6,6 +6,16 @@ export function shouldTrackSeedConflictRecovery(input: {
   return input.teamId === input.generalAssistantTeamId && input.preserveConflicts === true;
 }
 
+export function selectSeedConflictRecoveryDirectory(input: {
+  current: string | null;
+  copiedDirectory: string;
+  teamId: string;
+  generalAssistantTeamId: string;
+  preserveConflicts: boolean | undefined;
+}): string | null {
+  return shouldTrackSeedConflictRecovery(input) ? input.copiedDirectory : input.current;
+}
+
 export function deriveBuiltInTeamSeedStatus(
   conflictCount: number,
   copiedTeamCount: number,

@@ -27,6 +27,31 @@ import {
 import {
   preserveLegacyEmbeddedOnboardingOrchestration,
 } from "./team-onboarding-orchestration-store.js";
+import {
+  assertBuiltInTeamOwnership,
+  assertDirectUserTeamDirectory as assertDirectUserTeamDirectoryPlan,
+  assertLocationLayout,
+  assertMatchingTeamOwnership,
+  assertMemberIsNotPrimary,
+  assertUserTeamOwnership,
+  assertValidMemberSlug,
+  assertValidTeamId,
+  BuiltInTeamReadOnlyError,
+  classifyTeamOwnership,
+  normalizeSystemTeamLocationOverrides,
+  selectMemberDirectory,
+  selectPrimaryAgentSlug,
+  selectTeamDirectoryName,
+  shouldIncludeCanonicalSystemTeam,
+  TeamPathError,
+  TeamPrimaryAgentError,
+} from "./team-location-plan.js";
+
+export {
+  BuiltInTeamReadOnlyError,
+  TeamPathError,
+  TeamPrimaryAgentError,
+} from "./team-location-plan.js";
 
 export const TEAMS_DIRECTORY = "teams";
 export const SYSTEM_TEAMS_DIRECTORY = ".system";
@@ -79,9 +104,7 @@ export function getTeamManifestPath(location: TeamLocation): string {
 }
 
 export function getMemberDirectory(location: TeamLocation, slug: string): string {
-  if (!isValidPathSegment(slug) || slug.trim() !== slug) {
-    throw new TeamPathError(`Invalid member slug: ${slug}`);
-  }
+  assertValidMemberSlug(slug);
   return path.join(location.directory, TEAM_MEMBERS_DIRECTORY, slug);
 }
 
@@ -97,10 +120,14 @@ export function resolveTeamLocation(input: {
   assertTeamId(input.teamId);
   const dataRoot = path.resolve(input.dataRoot);
   const override = readSystemTeamLocationOverrides(dataRoot)[input.teamId];
-  const directory =
-    input.ownership === "system"
-      ? path.join(getSystemTeamsRoot(dataRoot), override ?? input.teamId)
-      : path.join(getTeamsRoot(dataRoot), input.teamId);
+  const directoryPlan = selectTeamDirectoryName({
+    ownership: input.ownership,
+    override,
+    teamId: input.teamId,
+    systemRoot: getSystemTeamsRoot(dataRoot),
+    userRoot: getTeamsRoot(dataRoot),
+  });
+  const directory = path.join(directoryPlan.rootDirectory, directoryPlan.directoryName);
 
   return {
     dataRoot,
@@ -134,7 +161,7 @@ export function determineTeamOwnership(dataRoot: string, targetPath: string): Te
   }
 
   const [topLevelSegment] = relativePath.split(path.sep);
-  return topLevelSegment === SYSTEM_TEAMS_DIRECTORY ? "system" : "user";
+  return classifyTeamOwnership(topLevelSegment);
 }
 
 export async function listTeamLocations(dataRoot: string): Promise<TeamLocation[]> {
@@ -153,7 +180,11 @@ export async function listTeamLocations(dataRoot: string): Promise<TeamLocation[
     Object.entries(overrides).filter(([, value]) => value === null).map(([teamId]) => teamId),
   );
   const defaultSystemIds = systemIds.filter(
-    (teamId) => !overriddenDirectoryNames.has(teamId) && !excludedCanonicalIds.has(teamId),
+    (teamId) => shouldIncludeCanonicalSystemTeam({
+      teamId,
+      overriddenDirectoryNames,
+      excludedCanonicalIds,
+    }),
   );
   return [
     ...defaultSystemIds.map((teamId) =>
@@ -200,27 +231,6 @@ export function readSystemTeamLocationOverrides(
   } catch {
     return {};
   }
-}
-
-function normalizeSystemTeamLocationOverrides(
-  value: Record<string, unknown>,
-): Record<string, string | null> {
-  const normalized: Record<string, string | null> = {};
-  for (const [teamId, rawDirectoryName] of Object.entries(value)) {
-    if (!isValidPathSegment(teamId)) continue;
-    if (rawDirectoryName === null) {
-      normalized[teamId] = null;
-      continue;
-    }
-    if (
-      typeof rawDirectoryName === "string"
-      && isValidPathSegment(rawDirectoryName)
-      && rawDirectoryName !== SYSTEM_TEAMS_DIRECTORY
-    ) {
-      normalized[teamId] = rawDirectoryName;
-    }
-  }
-  return normalized;
 }
 
 export async function readTeamSnapshot(location: TeamLocation): Promise<TeamSnapshot> {
@@ -397,7 +407,7 @@ export async function addTeamMember(location: TeamLocation): Promise<AddedTeamMe
     );
     await writeTeamDefinition(location, {
       ...snapshot.definition,
-      primaryAgentSlug: snapshot.definition.primaryAgentSlug ?? slug,
+      primaryAgentSlug: selectPrimaryAgentSlug(snapshot.definition.primaryAgentSlug, slug),
       memberOrder: [...snapshot.definition.memberOrder, slug],
     });
   } catch (error) {
@@ -452,9 +462,7 @@ export async function setTeamPrimaryAgent(location: TeamLocation, primaryAgentSl
 export async function duplicateBuiltInTeamDirectory(source: TeamLocation): Promise<TeamLocation> {
   assertLocationMatchesLayout(source);
   const actualOwnership = determineTeamOwnership(source.dataRoot, source.directory);
-  if (source.ownership !== "system" || actualOwnership !== "system") {
-    throw new TeamPathError(`Only a built-in team can be copied by this operation: ${source.directory}`);
-  }
+  assertBuiltInTeamOwnership(source.ownership, actualOwnership, source.directory);
 
   return duplicateTeamDirectoryAsUserTeam(source);
 }
@@ -525,14 +533,15 @@ export async function trashTeamMemberDirectory(
   if (snapshot.definition === null) {
     throw new TeamMutationError("团队信息当前不可用，无法删除 Agent。");
   }
-  if (snapshot.definition.primaryAgentSlug === memberSlug) {
-    throw new TeamPrimaryAgentError("删除主 Agent 前，请先指定另一名有效成员作为主 Agent。");
-  }
+  assertMemberIsNotPrimary(snapshot.definition.primaryAgentSlug, memberSlug);
   const member = snapshot.members.find((candidate) => candidate.slug === memberSlug);
   if (member === undefined && !snapshot.definition.memberOrder.includes(memberSlug)) {
     throw new TeamMutationError("要删除的 Agent 当前不可用。");
   }
-  const memberDirectory = member?.directory ?? getMemberDirectory(location, memberSlug);
+  const memberDirectory = selectMemberDirectory(
+    member?.directory,
+    getMemberDirectory(location, memberSlug),
+  );
 
   const previousDefinition = snapshot.definition;
   await writeTeamDefinition(location, {
@@ -561,9 +570,7 @@ export async function trashUserTeamDirectory(
   moveToTrash: MovePathToTrash,
 ): Promise<void> {
   assertTeamWritable(location);
-  if (location.ownership !== "user") {
-    throw new BuiltInTeamReadOnlyError(location.id);
-  }
+  assertUserTeamOwnership(location.ownership, location.id);
   const sourceStats = await fs.stat(location.directory);
   if (!sourceStats.isDirectory()) {
     throw new TeamPathError(`User team path is not a directory: ${location.directory}`);
@@ -574,9 +581,11 @@ export async function trashUserTeamDirectory(
 async function duplicateTeamDirectoryAsUserTeam(source: TeamLocation): Promise<TeamLocation> {
   assertLocationMatchesLayout(source);
   const actualOwnership = determineTeamOwnership(source.dataRoot, source.directory);
-  if (source.ownership !== actualOwnership) {
-    throw new TeamPathError(`Team ownership does not match its disk location: ${source.directory}`);
-  }
+  assertMatchingTeamOwnership({
+    declared: source.ownership,
+    actual: actualOwnership,
+    directory: source.directory,
+  });
 
   const sourceStats = await fs.stat(source.directory);
   if (!sourceStats.isDirectory()) {
@@ -596,42 +605,17 @@ async function duplicateTeamDirectoryAsUserTeam(source: TeamLocation): Promise<T
 export function assertTeamWritable(location: TeamLocation): void {
   assertLocationMatchesLayout(location);
   const actualOwnership = determineTeamOwnership(location.dataRoot, location.directory);
-  if (location.ownership !== actualOwnership) {
-    throw new TeamPathError(`Team ownership does not match its disk location: ${location.directory}`);
-  }
+  assertMatchingTeamOwnership({
+    declared: location.ownership,
+    actual: actualOwnership,
+    directory: location.directory,
+  });
 }
 
 /**
  * Kept for source compatibility with older callers. Official teams are editable
  * now, so current mutation paths no longer throw this error.
  */
-export class BuiltInTeamReadOnlyError extends Error {
-  readonly code = "BUILT_IN_TEAM_READ_ONLY";
-
-  constructor(teamId: string) {
-    super(`Built-in team is read-only: ${teamId}`);
-    this.name = "BuiltInTeamReadOnlyError";
-  }
-}
-
-export class TeamPathError extends Error {
-  readonly code = "TEAM_PATH_INVALID";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "TeamPathError";
-  }
-}
-
-export class TeamPrimaryAgentError extends Error {
-  readonly code = "TEAM_PRIMARY_AGENT_INVALID";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "TeamPrimaryAgentError";
-  }
-}
-
 export class TeamMutationError extends Error {
   readonly code = "TEAM_MUTATION_INVALID";
 
@@ -642,9 +626,7 @@ export class TeamMutationError extends Error {
 }
 
 function assertTeamId(teamId: string): void {
-  if (!isValidPathSegment(teamId) || teamId.trim() !== teamId || teamId === SYSTEM_TEAMS_DIRECTORY) {
-    throw new TeamPathError(`Invalid team id: ${teamId}`);
-  }
+  assertValidTeamId(teamId);
 }
 
 async function reserveUserTeamCopyLocation(source: TeamLocation): Promise<TeamLocation> {
@@ -691,27 +673,29 @@ function normalizeTeamInformation(information: TeamInformation): TeamInformation
 }
 
 function assertLocationMatchesLayout(location: TeamLocation): void {
-  if (location.ownership === "user") {
-    assertTeamId(location.id);
-    if (!path.isAbsolute(location.directory)) {
-      throw new TeamPathError(`User team path must be absolute: ${location.directory}`);
-    }
-    return;
-  }
-
-  const expected = resolveTeamLocation({ dataRoot: location.dataRoot, teamId: location.id, ownership: "system" });
-  if (path.resolve(location.directory) !== expected.directory) {
-    throw new TeamPathError(`Built-in team path does not match its id: ${location.directory}`);
-  }
+  const expected = resolveTeamLocation({
+    dataRoot: location.dataRoot,
+    teamId: location.id,
+    ownership: "system",
+  });
+  assertLocationLayout({
+    ownership: location.ownership,
+    teamId: location.id,
+    directory: location.directory,
+    resolvedDirectory: path.resolve(location.directory),
+    expectedSystemDirectory: expected.directory,
+    userPathIsAbsolute: path.isAbsolute(location.directory),
+  });
 }
 
 function assertDirectUserTeamDirectory(dataRoot: string, directory: string): void {
   const resolvedDirectory = path.resolve(directory);
   const teamsRoot = getTeamsRoot(dataRoot);
-  if (path.dirname(resolvedDirectory) !== teamsRoot || path.basename(resolvedDirectory) === SYSTEM_TEAMS_DIRECTORY) {
-    throw new TeamPathError("User team folders must be direct children of the Agent teams folder.");
-  }
-  assertTeamId(path.basename(resolvedDirectory));
+  assertDirectUserTeamDirectoryPlan({
+    parentDirectory: path.dirname(resolvedDirectory),
+    teamsRoot,
+    directoryName: path.basename(resolvedDirectory),
+  });
 }
 
 async function inspectTeamDirectory(directory: string): Promise<TeamRepairIssue | null> {
