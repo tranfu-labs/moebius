@@ -104,6 +104,7 @@ function catalog(commit: ReturnType<typeof vi.fn>): AgentTeamCatalogBundle {
     setLastUsedTeamKey: () => undefined,
     selection: null,
     setSelection: () => undefined,
+    replaceTeams: () => undefined,
     refresh: () => undefined,
   };
 }

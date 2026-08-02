@@ -25,3 +25,10 @@
 `useDesktopLanguageController` 调度并委托 `language-state.ts` 的 `plan*` 决策；首次启动、完成与 replay
 路由由 `DesktopRoutesController` / `OperatorConsoleRoute` 调度并委托 `desktop-routing-model.ts`。root
 仅装配具名 `languageBundle`、i18n Provider、HashRouter 与 route controller。
+
+## `desktop/src/console-page/use-agent-team-console.ts`
+
+该 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 + business 0 = AST
+控制分支 0。文件包含 9 次具名 team hook 装配和一次 memo 化透传；不持有业务状态、不注册 effect，
+团队列表的 `ready` 状态形状由 `useAgentTeamCatalog` 内部的 `replaceTeams` 能力负责，builder 草稿
+storage key 由 domain constants 提供。

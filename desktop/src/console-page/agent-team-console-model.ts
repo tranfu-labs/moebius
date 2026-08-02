@@ -25,6 +25,8 @@ import {
   type AgentTeamSelection,
 } from "./team-state.js";
 
+export const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
+
 export function planAgentTeamFileManagerTranslationKey(
   kind: AgentTeamFileManagerKind,
 ): TranslationKey {

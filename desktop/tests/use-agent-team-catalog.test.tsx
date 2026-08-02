@@ -39,6 +39,7 @@ describe("agent team catalog controller", () => {
     }} />));
     expect(latest.state).toMatchObject({ status: "ready" });
     expect(latest.lastUsedTeamKey).toBe("user:replacement");
+    const replacementView = latest.state.status === "ready" ? latest.state.teams[0]! : null;
 
     await act(async () => stale.resolve({ status: "ready", teams: [staleTeam] }));
     expect(latest.state.status === "ready" ? latest.state.teams[0]?.id : null).toBe("replacement");
@@ -47,6 +48,9 @@ describe("agent team catalog controller", () => {
       listAgentTeams: async () => Promise.reject(new Error("offline")),
     }} />));
     expect(latest.state.status).toBe("error");
+
+    act(() => latest.replaceTeams([replacementView!]));
+    expect(latest.state).toMatchObject({ status: "ready", teams: [{ id: "replacement" }] });
   });
 
   function Harness(props: { api: Parameters<typeof useAgentTeamCatalog>[0] }): null {

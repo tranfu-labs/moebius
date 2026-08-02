@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import type { OperatorAgentTeamsState } from "@moebius/console-ui";
+import type { OperatorAgentTeam, OperatorAgentTeamsState } from "@moebius/console-ui";
 
 import type { LastUsedAgentTeam } from "../team-conversation-preference-contract.js";
 import type { AgentTeamListResponse } from "../team-ipc-contract.js";
@@ -30,6 +30,7 @@ export interface AgentTeamCatalogBundle {
   setLastUsedTeamKey: Dispatch<SetStateAction<string | null>>;
   selection: AgentTeamSelection | null;
   setSelection: Dispatch<SetStateAction<AgentTeamSelection | null>>;
+  replaceTeams(teams: OperatorAgentTeam[]): void;
   refresh(): void;
 }
 
@@ -82,6 +83,9 @@ export function useAgentTeamCatalog(api: AgentTeamCatalogPort | undefined): Agen
     };
   }, [api, refreshNonce]);
   const refresh = useCallback(() => setRefreshNonce((current) => current + 1), []);
+  const replaceTeams = useCallback((teams: OperatorAgentTeam[]) => {
+    setState({ status: "ready", teams });
+  }, []);
   return useMemo(() => ({
     state,
     setState,
@@ -89,6 +93,7 @@ export function useAgentTeamCatalog(api: AgentTeamCatalogPort | undefined): Agen
     setLastUsedTeamKey,
     selection,
     setSelection,
+    replaceTeams,
     refresh,
-  }), [lastUsedTeamKey, refresh, selection, state]);
+  }), [lastUsedTeamKey, refresh, replaceTeams, selection, state]);
 }

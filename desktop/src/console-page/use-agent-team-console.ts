@@ -11,8 +11,7 @@ import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
 import { useAgentTeamProfile } from "./use-agent-team-profile.js";
 import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
-
-const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
+import { AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY } from "./agent-team-console-model.js";
 
 export function useAgentTeamConsole(
   api: DesktopApi | undefined,
@@ -42,7 +41,7 @@ export function useAgentTeamConsole(
     storageKey: AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
     createDraftId,
     activateCopiedTeam: copy.activateCopiedTeam,
-    replaceTeams: (teams) => catalog.setState({ status: "ready", teams }),
+    replaceTeams: catalog.replaceTeams,
     t,
   });
   return useMemo(() => ({
