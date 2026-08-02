@@ -32,6 +32,7 @@ describe("edit and resend draft preparation", () => {
       stoppedMessageId: 12,
       stoppedRunId: null,
       sessionId: "session-a",
+      missingSourceMessage: "missing-source-sentinel",
       replaceAttachments,
       persistBody,
     })).resolves.toMatchObject({ id: 11, body: "原消息" });
@@ -49,9 +50,10 @@ describe("edit and resend draft preparation", () => {
       stoppedMessageId: 2,
       stoppedRunId: null,
       sessionId: "session-a",
+      missingSourceMessage: "missing-source-sentinel",
       replaceAttachments: vi.fn(async () => undefined),
       persistBody,
-    })).rejects.toThrow("找不到这轮开始时的用户消息");
+    })).rejects.toThrow("missing-source-sentinel");
     expect(persistBody).not.toHaveBeenCalled();
   });
 
@@ -66,9 +68,10 @@ describe("edit and resend draft preparation", () => {
       stoppedMessageId: 2,
       stoppedRunId: "run-stale",
       sessionId: "session-a",
+      missingSourceMessage: "stale-source-sentinel",
       replaceAttachments: vi.fn(async () => undefined),
       persistBody,
-    })).rejects.toThrow("找不到这轮开始时的用户消息");
+    })).rejects.toThrow("stale-source-sentinel");
     expect(persistBody).not.toHaveBeenCalled();
   });
 });
