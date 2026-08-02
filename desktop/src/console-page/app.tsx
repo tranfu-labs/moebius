@@ -1,7 +1,6 @@
 import "@moebius/console-ui/globals.css";
 
 import {
-  I18nProvider,
   useI18n,
   OperatorConsole,
   ConversationSearch,
@@ -30,7 +29,6 @@ import {
   type OperatorSession,
   type OperatorSubSessionViewState,
   type RightSidebarTabsState,
-  type Locale,
   type TranslationKey,
   type ExecutionRegistryState,
   hasBlockingComposerAttachment,
@@ -102,14 +100,6 @@ import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  HashRouter,
-  Navigate,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
-import {
   acknowledgeDisplayedResult,
   loadProcessOutput,
   loadProcessOutputUpdate,
@@ -180,13 +170,10 @@ import {
 } from "./conversation-draft-model.js";
 import { createConversationDraftStore } from "./draft-store.js";
 import {
-  isFirstRunOnboarding,
   readSidebarVisibilityPreference,
   writeSidebarVisibilityPreference,
   type SidebarVisibilityPreference,
 } from "./sidebar-preference.js";
-import { OnboardingRoute } from "../onboarding/onboarding-route.js";
-import { finishOnboardingPresentation } from "../onboarding/onboarding-completion.js";
 import {
   clearConsoleSelectionPreference,
   decideConsoleSelectionCommit,
@@ -267,17 +254,12 @@ import type {
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
-import {
-  createLanguageState,
-  reduceLanguageState,
-  type LanguageState,
-} from "./language-state.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
 import {
-  createContext,
-  useContext,
-} from "react";
+  DesktopApplicationRoot,
+  useDesktopLanguage,
+} from "./desktop-application-root.js";
 
 export interface DesktopApi {
   readLanguagePreference?: () => Promise<DesktopLocale>;
@@ -414,227 +396,9 @@ declare global {
 }
 
 export function App(): JSX.Element {
-  return <DesktopLanguageRoot />;
+  return <DesktopApplicationRoot operatorConsole={OperatorConsoleApp} />;
 }
 
-interface DesktopLanguageContextValue extends LanguageState {
-  selectLocale(locale: DesktopLocale): void;
-  retry(): void;
-}
-
-const DesktopLanguageContext = createContext<DesktopLanguageContextValue | null>(null);
-const FALLBACK_DESKTOP_LANGUAGE: DesktopLanguageContextValue = {
-  ...createLanguageState("zh-CN"),
-  selectLocale: () => undefined,
-  retry: () => undefined,
-};
-
-function DesktopLanguageRoot(): JSX.Element {
-  const [state, dispatch] = useReducer(
-    reduceLanguageState,
-    readInitialLocale(),
-    createLanguageState,
-  );
-  const requestIdRef = useRef(0);
-
-  const save = useCallback((locale: DesktopLocale) => {
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    dispatch({ type: "select", locale, requestId });
-    const savePreference = window.moebius?.saveLanguagePreference;
-    if (savePreference === undefined) {
-      dispatch({ type: "saved", locale, requestId });
-      return;
-    }
-    void savePreference(locale).then((savedLocale) => {
-      dispatch({ type: "saved", locale: savedLocale, requestId });
-    }).catch(() => {
-      dispatch({ type: "failed", requestId });
-    });
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.lang = state.activeLocale;
-  }, [state.activeLocale]);
-
-  useEffect(() => {
-    void window.moebius?.readLanguagePreference?.().then((locale) => {
-      dispatch({ type: "external", locale });
-    }).catch(() => undefined);
-    return window.moebius?.onLanguagePreferenceChanged?.((locale) => {
-      dispatch({ type: "external", locale });
-    });
-  }, []);
-
-  const value = useMemo<DesktopLanguageContextValue>(() => ({
-    ...state,
-    selectLocale: save,
-    retry: () => {
-      if (state.pendingLocale !== null) {
-        save(state.pendingLocale);
-      }
-    },
-  }), [save, state]);
-
-  return (
-    <DesktopLanguageContext.Provider value={value}>
-      <I18nProvider locale={state.activeLocale as Locale}>
-        <HashRouter>
-          <DesktopRoutes />
-        </HashRouter>
-      </I18nProvider>
-    </DesktopLanguageContext.Provider>
-  );
-}
-
-function useDesktopLanguage(): DesktopLanguageContextValue {
-  return useContext(DesktopLanguageContext) ?? FALLBACK_DESKTOP_LANGUAGE;
-}
-
-function readInitialLocale(): DesktopLocale {
-  const value = new URLSearchParams(window.location.search).get("locale");
-  return value === "en" ? "en" : "zh-CN";
-}
-
-function DesktopRoutes(): JSX.Element {
-  const { t } = useI18n();
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let active = true;
-    const readStatus = async () => {
-      if (window.moebius?.getOnboardingStatus === undefined) {
-        if (active) {
-          setOnboardingCompleted(true);
-        }
-        return;
-      }
-      try {
-        const result = await window.moebius.getOnboardingStatus();
-        if (active) {
-          setOnboardingCompleted(result.completed);
-        }
-      } catch {
-        if (active) {
-          setOnboardingCompleted(false);
-        }
-      }
-    };
-    void readStatus();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (onboardingCompleted === null) {
-    return <main className="h-screen min-h-[560px] bg-canvas" data-testid="desktop-route-loading" />;
-  }
-
-  const completeOnboarding = async (pendingAgentTeamKey: string) => {
-    const result = await window.moebius?.completeOnboarding?.();
-    if (result?.completed !== true) {
-      throw new Error(t("desktop.error.onboardingSave"));
-    }
-    setOnboardingCompleted(true);
-    navigate("/", {
-      replace: true,
-      state: { pendingAgentTeamKey } satisfies OnboardingNavigationState,
-    });
-  };
-
-  return (
-    <Routes>
-      <Route
-        path="/onboarding/*"
-        element={isFirstRunOnboarding(onboardingCompleted)
-          ? (
-              <OnboardingRoute
-                onComplete={(teamKey) => finishOnboardingPresentation({
-                  mode: "first-run",
-                  teamKey,
-                  onFirstRunComplete: completeOnboarding,
-                })}
-              />
-            )
-          : <Navigate replace to="/" />}
-      />
-      <Route
-        path="/*"
-        element={isFirstRunOnboarding(onboardingCompleted)
-          ? <Navigate replace to="/onboarding" />
-          : <OperatorConsoleRoute />}
-      />
-    </Routes>
-  );
-}
-
-interface OnboardingNavigationState {
-  pendingAgentTeamKey: string;
-}
-
-function OperatorConsoleRoute(): JSX.Element {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [pendingAgentTeamKey] = useState(() => readPendingAgentTeamKey(location.state));
-  const [replayingOnboarding, setReplayingOnboarding] = useState(false);
-  const replayReturnFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (readPendingAgentTeamKey(location.state) === null) {
-      return;
-    }
-    navigate(
-      { pathname: location.pathname, search: location.search, hash: location.hash },
-      { replace: true, state: null },
-    );
-  }, [location.hash, location.pathname, location.search, location.state, navigate]);
-
-  const finishReplay = useCallback(() => {
-    setReplayingOnboarding(false);
-    window.requestAnimationFrame(() => replayReturnFocusRef.current?.focus());
-  }, []);
-
-  const startReplay = useCallback(() => {
-    replayReturnFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    setReplayingOnboarding(true);
-  }, []);
-
-  return (
-    <>
-      <div
-        className={replayingOnboarding ? "hidden" : "contents"}
-        aria-hidden={replayingOnboarding ? "true" : undefined}
-        data-testid="operator-console-preserved-during-onboarding-replay"
-      >
-        <OperatorConsoleApp
-          pendingAgentTeamKey={pendingAgentTeamKey}
-          onReplayOnboarding={startReplay}
-        />
-      </div>
-      {replayingOnboarding ? (
-        <OnboardingRoute
-          mode="replay"
-          onExit={finishReplay}
-          onComplete={() => finishOnboardingPresentation({
-            mode: "replay",
-            onReplayComplete: finishReplay,
-          })}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function readPendingAgentTeamKey(value: unknown): string | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  const key = (value as Partial<OnboardingNavigationState>).pendingAgentTeamKey;
-  return typeof key === "string" && key.trim().length > 0 ? key : null;
-}
 
 export function OperatorConsoleApp({
   pendingAgentTeamKey: initialPendingAgentTeamKey = null,

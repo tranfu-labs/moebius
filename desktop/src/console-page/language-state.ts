@@ -67,3 +67,19 @@ export function reduceLanguageState(
     requestId: action.requestId,
   };
 }
+
+export function planInitialDesktopLocale(search: string): DesktopLocale {
+  return new URLSearchParams(search).get("locale") === "en" ? "en" : "zh-CN";
+}
+
+export function planLanguagePersistence(hasPersistencePort: boolean): "persist" | "commit-local" {
+  return hasPersistencePort ? "persist" : "commit-local";
+}
+
+export function planLanguageRetry(state: LanguageState): DesktopLocale | null {
+  return state.pendingLocale;
+}
+
+export function planActiveLanguageCommit(active: boolean): boolean {
+  return active;
+}

@@ -89,6 +89,36 @@ describe("desktop onboarding routing", () => {
     expect(window.location.hash).toBe("#/");
   });
 
+  it("follows a replaced status port, ignores its slow predecessor, and exposes current failure", async () => {
+    const staleStatus = deferred<Awaited<ReturnType<
+      NonNullable<DesktopApi["getOnboardingStatus"]>
+    >>>();
+    installApi({ getOnboardingStatus: () => staleStatus.promise });
+
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="desktop-route-loading"]');
+
+    installApi({
+      getOnboardingStatus: async () => ({
+        completed: true,
+        completedAt: "2026-07-24T00:00:00.000Z",
+      }),
+    });
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="operator-sidebar"]');
+
+    await act(async () => staleStatus.resolve({ completed: false, completedAt: null }));
+    expect(document.querySelector('[data-testid="operator-sidebar"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid^="onboarding-step-"]')).toBeNull();
+
+    installApi({
+      getOnboardingStatus: async () => Promise.reject(new Error("status unavailable")),
+    });
+    await act(async () => root.render(<App />));
+    await findElement('[data-testid="onboarding-step-1"]');
+    expect(document.querySelector('[data-testid="operator-sidebar"]')).toBeNull();
+  });
+
   it.each([
     "checking",
     "ready",
