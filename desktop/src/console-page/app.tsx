@@ -17,10 +17,7 @@ import {
 } from "./console-api-client.js";
 import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
-import {
-  planAgentTeamFileManagerTranslationKey,
-  planGeneralAssistantTeamKey,
-} from "./agent-team-console-model.js";
+import { planGeneralAssistantTeamKey } from "./agent-team-console-model.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import { NEW_CONVERSATION_DRAFT_KEY, sessionDraftKey } from "./conversation-draft-model.js";
@@ -43,11 +40,6 @@ import {
 } from "./sidebar-conversation-drafts.js";
 import { sidebarPresentationRoute } from "./presentation-route.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
-import {
-  discardAgentTeamMemberDraft,
-  discardAllAgentTeamDrafts,
-  updateAgentTeamMemberDraft,
-} from "./team-state.js";
 export type { DesktopApi } from "./desktop-api-contract.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
@@ -582,22 +574,12 @@ export function OperatorConsoleApp({
       onRetryAgentTeams={agentTeamCatalogBundle.refresh}
       onCreateAgentTeam={agentTeamRecordMutationBundle.createTeam}
       onOpenAgentTeam={agentTeamNavigationBundle.open}
-      onCloseAgentTeam={() => {
-        agentTeamNavigationBundle.close();
-        agentTeamProfileBundle.clearPrimaryAgentChange();
-      }}
+      onCloseAgentTeam={agentTeamControllersBundle.intents.close}
       onSelectAgentTeamMember={agentTeamNavigationBundle.selectMember}
       onChangeAgentTeamPrimaryAgent={agentTeamProfileBundle.changePrimaryAgent}
       onAddAgentTeamMember={agentTeamMemberMutationBundle.addMember}
       onUpdateAgentTeamInformation={agentTeamRecordMutationBundle.updateInformation}
-      onChangeAgentTeamMember={(teamKey, memberSlug, agentMarkdown) => {
-        agentTeamMemberBundle.commitDrafts(updateAgentTeamMemberDraft(
-          agentTeamMemberBundle.draftsRef.current,
-          teamKey,
-          memberSlug,
-          agentMarkdown,
-        ));
-      }}
+      onChangeAgentTeamMember={agentTeamControllersBundle.intents.changeMember}
       onSaveAgentTeamMember={agentTeamMemberBundle.saveMember}
       onCheckAgentTeamMemberExternalChange={agentTeamMemberBundle.checkExternalChange}
       onLoadAgentTeamMemberExternalVersion={agentTeamMemberBundle.loadExternalVersion}
@@ -605,17 +587,8 @@ export function OperatorConsoleApp({
       onRetryAgentTeamMember={(teamKey, memberSlug) => {
         void agentTeamMemberBundle.loadMember(teamKey, memberSlug);
       }}
-      onDiscardAgentTeamMember={(teamKey, memberSlug) => {
-        agentTeamMemberBundle.commitDrafts(discardAgentTeamMemberDraft(
-          agentTeamMemberBundle.draftsRef.current,
-          teamKey,
-          memberSlug,
-        ));
-      }}
-      onDiscardAllAgentTeamDrafts={(teamKey) => {
-        agentTeamMemberBundle.commitDrafts(discardAllAgentTeamDrafts(agentTeamMemberBundle.draftsRef.current, teamKey));
-        agentTeamMemberBundle.setSaveAllFailures([]);
-      }}
+      onDiscardAgentTeamMember={agentTeamControllersBundle.intents.discardMember}
+      onDiscardAllAgentTeamDrafts={agentTeamControllersBundle.intents.discardAll}
       onSaveAllAgentTeamDrafts={agentTeamMemberBundle.saveAll}
       onSaveAgentExecutionProfile={agentTeamProfileBundle.saveExecutionProfile}
       onRestoreAgentRecommendedProfile={agentTeamProfileBundle.restoreRecommendedProfile}
@@ -624,9 +597,7 @@ export function OperatorConsoleApp({
       onRecheckAgentTeam={agentTeamCatalogBundle.refresh}
       onRelocateAgentTeam={agentTeamRecordMutationBundle.relocateTeam}
       onRemoveAgentTeamRecord={agentTeamRecordMutationBundle.removeRecord}
-      agentTeamFileManagerLabel={t(planAgentTeamFileManagerTranslationKey(
-        window.moebius?.agentTeamFileManagerKind ?? "file-manager",
-      ))}
+      agentTeamFileManagerLabel={agentTeamControllersBundle.intents.fileManagerLabel}
       onOpenAgentTeamLocation={agentTeamRecordMutationBundle.openLocation}
       onDuplicateUserAgentTeam={agentTeamCopyBundle.duplicateUser}
       onDuplicateAgentTeamMember={agentTeamMemberMutationBundle.duplicateMember}

@@ -28,7 +28,7 @@ import {
 export const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
 
 export function planAgentTeamFileManagerTranslationKey(
-  kind: AgentTeamFileManagerKind,
+  kind: AgentTeamFileManagerKind | undefined,
 ): TranslationKey {
   if (kind === "finder") return "desktop.fileManager.finder";
   if (kind === "windows-explorer") return "desktop.fileManager.windowsExplorer";

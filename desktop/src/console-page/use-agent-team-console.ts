@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { Translate } from "@moebius/console-ui";
 
 import type { DesktopApi } from "./desktop-api-contract.js";
@@ -13,8 +13,14 @@ import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.j
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
 import {
   AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
+  planAgentTeamFileManagerTranslationKey,
   planAgentTeamDetailState,
 } from "./agent-team-console-model.js";
+import {
+  discardAgentTeamMemberDraft,
+  discardAllAgentTeamDrafts,
+  updateAgentTeamMemberDraft,
+} from "./team-state.js";
 
 export function useAgentTeamConsole(
   api: DesktopApi | undefined,
@@ -56,6 +62,32 @@ export function useAgentTeamConsole(
     primaryAgentChange: profile.primaryAgentChange,
   }), [catalog.selection, catalog.state, member.drafts, member.saveAllFailures,
     navigation.activeTeamKey, profile.primaryAgentChange]);
+  const close = useCallback(() => {
+    navigation.close();
+    profile.clearPrimaryAgentChange();
+  }, [navigation, profile]);
+  const changeMember = useCallback((teamKey: string, memberSlug: string, agentMarkdown: string) => {
+    member.commitDrafts(updateAgentTeamMemberDraft(
+      member.draftsRef.current,
+      teamKey,
+      memberSlug,
+      agentMarkdown,
+    ));
+  }, [member]);
+  const discardMember = useCallback((teamKey: string, memberSlug: string) => {
+    member.commitDrafts(discardAgentTeamMemberDraft(member.draftsRef.current, teamKey, memberSlug));
+  }, [member]);
+  const discardAll = useCallback((teamKey: string) => {
+    member.commitDrafts(discardAllAgentTeamDrafts(member.draftsRef.current, teamKey));
+    member.setSaveAllFailures([]);
+  }, [member]);
+  const intents = useMemo(() => ({
+    close,
+    changeMember,
+    discardMember,
+    discardAll,
+    fileManagerLabel: t(planAgentTeamFileManagerTranslationKey(api?.agentTeamFileManagerKind)),
+  }), [api?.agentTeamFileManagerKind, changeMember, close, discardAll, discardMember, t]);
   return useMemo(() => ({
     catalog,
     member,
@@ -67,6 +99,7 @@ export function useAgentTeamConsole(
     recordMutations,
     builder,
     detailState,
-  }), [builder, catalog, copy, detailState, member, memberMutations, navigation, profile,
+    intents,
+  }), [builder, catalog, copy, detailState, intents, member, memberMutations, navigation, profile,
     recordMutations, registration]);
 }
