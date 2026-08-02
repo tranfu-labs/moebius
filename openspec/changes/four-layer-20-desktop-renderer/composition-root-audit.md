@@ -69,6 +69,6 @@ application file，不进入 composition-root allowlist。
 ## `desktop/src/console-page/use-session-console.ts`
 
 该 session 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
-business 0 = AST 控制分支 0。文件只装配 session-run 与 sidebar-message 两个具名 application
-bundle；发送可用性、草稿内容和 sidebar view 刷新判据仍由独立 domain models 持有。该 facade
+business 0 = AST 控制分支 0。文件只装配 session-run、sidebar-message 与 sidebar-draft 三个具名
+application bundle；发送可用性、草稿内容、promotion 路由和 sidebar view 刷新判据仍由独立 domain models 持有。该 facade
 继续登记为 application file，不进入 composition-root allowlist。

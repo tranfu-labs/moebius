@@ -25,6 +25,10 @@ export function planReadyAttachmentIds(attachments: readonly ComposerAttachment[
       : []);
 }
 
+export function planHasBlockingAttachments(attachments: readonly ComposerAttachment[]): boolean {
+  return attachments.some((attachment) => attachment.status !== "ready");
+}
+
 export function planMessageImageSources(messages: readonly OperatorMessage[]) {
   return messages.flatMap((message) => (message.attachments ?? [])
     .filter((attachment) => attachment.kind === "image")

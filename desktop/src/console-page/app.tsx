@@ -83,21 +83,18 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { createRoot } from "react-dom/client";
 import {
   loadExecutionProfileRegistry,
-  createSidebarConversationSession,
   restoreConsoleSession,
   type SessionSearchResult,
 } from "./console-api-client.js";
 import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import {
-  planAnalysisRootSession,
   planCanonicalConversationTabTitles,
   planConversationProjectContext,
   planConversationTabDiscriminators,
 } from "./console-presentation-model.js";
 import {
   planAgentTeamFileManagerTranslationKey,
-  planFindOperatorAgentTeam,
   planGeneralAssistantTeamKey,
   planAgentTeamDetailState,
 } from "./agent-team-console-model.js";
@@ -191,6 +188,7 @@ import { useProjectMutations } from "./use-project-mutations.js";
 import { browserSessionRunPort } from "./session-run-browser-port.js";
 import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
+import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -777,10 +775,6 @@ export function OperatorConsoleApp({
     t,
   ]);
 
-  const allSidebarSessions = useMemo(
-    () => projects.flatMap((candidate) => candidate.sessions),
-    [projects],
-  );
   const conversationControllersBundle = useConversationConsole(
     composerDraft, selection, projects, actions, setClientError, t, coordinatorRef.current,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
@@ -926,7 +920,10 @@ export function OperatorConsoleApp({
     selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort,
     sidebarConversationSendingId, setSidebarConversationSendingId,
     sidebarConversationComposerValues, setSidebarConversationComposerValues,
-    managedSidebarConversationAttachments, sidebarConversationViews,
+    managedSidebarConversationAttachments, projects, agentTeamCatalogBundle,
+    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
+    rightSidebarTabsBundle, presentationRouteRef, commitPresentationRoute,
+    window.moebius, browserSidebarDraftPort, t, sidebarConversationViews,
     setSidebarConversationViews, browserSidebarMessagePort, setClientError,
   );
   const sessionRunActionsBundle = sessionControllersBundle.runs;
@@ -939,6 +936,8 @@ export function OperatorConsoleApp({
   const retryPendingMessage = sidebarMessageActionsBundle.retryPendingMessage;
   const editPendingMessage = sidebarMessageActionsBundle.editPendingMessage;
   const removePendingMessage = sidebarMessageActionsBundle.removePendingMessage;
+  const updateSidebarConversationDraft = sessionControllersBundle.sidebarDrafts.updateDraft;
+  const submitSidebarConversationDraft = sessionControllersBundle.sidebarDrafts.submitDraft;
 
   const openDiagnostics = useMemo(() => {
     if (window.moebius?.openStatusPage === undefined) {
@@ -992,126 +991,6 @@ export function OperatorConsoleApp({
     refresh,
     setRightSidebarOpen,
     state,
-  ]);
-
-  const updateSidebarConversationDraft = useCallback((
-    draftId: string,
-    update: (draft: SidebarConversationDraft) => SidebarConversationDraft,
-  ) => {
-    const current = sidebarConversationDraftStoreRef.current.read(draftId);
-    if (current === null) return;
-    sidebarConversationDraftStoreRef.current.write(update(current));
-    setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-  }, []);
-
-  const submitSidebarConversationDraft = useCallback(async (draftId: string) => {
-    const draft = sidebarConversationDraftStoreRef.current.read(draftId);
-    if (
-      apiBase === null
-      || draft === null
-      || draft.body.trim() === ""
-      || draft.context.projectId === null
-      || draft.context.teamKey === null
-      || sidebarConversationSendingId !== null
-      || hasBlockingComposerAttachment(managedSidebarConversationAttachments.attachments)
-    ) {
-      return;
-    }
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, draft.context.teamKey);
-    if (team === undefined || !team.canCreateConversation) {
-      setClientError(t("desktop.error.teamUnavailable"));
-      return;
-    }
-    setSidebarConversationSendingId(draftId);
-    try {
-      const created = await createSidebarConversationSession({
-        apiBase,
-        projectId: draft.context.projectId,
-        initialMessage: draft.body,
-        agentTeam: { ownership: team.ownership, id: team.id },
-        workspaceMode: draft.context.workspaceMode,
-        attachmentIds: readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
-        attachmentDraftKey: draft.attachmentDraftKey,
-        originSessionId: draft.originSessionId,
-        analysisParentSessionId: draft.hostSessionId,
-        entryTemplate: draft.entryTemplate,
-        writePolicy: draft.writePolicy,
-        textFragments: draft.textFragments,
-        fetch,
-      });
-      const createdTitle = created.title
-        ?? draft.body.trim().replace(/\s+/gu, " ").slice(0, 32);
-      const createdProject = stateRef.current?.projects.find(
-        (project) => project.projectId === draft.context.projectId,
-      );
-      rightSidebarTabsBundle.store.promoteConversationDraft({
-        draftId,
-        sessionId: created.sessionId,
-        title: createdTitle,
-        conversationContext: createdProject === undefined
-          ? undefined
-          : planConversationProjectContext(createdProject),
-      });
-      const directParent = allSidebarSessions.find((session) => session.sessionId === draft.hostSessionId);
-      const root = directParent === undefined
-        ? null
-        : planAnalysisRootSession(allSidebarSessions, directParent.sessionId);
-      const tabHostSessionId = root?.sessionId ?? draft.hostSessionId;
-      const nextTabs = rightSidebarTabsBundle.store.read(tabHostSessionId);
-      const currentHostSessionId = presentationRouteRef.current?.hostSessionId
-        ?? selectionRef.current.sessionId;
-      if (currentHostSessionId === tabHostSessionId) {
-        rightSidebarTabsBundle.commitCurrent(nextTabs);
-      }
-      sidebarConversationDraftStoreRef.current.remove(draftId);
-      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-      managedSidebarConversationAttachments.clearDraft(draft.attachmentDraftKey);
-      setSidebarConversationComposerValues((current) => ({
-        ...current,
-        [created.sessionId]: "",
-      }));
-      commitPresentationRoute(root === null
-        ? sidebarPresentationRoute({
-            sidebarProjectId: draft.context.projectId,
-            sidebarSessionId: created.sessionId,
-            originSessionId: draft.originSessionId,
-            originAvailable: draft.originSessionId !== null,
-          })
-        : {
-            version: 1,
-            projectId: root.projectId,
-            selectedSessionId: created.sessionId,
-            mainSessionId: root.sessionId,
-            rightConversationSessionId: created.sessionId,
-            hostSessionId: root.sessionId,
-            notice: null,
-          });
-      await refresh(selectionRef.current);
-      const recordSuccessfulTeam = window.moebius?.recordSuccessfulConversationAgentTeam;
-      if (recordSuccessfulTeam !== undefined) {
-        await recordSuccessfulTeam({
-          ownership: team.ownership,
-          teamId: team.id,
-          sessionId: created.sessionId,
-        });
-        agentTeamCatalogBundle.setLastUsedTeamKey(team.teamKey);
-      }
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    } finally {
-      setSidebarConversationSendingId(null);
-    }
-  }, [
-    agentTeamCatalogBundle.state,
-    allSidebarSessions,
-    apiBase,
-    commitPresentationRoute,
-    managedSidebarConversationAttachments.attachments,
-    managedSidebarConversationAttachments.clearDraft,
-    refresh,
-    sidebarConversationSendingId,
-    t,
   ]);
 
   const openSearchedSession = useCallback(async (
