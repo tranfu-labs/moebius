@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type MutableRefObject } from "react";
+import { useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   type OperatorAgentTeam,
   type OperatorProject,
@@ -8,6 +8,7 @@ import {
 } from "@moebius/console-ui";
 
 import type { LocalConsoleState } from "./console-state-contract.js";
+import type { ConsoleStateActions } from "./console-state-actions.js";
 import type { ConversationAnalysisReferencePort } from "./conversation-analysis-contract.js";
 import type { SearchedSessionPort } from "./searched-session-contract.js";
 import type { ConsoleSelection, ConsoleStateCoordinator } from "./console-state-coordinator.js";
@@ -21,6 +22,7 @@ import type {
 import { useAnalysisPanelNavigation } from "./use-analysis-panel-navigation.js";
 import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 import { useConversationAnalysis } from "./use-conversation-analysis.js";
+import type { useConversationSearch } from "./use-conversation-search.js";
 import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
 import { useEditResend } from "./use-edit-resend.js";
@@ -29,21 +31,18 @@ import { useNewConversationSubmission } from "./use-new-conversation-submission.
 import { useNewConversationLauncher } from "./use-new-conversation-launcher.js";
 import { useSearchedSessionNavigation } from "./use-searched-session-navigation.js";
 import { useSidebarSourceMigration } from "./use-sidebar-source-migration.js";
+import { useSessionMutationIntents } from "./use-session-mutation-intents.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-type ConversationActions = Parameters<typeof useConversationTransition>[2]
-  & Parameters<typeof useConversationNavigation>[7]
-  & Parameters<typeof useNewConversationSubmission>[6]
-  & Parameters<typeof useAnalysisPanelNavigation>[3];
-
 export function useConversationConsole(
   composerDraft: Pick<ConversationComposerDraftState, "key">,
   composerDraftRef: MutableRefObject<ConversationComposerDraftState>,
   commitComposerDraft: (draft: ConversationComposerDraftState) => void,
   selection: ConsoleSelection,
   projects: readonly OperatorProject[],
-  actions: ConversationActions,
+  actions: ConsoleStateActions,
+  search: ReturnType<typeof useConversationSearch>,
   setError: (error: string | null) => void,
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
   coordinator: ConsoleStateCoordinator,
@@ -84,6 +83,8 @@ export function useConversationConsole(
   searchedSessionPort: SearchedSessionPort,
   fetch: FetchLike,
   setNotice: (notice: string | null) => void,
+  setUpdatingTitleIds: Dispatch<SetStateAction<Set<string>>>,
+  copySessionLogPath: Parameters<typeof useSessionMutationIntents>[7],
 ) {
   const transition = useConversationTransition(
     composerDraft.key, selection.sessionId, actions, setError, t,
@@ -122,6 +123,10 @@ export function useConversationConsole(
     apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
     tabs.setOpen, actions.selectSession, searchedSessionPort, setError,
   );
+  const sessionMutations = useSessionMutationIntents(
+    actions, search, tabs, presentationRouteRef, selectionRef, commitRoute,
+    setUpdatingTitleIds, copySessionLogPath,
+  );
   useSidebarSourceMigration(
     projects, presentationRoute, refresh, commitRoute, tabs.setOpen, tabs.showHost,
   );
@@ -134,5 +139,6 @@ export function useConversationConsole(
     analysisNavigation,
     analysis,
     searchedSession,
-  }), [analysis, analysisNavigation, editResend, launcher, navigation, searchedSession, submission, transition]);
+    sessionMutations,
+  }), [analysis, analysisNavigation, editResend, launcher, navigation, searchedSession, sessionMutations, submission, transition]);
 }

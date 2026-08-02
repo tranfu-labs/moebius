@@ -142,7 +142,6 @@ import {
 } from "./sidebar-conversation-drafts.js";
 import {
   createConsolePresentationRouteStore,
-  ordinaryPresentationRoute,
   sidebarPresentationRoute,
   type ConsolePresentationRoute,
 } from "./presentation-route.js";
@@ -761,7 +760,7 @@ export function OperatorConsoleApp({
 
   const conversationControllersBundle = useConversationConsole(
     composerDraft, composerDraftRef, commitComposerDraft,
-    selection, projects, actions, setClientError, t, coordinatorRef.current,
+    selection, projects, actions, conversationSearchBundle, setClientError, t, coordinatorRef.current,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
     activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
     agentTeamCatalogBundle, pendingAgentTeamKey, setPendingAgentTeamKey,
@@ -773,6 +772,7 @@ export function OperatorConsoleApp({
     apiBase, stateRef, presentationRouteRef, presentationRoute, sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, commitConsoleState, commitSelection, refresh,
     browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
+    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath,
   );
   const conversationTransitionBundle = conversationControllersBundle.transition;
   const conversationNavigationBundle = conversationControllersBundle.navigation;
@@ -782,6 +782,7 @@ export function OperatorConsoleApp({
   const openSearchedSession = conversationControllersBundle.searchedSession.openSearchedSession;
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
   const editAndResend = conversationControllersBundle.editResend.editAndResend;
+  const sessionMutationIntents = conversationControllersBundle.sessionMutations;
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
@@ -1061,57 +1062,16 @@ export function OperatorConsoleApp({
       onRemoveProject={removeProject}
       onSelectFolderForRepair={selectFolderForRepair}
       onRepairProjectFolder={repairProjectFolder}
-      onArchiveSession={async (sessionId, projectId) => {
-        const archivedSessionIds = await actions.archiveSession(sessionId, projectId);
-        if (archivedSessionIds === null) return;
-        const activeHostSessionId = presentationRouteRef.current?.hostSessionId
-          ?? selectionRef.current.sessionId;
-        for (const archivedSessionId of archivedSessionIds) {
-          rightSidebarTabsBundle.store.removeSession(archivedSessionId);
-        }
-        rightSidebarTabsBundle.store.clearHosts(archivedSessionIds);
-        if (presentationRoute?.selectedSessionId === sessionId) {
-          const next = selectionRef.current;
-          commitPresentationRoute(ordinaryPresentationRoute(next));
-          rightSidebarTabsBundle.showHost(next.sessionId);
-        } else {
-          rightSidebarTabsBundle.showHost(activeHostSessionId);
-        }
-      }}
-      onCopySessionLogPath={async (sessionId) => {
-        const copySessionLogPath = window.moebius?.copySessionLogPath;
-        if (copySessionLogPath === undefined) {
-          return { ok: false, reason: "service-unavailable" };
-        }
-        return copySessionLogPath(sessionId);
-      }}
+      onArchiveSession={sessionMutationIntents.archiveSession}
+      onCopySessionLogPath={sessionMutationIntents.copyLogPath}
       onUpdateSessionReadState={async (session, _projectId, action) => {
         await actions.updateSessionReadState(session, action);
       }}
       onSetSessionPinned={async (session, _projectId, pinned) => {
         await actions.setSessionPinned(session, pinned);
       }}
-      onRenameSession={async (session, _projectId, title) => {
-        const resumeSearch = conversationSearchBundle.suspendForMutation();
-        setUpdatingConversationTitleSessionIds((current) => new Set(current).add(session.id));
-        try {
-          await actions.renameSession(session, title);
-          rightSidebarTabsBundle.store.renameConversation(session.id, title.trim());
-          const hostSessionId = presentationRouteRef.current?.hostSessionId
-            ?? selectionRef.current.sessionId;
-          rightSidebarTabsBundle.showHost(hostSessionId);
-          resumeSearch();
-        } catch (error) {
-          resumeSearch();
-          throw error;
-        } finally {
-          setUpdatingConversationTitleSessionIds((current) => {
-            const next = new Set(current);
-            next.delete(session.id);
-            return next;
-          });
-        }
-      }}
+      onRenameSession={(session, _projectId, title) =>
+        sessionMutationIntents.renameSession(session, title)}
       onInterrupt={interrupt}
       onRetryRun={(sessionId, runId, executionOverride) =>
         retryRun(sessionId, runId, executionOverride)}
