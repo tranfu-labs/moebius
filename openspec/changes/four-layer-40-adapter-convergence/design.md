@@ -9,7 +9,8 @@
 3. local SQLite/JSONL state、HTTP server 与 composition roots。
 
 实施前簇级账按最新债务形状拆开维护；第一簇见
-[`provider-infra-cluster-ledger.md`](provider-infra-cluster-ledger.md)。账面目标未经主理人核验不得实施。
+[`provider-infra-cluster-ledger.md`](provider-infra-cluster-ledger.md)，第二簇见
+[`ai-team-builder-cluster-ledger.md`](ai-team-builder-cluster-ledger.md)。账面目标未经主理人核验不得实施。
 
 adapter 可以包含外部协议校验、路径安全、原子写和 wire→DTO 映射；“用户/会话/任务在什么条件下
 允许什么结果”属于 domain。application 只调用 ports。`LocalConsoleStore` 名称、方法和 schema 不变。
