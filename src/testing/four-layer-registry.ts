@@ -374,6 +374,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
 
 export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/ai-team-builder/contract.ts",
+  "desktop/src/ai-team-builder/builder-action-plan.ts",
   "desktop/src/ai-team-builder/draft-persistence-plan.ts",
   "desktop/src/ai-team-builder/draft-store-contract.ts",
   "desktop/src/ai-team-builder/driver.ts",
@@ -386,6 +387,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/ai-team-builder/team-write-contract.ts",
   "desktop/src/ai-team-builder/team-write-error.ts",
   "desktop/src/ai-team-builder/team-write-plan.ts",
+  "desktop/src/ai-team-builder/turn-plan.ts",
   "desktop/src/ai-team-builder/validator.ts",
   "desktop/src/team-builder-view-state.ts",
   "desktop/src/console-page/attachment-preview.ts",
