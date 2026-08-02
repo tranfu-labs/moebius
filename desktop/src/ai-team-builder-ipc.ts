@@ -1,14 +1,12 @@
 import {
-  AiTeamBuilder,
-  AiTeamBuilderRequestError,
-} from "./ai-team-builder/index.js";
-import {
   AI_TEAM_BUILDER_IPC_CHANNELS,
+  type AiTeamBuilderServicePort,
   type AiTeamBuilderCommitRequest,
   type AiTeamBuilderDraftRequest,
   type AiTeamBuilderIpcResponse,
   type AiTeamBuilderTurnRequest,
 } from "./ai-team-builder/contract.js";
+import { AiTeamBuilderRequestError } from "./ai-team-builder/request-error.js";
 import { AiTeamBuilderStaleRevisionError } from "./ai-team-builder/state-machine.js";
 import type { AiTeamBuilderState } from "./ai-team-builder/dto.js";
 
@@ -23,7 +21,7 @@ export interface AiTeamBuilderIpcMain {
 
 export function registerAiTeamBuilderIpc(input: {
   ipcMain: AiTeamBuilderIpcMain;
-  builder: AiTeamBuilder;
+  builder: AiTeamBuilderServicePort;
 }): void {
   input.ipcMain.handle(AI_TEAM_BUILDER_IPC_CHANNELS.state, async (_event, rawRequest) =>
     invokeSafely(async () => input.builder.getState(parseDraftRequest(rawRequest).draftId)));

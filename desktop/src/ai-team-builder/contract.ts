@@ -21,6 +21,15 @@ export interface AiTeamBuilderCommitRequest extends AiTeamBuilderDraftRequest {
   proposalRevision: number;
 }
 
+export interface AiTeamBuilderServicePort {
+  getState(draftId: string): Promise<AiTeamBuilderState>;
+  start(draftId: string): Promise<AiTeamBuilderState>;
+  submit(draftId: string, text: string): Promise<AiTeamBuilderState>;
+  adjust(draftId: string, text: string): Promise<AiTeamBuilderState>;
+  retry(draftId: string): Promise<AiTeamBuilderState>;
+  commit(draftId: string, proposalRevision: number): Promise<AiTeamBuilderState>;
+}
+
 export type AiTeamBuilderIpcResponse =
   | { ok: true; state: AiTeamBuilderState }
   | {
