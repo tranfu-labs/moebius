@@ -1,9 +1,45 @@
+import type { OperatorSession } from "@moebius/console-ui";
+import type { LocalConsoleState } from "./console-state-contract.js";
+
 export function planConsoleEndpoint(base: string, path: string): URL {
   return new URL(path.replace(/^\//u, ""), base.endsWith("/") ? base : `${base}/`);
 }
 
 export function planConsoleErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function planSessionMetadataState(
+  state: LocalConsoleState | null,
+  updated: OperatorSession,
+): LocalConsoleState | null {
+  if (state === null) return null;
+  const mergeSessions = (sessions: OperatorSession[]) => sessions.map((session) =>
+    session.sessionId === updated.sessionId ? { ...session, ...updated } : session);
+  return {
+    ...state,
+    projects: state.projects.map((project) => ({
+      ...project,
+      sessions: mergeSessions(project.sessions),
+    })),
+    project: { ...state.project, sessions: mergeSessions(state.project.sessions) },
+    selectedSession: state.selectedSession?.sessionId === updated.sessionId
+      ? { ...state.selectedSession, ...updated }
+      : state.selectedSession,
+  };
+}
+
+export function planComposerTargetSessionId(
+  sessionId: string | null | undefined,
+  selectedSessionId: string,
+): string {
+  return sessionId ?? selectedSessionId;
+}
+
+export function decideProjectFolderSelectionAvailability(
+  available: boolean,
+): "available" | "unavailable" {
+  return available ? "available" : "unavailable";
 }
 
 export function decideRefreshLease<T>(lease: T | null):

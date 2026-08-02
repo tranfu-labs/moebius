@@ -94,6 +94,7 @@ import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
 import { SidebarConversationView } from "./sidebar-conversation-view.js";
 import { useDesktopRuntimeBridge } from "./use-desktop-runtime-bridge.js";
 import { useConsoleSelectionState } from "./use-console-selection-state.js";
+import { useConsoleStateActions } from "./use-console-state-actions.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -180,8 +181,6 @@ export function OperatorConsoleApp({
     conversationDraftStoreRef.current.clear(key);
     commitComposerDraft(clearConversationComposerDraft(composerDraftRef.current, key));
   }, [commitComposerDraft]);
-  const [isSending, setIsSending] = useState(false);
-  const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
   const agentTeamControllersBundle = useAgentTeamConsole(
@@ -357,65 +356,13 @@ export function OperatorConsoleApp({
       sameMomentIndex: (index) => t("console.rightSidebar.sameMomentIndex", { index }),
     },
   );
-  const commitSidebarSessionMetadata = useCallback((updated: OperatorSession) => {
-    const current = stateRef.current;
-    if (current === null) return;
-    const mergeSessions = (sessions: OperatorSession[]) => sessions.map((session) =>
-      session.sessionId === updated.sessionId ? { ...session, ...updated } : session);
-    const projects = current.projects.map((candidate) => ({
-      ...candidate,
-      sessions: mergeSessions(candidate.sessions),
-    }));
-    const nextState: LocalConsoleState = {
-      ...current,
-      projects,
-      project: {
-        ...current.project,
-        sessions: mergeSessions(current.project.sessions),
-      },
-      selectedSession: current.selectedSession?.sessionId === updated.sessionId
-        ? { ...current.selectedSession, ...updated }
-        : current.selectedSession,
-    };
-    selectionStateBundle.replaceState(nextState);
-  }, []);
-
-  const actions = useMemo(() => new ConsoleStateActions({
-    apiBase,
-    commands: browserConsoleCommandPort,
-    coordinator,
-    t,
-    getSelection: () => selectionRef.current,
-    commitSelection,
-    refresh,
-    composerValue: composerDraft.value,
-    clearComposer: (sessionId) => {
-      const targetSessionId = sessionId ?? selectionRef.current.sessionId;
-      clearComposerDraft(targetSessionId);
-    },
-    getAttachmentIds: () => readyComposerAttachmentIds(managedAttachments.attachments),
-    getResumeRunId: (sessionId) =>
-      conversationDraftStoreRef.current.readResumeRunId(sessionDraftKey(sessionId)),
-    clearAttachments: (sessionId) => managedAttachments.clearDraft(sessionDraftKey(sessionId)),
-    clearResumeRunId: (sessionId) =>
-      conversationDraftStoreRef.current.clearResumeRunId(sessionDraftKey(sessionId)),
-    setMutationKind: setSelectionMutationKind,
-    setSending: setIsSending,
-    setError: setClientError,
-    commitSessionMetadata: commitSidebarSessionMetadata,
-    selectProjectFolder: window.moebius?.selectProjectFolder === undefined
-      ? undefined
-      : () => window.moebius!.selectProjectFolder!(),
-  }), [
-    apiBase,
-    commitSelection,
-    commitSidebarSessionMetadata,
-    clearComposerDraft,
-    composerDraft.value,
-    managedAttachments,
-    refresh,
-    t,
-  ]);
+  const stateActionsBundle = useConsoleStateActions(
+    apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
+    refresh, composerDraft.value, clearComposerDraft, managedAttachments,
+    conversationDraftStoreRef.current, stateRef, selectionStateBundle.replaceState,
+    setClientError, window.moebius,
+  );
+  const actions = stateActionsBundle.actions;
 
   const conversationControllersBundle = useConversationConsole(
     composerDraft, composerDraftRef, commitComposerDraft,
@@ -824,10 +771,10 @@ export function OperatorConsoleApp({
       onViewAgentTeamRegistrationConflict={agentTeamRegistrationBundle.viewConflict}
       onShowAgentTeamRegistrationConflictLocation={agentTeamRegistrationBundle.showConflictLocation}
       onPreserveAgentTeamRegistrationConflicts={agentTeamRegistrationBundle.preserveConflicts}
-      isSending={isSending}
+      isSending={stateActionsBundle.isSending}
       isSubSessionSending={sessionRunActionsBundle.isSending}
-      isSelectionMutationPending={selectionMutationKind !== null}
-      isSessionProjectUpdating={selectionMutationKind === "rebind-session"}
+      isSelectionMutationPending={stateActionsBundle.selectionMutationKind !== null}
+      isSessionProjectUpdating={stateActionsBundle.selectionMutationKind === "rebind-session"}
       isProjectMutationPending={isProjectMutationPending}
       sidebarOpen={sidebarVisibilityPreference === "open"}
       onSidebarOpenChange={setSidebarOpen}
