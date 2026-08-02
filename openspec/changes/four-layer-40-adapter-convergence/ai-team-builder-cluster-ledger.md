@@ -108,9 +108,9 @@ transport control，不需要 permit；若实施中出现新增未分类条件�
 | `runCurrentTurn` L182-267 | 10 | 0 | 4 | 6 | 进入 `turn-runtime.ts`；repair/terminal/phase 进 domain turn plan |
 | external session persistence L287-296 | 4 | 0 | 4 | 0 | 进入 turn runtime + draft-store port，identity 判据进 domain |
 | mutation/load/recovery L307-351 | 7 | 0 | 6 | 1 | mutation 留 service；read/write/recovery 走 draft-store 与 domain plan |
-| stored draft migration L393-447 | 14 | 14 | 0 | 0 | 进入纯 `draft-persistence-plan.ts`，只处理 unknown JSON 值 |
+| stored draft migration L393-447 | 14 | 0 | 0 | 14 | 作为持久数据解释进入纯 `draft-persistence-plan.ts`，不再误归为 wiring |
 | profile/draft/error guards L455-476 | 7 | 6 | 0 | 1 | path/profile/error decision 进入 domain contracts/plans |
-| **复算** | **55** | **25** | **14** | **16** | 三类合计等于原始 AST 条件总数 |
+| **复算** | **55** | **11** | **14** | **30** | 三类合计等于原始 AST 条件总数；14 条 migration 已按评审纠正为数据解释 |
 
 ### 5.2 目标形态
 
@@ -160,3 +160,36 @@ adapter 未分类 21→0 和不新增 permit/root 为准。
    retryability，不出现路径、session id、stdout/stderr；正常请求仍走同一 builder 实例。
 5. 跑 `pnpm check:boundaries`：40 批 debt 从 25 降到 18，五条 file debt 与两条 dependency debt 删除；
    `index.ts` 仍是唯一 AI builder root，新增 application/domain/adapter 均有唯一层归属，permit/root 不增加。
+
+## 7. 实施实绩
+
+| 原主体文件 | 实际逻辑行 | 实际原始条件 | 账面目标 | 结论 |
+| --- | ---: | ---: | --- | --- |
+| `index.ts` | 84 | 5 | <=180 / 5 | root 只剩 wiring；见 `composition-root-audit.md` |
+| `team-writer.ts` | 119 | 4 | <=180 / <=8 | 与 fs/path 抽离同提交完成，改登记为 application |
+| `claude-spawner.ts` | 134 | 10 | <=129 / 10 | 条件目标命中；具名 selector import/call 接缝增加 5 行 |
+| `codex-spawner.ts` | 277 | 16 | <=263 / 16 | 条件目标命中；三种 session plan 调用接缝增加 14 行 |
+| `kimi-spawner.ts` | 185 | 10 | <=174 / 10 | 条件目标命中；具名 selector import/call 接缝增加 11 行 |
+| **合计** | **799** | **45** | **<=926 / <=49** | 总账命中；不把迁入新模块的条件宣称为系统净减少 |
+
+三个 spawner 的单文件行数超过“保持原行数”子预算，已在实施时主动报告；原因是用窄参数显式调用具名
+domain selector，未新增 adapter、业务条件、permit 或间接基类。为压回原行数而改成单行调用或通用配置表会
+降低可读性，因此保留实际值；簇总行数仍比上限少 127 行。
+
+新增 application 实绩：`builder-service.ts` 138 行 / 6 条条件、`turn-runtime.ts` 147 / 7、
+`draft-repository.ts` 36 / 1、`team-writer.ts` 119 / 4，均为单 runtime export、低于 300 行和复杂度 12；
+条件只分派 domain `plan*` 结果。`draft-file-store.ts` 43 / 3，条件均为外部文件错误 codec。
+
+本簇清除 5 条 file debt 与 2 条 dependency debt，40 批 debt **25 -> 18**；condition permit 净增 0，
+composition root 仍为 9 条且 AI builder 只保留 `index.ts` 一条。新增 5 个纯测试文件、18 个纯用例；
+既有 service/writer/spawner/IPC I/O 测试全部保留，测试净删除 0。
+
+实施提交（自 `3d2ac79` 后完整清单）：
+
+1. `8e32731` `test(ai-team-builder): define driver session plans`
+2. `810e947` `refactor(ai-team-builder): isolate provider session selection`
+3. `7a664d5` `test(ai-team-builder): define atomic team write plans`
+4. `d38d638` `refactor(ai-team-builder): separate team write orchestration`
+5. `d7d04d8` `test(ai-team-builder): define draft persistence plans`
+6. `5fed2b6` `test(ai-team-builder): define service and turn plans`
+7. `aaf40d7` `refactor(ai-team-builder): narrow runtime composition root`
