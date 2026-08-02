@@ -5,6 +5,8 @@ import {
 
 const elements = {
   version: document.getElementById("version"),
+  localConsoleDot: document.getElementById("local-console-dot"),
+  localConsoleStatus: document.getElementById("local-console-status"),
   codexDot: document.getElementById("codex-dot"),
   codexStatus: document.getElementById("codex-status"),
   configDot: document.getElementById("config-dot"),
@@ -48,7 +50,18 @@ window.moebius.onStatus((snapshot) => {
 function renderSnapshot(snapshot) {
   elements.version.textContent = `v${snapshot.appVersion}`;
   elements.dataRoot.textContent = snapshot.dataRoot;
+  renderLocalConsole(snapshot.localConsole);
   renderDoctor(snapshot);
+}
+
+function renderLocalConsole(localConsole) {
+  elements.localConsoleDot.className = "dot";
+  elements.localConsoleDot.classList.add(localConsole.status === "running" ? "ok" : localConsole.status === "error" ? "error" : "muted");
+  elements.localConsoleStatus.textContent = localConsole.status === "running"
+    ? t("running")
+    : localConsole.status === "error"
+      ? localConsole.error ?? t("unavailable")
+      : t(localConsole.status);
 }
 
 function renderDoctor(snapshot) {
