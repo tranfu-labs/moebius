@@ -30,9 +30,9 @@
 
 - [x] `pnpm run test --scope ec57cd5`、相关定向测试、`pnpm check:boundaries`、`pnpm typecheck`、
   desktop build、`pnpm brand:check` 全绿
-- [ ] 执行 RA-16：语言错误 fallback、附件失败恢复与发送、停下/重试、A/B 快切、搜索、分析、右栏、
+- [x] 执行 RA-16：语言错误 fallback、附件失败恢复与发送、停下/重试、A/B 快切、搜索、分析、右栏、
   团队编辑保存、重启持久事实；记录入口、操作、屏幕信号和临时 evidence 路径
-- [ ] 明确引用未重叠验收：RA-11R/RA-12R/RA-30D 与 RA-15 不重跑；RA-14 文件管理器/外链/退出协调沿用 40 批
+- [x] 明确引用未重叠验收：RA-11R/RA-12R/RA-30D 与 RA-15 不重跑；RA-14 文件管理器/外链/退出协调沿用 40 批
 - [ ] QA/主理人复核后、合并前运行本 change 唯一一次 Node 24 `pnpm test`，记录各 scope、墙钟、
   真实 I/O 下限及是否达到 ≤110s / ≤40%；未达时解释且收益记 0
 
@@ -61,3 +61,43 @@
    应看到 selection/草稿/host/tab/team 修改均归正确对象；重启后这些事实与已发送附件保持。
 8. QA/主理人复核后跑唯一一次 Node 24 `pnpm test` → 应退出 0并输出四个 scope；报告同一日志的总墙钟与
    真实 I/O duration 下限，目标 ≤110s / ≤40%，未达到时不得删唯一接缝或宣称速度收益。
+
+## RA-16 联合真机记录（QA）
+
+环境：dev Electron（`MOEBIUS_DATA_ROOT=/tmp/moebius-ra10-zT1Ozl` 临时数据根，零 mock），ADR-0002
+CDP 9222 attach 真实窗口；Node v24.18.0；真实 Codex CLI。附件失败以「删除附件记录的 preview 文件
+后触发草稿恢复」构造真实失败。驱动脚本与启动日志留于临时数据根 `driver/` 与 `electron-ra50*.log`。
+
+- **语言错误 fallback（本批核心）通过**。英文界面下触发附件预览恢复失败（preview 文件缺失 →
+  客户端 `attachment-preview-read` 失败码）：MutationObserver 实测渲染出
+  **"The attachment preview could not be loaded."**（role=alert）。切换简体中文后重新触发同一失败：
+  渲染 **"附件预览读取失败。"**，通用条亦为中文（"操作台遇到问题，请打开开发者诊断查看日志。"）。
+  即失败文案按提交失败时的当前语言显示，与候选 C 设计一致。已显示旧错误不随后续切换重译——
+  本场景中错误展示为瞬态（见观察项），无从滞留，与设计「接受的后果」不冲突。
+- **附件发送通过**：会话 C 发送带 `ra13-probe.txt` 的消息，agent 回复逐字列出附件备件
+  （灯泡：2 透镜：1 密封圈：4），附件真实到达 provider。
+- **停下/重试通过，并取到 50 批要求登记的非空 partial 样本**：运行中点「停下主理人」，页面保留
+  中断前正文（"灯泡：2 透镜：1 密封圈：4"）并标 **内容不完整**；终局记录
+  `partialMarkdown="灯泡：2  \n透镜：1  \n密封圈：4"`（非空）、`contentIncomplete=true`、
+  `kind=interrupted/subkind=user`——补齐 10 批 RA-02 只验到空样本的缺口。重试后同会话重跑完成，
+  附件内容再次正确读取。
+- **A/B 快切通过**：A/B 快速往返后两份草稿仍各归原会话（`draft:<sessionId>` 分键），最终
+  selection 指向最后点击。
+- **搜索通过**：按「RA15-KIMI」检索命中目标会话并可打开。
+- **分析通过**：RA15-KIMI 会话消息级「在右侧栏分析这条消息」生成带文本片段的分析草稿，
+  归属正确右栏标签。
+- **右栏标签通过**：切换宿主各恢复自己的标签现场（C＝两个分析会话+项目文件+CEO 过程标签，
+  KIMI 会话＝自己的分析草稿标签）。
+- **团队编辑保存通过**：用户副本「通用助手」CLI kimi→codex 保存，出现「用户覆盖」标记。
+- **重启持久事实通过**：重启后全部会话在列、selection 保持（最后选中的 RA15-KIMI 会话）、
+  A/B 草稿各自保持、中文界面保持、团队 override（CLI=codex + 用户覆盖）保持、未读状态与
+  页面一致（两个分析会话自然未读如实显示）。
+- **未重叠验收显式引用不重跑**：RA-11R/RA-12R/RA-30D（30 批 local 启动、桌面拓扑、历史数据）
+  与 RA-15（三家 provider 链路）与 50 批改动（附件文案与失败码）无重叠，不重跑；RA-14 的
+  文件管理器/外链/退出协调结论沿用 40 批真机记录。
+
+**观察项（不阻塞）**：附件失败的具体文案（role=alert）展示是瞬态的——渲染后约 1 秒内被后续
+成功的状态刷新清掉（`refreshConsoleState` 成功路径 `setError(null)`），用户实际很难读到。
+中英文两条均靠 MutationObserver 才抓到。这不是 50 批引入的行为（refresh 清理 clientError 是
+既有逻辑），但「失败文案翻译正确」对用户的说服力受展示窗口限制，建议产品侧评估是否让附件
+失败固定在 composer 区域而非走全局 clientError。
