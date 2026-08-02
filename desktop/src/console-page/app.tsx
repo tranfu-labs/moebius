@@ -6,7 +6,6 @@ import {
   ConversationSearch,
   type ConversationSearchResultItem,
   resolveNewConversationAgentTeamKey,
-  type AgentTeamInformationInput,
   type AgentTeamSaveAllFailureView,
   type OperatorMessage,
   type OperatorPendingDispatch,
@@ -131,8 +130,6 @@ import {
   planAgentTeamFileManagerTranslationKey,
   planFindOperatorAgentTeam,
   planAgentTeamDetailState,
-  planAgentTeamMemberSelection,
-  planOperatorAgentTeam,
 } from "./agent-team-console-model.js";
 import {
   EMPTY_CONSOLE_PROJECT,
@@ -207,13 +204,7 @@ import { createConversationReadingPositionStore } from "./conversation-reading-p
 import {
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
-  failAgentTeamMemberLoad,
-  finishAgentTeamMemberLoad,
   getAgentTeamKey,
-  getDirtyAgentTeamMemberSlugs,
-  removeAgentTeamDrafts,
-  removeAgentTeamMemberDraft,
-  startAgentTeamMemberLoad,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 import {
@@ -233,9 +224,12 @@ import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
 import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
 import { useAgentTeamCatalog } from "./use-agent-team-catalog.js";
+import { useAgentTeamCopy } from "./use-agent-team-copy.js";
 import { useAgentTeamMemberEditor } from "./use-agent-team-member-editor.js";
+import { useAgentTeamMemberMutations } from "./use-agent-team-member-mutations.js";
 import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
 import { useAgentTeamProfile } from "./use-agent-team-profile.js";
+import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
 import {
   DesktopApplicationRoot,
@@ -603,292 +597,39 @@ export function OperatorConsoleApp({
   }, [state]);
 
 
-  const activateCopiedAgentTeam = useCallback(async (copiedItem: AgentTeamListItem): Promise<string> => {
-    const copiedTeam = planOperatorAgentTeam(copiedItem);
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : { status: "ready", teams: [...current.teams, copiedTeam] });
-
-    const memberSlug = planAgentTeamMemberSelection(copiedTeam, null);
-    agentTeamNavigationBundle.activateSelection(copiedTeam.teamKey, memberSlug);
-
-    if (memberSlug !== null) {
-      agentTeamMemberBundle.commitDrafts(startAgentTeamMemberLoad(
-        agentTeamMemberBundle.draftsRef.current,
-        copiedTeam.teamKey,
-        memberSlug,
-      ));
-      try {
-        const document = await window.moebius?.readAgentTeamMember?.({
-          teamId: copiedTeam.id,
-          ownership: copiedTeam.ownership,
-          memberSlug,
-        });
-        if (document === undefined) {
-          throw new Error(t("desktop.error.duplicateRead"));
-        }
-        agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
-          agentTeamMemberBundle.draftsRef.current,
-          copiedTeam.teamKey,
-          memberSlug,
-          document.agentMarkdown,
-        ));
-      } catch (error) {
-        agentTeamMemberBundle.commitDrafts(failAgentTeamMemberLoad(
-          agentTeamMemberBundle.draftsRef.current,
-          copiedTeam.teamKey,
-          memberSlug,
-          formatError(error),
-        ));
-      }
-    }
-
-    return copiedTeam.teamKey;
-  }, [agentTeamMemberBundle.commitDrafts, t]);
-
+  const agentTeamCopyBundle = useAgentTeamCopy({
+    api: window.moebius,
+    catalog: agentTeamCatalogBundle,
+    member: agentTeamMemberBundle,
+    navigation: agentTeamNavigationBundle,
+    t,
+  });
+  const agentTeamMemberMutationBundle = useAgentTeamMemberMutations({
+    api: window.moebius,
+    catalog: agentTeamCatalogBundle,
+    copy: agentTeamCopyBundle,
+    member: agentTeamMemberBundle,
+    navigation: agentTeamNavigationBundle,
+    t,
+  });
+  const agentTeamRecordMutationBundle = useAgentTeamRecordMutations({
+    api: window.moebius,
+    catalog: agentTeamCatalogBundle,
+    copy: agentTeamCopyBundle,
+    member: agentTeamMemberBundle,
+    navigation: agentTeamNavigationBundle,
+    profile: agentTeamProfileBundle,
+    t,
+  });
   const agentTeamBuilderBundle = useAgentTeamBuilderController({
     api: window.moebius,
     storage: window.localStorage,
     storageKey: AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
     createDraftId: createAgentTeamBuilderDraftId,
-    activateCopiedTeam: activateCopiedAgentTeam,
+    activateCopiedTeam: agentTeamCopyBundle.activateCopiedTeam,
     replaceTeams: (teams) => agentTeamCatalogBundle.setState({ status: "ready", teams }),
     t,
   });
-
-  const duplicateBuiltInAgentTeam = useCallback(async (teamKey: string): Promise<string> => {
-    const source = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const duplicateTeam = window.moebius?.duplicateBuiltInAgentTeam;
-    if (source === undefined || source.ownership !== "system" || duplicateTeam === undefined) {
-      throw new Error(t("desktop.error.duplicateBuiltIn"));
-    }
-
-    const copiedItem = await duplicateTeam({ teamId: source.id, ownership: "system" });
-    return activateCopiedAgentTeam(copiedItem);
-  }, [activateCopiedAgentTeam, agentTeamCatalogBundle.state, t]);
-
-  const assertAgentTeamDraftsResolved = useCallback((teamKey: string) => {
-    if (getDirtyAgentTeamMemberSlugs(agentTeamMemberBundle.draftsRef.current, teamKey).length > 0) {
-      throw new Error(t("desktop.error.unsavedTeam"));
-    }
-  }, [t]);
-
-  const duplicateUserAgentTeam = useCallback(async (teamKey: string): Promise<string> => {
-    assertAgentTeamDraftsResolved(teamKey);
-    const source = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const duplicateTeam = window.moebius?.duplicateUserAgentTeam;
-    if (source === undefined || source.ownership !== "user" || duplicateTeam === undefined) {
-      throw new Error(t("desktop.error.duplicateUserTeam"));
-    }
-    const copiedItem = await duplicateTeam({ teamId: source.id, ownership: "user" });
-    return activateCopiedAgentTeam(copiedItem);
-  }, [activateCopiedAgentTeam, agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, t]);
-
-  const duplicateAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    assertAgentTeamDraftsResolved(teamKey);
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const duplicateMember = window.moebius?.duplicateAgentTeamMember;
-    if (team === undefined || duplicateMember === undefined) {
-      throw new Error(t("desktop.error.duplicateAgent"));
-    }
-    const result = await duplicateMember({
-      teamId: team.id,
-      ownership: team.ownership,
-      memberSlug,
-    });
-    const updatedTeam = planOperatorAgentTeam(result.team);
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
-        });
-    agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
-      agentTeamMemberBundle.draftsRef.current,
-      teamKey,
-      result.member.slug,
-      result.member.agentMarkdown,
-    ));
-    agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: result.member.slug });
-    agentTeamMemberBundle.setSaveAllFailures([]);
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, t]);
-
-  const trashAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    assertAgentTeamDraftsResolved(teamKey);
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const trashMember = window.moebius?.trashAgentTeamMember;
-    if (team === undefined || trashMember === undefined) {
-      throw new Error(t("desktop.error.deleteAgent"));
-    }
-    if (team.primaryAgentSlug === memberSlug) {
-      throw new Error(t("desktop.error.deletePrimary"));
-    }
-    const updatedItem = await trashMember({ teamId: team.id, ownership: "user", memberSlug });
-    const updatedTeam = planOperatorAgentTeam(updatedItem);
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
-        });
-    agentTeamMemberBundle.commitDrafts(removeAgentTeamMemberDraft(
-      agentTeamMemberBundle.draftsRef.current,
-      teamKey,
-      memberSlug,
-    ));
-    const nextMemberSlug = updatedTeam.primaryAgentSlug !== null
-      && updatedTeam.members.some((member) => member.slug === updatedTeam.primaryAgentSlug)
-      ? updatedTeam.primaryAgentSlug
-      : updatedTeam.members[0]?.slug ?? null;
-    agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: nextMemberSlug });
-    agentTeamMemberBundle.setSaveAllFailures([]);
-    if (nextMemberSlug !== null) {
-      void agentTeamMemberBundle.loadMember(teamKey, nextMemberSlug);
-    }
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, agentTeamMemberBundle.loadMember, t]);
-
-  const trashUserAgentTeam = useCallback(async (teamKey: string): Promise<void> => {
-    assertAgentTeamDraftsResolved(teamKey);
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const trashTeam = window.moebius?.trashUserAgentTeam;
-    if (team === undefined || team.ownership !== "user" || trashTeam === undefined) {
-      throw new Error(t("desktop.error.trashTeam"));
-    }
-    await trashTeam({ teamId: team.id, ownership: "user" });
-    const remainingTeams = agentTeamCatalogBundle.state.status === "ready"
-      ? agentTeamCatalogBundle.state.teams.filter((candidate) => candidate.teamKey !== teamKey)
-      : [];
-    agentTeamCatalogBundle.setState({ status: "ready", teams: remainingTeams });
-    agentTeamMemberBundle.commitDrafts(removeAgentTeamDrafts(agentTeamMemberBundle.draftsRef.current, teamKey));
-    const fallbackTeam = remainingTeams[0];
-    const fallbackMemberSlug = fallbackTeam === undefined
-      ? null
-      : fallbackTeam.primaryAgentSlug !== null
-          && fallbackTeam.members.some((member) => member.slug === fallbackTeam.primaryAgentSlug)
-        ? fallbackTeam.primaryAgentSlug
-        : fallbackTeam.members[0]?.slug ?? null;
-    agentTeamCatalogBundle.setSelection(fallbackTeam === undefined
-      ? null
-      : { teamKey: fallbackTeam.teamKey, memberSlug: fallbackMemberSlug });
-    agentTeamNavigationBundle.close();
-    agentTeamMemberBundle.setSaveAllFailures([]);
-    agentTeamProfileBundle.clearPrimaryAgentChange();
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, t]);
-
-  const createAgentTeam = useCallback(async (
-    information: AgentTeamInformationInput,
-  ): Promise<OperatorAgentTeam> => {
-    const createTeam = window.moebius?.createAgentTeam;
-    if (createTeam === undefined) {
-      throw new Error(t("desktop.error.createTeam"));
-    }
-    const created = planOperatorAgentTeam(await createTeam(information));
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : { status: "ready", teams: [...current.teams, created] });
-    agentTeamNavigationBundle.activate(created.teamKey, null);
-    agentTeamProfileBundle.clearPrimaryAgentChange();
-    return created;
-  }, [t]);
-
-  const addAgentTeamMember = useCallback(async (teamKey: string): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const addMember = window.moebius?.addAgentTeamMember;
-    if (team === undefined || addMember === undefined) {
-      throw new Error(t("desktop.error.addAgent"));
-    }
-    const result = await addMember({ teamId: team.id, ownership: team.ownership });
-    const updatedTeam = planOperatorAgentTeam(result.team);
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
-        });
-    agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
-      agentTeamMemberBundle.draftsRef.current,
-      teamKey,
-      result.member.slug,
-      result.member.agentMarkdown,
-    ));
-    agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: result.member.slug });
-    agentTeamMemberBundle.setSaveAllFailures([]);
-  }, [agentTeamCatalogBundle.state, agentTeamMemberBundle.commitDrafts, t]);
-
-  const updateAgentTeamInformation = useCallback(async (
-    teamKey: string,
-    information: AgentTeamInformationInput,
-  ): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const updateInformation = window.moebius?.updateAgentTeamInformation;
-    if (team === undefined || updateInformation === undefined) {
-      throw new Error(t("desktop.error.updateTeam"));
-    }
-    const updatedTeam = planOperatorAgentTeam(await updateInformation({
-      teamId: team.id,
-      ownership: team.ownership,
-      ...information,
-    }));
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
-      });
-  }, [agentTeamCatalogBundle.state, t]);
-
-  const openAgentTeamLocation = useCallback(async (teamKey: string, memberSlug?: string): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const openLocation = window.moebius?.openAgentTeamLocation;
-    if (team === undefined || openLocation === undefined) {
-      throw new Error(t("desktop.error.openLocation"));
-    }
-    await openLocation({
-      teamId: team.id,
-      ownership: team.ownership,
-      ...(memberSlug === undefined ? {} : { memberSlug }),
-    });
-  }, [agentTeamCatalogBundle.state, t]);
-
-  const relocateAgentTeam = useCallback(async (teamKey: string): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const selectFolder = window.moebius?.selectAgentTeamRelocationFolder;
-    const relocateRecord = window.moebius?.relocateAgentTeamRecord;
-    if (team === undefined || team.ownership !== "user" || selectFolder === undefined || relocateRecord === undefined) {
-      throw new Error(t("desktop.error.relocateTeam"));
-    }
-    const directory = await selectFolder();
-    if (directory === null) {
-      return;
-    }
-    const updated = planOperatorAgentTeam(await relocateRecord({
-      teamId: team.id,
-      ownership: team.ownership,
-      directory,
-    }));
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updated : candidate),
-        });
-  }, [agentTeamCatalogBundle.state, t]);
-
-  const removeAgentTeamRecord = useCallback(async (teamKey: string): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const removeRecord = window.moebius?.removeAgentTeamRecord;
-    if (team === undefined || team.ownership !== "user" || removeRecord === undefined) {
-      throw new Error(t("desktop.error.removeTeamRecord"));
-    }
-    await removeRecord({ teamId: team.id, ownership: "user" });
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : { status: "ready", teams: current.teams.filter((candidate) => candidate.teamKey !== teamKey) });
-    if (agentTeamNavigationBundle.activeTeamKey === teamKey) agentTeamNavigationBundle.close();
-    agentTeamCatalogBundle.setSelection((current) => current?.teamKey === teamKey ? null : current);
-    agentTeamMemberBundle.setSaveAllFailures([]);
-    agentTeamProfileBundle.clearPrimaryAgentChange();
-  }, [agentTeamCatalogBundle.state, t]);
 
   const agentTeamDetailState = useMemo(() => planAgentTeamDetailState({
     activeTeamKey: agentTeamNavigationBundle.activeTeamKey,
@@ -3491,7 +3232,7 @@ export function OperatorConsoleApp({
         void refresh(selectionRef.current);
       }}
       onRetryAgentTeams={agentTeamCatalogBundle.refresh}
-      onCreateAgentTeam={createAgentTeam}
+      onCreateAgentTeam={agentTeamRecordMutationBundle.createTeam}
       onOpenAgentTeam={agentTeamNavigationBundle.open}
       onCloseAgentTeam={() => {
         agentTeamNavigationBundle.close();
@@ -3499,8 +3240,8 @@ export function OperatorConsoleApp({
       }}
       onSelectAgentTeamMember={agentTeamNavigationBundle.selectMember}
       onChangeAgentTeamPrimaryAgent={agentTeamProfileBundle.changePrimaryAgent}
-      onAddAgentTeamMember={addAgentTeamMember}
-      onUpdateAgentTeamInformation={updateAgentTeamInformation}
+      onAddAgentTeamMember={agentTeamMemberMutationBundle.addMember}
+      onUpdateAgentTeamInformation={agentTeamRecordMutationBundle.updateInformation}
       onChangeAgentTeamMember={(teamKey, memberSlug, agentMarkdown) => {
         agentTeamMemberBundle.commitDrafts(updateAgentTeamMemberDraft(
           agentTeamMemberBundle.draftsRef.current,
@@ -3531,18 +3272,18 @@ export function OperatorConsoleApp({
       onSaveAgentExecutionProfile={agentTeamProfileBundle.saveExecutionProfile}
       onRestoreAgentRecommendedProfile={agentTeamProfileBundle.restoreRecommendedProfile}
       onApplyOfficialAgentTeamUpdate={agentTeamProfileBundle.applyOfficialUpdate}
-      onDuplicateBuiltInAgentTeam={duplicateBuiltInAgentTeam}
+      onDuplicateBuiltInAgentTeam={agentTeamCopyBundle.duplicateBuiltIn}
       onRecheckAgentTeam={agentTeamCatalogBundle.refresh}
-      onRelocateAgentTeam={relocateAgentTeam}
-      onRemoveAgentTeamRecord={removeAgentTeamRecord}
+      onRelocateAgentTeam={agentTeamRecordMutationBundle.relocateTeam}
+      onRemoveAgentTeamRecord={agentTeamRecordMutationBundle.removeRecord}
       agentTeamFileManagerLabel={t(planAgentTeamFileManagerTranslationKey(
         window.moebius?.agentTeamFileManagerKind ?? "file-manager",
       ))}
-      onOpenAgentTeamLocation={openAgentTeamLocation}
-      onDuplicateUserAgentTeam={duplicateUserAgentTeam}
-      onDuplicateAgentTeamMember={duplicateAgentTeamMember}
-      onTrashAgentTeamMember={trashAgentTeamMember}
-      onTrashUserAgentTeam={trashUserAgentTeam}
+      onOpenAgentTeamLocation={agentTeamRecordMutationBundle.openLocation}
+      onDuplicateUserAgentTeam={agentTeamCopyBundle.duplicateUser}
+      onDuplicateAgentTeamMember={agentTeamMemberMutationBundle.duplicateMember}
+      onTrashAgentTeamMember={agentTeamMemberMutationBundle.trashMember}
+      onTrashUserAgentTeam={agentTeamRecordMutationBundle.trashTeam}
       onViewAgentTeamRegistrationConflict={agentTeamRegistrationBundle.viewConflict}
       onShowAgentTeamRegistrationConflictLocation={agentTeamRegistrationBundle.showConflictLocation}
       onPreserveAgentTeamRegistrationConflicts={agentTeamRegistrationBundle.preserveConflicts}

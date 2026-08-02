@@ -361,3 +361,79 @@ export function planOptionalOperatorAgentTeam(
 ): OperatorAgentTeam | null {
   return item === null ? null : planOperatorAgentTeam(item);
 }
+
+export function planAgentTeamMutation(
+  team: OperatorAgentTeam | undefined,
+  ownership: "any" | "system" | "user",
+  hasOperation: boolean,
+): "run" | "unavailable" {
+  if (team === undefined || !hasOperation) return "unavailable";
+  return ownership === "any" || team.ownership === ownership ? "run" : "unavailable";
+}
+
+export function planAgentTeamDirtyGuard(dirtyCount: number): "continue" | "reject" {
+  return dirtyCount === 0 ? "continue" : "reject";
+}
+
+export function planAgentTeamCatalogAppend(
+  state: OperatorAgentTeamsState,
+  added: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  return state.status === "ready"
+    ? { status: "ready", teams: [...state.teams, added] }
+    : state;
+}
+
+export function planAgentTeamMemberRemoval(
+  team: OperatorAgentTeam | undefined,
+  memberSlug: string,
+  hasOperation: boolean,
+): "remove" | "primary" | "unavailable" {
+  if (team === undefined || !hasOperation) return "unavailable";
+  return team.primaryAgentSlug === memberSlug ? "primary" : "remove";
+}
+
+export function planAgentTeamCatalogRemove(
+  state: OperatorAgentTeamsState,
+  teamKey: string,
+): OperatorAgentTeamsState {
+  return state.status === "ready"
+    ? { status: "ready", teams: state.teams.filter((candidate) => candidate.teamKey !== teamKey) }
+    : { status: "ready", teams: [] };
+}
+
+export function planAgentTeamCatalogTeams(state: OperatorAgentTeamsState): OperatorAgentTeam[] {
+  return state.status === "ready" ? state.teams : [];
+}
+
+export function planAgentTeamFallbackSelection(
+  teams: readonly OperatorAgentTeam[],
+): AgentTeamSelection | null {
+  const team = teams[0];
+  return team === undefined
+    ? null
+    : { teamKey: team.teamKey, memberSlug: planAgentTeamMemberSelection(team, null) };
+}
+
+export function planAgentTeamSelectionAfterRemoval(
+  selection: AgentTeamSelection | null,
+  teamKey: string,
+): AgentTeamSelection | null {
+  return selection?.teamKey === teamKey ? null : selection;
+}
+
+export function planAgentTeamShouldClose(activeTeamKey: string | null, teamKey: string): boolean {
+  return activeTeamKey === teamKey;
+}
+
+export function planAgentTeamRelocationDirectory(directory: string | null): "relocate" | "cancel" {
+  return directory === null ? "cancel" : "relocate";
+}
+
+export function planAgentTeamRelocation(
+  team: OperatorAgentTeam | undefined,
+  hasFolderSelection: boolean,
+  hasRelocation: boolean,
+): "run" | "unavailable" {
+  return team?.ownership === "user" && hasFolderSelection && hasRelocation ? "run" : "unavailable";
+}

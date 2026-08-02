@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   planAgentTeamBuilderDraftSource,
   planAgentTeamCatalogLoad,
+  planAgentTeamCatalogRemove,
+  planAgentTeamFallbackSelection,
+  planAgentTeamMemberRemoval,
   planBuilderOperation,
   planBuilderRetry,
   planSelectedBuilderTeamId,
@@ -48,4 +51,38 @@ describe("agent team console model", () => {
       state: { status: "ready" },
     });
   });
+
+  it("preserves a usable fallback after team and member deletion decisions", () => {
+    const state = {
+      status: "ready" as const,
+      teams: [
+        operatorTeam("user:first", "first", "lead"),
+        operatorTeam("user:second", "second", "editor"),
+      ],
+    };
+    const remaining = planAgentTeamCatalogRemove(state, "user:first");
+    expect(planAgentTeamFallbackSelection(remaining.status === "ready" ? remaining.teams : []))
+      .toEqual({ teamKey: "user:second", memberSlug: "editor" });
+    expect(planAgentTeamMemberRemoval(state.teams[0], "lead", true)).toBe("primary");
+    expect(planAgentTeamMemberRemoval(state.teams[0], "writer", true)).toBe("remove");
+    expect(planAgentTeamMemberRemoval(state.teams[0], "writer", false)).toBe("unavailable");
+  });
 });
+
+function operatorTeam(teamKey: string, id: string, primaryAgentSlug: string) {
+  return {
+    teamKey,
+    id,
+    ownership: "user" as const,
+    name: id,
+    description: null,
+    primaryAgentSlug,
+    memberOrder: [primaryAgentSlug],
+    members: [{ slug: primaryAgentSlug, displayName: primaryAgentSlug, description: "", available: true }],
+    status: "usable" as const,
+    canCreateConversation: true,
+    canEditContent: true,
+    canDeleteTeam: true,
+    issues: [],
+  };
+}
