@@ -1,5 +1,5 @@
 import type { CeoScript } from "../ceo-scripts.js";
-import { parseCeoOrchestrationOutput } from "../ceo-orchestration.js";
+import { parseCeoOrchestrationOutput } from "./ceo-orchestration-parser.js";
 import {
   localChildSessionId,
   localOrchestrationKey,

@@ -486,6 +486,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/canonical-json.ts",
   "src/local-console/child-session-summary.ts",
   "src/local-console/codex-thread-link.ts",
+  "src/local-console/ceo-orchestration-parser.ts",
   "src/local-console/execution-context.ts",
   "src/local-console/member-identity.ts",
   "src/local-console/message-command-plan.ts",

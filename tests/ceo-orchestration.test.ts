@@ -5,15 +5,17 @@ import {
   buildCeoRoundtableCompletionKey,
   buildCeoRoundtableKey,
   buildGoalIntakeProposalKey,
-  parseCeoOrchestrationOutput,
   renderCeoChildIssueBody,
   renderCeoRoundtableChildIssueBody,
   renderCeoRoundtableParentSummaryBody,
   renderCeoRoundtableRouteBody,
   renderGoalIntakeProposalBody,
+} from "../src/ceo-orchestration.js";
+import {
+  parseCeoOrchestrationOutput,
   type CeoChildIssueDescriptor,
   type CeoOrchestrationGroup,
-} from "../src/ceo-orchestration.js";
+} from "../src/local-console/ceo-orchestration-parser.js";
 import type { CeoScript } from "../src/ceo-scripts.js";
 import { makeIssueSource } from "../src/issue-source.js";
 

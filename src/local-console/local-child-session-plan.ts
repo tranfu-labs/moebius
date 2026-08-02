@@ -4,7 +4,7 @@ import type {
   CeoChildIssueDescriptor,
   CeoOrchestrationGroup,
   ParseCeoOrchestrationResult,
-} from "../ceo-orchestration.js";
+} from "./ceo-orchestration-parser.js";
 import { CEO_ORCHESTRATION_STAGE } from "../stages.js";
 
 export function collectLocalCeoLedgerTaskIds(finalText: string): string[] {
