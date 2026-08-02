@@ -9,14 +9,26 @@ import {
 } from "./conversation-draft-model.js";
 import { SessionViewTransitionQueue } from "./console-state-coordinator.js";
 
-export function useConversationTransition(input: {
-  composerOwnerKey: ConversationDraftKey;
-  selectedSessionId: string;
+interface ConversationTransitionActions {
   transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
   sendMessage(): Promise<void>;
-  setError(error: string): void;
-  t: Translate;
-}) {
+}
+
+export function useConversationTransition(
+  composerOwnerKey: ConversationDraftKey,
+  selectedSessionId: string,
+  actions: ConversationTransitionActions,
+  setError: (error: string) => void,
+  t: Translate,
+) {
+  const input = {
+    composerOwnerKey,
+    selectedSessionId,
+    transitionSessionView: actions.transitionSessionView,
+    sendMessage: actions.sendMessage,
+    setError,
+    t,
+  };
   const inputRef = useRef(input);
   inputRef.current = input;
   const queueRef = useRef(new SessionViewTransitionQueue());

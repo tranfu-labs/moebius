@@ -217,15 +217,7 @@ import type {
 } from "../settings-contract.js";
 import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
-import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
-import { useAgentTeamCatalog } from "./use-agent-team-catalog.js";
-import { useAgentTeamCopy } from "./use-agent-team-copy.js";
-import { useAgentTeamMemberEditor } from "./use-agent-team-member-editor.js";
-import { useAgentTeamMemberMutations } from "./use-agent-team-member-mutations.js";
-import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
-import { useAgentTeamProfile } from "./use-agent-team-profile.js";
-import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
-import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
+import { useAgentTeamConsole } from "./use-agent-team-console.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
 import { useConversationSearch } from "./use-conversation-search.js";
@@ -355,8 +347,6 @@ interface LocalConsoleState {
   lastError: string | null;
 }
 
-const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
-
 declare global {
   interface Window {
     moebius?: DesktopApi;
@@ -478,27 +468,18 @@ export function OperatorConsoleApp({
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
-  const agentTeamCatalogBundle = useAgentTeamCatalog(window.moebius);
-  const agentTeamMemberBundle = useAgentTeamMemberEditor({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    t,
-  });
-  const agentTeamNavigationBundle = useAgentTeamNavigation({
-    catalog: agentTeamCatalogBundle,
-    member: agentTeamMemberBundle,
-  });
-  const agentTeamProfileBundle = useAgentTeamProfile({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    t,
-  });
-  const agentTeamRegistrationBundle = useAgentTeamRegistration({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    open: agentTeamNavigationBundle.open,
-    t,
-  });
+  const agentTeamControllersBundle = useAgentTeamConsole(
+    window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t,
+  );
+  const agentTeamCatalogBundle = agentTeamControllersBundle.catalog;
+  const agentTeamMemberBundle = agentTeamControllersBundle.member;
+  const agentTeamNavigationBundle = agentTeamControllersBundle.navigation;
+  const agentTeamProfileBundle = agentTeamControllersBundle.profile;
+  const agentTeamRegistrationBundle = agentTeamControllersBundle.registration;
+  const agentTeamCopyBundle = agentTeamControllersBundle.copy;
+  const agentTeamMemberMutationBundle = agentTeamControllersBundle.memberMutations;
+  const agentTeamRecordMutationBundle = agentTeamControllersBundle.recordMutations;
+  const agentTeamBuilderBundle = agentTeamControllersBundle.builder;
   const cliInstallationsBundle = useActiveCliInstallationsBundle(window.moebius);
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,
@@ -583,42 +564,6 @@ export function OperatorConsoleApp({
           .map((session) => session.sessionId)),
     );
   }, [state]);
-
-
-  const agentTeamCopyBundle = useAgentTeamCopy({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    member: agentTeamMemberBundle,
-    navigation: agentTeamNavigationBundle,
-    t,
-  });
-  const agentTeamMemberMutationBundle = useAgentTeamMemberMutations({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    copy: agentTeamCopyBundle,
-    member: agentTeamMemberBundle,
-    navigation: agentTeamNavigationBundle,
-    t,
-  });
-  const agentTeamRecordMutationBundle = useAgentTeamRecordMutations({
-    api: window.moebius,
-    catalog: agentTeamCatalogBundle,
-    copy: agentTeamCopyBundle,
-    member: agentTeamMemberBundle,
-    navigation: agentTeamNavigationBundle,
-    profile: agentTeamProfileBundle,
-    t,
-  });
-  const agentTeamBuilderBundle = useAgentTeamBuilderController({
-    api: window.moebius,
-    storage: window.localStorage,
-    storageKey: AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
-    createDraftId: createAgentTeamBuilderDraftId,
-    activateCopiedTeam: agentTeamCopyBundle.activateCopiedTeam,
-    replaceTeams: (teams) => agentTeamCatalogBundle.setState({ status: "ready", teams }),
-    t,
-  });
-
   const agentTeamDetailState = useMemo(() => planAgentTeamDetailState({
     activeTeamKey: agentTeamNavigationBundle.activeTeamKey,
     catalog: agentTeamCatalogBundle.state,
@@ -1274,33 +1219,14 @@ export function OperatorConsoleApp({
     t,
   ]);
 
-  const conversationTransitionInput = {
-    composerOwnerKey: composerDraft.key,
-    selectedSessionId: selection.sessionId,
-    transitionSessionView: actions.transitionSessionView,
-    sendMessage: actions.sendMessage,
-    setError: setClientError,
-    t,
-  };
-  const conversationTransitionBundle = useConversationTransition(conversationTransitionInput);
-  const conversationNavigationInput = {
-    projects,
-    selectionMutationPending: () => coordinatorRef.current.isSelectionMutationPending,
-    getSelection: () => selectionRef.current,
-    enableSelectionPersistence: () => { selectionPersistenceEnabledRef.current = true; },
-    hideNewConversation: () => dispatchNewConversation({ type: "hide" }),
-    commitRoute: commitPresentationRoute,
-    activateComposer: activateComposerDraft,
-    selectSession: actions.selectSession,
-    readTabs: (hostSessionId: string) => rightSidebarTabsStoreRef.current.read(hostSessionId),
-    writeTabs: (hostSessionId: string, tabs: RightSidebarTabsState) =>
-      rightSidebarTabsStoreRef.current.write(hostSessionId, tabs),
-    openTab: openRightSidebarSourceTab,
-    commitTabs: setRightSidebarTabs,
-    setRightSidebarOpen,
-    queueTransition: conversationTransitionBundle.queueTransition,
-  };
-  const conversationNavigationBundle = useConversationNavigation(conversationNavigationInput);
+  const conversationTransitionBundle = useConversationTransition(
+    composerDraft.key, selection.sessionId, actions, setClientError, t,
+  );
+  const conversationNavigationBundle = useConversationNavigation(
+    projects, coordinatorRef.current, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
+    commitPresentationRoute, activateComposerDraft, actions, rightSidebarTabsStoreRef.current,
+    openRightSidebarSourceTab, setRightSidebarTabs, setRightSidebarOpen, conversationTransitionBundle,
+  );
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
 
   const allSidebarSessions = useMemo(

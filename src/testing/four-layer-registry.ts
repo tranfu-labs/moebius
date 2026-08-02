@@ -116,6 +116,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-agent-team-builder-finalization.ts",
   "desktop/src/console-page/use-agent-team-builder-session.ts",
   "desktop/src/console-page/use-agent-team-catalog.ts",
+  "desktop/src/console-page/use-agent-team-console.ts",
   "desktop/src/console-page/use-agent-team-copy.ts",
   "desktop/src/console-page/use-agent-team-draft-state.ts",
   "desktop/src/console-page/use-agent-team-external-change.ts",

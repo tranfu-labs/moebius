@@ -5,11 +5,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Translate } from "@moebius/console-ui";
 
+import type { ConversationDraftKey } from "../src/console-page/conversation-draft-model.js";
 import { useConversationTransition } from "../src/console-page/use-conversation-transition.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-type TransitionInput = Parameters<typeof useConversationTransition>[0];
+interface TransitionInput {
+  composerOwnerKey: ConversationDraftKey;
+  selectedSessionId: string;
+  transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
+  sendMessage(): Promise<void>;
+  setError(error: string): void;
+  t: Translate;
+}
 type TransitionBundle = ReturnType<typeof useConversationTransition>;
 
 describe("conversation transition controller", () => {
@@ -74,7 +82,13 @@ describe("conversation transition controller", () => {
   }
 
   function Harness(props: { input: TransitionInput }): null {
-    latest = useConversationTransition(props.input);
+    latest = useConversationTransition(
+      props.input.composerOwnerKey,
+      props.input.selectedSessionId,
+      props.input,
+      props.input.setError,
+      props.input.t,
+    );
     return null;
   }
 });

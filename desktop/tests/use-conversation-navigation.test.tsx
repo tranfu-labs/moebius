@@ -5,12 +5,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperatorProject, OperatorSession, RightSidebarTabsState } from "@moebius/console-ui";
 
+import { ConsoleStateCoordinator } from "../src/console-page/console-state-coordinator.js";
 import { useConversationNavigation } from "../src/console-page/use-conversation-navigation.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-type NavigationInput = Parameters<typeof useConversationNavigation>[0];
 type NavigationBundle = ReturnType<typeof useConversationNavigation>;
+type NavigationInput = ReturnType<typeof input>;
 
 describe("conversation navigation controller", () => {
   let host: HTMLDivElement;
@@ -43,7 +44,10 @@ describe("conversation navigation controller", () => {
     }));
     expect(current.activateComposer).toHaveBeenCalledWith("source");
     expect(current.selectSession).toHaveBeenCalledWith({ projectId: "local", sessionId: "source" });
-    expect(current.writeTabs).toHaveBeenCalledWith("source", expect.objectContaining({ activeTabId: "conversation-analysis" }));
+    expect(current.tabsStore.write).toHaveBeenCalledWith(
+      "source",
+      expect.objectContaining({ activeTabId: "conversation-analysis" }),
+    );
     expect(current.setRightSidebarOpen).toHaveBeenCalledWith(true);
     expect(current.queueTransition).toHaveBeenCalledWith("source", "analysis");
   });
@@ -62,40 +66,53 @@ describe("conversation navigation controller", () => {
   }
 
   function Harness(props: { input: NavigationInput }): null {
-    latest = useConversationNavigation(props.input);
+    const next = props.input;
+    latest = useConversationNavigation(
+      next.projects,
+      next.coordinator,
+      next.selectionRef,
+      next.persistenceRef,
+      next.runtime.dispatchNewConversation,
+      next.runtime.commitRoute,
+      next.runtime.activateComposer,
+      next.runtime,
+      next.runtime.tabsStore,
+      next.runtime.openTab,
+      next.runtime.commitTabs,
+      next.runtime.setRightSidebarOpen,
+      next.runtime,
+    );
     return null;
   }
 });
 
-function input(runtime: ReturnType<typeof ports>, pending = false): NavigationInput {
+function input(runtime: ReturnType<typeof ports>, pending = false) {
+  const coordinator = new ConsoleStateCoordinator();
+  if (pending) coordinator.beginSelectionMutation("open-project");
   return {
     projects: [project()],
-    selectionMutationPending: () => pending,
-    getSelection: () => ({ projectId: "local", sessionId: "source" }),
-    enableSelectionPersistence: runtime.enableSelectionPersistence,
-    hideNewConversation: runtime.hideNewConversation,
-    commitRoute: runtime.commitRoute,
-    activateComposer: runtime.activateComposer,
-    selectSession: runtime.selectSession,
-    readTabs: runtime.readTabs,
-    writeTabs: runtime.writeTabs,
-    openTab: runtime.openTab,
-    commitTabs: runtime.commitTabs,
-    setRightSidebarOpen: runtime.setRightSidebarOpen,
-    queueTransition: runtime.queueTransition,
+    coordinator,
+    selectionRef: { current: { projectId: "local", sessionId: "source" } },
+    persistenceRef: { current: false },
+    runtime,
   };
 }
 
 function ports() {
   const tabs: RightSidebarTabsState = { tabs: [], activeTabId: null };
   return {
-    enableSelectionPersistence: vi.fn(),
-    hideNewConversation: vi.fn(),
+    dispatchNewConversation: vi.fn(),
     commitRoute: vi.fn(),
     activateComposer: vi.fn(),
     selectSession: vi.fn(),
-    readTabs: vi.fn(() => tabs),
-    writeTabs: vi.fn(),
+    tabsStore: {
+      read: vi.fn(() => tabs),
+      write: vi.fn(),
+      promoteConversationDraft: vi.fn(() => []),
+      renameConversation: vi.fn(() => []),
+      removeSession: vi.fn(),
+      clearHosts: vi.fn(),
+    },
     openTab: vi.fn((_state, source) => ({
       tabs: [{ ...source, closable: true as const }],
       activeTabId: source.id,
