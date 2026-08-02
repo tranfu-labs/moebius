@@ -83,14 +83,11 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { createRoot } from "react-dom/client";
 import {
   loadExecutionProfileRegistry,
-  restoreConsoleSession,
-  type SessionSearchResult,
 } from "./console-api-client.js";
 import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import {
   planCanonicalConversationTabTitles,
-  planConversationProjectContext,
   planConversationTabDiscriminators,
 } from "./console-presentation-model.js";
 import {
@@ -135,7 +132,6 @@ import {
   reduceNewConversationDraft,
 } from "./new-conversation.js";
 import {
-  conversationTabSourceKey,
   createRightSidebarTabsStore,
   parseConversationTabSourceKey,
 } from "./right-sidebar-tabs-store.js";
@@ -189,6 +185,7 @@ import { browserSessionRunPort } from "./session-run-browser-port.js";
 import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
+import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -786,13 +783,14 @@ export function OperatorConsoleApp({
     (sessionId, messageId) => conversationReadingPositionStoreRef.current.write(sessionId, messageId),
     apiBase, stateRef, presentationRouteRef, sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, commitConsoleState, commitSelection,
-    browserConversationAnalysisReferencePort, fetch, setSessionAnalysisNotice,
+    browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
   );
   const conversationTransitionBundle = conversationControllersBundle.transition;
   const conversationNavigationBundle = conversationControllersBundle.navigation;
   const newConversationSubmissionBundle = conversationControllersBundle.submission;
   const analysisNavigationBundle = conversationControllersBundle.analysisNavigation;
   const analyzeConversation = conversationControllersBundle.analysis.analyze;
+  const openSearchedSession = conversationControllersBundle.searchedSession.openSearchedSession;
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
@@ -992,68 +990,6 @@ export function OperatorConsoleApp({
     setRightSidebarOpen,
     state,
   ]);
-
-  const openSearchedSession = useCallback(async (
-    result: SessionSearchResult,
-    restore: boolean,
-  ) => {
-    if (apiBase === null) return false;
-    try {
-      const target = restore
-        ? await restoreConsoleSession({
-            apiBase,
-            sessionId: result.session.sessionId,
-            fetch,
-          })
-        : result.session;
-      const currentState = stateRef.current;
-      const origin = target.originSessionId == null
-        ? undefined
-        : currentState?.projects
-          .flatMap((candidate) => candidate.sessions)
-          .find((session) => session.sessionId === target.originSessionId);
-      if (origin !== undefined && result.originAvailable) {
-        const route = sidebarPresentationRoute({
-          sidebarProjectId: target.projectId,
-          sidebarSessionId: target.sessionId,
-          originSessionId: origin.sessionId,
-          originAvailable: true,
-        });
-        commitPresentationRoute(route);
-        const tabs = openRightSidebarSourceTab(
-          rightSidebarTabsBundle.store.read(origin.sessionId),
-          {
-            id: `conversation-${target.sessionId}`,
-            type: "conversation",
-            title: target.title,
-            sourceKey: conversationTabSourceKey(target.sessionId),
-            conversationContext: planConversationProjectContext(
-              currentState?.projects.find((project) => project.projectId === target.projectId),
-              target,
-            ),
-            conversationCreatedAt: target.createdAt,
-          },
-        );
-        rightSidebarTabsBundle.store.write(origin.sessionId, tabs);
-        rightSidebarTabsBundle.commitCurrent(tabs);
-        setRightSidebarOpen(true);
-        actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
-      } else {
-        commitPresentationRoute(sidebarPresentationRoute({
-          sidebarProjectId: target.projectId,
-          sidebarSessionId: target.sessionId,
-          originSessionId: target.originSessionId ?? null,
-          originAvailable: false,
-        }));
-        setRightSidebarOpen(false);
-        actions.selectSession({ projectId: target.projectId, sessionId: target.sessionId });
-      }
-      return true;
-    } catch (error) {
-      setClientError(formatError(error));
-      return false;
-    }
-  }, [apiBase, commitPresentationRoute, setRightSidebarOpen]);
 
   const renderSidebarConversation = useCallback(() => {
     if (activeSidebarConversationDraft !== null) {

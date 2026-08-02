@@ -8,6 +8,7 @@ import {
 
 import type { LocalConsoleState } from "./console-state-contract.js";
 import type { ConversationAnalysisReferencePort } from "./conversation-analysis-contract.js";
+import type { SearchedSessionPort } from "./searched-session-contract.js";
 import type { ConsoleSelection, ConsoleStateCoordinator } from "./console-state-coordinator.js";
 import type { ConversationComposerDraftState } from "./conversation-draft-model.js";
 import type { NewConversationDraftEvent } from "./new-conversation.js";
@@ -23,6 +24,7 @@ import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
+import { useSearchedSessionNavigation } from "./use-searched-session-navigation.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -64,6 +66,7 @@ export function useConversationConsole(
   commitState: (state: LocalConsoleState) => void,
   commitSelection: (selection: ConsoleSelection) => void,
   referencePort: ConversationAnalysisReferencePort,
+  searchedSessionPort: SearchedSessionPort,
   fetch: FetchLike,
   setNotice: (notice: string | null) => void,
 ) {
@@ -92,11 +95,16 @@ export function useConversationConsole(
     dispatchNewConversation, commitState, commitSelection, rememberSelection, commitRoute,
     activateComposer, openTab, referencePort, fetch, setError, setNotice, t,
   );
+  const searchedSession = useSearchedSessionNavigation(
+    apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
+    tabs.setOpen, actions.selectSession, searchedSessionPort, setError,
+  );
   return useMemo(() => ({
     transition,
     navigation,
     submission,
     analysisNavigation,
     analysis,
-  }), [analysis, analysisNavigation, navigation, submission, transition]);
+    searchedSession,
+  }), [analysis, analysisNavigation, navigation, searchedSession, submission, transition]);
 }
