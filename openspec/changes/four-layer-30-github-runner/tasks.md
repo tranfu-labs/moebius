@@ -2,6 +2,15 @@
 
 ## A · 删除前基线
 
+### RA-30D 删除前证据（2026-08-02）
+
+- 临时数据根：`/tmp/moebius-ra30d-predelete.X56LSo`
+- `github-runner.sqlite` SHA-256：`1cc1da94e7be17b386fdb72a08cf6cf2cc1f0bd057428f616745ca54c7978240`
+- 非空 GitHub 代表事实：`github_intake_issues=1`、`github_intake_repositories=1`、
+  `goal_ledger_documents=1`、`session_agent_contexts=1`、`session_role_threads=1`、`sessions=1`
+- 全部用户表总行数：31。上述事实通过删除前生产 `runSqliteStateCommand` API 写入，不是直接改表。
+- 删除后 RA-30D 必须在同一路径启动 local-only terminal/Desktop，再复算相同哈希和逐表行数。
+
 - [ ] 导出 production import 图与 `new Worker` / `utilityProcess.fork` / `spawn` 字符串入口清单，记录
   `sqlite-state-worker.ts` 保留和 Desktop runner child 删除的反例
 - [ ] 建立生产删除清单（整删 / 拆分保留 / 不动）与起始物理行数，逐文件标注最后一个生产消费者
