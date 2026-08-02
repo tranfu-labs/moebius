@@ -153,3 +153,53 @@ root 99/713（另 1 file / 4 tests skipped）、slow 1/63、**desktop 114/529**�
 dev 在每个检查点后读本文件前，先确认已取到最新提交——裁决落盘晚于 dev 的检查点提交属正常时序。
 以本文件中**最靠后的一节**为准；若某检查点对应的裁决尚未出现，说明尚未落盘，可继续等待或按最近一次
 放行范围内的工作推进，不必重发交棒。
+
+---
+
+## 簇 3 实施检查点 — 裁决：**打回（仅闸门项）**
+
+代码本体通过，合并点闸门红，需修复后重跑。
+
+### 已核实通过的部分
+
+- `main.ts` **586 → 248 逻辑行**（目标 <=260），AST 条件 **50 → 0**——强于 <=8 wiring 的目标。
+- **40 批 debt 18 → 0**，permit 保持 **193**、composition root 保持 **9**，均无增长。
+- `check:boundaries` 617 source / 531 production / 3 roots 全绿。
+- QA 的 RA-13～RA-15 三条全部真机通过且三家 provider 均可用、无「待真机验收」项；resume 同源直接对账
+  provider 原生记录（Codex `thread_id` / Claude `session_id` / Kimi ACP `sessionId`），不靠 UI 推断。
+  两个侧注（退出恢复那次 codex 答上一轮问题、`showItemInFolder` 对缺失路径静默）如实标注且不阻塞，处理正确。
+
+### 合并点闸门（主理人执行）— 红
+
+`pnpm test` 116s，desktop scope 失败：
+
+```
+FAIL tests/status-page-update-entry.test.ts
+  > removes the migrated update action and its deprecated IPC surface
+  → expected main.ts to contain 'registerSettingsIpc'
+```
+
+**根因**：该测试 5 条断言中，前 4 条是「已废弃表面不存在」的否定断言，全部仍通过；第 5 条
+`expect(main).toContain("registerSettingsIpc")` 断裂，因为 `main.ts` 收窄为 248 行 root 后，settings IPC
+装配已移至 `desktop/src/desktop-core-ipc-register.ts:60`。**生产代码正确，断言落点过时。**
+
+### 修复方向（不得靠删断言修绿）
+
+这是本系列第三次源码镜像断言在合并点断裂（10 批镜像清单、30 批 guard 路径、本次符号位置）。据此确立口径：
+
+- **证明「不存在」**（前 4 条）→ 文本断言合适且应保留，行为测试无法证明缺席。
+- **证明「存在」**（第 5 条）→ **不应使用源码文本 grep**。`registerSettingsIpc` 是否真的注册，可用行为
+  验证：传入 fake `ipcMain` 调用注册入口，断言实际注册的 channel 名。这样后续重构挪动实现位置不会再断。
+
+允许的最小修法是把第 5 条重指到 `desktop-core-ipc-register.ts`；**推荐**改为上述行为断言。两者均可，
+但不得直接删除该断言——它保护的是「update 能力确实迁到了 settings IPC」这一事实。
+
+### 其余待办（归档前）
+
+1. **提交清单漏 1 个**：实际 18 个提交中 `32bb8bf` 为主理人裁决提交（正确排除），其余 17 个为 dev 所出，
+   报告列了 16，漏 `7813b10 test(desktop): define onboarding orchestration plans`（本簇首个提交）。
+2. **`tasks.md` 尚有 10 条未勾**，其中第 10/11/14/15/16 条（清理各处共居判据、保持 `LocalConsoleStore`
+   API/schema 不变、scope 与 build 全绿）已由 debt 归零与实测结果证明完成，需据实勾选；第 3/8/9 条
+   （剩余 layer debt 导出、provider 前提核对记录、parser/classifier test-name ledger）需补齐内容。
+3. **QA 写入的 `tasks.md` 尚未提交**，工作区不干净。
+4. 修复后**重跑完整 `pnpm test` 全量**（不接受只补跑 desktop scope），并把闸门实测数据写入 tasks.md。
