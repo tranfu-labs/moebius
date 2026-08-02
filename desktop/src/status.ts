@@ -1,23 +1,16 @@
 import type { DoctorCheck } from "./env-doctor.js";
-import type { RunnerSupervisorState } from "./runner-supervisor.js";
 import type { ShellPathResult } from "./shell-path.js";
 import type { UpdateDecision } from "./updater.js";
 
 export interface DesktopStatusSnapshot {
   appVersion: string;
   dataRoot: string;
-  observer: {
-    status: "starting" | "running" | "error" | "stopped";
-    url?: string;
-    error?: string;
-  };
   localConsole: {
     status: "starting" | "running" | "error" | "stopped";
     url?: string;
     sqlitePath?: string;
     error?: string;
   };
-  runner: RunnerSupervisorState;
   doctor: { codex: DoctorCheck } | null;
   shellPath: ShellPathResult | null;
   seed: {

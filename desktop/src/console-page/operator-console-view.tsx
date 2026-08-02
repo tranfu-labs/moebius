@@ -184,7 +184,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       composerValue={composer.draft.value}
       composerAttachments={props.attachments.main.attachments}
       composerSubmissionBlockReason={conversationTransition.submissionBlockText}
-      runnerStatus={runtime.runnerStatus}
       sqlitePath={props.presentation.sqlitePath}
       lastError={lastError}
       projectListState={props.presentation.projectListState}

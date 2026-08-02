@@ -38,21 +38,14 @@ const common = {
 
 await build({
   ...common,
-  entryPoints: [
-    path.join(root, "src/main.ts"),
-    path.join(root, "src/runner-child.ts"),
-  ],
+  entryPoints: [path.join(root, "src/main.ts")],
 });
 
-await Promise.all(
-  ["main.js", "runner-child.js"].map(async (fileName) => {
-    const bundle = await fs.readFile(path.join(dist, fileName), "utf8");
-    assertStaticNodeBundle(bundle, fileName);
-  }),
-);
+const mainBundle = await fs.readFile(path.join(dist, "main.js"), "utf8");
+assertStaticNodeBundle(mainBundle, "main.js");
 
 // sqlite-state.ts resolves its worker thread module relative to its own bundled
-// location (./sqlite-state-worker.js next to main.js/runner-child.js), so it must be
+// location (./sqlite-state-worker.js next to main.js), so it must be
 // built as its own output file rather than inlined into the bundles above.
 await build({
   ...common,

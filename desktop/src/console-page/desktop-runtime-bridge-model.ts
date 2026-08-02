@@ -38,12 +38,10 @@ export function planDesktopError(error: unknown): string {
 }
 
 export function planDesktopStatusUpdate(snapshot: DesktopStatusSnapshot): {
-  runnerStatus: DesktopStatusSnapshot["runner"]["status"];
   apiBase: string | null;
   error: string | null;
 } {
   return {
-    runnerStatus: snapshot.runner.status,
     apiBase: snapshot.localConsole?.url ?? null,
     error: snapshot.localConsole?.error ?? null,
   };

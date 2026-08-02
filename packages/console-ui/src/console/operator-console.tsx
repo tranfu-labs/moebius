@@ -163,7 +163,6 @@ export type OperatorSessionStatus =
   | "stuck"
   | "failed"
   | "interrupted";
-export type OperatorRunnerStatus = "starting" | "running" | "stopped" | "crashed" | "error";
 export type OperatorApplicationView = "conversation" | "agent-teams";
 export type OperatorProjectListState = "ready" | "loading" | "error";
 export type OperatorApplicationOverlay = { kind: "search" };
@@ -439,7 +438,6 @@ export interface OperatorConsoleProps {
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
   composerSubmissionBlockReason?: string | null;
-  runnerStatus?: OperatorRunnerStatus;
   sqlitePath?: string;
   lastError?: string | null;
   projectListState?: OperatorProjectListState;

@@ -9,13 +9,10 @@ import {
   dialog,
   ipcMain,
   shell,
-  utilityProcess,
   type OpenDialogOptions,
-  type UtilityProcess,
 } from "electron";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
-import { startObserverServer, type StartedObserverServer } from "../../src/observer/server.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
 import {
   buildSeedCopyPlan,
@@ -25,8 +22,6 @@ import {
 } from "./data-root.js";
 import { checkCodex } from "./env-doctor.js";
 import { integratedMainWindowOptions } from "./main-window-options.js";
-import { RunnerSupervisor, type RunnerProcess } from "./runner-supervisor.js";
-import { DESKTOP_RUNNER_ARGS } from "./runner-launch.js";
 import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
@@ -130,10 +125,8 @@ if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
 
 let mainWindow: BrowserWindow | null = null;
 let statusWindow: BrowserWindow | null = null;
-let observerServer: StartedObserverServer | null = null;
 let localConsoleServer: StartedLocalConsoleServer | null = null;
 let localConsoleAttachmentCapability: string | null = null;
-let runnerSupervisor: RunnerSupervisor | null = null;
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let isQuitting = false;
 let activeLocale: DesktopLocale = "zh-CN";
@@ -141,9 +134,7 @@ let activeLocale: DesktopLocale = "zh-CN";
 const status: DesktopStatusSnapshot = {
   appVersion: app.getVersion(),
   dataRoot,
-  observer: { status: "starting" },
   localConsole: { status: "starting" },
-  runner: { status: "stopped", crashCount: 0, maxCrashCount: 3 },
   doctor: null,
   shellPath: null,
   seed: { status: "pending", copied: 0, skipped: 0 },
@@ -257,9 +248,7 @@ async function boot(): Promise<void> {
   }
   publishStatus();
 
-  await startObserver();
   await startLocalConsole();
-  startRunner();
 }
 
 function createWindow(): void {
@@ -312,20 +301,6 @@ function registerLanguagePreferenceIpc(): void {
   );
 }
 
-async function startObserver(): Promise<void> {
-  try {
-    observerServer = await startObserverServer({
-      host: "127.0.0.1",
-      port: 0,
-      projectRoot: status.dataRoot,
-    });
-    status.observer = { status: "running", url: observerServer.url };
-  } catch (error) {
-    status.observer = { status: "error", error: formatError(error) };
-  }
-  publishStatus();
-}
-
 async function startLocalConsole(): Promise<void> {
   try {
     localConsoleAttachmentCapability = randomBytes(32).toString("base64url");
@@ -376,77 +351,6 @@ async function startLocalConsole(): Promise<void> {
   }
   publishStatus();
 }
-
-function startRunner(): void {
-  const logPath = path.join(status.dataRoot, "logs", `runner-${new Date().toISOString().replace(/[:.]/gu, "-")}.log`);
-  runnerSupervisor = new RunnerSupervisor({
-    spawn: () => spawnRunnerProcess(logPath),
-    logPath,
-    onStateChange: (runnerState) => {
-      status.runner = runnerState;
-      publishStatus();
-    },
-  });
-  runnerSupervisor.start();
-}
-
-function spawnRunnerProcess(logPath: string): RunnerProcess {
-  fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  const logStream = fs.createWriteStream(logPath, { flags: "a" });
-  const child = utilityProcess.fork(path.join(dirname, "runner-child.js"), [...DESKTOP_RUNNER_ARGS], {
-    cwd: status.dataRoot,
-    env: {
-      ...process.env,
-      // WORKDIR_ROOT 默认派生自 DATA_ROOT，故只需注入数据根，workdir 自动跟随。
-      MOEBIUS_DATA_ROOT: status.dataRoot,
-    },
-    stdio: "pipe",
-    serviceName: "moebius-runner",
-  });
-
-  child.stdout?.on("data", (chunk) => {
-    logStream.write(chunk);
-  });
-  child.stderr?.on("data", (chunk) => {
-    logStream.write(chunk);
-  });
-  child.once("exit", () => {
-    logStream.end();
-  });
-
-  return new ElectronRunnerProcess(child);
-}
-
-class ElectronRunnerProcess implements RunnerProcess {
-  readonly pid?: number;
-  private readonly child: UtilityProcess;
-
-  constructor(child: UtilityProcess) {
-    this.child = child;
-    this.pid = child.pid;
-  }
-
-  onExit(listener: Parameters<RunnerProcess["onExit"]>[0]): void {
-    this.child.once("exit", (exitCode) => {
-      listener({ reason: "exit", exitCode, signal: null });
-    });
-    this.child.once("spawn", () => undefined);
-  }
-
-  terminate(): void {
-    this.child.kill();
-  }
-
-  kill(): void {
-    this.child.kill();
-  }
-}
-
-ipcMain.handle("action:open-observer", async () => {
-  if (status.observer.status === "running" && status.observer.url !== undefined) {
-    await shell.openExternal(status.observer.url);
-  }
-});
 
 ipcMain.handle("action:open-status-page", async () => {
   openStatusPage();
@@ -644,8 +548,6 @@ async function shutdownAndQuit(): Promise<void> {
   }
   isQuitting = true;
   shutdownPromise = (async () => {
-    runnerSupervisor?.stop();
-    await closeObserver();
     await closeLocalConsole();
     await closeSqliteStateWorkers();
     shutdownComplete = true;
@@ -689,17 +591,6 @@ async function requestShutdown(): Promise<void> {
     quitCoordinationPromise = null;
   });
   return quitCoordinationPromise;
-}
-
-async function closeObserver(): Promise<void> {
-  if (observerServer === null) {
-    return;
-  }
-
-  await new Promise<void>((resolve) => {
-    observerServer?.server.close(() => resolve());
-  });
-  observerServer = null;
 }
 
 async function closeLocalConsole(): Promise<void> {

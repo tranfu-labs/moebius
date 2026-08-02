@@ -55,10 +55,7 @@ import type {
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
-import type { OperatorRunnerStatus } from "@moebius/console-ui";
-
 export interface DesktopStatusSnapshot {
-  runner: { status: OperatorRunnerStatus };
   localConsole?: {
     status: "starting" | "running" | "error" | "stopped";
     url?: string;

@@ -1,12 +1,10 @@
 interface FakeStatusSnapshot {
-  runner: { status: "starting" | "running" | "stopped" | "crashed" | "error" };
   localConsole?: { status: "starting" | "running" | "error" | "stopped"; url?: string; sqlitePath?: string; error?: string };
 }
 
 interface FakeApi {
   onStatus(listener: (snapshot: FakeStatusSnapshot) => void): () => void;
   getLocalConsoleUrl(): Promise<string | null>;
-  openObserver(): Promise<void>;
   openStatusPage(): Promise<void>;
   openDataRoot(): Promise<void>;
   selectProjectFolder(): Promise<string | null>;
@@ -19,7 +17,6 @@ const api: FakeApi = {
   onStatus(listener) {
     queueMicrotask(() => {
       listener({
-        runner: { status: "running" },
         localConsole: { status: "running", url: injected || undefined, sqlitePath: "(web-shell)" },
       });
     });
@@ -27,9 +24,6 @@ const api: FakeApi = {
   },
   async getLocalConsoleUrl() {
     return injected || null;
-  },
-  async openObserver() {
-    console.info("[web-shell] openObserver: no-op in browser");
   },
   async openStatusPage() {
     console.info("[web-shell] openStatusPage: no-op in browser");

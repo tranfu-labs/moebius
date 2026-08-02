@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ExecutionRegistryState, OperatorRunnerStatus, Translate } from "@moebius/console-ui";
+import type { ExecutionRegistryState, Translate } from "@moebius/console-ui";
 
 import type { loadExecutionProfileRegistry } from "./console-api-client.js";
 import type { DesktopApi } from "./desktop-api-contract.js";
@@ -26,7 +26,6 @@ export function useDesktopRuntimeBridge(
     useState<ExecutionRegistryState>({ status: "loading" });
   const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
-  const [runnerStatus, setRunnerStatus] = useState<OperatorRunnerStatus>("stopped");
   const [statusError, setStatusError] = useState<string | null>(null);
   const shellActions = useDesktopShellActions(api, t);
 
@@ -78,7 +77,6 @@ export function useDesktopRuntimeBridge(
 
   useEffect(() => api?.onStatus?.((snapshot) => {
     const update = planDesktopStatusUpdate(snapshot);
-    setRunnerStatus(update.runnerStatus);
     if (update.apiBase !== null) setApiBase(update.apiBase);
     if (update.error !== null) setStatusError(update.error);
   }), [api]);
@@ -89,9 +87,8 @@ export function useDesktopRuntimeBridge(
     executionRegistryState,
     reloadExecutionRegistry,
     attachmentCapability,
-    runnerStatus,
     statusError,
     ...shellActions,
   }), [apiBase, attachmentCapability, executionRegistryState, reloadExecutionRegistry,
-    runnerStatus, shellActions, statusError]);
+    shellActions, statusError]);
 }

@@ -158,7 +158,6 @@ describe("desktop onboarding routing", () => {
     await act(async () => root.render(<App />));
     await findElement('[data-testid="operator-sidebar"]');
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "ok" },
     }));
@@ -236,7 +235,6 @@ describe("desktop onboarding routing", () => {
     )).toBe(true);
 
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "pending" },
     }));
@@ -271,7 +269,6 @@ describe("desktop onboarding routing", () => {
     await waitFor(() => statusListener !== null);
 
     await act(async () => statusListener?.({
-      runner: { status: "stopped" },
       shellPath: { status: "ok", path: "/opt/homebrew/bin:/usr/bin" },
       seed: { status: "pending" },
     }));

@@ -26,7 +26,6 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "start": "cross-env NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx src/runner.ts",
-    "observer": "tsx src/observer/server.ts",
     "desktop": "cross-env NODE_OPTIONS=--disable-warning=ExperimentalWarning pnpm --filter @moebius/desktop dev",
     "brand:generate": "node scripts/generate-brand-assets.mjs",
     "brand:check": "node scripts/generate-brand-assets.mjs --check",

@@ -139,7 +139,6 @@ const sample: OperatorConsoleProps = {
     interruptible: true,
   },
   composerValue: "@",
-  runnerStatus: "running",
   sqlitePath: ".state/local-console.sqlite",
   lastError: null,
   onComposerChange: () => undefined,
