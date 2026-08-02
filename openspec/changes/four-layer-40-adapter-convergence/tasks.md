@@ -16,7 +16,7 @@
 - [x] scope、定向测试、typecheck、desktop build 全绿
 - [x] 执行 RA-13～RA-15，报告环境前提和真实观察
 - [x] 报告纯比例、闸门耗时与速度净收益（允许为零）
-- [ ] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
+- [x] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
 
 ## 实施收口记录
 
@@ -44,6 +44,19 @@
 - 首次合并点 `pnpm test` 于 116s 在 desktop scope 因一条正向源码位置镜像断言失败，未形成可比全绿样本；
   修复后完整闸门数据见下方“合并点重跑”。本 change 测试净删除 0，无法从 test-name 中归因速度收益，
   因此速度净收益按方案记 **0**。
+
+## 合并点重跑
+
+- 首次完整闸门红后，保留四条“废弃表面不存在”的负向源码断言；把
+  `main.ts` 必须包含 `registerSettingsIpc` 的正向位置镜像改为行为测试：向 `registerDesktopCoreIpc` 注入
+  fake `ipcMain`，断言三个 settings channel 实际注册，并调用更新 channel 验证版本参数进入 update port。
+  定向 `pnpm --dir desktop exec vitest run tests/status-page-update-entry.test.ts` 为 **1 file / 2 tests** 全绿。
+- 主理人点名的修复后完整重跑使用 Node **24.18.0**，`pnpm test` 退出码 **0**、总墙钟 **127s**：
+  root **99 files / 713 tests**（另 1 file / 4 tests skipped）、slow **1/63**、desktop **128/566**、
+  console-ui **45/460**，无 `FAIL` / `ELIFECYCLE` / `ERR_PNPM`。
+- 与簇 2 的全绿基线 126s 相比，root、slow、console-ui 规模不变，desktop 114/529 → **128/566**
+  （+14 files / +37 tests），墙钟仅 +1s。该单样本既不支持可归因速度收益，也不构成性能回归；按既定口径
+  速度净收益仍记 **0**。
 
 ## 簇 3 提交清单（自账目核验起）
 
