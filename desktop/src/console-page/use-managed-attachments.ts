@@ -1,9 +1,5 @@
-import type {
-  ComposerAttachment,
-  OperatorMessage,
-  StructuredAttachment,
-} from "@moebius/console-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComposerAttachment } from "@moebius/console-ui";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createBoundedPngPreview } from "./attachment-preview.js";
 import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
@@ -411,65 +407,6 @@ export function useManagedAttachmentDrafts(input: {
     clearDraft,
     replaceWithMessageAttachments,
   };
-}
-
-export function useMessagesWithAttachmentPreviews(input: {
-  client: ManagedAttachmentClient;
-  messages: OperatorMessage[];
-  apiBase: string | null;
-  capability: string | null;
-}): OperatorMessage[] {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const urlsRef = useRef(urls);
-  urlsRef.current = urls;
-
-  useEffect(() => {
-    if (input.apiBase === null || input.capability === null) return;
-    const controller = new AbortController();
-    const images = input.messages.flatMap((message) => (message.attachments ?? [])
-      .filter((attachment) => attachment.kind === "image")
-      .map((attachment) => ({ attachment, sessionId: message.sessionId })));
-    const liveIds = new Set(images.map(({ attachment }) => attachment.attachmentId));
-    setUrls((current) => {
-      const next = { ...current };
-      for (const [attachmentId, url] of Object.entries(current)) {
-        if (!liveIds.has(attachmentId)) {
-          URL.revokeObjectURL(url);
-          delete next[attachmentId];
-        }
-      }
-      return next;
-    });
-    for (const { attachment, sessionId } of images) {
-      if (urlsRef.current[attachment.attachmentId] !== undefined) continue;
-      void input.client.loadPreview({
-        apiBase: input.apiBase,
-        capability: input.capability,
-        sessionId,
-        attachmentId: attachment.attachmentId,
-        signal: controller.signal,
-      }).then((blob) => {
-        if (controller.signal.aborted) return;
-        const url = URL.createObjectURL(blob);
-        setUrls((current) => current[attachment.attachmentId] === undefined
-          ? { ...current, [attachment.attachmentId]: url }
-          : (URL.revokeObjectURL(url), current));
-      }).catch(() => undefined);
-    }
-    return () => controller.abort("messages-changed");
-  }, [input.apiBase, input.capability, input.messages]);
-
-  useEffect(() => () => {
-    for (const url of Object.values(urlsRef.current)) URL.revokeObjectURL(url);
-  }, []);
-
-  return useMemo(() => input.messages.map((message) => ({
-    ...message,
-    attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => ({
-      ...attachment,
-      ...(urls[attachment.attachmentId] === undefined ? {} : { previewUrl: urls[attachment.attachmentId] }),
-    })),
-  })), [input.messages, urls]);
 }
 
 function formatError(error: unknown): string {

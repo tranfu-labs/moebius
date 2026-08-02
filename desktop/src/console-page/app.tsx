@@ -236,8 +236,8 @@ import {
 import { saveAllAgentTeamDrafts } from "./team-save-controller.js";
 import {
   useManagedAttachmentDrafts,
-  useMessagesWithAttachmentPreviews,
 } from "./use-managed-attachments.js";
+import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
 import { interruptLocalConsoleRun } from "./interrupt.js";
 import { refillStoppedRunDraft } from "./edit-resend.js";
 import type { CopySessionLogPathResult } from "../session-log-clipboard.js";
