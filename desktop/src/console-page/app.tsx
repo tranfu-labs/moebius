@@ -17,6 +17,7 @@ import { managedAttachmentClient } from "./attachment-client.js";
 import { createConversationDraftStore } from "./draft-store.js";
 import {
   readSidebarVisibilityPreference,
+  planSidebarVisibilityPreference,
   writeSidebarVisibilityPreference,
   type SidebarVisibilityPreference,
 } from "./sidebar-preference.js";
@@ -230,7 +231,7 @@ export function OperatorConsoleApp({
   );
 
   const setSidebarOpen = useCallback((open: boolean) => {
-    const preference = open ? "open" : "closed";
+    const preference = planSidebarVisibilityPreference(open);
     setSidebarVisibilityPreference(preference);
     writeSidebarVisibilityPreference(window.localStorage, preference);
   }, []);

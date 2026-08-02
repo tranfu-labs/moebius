@@ -112,13 +112,6 @@ preview controller，后者组合持久 draft port 与纯 draft state transition
 复算：wiring 0 + timing 1 + business 0 = AST 控制分支 1。三个 attachment controller 的 owner key 由
 `managed-attachment-model.ts` 统一计划，facade 不自行判断草稿归属。
 
-## `desktop/src/console-page/use-console-attachment-drafts.ts`
-
-该 attachment 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
-business 0 = AST 控制分支 0。文件只把 main、sub-session、sidebar 三个 draft key 装配到既有
-`useManagedAttachmentDrafts` controller，并 memo 化三个具名 bundle；上传、恢复、替换、preview 与
-presence generation 的规则仍由原 controller/domain modules 持有。
-
 ## `desktop/src/console-page/use-right-sidebar-process-data.ts`
 
 该 process-data 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
@@ -151,3 +144,27 @@ application file，不进入 composition-root allowlist。
 business 0 = AST 控制分支 0。文件只装配 session-run、sidebar-message 与 sidebar-draft 三个具名
 application bundle；发送可用性、草稿内容、promotion 路由和 sidebar view 刷新判据仍由独立 domain models 持有。该 facade
 继续登记为 application file，不进入 composition-root allowlist。
+
+## `desktop/src/console-page/app.tsx`
+
+| 行 | 条件 | 分类 | 处置 |
+| --- | --- | --- | --- |
+| 139 | `presentationRoute?.hostSessionId ?? selection.sessionId` | wiring | 从已计划 route 选择 right-sidebar host 输入 |
+| 140 | `state?.selectedSession ?? null` | wiring | 把可选 snapshot 端口映射为 controller 输入 |
+| 149 | `activeConversationLocator?.kind === "session"` | wiring | domain active-source plan 的 session 输出接入 attachment controller |
+| 152 | `activeConversationLocator?.kind === "draft"` | wiring | domain active-source plan 的 draft 输出接入 draft store |
+| 155 | `activeSidebarConversationDraftId === null` | wiring | 无 active draft 时不读取 store |
+| 157 | `find(...) ?? null` | wiring | exact draft id 未命中时给 controller 注入 null |
+| 163 | `activeSidebarConversationDraft?.attachmentDraftKey ?? null` | wiring | active draft 的可选附件 owner 接入 attachment facade |
+| 269 | `typeof globalThis.crypto?.randomUUID === "function"` | wiring | 浏览器 randomUUID capability 可用时优先使用，否则生成本地 fallback id |
+
+复算：wiring 8 + timing 0 + business 0 = AST 控制分支 8。root 为 262 逻辑行，装配 12 个具名
+bundle；业务与异步判据均由 application/domain 模块持有，`OperatorConsole` props 与 sidebar slot 映射位于
+`operator-console-view.tsx`。
+
+## 新增零分支聚合 facade
+
+`use-desktop-console-shell.ts` 与 `use-console-local-state.ts` 均无 AST 控制分支。各自复算均为
+wiring 0 + timing 0 + business 0 = AST 控制分支 0；前者把 runtime/settings/CLI/search 四个同域 bundle
+聚合为 desktop shell，后者把 selection/composer 两个同域 bundle 聚合为 local state。二者均只接收窄
+ports，不实例化 adapter，不持有业务判据。

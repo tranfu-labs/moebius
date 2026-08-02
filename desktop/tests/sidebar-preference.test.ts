@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SIDEBAR_VISIBILITY_STORAGE_KEY,
   isFirstRunOnboarding,
+  planSidebarVisibilityPreference,
   readSidebarVisibilityPreference,
   writeSidebarVisibilityPreference,
 } from "../src/console-page/sidebar-preference.js";
@@ -28,5 +29,10 @@ describe("sidebar visibility preference", () => {
     expect(isFirstRunOnboarding(null)).toBe(false);
     expect(isFirstRunOnboarding(false)).toBe(true);
     expect(isFirstRunOnboarding(true)).toBe(false);
+  });
+
+  it("maps sidebar visibility intents to persisted preferences", () => {
+    expect(planSidebarVisibilityPreference(true)).toBe("open");
+    expect(planSidebarVisibilityPreference(false)).toBe("closed");
   });
 });
