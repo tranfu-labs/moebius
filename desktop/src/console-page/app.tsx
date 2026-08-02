@@ -98,7 +98,7 @@ export function OperatorConsoleApp({
   const { t } = useI18n();
   const runtimeBridgeBundle = useDesktopRuntimeBridge(
     window.moebius, window.MOEBIUS_LOCAL_CONSOLE_URL, window.location.search,
-    loadExecutionProfileRegistry, window.fetch,
+    loadExecutionProfileRegistry, window.fetch, t,
   );
   const apiBase = runtimeBridgeBundle.apiBase;
   const conversationSearchBundle = useConversationSearch(
@@ -106,6 +106,8 @@ export function OperatorConsoleApp({
   );
   const executionRegistryState = runtimeBridgeBundle.executionRegistryState;
   const attachmentCapability = runtimeBridgeBundle.attachmentCapability;
+  const clientError = runtimeBridgeBundle.clientError;
+  const setClientError = runtimeBridgeBundle.setClientError;
   const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
   const conversationReadingPositionStoreRef = useRef(
@@ -150,7 +152,6 @@ export function OperatorConsoleApp({
   const commitComposerDraft = composerBundle.commit;
   const activateComposerDraft = composerBundle.activate;
   const clearComposerDraft = composerBundle.clear;
-  const [clientError, setClientError] = useState<string | null>(null);
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
   const agentTeamControllersBundle = useAgentTeamConsole(
     window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t,
@@ -327,15 +328,6 @@ export function OperatorConsoleApp({
   const editPendingMessage = sidebarMessageActionsBundle.editPendingMessage;
   const removePendingMessage = sidebarMessageActionsBundle.removePendingMessage;
 
-  const openDiagnostics = useMemo(() => {
-    if (window.moebius?.openStatusPage === undefined) {
-      return undefined;
-    }
-    return () => {
-      void window.moebius?.openStatusPage?.();
-    };
-  }, []);
-
   const setSidebarOpen = useCallback((open: boolean) => {
     const preference = open ? "open" : "closed";
     setSidebarVisibilityPreference(preference);
@@ -415,16 +407,7 @@ export function OperatorConsoleApp({
           onOpen={openSearchedSession}
         />
       )}
-      onUpdateClaude={() => {
-        const update = window.moebius?.startOnboardingClaudeUpdate;
-        if (update === undefined) {
-          setClientError(t("desktop.error.builderUnavailable"));
-          return;
-        }
-        void update().catch((error) => {
-          setClientError(formatError(error));
-        });
-      }}
+      onUpdateClaude={runtimeBridgeBundle.updateClaude}
       project={project}
       projects={projects}
       selectedProjectId={selection.projectId}
@@ -588,15 +571,9 @@ export function OperatorConsoleApp({
         });
       }}
       onEditAndResend={editAndResend}
-      onOpenDiagnostics={openDiagnostics}
+      onOpenDiagnostics={runtimeBridgeBundle.openDiagnostics}
       onReplayOnboarding={onReplayOnboarding}
-      onOpenExternalLink={window.moebius?.openExternalLink === undefined
-        ? undefined
-        : (url) => {
-          void window.moebius?.openExternalLink?.(url).catch((error: unknown) => {
-            setClientError(error instanceof Error ? error.message : String(error));
-          });
-        }}
+      onOpenExternalLink={runtimeBridgeBundle.openExternalLink}
       onOpenConversationReference={openConversationReference}
       onRetryProjectList={() => {
         setClientError(null);
@@ -726,10 +703,6 @@ function createAgentTeamBuilderDraftId(): string {
     ? globalThis.crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `agent-teams-${suffix}`;
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const rootElement = document.getElementById("root");

@@ -29,6 +29,14 @@ export function decideDesktopRegistryCommit(aborted: boolean): "commit" | "ignor
   return aborted ? "ignore" : "commit";
 }
 
+export function planDesktopActionAvailability(available: boolean): "available" | "unavailable" {
+  return available ? "available" : "unavailable";
+}
+
+export function planDesktopError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function planDesktopStatusUpdate(snapshot: DesktopStatusSnapshot): {
   runnerStatus: DesktopStatusSnapshot["runner"]["status"];
   apiBase: string | null;

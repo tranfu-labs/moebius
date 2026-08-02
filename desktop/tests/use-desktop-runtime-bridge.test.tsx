@@ -48,6 +48,24 @@ describe("desktop runtime bridge", () => {
     expect(latest.executionRegistryState).toEqual({ status: "ready", registry });
   });
 
+  it("keeps shell action failures on the current API after a parent rerender", async () => {
+    await render({}, vi.fn(async () => ({ models: [], providers: [] }) as never));
+    await act(async () => latest.updateClaude());
+    expect(latest.clientError).toBe("desktop.error.builderUnavailable");
+
+    const currentApi: DesktopApi = {
+      startOnboardingClaudeUpdate: vi.fn(async () => { throw new Error("update failed"); }),
+      openExternalLink: vi.fn(async () => { throw new Error("link failed"); }),
+    };
+    await render(currentApi, vi.fn(async () => ({ models: [], providers: [] }) as never));
+    await act(async () => latest.updateClaude());
+    await waitFor(() => latest.clientError === "update failed");
+    await act(async () => latest.openExternalLink?.("https://example.com"));
+    await waitFor(() => latest.clientError === "link failed");
+    expect(currentApi.startOnboardingClaudeUpdate).toHaveBeenCalledOnce();
+    expect(currentApi.openExternalLink).toHaveBeenCalledWith("https://example.com");
+  });
+
   async function render(
     api: DesktopApi,
     loader: Parameters<typeof useDesktopRuntimeBridge>[3],
@@ -62,7 +80,7 @@ describe("desktop runtime bridge", () => {
     api: DesktopApi;
     loader: Parameters<typeof useDesktopRuntimeBridge>[3];
   }): null {
-    latest = useDesktopRuntimeBridge(api, undefined, "", loader, fakeFetch);
+    latest = useDesktopRuntimeBridge(api, undefined, "", loader, fakeFetch, translate);
     return null;
   }
 });
@@ -71,6 +89,7 @@ const failingLoader: Parameters<typeof useDesktopRuntimeBridge>[3] = vi.fn(async
   throw new Error("registry unavailable");
 });
 const fakeFetch = vi.fn();
+const translate = vi.fn((key: string) => key);
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   await waitForCondition(predicate, {

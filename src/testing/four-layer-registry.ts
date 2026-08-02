@@ -121,6 +121,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/team-save-controller.ts",
   "desktop/src/console-page/use-desktop-settings.ts",
   "desktop/src/console-page/use-desktop-runtime-bridge.ts",
+  "desktop/src/console-page/use-desktop-shell-actions.ts",
   "desktop/src/console-page/use-edit-resend.ts",
   "desktop/src/console-page/use-active-cli-installations.ts",
   "desktop/src/console-page/use-analysis-panel-navigation.ts",
