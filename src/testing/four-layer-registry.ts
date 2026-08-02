@@ -464,6 +464,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/settings-contract.ts",
   "desktop/src/status.ts",
   "desktop/src/team-conversation-preference-contract.ts",
+  "desktop/src/team-desktop-action-plan.ts",
   "desktop/src/team-execution-profile.ts",
   "desktop/src/team-external-change-contract.ts",
   "desktop/src/team-file-manager-contract.ts",
@@ -857,9 +858,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   ],
   fileDebt: [
     { ruleId: "application-use-case-shape", file: "desktop/src/main.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-external-change.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-file-manager.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-repair-ipc.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-conversation-preference.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-ipc.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-runtime-binding.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },

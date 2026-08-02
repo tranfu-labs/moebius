@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 
 import { isValidPathSegment } from "./team-model.js";
+import { AgentTeamIpcRequestError } from "./team-ipc-contract.js";
 import type {
   TeamDefinition,
   TeamInformation,
@@ -711,17 +712,4 @@ function parseUserTeamRequest(value: unknown, ownershipError: string): AgentTeam
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export class AgentTeamIpcRequestError extends Error {
-  constructor(
-    message: string,
-    readonly code:
-      | "AGENT_TEAM_IPC_REQUEST_INVALID"
-      | "CAPABILITY_SNAPSHOT_STALE"
-      | "EXECUTION_PROFILE_UNAVAILABLE" = "AGENT_TEAM_IPC_REQUEST_INVALID",
-  ) {
-    super(message);
-    this.name = "AgentTeamIpcRequestError";
-  }
 }

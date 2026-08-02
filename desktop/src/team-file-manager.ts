@@ -1,7 +1,10 @@
 import { constants } from "node:fs";
 import fs from "node:fs/promises";
 
-import type { AgentTeamFileManagerRequest } from "./team-file-manager-contract.js";
+import {
+  parseFileManagerRequest,
+  planFileManagerTarget,
+} from "./team-desktop-action-plan.js";
 import { resolveRecordedTeamLocation } from "./team-record-store.js";
 import { getMemberDirectory, resolveTeamLocation } from "./team-store.js";
 
@@ -18,12 +21,20 @@ export async function openAgentTeamLocationInFileManager(input: {
 }): Promise<void> {
   try {
     const request = parseFileManagerRequest(input.request);
-    const location = request.ownership === "system"
-      ? resolveTeamLocation({ dataRoot: input.dataRoot, teamId: request.teamId, ownership: "system" })
-      : await resolveRecordedTeamLocation(input.dataRoot, request.teamId);
-    const targetPath = request.memberSlug === undefined
-      ? location.directory
-      : getMemberDirectory(location, request.memberSlug);
+    const locationLoaders = {
+      system: async () => resolveTeamLocation({
+        dataRoot: input.dataRoot,
+        teamId: request.teamId,
+        ownership: "system" as const,
+      }),
+      user: async () => await resolveRecordedTeamLocation(input.dataRoot, request.teamId),
+    };
+    const location = await locationLoaders[request.ownership]();
+    const targetPaths = {
+      team: () => location.directory,
+      member: () => getMemberDirectory(location, request.memberSlug!),
+    };
+    const targetPath = targetPaths[planFileManagerTarget(request.memberSlug)]();
 
     const stats = await fs.stat(targetPath);
     if (!stats.isDirectory()) {
@@ -38,33 +49,6 @@ export async function openAgentTeamLocationInFileManager(input: {
   } catch {
     throw new AgentTeamFileManagerError();
   }
-}
-
-function parseFileManagerRequest(value: unknown): AgentTeamFileManagerRequest {
-  if (!isPlainObject(value)) {
-    throw new Error("An Agent team location request is required.");
-  }
-  if (typeof value.teamId !== "string" || value.teamId.trim().length === 0) {
-    throw new Error("An Agent team id is required.");
-  }
-  if (value.ownership !== "system" && value.ownership !== "user") {
-    throw new Error("A valid Agent team ownership is required.");
-  }
-  if (
-    value.memberSlug !== undefined
-    && (typeof value.memberSlug !== "string" || value.memberSlug.trim().length === 0)
-  ) {
-    throw new Error("A valid Agent slug is required.");
-  }
-  return {
-    teamId: value.teamId,
-    ownership: value.ownership,
-    ...(value.memberSlug === undefined ? {} : { memberSlug: value.memberSlug }),
-  };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export class AgentTeamFileManagerError extends Error {
