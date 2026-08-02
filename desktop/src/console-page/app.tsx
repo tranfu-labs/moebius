@@ -14,10 +14,8 @@ import {
   type OperatorProcessOutput,
   type OperatorProcessTimelineEvent,
   type OperatorRunSnapshot,
-  type OperatorRunnerStatus,
   type OperatorSession,
   type TranslationKey,
-  type ExecutionRegistryState,
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
   type OperatorWorkspaceDiffSummary,
@@ -125,6 +123,7 @@ import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
 import { SidebarConversationView } from "./sidebar-conversation-view.js";
+import { useDesktopRuntimeBridge } from "./use-desktop-runtime-bridge.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -144,14 +143,16 @@ export function OperatorConsoleApp({
 }): JSX.Element {
   const language = useDesktopLanguage();
   const { t } = useI18n();
-  const [apiBase, setApiBase] = useState<string | null>(readQueryApiBase());
+  const runtimeBridgeBundle = useDesktopRuntimeBridge(
+    window.moebius, window.MOEBIUS_LOCAL_CONSOLE_URL, window.location.search,
+    loadExecutionProfileRegistry, window.fetch,
+  );
+  const apiBase = runtimeBridgeBundle.apiBase;
   const conversationSearchBundle = useConversationSearch(
     { apiBase, port: browserConversationSearchPort },
   );
-  const [executionRegistryState, setExecutionRegistryState] =
-    useState<ExecutionRegistryState>({ status: "loading" });
-  const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
-  const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
+  const executionRegistryState = runtimeBridgeBundle.executionRegistryState;
+  const attachmentCapability = runtimeBridgeBundle.attachmentCapability;
   const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
   const [initialSelectionPreference] = useState<ConsoleSelection | null>(() =>
     readConsoleSelectionPreference(window.localStorage),
@@ -209,7 +210,6 @@ export function OperatorConsoleApp({
     conversationDraftStoreRef.current.clear(key);
     commitComposerDraft(clearConversationComposerDraft(composerDraftRef.current, key));
   }, [commitComposerDraft]);
-  const [runnerStatus, setRunnerStatus] = useState<OperatorRunnerStatus>("stopped");
   const [isSending, setIsSending] = useState(false);
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -319,73 +319,6 @@ export function OperatorConsoleApp({
     agentTeamCatalogBundle.state,
     agentTeamProfileBundle.primaryAgentChange,
   ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function resolveApiBase(): Promise<void> {
-      if (apiBase !== null) {
-        return;
-      }
-      const fromWindow = window.MOEBIUS_LOCAL_CONSOLE_URL;
-      if (fromWindow) {
-        setApiBase(fromWindow);
-        return;
-      }
-      const fromPreload = await window.moebius?.getLocalConsoleUrl?.();
-      if (!cancelled && fromPreload) {
-        setApiBase(fromPreload);
-      }
-    }
-    void resolveApiBase();
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase]);
-
-  useEffect(() => {
-    if (apiBase === null) {
-      setExecutionRegistryState({ status: "loading" });
-      return;
-    }
-    const controller = new AbortController();
-    setExecutionRegistryState({ status: "loading" });
-    void loadExecutionProfileRegistry({
-      apiBase,
-      fetch: window.fetch.bind(window),
-      signal: controller.signal,
-    }).then((registry) => {
-      if (!controller.signal.aborted) {
-        setExecutionRegistryState({ status: "ready", registry });
-      }
-    }).catch(() => {
-      if (!controller.signal.aborted) {
-        setExecutionRegistryState({ status: "error", message: "" });
-      }
-    });
-    return () => controller.abort();
-  }, [apiBase, executionRegistryReload]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void window.moebius?.getLocalConsoleAttachmentCapability?.().then((capability) => {
-      if (!cancelled) setAttachmentCapability(capability);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase]);
-
-  useEffect(() => {
-    return window.moebius?.onStatus?.((snapshot) => {
-      setRunnerStatus(snapshot.runner.status);
-      if (snapshot.localConsole?.url) {
-        setApiBase(snapshot.localConsole.url);
-      }
-      if (snapshot.localConsole?.error) {
-        setClientError(snapshot.localConsole.error);
-      }
-    });
-  }, []);
 
   const commitSelection = useCallback((nextSelection: ConsoleSelection) => {
     selectionRef.current = nextSelection;
@@ -616,7 +549,11 @@ export function OperatorConsoleApp({
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
   const editAndResend = conversationControllersBundle.editResend.editAndResend;
   const sessionMutationIntents = conversationControllersBundle.sessionMutations;
-  const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
+  const lastError = conversationTransitionBundle.transitionError
+    ?? clientError
+    ?? runtimeBridgeBundle.statusError
+    ?? state?.lastError
+    ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
   const setAnalysisPanelOpen = analysisNavigationBundle.setPanelOpen;
@@ -688,7 +625,7 @@ export function OperatorConsoleApp({
         agentTeams={agentTeamCatalogBundle}
         actions={actions}
         executionRegistryState={executionRegistryState}
-        reloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
+        reloadExecutionRegistry={runtimeBridgeBundle.reloadExecutionRegistry}
         readComposerValue={(sessionId) => sessionControllersBundle.sidebarComposerValues[sessionId]
           ?? conversationDraftStoreRef.current.read(sessionDraftKey(sessionId))}
         writeComposerValue={sessionControllersBundle.sidebarMessages.editComposer}
@@ -733,7 +670,7 @@ export function OperatorConsoleApp({
   return (
     <OperatorConsole
       executionRegistryState={executionRegistryState}
-      onReloadExecutionRegistry={() => setExecutionRegistryReload((value) => value + 1)}
+      onReloadExecutionRegistry={runtimeBridgeBundle.reloadExecutionRegistry}
       activeLocale={language.activeLocale}
       pendingLocale={language.pendingLocale}
       languageSaveStatus={language.status}
@@ -809,7 +746,7 @@ export function OperatorConsoleApp({
       composerValue={composerDraft.value}
       composerAttachments={managedAttachments.attachments}
       composerSubmissionBlockReason={conversationTransitionBundle.submissionBlockText}
-      runnerStatus={runnerStatus}
+      runnerStatus={runtimeBridgeBundle.runnerStatus}
       sqlitePath={sqlitePath}
       lastError={lastError}
       projectListState={projectListState}
@@ -1062,11 +999,6 @@ function createAgentTeamBuilderDraftId(): string {
     ? globalThis.crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `agent-teams-${suffix}`;
-}
-
-function readQueryApiBase(): string | null {
-  const value = new URLSearchParams(window.location.search).get("api");
-  return value?.trim() || null;
 }
 
 function formatError(error: unknown): string {
