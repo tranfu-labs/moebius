@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-labelledby="title desc">
+  <title id="title">Moebius four-layer convergence before batch 50</title>
+  <desc id="desc">Architecture debt is zero, while interface copy debt and final evidence remain open.</desc>
+  <style>
+    text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }
+    .title { font-size: 24px; font-weight: 700; }
+    .label { font-size: 17px; font-weight: 650; }
+    .body { font-size: 14px; }
+    .ok { fill: #eaf8ee; stroke: #2f8a4d; stroke-width: 2; }
+    .open { fill: #fff1df; stroke: #d27b22; stroke-width: 2; }
+    .gate { fill: #eaf2ff; stroke: #4076b8; stroke-width: 2; }
+    .arrow { stroke: #536174; stroke-width: 2; marker-end: url(#arrow); }
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#536174"/></marker></defs>
+  <text x="42" y="48" class="title">Before batch 50: structure closed, evidence still open</text>
+  <rect x="55" y="105" width="300" height="150" rx="18" class="ok"/>
+  <text x="82" y="143" class="label">Four-layer registry</text>
+  <text x="82" y="176" class="body">531 production files · exactly one layer</text>
+  <text x="82" y="202" class="body">file/dependency debt = 0</text>
+  <text x="82" y="228" class="body">9 exact roots · 193 permits</text>
+  <rect x="410" y="105" width="300" height="150" rx="18" class="open"/>
+  <text x="437" y="143" class="label">Interface copy debt</text>
+  <text x="437" y="176" class="body">6 renderer files · 16 CJK fallbacks</text>
+  <text x="437" y="202" class="body">English UI may expose Chinese fallback</text>
+  <text x="437" y="228" class="body">bound to final convergence</text>
+  <rect x="765" y="105" width="300" height="150" rx="18" class="open"/>
+  <text x="792" y="143" class="label">Final evidence</text>
+  <text x="792" y="176" class="body">IB/NI and test ledgers not consolidated</text>
+  <text x="792" y="202" class="body">RA-16 and final metrics pending</text>
+  <text x="792" y="228" class="body">architecture fact source not returned</text>
+  <line x1="205" y1="255" x2="205" y2="330" class="arrow"/>
+  <line x1="560" y1="255" x2="560" y2="330" class="arrow"/>
+  <line x1="915" y1="255" x2="915" y2="330" class="arrow"/>
+  <rect x="180" y="330" width="760" height="190" rx="20" class="gate"/>
+  <text x="215" y="372" class="label">Batch 50 convergence gate</text>
+  <text x="215" y="408" class="body">locale resources + commit-time translation</text>
+  <text x="215" y="438" class="body">machine layer report + boundary oracle ledger + six-batch test ledger</text>
+  <text x="215" y="468" class="body">RA-16 + one full gate + fixed metrics + architecture return</text>
+  <text x="215" y="498" class="body">production diff must remain at or below 500 changed lines</text>
+</svg>
