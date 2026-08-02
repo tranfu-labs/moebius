@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
 import type { AiTeamBuilderIpcResponse } from "../src/ai-team-builder/contract.js";
-import { App, type DesktopApi } from "../src/console-page/app.js";
+import { App } from "../src/console-page/app.js";
+import type { DesktopApi } from "../src/console-page/desktop-api-contract.js";
 import type { DoctorCheck } from "../src/env-doctor.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

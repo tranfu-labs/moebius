@@ -90,6 +90,8 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ui/popover.tsx",
   "packages/console-ui/src/ui/tooltip.tsx",
   "desktop/src/console-page/conversation-search-overlay.tsx",
+  "desktop/src/console-page/mount-console-app.tsx",
+  "desktop/src/console-page/operator-console-view.tsx",
   "desktop/src/console-page/sidebar-conversation-view.tsx",
   "src/observer/render.ts",
 ] as const;
@@ -121,6 +123,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/settings-request-controller.ts",
   "desktop/src/console-page/team-save-controller.ts",
   "desktop/src/console-page/use-desktop-settings.ts",
+  "desktop/src/console-page/use-desktop-console-shell.ts",
   "desktop/src/console-page/use-desktop-runtime-bridge.ts",
   "desktop/src/console-page/use-desktop-shell-actions.ts",
   "desktop/src/console-page/use-edit-resend.ts",
@@ -164,6 +167,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-console-attachment-drafts.ts",
   "desktop/src/console-page/use-console-state-sync.ts",
   "desktop/src/console-page/use-console-selection-state.ts",
+  "desktop/src/console-page/use-console-local-state.ts",
   "desktop/src/console-page/use-console-state-actions.ts",
   "desktop/src/console-page/use-console-presentation.ts",
   "desktop/src/console-page/use-conversation-navigation.ts",
@@ -588,7 +592,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   ],
   fileDebt: [
     { ruleId: "application-use-case-shape", file: "desktop/src/ai-team-builder/index.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "application-use-case-shape", file: "desktop/src/console-page/app.tsx", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-20-desktop-renderer" },
     { ruleId: "application-use-case-shape", file: "desktop/src/main.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "application-use-case-shape", file: "src/runner.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-30-github-runner" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/claude-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },

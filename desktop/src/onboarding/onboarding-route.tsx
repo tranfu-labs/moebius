@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import type { AgentTeamListItem } from "../team-ipc-contract.js";
-import type { DesktopApi } from "../console-page/app.js";
+import type { DesktopApi } from "../console-page/desktop-api-contract.js";
 import {
   toTeamBuilderIpcViewError,
   toTeamBuilderViewState,

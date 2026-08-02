@@ -1,7 +1,7 @@
 import type { OnboardingEnvironmentState } from "@moebius/console-ui";
 import { useCallback, useRef, useState } from "react";
 
-import type { DesktopApi } from "../console-page/app.js";
+import type { DesktopApi } from "../console-page/desktop-api-contract.js";
 import type { OnboardingCliReadinessSnapshot } from "./cli-readiness-contract.js";
 import {
   createOnboardingReadinessModel,

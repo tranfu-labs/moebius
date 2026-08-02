@@ -1,7 +1,7 @@
 import type { OnboardingCli, Translate } from "@moebius/console-ui";
 import { useCallback, useRef } from "react";
 
-import type { DesktopApi } from "../console-page/app.js";
+import type { DesktopApi } from "../console-page/desktop-api-contract.js";
 import type { OnboardingCliInstallSnapshot } from "./cli-installer-contract.js";
 import {
   decideOnboardingInstallationCancellation,

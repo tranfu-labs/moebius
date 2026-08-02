@@ -1,6 +1,6 @@
 import type { OnboardingCli, OnboardingInstallationState, Translate } from "@moebius/console-ui";
 
-import type { DesktopApi } from "../console-page/app.js";
+import type { DesktopApi } from "../console-page/desktop-api-contract.js";
 import { useOnboardingInstallationActions } from "./use-onboarding-installation-actions.js";
 import { useOnboardingInstallationState } from "./use-onboarding-installation-state.js";
 
