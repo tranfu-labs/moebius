@@ -104,17 +104,17 @@ describe("sqlite state worker pool", () => {
 
     const first = runSqliteStateCommand<{ order: number }>({
       sqlitePath: linkedPath,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     });
     const firstWorker = await waitForWorker(0);
     const firstRequest = await waitForCommand(firstWorker, 0);
     const second = runSqliteStateCommand<{ order: number }>({
       sqlitePath: realPath,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     });
     const third = runSqliteStateCommand<{ order: number }>({
       sqlitePath: realPath,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     });
 
     expect(commandRequests(firstWorker)).toHaveLength(1);
@@ -133,16 +133,16 @@ describe("sqlite state worker pool", () => {
       runSqliteStateCommand({
         sqlitePath: realPath,
         readOnly: true,
-        command: { kind: "load-role-threads" },
+        command: { kind: "local-list-projects" },
       }),
       runSqliteStateCommand({
         sqlitePath: realPath,
         busyTimeoutMs: 3_000,
-        command: { kind: "load-role-threads" },
+        command: { kind: "local-list-projects" },
       }),
       runSqliteStateCommand({
         sqlitePath: path.join(realRoot, ".state", "other.sqlite"),
-        command: { kind: "load-role-threads" },
+        command: { kind: "local-list-projects" },
       }),
     ];
     await waitForCondition(() => workerHarness.instances.length === 4, {
@@ -167,14 +167,14 @@ describe("sqlite state worker pool", () => {
     const active = runSqliteStateCommand({
       sqlitePath,
       timeoutMs: 1_000,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     });
     const worker = await waitForWorker(0);
     const activeRequest = await waitForCommand(worker, 0);
     const queued = runSqliteStateCommand({
       sqlitePath,
       timeoutMs: 30,
-      command: { kind: "load-agent-contexts" },
+      command: { kind: "local-list-sessions" },
     });
 
     await expect(queued).rejects.toBeInstanceOf(SqliteStateTimeoutError);
@@ -189,14 +189,14 @@ describe("sqlite state worker pool", () => {
     const ambiguous = runSqliteStateCommand({
       sqlitePath,
       timeoutMs: 30,
-      command: { kind: "save-role-threads", store: { sideEffect: 1 } },
+      command: { kind: "local-init" },
     });
     const firstWorker = await waitForWorker(0);
     const ambiguousRequest = await waitForCommand(firstWorker, 0);
     const queued = runSqliteStateCommand({
       sqlitePath,
       timeoutMs: 1_000,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     });
 
     await expect(ambiguous).rejects.toBeInstanceOf(SqliteStateTimeoutError);
@@ -216,25 +216,25 @@ describe("sqlite state worker pool", () => {
     let rejectionCount = 0;
     const active = runSqliteStateCommand({
       sqlitePath,
-      command: { kind: "load-role-threads" },
+      command: { kind: "local-list-projects" },
     }).catch((error: unknown) => {
       rejectionCount += 1;
       throw error;
     });
     const firstWorker = await waitForWorker(0);
     await waitForCommand(firstWorker, 0);
-    const second = runSqliteStateCommand({ sqlitePath, command: { kind: "load-agent-contexts" } });
-    const third = runSqliteStateCommand({ sqlitePath, command: { kind: "load-github-intake" } });
+    const second = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-sessions" } });
+    const third = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-session-message-indexes" } });
 
     firstWorker.emit("error", new Error("worker crashed"));
     await expect(active).rejects.toBeInstanceOf(SqliteStateWorkerError);
     expect(rejectionCount).toBe(1);
     const replacement = await waitForWorker(1);
     const secondRequest = await waitForCommand(replacement, 0);
-    expect(secondRequest.command.kind).toBe("load-agent-contexts");
+    expect(secondRequest.command.kind).toBe("local-list-sessions");
     replySuccess(replacement, secondRequest, { second: true });
     const thirdRequest = await waitForCommand(replacement, 1);
-    expect(thirdRequest.command.kind).toBe("load-github-intake");
+    expect(thirdRequest.command.kind).toBe("local-list-session-message-indexes");
     replySuccess(replacement, thirdRequest, { third: true });
     await expect(Promise.all([second, third])).resolves.toEqual([{ second: true }, { third: true }]);
   });
@@ -243,11 +243,11 @@ describe("sqlite state worker pool", () => {
     const sqlitePath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "moebius-worker-pool-error-")), "state.sqlite");
     const failed = runSqliteStateCommand({
       sqlitePath,
-      command: { kind: "save-role-threads", store: { invalid: true } },
+      command: { kind: "local-init" },
     });
     const firstWorker = await waitForWorker(0);
     const failedRequest = await waitForCommand(firstWorker, 0);
-    const queued = runSqliteStateCommand({ sqlitePath, command: { kind: "load-role-threads" } });
+    const queued = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-projects" } });
 
     replyFailure(firstWorker, failedRequest, "transaction rolled back");
     await expect(failed).rejects.toThrow("transaction rolled back");
@@ -262,8 +262,8 @@ describe("sqlite state worker pool", () => {
   it("fails an unready generation without dispatching commands and allows a later generation to recover", async () => {
     workerHarness.autoReady = false;
     const sqlitePath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "moebius-worker-pool-init-")), "state.sqlite");
-    const first = runSqliteStateCommand({ sqlitePath, command: { kind: "load-role-threads" } });
-    const second = runSqliteStateCommand({ sqlitePath, command: { kind: "load-agent-contexts" } });
+    const first = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-projects" } });
+    const second = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-sessions" } });
     const failedWorker = await waitForWorker(0);
     failedWorker.emit("message", {
       type: "initialization-error",
@@ -275,7 +275,7 @@ describe("sqlite state worker pool", () => {
     expect(commandRequests(failedWorker)).toHaveLength(0);
 
     workerHarness.autoReady = true;
-    const recovered = runSqliteStateCommand({ sqlitePath, command: { kind: "load-role-threads" } });
+    const recovered = runSqliteStateCommand({ sqlitePath, command: { kind: "local-list-projects" } });
     const replacement = await waitForWorker(1);
     const recoveredRequest = await waitForCommand(replacement, 0);
     replySuccess(replacement, recoveredRequest, { recovered: true });

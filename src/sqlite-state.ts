@@ -3,24 +3,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
 
-export type SqliteStateSource = "role-threads" | "agent-contexts" | "github-intake" | "goal-ledger";
-
 export type SqliteStateCommand =
-  | { kind: "get-migration-status"; source: SqliteStateSource }
-  | { kind: "import-role-threads"; store: unknown; legacyDigest: string | null }
-  | { kind: "load-role-threads" }
-  | { kind: "save-role-threads"; store: unknown }
-  | { kind: "save-role-thread-entry"; issueKey: string; role: string; state: unknown }
-  | { kind: "import-agent-contexts"; store: unknown; legacyDigest: string | null }
-  | { kind: "load-agent-contexts" }
-  | { kind: "save-agent-contexts"; store: unknown }
-  | { kind: "save-agent-context-entry"; issueKey: string; role: string; state: unknown }
-  | { kind: "import-github-intake"; state: unknown; legacyDigest: string | null }
-  | { kind: "load-github-intake" }
-  | { kind: "save-github-intake"; state: unknown }
-  | { kind: "import-goal-ledger"; state: unknown; legacyDigest: string | null }
-  | { kind: "load-goal-ledger" }
-  | { kind: "save-goal-ledger"; state: unknown }
   | { kind: "local-init" }
   | { kind: "local-session-fact-migration-status" }
   | { kind: "local-complete-session-fact-migration"; now: string }
@@ -966,3 +949,4 @@ function isSerializedWorkerError(value: unknown): value is { message: string; st
     && typeof (value as { message?: unknown }).message === "string"
     && ((value as { stack?: unknown }).stack === undefined || typeof (value as { stack?: unknown }).stack === "string");
 }
+

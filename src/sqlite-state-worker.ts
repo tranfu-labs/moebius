@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData } from "node:worker_threads";
-import { issueKeyToSessionId, parseIssueKey, sessionIdToIssueKey } from "./session-key.js";
+import { parseIssueKey } from "./session-key.js";
 import { parseAgentMentions } from "./conversation.js";
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
@@ -17,7 +17,6 @@ import {
 } from "./local-console/types.js";
 import type {
   SqliteStateCommand,
-  SqliteStateSource,
   SqliteStateWorkerConfiguration,
   SqliteStateWorkerRequest,
   SqliteStateWorkerResponse,
@@ -173,36 +172,6 @@ function readRequestId(value: unknown): number {
 
 function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
     switch (input.command.kind) {
-      case "get-migration-status":
-        return getMigrationStatus(database, input.command.source);
-      case "import-role-threads":
-        return importRoleThreads(database, input.command.store, input.command.legacyDigest);
-      case "load-role-threads":
-        return loadRoleThreads(database);
-      case "save-role-threads":
-        return replaceRoleThreads(database, input.command.store, true);
-      case "save-role-thread-entry":
-        return saveRoleThreadEntry(database, input.command.issueKey, input.command.role, input.command.state);
-      case "import-agent-contexts":
-        return importAgentContexts(database, input.command.store, input.command.legacyDigest);
-      case "load-agent-contexts":
-        return loadAgentContexts(database);
-      case "save-agent-contexts":
-        return replaceAgentContexts(database, input.command.store, true);
-      case "save-agent-context-entry":
-        return saveAgentContextEntry(database, input.command.issueKey, input.command.role, input.command.state);
-      case "import-github-intake":
-        return importGitHubIntake(database, input.command.state, input.command.legacyDigest);
-      case "load-github-intake":
-        return loadGitHubIntake(database);
-      case "save-github-intake":
-        return replaceGitHubIntake(database, input.command.state, true);
-      case "import-goal-ledger":
-        return importGoalLedger(database, input.command.state, input.command.legacyDigest);
-      case "load-goal-ledger":
-        return loadGoalLedger(database);
-      case "save-goal-ledger":
-        return saveGoalLedger(database, input.command.state, true);
       case "local-init":
         return initLocalConsole(database);
       case "local-session-fact-migration-status":
@@ -531,41 +500,6 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       active_run_id TEXT,
       updated_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS session_role_threads (
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      thread_id TEXT NOT NULL,
-      last_seen_index INTEGER NOT NULL,
-      provider TEXT,
-      context_fingerprint TEXT,
-      workspace_fingerprint TEXT,
-      persona_fingerprint TEXT,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(session_id, role)
-    );
-    CREATE TABLE IF NOT EXISTS session_agent_contexts (
-      session_id TEXT NOT NULL,
-      context_key TEXT NOT NULL,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY(session_id, context_key)
-    );
-    CREATE TABLE IF NOT EXISTS github_intake_repositories (
-      repo_key TEXT PRIMARY KEY,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS github_intake_issues (
-      session_id TEXT PRIMARY KEY,
-      issue_key TEXT NOT NULL UNIQUE,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS goal_ledger_documents (
-      document_key TEXT PRIMARY KEY,
-      json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS local_route_decisions (
       session_id TEXT NOT NULL,
       message_id INTEGER NOT NULL,
@@ -641,7 +575,6 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionsProjectId(database, now);
   ensureSessionAgentTeamColumns(database);
   ensureSessionAgentTeamProfileColumns(database);
-  ensureRoleThreadContextColumns(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
@@ -929,21 +862,6 @@ function readTableRowCount(database: SqliteDatabase, tableName: string): number 
     throw new Error("Unable to read session Agent team member row count");
   }
   return row.row_count;
-}
-
-function ensureRoleThreadContextColumns(database: SqliteDatabase): void {
-  for (const column of [
-    ["provider", "TEXT"],
-    ["context_fingerprint", "TEXT"],
-    ["workspace_fingerprint", "TEXT"],
-    ["persona_fingerprint", "TEXT"],
-  ] as const) {
-    if (!tableHasColumn(database, "session_role_threads", column[0])) {
-      database.exec(
-        `ALTER TABLE session_role_threads ADD COLUMN ${column[0]} ${column[1]}`,
-      );
-    }
-  }
 }
 
 function migrateSessionWorkspaceContext(database: SqliteDatabase): void {
@@ -1320,289 +1238,6 @@ function migrateLocalMessages(database: SqliteDatabase): void {
     }
     markMigrationImported(database, "local-messages", null);
   });
-}
-
-function getMigrationStatus(database: SqliteDatabase, source: SqliteStateSource): { status: string | null } {
-  const row = database.prepare("SELECT status FROM legacy_migration_sources WHERE source = ?").get(source);
-  if (!isRecord(row)) {
-    return { status: null };
-  }
-  return { status: readString(row.status, "status") };
-}
-
-function importRoleThreads(database: SqliteDatabase, store: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "role-threads", "SELECT COUNT(*) AS count FROM session_role_threads");
-    replaceRoleThreadsRaw(database, store, false);
-    markMigrationImported(database, "role-threads", legacyDigest);
-    return null;
-  });
-}
-
-function loadRoleThreads(database: SqliteDatabase): unknown {
-  const rows = database.prepare("SELECT * FROM session_role_threads ORDER BY session_id ASC, role ASC").all();
-  const store: Record<string, Record<string, unknown>> = {};
-  for (const row of rows) {
-    if (!isRecord(row)) {
-      continue;
-    }
-    const issueKey = sessionIdToIssueKey(readString(row.session_id, "session_id"));
-    const role = readString(row.role, "role");
-    store[issueKey] = {
-      ...(store[issueKey] ?? {}),
-      [role]: {
-        threadId: readString(row.thread_id, "thread_id"),
-        lastSeenIndex: readNumber(row.last_seen_index, "last_seen_index"),
-        ...readNullableString(row.provider, "provider") === null
-          ? {}
-          : { provider: readString(row.provider, "provider") },
-        ...readNullableString(row.context_fingerprint, "context_fingerprint") === null
-          ? {}
-          : { contextFingerprint: readString(row.context_fingerprint, "context_fingerprint") },
-        ...readNullableString(row.workspace_fingerprint, "workspace_fingerprint") === null
-          ? {}
-          : { workspaceFingerprint: readString(row.workspace_fingerprint, "workspace_fingerprint") },
-        ...readNullableString(row.persona_fingerprint, "persona_fingerprint") === null
-          ? {}
-          : { personaFingerprint: readString(row.persona_fingerprint, "persona_fingerprint") },
-      },
-    };
-  }
-  return store;
-}
-
-function replaceRoleThreads(database: SqliteDatabase, store: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceRoleThreadsRaw(database, store, markImported);
-    return null;
-  });
-}
-
-function replaceRoleThreadsRaw(database: SqliteDatabase, store: unknown, markImported: boolean): void {
-  database.exec("DELETE FROM session_role_threads");
-  const now = new Date().toISOString();
-  for (const [issueKey, roles] of entriesObject(store)) {
-    for (const [role, state] of entriesObject(roles)) {
-      saveRoleThreadEntryRaw(database, issueKey, role, state, now);
-    }
-  }
-  if (markImported) {
-    markMigrationImported(database, "role-threads", null);
-  }
-}
-
-function saveRoleThreadEntry(database: SqliteDatabase, issueKey: string, role: string, state: unknown): null {
-  return transaction(database, () => {
-    saveRoleThreadEntryRaw(database, issueKey, role, state, new Date().toISOString());
-    markMigrationImported(database, "role-threads", null);
-    return null;
-  });
-}
-
-function saveRoleThreadEntryRaw(database: SqliteDatabase, issueKey: string, role: string, state: unknown, now: string): void {
-  if (!isRecord(state)) {
-    throw new Error("Invalid role thread state payload");
-  }
-  const sessionId = issueKeyToSessionId(issueKey);
-  ensureSession(database, sessionId, now);
-  database
-    .prepare(
-      `INSERT INTO session_role_threads (
-         session_id, role, thread_id, last_seen_index, provider,
-         context_fingerprint, workspace_fingerprint, persona_fingerprint, updated_at
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(session_id, role)
-       DO UPDATE SET
-         thread_id = excluded.thread_id,
-         last_seen_index = excluded.last_seen_index,
-         provider = excluded.provider,
-         context_fingerprint = excluded.context_fingerprint,
-         workspace_fingerprint = excluded.workspace_fingerprint,
-         persona_fingerprint = excluded.persona_fingerprint,
-         updated_at = excluded.updated_at`,
-    )
-    .run(
-      sessionId,
-      role,
-      readString(state.threadId, "threadId"),
-      readNumber(state.lastSeenIndex, "lastSeenIndex"),
-      readOptionalString(state.provider),
-      readOptionalString(state.contextFingerprint),
-      readOptionalString(state.workspaceFingerprint),
-      readOptionalString(state.personaFingerprint),
-      now,
-    );
-}
-
-function importAgentContexts(database: SqliteDatabase, store: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "agent-contexts", "SELECT COUNT(*) AS count FROM session_agent_contexts");
-    replaceAgentContextsRaw(database, store, false);
-    markMigrationImported(database, "agent-contexts", legacyDigest);
-    return null;
-  });
-}
-
-function loadAgentContexts(database: SqliteDatabase): unknown {
-  const rows = database.prepare("SELECT * FROM session_agent_contexts ORDER BY session_id ASC, context_key ASC").all();
-  const store: Record<string, Record<string, unknown>> = {};
-  for (const row of rows) {
-    if (!isRecord(row)) {
-      continue;
-    }
-    const issueKey = sessionIdToIssueKey(readString(row.session_id, "session_id"));
-    const key = readString(row.context_key, "context_key");
-    store[issueKey] = {
-      ...(store[issueKey] ?? {}),
-      [key]: JSON.parse(readString(row.json, "json")),
-    };
-  }
-  return store;
-}
-
-function replaceAgentContexts(database: SqliteDatabase, store: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceAgentContextsRaw(database, store, markImported);
-    return null;
-  });
-}
-
-function replaceAgentContextsRaw(database: SqliteDatabase, store: unknown, markImported: boolean): void {
-  database.exec("DELETE FROM session_agent_contexts");
-  const now = new Date().toISOString();
-  for (const [issueKey, contexts] of entriesObject(store)) {
-    for (const [key, state] of entriesObject(contexts)) {
-      saveAgentContextEntryRaw(database, issueKey, key, state, now);
-    }
-  }
-  if (markImported) {
-    markMigrationImported(database, "agent-contexts", null);
-  }
-}
-
-function saveAgentContextEntry(database: SqliteDatabase, issueKey: string, role: string, state: unknown): null {
-  return transaction(database, () => {
-    saveAgentContextEntryRaw(database, issueKey, role, state, new Date().toISOString());
-    markMigrationImported(database, "agent-contexts", null);
-    return null;
-  });
-}
-
-function saveAgentContextEntryRaw(database: SqliteDatabase, issueKey: string, key: string, state: unknown, now: string): void {
-  const sessionId = issueKeyToSessionId(issueKey);
-  ensureSession(database, sessionId, now);
-  database
-    .prepare(
-      `INSERT INTO session_agent_contexts (session_id, context_key, json, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(session_id, context_key)
-       DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`,
-    )
-    .run(sessionId, key, JSON.stringify(state), now);
-}
-
-function importGitHubIntake(database: SqliteDatabase, state: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "github-intake", "SELECT COUNT(*) AS count FROM github_intake_repositories UNION ALL SELECT COUNT(*) AS count FROM github_intake_issues");
-    replaceGitHubIntakeRaw(database, state, false);
-    markMigrationImported(database, "github-intake", legacyDigest);
-    return null;
-  });
-}
-
-function loadGitHubIntake(database: SqliteDatabase): unknown {
-  const repositories: Record<string, unknown> = {};
-  for (const row of database.prepare("SELECT repo_key, json FROM github_intake_repositories ORDER BY repo_key ASC").all()) {
-    if (isRecord(row)) {
-      repositories[readString(row.repo_key, "repo_key")] = JSON.parse(readString(row.json, "json"));
-    }
-  }
-
-  const issues: Record<string, unknown> = {};
-  for (const row of database.prepare("SELECT issue_key, json FROM github_intake_issues ORDER BY issue_key ASC").all()) {
-    if (isRecord(row)) {
-      issues[readString(row.issue_key, "issue_key")] = JSON.parse(readString(row.json, "json"));
-    }
-  }
-
-  return { repositories, issues };
-}
-
-function replaceGitHubIntake(database: SqliteDatabase, state: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    replaceGitHubIntakeRaw(database, state, markImported);
-    return null;
-  });
-}
-
-function replaceGitHubIntakeRaw(database: SqliteDatabase, state: unknown, markImported: boolean): void {
-  if (!isRecord(state)) {
-    throw new Error("Invalid GitHub intake payload");
-  }
-  database.exec("DELETE FROM github_intake_repositories");
-  database.exec("DELETE FROM github_intake_issues");
-  const now = new Date().toISOString();
-  for (const [repoKey, repositoryState] of entriesObject(state.repositories)) {
-    database
-      .prepare(
-        `INSERT INTO github_intake_repositories (repo_key, json, updated_at)
-         VALUES (?, ?, ?)`,
-      )
-      .run(repoKey, JSON.stringify(repositoryState), now);
-  }
-  for (const [issueKey, issueState] of entriesObject(state.issues)) {
-    const sessionId = issueKeyToSessionId(issueKey);
-    ensureSession(database, sessionId, now);
-    database
-      .prepare(
-        `INSERT INTO github_intake_issues (session_id, issue_key, json, updated_at)
-         VALUES (?, ?, ?, ?)`,
-      )
-      .run(sessionId, issueKey, JSON.stringify(issueState), now);
-  }
-  if (markImported) {
-    markMigrationImported(database, "github-intake", null);
-  }
-}
-
-function importGoalLedger(database: SqliteDatabase, state: unknown, legacyDigest: string | null): null {
-  return transaction(database, () => {
-    assertTargetEmptyForImport(database, "goal-ledger", "SELECT COUNT(*) AS count FROM goal_ledger_documents");
-    saveGoalLedgerRaw(database, state, false);
-    markMigrationImported(database, "goal-ledger", legacyDigest);
-    return null;
-  });
-}
-
-function loadGoalLedger(database: SqliteDatabase): unknown | null {
-  const row = database.prepare("SELECT json FROM goal_ledger_documents WHERE document_key = 'default'").get();
-  if (!isRecord(row)) {
-    return null;
-  }
-  return JSON.parse(readString(row.json, "json"));
-}
-
-function saveGoalLedger(database: SqliteDatabase, state: unknown, markImported: boolean): null {
-  return transaction(database, () => {
-    saveGoalLedgerRaw(database, state, markImported);
-    return null;
-  });
-}
-
-function saveGoalLedgerRaw(database: SqliteDatabase, state: unknown, markImported: boolean): void {
-  const now = new Date().toISOString();
-  database
-    .prepare(
-      `INSERT INTO goal_ledger_documents (document_key, json, updated_at)
-       VALUES ('default', ?, ?)
-       ON CONFLICT(document_key)
-       DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`,
-    )
-    .run(JSON.stringify(state), now);
-  if (markImported) {
-    markMigrationImported(database, "goal-ledger", null);
-  }
 }
 
 function initLocalConsole(database: SqliteDatabase): null {
@@ -2212,8 +1847,6 @@ function isUnusedDefaultLocalProject(
   const factQueries = [
     "SELECT 1 AS found FROM session_agent_team_members WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM session_messages WHERE session_id = ? LIMIT 1",
-    "SELECT 1 AS found FROM session_role_threads WHERE session_id = ? LIMIT 1",
-    "SELECT 1 AS found FROM session_agent_contexts WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_route_decisions WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_acceptance_facts WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_integration_events WHERE session_id = ? LIMIT 1",
@@ -5424,7 +5057,7 @@ function markSchemaMigration(database: SqliteDatabase, version: string): void {
     .run(version, new Date().toISOString());
 }
 
-function markMigrationImported(database: SqliteDatabase, source: SqliteStateSource | "local-messages", legacyDigest: string | null): void {
+function markMigrationImported(database: SqliteDatabase, source: "local-messages", legacyDigest: string | null): void {
   database
     .prepare(
       `INSERT INTO legacy_migration_sources (source, legacy_digest, status, imported_at, error)
@@ -5433,19 +5066,6 @@ function markMigrationImported(database: SqliteDatabase, source: SqliteStateSour
        DO UPDATE SET legacy_digest = excluded.legacy_digest, status = 'imported', imported_at = excluded.imported_at, error = NULL`,
     )
     .run(source, legacyDigest, new Date().toISOString());
-}
-
-function assertTargetEmptyForImport(database: SqliteDatabase, source: SqliteStateSource, sql: string): void {
-  const rows = database.prepare(sql).all();
-  const count = rows.reduce<number>((sum, row) => {
-    if (!isRecord(row)) {
-      return sum;
-    }
-    return sum + readNumber(row.count, "count");
-  }, 0);
-  if (count > 0) {
-    throw new Error(`Cannot import legacy ${source}: SQLite target already has unmarked state`);
-  }
 }
 
 function transaction<T>(database: SqliteDatabase, body: () => T): T {
@@ -5478,13 +5098,6 @@ function transaction<T>(database: SqliteDatabase, body: () => T): T {
     }
     throw error;
   }
-}
-
-function entriesObject(value: unknown): Array<[string, unknown]> {
-  if (!isRecord(value) || Array.isArray(value)) {
-    return [];
-  }
-  return Object.entries(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -5546,3 +5159,4 @@ function toNumberId(value: number | bigint | undefined): number {
 function assertNever(value: never): never {
   throw new Error(`Unhandled SQLite command: ${JSON.stringify(value)}`);
 }
+
