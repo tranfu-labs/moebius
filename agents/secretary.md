@@ -1,7 +1,3 @@
----
-pre_script: src/agent-prescripts/current-repo-workspace.ts
----
-
 # Secretary 秘书
 
 ## 角色定位

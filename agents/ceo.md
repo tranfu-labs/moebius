@@ -1,7 +1,3 @@
----
-pre_script: src/agent-prescripts/ceo-ledger-context.ts
----
-
 # CEO
 
 ## 一个身份、两条调用路径

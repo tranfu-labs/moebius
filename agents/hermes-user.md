@@ -1,7 +1,3 @@
----
-workspace_access: read-run
----
-
 # Hermes 用户画像
 
 ## Workspace 访问纪律

@@ -58,22 +58,6 @@ export const CONFIG_PATH = RUNTIME_PATHS.configPath;
 export const LOCAL_CONFIG_PATH = RUNTIME_PATHS.localConfigPath;
 const LOCAL_CONFIG = loadMergedLocalConfig({ configPath: CONFIG_PATH, localConfigPath: LOCAL_CONFIG_PATH });
 
-export const TICK_INTERVAL_MS = 1 * 60 * 1000;
-export const IDLE_REPOSITORY_SCAN_INTERVAL_MS = 5 * 60 * 1000;
-export const ACTIVE_ISSUE_POLL_INTERVAL_MS = 1 * 60 * 1000;
-export const RUNNING_AGENT_INTERRUPT_POLL_INTERVAL_MS = 15 * 1000;
-export const ACTIVE_ISSUE_NO_CHANGE_LIMIT = 5;
-export const FAILURE_RETRY_LIMIT = 5;
-export const ISSUE_DISCOVERY_LIMIT = 20;
-export const MAX_ACTIVE_ISSUES = 3;
-export const CODEX_DRIVER_POOL_MAX_CONCURRENT = 5;
-export const GITHUB_CLI_RETRY_POLICY = {
-  retries: 4,
-  minTimeoutMs: 500,
-  maxTimeoutMs: 8_000,
-  factor: 2,
-} as const;
-export const CODEX_RUN_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 export const LOCAL_RUN_IDLE_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_RUN_IDLE_TIMEOUT_MS,
 ) ?? 3 * 60 * 1000;
@@ -87,16 +71,9 @@ export const LOCAL_LONG_RUN_REPORT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_LONG_RUN_REPORT_MS,
 ) ?? 15 * 60 * 1000;
 export const KIMI_CLI_SPAWN_TIMEOUT_MS = 5_000;
-export const CODEX_RUN_MAX_DURATION_MS = 120 * 60 * 1000;
 export const AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 export const AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS = 10 * 60 * 1000;
-export const CEO_ORCHESTRATION_ACTION_TIMEOUT_MS = 2 * 60 * 1000;
 export const WORKTREE_GIT_TIMEOUT_MS = 2 * 60 * 1000;
-export const ISSUE_MEDIA_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-export const ISSUE_MEDIA_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
-export const OUTPUT_ARTIFACT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-export const OUTPUT_ARTIFACT_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
-export const OUTPUT_ARTIFACT_RELEASE_TAG = "moebius-artifacts";
 export const LOCAL_CONSOLE_HOST = process.env.LOCAL_CONSOLE_HOST?.trim() || "127.0.0.1";
 export const LOCAL_CONSOLE_PORT = parseOptionalPort(process.env.LOCAL_CONSOLE_PORT) ?? 8788;
 export const LOCAL_CONSOLE_SQLITE_PATH = path.join(DATA_ROOT, ".state", "local-console.sqlite");
@@ -106,16 +83,11 @@ export const LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 export const LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE = 512;
 export const LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 export const LOCAL_CONSOLE_SESSION_LOG_ROOT = path.join(DATA_ROOT, "sessions");
-export const GITHUB_RUNNER_SQLITE_PATH = path.join(DATA_ROOT, ".state", "github-runner.sqlite");
 export const LOCAL_CONSOLE_STORE_TIMEOUT_MS = parseOptionalPositiveInteger(process.env.LOCAL_CONSOLE_STORE_TIMEOUT_MS) ?? 2_000;
 export const LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS = parseOptionalPositiveInteger(process.env.LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS) ?? 2_000;
-export const LOCAL_CONSOLE_FAILURE_RETRY_LIMIT = parseOptionalPositiveInteger(process.env.LOCAL_CONSOLE_FAILURE_RETRY_LIMIT) ?? FAILURE_RETRY_LIMIT;
+export const LOCAL_CONSOLE_FAILURE_RETRY_LIMIT = parseOptionalPositiveInteger(process.env.LOCAL_CONSOLE_FAILURE_RETRY_LIMIT) ?? 5;
 export const AGENTS_DIR = RUNTIME_PATHS.agentsDir;
 export const TMP_ROOT = "/tmp";
-export const ROLE_THREADS_STATE_PATH = path.join(DATA_ROOT, ".state", "role-threads.json");
-export const AGENT_CONTEXTS_STATE_PATH = path.join(DATA_ROOT, ".state", "agent-contexts.json");
-export const GITHUB_RESPONSE_INTAKE_STATE_PATH = path.join(DATA_ROOT, ".state", "github-response-intake.json");
-export const GOAL_LEDGER_STATE_PATH = path.join(DATA_ROOT, ".state", "goal-ledger.json");
 export const WORKDIR_ROOT = RUNTIME_PATHS.workdirRoot;
 
 export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
@@ -273,49 +245,6 @@ function buildCodexProviderOptions(config: CodexProviderConfig): string[] {
   ];
 }
 
-export const CONFIG_LOG_FIELDS = {
-  configPath: CONFIG_PATH,
-  localConfigPath: LOCAL_CONFIG_PATH,
-  dataRoot: DATA_ROOT,
-  tickIntervalMs: TICK_INTERVAL_MS,
-  idleRepositoryScanIntervalMs: IDLE_REPOSITORY_SCAN_INTERVAL_MS,
-  activeIssuePollIntervalMs: ACTIVE_ISSUE_POLL_INTERVAL_MS,
-  runningAgentInterruptPollIntervalMs: RUNNING_AGENT_INTERRUPT_POLL_INTERVAL_MS,
-  activeIssueNoChangeLimit: ACTIVE_ISSUE_NO_CHANGE_LIMIT,
-  failureRetryLimit: FAILURE_RETRY_LIMIT,
-  issueDiscoveryLimit: ISSUE_DISCOVERY_LIMIT,
-  maxActiveIssues: MAX_ACTIVE_ISSUES,
-  codexDriverPoolMaxConcurrent: CODEX_DRIVER_POOL_MAX_CONCURRENT,
-  githubCliRetry: GITHUB_CLI_RETRY_POLICY,
-  codexRunIdleTimeoutMs: CODEX_RUN_IDLE_TIMEOUT_MS,
-  codexRunMaxDurationMs: CODEX_RUN_MAX_DURATION_MS,
-  ceoOrchestrationActionTimeoutMs: CEO_ORCHESTRATION_ACTION_TIMEOUT_MS,
-  worktreeGitTimeoutMs: WORKTREE_GIT_TIMEOUT_MS,
-  issueMediaImageMaxBytes: ISSUE_MEDIA_IMAGE_MAX_BYTES,
-  issueMediaVideoMaxBytes: ISSUE_MEDIA_VIDEO_MAX_BYTES,
-  outputArtifactImageMaxBytes: OUTPUT_ARTIFACT_IMAGE_MAX_BYTES,
-  outputArtifactVideoMaxBytes: OUTPUT_ARTIFACT_VIDEO_MAX_BYTES,
-  outputArtifactReleaseTag: OUTPUT_ARTIFACT_RELEASE_TAG,
-  localConsoleHost: LOCAL_CONSOLE_HOST,
-  localConsolePort: LOCAL_CONSOLE_PORT,
-  localConsoleSqlitePath: LOCAL_CONSOLE_SQLITE_PATH,
-  localConsoleAttachmentMaxBytes: LOCAL_CONSOLE_ATTACHMENT_MAX_BYTES,
-  localConsoleAttachmentPreviewMaxBytes: LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_BYTES,
-  localConsoleAttachmentPreviewMaxEdge: LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE,
-  localConsoleAttachmentStagingTtlMs: LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS,
-  localConsoleSessionLogRoot: LOCAL_CONSOLE_SESSION_LOG_ROOT,
-  githubRunnerSqlitePath: GITHUB_RUNNER_SQLITE_PATH,
-  localConsoleStoreTimeoutMs: LOCAL_CONSOLE_STORE_TIMEOUT_MS,
-  localConsoleSqliteBusyTimeoutMs: LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS,
-  localConsoleFailureRetryLimit: LOCAL_CONSOLE_FAILURE_RETRY_LIMIT,
-  agentsDir: AGENTS_DIR,
-  tmpRoot: TMP_ROOT,
-  roleThreadsStatePath: ROLE_THREADS_STATE_PATH,
-  agentContextsStatePath: AGENT_CONTEXTS_STATE_PATH,
-  githubResponseIntakeStatePath: GITHUB_RESPONSE_INTAKE_STATE_PATH,
-  goalLedgerStatePath: GOAL_LEDGER_STATE_PATH,
-  workdirRoot: WORKDIR_ROOT,
-};
 
 function parseOptionalPort(value: string | undefined): number | null {
   if (value === undefined || value.trim() === "") {

@@ -1,7 +1,3 @@
----
-workspace_access: write
----
-
 # Dev 开发者
 
 当收到需求的时候，你的职责是按照 openspec-driven-development SKILL 来实现。

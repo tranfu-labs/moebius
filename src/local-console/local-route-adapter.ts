@@ -1,14 +1,12 @@
-import {
-  DEFAULT_CEO_TIMEOUT_MS,
-  loadCeoPersonaWithScripts,
-  parseExternalCommentRouteOutput,
-  validateExternalRouteAppendBody,
-} from "../format-ceo.js";
 import type { CodexRunResult } from "../codex.js";
 import type { TimelineMessage } from "../conversation.js";
 import type { LocalRouteJudgment, LocalRouteJudgmentInput } from "./route-bus.js";
 import type { LocalConsoleMessage } from "./types.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
+import { parseLocalRouteJudgment, validateLocalRouteAppendBody } from "./local-route-judgment.js";
+import { loadLocalRoutePersona } from "./local-route-persona.js";
+
+const DEFAULT_LOCAL_ROUTE_TIMEOUT_MS = 300_000;
 
 export const defaultLocalRouteJudgment: LocalRouteJudgment = async (input) => {
   const run = input.runCodex;
@@ -17,7 +15,7 @@ export const defaultLocalRouteJudgment: LocalRouteJudgment = async (input) => {
   }
   let persona: string;
   try {
-    persona = await loadCeoPersonaWithScripts(input.agentsDir);
+    persona = await loadLocalRoutePersona(input.agentsDir);
   } catch (error) {
     return { action: "FAIL_OPEN", reason: "persona-load-failed", detail: formatError(error) };
   }
@@ -36,7 +34,7 @@ export const defaultLocalRouteJudgment: LocalRouteJudgment = async (input) => {
         mode: { kind: "full" },
         signal: controller.signal,
       }),
-      planRuntimeFallback(input.timeoutMs, DEFAULT_CEO_TIMEOUT_MS),
+      planRuntimeFallback(input.timeoutMs, DEFAULT_LOCAL_ROUTE_TIMEOUT_MS),
       () => controller.abort(),
     );
   } catch (error) {
@@ -44,7 +42,7 @@ export const defaultLocalRouteJudgment: LocalRouteJudgment = async (input) => {
   }
   if (!result.ok) return { action: "FAIL_OPEN", reason: "codex-failed", detail: result.reason };
   if (result.finalText.trim() === "") return { action: "FAIL_OPEN", reason: "empty-output" };
-  const parsed = parseExternalCommentRouteOutput(result.finalText);
+  const parsed = parseLocalRouteJudgment(result.finalText);
   if (parsed.kind === "invalid_json") {
     return { action: "FAIL_OPEN", reason: "invalid-json", detail: parsed.detail };
   }
@@ -52,14 +50,14 @@ export const defaultLocalRouteJudgment: LocalRouteJudgment = async (input) => {
     return { action: "FAIL_OPEN", reason: "unknown-action", detail: parsed.detail };
   }
   if (parsed.kind === "no_action") return { action: "NO_ACTION", reason: "ceo-no-action" };
-  const validation = validateExternalRouteAppendBody(parsed.body, input.availableAgentNames);
+  const validation = validateLocalRouteAppendBody(parsed.body, input.availableAgentNames);
   if (!validation.ok) {
     return { action: "FAIL_OPEN", reason: validation.reason, detail: validation.detail };
   }
   return { action: "APPEND", body: parsed.body, targetRole: validation.targetRole, reason: "appended" };
 };
 
-export const validateLocalRouteAppend = validateExternalRouteAppendBody;
+export const validateLocalRouteAppend = validateLocalRouteAppendBody;
 
 function buildLocalRoutePrompt(input: {
   persona: string;

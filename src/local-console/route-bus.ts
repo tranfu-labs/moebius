@@ -1,4 +1,4 @@
-import type { FormatExternalCommentRouteResult } from "../format-ceo.js";
+import type { LocalRouteJudgmentResult } from "./local-route-judgment.js";
 import type { CodexRunOptions, CodexRunResult } from "../codex.js";
 import type { TimelineMessage } from "../conversation.js";
 import type { LocalConsoleMessage, LocalConsoleStore } from "./types.js";
@@ -14,7 +14,7 @@ import { planRuntimeFallback } from "./runtime-domain.js";
 
 export type LocalRouteJudgment = (
   input: LocalRouteJudgmentInput,
-) => Promise<FormatExternalCommentRouteResult>;
+) => Promise<LocalRouteJudgmentResult>;
 
 export interface LocalRouteJudgmentInput {
   timeline: TimelineMessage[];
@@ -91,7 +91,7 @@ export async function maybeRouteLocalNoMentionMessage(
 
   const action = planLocalRouteAction(routeResult.action);
   if (action.kind === "append") {
-    const append = routeResult as Extract<FormatExternalCommentRouteResult, { action: "APPEND" }>;
+    const append = routeResult as Extract<LocalRouteJudgmentResult, { action: "APPEND" }>;
     const validation = input.validateAppend(append.body, input.availableAgentNames);
     const validationPlan = decideLocalRouteValidation(validation.ok);
     if (validationPlan.kind === "invalid") {
@@ -113,7 +113,7 @@ export async function maybeRouteLocalNoMentionMessage(
   }
 
   if (action.kind === "no-action") {
-    const noAction = routeResult as Extract<FormatExternalCommentRouteResult, { action: "NO_ACTION" }>;
+    const noAction = routeResult as Extract<LocalRouteJudgmentResult, { action: "NO_ACTION" }>;
     await input.store.recordRouteNoAction({
       userMessageId: input.message.id,
       sessionId: input.sessionId,
@@ -130,7 +130,7 @@ export async function maybeRouteLocalNoMentionMessage(
   return await handleFailedRouteJudgment(
     input,
     routeKey,
-    (routeResult as Extract<FormatExternalCommentRouteResult, { action: "FAIL_OPEN" }>).reason,
+    (routeResult as Extract<LocalRouteJudgmentResult, { action: "FAIL_OPEN" }>).reason,
   );
 }
 

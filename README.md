@@ -86,7 +86,7 @@ Moebius is under active development. Read the [release notes](CHANGELOG.md), [re
 
 ## Develop and contribute
 
-Source setup, development commands, tests, review expectations, and the squash-merge workflow live in [CONTRIBUTING.md](CONTRIBUTING.md). Architecture starts with the [module map](docs/architecture/module-map.md) and [architecture invariants](docs/architecture/invariants.md); advanced GitHub runner behavior is documented in the [interaction protocol](docs/protocols/github-interaction.md).
+Source setup, development commands, tests, review expectations, and the squash-merge workflow live in [CONTRIBUTING.md](CONTRIBUTING.md). Architecture starts with the [module map](docs/architecture/module-map.md) and [architecture invariants](docs/architecture/invariants.md).
 
 ## License
 

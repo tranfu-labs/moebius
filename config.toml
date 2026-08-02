@@ -1,19 +1,7 @@
 # moebius default configuration.
 #
-# This checked-in file is an example. It should not enable repository
-# monitoring by default.
-#
-# Put machine-local repository entries in config.local.toml instead.
-#
-# Example:
-#
-# [[watchRepositories]]
-# owner = "tranfu-labs"
-# repo = "tranfu-agents-app"
-#
-# [[watchRepositories]]
-# owner = "tranfu-labs"
-# repo = "moebius"
+# This checked-in file is an example. Put machine-local provider overrides in
+# config.local.toml instead.
 
 # Codex 执行 provider 覆盖（默认走本机订阅登录；下面二选一切到 API 网关）：
 #
