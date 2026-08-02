@@ -83,7 +83,11 @@ type ConsoleErrorSourceFamily =
 interface ConsoleErrorSource { family: ConsoleErrorSourceFamily; scope?: string }
 interface ConsoleErrorOperation { sourceKey: string; generation: number }
 interface ConsoleErrorState {
-  visible: { operation: ConsoleErrorOperation; message: string } | null;
+  unresolvedBySource: Readonly<Record<string, {
+    operation: ConsoleErrorOperation;
+    message: string;
+    publishedSequence: number;
+  }>>;
   latestGenerationBySource: Readonly<Record<string, number>>;
 }
 ```
@@ -91,9 +95,13 @@ interface ConsoleErrorState {
 纯 reducer 接收 `begin / fail / succeed` intent：
 
 - `begin` 只推进该 source 的 generation，旧错误继续可读；
-- `fail` 仅在 token 仍是该 source 最新操作时发布，并替换当前单一可见错误；
-- `succeed` 仅在 token 最新且当前可见错误属于同 source 时清除；
+- `fail` 仅在 token 仍是该 source 最新操作时发布，并替换该 source 当前唯一未解决错误；
+- `succeed` 仅在 token 最新时清除同 source 的未解决错误；
 - stale token 和其他 source 的成功保持状态不变。
+
+每个 source 最多保留一条未解决错误，状态大小受 source 数量约束，不保存无上限时间序列。可见错误从
+`unresolvedBySource` 中选择 `publishedSequence` 最大的一条；当前 source 成功后，如果还有其他未解决错误，
+重新显示其中最新的一条。view 仍只接收一个字符串。
 
 不同实体可能并发的附件、session、project 使用 `scope`（draft/session/project id）；scope 只参与内部所有权，
 不进入文案、DOM、日志或持久化。
@@ -106,7 +114,7 @@ interface ConsoleErrorState {
 - `fail(operation, message)`；
 - `succeed(operation)`；
 - `report(source, message)` 仅供无异步等待的同步拒绝，内部等价于 begin + fail；
-- `visibleMessage` 供现有 presentation 使用。
+- `visibleMessage` 由未解决 source 集合中最新一条派生，供现有 presentation 使用。
 
 controller 使用 ref 读取最新状态，不因父级重渲染或 callback identity 变化变旧。它不翻译、不判断业务错误，
 只落实所有权。
@@ -137,7 +145,8 @@ controller 使用 ref 读取最新状态，不因父级重渲染或 callback ide
 ## 5. 失败、并发与恢复
 
 - source A 失败后，任意次数 state refresh 成功不能清除 A；
-- source B 成功只 settle B，不能清除 A；B 失败可以作为更新的可见错误替换 A；
+- source B 成功只 settle B，不能清除 A；B 失败时 B 成为最新可见错误；
+- A 失败 → B 失败 → B 成功后，A 重新成为可见错误；随后 A 成功才清空；
 - A 的下一次操作开始时保留旧 A 错误，直到新 A 成功清除或失败替换，避免重试期间空白；
 - A1 慢请求后于 A2 返回时，A1 的 succeed/fail 都因 generation stale 被忽略；
 - abort、selection mutation 失效与组件卸载沿用现有 guard，不得借错误 controller 恢复 stale 结果；
@@ -156,7 +165,7 @@ controller 使用 ref 读取最新状态，不因父级重渲染或 callback ide
 
 ### 7.1 自动化
 
-1. 纯 reducer：跨来源隔离、同源成功/失败、stale token、scope 隔离；
+1. 纯 reducer：跨来源隔离、同源成功/失败、错误遮蔽恢复、stale token、scope 隔离；
 2. error hook：父级重渲染、controller/callback identity 变化、慢结果；
 3. state sync：连续三个成功 poll 不清 operation error；refresh 自身失败后成功会清；
 4. project/attachment/session/analysis 四类 controller 各取一条失败→无关成功→同源恢复；

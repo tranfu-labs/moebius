@@ -12,10 +12,10 @@
     <rect x="45" y="310" width="255" height="72" rx="10" fill="#fff" stroke="#94a3b8"/><text x="70" y="340">并发实体</text><text x="70" y="365">family + draft/session scope</text>
     <rect x="390" y="125" width="260" height="190" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
     <text x="425" y="165" font-weight="700">domain reducer</text>
-    <text x="420" y="200">latest generation / source</text>
+    <text x="420" y="200">每个 source 一条未解决错误</text>
     <text x="420" y="230">跨来源 succeed → no-op</text>
     <text x="420" y="260">stale token → no-op</text>
-    <text x="420" y="290">当前同源 succeed → clear</text>
+    <text x="420" y="290">同源 clear → 回显剩余最新项</text>
     <rect x="745" y="165" width="175" height="110" rx="10" fill="#fff" stroke="#94a3b8"/>
     <text x="775" y="205">visibleMessage</text><text x="770" y="235">单一现有表面</text><text x="770" y="260">UI 布局不变</text>
   </g>

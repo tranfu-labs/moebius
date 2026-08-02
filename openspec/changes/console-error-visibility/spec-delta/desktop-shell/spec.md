@@ -6,9 +6,11 @@
 
 Source: docs/product/pages/main-conversation.md#操作与反馈
 
-desktop renderer MUST 为共享客户端错误记录产生它的用例来源和该来源内的操作代次。操作成功 MUST 只消解
+desktop renderer MUST 为共享客户端错误记录产生它的用例来源和该来源内的操作代次，并按 source 至多保留一条
+当前未解决错误。操作成功 MUST 只消解
 同来源当前操作的错误；周期性状态刷新或其他来源成功 MUST NOT 清除它们没有产生的错误。页面 MAY 继续只显示
-一个当前错误，但 MUST NOT 使用 TTL、固定延时或附件专属状态代替来源所有权。
+一个当前错误；当前错误被同源成功消解后，系统 MUST 重新显示其余未解决错误中最近发布的一条。系统 MUST NOT
+使用无上限错误时间序列、TTL、固定延时或附件专属状态代替来源所有权。
 
 同来源较旧操作的迟到成功或失败 MUST NOT 清除、替换或恢复较新操作已经提交的错误状态。不同草稿、会话、
 项目或标签允许并发时，来源 MUST 包含足以区分对应实体的 scope；scope MUST NOT 进入用户文案、DOM、日志或持久化。
@@ -34,6 +36,14 @@ desktop renderer MUST 为共享客户端错误记录产生它的用例来源和�
 - THEN A 的错误被清除
 - WHEN 更早的 A1 随后成功或失败
 - THEN 当前错误状态保持不变
+
+#### Scenario: 被后续失败遮蔽的错误重新可见
+
+- GIVEN 来源 A 失败后来源 B 失败且 B 是当前可见错误
+- WHEN B 的最新操作成功
+- THEN A 的未解决错误重新可见
+- WHEN A 的最新操作也成功
+- THEN 当前客户端错误清空
 
 #### Scenario: 并发实体互不清除
 

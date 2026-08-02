@@ -4,7 +4,8 @@
 
 - [ ] 固定 `47f2031` 基线：53 个非 null 写入、除 refresh 外 23 个 null 清除、`app.tsx` 262 逻辑行、
   file/dependency debt 0、permit 193、roots 9
-- [ ] 先补 `console-error-model` 纯测试：跨来源成功不清、同源成功清除、同源失败替换、stale token 忽略、scope 隔离
+- [ ] 先补 `console-error-model` 纯测试：跨来源成功不清、同源成功清除、同源失败替换、stale token 忽略、scope 隔离，
+  以及 A 失败 → B 失败 → B 成功后 A 重新可见 → A 成功后清空
 - [ ] 补 hook/controller 测试：父级重渲染、callback identity 变化、慢旧返回与失败；测试先红后再改生产代码
 
 ## B · 错误所有权模型
@@ -41,7 +42,8 @@
 1. 打开真实 Desktop 主会话 → 制造项目 mutation 失败 → 不操作等待至少 3.2 秒 → 应持续看到同一可读错误，
    三次成功 state poll 均不得清除它。
 2. 保持上述项目错误 → 成功完成另一来源的附件预览或会话搜索 → 应仍看到项目错误；不得因无关成功消失。
-3. 在同一项目入口重试并成功 → 应看到该项目错误消失；同时存在的其他来源错误不得被清除。
+3. 先让来源 A 失败、再让来源 B 失败 → B 应成为当前错误；B 重试成功 → A 应重新可见；A 再成功 →
+   错误才清空。stale 返回与父级重渲染后结论不变。
 4. 切到 English 触发附件失败并等待三个 poll → 应持续看到英文错误；切回简体中文后重新触发同类失败 →
    应持续看到中文错误，均无需 MutationObserver 才能读到。
 5. 跑 error model/hook/state-sync/controller 定向测试 → 应退出 0，并覆盖跨来源、同源恢复、stale、父级重渲染、
