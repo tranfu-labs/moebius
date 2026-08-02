@@ -21,6 +21,7 @@ import { checkCodex } from "./env-doctor.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
 import { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
 import { DesktopShutdownRuntime } from "./desktop-shutdown-runtime.js";
+import { runDesktopStartup } from "./desktop-startup-runtime.js";
 import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
@@ -283,76 +284,54 @@ app.on("window-all-closed", () => {
 });
 
 async function boot(): Promise<void> {
-  activeLocale = await readLanguagePreference(status.dataRoot);
-  registerLanguagePreferenceIpc();
-  const shellPathReady = createShellPathReadinessGate({
-    resolve: () => resolveShellPath({
-      platform: process.platform,
-      currentPath: process.env.PATH,
+  await runDesktopStartup({
+    status,
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    readLocale: () => readLanguagePreference(status.dataRoot),
+    setLocale: (locale) => {
+      activeLocale = locale;
+    },
+    registerLanguage: registerLanguagePreferenceIpc,
+    createShellPathGate: (apply) => createShellPathReadinessGate({
+      resolve: () => resolveShellPath({ platform: process.platform, currentPath: process.env.PATH }),
+      apply,
     }),
-    apply: (shellPath) => {
-      status.shellPath = shellPath;
-      process.env.PATH = shellPath.path;
-      windows.publishStatus();
-    },
-  });
-  const onboardingReadiness = new OnboardingCliReadinessService();
-  const teamBuilder = new AiTeamBuilder({
-    dataRoot: status.dataRoot,
-    resolveExecutionProfile: () =>
-      shellPathReady.afterReady(() => onboardingReadiness.ensureBuilderExecutionProfile()),
-  });
-  onboardingCliInstaller = new OnboardingCliInstallManager({
-    onInstallSucceeded: async (cli) => {
-      await onboardingReadiness.check(cli);
-    },
-  });
-  onboardingCliInstaller.subscribe((snapshot) => {
-    windows.sendMain(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
-  });
-  registerAiTeamBuilderIpc({
-    ipcMain,
-    builder: teamBuilder,
-  });
-
-  registerOnboardingIpc({
-    ipcMain,
-    getDataRoot: () => status.dataRoot,
-    clipboard,
-    readiness: onboardingReadiness,
-    installer: onboardingCliInstaller,
-    teamBuilder,
-  });
-  if (process.platform === "darwin" && !app.isPackaged) {
-    app.dock?.setIcon(path.join(dirname, "app-icon-1024.png"));
-  }
-  windows.createMainWindow();
-  windows.publishStatus();
-
-  shellPathReady.start();
-  await shellPathReady.ready;
-
-  try {
-    const seedRoot = resolveSeedRoot();
-    const plan = await buildSeedCopyPlan({ seedRoot, dataRoot: status.dataRoot });
-    await executeSeedCopyPlan(plan.operations);
-    const teamSeed = await seedBuiltInTeams({
-      seedTeamsRoot: app.isPackaged ? path.join(seedRoot, "teams") : path.join(projectRoot, "seeds", "teams"),
+    createReadiness: () => new OnboardingCliReadinessService(),
+    createBuilder: (readiness, gate) => new AiTeamBuilder({
       dataRoot: status.dataRoot,
-    });
-    status.seed = {
-      status: "ok",
-      copied: plan.operations.length + (teamSeed.status === "seeded" ? 1 : 0),
-      skipped: plan.skippedDestinations.length + (teamSeed.status === "skipped" ? 1 : 0),
-    };
-  } catch (error) {
-    status.seed = { status: "error", copied: 0, skipped: 0, error: formatError(error) };
-    windows.publishStatus();
-    return;
-  }
-  windows.publishStatus();
-
-  await localConsole.start();
+      resolveExecutionProfile: () => gate.afterReady(() => readiness.ensureBuilderExecutionProfile()),
+    }),
+    createInstaller: (onInstallSucceeded) => new OnboardingCliInstallManager({ onInstallSucceeded }),
+    setInstaller: (installer) => {
+      onboardingCliInstaller = installer;
+    },
+    observeInstaller: (installer) => installer.subscribe((snapshot) => {
+      windows.sendMain(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
+    }),
+    registerBuilder: (builder) => registerAiTeamBuilderIpc({ ipcMain, builder }),
+    registerOnboarding: ({ readiness, installer, builder }) => registerOnboardingIpc({
+      ipcMain,
+      getDataRoot: () => status.dataRoot,
+      clipboard,
+      readiness,
+      installer,
+      teamBuilder: builder,
+    }),
+    setDockIcon: () => app.dock?.setIcon(path.join(dirname, "app-icon-1024.png")),
+    createWindow: () => windows.createMainWindow(),
+    publishStatus: () => windows.publishStatus(),
+    buildSeedPlan: () => buildSeedCopyPlan({ seedRoot: resolveSeedRoot(), dataRoot: status.dataRoot }),
+    executeSeedPlan: executeSeedCopyPlan,
+    seedTeams: () => seedBuiltInTeams({
+      seedTeamsRoot: app.isPackaged
+        ? path.join(resolveSeedRoot(), "teams")
+        : path.join(projectRoot, "seeds", "teams"),
+      dataRoot: status.dataRoot,
+    }),
+    startLocalConsole: () => localConsole.start(),
+    formatError,
+  });
 }
 
 function registerLanguagePreferenceIpc(): void {
