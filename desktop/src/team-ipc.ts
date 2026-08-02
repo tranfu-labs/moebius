@@ -41,7 +41,7 @@ import {
   prepareOfficialTeamUpdate,
   type PreparedOfficialTeamUpdate,
 } from "./team-official-update.js";
-import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration.js";
+import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration-store.js";
 import {
   forgetTrashedUserTeamRecord,
   listRecordedUserTeamSnapshots,

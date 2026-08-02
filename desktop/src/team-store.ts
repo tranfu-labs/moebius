@@ -26,7 +26,7 @@ import {
 } from "./team-model.js";
 import {
   preserveLegacyEmbeddedOnboardingOrchestration,
-} from "./team-onboarding-orchestration.js";
+} from "./team-onboarding-orchestration-store.js";
 
 export const TEAMS_DIRECTORY = "teams";
 export const SYSTEM_TEAMS_DIRECTORY = ".system";

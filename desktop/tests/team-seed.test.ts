@@ -16,7 +16,7 @@ import {
   readTeamSeedConflicts,
   seedBuiltInTeams,
 } from "../src/team-seed.js";
-import { readTeamOnboardingOrchestration } from "../src/team-onboarding-orchestration.js";
+import { readTeamOnboardingOrchestration } from "../src/team-onboarding-orchestration-store.js";
 import {
   getPackagedTeamCacheDirectory,
   readTeamExecutionBindings,
