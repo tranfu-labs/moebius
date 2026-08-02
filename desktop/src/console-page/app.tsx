@@ -7,8 +7,6 @@ import {
   type ConversationSearchResultItem,
   resolveNewConversationAgentTeamKey,
   type AgentTeamInformationInput,
-  type AgentTeamDetailState,
-  type AgentTeamMemberEditorState,
   type AgentTeamSaveAllFailureView,
   type OperatorMessage,
   type OperatorPendingDispatch,
@@ -89,7 +87,6 @@ import type {
   AgentTeamExternalChangeRequest,
   AgentTeamExternalChangeResponse,
 } from "../team-external-change-contract.js";
-import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -133,6 +130,7 @@ import {
 import {
   planAgentTeamFileManagerTranslationKey,
   planFindOperatorAgentTeam,
+  planAgentTeamDetailState,
   planOperatorAgentTeam,
 } from "./agent-team-console-model.js";
 import {
@@ -206,31 +204,18 @@ import {
 } from "./presentation-route.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import {
-  applyAgentTeamMemberExternalChange,
-  clearAgentTeamMemberExternalChange,
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
-  EMPTY_AGENT_TEAM_DRAFT_STATE,
   failAgentTeamMemberLoad,
-  failAgentTeamMemberSave,
   finishAgentTeamMemberLoad,
-  finishAgentTeamMemberSave,
   getAgentTeamKey,
   getDirtyAgentTeamMemberSlugs,
-  getAgentTeamMemberDraft,
-  isAgentTeamMemberDirty,
-  loadAgentTeamMemberExternalVersion,
   reconcileAgentTeamSelection,
   removeAgentTeamDrafts,
   removeAgentTeamMemberDraft,
   startAgentTeamMemberLoad,
-  startAgentTeamMemberExternalOverwrite,
-  startAgentTeamMemberSave,
   updateAgentTeamMemberDraft,
-  type AgentTeamDraftState,
-  type AgentTeamSaveAllFailure,
 } from "./team-state.js";
-import { saveAllAgentTeamDrafts } from "./team-save-controller.js";
 import {
   useManagedAttachmentDrafts,
 } from "./use-managed-attachments.js";
@@ -248,6 +233,7 @@ import { useDesktopSettingsBundle } from "./use-desktop-settings.js";
 import { useActiveCliInstallationsBundle } from "./use-active-cli-installations.js";
 import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
 import { useAgentTeamCatalog } from "./use-agent-team-catalog.js";
+import { useAgentTeamMemberEditor } from "./use-agent-team-member-editor.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -514,15 +500,16 @@ export function OperatorConsoleApp({
   const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const agentTeamCatalogBundle = useAgentTeamCatalog(window.moebius);
+  const agentTeamMemberBundle = useAgentTeamMemberEditor({
+    api: window.moebius,
+    catalog: agentTeamCatalogBundle,
+    t,
+  });
   const cliInstallationsBundle = useActiveCliInstallationsBundle(window.moebius);
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,
   );
   const [activeAgentTeamKey, setActiveAgentTeamKey] = useState<string | null>(null);
-  const [agentTeamDraftState, setAgentTeamDraftState] = useState<AgentTeamDraftState>(EMPTY_AGENT_TEAM_DRAFT_STATE);
-  const agentTeamDraftStateRef = useRef(agentTeamDraftState);
-  const checkingAgentTeamExternalChangesRef = useRef(new Set<string>());
-  const [agentTeamSaveAllFailures, setAgentTeamSaveAllFailures] = useState<AgentTeamSaveAllFailure[]>([]);
   const [primaryAgentChange, setPrimaryAgentChange] = useState<AgentTeamPrimaryAgentChangeState | null>(null);
   const [sidebarVisibilityPreference, setSidebarVisibilityPreference] = useState<SidebarVisibilityPreference>(() =>
     readSidebarVisibilityPreference(window.localStorage),
@@ -605,241 +592,6 @@ export function OperatorConsoleApp({
     );
   }, [state]);
 
-  const commitAgentTeamDraftState = useCallback((nextState: AgentTeamDraftState) => {
-    agentTeamDraftStateRef.current = nextState;
-    setAgentTeamDraftState(nextState);
-  }, []);
-
-
-  const loadAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string) => {
-    const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    if (current?.loadStatus === "ready" || current?.loadStatus === "loading") {
-      return;
-    }
-
-    commitAgentTeamDraftState(startAgentTeamMemberLoad(agentTeamDraftStateRef.current, teamKey, memberSlug));
-    try {
-      const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-      const readMember = window.moebius?.readAgentTeamMember;
-      if (team === undefined || readMember === undefined) {
-        throw new Error(t("desktop.error.agentRead"));
-      }
-      const document = await readMember({ teamId: team.id, ownership: team.ownership, memberSlug });
-      commitAgentTeamDraftState(finishAgentTeamMemberLoad(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        document.agentMarkdown,
-      ));
-    } catch (error) {
-      commitAgentTeamDraftState(failAgentTeamMemberLoad(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        formatError(error),
-      ));
-    }
-  }, [agentTeamCatalogBundle.state, commitAgentTeamDraftState, t]);
-
-  const updateAgentTeamMemberSummary = useCallback((teamKey: string, document: AgentTeamMemberDocument) => {
-    agentTeamCatalogBundle.setState((current) => current.status !== "ready"
-      ? current
-      : {
-          status: "ready",
-          teams: current.teams.map((team) => team.teamKey !== teamKey
-            ? team
-            : {
-                ...team,
-                members: team.members.map((member) => member.slug === document.slug
-                  ? {
-                      slug: document.slug,
-                      displayName: document.displayName,
-                      description: document.description,
-                    }
-                  : member),
-              }),
-        });
-  }, []);
-
-  const checkAgentTeamMemberExternalChange = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    const checkExternalChange = window.moebius?.checkAgentTeamMemberExternalChange;
-    if (
-      team === undefined
-      || current?.loadStatus !== "ready"
-      || current.savedMarkdown === null
-      || current.saveStatus === "saving"
-      || checkExternalChange === undefined
-    ) {
-      return;
-    }
-
-    const checkKey = `${teamKey}\u0000${memberSlug}`;
-    if (checkingAgentTeamExternalChangesRef.current.has(checkKey)) {
-      return;
-    }
-    checkingAgentTeamExternalChangesRef.current.add(checkKey);
-    try {
-      const result = await checkExternalChange({
-        teamId: team.id,
-        ownership: team.ownership,
-        memberSlug,
-        knownAgentMarkdown: current.savedMarkdown,
-      });
-      if (result.status === "unchanged") {
-        commitAgentTeamDraftState(clearAgentTeamMemberExternalChange(
-          agentTeamDraftStateRef.current,
-          teamKey,
-          memberSlug,
-        ));
-        return;
-      }
-      if (result.status !== "changed") {
-        return;
-      }
-
-      const nextState = applyAgentTeamMemberExternalChange(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        result.document.agentMarkdown,
-      );
-      commitAgentTeamDraftState(nextState);
-      if (getAgentTeamMemberDraft(nextState, teamKey, memberSlug)?.externalChangeStatus === "reloaded") {
-        updateAgentTeamMemberSummary(teamKey, result.document);
-      }
-    } catch (error) {
-      commitAgentTeamDraftState(failAgentTeamMemberLoad(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        t("desktop.error.externalCheck", { error: formatError(error) }),
-      ));
-    } finally {
-      checkingAgentTeamExternalChangesRef.current.delete(checkKey);
-    }
-  }, [agentTeamCatalogBundle.state, commitAgentTeamDraftState, t, updateAgentTeamMemberSummary]);
-
-  const persistAgentTeamMember = useCallback(async (
-    teamKey: string,
-    memberSlug: string,
-    agentMarkdown: string,
-  ): Promise<AgentTeamMemberDocument> => {
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
-    const writeMember = window.moebius?.writeAgentTeamMember;
-    if (team === undefined || writeMember === undefined) {
-      throw new Error(t("desktop.error.agentSave"));
-    }
-    const document = await writeMember({
-      teamId: team.id,
-      ownership: team.ownership,
-      memberSlug,
-      agentMarkdown,
-    });
-    updateAgentTeamMemberSummary(teamKey, document);
-    return document;
-  }, [agentTeamCatalogBundle.state, t, updateAgentTeamMemberSummary]);
-
-  const saveAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    if (!isAgentTeamMemberDirty(current) || current?.saveStatus === "saving") {
-      return;
-    }
-    commitAgentTeamDraftState(startAgentTeamMemberSave(agentTeamDraftStateRef.current, teamKey, memberSlug));
-    const saving = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    const requestedMarkdown = saving?.saveRequestedMarkdown;
-    if (requestedMarkdown === null || requestedMarkdown === undefined) {
-      return;
-    }
-
-    try {
-      const document = await persistAgentTeamMember(teamKey, memberSlug, requestedMarkdown);
-      commitAgentTeamDraftState(finishAgentTeamMemberSave(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        document.agentMarkdown,
-      ));
-      setAgentTeamSaveAllFailures((currentFailures) =>
-        currentFailures.filter((failure) => failure.memberSlug !== memberSlug));
-    } catch (error) {
-      commitAgentTeamDraftState(failAgentTeamMemberSave(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        formatError(error),
-      ));
-    }
-  }, [commitAgentTeamDraftState, persistAgentTeamMember]);
-
-  const loadAgentTeamMemberExternalChange = useCallback((teamKey: string, memberSlug: string): void => {
-    const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    if (current?.externalChangeStatus !== "conflict" || current.externalMarkdown === null) {
-      return;
-    }
-    const externalMarkdown = current.externalMarkdown;
-    commitAgentTeamDraftState(loadAgentTeamMemberExternalVersion(
-      agentTeamDraftStateRef.current,
-      teamKey,
-      memberSlug,
-    ));
-    updateAgentTeamMemberSummary(teamKey, {
-      slug: memberSlug,
-      agentMarkdown: externalMarkdown,
-      ...tryParseAgentMarkdownIdentity(externalMarkdown),
-    });
-  }, [commitAgentTeamDraftState, updateAgentTeamMemberSummary]);
-
-  const overwriteAgentTeamMemberExternalChange = useCallback(async (
-    teamKey: string,
-    memberSlug: string,
-  ): Promise<void> => {
-    commitAgentTeamDraftState(startAgentTeamMemberExternalOverwrite(
-      agentTeamDraftStateRef.current,
-      teamKey,
-      memberSlug,
-    ));
-    const saving = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
-    const requestedMarkdown = saving?.saveRequestedMarkdown;
-    if (saving?.saveStatus !== "saving" || requestedMarkdown === null || requestedMarkdown === undefined) {
-      return;
-    }
-
-    try {
-      const document = await persistAgentTeamMember(teamKey, memberSlug, requestedMarkdown);
-      commitAgentTeamDraftState(finishAgentTeamMemberSave(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        document.agentMarkdown,
-      ));
-    } catch (error) {
-      commitAgentTeamDraftState(failAgentTeamMemberSave(
-        agentTeamDraftStateRef.current,
-        teamKey,
-        memberSlug,
-        formatError(error),
-      ));
-    }
-  }, [commitAgentTeamDraftState, persistAgentTeamMember]);
-
-  const saveAllDraftsAndLeave = useCallback(async (
-    teamKey: string,
-  ): Promise<{ failures: AgentTeamSaveAllFailureView[] }> => {
-    const result = await saveAllAgentTeamDrafts({
-      state: agentTeamDraftStateRef.current,
-      teamKey,
-      saveMember: async (memberSlug, agentMarkdown) => {
-        const document = await persistAgentTeamMember(teamKey, memberSlug, agentMarkdown);
-        return document.agentMarkdown;
-      },
-      onTransition: commitAgentTeamDraftState,
-    });
-    commitAgentTeamDraftState(result.state);
-    setAgentTeamSaveAllFailures(result.failures);
-    return { failures: result.failures };
-  }, [commitAgentTeamDraftState, persistAgentTeamMember]);
 
   const openAgentTeam = useCallback((teamKey: string) => {
     const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
@@ -856,11 +608,11 @@ export function OperatorConsoleApp({
         : team.members[0]?.slug ?? null;
     setActiveAgentTeamKey(teamKey);
     agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: currentMemberSlug });
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
     if (currentMemberSlug !== null) {
-      void loadAgentTeamMember(teamKey, currentMemberSlug);
+      void agentTeamMemberBundle.loadMember(teamKey, currentMemberSlug);
     }
-  }, [agentTeamCatalogBundle.selection, agentTeamCatalogBundle.state, loadAgentTeamMember]);
+  }, [agentTeamCatalogBundle.selection, agentTeamCatalogBundle.state, agentTeamMemberBundle.loadMember]);
 
   const viewAgentTeamRegistrationConflict = useCallback(() => {
     openAgentTeam("user:general-assistant");
@@ -897,8 +649,8 @@ export function OperatorConsoleApp({
       return;
     }
     agentTeamCatalogBundle.setSelection({ teamKey, memberSlug });
-    void loadAgentTeamMember(teamKey, memberSlug);
-  }, [agentTeamCatalogBundle.state, loadAgentTeamMember]);
+    void agentTeamMemberBundle.loadMember(teamKey, memberSlug);
+  }, [agentTeamCatalogBundle.state, agentTeamMemberBundle.loadMember]);
 
   const changeAgentTeamPrimaryAgent = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, teamKey);
@@ -1006,11 +758,11 @@ export function OperatorConsoleApp({
       : copiedTeam.members[0]?.slug ?? null;
     setActiveAgentTeamKey(copiedTeam.teamKey);
     agentTeamCatalogBundle.setSelection({ teamKey: copiedTeam.teamKey, memberSlug });
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
 
     if (memberSlug !== null) {
-      commitAgentTeamDraftState(startAgentTeamMemberLoad(
-        agentTeamDraftStateRef.current,
+      agentTeamMemberBundle.commitDrafts(startAgentTeamMemberLoad(
+        agentTeamMemberBundle.draftsRef.current,
         copiedTeam.teamKey,
         memberSlug,
       ));
@@ -1023,15 +775,15 @@ export function OperatorConsoleApp({
         if (document === undefined) {
           throw new Error(t("desktop.error.duplicateRead"));
         }
-        commitAgentTeamDraftState(finishAgentTeamMemberLoad(
-          agentTeamDraftStateRef.current,
+        agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
+          agentTeamMemberBundle.draftsRef.current,
           copiedTeam.teamKey,
           memberSlug,
           document.agentMarkdown,
         ));
       } catch (error) {
-        commitAgentTeamDraftState(failAgentTeamMemberLoad(
-          agentTeamDraftStateRef.current,
+        agentTeamMemberBundle.commitDrafts(failAgentTeamMemberLoad(
+          agentTeamMemberBundle.draftsRef.current,
           copiedTeam.teamKey,
           memberSlug,
           formatError(error),
@@ -1040,7 +792,7 @@ export function OperatorConsoleApp({
     }
 
     return copiedTeam.teamKey;
-  }, [commitAgentTeamDraftState, t]);
+  }, [agentTeamMemberBundle.commitDrafts, t]);
 
   const agentTeamBuilderBundle = useAgentTeamBuilderController({
     api: window.moebius,
@@ -1064,7 +816,7 @@ export function OperatorConsoleApp({
   }, [activateCopiedAgentTeam, agentTeamCatalogBundle.state, t]);
 
   const assertAgentTeamDraftsResolved = useCallback((teamKey: string) => {
-    if (getDirtyAgentTeamMemberSlugs(agentTeamDraftStateRef.current, teamKey).length > 0) {
+    if (getDirtyAgentTeamMemberSlugs(agentTeamMemberBundle.draftsRef.current, teamKey).length > 0) {
       throw new Error(t("desktop.error.unsavedTeam"));
     }
   }, [t]);
@@ -1099,15 +851,15 @@ export function OperatorConsoleApp({
           status: "ready",
           teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
         });
-    commitAgentTeamDraftState(finishAgentTeamMemberLoad(
-      agentTeamDraftStateRef.current,
+    agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
+      agentTeamMemberBundle.draftsRef.current,
       teamKey,
       result.member.slug,
       result.member.agentMarkdown,
     ));
     agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: result.member.slug });
-    setAgentTeamSaveAllFailures([]);
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, commitAgentTeamDraftState, t]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
+  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, t]);
 
   const trashAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     assertAgentTeamDraftsResolved(teamKey);
@@ -1127,8 +879,8 @@ export function OperatorConsoleApp({
           status: "ready",
           teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
         });
-    commitAgentTeamDraftState(removeAgentTeamMemberDraft(
-      agentTeamDraftStateRef.current,
+    agentTeamMemberBundle.commitDrafts(removeAgentTeamMemberDraft(
+      agentTeamMemberBundle.draftsRef.current,
       teamKey,
       memberSlug,
     ));
@@ -1137,11 +889,11 @@ export function OperatorConsoleApp({
       ? updatedTeam.primaryAgentSlug
       : updatedTeam.members[0]?.slug ?? null;
     agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: nextMemberSlug });
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
     if (nextMemberSlug !== null) {
-      void loadAgentTeamMember(teamKey, nextMemberSlug);
+      void agentTeamMemberBundle.loadMember(teamKey, nextMemberSlug);
     }
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, commitAgentTeamDraftState, loadAgentTeamMember, t]);
+  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, agentTeamMemberBundle.loadMember, t]);
 
   const trashUserAgentTeam = useCallback(async (teamKey: string): Promise<void> => {
     assertAgentTeamDraftsResolved(teamKey);
@@ -1155,7 +907,7 @@ export function OperatorConsoleApp({
       ? agentTeamCatalogBundle.state.teams.filter((candidate) => candidate.teamKey !== teamKey)
       : [];
     agentTeamCatalogBundle.setState({ status: "ready", teams: remainingTeams });
-    commitAgentTeamDraftState(removeAgentTeamDrafts(agentTeamDraftStateRef.current, teamKey));
+    agentTeamMemberBundle.commitDrafts(removeAgentTeamDrafts(agentTeamMemberBundle.draftsRef.current, teamKey));
     const fallbackTeam = remainingTeams[0];
     const fallbackMemberSlug = fallbackTeam === undefined
       ? null
@@ -1167,9 +919,9 @@ export function OperatorConsoleApp({
       ? null
       : { teamKey: fallbackTeam.teamKey, memberSlug: fallbackMemberSlug });
     setActiveAgentTeamKey(null);
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
     setPrimaryAgentChange(null);
-  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, commitAgentTeamDraftState, t]);
+  }, [agentTeamCatalogBundle.state, assertAgentTeamDraftsResolved, agentTeamMemberBundle.commitDrafts, t]);
 
   const createAgentTeam = useCallback(async (
     information: AgentTeamInformationInput,
@@ -1184,7 +936,7 @@ export function OperatorConsoleApp({
       : { status: "ready", teams: [...current.teams, created] });
     setActiveAgentTeamKey(created.teamKey);
     agentTeamCatalogBundle.setSelection({ teamKey: created.teamKey, memberSlug: null });
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
     setPrimaryAgentChange(null);
     return created;
   }, [t]);
@@ -1203,15 +955,15 @@ export function OperatorConsoleApp({
           status: "ready",
           teams: current.teams.map((candidate) => candidate.teamKey === teamKey ? updatedTeam : candidate),
         });
-    commitAgentTeamDraftState(finishAgentTeamMemberLoad(
-      agentTeamDraftStateRef.current,
+    agentTeamMemberBundle.commitDrafts(finishAgentTeamMemberLoad(
+      agentTeamMemberBundle.draftsRef.current,
       teamKey,
       result.member.slug,
       result.member.agentMarkdown,
     ));
     agentTeamCatalogBundle.setSelection({ teamKey, memberSlug: result.member.slug });
-    setAgentTeamSaveAllFailures([]);
-  }, [agentTeamCatalogBundle.state, commitAgentTeamDraftState, t]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
+  }, [agentTeamCatalogBundle.state, agentTeamMemberBundle.commitDrafts, t]);
 
   const updateAgentTeamInformation = useCallback(async (
     teamKey: string,
@@ -1284,62 +1036,21 @@ export function OperatorConsoleApp({
       : { status: "ready", teams: current.teams.filter((candidate) => candidate.teamKey !== teamKey) });
     setActiveAgentTeamKey((current) => current === teamKey ? null : current);
     agentTeamCatalogBundle.setSelection((current) => current?.teamKey === teamKey ? null : current);
-    setAgentTeamSaveAllFailures([]);
+    agentTeamMemberBundle.setSaveAllFailures([]);
     setPrimaryAgentChange(null);
   }, [agentTeamCatalogBundle.state, t]);
 
-  const agentTeamDetailState = useMemo<AgentTeamDetailState | null>(() => {
-    if (activeAgentTeamKey === null) {
-      return null;
-    }
-    const team = planFindOperatorAgentTeam(agentTeamCatalogBundle.state, activeAgentTeamKey);
-    if (team === undefined) {
-      return null;
-    }
-    const selectedMemberSlug = agentTeamCatalogBundle.selection?.teamKey === activeAgentTeamKey
-      ? agentTeamCatalogBundle.selection.memberSlug
-      : null;
-    const memberEditors: Record<string, AgentTeamMemberEditorState | undefined> = {};
-    for (const member of team.members) {
-      const editor = getAgentTeamMemberDraft(agentTeamDraftState, activeAgentTeamKey, member.slug);
-      if (editor === undefined) {
-        continue;
-      }
-      const identity = editor.loadStatus === "ready"
-        ? tryParseAgentMarkdownIdentity(editor.draftMarkdown, {
-            displayName: member.displayName,
-            description: member.description,
-          })
-        : { displayName: member.displayName, description: member.description };
-      memberEditors[member.slug] = {
-        memberSlug: member.slug,
-        loadStatus: editor.loadStatus,
-        loadError: editor.loadError,
-        draftMarkdown: editor.draftMarkdown,
-        isDirty: isAgentTeamMemberDirty(editor),
-        saveStatus: editor.saveStatus,
-        saveError: editor.saveError,
-        externalChangeStatus: editor.externalChangeStatus,
-        displayName: identity.displayName,
-        description: identity.description,
-      };
-    }
-    return {
-      teamKey: activeAgentTeamKey,
-      selectedMemberSlug,
-      memberEditors,
-      saveAllFailures: agentTeamSaveAllFailures,
-      primaryAgentChangeStatus: primaryAgentChange?.teamKey === activeAgentTeamKey
-        ? primaryAgentChange.status
-        : "idle",
-      primaryAgentChangeError: primaryAgentChange?.teamKey === activeAgentTeamKey
-        ? primaryAgentChange.error
-        : null,
-    };
-  }, [
+  const agentTeamDetailState = useMemo(() => planAgentTeamDetailState({
+    activeTeamKey: activeAgentTeamKey,
+    catalog: agentTeamCatalogBundle.state,
+    selection: agentTeamCatalogBundle.selection,
+    drafts: agentTeamMemberBundle.drafts,
+    saveAllFailures: agentTeamMemberBundle.saveAllFailures,
+    primaryAgentChange,
+  }), [
     activeAgentTeamKey,
-    agentTeamDraftState,
-    agentTeamSaveAllFailures,
+    agentTeamMemberBundle.drafts,
+    agentTeamMemberBundle.saveAllFailures,
     agentTeamCatalogBundle.selection,
     agentTeamCatalogBundle.state,
     primaryAgentChange,
@@ -3934,7 +3645,7 @@ export function OperatorConsoleApp({
       onOpenAgentTeam={openAgentTeam}
       onCloseAgentTeam={() => {
         setActiveAgentTeamKey(null);
-        setAgentTeamSaveAllFailures([]);
+        agentTeamMemberBundle.setSaveAllFailures([]);
         setPrimaryAgentChange(null);
       }}
       onSelectAgentTeamMember={selectAgentTeamMember}
@@ -3942,32 +3653,32 @@ export function OperatorConsoleApp({
       onAddAgentTeamMember={addAgentTeamMember}
       onUpdateAgentTeamInformation={updateAgentTeamInformation}
       onChangeAgentTeamMember={(teamKey, memberSlug, agentMarkdown) => {
-        commitAgentTeamDraftState(updateAgentTeamMemberDraft(
-          agentTeamDraftStateRef.current,
+        agentTeamMemberBundle.commitDrafts(updateAgentTeamMemberDraft(
+          agentTeamMemberBundle.draftsRef.current,
           teamKey,
           memberSlug,
           agentMarkdown,
         ));
       }}
-      onSaveAgentTeamMember={saveAgentTeamMember}
-      onCheckAgentTeamMemberExternalChange={checkAgentTeamMemberExternalChange}
-      onLoadAgentTeamMemberExternalVersion={loadAgentTeamMemberExternalChange}
-      onOverwriteAgentTeamMemberExternalVersion={overwriteAgentTeamMemberExternalChange}
+      onSaveAgentTeamMember={agentTeamMemberBundle.saveMember}
+      onCheckAgentTeamMemberExternalChange={agentTeamMemberBundle.checkExternalChange}
+      onLoadAgentTeamMemberExternalVersion={agentTeamMemberBundle.loadExternalVersion}
+      onOverwriteAgentTeamMemberExternalVersion={agentTeamMemberBundle.overwriteExternal}
       onRetryAgentTeamMember={(teamKey, memberSlug) => {
-        void loadAgentTeamMember(teamKey, memberSlug);
+        void agentTeamMemberBundle.loadMember(teamKey, memberSlug);
       }}
       onDiscardAgentTeamMember={(teamKey, memberSlug) => {
-        commitAgentTeamDraftState(discardAgentTeamMemberDraft(
-          agentTeamDraftStateRef.current,
+        agentTeamMemberBundle.commitDrafts(discardAgentTeamMemberDraft(
+          agentTeamMemberBundle.draftsRef.current,
           teamKey,
           memberSlug,
         ));
       }}
       onDiscardAllAgentTeamDrafts={(teamKey) => {
-        commitAgentTeamDraftState(discardAllAgentTeamDrafts(agentTeamDraftStateRef.current, teamKey));
-        setAgentTeamSaveAllFailures([]);
+        agentTeamMemberBundle.commitDrafts(discardAllAgentTeamDrafts(agentTeamMemberBundle.draftsRef.current, teamKey));
+        agentTeamMemberBundle.setSaveAllFailures([]);
       }}
-      onSaveAllAgentTeamDrafts={saveAllDraftsAndLeave}
+      onSaveAllAgentTeamDrafts={agentTeamMemberBundle.saveAll}
       onSaveAgentExecutionProfile={saveAgentExecutionProfile}
       onRestoreAgentRecommendedProfile={restoreAgentRecommendedProfile}
       onApplyOfficialAgentTeamUpdate={applyOfficialAgentTeamUpdate}

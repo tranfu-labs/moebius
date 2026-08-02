@@ -1,4 +1,6 @@
 import type {
+  AgentTeamDetailState,
+  AgentTeamMemberEditorState,
   OperatorAgentTeam,
   OperatorAgentTeamsState,
   TeamBuilderViewState,
@@ -7,11 +9,21 @@ import type {
 
 import type { LastUsedAgentTeam } from "../team-conversation-preference-contract.js";
 import type { AgentTeamFileManagerKind } from "../team-file-manager-contract.js";
-import type { AgentTeamListItem } from "../team-ipc-contract.js";
+import type { AgentTeamListItem, AgentTeamMemberDocument } from "../team-ipc-contract.js";
 import type { AgentTeamListResponse } from "../team-ipc-contract.js";
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
+import type { AgentTeamExternalChangeResponse } from "../team-external-change-contract.js";
+import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { getAgentTeamKey } from "./team-state.js";
+import {
+  getAgentTeamMemberDraft,
+  isAgentTeamMemberDirty,
+  type AgentTeamDraftState,
+  type AgentTeamMemberDraft,
+  type AgentTeamSaveAllFailure,
+  type AgentTeamSelection,
+} from "./team-state.js";
 
 export function planAgentTeamFileManagerTranslationKey(
   kind: AgentTeamFileManagerKind,
@@ -156,4 +168,115 @@ export function planAgentTeamCatalogLoad(
     lastUsedTeamKey: lastUsedTeam === null ? null : planAgentTeamIdentityKey(lastUsedTeam),
     teams: response.teams,
   };
+}
+
+export function planAgentTeamDetailState(input: {
+  activeTeamKey: string | null;
+  catalog: OperatorAgentTeamsState;
+  selection: AgentTeamSelection | null;
+  drafts: AgentTeamDraftState;
+  saveAllFailures: AgentTeamSaveAllFailure[];
+  primaryAgentChange: {
+    teamKey: string;
+    status: "saving" | "saved" | "failed";
+    error: string | null;
+  } | null;
+}): AgentTeamDetailState | null {
+  if (input.activeTeamKey === null) return null;
+  const team = planFindOperatorAgentTeam(input.catalog, input.activeTeamKey);
+  if (team === undefined) return null;
+  const selectedMemberSlug = input.selection?.teamKey === input.activeTeamKey
+    ? input.selection.memberSlug
+    : null;
+  const memberEditors: Record<string, AgentTeamMemberEditorState | undefined> = {};
+  for (const member of team.members) {
+    const editor = getAgentTeamMemberDraft(input.drafts, input.activeTeamKey, member.slug);
+    if (editor === undefined) continue;
+    const identity = editor.loadStatus === "ready"
+      ? tryParseAgentMarkdownIdentity(editor.draftMarkdown, {
+          displayName: member.displayName,
+          description: member.description,
+        })
+      : { displayName: member.displayName, description: member.description };
+    memberEditors[member.slug] = {
+      memberSlug: member.slug,
+      loadStatus: editor.loadStatus,
+      loadError: editor.loadError,
+      draftMarkdown: editor.draftMarkdown,
+      isDirty: isAgentTeamMemberDirty(editor),
+      saveStatus: editor.saveStatus,
+      saveError: editor.saveError,
+      externalChangeStatus: editor.externalChangeStatus,
+      displayName: identity.displayName,
+      description: identity.description,
+    };
+  }
+  return {
+    teamKey: input.activeTeamKey,
+    selectedMemberSlug,
+    memberEditors,
+    saveAllFailures: input.saveAllFailures,
+    primaryAgentChangeStatus: input.primaryAgentChange?.teamKey === input.activeTeamKey
+      ? input.primaryAgentChange.status
+      : "idle",
+    primaryAgentChangeError: input.primaryAgentChange?.teamKey === input.activeTeamKey
+      ? input.primaryAgentChange.error
+      : null,
+  };
+}
+
+export function planAgentTeamMemberSummary(
+  state: OperatorAgentTeamsState,
+  teamKey: string,
+  document: AgentTeamMemberDocument,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready") return state;
+  return {
+    status: "ready",
+    teams: state.teams.map((team) => team.teamKey !== teamKey
+      ? team
+      : {
+          ...team,
+          members: team.members.map((member) => member.slug === document.slug
+            ? {
+                slug: document.slug,
+                displayName: document.displayName,
+                description: document.description,
+              }
+            : member),
+        }),
+  };
+}
+
+export function planAgentTeamMemberLoad(current: AgentTeamMemberDraft | undefined): "load" | "skip" {
+  return current?.loadStatus === "ready" || current?.loadStatus === "loading" ? "skip" : "load";
+}
+
+export function planAgentTeamExternalCheck(inFlight: boolean): "check" | "skip" {
+  return inFlight ? "skip" : "check";
+}
+
+export function planAgentTeamExternalResult(response: AgentTeamExternalChangeResponse):
+  | { action: "clear" }
+  | { action: "ignore" }
+  | { action: "apply"; document: AgentTeamMemberDocument } {
+  if (response.status === "unchanged") return { action: "clear" };
+  if (response.status === "changed") return { action: "apply", document: response.document };
+  return { action: "ignore" };
+}
+
+export function planAgentTeamExternalReloaded(current: AgentTeamMemberDraft | undefined): boolean {
+  return current?.externalChangeStatus === "reloaded";
+}
+
+export function planAgentTeamExternalMarkdown(current: AgentTeamMemberDraft | undefined): string | null {
+  return current?.externalChangeStatus === "conflict" ? current.externalMarkdown : null;
+}
+
+export function planAgentTeamSaveRequest(current: AgentTeamMemberDraft | undefined): "save" | "skip" {
+  return isAgentTeamMemberDirty(current) && current?.saveStatus !== "saving" ? "save" : "skip";
+}
+
+export function planAgentTeamRequestedMarkdown(current: AgentTeamMemberDraft | undefined): string | null {
+  return current?.saveStatus === "saving" ? current.saveRequestedMarkdown : null;
 }
