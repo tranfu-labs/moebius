@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LocalCodexResumeIntentFact } from "../src/local-console/codex-resume.js";
 import type { LocalRunExecutionContextFact } from "../src/local-console/execution-context.js";
 import {
+  assertUserDirectResumeIdentity,
   decideLegacyStartupRepair,
   planLegacyHandoffRepair,
   planOrphanRecovery,
@@ -11,6 +12,21 @@ import {
 import type { LocalConsoleMessage } from "../src/local-console/types.js";
 
 describe("local console startup recovery plan", () => {
+  it("rejects a user-direct resume whose dispatch identity changed", () => {
+    expect(() => assertUserDirectResumeIdentity({
+      sourceDisposition: "user-direct",
+      dispatchLane: "primary",
+      dispatchRole: "dev",
+      requestedRole: "dev",
+    })).toThrow("User-direct resume source dispatch does not match the active role");
+    expect(() => assertUserDirectResumeIdentity({
+      sourceDisposition: "primary",
+      dispatchLane: "primary",
+      dispatchRole: null,
+      requestedRole: "dev",
+    })).not.toThrow();
+  });
+
   it("distinguishes a graceful orphan from an ordinary stuck orphan", () => {
     const intent = gracefulIntent();
     const graceful = planOrphanRecovery({

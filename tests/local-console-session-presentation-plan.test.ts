@@ -4,7 +4,9 @@ import {
   decideNonContinuableRecordWrite,
   decideUnavailableTeamStop,
   planAttentionSynchronization,
+  planFallbackSessionTitle,
   planNonContinuableRecord,
+  planPersistedSessionTitle,
   planRuntimeActivity,
   planUnsafeRunContext,
 } from "../src/local-console/session-presentation-plan.js";
@@ -54,6 +56,14 @@ function project(sessions: LocalConsoleSessionSummary[]): LocalConsoleProjectSum
     errorCount: 0,
   };
 }
+
+describe("session title presentation", () => {
+  it("applies persisted and default session title fallbacks", () => {
+    expect(planPersistedSessionTitle(null, "fallback")).toBe("fallback");
+    expect(planFallbackSessionTitle("default", "default")).toBe("默认会话");
+    expect(planFallbackSessionTitle("local:123", "default")).toBe("会话 123");
+  });
+});
 
 describe("local console session presentation plan", () => {
   it("projects active runtime work over persisted counters", () => {

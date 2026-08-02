@@ -43,3 +43,17 @@ export function decidePendingWait(input: {
 export function planPendingSessionIds(sessions: readonly LocalConsoleSessionSummary[]): string[] {
   return sessions.filter(hasPendingStartupControlWork).map((session) => session.sessionId);
 }
+
+export function planHasPendingControlWork(input: {
+  activeMessage: boolean;
+  hasMessageAfterCursor: boolean;
+}): boolean {
+  return input.activeMessage || input.hasMessageAfterCursor;
+}
+
+export function decidePendingControlWorkInspection(input: {
+  hasRunningMessage: boolean;
+  hasQueuedControlMessage: boolean;
+}): "pending" | "inspect-cursor" {
+  return input.hasRunningMessage || input.hasQueuedControlMessage ? "pending" : "inspect-cursor";
+}

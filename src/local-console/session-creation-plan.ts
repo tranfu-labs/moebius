@@ -136,3 +136,32 @@ export function planSessionCreationBaselineCacheValue(
 ): string | null {
   return baselineCommit ?? null;
 }
+
+export function assertAnalysisParent(input: { sessionId: string; analysisParentSessionId: string }): void {
+  if (input.analysisParentSessionId === input.sessionId) {
+    throw new Error("analysis session cannot parent itself");
+  }
+}
+
+export function planInitialDispatchRole(input: {
+  requestedRole: string | undefined;
+  firstTeamMemberName: string | undefined;
+}): string | null {
+  return input.requestedRole ?? input.firstTeamMemberName ?? null;
+}
+
+export function assertChildProject(input: { requestedProjectId: string; parentProjectId: string }): void {
+  if (input.requestedProjectId !== input.parentProjectId) {
+    throw new Error(`local child project mismatch: parent=${input.parentProjectId} input=${input.requestedProjectId}`);
+  }
+}
+
+export function planChildAgentTeam(input: {
+  ownership: "system" | "user" | null;
+  id: string | null;
+}): { ownership: "system" | "user" | undefined; id: string | undefined } {
+  return {
+    ownership: input.ownership ?? undefined,
+    id: input.id ?? undefined,
+  };
+}

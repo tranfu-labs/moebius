@@ -10,14 +10,16 @@ import {
   LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
 } from "./config.js";
 import {
-  terminalForFailure,
-  type CodexRunFailure,
   type CodexRunResult,
 } from "./codex.js";
 import {
+  planExecutionFailureTerminal,
+  type CodexRunFailure,
+} from "./execution-failure-plan.js";
+import {
   createProviderToolProjectionState,
-  projectKimiProgress,
   projectKimiToolLifecycle,
+  selectKimiExecutionProgress,
   executionInterruptionActor,
   executionInterruptionCause,
   type ExecutionProgressEvent,
@@ -135,7 +137,7 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
     const partialText = readKimiPartialText(error);
     const terminal = failure === null
       ? { kind: "crashed" as const, partialText, safeCode: "kimi-unknown" }
-      : terminalForFailure(failure, partialText);
+      : planExecutionFailureTerminal(failure, partialText);
     if (
       terminal.kind === "timeout"
       && error instanceof KimiAcpError
@@ -331,7 +333,7 @@ export async function runKimiAcpWithTransport(
     const sequence = ++progressSequence;
     const toolLifecycle = projectKimiToolLifecycle(update, sequence, toolProjection);
     toolProjection = toolLifecycle.state;
-    const progress = toolLifecycle.progress ?? projectKimiProgress(update, sequence);
+    const progress = selectKimiExecutionProgress(toolLifecycle.progress, update, sequence);
     if (progress !== null) {
       const supervision = observeRunProgress(progressSupervisor, progress, Date.now());
       progressSupervisor = supervision.state;
@@ -523,7 +525,7 @@ export async function runKimiAcpWithTransport(
         ok: false,
         reason: failure.code,
         failure,
-        terminal: terminalForFailure(failure, finalText),
+        terminal: planExecutionFailureTerminal(failure, finalText),
         threadId: sessionId,
         runDir,
         stdoutPath,

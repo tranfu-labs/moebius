@@ -82,3 +82,20 @@ export function decideSessionView(
 ): { kind: "missing" } | { kind: "read"; session: LocalConsoleSessionSummary } {
   return session === undefined ? { kind: "missing" } : { kind: "read", session };
 }
+
+export function planSessionSearchMatch(title: string | null, normalizedQuery: string): boolean {
+  return (title ?? "").trim().normalize("NFKC").toLowerCase().includes(normalizedQuery);
+}
+
+export function planPendingAttentionRunningCount(input: {
+  persistedRunningCount: number;
+  hasPendingControlWork: boolean;
+}): number {
+  return input.hasPendingControlWork ? Math.max(1, input.persistedRunningCount) : input.persistedRunningCount;
+}
+
+export function decidePendingAttentionState(
+  hasPendingControlWork: boolean,
+): "blink" | "inspect-unread" {
+  return hasPendingControlWork ? "blink" : "inspect-unread";
+}

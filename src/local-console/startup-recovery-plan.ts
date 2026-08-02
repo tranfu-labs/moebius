@@ -203,3 +203,17 @@ export function planStaleRunningRepair(input: {
 export function emptyStartupRecoveryFacts(): LocalCodexRecoveryFacts {
   return { intents: [], consumedIntentIds: new Set<string>(), repairedIntentIds: new Set<string>() };
 }
+
+export function assertUserDirectResumeIdentity(input: {
+  sourceDisposition: LocalRunSourceDisposition;
+  dispatchLane: LocalConsoleMessage["dispatchLane"];
+  dispatchRole: string | null;
+  requestedRole: string;
+}): void {
+  if (
+    input.sourceDisposition === "user-direct"
+    && (input.dispatchLane !== "worker" || input.dispatchRole !== input.requestedRole)
+  ) {
+    throw new Error("User-direct resume source dispatch does not match the active role");
+  }
+}

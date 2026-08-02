@@ -8,6 +8,7 @@
 - [ ] 建 parser/classifier test-name ledger，列明不可删除 IO 接缝
 - [ ] 清理 desktop main/team/onboarding/IPC/browser storage 共居判据
 - [ ] 清理 provider/files/trusted JSONL/workspace/attachment 共居判据
+  - [x] provider / infra 第一簇：8 条 file debt 清零，150 条 exact permit、64 条账面业务条件下沉，测试净删除 0
 - [ ] 清理 local SQLite/JSONL state、HTTP server 与 composition root 共居判据
 - [ ] 保持 `LocalConsoleStore` API/schema 不变，删除本 change 对应 debt
 - [ ] scope、定向测试、typecheck、desktop build 全绿

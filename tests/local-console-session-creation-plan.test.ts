@@ -6,6 +6,10 @@ import {
   decideSessionCreationTeamLoad,
   decideSessionCreationWorkspace,
   decideSessionCreationWorkspaceRead,
+  assertAnalysisParent,
+  assertChildProject,
+  planChildAgentTeam,
+  planInitialDispatchRole,
   planSessionCreationContent,
   planSessionCreationDispatch,
   planSessionCreationTitle,
@@ -98,5 +102,15 @@ describe("local console session creation plan", () => {
     })).toBe("Requested");
     expect(decideSessionCreationAttachmentRead({ firstAttachmentId: undefined, portAvailable: true }))
       .toEqual({ kind: "skip" });
+  });
+
+  it("owns persisted analysis, dispatch, and child inheritance rules", () => {
+    expect(() => assertAnalysisParent({ sessionId: "a", analysisParentSessionId: "a" }))
+      .toThrow("analysis session cannot parent itself");
+    expect(planInitialDispatchRole({ requestedRole: undefined, firstTeamMemberName: "dev" })).toBe("dev");
+    expect(planInitialDispatchRole({ requestedRole: undefined, firstTeamMemberName: undefined })).toBeNull();
+    expect(() => assertChildProject({ requestedProjectId: "other", parentProjectId: "parent" }))
+      .toThrow("local child project mismatch");
+    expect(planChildAgentTeam({ ownership: null, id: null })).toEqual({ ownership: undefined, id: undefined });
   });
 });

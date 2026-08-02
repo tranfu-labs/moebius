@@ -3,6 +3,11 @@ import {
   decideSessionArchive,
   decideSessionWorkspaceInspection,
   decideSessionWorkspacePersistenceError,
+  assertSessionArchiveIdle,
+  assertSessionWorkspaceMutable,
+  planArchivedSessionSelection,
+  planPendingTeamPromotion,
+  planSessionTeamWrite,
 } from "../src/local-console/session-settings-plan.js";
 
 describe("session settings plan", () => {
@@ -25,5 +30,15 @@ describe("session settings plan", () => {
     expect(decideSessionArchive({ capabilityAvailable: false, activeRun: false })).toEqual({ kind: "unavailable" });
     expect(decideSessionArchive({ capabilityAvailable: true, activeRun: true })).toEqual({ kind: "running" });
     expect(decideSessionArchive({ capabilityAvailable: true, activeRun: false })).toEqual({ kind: "archive" });
+  });
+
+  it("plans persisted workspace, team, and archive transitions", () => {
+    expect(() => assertSessionWorkspaceMutable(true)).toThrow("SESSION_WORKSPACE_LOCKED");
+    expect(planSessionTeamWrite({ hasRunningMessage: false, hasQueuedWorker: true })).toBe("pending");
+    expect(planSessionTeamWrite({ hasRunningMessage: false, hasQueuedWorker: false })).toBe("effective");
+    expect(planPendingTeamPromotion(true)).toBe("promote");
+    expect(() => assertSessionArchiveIdle(true)).toThrow("SESSION_HAS_RUNNING_AGENT");
+    expect(planArchivedSessionSelection(["newer", "archived", "older"], 1)).toBe("older");
+    expect(planArchivedSessionSelection(["archived"], 0)).toBeNull();
   });
 });

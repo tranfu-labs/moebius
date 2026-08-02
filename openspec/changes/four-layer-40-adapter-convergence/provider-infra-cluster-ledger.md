@@ -108,3 +108,26 @@ worker request 或具体 store。SQL 查询、事务、row codec、command dispa
    worker command、事务、schema、重启和历史数据读取行为与基线一致。
 4. 在环境可用的真实 Electron 中分别执行 Codex/Claude/Kimi 新调用与 resume → 应看到同一 provider 的过程、
    terminal、session link 和重启后记录一致；不可用 provider 按 proposal 逐家标记“未验证”，不得互相抵扣。
+
+## 5. 实施实绩
+
+| 文件 | 实际总分支 | 实际 exact permit | 结论 |
+| --- | ---: | ---: | --- |
+| `src/claude.ts` | 119 | 2 | 两条 session callback 时序留 adapter |
+| `src/codex.ts` | 157 | 0 | progress 与 failure mapping 已下沉 |
+| `src/kimi.ts` | 257 | 10 | shutdown 3 + ACP error dispatch 7 留 adapter |
+| `src/codex-rollout.ts` | 101 | 0 | prompt role 投影已下沉 |
+| `src/ceo-scripts.ts` | 29 | 0 | `agentsDir` 改为显式输入 |
+| `src/config.ts` | 31 | 0 | `projectRoot` 改为显式 composition 输入 |
+| `src/sqlite-state.ts` | 84 | 1 | canonical path 祖先探测循环留 adapter |
+| `src/sqlite-state-worker.ts` | 650 | 137 | 32 条业务判据下沉；协议分派/codec 留原 worker |
+| **合计** | **1,428** | **150** | **8 条 file debt 清零，composition root 不增加** |
+
+worker 的实际总分支比目标 660 少 10，不是额外删除业务分支：基线“未分类 169”取自最终 violation
+去重结果，而总分支 692 取自原始 `conditionNodes`；嵌套 `if (a && b)` 会生成两个 AST condition，
+但同一行同一 fingerprint 在 violation 输出中只保留一个。业务判据整体下沉时，这 10 个重复 AST 节点随之
+一起消失。exact permit 仍为批准账面的 150，且 150 个 `ruleId:file:owner:fingerprint` key 全部唯一。
+
+permit stale 反证已执行：临时把 `src/claude.ts` 的 `streamSessionPending` 条件改成
+`streamSessionPending === true` 后，`pnpm check:boundaries` 退出 1，同时报告旧 permit stale 与新条件
+未登记；恢复源码后门禁重新退出 0。测试净删除为 0。

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decidePendingAttentionState,
+  planPendingAttentionRunningCount,
   planLocalSnapshotStatus,
+  planSessionSearchMatch,
   planSelectedConsoleState,
 } from "../src/local-console/state-query-plan.js";
 import type {
@@ -50,6 +53,17 @@ function project(projectId: string, sessions: LocalConsoleSessionSummary[]): Loc
     errorCount: 0,
   };
 }
+
+describe("local console state query decisions", () => {
+  it("derives search matching and pending attention from decoded state", () => {
+    expect(planSessionSearchMatch("  Release Notes  ", "release")).toBe(true);
+    expect(planSessionSearchMatch(null, "release")).toBe(false);
+    expect(planPendingAttentionRunningCount({ persistedRunningCount: 0, hasPendingControlWork: true })).toBe(1);
+    expect(planPendingAttentionRunningCount({ persistedRunningCount: 2, hasPendingControlWork: false })).toBe(2);
+    expect(decidePendingAttentionState(true)).toBe("blink");
+    expect(decidePendingAttentionState(false)).toBe("inspect-unread");
+  });
+});
 
 describe("local console state query plan", () => {
   it("selects the requested project root when the previous session belongs elsewhere", () => {

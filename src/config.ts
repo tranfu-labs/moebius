@@ -2,12 +2,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadMergedLocalConfig } from "./local-config.js";
 
+const SOURCE_PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 // 尽早把项目根 .env 加载到 process.env，供 CODEX_PROVIDER_CONFIG 与任何
 // LOCAL_CONSOLE_* 环境读取使用。process.loadEnvFile 不覆盖已有变量，且文件不
 // 存在时抛错——一律吞掉，让缺省 .env 场景静默通过。
 try {
-  const projectRootForEnv = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  process.loadEnvFile(path.join(projectRootForEnv, ".env"));
+  process.loadEnvFile(path.join(SOURCE_PROJECT_ROOT, ".env"));
 } catch {
   // ignore：.env 不存在或 Node 版本过老（无 loadEnvFile）时保持原有 process.env
 }
@@ -17,7 +18,7 @@ export const MOEBIUS_WORKDIR_ROOT_ENV = "MOEBIUS_WORKDIR_ROOT";
 
 export interface RuntimePathResolutionInput {
   env?: NodeJS.ProcessEnv;
-  projectRoot?: string;
+  projectRoot: string;
 }
 
 export interface RuntimePaths {
@@ -29,8 +30,8 @@ export interface RuntimePaths {
   workdirRoot: string;
 }
 
-export function resolveRuntimePaths(input: RuntimePathResolutionInput = {}): RuntimePaths {
-  const projectRoot = path.resolve(input.projectRoot ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+export function resolveRuntimePaths(input: RuntimePathResolutionInput): RuntimePaths {
+  const projectRoot = path.resolve(input.projectRoot);
   const dataRootOverride = input.env?.[MOEBIUS_DATA_ROOT_ENV]?.trim();
   const dataRoot = path.resolve(dataRootOverride && dataRootOverride.length > 0 ? dataRootOverride : projectRoot);
 
@@ -51,7 +52,7 @@ export function resolveRuntimePaths(input: RuntimePathResolutionInput = {}): Run
   };
 }
 
-const RUNTIME_PATHS = resolveRuntimePaths({ env: process.env });
+const RUNTIME_PATHS = resolveRuntimePaths({ env: process.env, projectRoot: SOURCE_PROJECT_ROOT });
 export const PROJECT_ROOT = RUNTIME_PATHS.projectRoot;
 export const DATA_ROOT = RUNTIME_PATHS.dataRoot;
 export const CONFIG_PATH = RUNTIME_PATHS.configPath;

@@ -23,6 +23,45 @@ import type {
 } from "./sqlite-state.js";
 import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
 import { appendSessionFactLogLineSync, canonicalJson } from "./local-console/session-fact-log.js";
+import {
+  assertCompleteProjectOrder,
+  assertProjectRemovalIdle,
+  decideDefaultProjectIdentity,
+  decideDefaultSessionIdentity,
+  planPersistedProjectTitle,
+} from "./local-console/project-command-plan.js";
+import {
+  assertSessionArchiveIdle,
+  assertSessionWorkspaceMutable,
+  planArchivedSessionSelection,
+  planPendingTeamPromotion,
+  planSessionTeamWrite,
+} from "./local-console/session-settings-plan.js";
+import {
+  assertAnalysisParent,
+  assertChildProject,
+  planChildAgentTeam,
+  planInitialDispatchRole,
+} from "./local-console/session-creation-plan.js";
+import {
+  decidePendingAttentionState,
+  planPendingAttentionRunningCount,
+  planSessionSearchMatch,
+} from "./local-console/state-query-plan.js";
+import {
+  planFallbackSessionTitle,
+  planPersistedSessionTitle,
+} from "./local-console/session-presentation-plan.js";
+import {
+  assertAttachmentCloneTarget,
+  planAttachmentContentScopeValue,
+  planAttachmentDraftKey,
+} from "./local-console/attachment-plan.js";
+import { assertUserDirectResumeIdentity } from "./local-console/startup-recovery-plan.js";
+import {
+  decidePendingControlWorkInspection,
+  planHasPendingControlWork,
+} from "./local-console/pending-processing-plan.js";
 
 interface SqliteRunResult {
   changes?: number | bigint;
@@ -1605,7 +1644,10 @@ function renameLocalProject(
     if (!isRecord(project)) {
       throw new Error(`local console project not found: ${input.projectId}`);
     }
-    const title = input.title.trim() || projectTitleFromFolder(readString(project.folder_path, "folder_path"));
+    const title = planPersistedProjectTitle(
+      input.title,
+      projectTitleFromFolder(readString(project.folder_path, "folder_path")),
+    );
     database
       .prepare("UPDATE projects SET title = ?, updated_at = ? WHERE project_id = ?")
       .run(title, input.now, input.projectId);
@@ -1672,9 +1714,7 @@ function removeLocalProject(
     const archivedSessionIds = listActiveAnalysisSubtreeIds(database, projectSessionIds);
     const hasPendingControlWorkInProject = archivedSessionIds.some((sessionId) =>
       hasPendingLocalControlWork(database, sessionId));
-    if (hasPendingControlWorkInProject && !input.force) {
-      throw new Error("PROJECT_HAS_RUNNING_AGENTS");
-    }
+    assertProjectRemovalIdle({ hasPendingControlWork: hasPendingControlWorkInProject, force: input.force });
     const originalFolderPath = readString(project.folder_path, "folder_path");
     const releasedFolderPath = `${originalFolderPath}#removed:${input.projectId}:${input.now}`;
     database
@@ -1734,14 +1774,7 @@ function reorderLocalProjects(
       }
       return readString(row.project_id, "project_id");
     });
-    const requested = new Set(projectIds);
-    if (
-      requested.size !== projectIds.length
-      || projectIds.length !== storedIds.length
-      || storedIds.some((projectId) => !requested.has(projectId))
-    ) {
-      throw new Error("project order must contain every active project exactly once");
-    }
+    assertCompleteProjectOrder(projectIds, storedIds);
     const update = database.prepare("UPDATE projects SET sort_order = ? WHERE project_id = ?");
     projectIds.forEach((projectId, index) => update.run(index, projectId));
     return listLocalProjects(database, defaultProjectFolderPath);
@@ -1765,17 +1798,30 @@ function isUnusedDefaultLocalProject(
   }
   const normalizedDefaultFolderPath = path.resolve(defaultProjectFolderPath);
   if (
-    readString(row.project_id, "project_id") !== LOCAL_CONSOLE_PROJECT_ID
-    || readString(row.source_type, "source_type") !== LOCAL_CONSOLE_PROJECT_SOURCE_TYPE
-    || readString(row.title, "title") !== projectTitleFromFolder(normalizedDefaultFolderPath)
-    || path.resolve(readString(row.folder_path, "folder_path")) !== normalizedDefaultFolderPath
-    || readBooleanNumber(row.worktree_mode, "worktree_mode")
-    || readNullableString(row.original_folder_path, "original_folder_path") !== null
+    readNullableString(row.original_folder_path, "original_folder_path") !== null
     || readNullableString(row.removed_at, "removed_at") !== null
   ) {
     return false;
   }
+  const projectIdentity = decideDefaultProjectIdentity({
+    projectId: readString(row.project_id, "project_id"),
+    sourceType: readString(row.source_type, "source_type"),
+    title: readString(row.title, "title"),
+    folderPath: path.resolve(readString(row.folder_path, "folder_path")),
+    worktreeMode: readBooleanNumber(row.worktree_mode, "worktree_mode"),
+    expectedProjectId: LOCAL_CONSOLE_PROJECT_ID,
+    expectedSourceType: LOCAL_CONSOLE_PROJECT_SOURCE_TYPE,
+    expectedTitle: projectTitleFromFolder(normalizedDefaultFolderPath),
+    expectedFolderPath: normalizedDefaultFolderPath,
+  });
+  const inspectProject = {
+    used: () => false,
+    "inspect-session": () => readUnusedDefaultLocalProjectSession(database),
+  } satisfies Record<typeof projectIdentity, () => boolean>;
+  return inspectProject[projectIdentity]();
+}
 
+function readUnusedDefaultLocalProjectSession(database: SqliteDatabase): boolean {
   const sessionRows = database
     .prepare("SELECT * FROM sessions WHERE project_id = ?")
     .all(LOCAL_CONSOLE_PROJECT_ID);
@@ -1783,10 +1829,24 @@ function isUnusedDefaultLocalProject(
     return false;
   }
   const session = sessionRows[0];
+  const sessionIdentity = decideDefaultSessionIdentity({
+    sessionId: readString(session.session_id, "session_id"),
+    sourceType: readString(session.source_type, "source_type"),
+    expectedSessionId: LOCAL_CONSOLE_DEFAULT_SESSION_ID,
+  });
+  const inspectSession = {
+    used: () => false,
+    "inspect-facts": () => readUnusedDefaultLocalSessionFacts(database, session),
+  } satisfies Record<typeof sessionIdentity, () => boolean>;
+  return inspectSession[sessionIdentity]();
+}
+
+function readUnusedDefaultLocalSessionFacts(
+  database: SqliteDatabase,
+  session: Record<string, unknown>,
+): boolean {
   if (
-    readString(session.session_id, "session_id") !== LOCAL_CONSOLE_DEFAULT_SESSION_ID
-    || readString(session.source_type, "source_type") !== "local"
-    || readNullableString(session.source_owner, "source_owner") !== null
+    readNullableString(session.source_owner, "source_owner") !== null
     || readNullableString(session.source_repo, "source_repo") !== null
     || session.source_issue_number !== null
     || readNullableString(session.parent_session_id, "parent_session_id") !== null
@@ -1886,9 +1946,7 @@ function switchLocalSessionWorkspace(
 ): unknown {
   return transaction(database, () => {
     requireLocalSession(database, input.sessionId);
-    if (hasSessionMessage(database, input.sessionId)) {
-      throw new Error("SESSION_WORKSPACE_LOCKED");
-    }
+    assertSessionWorkspaceMutable(hasSessionMessage(database, input.sessionId));
     database.prepare(
       "UPDATE sessions SET workspace_mode = ?, updated_at = ? WHERE session_id = ? AND source_type = 'local'",
     ).run(input.workspaceMode, input.now, input.sessionId);
@@ -1913,14 +1971,15 @@ function switchLocalSessionTeam(
          LIMIT 1`,
       )
       .get(input.sessionId) !== undefined;
-    if (hasRunningMessage(database, input.sessionId) || hasQueuedWorker) {
+    const writePending = () => {
       database.prepare(
         `UPDATE sessions
          SET agent_team_pending_ownership = ?, agent_team_pending_id = ?, updated_at = ?
          WHERE session_id = ? AND source_type = 'local'`,
       ).run(input.agentTeamOwnership, input.agentTeamId, input.now, input.sessionId);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "pending", input.agentTeamSnapshot);
-    } else {
+    };
+    const writeEffective = () => {
       database.prepare(
         `UPDATE sessions
          SET agent_team_ownership = ?, agent_team_id = ?,
@@ -1929,7 +1988,12 @@ function switchLocalSessionTeam(
       ).run(input.agentTeamOwnership, input.agentTeamId, input.now, input.sessionId);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "effective", input.agentTeamSnapshot);
       replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "pending", undefined);
-    }
+    };
+    const teamWrite = planSessionTeamWrite({
+      hasRunningMessage: hasRunningMessage(database, input.sessionId),
+      hasQueuedWorker,
+    });
+    ({ pending: writePending, effective: writeEffective })[teamWrite]();
     return requireLocalSession(database, input.sessionId);
   });
 }
@@ -1973,14 +2037,15 @@ function applyPendingLocalSessionContext(
            END
        WHERE session_id = ? AND source_type = 'local'`,
     ).run(input.now, input.sessionId);
-    if (hasPendingTeam) {
+    const promotePendingTeam = () => {
       database.prepare(
         "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'effective'",
       ).run(input.sessionId);
       database.prepare(
         "UPDATE session_agent_team_members SET slot = 'effective' WHERE session_id = ? AND slot = 'pending'",
       ).run(input.sessionId);
-    }
+    };
+    ({ promote: promotePendingTeam, skip: () => undefined })[planPendingTeamPromotion(hasPendingTeam)]();
     return requireLocalSession(database, input.sessionId);
   });
 }
@@ -2113,9 +2178,7 @@ function createLocalSession(
       if (input.entryTemplate !== "session-analysis") {
         throw new Error("analysis parent requires session-analysis entry template");
       }
-      if (input.analysisParentSessionId === input.sessionId) {
-        throw new Error("analysis session cannot parent itself");
-      }
+      assertAnalysisParent({ sessionId: input.sessionId, analysisParentSessionId: input.analysisParentSessionId });
       const parent = database
         .prepare(
           "SELECT 1 AS found FROM sessions WHERE session_id = ? AND source_type = 'local' AND archived_at IS NULL",
@@ -2171,7 +2234,10 @@ function createLocalSession(
           persistedBody,
           "[]",
           input.initialDispatch?.lane ?? "primary",
-          input.initialDispatch?.role ?? input.agentTeamSnapshot?.members[0]?.name ?? null,
+          planInitialDispatchRole({
+            requestedRole: input.initialDispatch?.role,
+            firstTeamMemberName: input.agentTeamSnapshot?.members[0]?.name,
+          }),
           input.initialDispatch?.reason ?? "no-valid-mention",
           input.now,
           input.now,
@@ -2250,9 +2316,7 @@ function archiveLocalSession(
       throw new Error(`local console session already archived: ${input.sessionId}`);
     }
     const archivedSessionIds = listActiveAnalysisSubtreeIds(database, [input.sessionId]);
-    if (archivedSessionIds.some((sessionId) => hasPendingLocalControlWork(database, sessionId))) {
-      throw new Error("SESSION_HAS_RUNNING_AGENT");
-    }
+    assertSessionArchiveIdle(archivedSessionIds.some((sessionId) => hasPendingLocalControlWork(database, sessionId)));
 
     const projectId = readString(row.project_id, "project_id");
     const visibleSessionIds = database
@@ -2273,9 +2337,7 @@ function archiveLocalSession(
     if (archivedIndex < 0) {
       throw new Error(`local console session is not visible: ${input.sessionId}`);
     }
-    const selectedSessionId = visibleSessionIds[archivedIndex + 1]
-      ?? visibleSessionIds[archivedIndex - 1]
-      ?? null;
+    const selectedSessionId = planArchivedSessionSelection(visibleSessionIds, archivedIndex);
 
     updateSessionsArchivedAt(database, archivedSessionIds, input.now, input.now);
     for (const sessionId of archivedSessionIds) {
@@ -2377,9 +2439,7 @@ function createLocalChildSession(
       throw new Error(`local parent session not found: ${input.parentSessionId}`);
     }
     const parentProjectId = readString(parent.project_id, "project_id");
-    if (input.projectId !== parentProjectId) {
-      throw new Error(`local child project mismatch: parent=${parentProjectId} input=${input.projectId}`);
-    }
+    assertChildProject({ requestedProjectId: input.projectId, parentProjectId });
 
     const existing = database
       .prepare(
@@ -2398,10 +2458,14 @@ function createLocalChildSession(
 
     const parentAgentTeamOwnership = readNullableAgentTeamOwnership(parent.agent_team_ownership);
     const parentAgentTeamId = readNullableString(parent.agent_team_id, "agent_team_id");
-    ensureSession(database, input.childSessionId, input.now, input.title, parentProjectId, {
-      ownership: parentAgentTeamOwnership ?? undefined,
-      id: parentAgentTeamId ?? undefined,
-    });
+    ensureSession(
+      database,
+      input.childSessionId,
+      input.now,
+      input.title,
+      parentProjectId,
+      planChildAgentTeam({ ownership: parentAgentTeamOwnership, id: parentAgentTeamId }),
+    );
     database.prepare(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
@@ -2569,8 +2633,8 @@ function searchLocalSessions(
     )
     .all(input.includeArchived ? 1 : 0);
   return rows
-    .filter((row) => isRecord(row)
-      && normalizeSessionSearchText(readNullableString(row.title, "title") ?? "").includes(normalizedQuery))
+    .filter(isRecord)
+    .filter((row) => planSessionSearchMatch(readNullableString(row.title, "title"), normalizedQuery))
     .map((row) => {
       if (!isRecord(row)) {
         throw new Error("Invalid local session search row");
@@ -2808,16 +2872,17 @@ function localSessionVisibleAttentionState(
   if (hasCurrentAttention && attentionRevision > acknowledgedRevision) {
     return "red";
   }
-  if (hasPendingLocalControlWork(database, sessionId)) {
-    return "blink";
-  }
-  if (
-    readNullableString(row.unread_since, "unread_since") !== null
-    || readNullableString(row.manual_unread_at, "manual_unread_at") !== null
-  ) {
-    return "blue";
-  }
-  return "none";
+  const inspectUnread = (): "blue" | "none" => {
+    if (
+      readNullableString(row.unread_since, "unread_since") !== null
+      || readNullableString(row.manual_unread_at, "manual_unread_at") !== null
+    ) {
+      return "blue";
+    }
+    return "none";
+  };
+  const pendingAttention = decidePendingAttentionState(hasPendingLocalControlWork(database, sessionId));
+  return ({ blink: () => "blink" as const, "inspect-unread": inspectUnread })[pendingAttention]();
 }
 
 function appendUserMessage(
@@ -2858,7 +2923,7 @@ function appendUserMessage(
     const messageId = toNumberId(result.lastInsertRowid);
     claimAttachmentRefs(
       database,
-      input.attachmentDraftKey ?? `draft:${input.sessionId}`,
+      planAttachmentDraftKey({ requestedDraftKey: input.attachmentDraftKey, sessionId: input.sessionId }),
       attachmentIds,
       messageId,
       input.now,
@@ -3043,9 +3108,7 @@ function cloneMessageAttachments(
   input: Extract<SqliteStateCommand, { kind: "local-clone-message-attachments" }>,
 ): unknown[] {
   return transaction(database, () => {
-    if (input.targetDraftKey !== `draft:${input.sessionId}`) {
-      throw new Error("Attachment target draft does not belong to the session");
-    }
+    assertAttachmentCloneTarget({ targetDraftKey: input.targetDraftKey, sessionId: input.sessionId });
     const source = database.prepare(
       "SELECT speaker FROM session_messages WHERE id = ? AND session_id = ?",
     ).get(input.sourceMessageId, input.sessionId);
@@ -3098,7 +3161,7 @@ function getAttachmentContentRecord(
   const scopeSql = input.draftKey !== undefined
     ? "r.draft_key = ?"
     : "r.message_id IN (SELECT id FROM session_messages WHERE session_id = ?)";
-  const scopeValue = input.draftKey ?? input.sessionId ?? "";
+  const scopeValue = planAttachmentContentScopeValue(input);
   const row = database.prepare(
     `${attachmentContentSelectSql()}
      WHERE r.attachment_id = ? AND ${scopeSql}`,
@@ -3253,10 +3316,7 @@ function hasRunningMessage(database: SqliteDatabase, sessionId: string): boolean
 }
 
 function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string): boolean {
-  if (hasRunningMessage(database, sessionId)) {
-    return true;
-  }
-  if (database
+  const hasQueuedControlMessage = database
     .prepare(
       `SELECT 1 AS found
        FROM session_messages
@@ -3266,39 +3326,43 @@ function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string)
          AND dispatch_lane IN ('worker', 'awaiting-team')
        LIMIT 1`,
     )
-    .get(sessionId) !== undefined) {
-    return true;
-  }
-  const cursor = database
-    .prepare(
-      `SELECT processed_through_message_id, active_message_id
-       FROM local_message_cursors
-       WHERE session_id = ?`,
-    )
-    .get(sessionId);
-  if (!isRecord(cursor)) {
-    return false;
-  }
-  if (cursor.active_message_id !== null) {
-    return true;
-  }
-  const processedThroughMessageId = readNumber(
-    cursor.processed_through_message_id,
-    "processed_through_message_id",
-  );
-  return database
-    .prepare(
-      `SELECT 1 AS found
-       FROM session_messages
-       WHERE session_id = ?
-         AND id > ?
-         AND (
-           (speaker = 'user' AND status IN ('pending', 'running'))
-           OR (speaker = 'agent' AND status = 'displayed')
-         )
-       LIMIT 1`,
-    )
-    .get(sessionId, processedThroughMessageId) !== undefined;
+    .get(sessionId) !== undefined;
+  const inspectCursor = (): boolean => {
+    const cursor = database
+      .prepare(
+        `SELECT processed_through_message_id, active_message_id
+         FROM local_message_cursors
+         WHERE session_id = ?`,
+      )
+      .get(sessionId);
+    if (!isRecord(cursor)) return false;
+    const processedThroughMessageId = readNumber(
+      cursor.processed_through_message_id,
+      "processed_through_message_id",
+    );
+    const hasMessageAfterCursor = database
+      .prepare(
+        `SELECT 1 AS found
+         FROM session_messages
+         WHERE session_id = ?
+           AND id > ?
+           AND (
+             (speaker = 'user' AND status IN ('pending', 'running'))
+             OR (speaker = 'agent' AND status = 'displayed')
+           )
+         LIMIT 1`,
+      )
+      .get(sessionId, processedThroughMessageId) !== undefined;
+    return planHasPendingControlWork({
+      activeMessage: cursor.active_message_id !== null,
+      hasMessageAfterCursor,
+    });
+  };
+  const inspection = decidePendingControlWorkInspection({
+    hasRunningMessage: hasRunningMessage(database, sessionId),
+    hasQueuedControlMessage,
+  });
+  return ({ pending: () => true, "inspect-cursor": inspectCursor })[inspection]();
 }
 
 function hasSessionMessage(database: SqliteDatabase, sessionId: string): boolean {
@@ -3760,12 +3824,12 @@ function releaseMessageForResume(
     if (source.speaker !== "user") {
       throw new Error(`${input.sourceDisposition} resume source must be a user message`);
     }
-    if (
-      input.sourceDisposition === "user-direct"
-      && (source.dispatchLane !== "worker" || source.dispatchRole !== input.role)
-    ) {
-      throw new Error("User-direct resume source dispatch does not match the active role");
-    }
+    assertUserDirectResumeIdentity({
+      sourceDisposition: input.sourceDisposition,
+      dispatchLane: source.dispatchLane,
+      dispatchRole: source.dispatchRole,
+      requestedRole: input.role,
+    });
     if (input.sourceDisposition === "primary" && source.dispatchLane === "worker") {
       throw new Error("Primary resume source cannot use the worker dispatch lane");
     }
@@ -4572,7 +4636,10 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
   const hasPendingControlWork = hasPendingLocalControlWork(database, sessionId);
   const effectiveCounts = {
     ...counts,
-    running: hasPendingControlWork ? Math.max(1, counts.running) : counts.running,
+    running: planPendingAttentionRunningCount({
+      persistedRunningCount: counts.running,
+      hasPendingControlWork,
+    }),
   };
   const awaitsHumanReason = null;
   counts.waiting = 0;
@@ -4599,7 +4666,10 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     agentTeamPendingId: readNullableString(row.agent_team_pending_id, "agent_team_pending_id"),
     workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
     workspacePendingMode: null,
-    title: readNullableString(row.title, "title") ?? fallbackSessionTitle(sessionId),
+    title: planPersistedSessionTitle(
+      readNullableString(row.title, "title"),
+      fallbackSessionTitle(sessionId),
+    ),
     titleRevision: readNumber(row.title_revision, "title_revision"),
     pinnedAt: readNullableString(row.pinned_at, "pinned_at"),
     status: sessionStatusFromCounts(effectiveCounts),
@@ -5048,7 +5118,7 @@ function projectTitleFromFolder(folderPath: string): string {
 }
 
 function fallbackSessionTitle(sessionId: string): string {
-  return sessionId === LOCAL_CONSOLE_DEFAULT_SESSION_ID ? "默认会话" : sessionId.replace(/^local:/u, "会话 ");
+  return planFallbackSessionTitle(sessionId, LOCAL_CONSOLE_DEFAULT_SESSION_ID);
 }
 
 function markSchemaMigration(database: SqliteDatabase, version: string): void {
@@ -5159,4 +5229,3 @@ function toNumberId(value: number | bigint | undefined): number {
 function assertNever(value: never): never {
   throw new Error(`Unhandled SQLite command: ${JSON.stringify(value)}`);
 }
-

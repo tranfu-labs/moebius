@@ -94,3 +94,14 @@ export function decideUnavailableTeamStop(
 ): { kind: "abort" } | { kind: "keep" } {
   return snapshot == null ? { kind: "abort" } : { kind: "keep" };
 }
+
+export function planPersistedSessionTitle(title: string | null, fallback: string): string {
+  return title ?? fallback;
+}
+
+export function planFallbackSessionTitle(
+  sessionId: string,
+  defaultSessionId: string,
+): string {
+  return sessionId === defaultSessionId ? "默认会话" : sessionId.replace(/^local:/u, "会话 ");
+}

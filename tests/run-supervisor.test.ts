@@ -11,6 +11,9 @@ import {
   projectCodexToolLifecycle,
   projectKimiProgress,
   projectKimiToolLifecycle,
+  selectClaudeExecutionProgress,
+  selectCodexExecutionProgress,
+  selectKimiExecutionProgress,
 } from "../src/execution-contract.js";
 import {
   createRunSupervisorState,
@@ -50,6 +53,18 @@ describe("execution progress contract", () => {
       activeByProviderId: new Map([["tool-1", "kimi-tool:1"]]),
       anonymousQueue: [],
     }).progress).toMatchObject({ kind: "tool-finished", toolId: "kimi-tool:1" });
+  });
+
+  it("prefers tool lifecycle progress and otherwise projects provider progress", () => {
+    const toolProgress = { kind: "tool-started", toolId: "tool-1", toolKind: "read", sequence: 1 } as const;
+    expect(selectCodexExecutionProgress(toolProgress, {}, 2)).toBe(toolProgress);
+    expect(selectClaudeExecutionProgress(null, {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "hello" } },
+    }, 2)).toEqual({ kind: "assistant-output", delta: "hello", sequence: 2 });
+    expect(selectKimiExecutionProgress(null, {
+      update: { sessionUpdate: "agent_thought_chunk", content: { thought: "checking" } },
+    }, 3)).toEqual({ kind: "reasoning-output", delta: "checking", sequence: 3 });
   });
 
   it("keeps Kimi chatter and retries separate from true progress", () => {

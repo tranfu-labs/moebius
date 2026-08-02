@@ -59,3 +59,55 @@ export function planProjectRemovalError(
 ): { kind: "running" } | { kind: "rethrow" } {
   return message.includes("PROJECT_HAS_RUNNING_AGENTS") ? { kind: "running" } : { kind: "rethrow" };
 }
+
+export function planPersistedProjectTitle(input: string, fallback: string): string {
+  return input.trim() || fallback;
+}
+
+export function assertProjectRemovalIdle(input: { hasPendingControlWork: boolean; force: boolean }): void {
+  if (input.hasPendingControlWork && !input.force) throw new Error("PROJECT_HAS_RUNNING_AGENTS");
+}
+
+export function assertCompleteProjectOrder(
+  requestedProjectIds: readonly string[],
+  storedProjectIds: readonly string[],
+): void {
+  const requested = new Set(requestedProjectIds);
+  if (
+    requested.size !== requestedProjectIds.length
+    || requestedProjectIds.length !== storedProjectIds.length
+    || storedProjectIds.some((projectId) => !requested.has(projectId))
+  ) {
+    throw new Error("project order must contain every active project exactly once");
+  }
+}
+
+export function decideDefaultProjectIdentity(input: {
+  projectId: string;
+  sourceType: string;
+  title: string;
+  folderPath: string;
+  worktreeMode: boolean;
+  expectedProjectId: string;
+  expectedSourceType: string;
+  expectedTitle: string;
+  expectedFolderPath: string;
+}): "inspect-session" | "used" {
+  return input.projectId === input.expectedProjectId
+    && input.sourceType === input.expectedSourceType
+    && input.title === input.expectedTitle
+    && input.folderPath === input.expectedFolderPath
+    && !input.worktreeMode
+    ? "inspect-session"
+    : "used";
+}
+
+export function decideDefaultSessionIdentity(input: {
+  sessionId: string;
+  sourceType: string;
+  expectedSessionId: string;
+}): "inspect-facts" | "used" {
+  return input.sessionId === input.expectedSessionId && input.sourceType === "local"
+    ? "inspect-facts"
+    : "used";
+}

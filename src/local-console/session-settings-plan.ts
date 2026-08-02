@@ -35,3 +35,29 @@ export function decideSessionRestore(
 ): { kind: "unavailable" } | { kind: "restore" } {
   return capabilityAvailable ? { kind: "restore" } : { kind: "unavailable" };
 }
+
+export function assertSessionWorkspaceMutable(hasMessages: boolean): void {
+  if (hasMessages) throw new Error("SESSION_WORKSPACE_LOCKED");
+}
+
+export function planSessionTeamWrite(input: {
+  hasRunningMessage: boolean;
+  hasQueuedWorker: boolean;
+}): "pending" | "effective" {
+  return input.hasRunningMessage || input.hasQueuedWorker ? "pending" : "effective";
+}
+
+export function planPendingTeamPromotion(hasPendingTeam: boolean): "promote" | "skip" {
+  return hasPendingTeam ? "promote" : "skip";
+}
+
+export function assertSessionArchiveIdle(hasPendingControlWork: boolean): void {
+  if (hasPendingControlWork) throw new Error("SESSION_HAS_RUNNING_AGENT");
+}
+
+export function planArchivedSessionSelection(
+  visibleSessionIds: readonly string[],
+  archivedIndex: number,
+): string | null {
+  return visibleSessionIds[archivedIndex + 1] ?? visibleSessionIds[archivedIndex - 1] ?? null;
+}

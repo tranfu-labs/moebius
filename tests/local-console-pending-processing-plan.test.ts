@@ -1,13 +1,30 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decidePendingControlWorkInspection,
   decidePendingAdmission,
   decidePendingFollowUp,
   decidePendingWait,
   decidePendingWorkspace,
+  planHasPendingControlWork,
 } from "../src/local-console/pending-processing-plan.js";
 
 describe("local console pending processing plan", () => {
+  it("combines persisted running, queued, active, and post-cursor work", () => {
+    expect(planHasPendingControlWork({
+      activeMessage: true,
+      hasMessageAfterCursor: false,
+    })).toBe(true);
+    expect(planHasPendingControlWork({
+      activeMessage: false,
+      hasMessageAfterCursor: false,
+    })).toBe(false);
+    expect(decidePendingControlWorkInspection({ hasRunningMessage: true, hasQueuedControlMessage: false }))
+      .toBe("pending");
+    expect(decidePendingControlWorkInspection({ hasRunningMessage: false, hasQueuedControlMessage: false }))
+      .toBe("inspect-cursor");
+  });
+
   it("queues only a live duplicate drain and reruns one requested pass", () => {
     expect(decidePendingAdmission({ stopping: true, processing: false })).toEqual({ kind: "stop" });
     expect(decidePendingAdmission({ stopping: false, processing: true })).toEqual({ kind: "queue" });

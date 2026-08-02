@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { planCodexRolloutPromptProjection } from "./local-console/codex-rollout-invocation-plan.js";
 import {
   malformedCodexRolloutEvent,
   projectCodexRolloutRecord,
@@ -344,11 +345,9 @@ export async function readCodexRolloutInvocation(
         continue;
       }
       const content = readPromptContent(payload.content);
-      if (payload.role === "developer") {
-        pushDistinct(developer, content);
-      } else if (payload.role === "user") {
-        pushDistinct(user, content);
-      }
+      const promptProjection = planCodexRolloutPromptProjection(payload.role, content);
+      pushDistinct(developer, promptProjection.developer);
+      pushDistinct(user, promptProjection.user);
     }
 
     if (readableRecords === 0) {
