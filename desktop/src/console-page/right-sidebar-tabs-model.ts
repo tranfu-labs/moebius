@@ -30,6 +30,38 @@ export interface RightSidebarTabsState {
   activeTabId: string | null;
 }
 
+export interface RightSidebarActiveSources {
+  subSessionId: string | null;
+  processSourceKey: string | null;
+  conversation:
+    | { kind: "session"; sessionId: string }
+    | { kind: "draft"; draftId: string }
+    | null;
+}
+
+export interface RightSidebarConversationDraftSeed {
+  draftId: string;
+  hostSessionId: string;
+  originSessionId: string | null;
+  projectId: string;
+  workspaceMode: "direct" | "worktree";
+  teamKey: string | null;
+  now: string;
+}
+
+export type RightSidebarTabsChangePlan =
+  | { kind: "persist"; state: RightSidebarTabsState }
+  | {
+      kind: "create-conversation-draft";
+      state: RightSidebarTabsState;
+      draft: RightSidebarConversationDraftSeed;
+    };
+
+export interface RightSidebarFocusRequest {
+  hostSessionId: string;
+  tabId: string;
+}
+
 export type RightSidebarTabsByHost = Readonly<Record<string, RightSidebarTabsState>>;
 
 export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
@@ -67,6 +99,72 @@ export function parseConversationTabSourceKey(
   } catch {
     return null;
   }
+}
+
+export function planRightSidebarActiveSources(
+  state: RightSidebarTabsState,
+  subSessionIdFromSourceKey: (sourceKey: string | null) => string | null,
+): RightSidebarActiveSources {
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+  return {
+    subSessionId: activeTab?.type === "sub-session"
+      ? subSessionIdFromSourceKey(activeTab.sourceKey)
+      : null,
+    processSourceKey: activeTab?.type === "run-output" ? activeTab.sourceKey : null,
+    conversation: activeTab?.type === "conversation"
+      ? parseConversationTabSourceKey(activeTab.sourceKey)
+      : null,
+  };
+}
+
+export function planRightSidebarTabsChange(
+  nextState: RightSidebarTabsState,
+  input: {
+    hostSessionId: string;
+    selectedSession: {
+      sessionId: string;
+      projectId: string;
+      workspaceMode: "direct" | "worktree";
+    } | null;
+    selectedProjectId: string;
+    generalAssistantTeamKey: string | null;
+    draftId: string;
+    now: string;
+  },
+): RightSidebarTabsChangePlan {
+  const unresolvedConversation = nextState.tabs.find(
+    (tab) => tab.type === "conversation" && tab.sourceKey === null,
+  );
+  if (unresolvedConversation === undefined) return { kind: "persist", state: nextState };
+  return {
+    kind: "create-conversation-draft",
+    state: {
+      ...nextState,
+      tabs: nextState.tabs.map((tab) => tab.id === unresolvedConversation.id
+        ? { ...tab, sourceKey: conversationDraftTabSourceKey(input.draftId) }
+        : tab),
+    },
+    draft: {
+      draftId: input.draftId,
+      hostSessionId: input.hostSessionId,
+      originSessionId: input.selectedSession?.sessionId ?? null,
+      projectId: input.selectedSession?.projectId ?? input.selectedProjectId,
+      workspaceMode: input.selectedSession?.workspaceMode ?? "direct",
+      teamKey: input.generalAssistantTeamKey,
+      now: input.now,
+    },
+  };
+}
+
+export function planRightSidebarVisibilityPreference(open: boolean): "open" | "closed" {
+  return open ? "open" : "closed";
+}
+
+export function planHandledRightSidebarFocusRequest(
+  current: RightSidebarFocusRequest | null,
+  handledTabId: string,
+): RightSidebarFocusRequest | null {
+  return current?.tabId === handledTabId ? null : current;
 }
 
 export function decidePromoteConversationDraft(

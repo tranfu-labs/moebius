@@ -18,7 +18,6 @@ import {
   type OperatorRunSnapshot,
   type OperatorRunnerStatus,
   type OperatorSession,
-  type RightSidebarTabsState,
   type TranslationKey,
   type ExecutionRegistryState,
   hasBlockingComposerAttachment,
@@ -104,9 +103,6 @@ import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import { refreshConsoleState } from "./refresh-console-state.js";
 import {
-  subSessionIdFromSourceKey,
-} from "./console-process-model.js";
-import {
   planAnalysisRootSession,
   planCanonicalConversationTabTitles,
   planConversationProjectContext,
@@ -115,6 +111,7 @@ import {
 import {
   planAgentTeamFileManagerTranslationKey,
   planFindOperatorAgentTeam,
+  planGeneralAssistantTeamKey,
   planAgentTeamDetailState,
 } from "./agent-team-console-model.js";
 import {
@@ -154,13 +151,6 @@ import {
   createNewConversationDraft,
   reduceNewConversationDraft,
 } from "./new-conversation.js";
-import {
-  readRightSidebarVisibilityPreference,
-  readRightSidebarWidthPreference,
-  writeRightSidebarVisibilityPreference,
-  writeRightSidebarWidthPreference,
-  type RightSidebarVisibilityPreference,
-} from "./right-sidebar-preference.js";
 import {
   conversationDraftTabSourceKey,
   conversationTabSourceKey,
@@ -209,10 +199,9 @@ import { useNewConversationSubmission } from "./use-new-conversation-submission.
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
 import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
-import { useRightSidebarConversationViews } from "./use-right-sidebar-conversation-views.js";
 import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
-import { useRightSidebarProcessData } from "./use-right-sidebar-process-data.js";
 import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
+import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -381,7 +370,10 @@ export function OperatorConsoleApp({
   const [state, setState] = useState<LocalConsoleState | null>(null);
   const stateRef = useRef<LocalConsoleState | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
-  const rightSidebarTabsStoreRef = useRef(createRightSidebarTabsStore(window.localStorage));
+  const rightSidebarTabsStore = useMemo(
+    () => createRightSidebarTabsStore(window.localStorage),
+    [],
+  );
   const sidebarConversationDraftStoreRef = useRef(
     createSidebarConversationDraftStore(window.localStorage),
   );
@@ -396,15 +388,6 @@ export function OperatorConsoleApp({
   const conversationReadingPositionStoreRef = useRef(
     createConversationReadingPositionStore(window.localStorage),
   );
-  const [rightSidebarTabs, setRightSidebarTabs] = useState<RightSidebarTabsState>(() =>
-    rightSidebarTabsStoreRef.current.read(
-      presentationRouteStoreRef.current.read()?.hostSessionId ?? selection.sessionId,
-    ),
-  );
-  const [rightSidebarFocusRequest, setRightSidebarFocusRequest] = useState<{
-    hostSessionId: string;
-    tabId: string;
-  } | null>(null);
   const [conversationMessageNavigation, setConversationMessageNavigation] = useState<{
     sessionId: string;
     messageId: number;
@@ -467,26 +450,21 @@ export function OperatorConsoleApp({
   const [sidebarVisibilityPreference, setSidebarVisibilityPreference] = useState<SidebarVisibilityPreference>(() =>
     readSidebarVisibilityPreference(window.localStorage),
   );
-  const [rightSidebarVisibilityPreference, setRightSidebarVisibilityPreference] =
-    useState<RightSidebarVisibilityPreference>(() => readRightSidebarVisibilityPreference(window.localStorage));
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(() =>
-    readRightSidebarWidthPreference(window.localStorage),
-  );
   const [analysisPanelOpenBySession, setAnalysisPanelOpenBySession] =
     useState<Record<string, boolean>>({});
   const resultAcknowledgementsRef = useRef(new Set<string>());
-  const activeRightSidebarTab = rightSidebarTabs.tabs.find(
-    (tab) => tab.id === rightSidebarTabs.activeTabId,
-  ) ?? null;
-  const activeSubSessionId = activeRightSidebarTab?.type === "sub-session"
-    ? subSessionIdFromSourceKey(activeRightSidebarTab.sourceKey)
-    : null;
-  const activeProcessSourceKey = activeRightSidebarTab?.type === "run-output"
-    ? activeRightSidebarTab.sourceKey
-    : null;
-  const activeConversationLocator = activeRightSidebarTab?.type === "conversation"
-    ? parseConversationTabSourceKey(activeRightSidebarTab.sourceKey)
-    : null;
+  const rightSidebarBundle = useRightSidebarConsole(
+    window.localStorage, rightSidebarTabsStore, apiBase,
+    presentationRoute?.hostSessionId ?? selection.sessionId,
+    selection.sessionId, state?.selectedSession ?? null, selection.projectId,
+    planGeneralAssistantTeamKey(agentTeamCatalogBundle.state), sidebarConversationDraftStoreRef.current,
+    setSidebarConversationDrafts, browserConversationViewSyncPort, browserProcessDataSyncPort,
+    processInvocationKey, setClientError,
+  );
+  const rightSidebarTabsBundle = rightSidebarBundle.tabs;
+  const rightSidebarTabs = rightSidebarTabsBundle.state;
+  const activeSubSessionId = rightSidebarBundle.active.subSessionId;
+  const activeConversationLocator = rightSidebarBundle.active.conversation;
   const activeSidebarConversationSessionId = activeConversationLocator?.kind === "session"
     ? activeConversationLocator.sessionId
     : null;
@@ -496,19 +474,12 @@ export function OperatorConsoleApp({
   const activeSidebarConversationDraft = activeSidebarConversationDraftId === null
     ? null
     : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
-  const conversationViewsBundle = useRightSidebarConversationViews(
-    apiBase, activeSubSessionId, activeSidebarConversationSessionId, browserConversationViewSyncPort,
-  );
+  const conversationViewsBundle = rightSidebarBundle.conversationViews;
   const subSessionViews = conversationViewsBundle.subSessionViews;
   const sidebarConversationViews = conversationViewsBundle.sidebarConversationViews;
   const setSidebarConversationViews = conversationViewsBundle.setSidebarConversationViews;
   const refreshSubSessionNow = conversationViewsBundle.refreshSubSessionNow;
-  const clearSubSessionViews = conversationViewsBundle.clearSubSessionViews;
-  const processDataBundle = useRightSidebarProcessData(
-    apiBase, activeProcessSourceKey, selection.sessionId,
-    presentationRoute?.hostSessionId ?? selection.sessionId, browserProcessDataSyncPort,
-    processInvocationKey, setClientError,
-  );
+  const processDataBundle = rightSidebarBundle.processData;
   const processOutputs = processDataBundle.outputs;
   const processInvocationStates = processDataBundle.invocations;
   const readProcessDebugInvocation = processDataBundle.readInvocation;
@@ -644,11 +615,7 @@ export function OperatorConsoleApp({
     setPresentationRoute(route);
   }, []);
 
-  const setRightSidebarOpen = useCallback((open: boolean) => {
-    const preference = open ? "open" : "closed";
-    setRightSidebarVisibilityPreference(preference);
-    writeRightSidebarVisibilityPreference(window.localStorage, preference);
-  }, []);
+  const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
 
   const forgetPersistedSelection = useCallback(() => {
     clearConsoleSelectionPreference(window.localStorage);
@@ -702,13 +669,6 @@ export function OperatorConsoleApp({
     stateRef.current = nextState;
     setState(nextState);
   }, [forgetPersistedSelection, rememberConfirmedSelection]);
-
-  useEffect(() => {
-    setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(
-      presentationRoute?.hostSessionId ?? selection.sessionId,
-    ));
-    clearSubSessionViews();
-  }, [clearSubSessionViews, presentationRoute?.hostSessionId, selection.sessionId]);
 
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinatorRef.current, selectionRef, commitConsoleState, commitSelection,
@@ -857,8 +817,9 @@ export function OperatorConsoleApp({
   );
   const conversationNavigationBundle = useConversationNavigation(
     projects, coordinatorRef.current, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
-    commitPresentationRoute, activateComposerDraft, actions, rightSidebarTabsStoreRef.current,
-    openRightSidebarSourceTab, setRightSidebarTabs, setRightSidebarOpen, conversationTransitionBundle,
+    commitPresentationRoute, activateComposerDraft, actions, rightSidebarTabsBundle.store,
+    openRightSidebarSourceTab, rightSidebarTabsBundle.commitCurrent, setRightSidebarOpen,
+    conversationTransitionBundle,
   );
   const newConversationSubmissionBundle = useNewConversationSubmission(
     newConversation, dispatchNewConversation, agentTeamCatalogBundle, managedAttachments,
@@ -936,7 +897,7 @@ export function OperatorConsoleApp({
       return;
     }
     const nextTabs = openRightSidebarSourceTab(
-      rightSidebarTabsStoreRef.current.read(root.sessionId),
+      rightSidebarTabsBundle.store.read(root.sessionId),
       {
         id: `conversation-${target.sessionId}`,
         type: "conversation",
@@ -944,7 +905,7 @@ export function OperatorConsoleApp({
         sourceKey: conversationTabSourceKey(target.sessionId),
       },
     );
-    rightSidebarTabsStoreRef.current.write(root.sessionId, nextTabs);
+    rightSidebarTabsBundle.store.write(root.sessionId, nextTabs);
     if (selectionRef.current.sessionId !== root.sessionId) {
       void actions.selectSession({
         projectId: root.projectId,
@@ -955,10 +916,10 @@ export function OperatorConsoleApp({
       projectId: root.projectId,
       sessionId: root.sessionId,
     }));
-    setRightSidebarTabs(nextTabs);
+    rightSidebarTabsBundle.commitCurrent(nextTabs);
     setRightSidebarOpen(true);
     if (nextTabs.activeTabId !== null) {
-      setRightSidebarFocusRequest({
+      rightSidebarTabsBundle.requestFocus({
         hostSessionId: root.sessionId,
         tabId: nextTabs.activeTabId,
       });
@@ -1007,7 +968,7 @@ export function OperatorConsoleApp({
       return;
     }
     const nextTabs = openRightSidebarSourceTab(
-      rightSidebarTabsStoreRef.current.read(root.sessionId),
+      rightSidebarTabsBundle.store.read(root.sessionId),
       {
         id: `conversation-${target.sessionId}`,
         type: "conversation",
@@ -1015,7 +976,7 @@ export function OperatorConsoleApp({
         sourceKey: conversationTabSourceKey(target.sessionId),
       },
     );
-    rightSidebarTabsStoreRef.current.write(root.sessionId, nextTabs);
+    rightSidebarTabsBundle.store.write(root.sessionId, nextTabs);
     commitPresentationRoute(ordinaryPresentationRoute({
       projectId: root.projectId,
       sessionId: root.sessionId,
@@ -1026,7 +987,7 @@ export function OperatorConsoleApp({
         sessionId: root.sessionId,
       });
     }
-    setRightSidebarTabs(nextTabs);
+    rightSidebarTabsBundle.commitCurrent(nextTabs);
     setRightSidebarOpen(true);
     setClientError(null);
   }, [
@@ -1209,9 +1170,9 @@ export function OperatorConsoleApp({
       }
       const archivedSessionIds = body.archivedSessionIds ?? [...removingSessionIds];
       for (const sessionId of archivedSessionIds) {
-        rightSidebarTabsStoreRef.current.removeSession(sessionId);
+        rightSidebarTabsBundle.store.removeSession(sessionId);
       }
-      rightSidebarTabsStoreRef.current.clearHosts(archivedSessionIds);
+      rightSidebarTabsBundle.store.clearHosts(archivedSessionIds);
       if (migratingSidebarSession !== undefined) {
         const migrated = await refresh({
           projectId: migratingSidebarSession.projectId,
@@ -1225,7 +1186,7 @@ export function OperatorConsoleApp({
             originAvailable: false,
           }));
           setRightSidebarOpen(false);
-          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(migratingSidebarSession.sessionId));
+          rightSidebarTabsBundle.showHost(migratingSidebarSession.sessionId);
         }
       } else {
         await refresh(selectionRef.current);
@@ -1432,7 +1393,7 @@ export function OperatorConsoleApp({
         originAvailable: false,
       }));
       setRightSidebarOpen(false);
-      setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(target.sessionId));
+      rightSidebarTabsBundle.showHost(target.sessionId);
     }).finally(() => {
       sourceMigrationRef.current = null;
     });
@@ -1443,48 +1404,6 @@ export function OperatorConsoleApp({
     setRightSidebarOpen,
     state,
   ]);
-
-  const changeRightSidebarWidth = useCallback((width: number) => {
-    setRightSidebarWidth(width);
-    writeRightSidebarWidthPreference(window.localStorage, width);
-  }, []);
-
-  const changeRightSidebarTabs = useCallback((nextState: RightSidebarTabsState) => {
-    const hostSessionId = presentationRoute?.hostSessionId ?? selectionRef.current.sessionId;
-    let resolvedState = nextState;
-    const unresolvedConversation = nextState.tabs.find(
-      (tab) => tab.type === "conversation" && tab.sourceKey === null,
-    );
-    if (unresolvedConversation !== undefined) {
-      const selected = state?.selectedSession ?? null;
-      const generalAssistant = agentTeamCatalogBundle.state.status === "ready"
-        ? agentTeamCatalogBundle.state.teams.find((team) =>
-            team.ownership === "system" && team.id === "general-assistant")
-        : undefined;
-      const draft = createSidebarConversationDraft({
-        draftId: crypto.randomUUID(),
-        hostSessionId,
-        originSessionId: selected?.sessionId ?? null,
-        entryTemplate: null,
-        context: {
-          projectId: selected?.projectId ?? selectionRef.current.projectId,
-          workspaceMode: selected?.workspaceMode ?? "direct",
-          teamKey: generalAssistant?.teamKey ?? null,
-        },
-        now: new Date().toISOString(),
-      });
-      sidebarConversationDraftStoreRef.current.write(draft);
-      setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-      resolvedState = {
-        ...nextState,
-        tabs: nextState.tabs.map((tab) => tab.id === unresolvedConversation.id
-          ? { ...tab, sourceKey: conversationDraftTabSourceKey(draft.draftId) }
-          : tab),
-      };
-    }
-    rightSidebarTabsStoreRef.current.write(hostSessionId, resolvedState);
-    setRightSidebarTabs(resolvedState);
-  }, [agentTeamCatalogBundle.state, presentationRoute?.hostSessionId, state?.selectedSession]);
 
   const analyzeConversation = useCallback(async (input:
     | {
@@ -1621,7 +1540,7 @@ export function OperatorConsoleApp({
       sidebarConversationDraftStoreRef.current.write(nextDraft);
       setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
       const nextTabs = openRightSidebarSourceTab(
-        rightSidebarTabsStoreRef.current.read(sourceRootSession.sessionId),
+        rightSidebarTabsBundle.store.read(sourceRootSession.sessionId),
         {
           id: `conversation-draft-${nextDraft.draftId}`,
           type: "conversation",
@@ -1640,8 +1559,8 @@ export function OperatorConsoleApp({
         commitPresentationRoute(ordinaryPresentationRoute(targetSelection));
         activateComposerDraft(input.sessionId);
       }
-      rightSidebarTabsStoreRef.current.write(sourceRootSession.sessionId, nextTabs);
-      setRightSidebarTabs(nextTabs);
+      rightSidebarTabsBundle.store.write(sourceRootSession.sessionId, nextTabs);
+      rightSidebarTabsBundle.commitCurrent(nextTabs);
       setRightSidebarOpen(true);
       setClientError(null);
       setSessionAnalysisNotice(null);
@@ -1715,7 +1634,7 @@ export function OperatorConsoleApp({
       const createdProject = stateRef.current?.projects.find(
         (project) => project.projectId === draft.context.projectId,
       );
-      rightSidebarTabsStoreRef.current.promoteConversationDraft({
+      rightSidebarTabsBundle.store.promoteConversationDraft({
         draftId,
         sessionId: created.sessionId,
         title: createdTitle,
@@ -1728,11 +1647,11 @@ export function OperatorConsoleApp({
         ? null
         : planAnalysisRootSession(allSidebarSessions, directParent.sessionId);
       const tabHostSessionId = root?.sessionId ?? draft.hostSessionId;
-      const nextTabs = rightSidebarTabsStoreRef.current.read(tabHostSessionId);
+      const nextTabs = rightSidebarTabsBundle.store.read(tabHostSessionId);
       const currentHostSessionId = presentationRouteRef.current?.hostSessionId
         ?? selectionRef.current.sessionId;
       if (currentHostSessionId === tabHostSessionId) {
-        setRightSidebarTabs(nextTabs);
+        rightSidebarTabsBundle.commitCurrent(nextTabs);
       }
       sidebarConversationDraftStoreRef.current.remove(draftId);
       setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
@@ -1933,7 +1852,7 @@ export function OperatorConsoleApp({
         });
         commitPresentationRoute(route);
         const tabs = openRightSidebarSourceTab(
-          rightSidebarTabsStoreRef.current.read(origin.sessionId),
+          rightSidebarTabsBundle.store.read(origin.sessionId),
           {
             id: `conversation-${target.sessionId}`,
             type: "conversation",
@@ -1946,8 +1865,8 @@ export function OperatorConsoleApp({
             conversationCreatedAt: target.createdAt,
           },
         );
-        rightSidebarTabsStoreRef.current.write(origin.sessionId, tabs);
-        setRightSidebarTabs(tabs);
+        rightSidebarTabsBundle.store.write(origin.sessionId, tabs);
+        rightSidebarTabsBundle.commitCurrent(tabs);
         setRightSidebarOpen(true);
         actions.selectSession({ projectId: origin.projectId, sessionId: origin.sessionId });
       } else {
@@ -2163,7 +2082,7 @@ export function OperatorConsoleApp({
           id: team.id,
         })}
         onOpenEvidence={(intent) => {
-          changeRightSidebarTabs(openRightSidebarSourceTab(rightSidebarTabs, intent.kind === "workspace-diff"
+          rightSidebarTabsBundle.changeTabs(openRightSidebarSourceTab(rightSidebarTabs, intent.kind === "workspace-diff"
             ? {
                 id: `sidebar-workspace-${intent.sessionId}`,
                 type: "workspace-diff",
@@ -2190,7 +2109,7 @@ export function OperatorConsoleApp({
     analysisEntriesFor,
     analysisPanelOpenBySession,
     analyzeConversation,
-    changeRightSidebarTabs,
+    rightSidebarTabsBundle,
     conversationMessageNavigation,
     executionRegistryState,
     interruptSubSession,
@@ -2396,15 +2315,15 @@ export function OperatorConsoleApp({
         const activeHostSessionId = presentationRouteRef.current?.hostSessionId
           ?? selectionRef.current.sessionId;
         for (const archivedSessionId of archivedSessionIds) {
-          rightSidebarTabsStoreRef.current.removeSession(archivedSessionId);
+          rightSidebarTabsBundle.store.removeSession(archivedSessionId);
         }
-        rightSidebarTabsStoreRef.current.clearHosts(archivedSessionIds);
+        rightSidebarTabsBundle.store.clearHosts(archivedSessionIds);
         if (presentationRoute?.selectedSessionId === sessionId) {
           const next = selectionRef.current;
           commitPresentationRoute(ordinaryPresentationRoute(next));
-          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(next.sessionId));
+          rightSidebarTabsBundle.showHost(next.sessionId);
         } else {
-          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(activeHostSessionId));
+          rightSidebarTabsBundle.showHost(activeHostSessionId);
         }
       }}
       onCopySessionLogPath={async (sessionId) => {
@@ -2425,10 +2344,10 @@ export function OperatorConsoleApp({
         setUpdatingConversationTitleSessionIds((current) => new Set(current).add(session.id));
         try {
           await actions.renameSession(session, title);
-          rightSidebarTabsStoreRef.current.renameConversation(session.id, title.trim());
+          rightSidebarTabsBundle.store.renameConversation(session.id, title.trim());
           const hostSessionId = presentationRouteRef.current?.hostSessionId
             ?? selectionRef.current.sessionId;
-          setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(hostSessionId));
+          rightSidebarTabsBundle.showHost(hostSessionId);
           resumeSearch();
         } catch (error) {
           resumeSearch();
@@ -2537,8 +2456,8 @@ export function OperatorConsoleApp({
       isProjectMutationPending={isProjectMutationPending}
       sidebarOpen={sidebarVisibilityPreference === "open"}
       onSidebarOpenChange={setSidebarOpen}
-      rightSidebarOpen={rightSidebarVisibilityPreference === "open"}
-      rightSidebarWidth={rightSidebarWidth}
+      rightSidebarOpen={rightSidebarTabsBundle.visibilityPreference === "open"}
+      rightSidebarWidth={rightSidebarTabsBundle.width}
       rightSidebarTabs={resolvedRightSidebarTabs.state}
       rightSidebarTabDiscriminators={rightSidebarTabDiscriminators}
       rightSidebarUpdatingTabIds={rightSidebarUpdatingTabIds}
@@ -2548,12 +2467,12 @@ export function OperatorConsoleApp({
       }}
       rightSidebarFocusTabId={
         selectedSession !== null
-        && rightSidebarFocusRequest?.hostSessionId === selectedSession.sessionId
-          ? rightSidebarFocusRequest.tabId
+        && rightSidebarTabsBundle.focusRequest?.hostSessionId === selectedSession.sessionId
+          ? rightSidebarTabsBundle.focusRequest.tabId
           : null
       }
       onRightSidebarFocusHandled={(tabId) => {
-        setRightSidebarFocusRequest((current) => current?.tabId === tabId ? null : current);
+        rightSidebarTabsBundle.handleFocus(tabId);
       }}
       rightSidebarContentSlots={{
         conversation: renderSidebarConversation,
@@ -2562,8 +2481,8 @@ export function OperatorConsoleApp({
       processInvocationStates={processInvocationStates}
       onLoadProcessInvocation={readProcessDebugInvocation}
       onRightSidebarOpenChange={setRightSidebarOpen}
-      onRightSidebarWidthChange={changeRightSidebarWidth}
-      onRightSidebarTabsChange={changeRightSidebarTabs}
+      onRightSidebarWidthChange={rightSidebarTabsBundle.changeWidth}
+      onRightSidebarTabsChange={rightSidebarTabsBundle.changeTabs}
       onBeforeCloseRightSidebarTab={(tab) => {
         const locator = tab.type === "conversation"
           ? parseConversationTabSourceKey(tab.sourceKey)

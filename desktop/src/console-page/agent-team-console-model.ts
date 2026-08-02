@@ -77,6 +77,13 @@ export function planFindOperatorAgentTeam(
     : undefined;
 }
 
+export function planGeneralAssistantTeamKey(state: OperatorAgentTeamsState): string | null {
+  return state.status === "ready"
+    ? state.teams.find((team) => team.ownership === "system" && team.id === "general-assistant")
+      ?.teamKey ?? null
+    : null;
+}
+
 export function planAgentTeamBuilderDraftSource(
   current: string | null,
   stored: string | null,
