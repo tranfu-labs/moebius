@@ -280,3 +280,84 @@ export function planAgentTeamSaveRequest(current: AgentTeamMemberDraft | undefin
 export function planAgentTeamRequestedMarkdown(current: AgentTeamMemberDraft | undefined): string | null {
   return current?.saveStatus === "saving" ? current.saveRequestedMarkdown : null;
 }
+
+export function planAgentTeamMemberSelection(
+  team: OperatorAgentTeam,
+  current: AgentTeamSelection | null,
+): string | null {
+  if (current?.teamKey === team.teamKey && current.memberSlug !== null
+    && team.members.some((member) => member.slug === current.memberSlug)) {
+    return current.memberSlug;
+  }
+  if (team.primaryAgentSlug !== null
+    && team.members.some((member) => member.slug === team.primaryAgentSlug)) {
+    return team.primaryAgentSlug;
+  }
+  return team.members[0]?.slug ?? null;
+}
+
+export function planAgentTeamMemberTarget(team: OperatorAgentTeam | undefined, memberSlug: string): boolean {
+  return team?.members.some((member) => member.slug === memberSlug) === true;
+}
+
+export function planAgentTeamMemberLoadTarget(memberSlug: string | null): boolean {
+  return memberSlug !== null;
+}
+
+export function planAgentTeamPrimaryChange(team: OperatorAgentTeam | undefined, memberSlug: string): "save" | "skip" {
+  return team !== undefined
+    && team.primaryAgentSlug !== memberSlug
+    && team.members.some((member) => member.slug === memberSlug)
+    ? "save"
+    : "skip";
+}
+
+export function planAgentTeamPrimaryOperation(
+  team: OperatorAgentTeam | undefined,
+  memberSlug: string,
+  hasOperation: boolean,
+): "save" | "skip" {
+  return hasOperation && planAgentTeamPrimaryChange(team, memberSlug) === "save" ? "save" : "skip";
+}
+
+export function planAgentTeamProfileOperation(
+  team: OperatorAgentTeam | undefined,
+  hasOperation: boolean,
+): "run" | "unavailable" {
+  return team !== undefined && hasOperation ? "run" : "unavailable";
+}
+
+export function planAgentTeamOfficialUpdate(
+  team: OperatorAgentTeam | undefined,
+  hasPrepare: boolean,
+  hasApply: boolean,
+): "run" | "unavailable" {
+  return team?.ownership === "system" && hasPrepare && hasApply ? "run" : "unavailable";
+}
+
+export function planAgentTeamCatalogReplace(
+  state: OperatorAgentTeamsState,
+  updated: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready") return state;
+  return {
+    status: "ready",
+    teams: state.teams.map((candidate) => candidate.teamKey === updated.teamKey ? updated : candidate),
+  };
+}
+
+export function planAgentTeamCatalogAddIfMissing(
+  state: OperatorAgentTeamsState,
+  added: OperatorAgentTeam,
+): OperatorAgentTeamsState {
+  if (state.status !== "ready" || state.teams.some((candidate) => candidate.teamKey === added.teamKey)) {
+    return state;
+  }
+  return { status: "ready", teams: [...state.teams, added] };
+}
+
+export function planOptionalOperatorAgentTeam(
+  item: AgentTeamListItem | null,
+): OperatorAgentTeam | null {
+  return item === null ? null : planOperatorAgentTeam(item);
+}
