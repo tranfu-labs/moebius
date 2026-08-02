@@ -843,9 +843,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   fileDebt: [
     { ruleId: "application-use-case-shape", file: "desktop/src/ai-team-builder/index.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "application-use-case-shape", file: "desktop/src/main.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/claude-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/codex-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/kimi-spawner.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-external-change.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-file-manager.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-management-store.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },

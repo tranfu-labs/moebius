@@ -16,6 +16,7 @@ import type {
   AiTeamBuilderDriverRequest,
   AiTeamBuilderDriverResult,
 } from "./driver.js";
+import { selectClaudeAiTeamBuilderSession } from "./driver-session-plan.js";
 import { AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS } from "./instructions.js";
 import { serializeAiTeamBuilderOutputSchema } from "./output-schema.js";
 
@@ -89,14 +90,18 @@ export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
         ok: false,
         reason: result.reason,
         resumeFailed: request.externalSessionId !== null,
-        externalSessionId: result.threadId
-          ?? observedExternalSessionId
-          ?? request.externalSessionId,
+        externalSessionId: selectClaudeAiTeamBuilderSession({
+          threadId: result.threadId,
+          observedExternalSessionId,
+          requestedExternalSessionId: request.externalSessionId,
+        }),
       };
     }
-    const externalSessionId = result.threadId
-      ?? observedExternalSessionId
-      ?? request.externalSessionId;
+    const externalSessionId = selectClaudeAiTeamBuilderSession({
+      threadId: result.threadId,
+      observedExternalSessionId,
+      requestedExternalSessionId: request.externalSessionId,
+    });
     if (externalSessionId === null) {
       return {
         ok: false,

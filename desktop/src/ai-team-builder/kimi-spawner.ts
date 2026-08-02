@@ -14,6 +14,10 @@ import type {
   AiTeamBuilderDriverRequest,
   AiTeamBuilderDriverResult,
 } from "./driver.js";
+import {
+  selectKimiAiTeamBuilderFailedSession,
+  selectKimiAiTeamBuilderSession,
+} from "./driver-session-plan.js";
 import { AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS } from "./instructions.js";
 
 export interface AiTeamBuilderKimiSpawnerOptions {
@@ -94,10 +98,17 @@ export class AiTeamBuilderKimiSpawner implements AiTeamBuilderDriverPort {
         ok: false,
         reason: result.reason,
         resumeFailed: request.externalSessionId !== null,
-        externalSessionId: observedExternalSessionId ?? request.externalSessionId,
+        externalSessionId: selectKimiAiTeamBuilderFailedSession({
+          observedExternalSessionId,
+          requestedExternalSessionId: request.externalSessionId,
+        }),
       };
     }
-    const externalSessionId = result.threadId ?? observedExternalSessionId ?? request.externalSessionId;
+    const externalSessionId = selectKimiAiTeamBuilderSession({
+      threadId: result.threadId,
+      observedExternalSessionId,
+      requestedExternalSessionId: request.externalSessionId,
+    });
     if (externalSessionId === null) {
       await writeInvocationManifest(runDir, {
         version: 1,
