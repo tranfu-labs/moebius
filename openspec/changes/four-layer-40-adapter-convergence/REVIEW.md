@@ -94,12 +94,35 @@ business 的兜底桶」，该结论即失去信息量。本簇收口复算与�
 
 ---
 
-## 簇 3：desktop team-* — **已放行，出账后直接实施**
+## 簇 3：desktop team-* — 账已核 · 裁决：**通过，直接实施**（账 `cead83b`）
 
-范围：12 个 `desktop/src/team-*.ts`（`team-store` / `team-ipc` / `team-official-management` /
-`team-official-update` / `team-record-store` / `team-runtime-binding` / `team-repair-ipc` /
-`team-management-store` / `team-file-manager` / `team-external-change` / `team-conversation-preference` /
-`team-seed` / `team-onboarding-orchestration`）加 `desktop/src/main.ts`，对应 40 批剩余 18 条 debt。
+### 范围更正（dev-manager 原记有误）
+
+本节原写「12 个 team-*」，**registry 实际为 13 个 team-* file debt + `desktop/src/main.ts`（共 14 条
+file debt）+ 4 条 dependency debt = 18 条**。dev 在簇级账中以 exact registry 为准并显式保留了这项差异，
+未默默采信任何一方，处理正确。以 registry 为准。
+
+### 账目复核（dev-manager）
+
+- 基线 **4,711 逻辑行 / 626 原始 AST 条件 / 98 去重违规**，三栏并列，沿用簇 2 口径。
+- 逐文件复算与主理人独立计数在 `team-external-change.ts`(+4)、`team-store.ts`(+4)、
+  `team-record-store.ts`(+1) 三处相差共 9 行（0.2%），系行数启发式与 checker AST 口径的细微差异；
+  **唯一带硬门禁的 `main.ts` 双方一致为 586 行**，不影响任何判据。**以 checker 口径为准，不返工。**
+- `main.ts` 目标 586 → <=260 行（留 40 行门禁余量）、<=8 wiring 条件。
+
+**严格三分口径产生了实质效果，予以确认。** `main.ts` 复算 50 = wiring **11** / timing **31** /
+business 8，并明写「表内把 codec 并入 business、transport 并入 timing 复算，避免塞进 wiring 兜底」。
+按宽口径那 31 条 timing 很可能被归为 wiring，结论会变成「几乎全是装配」；严格标注后才暴露出
+`main.ts` 的真实问题是**进程与窗口时序**而非装配。这说明上一轮的重标要求改变的是判断本身，不只是标签。
+
+其余认可：
+
+- 四处层级改登记（`team-conversation-preference` / `team-runtime-binding` / `team-ipc` → application，
+  `team-onboarding-orchestration` → domain）均绑定「层级改登记、能力抽离与 dependency debt 摘除
+  必须同一提交完成」，承接簇 2 自缚条款。
+- 「除 `main.ts` 与改登记的 application 外，不用行数做 adapter 成败指标」——adapter 的判据是条件去向
+  而非行数，避免了在 adapter 上重演压行。
+- 测试净删除目标 0；真实 I/O 测试全部保留，纯测试不得抵扣；等价替代须逐条写入 test-name ledger。
 
 ### 约束
 
