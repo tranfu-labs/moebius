@@ -161,7 +161,7 @@ export function OperatorConsoleApp({
     managedAttachmentClient, apiBase, attachmentCapability, newConversation?.isOpen === true,
     composerDraft.key, activeSubSessionId, activeSidebarConversationSessionId,
     activeSidebarConversationDraft?.attachmentDraftKey ?? null,
-    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts, setClientError,
+    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts, setClientError, t,
   );
   const managedAttachments = attachmentDraftsBundle.main;
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;

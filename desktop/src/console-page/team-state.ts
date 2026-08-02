@@ -352,10 +352,10 @@ export function removeAgentTeamDrafts(state: AgentTeamDraftState, teamKey: strin
 }
 
 export function decideAgentTeamSaveAdmission(member: AgentTeamMemberDraft | undefined):
-  | { kind: "already-saving"; reason: string }
+  | { kind: "already-saving" }
   | { kind: "start" } {
   if (member?.saveStatus === "saving") {
-    return { kind: "already-saving", reason: "该成员仍在保存，请稍后重试。" };
+    return { kind: "already-saving" };
   }
   return { kind: "start" };
 }

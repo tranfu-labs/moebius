@@ -91,7 +91,7 @@ export function useConversationConsole(
   );
   const editResend = useEditResend(
     stateRef, managedAttachments.replaceWithMessageAttachments, conversationDraftStore,
-    composerDraftRef, commitComposerDraft, setError,
+    composerDraftRef, commitComposerDraft, setError, t,
   );
   const navigation = useConversationNavigation(
     projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,

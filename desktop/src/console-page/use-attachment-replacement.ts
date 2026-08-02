@@ -9,6 +9,7 @@ import {
   decideAttachmentKind,
   decideAttachmentRevision,
   decideAttachmentService,
+  ManagedAttachmentFailure,
   planAttachmentIds,
   planAttachmentPreviewUrls,
   planDraftAttachmentPresence,
@@ -26,68 +27,76 @@ export function useAttachmentReplacement(
     sessionId: string;
     sourceMessageId: number;
   }): Promise<void> => {
-    const service = decideAttachmentService(input);
-    if (service.kind === "unavailable") throw new Error("本地附件服务尚未就绪");
-    const draftKey = input.currentDraftKey;
-    const owner = decideAttachmentDraftOwner(draftKey, source.sessionId);
-    if (owner === "mismatch") throw new Error("附件草稿与当前会话不一致");
-
-    const revision = planNextAttachmentGeneration(runtime.draftRevisionRef.current.get(draftKey));
-    runtime.draftRevisionRef.current.set(draftKey, revision);
-    const presenceGeneration = runtime.beginPresenceMutation(draftKey);
-    const currentItems = planDraftAttachments(runtime.draftsRef.current, draftKey);
-    for (const item of currentItems) {
-      runtime.handlesRef.current.get(item.clientId)?.controller?.abort("draft-replaced");
-      runtime.handlesRef.current.delete(item.clientId);
-    }
-    await Promise.all(planAttachmentIds(currentItems).map((attachmentId) => input.client.removeDraft({
-      apiBase: service.apiBase,
-      capability: service.capability,
-      draftKey,
-      attachmentId,
-    })));
-
-    const cloned = await input.client.cloneMessage({
-      apiBase: service.apiBase,
-      capability: service.capability,
-      sessionId: source.sessionId,
-      sourceMessageId: source.sourceMessageId,
-      targetDraftKey: draftKey,
-    });
-    const restored = await Promise.all(cloned.map(async (attachment) => {
-      const kind = decideAttachmentKind(attachment.kind);
-      let previewUrl: string | undefined;
-      if (kind === "image") {
-        const preview = await input.client.loadPreview({
-          apiBase: service.apiBase,
-          capability: service.capability,
-          draftKey,
-          attachmentId: attachment.attachmentId,
-        });
-        previewUrl = URL.createObjectURL(preview);
+    try {
+      const service = decideAttachmentService(input);
+      if (service.kind === "unavailable") {
+        throw new ManagedAttachmentFailure("attachment-service-unavailable");
       }
-      return planRestoredAttachment(attachment, previewUrl);
-    }));
-    for (const url of planAttachmentPreviewUrls(currentItems)) URL.revokeObjectURL(url);
-    const revisionDecision = decideAttachmentRevision({
-      current: runtime.draftRevisionRef.current.get(draftKey),
-      expected: revision,
-    });
-    if (revisionDecision === "stale") {
-      for (const url of planAttachmentPreviewUrls(restored)) URL.revokeObjectURL(url);
-      return;
+      const draftKey = input.currentDraftKey;
+      const owner = decideAttachmentDraftOwner(draftKey, source.sessionId);
+      if (owner === "mismatch") {
+        throw new ManagedAttachmentFailure("attachment-draft-owner-mismatch");
+      }
+
+      const revision = planNextAttachmentGeneration(runtime.draftRevisionRef.current.get(draftKey));
+      runtime.draftRevisionRef.current.set(draftKey, revision);
+      const presenceGeneration = runtime.beginPresenceMutation(draftKey);
+      const currentItems = planDraftAttachments(runtime.draftsRef.current, draftKey);
+      for (const item of currentItems) {
+        runtime.handlesRef.current.get(item.clientId)?.controller?.abort("draft-replaced");
+        runtime.handlesRef.current.delete(item.clientId);
+      }
+      await Promise.all(planAttachmentIds(currentItems).map((attachmentId) => input.client.removeDraft({
+        apiBase: service.apiBase,
+        capability: service.capability,
+        draftKey,
+        attachmentId,
+      })));
+
+      const cloned = await input.client.cloneMessage({
+        apiBase: service.apiBase,
+        capability: service.capability,
+        sessionId: source.sessionId,
+        sourceMessageId: source.sourceMessageId,
+        targetDraftKey: draftKey,
+      });
+      const restored = await Promise.all(cloned.map(async (attachment) => {
+        const kind = decideAttachmentKind(attachment.kind);
+        let previewUrl: string | undefined;
+        if (kind === "image") {
+          const preview = await input.client.loadPreview({
+            apiBase: service.apiBase,
+            capability: service.capability,
+            draftKey,
+            attachmentId: attachment.attachmentId,
+          });
+          previewUrl = URL.createObjectURL(preview);
+        }
+        return planRestoredAttachment(attachment, previewUrl);
+      }));
+      for (const url of planAttachmentPreviewUrls(currentItems)) URL.revokeObjectURL(url);
+      const revisionDecision = decideAttachmentRevision({
+        current: runtime.draftRevisionRef.current.get(draftKey),
+        expected: revision,
+      });
+      if (revisionDecision === "stale") {
+        for (const url of planAttachmentPreviewUrls(restored)) URL.revokeObjectURL(url);
+        return;
+      }
+      const visible = planVisibleRestoredAttachments(
+        restored,
+        runtime.currentDraftKeyRef.current === draftKey,
+      );
+      for (const url of visible.revokeUrls) URL.revokeObjectURL(url);
+      runtime.setDraft(draftKey, visible.items);
+      runtime.commitPresence(
+        draftKey,
+        presenceGeneration,
+        planDraftAttachmentPresence(cloned.length),
+      );
+    } catch (error) {
+      throw new Error(runtime.resolveError(error));
     }
-    const visible = planVisibleRestoredAttachments(
-      restored,
-      runtime.currentDraftKeyRef.current === draftKey,
-    );
-    for (const url of visible.revokeUrls) URL.revokeObjectURL(url);
-    runtime.setDraft(draftKey, visible.items);
-    runtime.commitPresence(
-      draftKey,
-      presenceGeneration,
-      planDraftAttachmentPresence(cloned.length),
-    );
   }, [input, runtime]);
 
   return { replaceWithMessageAttachments };

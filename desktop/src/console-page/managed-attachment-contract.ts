@@ -4,6 +4,21 @@ import type { MutableRefObject } from "react";
 import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
 
+export type ManagedAttachmentFailureCode =
+  | "attachment-upload"
+  | "attachment-preview-not-ready"
+  | "attachment-preview-save"
+  | "attachment-draft-restore"
+  | "attachment-backfill"
+  | "attachment-remove"
+  | "attachment-preview-read"
+  | "image-preview-budget"
+  | "image-dimensions-invalid"
+  | "image-preview-canvas"
+  | "image-preview-encode"
+  | "attachment-service-unavailable"
+  | "attachment-draft-owner-mismatch";
+
 export interface PendingAttachmentHandle {
   draftKey: string;
   file: File;
@@ -18,6 +33,7 @@ export interface ManagedAttachmentDraftInput {
   capability: string | null;
   currentDraftKey: string;
   onError(error: string): void;
+  translateFailure(code: ManagedAttachmentFailureCode): string;
   onDraftAttachmentPresenceChange?(
     draftKey: string,
     presence: SidebarConversationDraftAttachmentPresence,
@@ -42,4 +58,6 @@ export interface ManagedAttachmentRuntime {
     generation: number,
     presence: SidebarConversationDraftAttachmentPresence,
   ): void;
+  resolveError(error: unknown): string;
+  reportError(error: unknown): void;
 }

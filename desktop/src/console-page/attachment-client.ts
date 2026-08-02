@@ -1,5 +1,6 @@
 import type { StructuredAttachment } from "@moebius/console-ui";
 import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
+import { ManagedAttachmentFailure } from "./managed-attachment-model.js";
 
 export const ATTACHMENT_CAPABILITY_HEADER = "x-moebius-attachment-capability";
 
@@ -45,10 +46,14 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
     attachment?: StructuredAttachment;
     error?: string;
   }>(uploadResponse);
-  if (!uploadResponse.ok) throw new Error(uploaded.error ?? "附件上传失败");
+  if (!uploadResponse.ok) {
+    throw uploaded.error === undefined
+      ? new ManagedAttachmentFailure("attachment-upload")
+      : new Error(uploaded.error);
+  }
   if (uploaded.status === "ready" && uploaded.attachment !== undefined) return uploaded.attachment;
   if (uploaded.status !== "preview-required" || uploaded.uploadId === undefined || input.preview === null) {
-    throw new Error("图片预览没有准备好");
+    throw new ManagedAttachmentFailure("attachment-preview-not-ready");
   }
   const previewUrl = endpoint(
     input.apiBase,
@@ -66,7 +71,9 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
   });
   const finalized = await readJson<{ attachment?: StructuredAttachment; error?: string }>(previewResponse);
   if (!previewResponse.ok || finalized.attachment === undefined) {
-    throw new Error(finalized.error ?? "图片预览保存失败");
+    throw finalized.error === undefined
+      ? new ManagedAttachmentFailure("attachment-preview-save")
+      : new Error(finalized.error);
   }
   return finalized.attachment;
 }
@@ -81,7 +88,11 @@ export async function listManagedDraftAttachments(
     signal: input.signal,
   });
   const body = await readJson<{ attachments?: StructuredAttachment[]; error?: string }>(response);
-  if (!response.ok || body.attachments === undefined) throw new Error(body.error ?? "附件草稿恢复失败");
+  if (!response.ok || body.attachments === undefined) {
+    throw body.error === undefined
+      ? new ManagedAttachmentFailure("attachment-draft-restore")
+      : new Error(body.error);
+  }
   return body.attachments;
 }
 
@@ -107,7 +118,9 @@ export async function cloneManagedMessageAttachments(
   });
   const body = await readJson<{ attachments?: StructuredAttachment[]; error?: string }>(response);
   if (!response.ok || body.attachments === undefined) {
-    throw new Error(body.error ?? "附件回填失败");
+    throw body.error === undefined
+      ? new ManagedAttachmentFailure("attachment-backfill")
+      : new Error(body.error);
   }
   return body.attachments;
 }
@@ -123,7 +136,9 @@ export async function removeManagedDraftAttachment(
   });
   if (!response.ok && response.status !== 404) {
     const body = await readJson<{ error?: string }>(response);
-    throw new Error(body.error ?? "附件移除失败");
+    throw body.error === undefined
+      ? new ManagedAttachmentFailure("attachment-remove")
+      : new Error(body.error);
   }
 }
 
@@ -143,7 +158,7 @@ export async function loadManagedAttachmentPreview(
     signal: input.signal,
   });
   if (!response.ok || response.headers.get("content-type") !== "image/png") {
-    throw new Error("附件预览读取失败");
+    throw new ManagedAttachmentFailure("attachment-preview-read");
   }
   return await response.blob();
 }

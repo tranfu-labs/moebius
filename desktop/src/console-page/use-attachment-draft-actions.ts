@@ -9,7 +9,6 @@ import {
   decideAttachmentRetry,
   decideAttachmentService,
   decideImageFile,
-  planAttachmentErrorMessage,
   planAttachmentRemoval,
   planDraftAttachments,
   planDraftCleanup,
@@ -58,7 +57,7 @@ export function useAttachmentDraftActions(
       items.filter((candidate) => candidate.clientId !== clientId));
     if (removal.remote !== null) {
       void input.client.removeDraft(removal.remote)
-        .catch((error: unknown) => input.onError(planAttachmentErrorMessage(error)));
+        .catch((error: unknown) => runtime.reportError(error));
     }
   }, [input, runtime]);
 

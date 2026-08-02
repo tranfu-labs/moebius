@@ -9,7 +9,6 @@ import {
   decideAttachmentKind,
   decideAttachmentRestorationCommit,
   decideAttachmentService,
-  planAttachmentErrorMessage,
   planAttachmentGeneration,
   planAttachmentPreviewUrls,
   planDraftAttachmentPresence,
@@ -74,8 +73,8 @@ export function useAttachmentDraftRestoration(
       });
     }).catch((error: unknown) => {
       const failure = decideAsyncAttachmentCommit(controller.signal.aborted);
-      if (failure === "commit") input.onError(planAttachmentErrorMessage(error));
+      if (failure === "commit") runtime.reportError(error);
     });
     return () => controller.abort("draft-changed");
-  }, [input.apiBase, input.capability, input.client, input.currentDraftKey, input.onError, runtime]);
+  }, [input.apiBase, input.capability, input.client, input.currentDraftKey, runtime]);
 }

@@ -9,7 +9,7 @@ import type {
 import {
   decideAttachmentHandleCurrent,
   decideAttachmentService,
-  planAttachmentErrorMessage,
+  ManagedAttachmentFailure,
   planAttachmentPreviewItems,
   planAttachmentPreviewTransition,
   planAttachmentStatusItems,
@@ -24,7 +24,12 @@ export function useAttachmentUploadQueue(
     const service = decideAttachmentService(input);
     if (service.kind === "unavailable") {
       runtime.updateDraft(handle.draftKey, (items) =>
-        planAttachmentStatusItems(items, clientId, "failed", "本地附件服务尚未就绪"));
+        planAttachmentStatusItems(
+          items,
+          clientId,
+          "failed",
+          runtime.resolveError(new ManagedAttachmentFailure("attachment-service-unavailable")),
+        ));
       return;
     }
     const controller = new AbortController();
@@ -88,7 +93,7 @@ export function useAttachmentUploadQueue(
       });
       if (failureCommit === "stale") return;
       runtime.updateDraft(handle.draftKey, (items) =>
-        planAttachmentStatusItems(items, clientId, "failed", planAttachmentErrorMessage(error)));
+        planAttachmentStatusItems(items, clientId, "failed", runtime.resolveError(error)));
       handle.controller = null;
     }
   }, [input.apiBase, input.capability, input.client, runtime]);

@@ -89,6 +89,7 @@ describe("edit resend controller", () => {
       { current: { key: sessionDraftKey("session-a"), value: "" } },
       commitDraft,
       setError,
+      (key) => key,
     );
     return null;
   }

@@ -10,6 +10,7 @@ import {
   planDraftAttachments,
   planHasDraftAttachments,
   planNextAttachmentGeneration,
+  planAttachmentErrorMessage,
 } from "./managed-attachment-model.js";
 import { useAttachmentDraftActions } from "./use-attachment-draft-actions.js";
 import { useAttachmentDraftRestoration } from "./use-attachment-draft-restoration.js";
@@ -26,6 +27,10 @@ export function useManagedAttachmentDrafts(input: ManagedAttachmentDraftInput) {
   const presenceGenerationRef = useRef(new Map<string, number>());
   const presenceCallbackRef = useRef(input.onDraftAttachmentPresenceChange);
   presenceCallbackRef.current = input.onDraftAttachmentPresenceChange;
+  const onErrorRef = useRef(input.onError);
+  onErrorRef.current = input.onError;
+  const translateFailureRef = useRef(input.translateFailure);
+  translateFailureRef.current = input.translateFailure;
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const currentDraftKeyRef = useRef(input.currentDraftKey);
   currentDraftKeyRef.current = input.currentDraftKey;
@@ -59,6 +64,11 @@ export function useManagedAttachmentDrafts(input: ManagedAttachmentDraftInput) {
     });
     if (decision === "commit") presenceCallbackRef.current?.(draftKey, presence);
   }, []);
+  const resolveError = useCallback((error: unknown) =>
+    planAttachmentErrorMessage(error, translateFailureRef.current), []);
+  const reportError = useCallback((error: unknown) => {
+    onErrorRef.current(resolveError(error));
+  }, [resolveError]);
 
   const runtime = useMemo<ManagedAttachmentRuntime>(() => ({
     draftsRef,
@@ -71,7 +81,9 @@ export function useManagedAttachmentDrafts(input: ManagedAttachmentDraftInput) {
     setDraft,
     beginPresenceMutation,
     commitPresence,
-  }), [beginPresenceMutation, commitPresence, setDraft, updateDraft]);
+    resolveError,
+    reportError,
+  }), [beginPresenceMutation, commitPresence, reportError, resolveError, setDraft, updateDraft]);
 
   const uploadQueueBundle = useAttachmentUploadQueue(input, runtime);
   const actionsBundle = useAttachmentDraftActions(input, runtime, uploadQueueBundle);

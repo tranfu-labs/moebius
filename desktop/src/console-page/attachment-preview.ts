@@ -29,7 +29,7 @@ export async function createBoundedPngPreview(
       width = Math.max(1, Math.floor(width * 0.75));
       height = Math.max(1, Math.floor(height * 0.75));
     }
-    throw new Error("图片无法在预览预算内编码");
+    throw new ManagedAttachmentFailure("image-preview-budget");
   } finally {
     decoded.close();
   }
@@ -46,7 +46,7 @@ export async function hasSupportedImageSignature(file: Blob): Promise<boolean> {
 
 export function fitWithin(width: number, height: number, maxEdge: number): { width: number; height: number } {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error("图片尺寸无效");
+    throw new ManagedAttachmentFailure("image-dimensions-invalid");
   }
   const scale = Math.min(1, maxEdge / Math.max(width, height));
   return {
@@ -71,10 +71,12 @@ function browserPreviewDependencies(): ImagePreviewDependencies {
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
-      if (context === null) throw new Error("浏览器无法创建图片预览");
+      if (context === null) throw new ManagedAttachmentFailure("image-preview-canvas");
       context.drawImage(source, 0, 0, width, height);
       return await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => blob === null ? reject(new Error("图片预览编码失败")) : resolve(blob), "image/png");
+        canvas.toBlob((blob) => blob === null
+          ? reject(new ManagedAttachmentFailure("image-preview-encode"))
+          : resolve(blob), "image/png");
       });
     },
   };
@@ -83,3 +85,4 @@ function browserPreviewDependencies(): ImagePreviewDependencies {
 function startsWith(value: Uint8Array, prefix: Uint8Array): boolean {
   return prefix.every((byte, index) => value[index] === byte);
 }
+import { ManagedAttachmentFailure } from "./managed-attachment-model.js";

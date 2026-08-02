@@ -5,7 +5,10 @@ import type {
 } from "@moebius/console-ui";
 
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
-import type { PendingAttachmentHandle } from "./managed-attachment-contract.js";
+import type {
+  ManagedAttachmentFailureCode,
+  PendingAttachmentHandle,
+} from "./managed-attachment-contract.js";
 import {
   NEW_CONVERSATION_DRAFT_KEY,
   sessionDraftKey,
@@ -103,7 +106,18 @@ export function planMessagesWithAttachmentPreviews(
   }));
 }
 
-export function planAttachmentErrorMessage(error: unknown): string {
+export class ManagedAttachmentFailure extends Error {
+  constructor(readonly code: ManagedAttachmentFailureCode) {
+    super(code);
+    this.name = "ManagedAttachmentFailure";
+  }
+}
+
+export function planAttachmentErrorMessage(
+  error: unknown,
+  translateFailure: (code: ManagedAttachmentFailureCode) => string,
+): string {
+  if (error instanceof ManagedAttachmentFailure) return translateFailure(error.code);
   return error instanceof Error ? error.message : String(error);
 }
 

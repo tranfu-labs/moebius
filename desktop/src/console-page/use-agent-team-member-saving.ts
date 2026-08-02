@@ -116,6 +116,7 @@ export function useAgentTeamMemberSaving(input: {
     const result = await saveAllAgentTeamDrafts({
       state: runtime.draft.draftsRef.current,
       teamKey,
+      alreadySavingReason: runtime.t("desktop.error.teamMemberAlreadySaving"),
       saveMember: async (memberSlug, markdown) =>
         (await persist(teamKey, memberSlug, markdown)).agentMarkdown,
       onTransition: runtime.draft.commitDrafts,

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, type MutableRefObject } from "react";
-import type { OperatorEditAndResendTarget } from "@moebius/console-ui";
+import type { OperatorEditAndResendTarget, Translate } from "@moebius/console-ui";
 
 import type { LocalConsoleState } from "./console-state-contract.js";
 import {
@@ -19,12 +19,13 @@ export function useEditResend(
   composerDraftRef: MutableRefObject<ConversationComposerDraftState>,
   commitComposerDraft: (draft: ConversationComposerDraftState) => void,
   setError: (error: string | null) => void,
+  t: Translate,
 ) {
   const inputRef = useRef({
-    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError,
+    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError, t,
   });
   inputRef.current = {
-    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError,
+    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError, t,
   };
   const editAndResend = useCallback((target: OperatorEditAndResendTarget) => {
     const current = inputRef.current;
@@ -36,6 +37,7 @@ export function useEditResend(
       stoppedMessageId: start.target.stoppedMessageId,
       stoppedRunId: start.target.runId,
       sessionId: start.target.sessionId,
+      missingSourceMessage: current.t("desktop.error.editResendSourceMissing"),
       replaceAttachments: current.replaceAttachments,
       persistBody: (body) => {
         const latest = inputRef.current;

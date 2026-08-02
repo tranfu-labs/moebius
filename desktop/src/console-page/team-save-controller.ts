@@ -14,6 +14,7 @@ import {
 export async function saveAllAgentTeamDrafts(input: {
   state: AgentTeamDraftState;
   teamKey: string;
+  alreadySavingReason: string;
   saveMember: (memberSlug: string, agentMarkdown: string) => Promise<string>;
   onTransition?: (state: AgentTeamDraftState) => void;
 }): Promise<{ state: AgentTeamDraftState; failures: AgentTeamSaveAllFailure[] }> {
@@ -26,7 +27,7 @@ export async function saveAllAgentTeamDrafts(input: {
       getAgentTeamMemberDraft(state, input.teamKey, memberSlug),
     );
     if (current.kind === "already-saving") {
-      failures.push({ memberSlug, reason: current.reason });
+      failures.push({ memberSlug, reason: input.alreadySavingReason });
       continue;
     }
     state = startAgentTeamMemberSave(state, input.teamKey, memberSlug);
