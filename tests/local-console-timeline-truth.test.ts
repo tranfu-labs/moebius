@@ -16,13 +16,34 @@ import {
 import { addAgentTeamMember, createAgentTeam, trashUserAgentTeam } from "../desktop/src/team-ipc.js";
 import { serializeTeamDefinition } from "../desktop/src/team-model.js";
 import {
+  createTeamRuntimeBindingService,
+} from "../desktop/src/team-runtime-binding.js";
+import { listSharedAgentFiles } from "../desktop/src/team-shared-agent-store.js";
+import { resolveRecordedTeamLocation } from "../desktop/src/team-record-store.js";
+import {
+  readOfficialTeamStateDocument,
+  readTeamExecutionBindings,
+} from "../desktop/src/team-management-store.js";
+import { readTeamSnapshot, resolveTeamLocation } from "../desktop/src/team-store.js";
+
+const roots: string[] = [];
+const runtimeBinding = createTeamRuntimeBindingService({
+  listSharedAgents: listSharedAgentFiles,
+  resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
+    dataRoot,
+    teamId,
+    ownership: "system",
+  }),
+  resolveUserLocation: resolveRecordedTeamLocation,
+  readSnapshot: readTeamSnapshot,
+  readBindings: readTeamExecutionBindings,
+  readOfficialState: readOfficialTeamStateDocument,
+});
+const {
   listSessionAgentFiles,
   loadAgentTeamSnapshot,
   resolveSessionAgentTeamHealth,
-} from "../desktop/src/team-runtime-binding.js";
-import { resolveTeamLocation } from "../desktop/src/team-store.js";
-
-const roots: string[] = [];
+} = runtimeBinding;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, {

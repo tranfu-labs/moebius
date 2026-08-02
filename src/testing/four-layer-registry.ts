@@ -140,6 +140,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-sidebar-draft-close.ts",
   "desktop/src/console-page/use-session-mutation-intents.ts",
   "desktop/src/team-conversation-preference.ts",
+  "desktop/src/team-runtime-binding.ts",
   "desktop/src/console-page/refresh-console-state.ts",
   "desktop/src/console-page/selection-mutation-lifecycle.ts",
   "desktop/src/console-page/session-creation-actions.ts",
@@ -332,8 +333,8 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/team-onboarding-orchestration-store.ts",
   "desktop/src/team-record-store.ts",
   "desktop/src/team-repair-ipc.ts",
-  "desktop/src/team-runtime-binding.ts",
   "desktop/src/team-seed.ts",
+  "desktop/src/team-shared-agent-store.ts",
   "desktop/src/team-store.ts",
   "desktop/src/updater.ts",
   "src/ceo-scripts.ts",
@@ -480,6 +481,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/team-official-update-plan.ts",
   "desktop/src/team-repair-contract.ts",
   "desktop/src/team-record-plan.ts",
+  "desktop/src/team-runtime-binding-plan.ts",
   "desktop/src/team-seed-plan.ts",
   "src/agent-frontmatter.ts",
   "src/agent-manifest.ts",
@@ -861,7 +863,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   fileDebt: [
     { ruleId: "application-use-case-shape", file: "desktop/src/main.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-ipc.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-runtime-binding.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
   ],
   conditionPermits: [
     ...PROVIDER_INFRA_CONDITION_PERMITS,

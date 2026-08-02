@@ -1,157 +1,155 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 import type { LocalConsoleAgentFile } from "../../src/local-console/runtime.js";
 import type {
   LocalConsoleAgentTeamSnapshot,
   LocalConsoleSessionSummary,
 } from "../../src/local-console/types.js";
-import { resolveRecordedTeamLocation } from "./team-record-store.js";
 import {
-  readOfficialTeamStateDocument,
-  readTeamExecutionBindings,
-} from "./team-management-store.js";
-import {
-  DEFAULT_TEAM_EXECUTION_PROFILE,
   resolveEffectiveExecutionProfile,
   type ExecutionProfile,
   type ExecutionProfileBinding,
 } from "./team-execution-profile.js";
-import { readTeamSnapshot, resolveTeamLocation } from "./team-store.js";
+import type {
+  OfficialTeamStateDocumentV1,
+} from "./team-management-document-codec.js";
+import {
+  AgentTeamRosterUnavailableError,
+  assertUsableTeamSnapshot,
+  deriveAgentTeamHealth,
+  orderPrimaryFirst,
+  planBoundTeamLocation,
+  planRosterReadFailure,
+  planSessionAgentSource,
+  selectMemberExecutionBinding,
+  selectOfficialRecommendations,
+  selectRuntimeExecutionProfile,
+} from "./team-runtime-binding-plan.js";
+import type { TeamLocation, TeamSnapshot } from "./team-store.js";
 
-export class AgentTeamRosterUnavailableError extends Error {
-  readonly code = "AGENT_TEAM_ROSTER_UNAVAILABLE";
-
-  constructor(teamId: string, readonly health: "deleted" | "needs-repair" = "needs-repair") {
-    super(health === "deleted"
-      ? `当前会话绑定的 Agent 团队“${teamId}”已经被删除，请改选另一支团队。`
-      : `当前会话绑定的 Agent 团队“${teamId}”需要修复，暂时无法解析可用 Agent。`);
-    this.name = "AgentTeamRosterUnavailableError";
-  }
+export interface TeamRuntimeBindingPorts {
+  listSharedAgents(dataRoot: string): Promise<LocalConsoleAgentFile[]>;
+  resolveSystemLocation(input: { dataRoot: string; teamId: string }): TeamLocation;
+  resolveUserLocation(dataRoot: string, teamId: string): Promise<TeamLocation>;
+  readSnapshot(location: TeamLocation): Promise<TeamSnapshot>;
+  readBindings(input: {
+    dataRoot: string;
+    ownership: "system" | "user";
+    teamId: string;
+  }): Promise<Record<string, ExecutionProfileBinding>>;
+  readOfficialState(dataRoot: string): Promise<OfficialTeamStateDocumentV1>;
 }
 
-export async function listSessionAgentFiles(input: {
-  dataRoot: string;
-  session: LocalConsoleSessionSummary;
-}): Promise<LocalConsoleAgentFile[]> {
-  if (input.session.agentTeamOwnership == null || input.session.agentTeamId == null) {
-    return listSharedAgentFiles(path.join(input.dataRoot, "agents"));
-  }
-  const snapshot = await readBoundTeamSnapshot(input.dataRoot, input.session);
-  if (snapshot.status !== "usable") {
-    throw new AgentTeamRosterUnavailableError(input.session.agentTeamId);
-  }
-  return orderPrimaryFirst(snapshot).map((member) => ({ name: member.slug, path: member.agentFile }));
-}
+export function createTeamRuntimeBindingService(ports: TeamRuntimeBindingPorts) {
+  const readBoundTeamSnapshot = async (
+    dataRoot: string,
+    session: Pick<LocalConsoleSessionSummary, "agentTeamOwnership" | "agentTeamId">,
+  ): Promise<TeamSnapshot> => {
+    const teamId = session.agentTeamId!;
+    const ownership = session.agentTeamOwnership!;
+    const locationLoaders = {
+      system: async () => ports.resolveSystemLocation({ dataRoot, teamId }),
+      user: async () => await ports.resolveUserLocation(dataRoot, teamId),
+    };
+    try {
+      return await ports.readSnapshot(await locationLoaders[planBoundTeamLocation(ownership)]());
+    } catch {
+      throw new AgentTeamRosterUnavailableError(teamId, "deleted");
+    }
+  };
 
-export async function loadAgentTeamSnapshot(input: {
-  dataRoot: string;
-  ownership: "system" | "user";
-  teamId: string;
-}): Promise<LocalConsoleAgentTeamSnapshot> {
-  const snapshot = await readBoundTeamSnapshot(input.dataRoot, {
-    agentTeamOwnership: input.ownership,
-    agentTeamId: input.teamId,
-  });
-  if (snapshot.status !== "usable") {
-    throw new AgentTeamRosterUnavailableError(input.teamId);
-  }
-  const profiles = await loadEffectiveProfiles({
-    dataRoot: input.dataRoot,
-    ownership: input.ownership,
-    teamId: input.teamId,
-    memberSlugs: snapshot.members.map((member) => member.slug),
-  });
+  const loadEffectiveProfiles = async (input: {
+    dataRoot: string;
+    ownership: "system" | "user";
+    teamId: string;
+    memberSlugs: readonly string[];
+  }): Promise<Record<string, ExecutionProfile>> => {
+    const bindings = await ports.readBindings(input);
+    const officialLoaders = {
+      system: async () => (await ports.readOfficialState(input.dataRoot)).teams[input.teamId],
+      user: async () => undefined,
+    };
+    const recommendations = selectOfficialRecommendations({
+      ownership: input.ownership,
+      official: await officialLoaders[input.ownership](),
+    });
+    return Object.fromEntries(input.memberSlugs.map((slug) => {
+      const binding = selectMemberExecutionBinding({
+        binding: bindings[slug],
+        recommendation: recommendations[slug],
+      });
+      return [slug, resolveEffectiveExecutionProfile({
+        binding,
+        recommendation: recommendations[slug],
+      })];
+    }));
+  };
+
   return {
-    members: orderPrimaryFirst(snapshot).map((member) => ({
-      name: member.slug,
-      agentMarkdown: member.agentMarkdown,
-      executionProfile: profiles[member.slug] ?? null,
-    })),
+    listSessionAgentFiles: async (input: {
+      dataRoot: string;
+      session: LocalConsoleSessionSummary;
+    }): Promise<LocalConsoleAgentFile[]> => {
+      const handlers = {
+        shared: async () => await ports.listSharedAgents(input.dataRoot),
+        team: async () => {
+          const snapshot = await readBoundTeamSnapshot(input.dataRoot, input.session);
+          assertUsableTeamSnapshot(snapshot, input.session.agentTeamId!);
+          return orderPrimaryFirst(snapshot).map((member) => ({
+            name: member.slug,
+            path: member.agentFile,
+          }));
+        },
+      };
+      return handlers[planSessionAgentSource(input.session)]();
+    },
+
+    loadAgentTeamSnapshot: async (input: {
+      dataRoot: string;
+      ownership: "system" | "user";
+      teamId: string;
+    }): Promise<LocalConsoleAgentTeamSnapshot> => {
+      const snapshot = await readBoundTeamSnapshot(input.dataRoot, {
+        agentTeamOwnership: input.ownership,
+        agentTeamId: input.teamId,
+      });
+      assertUsableTeamSnapshot(snapshot, input.teamId);
+      const profiles = await loadEffectiveProfiles({
+        ...input,
+        memberSlugs: snapshot.members.map((member) => member.slug),
+      });
+      return {
+        members: orderPrimaryFirst(snapshot).map((member) => ({
+          name: member.slug,
+          agentMarkdown: member.agentMarkdown,
+          executionProfile: selectRuntimeExecutionProfile(profiles[member.slug]),
+        })),
+      };
+    },
+
+    resolveSessionAgentTeamHealth: async (input: {
+      dataRoot: string;
+      session: LocalConsoleSessionSummary;
+    }): Promise<{ health: "usable" | "deleted" | "needs-repair"; reason: string | null }> => {
+      const handlers = {
+        shared: async () => ({ health: "usable" as const, reason: null }),
+        team: async () => {
+          try {
+            const snapshot = await readBoundTeamSnapshot(input.dataRoot, input.session);
+            return deriveAgentTeamHealth({ snapshot, teamId: input.session.agentTeamId! });
+          } catch (error) {
+            const failures = {
+              deleted: () => ({
+                health: "deleted" as const,
+                reason: (error as AgentTeamRosterUnavailableError).message,
+              }),
+              rethrow: (): never => { throw error; },
+            };
+            return failures[planRosterReadFailure(error)]();
+          }
+        },
+      };
+      return handlers[planSessionAgentSource(input.session)]();
+    },
   };
 }
 
-export async function resolveSessionAgentTeamHealth(input: {
-  dataRoot: string;
-  session: LocalConsoleSessionSummary;
-}): Promise<{ health: "usable" | "deleted" | "needs-repair"; reason: string | null }> {
-  if (input.session.agentTeamOwnership == null || input.session.agentTeamId == null) {
-    return { health: "usable", reason: null };
-  }
-  let snapshot: Awaited<ReturnType<typeof readBoundTeamSnapshot>>;
-  try {
-    snapshot = await readBoundTeamSnapshot(input.dataRoot, input.session);
-  } catch (error) {
-    if (error instanceof AgentTeamRosterUnavailableError && error.health === "deleted") {
-      return { health: "deleted", reason: error.message };
-    }
-    throw error;
-  }
-  return snapshot.status === "usable"
-    ? { health: "usable", reason: null }
-    : {
-        health: "needs-repair",
-        reason: snapshot.issues[0]?.message ?? `Agent 团队“${input.session.agentTeamId}”需要修复。`,
-      };
-}
-
-async function readBoundTeamSnapshot(
-  dataRoot: string,
-  session: Pick<LocalConsoleSessionSummary, "agentTeamOwnership" | "agentTeamId">,
-) {
-  const teamId = session.agentTeamId;
-  const ownership = session.agentTeamOwnership;
-  if (teamId == null || ownership == null) {
-    throw new Error("Session has no Agent team binding");
-  }
-  let location;
-  try {
-    location = ownership === "system"
-      ? resolveTeamLocation({ dataRoot, teamId, ownership: "system" })
-      : await resolveRecordedTeamLocation(dataRoot, teamId);
-  } catch {
-    throw new AgentTeamRosterUnavailableError(teamId, "deleted");
-  }
-  return readTeamSnapshot(location);
-}
-
-function orderPrimaryFirst<T extends { slug: string }>(snapshot: { definition: { primaryAgentSlug: string | null } | null; members: T[] }): T[] {
-  const primary = snapshot.definition?.primaryAgentSlug;
-  return primary == null
-    ? [...snapshot.members]
-    : [...snapshot.members].sort((left, right) => Number(right.slug === primary) - Number(left.slug === primary));
-}
-
-async function listSharedAgentFiles(directory: string): Promise<LocalConsoleAgentFile[]> {
-  const entries = await fs.readdir(directory, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => ({ name: path.basename(entry.name, ".md"), path: path.join(directory, entry.name) }))
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
-
-async function loadEffectiveProfiles(input: {
-  dataRoot: string;
-  ownership: "system" | "user";
-  teamId: string;
-  memberSlugs: readonly string[];
-}): Promise<Record<string, ExecutionProfile>> {
-  const bindings = await readTeamExecutionBindings(input);
-  const recommendations = input.ownership === "system"
-    ? (await readOfficialTeamStateDocument(input.dataRoot)).teams[input.teamId]?.appliedRecommendations ?? {}
-    : {};
-  return Object.fromEntries(input.memberSlugs.map((slug) => {
-    const binding: ExecutionProfileBinding = bindings[slug] ?? (
-      recommendations[slug] === undefined
-        ? {
-            source: "explicit",
-            profile: DEFAULT_TEAM_EXECUTION_PROFILE,
-          }
-        : { source: "recommended" }
-    );
-    return [slug, resolveEffectiveExecutionProfile({
-      binding,
-      recommendation: recommendations[slug],
-    })];
-  }));
-}
+export { AgentTeamRosterUnavailableError } from "./team-runtime-binding-plan.js";

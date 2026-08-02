@@ -53,13 +53,22 @@ import {
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
 } from "./team-repair-ipc.js";
-import { getSystemTeamsRoot, getTeamsRoot } from "./team-store.js";
+import { resolveRecordedTeamLocation as resolveRecordedRuntimeTeamLocation } from "./team-record-store.js";
+import {
+  readOfficialTeamStateDocument,
+  readTeamExecutionBindings,
+} from "./team-management-store.js";
+import {
+  getSystemTeamsRoot,
+  getTeamsRoot,
+  readTeamSnapshot,
+  resolveTeamLocation,
+} from "./team-store.js";
 import { seedBuiltInTeams } from "./team-seed.js";
 import {
-  listSessionAgentFiles,
-  loadAgentTeamSnapshot,
-  resolveSessionAgentTeamHealth,
+  createTeamRuntimeBindingService,
 } from "./team-runtime-binding.js";
+import { listSharedAgentFiles } from "./team-shared-agent-store.js";
 import { TEAM_EXTERNAL_CHANGE_IPC_CHANNEL } from "./team-external-change-contract.js";
 import {
   checkAgentTeamMemberExternalChange,
@@ -130,6 +139,19 @@ let mainWindow: BrowserWindow | null = null;
 let statusWindow: BrowserWindow | null = null;
 let localConsoleServer: StartedLocalConsoleServer | null = null;
 let localConsoleAttachmentCapability: string | null = null;
+
+const teamRuntimeBinding = createTeamRuntimeBindingService({
+  listSharedAgents: listSharedAgentFiles,
+  resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
+    dataRoot,
+    teamId,
+    ownership: "system",
+  }),
+  resolveUserLocation: resolveRecordedRuntimeTeamLocation,
+  readSnapshot: readTeamSnapshot,
+  readBindings: readTeamExecutionBindings,
+  readOfficialState: readOfficialTeamStateDocument,
+});
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let isQuitting = false;
 let activeLocale: DesktopLocale = "zh-CN";
@@ -329,16 +351,16 @@ async function startLocalConsole(): Promise<void> {
       store,
       attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments"),
       attachmentCapability: localConsoleAttachmentCapability,
-      listAgentFiles: async (sessionId) => listSessionAgentFiles({
+      listAgentFiles: async (sessionId) => teamRuntimeBinding.listSessionAgentFiles({
         dataRoot: status.dataRoot,
         session: await findSession(sessionId),
       }),
-      loadAgentTeamSnapshot: async (binding) => loadAgentTeamSnapshot({
+      loadAgentTeamSnapshot: async (binding) => teamRuntimeBinding.loadAgentTeamSnapshot({
         dataRoot: status.dataRoot,
         ownership: binding.ownership,
         teamId: binding.id,
       }),
-      resolveAgentTeamHealth: async (session) => resolveSessionAgentTeamHealth({
+      resolveAgentTeamHealth: async (session) => teamRuntimeBinding.resolveSessionAgentTeamHealth({
         dataRoot: status.dataRoot,
         session,
       }),
