@@ -20,6 +20,7 @@ import {
 import { checkCodex } from "./env-doctor.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
 import { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
+import { DesktopShutdownRuntime } from "./desktop-shutdown-runtime.js";
 import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
@@ -184,8 +185,8 @@ const agentTeamService = createAgentTeamService({
   getPackagedDirectory: getPackagedTeamCacheDirectory,
 });
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
-let isQuitting = false;
 let activeLocale: DesktopLocale = "zh-CN";
+let shutdown!: DesktopShutdownRuntime;
 
 const status: DesktopStatusSnapshot = {
   appVersion: app.getVersion(),
@@ -202,9 +203,9 @@ const windows = new DesktopWindowRuntime({
   platform: process.platform,
   status,
   locale: () => activeLocale,
-  isQuitting: () => isQuitting,
+  isQuitting: () => shutdown.isQuitting,
   hasRunningInstallers: () => (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0,
-  requestShutdown,
+  requestShutdown: () => shutdown.request(),
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
 });
 
@@ -242,6 +243,25 @@ const localConsole = new DesktopLocalConsoleRuntime({
   formatError,
 });
 
+shutdown = new DesktopShutdownRuntime({
+  closeLocalConsole: () => localConsole.close(),
+  closeStateWorkers: closeSqliteStateWorkers,
+  quit: () => app.quit(),
+  getRunningInstallers: () => onboardingCliInstaller?.getRunningClis() ?? [],
+  confirmInstallerCancellation: async (running) => {
+    const response = await windows.showMessageBox(
+      installerQuitDialogOptions(running, activeLocale),
+    );
+    return response !== 0;
+  },
+  cancelInstallers: async () => {
+    await onboardingCliInstaller?.cancelAll();
+  },
+  reportCleanupBlocked: async () => {
+    await windows.showMessageBox(installerCleanupBlockedDialogOptions(activeLocale));
+  },
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -254,22 +274,12 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-let shutdownPromise: Promise<void> | null = null;
-let quitCoordinationPromise: Promise<void> | null = null;
-let shutdownComplete = false;
-
 app.on("before-quit", (event) => {
-  if (shutdownComplete) {
-    return;
-  }
-  event.preventDefault();
-  void requestShutdown();
+  shutdown.beforeQuit(() => event.preventDefault());
 });
 
 app.on("window-all-closed", () => {
-  if (!isQuitting) {
-    void requestShutdown();
-  }
+  shutdown.lastWindowClosed();
 });
 
 async function boot(): Promise<void> {
@@ -454,51 +464,6 @@ registerSettingsIpc({
   checkForUpdates: runSettingsUpdateCheck,
   clipboard,
 });
-
-async function shutdownAndQuit(): Promise<void> {
-  if (shutdownPromise !== null) {
-    return shutdownPromise;
-  }
-  isQuitting = true;
-  shutdownPromise = (async () => {
-    await localConsole.close();
-    await closeSqliteStateWorkers();
-    shutdownComplete = true;
-    app.quit();
-  })();
-  return shutdownPromise;
-}
-
-async function requestShutdown(): Promise<void> {
-  if (shutdownComplete || shutdownPromise !== null) {
-    await shutdownAndQuit();
-    return;
-  }
-  if (quitCoordinationPromise !== null) {
-    return quitCoordinationPromise;
-  }
-  quitCoordinationPromise = (async () => {
-    const running = onboardingCliInstaller?.getRunningClis() ?? [];
-    if (running.length > 0) {
-      const options = installerQuitDialogOptions(running, activeLocale);
-      const response = await windows.showMessageBox(options);
-      if (response === 0) {
-        return;
-      }
-      try {
-        await onboardingCliInstaller?.cancelAll();
-      } catch {
-        const cleanupBlocked = installerCleanupBlockedDialogOptions(activeLocale);
-        await windows.showMessageBox(cleanupBlocked);
-        return;
-      }
-    }
-    await shutdownAndQuit();
-  })().finally(() => {
-    quitCoordinationPromise = null;
-  });
-  return quitCoordinationPromise;
-}
 
 function resolveSeedRoot(): string {
   if (app.isPackaged) {
