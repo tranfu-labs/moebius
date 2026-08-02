@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   planBeforeQuit,
   planDesktopShutdownRequest,
+  planInstallerAccess,
   planInstallerShutdownApproval,
   planLastWindowClosed,
 } from "../src/desktop-shutdown-plan.js";
@@ -41,6 +42,8 @@ describe("desktop shutdown plan", () => {
   it("maps user approval and lifecycle state to observable shutdown actions", () => {
     expect(planInstallerShutdownApproval(false)).toBe("stay-open");
     expect(planInstallerShutdownApproval(true)).toBe("cancel-installers");
+    expect(planInstallerAccess(false)).toBe("unavailable");
+    expect(planInstallerAccess(true)).toBe("available");
     expect(planBeforeQuit(false)).toBe("coordinate");
     expect(planBeforeQuit(true)).toBe("allow");
     expect(planLastWindowClosed(false)).toBe("coordinate");

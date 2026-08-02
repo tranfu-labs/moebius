@@ -6,6 +6,7 @@ import type { LocalConsoleStore } from "../../src/local-console/types.js";
 
 import {
   decideRequiredLocalConsoleSession,
+  decideLocalConsoleUrl,
   planLocalConsoleServerAccess,
 } from "./desktop-local-console-plan.js";
 import type { DesktopStatusSnapshot } from "./status.js";
@@ -61,6 +62,10 @@ export class DesktopLocalConsoleRuntime {
 
   get attachmentCapability(): string | null {
     return this.#attachmentCapability;
+  }
+
+  get url(): string | null {
+    return decideLocalConsoleUrl(this.#status.localConsole);
   }
 
   get pathSource(): StartedLocalConsoleServer["runtime"] | null {

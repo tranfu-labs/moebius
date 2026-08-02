@@ -20,3 +20,16 @@ migration、action legality、repair、session identity 和 atomic team write �
 
 `builder-service.ts`、`turn-runtime.ts`、`draft-repository.ts` 与 `team-writer.ts` 均登记为受
 `[IB:application-use-case-shape]` 约束的 application，不进入 composition-root allowlist。
+
+## `desktop/src/main.ts`
+
+最终 AST 条件为 0；因此逐行条件表为空。
+
+复算：wiring 0 + timing 0 + business 0 = AST 条件 0。root 为 248 逻辑行，只保留 application
+service 实例化、窄 port bundle 接入和 Electron 生命周期注册。原有 50 个条件分别进入 startup / shutdown /
+window / local-console application 与纯 `plan*`，或留在 project / team / core IPC adapter 的 codec 与 transport
+边界；没有新增 condition permit，也没有新增 composition root。
+
+本簇新增的 `desktop-process-config.ts`、`desktop-lifecycle-register.ts`、
+`desktop-core-ipc-register.ts`、`desktop-team-wiring.ts` 与 `desktop-team-ipc-wiring.ts` 均登记为 adapter；
+它们只暴露基础设施或返回端口对象，不实例化 application service，也不组装全局对象图。

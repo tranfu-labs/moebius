@@ -1,4 +1,5 @@
 import type { LocalConsoleSessionSummary } from "../../src/local-console/types.js";
+import type { DesktopStatusSnapshot } from "./status.js";
 
 export function decideRequiredLocalConsoleSession(
   sessions: readonly LocalConsoleSessionSummary[],
@@ -15,4 +16,10 @@ export function planLocalConsoleServerAccess(
   isAvailable: boolean,
 ): "available" | "unavailable" {
   return isAvailable ? "available" : "unavailable";
+}
+
+export function decideLocalConsoleUrl(
+  status: DesktopStatusSnapshot["localConsole"],
+): string | null {
+  return status.status === "running" ? status.url ?? null : null;
 }

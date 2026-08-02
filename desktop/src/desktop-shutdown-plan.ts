@@ -25,6 +25,12 @@ export function planInstallerShutdownApproval(
   return shouldCancelInstallers ? "cancel-installers" : "stay-open";
 }
 
+export function planInstallerAccess(
+  isAvailable: boolean,
+): "available" | "unavailable" {
+  return isAvailable ? "available" : "unavailable";
+}
+
 export function planBeforeQuit(shutdownComplete: boolean): "allow" | "coordinate" {
   return shutdownComplete ? "allow" : "coordinate";
 }

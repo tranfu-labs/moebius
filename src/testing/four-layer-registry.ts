@@ -316,6 +316,9 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/desktop-window-runtime.ts",
   "desktop/src/desktop-team-wiring.ts",
   "desktop/src/desktop-team-ipc-wiring.ts",
+  "desktop/src/desktop-core-ipc-register.ts",
+  "desktop/src/desktop-process-config.ts",
+  "desktop/src/desktop-lifecycle-register.ts",
   "desktop/src/ai-team-builder/execution-profile.ts",
   "desktop/src/env-doctor.ts",
   "desktop/src/execution-capabilities.ts",
@@ -877,7 +880,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   dependencyDebt: [
   ],
   fileDebt: [
-    { ruleId: "application-use-case-shape", file: "desktop/src/main.ts", reason: "pre-four-layer composition root exceeds narrow baseline", removalChange: "four-layer-40-adapter-convergence" },
   ],
   conditionPermits: [
     ...PROVIDER_INFRA_CONDITION_PERMITS,

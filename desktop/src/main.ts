@@ -1,7 +1,5 @@
-import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   app,
   clipboard,
@@ -11,11 +9,10 @@ import {
 import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
+import { formatLocalError } from "../../src/local-console/runtime-domain.js";
 import {
   buildSeedCopyPlan,
   executeSeedCopyPlan,
-  resolveDesktopDataRoot,
-  resolveDesktopInstanceUserDataPath,
 } from "./data-root.js";
 import { checkCodex } from "./env-doctor.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
@@ -35,7 +32,6 @@ import {
 import {
   createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
-import { registerProjectIpc } from "./project-ipc-register.js";
 import {
   createDesktopAgentTeamServicePorts,
   createDesktopTeamConversationPreferencePorts,
@@ -43,12 +39,9 @@ import {
 } from "./desktop-team-wiring.js";
 import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
 import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
-import { registerSettingsIpc } from "./settings-ipc.js";
-import {
-  OPEN_EXTERNAL_LINK_IPC_CHANNEL,
-  openValidatedExternalLink,
-} from "./external-link.js";
-import { registerSessionLogClipboardIpc } from "./session-log-clipboard.js";
+import { registerDesktopCoreIpc } from "./desktop-core-ipc-register.js";
+import { configureDesktopProcess } from "./desktop-process-config.js";
+import { registerDesktopLifecycle } from "./desktop-lifecycle-register.js";
 import { registerOnboardingIpc } from "./onboarding/register.js";
 import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
@@ -57,41 +50,19 @@ import {
   installerCleanupBlockedDialogOptions,
   installerQuitDialogOptions,
 } from "./onboarding/shutdown-coordination.js";
-import {
-  LANGUAGE_PREFERENCE_IPC_CHANNELS,
-  type DesktopLocale,
-} from "./language-preference-contract.js";
-import { createLanguagePreferenceIpcHandlers } from "./language-preference-ipc.js";
+import type { DesktopLocale } from "./language-preference-contract.js";
+import { registerLanguagePreferenceIpc } from "./language-preference-ipc.js";
 import {
   readLanguagePreference,
   saveLanguagePreference,
 } from "./language-preference.js";
 import { translateDesktop } from "./i18n/index.js";
 
-const dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(dirname, "..", "..");
-const dataRoot = resolveDesktopDataRoot({
+const { dirname, dataRoot, seedRoot, seedTeamsRoot } = configureDesktopProcess({
+  app,
+  moduleUrl: import.meta.url,
   env: process.env,
-  isPackaged: app.isPackaged,
-  projectRoot,
 });
-const instanceUserDataPath = resolveDesktopInstanceUserDataPath({
-  dataRoot,
-  packagedDefaultDataRoot: resolveDesktopDataRoot({
-    env: {},
-    isPackaged: true,
-    projectRoot,
-  }),
-  defaultUserDataPath: app.getPath("userData"),
-});
-if (instanceUserDataPath !== app.getPath("userData")) {
-  fs.mkdirSync(instanceUserDataPath, { recursive: true });
-  app.setPath("userData", instanceUserDataPath);
-}
-
-if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
-  app.commandLine.appendSwitch("remote-debugging-port", "9222");
-}
 
 const teamRuntimeBinding = createTeamRuntimeBindingService(
   createDesktopTeamRuntimeBindingPorts(),
@@ -119,7 +90,7 @@ const windows = new DesktopWindowRuntime({
   status,
   locale: () => activeLocale,
   isQuitting: () => shutdown.isQuitting,
-  hasRunningInstallers: () => (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0,
+  hasRunningInstallers: () => shutdown.hasRunningInstallers(),
   requestShutdown: () => shutdown.request(),
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
 });
@@ -155,46 +126,31 @@ const localConsole = new DesktopLocalConsoleRuntime({
     }),
   }),
   publishStatus: () => windows.publishStatus(),
-  formatError,
+  formatError: formatLocalError,
 });
 
 shutdown = new DesktopShutdownRuntime({
   closeLocalConsole: () => localConsole.close(),
   closeStateWorkers: closeSqliteStateWorkers,
   quit: () => app.quit(),
-  getRunningInstallers: () => onboardingCliInstaller?.getRunningClis() ?? [],
+  getInstaller: () => onboardingCliInstaller,
   confirmInstallerCancellation: async (running) => {
     const response = await windows.showMessageBox(
       installerQuitDialogOptions(running, activeLocale),
     );
     return response !== 0;
   },
-  cancelInstallers: async () => {
-    await onboardingCliInstaller?.cancelAll();
-  },
   reportCleanupBlocked: async () => {
     await windows.showMessageBox(installerCleanupBlockedDialogOptions(activeLocale));
   },
 });
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    windows.focusMainWindow();
-  });
-
-  app.whenReady().then(() => {
-    void boot();
-  });
-}
-
-app.on("before-quit", (event) => {
-  shutdown.beforeQuit(() => event.preventDefault());
-});
-
-app.on("window-all-closed", () => {
-  shutdown.lastWindowClosed();
+registerDesktopLifecycle({
+  app,
+  focusMainWindow: () => windows.focusMainWindow(),
+  boot,
+  beforeQuit: (preventDefault) => shutdown.beforeQuit(preventDefault),
+  lastWindowClosed: () => shutdown.lastWindowClosed(),
 });
 
 async function boot(): Promise<void> {
@@ -206,7 +162,7 @@ async function boot(): Promise<void> {
     setLocale: (locale) => {
       activeLocale = locale;
     },
-    registerLanguage: registerLanguagePreferenceIpc,
+    registerLanguage: registerDesktopLanguagePreferenceIpc,
     createShellPathGate: (apply) => createShellPathReadinessGate({
       resolve: () => resolveShellPath({ platform: process.platform, currentPath: process.env.PATH }),
       apply,
@@ -235,55 +191,56 @@ async function boot(): Promise<void> {
     setDockIcon: () => app.dock?.setIcon(path.join(dirname, "app-icon-1024.png")),
     createWindow: () => windows.createMainWindow(),
     publishStatus: () => windows.publishStatus(),
-    buildSeedPlan: () => buildSeedCopyPlan({ seedRoot: resolveSeedRoot(), dataRoot: status.dataRoot }),
+    buildSeedPlan: () => buildSeedCopyPlan({ seedRoot, dataRoot: status.dataRoot }),
     executeSeedPlan: executeSeedCopyPlan,
     seedTeams: () => seedBuiltInTeams({
-      seedTeamsRoot: app.isPackaged
-        ? path.join(resolveSeedRoot(), "teams")
-        : path.join(projectRoot, "seeds", "teams"),
+      seedTeamsRoot,
       dataRoot: status.dataRoot,
     }),
     startLocalConsole: () => localConsole.start(),
-    formatError,
+    formatError: formatLocalError,
   });
 }
 
-function registerLanguagePreferenceIpc(): void {
-  const handlers = createLanguagePreferenceIpcHandlers({
-    getActiveLocale: () => activeLocale,
-    setActiveLocale: (locale) => {
-      activeLocale = locale;
+function registerDesktopLanguagePreferenceIpc(): void {
+  registerLanguagePreferenceIpc({
+    ipcMain,
+    dependencies: {
+      getActiveLocale: () => activeLocale,
+      setActiveLocale: (locale) => {
+        activeLocale = locale;
+      },
+      persist: (locale) => saveLanguagePreference(status.dataRoot, locale),
+      getBroadcastTargets: () => windows.getBroadcastTargets(),
     },
-    persist: (locale) => saveLanguagePreference(status.dataRoot, locale),
-    getBroadcastTargets: () => windows.getBroadcastTargets(),
   });
-  ipcMain.handle(LANGUAGE_PREFERENCE_IPC_CHANNELS.read, () => handlers.read());
-  ipcMain.handle(
-    LANGUAGE_PREFERENCE_IPC_CHANNELS.save,
-    (_event, candidate: unknown) => handlers.save(candidate),
-  );
 }
 
-ipcMain.handle("action:open-status-page", async () => {
-  windows.openStatusPage();
-  status.doctor = null;
-  windows.publishStatus();
-  status.doctor = { codex: await checkCodex() };
-  windows.publishStatus();
-});
-
-ipcMain.handle("local-console:get-url", async () => status.localConsole.url ?? null);
-ipcMain.handle("local-console:get-attachment-capability", async () => localConsole.attachmentCapability);
-
-registerSessionLogClipboardIpc({
+registerDesktopCoreIpc({
   ipcMain,
-  getPathSource: () => localConsole.pathSource,
   clipboard,
-  access: (targetPath) => fs.promises.access(targetPath, fs.constants.R_OK),
+  shell,
+  openStatusPage: () => windows.openStatusPage(),
+  refreshDoctor: async () => {
+    status.doctor = null;
+    windows.publishStatus();
+    status.doctor = { codex: await checkCodex() };
+    windows.publishStatus();
+  },
+  getLocalConsoleUrl: () => localConsole.url,
+  getAttachmentCapability: () => localConsole.attachmentCapability,
+  getPathSource: () => localConsole.pathSource,
+  selectDirectory: (options) => windows.selectDirectory(options),
+  openProjectTitle: () => translateDesktop(activeLocale, "dialog.openProject"),
+  repairProjectTitle: () => translateDesktop(activeLocale, "dialog.repairProject"),
+  selectLocationLabel: () => translateDesktop(activeLocale, "dialog.selectLocation"),
+  dataRoot: status.dataRoot,
+  getVersion: () => app.getVersion(),
+  checkForUpdates: (currentVersion) => checkDesktopUpdates({
+    currentVersion,
+    fetchLatestRelease: fetchLatestDesktopRelease,
+  }),
 });
-
-ipcMain.handle(OPEN_EXTERNAL_LINK_IPC_CHANNEL, async (_event, url: unknown) =>
-  openValidatedExternalLink(url, shell));
 
 const teamConversationPreference = createTeamConversationPreferenceService(
   createDesktopTeamConversationPreferencePorts(agentTeamService.listAgentTeams),
@@ -292,9 +249,7 @@ const teamConversationPreference = createTeamConversationPreferenceService(
 registerTeamIpc(createDesktopTeamIpcOptions({
   ipcMain,
   dataRoot: status.dataRoot,
-  seedTeamsRoot: app.isPackaged
-    ? path.join(resolveSeedRoot(), "teams")
-    : path.join(projectRoot, "seeds", "teams"),
+  seedTeamsRoot,
   seedPending: () => status.seed.status === "pending",
   service: agentTeamService,
   preference: teamConversationPreference,
@@ -303,44 +258,3 @@ registerTeamIpc(createDesktopTeamIpcOptions({
   relocationTitle: () => translateDesktop(activeLocale, "dialog.relocateTeam"),
   sessionExists: (sessionId) => localConsole.sessionExists(sessionId),
 }));
-
-registerProjectIpc({
-  ipcMain,
-  select: (options) => windows.selectDirectory(options),
-  showInFolder: (folderPath) => shell.showItemInFolder(folderPath),
-  openDataRoot: async () => {
-    await shell.openPath(status.dataRoot);
-  },
-  openProjectOptions: () => ({
-    properties: ["openDirectory", "createDirectory"],
-    title: translateDesktop(activeLocale, "dialog.openProject"),
-  }),
-  repairProjectOptions: () => ({
-    properties: ["openDirectory"],
-    title: translateDesktop(activeLocale, "dialog.repairProject"),
-    buttonLabel: translateDesktop(activeLocale, "dialog.selectLocation"),
-  }),
-});
-
-const runSettingsUpdateCheck = () => checkDesktopUpdates({
-  currentVersion: app.getVersion(),
-  fetchLatestRelease: fetchLatestDesktopRelease,
-});
-
-registerSettingsIpc({
-  ipcMain,
-  getVersion: () => app.getVersion(),
-  checkForUpdates: runSettingsUpdateCheck,
-  clipboard,
-});
-
-function resolveSeedRoot(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "seed");
-  }
-  return projectRoot;
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

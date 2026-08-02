@@ -3,6 +3,7 @@ import {
   isDesktopLocale,
   type DesktopLocale,
 } from "./language-preference-contract.js";
+import type { IpcMain } from "electron";
 
 export interface LanguagePreferenceBroadcastTarget {
   isDestroyed(): boolean;
@@ -49,4 +50,16 @@ export function createLanguagePreferenceIpcHandlers(
       return dependencies.getActiveLocale();
     },
   };
+}
+
+export function registerLanguagePreferenceIpc(input: {
+  ipcMain: Pick<IpcMain, "handle">;
+  dependencies: LanguagePreferenceIpcDependencies;
+}): void {
+  const handlers = createLanguagePreferenceIpcHandlers(input.dependencies);
+  input.ipcMain.handle(LANGUAGE_PREFERENCE_IPC_CHANNELS.read, () => handlers.read());
+  input.ipcMain.handle(
+    LANGUAGE_PREFERENCE_IPC_CHANNELS.save,
+    (_event, candidate: unknown) => handlers.save(candidate),
+  );
 }

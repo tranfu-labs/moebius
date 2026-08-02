@@ -2,6 +2,7 @@ import type { OnboardingCli } from "./onboarding/cli-readiness-contract.js";
 import {
   planBeforeQuit,
   planDesktopShutdownRequest,
+  planInstallerAccess,
   planInstallerShutdownApproval,
   planLastWindowClosed,
 } from "./desktop-shutdown-plan.js";
@@ -10,9 +11,11 @@ export class DesktopShutdownRuntime {
   readonly #closeLocalConsole: () => Promise<void>;
   readonly #closeStateWorkers: () => Promise<void>;
   readonly #quit: () => void;
-  readonly #getRunningInstallers: () => readonly OnboardingCli[];
+  readonly #getInstaller: () => {
+    getRunningClis(): readonly OnboardingCli[];
+    cancelAll(): Promise<unknown>;
+  } | null;
   readonly #confirmInstallerCancellation: (running: readonly OnboardingCli[]) => Promise<boolean>;
-  readonly #cancelInstallers: () => Promise<void>;
   readonly #reportCleanupBlocked: () => Promise<void>;
   #shutdownPromise: Promise<void> | null = null;
   #coordinationPromise: Promise<void> | null = null;
@@ -23,22 +26,32 @@ export class DesktopShutdownRuntime {
     closeLocalConsole(): Promise<void>;
     closeStateWorkers(): Promise<void>;
     quit(): void;
-    getRunningInstallers(): readonly OnboardingCli[];
+    getInstaller(): {
+      getRunningClis(): readonly OnboardingCli[];
+      cancelAll(): Promise<unknown>;
+    } | null;
     confirmInstallerCancellation(running: readonly OnboardingCli[]): Promise<boolean>;
-    cancelInstallers(): Promise<void>;
     reportCleanupBlocked(): Promise<void>;
   }) {
     this.#closeLocalConsole = input.closeLocalConsole;
     this.#closeStateWorkers = input.closeStateWorkers;
     this.#quit = input.quit;
-    this.#getRunningInstallers = input.getRunningInstallers;
+    this.#getInstaller = input.getInstaller;
     this.#confirmInstallerCancellation = input.confirmInstallerCancellation;
-    this.#cancelInstallers = input.cancelInstallers;
     this.#reportCleanupBlocked = input.reportCleanupBlocked;
   }
 
   get isQuitting(): boolean {
     return this.#isQuitting;
+  }
+
+  hasRunningInstallers(): boolean {
+    const installer = this.#getInstaller();
+    const access = planInstallerAccess(installer !== null);
+    if (access === "unavailable") {
+      return false;
+    }
+    return installer!.getRunningClis().length > 0;
   }
 
   beforeQuit(preventDefault: () => void): void {
@@ -57,7 +70,9 @@ export class DesktopShutdownRuntime {
   }
 
   async request(): Promise<void> {
-    const running = this.#getRunningInstallers();
+    const installer = this.#getInstaller();
+    const access = planInstallerAccess(installer !== null);
+    const running = access === "available" ? installer!.getRunningClis() : [];
     const plan = planDesktopShutdownRequest({
       shutdownComplete: this.#shutdownComplete,
       shutdownPending: this.#shutdownPromise !== null,
@@ -76,13 +91,16 @@ export class DesktopShutdownRuntime {
       await this.#shutdown();
       return;
     }
-    this.#coordinationPromise = this.#coordinate(running).finally(() => {
+    this.#coordinationPromise = this.#coordinate(running, installer!).finally(() => {
       this.#coordinationPromise = null;
     });
     await this.#coordinationPromise;
   }
 
-  async #coordinate(running: readonly OnboardingCli[]): Promise<void> {
+  async #coordinate(
+    running: readonly OnboardingCli[],
+    installer: { cancelAll(): Promise<unknown> },
+  ): Promise<void> {
     const approval = planInstallerShutdownApproval(
       await this.#confirmInstallerCancellation(running),
     );
@@ -90,7 +108,7 @@ export class DesktopShutdownRuntime {
       return;
     }
     try {
-      await this.#cancelInstallers();
+      await installer.cancelAll();
     } catch {
       await this.#reportCleanupBlocked();
       return;
