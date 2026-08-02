@@ -1,15 +1,12 @@
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   app,
-  BrowserWindow,
   clipboard,
-  dialog,
   ipcMain,
   shell,
-  type OpenDialogOptions,
 } from "electron";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
@@ -21,7 +18,7 @@ import {
   resolveDesktopInstanceUserDataPath,
 } from "./data-root.js";
 import { checkCodex } from "./env-doctor.js";
-import { integratedMainWindowOptions } from "./main-window-options.js";
+import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
 import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js";
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
@@ -88,7 +85,6 @@ import {
 import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
 import { registerSettingsIpc } from "./settings-ipc.js";
 import {
-  installExternalNavigationGuards,
   OPEN_EXTERNAL_LINK_IPC_CHANNEL,
   openValidatedExternalLink,
 } from "./external-link.js";
@@ -137,8 +133,6 @@ if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
 }
 
-let mainWindow: BrowserWindow | null = null;
-let statusWindow: BrowserWindow | null = null;
 let localConsoleServer: StartedLocalConsoleServer | null = null;
 let localConsoleAttachmentCapability: string | null = null;
 
@@ -205,16 +199,22 @@ const status: DesktopStatusSnapshot = {
   update: null,
 };
 
+const windows = new DesktopWindowRuntime({
+  dirname,
+  platform: process.platform,
+  status,
+  locale: () => activeLocale,
+  isQuitting: () => isQuitting,
+  hasRunningInstallers: () => (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0,
+  requestShutdown,
+  statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow !== null) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-    }
+    windows.focusMainWindow();
   });
 
   app.whenReady().then(() => {
@@ -251,7 +251,7 @@ async function boot(): Promise<void> {
     apply: (shellPath) => {
       status.shellPath = shellPath;
       process.env.PATH = shellPath.path;
-      publishStatus();
+      windows.publishStatus();
     },
   });
   const onboardingReadiness = new OnboardingCliReadinessService();
@@ -266,9 +266,7 @@ async function boot(): Promise<void> {
     },
   });
   onboardingCliInstaller.subscribe((snapshot) => {
-    if (mainWindow !== null && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
-    }
+    windows.sendMain(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
   });
   registerAiTeamBuilderIpc({
     ipcMain,
@@ -286,8 +284,8 @@ async function boot(): Promise<void> {
   if (process.platform === "darwin" && !app.isPackaged) {
     app.dock?.setIcon(path.join(dirname, "app-icon-1024.png"));
   }
-  createWindow();
-  publishStatus();
+  windows.createMainWindow();
+  windows.publishStatus();
 
   shellPathReady.start();
   await shellPathReady.ready;
@@ -307,46 +305,12 @@ async function boot(): Promise<void> {
     };
   } catch (error) {
     status.seed = { status: "error", copied: 0, skipped: 0, error: formatError(error) };
-    publishStatus();
+    windows.publishStatus();
     return;
   }
-  publishStatus();
+  windows.publishStatus();
 
   await startLocalConsole();
-}
-
-function createWindow(): void {
-  const consolePagePath = path.join(dirname, "console-page", "index.html");
-  mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
-    minWidth: 520,
-    minHeight: 480,
-    title: "Moebius",
-    ...integratedMainWindowOptions(process.platform),
-    webPreferences: {
-      preload: path.join(dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-
-  mainWindow.on("close", (event) => {
-    if (
-      !isQuitting
-      && (onboardingCliInstaller?.getRunningClis().length ?? 0) > 0
-    ) {
-      event.preventDefault();
-      void requestShutdown();
-    }
-  });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
-  mainWindow.webContents.on("did-finish-load", publishStatus);
-  installExternalNavigationGuards(mainWindow.webContents, pathToFileURL(consolePagePath).href);
-  void mainWindow.loadFile(consolePagePath, { query: { locale: activeLocale } });
 }
 
 function registerLanguagePreferenceIpc(): void {
@@ -356,7 +320,7 @@ function registerLanguagePreferenceIpc(): void {
       activeLocale = locale;
     },
     persist: (locale) => saveLanguagePreference(status.dataRoot, locale),
-    getBroadcastTargets: () => BrowserWindow.getAllWindows().map((window) => window.webContents),
+    getBroadcastTargets: () => windows.getBroadcastTargets(),
   });
   ipcMain.handle(LANGUAGE_PREFERENCE_IPC_CHANNELS.read, () => handlers.read());
   ipcMain.handle(
@@ -413,15 +377,15 @@ async function startLocalConsole(): Promise<void> {
     localConsoleAttachmentCapability = null;
     status.localConsole = { status: "error", error: formatError(error) };
   }
-  publishStatus();
+  windows.publishStatus();
 }
 
 ipcMain.handle("action:open-status-page", async () => {
-  openStatusPage();
+  windows.openStatusPage();
   status.doctor = null;
-  publishStatus();
+  windows.publishStatus();
   status.doctor = { codex: await checkCodex() };
-  publishStatus();
+  windows.publishStatus();
 });
 
 ipcMain.handle("local-console:get-url", async () => status.localConsole.url ?? null);
@@ -463,7 +427,7 @@ registerTeamIpc({
     getSystemTeamsRoot(status.dataRoot),
     "general-assistant",
   )),
-  selectRelocationFolder: selectDirectory,
+  selectRelocationFolder: (options) => windows.selectDirectory(options),
   relocationDialogOptions: () => ({ properties: ["openDirectory"],
     title: translateDesktop(activeLocale, "dialog.relocateTeam"), defaultPath: getTeamsRoot(status.dataRoot) }),
   relocate: (request) => relocateAgentTeamRecord(status.dataRoot, request),
@@ -482,7 +446,7 @@ registerTeamIpc({
 
 registerProjectIpc({
   ipcMain,
-  select: selectDirectory,
+  select: (options) => windows.selectDirectory(options),
   showInFolder: (folderPath) => shell.showItemInFolder(folderPath),
   openDataRoot: async () => {
     await shell.openPath(status.dataRoot);
@@ -536,21 +500,15 @@ async function requestShutdown(): Promise<void> {
     const running = onboardingCliInstaller?.getRunningClis() ?? [];
     if (running.length > 0) {
       const options = installerQuitDialogOptions(running, activeLocale);
-      const result = mainWindow === null
-        ? await dialog.showMessageBox(options)
-        : await dialog.showMessageBox(mainWindow, options);
-      if (result.response === 0) {
+      const response = await windows.showMessageBox(options);
+      if (response === 0) {
         return;
       }
       try {
         await onboardingCliInstaller?.cancelAll();
       } catch {
         const cleanupBlocked = installerCleanupBlockedDialogOptions(activeLocale);
-        if (mainWindow === null) {
-          await dialog.showMessageBox(cleanupBlocked);
-        } else {
-          await dialog.showMessageBox(mainWindow, cleanupBlocked);
-        }
+        await windows.showMessageBox(cleanupBlocked);
         return;
       }
     }
@@ -571,54 +529,12 @@ async function closeLocalConsole(): Promise<void> {
   status.localConsole = { status: "stopped" };
 }
 
-async function selectDirectory(options: OpenDialogOptions): Promise<string | null> {
-  const result = mainWindow === null
-    ? await dialog.showOpenDialog(options)
-    : await dialog.showOpenDialog(mainWindow, options);
-  return result.canceled ? null : result.filePaths[0] ?? null;
-}
-
 async function sessionExists(sessionId: string): Promise<boolean> {
   if (localConsoleServer === null) {
     return false;
   }
   const localState = await localConsoleServer.runtime.state({ sessionId });
   return localState.selectedSession?.sessionId === sessionId;
-}
-
-function publishStatus(): void {
-  mainWindow?.webContents.send("status:snapshot", status);
-  statusWindow?.webContents.send("status:snapshot", status);
-}
-
-function openStatusPage(): void {
-  if (statusWindow !== null) {
-    if (statusWindow.isMinimized()) {
-      statusWindow.restore();
-    }
-    statusWindow.focus();
-    return;
-  }
-  statusWindow = new BrowserWindow({
-    width: 760,
-    height: 560,
-    minWidth: 520,
-    minHeight: 420,
-    title: translateDesktop(activeLocale, "window.statusTitle"),
-    webPreferences: {
-      preload: path.join(dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  statusWindow.on("closed", () => {
-    statusWindow = null;
-  });
-  statusWindow.webContents.on("did-finish-load", publishStatus);
-  void statusWindow.loadFile(path.join(dirname, "status-page", "index.html"), {
-    query: { locale: activeLocale },
-  });
 }
 
 function resolveSeedRoot(): string {
