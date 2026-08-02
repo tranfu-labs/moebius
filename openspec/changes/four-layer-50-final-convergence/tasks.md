@@ -24,7 +24,7 @@
 - [x] 写 `final-test-ledger.md`：00～50 六批逐 test-name/断言对账，30 契约删除与重构替代分列，空列为 0
 - [x] 对 `docs/architecture/invariants.md` 做 L1/S1/V1/S2 符合度核对；现行 local 不变量不因 GitHub 退役再次删除
 - [x] 按固定 logical-line/职责抽样复测纯逻辑比例，列 domain files/lines、比例区间与剩余非纯分支，不制造单点精度
-- [ ] 从同一次完整闸门日志按 final ledger 的真实 I/O 文件集合求 duration 下限；未打印 duration 按 0
+- [x] 从同一次完整闸门日志按 final ledger 的真实 I/O 文件集合求 duration 下限；未打印 duration 按 0
 
 ## D · 验证与真机
 
@@ -33,7 +33,7 @@
 - [x] 执行 RA-16：语言错误 fallback、附件失败恢复与发送、停下/重试、A/B 快切、搜索、分析、右栏、
   团队编辑保存、重启持久事实；记录入口、操作、屏幕信号和临时 evidence 路径
 - [x] 明确引用未重叠验收：RA-11R/RA-12R/RA-30D 与 RA-15 不重跑；RA-14 文件管理器/外链/退出协调沿用 40 批
-- [ ] QA/主理人复核后、合并前运行本 change 唯一一次 Node 24 `pnpm test`，记录各 scope、墙钟、
+- [x] QA/主理人复核后、合并前运行本 change 唯一一次 Node 24 `pnpm test`，记录各 scope、墙钟、
   真实 I/O 下限及是否达到 ≤110s / ≤40%；未达时解释且收益记 0
 
 ## E · 事实源回流准备
@@ -101,3 +101,29 @@ CDP 9222 attach 真实窗口；Node v24.18.0；真实 Codex CLI。附件失败�
 中英文两条均靠 MutationObserver 才抓到。这不是 50 批引入的行为（refresh 清理 clientError 是
 既有逻辑），但「失败文案翻译正确」对用户的说服力受展示窗口限制，建议产品侧评估是否让附件
 失败固定在 composer 区域而非走全局 clientError。
+
+## 合并点完整闸门与 I/O 下限（dev-manager 执行）
+
+- Node 24.18.0，同一工作区，**退出码 0，总墙钟 129s**：root 99 files / 713 tests（另 1 file / 4 tests
+  skipped）、slow 1 / 63、desktop 128 / 571、console-ui 45 / 459。`check:boundaries` 617 source /
+  531 production / 3 roots。
+- 真实 I/O duration 下限（按 final-test-ledger §5 固定集合，同一日志求和，未打印按 0）：**26.6s**，
+  命中 18 个文件。占总墙钟 **20.6%**。
+
+| 目标 | 实测 | 结论 |
+| --- | --- | --- |
+| 真实 IO 墙钟下限占比 <=40% | **20.6%** | 达标 |
+| 完整闸门 <=110s | **129s** | 未达标 |
+
+按系列既定口径：闸门耗时未达目标时如实报告，不阻塞正确性，**不宣称任何速度收益，记 0**。未通过删测、
+调等待或缩减真实 I/O 接缝来制造达标——固定 I/O 集合 20 个文件全部保留，本批测试净删除为 0。
+
+耗时最高的三个 I/O 文件为 `codex` 8,871ms、`claude` 7,285ms、`session-jsonl-fact-log` 3,057ms，合计
+19.2s，占 I/O 下限的 72%；三者均为真实 provider / 事实日志接缝，是耗时主因也是不可替换的验证价值所在。
+
+### 闸门稳定性备注
+
+同一 HEAD 连续四次完整闸门中，前两次红于 `tests/local-console-execution-runtime.test.ts` 的
+`retries a detached Kimi empty response ...`，错因为该测试自设的 8,000ms 轮询放弃阈值被超出 19ms
+（0.2%）；后两次全绿。单跑 root scope 在 40 批基线与本批 HEAD 均 29s 通过。判定为既有测试基础设施的
+时间阈值脆性，与 50 批改动无关，已作为遗留项移交（见 REVIEW.md）。
