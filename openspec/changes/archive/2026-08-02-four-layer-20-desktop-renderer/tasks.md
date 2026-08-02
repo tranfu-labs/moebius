@@ -141,3 +141,24 @@ RA-10 的 Project files 内容为空文件夹如实提示，与临时项目目�
 - 相对 Node 24 基线 119.24s 的单样本观察为 +13.76s，且高于本批 102–118s 目标带。20 批没有删除
   ledger 集成接缝，desktop suite 相比 10 批增加 83 项；测试组合和机器时序同时变化，故不把差值归因于
   重构，仍按可归因速度收益 **0** 记账，不以单次样本宣称提速。
+
+### 主理人独立复核（dev-manager）
+
+- 独立重跑完整 `pnpm test`（Node 24.18.0，同一工作区）：四个 scope 全绿且计数与 dev 报告逐项一致
+  ——root 121 files / 1,034 tests（另 1 file / 4 tests skipped）、slow 1 / 63、desktop 111 / 514、
+  console-ui 45 / 460；无 `FAIL` / `ELIFECYCLE` / `ERR_PNPM` 标记；总墙钟 128s。
+- 墙钟差值归因：相较 10 批，root（121/1,034）、slow（1/63）、console-ui（45/459→460）三个 scope
+  规模基本未变，增量全部来自 desktop 的 66 files / 431 tests → 111 files / 514 tests，即 +45 个测试
+  文件、+83 个用例。+13.76s 摊到 45 个新文件约 0.3s/文件，与 vitest 每文件 transform + environment
+  固定开销同量级。故该差值指向覆盖增加而非执行变慢；与 dev 一致按可归因收益 0 记账，此处仅补归因，
+  不改记账口径。
+- 独立反证探针（非复用 dev 的 fixture，测毕已还原、工作区干净）：
+  - 探针 A：在 `desktop/src/console-page/` 新增未登记 `.ts` 并写入中文字面量 → guard 第 1 条测试变红，
+    精确打印 `desktop/src/console-page/__probe_dm.ts:1` 及字面量内容；另两条保持绿。
+  - 探针 B：向既有 debt 文件 `edit-resend.ts` 追加一条中文字面量 → guard 第 2 条测试变红，报
+    `expected 1 debt literals, found 2`。
+  - 结论：exact copy debt 是可回归的棘轮而非白名单——新增违规与既有文件的违规增量都会被拦住，
+    且债务条目失效（文件改名/删除）会报 stale。
+- 收口条件逐条核对：`app.tsx` 4,801 → 262 逻辑行（≤262 目标）；bundle 16 → 12；JSX 带函数体内联
+  回调 17 → 0；`four-layer-20-desktop-renderer` fileDebt 15 → 0；`runtime.ts` 停留在 10 批的
+  `04cf8c5`、308 物理 / 299 逻辑行、本批零改动；composition-root 审计 16 条；QA 七条真机记录已落盘。
