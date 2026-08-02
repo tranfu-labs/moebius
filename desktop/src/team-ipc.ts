@@ -24,3 +24,5 @@ export function createAgentTeamService(ports: AgentTeamServicePorts) {
   });
   return { ...catalog, ...profiles };
 }
+
+export type AgentTeamService = ReturnType<typeof createAgentTeamService>;

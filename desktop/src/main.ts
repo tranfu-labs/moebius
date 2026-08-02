@@ -26,11 +26,9 @@ import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js"
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
-import { TEAM_FILE_MANAGER_IPC_CHANNEL } from "./team-file-manager-contract.js";
 import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
-import { TEAM_IPC_CHANNELS } from "./team-ipc-contract.js";
 import { createAgentTeamService } from "./team-ipc.js";
-import { TEAM_REPAIR_IPC_CHANNELS } from "./team-repair-contract.js";
+import { registerTeamIpc } from "./team-ipc-register.js";
 import {
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
@@ -78,16 +76,11 @@ import {
   createTeamRuntimeBindingService,
 } from "./team-runtime-binding.js";
 import { listSharedAgentFiles } from "./team-shared-agent-store.js";
-import { TEAM_EXTERNAL_CHANGE_IPC_CHANNEL } from "./team-external-change-contract.js";
-import {
-  checkAgentTeamMemberExternalChange,
-} from "./team-external-change.js";
-import {
-  TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS,
-} from "./team-conversation-preference-contract.js";
+import { checkAgentTeamMemberExternalChange } from "./team-external-change.js";
 import {
   createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
+import { registerProjectIpc } from "./project-ipc-register.js";
 import {
   readLastUsedAgentTeamStore,
   writeLastUsedAgentTeamStore,
@@ -444,171 +437,65 @@ registerSessionLogClipboardIpc({
 ipcMain.handle(OPEN_EXTERNAL_LINK_IPC_CHANNEL, async (_event, url: unknown) =>
   openValidatedExternalLink(url, shell));
 
-ipcMain.handle(TEAM_IPC_CHANNELS.list, async () => agentTeamService.listAgentTeams({
-  dataRoot: status.dataRoot,
-  seedPending: status.seed.status === "pending",
-}));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.resolveSeedConflict, async () => {
-  const seedRoot = resolveSeedRoot();
-  await seedBuiltInTeams({
-    seedTeamsRoot: app.isPackaged
-      ? path.join(seedRoot, "teams")
-      : path.join(projectRoot, "seeds", "teams"),
-    dataRoot: status.dataRoot,
-    preserveGeneralAssistantConflicts: true,
-  });
-  return agentTeamService.listAgentTeams({
-    dataRoot: status.dataRoot,
-    seedPending: false,
-  });
-});
-
-ipcMain.handle(TEAM_IPC_CHANNELS.showSeedConflictLocation, async () => {
-  shell.showItemInFolder(path.join(
-    getSystemTeamsRoot(status.dataRoot),
-    "general-assistant",
-  ));
-});
-
-ipcMain.handle(TEAM_IPC_CHANNELS.create, async (_event, request: unknown) =>
-  agentTeamService.createAgentTeam(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.readMember, async (_event, request: unknown) =>
-  agentTeamService.readAgentTeamMember(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.writeMember, async (_event, request: unknown) =>
-  agentTeamService.writeAgentTeamMember(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.addMember, async (_event, request: unknown) =>
-  agentTeamService.addAgentTeamMember(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.updateInformation, async (_event, request: unknown) =>
-  agentTeamService.updateAgentTeamInformation(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.setPrimaryAgent, async (_event, request: unknown) =>
-  agentTeamService.setAgentTeamPrimaryAgent(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.duplicateBuiltIn, async (_event, request: unknown) =>
-  agentTeamService.duplicateBuiltInAgentTeam(status.dataRoot, request));
-
-// Repair channels remain isolated from destructive team-management operations.
-ipcMain.handle(TEAM_REPAIR_IPC_CHANNELS.selectRelocationFolder, async () => {
-  const options: OpenDialogOptions = {
-    properties: ["openDirectory"],
-    title: translateDesktop(activeLocale, "dialog.relocateTeam"),
-    defaultPath: getTeamsRoot(status.dataRoot),
-  };
-  const result = mainWindow === null
-    ? await dialog.showOpenDialog(options)
-    : await dialog.showOpenDialog(mainWindow, options);
-  return result.canceled ? null : result.filePaths[0] ?? null;
-});
-
-ipcMain.handle(TEAM_REPAIR_IPC_CHANNELS.relocate, async (_event, request: unknown) =>
-  relocateAgentTeamRecord(status.dataRoot, request));
-
-ipcMain.handle(TEAM_REPAIR_IPC_CHANNELS.removeRecord, async (_event, request: unknown) =>
-  removeAgentTeamRecord(status.dataRoot, request));
-
-ipcMain.handle(TEAM_FILE_MANAGER_IPC_CHANNEL, async (_event, request: unknown) =>
-  openAgentTeamLocationInFileManager({
-    dataRoot: status.dataRoot,
-    request,
-    shell,
-  }));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.duplicateUser, async (_event, request: unknown) =>
-  agentTeamService.duplicateUserAgentTeam(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.duplicateMember, async (_event, request: unknown) =>
-  agentTeamService.duplicateAgentTeamMember(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.trashMember, async (_event, request: unknown) =>
-  agentTeamService.trashAgentTeamMember(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.trashUserTeam, async (_event, request: unknown) =>
-  agentTeamService.trashUserAgentTeam(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.readExecutionProfile, async (_event, request: unknown) =>
-  agentTeamService.readAgentTeamExecutionProfile(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.saveExecutionProfile, async (_event, request: unknown) =>
-  agentTeamService.saveAgentTeamExecutionProfile(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
-  agentTeamService.restoreAgentTeamRecommendedProfile(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.prepareOfficialUpdate, async (_event, request: unknown) =>
-  agentTeamService.prepareAgentTeamOfficialUpdate(status.dataRoot, request));
-
-ipcMain.handle(TEAM_IPC_CHANNELS.applyOfficialUpdate, async (_event, request: unknown) =>
-  agentTeamService.applyAgentTeamOfficialUpdate(status.dataRoot, request));
-
-ipcMain.handle(TEAM_EXTERNAL_CHANGE_IPC_CHANNEL, async (_event, request: unknown) =>
-  checkAgentTeamMemberExternalChange(status.dataRoot, request));
-
 const teamConversationPreference = createTeamConversationPreferenceService({
   read: readLastUsedAgentTeamStore,
   write: writeLastUsedAgentTeamStore,
   list: agentTeamService.listAgentTeams,
 });
 
-ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.readLastUsed, async () =>
-  teamConversationPreference.readLastUsedAgentTeam(status.dataRoot));
-
-ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.recordSuccessful, async (_event, request: unknown) =>
-  teamConversationPreference.recordSuccessfulConversationAgentTeam(
+registerTeamIpc({
+  ipcMain,
+  dataRoot: status.dataRoot,
+  seedPending: () => status.seed.status === "pending",
+  list: agentTeamService.listAgentTeams,
+  resolveSeedConflict: async () => {
+    const seedRoot = resolveSeedRoot();
+    await seedBuiltInTeams({
+      seedTeamsRoot: app.isPackaged
+        ? path.join(seedRoot, "teams")
+        : path.join(projectRoot, "seeds", "teams"),
+      dataRoot: status.dataRoot,
+      preserveGeneralAssistantConflicts: true,
+    });
+    return agentTeamService.listAgentTeams({ dataRoot: status.dataRoot, seedPending: false });
+  },
+  showSeedConflictLocation: () => shell.showItemInFolder(path.join(
+    getSystemTeamsRoot(status.dataRoot),
+    "general-assistant",
+  )),
+  selectRelocationFolder: selectDirectory,
+  relocationDialogOptions: () => ({ properties: ["openDirectory"],
+    title: translateDesktop(activeLocale, "dialog.relocateTeam"), defaultPath: getTeamsRoot(status.dataRoot) }),
+  relocate: (request) => relocateAgentTeamRecord(status.dataRoot, request),
+  removeRecord: (request) => removeAgentTeamRecord(status.dataRoot, request),
+  openFileManager: (request) => openAgentTeamLocationInFileManager({ dataRoot: status.dataRoot, request, shell }),
+  externalChange: (request) => checkAgentTeamMemberExternalChange(status.dataRoot, request),
+  readPreference: () => teamConversationPreference.readLastUsedAgentTeam(status.dataRoot),
+  recordPreference: (request) => teamConversationPreference.recordSuccessfulConversationAgentTeam(
     status.dataRoot,
     request,
-    async (sessionId) => {
-    if (localConsoleServer === null) {
-      return false;
-    }
-    const localState = await localConsoleServer.runtime.state({ sessionId });
-    return localState.selectedSession?.sessionId === sessionId;
-    },
-  ));
-
-ipcMain.handle("project:select-folder", async () => {
-  const options: OpenDialogOptions = {
-    properties: ["openDirectory", "createDirectory"],
-    title: translateDesktop(activeLocale, "dialog.openProject"),
-  };
-  const result =
-    mainWindow === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
-  if (result.canceled || result.filePaths[0] === undefined) {
-    return null;
-  }
-  return result.filePaths[0];
+    sessionExists,
+  ),
+  service: agentTeamService,
+  moveToTrash: (targetPath) => shell.trashItem(targetPath),
 });
 
-ipcMain.handle("project:select-folder-for-repair", async (_event, projectId: unknown) => {
-  if (typeof projectId !== "string" || projectId.trim() === "") {
-    throw new Error("project id is required for folder repair");
-  }
-  const options: OpenDialogOptions = {
+registerProjectIpc({
+  ipcMain,
+  select: selectDirectory,
+  showInFolder: (folderPath) => shell.showItemInFolder(folderPath),
+  openDataRoot: async () => {
+    await shell.openPath(status.dataRoot);
+  },
+  openProjectOptions: () => ({
+    properties: ["openDirectory", "createDirectory"],
+    title: translateDesktop(activeLocale, "dialog.openProject"),
+  }),
+  repairProjectOptions: () => ({
     properties: ["openDirectory"],
     title: translateDesktop(activeLocale, "dialog.repairProject"),
     buttonLabel: translateDesktop(activeLocale, "dialog.selectLocation"),
-  };
-  const result =
-    mainWindow === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(mainWindow, options);
-  if (result.canceled || result.filePaths[0] === undefined) {
-    return null;
-  }
-  return result.filePaths[0];
-});
-
-ipcMain.handle("project:show-in-folder", (_event, folderPath: unknown) => {
-  if (typeof folderPath !== "string" || folderPath.trim() === "") {
-    throw new Error("project folder path is required");
-  }
-  shell.showItemInFolder(folderPath);
-});
-
-ipcMain.handle("action:open-data-root", async () => {
-  await shell.openPath(status.dataRoot);
+  }),
 });
 
 const runSettingsUpdateCheck = () => checkDesktopUpdates({
@@ -682,6 +569,21 @@ async function closeLocalConsole(): Promise<void> {
   localConsoleServer = null;
   localConsoleAttachmentCapability = null;
   status.localConsole = { status: "stopped" };
+}
+
+async function selectDirectory(options: OpenDialogOptions): Promise<string | null> {
+  const result = mainWindow === null
+    ? await dialog.showOpenDialog(options)
+    : await dialog.showOpenDialog(mainWindow, options);
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
+async function sessionExists(sessionId: string): Promise<boolean> {
+  if (localConsoleServer === null) {
+    return false;
+  }
+  const localState = await localConsoleServer.runtime.state({ sessionId });
+  return localState.selectedSession?.sessionId === sessionId;
 }
 
 function publishStatus(): void {
