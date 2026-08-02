@@ -38,7 +38,7 @@ export function reduceLanguageState(
     return state;
   }
   if (action.type === "select") {
-    if (action.locale === state.activeLocale) {
+    if (action.locale === state.activeLocale) { // i18n-exempt: locale-state-reducer
       return {
         ...state,
         pendingLocale: null,

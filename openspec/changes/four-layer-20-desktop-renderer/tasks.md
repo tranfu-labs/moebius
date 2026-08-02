@@ -21,9 +21,9 @@
 
 - [x] 按 ledger 剪枝重复重型组合，保留唯一接缝
 - [x] scope、定向测试、typecheck、desktop build 全绿
-- [ ] 执行 RA-05、RA-05a～RA-10 并按真机协议记录；RA-05a 必须记录 A/B 草稿、pending 发送禁用、最终 selection/未读及重启事实
-- [ ] 报告纯比例、闸门耗时和集成测试净变化
-- [ ] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
+- [x] 执行 RA-05、RA-05a～RA-10 并按真机协议记录；RA-05a 必须记录 A/B 草稿、pending 发送禁用、最终 selection/未读及重启事实
+- [x] 报告纯比例、闸门耗时和集成测试净变化
+- [x] QA/主理人复核后、合并前运行本 change 唯一一次 `pnpm test`
 
 ## 行为矩阵基线
 
@@ -70,7 +70,7 @@
   `<=262` 目标并通过 `<=300` 硬门禁。root 装配 12 个具名 bundle；`OperatorConsole` prop mapping 与
   sidebar slot 位于 view 层，20 批最后一条 `application-use-case-shape` debt 已摘除。
 - 20 批 exact debt：15 → **0**；全系列剩余 debt 仅绑定 30 批 20 条、40 批 56 条。
-  composition-root audit 已覆盖 15 个 root/facade；`app.tsx` 复算为 wiring 8 / timing 0 / business 0。
+  composition-root audit 已覆盖 16 个 root/facade；`app.tsx` 复算为 wiring 8 / timing 0 / business 0。
 - `runtime.ts` 保持 **299/300 逻辑行**（308 物理行），20 批没有修改；没有占用它仅剩的 1 行余量。
 - 按 00 批同一 logical-line 脚本，domain closure 从 113 文件 / 15,032 行增至 **161 文件 /
   19,734 行**，增加 4,702 行。沿用 00 批 74 文件 / 10,024 行对应 34–41% 的校准区间，本批累计
@@ -80,5 +80,64 @@
 - Node 24.18.0 验证：`pnpm check:boundaries` 通过（602 source / 516 production / 3 roots）；
   `pnpm run test --scope fb5081d` 为 65 files / 255 tests 全绿（17.27s）；`pnpm typecheck` 与
   `pnpm --filter @moebius/desktop build` 均退出码 0。
-- 本 change 的完整 `pnpm test` 尚未运行；按约定留到 QA/主理人复核通过后的合并点。故完整闸门
-  实际耗时暂记“待合并点采样”，不以 scope/build 时间冒充。
+- 本 change 的完整 `pnpm test` 按约定留到 QA/主理人复核通过后的合并点；结果见文末合并点记录。
+
+## RA-05、RA-05a～RA-10 真机记录（QA）
+
+环境：dev Electron（`MOEBIUS_DATA_ROOT=/tmp/moebius-ra10-zT1Ozl` 临时数据根，零 mock），经 ADR-0002
+dev-only CDP 9222 attach 真实窗口操作并断言；Node v24.18.0；真实 Codex CLI（0.146.0，ChatGPT 订阅）。
+慢切换/迟到场景用 CDP `Network.emulateNetworkConditions`（latency 2.5–3s）构造。驱动脚本与启动日志
+留于临时数据根 `driver/` 与 `electron-ra20*.log`。准备数据（项目、三个空会话）经真实 HTTP API 建立，
+所有 RA 断言动作均为真实页面操作。
+
+- **RA-05 通过**。入口＝侧栏 Settings；操作＝语言切到 English、About → Check for updates、Copy version
+  info、关闭。观察＝界面实时转英文；更新区显示 “You're up to date” 且按钮变为 “Check again”（只属于
+  最新请求）；复制后按钮变为 “Copied”，剪贴板实测为 `Moebius 0.2.0 · Apple Silicon Mac`；重启应用后
+  界面保持英文（侧栏 New conversation/Search/Settings 等）。
+- **RA-05a 通过**。入口＝主页面左侧栏；操作＝会话 A/B 各输入不同未发送草稿（DRAFT-A/DRAFT-B），
+  A→B→A→B→A 快速往返；再以 3s 节流构造慢切换。观察＝快速往返中 composer 始终显示目标会话自己的
+  草稿（`draft:<sessionId>` 按会话 ID 分键持久化，结构上不可能串会话）；慢切换 pending 期间发送按钮
+  disabled（t+0 至 t+2.5s 全程 true），解除节流后切换完成、按钮恢复，草稿未写入旧会话；最终主区与
+  selection 指向最后点击的会话 A。B 经菜单标记未读并离开后，页面 “Unread” 与服务端 `manualUnreadAt`
+  一致。重启应用后：页面恢复到最后 selection（A），两份草稿各归原会话，B 未读保持。
+- **RA-06 通过**。入口＝Agent teams 页；操作＝内容生产团队 → 成员内容生产总控 → Reasoning effort
+  high→xhigh → Save runtime configuration。观察＝保存后该成员配置出现 “User override” 标记；切到同团队
+  成员内容情报与证据为 “Following recommendation”，切到开发团队同样无 override——反馈只落目标团队/
+  成员；离开团队页再进入、重开详情，xhigh 与 User override 均保持。
+- **RA-07 通过**。入口＝侧栏 Replay onboarding；操作＝在会话 A（草稿 DRAFT-A、右栏打开）回看
+  onboarding 并逐步完成到 Get started。观察＝回到会话 A，草稿原样保留，selection 不变
+  （`moebius.console.selection` 仍为 A），右栏仍为打开且内容未重置。
+- **RA-08 通过**。入口＝侧栏 Search；操作＝2.5s 节流下先搜「薄荷糖」300ms 后改搜「仙人掌」，解除节流
+  后打开结果。观察＝结果稳定后只显示第二条件命中的会话 B（第一请求迟到未拉回）；打开后主内容＝
+  会话 B、selection＝B、composer 恢复 B 自己的草稿，右栏 host 与 B 一致。
+- **RA-09 通过**。入口＝消息 More actions → “Analyze this message in the right sidebar”（消息级）与会话
+  菜单 → “Analyze this conversation in the right sidebar”（整段级），均在会话 C（已先用真实运行造出一条
+  agent 消息）。观察＝消息级触发后立即离开到会话 A，30s 后页面仍停在 A（迟到结果未抢页面）；回到 C，
+  分析草稿带 “Text fragment 1” 留在 C 的右栏。两条分析发送后均完成真实运行：来源分别显示
+  「消息 · ceo · “RA09-LIGHTHOUSE”」与「对话 · “会话C-灯塔维修日志”」，回复 RA09-ANALYSIS / RA09-CONV；
+  服务端各出现一条 `analysisParentSessionId=C` 的真实会话，右栏内有 composer 可继续发送。
+- **RA-10 通过**。入口＝右侧栏；操作＝A 开 Changes 标签；C 开两个分析子会话标签、New blank tab →
+  Project files、主会话消息 Full output → CEO 过程标签；3s 节流下 C→A 切换宿主；关闭并重开右栏。
+  观察＝节流 pending 期间右栏显示目标 host（A）自己的活动标签并呈 “Loading project changes…”，
+  无迟到内容抢占；每个 host 的标签现场各自保持：C＝两个子会话 + Project files + CEO（活动＝CEO
+  过程标签，含 Attempt 1 · completed），A＝Changes；关闭/重开后两 host 现场均恢复。
+
+七条全部通过。备注：RA-05a 的「未读与实际已查看一致」以手动未读样本验证（空会话无自然未读）；
+RA-10 的 Project files 内容为空文件夹如实提示，与临时项目目录一致。
+
+## 合并点完整闸门
+
+- 首次 `pnpm test` 红于 `production-copy-guard.test.ts` 的两条 ENOENT：测试硬编码了已拆除的
+  `desktop/src/console-page/state-sync.ts`，且因此无法确认递归命令中后续 suite 是否执行。
+- 修正把 `desktop/src/console-page` 的生产 `.ts` / `.tsx` 改为递归自动发现；6 个文件的 16 条存量
+  中文文案登记为 exact copy debt（每个文件冻结命中数、原因与
+  `four-layer-50-final-convergence` removal change），`language-state.ts` 的 reducer locale 比较使用
+  行级 `i18n-exempt: locale-state-reducer` 标记，不把业务状态比较误报成文案分支。
+- 反证 fixture：临时加入未登记的 `production-copy-guard-probe.ts` 后，guard 仅该测试变红并打印
+  文件路径、第 1 行及字面量；移除探针后定向 guard 3/3 全绿。
+- 修正后完整 `pnpm test`（Node 24.18.0）退出码 **0**，总墙钟 **133s**：root 121 files / 1,034 tests
+  全绿，另 1 file / 4 tests skipped（81.24s）；slow 1 / 63（15.96s）；desktop 111 / 514
+  （25.78s）；console-ui 45 / 460（7.15s）。
+- 相对 Node 24 基线 119.24s 的单样本观察为 +13.76s，且高于本批 102–118s 目标带。20 批没有删除
+  ledger 集成接缝，desktop suite 相比 10 批增加 83 项；测试组合和机器时序同时变化，故不把差值归因于
+  重构，仍按可归因速度收益 **0** 记账，不以单次样本宣称提速。
