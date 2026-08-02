@@ -18,6 +18,13 @@ export function decideAttachmentService(options: {
     : { kind: "available", apiBase: options.apiBase, capability: options.capability };
 }
 
+export function planReadyAttachmentIds(attachments: readonly ComposerAttachment[]): string[] {
+  return attachments.flatMap((attachment) =>
+    attachment.status === "ready" && attachment.attachmentId !== undefined
+      ? [attachment.attachmentId]
+      : []);
+}
+
 export function planMessageImageSources(messages: readonly OperatorMessage[]) {
   return messages.flatMap((message) => (message.attachments ?? [])
     .filter((attachment) => attachment.kind === "image")

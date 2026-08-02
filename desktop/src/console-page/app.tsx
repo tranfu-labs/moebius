@@ -922,13 +922,11 @@ export function OperatorConsoleApp({
 
   const sessionControllersBundle = useSessionConsole(
     apiBase, subSessionComposerValues, setSubSessionComposerValues,
-    readyComposerAttachmentIds(managedSubSessionAttachments.attachments),
-    managedSubSessionAttachments.clearDraft, conversationDraftStoreRef.current,
+    managedSubSessionAttachments, conversationDraftStoreRef.current,
     selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort,
     sidebarConversationSendingId, setSidebarConversationSendingId,
     sidebarConversationComposerValues, setSidebarConversationComposerValues,
-    readyComposerAttachmentIds(managedSidebarConversationAttachments.attachments),
-    managedSidebarConversationAttachments.clearDraft, sidebarConversationViews,
+    managedSidebarConversationAttachments, sidebarConversationViews,
     setSidebarConversationViews, browserSidebarMessagePort, setClientError,
   );
   const sessionRunActionsBundle = sessionControllersBundle.runs;

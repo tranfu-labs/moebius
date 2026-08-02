@@ -4,6 +4,8 @@ import type { ConversationDraftStore } from "./draft-store.js";
 import type { ConsoleSelection } from "./console-state-coordinator.js";
 import type { SessionRunPort } from "./session-run-contract.js";
 import type { SidebarMessagePort } from "./sidebar-message-contract.js";
+import { planReadyAttachmentIds } from "./managed-attachment-model.js";
+import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import { useSessionRunActions } from "./use-session-run-actions.js";
 import { useSidebarMessageActions } from "./use-sidebar-message-actions.js";
 
@@ -11,8 +13,7 @@ export function useSessionConsole(
   apiBase: string | null,
   subSessionComposerValues: Readonly<Record<string, string>>,
   setSubSessionComposerValues: Dispatch<SetStateAction<Record<string, string>>>,
-  subSessionAttachmentIds: readonly string[],
-  clearSubSessionAttachments: (draftKey: string) => void,
+  subSessionAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
   draftStore: ConversationDraftStore,
   selectionRef: MutableRefObject<ConsoleSelection>,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
@@ -22,8 +23,7 @@ export function useSessionConsole(
   setSidebarSendingId: (sessionId: string | null) => void,
   sidebarComposerValues: Readonly<Record<string, string>>,
   setSidebarComposerValues: Dispatch<SetStateAction<Record<string, string>>>,
-  sidebarAttachmentIds: readonly string[],
-  clearSidebarAttachments: (draftKey: string) => void,
+  sidebarAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
   sidebarViews: Parameters<typeof useSidebarMessageActions>[8],
   setSidebarViews: Parameters<typeof useSidebarMessageActions>[9],
   sidebarPort: SidebarMessagePort,
@@ -31,12 +31,12 @@ export function useSessionConsole(
 ) {
   const runs = useSessionRunActions(
     apiBase, subSessionComposerValues, setSubSessionComposerValues,
-    subSessionAttachmentIds, clearSubSessionAttachments, draftStore,
+    planReadyAttachmentIds(subSessionAttachments.attachments), subSessionAttachments.clearDraft, draftStore,
     selectionRef, refresh, refreshSubSession, runPort, setError,
   );
   const sidebarMessages = useSidebarMessageActions(
     apiBase, sidebarSendingId, setSidebarSendingId, sidebarComposerValues,
-    setSidebarComposerValues, sidebarAttachmentIds, clearSidebarAttachments,
+    setSidebarComposerValues, planReadyAttachmentIds(sidebarAttachments.attachments), sidebarAttachments.clearDraft,
     draftStore, sidebarViews, setSidebarViews, selectionRef, refresh, sidebarPort, setError,
   );
   return useMemo(() => ({ runs, sidebarMessages }), [runs, sidebarMessages]);
