@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">控制台错误所有权改造前</title>
+  <desc id="desc">多个用户操作和周期刷新共享一个无来源字符串槽，任一成功都能清空其他来源错误。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="960" height="420" fill="#f8fafc"/>
+  <text x="40" y="42" font-family="system-ui" font-size="24" font-weight="700" fill="#0f172a">Before · 无所有权的共享错误槽</text>
+  <g font-family="system-ui" font-size="16" fill="#0f172a">
+    <rect x="50" y="90" width="250" height="64" rx="10" fill="#fff" stroke="#94a3b8"/><text x="75" y="128">53 个用户操作失败写入方</text>
+    <rect x="50" y="190" width="250" height="64" rx="10" fill="#fff" stroke="#94a3b8"/><text x="75" y="228">每秒 state refresh 成功</text>
+    <rect x="50" y="290" width="250" height="64" rx="10" fill="#fff" stroke="#94a3b8"/><text x="75" y="328">其他用例成功 / setError(null)</text>
+    <rect x="405" y="170" width="200" height="100" rx="12" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+    <text x="442" y="210" font-weight="700">clientError</text><text x="430" y="240">string | null · 无来源</text>
+    <rect x="700" y="185" width="210" height="70" rx="10" fill="#fff" stroke="#94a3b8"/><text x="735" y="228">单一错误显示表面</text>
+  </g>
+  <g fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)">
+    <path d="M300 122 L405 195"/><path d="M300 222 L405 220"/><path d="M300 322 L405 245"/><path d="M605 220 L700 220"/>
+  </g>
+  <text x="390" y="320" font-family="system-ui" font-size="16" fill="#b91c1c">后台成功可无条件清掉别人的错误</text>
+</svg>
