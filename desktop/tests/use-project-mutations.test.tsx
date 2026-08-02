@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRightSidebarTabsStore } from "../src/console-page/right-sidebar-tabs-store.js";
 import type { ProjectMutationPort } from "../src/console-page/project-mutation-contract.js";
 import { useProjectMutations } from "../src/console-page/use-project-mutations.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -105,7 +106,7 @@ describe("project mutation controller", () => {
       vi.fn(),
       undefined,
       mutationPort,
-      setError,
+      createTestConsoleErrorSetter(setError),
     );
     return null;
   }

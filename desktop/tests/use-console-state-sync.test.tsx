@@ -8,6 +8,7 @@ import { waitForCondition } from "../../src/testing/wait.js";
 import type { ConsoleStateSyncPort } from "../src/console-page/console-state-sync-contract.js";
 import { ConsoleStateCoordinator } from "../src/console-page/console-state-coordinator.js";
 import { useConsoleStateSync } from "../src/console-page/use-console-state-sync.js";
+import { createTestConsoleErrorController } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -55,8 +56,8 @@ describe("console state sync controller", () => {
       projectId: "project-replacement",
       sessionId: "session-replacement",
     });
-    expect(initial.setError).toHaveBeenLastCalledWith(null);
-    expect(replacement.setError).toHaveBeenLastCalledWith(null);
+    expect(initial.errors.succeed).toHaveBeenCalled();
+    expect(replacement.errors.succeed).toHaveBeenCalled();
   });
 
   async function render(next: SyncInput): Promise<void> {
@@ -70,7 +71,7 @@ interface SyncInput {
   selectionRef: { current: { projectId: string; sessionId: string } };
   commitState: ReturnType<typeof vi.fn>;
   commitSelection: ReturnType<typeof vi.fn>;
-  setError: ReturnType<typeof vi.fn>;
+  errors: ReturnType<typeof createTestConsoleErrorController>;
   activateComposer: ReturnType<typeof vi.fn>;
   acknowledged: { current: Set<string> };
   port: ConsoleStateSyncPort & {
@@ -87,7 +88,7 @@ function Harness({ input }: { input: SyncInput }): null {
     input.selectionRef,
     input.commitState,
     input.commitSelection,
-    input.setError,
+    input.errors.controller,
     true,
     input.state.selectedSessionId,
     input.activateComposer,
@@ -113,7 +114,7 @@ function input(owner: string, acknowledgement: Promise<void>): SyncInput {
     selectionRef: { current: { projectId: `project-${owner}`, sessionId: `session-${owner}` } },
     commitState: vi.fn(),
     commitSelection: vi.fn(),
-    setError: vi.fn(),
+    errors: createTestConsoleErrorController(),
     activateComposer: vi.fn(),
     acknowledged: { current: new Set() },
     port: {

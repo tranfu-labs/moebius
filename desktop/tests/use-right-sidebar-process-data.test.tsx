@@ -8,6 +8,7 @@ import type { OperatorProcessDebugInvocation } from "@moebius/console-ui";
 import { waitForCondition } from "../../src/testing/wait.js";
 import type { ProcessDataSyncPort } from "../src/console-page/process-data-sync-contract.js";
 import { useRightSidebarProcessData } from "../src/console-page/use-right-sidebar-process-data.js";
+import { createTestConsoleErrorController } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,7 +70,7 @@ describe("right sidebar process data controller", () => {
       "session-a",
       port,
       (sessionId, runId) => `${sessionId}:${runId}`,
-      vi.fn(),
+      createTestConsoleErrorController().controller,
     );
     return null;
   }

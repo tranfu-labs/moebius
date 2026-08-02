@@ -7,6 +7,7 @@ import type { Translate } from "@moebius/console-ui";
 
 import type { ConversationDraftKey } from "../src/console-page/conversation-draft-model.js";
 import { useConversationTransition } from "../src/console-page/use-conversation-transition.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -15,7 +16,7 @@ interface TransitionInput {
   selectedSessionId: string;
   transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
   sendMessage(): Promise<void>;
-  setError(error: string): void;
+  setError(error: string | null): void;
   t: Translate;
 }
 type TransitionBundle = ReturnType<typeof useConversationTransition>;
@@ -86,7 +87,7 @@ describe("conversation transition controller", () => {
       props.input.composerOwnerKey,
       props.input.selectedSessionId,
       props.input,
-      props.input.setError,
+      createTestConsoleErrorSetter(props.input.setError),
       props.input.t,
     );
     return null;

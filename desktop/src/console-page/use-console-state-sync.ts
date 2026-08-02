@@ -17,6 +17,7 @@ import {
   planConsoleErrorMessage,
 } from "./console-state-plan.js";
 import { refreshConsoleState } from "./refresh-console-state.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
   apiBase: string | null,
@@ -25,7 +26,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
   selectionRef: MutableRefObject<ConsoleSelection>,
   commitState: (state: TState) => void,
   commitSelection: (selection: ConsoleSelection) => void,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   newConversationOpen: boolean,
   selectedSessionId: string,
   activateComposer: (sessionId: string) => void,
@@ -39,7 +40,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
     selectionRef,
     commitState,
     commitSelection,
-    setError,
+    errors,
     newConversationOpen,
     selectedSessionId,
     activateComposer,
@@ -67,7 +68,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
       }),
       commitState: current.commitState,
       commitSelection: current.commitSelection,
-      setError: current.setError,
+      errors: current.errors,
       mutationOwner,
     });
   }, []);
@@ -101,16 +102,21 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
     );
     if (acknowledgement.kind === "skip") return;
     current.acknowledgedResultsRef.current.add(acknowledgement.key);
+    const errorOperation = current.errors.begin({
+      family: "result-acknowledgement",
+      scope: acknowledgement.key,
+    });
     void current.port.acknowledgeDisplayedResult({
       apiBase: acknowledgement.apiBase,
       sessionId: acknowledgement.sessionId,
       unreadSince: acknowledgement.unreadSince,
     }).then(async () => {
+      inputRef.current.errors.succeed(errorOperation);
       await refresh(inputRef.current.selectionRef.current);
     }).catch((error: unknown) => {
       const latest = inputRef.current;
       latest.acknowledgedResultsRef.current.delete(acknowledgement.key);
-      latest.setError(planConsoleErrorMessage(error));
+      latest.errors.fail(errorOperation, planConsoleErrorMessage(error));
     });
   }, [apiBase, refresh, state]);
 

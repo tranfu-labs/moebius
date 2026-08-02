@@ -10,6 +10,7 @@ import type { LocalConsoleState } from "../src/console-page/console-state-contra
 import { sessionDraftKey } from "../src/console-page/conversation-draft-model.js";
 import { createConversationDraftStore } from "../src/console-page/draft-store.js";
 import { useEditResend } from "../src/console-page/use-edit-resend.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -88,7 +89,7 @@ describe("edit resend controller", () => {
       draftStore,
       { current: { key: sessionDraftKey("session-a"), value: "" } },
       commitDraft,
-      setError,
+      createTestConsoleErrorSetter(setError),
       (key) => key,
     );
     return null;

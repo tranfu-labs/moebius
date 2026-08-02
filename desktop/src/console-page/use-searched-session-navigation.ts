@@ -11,6 +11,7 @@ import {
   planSearchedSessionNavigation,
   planSearchedSessionTarget,
 } from "./searched-session-model.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useSearchedSessionNavigation(
   apiBase: string | null,
@@ -22,11 +23,11 @@ export function useSearchedSessionNavigation(
   setRightSidebarOpen: (open: boolean) => void,
   selectSession: (selection: { projectId: string; sessionId: string }) => void,
   port: SearchedSessionPort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const input = {
     apiBase, stateRef, commitRoute, tabsStore, openTab, commitTabs,
-    setRightSidebarOpen, selectSession, port, setError,
+    setRightSidebarOpen, selectSession, port, errors,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -34,6 +35,10 @@ export function useSearchedSessionNavigation(
     const current = inputRef.current;
     const targetPlan = planSearchedSessionTarget({ apiBase: current.apiBase, result, restore });
     if (targetPlan.kind === "unavailable") return false;
+    const errorOperation = current.errors.begin({
+      family: "search-navigation",
+      scope: result.session.sessionId,
+    });
     try {
       const target = targetPlan.kind === "restore"
         ? await current.port.restore(targetPlan.apiBase, targetPlan.sessionId)
@@ -54,9 +59,10 @@ export function useSearchedSessionNavigation(
         latest.setRightSidebarOpen(false);
       }
       latest.selectSession(navigation.selection);
+      latest.errors.succeed(errorOperation);
       return true;
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
       return false;
     }
   }, []);

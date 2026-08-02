@@ -14,6 +14,7 @@ import type {
   SidebarConversationDraftStore,
 } from "./sidebar-conversation-drafts.js";
 import { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 const failureKeys: Readonly<Record<ManagedAttachmentFailureCode, TranslationKey>> = {
   "attachment-upload": "desktop.error.attachmentUpload",
@@ -42,7 +43,7 @@ export function useConsoleAttachmentDrafts(
   activeSidebarAttachmentDraftKey: `draft:sidebar:${string}` | null,
   sidebarDraftStore: SidebarConversationDraftStore,
   commitSidebarDrafts: Dispatch<SetStateAction<SidebarConversationDraft[]>>,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: Translate,
 ) {
   const keys = planConsoleAttachmentDraftKeys({
@@ -52,7 +53,15 @@ export function useConsoleAttachmentDrafts(
     activeSidebarSessionId,
     activeSidebarAttachmentDraftKey,
   });
-  const onError = useCallback((error: string) => setError(error), [setError]);
+  const mainError = useCallback((error: string) => {
+    errors.report({ family: "attachment", scope: keys.main }, error);
+  }, [errors, keys.main]);
+  const subSessionError = useCallback((error: string) => {
+    errors.report({ family: "attachment", scope: keys.subSession }, error);
+  }, [errors, keys.subSession]);
+  const sidebarError = useCallback((error: string) => {
+    errors.report({ family: "attachment", scope: keys.sidebar }, error);
+  }, [errors, keys.sidebar]);
   const translateFailure = useCallback(
     (code: ManagedAttachmentFailureCode) => t(failureKeys[code]),
     [t],
@@ -72,7 +81,7 @@ export function useConsoleAttachmentDrafts(
     apiBase,
     capability,
     currentDraftKey: keys.main,
-    onError,
+    onError: mainError,
     translateFailure,
   });
   const subSession = useManagedAttachmentDrafts({
@@ -80,7 +89,7 @@ export function useConsoleAttachmentDrafts(
     apiBase,
     capability,
     currentDraftKey: keys.subSession,
-    onError,
+    onError: subSessionError,
     translateFailure,
   });
   const sidebar = useManagedAttachmentDrafts({
@@ -88,7 +97,7 @@ export function useConsoleAttachmentDrafts(
     apiBase,
     capability,
     currentDraftKey: keys.sidebar,
-    onError,
+    onError: sidebarError,
     translateFailure,
     onDraftAttachmentPresenceChange: onSidebarPresence,
   });

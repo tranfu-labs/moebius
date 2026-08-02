@@ -10,6 +10,7 @@ import {
   planSubSessionComposerBody,
   planSubSessionMessage,
 } from "./session-run-model.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useSessionRunActions(
   apiBase: string | null,
@@ -22,12 +23,12 @@ export function useSessionRunActions(
   refreshCurrent: (selection: ConsoleSelection) => Promise<boolean>,
   refreshSubSession: (sessionId: string) => Promise<unknown>,
   port: SessionRunPort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const [sendingSessionId, setSendingSessionId] = useState<string | null>(null);
   const input = {
     apiBase, composerValues, setComposerValues, readyAttachmentIds, clearAttachmentDraft,
-    draftStore, selectionRef, refreshCurrent, refreshSubSession, port, setError,
+    draftStore, selectionRef, refreshCurrent, refreshSubSession, port, errors,
     sendingSessionId,
   };
   const inputRef = useRef(input);
@@ -43,6 +44,7 @@ export function useSessionRunActions(
     const current = inputRef.current;
     const availability = decideSessionRunAvailability({ apiBase: current.apiBase, sending: false });
     if (availability.kind !== "available") return;
+    const errorOperation = current.errors.begin({ family: "session-run", scope: `${sessionId}:interrupt` });
     try {
       await current.port.interrupt(
         availability.apiBase,
@@ -50,9 +52,9 @@ export function useSessionRunActions(
         runId,
         () => current.refreshCurrent(current.selectionRef.current),
       );
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, []);
 
@@ -73,6 +75,7 @@ export function useSessionRunActions(
       attachmentIds: current.readyAttachmentIds,
     });
     if (submission.kind === "skip") return;
+    const errorOperation = current.errors.begin({ family: "session-run", scope: `${sessionId}:send` });
     setSendingSessionId(sessionId);
     try {
       await current.port.submitMessage(
@@ -89,9 +92,9 @@ export function useSessionRunActions(
         latest.refreshSubSession(sessionId),
         latest.refreshCurrent(latest.selectionRef.current),
       ]);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       setSendingSessionId(null);
     }
@@ -108,6 +111,7 @@ export function useSessionRunActions(
       sending: current.sendingSessionId !== null,
     });
     if (availability.kind !== "available") throw new Error("retry unavailable");
+    const errorOperation = current.errors.begin({ family: "session-run", scope: `${sessionId}:retry` });
     setSendingSessionId(sessionId);
     try {
       await current.port.retryRun(availability.apiBase, sessionId, runId, executionOverride);
@@ -116,9 +120,9 @@ export function useSessionRunActions(
         latest.refreshSubSession(sessionId),
         latest.refreshCurrent(latest.selectionRef.current),
       ]);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
       throw error;
     } finally {
       setSendingSessionId(null);
@@ -129,6 +133,7 @@ export function useSessionRunActions(
     const current = inputRef.current;
     const availability = decideSessionRunAvailability({ apiBase: current.apiBase, sending: false });
     if (availability.kind !== "available") return;
+    const errorOperation = current.errors.begin({ family: "session-run", scope: `${sessionId}:interrupt` });
     try {
       await current.port.interrupt(availability.apiBase, sessionId, runId, async () => {
         const latest = inputRef.current;
@@ -137,9 +142,9 @@ export function useSessionRunActions(
           latest.refreshCurrent(latest.selectionRef.current),
         ]);
       });
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, []);
 

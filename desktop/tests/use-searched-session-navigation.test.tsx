@@ -8,6 +8,7 @@ import { openRightSidebarSourceTab } from "@moebius/console-ui";
 import { createRightSidebarTabsStore } from "../src/console-page/right-sidebar-tabs-store.js";
 import type { SearchedSessionPort } from "../src/console-page/searched-session-contract.js";
 import { useSearchedSessionNavigation } from "../src/console-page/use-searched-session-navigation.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -96,7 +97,7 @@ describe("searched session navigation controller", () => {
       vi.fn(),
       selectSession,
       searchPort,
-      setError,
+      createTestConsoleErrorSetter(setError),
     );
     return null;
   }

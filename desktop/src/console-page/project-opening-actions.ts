@@ -20,7 +20,7 @@ export const projectOpeningActions = {
       options.t("desktop.error.localConsoleUnavailable"),
     );
     if (availability.kind === "unavailable") {
-      options.setError(availability.message);
+      options.errors.report({ family: "project", scope: "add" }, availability.message);
       return null;
     }
     const picker = decideFolderPicker(
@@ -28,11 +28,12 @@ export const projectOpeningActions = {
       options.t("desktop.error.folderPickerUnavailable"),
     );
     if (picker.kind === "unavailable") {
-      options.setError(picker.message);
+      options.errors.report({ family: "project", scope: "add" }, picker.message);
       return null;
     }
     const mutation = decideMutationToken(selectionMutationLifecycle.begin(options, "open-project"));
     if (mutation.kind === "busy") return null;
+    const errorOperation = options.errors.begin({ family: "project", scope: "add" });
     try {
       const folder = decideSelectedFolder(await picker.picker());
       if (folder.kind === "cancelled") return null;
@@ -43,13 +44,14 @@ export const projectOpeningActions = {
         options.t("desktop.error.folderAlreadyUsed"),
       );
       if (addition.kind === "duplicate") {
-        options.setError(addition.message);
+        options.errors.fail(errorOperation, addition.message);
         return null;
       }
       await options.refresh(options.getSelection(), mutation.token);
+      options.errors.succeed(errorOperation);
       return { projectId: addition.projectId };
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
       return null;
     } finally {
       selectionMutationLifecycle.finish(options, mutation.token);
@@ -62,7 +64,7 @@ export const projectOpeningActions = {
       options.t("desktop.error.localConsoleUnavailable"),
     );
     if (availability.kind === "unavailable") {
-      options.setError(availability.message);
+      options.errors.report({ family: "project", scope: "open" }, availability.message);
       return;
     }
     const picker = decideFolderPicker(
@@ -70,14 +72,18 @@ export const projectOpeningActions = {
       options.t("desktop.error.folderPickerUnavailable"),
     );
     if (picker.kind === "unavailable") {
-      options.setError(picker.message);
+      options.errors.report({ family: "project", scope: "open" }, picker.message);
       return;
     }
     const mutation = decideMutationToken(selectionMutationLifecycle.begin(options, "open-project"));
     if (mutation.kind === "busy") return;
+    const errorOperation = options.errors.begin({ family: "project", scope: "open" });
     try {
       const folder = decideSelectedFolder(await picker.picker());
-      if (folder.kind === "cancelled") return;
+      if (folder.kind === "cancelled") {
+        options.errors.succeed(errorOperation);
+        return;
+      }
       const project = await options.commands.openProject(availability.apiBase, folder.folderPath);
       const nextSelection = planOpenedProjectSelection({
         projectId: project.projectId,
@@ -86,8 +92,9 @@ export const projectOpeningActions = {
       });
       options.commitSelection(nextSelection);
       await options.refresh(nextSelection, mutation.token);
+      options.errors.succeed(errorOperation);
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       selectionMutationLifecycle.finish(options, mutation.token);
     }

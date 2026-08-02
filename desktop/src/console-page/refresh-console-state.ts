@@ -7,6 +7,7 @@ import {
   planConsoleErrorMessage,
   planRefreshResponse,
 } from "./console-state-plan.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -18,7 +19,7 @@ export interface RefreshConsoleStateOptions<TState> {
   readSelection(state: TState): ConsoleSelection;
   commitState(state: TState): void;
   commitSelection(selection: ConsoleSelection): void;
-  setError(error: string | null): void;
+  errors: ConsoleErrorController;
   mutationOwner?: SelectionMutationToken;
 }
 
@@ -30,6 +31,10 @@ export async function refreshConsoleState<TState>(options: RefreshConsoleStateOp
     return false;
   }
   const lease = leaseDecision.lease;
+  const errorOperation = options.errors.begin({
+    family: "state-refresh",
+    scope: `${options.selection.projectId}:${options.selection.sessionId}`,
+  });
   try {
     const url = planConsoleEndpoint(options.apiBase, "/api/local-console/state");
     url.searchParams.set("sessionId", options.selection.sessionId);
@@ -48,12 +53,12 @@ export async function refreshConsoleState<TState>(options: RefreshConsoleStateOp
     const nextState = responsePlan.state;
     options.commitState(nextState);
     options.commitSelection(options.readSelection(nextState));
-    options.setError(null);
+    options.errors.succeed(errorOperation);
     return true;
   } catch (error) {
     const errorDecision = decideRefreshCommit(options.coordinator.canCommitRefresh(lease));
     if (errorDecision === "commit") {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
     return false;
   } finally {

@@ -8,6 +8,7 @@ import type { OperatorSession, OperatorSubSessionView } from "@moebius/console-u
 import { createConversationDraftStore } from "../src/console-page/draft-store.js";
 import type { SidebarMessagePort } from "../src/console-page/sidebar-message-contract.js";
 import { useSidebarMessageActions } from "../src/console-page/use-sidebar-message-actions.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -112,7 +113,7 @@ describe("sidebar message actions controller", () => {
       { current: { projectId: "project-a", sessionId: "root" } },
       refresh,
       messagePort,
-      setError,
+      createTestConsoleErrorSetter(setError),
     );
     return null;
   }

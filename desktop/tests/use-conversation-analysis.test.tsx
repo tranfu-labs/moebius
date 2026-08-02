@@ -12,6 +12,7 @@ import { ConsoleStateCoordinator } from "../src/console-page/console-state-coord
 import { createRightSidebarTabsStore } from "../src/console-page/right-sidebar-tabs-store.js";
 import { createSidebarConversationDraftStore } from "../src/console-page/sidebar-conversation-drafts.js";
 import { useConversationAnalysis } from "../src/console-page/use-conversation-analysis.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,7 +130,7 @@ describe("conversation analysis controller", () => {
       openRightSidebarSourceTab,
       port,
       vi.fn(),
-      setError,
+      createTestConsoleErrorSetter(setError),
       vi.fn(),
       (key: TranslationKey, values?: Record<string, string | number>) =>
         values?.index === undefined ? key : `${key}:${String(values.index)}`,

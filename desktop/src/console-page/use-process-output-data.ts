@@ -11,6 +11,7 @@ import {
 import { decideRemoteViewCommit, decideRemoteViewRequest, planConsoleErrorMessage } from "./console-state-plan.js";
 import type { ProcessDataSyncPort, ProcessOutputState } from "./process-data-sync-contract.js";
 import { loadPreviousProcessOutput } from "./load-previous-process-output.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useProcessOutputData(
   apiBase: string | null,
@@ -18,12 +19,12 @@ export function useProcessOutputData(
   selectedSessionId: string,
   hostSessionId: string,
   port: ProcessDataSyncPort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const [outputs, setOutputs] = useState<Record<string, ProcessOutputState>>({});
   const outputsRef = useRef(outputs);
-  const inputRef = useRef({ apiBase, selectedSessionId, port, setError });
-  inputRef.current = { apiBase, selectedSessionId, port, setError };
+  const inputRef = useRef({ apiBase, selectedSessionId, port, errors });
+  inputRef.current = { apiBase, selectedSessionId, port, errors };
 
   const commitOutputs = useCallback((
     update: (current: Record<string, ProcessOutputState>) => Record<string, ProcessOutputState>,
@@ -51,7 +52,7 @@ export function useProcessOutputData(
       currentOutputs: () => outputsRef.current,
       commit: commitOutputs,
       port: current.port,
-      setError: (error) => inputRef.current.setError(error),
+      errors: inputRef.current.errors,
     });
   }, [commitOutputs]);
 

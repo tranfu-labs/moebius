@@ -72,6 +72,10 @@ export const conversationActions = {
       nextSessionId,
     });
     if (decision.kind === "skip") return null;
+    const errorOperation = options.errors.begin({
+      family: "conversation",
+      scope: `${previousSessionId}:${nextSessionId}:transition`,
+    });
     try {
       await options.commands.mutateSession(
         decision.apiBase,
@@ -80,10 +84,11 @@ export const conversationActions = {
         undefined,
       );
       await options.commands.mutateSession(decision.apiBase, nextSessionId, "viewed", undefined);
+      options.errors.succeed(errorOperation);
       return null;
     } catch (error) {
       const message = planConsoleErrorMessage(error);
-      options.setError(message);
+      options.errors.fail(errorOperation, message);
       return message;
     }
   },
@@ -99,6 +104,7 @@ export const conversationActions = {
     if (submission.kind === "skip") return;
     const started = decideSendStarted(options.coordinator.beginSend());
     if (started === "blocked") return;
+    const errorOperation = options.errors.begin({ family: "conversation", scope: `${selection.sessionId}:send` });
     options.setSending(true);
     try {
       await options.commands.sendMessage(
@@ -110,8 +116,9 @@ export const conversationActions = {
       options.clearAttachments(selection.sessionId);
       options.clearResumeRunId(selection.sessionId);
       await options.refresh(options.getSelection());
+      options.errors.succeed(errorOperation);
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       options.coordinator.endSend();
       options.setSending(false);
@@ -132,9 +139,10 @@ async function mutateSidebarSession(
   );
   if (availability.kind === "unavailable") {
     const error = new Error(availability.message);
-    options.setError(error.message);
+    options.errors.report({ family: "conversation", scope: `${sessionId}:${action}` }, error.message);
     throw error;
   }
+  const errorOperation = options.errors.begin({ family: "conversation", scope: `${sessionId}:${action}` });
   try {
     const session = await options.commands.mutateSession(
       availability.apiBase,
@@ -145,8 +153,9 @@ async function mutateSidebarSession(
     options.commitSessionMetadata(session as OperatorSession);
     options.coordinator.invalidateRefresh();
     await options.refresh(options.getSelection());
+    options.errors.succeed(errorOperation);
   } catch (error) {
-    options.setError(planMutationErrorMessage(error, fallbackError));
+    options.errors.fail(errorOperation, planMutationErrorMessage(error, fallbackError));
     throw error;
   }
 }

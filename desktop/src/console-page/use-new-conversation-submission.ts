@@ -21,6 +21,7 @@ import { planFindOperatorAgentTeam } from "./agent-team-console-model.js";
 import { planConsoleErrorMessage } from "./console-state-plan.js";
 import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type AttachmentsBundle = ReturnType<typeof useManagedAttachmentDrafts>;
 
@@ -48,7 +49,7 @@ export function useNewConversationSubmission(
   draftStore: ConversationDraftStore,
   activateComposer: (sessionId: string) => void,
   api: DesktopApi | undefined,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: Translate,
 ) {
   const input = {
@@ -65,7 +66,7 @@ export function useNewConversationSubmission(
     draftStore,
     activateComposer,
     api,
-    setError,
+    errors,
     t,
   };
   const inputRef = useRef(input);
@@ -84,6 +85,10 @@ export function useNewConversationSubmission(
       return;
     }
     runtime.dispatch({ type: "submit-started" });
+    const preferenceOperation = runtime.errors.begin({
+      family: "new-conversation",
+      scope: `${submission.projectId}:preference`,
+    });
     const result = await submitNewConversation({
       projectId: submission.projectId,
       workspaceMode: submission.workspaceMode,
@@ -121,9 +126,9 @@ export function useNewConversationSubmission(
     const preferenceCommands = {
       recorded: () => {
         current.catalog.setLastUsedTeamKey(team.teamKey);
-        current.setError(null);
+        current.errors.succeed(preferenceOperation);
       },
-      failed: () => current.setError(current.t("desktop.error.preferenceRecord", {
+      failed: () => current.errors.fail(preferenceOperation, current.t("desktop.error.preferenceRecord", {
         error: planConsoleErrorMessage(planNewConversationPreferenceError(result)),
       })),
       "not-created": () => undefined,

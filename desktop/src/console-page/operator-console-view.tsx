@@ -263,7 +263,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onOpenExternalLink={runtime.openExternalLink}
       onOpenConversationReference={analysisNavigation.openReference}
       onRetryProjectList={() => {
-        runtime.setClientError(null);
         void props.stateSync.refresh(selectionState.selectionRef.current);
       }}
       onRetryAgentTeams={props.agentTeams.catalog.refresh}
@@ -312,7 +311,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       rightSidebarTabDiscriminators={props.presentation.rightSidebarTabDiscriminators}
       rightSidebarUpdatingTabIds={props.presentation.rightSidebarUpdatingTabIds}
       onRetryRightSidebarTitles={() => {
-        runtime.setClientError(null);
         void props.stateSync.refresh(selectionState.selectionRef.current);
       }}
       rightSidebarFocusTabId={selectedSession !== null

@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { ProcessDataSyncPort } from "./process-data-sync-contract.js";
 import { useProcessInvocationData } from "./use-process-invocation-data.js";
 import { useProcessOutputData } from "./use-process-output-data.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useRightSidebarProcessData(
   apiBase: string | null,
@@ -11,10 +12,10 @@ export function useRightSidebarProcessData(
   hostSessionId: string,
   port: ProcessDataSyncPort,
   invocationKey: (sessionId: string, runId: string) => string,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const output = useProcessOutputData(
-    apiBase, activeSourceKey, selectedSessionId, hostSessionId, port, setError,
+    apiBase, activeSourceKey, selectedSessionId, hostSessionId, port, errors,
   );
   const invocation = useProcessInvocationData(apiBase, hostSessionId, port, invocationKey);
   return useMemo(() => ({

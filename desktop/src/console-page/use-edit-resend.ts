@@ -11,6 +11,7 @@ import type { ConversationDraftStore } from "./draft-store.js";
 import { refillStoppedRunDraft } from "./edit-resend.js";
 import { planConsoleErrorMessage } from "./console-state-plan.js";
 import { planEditResendPersistence, planEditResendStart } from "./edit-resend-model.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useEditResend(
   stateRef: MutableRefObject<LocalConsoleState | null>,
@@ -18,20 +19,23 @@ export function useEditResend(
   draftStore: ConversationDraftStore,
   composerDraftRef: MutableRefObject<ConversationComposerDraftState>,
   commitComposerDraft: (draft: ConversationComposerDraftState) => void,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: Translate,
 ) {
   const inputRef = useRef({
-    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError, t,
+    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, errors, t,
   });
   inputRef.current = {
-    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, setError, t,
+    stateRef, replaceAttachments, draftStore, composerDraftRef, commitComposerDraft, errors, t,
   };
   const editAndResend = useCallback((target: OperatorEditAndResendTarget) => {
     const current = inputRef.current;
     const start = planEditResendStart(current.stateRef.current, target);
     if (start.kind === "skip") return;
-    current.setError(null);
+    const errorOperation = current.errors.begin({
+      family: "edit-resend",
+      scope: `${target.sessionId}:${target.stoppedMessageId}`,
+    });
     void refillStoppedRunDraft({
       messages: start.messages,
       stoppedMessageId: start.target.stoppedMessageId,
@@ -55,7 +59,8 @@ export function useEditResend(
           latest.commitComposerDraft(editConversationComposerDraft(latest.composerDraftRef.current, body));
         }
       },
-    }).catch((error: unknown) => inputRef.current.setError(planConsoleErrorMessage(error)));
+    }).then(() => inputRef.current.errors.succeed(errorOperation))
+      .catch((error: unknown) => inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error)));
   }, []);
   return useMemo(() => ({ editAndResend }), [editAndResend]);
 }

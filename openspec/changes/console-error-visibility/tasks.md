@@ -2,26 +2,26 @@
 
 ## A · 基线与行为护栏
 
-- [ ] 固定 `47f2031` 基线：53 个非 null 写入、除 refresh 外 23 个 null 清除、`app.tsx` 262 逻辑行、
+- [x] 固定 `47f2031` 基线：53 个非 null 写入、除 refresh 外 23 个 null 清除、`app.tsx` 262 逻辑行、
   file/dependency debt 0、permit 193、roots 9
-- [ ] 先补 `console-error-model` 纯测试：跨来源成功不清、同源成功清除、同源失败替换、stale token 忽略、scope 隔离，
+- [x] 先补 `console-error-model` 纯测试：跨来源成功不清、同源成功清除、同源失败替换、stale token 忽略、scope 隔离，
   以及 A 失败 → B 失败 → B 成功后 A 重新可见 → A 成功后清空
-- [ ] 补 hook/controller 测试：父级重渲染、callback identity 变化、慢旧返回与失败；测试先红后再改生产代码
+- [x] 补 hook/controller 测试：父级重渲染、callback identity 变化、慢旧返回与失败；测试先红后再改生产代码
 
 ## B · 错误所有权模型
 
-- [ ] 新增纯 `console-error-model.ts`，实现 source/scoped operation 与 begin/fail/succeed reducer；登记为 domain
-- [ ] 新增 `use-console-error-state.ts`，提供稳定 controller 与 `visibleMessage`；登记为 application
-- [ ] 在 runtime bridge 内装配 controller，保持 console-ui `lastError` 字符串接口与 `app.tsx` ≤300
+- [x] 新增纯 `console-error-model.ts`，实现 source/scoped operation 与 begin/fail/succeed reducer；登记为 domain
+- [x] 新增 `use-console-error-state.ts`，提供稳定 controller 与 `visibleMessage`；登记为 application
+- [x] 在 runtime bridge 内装配 controller，保持 console-ui `lastError` 字符串接口与 `app.tsx` ≤300
 
 ## C · 写入方迁移
 
-- [ ] 迁移 state-refresh 与 result-acknowledgement；三个成功 poll 不清其他来源，refresh 失败后同源成功可清
-- [ ] 迁移 desktop-shell、attachment、process-data；draft/tab 并发使用 scoped source
-- [ ] 迁移 conversation、session-run、new-conversation、edit-resend；现有 send/mutation/stale guard 保持
-- [ ] 迁移 project、search-navigation、analysis、sidebar-message/sidebar-draft；成功只 settle 本来源
-- [ ] 审计 22 个承载文件：不再把无来源 `setClientError(string|null)` 穿透 controller 树，53 个写入均有 owner
-- [ ] 逐项确认测试净删除 0；若旧断言失义，先写 test-name、失义判据与新行为接管证据
+- [x] 迁移 state-refresh 与 result-acknowledgement；三个成功 poll 不清其他来源，refresh 失败后同源成功可清
+- [x] 迁移 desktop-shell、attachment、process-data；draft/tab 并发使用 scoped source
+- [x] 迁移 conversation、session-run、new-conversation、edit-resend；现有 send/mutation/stale guard 保持
+- [x] 迁移 project、search-navigation、analysis、sidebar-message/sidebar-draft；成功只 settle 本来源
+- [x] 审计 22 个承载文件：不再把无来源 `setClientError(string|null)` 穿透 controller 树，53 个写入均有 owner
+- [x] 逐项确认测试净删除 0；若旧断言失义，先写 test-name、失义判据与新行为接管证据
 
 ## D · 验证与真机
 

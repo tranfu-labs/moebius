@@ -7,6 +7,7 @@ import type { Translate } from "@moebius/console-ui";
 
 import { createNewConversationDraft } from "../src/console-page/new-conversation.js";
 import { useNewConversationSubmission } from "../src/console-page/use-new-conversation-submission.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -151,7 +152,7 @@ function input(
     commitRoute: vi.fn(),
     draftStore: { clear: clearDraft } as unknown as SubmissionArguments[10],
     activateComposer: vi.fn(),
-    setError: vi.fn(),
+    setError: createTestConsoleErrorSetter(vi.fn()),
     t: ((key: string) => `${owner}:${key}`) as Translate,
     clearDraft,
     clearAttachments,

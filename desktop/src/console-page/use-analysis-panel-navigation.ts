@@ -17,6 +17,7 @@ import type { ConsoleSelection } from "./console-state-coordinator.js";
 import { ordinaryPresentationRoute, type ConsolePresentationRoute } from "./presentation-route.js";
 import { conversationTabSourceKey } from "./right-sidebar-tabs-model.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 interface AnalysisNavigationActions {
   selectSession(selection: ConsoleSelection): void;
@@ -36,7 +37,7 @@ export function useAnalysisPanelNavigation(
     "store" | "commitCurrent" | "setOpen" | "requestFocus">,
   openTab: (state: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
   writeReadingPosition: (sessionId: string, messageId: number) => void,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: (key: TranslationKey) => string,
 ) {
   const [openBySession, setOpenBySession] = useState<Record<string, boolean>>({});
@@ -55,7 +56,7 @@ export function useAnalysisPanelNavigation(
     tabs,
     openTab,
     writeReadingPosition,
-    setError,
+    errors,
     t,
   });
   inputRef.current = {
@@ -67,7 +68,7 @@ export function useAnalysisPanelNavigation(
     tabs,
     openTab,
     writeReadingPosition,
-    setError,
+    errors,
     t,
   };
   const entriesFor = useCallback((parentSessionId: string) =>
@@ -92,16 +93,23 @@ export function useAnalysisPanelNavigation(
         "source-unavailable": "console.sessionAnalysis.sourceUnavailable",
         "open-failed": "console.sessionAnalysis.openFailed",
       } as const;
-      current.setError(current.t(errorKeys[plan.reason]));
+      current.errors.report(
+        { family: "analysis", scope: `${request.sessionId}:navigation` },
+        current.t(errorKeys[plan.reason]),
+      );
       return;
     }
+    const errorOperation = current.errors.begin({
+      family: "analysis",
+      scope: `${request.sessionId}:navigation`,
+    });
     current.commitRoute(ordinaryPresentationRoute({
       projectId: plan.root.projectId,
       sessionId: plan.root.sessionId,
     }));
     if (plan.kind === "direct") {
       current.actions.selectSession({ projectId: plan.root.projectId, sessionId: plan.root.sessionId });
-      current.setError(null);
+      current.errors.succeed(errorOperation);
       return;
     }
     const nextTabs = current.openTab(current.tabs.store.read(plan.root.sessionId), {
@@ -119,7 +127,7 @@ export function useAnalysisPanelNavigation(
     if (plan.focusTab && nextTabs.activeTabId !== null) {
       current.tabs.requestFocus({ hostSessionId: plan.root.sessionId, tabId: nextTabs.activeTabId });
     }
-    current.setError(null);
+    current.errors.succeed(errorOperation);
   }, []);
   const openEntry = useCallback((parentSessionId: string, entry: AnalysisPanelEntry) => {
     openPlannedNavigation({ kind: "panel-entry", parentSessionId, sessionId: entry.sessionId });

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createConversationDraftStore } from "../src/console-page/draft-store.js";
 import type { SessionRunPort } from "../src/console-page/session-run-contract.js";
 import { useSessionRunActions } from "../src/console-page/use-session-run-actions.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -121,7 +122,7 @@ describe("session run actions controller", () => {
       refresh,
       vi.fn(async () => undefined),
       runPort,
-      setError,
+      createTestConsoleErrorSetter(setError),
     );
     return null;
   }

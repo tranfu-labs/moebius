@@ -12,6 +12,7 @@ import {
   readDesktopApiBase,
 } from "./desktop-runtime-bridge-model.js";
 import { useDesktopShellActions } from "./use-desktop-shell-actions.js";
+import { useConsoleErrorState } from "./use-console-error-state.js";
 
 export function useDesktopRuntimeBridge(
   api: DesktopApi | undefined,
@@ -27,7 +28,8 @@ export function useDesktopRuntimeBridge(
   const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const shellActions = useDesktopShellActions(api, t);
+  const clientErrors = useConsoleErrorState();
+  const shellActions = useDesktopShellActions(api, t, clientErrors.controller);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +90,9 @@ export function useDesktopRuntimeBridge(
     reloadExecutionRegistry,
     attachmentCapability,
     statusError,
+    clientError: clientErrors.visibleMessage,
+    clientErrors: clientErrors.controller,
     ...shellActions,
   }), [apiBase, attachmentCapability, executionRegistryState, reloadExecutionRegistry,
-    shellActions, statusError]);
+    clientErrors, shellActions, statusError]);
 }

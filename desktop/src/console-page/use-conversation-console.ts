@@ -33,6 +33,7 @@ import { useSearchedSessionNavigation } from "./use-searched-session-navigation.
 import { useSidebarSourceMigration } from "./use-sidebar-source-migration.js";
 import { useSessionMutationIntents } from "./use-session-mutation-intents.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 export function useConversationConsole(
@@ -43,7 +44,7 @@ export function useConversationConsole(
   projects: readonly OperatorProject[],
   actions: ConsoleStateActions,
   search: ReturnType<typeof useConversationSearch>,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
   coordinator: ConsoleStateCoordinator,
   selectionRef: MutableRefObject<ConsoleSelection>,
@@ -87,11 +88,11 @@ export function useConversationConsole(
   copySessionLogPath: Parameters<typeof useSessionMutationIntents>[7],
 ) {
   const transition = useConversationTransition(
-    composerDraft.key, selection.sessionId, actions, setError, t,
+    composerDraft.key, selection.sessionId, actions, errors, t,
   );
   const editResend = useEditResend(
     stateRef, managedAttachments.replaceWithMessageAttachments, conversationDraftStore,
-    composerDraftRef, commitComposerDraft, setError, t,
+    composerDraftRef, commitComposerDraft, errors, t,
   );
   const navigation = useConversationNavigation(
     projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
@@ -102,27 +103,27 @@ export function useConversationConsole(
     newConversation, dispatchNewConversation, agentTeams, managedAttachments,
     readyAttachmentIds, attachmentsBlocked, actions,
     selectionPersistenceEnabledRef, rememberSelection, commitRoute, conversationDraftStore,
-    activateComposer, desktopApi, setError, t,
+    activateComposer, desktopApi, errors, t,
   );
   const launcher = useNewConversationLauncher(
     projects, newConversation, dispatchNewConversation, agentTeams, pendingTeamKey,
-    setPendingTeamKey, conversationDraftStore, resolveTeamKey, setError,
+    setPendingTeamKey, conversationDraftStore, resolveTeamKey,
     actions.addProject,
   );
   const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
   const analysisNavigation = useAnalysisPanelNavigation(
     sessions, locale, selectionRef, actions, commitRoute, tabs, openTab,
-    writeReadingPosition, setError, t,
+    writeReadingPosition, errors, t,
   );
   const analysis = useConversationAnalysis(
     apiBase, stateRef, presentationRouteRef, coordinator, agentTeams, sidebarDraftStore,
     commitSidebarDrafts, tabs, selectionRef, selectionPersistenceEnabledRef,
     dispatchNewConversation, commitState, commitSelection, rememberSelection, commitRoute,
-    activateComposer, openTab, referencePort, fetch, setError, setNotice, t,
+    activateComposer, openTab, referencePort, fetch, errors, setNotice, t,
   );
   const searchedSession = useSearchedSessionNavigation(
     apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
-    tabs.setOpen, actions.selectSession, searchedSessionPort, setError,
+    tabs.setOpen, actions.selectSession, searchedSessionPort, errors,
   );
   const sessionMutations = useSessionMutationIntents(
     actions, search, tabs, presentationRouteRef, selectionRef, commitRoute,

@@ -8,6 +8,7 @@ import {
   type ConversationDraftKey,
 } from "./conversation-draft-model.js";
 import { SessionViewTransitionQueue } from "./console-state-coordinator.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 interface ConversationTransitionActions {
   transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
@@ -18,7 +19,7 @@ export function useConversationTransition(
   composerOwnerKey: ConversationDraftKey,
   selectedSessionId: string,
   actions: ConversationTransitionActions,
-  setError: (error: string) => void,
+  errors: ConsoleErrorController,
   t: Translate,
 ) {
   const input = {
@@ -26,7 +27,7 @@ export function useConversationTransition(
     selectedSessionId,
     transitionSessionView: actions.transitionSessionView,
     sendMessage: actions.sendMessage,
-    setError,
+    errors,
     t,
   };
   const inputRef = useRef(input);
@@ -66,8 +67,14 @@ export function useConversationTransition(
     });
     const commands = {
       send: () => void runtime.sendMessage(),
-      "transition-pending": () => runtime.setError(runtime.t("desktop.composer.transitionPending")),
-      "owner-mismatch": () => runtime.setError(runtime.t("desktop.composer.ownerMismatch")),
+      "transition-pending": () => runtime.errors.report(
+        { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
+        runtime.t("desktop.composer.transitionPending"),
+      ),
+      "owner-mismatch": () => runtime.errors.report(
+        { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
+        runtime.t("desktop.composer.ownerMismatch"),
+      ),
     };
     commands[action]();
   }, []);

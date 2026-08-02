@@ -12,6 +12,7 @@ import {
 import { createRightSidebarTabsStore } from "../src/console-page/right-sidebar-tabs-store.js";
 import type { ConsoleSelection } from "../src/console-page/console-state-coordinator.js";
 import { useAnalysisPanelNavigation } from "../src/console-page/use-analysis-panel-navigation.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 import type { RightSidebarTabsBundle } from "../src/console-page/use-right-sidebar-tabs.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -113,7 +114,7 @@ describe("analysis panel navigation controller", () => {
         "store" | "commitCurrent" | "setOpen" | "requestFocus">,
       openRightSidebarSourceTab,
       writeReadingPosition,
-      setError,
+      createTestConsoleErrorSetter(setError),
       (key: TranslationKey) => key,
     );
     return null;

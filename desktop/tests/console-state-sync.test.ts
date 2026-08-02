@@ -46,6 +46,10 @@ import {
   type ConsoleSelection,
   type SelectionMutationKind,
 } from "../src/console-page/console-state-coordinator.js";
+import {
+  createModelConsoleErrorController,
+  createTestConsoleErrorController,
+} from "./console-error-test-controller.js";
 
 describe("execution profile registry state sync", () => {
   it("keeps server admission and the team-page registry in lockstep", () => {
@@ -286,6 +290,48 @@ describe("SessionViewTransitionQueue", () => {
 });
 
 describe("refreshConsoleState", () => {
+  it("does not clear another source after three successful polls", async () => {
+    const errors = createModelConsoleErrorController();
+    errors.controller.report({ family: "project", scope: "project-a:rename" }, "rename failed");
+    const committed: TestState[] = [];
+    const options = refreshOptions({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch: vi.fn(async () => jsonResponse({
+        selectedProjectId: "project-a",
+        selectedSessionId: "session-a",
+      })),
+      committed,
+      errors: errors.controller,
+    });
+
+    await refreshConsoleState(options);
+    await refreshConsoleState(options);
+    await refreshConsoleState(options);
+
+    expect(errors.visibleMessage()).toBe("rename failed");
+  });
+
+  it("clears only its own failure after the next successful refresh", async () => {
+    const errors = createModelConsoleErrorController();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "unavailable" }, 503))
+      .mockResolvedValueOnce(jsonResponse({
+        selectedProjectId: "project-a",
+        selectedSessionId: "session-a",
+      }));
+    const options = refreshOptions({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch,
+      committed: [],
+      errors: errors.controller,
+    });
+
+    await expect(refreshConsoleState(options)).resolves.toBe(false);
+    expect(errors.visibleMessage()).toBe("unavailable");
+    await expect(refreshConsoleState(options)).resolves.toBe(true);
+    expect(errors.visibleMessage()).toBeNull();
+  });
+
   it("keeps a slow periodic refresh single-flight and eventually commits it", async () => {
     const coordinator = new ConsoleStateCoordinator();
     const response = deferred<Response>();
@@ -1191,7 +1237,7 @@ describe("ConsoleStateActions", () => {
       clearResumeRunId: vi.fn(),
       setMutationKind: vi.fn(),
       setSending: vi.fn(),
-      setError: vi.fn(),
+      errors: createTestConsoleErrorController().controller,
       commitSessionMetadata: vi.fn(),
     });
 
@@ -1462,6 +1508,7 @@ function refreshOptions(input: {
   selection?: ConsoleSelection;
   mutationOwner?: Parameters<ConsoleStateCoordinator["beginRefresh"]>[0];
   commitSelection?: (selection: ConsoleSelection) => void;
+  errors?: ReturnType<typeof createTestConsoleErrorController>["controller"];
 }) {
   return {
     apiBase: "http://127.0.0.1:8787/",
@@ -1475,7 +1522,7 @@ function refreshOptions(input: {
     }),
     commitState: (state: TestState) => input.committed.push(state),
     commitSelection: input.commitSelection ?? vi.fn(),
-    setError: vi.fn(),
+    errors: input.errors ?? createTestConsoleErrorController().controller,
     mutationOwner: input.mutationOwner ?? undefined,
   };
 }
@@ -1518,7 +1565,7 @@ function actionHarness(input: {
     clearResumeRunId: vi.fn(),
     setMutationKind: (kind) => mutationKinds.push(kind),
     setSending: (value) => sending.push(value),
-    setError: (error) => errors.push(error),
+    errors: createTestConsoleErrorControllerWithMessages(errors),
     commitSessionMetadata: input.commitSessionMetadata ?? vi.fn(),
     selectProjectFolder: input.selectProjectFolder,
   });
@@ -1531,6 +1578,13 @@ function actionHarness(input: {
     selection: () => selection,
     sending,
   };
+}
+
+function createTestConsoleErrorControllerWithMessages(messages: string[]) {
+  const harness = createTestConsoleErrorController();
+  harness.fail.mockImplementation((_operation, message) => { messages.push(message); });
+  harness.report.mockImplementation((_source, message) => { messages.push(message); });
+  return harness.controller;
 }
 
 function receiverSensitiveFetch(...responses: Response[]) {

@@ -80,7 +80,7 @@ export function OperatorConsoleApp({
   const apiBase = runtimeBridgeBundle.apiBase;
   const attachmentCapability = runtimeBridgeBundle.attachmentCapability;
   const clientError = runtimeBridgeBundle.clientError;
-  const setClientError = runtimeBridgeBundle.setClientError;
+  const clientErrors = runtimeBridgeBundle.clientErrors;
   const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
   const conversationReadingPositionStoreRef = useRef(
@@ -140,7 +140,7 @@ export function OperatorConsoleApp({
     selection.sessionId, state?.selectedSession ?? null, selection.projectId,
     planGeneralAssistantTeamKey(agentTeamCatalogBundle.state), sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, browserConversationViewSyncPort, browserProcessDataSyncPort,
-    browserProjectFilePort, processInvocationKey, setClientError,
+    browserProjectFilePort, processInvocationKey, clientErrors,
   );
   const rightSidebarTabsBundle = rightSidebarBundle.tabs;
   const rightSidebarTabs = rightSidebarTabsBundle.state;
@@ -161,7 +161,7 @@ export function OperatorConsoleApp({
     managedAttachmentClient, apiBase, attachmentCapability, newConversation?.isOpen === true,
     composerDraft.key, activeSubSessionId, activeSidebarConversationSessionId,
     activeSidebarConversationDraft?.attachmentDraftKey ?? null,
-    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts, setClientError, t,
+    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts, clientErrors, t,
   );
   const managedAttachments = attachmentDraftsBundle.main;
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
@@ -177,7 +177,7 @@ export function OperatorConsoleApp({
   const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
-    setClientError, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
+    clientErrors, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
     resultAcknowledgementsRef, browserConsoleStateSyncPort,
   );
   const refresh = stateSyncBundle.refresh;
@@ -192,13 +192,13 @@ export function OperatorConsoleApp({
     apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
     refresh, composerDraft.value, clearComposerDraft, managedAttachments,
     conversationDraftStoreRef.current, stateRef, selectionStateBundle.replaceState,
-    setClientError, window.moebius,
+    clientErrors, window.moebius,
   );
   const actions = stateActionsBundle.actions;
 
   const conversationControllersBundle = useConversationConsole(
     composerDraft, composerDraftRef, commitComposerDraft,
-    selection, projects, actions, desktopShellBundle.conversationSearch, setClientError, t, coordinator,
+    selection, projects, actions, desktopShellBundle.conversationSearch, clientErrors, t, coordinator,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
     activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
     agentTeamCatalogBundle, pendingAgentTeamKey, setPendingAgentTeamKey,
@@ -218,7 +218,7 @@ export function OperatorConsoleApp({
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
     forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
     rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation,
-    window.moebius, browserProjectMutationPort, setClientError,
+    window.moebius, browserProjectMutationPort, clientErrors,
   );
 
   const sessionControllersBundle = useSessionConsole(
@@ -227,7 +227,7 @@ export function OperatorConsoleApp({
     managedSidebarConversationAttachments, projects, agentTeamCatalogBundle,
     sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
     presentationRouteRef, commitPresentationRoute, window.moebius,
-    browserSidebarDraftPort, t, browserSidebarMessagePort, setClientError,
+    browserSidebarDraftPort, t, browserSidebarMessagePort, clientErrors,
   );
 
   const setSidebarOpen = useCallback((open: boolean) => {

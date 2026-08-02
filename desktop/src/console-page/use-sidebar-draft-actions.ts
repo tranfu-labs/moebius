@@ -21,6 +21,7 @@ import type {
   SidebarConversationDraft,
   SidebarConversationDraftStore,
 } from "./sidebar-conversation-drafts.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useSidebarDraftActions(
   apiBase: string | null,
@@ -42,13 +43,13 @@ export function useSidebarDraftActions(
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   transport: SidebarDraftPreferenceTransport | undefined,
   port: SidebarDraftPort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   t: (key: TranslationKey) => string,
 ) {
   const input = {
     apiBase, sendingId, setSendingId, projects, catalog, attachmentIds, attachmentsBlocked,
     clearAttachmentDraft, draftStore, commitDrafts, setComposerValues, tabsStore, commitTabs,
-    presentationRouteRef, selectionRef, commitRoute, refresh, transport, port, setError, t,
+    presentationRouteRef, selectionRef, commitRoute, refresh, transport, port, errors, t,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -75,9 +76,10 @@ export function useSidebarDraftActions(
     });
     if (submission.kind === "skip") return;
     if (submission.kind === "team-unavailable") {
-      current.setError(current.t("desktop.error.teamUnavailable"));
+      current.errors.report({ family: "sidebar-draft", scope: draftId }, current.t("desktop.error.teamUnavailable"));
       return;
     }
+    const errorOperation = current.errors.begin({ family: "sidebar-draft", scope: draftId });
     current.setSendingId(draftId);
     try {
       const created = await current.port.createConversation({
@@ -121,9 +123,9 @@ export function useSidebarDraftActions(
       if (decideSidebarTeamPreference(preference) === "commit") {
         latest.catalog.setLastUsedTeamKey(submission.team.teamKey);
       }
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       inputRef.current.setSendingId(null);
     }

@@ -11,6 +11,7 @@ import {
   type SelectionMutationToken,
 } from "./console-state-coordinator.js";
 import { refreshConsoleState } from "./refresh-console-state.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -23,7 +24,7 @@ export async function loadConversationAnalysisTarget(input: {
   mutation: SelectionMutationToken | null;
   fetch: FetchLike;
   sourceMissingError: string;
-  setError(error: string | null): void;
+  errors: ConsoleErrorController;
 }): Promise<{ kind: "ready" | "failed"; state: LocalConsoleState | null }> {
   if (planConversationAnalysisTargetLoad(input.loadTarget) === "retain") {
     return { kind: "ready", state: null };
@@ -40,7 +41,7 @@ export async function loadConversationAnalysisTarget(input: {
     }),
     commitState: (state) => { preparedState = state; },
     commitSelection: () => undefined,
-    setError: input.setError,
+    errors: input.errors,
     mutationOwner: planConversationAnalysisMutationOwner(input.mutation),
   });
   if (!decideConversationAnalysisRefresh(loaded, preparedState)) {

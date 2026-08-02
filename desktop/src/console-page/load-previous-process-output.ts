@@ -7,6 +7,7 @@ import {
 } from "./console-process-model.js";
 import { planConsoleErrorMessage } from "./console-state-plan.js";
 import type { ProcessDataSyncPort, ProcessOutputState } from "./process-data-sync-contract.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type ProcessOutputs = Record<string, ProcessOutputState>;
 
@@ -19,7 +20,7 @@ export async function loadPreviousProcessOutput(input: {
   currentOutputs(): ProcessOutputs;
   commit(update: (current: ProcessOutputs) => ProcessOutputs): void;
   port: ProcessDataSyncPort;
-  setError(error: string): void;
+  errors: ConsoleErrorController;
 }): Promise<void> {
   const request = planPreviousProcessOutputRequest(
     input.apiBase,
@@ -28,6 +29,7 @@ export async function loadPreviousProcessOutput(input: {
     input.currentOutputs()[input.sourceKey],
   );
   if (request.kind === "skip") return;
+  const errorOperation = input.errors.begin({ family: "process-data", scope: input.sourceKey });
   input.commit((states) => ({
     ...states,
     [input.sourceKey]: planPreviousProcessOutputLoading(states[input.sourceKey]),
@@ -45,6 +47,7 @@ export async function loadPreviousProcessOutput(input: {
         page,
       ) ?? states[input.sourceKey]!,
     }));
+    input.errors.succeed(errorOperation);
   } catch (error) {
     if (decidePreviousProcessOutputCommit(
       input.currentSelectionId(),
@@ -56,6 +59,6 @@ export async function loadPreviousProcessOutput(input: {
         states[input.sourceKey],
       ) ?? states[input.sourceKey]!,
     }));
-    input.setError(planConsoleErrorMessage(error));
+    input.errors.fail(errorOperation, planConsoleErrorMessage(error));
   }
 }

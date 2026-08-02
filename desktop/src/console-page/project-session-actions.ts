@@ -32,18 +32,22 @@ export const projectSessionActions = {
       unavailableMessage: options.t("desktop.error.localConsoleUnavailable"),
     });
     if (decision.kind !== "rebind") {
-      if (decision.kind === "unavailable") options.setError(decision.message);
+      if (decision.kind === "unavailable") {
+        options.errors.report({ family: "conversation", scope: `${sessionId}:rebind` }, decision.message);
+      }
       return;
     }
     const mutation = decideMutationToken(selectionMutationLifecycle.begin(options, "rebind-session"));
     if (mutation.kind === "busy") return;
+    const errorOperation = options.errors.begin({ family: "conversation", scope: `${sessionId}:rebind` });
     try {
       await options.commands.rebindSessionProject(decision.apiBase, sessionId, projectId);
       const nextSelection = { projectId, sessionId };
       options.commitSelection(nextSelection);
       await options.refresh(nextSelection, mutation.token);
+      options.errors.succeed(errorOperation);
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       selectionMutationLifecycle.finish(options, mutation.token);
     }
@@ -84,16 +88,18 @@ export const projectSessionActions = {
       unavailableMessage: options.t("desktop.error.localConsoleUnavailable"),
     });
     if (decision.kind === "unavailable") {
-      options.setError(decision.message);
+      options.errors.report({ family: "project", scope: "reorder" }, decision.message);
       return false;
     }
     if (decision.kind === "blocked") return false;
+    const errorOperation = options.errors.begin({ family: "project", scope: "reorder" });
     try {
       await options.commands.reorderProjects(decision.apiBase, projectIds);
       await options.refresh(options.getSelection());
+      options.errors.succeed(errorOperation);
       return true;
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
       return false;
     }
   },
@@ -108,11 +114,12 @@ export const projectSessionActions = {
       options.t("desktop.error.localConsoleUnavailable"),
     );
     if (availability.kind === "unavailable") {
-      options.setError(availability.message);
+      options.errors.report({ family: "conversation", scope: `${sessionId}:archive` }, availability.message);
       return null;
     }
     const mutation = decideMutationToken(selectionMutationLifecycle.begin(options, "archive-session"));
     if (mutation.kind === "busy") return null;
+    const errorOperation = options.errors.begin({ family: "conversation", scope: `${sessionId}:archive` });
     try {
       const result = planArchivedSession({
         requestedSessionId: sessionId,
@@ -123,9 +130,10 @@ export const projectSessionActions = {
       if (result.kind === "rejected") throw new Error(result.message);
       options.commitSelection(result.selection);
       await options.refresh(result.selection, mutation.token);
+      options.errors.succeed(errorOperation);
       return result.archivedIds;
     } catch (error) {
-      options.setError(planConsoleErrorMessage(error));
+      options.errors.fail(errorOperation, planConsoleErrorMessage(error));
       return null;
     } finally {
       selectionMutationLifecycle.finish(options, mutation.token);
@@ -145,9 +153,10 @@ async function patchSessionContext(
     options.t("desktop.error.localConsoleUnavailable"),
   );
   if (availability.kind === "unavailable") {
-    options.setError(availability.message);
+    options.errors.report({ family: "conversation", scope: `${sessionId}:${context}` }, availability.message);
     return;
   }
+  const errorOperation = options.errors.begin({ family: "conversation", scope: `${sessionId}:${context}` });
   try {
     await options.commands.patchSessionContext(
       availability.apiBase,
@@ -157,7 +166,8 @@ async function patchSessionContext(
       fallbackError,
     );
     await options.refresh(options.getSelection());
+    options.errors.succeed(errorOperation);
   } catch (error) {
-    options.setError(planConsoleErrorMessage(error));
+    options.errors.fail(errorOperation, planConsoleErrorMessage(error));
   }
 }

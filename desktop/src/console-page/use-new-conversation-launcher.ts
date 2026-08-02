@@ -31,7 +31,6 @@ export function useNewConversationLauncher(
   setPendingTeamKey: (teamKey: string | null) => void,
   draftStore: ConversationDraftStore,
   resolveTeamKey: ResolveTeamKey,
-  setError: (error: string | null) => void,
   addProject: (existingProjectIds: readonly string[]) => Promise<{ projectId: string } | null>,
 ) {
   const teamState = planNewConversationTeamState(catalog.state);
@@ -41,7 +40,7 @@ export function useNewConversationLauncher(
   );
   const input = {
     projects, conversation, dispatch, catalog, pendingTeamKey, setPendingTeamKey,
-    draftStore, resolveTeamKey, setError, preferredTeamKey, addProject,
+    draftStore, resolveTeamKey, preferredTeamKey, addProject,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -69,7 +68,6 @@ export function useNewConversationLauncher(
 
   const startNewConversation = useCallback((projectId?: string) => {
     const current = inputRef.current;
-    current.setError(null);
     planNewConversationLaunch({
       requestedProjectId: projectId,
       projects: current.projects,
@@ -81,7 +79,6 @@ export function useNewConversationLauncher(
 
   const selectProject = useCallback((projectId: string) => {
     const current = inputRef.current;
-    current.setError(null);
     planNewConversationProjectChange(current.projects, projectId).forEach(current.dispatch);
   }, []);
   const selectWorkspace = useCallback((workspaceMode: "direct" | "worktree") => {
@@ -100,7 +97,6 @@ export function useNewConversationLauncher(
     const added = await current.addProject(current.projects.map((project) => project.projectId));
     const events = planAddedNewConversationProject(added);
     events.forEach(inputRef.current.dispatch);
-    if (events.length > 0) inputRef.current.setError(null);
   }, []);
 
   return useMemo(

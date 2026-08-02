@@ -17,6 +17,7 @@ import {
   planProjectRemovalContext,
   planRemovedProjectSessionIds,
 } from "./project-mutation-model.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useProjectMutations(
   apiBase: string | null,
@@ -33,24 +34,25 @@ export function useProjectMutations(
   startNewConversation: () => void,
   transport: ProjectDesktopTransport | undefined,
   port: ProjectMutationPort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const [isPending, setPending] = useState(false);
   const input = {
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
     forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
-    tabsStore, showTabsHost, startNewConversation, transport, port, setError,
+    tabsStore, showTabsHost, startNewConversation, transport, port, errors,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
 
   const showProjectInFolder = useCallback(async (folderPath: string) => {
     const current = inputRef.current;
+    const errorOperation = current.errors.begin({ family: "project", scope: `show:${folderPath}` });
     try {
       await current.port.showInFolder(current.transport, folderPath);
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, []);
 
@@ -58,14 +60,15 @@ export function useProjectMutations(
     const current = inputRef.current;
     const availability = decideProjectMutationAvailability(current.apiBase);
     if (availability.kind === "unavailable") throw new Error(availability.error);
+    const errorOperation = current.errors.begin({ family: "project", scope: `${projectId}:rename` });
     setPending(true);
     try {
       await current.port.renameProject(availability.apiBase, projectId, title);
       const latest = inputRef.current;
       await latest.refresh(latest.selectionRef.current);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
       throw error;
     } finally {
       setPending(false);
@@ -76,6 +79,7 @@ export function useProjectMutations(
     const current = inputRef.current;
     const availability = decideProjectMutationAvailability(current.apiBase);
     if (availability.kind === "unavailable") throw new Error(availability.error);
+    const errorOperation = current.errors.begin({ family: "project", scope: `${projectId}:remove` });
     const removal = planProjectRemovalContext({
       projectId,
       selection: current.selectionRef.current,
@@ -113,9 +117,9 @@ export function useProjectMutations(
         await latest.refresh(latest.selectionRef.current);
       }
       if (removal.wasCurrentProject) latest.startNewConversation();
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
       throw error;
     } finally {
       setPending(false);
@@ -131,14 +135,15 @@ export function useProjectMutations(
     const current = inputRef.current;
     const availability = decideProjectMutationAvailability(current.apiBase);
     if (availability.kind === "unavailable") throw new Error(availability.error);
+    const errorOperation = current.errors.begin({ family: "project", scope: `${projectId}:repair` });
     setPending(true);
     try {
       await current.port.repairProjectFolder(availability.apiBase, projectId, folderPath);
       const latest = inputRef.current;
       await latest.refresh(latest.selectionRef.current);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
       throw error;
     } finally {
       setPending(false);

@@ -38,6 +38,7 @@ import type {
 } from "./sidebar-conversation-drafts.js";
 import type { NewConversationDraftEvent } from "./new-conversation.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -61,7 +62,7 @@ export function useConversationAnalysis(
   openTab: (state: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
   referencePort: ConversationAnalysisReferencePort,
   fetch: FetchLike,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   setNotice: (notice: string | null) => void,
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
 ) {
@@ -69,13 +70,13 @@ export function useConversationAnalysis(
     apiBase, stateRef, presentationRouteRef, coordinator, agentTeams, draftStore, commitDrafts,
     tabs, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitState,
     commitSelection, rememberSelection, commitRoute, activateComposer, openTab, referencePort, fetch,
-    setError, setNotice, t,
+    errors, setNotice, t,
   });
   inputRef.current = {
     apiBase, stateRef, presentationRouteRef, coordinator, agentTeams, draftStore, commitDrafts,
     tabs, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitState,
     commitSelection, rememberSelection, commitRoute, activateComposer, openTab, referencePort, fetch,
-    setError, setNotice, t,
+    errors, setNotice, t,
   };
   const analyze = useCallback(async (request: ConversationAnalysisRequest): Promise<void> => {
     const current = inputRef.current;
@@ -94,7 +95,10 @@ export function useConversationAnalysis(
         "open-failed": "console.sessionAnalysis.openFailed",
         "record-unavailable": "console.sessionAnalysis.recordUnavailable",
       } as const;
-      current.setError(current.t(errorKeys[start.error]));
+      current.errors.report(
+        { family: "analysis", scope: `${request.sessionId}:create` },
+        current.t(errorKeys[start.error]),
+      );
       current.setNotice(current.t(noticeKeys[start.notice]));
       return;
     }
@@ -103,10 +107,17 @@ export function useConversationAnalysis(
       : null;
     const mutationPlan = planConversationAnalysisMutation(start.requiresMutation, mutation);
     if (mutationPlan.kind === "busy") {
-      current.setError(current.t("console.sessionAnalysis.navigationBusy"));
+      current.errors.report(
+        { family: "analysis", scope: `${request.sessionId}:create` },
+        current.t("console.sessionAnalysis.navigationBusy"),
+      );
       current.setNotice(current.t("console.sessionAnalysis.navigationBusy"));
       return;
     }
+    const errorOperation = current.errors.begin({
+      family: "analysis",
+      scope: `${request.sessionId}:create`,
+    });
     try {
       const reference = await current.referencePort.load({
         apiBase: current.apiBase!,
@@ -122,12 +133,13 @@ export function useConversationAnalysis(
         mutation: mutationPlan.mutation,
         fetch: current.fetch,
         sourceMissingError: current.t("console.sessionAnalysis.sourceMissing"),
-        setError: latest.setError,
+        errors: latest.errors,
       });
       if (
         target.kind === "failed"
         && planConversationAnalysisTargetResult(target.kind) === "stop"
       ) {
+        latest.errors.succeed(errorOperation);
         latest.setNotice(latest.t("console.sessionAnalysis.openFailed"));
         return;
       }
@@ -175,11 +187,11 @@ export function useConversationAnalysis(
       latest.tabs.store.write(start.root.sessionId, openedTabs);
       latest.tabs.commitCurrent(openedTabs);
       latest.tabs.setOpen(true);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
       latest.setNotice(null);
     } catch (error) {
       const latest = inputRef.current;
-      latest.setError(planConsoleErrorMessage(error));
+      latest.errors.fail(errorOperation, planConsoleErrorMessage(error));
       latest.setNotice(latest.t("console.sessionAnalysis.openFailed"));
     } finally {
       if (mutationPlan.mutation !== null) {

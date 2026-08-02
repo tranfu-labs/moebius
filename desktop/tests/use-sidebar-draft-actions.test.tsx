@@ -11,6 +11,7 @@ import {
   createSidebarConversationDraftStore,
 } from "../src/console-page/sidebar-conversation-drafts.js";
 import { useSidebarDraftActions } from "../src/console-page/use-sidebar-draft-actions.js";
+import { createTestConsoleErrorSetter } from "./console-error-test-controller.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -113,7 +114,7 @@ describe("sidebar draft actions controller", () => {
       vi.fn(async () => true),
       undefined,
       draftPort,
-      setError,
+      createTestConsoleErrorSetter(setError),
       (key) => key,
     );
     return null;

@@ -12,6 +12,7 @@ import {
   planSidebarComposerBody,
   planSidebarMessageSubmission,
 } from "./sidebar-message-model.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type SidebarConversationViewState =
   | { status: "idle" | "loading" }
@@ -32,11 +33,11 @@ export function useSidebarMessageActions(
   selectionRef: MutableRefObject<ConsoleSelection>,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   port: SidebarMessagePort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const input = {
     apiBase, sendingId, setSendingId, composerValues, setComposerValues, readyAttachmentIds,
-    clearAttachmentDraft, draftStore, views, setViews, selectionRef, refresh, port, setError,
+    clearAttachmentDraft, draftStore, views, setViews, selectionRef, refresh, port, errors,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -64,6 +65,7 @@ export function useSidebarMessageActions(
       attachmentIds: current.readyAttachmentIds,
     });
     if (submission.kind === "skip") return;
+    const errorOperation = current.errors.begin({ family: "sidebar-message", scope: `${sessionId}:send` });
     current.setSendingId(sessionId);
     try {
       await current.port.submitMessage(
@@ -79,9 +81,9 @@ export function useSidebarMessageActions(
       const view = await latest.port.loadView(availability.apiBase, sessionId);
       latest.setViews((views) => ({ ...views, [sessionId]: { status: "ready", view } }));
       await latest.refresh(latest.selectionRef.current);
-      latest.setError(null);
+      latest.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     } finally {
       inputRef.current.setSendingId(null);
     }
@@ -106,12 +108,16 @@ export function useSidebarMessageActions(
     const current = inputRef.current;
     const availability = decideSidebarMessageAvailability({ apiBase: current.apiBase, sending: false });
     if (availability.kind === "skip") return;
+    const errorOperation = current.errors.begin({
+      family: "sidebar-message",
+      scope: `${sessionId}:${messageId}:retry`,
+    });
     try {
       await current.port.retryPending(availability.apiBase, sessionId, messageId);
       await refreshAfterPendingMutation(sessionId);
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, [refreshAfterPendingMutation]);
 
@@ -119,12 +125,16 @@ export function useSidebarMessageActions(
     const current = inputRef.current;
     const availability = decideSidebarMessageAvailability({ apiBase: current.apiBase, sending: false });
     if (availability.kind === "skip") return;
+    const errorOperation = current.errors.begin({
+      family: "sidebar-message",
+      scope: `${sessionId}:${messageId}:edit`,
+    });
     try {
       await current.port.updatePending(availability.apiBase, sessionId, messageId, body);
       await refreshAfterPendingMutation(sessionId);
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, [refreshAfterPendingMutation]);
 
@@ -132,12 +142,16 @@ export function useSidebarMessageActions(
     const current = inputRef.current;
     const availability = decideSidebarMessageAvailability({ apiBase: current.apiBase, sending: false });
     if (availability.kind === "skip") return;
+    const errorOperation = current.errors.begin({
+      family: "sidebar-message",
+      scope: `${sessionId}:${messageId}:remove`,
+    });
     try {
       await current.port.removePending(availability.apiBase, sessionId, messageId);
       await refreshAfterPendingMutation(sessionId);
-      inputRef.current.setError(null);
+      inputRef.current.errors.succeed(errorOperation);
     } catch (error) {
-      inputRef.current.setError(planConsoleErrorMessage(error));
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
     }
   }, [refreshAfterPendingMutation]);
 

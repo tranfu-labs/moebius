@@ -19,6 +19,7 @@ import {
 } from "./console-state-plan.js";
 import { planReadyAttachmentIds } from "./managed-attachment-model.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useConsoleStateActions(
   apiBase: string | null,
@@ -34,7 +35,7 @@ export function useConsoleStateActions(
   draftStore: ConversationDraftStore,
   stateRef: MutableRefObject<LocalConsoleState | null>,
   replaceState: (state: LocalConsoleState) => void,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
   api: DesktopApi | undefined,
 ) {
   const [isSending, setIsSending] = useState(false);
@@ -63,7 +64,7 @@ export function useConsoleStateActions(
     clearResumeRunId: (sessionId) => draftStore.clearResumeRunId(sessionDraftKey(sessionId)),
     setMutationKind: setSelectionMutationKind,
     setSending: setIsSending,
-    setError,
+    errors,
     commitSessionMetadata,
     selectProjectFolder: decideProjectFolderSelectionAvailability(
       api?.selectProjectFolder !== undefined,
@@ -71,7 +72,7 @@ export function useConsoleStateActions(
   }), [
     api, apiBase, attachments, clearComposer, commands, commitSelection,
     commitSessionMetadata, composerValue, coordinator, draftStore, refresh,
-    selectionRef, setError, t,
+    errors, selectionRef, t,
   ]);
   return useMemo(
     () => ({ actions, isSending, selectionMutationKind }),

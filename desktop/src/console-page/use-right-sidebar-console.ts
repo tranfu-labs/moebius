@@ -14,6 +14,7 @@ import { useRightSidebarConversationViews } from "./use-right-sidebar-conversati
 import { useRightSidebarProcessData } from "./use-right-sidebar-process-data.js";
 import { useRightSidebarTabs } from "./use-right-sidebar-tabs.js";
 import { useProjectFileReader } from "./use-project-file-reader.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 interface SelectedSidebarSession {
   sessionId: string;
@@ -36,7 +37,7 @@ export function useRightSidebarConsole(
   processPort: ProcessDataSyncPort,
   projectFilePort: ProjectFilePort,
   invocationKey: (sessionId: string, runId: string) => string,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const tabs = useRightSidebarTabs(
     storage, tabsStore, hostSessionId, selectedSession, selectedProjectId, generalAssistantTeamKey,
@@ -51,7 +52,7 @@ export function useRightSidebarConsole(
   );
   const processData = useRightSidebarProcessData(
     apiBase, active.processSourceKey, selectedSessionId, hostSessionId,
-    processPort, invocationKey, setError,
+    processPort, invocationKey, errors,
   );
   const files = useProjectFileReader(apiBase, projectFilePort);
   useEffect(() => {

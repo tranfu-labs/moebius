@@ -15,6 +15,7 @@ import type { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import { useSessionRunActions } from "./use-session-run-actions.js";
 import { useSidebarDraftActions } from "./use-sidebar-draft-actions.js";
 import { useSidebarMessageActions } from "./use-sidebar-message-actions.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useSessionConsole(
   apiBase: string | null,
@@ -35,7 +36,7 @@ export function useSessionConsole(
   draftPort: SidebarDraftPort,
   t: (key: TranslationKey) => string,
   sidebarPort: SidebarMessagePort,
-  setError: (error: string | null) => void,
+  errors: ConsoleErrorController,
 ) {
   const [subSessionComposerValues, setSubSessionComposerValues] = useState<Record<string, string>>({});
   const [sidebarSendingId, setSidebarSendingId] = useState<string | null>(null);
@@ -43,14 +44,14 @@ export function useSessionConsole(
   const runs = useSessionRunActions(
     apiBase, subSessionComposerValues, setSubSessionComposerValues,
     planReadyAttachmentIds(subSessionAttachments.attachments), subSessionAttachments.clearDraft, draftStore,
-    selectionRef, refresh, rightSidebar.conversationViews.refreshSubSessionNow, runPort, setError,
+    selectionRef, refresh, rightSidebar.conversationViews.refreshSubSessionNow, runPort, errors,
   );
   const sidebarMessages = useSidebarMessageActions(
     apiBase, sidebarSendingId, setSidebarSendingId, sidebarComposerValues,
     setSidebarComposerValues, planReadyAttachmentIds(sidebarAttachments.attachments), sidebarAttachments.clearDraft,
     draftStore, rightSidebar.conversationViews.sidebarConversationViews,
     rightSidebar.conversationViews.setSidebarConversationViews,
-    selectionRef, refresh, sidebarPort, setError,
+    selectionRef, refresh, sidebarPort, errors,
   );
   const sidebarDrafts = useSidebarDraftActions(
     apiBase, sidebarSendingId, setSidebarSendingId, projects, catalog,
@@ -58,7 +59,7 @@ export function useSessionConsole(
     planHasBlockingAttachments(sidebarAttachments.attachments), sidebarAttachments.clearDraft,
     sidebarDraftStore, commitSidebarDrafts, setSidebarComposerValues, rightSidebar.tabs.store,
     rightSidebar.tabs.commitCurrent, presentationRouteRef, selectionRef, commitRoute, refresh,
-    draftTransport, draftPort, setError, t,
+    draftTransport, draftPort, errors, t,
   );
   return useMemo(
     () => ({

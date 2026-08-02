@@ -6,6 +6,7 @@ import type {
   SelectionMutationKind,
   SelectionMutationToken,
 } from "./console-state-coordinator.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export interface CreatedSession {
   sessionId: string;
@@ -70,7 +71,7 @@ export interface ConsoleStateActionsOptions {
   clearResumeRunId(sessionId: string): void;
   setMutationKind(kind: SelectionMutationKind | null): void;
   setSending(sending: boolean): void;
-  setError(error: string): void;
+  errors: ConsoleErrorController;
   commitSessionMetadata(session: OperatorSession): void;
   selectProjectFolder?: () => Promise<string | null>;
 }
