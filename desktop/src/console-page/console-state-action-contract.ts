@@ -1,4 +1,8 @@
-import type { OperatorSession, Translate } from "@moebius/console-ui";
+import type {
+  OperatorSession,
+  RightSidebarTabsState,
+  Translate,
+} from "@moebius/console-ui";
 
 import type {
   ConsoleSelection,
@@ -7,6 +11,26 @@ import type {
   SelectionMutationToken,
 } from "./console-state-coordinator.js";
 import type { ConsoleErrorController } from "./use-console-error-state.js";
+import type { ConsolePresentationRoute } from "./presentation-route.js";
+import type { ConversationComposerDraftState } from "./conversation-draft-model.js";
+import type { RightSidebarTabsStoreSnapshot } from "./right-sidebar-tabs-store.js";
+import type { RightSidebarVisibilityPreference } from "./right-sidebar-preference.js";
+
+export interface ConsoleNavigationScene {
+  selection: ConsoleSelection;
+  presentationRoute: ConsolePresentationRoute | null;
+  rightSidebar: {
+    hostSessionId: string;
+    tabs: RightSidebarTabsState;
+    visibilityPreference: RightSidebarVisibilityPreference;
+    tabsStore?: RightSidebarTabsStoreSnapshot;
+  };
+  composer: ConversationComposerDraftState;
+  readingPosition: {
+    sessionId: string;
+    messageId: number | null;
+  };
+}
 
 export interface CreatedSession {
   sessionId: string;
@@ -62,6 +86,10 @@ export interface ConsoleStateActionsOptions {
   t: Translate;
   getSelection(): ConsoleSelection;
   commitSelection(selection: ConsoleSelection): void;
+  getPresentationRoute(): ConsolePresentationRoute | null;
+  commitPresentationRoute(route: ConsolePresentationRoute): void;
+  getNavigationScene?(): ConsoleNavigationScene;
+  restoreNavigationScene?(scene: ConsoleNavigationScene): void;
   refresh(selection: ConsoleSelection, mutationOwner?: SelectionMutationToken): Promise<boolean>;
   composerValue: string;
   clearComposer(sessionId?: string): void;

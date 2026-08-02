@@ -57,9 +57,9 @@ export function useConversationNavigation(
     const plan = planConversationNavigation(runtime.projects, selection);
     const handlers = {
       hosted: () => {
+        runtime.selectSession(plan.selection);
         runtime.commitRoute(plan.route);
         runtime.activateComposer(plan.composerSessionId);
-        runtime.selectSession(plan.selection);
         const tabs = runtime.openTab(runtime.readTabs(plan.hostSessionId!), plan.source!);
         runtime.writeTabs(plan.hostSessionId!, tabs);
         runtime.commitTabs(tabs);
@@ -67,9 +67,9 @@ export function useConversationNavigation(
         runtime.queueTransition(previousSessionId, plan.viewedSessionId);
       },
       direct: () => {
+        runtime.selectSession(plan.selection);
         runtime.commitRoute(plan.route);
         runtime.activateComposer(plan.composerSessionId);
-        runtime.selectSession(plan.selection);
         runtime.commitTabs(runtime.readTabs(plan.selection.sessionId));
         const sidebarCommands = {
           close: () => runtime.setRightSidebarOpen(false),

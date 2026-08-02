@@ -13,14 +13,20 @@ import {
   planConversationReferencePosition,
   planHandledConversationMessageNavigation,
 } from "./console-presentation-model.js";
+import {
+  planNavigationSceneArgument,
+  planNavigationSceneSource,
+} from "./console-state-plan.js";
 import type { ConsoleSelection } from "./console-state-coordinator.js";
+import type { ConsoleNavigationScene } from "./console-state-action-contract.js";
 import { ordinaryPresentationRoute, type ConsolePresentationRoute } from "./presentation-route.js";
 import { conversationTabSourceKey } from "./right-sidebar-tabs-model.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
 import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 interface AnalysisNavigationActions {
-  selectSession(selection: ConsoleSelection): void;
+  selectSession(selection: ConsoleSelection, navigationScene?: ConsoleNavigationScene): void;
+  captureNavigationScene(): ConsoleNavigationScene | undefined;
 }
 
 export type ConversationReference =
@@ -80,8 +86,13 @@ export function useAnalysisPanelNavigation(
     request:
       | { kind: "panel-entry"; parentSessionId: string; sessionId: string }
       | { kind: "reference"; sessionId: string },
+    navigationScene?: ConsoleNavigationScene,
   ) => {
     const current = inputRef.current;
+    const rollbackScene = planNavigationSceneSource(
+      navigationScene,
+      current.actions.captureNavigationScene(),
+    );
     const plan = planAnalysisNavigation(
       current.sessions,
       current.selectionRef.current.sessionId,
@@ -103,12 +114,17 @@ export function useAnalysisPanelNavigation(
       family: "analysis",
       scope: `${request.sessionId}:navigation`,
     });
-    current.commitRoute(ordinaryPresentationRoute({
+    const route = ordinaryPresentationRoute({
       projectId: plan.root.projectId,
       sessionId: plan.root.sessionId,
-    }));
+    });
+    const selectRoot = (): void => {
+      const selection = { projectId: plan.root.projectId, sessionId: plan.root.sessionId };
+      current.actions.selectSession(selection, ...planNavigationSceneArgument(rollbackScene));
+    };
     if (plan.kind === "direct") {
-      current.actions.selectSession({ projectId: plan.root.projectId, sessionId: plan.root.sessionId });
+      selectRoot();
+      current.commitRoute(route);
       current.errors.succeed(errorOperation);
       return;
     }
@@ -120,8 +136,9 @@ export function useAnalysisPanelNavigation(
     });
     current.tabs.store.write(plan.root.sessionId, nextTabs);
     if (plan.selectRoot) {
-      current.actions.selectSession({ projectId: plan.root.projectId, sessionId: plan.root.sessionId });
+      selectRoot();
     }
+    current.commitRoute(route);
     current.tabs.commitCurrent(nextTabs);
     current.tabs.setOpen(true);
     if (plan.focusTab && nextTabs.activeTabId !== null) {
@@ -135,12 +152,13 @@ export function useAnalysisPanelNavigation(
   const openReference = useCallback((reference: ConversationReference) => {
     const current = inputRef.current;
     const messagePosition = planConversationReferencePosition(reference);
+    const navigationScene = current.actions.captureNavigationScene();
     if (messagePosition !== null) {
       current.writeReadingPosition(messagePosition.sessionId, messagePosition.messageId);
       navigationIdRef.current += 1;
       setMessageNavigation({ ...messagePosition, requestId: navigationIdRef.current });
     }
-    openPlannedNavigation({ kind: "reference", sessionId: reference.sessionId });
+    openPlannedNavigation({ kind: "reference", sessionId: reference.sessionId }, navigationScene);
   }, [openPlannedNavigation]);
   const handleMessageNavigation = useCallback((requestId: number) => {
     setMessageNavigation((current) =>

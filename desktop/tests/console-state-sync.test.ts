@@ -29,7 +29,10 @@ import {
 } from "../src/console-page/console-api-client.js";
 import { ConsoleStateActions } from "../src/console-page/console-state-actions.js";
 import { loadEvidenceView } from "../src/console-page/load-evidence-view.js";
-import { refreshConsoleState } from "../src/console-page/refresh-console-state.js";
+import {
+  refreshConsoleState,
+  type ConsoleStateEtagStore,
+} from "../src/console-page/refresh-console-state.js";
 import { createBrowserFetchPort } from "../src/console-page/browser-fetch.js";
 import { createConsoleCommandPort } from "../src/console-page/console-command-client.js";
 import {
@@ -215,6 +218,12 @@ describe("sidebar conversation state sync", () => {
 interface TestState {
   selectedProjectId: string;
   selectedSessionId: string;
+  activeRuns?: Array<{
+    elapsedMs: number;
+    liveMarkdown: string;
+    activity: string;
+    status: "running" | "completed";
+  }>;
 }
 
 const zhT: Parameters<typeof loadEvidenceView>[0]["t"] = (key, values) =>
@@ -290,6 +299,84 @@ describe("SessionViewTransitionQueue", () => {
 });
 
 describe("refreshConsoleState", () => {
+  it("sends the cached ETag and skips the React state commit on an unchanged response", async () => {
+    const coordinator = new ConsoleStateCoordinator();
+    const committed: TestState[] = [];
+    const etags = new Map<string, string>();
+    const etagStore: ConsoleStateEtagStore = {
+      read: (selection) => etags.get(`${selection.projectId}:${selection.sessionId}`),
+      write: (selection, etag) => {
+        etags.set(`${selection.projectId}:${selection.sessionId}`, etag);
+      },
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        selectedProjectId: "project-a",
+        selectedSessionId: "session-a",
+      }), { status: 200, headers: { etag: "\"state-1\"", "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { etag: "\"state-1\"" } }));
+    const options = refreshOptions({
+      coordinator,
+      fetch,
+      committed,
+      etags: etagStore,
+    });
+
+    await expect(refreshConsoleState(options)).resolves.toBe(true);
+    await expect(refreshConsoleState(options)).resolves.toBe(true);
+
+    expect(committed).toHaveLength(1);
+    expect(fetch.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      headers: { "if-none-match": "\"state-1\"" },
+    }));
+  });
+
+  it("commits active-run updates when the snapshot ETag changes", async () => {
+    const coordinator = new ConsoleStateCoordinator();
+    const committed: TestState[] = [];
+    const etags = new Map<string, string>();
+    const etagStore: ConsoleStateEtagStore = {
+      read: (selection) => etags.get(`${selection.projectId}:${selection.sessionId}`),
+      write: (selection, etag) => {
+        etags.set(`${selection.projectId}:${selection.sessionId}`, etag);
+      },
+    };
+    const state = (elapsedMs: number, liveMarkdown: string, activity: string) => ({
+      selectedProjectId: "project-a",
+      selectedSessionId: "session-a",
+      activeRuns: [{ elapsedMs, liveMarkdown, activity, status: "running" as const }],
+    });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(state(1_000, "第一段", "读取输入")), {
+        status: 200,
+        headers: { etag: "\"state-1\"", "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(state(2_000, "第二段", "生成输出")), {
+        status: 200,
+        headers: { etag: "\"state-2\"", "content-type": "application/json" },
+      }));
+    const options = refreshOptions({
+      coordinator,
+      fetch,
+      committed,
+      etags: etagStore,
+    });
+
+    await refreshConsoleState(options);
+    await refreshConsoleState(options);
+
+    expect(committed).toHaveLength(2);
+    expect(committed[1]?.activeRuns).toEqual([{
+      elapsedMs: 2_000,
+      liveMarkdown: "第二段",
+      activity: "生成输出",
+      status: "running",
+    }]);
+    expect(fetch.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      headers: { "if-none-match": "\"state-1\"" },
+    }));
+  });
+
   it("does not clear another source after three successful polls", async () => {
     const errors = createModelConsoleErrorController();
     errors.controller.report({ family: "project", scope: "project-a:rename" }, "rename failed");
@@ -945,6 +1032,31 @@ describe("process output reads", () => {
 });
 
 describe("ConsoleStateActions", () => {
+  it("restores the previous selection when a clicked session cannot load", async () => {
+    const previousRoute = {
+      version: 1 as const,
+      projectId: "project-a",
+      selectedSessionId: "session-a",
+      mainSessionId: "session-a",
+      rightConversationSessionId: null,
+      hostSessionId: "session-a",
+      notice: null,
+    };
+    const harness = actionHarness({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch: vi.fn(async () => jsonResponse({ error: "state unavailable" }, 503)),
+      refresh: vi.fn(async () => false),
+      presentationRoute: previousRoute,
+    });
+
+    harness.actions.selectSession({ projectId: "project-b", sessionId: "session-b" });
+    await vi.waitFor(() => expect(harness.selection()).toEqual({
+      projectId: "project-a",
+      sessionId: "session-a",
+    }));
+    expect(harness.presentationRoute()).toEqual(previousRoute);
+  });
+
   it("arms the previous session before marking the next session viewed", async () => {
     const armResponse = deferred<Response>();
     const fetch = vi.fn()
@@ -1228,6 +1340,8 @@ describe("ConsoleStateActions", () => {
       commitSelection: (nextSelection) => {
         selection = nextSelection;
       },
+      getPresentationRoute: () => null,
+      commitPresentationRoute: vi.fn(),
       refresh,
       composerValue: "draft",
       clearComposer: vi.fn(),
@@ -1509,6 +1623,7 @@ function refreshOptions(input: {
   mutationOwner?: Parameters<ConsoleStateCoordinator["beginRefresh"]>[0];
   commitSelection?: (selection: ConsoleSelection) => void;
   errors?: ReturnType<typeof createTestConsoleErrorController>["controller"];
+  etags?: ConsoleStateEtagStore;
 }) {
   return {
     apiBase: "http://127.0.0.1:8787/",
@@ -1524,6 +1639,7 @@ function refreshOptions(input: {
     commitSelection: input.commitSelection ?? vi.fn(),
     errors: input.errors ?? createTestConsoleErrorController().controller,
     mutationOwner: input.mutationOwner ?? undefined,
+    etags: input.etags,
   };
 }
 
@@ -1540,8 +1656,10 @@ function actionHarness(input: {
   commitSessionMetadata?: (
     session: import("@moebius/console-ui").OperatorSession,
   ) => void;
+  presentationRoute?: import("../src/console-page/presentation-route.js").ConsolePresentationRoute;
 }) {
   let selection: ConsoleSelection = { projectId: "project-a", sessionId: "session-a" };
+  let presentationRoute = input.presentationRoute ?? null;
   const mutationKinds: Array<SelectionMutationKind | null> = [];
   const errors: string[] = [];
   const sending: boolean[] = [];
@@ -1555,6 +1673,10 @@ function actionHarness(input: {
     getSelection: () => selection,
     commitSelection: (nextSelection) => {
       selection = nextSelection;
+    },
+    getPresentationRoute: () => presentationRoute,
+    commitPresentationRoute: (nextRoute) => {
+      presentationRoute = nextRoute;
     },
     refresh: input.refresh ?? (async () => true),
     composerValue: input.composerValue ?? "draft",
@@ -1576,6 +1698,7 @@ function actionHarness(input: {
     errors,
     mutationKinds,
     selection: () => selection,
+    presentationRoute: () => presentationRoute,
     sending,
   };
 }

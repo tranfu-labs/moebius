@@ -24,6 +24,26 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 - MUST expose session-scoped message submission and interrupt operations.
 - MUST keep the local console API loopback-only by default.
 
+### Requirement: 状态接口支持未改变快照的条件刷新
+
+Source: docs/product/pages/main-conversation.md#指标与验收
+
+local-console state API MUST 支持客户端以当前快照标识发起条件请求。快照未改变时 MUST 返回无状态体的未改变响应；快照发生任何可见状态变化时 MUST 返回完整状态，而不是让客户端沿用旧快照。
+
+#### Scenario: 空闲会话的快照未改变
+
+- **GIVEN** 当前选择的完整状态与上一次响应完全相同
+- **WHEN** 桌面刷新通道发送当前快照标识
+- **THEN** API 返回未改变响应且响应体为空
+- **AND** 客户端保留当前状态，不提交新的时间线状态。
+
+#### Scenario: 活动状态发生变化
+
+- **GIVEN** 同一会话仍在打开且 `elapsedMs`、`liveMarkdown`、活动摘要、失败或终态中任一事实发生变化
+- **WHEN** 桌面刷新通道发送旧快照标识
+- **THEN** API 返回完整状态
+- **AND** 客户端应用变化，不把该响应误判为 unchanged。
+
 ### 桌面启动恢复最后一次成功选择
 
 Source: docs/product/pages/main-left-sidebar.md#入口与去向

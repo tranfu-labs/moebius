@@ -15,6 +15,7 @@ import {
   Search,
   Settings,
 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LucideIcon } from "lucide-react";
 import {
   useCallback,
@@ -23,7 +24,9 @@ import {
   useMemo,
   useRef,
   useState,
+  Profiler,
   type PointerEvent as ReactPointerEvent,
+  type ProfilerOnRenderCallback,
   type ReactNode,
   type Ref,
   type SyntheticEvent,
@@ -67,6 +70,8 @@ import {
 import {
   MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
   MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
+  planConversationMessageReveal,
+  planConversationReadingRestore,
 } from "@/console/conversation-layout";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
@@ -785,6 +790,8 @@ export function OperatorConsole({
   className,
 }: OperatorConsoleProps): JSX.Element {
   const embeddedConversation = presentation === "conversation";
+  const timelinePerfEnabled = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("moebius-timeline-perf") === "1";
   const t: Translate = (key, values) => translate(activeLocale, key, values);
   const resolvedAgentTeamFileManagerLabel = agentTeamFileManagerLabel ?? t("console.operator.fileManager");
   const displayedActiveRuns = activeRuns ?? (activeRun === null ? [] : [activeRun]);
@@ -816,8 +823,12 @@ export function OperatorConsole({
   const parentScrollTopRef = useRef(0);
   const parentConversationPaneRef = useRef<HTMLDivElement | null>(null);
   const conversationDockRef = useRef<HTMLDivElement | null>(null);
+  const timelineListRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
   const restoredReadingSessionRef = useRef<string | null>(null);
+  const readingRestoreLayoutRef = useRef<string | null>(null);
+  const readingSessionIdentityRef = useRef(selectedSessionId);
+  const suppressReadingScrollRef = useRef(false);
   const conversationFocusFrameRef = useRef<number | null>(null);
   const conversationHighlightTimerRef = useRef<number | null>(null);
   const handledMessageNavigationRequestRef = useRef<number | null>(null);
@@ -834,6 +845,21 @@ export function OperatorConsole({
   const [conversationDockHeight, setConversationDockHeight] = useState(
     INITIAL_CONVERSATION_DOCK_HEIGHT_PX,
   );
+  const messageIndexById = useMemo(
+    () => new Map(messages.map((message, index) => [message.id, index] as const)),
+    [messages],
+  );
+  const timelineVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => timelineScrollRef.current,
+    getItemKey: (index) => messages[index]?.id ?? index,
+    estimateSize: () => 180,
+    measureElement: (element) => element.getBoundingClientRect().height,
+    overscan: 8,
+    initialRect: { width: 760, height: 640 },
+    scrollMargin: timelineListRef.current?.offsetTop ?? 0,
+  });
+  const virtualTimelineItems = timelineVirtualizer.getVirtualItems();
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
   const [fileReferenceContents, setFileReferenceContents] = useState<Record<string, FileReferenceContent>>({});
@@ -1035,42 +1061,106 @@ export function OperatorConsole({
   }, []);
 
   useLayoutEffect(() => {
+    timelineVirtualizer.measure();
+  }, [conversationPaneWidth, timelineVirtualizer]);
+
+  const revealConversationMessage = useCallback((messageId: number): boolean => {
+    const mountedTarget = conversationMessageRefs.current.get(messageId);
+    if (mountedTarget !== undefined && !mountedTarget.isConnected) {
+      if (mountedTarget.parentElement !== null) return false;
+      conversationMessageRefs.current.delete(messageId);
+    }
+    const revealPlan = planConversationMessageReveal(
+      [...messageIndexById.keys()],
+      messageId,
+      [...conversationMessageRefs.current.keys()],
+    );
+    if (revealPlan.kind === "not-found") return false;
+    const reveal = () => {
+      const target = conversationMessageRefs.current.get(messageId);
+      if (target === undefined || !target.isConnected) return;
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      target.focus({ preventScroll: true });
+    };
+    if (revealPlan.kind === "mounted") {
+      reveal();
+      return true;
+    }
+    timelineVirtualizer.scrollToIndex(revealPlan.index, { align: "center" });
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(reveal);
+    });
+    return true;
+  }, [messageIndexById, timelineVirtualizer]);
+
+  useLayoutEffect(() => {
+    if (readingSessionIdentityRef.current === selectedSessionId) return;
+    readingSessionIdentityRef.current = selectedSessionId;
+    restoredReadingSessionRef.current = null;
+    readingRestoreLayoutRef.current = null;
+    suppressReadingScrollRef.current = true;
+  }, [selectedSessionId]);
+
+  useLayoutEffect(() => {
     if (restoredReadingSessionRef.current === selectedSessionId) return;
+    if (selectedSession?.sessionId !== selectedSessionId) return;
     if (conversationRelayEvents.length === 0) {
       setCurrentRelayEventId(null);
       return;
     }
     if (!messages.some((message) => message.sessionId === selectedSessionId)) return;
-    const savedEvent = initialReadingMessageId === null
-      ? undefined
-      : conversationRelayEvents.find((event) => event.messageId === initialReadingMessageId);
-    const targetEvent = savedEvent ?? conversationRelayEvents.at(-1);
-    if (targetEvent === undefined) return;
+    const restorePlan = planConversationReadingRestore(
+      conversationRelayEvents,
+      initialReadingMessageId,
+    );
+    if (restorePlan.kind === "skip") return;
+    const targetEvent = restorePlan.event;
     restoredReadingSessionRef.current = selectedSessionId;
+    readingRestoreLayoutRef.current = selectedSessionId;
+    suppressReadingScrollRef.current = false;
     setCurrentRelayEventId(targetEvent.id);
     onReadingMessageChange?.(selectedSessionId, targetEvent.messageId);
 
     const timeline = timelineScrollRef.current;
-    const target = conversationMessageRefs.current.get(targetEvent.messageId);
-    const followsLatest = targetEvent.id === conversationRelayEvents.at(-1)?.id;
+    const followsLatest = restorePlan.kind === "follow-latest";
     followTimelineRef.current = followsLatest;
     setShowJumpToBottom(!followsLatest);
     if (timeline === null) return;
-    if (followsLatest || target === undefined) {
-      timeline.scrollTop = timeline.scrollHeight;
+    if (followsLatest) {
+      if (messages.length > 0) {
+        timelineVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+      }
+      window.requestAnimationFrame(() => {
+        const currentTimeline = timelineScrollRef.current;
+        if (currentTimeline !== null) {
+          currentTimeline.scrollTop = currentTimeline.scrollHeight;
+        }
+      });
       return;
     }
-    target.scrollIntoView({ block: "center", behavior: "auto" });
+    revealConversationMessage(targetEvent.messageId);
   }, [
     conversationRelayEvents,
     initialReadingMessageId,
+    messages.length,
     onReadingMessageChange,
+    revealConversationMessage,
+    selectedSession?.sessionId,
     selectedSessionId,
+    timelineVirtualizer,
   ]);
 
   useLayoutEffect(() => {
     const timeline = timelineScrollRef.current;
+    if (readingRestoreLayoutRef.current === selectedSessionId) {
+      readingRestoreLayoutRef.current = null;
+      return;
+    }
+    if (selectedSession?.sessionId !== selectedSessionId) return;
     if (timeline !== null && followTimelineRef.current) {
+      if (messages.length > 0) {
+        timelineVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+      }
       timeline.scrollTop = timeline.scrollHeight;
       const latestEvent = conversationRelayEvents.at(-1);
       if (latestEvent !== undefined) {
@@ -1084,13 +1174,14 @@ export function OperatorConsole({
     messages.length,
     displayedActiveRuns.map((run) => `${run.runId}:${run.lastOutputSummary}:${run.liveMarkdown ?? ""}`).join("|"),
     onReadingMessageChange,
+    selectedSession?.sessionId,
     selectedSessionId,
+    timelineVirtualizer,
   ]);
 
   const locateConversationRelayEvent = useCallback((event: ConversationRelayEvent) => {
     const timeline = timelineScrollRef.current;
-    const target = conversationMessageRefs.current.get(event.messageId);
-    if (timeline === null || target === undefined || !target.isConnected) {
+    if (timeline === null || !revealConversationMessage(event.messageId)) {
       followTimelineRef.current = false;
       setRelayFeedback(t("console.operator.relayNotFound"));
       return;
@@ -1100,11 +1191,6 @@ export function OperatorConsole({
     setShowJumpToBottom(!followTimelineRef.current);
     setCurrentRelayEventId(event.id);
     onReadingMessageChange?.(selectedSessionId, event.messageId);
-    target.scrollIntoView({
-      block: "center",
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-    });
-    target.focus({ preventScroll: true });
     setHighlightedMessageId(event.messageId);
     setRelayFeedback(t("console.operator.relayLocated"));
     if (conversationHighlightTimerRef.current !== null) {
@@ -1113,7 +1199,7 @@ export function OperatorConsole({
     conversationHighlightTimerRef.current = window.setTimeout(() => {
       setHighlightedMessageId(null);
     }, prefersReducedMotion() ? 700 : 1500);
-  }, [conversationRelayEvents, onReadingMessageChange, selectedSessionId, t]);
+  }, [conversationRelayEvents, onReadingMessageChange, revealConversationMessage, selectedSessionId, t]);
 
   useLayoutEffect(() => {
     if (messageNavigationRequest === null) return;
@@ -1366,6 +1452,86 @@ export function OperatorConsole({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 
+  const renderTimelineMessage = (
+    message: OperatorMessage,
+    index: number,
+    virtualStart?: number,
+  ) => {
+    const isVirtualized = virtualStart !== undefined;
+    return (
+      <div
+        key={message.id}
+        ref={isVirtualized ? timelineVirtualizer.measureElement : undefined}
+        data-index={index}
+        className={isVirtualized ? "absolute left-0 top-0 w-full" : undefined}
+        style={isVirtualized
+          ? { transform: `translateY(${String(virtualStart - timelineVirtualizer.options.scrollMargin)}px)` }
+          : undefined}
+      >
+        <div
+          ref={(element) => {
+            if (element === null) conversationMessageRefs.current.delete(message.id);
+            else conversationMessageRefs.current.set(message.id, element);
+          }}
+          className={cn(
+            "rounded-md outline-none transition-colors",
+            highlightedMessageId === message.id && "bg-sel ring-2 ring-inset ring-accent",
+          )}
+          data-message-id={message.id}
+          data-testid={`timeline-message-${String(message.id)}`}
+          tabIndex={-1}
+        >
+          <TimelineEntry
+            message={message}
+            processRole={resolveMessageProcessRole(message, messages)}
+            memberIdentities={memberIdentities}
+            childSessions={childSessions}
+            openedSubSessionId={openedSubSessionId}
+            onOpenSubSession={openSubSession}
+            onRetryRun={onRetryRun}
+            executionRegistryState={executionRegistryState}
+            onReloadExecutionRegistry={onReloadExecutionRegistry}
+            onAnalyzeConversation={onAnalyzeConversation}
+            onUpdateClaude={onUpdateClaude}
+            onEditAndResend={onEditAndResend}
+            onOpenDiagnostics={onOpenDiagnostics}
+            onOpenExternalLink={onOpenExternalLink}
+            onOpenConversationReference={onOpenConversationReference}
+            onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
+            onOpenTeamMember={openMentionedTeamMember}
+            onOpenEvidence={openEvidence}
+          />
+        </div>
+      </div>
+    );
+  };
+  const timelineBounds = timelineScrollRef.current?.getBoundingClientRect();
+  const renderFullTimeline = timelineScrollRef.current === null
+    || timelineScrollRef.current.clientHeight === 0
+    || timelineBounds?.height === 0;
+  const onTimelineProfilerRender: ProfilerOnRenderCallback = useCallback((
+    id,
+    phase,
+    actualDuration,
+    baseDuration,
+    startTime,
+    commitTime,
+  ) => {
+    if (!timelinePerfEnabled) return;
+    const probe = (window as Window & {
+      __MOEBIUS_TIMELINE_PERF__?: {
+        onCommit?: (entry: {
+          id: string;
+          phase: "mount" | "update" | "nested-update";
+          actualDuration: number;
+          baseDuration: number;
+          startTime: number;
+          commitTime: number;
+        }) => void;
+      };
+    }).__MOEBIUS_TIMELINE_PERF__;
+    probe?.onCommit?.({ id, phase, actualDuration, baseDuration, startTime, commitTime });
+  }, [timelinePerfEnabled]);
   return (
     <div className={cn(
       "relative flex overflow-hidden bg-canvas text-ink",
@@ -1762,43 +1928,49 @@ export function OperatorConsole({
                 />
               </div>
             ) : null}
-            <section
-              className={cn(
-                "scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
-                analysisPanelReservesSpace && "pr-[312px]",
-              )}
-              aria-label={t("console.operator.timeline")}
-              ref={timelineScrollRef}
-              style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
-              onScroll={(event) => {
-                const timeline = event.currentTarget;
-                const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
-                followTimelineRef.current = atBottom;
-                setShowJumpToBottom(!atBottom);
-                if (conversationFocusFrameRef.current !== null) return;
-                conversationFocusFrameRef.current = window.requestAnimationFrame(() => {
-                  conversationFocusFrameRef.current = null;
-                  const bounds = timeline.getBoundingClientRect();
-                  const readingCenter = bounds.top + bounds.height / 2;
-                  let nearest: ConversationRelayEvent | null = null;
-                  let nearestDistance = Number.POSITIVE_INFINITY;
-                  for (const relayEvent of conversationRelayEvents) {
-                    const element = conversationMessageRefs.current.get(relayEvent.messageId);
-                    if (element === undefined) continue;
-                    const rect = element.getBoundingClientRect();
-                    const distance = Math.abs(rect.top + rect.height / 2 - readingCenter);
-                    if (distance < nearestDistance) {
-                      nearest = relayEvent;
-                      nearestDistance = distance;
-                    }
-                  }
-                  if (nearest !== null && nearest.id !== currentRelayEventId) {
-                    setCurrentRelayEventId(nearest.id);
-                    onReadingMessageChange?.(selectedSessionId, nearest.messageId);
-                  }
-                });
-              }}
+            <TimelinePerformanceBoundary
+              enabled={timelinePerfEnabled}
+              onRender={onTimelineProfilerRender}
             >
+            <section
+                className={cn(
+                  "scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
+                  analysisPanelReservesSpace && "pr-[312px]",
+                )}
+                aria-label={t("console.operator.timeline")}
+                ref={timelineScrollRef}
+                style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
+                onScroll={(event) => {
+                  const timeline = event.currentTarget;
+                  const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
+                  followTimelineRef.current = atBottom;
+                  setShowJumpToBottom(!atBottom);
+                  if (selectedSession?.sessionId !== selectedSessionId) return;
+                  if (atBottom || suppressReadingScrollRef.current) return;
+                  if (conversationFocusFrameRef.current !== null) return;
+                  conversationFocusFrameRef.current = window.requestAnimationFrame(() => {
+                    conversationFocusFrameRef.current = null;
+                    const bounds = timeline.getBoundingClientRect();
+                    const readingCenter = bounds.top + bounds.height / 2;
+                    let nearest: ConversationRelayEvent | null = null;
+                    let nearestDistance = Number.POSITIVE_INFINITY;
+                    for (const relayEvent of conversationRelayEvents) {
+                      const element = conversationMessageRefs.current.get(relayEvent.messageId);
+                      if (element === undefined) continue;
+                      const rect = element.getBoundingClientRect();
+                      const distance = Math.abs(rect.top + rect.height / 2 - readingCenter);
+                      if (distance < nearestDistance) {
+                        nearest = relayEvent;
+                        nearestDistance = distance;
+                      }
+                    }
+                    if (nearest !== null && nearest.id !== currentRelayEventId) {
+                      setCurrentRelayEventId(nearest.id);
+                      onReadingMessageChange?.(selectedSessionId, nearest.messageId);
+                    }
+                  });
+                }}
+              >
               {selectedSession ? (
                 <header
                   className={cn(
@@ -1857,44 +2029,21 @@ export function OperatorConsole({
               ) : (
                 <div className={MAIN_CONVERSATION_COLUMN_GUTTER_CLASS}>
                   <div className={cn("mx-auto", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
-                    <div>
-                      {messages.map((message) => (
-                        <div
-                          key={message.id}
-                          ref={(element) => {
-                            if (element === null) conversationMessageRefs.current.delete(message.id);
-                            else conversationMessageRefs.current.set(message.id, element);
-                          }}
-                          className={cn(
-                            "rounded-md outline-none transition-colors",
-                            highlightedMessageId === message.id && "bg-sel ring-2 ring-inset ring-accent",
-                          )}
-                          data-message-id={message.id}
-                          data-testid={`timeline-message-${String(message.id)}`}
-                          tabIndex={-1}
-                        >
-                          <TimelineEntry
-                            message={message}
-                            processRole={resolveMessageProcessRole(message, messages)}
-                            memberIdentities={memberIdentities}
-                            childSessions={childSessions}
-                            openedSubSessionId={openedSubSessionId}
-                            onOpenSubSession={openSubSession}
-                            onRetryRun={onRetryRun}
-                            executionRegistryState={executionRegistryState}
-                            onReloadExecutionRegistry={onReloadExecutionRegistry}
-                            onAnalyzeConversation={onAnalyzeConversation}
-                            onUpdateClaude={onUpdateClaude}
-                            onEditAndResend={onEditAndResend}
-                            onOpenDiagnostics={onOpenDiagnostics}
-                            onOpenExternalLink={onOpenExternalLink}
-                            onOpenConversationReference={onOpenConversationReference}
-                            onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
-                            onOpenTeamMember={openMentionedTeamMember}
-                            onOpenEvidence={openEvidence}
-                          />
-                        </div>
-                      ))}
+                    <div
+                      ref={timelineListRef}
+                      className="relative"
+                      style={renderFullTimeline
+                        ? undefined
+                        : { height: `${String(timelineVirtualizer.getTotalSize())}px` }}
+                    >
+                      {renderFullTimeline
+                        ? messages.map((message, index) => renderTimelineMessage(message, index))
+                        : virtualTimelineItems.map((virtualItem) => {
+                            const message = messages[virtualItem.index];
+                            return message === undefined
+                              ? null
+                              : renderTimelineMessage(message, virtualItem.index, virtualItem.start);
+                          })}
                     </div>
 
                     {displayedActiveRuns.map((run) => {
@@ -1965,7 +2114,8 @@ export function OperatorConsole({
                   </div>
                 </div>
               )}
-            </section>
+              </section>
+            </TimelinePerformanceBoundary>
             <p className="sr-only" aria-live="polite" data-testid="conversation-relay-feedback">
               {relayFeedback}
             </p>
@@ -3145,6 +3295,20 @@ function TimelineEntry({
       </div>
     </div>
   );
+}
+
+function TimelinePerformanceBoundary({
+  enabled,
+  onRender,
+  children,
+}: {
+  enabled: boolean;
+  onRender: ProfilerOnRenderCallback;
+  children: ReactNode;
+}): JSX.Element {
+  return enabled
+    ? <Profiler id="main-timeline" onRender={onRender}>{children}</Profiler>
+    : <>{children}</>;
 }
 
 function ConversationAnalysisMenu({

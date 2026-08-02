@@ -12,6 +12,7 @@ import {
   sidebarPresentationRoute,
   createConsolePresentationRouteStore,
 } from "../src/console-page/presentation-route.js";
+import { createConversationReadingPositionStore } from "../src/console-page/conversation-reading-position.js";
 import {
   conversationDraftTabSourceKey,
   conversationTabSourceKey,
@@ -54,6 +55,7 @@ describe("desktop App sidebar conversation regressions", () => {
   let projectDirectoryAvailable: boolean;
   let includeAvailableAlternativeProject: boolean;
   let stateRequestCount: number;
+  let stateFailureSessionId: string | null;
   let ordinaryCreateFailure: boolean;
   let preferenceRecordFailure: boolean;
   let preferenceRecordAttemptCount: number;
@@ -82,6 +84,7 @@ describe("desktop App sidebar conversation regressions", () => {
     projectDirectoryAvailable = true;
     includeAvailableAlternativeProject = false;
     stateRequestCount = 0;
+    stateFailureSessionId = null;
     ordinaryCreateFailure = false;
     preferenceRecordFailure = false;
     preferenceRecordAttemptCount = 0;
@@ -130,7 +133,11 @@ describe("desktop App sidebar conversation regressions", () => {
         : new URL(typeof input === "string" ? input : input.url);
       if (url.pathname === "/api/local-console/state") {
         stateRequestCount += 1;
-        return Promise.resolve(jsonResponse(createState(url.searchParams.get("sessionId") ?? "source-a")));
+        const requestedSessionId = url.searchParams.get("sessionId") ?? "source-a";
+        if (requestedSessionId === stateFailureSessionId) {
+          return Promise.resolve(jsonResponse({ error: "state unavailable" }, 503));
+        }
+        return Promise.resolve(jsonResponse(createState(requestedSessionId)));
       }
       if (url.pathname === "/api/local-console/attachments" && (init?.method ?? "GET") === "GET") {
         const draftKey = url.searchParams.get("draftKey") ?? "";
@@ -504,6 +511,138 @@ describe("desktop App sidebar conversation regressions", () => {
       ]);
     expectSelectedMainConversation("source-a", "来源会话 A");
     expect(composer.value).toBe("草稿 A");
+  });
+
+  it("restores the complete right-sidebar scene when an ordinary target load fails", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+    stateFailureSessionId = "source-b";
+    timelineMessages = [{
+      id: 7,
+      sessionId: "source-a",
+      speaker: "agent",
+      role: "assistant",
+      body: "已读到这里。",
+      status: "displayed",
+      runId: null,
+      runDir: null,
+      error: null,
+      systemEventKind: "other",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:01.000Z",
+    }];
+    window.localStorage.setItem("draft:source-a", "草稿 A");
+    createConversationReadingPositionStore(window.localStorage).write("source-a", 7);
+    const initialRoute = ordinaryPresentationRoute({ projectId: "local", sessionId: "source-a" });
+    createConsolePresentationRouteStore(window.localStorage).write(initialRoute);
+    const initialTabs = {
+      tabs: [{
+        id: "source-a-files",
+        type: "project-files" as const,
+        title: "builtin:project-files",
+        sourceKey: null,
+        closable: true as const,
+      }],
+      activeTabId: "source-a-files",
+    };
+    createRightSidebarTabsStore(window.localStorage).write("source-a", initialTabs);
+
+    await act(async () => root.render(<App />));
+    await findElement<HTMLElement>('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]',
+      (element) => element.getAttribute("data-tab-id") === "source-a-files");
+
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => targetRow.click());
+    await waitFor(() => stateRequestCount >= 2
+      && host.querySelector(
+        '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+      )?.getAttribute("data-session-id") === "source-a");
+
+    expectSelectedMainConversation("source-a", "来源会话 A");
+    expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="消息内容"]')?.value)
+      .toBe("草稿 A");
+    expect(createConversationReadingPositionStore(window.localStorage).read("source-a")).toBe(7);
+    expect(host.querySelector('[data-testid="right-sidebar"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-tab-id")).toBe("source-a-files");
+    expect(window.localStorage.getItem("moebius.right-sidebar.visibility")).toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toEqual(initialTabs);
+    expect(createConsolePresentationRouteStore(window.localStorage).read()).toEqual(initialRoute);
+  });
+
+  it("restores the complete right-sidebar scene when a hosted analysis conversation load fails", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+      createSession("analysis-b", "分析会话 B", "source-b"),
+    ];
+    stateFailureSessionId = "source-b";
+    timelineMessages = [{
+      id: 11,
+      sessionId: "source-a",
+      speaker: "agent",
+      role: "assistant",
+      body: "已读到中段。",
+      status: "displayed",
+      runId: null,
+      runDir: null,
+      error: null,
+      systemEventKind: "other",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:01.000Z",
+    }];
+    window.localStorage.setItem("draft:source-a", "草稿 A");
+    createConversationReadingPositionStore(window.localStorage).write("source-a", 11);
+    const initialRoute = ordinaryPresentationRoute({ projectId: "local", sessionId: "source-a" });
+    createConsolePresentationRouteStore(window.localStorage).write(initialRoute);
+    const initialTabs = {
+      tabs: [
+        {
+          id: "source-a-first",
+          type: "project-files" as const,
+          title: "builtin:project-files",
+          sourceKey: null,
+          closable: true as const,
+        },
+        {
+          id: "source-a-active",
+          type: "workspace-diff" as const,
+          title: "builtin:workspace-diff",
+          sourceKey: null,
+          closable: true as const,
+        },
+      ],
+      activeTabId: "source-a-active",
+    };
+    createRightSidebarTabsStore(window.localStorage).write("source-a", initialTabs);
+
+    await act(async () => root.render(<App />));
+    await findElement<HTMLElement>('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]',
+      (element) => element.getAttribute("data-tab-id") === "source-a-active");
+    const targetRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="analysis-b"]',
+    );
+    await act(async () => targetRow.click());
+    await waitFor(() => stateRequestCount >= 2
+      && host.querySelector(
+        '[data-testid="conversation-sidebar-session"][aria-current="page"]',
+      )?.getAttribute("data-session-id") === "source-a");
+
+    expectSelectedMainConversation("source-a", "来源会话 A");
+    expect(host.querySelector('[data-testid="right-sidebar"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-tab-id")).toBe("source-a-active");
+    expect(window.localStorage.getItem("moebius.right-sidebar.visibility")).toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toEqual(initialTabs);
+    expect(createRightSidebarTabsStore(window.localStorage).read("source-b").tabs).toEqual([]);
+    expect(createConsolePresentationRouteStore(window.localStorage).read()).toEqual(initialRoute);
+    expect(createConversationReadingPositionStore(window.localStorage).read("source-a")).toBe(11);
+    expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="消息内容"]')?.value)
+      .toBe("草稿 A");
   });
 
   it("keeps the previous route and draft when ordinary conversation creation fails", async () => {

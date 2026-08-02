@@ -59,6 +59,26 @@ describe("console error state controller", () => {
     expect(latest.visibleMessage).toBe("current failure");
   });
 
+  it("does not resurrect a hidden error after an unrelated rerender", async () => {
+    await render("initial");
+    let operationA!: ReturnType<typeof latest.controller.begin>;
+    let operationB!: ReturnType<typeof latest.controller.begin>;
+    await act(async () => {
+      operationA = latest.controller.begin({ family: "project", scope: "a" });
+      latest.controller.fail(operationA, "error A");
+      operationB = latest.controller.begin({ family: "search-navigation", scope: "b" });
+      latest.controller.fail(operationB, "error B");
+    });
+    expect(latest.visibleMessage).toBe("error B");
+
+    await act(async () => latest.controller.succeed(operationA));
+    expect(latest.visibleMessage).toBe("error B");
+
+    await render("unrelated rerender");
+    await act(async () => latest.controller.succeed(operationB));
+    expect(latest.visibleMessage).toBeNull();
+  });
+
   async function render(callbackIdentity: string): Promise<void> {
     await act(async () => root.render(<Harness callbackIdentity={callbackIdentity} />));
   }

@@ -49,6 +49,7 @@ export function useSearchedSessionNavigation(
         originAvailable: result.originAvailable,
         state: latest.stateRef.current,
       });
+      latest.selectSession(navigation.selection);
       latest.commitRoute(navigation.route);
       if (navigation.kind === "hosted") {
         const tabs = latest.openTab(latest.tabsStore.read(navigation.hostSessionId), navigation.source);
@@ -58,7 +59,6 @@ export function useSearchedSessionNavigation(
       } else {
         latest.setRightSidebarOpen(false);
       }
-      latest.selectSession(navigation.selection);
       latest.errors.succeed(errorOperation);
       return true;
     } catch (error) {

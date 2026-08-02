@@ -1,5 +1,10 @@
-import type { OperatorSession } from "@moebius/console-ui";
+import type { OperatorSession, RightSidebarTabsState } from "@moebius/console-ui";
+import type { ConsoleNavigationScene } from "./console-state-action-contract.js";
 import type { LocalConsoleState } from "./console-state-contract.js";
+import type { ConsoleSelection } from "./console-state-coordinator.js";
+import type { RightSidebarTabsStoreSnapshot } from "./right-sidebar-tabs-store.js";
+import type { ConsolePresentationRoute } from "./presentation-route.js";
+import type { RightSidebarVisibilityPreference } from "./right-sidebar-preference.js";
 
 export function planConsoleEndpoint(base: string, path: string): URL {
   return new URL(path.replace(/^\//u, ""), base.endsWith("/") ? base : `${base}/`);
@@ -7,6 +12,13 @@ export function planConsoleEndpoint(base: string, path: string): URL {
 
 export function planConsoleErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function decideConsoleErrorCommit(
+  previousVisibleMessage: string | null,
+  nextVisibleMessage: string | null,
+): "commit" | "skip" {
+  return previousVisibleMessage === nextVisibleMessage ? "skip" : "commit";
 }
 
 export function planSessionMetadataState(
@@ -64,6 +76,31 @@ export function planRefreshResponse<T>(
 
 export function decideRefreshCommit(canCommit: boolean): "commit" | "ignore" {
   return canCommit ? "commit" : "ignore";
+}
+
+export function planConsoleStateRequestInit(etag: string | undefined): RequestInit {
+  return etag === undefined ? {} : { headers: { "if-none-match": etag } };
+}
+
+export function decideRefreshResponse(status: number): "not-modified" | "body" {
+  return status === 304 ? "not-modified" : "body";
+}
+
+export function decideResponseEtag(etag: string | null):
+  | { kind: "skip" }
+  | { kind: "write"; etag: string } {
+  return etag === null ? { kind: "skip" } : { kind: "write", etag };
+}
+
+export function decideStateEtagAvailability(
+  state: { selectedProjectId: string; selectedSessionId: string } | null,
+  selection: ConsoleSelection,
+): "use" | "skip" {
+  return state !== null
+    && state.selectedProjectId === selection.projectId
+    && state.selectedSessionId === selection.sessionId
+    ? "use"
+    : "skip";
 }
 
 export function decideConsoleStatePoll(selectionMutationPending: boolean): "refresh" | "wait" {
@@ -280,6 +317,121 @@ export function planOpenedProjectSelection(options: {
 
 export function decideSessionSelection(pending: boolean): "blocked" | "select" {
   return pending ? "blocked" : "select";
+}
+
+export function planNavigationSceneSource(
+  explicit: ConsoleNavigationScene | undefined,
+  captured: ConsoleNavigationScene | undefined,
+): ConsoleNavigationScene | undefined {
+  return explicit ?? captured;
+}
+
+export function planNavigationSceneHostSessionId(
+  route: ConsolePresentationRoute | null,
+  selection: ConsoleSelection,
+): string {
+  return route?.hostSessionId ?? selection.sessionId;
+}
+
+export function planPresentationRouteCommit(
+  route: ConsolePresentationRoute | null,
+): { kind: "clear" } | { kind: "write"; route: ConsolePresentationRoute } {
+  return route === null ? { kind: "clear" } : { kind: "write", route };
+}
+
+export function planNavigationSceneArgument(
+  scene: ConsoleNavigationScene | undefined,
+): [] | [ConsoleNavigationScene] {
+  return scene === undefined ? [] : [scene];
+}
+
+export function planNavigationSceneSnapshot(input: {
+  selection: ConsoleSelection;
+  presentationRoute: ConsolePresentationRoute | null;
+  hostSessionId: string;
+  tabs: RightSidebarTabsState;
+  visibilityPreference: RightSidebarVisibilityPreference;
+  tabsStore?: RightSidebarTabsStoreSnapshot;
+  composer: ConsoleNavigationScene["composer"];
+  readingPosition: ConsoleNavigationScene["readingPosition"];
+}): ConsoleNavigationScene {
+  return {
+    selection: input.selection,
+    presentationRoute: input.presentationRoute,
+    rightSidebar: {
+      hostSessionId: input.hostSessionId,
+      tabs: input.tabs,
+      visibilityPreference: input.visibilityPreference,
+      tabsStore: input.tabsStore,
+    },
+    composer: input.composer,
+    readingPosition: input.readingPosition,
+  };
+}
+
+export function planNavigationSceneRestore(
+  scene: ConsoleNavigationScene,
+  canRestoreTabsDocument: boolean,
+): {
+  sidebar:
+    | { kind: "snapshot"; snapshot: RightSidebarTabsStoreSnapshot }
+    | { kind: "host"; hostSessionId: string; tabs: RightSidebarTabsState };
+  readingPosition:
+    | { kind: "remove"; sessionId: string }
+    | { kind: "write"; sessionId: string; messageId: number };
+} {
+  const sidebar = scene.rightSidebar.tabsStore !== undefined && canRestoreTabsDocument
+    ? { kind: "snapshot" as const, snapshot: scene.rightSidebar.tabsStore }
+    : {
+        kind: "host" as const,
+        hostSessionId: scene.rightSidebar.hostSessionId,
+        tabs: scene.rightSidebar.tabs,
+      };
+  const readingPosition = scene.readingPosition.messageId === null
+    ? { kind: "remove" as const, sessionId: scene.readingPosition.sessionId }
+    : {
+        kind: "write" as const,
+        sessionId: scene.readingPosition.sessionId,
+        messageId: scene.readingPosition.messageId,
+      };
+  return { sidebar, readingPosition };
+}
+
+export function planSessionSelectionRollback(options: {
+  loaded: boolean;
+  currentSelection: ConsoleSelection;
+  targetSelection: ConsoleSelection;
+  previousSelection: ConsoleSelection;
+  previousPresentationRoute: ConsolePresentationRoute | null;
+  previousNavigationScene?: ConsoleNavigationScene;
+  canRestoreNavigationScene: boolean;
+}):
+  | { kind: "keep" }
+  | { kind: "restore-scene"; scene: ConsoleNavigationScene }
+  | {
+      kind: "restore";
+      selection: ConsoleSelection;
+      presentationRoute: ConsolePresentationRoute;
+    } {
+  const sameSelection = options.currentSelection.projectId === options.targetSelection.projectId
+    && options.currentSelection.sessionId === options.targetSelection.sessionId;
+  if (options.loaded || !sameSelection) return { kind: "keep" };
+  if (options.previousNavigationScene !== undefined && options.canRestoreNavigationScene) {
+    return { kind: "restore-scene", scene: options.previousNavigationScene };
+  }
+  return {
+    kind: "restore",
+    selection: options.previousSelection,
+    presentationRoute: options.previousPresentationRoute ?? {
+      version: 1,
+      projectId: options.previousSelection.projectId,
+      selectedSessionId: options.previousSelection.sessionId,
+      mainSessionId: options.previousSelection.sessionId,
+      rightConversationSessionId: null,
+      hostSessionId: options.previousSelection.sessionId,
+      notice: null,
+    },
+  };
 }
 
 export function decideSessionProjectRebind(options: {
