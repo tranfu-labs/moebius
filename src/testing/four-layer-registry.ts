@@ -166,6 +166,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-console-presentation.ts",
   "desktop/src/console-page/use-conversation-navigation.ts",
   "desktop/src/console-page/use-conversation-analysis.ts",
+  "desktop/src/console-page/use-conversation-composer.ts",
   "desktop/src/console-page/use-conversation-console.ts",
   "desktop/src/console-page/use-searched-session-navigation.ts",
   "desktop/src/console-page/use-sidebar-source-migration.ts",

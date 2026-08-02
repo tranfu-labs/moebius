@@ -23,14 +23,7 @@ import {
 } from "./agent-team-console-model.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
-import {
-  activateConversationComposerDraft,
-  clearConversationComposerDraft,
-  editConversationComposerDraft,
-  type ConversationComposerDraftState,
-  NEW_CONVERSATION_DRAFT_KEY,
-  sessionDraftKey,
-} from "./conversation-draft-model.js";
+import { NEW_CONVERSATION_DRAFT_KEY, sessionDraftKey } from "./conversation-draft-model.js";
 import { createConversationDraftStore } from "./draft-store.js";
 import {
   readSidebarVisibilityPreference,
@@ -83,6 +76,7 @@ import { useDesktopRuntimeBridge } from "./use-desktop-runtime-bridge.js";
 import { useConsoleSelectionState } from "./use-console-selection-state.js";
 import { useConsoleStateActions } from "./use-console-state-actions.js";
 import { useConsolePresentation } from "./use-console-presentation.js";
+import { useConversationComposer } from "./use-conversation-composer.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -147,28 +141,15 @@ export function OperatorConsoleApp({
   );
   const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
     useState<Set<string>>(() => new Set());
-  const [composerDraft, setComposerDraft] = useState<ConversationComposerDraftState>(() => {
-    const key = sessionDraftKey(selection.sessionId);
-    return { key, value: conversationDraftStoreRef.current.read(key) };
-  });
-  const composerDraftRef = useRef(composerDraft);
-  const commitComposerDraft = useCallback((next: ConversationComposerDraftState) => {
-    composerDraftRef.current = next;
-    setComposerDraft(next);
-  }, []);
-  const activateComposerDraft = useCallback((sessionId: string) => {
-    const key = sessionDraftKey(sessionId);
-    commitComposerDraft(activateConversationComposerDraft(
-      composerDraftRef.current,
-      key,
-      conversationDraftStoreRef.current.read(key),
-    ));
-  }, [commitComposerDraft]);
-  const clearComposerDraft = useCallback((sessionId: string) => {
-    const key = sessionDraftKey(sessionId);
-    conversationDraftStoreRef.current.clear(key);
-    commitComposerDraft(clearConversationComposerDraft(composerDraftRef.current, key));
-  }, [commitComposerDraft]);
+  const composerBundle = useConversationComposer(
+    selection.sessionId,
+    conversationDraftStoreRef.current,
+  );
+  const composerDraft = composerBundle.draft;
+  const composerDraftRef = composerBundle.draftRef;
+  const commitComposerDraft = composerBundle.commit;
+  const activateComposerDraft = composerBundle.activate;
+  const clearComposerDraft = composerBundle.clear;
   const [clientError, setClientError] = useState<string | null>(null);
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
   const agentTeamControllersBundle = useAgentTeamConsole(
@@ -518,11 +499,7 @@ export function OperatorConsoleApp({
         error: sessionAnalysisNotice ?? newConversation.error ?? clientError,
       }}
       {...cliInstallationsBundle}
-      onComposerChange={(value) => {
-        const current = composerDraftRef.current;
-        conversationDraftStoreRef.current.write(current.key, value);
-        commitComposerDraft(editConversationComposerDraft(current, value));
-      }}
+      onComposerChange={composerBundle.change}
       onComposerFilesAdded={managedAttachments.addFiles}
       onComposerAttachmentRemove={managedAttachments.remove}
       onComposerAttachmentRetry={managedAttachments.retry}
