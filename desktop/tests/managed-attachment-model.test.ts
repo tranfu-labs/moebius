@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   decideAttachmentRestorationCommit,
   decideAttachmentService,
+  decideSidebarAttachmentPresenceCommit,
+  planConsoleAttachmentDraftKeys,
   planMergedDraftAttachments,
   planPendingAttachment,
   planVisibleRestoredAttachments,
@@ -83,6 +85,29 @@ describe("managed attachment decisions", () => {
       currentRevision: 3,
       expectedRevision: 2,
     })).toBe("stale");
+  });
+
+  it("assigns each attachment controller to its current draft owner", () => {
+    expect(planConsoleAttachmentDraftKeys({
+      newConversationOpen: false,
+      composerDraftKey: "draft:main",
+      activeSubSessionId: "child",
+      activeSidebarSessionId: "sidebar",
+      activeSidebarAttachmentDraftKey: null,
+    })).toEqual({
+      main: "draft:main",
+      subSession: "draft:child",
+      sidebar: "draft:sidebar",
+    });
+    expect(planConsoleAttachmentDraftKeys({
+      newConversationOpen: true,
+      composerDraftKey: "draft:main",
+      activeSubSessionId: null,
+      activeSidebarSessionId: null,
+      activeSidebarAttachmentDraftKey: "draft:sidebar:draft-a",
+    })).toMatchObject({ main: "draft:new", sidebar: "draft:sidebar:draft-a" });
+    expect(decideSidebarAttachmentPresenceCommit(false)).toBe("skip");
+    expect(decideSidebarAttachmentPresenceCommit(true)).toBe("commit");
   });
 });
 

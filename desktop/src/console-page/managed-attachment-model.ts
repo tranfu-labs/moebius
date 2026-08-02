@@ -6,6 +6,32 @@ import type {
 
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
 import type { PendingAttachmentHandle } from "./managed-attachment-contract.js";
+import {
+  NEW_CONVERSATION_DRAFT_KEY,
+  sessionDraftKey,
+  type ConversationDraftKey,
+} from "./conversation-draft-model.js";
+
+export function planConsoleAttachmentDraftKeys(input: {
+  newConversationOpen: boolean;
+  composerDraftKey: ConversationDraftKey;
+  activeSubSessionId: string | null;
+  activeSidebarSessionId: string | null;
+  activeSidebarAttachmentDraftKey: `draft:sidebar:${string}` | null;
+}): { main: string; subSession: string; sidebar: string } {
+  return {
+    main: input.newConversationOpen ? NEW_CONVERSATION_DRAFT_KEY : input.composerDraftKey,
+    subSession: sessionDraftKey(input.activeSubSessionId ?? "__inactive-sub-session__"),
+    sidebar: input.activeSidebarAttachmentDraftKey
+      ?? (input.activeSidebarSessionId === null
+        ? "draft:sidebar:__inactive__"
+        : sessionDraftKey(input.activeSidebarSessionId)),
+  };
+}
+
+export function decideSidebarAttachmentPresenceCommit(changed: boolean): "commit" | "skip" {
+  return changed ? "commit" : "skip";
+}
 
 export function decideAttachmentService(options: {
   apiBase: string | null;

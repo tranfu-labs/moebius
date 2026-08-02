@@ -20,7 +20,7 @@ import { browserConsoleCommandPort } from "./console-command-client.js";
 import { planGeneralAssistantTeamKey } from "./agent-team-console-model.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
-import { NEW_CONVERSATION_DRAFT_KEY, sessionDraftKey } from "./conversation-draft-model.js";
+import { sessionDraftKey } from "./conversation-draft-model.js";
 import { createConversationDraftStore } from "./draft-store.js";
 import {
   readSidebarVisibilityPreference,
@@ -33,7 +33,6 @@ import {
 } from "./right-sidebar-tabs-store.js";
 import {
   createSidebarConversationDraftStore,
-  type SidebarConversationDraftAttachmentPresence,
   type SidebarConversationDraft,
 } from "./sidebar-conversation-drafts.js";
 import { sidebarPresentationRoute } from "./presentation-route.js";
@@ -196,28 +195,11 @@ export function OperatorConsoleApp({
   const readProjectFiles = rightSidebarBundle.files.readProjectFiles;
   const readProjectFile = rightSidebarBundle.files.readProjectFile;
   const readFileReference = rightSidebarBundle.files.readFileReference;
-  const currentAttachmentDraftKey = newConversation?.isOpen !== true
-    ? composerDraft.key
-    : NEW_CONVERSATION_DRAFT_KEY;
-  const activeSubSessionDraftKey = sessionDraftKey(activeSubSessionId ?? "__inactive-sub-session__");
-  const activeSidebarConversationAttachmentDraftKey = activeSidebarConversationDraft?.attachmentDraftKey
-    ?? (activeSidebarConversationSessionId === null
-      ? "draft:sidebar:__inactive__"
-      : sessionDraftKey(activeSidebarConversationSessionId));
-  const reportAttachmentError = useCallback((error: string) => setClientError(error), []);
-  const recordSidebarDraftAttachmentPresence = useCallback((
-    draftKey: string,
-    presence: SidebarConversationDraftAttachmentPresence,
-  ) => {
-    if (!sidebarConversationDraftStoreRef.current.setManagedAttachmentPresence(draftKey, presence)) {
-      return;
-    }
-    setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
-  }, []);
   const attachmentDraftsBundle = useConsoleAttachmentDrafts(
-    managedAttachmentClient, apiBase, attachmentCapability, currentAttachmentDraftKey,
-    activeSubSessionDraftKey, activeSidebarConversationAttachmentDraftKey,
-    reportAttachmentError, recordSidebarDraftAttachmentPresence,
+    managedAttachmentClient, apiBase, attachmentCapability, newConversation?.isOpen === true,
+    composerDraft.key, activeSubSessionId, activeSidebarConversationSessionId,
+    activeSidebarConversationDraft?.attachmentDraftKey ?? null,
+    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts, setClientError,
   );
   const managedAttachments = attachmentDraftsBundle.main;
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
