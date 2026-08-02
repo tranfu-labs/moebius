@@ -86,3 +86,28 @@ export function planNewConversationLaunch(input: {
     }),
   }];
 }
+
+export function planNewConversationProjectChange(
+  projects: readonly OperatorProject[],
+  projectId: string,
+): NewConversationDraftEvent[] {
+  const project = projects.find((candidate) => candidate.projectId === projectId);
+  return [
+    { type: "select-project", projectId },
+    {
+      type: "select-workspace",
+      workspaceMode: project?.worktreeMode === true ? "worktree" : "direct",
+    },
+  ];
+}
+
+export function planAddedNewConversationProject(
+  project: { projectId: string } | null,
+): NewConversationDraftEvent[] {
+  return project === null
+    ? []
+    : [
+        { type: "select-project", projectId: project.projectId },
+        { type: "select-workspace", workspaceMode: "direct" },
+      ];
+}

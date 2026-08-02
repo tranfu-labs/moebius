@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, type Dispatch, type MutableRefObject } from "react";
 import type { Translate } from "@moebius/console-ui";
 
-import type { DesktopApi } from "./app.js";
+import type { DesktopApi } from "./desktop-api-contract.js";
 import type { ConsoleSelection } from "./console-state-coordinator.js";
 import type { ConversationDraftStore } from "./draft-store.js";
 import {

@@ -492,35 +492,12 @@ export function OperatorConsoleApp({
         void interruptSubSession(sessionId, runId);
       }}
       onStartNewConversation={startNewConversation}
-      onNewConversationProjectChange={(projectId) => {
-        setClientError(null);
-        dispatchNewConversation({ type: "select-project", projectId });
-        const selectedProject = projects.find((candidate) => candidate.projectId === projectId);
-        dispatchNewConversation({
-          type: "select-workspace",
-          workspaceMode: selectedProject?.worktreeMode === true ? "worktree" : "direct",
-        });
-      }}
-      onNewConversationWorkspaceChange={(workspaceMode) => {
-        dispatchNewConversation({ type: "select-workspace", workspaceMode });
-      }}
-      onNewConversationTeamChange={(teamKey) => {
-        dispatchNewConversation({ type: "select-team", teamKey });
-      }}
-      onNewConversationDraftChange={(value) => {
-        conversationDraftStoreRef.current.write(NEW_CONVERSATION_DRAFT_KEY, value);
-        dispatchNewConversation({ type: "edit-draft", draft: value });
-      }}
+      onNewConversationProjectChange={conversationControllersBundle.launcher.selectProject}
+      onNewConversationWorkspaceChange={conversationControllersBundle.launcher.selectWorkspace}
+      onNewConversationTeamChange={conversationControllersBundle.launcher.selectTeam}
+      onNewConversationDraftChange={conversationControllersBundle.launcher.changeDraft}
       onSubmitNewConversation={() => void newConversationSubmissionBundle.createConversation()}
-      onAddNewConversationProject={() => {
-        void actions.addProject(projects.map((candidate) => candidate.projectId)).then((added) => {
-          if (added !== null) {
-            setClientError(null);
-            dispatchNewConversation({ type: "select-project", projectId: added.projectId });
-            dispatchNewConversation({ type: "select-workspace", workspaceMode: "direct" });
-          }
-        });
-      }}
+      onAddNewConversationProject={() => void conversationControllersBundle.launcher.addProject()}
       onReorderProjects={actions.reorderProjects}
       onChangeSessionWorkspace={actions.changeSessionWorkspace}
       onChangeSessionTeam={(sessionId, team) => actions.changeSessionTeam(sessionId, {

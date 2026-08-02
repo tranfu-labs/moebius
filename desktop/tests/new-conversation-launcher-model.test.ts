@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  planAddedNewConversationProject,
   planNewConversationLaunch,
+  planNewConversationProjectChange,
   planNewConversationTeamRepair,
   planPendingNewConversationTeam,
 } from "../src/console-page/new-conversation-launcher-model.js";
@@ -60,6 +62,22 @@ describe("new conversation launcher model", () => {
       preferredTeamKey: "system:development",
       storedDraft: "stored",
     })).toMatchObject([{ type: "open", draft: { teamKey: "system:development", draft: "stored" } }]);
+  });
+
+  it("maps project selection and successful project creation into draft events", () => {
+    expect(planNewConversationProjectChange([project("project-a", true)], "project-a")).toEqual([
+      { type: "select-project", projectId: "project-a" },
+      { type: "select-workspace", workspaceMode: "worktree" },
+    ]);
+    expect(planNewConversationProjectChange([project("project-a", true)], "missing")).toEqual([
+      { type: "select-project", projectId: "missing" },
+      { type: "select-workspace", workspaceMode: "direct" },
+    ]);
+    expect(planAddedNewConversationProject(null)).toEqual([]);
+    expect(planAddedNewConversationProject({ projectId: "project-b" })).toEqual([
+      { type: "select-project", projectId: "project-b" },
+      { type: "select-workspace", workspaceMode: "direct" },
+    ]);
   });
 });
 

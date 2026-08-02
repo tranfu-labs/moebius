@@ -9,6 +9,8 @@ import {
 import type { NewConversationDraftEvent, NewConversationDraftState } from "./new-conversation.js";
 import {
   planNewConversationLaunch,
+  planNewConversationProjectChange,
+  planAddedNewConversationProject,
   planNewConversationTeamState,
   planNewConversationTeamRepair,
   planPendingNewConversationTeam,
@@ -30,6 +32,7 @@ export function useNewConversationLauncher(
   draftStore: ConversationDraftStore,
   resolveTeamKey: ResolveTeamKey,
   setError: (error: string | null) => void,
+  addProject: (existingProjectIds: readonly string[]) => Promise<{ projectId: string } | null>,
 ) {
   const teamState = planNewConversationTeamState(catalog.state);
   const preferredTeamKey = useMemo(
@@ -38,7 +41,7 @@ export function useNewConversationLauncher(
   );
   const input = {
     projects, conversation, dispatch, catalog, pendingTeamKey, setPendingTeamKey,
-    draftStore, resolveTeamKey, setError, preferredTeamKey,
+    draftStore, resolveTeamKey, setError, preferredTeamKey, addProject,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -76,8 +79,41 @@ export function useNewConversationLauncher(
     }).forEach(current.dispatch);
   }, []);
 
+  const selectProject = useCallback((projectId: string) => {
+    const current = inputRef.current;
+    current.setError(null);
+    planNewConversationProjectChange(current.projects, projectId).forEach(current.dispatch);
+  }, []);
+  const selectWorkspace = useCallback((workspaceMode: "direct" | "worktree") => {
+    inputRef.current.dispatch({ type: "select-workspace", workspaceMode });
+  }, []);
+  const selectTeam = useCallback((teamKey: string) => {
+    inputRef.current.dispatch({ type: "select-team", teamKey });
+  }, []);
+  const changeDraft = useCallback((value: string) => {
+    const current = inputRef.current;
+    current.draftStore.write(NEW_CONVERSATION_DRAFT_KEY, value);
+    current.dispatch({ type: "edit-draft", draft: value });
+  }, []);
+  const addNewProject = useCallback(async () => {
+    const current = inputRef.current;
+    const added = await current.addProject(current.projects.map((project) => project.projectId));
+    const events = planAddedNewConversationProject(added);
+    events.forEach(inputRef.current.dispatch);
+    if (events.length > 0) inputRef.current.setError(null);
+  }, []);
+
   return useMemo(
-    () => ({ preferredTeamKey, startNewConversation }),
-    [preferredTeamKey, startNewConversation],
+    () => ({
+      preferredTeamKey,
+      startNewConversation,
+      selectProject,
+      selectWorkspace,
+      selectTeam,
+      changeDraft,
+      addProject: addNewProject,
+    }),
+    [addNewProject, changeDraft, preferredTeamKey, selectProject, selectTeam, selectWorkspace,
+      startNewConversation],
   );
 }

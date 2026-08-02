@@ -107,6 +107,7 @@ export function useConversationConsole(
   const launcher = useNewConversationLauncher(
     projects, newConversation, dispatchNewConversation, agentTeams, pendingTeamKey,
     setPendingTeamKey, conversationDraftStore, resolveTeamKey, setError,
+    actions.addProject,
   );
   const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
   const analysisNavigation = useAnalysisPanelNavigation(
