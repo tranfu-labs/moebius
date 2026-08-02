@@ -139,6 +139,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-attachment-preview-lifecycle.ts",
   "desktop/src/console-page/use-conversation-search.ts",
   "desktop/src/console-page/use-conversation-transition.ts",
+  "desktop/src/console-page/use-console-attachment-drafts.ts",
   "desktop/src/console-page/use-console-state-sync.ts",
   "desktop/src/console-page/use-conversation-navigation.ts",
   "desktop/src/main.ts",

@@ -32,3 +32,10 @@
 控制分支 0。文件包含 9 次具名 team hook 装配和一次 memo 化透传；不持有业务状态、不注册 effect，
 团队列表的 `ready` 状态形状由 `useAgentTeamCatalog` 内部的 `replaceTeams` 能力负责，builder 草稿
 storage key 由 domain constants 提供。
+
+## `desktop/src/console-page/use-console-attachment-drafts.ts`
+
+该 attachment 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
+business 0 = AST 控制分支 0。文件只把 main、sub-session、sidebar 三个 draft key 装配到既有
+`useManagedAttachmentDrafts` controller，并 memo 化三个具名 bundle；上传、恢复、替换、preview 与
+presence generation 的规则仍由原 controller/domain modules 持有。

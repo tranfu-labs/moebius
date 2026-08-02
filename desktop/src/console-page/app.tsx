@@ -198,9 +198,6 @@ import {
   getAgentTeamKey,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
-import {
-  useManagedAttachmentDrafts,
-} from "./use-managed-attachments.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
 import { interruptLocalConsoleRun } from "./interrupt.js";
 import { refillStoppedRunDraft } from "./edit-resend.js";
@@ -222,6 +219,7 @@ import { useConversationTransition } from "./use-conversation-transition.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
+import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -530,28 +528,14 @@ export function OperatorConsoleApp({
     }
     setSidebarConversationDrafts(sidebarConversationDraftStoreRef.current.list());
   }, []);
-  const managedAttachments = useManagedAttachmentDrafts({
-    client: managedAttachmentClient,
-    apiBase,
-    capability: attachmentCapability,
-    currentDraftKey: currentAttachmentDraftKey,
-    onError: reportAttachmentError,
-  });
-  const managedSubSessionAttachments = useManagedAttachmentDrafts({
-    client: managedAttachmentClient,
-    apiBase,
-    capability: attachmentCapability,
-    currentDraftKey: activeSubSessionDraftKey,
-    onError: reportAttachmentError,
-  });
-  const managedSidebarConversationAttachments = useManagedAttachmentDrafts({
-    client: managedAttachmentClient,
-    apiBase,
-    capability: attachmentCapability,
-    currentDraftKey: activeSidebarConversationAttachmentDraftKey,
-    onError: reportAttachmentError,
-    onDraftAttachmentPresenceChange: recordSidebarDraftAttachmentPresence,
-  });
+  const attachmentDraftsBundle = useConsoleAttachmentDrafts(
+    managedAttachmentClient, apiBase, attachmentCapability, currentAttachmentDraftKey,
+    activeSubSessionDraftKey, activeSidebarConversationAttachmentDraftKey,
+    reportAttachmentError, recordSidebarDraftAttachmentPresence,
+  );
+  const managedAttachments = attachmentDraftsBundle.main;
+  const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
+  const managedSidebarConversationAttachments = attachmentDraftsBundle.sidebar;
 
   useEffect(() => {
     stateRef.current = state;
