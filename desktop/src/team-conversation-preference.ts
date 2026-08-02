@@ -37,3 +37,7 @@ export function createTeamConversationPreferenceService(ports: TeamConversationP
     },
   };
 }
+
+export type TeamConversationPreferenceService = ReturnType<
+  typeof createTeamConversationPreferenceService
+>;

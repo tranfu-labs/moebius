@@ -314,6 +314,8 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/console-page/right-sidebar-tabs-store.ts",
   "desktop/src/data-root.ts",
   "desktop/src/desktop-window-runtime.ts",
+  "desktop/src/desktop-team-wiring.ts",
+  "desktop/src/desktop-team-ipc-wiring.ts",
   "desktop/src/ai-team-builder/execution-profile.ts",
   "desktop/src/env-doctor.ts",
   "desktop/src/execution-capabilities.ts",

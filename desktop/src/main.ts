@@ -26,65 +26,22 @@ import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js"
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
-import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
 import { createAgentTeamService } from "./team-ipc.js";
 import { registerTeamIpc } from "./team-ipc-register.js";
-import {
-  relocateAgentTeamRecord,
-  removeAgentTeamRecord,
-} from "./team-repair-ipc.js";
-import {
-  forgetTrashedUserTeamRecord,
-  listRecordedUserTeamSnapshots,
-  registerUserTeamSnapshot,
-  resolveRecordedTeamLocation as resolveRecordedRuntimeTeamLocation,
-} from "./team-record-store.js";
-import {
-  getPackagedTeamCacheDirectory,
-  readOfficialTeamStateDocument,
-  readTeamExecutionBindings,
-  removeTeamExecutionBindings,
-  replaceTeamExecutionBindings,
-  saveTeamExecutionBinding,
-} from "./team-management-store.js";
-import {
-  addTeamMember,
-  createUserTeam,
-  duplicateBuiltInTeamDirectory,
-  duplicateTeamMemberDirectory,
-  duplicateUserTeamDirectory,
-  getSystemTeamsRoot,
-  getTeamsRoot,
-  listTeamLocations,
-  readTeamSnapshot,
-  resolveTeamLocation,
-  setTeamPrimaryAgent,
-  trashTeamMemberDirectory,
-  trashUserTeamDirectory,
-  updateTeamInformation,
-  writeMemberAgentMarkdown,
-} from "./team-store.js";
-import { readTeamSeedConflicts, seedBuiltInTeams } from "./team-seed.js";
-import {
-  commitOfficialTeamUpdate,
-  inspectOfficialTeamUpdate,
-  prepareOfficialTeamUpdate,
-} from "./team-official-update.js";
-import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration-store.js";
-import { readTeamDirectoryCreatedAt } from "./team-directory-metadata-store.js";
+import { seedBuiltInTeams } from "./team-seed.js";
 import {
   createTeamRuntimeBindingService,
 } from "./team-runtime-binding.js";
-import { listSharedAgentFiles } from "./team-shared-agent-store.js";
-import { checkAgentTeamMemberExternalChange } from "./team-external-change.js";
 import {
   createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
 import { registerProjectIpc } from "./project-ipc-register.js";
 import {
-  readLastUsedAgentTeamStore,
-  writeLastUsedAgentTeamStore,
-} from "./team-conversation-preference-store.js";
+  createDesktopAgentTeamServicePorts,
+  createDesktopTeamConversationPreferencePorts,
+  createDesktopTeamRuntimeBindingPorts,
+} from "./desktop-team-wiring.js";
+import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
 import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
 import { registerSettingsIpc } from "./settings-ipc.js";
 import {
@@ -136,55 +93,12 @@ if (!app.isPackaged && !app.commandLine.hasSwitch("remote-debugging-port")) {
   app.commandLine.appendSwitch("remote-debugging-port", "9222");
 }
 
-const teamRuntimeBinding = createTeamRuntimeBindingService({
-  listSharedAgents: listSharedAgentFiles,
-  resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({
-    dataRoot,
-    teamId,
-    ownership: "system",
-  }),
-  resolveUserLocation: resolveRecordedRuntimeTeamLocation,
-  readSnapshot: readTeamSnapshot,
-  readBindings: readTeamExecutionBindings,
-  readOfficialState: readOfficialTeamStateDocument,
-});
-
-const agentTeamService = createAgentTeamService({
-  listLocations: listTeamLocations,
-  readSnapshot: readTeamSnapshot,
-  listRecorded: listRecordedUserTeamSnapshots,
-  readRegistrationIssues: readTeamSeedConflicts,
-  create: createUserTeam,
-  resolveSystem: ({ dataRoot, teamId }) => resolveTeamLocation({
-    dataRoot,
-    teamId,
-    ownership: "system",
-  }),
-  resolveUser: resolveRecordedRuntimeTeamLocation,
-  writeMember: writeMemberAgentMarkdown,
-  addMember: addTeamMember,
-  updateInformation: updateTeamInformation,
-  setPrimary: setTeamPrimaryAgent,
-  duplicateBuiltIn: duplicateBuiltInTeamDirectory,
-  duplicateUser: duplicateUserTeamDirectory,
-  duplicateMember: duplicateTeamMemberDirectory,
-  trashMember: trashTeamMemberDirectory,
-  trashUser: trashUserTeamDirectory,
-  readBindings: readTeamExecutionBindings,
-  replaceBindings: replaceTeamExecutionBindings,
-  saveBinding: saveTeamExecutionBinding,
-  removeBindings: removeTeamExecutionBindings,
-  register: registerUserTeamSnapshot,
-  forget: forgetTrashedUserTeamRecord,
-  readOfficial: readOfficialTeamStateDocument,
-  inspectUpdate: inspectOfficialTeamUpdate,
-  prepareUpdate: prepareOfficialTeamUpdate,
-  commitUpdate: commitOfficialTeamUpdate,
-  resolveLocation: resolveTeamLocation,
-  readOnboarding: readTeamOnboardingOrchestration,
-  readCreatedAt: readTeamDirectoryCreatedAt,
-  getPackagedDirectory: getPackagedTeamCacheDirectory,
-});
+const teamRuntimeBinding = createTeamRuntimeBindingService(
+  createDesktopTeamRuntimeBindingPorts(),
+);
+const agentTeamService = createAgentTeamService(
+  createDesktopAgentTeamServicePorts(),
+);
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let activeLocale: DesktopLocale = "zh-CN";
 let shutdown!: DesktopShutdownRuntime;
@@ -371,48 +285,24 @@ registerSessionLogClipboardIpc({
 ipcMain.handle(OPEN_EXTERNAL_LINK_IPC_CHANNEL, async (_event, url: unknown) =>
   openValidatedExternalLink(url, shell));
 
-const teamConversationPreference = createTeamConversationPreferenceService({
-  read: readLastUsedAgentTeamStore,
-  write: writeLastUsedAgentTeamStore,
-  list: agentTeamService.listAgentTeams,
-});
+const teamConversationPreference = createTeamConversationPreferenceService(
+  createDesktopTeamConversationPreferencePorts(agentTeamService.listAgentTeams),
+);
 
-registerTeamIpc({
+registerTeamIpc(createDesktopTeamIpcOptions({
   ipcMain,
   dataRoot: status.dataRoot,
+  seedTeamsRoot: app.isPackaged
+    ? path.join(resolveSeedRoot(), "teams")
+    : path.join(projectRoot, "seeds", "teams"),
   seedPending: () => status.seed.status === "pending",
-  list: agentTeamService.listAgentTeams,
-  resolveSeedConflict: async () => {
-    const seedRoot = resolveSeedRoot();
-    await seedBuiltInTeams({
-      seedTeamsRoot: app.isPackaged
-        ? path.join(seedRoot, "teams")
-        : path.join(projectRoot, "seeds", "teams"),
-      dataRoot: status.dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    });
-    return agentTeamService.listAgentTeams({ dataRoot: status.dataRoot, seedPending: false });
-  },
-  showSeedConflictLocation: () => shell.showItemInFolder(path.join(
-    getSystemTeamsRoot(status.dataRoot),
-    "general-assistant",
-  )),
-  selectRelocationFolder: (options) => windows.selectDirectory(options),
-  relocationDialogOptions: () => ({ properties: ["openDirectory"],
-    title: translateDesktop(activeLocale, "dialog.relocateTeam"), defaultPath: getTeamsRoot(status.dataRoot) }),
-  relocate: (request) => relocateAgentTeamRecord(status.dataRoot, request),
-  removeRecord: (request) => removeAgentTeamRecord(status.dataRoot, request),
-  openFileManager: (request) => openAgentTeamLocationInFileManager({ dataRoot: status.dataRoot, request, shell }),
-  externalChange: (request) => checkAgentTeamMemberExternalChange(status.dataRoot, request),
-  readPreference: () => teamConversationPreference.readLastUsedAgentTeam(status.dataRoot),
-  recordPreference: (request) => teamConversationPreference.recordSuccessfulConversationAgentTeam(
-    status.dataRoot,
-    request,
-    (sessionId) => localConsole.sessionExists(sessionId),
-  ),
   service: agentTeamService,
-  moveToTrash: (targetPath) => shell.trashItem(targetPath),
-});
+  preference: teamConversationPreference,
+  shell,
+  selectDirectory: (options) => windows.selectDirectory(options),
+  relocationTitle: () => translateDesktop(activeLocale, "dialog.relocateTeam"),
+  sessionExists: (sessionId) => localConsole.sessionExists(sessionId),
+}));
 
 registerProjectIpc({
   ipcMain,
