@@ -29,42 +29,51 @@ import { AiTeamBuilder } from "./ai-team-builder/index.js";
 import { TEAM_FILE_MANAGER_IPC_CHANNEL } from "./team-file-manager-contract.js";
 import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
 import { TEAM_IPC_CHANNELS } from "./team-ipc-contract.js";
-import {
-  addAgentTeamMember,
-  createAgentTeam,
-  duplicateBuiltInAgentTeam,
-  duplicateAgentTeamMember,
-  duplicateUserAgentTeam,
-  applyAgentTeamOfficialUpdate,
-  listAgentTeams,
-  prepareAgentTeamOfficialUpdate,
-  readAgentTeamMember,
-  readAgentTeamExecutionProfile,
-  restoreAgentTeamRecommendedProfile,
-  saveAgentTeamExecutionProfile,
-  setAgentTeamPrimaryAgent,
-  trashAgentTeamMember,
-  trashUserAgentTeam,
-  updateAgentTeamInformation,
-  writeAgentTeamMember,
-} from "./team-ipc.js";
+import { createAgentTeamService } from "./team-ipc.js";
 import { TEAM_REPAIR_IPC_CHANNELS } from "./team-repair-contract.js";
 import {
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
 } from "./team-repair-ipc.js";
-import { resolveRecordedTeamLocation as resolveRecordedRuntimeTeamLocation } from "./team-record-store.js";
 import {
+  forgetTrashedUserTeamRecord,
+  listRecordedUserTeamSnapshots,
+  registerUserTeamSnapshot,
+  resolveRecordedTeamLocation as resolveRecordedRuntimeTeamLocation,
+} from "./team-record-store.js";
+import {
+  getPackagedTeamCacheDirectory,
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
+  removeTeamExecutionBindings,
+  replaceTeamExecutionBindings,
+  saveTeamExecutionBinding,
 } from "./team-management-store.js";
 import {
+  addTeamMember,
+  createUserTeam,
+  duplicateBuiltInTeamDirectory,
+  duplicateTeamMemberDirectory,
+  duplicateUserTeamDirectory,
   getSystemTeamsRoot,
   getTeamsRoot,
+  listTeamLocations,
   readTeamSnapshot,
   resolveTeamLocation,
+  setTeamPrimaryAgent,
+  trashTeamMemberDirectory,
+  trashUserTeamDirectory,
+  updateTeamInformation,
+  writeMemberAgentMarkdown,
 } from "./team-store.js";
-import { seedBuiltInTeams } from "./team-seed.js";
+import { readTeamSeedConflicts, seedBuiltInTeams } from "./team-seed.js";
+import {
+  commitOfficialTeamUpdate,
+  inspectOfficialTeamUpdate,
+  prepareOfficialTeamUpdate,
+} from "./team-official-update.js";
+import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration-store.js";
+import { readTeamDirectoryCreatedAt } from "./team-directory-metadata-store.js";
 import {
   createTeamRuntimeBindingService,
 } from "./team-runtime-binding.js";
@@ -151,6 +160,43 @@ const teamRuntimeBinding = createTeamRuntimeBindingService({
   readSnapshot: readTeamSnapshot,
   readBindings: readTeamExecutionBindings,
   readOfficialState: readOfficialTeamStateDocument,
+});
+
+const agentTeamService = createAgentTeamService({
+  listLocations: listTeamLocations,
+  readSnapshot: readTeamSnapshot,
+  listRecorded: listRecordedUserTeamSnapshots,
+  readRegistrationIssues: readTeamSeedConflicts,
+  create: createUserTeam,
+  resolveSystem: ({ dataRoot, teamId }) => resolveTeamLocation({
+    dataRoot,
+    teamId,
+    ownership: "system",
+  }),
+  resolveUser: resolveRecordedRuntimeTeamLocation,
+  writeMember: writeMemberAgentMarkdown,
+  addMember: addTeamMember,
+  updateInformation: updateTeamInformation,
+  setPrimary: setTeamPrimaryAgent,
+  duplicateBuiltIn: duplicateBuiltInTeamDirectory,
+  duplicateUser: duplicateUserTeamDirectory,
+  duplicateMember: duplicateTeamMemberDirectory,
+  trashMember: trashTeamMemberDirectory,
+  trashUser: trashUserTeamDirectory,
+  readBindings: readTeamExecutionBindings,
+  replaceBindings: replaceTeamExecutionBindings,
+  saveBinding: saveTeamExecutionBinding,
+  removeBindings: removeTeamExecutionBindings,
+  register: registerUserTeamSnapshot,
+  forget: forgetTrashedUserTeamRecord,
+  readOfficial: readOfficialTeamStateDocument,
+  inspectUpdate: inspectOfficialTeamUpdate,
+  prepareUpdate: prepareOfficialTeamUpdate,
+  commitUpdate: commitOfficialTeamUpdate,
+  resolveLocation: resolveTeamLocation,
+  readOnboarding: readTeamOnboardingOrchestration,
+  readCreatedAt: readTeamDirectoryCreatedAt,
+  getPackagedDirectory: getPackagedTeamCacheDirectory,
 });
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let isQuitting = false;
@@ -398,7 +444,7 @@ registerSessionLogClipboardIpc({
 ipcMain.handle(OPEN_EXTERNAL_LINK_IPC_CHANNEL, async (_event, url: unknown) =>
   openValidatedExternalLink(url, shell));
 
-ipcMain.handle(TEAM_IPC_CHANNELS.list, async () => listAgentTeams({
+ipcMain.handle(TEAM_IPC_CHANNELS.list, async () => agentTeamService.listAgentTeams({
   dataRoot: status.dataRoot,
   seedPending: status.seed.status === "pending",
 }));
@@ -412,7 +458,7 @@ ipcMain.handle(TEAM_IPC_CHANNELS.resolveSeedConflict, async () => {
     dataRoot: status.dataRoot,
     preserveGeneralAssistantConflicts: true,
   });
-  return listAgentTeams({
+  return agentTeamService.listAgentTeams({
     dataRoot: status.dataRoot,
     seedPending: false,
   });
@@ -426,25 +472,25 @@ ipcMain.handle(TEAM_IPC_CHANNELS.showSeedConflictLocation, async () => {
 });
 
 ipcMain.handle(TEAM_IPC_CHANNELS.create, async (_event, request: unknown) =>
-  createAgentTeam(status.dataRoot, request));
+  agentTeamService.createAgentTeam(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.readMember, async (_event, request: unknown) =>
-  readAgentTeamMember(status.dataRoot, request));
+  agentTeamService.readAgentTeamMember(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.writeMember, async (_event, request: unknown) =>
-  writeAgentTeamMember(status.dataRoot, request));
+  agentTeamService.writeAgentTeamMember(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.addMember, async (_event, request: unknown) =>
-  addAgentTeamMember(status.dataRoot, request));
+  agentTeamService.addAgentTeamMember(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.updateInformation, async (_event, request: unknown) =>
-  updateAgentTeamInformation(status.dataRoot, request));
+  agentTeamService.updateAgentTeamInformation(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.setPrimaryAgent, async (_event, request: unknown) =>
-  setAgentTeamPrimaryAgent(status.dataRoot, request));
+  agentTeamService.setAgentTeamPrimaryAgent(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.duplicateBuiltIn, async (_event, request: unknown) =>
-  duplicateBuiltInAgentTeam(status.dataRoot, request));
+  agentTeamService.duplicateBuiltInAgentTeam(status.dataRoot, request));
 
 // Repair channels remain isolated from destructive team-management operations.
 ipcMain.handle(TEAM_REPAIR_IPC_CHANNELS.selectRelocationFolder, async () => {
@@ -473,31 +519,31 @@ ipcMain.handle(TEAM_FILE_MANAGER_IPC_CHANNEL, async (_event, request: unknown) =
   }));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.duplicateUser, async (_event, request: unknown) =>
-  duplicateUserAgentTeam(status.dataRoot, request));
+  agentTeamService.duplicateUserAgentTeam(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.duplicateMember, async (_event, request: unknown) =>
-  duplicateAgentTeamMember(status.dataRoot, request));
+  agentTeamService.duplicateAgentTeamMember(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.trashMember, async (_event, request: unknown) =>
-  trashAgentTeamMember(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
+  agentTeamService.trashAgentTeamMember(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.trashUserTeam, async (_event, request: unknown) =>
-  trashUserAgentTeam(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
+  agentTeamService.trashUserAgentTeam(status.dataRoot, request, (targetPath) => shell.trashItem(targetPath)));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.readExecutionProfile, async (_event, request: unknown) =>
-  readAgentTeamExecutionProfile(status.dataRoot, request));
+  agentTeamService.readAgentTeamExecutionProfile(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.saveExecutionProfile, async (_event, request: unknown) =>
-  saveAgentTeamExecutionProfile(status.dataRoot, request));
+  agentTeamService.saveAgentTeamExecutionProfile(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
-  restoreAgentTeamRecommendedProfile(status.dataRoot, request));
+  agentTeamService.restoreAgentTeamRecommendedProfile(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.prepareOfficialUpdate, async (_event, request: unknown) =>
-  prepareAgentTeamOfficialUpdate(status.dataRoot, request));
+  agentTeamService.prepareAgentTeamOfficialUpdate(status.dataRoot, request));
 
 ipcMain.handle(TEAM_IPC_CHANNELS.applyOfficialUpdate, async (_event, request: unknown) =>
-  applyAgentTeamOfficialUpdate(status.dataRoot, request));
+  agentTeamService.applyAgentTeamOfficialUpdate(status.dataRoot, request));
 
 ipcMain.handle(TEAM_EXTERNAL_CHANGE_IPC_CHANNEL, async (_event, request: unknown) =>
   checkAgentTeamMemberExternalChange(status.dataRoot, request));
@@ -505,7 +551,7 @@ ipcMain.handle(TEAM_EXTERNAL_CHANGE_IPC_CHANNEL, async (_event, request: unknown
 const teamConversationPreference = createTeamConversationPreferenceService({
   read: readLastUsedAgentTeamStore,
   write: writeLastUsedAgentTeamStore,
-  list: listAgentTeams,
+  list: agentTeamService.listAgentTeams,
 });
 
 ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.readLastUsed, async () =>

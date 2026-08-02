@@ -9,11 +9,13 @@ import {
   AiTeamWriter,
   type AiTeamWriterOptions,
 } from "../src/ai-team-builder/team-writer.js";
-import { listAgentTeams } from "../src/team-ipc.js";
+import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import {
   forgetTrashedUserTeamRecord,
   registerUserTeamSnapshot,
 } from "../src/team-record-store.js";
+
+const { listAgentTeams } = createTestAgentTeamService();
 
 const temporaryRoots: string[] = [];
 

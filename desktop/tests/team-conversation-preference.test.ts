@@ -11,7 +11,7 @@ import {
   readLastUsedAgentTeamStore,
   writeLastUsedAgentTeamStore,
 } from "../src/team-conversation-preference-store.js";
-import { listAgentTeams } from "../src/team-ipc.js";
+import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import { serializeTeamDefinition, type TeamDefinition, type TeamOwnership } from "../src/team-model.js";
 import { resolveTeamLocation } from "../src/team-store.js";
 
@@ -21,6 +21,7 @@ const usableDefinition: TeamDefinition = {
   primaryAgentSlug: "manager",
   memberOrder: ["manager"],
 };
+const { listAgentTeams } = createTestAgentTeamService();
 const preferenceService = createTeamConversationPreferenceService({
   read: readLastUsedAgentTeamStore,
   write: writeLastUsedAgentTeamStore,

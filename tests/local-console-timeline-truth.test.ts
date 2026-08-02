@@ -13,7 +13,7 @@ import {
   type LocalConsoleMessage,
   type LocalConsoleSessionSummary,
 } from "../src/local-console/types.js";
-import { addAgentTeamMember, createAgentTeam, trashUserAgentTeam } from "../desktop/src/team-ipc.js";
+import { createTestAgentTeamService } from "../desktop/tests/helpers/agent-team-service.js";
 import { serializeTeamDefinition } from "../desktop/src/team-model.js";
 import {
   createTeamRuntimeBindingService,
@@ -27,6 +27,7 @@ import {
 import { readTeamSnapshot, resolveTeamLocation } from "../desktop/src/team-store.js";
 
 const roots: string[] = [];
+const { addAgentTeamMember, createAgentTeam, trashUserAgentTeam } = createTestAgentTeamService();
 const runtimeBinding = createTeamRuntimeBindingService({
   listSharedAgents: listSharedAgentFiles,
   resolveSystemLocation: ({ dataRoot, teamId }) => resolveTeamLocation({

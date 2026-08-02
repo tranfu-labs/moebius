@@ -3,7 +3,20 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TeamDefinition } from "../src/team-model.js";
+import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import {
+  readTeamExecutionBindings,
+  saveTeamExecutionBinding,
+  writeOfficialTeamStateDocument,
+} from "../src/team-management-store.js";
+import {
+  resolveTeamLocation,
+  writeMemberAgentMarkdown,
+  writeTeamDefinition,
+} from "../src/team-store.js";
+
+const temporaryRoots: string[] = [];
+const {
   addAgentTeamMember,
   createAgentTeam,
   duplicateAgentTeamMember,
@@ -19,19 +32,7 @@ import {
   trashUserAgentTeam,
   updateAgentTeamInformation,
   writeAgentTeamMember,
-} from "../src/team-ipc.js";
-import {
-  readTeamExecutionBindings,
-  saveTeamExecutionBinding,
-  writeOfficialTeamStateDocument,
-} from "../src/team-management-store.js";
-import {
-  resolveTeamLocation,
-  writeMemberAgentMarkdown,
-  writeTeamDefinition,
-} from "../src/team-store.js";
-
-const temporaryRoots: string[] = [];
+} = createTestAgentTeamService();
 const usableDefinition: TeamDefinition = {
   name: "开发团队",
   description: "负责软件开发任务",

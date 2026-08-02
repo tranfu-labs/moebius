@@ -2,7 +2,8 @@ import {
   relocateUserTeamRecord,
   removeUserTeamRecord,
 } from "./team-record-store.js";
-import { toListItem, type AgentTeamListItem } from "./team-ipc.js";
+import type { AgentTeamListItem } from "./team-ipc-contract.js";
+import { toListItem } from "./team-service-plan.js";
 import {
   AgentTeamRepairRequestError,
   parseRelocateRequest,
