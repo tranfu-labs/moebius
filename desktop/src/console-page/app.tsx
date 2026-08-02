@@ -115,7 +115,6 @@ import {
   EMPTY_CONSOLE_PROJECT,
   NO_OPERATOR_MESSAGES,
 } from "./console-default-state.js";
-import { planConsoleEndpoint } from "./console-state-plan.js";
 import {
   ConsoleStateCoordinator,
   type ConsoleSelection,
@@ -197,6 +196,8 @@ import { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import type { LocalConsoleState } from "./console-state-contract.js";
 import { browserConversationAnalysisReferencePort } from "./conversation-analysis-browser-port.js";
 import { useConversationConsole } from "./use-conversation-console.js";
+import { browserProjectMutationPort } from "./project-mutation-browser-port.js";
+import { useProjectMutations } from "./use-project-mutations.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -400,7 +401,6 @@ export function OperatorConsoleApp({
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
-  const [isProjectMutationPending, setIsProjectMutationPending] = useState(false);
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const agentTeamControllersBundle = useAgentTeamConsole(
     window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t,
@@ -911,151 +911,18 @@ export function OperatorConsoleApp({
     });
   }, [newConversation, preferredNewConversationTeamKey, projects]);
 
-  const showProjectInFolder = useCallback(async (folderPath: string) => {
-    try {
-      if (window.moebius?.showInFolder === undefined) {
-        throw new Error("desktop file manager unavailable");
-      }
-      await window.moebius.showInFolder(folderPath);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-    }
-  }, []);
-
-  const renameProject = useCallback(async (projectId: string, title: string) => {
-    if (apiBase === null) {
-      throw new Error("local console server unavailable");
-    }
-    setIsProjectMutationPending(true);
-    try {
-      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) {
-        throw new Error(body.error ?? "rename project failed");
-      }
-      await refresh(selectionRef.current);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-      throw error;
-    } finally {
-      setIsProjectMutationPending(false);
-    }
-  }, [apiBase, refresh]);
-
-  const removeProject = useCallback(async (projectId: string, force: boolean) => {
-    if (apiBase === null) {
-      throw new Error("local console server unavailable");
-    }
-    setIsProjectMutationPending(true);
-    const wasCurrentProject = selectionRef.current.projectId === projectId;
-    const removingSessionIds = new Set(
-      state?.projects.find((candidate) => candidate.projectId === projectId)
-        ?.sessions.map((session) => session.sessionId) ?? [],
-    );
-    const routeBeforeRemoval = presentationRoute;
-    const migratingSidebarSession = routeBeforeRemoval === null
-      || routeBeforeRemoval.rightConversationSessionId === null
-      || !removingSessionIds.has(routeBeforeRemoval.mainSessionId)
-      || removingSessionIds.has(routeBeforeRemoval.rightConversationSessionId)
-      ? undefined
-      : state?.projects
-        .flatMap((candidate) => candidate.sessions)
-        .find((session) => session.sessionId === routeBeforeRemoval.rightConversationSessionId);
-    try {
-      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ force }),
-      });
-      const body = await response.json() as { error?: string; archivedSessionIds?: string[] };
-      if (!response.ok) {
-        throw new Error(body.error ?? "remove project failed");
-      }
-      if (wasCurrentProject) {
-        selectionPersistenceEnabledRef.current = false;
-        forgetPersistedSelection();
-      }
-      const archivedSessionIds = body.archivedSessionIds ?? [...removingSessionIds];
-      for (const sessionId of archivedSessionIds) {
-        rightSidebarTabsBundle.store.removeSession(sessionId);
-      }
-      rightSidebarTabsBundle.store.clearHosts(archivedSessionIds);
-      if (migratingSidebarSession !== undefined) {
-        const migrated = await refresh({
-          projectId: migratingSidebarSession.projectId,
-          sessionId: migratingSidebarSession.sessionId,
-        });
-        if (migrated) {
-          commitPresentationRoute(sidebarPresentationRoute({
-            sidebarProjectId: migratingSidebarSession.projectId,
-            sidebarSessionId: migratingSidebarSession.sessionId,
-            originSessionId: migratingSidebarSession.originSessionId ?? routeBeforeRemoval!.mainSessionId,
-            originAvailable: false,
-          }));
-          setRightSidebarOpen(false);
-          rightSidebarTabsBundle.showHost(migratingSidebarSession.sessionId);
-        }
-      } else {
-        await refresh(selectionRef.current);
-      }
-      if (wasCurrentProject) {
-        startNewConversation();
-      }
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-      throw error;
-    } finally {
-      setIsProjectMutationPending(false);
-    }
-  }, [
-    apiBase,
-    commitPresentationRoute,
-    forgetPersistedSelection,
-    presentationRoute,
-    refresh,
-    setRightSidebarOpen,
-    startNewConversation,
-    state?.projects,
-  ]);
-
-  const selectFolderForRepair = useCallback(async (projectId: string): Promise<string | null> => {
-    if (window.moebius?.selectFolderForRepair === undefined) {
-      throw new Error("desktop repair folder picker unavailable");
-    }
-    return window.moebius.selectFolderForRepair(projectId);
-  }, []);
-
-  const repairProjectFolder = useCallback(async (projectId: string, folderPath: string) => {
-    if (apiBase === null) {
-      throw new Error("local console server unavailable");
-    }
-    setIsProjectMutationPending(true);
-    try {
-      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ folderPath }),
-      });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) {
-        throw new Error(body.error ?? "repair project folder failed");
-      }
-      await refresh(selectionRef.current);
-      setClientError(null);
-    } catch (error) {
-      setClientError(formatError(error));
-      throw error;
-    } finally {
-      setIsProjectMutationPending(false);
-    }
-  }, [apiBase, refresh]);
+  const projectMutationsBundle = useProjectMutations(
+    apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
+    forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
+    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation,
+    window.moebius, browserProjectMutationPort, setClientError,
+  );
+  const isProjectMutationPending = projectMutationsBundle.isPending;
+  const showProjectInFolder = projectMutationsBundle.showProjectInFolder;
+  const renameProject = projectMutationsBundle.renameProject;
+  const removeProject = projectMutationsBundle.removeProject;
+  const selectFolderForRepair = projectMutationsBundle.selectFolderForRepair;
+  const repairProjectFolder = projectMutationsBundle.repairProjectFolder;
 
   const interrupt = useCallback(async (sessionId: string, runId: string) => {
     if (apiBase === null) {
