@@ -49,7 +49,7 @@ describe("team model", () => {
       parseAgentMarkdownIdentity(`---
 display_name: 开发经理
 description: 负责技术决策、架构选型与质量保证。
-workspace_access: write
+legacy_field: ignored
 ---
 
 # 角色

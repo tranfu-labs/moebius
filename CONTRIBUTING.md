@@ -16,11 +16,7 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` launches the local console runtime. GitHub runner development additionally requires the local `codex` and `gh` CLIs, an authenticated `gh` session, and an explicit mode flag:
-
-```bash
-pnpm start -- --github-mode
-```
+`pnpm start` launches the local console runtime. The retired `--github-mode` flag fails closed with a readable error.
 
 The optional Electron desktop shell is available on macOS:
 
@@ -30,7 +26,7 @@ pnpm desktop
 
 ## Repository map
 
-- `src/`: runner, GitHub intake, local console, observer, and shared runtime logic
+- `src/`: local console, provider adapters, SQLite state, and shared runtime logic
 - `desktop/`: Electron main process, preload boundary, and renderer
 - `packages/console-ui/`: reusable React console components and design tokens
 - `agents/`: built-in agent role definitions
@@ -54,10 +50,10 @@ We use trunk-based development:
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat: add session recovery indicator`
-- `fix: preserve runner intake cursor`
-- `docs: explain github mode startup`
+- `fix: preserve session recovery state`
+- `docs: explain local runtime startup`
 - `refactor: isolate local console state`
-- `test: cover duplicate issue dispatch`
+- `test: cover duplicate local handoff`
 - `chore: update development dependency`
 
 Keep each commit scoped to one coherent change.

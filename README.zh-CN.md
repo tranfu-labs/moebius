@@ -74,7 +74,7 @@ Moebius 本地优先，但你接入的编程 AI 仍可能把提示词、项目�
 - 至少需要安装并登录一种受支持的编程 AI：Codex、Claude Code 或 Kimi。首次引导可以分别协助安装或诊断。
 - Moebius 使用你已有的这些工具账号，相关用量限制和费用仍由对应服务决定。
 - 发行产物已使用 Apple Developer ID 签名，但尚未完成公证。如果 macOS 阻止首次启动，请先核对发布来源，再使用系统提供的**打开**流程。
-- 项目文件和 issue 内容可能被发送给你接入的 AI 服务。不要在这些服务可以读取的内容中放置秘密信息。
+- 项目文件和对话内容可能被发送给你接入的 AI 服务。不要在这些服务可以读取的内容中放置秘密信息。
 
 ## 准备交出第一个目标？
 
@@ -86,7 +86,7 @@ Moebius 仍在积极开发中。你可以阅读[版本记录](CHANGELOG.md)、[�
 
 ## 开发与贡献
 
-源码环境、开发命令、测试、评审要求和 squash merge 流程统一放在 [CONTRIBUTING.md](CONTRIBUTING.md)。架构入口是[模块地图](docs/architecture/module-map.md)与[架构不变量](docs/architecture/invariants.md)；高级 GitHub runner 行为见 [GitHub 交互协议](docs/protocols/github-interaction.md)。
+源码环境、开发命令、测试、评审要求和 squash merge 流程统一放在 [CONTRIBUTING.md](CONTRIBUTING.md)。架构入口是[模块地图](docs/architecture/module-map.md)与[架构不变量](docs/architecture/invariants.md)。
 
 ## 许可证
 

@@ -862,6 +862,6 @@ sidebar chat 使用独立的上下文预选规则：
 - 会话内团队切换和异常恢复的完整交互。
 - Codex、Claude Code、Kimi 的独立运行环境诊断、安装、登录和模型能力检查。
 - Agent 运行配置如何进入会话快照，以及 Codex、Claude Code、Kimi 的启动、恢复、中止、过程展示和老会话兼容；这些由主对话页定义。
-- onboarding 如何展示三套 CLI 环境准备，以及 GitHub issue runner 是否支持 Claude Code 或 Kimi。
+- onboarding 如何展示三套 CLI 环境准备。
 - 官方团队的新增、下线、来源迁移，以及文件层事务、崩溃恢复等更新实现细节。
 - 软件内永久删除或独立的已删除团队管理页。

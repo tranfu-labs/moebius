@@ -82,7 +82,7 @@ describe("local console", { timeout: 15_000 }, () => {
       agentMarkdown: "# QA\n\n检查质量。",
       primaryAgent: "dev-manager",
       availableAgentNames: ["dev-manager", "dev", "qa"],
-      timeline: [{ index: 0, speaker: "user", body: "所有人依次报数", source: "comment" }],
+      timeline: [{ index: 0, speaker: "user", body: "所有人依次报数", source: "message" }],
     });
 
     expect(prompt).toContain("本地对话 session");

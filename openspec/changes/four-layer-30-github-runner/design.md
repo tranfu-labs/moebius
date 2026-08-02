@@ -53,7 +53,7 @@ server；动态扫描只发现 SQLite worker 必须保留，以及 Desktop runne
 | `src/ceo-orchestration.ts` | local parser/types 提取后删除原文件 | local child-session 仍解析结构化 CEO 输出，但不需要 GitHub issue 副作用 |
 | `src/config.ts` / `local-config.ts` | 删除 repository/GitHub 常量，保留 data root、provider 与 local 参数 | local、desktop 和 provider 仍依赖 |
 | `src/sqlite-state.ts` / worker | 保留动态 worker 和 local commands；按调用图删除无消费者的 GitHub commands | worker 是 local store 的真实运行入口 |
-| `conversation.ts`、`triggers/**`、`ceo-scripts.ts`、`agent-manifest.ts` | 保留 | local route、prompt、handoff 与团队执行仍使用 |
+| `conversation.ts`、`triggers/**`、`ceo-scripts.ts`、`agent-manifest.ts` | 保留 local 消费面，删除 GitHub prompt/thread exports | local timeline、mention、handoff 与团队执行仍使用 |
 | `format-ceo.ts` | 删除；提取 `local-route-judgment.ts` 与 `local-route-persona.ts` | local 只需要无 mention 路由判断和 persona/script 读取，不保留 GitHub 评论发布 guardrail |
 | `goal-ledger.ts` | 保留 | 独立纯业务域，不以当前 adapter 消费者数量决定产品去留 |
 | updater/Release 外链 | 保留 | GitHub 作为发行/外链平台，不属于 issue runner |
@@ -98,7 +98,7 @@ shell path、seed 和 update。状态页移除 runner/observer 行与“打开�
 | local startup | 改为 local-only 行为测试 | `pnpm start` 仍是公开入口，unknown args 仍需 fail closed |
 | CEO orchestration | 保留 parser/local child-session 分支测试，删除 GitHub issue side-effect 分支 | 以生产调用者与输出契约区分，不按文件整删 |
 | SQLite worker | 保留全部 local schema/worker pool/事实日志测试；删除仅覆盖 GitHub state commands 的用例 | 动态 worker 是 local 接缝，不得因 runner 删除而失去覆盖 |
-| shared conversation/trigger/provider/goal-ledger | 保留 | local runtime 或独立业务域仍使用 |
+| shared conversation/trigger/provider/goal-ledger | 保留 local/独立消费面 | local runtime 或独立业务域仍使用 |
 | CEO format guardrail | 删除；新增 local route judgment 纯测试 | GitHub 评论发布契约已删除，local 路由解析、单 mention 校验仍有行为覆盖 |
 
 每条删除必须在 `tasks.md` ledger 写明原 test name、删除的产品契约和剩余接缝；不得把旧断言改写成

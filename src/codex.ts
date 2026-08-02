@@ -82,7 +82,7 @@ export interface CodexRunFailure {
 }
 
 // 单次 run 的可选双看门狗：idle 只由调用方记录的语义进展重置，并可在工具
-// 在途时暂停；max-duration 无视活动，保留给 GitHub runner 等显式启用的模式。
+// 在途时暂停；max-duration 无视活动，保留给显式启用硬截止的调用方。
 // 至多触发一次回调；clear 后不再触发。
 export function createRunWatchdogs(options: {
   idleTimeoutMs?: number;

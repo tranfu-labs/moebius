@@ -13,9 +13,9 @@ import type { LocalConsoleMessage } from "../src/local-console/types.js";
 
 const recordedAt = "2026-08-02T01:00:00.000Z";
 const timeline: TimelineMessage[] = [
-  { index: 0, speaker: "user", body: "old", source: "comment" },
-  { index: 1, speaker: "dev", body: "self", source: "comment" },
-  { index: 2, speaker: "user", body: "new", source: "comment" },
+  { index: 0, speaker: "user", body: "old", source: "message" },
+  { index: 1, speaker: "dev", body: "self", source: "message" },
+  { index: 2, speaker: "user", body: "new", source: "message" },
 ];
 
 describe("local run preparation application flow", () => {

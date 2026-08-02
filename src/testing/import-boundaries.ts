@@ -92,7 +92,6 @@ interface ResolvedImportReference {
 const exact = (value: string): ImportBoundaryScope => ({ kind: "exact", value });
 const prefix = (value: string): ImportBoundaryScope => ({ kind: "prefix", value });
 
-const githubAdapter = [exact("src/github.ts")];
 const codexAdapter = [exact("src/codex.ts"), exact("src/codex-rollout.ts")];
 const filesystemAdapters = ["node:fs", "node:fs/promises"];
 const plannerDeniedTargets = [
@@ -117,35 +116,15 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     importers: [prefix("packages/console-ui/src/")],
     deniedRepositoryTargets: [
       exact("src/runner.ts"),
-      prefix("src/runner/"),
-      prefix("src/observer/"),
       prefix("src/local-console/"),
       exact("src/goal-ledger.ts"),
-      exact("src/goal-ledger-state.ts"),
-      exact("src/state.ts"),
-      exact("src/agent-context-state.ts"),
-      exact("src/github-intake-state.ts"),
     ],
   },
   {
     id: "console-ui-no-side-effect-adapters",
     importers: [prefix("packages/console-ui/src/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: ["node:child_process"],
-  },
-  {
-    id: "local-console-no-github-runtime",
-    importers: [prefix("src/local-console/")],
-    deniedRepositoryTargets: [
-      exact("src/github.ts"),
-      exact("src/scanner.ts"),
-      exact("src/issue-dispatcher.ts"),
-      exact("src/github-response-intake.ts"),
-      exact("src/github-intake-state.ts"),
-      exact("src/runner.ts"),
-      prefix("src/runner/"),
-      exact("src/media-assets.ts"),
-    ],
   },
   {
     id: "local-control-planner-pure-closure",
@@ -164,128 +143,42 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
   {
     id: "stages-no-side-effect-adapters",
     importers: [exact("src/stages.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "ceo-format-no-github-adapter",
-    importers: [exact("src/format-ceo.ts")],
-    deniedRepositoryTargets: githubAdapter,
   },
   {
     id: "ceo-scripts-no-provider-adapters",
     importers: [exact("src/ceo-scripts.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
   },
   {
-    id: "ceo-orchestration-no-side-effect-adapters",
-    importers: [exact("src/ceo-orchestration.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    id: "local-ceo-orchestration-no-side-effect-adapters",
+    importers: [exact("src/local-console/ceo-orchestration-parser.ts")],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: [...filesystemAdapters, "node:child_process"],
   },
   {
     id: "triggers-no-side-effect-adapters",
     importers: [prefix("src/triggers/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "response-intake-no-side-effect-adapters",
-    importers: [exact("src/github-response-intake.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "driver-pool-no-side-effect-adapters",
-    importers: [exact("src/driver-pool.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: filesystemAdapters,
   },
   {
     id: "local-config-no-provider-adapters",
     importers: [exact("src/local-config.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-  },
-  {
-    id: "observer-no-main-chain-dependents",
-    importers: [
-      exact("src/runner.ts"),
-      prefix("src/runner/"),
-      exact("src/scanner.ts"),
-      exact("src/issue-dispatcher.ts"),
-      exact("src/state-persister.ts"),
-      exact("src/github.ts"),
-      exact("src/codex.ts"),
-    ],
-    deniedRepositoryTargets: [prefix("src/observer/")],
-  },
-  {
-    id: "observer-no-write-adapters",
-    importers: [prefix("src/observer/")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter, exact("src/media-assets.ts")],
-    deniedExternalSpecifiers: ["node:child_process"],
-  },
-  {
-    id: "runner-no-reverse-dependencies",
-    importers: [
-      exact("src/goal-ledger.ts"),
-      exact("src/conversation.ts"),
-      exact("src/github-response-intake.ts"),
-      exact("src/driver-pool.ts"),
-      prefix("src/triggers/"),
-      prefix("src/observer/"),
-    ],
-    deniedRepositoryTargets: [exact("src/runner.ts"), prefix("src/runner/")],
-  },
-  {
-    id: "scanner-no-codex-adapter",
-    importers: [exact("src/scanner.ts")],
     deniedRepositoryTargets: codexAdapter,
-  },
-  {
-    id: "dispatcher-no-side-effect-adapters",
-    importers: [exact("src/issue-dispatcher.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "state-persister-no-domain-adapters",
-    importers: [exact("src/state-persister.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter, prefix("src/triggers/")],
   },
   {
     id: "conversation-no-side-effect-adapters",
     importers: [exact("src/conversation.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "issue-media-no-side-effect-adapters",
-    importers: [exact("src/issue-media.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
-    deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "media-assets-no-codex-adapter",
-    importers: [exact("src/media-assets.ts")],
     deniedRepositoryTargets: codexAdapter,
-  },
-  {
-    id: "conversation-interrupt-no-side-effect-adapters",
-    importers: [exact("src/conversation-interrupt.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
     deniedExternalSpecifiers: filesystemAdapters,
   },
   {
     id: "goal-ledger-no-side-effect-adapters",
     importers: [exact("src/goal-ledger.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
+    deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: [...filesystemAdapters, "node:child_process"],
-  },
-  {
-    id: "goal-ledger-state-no-provider-adapters",
-    importers: [exact("src/goal-ledger-state.ts")],
-    deniedRepositoryTargets: [...githubAdapter, ...codexAdapter],
   },
 ] as const;
 

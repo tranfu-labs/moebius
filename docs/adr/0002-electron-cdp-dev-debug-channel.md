@@ -54,7 +54,7 @@ accepted
 
 ### 实证边界：当前只覆盖渲染进程一路
 
-实测下，本 ADR 的 CDP 通道只暴露 Chromium 渲染层的 target；「后果」段第 1 条一并提到的「主进程」一路并未随 9222 端口打开——`main.ts` 里的 `startObserver` / `startLocalConsole` / `RunnerSupervisor` 出的 console、`ipcMain.handle` 里发生的事、`status` 对象的内部状态，都在 CDP 9222 视野外。属于本 ADR 未落地的边界，补齐两条路：
+实测下，本 ADR 的 CDP 通道只暴露 Chromium 渲染层的 target；「后果」段第 1 条一并提到的「主进程」一路并未随 9222 端口打开——`main.ts` 里的 local console 启动、`ipcMain.handle` 里发生的事和 `status` 对象内部状态都在 CDP 9222 视野外。属于本 ADR 未落地的边界，补齐两条路：
 
 - **A**：dev-only 追加 `commandLine.appendSwitch("inspect", "9229")`（V8 inspector 另一个端口），再配 node-inspector 系 MCP。改动量 ≈ 3 行代码 + 1 段文档。
 - **B**：走本 ADR「被否决」段落里的选项 D（`webContents.debugger.attach()` 自建 harness），换代价换灵活。

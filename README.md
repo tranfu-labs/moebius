@@ -74,7 +74,7 @@ Moebius is local-first, but the AI tools you connect may send prompts, project c
 - At least one supported AI coding tool—Codex, Claude Code, or Kimi—must be installed and signed in. The first-run guide can help install or diagnose each one independently.
 - Moebius uses your existing accounts for those tools. Their usage limits and costs still apply.
 - Release artifacts are signed with an Apple Developer ID but are not yet notarized. If macOS blocks the first launch, use the system-provided **Open** flow after verifying the release source.
-- Project files and issue content may be shared with the AI services you connect. Keep secrets out of anything those services can read.
+- Project files and conversation content may be shared with the AI services you connect. Keep secrets out of anything those services can read.
 
 ## Ready to hand off your first goal?
 

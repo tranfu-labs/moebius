@@ -5,27 +5,33 @@
 ## 维护规则
 
 - 新增 / 修订 / 删除不变量走 openspec change 流程。
-- qa 在审查中发现清单外的新故障类时，以补丁建议形式在 issue 评论中提出，经人类确认后合并；qa 不得直接修改本文件。
+- qa 在审查中发现清单外的新故障类时，在本地共享时间线提出补丁建议，经人类确认后合并；qa 不得直接修改本文件。
 - 每条不变量带稳定编号（L / S / V + 序号），供缺陷挂靠引用；编号只增不复用。
 
 ## 不变量
 
-### L1（liveness）：任何单点故障不得使循环永久停转
+### L1（liveness）：任何单点故障不得使本地会话永久停转
 
-任何单点故障——外部调用永久挂起、进程崩溃、依赖变慢——都不得使心跳循环或任一 issue 的推进永久停转。
+任何单点故障——provider 永久挂起、子进程崩溃、SQLite 锁、文件系统变慢——都不得使 local runtime、其他会话或同一会话后续可恢复动作永久停转。
 
-推论：每个外部调用（子进程、网络、文件系统）必须有界时（超时 / 看门狗兜底）；凡靠"对方一定会返回"维持推进的设计，都是对未验证经验假设的裸依赖。
+推论：每个外部调用必须有超时、AbortSignal 或看门狗兜底；活动 run、claim 与恢复意图必须在退出、失败或重启后收敛。凡靠“对方一定会返回”维持推进的设计，都是对未验证经验假设的裸依赖。
 
-出处：2026-07-03 事故——gh 子进程无超时，网络黑洞时 job 永不 settle，`busy` 永占导致 issue 永久 `skip-inflight`；`2026-07-02-harden-github-cli-transient-failures` 曾识别该故障类但只覆盖了 codex run 一个实例。
+出处：历史 GitHub runner 的挂起事故首次暴露该故障类；runner 退役后，不变量继续约束 local provider、SQLite、工作区与进程生命周期。
 
-### S1（safety）：用户指令不丢
+### S1（safety）：用户指令与公开回复不丢
 
-intake 游标 `updatedAt` 只有在 GitHub 上留下可见结果之后才推进——要么正常 agent 评论 / 确认无需触发，要么死信评论。任何处理失败都不得推进游标。
+用户消息只有在产生持久的 Agent 回复、明确 no-action、可见失败或可恢复终局后才推进处理位点；provider 成功但回复未落库时不得推进 per-Agent cursor。任何处理失败都必须保留原消息、run/attempt 归属和可恢复入口。
 
-出处：`2026-07-03-at-least-once-issue-intake` change，此处提升为系统级不变量。
+出处：local console 的 SQLite/JSONL 双事实接缝、canonical provider session 与 restart recovery 设计。
 
-### V1（visibility）：放弃必须可见
+### V1（visibility）：失败与降级必须可见
 
-系统放弃或降级任何任务（死信、降级 idle、跳过处理）必须在 GitHub 上留下可见痕迹；且该痕迹的发布路径本身受 L1 / S1 约束——"我放弃了"的信号不能因为同一场故障而沉默。
+系统放弃、暂停或降级任何本地动作时，必须在对应会话或状态页留下可恢复的可见事实；重启后该事实仍可观察。可见失败路径本身受 L1 / S1 约束——“这一步没跑起来”的信号不能因为同一场故障而沉默。
 
-出处：2026-07-03 事故——missing-repo-cache 烧完重试预算走死信，但死信评论恰在断网期发布失败，用户看到的是纯粹的沉默。
+出处：local console 的 interrupted/stuck/failed/recovery 终局与真实运行验收。
+
+### S2（safety）：退役能力不得破坏历史数据
+
+删除 GitHub runner 的代码、命令和 UI 不得 drop、truncate、迁移或重写既有 GitHub state 文件/表。local CLI 与 Desktop 可以忽略这些历史事实，但启动前后文件哈希与逐表行数必须保持不变。
+
+出处：`four-layer-30-github-runner` 删除类变更的 RA-30D。
