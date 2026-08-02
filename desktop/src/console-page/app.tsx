@@ -3,8 +3,6 @@ import "@moebius/console-ui/globals.css";
 import {
   useI18n,
   OperatorConsole,
-  ConversationSearch,
-  type ConversationSearchResultItem,
   resolveNewConversationAgentTeamKey,
   type AgentTeamSaveAllFailureView,
   type OperatorMessage,
@@ -106,7 +104,6 @@ import {
   retrySessionRun,
   createSidebarConversationSession,
   loadSessionReferenceText,
-  searchConsoleSessions,
   restoreConsoleSession,
   type SessionSearchResult,
 } from "./console-api-client.js";
@@ -231,6 +228,9 @@ import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
 import { useAgentTeamProfile } from "./use-agent-team-profile.js";
 import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
+import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
+import { ConversationSearchOverlay } from "./conversation-search-overlay.js";
+import { useConversationSearch } from "./use-conversation-search.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -379,6 +379,9 @@ export function OperatorConsoleApp({
   const language = useDesktopLanguage();
   const { t } = useI18n();
   const [apiBase, setApiBase] = useState<string | null>(readQueryApiBase());
+  const conversationSearchBundle = useConversationSearch(
+    { apiBase, port: browserConversationSearchPort },
+  );
   const [executionRegistryState, setExecutionRegistryState] =
     useState<ExecutionRegistryState>({ status: "loading" });
   const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
@@ -441,17 +444,6 @@ export function OperatorConsoleApp({
   const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
     useState<Record<string, string>>({});
   const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
-  const [conversationSearchState, setConversationSearchState] = useState<{
-    status: "idle" | "loading" | "ready" | "error";
-    results: SessionSearchResult[];
-    error: string | null;
-    conditionKey: string | null;
-  }>({ status: "idle", results: [], error: null, conditionKey: null });
-  const conversationSearchRequestRef = useRef<AbortController | null>(null);
-  const conversationSearchInputRef = useRef<{
-    query: string;
-    includeArchived: boolean;
-  } | null>(null);
   const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
     useState<Set<string>>(() => new Set());
   const sourceMigrationRef = useRef<string | null>(null);
@@ -2521,42 +2513,6 @@ export function OperatorConsoleApp({
     });
   }, [apiBase, commitProcessOutputs]);
 
-  const executeConversationSearch = useCallback((input: {
-    query: string;
-    includeArchived: boolean;
-  }) => {
-    if (apiBase === null) return;
-    conversationSearchInputRef.current = input;
-    conversationSearchRequestRef.current?.abort("search-condition-changed");
-    const controller = new AbortController();
-    conversationSearchRequestRef.current = controller;
-    const conditionKey = `${input.query.trim().normalize("NFKC").toLowerCase()}\u0000${String(input.includeArchived)}`;
-    setConversationSearchState({
-      status: "loading",
-      results: [],
-      error: null,
-      conditionKey,
-    });
-    void searchConsoleSessions({
-      apiBase,
-      query: input.query,
-      includeArchived: input.includeArchived,
-      fetch,
-      signal: controller.signal,
-    }).then((results) => {
-      if (conversationSearchRequestRef.current !== controller || controller.signal.aborted) return;
-      setConversationSearchState({ status: "ready", results, error: null, conditionKey });
-    }).catch((error: unknown) => {
-      if (conversationSearchRequestRef.current !== controller || controller.signal.aborted) return;
-      setConversationSearchState({
-        status: "error",
-        results: [],
-        error: formatError(error),
-        conditionKey,
-      });
-    });
-  }, [apiBase]);
-
   const openSearchedSession = useCallback(async (
     result: SessionSearchResult,
     restore: boolean,
@@ -2883,49 +2839,13 @@ export function OperatorConsoleApp({
       {...settingsBundle}
       onSelectLocale={language.selectLocale}
       onRetryLocaleSave={language.retry}
-      renderSearchOverlay={(close) => {
-        const items: ConversationSearchResultItem[] = conversationSearchState.results.map((result) => ({
-          sessionId: result.session.sessionId,
-          projectId: result.project.projectId,
-          projectTitle: result.project.title,
-          title: result.session.title,
-          archived: result.archived,
-        }));
-        const original = (item: ConversationSearchResultItem) =>
-          conversationSearchState.results.find((result) => result.session.sessionId === item.sessionId);
-        const closeSearch = () => {
-          conversationSearchRequestRef.current?.abort("search-closed");
-          conversationSearchRequestRef.current = null;
-          conversationSearchInputRef.current = null;
-          setConversationSearchState({ status: "idle", results: [], error: null, conditionKey: null });
-          close();
-        };
-        return (
-          <ConversationSearch
-            results={items}
-            status={conversationSearchState.status}
-            error={conversationSearchState.error}
-            onSearch={executeConversationSearch}
-            onClose={closeSearch}
-            onOpen={(item) => {
-              const result = original(item);
-              if (result !== undefined) {
-                void openSearchedSession(result, false).then((opened) => {
-                  if (opened) closeSearch();
-                });
-              }
-            }}
-            onRestoreAndOpen={(item) => {
-              const result = original(item);
-              if (result !== undefined) {
-                void openSearchedSession(result, true).then((opened) => {
-                  if (opened) closeSearch();
-                });
-              }
-            }}
-          />
-        );
-      }}
+      renderSearchOverlay={(close) => (
+        <ConversationSearchOverlay
+          {...conversationSearchBundle}
+          closeHost={close}
+          onOpen={openSearchedSession}
+        />
+      )}
       onUpdateClaude={() => {
         const update = window.moebius?.startOnboardingClaudeUpdate;
         if (update === undefined) {
@@ -3170,25 +3090,17 @@ export function OperatorConsoleApp({
         await actions.setSessionPinned(session, pinned);
       }}
       onRenameSession={async (session, _projectId, title) => {
-        const searchInput = conversationSearchInputRef.current;
+        const resumeSearch = conversationSearchBundle.suspendForMutation();
         setUpdatingConversationTitleSessionIds((current) => new Set(current).add(session.id));
-        conversationSearchRequestRef.current?.abort("conversation-title-mutation-started");
-        conversationSearchRequestRef.current = null;
-        setConversationSearchState((current) => ({
-          ...current,
-          status: current.conditionKey === null ? "idle" : "loading",
-          results: [],
-          error: null,
-        }));
         try {
           await actions.renameSession(session, title);
           rightSidebarTabsStoreRef.current.renameConversation(session.id, title.trim());
           const hostSessionId = presentationRouteRef.current?.hostSessionId
             ?? selectionRef.current.sessionId;
           setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(hostSessionId));
-          if (searchInput !== null) executeConversationSearch(searchInput);
+          resumeSearch();
         } catch (error) {
-          if (searchInput !== null) executeConversationSearch(searchInput);
+          resumeSearch();
           throw error;
         } finally {
           setUpdatingConversationTitleSessionIds((current) => {

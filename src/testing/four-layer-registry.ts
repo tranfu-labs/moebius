@@ -89,6 +89,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ui/input.tsx",
   "packages/console-ui/src/ui/popover.tsx",
   "packages/console-ui/src/ui/tooltip.tsx",
+  "desktop/src/console-page/conversation-search-overlay.tsx",
   "src/observer/render.ts",
 ] as const;
 
@@ -134,6 +135,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/console-page/use-attachment-replacement.ts",
   "desktop/src/console-page/use-attachment-draft-restoration.ts",
   "desktop/src/console-page/use-attachment-preview-lifecycle.ts",
+  "desktop/src/console-page/use-conversation-search.ts",
   "desktop/src/main.ts",
   "desktop/src/onboarding/onboarding-route.tsx",
   "desktop/src/onboarding/register.ts",
@@ -244,6 +246,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/console-page/browser-fetch.ts",
   "desktop/src/console-page/console-api-client.ts",
   "desktop/src/console-page/console-command-client.ts",
+  "desktop/src/console-page/conversation-search-browser-client.ts",
   "desktop/src/console-page/draft-store.ts",
   "desktop/src/console-page/right-sidebar-tabs-store.ts",
   "desktop/src/data-root.ts",
@@ -340,6 +343,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/console-page/console-state-action-contract.ts",
   "desktop/src/console-page/console-process-model.ts",
   "desktop/src/console-page/console-presentation-model.ts",
+  "desktop/src/console-page/conversation-search-model.ts",
   "desktop/src/console-page/agent-team-console-model.ts",
   "desktop/src/console-page/console-default-state.ts",
   "desktop/src/console-page/desktop-routing-model.ts",

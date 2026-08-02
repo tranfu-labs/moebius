@@ -17,6 +17,9 @@ import {
 } from "./console-process-model.js";
 import { planSidebarAnalysisParent } from "./console-state-plan.js";
 import type { CreatedSession } from "./console-state-action-contract.js";
+import type { SessionSearchResult } from "./conversation-search-model.js";
+
+export type { SessionSearchResult } from "./conversation-search-model.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -491,13 +494,6 @@ export async function loadSessionReferenceText(options: {
     throw new Error(body.error ?? "session reference request failed");
   }
   return { fragment: body.fragment };
-}
-
-export interface SessionSearchResult {
-  session: import("@moebius/console-ui").OperatorSession;
-  project: { projectId: string; title: string };
-  archived: boolean;
-  originAvailable: boolean;
 }
 
 export async function searchConsoleSessions(options: {
