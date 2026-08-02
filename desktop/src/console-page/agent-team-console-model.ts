@@ -8,6 +8,7 @@ import type {
 import type { LastUsedAgentTeam } from "../team-conversation-preference-contract.js";
 import type { AgentTeamFileManagerKind } from "../team-file-manager-contract.js";
 import type { AgentTeamListItem } from "../team-ipc-contract.js";
+import type { AgentTeamListResponse } from "../team-ipc-contract.js";
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import { getAgentTeamKey } from "./team-state.js";
@@ -118,5 +119,41 @@ export function planBuilderFailureState(
     proposal: current?.proposal ?? null,
     proposalRevision: current?.proposalRevision ?? null,
     error,
+  };
+}
+
+export function planAgentTeamCatalogPort(hasPort: boolean): "load" | "unavailable" {
+  return hasPort ? "load" : "unavailable";
+}
+
+export function planActiveAgentTeamCatalogCommit(cancelled: boolean): boolean {
+  return !cancelled;
+}
+
+export type AgentTeamCatalogLoadPlan =
+  | { kind: "retry" }
+  | { kind: "configuration-error" }
+  | {
+      kind: "ready";
+      state: OperatorAgentTeamsState;
+      lastUsedTeamKey: string | null;
+      teams: AgentTeamListItem[];
+    };
+
+export function planAgentTeamCatalogLoad(
+  response: AgentTeamListResponse,
+  lastUsedTeam: LastUsedAgentTeam | null,
+): AgentTeamCatalogLoadPlan {
+  if (response.status === "loading") return { kind: "retry" };
+  if (response.status === "configuration-error") return { kind: "configuration-error" };
+  return {
+    kind: "ready",
+    state: {
+      status: "ready",
+      teams: response.teams.map(planOperatorAgentTeam),
+      registrationIssues: response.registrationIssues,
+    },
+    lastUsedTeamKey: lastUsedTeam === null ? null : planAgentTeamIdentityKey(lastUsedTeam),
+    teams: response.teams,
   };
 }

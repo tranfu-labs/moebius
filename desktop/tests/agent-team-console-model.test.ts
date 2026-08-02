@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   planAgentTeamBuilderDraftSource,
+  planAgentTeamCatalogLoad,
   planBuilderOperation,
   planBuilderRetry,
   planSelectedBuilderTeamId,
@@ -24,5 +25,27 @@ describe("agent team console model", () => {
       actions: [],
       selectedTeamId: "launch-team",
     })).toBe("launch-team");
+  });
+
+  it("normalizes catalog loading outcomes before renderer state is committed", () => {
+    expect(planAgentTeamCatalogLoad({ status: "loading" }, null)).toEqual({ kind: "retry" });
+    expect(planAgentTeamCatalogLoad({ status: "configuration-error" }, null))
+      .toEqual({ kind: "configuration-error" });
+    expect(planAgentTeamCatalogLoad({
+      status: "ready",
+      teams: [{
+        id: "development",
+        ownership: "system",
+        definition: null,
+        members: [],
+        status: "usable",
+        canCreateConversation: true,
+        issues: [],
+      }],
+    }, { ownership: "system", teamId: "development" })).toMatchObject({
+      kind: "ready",
+      lastUsedTeamKey: "system:development",
+      state: { status: "ready" },
+    });
   });
 });
