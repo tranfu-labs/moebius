@@ -25,17 +25,29 @@
 
 ## D · 验证与真机
 
-- [ ] 定向测试覆盖 reducer、hook、state sync、project/attachment/session/analysis 四类外部行为
-- [ ] `pnpm run test --scope 47f2031`、`pnpm check:boundaries`、`pnpm typecheck`、desktop build 全绿
-- [ ] 确认 file/dependency debt 0、permit 193、roots 9，`app.tsx` ≤300，未引入 TTL/真实等待
+- [x] 定向测试覆盖 reducer、hook、state sync、project/attachment/session/analysis 四类外部行为
+- [x] `pnpm run test --scope 47f2031`、`pnpm check:boundaries`、`pnpm typecheck`、desktop build 全绿
+- [x] 确认 file/dependency debt 0、permit 193、roots 9，`app.tsx` ≤300，未引入 TTL/真实等待
 - [ ] 真机执行 CEV-01～04，记录页面入口、操作、可见信号、轮询周期与临时 evidence 路径
 - [ ] QA/主理人复核后、合并前运行本 change 唯一一次 Node 24 `pnpm test`
 
 ## E · 符合度与事实源准备
 
-- [ ] 对照 proposal/design 反思：无附件特例、无 refresh-only 漏洞、无 UI/文案扩项、无新 permit/root/debt
-- [ ] 更新 condition/source 审计与测试 ledger；实现未改变 PRD、wireframe 或 console-ui API
-- [ ] 准备归档回流：desktop-shell spec delta 与 `architecture/after.svg`
+- [x] 对照 proposal/design 反思：无附件特例、无 refresh-only 漏洞、无 UI/文案扩项、无新 permit/root/debt
+- [x] 更新 condition/source 审计与测试 ledger；实现未改变 PRD、wireframe 或 console-ui API
+- [x] 准备归档回流：desktop-shell spec delta 与 `architecture/after.svg`
+
+## 实现与验证记录
+
+- 实现提交：`9eeea1a`。生产 diff 相对 `47f2031` 为 +464/−155，共 619 行，落在 350–650
+  预算内；`app.tsx` 275 物理行，低于 285 目标及 300 硬门禁。
+- 写入审计：53 个 `errors.fail/report`，旧 `setError/setClientError` 为 0；详见 `source-audit.md`。
+- 边界账：file debt 0、dependency debt 0、permit 193、composition root 9；`check:boundaries`
+  输出 619 source / 533 production / 3 roots。
+- 定向闭包：`pnpm run test --scope 47f2031` 退出 0，20 files / 124 tests；全仓 `pnpm typecheck`
+  退出 0；desktop build 退出 0（4.26s）。
+- 符合度：没有附件特例、TTL 或通知框架；共享错误规则只存在于纯 domain model，React hook 只做状态提交；
+  console-ui 仍接收单一 `lastError` 字符串，PRD、wireframe 与组件 API 均未变化。
 
 ## 验收语句
 
