@@ -135,10 +135,30 @@ import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import { refreshConsoleState } from "./refresh-console-state.js";
 import {
+  mergeProcessEvents,
+  mergeRefreshedProcessOutput,
   mergeSettledProcessOutput,
   processOutputLocator,
   subSessionIdFromSourceKey,
 } from "./console-process-model.js";
+import {
+  planAnalysisRootSession,
+  planCanonicalConversationTabTitles,
+  planConversationProjectContext,
+  planConversationTabDiscriminators,
+} from "./console-presentation-model.js";
+import {
+  decideSafeAiTeamBuilderDraftId,
+  planAgentTeamFileManagerTranslationKey,
+  planAgentTeamIdentityKey,
+  planFindOperatorAgentTeam,
+  planOperatorAgentTeam,
+} from "./agent-team-console-model.js";
+import {
+  EMPTY_CONSOLE_PROJECT,
+  NO_OPERATOR_MESSAGES,
+} from "./console-default-state.js";
+import { planConsoleEndpoint } from "./console-state-plan.js";
 import {
   ConsoleStateCoordinator,
   ProcessInvocationRequestCoordinator,
@@ -874,10 +894,10 @@ export function OperatorConsoleApp({
 
         setAgentTeamsState({
           status: "ready",
-          teams: result.teams.map(toOperatorAgentTeam),
+          teams: result.teams.map(planOperatorAgentTeam),
           registrationIssues: result.registrationIssues,
         });
-        setLastUsedAgentTeamKey(lastUsedTeam === null ? null : getAgentTeamIdentityKey(lastUsedTeam));
+        setLastUsedAgentTeamKey(lastUsedTeam === null ? null : planAgentTeamIdentityKey(lastUsedTeam));
         setAgentTeamSelection((current) => reconcileAgentTeamSelection(result.teams, current));
       } catch {
         if (!cancelled) {
@@ -904,7 +924,7 @@ export function OperatorConsoleApp({
 
     commitAgentTeamDraftState(startAgentTeamMemberLoad(agentTeamDraftStateRef.current, teamKey, memberSlug));
     try {
-      const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+      const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
       const readMember = window.moebius?.readAgentTeamMember;
       if (team === undefined || readMember === undefined) {
         throw new Error(t("desktop.error.agentRead"));
@@ -947,7 +967,7 @@ export function OperatorConsoleApp({
   }, []);
 
   const checkAgentTeamMemberExternalChange = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const current = getAgentTeamMemberDraft(agentTeamDraftStateRef.current, teamKey, memberSlug);
     const checkExternalChange = window.moebius?.checkAgentTeamMemberExternalChange;
     if (
@@ -1011,7 +1031,7 @@ export function OperatorConsoleApp({
     memberSlug: string,
     agentMarkdown: string,
   ): Promise<AgentTeamMemberDocument> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const writeMember = window.moebius?.writeAgentTeamMember;
     if (team === undefined || writeMember === undefined) {
       throw new Error(t("desktop.error.agentSave"));
@@ -1127,7 +1147,7 @@ export function OperatorConsoleApp({
   }, [commitAgentTeamDraftState, persistAgentTeamMember]);
 
   const openAgentTeam = useCallback((teamKey: string) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     if (team === undefined) {
       return;
     }
@@ -1169,14 +1189,14 @@ export function OperatorConsoleApp({
     }
     setAgentTeamsState({
       status: "ready",
-      teams: result.teams.map(toOperatorAgentTeam),
+      teams: result.teams.map(planOperatorAgentTeam),
       registrationIssues: result.registrationIssues,
     });
     setAgentTeamSelection((current) => reconcileAgentTeamSelection(result.teams, current));
   }, [t]);
 
   const selectAgentTeamMember = useCallback((teamKey: string, memberSlug: string) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     if (team === undefined || !team.members.some((member) => member.slug === memberSlug)) {
       return;
     }
@@ -1185,7 +1205,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, loadAgentTeamMember]);
 
   const changeAgentTeamPrimaryAgent = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const setPrimaryAgent = window.moebius?.setAgentTeamPrimaryAgent;
     if (team === undefined || setPrimaryAgent === undefined) {
       return;
@@ -1206,7 +1226,7 @@ export function OperatorConsoleApp({
         : {
             status: "ready",
             teams: current.teams.map((candidate) => candidate.teamKey === teamKey
-              ? toOperatorAgentTeam(updatedTeam)
+              ? planOperatorAgentTeam(updatedTeam)
               : candidate),
           });
       setPrimaryAgentChange({ teamKey, status: "saved", error: null });
@@ -1220,7 +1240,7 @@ export function OperatorConsoleApp({
     memberSlug: string,
     profile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
   ) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const saveProfile = window.moebius?.saveAgentTeamExecutionProfile;
     if (team === undefined || saveProfile === undefined) {
       throw new Error(t("desktop.error.profileSave"));
@@ -1236,7 +1256,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const restoreAgentRecommendedProfile = useCallback(async (teamKey: string, memberSlug: string) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const restore = window.moebius?.restoreAgentTeamRecommendedProfile;
     if (team === undefined || restore === undefined) {
       throw new Error(t("desktop.error.profileRestore"));
@@ -1251,7 +1271,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const applyOfficialAgentTeamUpdate = useCallback(async (teamKey: string) => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const prepare = window.moebius?.prepareAgentTeamOfficialUpdate;
     const apply = window.moebius?.applyAgentTeamOfficialUpdate;
     if (team === undefined || team.ownership !== "system" || prepare === undefined || apply === undefined) {
@@ -1260,7 +1280,7 @@ export function OperatorConsoleApp({
     const plan = await prepare({ teamId: team.id, ownership: "system" });
     const result = await apply({ plan });
     if (result.copiedTeam !== null) {
-      const copiedTeam = toOperatorAgentTeam(result.copiedTeam);
+      const copiedTeam = planOperatorAgentTeam(result.copiedTeam);
       setAgentTeamsState((current) => current.status !== "ready"
         ? current
         : {
@@ -1279,7 +1299,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const activateCopiedAgentTeam = useCallback(async (copiedItem: AgentTeamListItem): Promise<string> => {
-    const copiedTeam = toOperatorAgentTeam(copiedItem);
+    const copiedTeam = planOperatorAgentTeam(copiedItem);
     setAgentTeamsState((current) => current.status !== "ready"
       ? current
       : { status: "ready", teams: [...current.teams, copiedTeam] });
@@ -1331,7 +1351,7 @@ export function OperatorConsoleApp({
       return agentTeamBuilderDraftIdRef.current;
     }
     const stored = window.localStorage.getItem(AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY);
-    const draftId = stored !== null && isSafeAiTeamBuilderDraftId(stored)
+    const draftId = stored !== null && decideSafeAiTeamBuilderDraftId(stored)
       ? stored
       : createAgentTeamBuilderDraftId();
     agentTeamBuilderDraftIdRef.current = draftId;
@@ -1377,9 +1397,9 @@ export function OperatorConsoleApp({
     if (selectedItem === undefined) {
       throw new Error(t("desktop.error.teamCreatedDetail"));
     }
-    const selectedTeam = toOperatorAgentTeam(selectedItem);
+    const selectedTeam = planOperatorAgentTeam(selectedItem);
     await activateCopiedAgentTeam(selectedItem);
-    setAgentTeamsState({ status: "ready", teams: result.teams.map(toOperatorAgentTeam) });
+    setAgentTeamsState({ status: "ready", teams: result.teams.map(planOperatorAgentTeam) });
     window.localStorage.removeItem(AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY);
     agentTeamBuilderDraftIdRef.current = null;
     agentTeamBuilderStartedRef.current = false;
@@ -1561,7 +1581,7 @@ export function OperatorConsoleApp({
   ]);
 
   const duplicateBuiltInAgentTeam = useCallback(async (teamKey: string): Promise<string> => {
-    const source = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const source = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const duplicateTeam = window.moebius?.duplicateBuiltInAgentTeam;
     if (source === undefined || source.ownership !== "system" || duplicateTeam === undefined) {
       throw new Error(t("desktop.error.duplicateBuiltIn"));
@@ -1579,7 +1599,7 @@ export function OperatorConsoleApp({
 
   const duplicateUserAgentTeam = useCallback(async (teamKey: string): Promise<string> => {
     assertAgentTeamDraftsResolved(teamKey);
-    const source = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const source = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const duplicateTeam = window.moebius?.duplicateUserAgentTeam;
     if (source === undefined || source.ownership !== "user" || duplicateTeam === undefined) {
       throw new Error(t("desktop.error.duplicateUserTeam"));
@@ -1590,7 +1610,7 @@ export function OperatorConsoleApp({
 
   const duplicateAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     assertAgentTeamDraftsResolved(teamKey);
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const duplicateMember = window.moebius?.duplicateAgentTeamMember;
     if (team === undefined || duplicateMember === undefined) {
       throw new Error(t("desktop.error.duplicateAgent"));
@@ -1600,7 +1620,7 @@ export function OperatorConsoleApp({
       ownership: team.ownership,
       memberSlug,
     });
-    const updatedTeam = toOperatorAgentTeam(result.team);
+    const updatedTeam = planOperatorAgentTeam(result.team);
     setAgentTeamsState((current) => current.status !== "ready"
       ? current
       : {
@@ -1619,7 +1639,7 @@ export function OperatorConsoleApp({
 
   const trashAgentTeamMember = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     assertAgentTeamDraftsResolved(teamKey);
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const trashMember = window.moebius?.trashAgentTeamMember;
     if (team === undefined || trashMember === undefined) {
       throw new Error(t("desktop.error.deleteAgent"));
@@ -1628,7 +1648,7 @@ export function OperatorConsoleApp({
       throw new Error(t("desktop.error.deletePrimary"));
     }
     const updatedItem = await trashMember({ teamId: team.id, ownership: "user", memberSlug });
-    const updatedTeam = toOperatorAgentTeam(updatedItem);
+    const updatedTeam = planOperatorAgentTeam(updatedItem);
     setAgentTeamsState((current) => current.status !== "ready"
       ? current
       : {
@@ -1653,7 +1673,7 @@ export function OperatorConsoleApp({
 
   const trashUserAgentTeam = useCallback(async (teamKey: string): Promise<void> => {
     assertAgentTeamDraftsResolved(teamKey);
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const trashTeam = window.moebius?.trashUserAgentTeam;
     if (team === undefined || team.ownership !== "user" || trashTeam === undefined) {
       throw new Error(t("desktop.error.trashTeam"));
@@ -1686,7 +1706,7 @@ export function OperatorConsoleApp({
     if (createTeam === undefined) {
       throw new Error(t("desktop.error.createTeam"));
     }
-    const created = toOperatorAgentTeam(await createTeam(information));
+    const created = planOperatorAgentTeam(await createTeam(information));
     setAgentTeamsState((current) => current.status !== "ready"
       ? current
       : { status: "ready", teams: [...current.teams, created] });
@@ -1698,13 +1718,13 @@ export function OperatorConsoleApp({
   }, [t]);
 
   const addAgentTeamMember = useCallback(async (teamKey: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const addMember = window.moebius?.addAgentTeamMember;
     if (team === undefined || addMember === undefined) {
       throw new Error(t("desktop.error.addAgent"));
     }
     const result = await addMember({ teamId: team.id, ownership: team.ownership });
-    const updatedTeam = toOperatorAgentTeam(result.team);
+    const updatedTeam = planOperatorAgentTeam(result.team);
     setAgentTeamsState((current) => current.status !== "ready"
       ? current
       : {
@@ -1725,12 +1745,12 @@ export function OperatorConsoleApp({
     teamKey: string,
     information: AgentTeamInformationInput,
   ): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const updateInformation = window.moebius?.updateAgentTeamInformation;
     if (team === undefined || updateInformation === undefined) {
       throw new Error(t("desktop.error.updateTeam"));
     }
-    const updatedTeam = toOperatorAgentTeam(await updateInformation({
+    const updatedTeam = planOperatorAgentTeam(await updateInformation({
       teamId: team.id,
       ownership: team.ownership,
       ...information,
@@ -1744,7 +1764,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const openAgentTeamLocation = useCallback(async (teamKey: string, memberSlug?: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const openLocation = window.moebius?.openAgentTeamLocation;
     if (team === undefined || openLocation === undefined) {
       throw new Error(t("desktop.error.openLocation"));
@@ -1757,7 +1777,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const relocateAgentTeam = useCallback(async (teamKey: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const selectFolder = window.moebius?.selectAgentTeamRelocationFolder;
     const relocateRecord = window.moebius?.relocateAgentTeamRecord;
     if (team === undefined || team.ownership !== "user" || selectFolder === undefined || relocateRecord === undefined) {
@@ -1767,7 +1787,7 @@ export function OperatorConsoleApp({
     if (directory === null) {
       return;
     }
-    const updated = toOperatorAgentTeam(await relocateRecord({
+    const updated = planOperatorAgentTeam(await relocateRecord({
       teamId: team.id,
       ownership: team.ownership,
       directory,
@@ -1781,7 +1801,7 @@ export function OperatorConsoleApp({
   }, [agentTeamsState, t]);
 
   const removeAgentTeamRecord = useCallback(async (teamKey: string): Promise<void> => {
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     const removeRecord = window.moebius?.removeAgentTeamRecord;
     if (team === undefined || team.ownership !== "user" || removeRecord === undefined) {
       throw new Error(t("desktop.error.removeTeamRecord"));
@@ -1800,7 +1820,7 @@ export function OperatorConsoleApp({
     if (activeAgentTeamKey === null) {
       return null;
     }
-    const team = findOperatorAgentTeam(agentTeamsState, activeAgentTeamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, activeAgentTeamKey);
     if (team === undefined) {
       return null;
     }
@@ -2357,7 +2377,7 @@ export function OperatorConsoleApp({
       });
   }, [apiBase, refresh, state]);
 
-  const project = state?.project ?? emptyProject;
+  const project = state?.project ?? EMPTY_CONSOLE_PROJECT;
   const projects = state?.projects ?? [project];
   const lastError = sessionViewTransitionError ?? clientError ?? state?.lastError ?? null;
   const selectedSession = state?.selectedSession ?? null;
@@ -2409,7 +2429,7 @@ export function OperatorConsoleApp({
   const activeRuns = state?.activeRuns ?? (activeRun === null ? [] : [activeRun]);
   const sqlitePath = state?.sqlitePath;
   const projectListState = state !== null ? "ready" : clientError === null ? "loading" : "error";
-  const resolvedRightSidebarTabs = resolveCanonicalConversationTabTitles(
+  const resolvedRightSidebarTabs = planCanonicalConversationTabTitles(
     rightSidebarTabs,
     state?.projects ?? [],
   );
@@ -2423,7 +2443,7 @@ export function OperatorConsoleApp({
         : [];
     }),
   );
-  const rightSidebarTabDiscriminators = conversationTabDiscriminators(
+  const rightSidebarTabDiscriminators = planConversationTabDiscriminators(
     resolvedRightSidebarTabs.state,
     state?.projects ?? [],
     new Set(rightSidebarUpdatingTabIds),
@@ -2603,7 +2623,7 @@ export function OperatorConsoleApp({
       setClientError(t("console.sessionAnalysis.sourceMissing"));
       return;
     }
-    const root = resolveAnalysisRootSession(allSidebarSessions, target.sessionId);
+    const root = planAnalysisRootSession(allSidebarSessions, target.sessionId);
     if (root === null) {
       setClientError(t("console.sessionAnalysis.openFailed"));
       return;
@@ -2653,7 +2673,7 @@ export function OperatorConsoleApp({
       setClientError(t("console.sessionAnalysis.sourceUnavailable"));
       return;
     }
-    const root = resolveAnalysisRootSession(allSidebarSessions, target.sessionId);
+    const root = planAnalysisRootSession(allSidebarSessions, target.sessionId);
     if (root === null) {
       setClientError(t("console.sessionAnalysis.openFailed"));
       return;
@@ -2825,7 +2845,7 @@ export function OperatorConsoleApp({
     }
     const projectId = newConversation.projectId!;
     const teamKey = newConversation.teamKey!;
-    const team = findOperatorAgentTeam(agentTeamsState, teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, teamKey);
     if (team === undefined || !team.canCreateConversation) {
       dispatchNewConversation({
         type: "submit-failed",
@@ -2903,7 +2923,7 @@ export function OperatorConsoleApp({
     }
     setIsProjectMutationPending(true);
     try {
-      const response = await fetch(endpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
+      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title }),
@@ -2942,7 +2962,7 @@ export function OperatorConsoleApp({
         .flatMap((candidate) => candidate.sessions)
         .find((session) => session.sessionId === routeBeforeRemoval.rightConversationSessionId);
     try {
-      const response = await fetch(endpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
+      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ force }),
@@ -3012,7 +3032,7 @@ export function OperatorConsoleApp({
     }
     setIsProjectMutationPending(true);
     try {
-      const response = await fetch(endpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
+      const response = await fetch(planConsoleEndpoint(apiBase, `/api/local-console/projects/${encodeURIComponent(projectId)}`), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ folderPath }),
@@ -3273,7 +3293,7 @@ export function OperatorConsoleApp({
       setSessionAnalysisNotice(t("console.sessionAnalysis.openFailed"));
       return;
     }
-    const sourceRootSession = resolveAnalysisRootSession(
+    const sourceRootSession = planAnalysisRootSession(
       currentState.projects.flatMap((project) => project.sessions),
       sourceSession.sessionId,
     );
@@ -3447,7 +3467,7 @@ export function OperatorConsoleApp({
     ) {
       return;
     }
-    const team = findOperatorAgentTeam(agentTeamsState, draft.context.teamKey);
+    const team = planFindOperatorAgentTeam(agentTeamsState, draft.context.teamKey);
     if (team === undefined || !team.canCreateConversation) {
       setClientError(t("desktop.error.teamUnavailable"));
       return;
@@ -3480,12 +3500,12 @@ export function OperatorConsoleApp({
         title: createdTitle,
         conversationContext: createdProject === undefined
           ? undefined
-          : conversationProjectContext(createdProject),
+          : planConversationProjectContext(createdProject),
       });
       const directParent = allSidebarSessions.find((session) => session.sessionId === draft.hostSessionId);
       const root = directParent === undefined
         ? null
-        : resolveAnalysisRootSession(allSidebarSessions, directParent.sessionId);
+        : planAnalysisRootSession(allSidebarSessions, directParent.sessionId);
       const tabHostSessionId = root?.sessionId ?? draft.hostSessionId;
       const nextTabs = rightSidebarTabsStoreRef.current.read(tabHostSessionId);
       const currentHostSessionId = presentationRouteRef.current?.hostSessionId
@@ -3797,7 +3817,7 @@ export function OperatorConsoleApp({
             type: "conversation",
             title: target.title,
             sourceKey: conversationTabSourceKey(target.sessionId),
-            conversationContext: conversationProjectContext(
+            conversationContext: planConversationProjectContext(
               currentState?.projects.find((project) => project.projectId === target.projectId),
               target,
             ),
@@ -4316,7 +4336,7 @@ export function OperatorConsoleApp({
               type: "conversation",
               title: target.title,
               sourceKey: conversationTabSourceKey(target.sessionId),
-              conversationContext: conversationProjectContext(
+              conversationContext: planConversationProjectContext(
                 projects.find((project) => project.projectId === target.projectId),
                 target,
               ),
@@ -4490,7 +4510,7 @@ export function OperatorConsoleApp({
       onRecheckAgentTeam={() => setAgentTeamsRefreshNonce((current) => current + 1)}
       onRelocateAgentTeam={relocateAgentTeam}
       onRemoveAgentTeamRecord={removeAgentTeamRecord}
-      agentTeamFileManagerLabel={t(agentTeamFileManagerTranslationKey(
+      agentTeamFileManagerLabel={t(planAgentTeamFileManagerTranslationKey(
         window.moebius?.agentTeamFileManagerKind ?? "file-manager",
       ))}
       onOpenAgentTeamLocation={openAgentTeamLocation}
@@ -4564,270 +4584,11 @@ export function OperatorConsoleApp({
   );
 }
 
-function conversationTabDiscriminators(
-  tabsState: RightSidebarTabsState,
-  projects: readonly OperatorProject[],
-  updatingTabIds: ReadonlySet<string>,
-  labels: {
-    fallback: string;
-    sameMomentIndex(index: number): string;
-  },
-): Record<string, string> {
-  const titleCounts = new Map<string, number>();
-  for (const tab of tabsState.tabs) {
-    if (tab.type === "conversation") {
-      titleCounts.set(tab.title, (titleCounts.get(tab.title) ?? 0) + 1);
-    }
-  }
-  const candidates = tabsState.tabs.flatMap((tab) => {
-    if (
-      tab.type !== "conversation"
-      || ((titleCounts.get(tab.title) ?? 0) < 2 && !updatingTabIds.has(tab.id))
-    ) {
-      return [];
-    }
-    const locator = parseConversationTabSourceKey(tab.sourceKey);
-    const session = locator?.kind === "session"
-      ? projects.flatMap((project) => project.sessions).find(
-          (candidate) => candidate.sessionId === locator.sessionId,
-        )
-      : undefined;
-    const project = session === undefined
-      ? undefined
-      : projects.find((candidate) => candidate.projectId === session.projectId);
-    const base = conversationProjectContext(project, session)
-      ?? tab.conversationContext
-      ?? labels.fallback;
-    const createdAt = session?.createdAt ?? tab.conversationCreatedAt ?? null;
-    return [{
-      tabId: tab.id,
-      base,
-      minute: createdAt?.replace("T", " ").slice(0, 16) ?? null,
-      stableKey: `${createdAt ?? ""}\u0000${tab.sourceKey ?? tab.id}`,
-    }];
-  });
-  const baseCounts = new Map<string, number>();
-  for (const entry of candidates) {
-    baseCounts.set(entry.base, (baseCounts.get(entry.base) ?? 0) + 1);
-  }
-  const withMinute = candidates.map((entry) => ({
-    ...entry,
-    candidate: (baseCounts.get(entry.base) ?? 0) > 1 && entry.minute !== null
-      ? `${entry.base} · ${entry.minute}`
-      : entry.base,
-  }));
-  const candidateCounts = new Map<string, number>();
-  for (const entry of withMinute) {
-    candidateCounts.set(entry.candidate, (candidateCounts.get(entry.candidate) ?? 0) + 1);
-  }
-  const result: Record<string, string> = {};
-  const collisions = new Map<string, typeof withMinute>();
-  for (const entry of withMinute) {
-    if ((candidateCounts.get(entry.candidate) ?? 0) === 1) {
-      result[entry.tabId] = entry.candidate;
-      continue;
-    }
-    const group = collisions.get(entry.candidate) ?? [];
-    group.push(entry);
-    collisions.set(entry.candidate, group);
-  }
-  for (const group of collisions.values()) {
-    group.sort((left, right) => left.stableKey.localeCompare(right.stableKey));
-    group.forEach((entry, index) => {
-      result[entry.tabId] = `${entry.candidate} · ${labels.sameMomentIndex(index + 1)}`;
-    });
-  }
-  return result;
-}
-
-function conversationProjectContext(
-  project: OperatorProject | undefined,
-  session?: OperatorSession,
-): string | undefined {
-  if (project === undefined) return undefined;
-  const context = [
-    project.title,
-    session?.branchName ?? project.branchName ?? null,
-  ].filter((value): value is string => value !== null && value.trim() !== "").join(" · ");
-  return context === "" ? undefined : context;
-}
-
-function resolveCanonicalConversationTabTitles(
-  tabsState: RightSidebarTabsState,
-  projects: readonly OperatorProject[],
-): { state: RightSidebarTabsState; unresolvedTabIds: string[] } {
-  const sessions = new Map(
-    projects.flatMap((project) =>
-      project.sessions.map((session) => [
-        session.sessionId,
-        { project, session },
-      ] as const)),
-  );
-  const unresolvedTabIds: string[] = [];
-  return {
-    state: {
-      ...tabsState,
-      tabs: tabsState.tabs.map((tab) => {
-        if (tab.type !== "conversation") return tab;
-        const locator = parseConversationTabSourceKey(tab.sourceKey);
-        if (locator?.kind !== "session") return tab;
-        const resolved = sessions.get(locator.sessionId);
-        if (resolved === undefined) {
-          unresolvedTabIds.push(tab.id);
-          return tab;
-        }
-        const conversationContext = conversationProjectContext(
-          resolved.project,
-          resolved.session,
-        );
-        if (
-          resolved.session.title === tab.title
-          && conversationContext === tab.conversationContext
-          && resolved.session.createdAt === tab.conversationCreatedAt
-        ) {
-          return tab;
-        }
-        return {
-          ...tab,
-          title: resolved.session.title,
-          conversationContext,
-          conversationCreatedAt: resolved.session.createdAt,
-        };
-      }),
-    },
-    unresolvedTabIds,
-  };
-}
-
-function mergeRefreshedProcessOutput(
-  current: OperatorProcessOutput,
-  incoming: OperatorProcessOutput,
-): OperatorProcessOutput {
-  if (
-    current.status === "unavailable"
-    || incoming.status === "unavailable"
-    || incoming.attempts.length <= current.attempts.length
-  ) {
-    return incoming;
-  }
-  return {
-    ...incoming,
-    events: mergeProcessEvents(current.events, incoming.events),
-    previousCursor: current.previousCursor,
-  };
-}
-
-function mergeProcessEvents(
-  before: readonly OperatorProcessTimelineEvent[],
-  after: readonly OperatorProcessTimelineEvent[],
-): OperatorProcessTimelineEvent[] {
-  const seen = new Set<string>();
-  return [...before, ...after].filter((event) => {
-    if (seen.has(event.key)) {
-      return false;
-    }
-    seen.add(event.key);
-    return true;
-  });
-}
-
-function agentTeamFileManagerTranslationKey(kind: AgentTeamFileManagerKind): TranslationKey {
-  if (kind === "finder") {
-    return "desktop.fileManager.finder";
-  }
-  if (kind === "windows-explorer") {
-    return "desktop.fileManager.windowsExplorer";
-  }
-  return "desktop.fileManager.generic";
-}
-
 function createAgentTeamBuilderDraftId(): string {
   const suffix = typeof globalThis.crypto?.randomUUID === "function"
     ? globalThis.crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `agent-teams-${suffix}`;
-}
-
-function isSafeAiTeamBuilderDraftId(value: string): boolean {
-  return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(value);
-}
-
-function resolveAnalysisRootSession(
-  sessions: readonly OperatorSession[],
-  sessionId: string,
-): OperatorSession | null {
-  const byId = new Map(sessions.map((session) => [session.sessionId, session]));
-  const visited = new Set<string>();
-  let current = byId.get(sessionId);
-  while (current !== undefined && current.analysisParentSessionId != null) {
-    if (visited.has(current.sessionId)) return null;
-    visited.add(current.sessionId);
-    current = byId.get(current.analysisParentSessionId);
-  }
-  return current ?? null;
-}
-
-const emptyProject: OperatorProject = {
-  projectId: "local",
-  sourceType: "local-folder",
-  title: "moebius",
-  folderPath: "",
-  worktreeMode: false,
-  workspaceCwd: null,
-  workspaceMode: null,
-  worktreePath: null,
-  worktreeUnavailableReason: null,
-  workspaceUpdatedAt: null,
-  branchName: null,
-  isGitRepository: false,
-  directoryAvailable: true,
-  directoryUnavailableReason: null,
-  sessions: [],
-  runningCount: 0,
-  waitingCount: 0,
-  stuckCount: 0,
-  errorCount: 0,
-};
-
-const NO_OPERATOR_MESSAGES: OperatorMessage[] = [];
-
-function endpoint(base: string, path: string): URL {
-  return new URL(path.replace(/^\//u, ""), base.endsWith("/") ? base : `${base}/`);
-}
-
-function toOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTeam {
-  return {
-    teamKey: getAgentTeamKey(team),
-    id: team.id,
-    ownership: team.ownership,
-    createdAt: team.createdAt,
-    officialSourceName: team.officialSourceName,
-    name: team.definition?.name ?? null,
-    description: team.definition?.description ?? null,
-    primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,
-    memberOrder: team.definition?.memberOrder ?? [],
-    members: team.members.map((member) => ({
-      ...member,
-      available: member.available !== false,
-      executionProfile: member.executionProfile,
-    })),
-    status: team.status,
-    canCreateConversation: team.canCreateConversation,
-    canEditContent: team.capabilities?.canEditContent ?? true,
-    canDeleteTeam: team.capabilities?.canDeleteTeam ?? team.ownership === "user",
-    issues: team.issues,
-    officialManagement: team.officialManagement,
-  };
-}
-
-function getAgentTeamIdentityKey(team: LastUsedAgentTeam): string {
-  return `${team.ownership}:${team.teamId}`;
-}
-
-function findOperatorAgentTeam(state: OperatorAgentTeamsState, teamKey: string): OperatorAgentTeam | undefined {
-  return state.status === "ready"
-    ? state.teams.find((team) => team.teamKey === teamKey)
-    : undefined;
 }
 
 function readQueryApiBase(): string | null {

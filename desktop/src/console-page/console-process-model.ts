@@ -1,6 +1,7 @@
 import type {
   OperatorProcessAppendOutput,
   OperatorProcessOutput,
+  OperatorProcessTimelineEvent,
 } from "@moebius/console-ui";
 
 import { parseProcessOutputSourceKey } from "./process-output-locator.js";
@@ -58,4 +59,32 @@ export function processOutputLocator(
   legacySessionId?: string,
 ): { sessionId: string; runId: string } | null {
   return parseProcessOutputSourceKey(sourceKey, legacySessionId);
+}
+
+export function mergeRefreshedProcessOutput(
+  current: OperatorProcessOutput,
+  incoming: OperatorProcessOutput,
+): OperatorProcessOutput {
+  if (
+    current.status === "unavailable"
+    || incoming.status === "unavailable"
+    || incoming.attempts.length <= current.attempts.length
+  ) return incoming;
+  return {
+    ...incoming,
+    events: mergeProcessEvents(current.events, incoming.events),
+    previousCursor: current.previousCursor,
+  };
+}
+
+export function mergeProcessEvents(
+  before: readonly OperatorProcessTimelineEvent[],
+  after: readonly OperatorProcessTimelineEvent[],
+): OperatorProcessTimelineEvent[] {
+  const seen = new Set<string>();
+  return [...before, ...after].filter((event) => {
+    if (seen.has(event.key)) return false;
+    seen.add(event.key);
+    return true;
+  });
 }
