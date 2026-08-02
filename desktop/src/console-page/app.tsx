@@ -14,8 +14,6 @@ import {
   type OperatorEditAndResendTarget,
   type OperatorProject,
   type OperatorProcessOutput,
-  type OperatorProcessOutputState,
-  type OperatorProcessInvocationState,
   type OperatorProcessTimelineEvent,
   type OperatorRunSnapshot,
   type OperatorRunnerStatus,
@@ -86,9 +84,6 @@ import type {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  loadProcessOutput,
-  loadProcessOutputUpdate,
-  loadProcessDebugInvocation,
   loadFileReference,
   loadProjectFile,
   loadProjectFiles,
@@ -109,10 +104,6 @@ import { ConsoleStateActions } from "./console-state-actions.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
 import { refreshConsoleState } from "./refresh-console-state.js";
 import {
-  mergeProcessEvents,
-  mergeRefreshedProcessOutput,
-  mergeSettledProcessOutput,
-  processOutputLocator,
   subSessionIdFromSourceKey,
 } from "./console-process-model.js";
 import {
@@ -133,7 +124,6 @@ import {
 import { planConsoleEndpoint } from "./console-state-plan.js";
 import {
   ConsoleStateCoordinator,
-  ProcessInvocationRequestCoordinator,
   type ConsoleSelection,
   type SelectionMutationKind,
 } from "./console-state-coordinator.js";
@@ -221,6 +211,8 @@ import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.j
 import { useConsoleAttachmentDrafts } from "./use-console-attachment-drafts.js";
 import { useRightSidebarConversationViews } from "./use-right-sidebar-conversation-views.js";
 import { browserConversationViewSyncPort } from "./conversation-view-browser-port.js";
+import { useRightSidebarProcessData } from "./use-right-sidebar-process-data.js";
+import { browserProcessDataSyncPort } from "./process-data-browser-port.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -419,13 +411,6 @@ export function OperatorConsoleApp({
     requestId: number;
   } | null>(null);
   const conversationMessageNavigationIdRef = useRef(0);
-  const [processOutputs, setProcessOutputs] = useState<Record<string, OperatorProcessOutputState>>({});
-  const processOutputsRef = useRef(processOutputs);
-  const [processInvocationStates, setProcessInvocationStates] = useState<
-    Record<string, OperatorProcessInvocationState>
-  >({});
-  const processInvocationStatesRef = useRef(processInvocationStates);
-  const processInvocationRequestsRef = useRef(new ProcessInvocationRequestCoordinator());
   const [sidebarConversationComposerValues, setSidebarConversationComposerValues] =
     useState<Record<string, string>>({});
   const [sidebarConversationSendingId, setSidebarConversationSendingId] = useState<string | null>(null);
@@ -496,6 +481,9 @@ export function OperatorConsoleApp({
   const activeSubSessionId = activeRightSidebarTab?.type === "sub-session"
     ? subSessionIdFromSourceKey(activeRightSidebarTab.sourceKey)
     : null;
+  const activeProcessSourceKey = activeRightSidebarTab?.type === "run-output"
+    ? activeRightSidebarTab.sourceKey
+    : null;
   const activeConversationLocator = activeRightSidebarTab?.type === "conversation"
     ? parseConversationTabSourceKey(activeRightSidebarTab.sourceKey)
     : null;
@@ -516,6 +504,15 @@ export function OperatorConsoleApp({
   const setSidebarConversationViews = conversationViewsBundle.setSidebarConversationViews;
   const refreshSubSessionNow = conversationViewsBundle.refreshSubSessionNow;
   const clearSubSessionViews = conversationViewsBundle.clearSubSessionViews;
+  const processDataBundle = useRightSidebarProcessData(
+    apiBase, activeProcessSourceKey, selection.sessionId,
+    presentationRoute?.hostSessionId ?? selection.sessionId, browserProcessDataSyncPort,
+    processInvocationKey, setClientError,
+  );
+  const processOutputs = processDataBundle.outputs;
+  const processInvocationStates = processDataBundle.invocations;
+  const readProcessDebugInvocation = processDataBundle.readInvocation;
+  const loadPreviousProcessOutput = processDataBundle.loadPrevious;
   const currentAttachmentDraftKey = newConversation?.isOpen !== true
     ? composerDraft.key
     : NEW_CONVERSATION_DRAFT_KEY;
@@ -707,195 +704,11 @@ export function OperatorConsoleApp({
   }, [forgetPersistedSelection, rememberConfirmedSelection]);
 
   useEffect(() => {
-    processInvocationRequestsRef.current.abortAll();
     setRightSidebarTabs(rightSidebarTabsStoreRef.current.read(
       presentationRoute?.hostSessionId ?? selection.sessionId,
     ));
-    processOutputsRef.current = {};
-    setProcessOutputs({});
-    processInvocationStatesRef.current = {};
-    setProcessInvocationStates({});
     clearSubSessionViews();
   }, [clearSubSessionViews, presentationRoute?.hostSessionId, selection.sessionId]);
-
-  const activeProcessSourceKey = activeRightSidebarTab?.type === "run-output"
-    ? activeRightSidebarTab.sourceKey
-    : null;
-
-  const commitProcessOutputs = useCallback((
-    update: (current: Record<string, OperatorProcessOutputState>) => Record<string, OperatorProcessOutputState>,
-  ) => {
-    setProcessOutputs((current) => {
-      const next = update(current);
-      processOutputsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const commitProcessInvocationStates = useCallback((
-    update: (
-      current: Record<string, OperatorProcessInvocationState>,
-    ) => Record<string, OperatorProcessInvocationState>,
-  ) => {
-    setProcessInvocationStates((current) => {
-      const next = update(current);
-      processInvocationStatesRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const readProcessDebugInvocation = useCallback((sessionId: string, runId: string) => {
-    if (apiBase === null) {
-      return;
-    }
-    const key = processInvocationKey(sessionId, runId);
-    const current = processInvocationStatesRef.current[key];
-    if (current?.status === "loading" || current?.status === "ready") {
-      return;
-    }
-    const controller = processInvocationRequestsRef.current.begin(key);
-    commitProcessInvocationStates((states) => ({
-      ...states,
-      [key]: { status: "loading" },
-    }));
-    void loadProcessDebugInvocation({
-      apiBase,
-      sessionId,
-      runId,
-      fetch,
-      signal: controller.signal,
-    }).then((invocation) => {
-      if (!processInvocationRequestsRef.current.finish(key, controller)) {
-        return;
-      }
-      commitProcessInvocationStates((states) => ({
-        ...states,
-        [key]: { status: "ready", invocation },
-      }));
-    }).catch((error: unknown) => {
-      if (!processInvocationRequestsRef.current.finish(key, controller)) {
-        return;
-      }
-      commitProcessInvocationStates((states) => ({
-        ...states,
-        [key]: { status: "error", message: formatError(error) },
-      }));
-    });
-  }, [apiBase, commitProcessInvocationStates]);
-
-  useEffect(() => {
-    if (apiBase === null || activeProcessSourceKey === null) {
-      return;
-    }
-    const locator = processOutputLocator(activeProcessSourceKey, selection.sessionId);
-    if (locator === null) {
-      return;
-    }
-    const { sessionId: processSessionId, runId } = locator;
-
-    const controller = new AbortController();
-    let inFlight = false;
-    let timer: number | null = null;
-    commitProcessOutputs((current) => ({
-      ...current,
-      [activeProcessSourceKey]: current[activeProcessSourceKey]?.status === "ready"
-        ? current[activeProcessSourceKey]!
-        : { status: "loading" },
-    }));
-    const refreshProcessOutput = async (): Promise<void> => {
-      if (inFlight) {
-        return;
-      }
-      inFlight = true;
-      try {
-        const current = processOutputsRef.current[activeProcessSourceKey];
-        if (
-          current?.status === "ready"
-          && current.output.status !== "unavailable"
-          && current.output.appendCursor !== null
-        ) {
-          const update = await loadProcessOutputUpdate({
-            apiBase,
-            sessionId: processSessionId,
-            runId,
-            appendCursor: current.output.appendCursor,
-            currentStatus: current.output.status,
-            fetch,
-            signal: controller.signal,
-          });
-          if (!controller.signal.aborted) {
-            commitProcessOutputs((latest) => {
-              const ready = latest[activeProcessSourceKey];
-              if (ready?.status !== "ready") {
-                return latest;
-              }
-              const output = update.kind === "append"
-                ? {
-                    ...ready.output,
-                    events: mergeProcessEvents(ready.output.events, update.append.events),
-                    appendCursor: update.append.appendCursor,
-                    atLatest: update.append.atLatest,
-                    status: update.append.status,
-                  }
-                : update.reason === "settled"
-                  ? mergeSettledProcessOutput(ready.output, update.output)
-                  : mergeRefreshedProcessOutput(ready.output, update.output);
-              return {
-                ...latest,
-                [activeProcessSourceKey]: {
-                  ...ready,
-                  output,
-                },
-              };
-            });
-          }
-          return;
-        }
-        const output = await loadProcessOutput({
-          apiBase,
-          sessionId: processSessionId,
-          runId,
-          fetch,
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted) {
-          commitProcessOutputs((latest) => {
-            const ready = latest[activeProcessSourceKey];
-            return {
-              ...latest,
-              [activeProcessSourceKey]: {
-                status: "ready",
-                output: ready?.status === "ready"
-                  ? mergeRefreshedProcessOutput(ready.output, output)
-                  : output,
-              },
-            };
-          });
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          commitProcessOutputs((current) => ({
-            ...current,
-            [activeProcessSourceKey]: current[activeProcessSourceKey]?.status === "ready"
-              ? current[activeProcessSourceKey]!
-              : { status: "error", message: formatError(error) },
-          }));
-        }
-      } finally {
-        inFlight = false;
-        if (!controller.signal.aborted) {
-          timer = window.setTimeout(() => void refreshProcessOutput(), 1_000);
-        }
-      }
-    };
-    void refreshProcessOutput();
-    return () => {
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-      controller.abort("process-output-tab-changed");
-    };
-  }, [activeProcessSourceKey, apiBase, commitProcessOutputs, selection.sessionId]);
 
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinatorRef.current, selectionRef, commitConsoleState, commitSelection,
@@ -2091,69 +1904,6 @@ export function OperatorConsoleApp({
     }
     return loadFileReference({ apiBase, sessionId, filePath, line, column, fetch });
   }, [apiBase]);
-
-  const loadPreviousProcessOutput = useCallback((sourceKey: string, cursor: string) => {
-    if (apiBase === null) {
-      return;
-    }
-    const selectedSessionId = selectionRef.current.sessionId;
-    const locator = processOutputLocator(sourceKey, selectedSessionId);
-    const ready = processOutputsRef.current[sourceKey];
-    if (locator === null || ready?.status !== "ready" || ready.loadingPrevious === true) {
-      return;
-    }
-    const { sessionId, runId } = locator;
-    commitProcessOutputs((current) => ({
-      ...current,
-      [sourceKey]: current[sourceKey]?.status === "ready"
-        ? { ...current[sourceKey], loadingPrevious: true }
-        : current[sourceKey] ?? { status: "idle" },
-    }));
-    void loadProcessOutput({
-      apiBase,
-      sessionId,
-      runId,
-      cursor,
-      fetch,
-    }).then((page) => {
-      if (selectionRef.current.sessionId !== selectedSessionId) {
-        return;
-      }
-      commitProcessOutputs((current) => {
-        const currentReady = current[sourceKey];
-        if (currentReady?.status !== "ready") {
-          return current;
-        }
-        return {
-          ...current,
-          [sourceKey]: {
-            status: "ready",
-            loadingPrevious: false,
-            output: {
-              ...currentReady.output,
-              attempts: page.attempts,
-              events: mergeProcessEvents(page.events, currentReady.output.events),
-              previousCursor: page.previousCursor,
-            },
-          },
-        };
-      });
-    }).catch((error: unknown) => {
-      if (selectionRef.current.sessionId !== selectedSessionId) {
-        return;
-      }
-      commitProcessOutputs((current) => {
-        const currentReady = current[sourceKey];
-        return currentReady?.status !== "ready"
-          ? current
-          : {
-              ...current,
-              [sourceKey]: { ...currentReady, loadingPrevious: false },
-            };
-      });
-      setClientError(formatError(error));
-    });
-  }, [apiBase, commitProcessOutputs]);
 
   const openSearchedSession = useCallback(async (
     result: SessionSearchResult,

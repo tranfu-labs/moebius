@@ -39,3 +39,10 @@ storage key 由 domain constants 提供。
 business 0 = AST 控制分支 0。文件只把 main、sub-session、sidebar 三个 draft key 装配到既有
 `useManagedAttachmentDrafts` controller，并 memo 化三个具名 bundle；上传、恢复、替换、preview 与
 presence generation 的规则仍由原 controller/domain modules 持有。
+
+## `desktop/src/console-page/use-right-sidebar-process-data.ts`
+
+该 process-data 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
+business 0 = AST 控制分支 0。文件只装配 `useProcessOutputData` 与
+`useProcessInvocationData` 两个具名用例 bundle；append/settled/history merge 判据位于
+`console-process-model.ts`，请求 generation、取消和 host reset 分别由两个 controller 持有。
