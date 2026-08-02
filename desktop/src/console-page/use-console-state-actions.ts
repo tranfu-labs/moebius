@@ -4,7 +4,10 @@ import type { OperatorSession, TranslationKey } from "@moebius/console-ui";
 import type { DesktopApi } from "./desktop-api-contract.js";
 import type { LocalConsoleState } from "./console-state-contract.js";
 import { ConsoleStateActions } from "./console-state-actions.js";
-import type { ConsoleCommandPort } from "./console-state-action-contract.js";
+import type {
+  ConsoleCommandPort,
+  ConsoleNavigationScene,
+} from "./console-state-action-contract.js";
 import type {
   ConsoleSelection,
   ConsoleStateCoordinator,
@@ -20,6 +23,7 @@ import {
 import { planReadyAttachmentIds } from "./managed-attachment-model.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import type { ConsoleErrorController } from "./use-console-error-state.js";
+import type { ConsolePresentationRoute } from "./presentation-route.js";
 
 export function useConsoleStateActions(
   apiBase: string | null,
@@ -28,6 +32,8 @@ export function useConsoleStateActions(
   t: (key: TranslationKey, values?: Record<string, string | number>) => string,
   selectionRef: MutableRefObject<ConsoleSelection>,
   commitSelection: (selection: ConsoleSelection) => void,
+  presentationRouteRef: MutableRefObject<ConsolePresentationRoute | null>,
+  commitPresentationRoute: (route: ConsolePresentationRoute) => void,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   composerValue: string,
   clearComposer: (sessionId: string) => void,
@@ -37,6 +43,8 @@ export function useConsoleStateActions(
   replaceState: (state: LocalConsoleState) => void,
   errors: ConsoleErrorController,
   api: DesktopApi | undefined,
+  getNavigationScene?: () => ConsoleNavigationScene,
+  restoreNavigationScene?: (scene: ConsoleNavigationScene) => void,
 ) {
   const [isSending, setIsSending] = useState(false);
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
@@ -52,6 +60,10 @@ export function useConsoleStateActions(
     t,
     getSelection: () => selectionRef.current,
     commitSelection,
+    getPresentationRoute: () => presentationRouteRef.current,
+    commitPresentationRoute,
+    getNavigationScene,
+    restoreNavigationScene,
     refresh,
     composerValue,
     clearComposer: (sessionId) => clearComposer(planComposerTargetSessionId(
@@ -70,9 +82,9 @@ export function useConsoleStateActions(
       api?.selectProjectFolder !== undefined,
     ) === "unavailable" ? undefined : () => api!.selectProjectFolder!(),
   }), [
-    api, apiBase, attachments, clearComposer, commands, commitSelection,
-    commitSessionMetadata, composerValue, coordinator, draftStore, refresh,
-    errors, selectionRef, t,
+    api, apiBase, attachments, clearComposer, commands, commitPresentationRoute,
+    commitSelection, commitSessionMetadata, composerValue, coordinator, draftStore,
+    errors, getNavigationScene, presentationRouteRef, refresh, restoreNavigationScene, selectionRef, t,
   ]);
   return useMemo(
     () => ({ actions, isSending, selectionMutationKind }),

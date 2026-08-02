@@ -103,7 +103,7 @@ describe("analysis panel navigation controller", () => {
       [session("root", "Root"), session("child", "Child", "root")],
       "en-US",
       selectionRef,
-      { selectSession },
+      { selectSession, captureNavigationScene: () => undefined },
       commitRoute,
       {
         store: tabsStore,

@@ -10,6 +10,7 @@ import {
   type ConsoleErrorSource,
   type ConsoleErrorState,
 } from "./console-error-model.js";
+import { decideConsoleErrorCommit } from "./console-state-plan.js";
 
 export interface ConsoleErrorController {
   begin(source: ConsoleErrorSource): ConsoleErrorOperation;
@@ -21,12 +22,14 @@ export interface ConsoleErrorController {
 export function useConsoleErrorState() {
   const [state, setState] = useState(createConsoleErrorState);
   const stateRef = useRef(state);
-  stateRef.current = state;
 
   const controller = useMemo<ConsoleErrorController>(() => {
     const commit = (next: ConsoleErrorState): void => {
+      const previousVisibleMessage = selectVisibleConsoleError(stateRef.current);
       stateRef.current = next;
-      setState(next);
+      if (decideConsoleErrorCommit(previousVisibleMessage, selectVisibleConsoleError(next)) === "commit") {
+        setState(next);
+      }
     };
     return {
       begin(source) {

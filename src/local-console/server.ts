@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { TMP_ROOT } from "../config.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
@@ -161,10 +162,17 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && url.pathname === "/api/local-console/state") {
-      sendJson(response, 200, await runtime.state({
+      const snapshot = await runtime.state({
         sessionId: readOptionalString(url.searchParams.get("sessionId")),
         projectId: readOptionalString(url.searchParams.get("projectId")),
-      }));
+      });
+      const serialized = JSON.stringify(snapshot);
+      const etag = `"${createHash("sha256").update(serialized).digest("base64url")}"`;
+      if (request.headers["if-none-match"] === etag) {
+        sendNotModified(response, etag);
+      } else {
+        sendJson(response, 200, snapshot, { etag });
+      }
       return;
     }
 
@@ -862,27 +870,43 @@ function sendHtml(response: http.ServerResponse, body: string): void {
   response.writeHead(200, {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "content-type, x-moebius-attachment-capability",
+    "access-control-allow-headers": "content-type, if-none-match, x-moebius-attachment-capability",
     "content-type": "text/html; charset=utf-8",
   });
   response.end(body);
 }
 
-function sendJson(response: http.ServerResponse, statusCode: number, body: unknown): void {
+function sendJson(
+  response: http.ServerResponse,
+  statusCode: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
   response.writeHead(statusCode, {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "content-type, x-moebius-attachment-capability",
+    "access-control-allow-headers": "content-type, if-none-match, x-moebius-attachment-capability",
     "content-type": "application/json; charset=utf-8",
+    ...headers,
   });
   response.end(JSON.stringify(body));
+}
+
+function sendNotModified(response: http.ServerResponse, etag: string): void {
+  response.writeHead(304, {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "access-control-allow-headers": "content-type, if-none-match, x-moebius-attachment-capability",
+    etag,
+  });
+  response.end();
 }
 
 function sendNoContent(response: http.ServerResponse): void {
   response.writeHead(204, {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "content-type, x-moebius-attachment-capability",
+    "access-control-allow-headers": "content-type, if-none-match, x-moebius-attachment-capability",
   });
   response.end();
 }

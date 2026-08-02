@@ -1,5 +1,8 @@
 import type { ConsoleSelection } from "./console-state-coordinator.js";
-import type { ConsoleStateActionsOptions } from "./console-state-action-contract.js";
+import type {
+  ConsoleNavigationScene,
+  ConsoleStateActionsOptions,
+} from "./console-state-action-contract.js";
 import {
   decideConsoleApiBase,
   decideMutationToken,
@@ -8,16 +11,51 @@ import {
   decideSessionSelection,
   planArchivedSession,
   planConsoleErrorMessage,
+  planNavigationSceneSource,
+  planSessionSelectionRollback,
 } from "./console-state-plan.js";
 import { selectionMutationLifecycle } from "./selection-mutation-lifecycle.js";
 
 export const projectSessionActions = {
-  selectSession(options: ConsoleStateActionsOptions, nextSelection: ConsoleSelection): void {
+  selectSession(
+    options: ConsoleStateActionsOptions,
+    nextSelection: ConsoleSelection,
+    navigationScene?: ConsoleNavigationScene,
+  ): void {
     const decision = decideSessionSelection(options.coordinator.isSelectionMutationPending);
     if (decision === "blocked") return;
+    const previousSelection = options.getSelection();
+    const previousPresentationRoute = options.getPresentationRoute();
+    const previousNavigationScene = planNavigationSceneSource(
+      navigationScene,
+      options.getNavigationScene?.(),
+    );
     options.coordinator.invalidateRefresh();
     options.commitSelection(nextSelection);
-    void options.refresh(nextSelection);
+    void options.refresh(nextSelection).then((loaded) => {
+      const rollback = planSessionSelectionRollback({
+        loaded,
+        currentSelection: options.getSelection(),
+        targetSelection: nextSelection,
+        previousSelection,
+        previousPresentationRoute,
+        previousNavigationScene,
+        canRestoreNavigationScene: options.restoreNavigationScene !== undefined,
+      });
+      type Rollback = ReturnType<typeof planSessionSelectionRollback>;
+      const rollbackHandlers: Record<Rollback["kind"], () => void> = {
+        keep: () => undefined,
+        "restore-scene": () => options.restoreNavigationScene!((rollback as Extract<Rollback, {
+          kind: "restore-scene";
+        }>).scene),
+        restore: () => {
+          const legacy = rollback as Extract<Rollback, { kind: "restore" }>;
+          options.commitSelection(legacy.selection);
+          options.commitPresentationRoute(legacy.presentationRoute);
+        },
+      };
+      rollbackHandlers[rollback.kind]();
+    });
   },
 
   async rebindSessionProject(

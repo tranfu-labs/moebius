@@ -9,6 +9,7 @@ interface ReadingPositionDocument {
 export interface ConversationReadingPositionStore {
   read(sessionId: string): number | null;
   write(sessionId: string, messageId: number): void;
+  remove(sessionId: string): void;
   retain(sessionIds: readonly string[]): void;
 }
 
@@ -63,6 +64,17 @@ export function createConversationReadingPositionStore(
         version: 1,
         positions: Object.fromEntries(entries.slice(-MAX_POSITIONS)),
       });
+    },
+    remove(sessionId) {
+      if (!validSessionId(sessionId)) return;
+      const document = readDocument();
+      if (!(sessionId in document.positions)) return;
+      delete document.positions[sessionId];
+      if (Object.keys(document.positions).length === 0) {
+        storage.removeItem(STORAGE_KEY);
+        return;
+      }
+      writeDocument(document);
     },
     retain(sessionIds) {
       const retained = new Set(sessionIds.filter(validSessionId));

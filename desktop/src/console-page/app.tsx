@@ -51,6 +51,7 @@ import { mountConsoleApp } from "./mount-console-app.js";
 import { useDesktopConsoleShell } from "./use-desktop-console-shell.js";
 import { useConsoleLocalState } from "./use-console-local-state.js";
 import { useConsoleStateActions } from "./use-console-state-actions.js";
+import { useConsoleNavigationScene } from "./use-console-navigation-scene.js";
 import { useConsolePresentation } from "./use-console-presentation.js";
 import { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import {
@@ -155,6 +156,18 @@ export function OperatorConsoleApp({
   const activeSidebarConversationDraft = activeSidebarConversationDraftId === null
     ? null
     : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
+  const navigationSceneBundle = useConsoleNavigationScene({
+    selectionRef,
+    presentationRouteRef,
+    rightSidebarTabs,
+    rightSidebarTabsBundle,
+    rightSidebarTabsStore,
+    composerDraftRef,
+    readingPositionStoreRef: conversationReadingPositionStoreRef,
+    commitSelection,
+    commitPresentationRoute,
+    commitComposerDraft,
+  });
   const conversationViewsBundle = rightSidebarBundle.conversationViews;
   const subSessionViews = conversationViewsBundle.subSessionViews;
   const attachmentDraftsBundle = useConsoleAttachmentDrafts(
@@ -190,9 +203,11 @@ export function OperatorConsoleApp({
   const projects = presentationBundle.projects;
   const stateActionsBundle = useConsoleStateActions(
     apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
-    refresh, composerDraft.value, clearComposerDraft, managedAttachments,
+    presentationRouteRef, commitPresentationRoute, refresh, composerDraft.value,
+    clearComposerDraft, managedAttachments,
     conversationDraftStoreRef.current, stateRef, selectionStateBundle.replaceState,
-    clientErrors, window.moebius,
+    clientErrors, window.moebius, navigationSceneBundle.captureNavigationScene,
+    navigationSceneBundle.restoreNavigationScene,
   );
   const actions = stateActionsBundle.actions;
 

@@ -13,10 +13,11 @@ import {
   decideComposerDraftActivation,
   decideConsoleApiBase,
   decideConsoleStatePoll,
+  decideStateEtagAvailability,
   planDisplayedResultAcknowledgement,
   planConsoleErrorMessage,
 } from "./console-state-plan.js";
-import { refreshConsoleState } from "./refresh-console-state.js";
+import { refreshConsoleState, type ConsoleStateEtagStore } from "./refresh-console-state.js";
 import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
@@ -33,6 +34,13 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
   acknowledgedResultsRef: MutableRefObject<Set<string>>,
   port: ConsoleStateSyncPort,
 ) {
+  const etagsRef = useRef(new Map<string, string>());
+  const etags: ConsoleStateEtagStore = useMemo(() => ({
+    read: (selection) => etagsRef.current.get(stateEtagKey(selection)),
+    write: (selection, etag) => {
+      etagsRef.current.set(stateEtagKey(selection), etag);
+    },
+  }), []);
   const input = {
     apiBase,
     state,
@@ -57,6 +65,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
     const current = inputRef.current;
     const endpoint = decideConsoleApiBase(current.apiBase, "");
     if (endpoint.kind === "unavailable") return false;
+    const etagAvailability = decideStateEtagAvailability(current.state, selection);
     return await refreshConsoleState<TState>({
       apiBase: endpoint.apiBase,
       selection,
@@ -70,8 +79,13 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
       commitSelection: current.commitSelection,
       errors: current.errors,
       mutationOwner,
+      etags: etagAvailability === "use" ? etags : undefined,
     });
   }, []);
+
+  useEffect(() => {
+    etagsRef.current.clear();
+  }, [apiBase]);
 
   useEffect(() => {
     void refresh(inputRef.current.selectionRef.current);
@@ -121,4 +135,8 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
   }, [apiBase, refresh, state]);
 
   return useMemo(() => ({ refresh }), [refresh]);
+}
+
+function stateEtagKey(selection: ConsoleSelection): string {
+  return `${selection.projectId}\u0000${selection.sessionId}`;
 }

@@ -27,6 +27,7 @@ import {
   readConsoleSelectionPreference,
   writeConsoleSelectionPreference,
 } from "./selection-preference.js";
+import { planPresentationRouteCommit } from "./console-state-plan.js";
 
 export function useConsoleSelectionState(
   storage: Storage,
@@ -59,8 +60,10 @@ export function useConsoleSelectionState(
     selectionRef.current = next;
     setSelection(next);
   }, []);
-  const commitPresentationRoute = useCallback((route: ConsolePresentationRoute) => {
-    presentationStore.write(route);
+  const commitPresentationRoute = useCallback((route: ConsolePresentationRoute | null) => {
+    const decision = planPresentationRouteCommit(route);
+    if (decision.kind === "clear") presentationStore.clear();
+    else presentationStore.write(decision.route);
     presentationRouteRef.current = route;
     setPresentationRoute(route);
   }, [presentationStore]);

@@ -1,5 +1,6 @@
 import type { ConsoleSelection } from "./console-state-coordinator.js";
 import type {
+  ConsoleNavigationScene,
   ConsoleStateActionsOptions,
   CreatedSession,
 } from "./console-state-action-contract.js";
@@ -37,8 +38,13 @@ export class ConsoleStateActions {
 
   readonly openProject = async (): Promise<void> => await projectOpeningActions.openProject(this.options);
 
-  readonly selectSession = (nextSelection: ConsoleSelection): void =>
-    projectSessionActions.selectSession(this.options, nextSelection);
+  readonly selectSession = (
+    nextSelection: ConsoleSelection,
+    navigationScene?: ConsoleNavigationScene,
+  ): void => projectSessionActions.selectSession(this.options, nextSelection, navigationScene);
+
+  readonly captureNavigationScene = (): ConsoleNavigationScene | undefined =>
+    this.options.getNavigationScene?.();
 
   readonly rebindSessionProject = async (sessionId: string, projectId: string): Promise<void> =>
     await projectSessionActions.rebindSessionProject(this.options, sessionId, projectId);

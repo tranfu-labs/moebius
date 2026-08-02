@@ -30,6 +30,8 @@ interface RightSidebarTabsDocument {
 export interface RightSidebarTabsStore {
   read(sessionId: string): RightSidebarTabsState;
   write(sessionId: string, state: RightSidebarTabsState): void;
+  snapshot?(): RightSidebarTabsStoreSnapshot;
+  restore?(snapshot: RightSidebarTabsStoreSnapshot): void;
   promoteConversationDraft(input: {
     draftId: string;
     sessionId: string;
@@ -40,6 +42,11 @@ export interface RightSidebarTabsStore {
   renameConversation(sessionId: string, title: string): readonly string[];
   removeSession(sessionId: string): void;
   clearHosts(hostSessionIds: readonly string[]): void;
+}
+
+export interface RightSidebarTabsStoreSnapshot {
+  version: 2;
+  hosts: Record<string, RightSidebarTabsState>;
 }
 
 export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsStore {
@@ -100,6 +107,15 @@ export function createRightSidebarTabsStore(storage: Storage): RightSidebarTabsS
       const document = readDocument();
       document.hosts[sessionId] = state;
       writeDocument(document);
+    },
+    snapshot() {
+      return readDocument();
+    },
+    restore(snapshot) {
+      writeDocument({
+        version: 2,
+        hosts: { ...snapshot.hosts },
+      });
     },
     promoteConversationDraft(input) {
       const document = readDocument();

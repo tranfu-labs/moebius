@@ -102,6 +102,16 @@ describe("child session summaries", () => {
       selectedSessionId: "child-running",
       selectedSession: { sessionId: "child-running", parentSessionId: parent.sessionId },
     });
+    const stateEtag = stateResponse.headers.get("etag");
+    expect(stateEtag).not.toBeNull();
+    const unchangedStateResponse = await fetch(new URL(
+      "/api/local-console/state?projectId=local&sessionId=child-running",
+      started.url,
+    ), {
+      headers: { "if-none-match": stateEtag as string },
+    });
+    expect(unchangedStateResponse.status).toBe(304);
+    await expect(unchangedStateResponse.text()).resolves.toBe("");
 
     const fallbackResponse = await fetch(new URL(
       "/api/local-console/state?projectId=local&sessionId=missing-session",
