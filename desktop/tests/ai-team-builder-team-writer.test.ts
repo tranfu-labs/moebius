@@ -3,9 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiTeamBuilder } from "../src/ai-team-builder/index.js";
+import { AiTeamWriteFileStore } from "../src/ai-team-builder/team-write-store.js";
 import type { AiTeamBuilderProposal } from "../src/ai-team-builder/validator.js";
-import { AiTeamWriter } from "../src/ai-team-builder/team-writer.js";
+import {
+  AiTeamWriter,
+  type AiTeamWriterOptions,
+} from "../src/ai-team-builder/team-writer.js";
 import { listAgentTeams } from "../src/team-ipc.js";
+import {
+  forgetTrashedUserTeamRecord,
+  registerUserTeamSnapshot,
+} from "../src/team-record-store.js";
 
 const temporaryRoots: string[] = [];
 
@@ -79,7 +87,7 @@ describe("AiTeamWriter", () => {
     const lastUsedPath = path.join(dataRoot, ".state", "last-used-team.json");
     await fs.mkdir(path.dirname(lastUsedPath), { recursive: true });
     await fs.writeFile(lastUsedPath, '{"teamId":"development"}\n', "utf8");
-    const writer = new AiTeamWriter({ createId: () => "12345678-abcd" });
+    const writer = createWriter({ createId: () => "12345678-abcd" });
 
     const created = await writer.create(dataRoot, proposal);
 
@@ -127,7 +135,7 @@ describe("AiTeamWriter", () => {
     const dataRoot = await makeDataRootWithBuiltInTeam();
     const lastUsedPath = path.join(dataRoot, ".state", "last-used-team.json");
 
-    await new AiTeamWriter({ createId: () => "no-preference" }).create(dataRoot, proposal);
+    await createWriter({ createId: () => "no-preference" }).create(dataRoot, proposal);
 
     await expect(fs.access(lastUsedPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -135,7 +143,7 @@ describe("AiTeamWriter", () => {
   it("rolls back the final directory and record when registration fails", async () => {
     const dataRoot = await makeDataRootWithBuiltInTeam();
     const rollbackRecord = vi.fn(async () => undefined);
-    const writer = new AiTeamWriter({
+    const writer = createWriter({
       createId: () => "abcdef",
       register: async () => {
         throw new Error("record write failed");
@@ -161,7 +169,7 @@ describe("AiTeamWriter", () => {
 
   it("rejects an invalid proposal before creating staging or formal directories", async () => {
     const dataRoot = await makeDataRootWithBuiltInTeam();
-    const writer = new AiTeamWriter();
+    const writer = createWriter();
     await expect(writer.create(dataRoot, {
       ...proposal,
       members: [proposal.members[0]!],
@@ -194,6 +202,16 @@ async function makeDataRootWithBuiltInTeam(): Promise<string> {
     "utf8",
   );
   return dataRoot;
+}
+
+function createWriter(options: Partial<AiTeamWriterOptions> = {}): AiTeamWriter {
+  return new AiTeamWriter({
+    store: new AiTeamWriteFileStore(),
+    register: registerUserTeamSnapshot,
+    rollbackRecord: forgetTrashedUserTeamRecord,
+    createId: () => "generated",
+    ...options,
+  });
 }
 
 async function listDirectories(root: string): Promise<string[]> {

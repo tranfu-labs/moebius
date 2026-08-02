@@ -1,36 +1,27 @@
-import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import {
-  TEAM_AGENT_FILE,
-  TEAM_MANIFEST_FILE,
-  TEAM_MEMBERS_DIRECTORY,
-  createUniqueAgentSlug,
   evaluateTeamStatus,
   parseAgentMarkdownIdentity,
   parseTeamDefinitionJson,
   serializeTeamDefinition,
-  validateTeamStructure,
-  type TeamDefinition,
 } from "../team-model.js";
+import type { TeamSnapshot } from "../team-store.js";
 import {
   TEAM_ONBOARDING_ORCHESTRATION_FILE,
   parseTeamOnboardingOrchestrationJson,
-  writeTeamOnboardingOrchestration,
+  serializeTeamOnboardingOrchestration,
 } from "../team-onboarding-orchestration.js";
+import type { AiTeamBuilderProposal } from "./validator.js";
+import type { AiTeamWriteStorePort } from "./team-write-contract.js";
+import { AiTeamWriterError } from "./team-write-error.js";
 import {
-  forgetTrashedUserTeamRecord,
-  registerUserTeamSnapshot,
-} from "../team-record-store.js";
-import type {
-  TeamMemberSnapshot,
-  TeamSnapshot,
-} from "../team-store.js";
-import {
-  renderAiTeamMemberMarkdown,
-  validateAiTeamBuilderOutput,
-  type AiTeamBuilderProposal,
-} from "./validator.js";
+  decideAiTeamWriteDevice,
+  planAiTeamStagedValidation,
+  planAiTeamWrite,
+  planAiTeamWriteCleanup,
+  planAiTeamWriteError,
+} from "./team-write-plan.js";
+
+export { AiTeamWriterError } from "./team-write-error.js";
 
 export interface AiTeamWriterResult {
   teamId: string;
@@ -38,209 +29,97 @@ export interface AiTeamWriterResult {
 }
 
 export interface AiTeamWriterOptions {
-  register?: (snapshot: TeamSnapshot) => Promise<void>;
-  rollbackRecord?: (input: { dataRoot: string; teamId: string }) => Promise<void>;
-  createId?: () => string;
+  store: AiTeamWriteStorePort;
+  register: (snapshot: TeamSnapshot) => Promise<void>;
+  rollbackRecord: (input: { dataRoot: string; teamId: string }) => Promise<void>;
+  createId: () => string;
 }
 
 export class AiTeamWriter {
-  private readonly register: (snapshot: TeamSnapshot) => Promise<void>;
-  private readonly rollbackRecord: (input: { dataRoot: string; teamId: string }) => Promise<void>;
-  private readonly createId: () => string;
-
-  constructor(options: AiTeamWriterOptions = {}) {
-    this.register = options.register ?? registerUserTeamSnapshot;
-    this.rollbackRecord = options.rollbackRecord ?? forgetTrashedUserTeamRecord;
-    this.createId = options.createId ?? randomUUID;
-  }
+  constructor(private readonly options: AiTeamWriterOptions) {}
 
   async create(dataRoot: string, proposal: AiTeamBuilderProposal): Promise<AiTeamWriterResult> {
-    const validation = validateAiTeamBuilderOutput({ phase: "proposal", ...proposal });
-    if (!validation.ok || validation.value.phase !== "proposal") {
+    const writePlan = planAiTeamWrite(proposal, this.options.createId());
+    if (!writePlan.ok) {
       throw new AiTeamWriterError("The current AI team proposal is invalid.");
     }
-    const normalized = validation.value;
-    const resolvedDataRoot = path.resolve(dataRoot);
-    const teamsRoot = path.join(resolvedDataRoot, "teams");
-    const stagingRoot = path.join(resolvedDataRoot, ".state", "ai-team-builder-staging");
-    await Promise.all([
-      fs.mkdir(teamsRoot, { recursive: true }),
-      fs.mkdir(stagingRoot, { recursive: true }),
-    ]);
-    await assertSameDevice(teamsRoot, stagingRoot);
+    const locations = await this.options.store.prepare(dataRoot, writePlan.teamId);
+    const deviceDecision = decideAiTeamWriteDevice(
+      locations.teamsDevice,
+      locations.stagingDevice,
+    );
+    if (!deviceDecision.ok) {
+      throw new AiTeamWriterError(deviceDecision.message);
+    }
 
-    const teamId = createTeamId(normalized.team.name, this.createId());
-    const destination = path.join(teamsRoot, teamId);
-    const staging = await fs.mkdtemp(path.join(stagingRoot, `${teamId}-`));
     let renamed = false;
+    let staging: string | null = null;
     try {
-      await writeStagedTeam(staging, normalized);
-      const stagedSnapshot = await rereadStagedTeam({
-        dataRoot: resolvedDataRoot,
-        teamId,
-        directory: staging,
-        proposal: normalized,
+      const readback = await this.options.store.stage(locations, {
+        definitionSource: serializeTeamDefinition(writePlan.definition),
+        orchestrationFileName: TEAM_ONBOARDING_ORCHESTRATION_FILE,
+        orchestrationSource: serializeTeamOnboardingOrchestration(writePlan.orchestration),
+        members: writePlan.members,
       });
-      await fs.rename(staging, destination);
+      staging = readback.staging;
+      const definition = parseTeamDefinitionJson(readback.definitionSource);
+      const orchestration = parseTeamOnboardingOrchestrationJson(
+        readback.orchestrationSource,
+        definition.memberOrder,
+      );
+      const validation = planAiTeamStagedValidation({
+        proposal,
+        definition,
+        orchestration,
+        members: readback.members.map((member) => ({
+          slug: member.slug,
+          identity: parseAgentMarkdownIdentity(member.agentMarkdown),
+          agentMarkdown: member.agentMarkdown,
+        })),
+      });
+      if (!validation.ok) {
+        throw new AiTeamWriterError(validation.message);
+      }
+      const readiness = evaluateTeamStatus({ definition });
+      const stagedSnapshot: TeamSnapshot = {
+        location: {
+          dataRoot: locations.dataRoot,
+          id: locations.teamId,
+          directory: readback.staging,
+          ownership: "user",
+        },
+        definition,
+        members: readback.members.map((member) => ({
+          ...member,
+          ...parseAgentMarkdownIdentity(member.agentMarkdown),
+        })),
+        status: readiness.status,
+        canCreateConversation: readiness.canCreateConversation,
+        issues: readiness.issues,
+      };
+      await this.options.store.commit(readback.staging, readback.destination);
       renamed = true;
-      const snapshot = relocateSnapshot(stagedSnapshot, destination);
+      const snapshot = this.options.store.relocateSnapshot(
+        stagedSnapshot,
+        readback.destination,
+      );
       try {
-        await this.register(snapshot);
+        await this.options.register(snapshot);
       } catch (error) {
-        await this.rollbackRecord({ dataRoot: resolvedDataRoot, teamId });
+        await this.options.rollbackRecord({ dataRoot: locations.dataRoot, teamId: locations.teamId });
         throw error;
       }
-      return { teamId, snapshot };
+      return { teamId: locations.teamId, snapshot };
     } catch (error) {
-      await fs.rm(renamed ? destination : staging, { recursive: true, force: true });
-      throw error instanceof AiTeamWriterError
-        ? error
-        : new AiTeamWriterError("Could not create the AI team atomically.", { cause: error });
+      const cleanup = planAiTeamWriteCleanup({
+        renamed,
+        staging,
+        destination: locations.destination,
+      });
+      if (cleanup.kind === "remove") {
+        await this.options.store.remove(cleanup.target);
+      }
+      throw planAiTeamWriteError(error);
     }
-  }
-}
-
-async function writeStagedTeam(
-  directory: string,
-  proposal: AiTeamBuilderProposal,
-): Promise<void> {
-  const definition: TeamDefinition = {
-    name: proposal.team.name,
-    description: proposal.team.purpose,
-    primaryAgentSlug: proposal.primaryAgentSlug,
-    memberOrder: proposal.members.map((member) => member.slug),
-  };
-  await fs.writeFile(path.join(directory, TEAM_MANIFEST_FILE), serializeTeamDefinition(definition), "utf8");
-  await writeTeamOnboardingOrchestration(directory, {
-    version: 1,
-    relayBeats: proposal.relayBeats.map((beat) => ({ ...beat })),
-  }, definition.memberOrder);
-  for (const member of proposal.members) {
-    const memberDirectory = path.join(directory, TEAM_MEMBERS_DIRECTORY, member.slug);
-    await fs.mkdir(memberDirectory, { recursive: true });
-    await fs.writeFile(
-      path.join(memberDirectory, TEAM_AGENT_FILE),
-      renderAiTeamMemberMarkdown(member),
-      "utf8",
-    );
-  }
-}
-
-async function rereadStagedTeam(input: {
-  dataRoot: string;
-  teamId: string;
-  directory: string;
-  proposal: AiTeamBuilderProposal;
-}): Promise<TeamSnapshot> {
-  const definition = parseTeamDefinitionJson(
-    await fs.readFile(path.join(input.directory, TEAM_MANIFEST_FILE), "utf8"),
-  );
-  const structuralIssues = validateTeamStructure(definition);
-  if (structuralIssues.length > 0) {
-    throw new AiTeamWriterError("Staged team manifest failed structural validation.");
-  }
-  if (
-    definition.name !== input.proposal.team.name
-    || definition.description !== input.proposal.team.purpose
-    || definition.primaryAgentSlug !== input.proposal.primaryAgentSlug
-  ) {
-    throw new AiTeamWriterError("Staged team manifest does not match the validated proposal.");
-  }
-  if (JSON.stringify(definition.memberOrder) !== JSON.stringify(input.proposal.members.map(({ slug }) => slug))) {
-    throw new AiTeamWriterError("Staged team member order does not match the proposal.");
-  }
-  const orchestration = parseTeamOnboardingOrchestrationJson(
-    await fs.readFile(path.join(input.directory, TEAM_ONBOARDING_ORCHESTRATION_FILE), "utf8"),
-    definition.memberOrder,
-  );
-  if (JSON.stringify(orchestration.relayBeats) !== JSON.stringify(input.proposal.relayBeats)) {
-    throw new AiTeamWriterError("Staged team relay beats do not match the proposal.");
-  }
-
-  const members: TeamMemberSnapshot[] = [];
-  for (const slug of definition.memberOrder) {
-    const expectedMember = input.proposal.members.find((member) => member.slug === slug);
-    if (expectedMember === undefined) {
-      throw new AiTeamWriterError(`Staged team contains an unexpected member: ${slug}`);
-    }
-    const memberDirectory = path.join(input.directory, TEAM_MEMBERS_DIRECTORY, slug);
-    const agentFile = path.join(memberDirectory, TEAM_AGENT_FILE);
-    const agentMarkdown = await fs.readFile(agentFile, "utf8");
-    const identity = parseAgentMarkdownIdentity(agentMarkdown);
-    if (
-      identity.displayName !== expectedMember.name
-      || identity.description !== expectedMember.role
-      || agentMarkdown !== renderAiTeamMemberMarkdown(expectedMember)
-    ) {
-      throw new AiTeamWriterError(`Staged member does not match the validated proposal: ${slug}`);
-    }
-    members.push({
-      slug,
-      directory: memberDirectory,
-      agentFile,
-      agentMarkdown,
-      ...identity,
-    });
-  }
-  const proposalValidation = validateAiTeamBuilderOutput({
-    phase: "proposal",
-    ...input.proposal,
-  });
-  if (!proposalValidation.ok || proposalValidation.value.phase !== "proposal") {
-    throw new AiTeamWriterError("Staged team proposal failed final business validation.");
-  }
-  const readiness = evaluateTeamStatus({ definition });
-  if (readiness.status !== "usable" || members.length !== input.proposal.members.length) {
-    throw new AiTeamWriterError("Staged team is not complete and usable.");
-  }
-  return {
-    location: {
-      dataRoot: input.dataRoot,
-      id: input.teamId,
-      directory: input.directory,
-      ownership: "user",
-    },
-    definition,
-    members,
-    status: readiness.status,
-    canCreateConversation: readiness.canCreateConversation,
-    issues: readiness.issues,
-  };
-}
-
-function relocateSnapshot(snapshot: TeamSnapshot, destination: string): TeamSnapshot {
-  return {
-    ...snapshot,
-    location: { ...snapshot.location, directory: destination },
-    members: snapshot.members.map((member) => {
-      const directory = path.join(destination, TEAM_MEMBERS_DIRECTORY, member.slug);
-      return {
-        ...member,
-        directory,
-        agentFile: path.join(directory, TEAM_AGENT_FILE),
-      };
-    }),
-  };
-}
-
-async function assertSameDevice(teamsRoot: string, stagingRoot: string): Promise<void> {
-  const [teams, staging] = await Promise.all([fs.stat(teamsRoot), fs.stat(stagingRoot)]);
-  if (teams.dev !== staging.dev) {
-    throw new AiTeamWriterError("AI team staging and teams directories must be on the same filesystem.");
-  }
-}
-
-function createTeamId(teamName: string, randomPart: string): string {
-  const nameSlug = createUniqueAgentSlug(teamName, []);
-  const safeRandomPart = randomPart.toLowerCase().replace(/[^a-z0-9]/gu, "").slice(0, 12) || "generated";
-  return `${nameSlug}-${safeRandomPart}`;
-}
-
-export class AiTeamWriterError extends Error {
-  readonly code = "AI_TEAM_WRITE_FAILED";
-
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "AiTeamWriterError";
   }
 }

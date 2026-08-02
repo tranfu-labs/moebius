@@ -17,6 +17,7 @@ import {
   type AiTeamBuilderExecutionProfileResolver,
 } from "./execution-profile.js";
 import { AiTeamBuilderKimiSpawner } from "./kimi-spawner.js";
+import { AiTeamWriteFileStore } from "./team-write-store.js";
 import {
   acceptAiTeamBuilderClarifying,
   acceptAiTeamBuilderProposal,
@@ -31,6 +32,10 @@ import {
   type AiTeamBuilderInternalError,
 } from "./state-machine.js";
 import { AiTeamWriter } from "./team-writer.js";
+import {
+  forgetTrashedUserTeamRecord,
+  registerUserTeamSnapshot,
+} from "../team-record-store.js";
 import {
   formatAiTeamBuilderValidationIssues,
   parseAndValidateAiTeamBuilderOutput,
@@ -68,7 +73,12 @@ export class AiTeamBuilder {
     };
     this.resolveExecutionProfile =
       options.resolveExecutionProfile ?? resolveAiTeamBuilderExecutionProfile;
-    this.writer = options.writer ?? new AiTeamWriter();
+    this.writer = options.writer ?? new AiTeamWriter({
+      store: new AiTeamWriteFileStore(),
+      register: registerUserTeamSnapshot,
+      rollbackRecord: forgetTrashedUserTeamRecord,
+      createId: randomUUID,
+    });
   }
 
   async getState(draftId: string): Promise<AiTeamBuilderState> {

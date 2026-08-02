@@ -116,6 +116,7 @@ export const FOUR_LAYER_VIEW_FILES = [
 
 export const FOUR_LAYER_APPLICATION_FILES = [
   "desktop/src/ai-team-builder/index.ts",
+  "desktop/src/ai-team-builder/team-writer.ts",
   "desktop/src/console-page/app.tsx",
   "desktop/src/console-page/desktop-application-root.tsx",
   "desktop/src/console-page/desktop-routes-controller.tsx",
@@ -282,7 +283,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/ai-team-builder/claude-spawner.ts",
   "desktop/src/ai-team-builder/codex-spawner.ts",
   "desktop/src/ai-team-builder/kimi-spawner.ts",
-  "desktop/src/ai-team-builder/team-writer.ts",
+  "desktop/src/ai-team-builder/team-write-store.ts",
   "desktop/src/console-page/attachment-client.ts",
   "desktop/src/console-page/browser-fetch.ts",
   "desktop/src/console-page/console-api-client.ts",
@@ -379,6 +380,8 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/ai-team-builder/instructions.ts",
   "desktop/src/ai-team-builder/output-schema.ts",
   "desktop/src/ai-team-builder/state-machine.ts",
+  "desktop/src/ai-team-builder/team-write-contract.ts",
+  "desktop/src/ai-team-builder/team-write-error.ts",
   "desktop/src/ai-team-builder/team-write-plan.ts",
   "desktop/src/ai-team-builder/validator.ts",
   "desktop/src/team-builder-view-state.ts",
@@ -835,7 +838,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   ],
   dependencyDebt: [
     { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/ai-team-builder-ipc.ts", target: "desktop/src/ai-team-builder/index.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/ai-team-builder/team-writer.ts", target: "desktop/src/team-onboarding-orchestration.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/team-ipc.ts", target: "desktop/src/team-onboarding-orchestration.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "architecture-layer-dependency-matrix", importer: "desktop/src/team-onboarding-orchestration.ts", target: "node:fs/promises", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-no-use-case-reentry", importer: "desktop/src/team-record-store.ts", target: "desktop/src/team-onboarding-orchestration.ts", reason: "pre-four-layer dependency frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
@@ -851,7 +853,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-repair-ipc.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-seed.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "application-use-case-shape", file: "desktop/src/team-onboarding-orchestration.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
-    { ruleId: "adapter-boundary-branch-total", file: "desktop/src/ai-team-builder/team-writer.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-conversation-preference.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-ipc.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-official-management.ts", reason: "pre-four-layer branch/use-case shape frozen at 00 baseline", removalChange: "four-layer-40-adapter-convergence" },

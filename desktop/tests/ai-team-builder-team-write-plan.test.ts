@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decideAiTeamWriteDevice,
   planAiTeamStagedValidation,
   planAiTeamWrite,
-  planAiTeamWriteCleanupTarget,
+  planAiTeamWriteCleanup,
 } from "../src/ai-team-builder/team-write-plan.js";
 import { parseAgentMarkdownIdentity } from "../src/team-model.js";
 
@@ -72,15 +73,11 @@ describe("AI team write plans", () => {
         identity: parseAgentMarkdownIdentity(candidate.agentMarkdown),
         agentMarkdown: candidate.agentMarkdown,
       })),
-      teamsDevice: 1,
-      stagingDevice: 1,
     };
 
     expect(planAiTeamStagedValidation(input)).toEqual({ ok: true });
-    expect(planAiTeamStagedValidation({ ...input, stagingDevice: 2 })).toEqual({
-      ok: false,
-      reason: "cross-device",
-    });
+    expect(decideAiTeamWriteDevice(1, 1)).toEqual({ ok: true });
+    expect(decideAiTeamWriteDevice(1, 2)).toMatchObject({ ok: false });
     expect(planAiTeamStagedValidation({
       ...input,
       definition: { ...input.definition, memberOrder: ["someone-else"] },
@@ -88,19 +85,24 @@ describe("AI team write plans", () => {
     expect(planAiTeamStagedValidation({
       ...input,
       members: [{ ...input.members[0]!, agentMarkdown: "changed" }],
-    })).toEqual({ ok: false, reason: "member-identity", slug: "launch-lead" });
+    })).toMatchObject({ ok: false, reason: "member-identity", slug: "launch-lead" });
   });
 
   it("selects the cleanup target from the committed rename state", () => {
-    expect(planAiTeamWriteCleanupTarget({
+    expect(planAiTeamWriteCleanup({
       renamed: false,
       staging: "/staging",
       destination: "/team",
-    })).toBe("/staging");
-    expect(planAiTeamWriteCleanupTarget({
+    })).toEqual({ kind: "remove", target: "/staging" });
+    expect(planAiTeamWriteCleanup({
       renamed: true,
       staging: "/staging",
       destination: "/team",
-    })).toBe("/team");
+    })).toEqual({ kind: "remove", target: "/team" });
+    expect(planAiTeamWriteCleanup({
+      renamed: false,
+      staging: null,
+      destination: "/team",
+    })).toEqual({ kind: "skip" });
   });
 });
