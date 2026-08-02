@@ -6,13 +6,12 @@
 
 1. desktop main/team/onboarding/updater/file-manager/IPC/browser storage；
 2. Codex/Claude/Kimi process、trusted JSONL、workspace/files/attachments；
-3. GitHub/media/state/goal-ledger persistence；
-4. HTTP server、observer read/render 和 composition roots。
+3. local SQLite/JSONL state、HTTP server 与 composition roots。
 
 adapter 可以包含外部协议校验、路径安全、原子写和 wire→DTO 映射；“用户/会话/任务在什么条件下
 允许什么结果”属于 domain。application 只调用 ports。`LocalConsoleStore` 名称、方法和 schema 不变。
 
-预估改动 3.5k–5.5k 行；累计纯比例 72–80%，完整闸门目标 94–112 秒。若剩余集成用例都在证明
+预估改动 2.5k–4.5k 行；以 30 批删除后新基线提升 6–10pp，完整闸门目标 92–116 秒。若剩余集成用例都在证明
 真实 IO，此批速度收益允许为零；其必要性是消除非法依赖和业务规则共居，不以删测试凑指标。
 
 ## 测试对账
@@ -23,7 +22,7 @@ adapter 可以包含外部协议校验、路径安全、原子写和 wire→DTO 
 - realpath/regular-file/device/inode/size/path traversal；
 - provider spawn、watchdog、session link、native transcript/wire；
 - preload IPC channel、fetch receiver、HTTP error mapping；
-- GitHub argv/stdin、visible write 无重试、observer readonly。
+- local HTTP/preload 边界与 provider argv/stdin。
 
 每个候选仍按系列 test-name ledger 证明等价。
 

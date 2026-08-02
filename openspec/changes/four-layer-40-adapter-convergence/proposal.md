@@ -5,8 +5,7 @@
 | 文件 | 小节 | 变更 | 状态 |
 | --- | --- | --- | --- |
 | `openspec/specs/desktop-shell/spec.md` | desktop main/team/onboarding/provider/IPC Requirements | adapter 行为保持 | 无变更 |
-| `openspec/specs/local-console/spec.md` | store/provider/process/observer 接缝 | adapter 行为保持 | 无变更 |
-| `openspec/specs/github-issue-runner/spec.md` | GitHub/provider/state/media 接缝 | adapter 行为保持 | 无变更 |
+| `openspec/specs/local-console/spec.md` | store/provider/process 接缝 | adapter 行为保持 | 无变更 |
 | `openspec/specs/goal-ledger/spec.md` | ledger state adapter | schema 与原子性保持 | 无变更 |
 | `openspec/changes/four-layer-architecture-series/design.md` | `40 · Adapter convergence` | 本 change 系列契约 | 待主理人核验 |
 
@@ -14,21 +13,21 @@
 
 ## 背景
 
-前三个执行 change 处理最大的 application 容器后，剩余 layer debt 会集中在 desktop main/team/
-onboarding、provider/GitHub/state/media/observer adapters 及“读取外部 shape + 内联业务判据”的共居模块。
+30 批退役 GitHub runner/observer 后，剩余 layer debt 集中在 desktop main/team/onboarding、provider、
+local state/storage adapters 及“读取外部 shape + 内联业务判据”的共居模块。
 这些模块不能仅因使用 IO 就整体免于分层，也不能仅因体量大就重画数据层。
 
 ## 提案
 
 - 逐项清理剩余 domain/application → concrete adapter 反向依赖。
 - 外部 wire/storage/process shape 的纯 parser/classifier 原样析出到 domain；实际 IO 留 adapter。
-- desktop main、preload、server、runner entry 继续作为 exact composition roots。
+- desktop main、preload、server 与 local entry 继续作为 exact composition roots。
 - 保留 `LocalConsoleStore`；不按行数拆 `sqlite-state-worker.ts`，只在发现真实领域判据时提取。
 - 对 adapter parser 的纯组合做 test-name 对账，原子性、安全路径、进程、IPC 和 HTTP 接缝继续集成测。
 
 ## 影响
 
-覆盖尚未迁移的 `src/**`、`desktop/src/**`、observer/provider/state/media 和 composition roots；
+覆盖尚未迁移的 `src/**`、`desktop/src/**`、provider/local state/storage 和 composition roots；
 console-ui 与已完成 application flows 不重写。
 
 ## 真实验收环境前提

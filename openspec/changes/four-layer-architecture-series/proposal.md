@@ -2,8 +2,9 @@
 
 ## 需求基线
 
-本系列是用户明确选择的全面内部架构重构。产品行为、页面结构、公开 API、持久化格式和
-provider 协议均保持不变；PRD 只作为回归 oracle，不修改正文。
+本系列最初由用户选择为全面内部架构重构；00/10/20 批保持产品行为不变。20 批归档后，用户明确
+退出 GitHub issue runner，因此 30 批起同时承接一次产品运行形态收敛。该产品决策只改变 runner /
+observer 边界；local 页面、API、持久化格式和 provider 协议继续作为回归 oracle。
 
 | 文件 | 小节 | 变更 | 状态 |
 | --- | --- | --- | --- |
@@ -16,9 +17,10 @@ provider 协议均保持不变；PRD 只作为回归 oracle，不修改正文。
 | `docs/product/pages/settings.md` | `操作与反馈`、`页面状态`、`验收清单` | 作为设置与 IPC 重构 oracle | 无变更 |
 | `docs/product/pages/search.md` | `操作与反馈`、`页面状态`、`指标与验收` | 作为搜索状态重构 oracle | 无变更 |
 | `docs/product/flows/session-analysis.md` | `主流程`、`分支与异常`、`端到端验收` | 作为分析会话重构 oracle | 无变更 |
+| `docs/product/prd.md` | `产品运行形态` | 30 批移除 GitHub runner 与 observer，只保留 local console | 已写入 |
 
-`spec-delta/` 保持为空：本系列不得改变任何已实现行为 Requirement。每个子 change 归档时只
-核对受影响规格未偏离，不把架构约束写进产品行为 spec。
+系列总纲不直接持有 spec-delta。00/10/20 批不得改变行为 Requirement；30 批由自己的 spec-delta
+退役 `github-issue-runner` 域并修改 local-console/desktop-shell，40/50 批继续保持剩余产品行为不变。
 
 ## 背景
 
@@ -41,7 +43,8 @@ provider 协议均保持不变；PRD 只作为回归 oracle，不修改正文。
   `app.tsx` 的状态与副作用编排。
 
 用户选择全面四层重构，并明确功能开发冻结、由单人执行。冻结降低了冲突成本，但不取消
-中途停止点：每个子 change 必须行为零变更、可独立合并和归档，完成后系统处于自洽状态。
+中途停止点：除用户明确批准退役行为的 30 批外，每个子 change 必须行为零变更；所有批次都必须
+可独立合并和归档，完成后系统处于自洽状态。
 
 ## 提案
 
@@ -53,7 +56,7 @@ provider 协议均保持不变；PRD 只作为回归 oracle，不修改正文。
    允许异步和 IO，但不得复制领域判据，且入口保持薄。
 3. **领域规则层**：只接收和返回普通值，运行时依赖闭包不得到达 fs、SQLite、provider、
    Electron、HTTP/IPC 或 browser global；全部由 `check:boundaries` 传递检查。
-4. **适配器层**：实现 fs、SQLite/JSONL、provider CLI、GitHub、HTTP、Electron IPC 和浏览器
+4. **适配器层**：实现 fs、SQLite/JSONL、provider CLI、HTTP、Electron IPC 和浏览器
    存储边界；不得拥有领域决策。
 
 采用一个系列总纲加六个顶层执行 change：
@@ -65,8 +68,8 @@ provider 协议均保持不变；PRD 只作为回归 oracle，不修改正文。
 5. `four-layer-40-adapter-convergence`
 6. `four-layer-50-final-convergence`
 
-拆分依据是独立运行边界，而不是文件数量：门禁、local console、desktop renderer、GitHub
-runner、其余 adapter/composition roots、最终清债分别能独立验证和回滚。每个子 change 只跑
+拆分依据是独立运行边界，而不是文件数量：门禁、local console、desktop renderer、退役 GitHub
+runner、剩余 adapter/composition roots、最终清债分别能独立验证和回滚。每个子 change 只跑
 自己的一次完整闸门；系列总纲不修改生产代码，不单独消耗完整闸门。
 
 ## 影响
@@ -78,8 +81,8 @@ runner、其余 adapter/composition roots、最终清债分别能独立验证和
 
 明确不涉及：
 
-- 产品行为、交互、文案、路由、API/IPC shape、错误 code 或排序语义；
+- 30 批明确退役的 GitHub runner/observer 以外的产品行为、交互、文案、路由、API/IPC shape、错误 code 或排序语义；
 - `LocalConsoleStore` 端口、SQLite/JSONL schema、数据根和恢复协议；
-- provider CLI 参数、GitHub 协议、模型选择或执行超时；
+- provider CLI 参数、模型选择或执行超时；
 - 顺手修复审计中发现的缺陷、依赖升级或无关命名清理；
 - CQRS、事件总线、service locator、DI 框架或四层之外的新架构概念。

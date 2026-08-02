@@ -7,7 +7,8 @@
 
 硬不变量：
 
-- 用户可见行为、API/IPC、SQLite/JSONL、provider/GitHub 协议和失败恢复顺序不变。
+- 30 批明确退役的 GitHub runner/observer 以外，用户可见行为、API/IPC、SQLite/JSONL、provider
+  协议和失败恢复顺序不变。
 - `LocalConsoleStore` 端口保留；store 实现继续属于 adapter，不新增第二套 repository 抽象。
 - `console-ui` 继续是受控视图包，不把 renderer 编排搬进组件库。
 - 每个子 change 合并后无“下一批才能编译/工作”的占位接口、双写或未消费 planner。
@@ -50,7 +51,7 @@
 - legacy exception 必须是 exact importer → exact target，带移除 change id；禁止 wildcard。
 - 新增文件没有归属、扩大 exception、已消失 exception 未删除都使检查失败。
 
-静态官网没有 TypeScript import 图，也不参与桌面、local console 或 GitHub runner 的运行时装配，
+静态官网没有 TypeScript import 图，也不参与桌面或 local console 的运行时装配，
 因此明确排除在 layer registry 之外；本系列不新增或修改 marketing-site 门禁。
 
 ### 3.2 允许依赖
@@ -127,12 +128,12 @@ permit 或修改 fixture 来修绿。新增 permit 必须点名外部协议字�
 | 00 `four-layer-00-boundary-foundation` | 四层 registry、覆盖检查、依赖矩阵、现有纯模块闭包、exact debt ledger | 1.2k–1.8k | 全生产文件有唯一归属；现有违规显式冻结，新违规进不来 | 34–41%（不提取规则）；已知 10,301 行 100% 受闭包保护 | 132–136s；允许 checker 增量，收益为风险可见性 |
 | 10 `four-layer-10-local-console` | runtime public use cases、primary/worker 编排、生命周期辅助；保留 store 端口 | 5.5k–7.5k | runtime 成为薄 facade/composition root；领域 planner 与应用 use case 可独立测 | 48–57% | 112–126s |
 | 20 `four-layer-20-desktop-renderer` | `app.tsx` shell/team/settings/onboarding 与 conversation/search/sidebar 分组纵切 | 5.0k–7.0k | `app.tsx` 只装配 controller 与 `OperatorConsole`；renderer 规则进入纯 state model | 60–69% | 102–118s |
-| 30 `four-layer-30-github-runner` | runner 主链、scanner/dispatcher/acceptance/route/orchestration 的 use case 与纯决策 | 3.0k–4.5k | GitHub mode composition root 只装配；L1/S1/V1 顺序由 application 流程显式表达 | 66–74% | 98–114s |
-| 40 `four-layer-40-adapter-convergence` | desktop main/team/onboarding、provider/GitHub/state/observer adapters 与剩余 cohabitation | 3.5k–5.5k | fs/SQLite/provider/IPC/browser storage 只在 adapter；数据端口未重画 | 72–80% | 94–112s；若无重复集成测试可剪，速度收益可为零 |
-| 50 `four-layer-50-final-convergence` | debt ledger 归零、规则去重、文档/架构图、全仓测试对账与指标复测 | 1.0k–1.8k | 无 legacy exception；四层和现有业务模块图同时成立，可在此长期停留 | ≥72%，目标 75% | ≤110s 目标；真实 IO 下限占比 ≤40% |
+| 30 `four-layer-30-github-runner` | 退役 GitHub runner、observer、Desktop 后台 child/status；保留 local CLI 与共享 parser/worker | 净删 14k–17k | `pnpm start` 与 Desktop 只装配 local console；历史 GitHub state 不被破坏 | 删除后按剩余代码重建基线，目标 ≥60% | 95–120s；只认领删除 test-name 的中位数 |
+| 40 `four-layer-40-adapter-convergence` | desktop main/team/onboarding、provider/local state/storage 与剩余 cohabitation | 2.5k–4.5k | fs/SQLite/provider/IPC/browser storage 只在 adapter；数据端口未重画 | 以 30 批新基线 +6–10pp | 92–116s；若无重复集成测试可剪，速度收益可为零 |
+| 50 `four-layer-50-final-convergence` | debt ledger 归零、规则去重、文档/架构图、全仓测试对账与指标复测 | 1.0k–1.8k | 无 legacy exception；四层和 local-only 模块图同时成立，可在此长期停留 | ≥68%，目标 72% | ≤110s 目标；真实 IO 下限占比 ≤40% |
 
 目标不是把所有代码变纯：application 时序、adapter 原子性、provider 进程、SQLite/JSONL、真实
-Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值低于 72% 时，只有逐项证明剩余
+Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值低于 68% 时，只有逐项证明剩余
 分支属于时序/IO 而非可提纯业务规则才可验收。
 
 ## 5. 测试替代总账
@@ -162,8 +163,8 @@ Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值
 | --- | --- | --- | --- |
 | 10 | `local-console.test.ts` 的路由/队列组合；`local-console-execution-runtime.test.ts` 的 retry/prompt 组合；`local-console-pending-switch.test.ts` 的状态选择组合 | session/project policy、primary plan、worker plan、terminal/recovery transition | 每类 HTTP+SQLite 一条、restart、provider facts、并发 lane、store failure |
 | 20 | `console-app-*.test.tsx` 中仅证明 owner/generation/reducer 的参数组合；`state-sync.test.ts` 的纯状态分支 | route/selection/search/process/team/settings controllers 与 reducers | fetch receiver、preload IPC、慢/失败返回、父重渲染、真实 Electron 用户动作 |
-| 30 | `runner.test.ts` 中可由纯 route/intake/acceptance decision 覆盖的组合 | issue processing plan、发布边界 transition、ledger/orchestration decision | gh/Codex adapter、L1 timeout、S1 cursor、V1 visible failure、真实 sandbox issue |
-| 40 | adapter 文件中仅验证 parser/classifier 的参数组合 | wire/storage result parser、path/identity decision | SQLite/JSONL、filesystem、process、IPC/preload、observer HTTP 原子/安全接缝 |
+| 30 | GitHub runner/observer/Desktop child 测试 | 不做伪替代；按已删除产品契约逐 test-name 删除 | local startup、shared parser/provider、SQLite worker、Desktop local main 接缝 |
+| 40 | adapter 文件中仅验证 parser/classifier 的参数组合 | wire/storage result parser、path/identity decision | SQLite/JSONL、filesystem、process、IPC/preload 原子/安全接缝 |
 
 00 不剪测试；50 只根据已完成 ledger 删除 stale 重复，不首次发明替代关系。
 
@@ -182,9 +183,7 @@ Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值
 | 20 | `desktop/tests/console-app-sidebar-conversation-regressions.test.tsx` · `keeps the previous route and draft when ordinary conversation creation fails` | `desktop/tests/console-navigation-controller.test.ts` · `rolls back pending creation to the previous route and draft on failure` | create pending → failure 的 route/draft 恢复 | 保留一条 mounted app 的 fetch failure 到可见错误反馈用例 |
 | 20 | `desktop/tests/onboarding-app-routing.test.tsx` · `keeps the later shell PATH recheck when the initial check resolves last` | `desktop/tests/onboarding-readiness-controller.test.ts` · `rejects an older initial readiness result after a newer PATH recheck` | request generation 与迟到 initial result 丢弃 | 保留 preload IPC subscription/receiver 解绑与 mounted onboarding 接缝 |
 | 20 | `desktop/tests/onboarding-app-routing.test.tsx` · `does not let an older full readiness response overwrite newer per-CLI results` | `desktop/tests/onboarding-readiness-controller.test.ts` · `merges newer per-CLI results without accepting an older full snapshot` | full/per-CLI response 版本合并 | 保留一条真实 preload readiness channel 到页面状态用例 |
-| 30 | `tests/runner.test.ts` · `integration acceptance prepass posts one parent request only after every ledger child has passed` | 现有 `tests/acceptance-prepass.test.ts` · `records a child acceptance fact and requests parent integration acceptance only when join is ready` | join ready 后只请求一次 parent integration acceptance | 保留一条 runner 阶段顺序 + 可见发布 + ledger save 接缝 |
-| 30 | `tests/runner.test.ts` · `records no_action fallback routing without posting a comment` | `tests/external-route.test.ts` · `records deterministic no_action for an agent-authored comment on an already passed ledger child`，并由 `tests/github-response-intake.test.ts` · `records external comment fallback route outcomes by comment id across no_action, append, and fail_open` 覆盖 fold | no_action 不发布、route fact 按 comment id 持久化 | 保留一条 runner 外部评论 → fallback adapter → state save 链路 |
-| 30 | `tests/runner.test.ts` · `does not re-run fallback routing for the same comment id` | `tests/external-route-deduplication.test.ts` · `does not plan fallback routing for an already recorded comment id` | 已记录 comment id 的幂等判据 | 保留 runner 重启后读取真实 state 并跳过重复发布的接缝 |
+| 30 | 原 `tests/runner.test.ts`、`tests/observer.test.ts` 与 GitHub adapter/state tests 的全部 test names | 无；被测产品契约退役 | GitHub issue runner/observer 行为删除，不伪造等价 local 行为 | `runtime-start` local-only、CEO local parser、SQLite worker/local store、Desktop local lifecycle 分别保留并点名 |
 
 实施者必须把这张初始表复制到对应子 change 的实际 ledger，补齐 duration、最终文件名和“删除/保留”
 结论；若迁移后的模块边界表明某候选仍承担不可替代接缝，其结论应为“保留”，而不是为了指标硬删。
@@ -240,21 +239,19 @@ Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值
 - **真实页面 RA-10**：右侧栏打开改动、文件、过程、子任务/普通会话标签并切换宿主；刷新期间当前
   标签不被抢占，关闭/重开恢复各宿主自己的标签现场。
 
-### 30 · GitHub runner
+### 30 · GitHub runner 退役
 
-- issue processing application flow 显式保持 build timeline → acceptance pre-pass → recovery → trigger →
-  fallback route → execution → publish → state save 的既有顺序。
-- L1 never-resolve、S1 首条可见结果前失败、V1 放弃可见三类故障注入继续成立。
-- **真实页面 RA-11**：在白名单 sandbox GitHub issue 页面发布合法 `@agent` 指令，页面先出现受控
-  reaction，随后只出现一条目标 Agent 评论；本地 runner 状态最终不再 in-flight。
-- **真实页面 RA-12**：在 active sandbox issue 页面发布无 mention 外部评论，页面只出现一次既有
-  fallback route 结果；重启 runner 后同一 comment 不重复发布。
-- sandbox 不可用时必须写“未验证”，不能用 fake gh 抵扣真实页面；先合并后补验还是阻断归档属于
-  30 批开始前必须由用户/主理人决定的环境策略，本方案不预判。
+- GitHub issue scanning/intake/dispatch/publication/state、observer 与 Desktop runner child 均不可达且无
+  残留启动命令；`sqlite-state-worker.ts` 继续服务 local store。
+- **真实运行 RA-11R**：`pnpm start` 可完成 local 会话写读并有界退出；进程树无 GitHub child；旧
+  `--github-mode` 在启动 server 前 fail closed。
+- **真实页面 RA-12R**：Desktop 主窗口和辅助状态页可用，只显示 local/环境/版本事实；页面与进程树
+  都没有 runner/observer。
+- **真实数据 RA-30D**：带代表性旧 GitHub state 的临时数据根启动前后内容不变，且没有新 GitHub 写入。
 
 ### 40 · Adapter convergence
 
-- fs、SQLite/JSONL、provider CLI、GitHub、HTTP、Electron IPC/browser storage 只在 adapter scopes；
+- fs、SQLite/JSONL、provider CLI、HTTP、Electron IPC/browser storage 只在 adapter scopes；
   domain/application 不再通过间接 import 到达具体实现。
 - `LocalConsoleStore` 及现有 schema/API/IPC 不变；adapter parser 析出时 byte/wire/storage 输入输出逐例等价。
 - **真实页面 RA-13**：主页面添加真实本地附件并发送，预览、发送、重启恢复和删除生命周期与既有
@@ -270,7 +267,8 @@ Electron/HTTP 接缝必须继续由集成或真机测试覆盖。最终纯比值
 - layer registry 覆盖全部生产文件，legacy exception 为零，composition root exact allowlist 无 stale 项。
 - 所有 `[IB:*]` 与 `module-map.md` 双向一致；所有 `[NI:*]` 有具体行为验证责任，不用“代码审查”四字
   代替 oracle。
-- 六个 change 的测试 ledger 每个删除项都有等价纯测试和保留接缝；不存在净删除。
+- 六个 change 的测试 ledger 中，重构删除项都有等价纯测试和保留接缝；30 批因产品契约退役而净删
+  的测试单列契约与 test name，不伪装成等价替代。
 - 复测纯逻辑/业务规则比例、完整闸门、真实 IO 下限；达不到目标时逐项解释，禁止改口径美化。
 - **真实页面 RA-16**：依次完成新会话发送/终止与重试、左侧栏快速会话往返、搜索导航、分析会话、
   团队编辑、设置、右栏标签和附件的联合 smoke；每一步屏幕信号与前述 RA 条目一致，重启后持久事实保持。
@@ -294,15 +292,15 @@ adapter。数据端口不改。若一个提取模块仍同时读取 store 并决
 controller 以 hook 或普通 coordinator 形式存在均可，不引入状态框架。纯状态规则进入 reducer/model，
 HTTP/IPC/localStorage 进入 adapter，`OperatorConsole` 仍是受控 view。
 
-### 30：GitHub runner 纵切
+### 30：GitHub runner 退役
 
-继续沿用既有 `scanner`、`dispatcher`、`acceptance-prepass`、`external-route`，不重写为事件管线。
-主 entry 只装配，application use case 保留 L1/S1/V1 调用顺序，纯 decision 留在现有 conversation、
-intake、ledger、trigger、orchestration modules 或新窄 planner。
+删除 runner/observer/Desktop child 闭包；`runner.ts` 只保留 local CLI shell。共享 parser/types 先迁到
+local domain，动态 SQLite worker、provider、conversation/trigger、format/agent manifest 依生产调用者
+保留。旧 GitHub 数据不做 destructive migration。
 
 ### 40：adapter 收敛
 
-覆盖未在前三批触及的 desktop main/team/onboarding、provider/GitHub/state/observer 和 cohabiting parser。
+覆盖未在前三批触及的 desktop main/team/onboarding、provider/local state/storage 和 cohabiting parser。
 适配器可以很大，只要变化理由都是同一外部边界；不得为了行数拆 `sqlite-state-worker.ts`，也不得改
 `LocalConsoleStore`。只有其中确有领域判据时才原样析出纯函数。
 

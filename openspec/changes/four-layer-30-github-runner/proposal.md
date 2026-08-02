@@ -4,41 +4,57 @@
 
 | 文件 | 小节 | 变更 | 状态 |
 | --- | --- | --- | --- |
-| `openspec/specs/github-issue-runner/spec.md` | 全部 runner Requirement | intake、trigger、执行、发布、恢复语义保持 | 无变更 |
-| `docs/protocols/github-interaction.md` | 全部公开交互协议 | mention/comment/stage 行为保持 | 无变更 |
-| `docs/architecture/invariants.md` | L1 / S1 / V1 | 调用顺序与失败边界 oracle | 无变更 |
-| `openspec/changes/four-layer-architecture-series/design.md` | `30 · GitHub runner` | 本 change 系列契约 | 待主理人核验 |
+| `docs/product/prd.md` | `产品运行形态` | 产品只保留本地操作台；移除 GitHub issue runner 与独立 observer | 已写入 |
+| `docs/product/prd.md` | `Desktop 持久 Agent 的执行会话连续性` | 持久 Agent 从三类收敛为 local 与 AI 建队两类 | 已写入 |
+| `openspec/specs/github-issue-runner/spec.md` | 全域 | runner 行为域随运行形态退役 | 待本 change 归档合并 |
+| `openspec/specs/local-console/spec.md` | observer 与双模式启动 Requirements | 删除 observer、`--github-mode` 与双状态链承诺，保留 local-only 启动 | 待本 change 归档合并 |
+| `openspec/specs/desktop-shell/spec.md` | 启动、退出、状态与 preload Requirements | 桌面不再启动/监管 runner 与 observer | 待本 change 归档合并 |
 
-`spec-delta/` 保持为空；任何 cursor、可见评论或重试语义变化均是回归。
+用户在四层系列 20 批归档后明确裁决“GitHub runner 不再需要，可以去掉”。这是一项产品意图变更，
+覆盖本 change 原先“行为零变更地重构 runner”的方案；旧分解账、RA-11/RA-12 与 sandbox 环境前提
+全部作废。三 provider 环境前提仍属于 40 批。
 
 ## 背景
 
-`runner.ts` 仍约 2,618 行。scanner、dispatcher、acceptance-prepass、external-route 已出现应用模块，
-但主 issue flow 仍混合领域判定、GitHub/Codex adapter 调用和状态提交，导致部分 trigger/route/
-acceptance 组合只能通过 runner 级测试验证。
+当前 GitHub 形态不是一个孤立文件：`src/runner.ts`、GitHub intake/state、issue dispatcher、
+prescript/worktree、observer 以及 Desktop runner child/status 共同形成约 14k+ 行生产链。继续按原计划
+把它分层，会永久维护用户已决定退出的能力、测试与桌面后台进程。
+
+静态可达性与动态入口核对纠正了两条初始假设：
+
+- `desktop/src/runner-child.ts` 明确以 `mode: "github"` 启动；Desktop 的 local console 由
+  `desktop/src/main.ts` 独立持有，因此 runner child/launch/supervisor 可以删除。
+- `src/sqlite-state-worker.ts` 由 `src/sqlite-state.ts` 通过 `new Worker(workerUrl)` 动态加载，并服务
+  local console；Desktop build 也显式打包它。它必须保留，不能因静态 import 图误删。
 
 ## 提案
 
-- 保持既有 scanner/dispatcher/route/acceptance 模块和流程顺序，不改成事件总线。
-- 把 issue processing 主链收成 application use case，纯 decisions 留既有 conversation/intake/ledger/
-  trigger/orchestration modules 或窄 planner。
-- `runner.ts` 只做配置、adapter 和 composition 装配。
-- 纯组合从 runner 重型用例迁到 direct tests，保留 gh/Codex、L1/S1/V1 和 sandbox GitHub 接缝。
+- 删除 GitHub issue 扫描、intake、comment/reaction/artifact、issue worktree、runner state 与 observer
+  的生产入口和实现。
+- 把 `src/runner.ts` 收成 local-only 的终端进程壳，保留 `pnpm start`；删除 `--github-mode` 与运行模式
+  分支，非空未知参数继续 fail closed。
+- 将 local console 实际使用的 CEO child-session parser/types 从 `ceo-orchestration.ts` 提取到 local
+  领域模块，随后删除 GitHub 专属 orchestration。
+- Desktop 只启动并展示 local console 与现有环境诊断；删除 runner supervisor、observer 服务、状态
+  字段、preload 动作和 renderer 的 `runnerStatus` 投影。
+- 保留 local/provider 共用模块、`LocalConsoleStore`、`sqlite-state.ts` 与动态 worker；不删除用户数据目录
+  中已有历史 GitHub 状态，不修改 SQLite/JSONL 的 local schema。
+- 外部 GitHub Release、更新检查和仓库链接不是 runner，继续保留。
 
 ## 影响
 
-涉及 `src/runner.ts`、`src/runner/**`、scanner/dispatcher 邻近 application/domain modules 和 tests；
-不改 GitHub API、Codex 参数、agent Markdown 或 ledger schema。
+生产代码预计净删除 14k–17k 行，涉及 `src/runner*`、GitHub/state/observer/prescript 纵切、Desktop
+后台 runner/observer 装配、状态页与 console status props。30 批 20 条 layer debt 随删除或 local
+提取清零；40 批的剩余 debt 以删除后的 registry 重新导出，`sqlite-state-worker.ts` 的 adapter debt
+明确保留给 40 批，不能用本次删除抵扣。
 
-## 真实验收环境前提
+行为变化是有意的：
 
-| 前提 | 开工前机械核对 | 不满足时的影响 |
-| --- | --- | --- |
-| 专用 sandbox GitHub 仓库已加入本机 `config.local.toml` 白名单 | 只读检查 exact `owner/repo`，不得提交本地配置 | RA-11/RA-12 无法进入真实 runner intake；不影响纯规则与 adapter 替身测试 |
-| 当前 `gh` 登录对 sandbox issue 具备读取、评论、reaction 及创建/关闭验收 issue 的权限 | `gh auth status` 加 sandbox 上一次可回收的读写探针 | 无法证明 reaction/comment 可见顺序、fallback 幂等和重启后的外部事实 |
-| 有专用验收 issue，且允许发布 mention、无 mention 评论并在结束后关闭 | 记录 issue URL/编号及验收账号，不复用真实用户 issue | 缺少可隔离、可清理的 RA-11/RA-12 页面入口 |
-| sandbox runner 配置的至少一个真实 provider 当前可完成一次短调用 | 开工前做一次额度最小探针，不把探针算验收 | RA-11 无法观察目标 Agent 终局评论；RA-12 的 no-action 路径仍只能部分验收 |
+- `pnpm start` 只启动 local console；`--github-mode` 不再是合法参数。
+- Desktop 不再产生 GitHub runner 子进程、observer 端口或相应状态/打开动作。
+- `pnpm observer` 命令移除。
+- 已有 GitHub runner 数据留在磁盘但不再读取、迁移或写入。
 
-任一前提不满足时，相关 RA 条目标记“未验证”，fake `gh` 或 mock provider 不抵扣。究竟阻断本批
-合并/归档，还是允许标记“待真机验收”后补，由用户/主理人在 30 批开始前决定；本 proposal 只固定
-影响面，不预设该策略。
+已有未归档 change 中凡仍含 `github-issue-runner` delta 的内容，在 runner 退役后不得继续作为可实施
+承诺；本 change 只登记冲突清单，不擅自把混合 change 的 local/goal-ledger 内容一并删除。主理人在
+本 change 归档前按“纯 GitHub change 作废、混合 change 删除 GitHub delta 并保留本地域”逐项处置。

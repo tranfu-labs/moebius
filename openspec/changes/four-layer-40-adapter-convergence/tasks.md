@@ -5,7 +5,7 @@
 - [ ] 建 parser/classifier test-name ledger，列明不可删除 IO 接缝
 - [ ] 清理 desktop main/team/onboarding/IPC/browser storage 共居判据
 - [ ] 清理 provider/files/trusted JSONL/workspace/attachment 共居判据
-- [ ] 清理 GitHub/media/state/ledger/observer/server 共居判据
+- [ ] 清理 local SQLite/JSONL state、HTTP server 与 composition root 共居判据
 - [ ] 保持 `LocalConsoleStore` API/schema 不变，删除本 change 对应 debt
 - [ ] scope、定向测试、typecheck、desktop build 全绿
 - [ ] 执行 RA-13～RA-15，报告环境前提和真实观察
