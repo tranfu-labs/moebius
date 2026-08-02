@@ -6,6 +6,7 @@ import type { LocalSessionCreationRuntime } from "./session-creation-runtime.js"
 import type { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import type { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import type { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
+import type { LocalSessionSettlementRuntime } from "./session-settlement-runtime.js";
 import type { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import type { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import type {
@@ -67,6 +68,7 @@ interface LocalConsoleFacadePorts {
   state: LocalConsoleStateQueryRuntime;
   output: LocalConsoleRunOutputRuntime;
   workspace: LocalConsoleWorkspaceQueryRuntime;
+  settlement: LocalSessionSettlementRuntime;
 }
 
 export class LocalConsoleRuntimeFacade {
@@ -172,6 +174,14 @@ export class LocalConsoleRuntimeFacade {
 
   async updatePendingUserMessage(input: LocalPendingMessageUpdateInput): Promise<LocalConsoleMessage> {
     return await this.facade.messages.updatePending(input);
+  }
+
+  /**
+   * Waits for pending processing, worker dispatch, and active runs to reach terminal edges.
+   * The signal is event-driven so callers do not infer persistence completion from a deadline.
+   */
+  async waitForSessionSettled(sessionId = this.facade.defaultSessionId()): Promise<void> {
+    await this.facade.settlement.waitForSessionSettled(sessionId);
   }
 
   async removePendingUserMessage(input: LocalPendingMessageInput): Promise<void> {

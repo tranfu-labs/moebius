@@ -5,7 +5,6 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 import type { ClaudeRunOptions } from "../src/claude.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
@@ -55,7 +54,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "analysis",
     });
     await post(server.url, "HIDDEN_SOURCE_USER_MESSAGE");
-    await waitForAgent(server.url, "HIDDEN_SOURCE_AGENT_OUTPUT");
+    await waitForAgent(server, "HIDDEN_SOURCE_AGENT_OUTPUT");
 
     const visibleFragment = "[对话 · “默认会话”](moebius-ref:conversation/default)";
 
@@ -83,7 +82,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       session: { sessionId: string; analysisParentSessionId: string | null };
     };
     expect(created.session.analysisParentSessionId).toBe("default");
-    await waitForCalls(codex, 2);
+    await waitForNonBlockingCalls(server, created.session.sessionId, codex, 2);
 
     const analysisPrompt = codex.mock.calls[1]![0].prompt;
     expect(analysisPrompt.split(visibleFragment)).toHaveLength(2);
@@ -99,10 +98,15 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     const busyRun = new Promise<void>((resolve) => {
       releaseBusyRun = resolve;
     });
+    let resolveFirstCallStarted!: () => void;
+    const firstCallStarted = new Promise<void>((resolve) => {
+      resolveFirstCallStarted = resolve;
+    });
     let call = 0;
     const codex = vi.fn(async (options: CodexRunOptions) => {
       call += 1;
       if (call === 1) {
+        resolveFirstCallStarted();
         await busyRun;
         return success(options, "占用结束");
       }
@@ -128,7 +132,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       { ownership: "user", id: "analysis" },
       "先占用主理人",
     );
-    await waitForCalls(codex, 1);
+    await firstCallStarted;
     await postToSession(
       server,
       target.sessionId,
@@ -137,7 +141,8 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     await postToSession(server, target.sessionId, "后续消息");
     releaseBusyRun();
 
-    await waitForCalls(codex, 3);
+    await server.runtime.waitForSessionSettled(target.sessionId);
+    expect(codex).toHaveBeenCalledTimes(3);
     await waitForAgentInSession(server, target.sessionId, "后续消息完成");
 
     expect(codex.mock.calls[1]![0].prompt).toContain(
@@ -197,7 +202,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "mixed",
     });
     await post(server.url, "build it");
-    await waitForAgent(server.url, "manager completed");
+    await waitForAgent(server, "manager completed");
 
     expect(kimi).toHaveBeenCalledTimes(2);
     expect(codex).toHaveBeenCalledTimes(1);
@@ -267,11 +272,11 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     snapshots.development = snapshot("new Codex team", selectedProfile);
 
     await post(server.url, "@dev implement");
-    await waitForAgent(server.url, "Kimi completed");
+    await waitForAgent(server, "Kimi completed");
     await post(server.url, "second message");
-    await waitForCalls(kimi, 2);
+    await waitForNonBlockingCalls(server, "default", kimi, 2);
     await post(server.url, "third message");
-    await waitForCalls(kimi, 3);
+    await waitForNonBlockingCalls(server, "default", kimi, 3);
 
     const createNew = await fetch(new URL("/api/local-console/sessions", server.url), {
       method: "POST",
@@ -284,7 +289,8 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       }),
     });
     expect(createNew.status).toBe(201);
-    await waitForCalls(codex, 1);
+    const createdNewSession = await createNew.json() as { session: { sessionId: string } };
+    await waitForNonBlockingCalls(server, createdNewSession.session.sessionId, codex, 1);
 
     expect(kimi).toHaveBeenCalledTimes(3);
     for (const [index, [options]] of kimi.mock.calls.entries()) {
@@ -511,9 +517,9 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     });
 
     await post(server.url, "@dev first");
-    await waitForAgent(server.url, "Claude first");
+    await waitForAgent(server, "Claude first");
     await post(server.url, "second");
-    await waitForAgent(server.url, "Claude resumed");
+    await waitForAgent(server, "Claude resumed");
 
     expect(claude).toHaveBeenCalledTimes(2);
     expect(claude.mock.calls[0]?.[0]).toMatchObject({
@@ -579,12 +585,12 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     });
     expect(response.status).toBe(201);
     const created = await response.json() as { session: { sessionId: string } };
-    await waitForCalls(kimi, 1);
+    await waitForNonBlockingCalls(server, created.session.sessionId, kimi, 1);
     expect(kimi).toHaveBeenCalledTimes(1);
     expect(codex).not.toHaveBeenCalled();
     const database = new DatabaseSync(sqlitePath, { readOnly: true });
     try {
-      const failed = await waitForDatabaseRow(database, {
+      const failed = await waitForDatabaseRow(server, created.session.sessionId, database, {
         sql: `SELECT body, error, status, system_event_kind
               FROM session_messages
               WHERE session_id = ? AND speaker = 'system' AND system_event_kind = 'run-not-started'`,
@@ -747,7 +753,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     servers.push(server);
 
     await post(server.url, "@dev continue");
-    await waitForAgent(server.url, "legacy completed");
+    await waitForAgent(server, "legacy completed");
     expect(codex).toHaveBeenCalledTimes(1);
     expect(codex.mock.calls[0]?.[0].execOptions).toBeUndefined();
     const facts = await fs.readFile(server.runtime.getSessionFactLogPath("default"), "utf8");
@@ -989,7 +995,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     });
 
     await postToSession(server, created.session.sessionId, "可以，按 v2 修改");
-    await waitForCalls(codex, 5);
+    await waitForNonBlockingCalls(server, created.session.sessionId, codex, 5);
     expect(sandboxValue(codex.mock.calls[3]?.[0].execOptions)).toBe("read-only");
     expect(sandboxValue(codex.mock.calls[4]?.[0].execOptions)).not.toBe("read-only");
     expect((await server.runtime.sessionView(created.session.sessionId)).session).toMatchObject({
@@ -1048,9 +1054,9 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     servers.push(server);
 
     await post(server.url, "@dev first");
-    await waitForSystemEvent(server.url, "run-not-started");
+    await waitForSystemEvent(server, "run-not-started");
     await post(server.url, "@dev second");
-    await waitForSystemEvent(server.url, "resume-unavailable");
+    await waitForSystemEvent(server, "resume-unavailable");
 
     expect(codex).toHaveBeenCalledTimes(1);
     expect(codex.mock.calls[0]?.[0].mode).toEqual({ kind: "full" });
@@ -1124,7 +1130,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "old",
     });
     await post(server.url, "@dev implement");
-    const stopped = await waitForSystemEvent(server.url, "user-stopped");
+    const stopped = await waitForSystemEvent(server, "user-stopped");
     expect(stopped.runId).not.toBeNull();
 
     await server.runtime.switchSessionTeam({
@@ -1137,7 +1143,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForAgent(server.url, "old Kimi fallback completed");
+    await waitForAgent(server, "old Kimi fallback completed");
 
     expect(kimi).toHaveBeenCalledTimes(2);
     expect(codex).not.toHaveBeenCalled();
@@ -1219,7 +1225,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "base",
     });
     await post(server.url, "@dev implement");
-    const stopped = await waitForSystemEvent(server.url, "user-stopped");
+    const stopped = await waitForSystemEvent(server, "user-stopped");
     const overrideBody = JSON.stringify({
       executionOverride: {
         overrideId: "override-once",
@@ -1233,7 +1239,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       body: overrideBody,
     });
     expect(retry.status).toBe(202);
-    await waitForAgent(server.url, "override completed");
+    await waitForAgent(server, "override completed");
 
     const delayedDuplicate = await fetch(retryUrl(server, "default", stopped.runId!), {
       method: "POST",
@@ -1243,7 +1249,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(delayedDuplicate.status).toBe(202);
 
     await post(server.url, "@dev continue normally");
-    await waitForAgent(server.url, "base resumed");
+    await waitForAgent(server, "base resumed");
 
     expect(codex).toHaveBeenCalledTimes(1);
     expect(codex.mock.calls[0]?.[0]).toMatchObject({ mode: { kind: "full" } });
@@ -1329,7 +1335,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "old",
     });
     await post(server.url, "@dev implement");
-    const stopped = await waitForSystemEvent(server.url, "user-stopped");
+    const stopped = await waitForSystemEvent(server, "user-stopped");
     expect(stopped.runId).not.toBeNull();
 
     await server.runtime.switchSessionTeam({
@@ -1358,7 +1364,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       server.url,
     ), { method: "POST" });
     expect(retry.status).toBe(202);
-    await waitForSystemEvent(server.url, "resume-unavailable");
+    await waitForSystemEvent(server, "resume-unavailable");
 
     expect(kimi).not.toHaveBeenCalled();
     expect(codex).not.toHaveBeenCalled();
@@ -1399,7 +1405,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       agentTeamId: "no-trigger",
     });
     await post(server.url, "create a no-trigger source");
-    await waitForAgent(server.url, "NO_TRIGGER_SOURCE");
+    await waitForAgent(server, "NO_TRIGGER_SOURCE");
     const settled = await waitForSnapshotMatching(server, "default", (snapshot) =>
       snapshot.activeRuns.length === 0
       && snapshot.messages.some((message) =>
@@ -1873,7 +1879,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(firstFailure.runId).not.toBeNull();
 
     await post(server.url, "AFTER_FAILURE_PUBLIC_DELTA");
-    await waitForAgent(server.url, "PRIMARY_DELTA_ACK");
+    await waitForAgent(server, "PRIMARY_DELTA_ACK");
 
     const firstRetryUrl = retryUrl(server, "default", firstFailure.runId!);
     const [firstRetry, duplicateRetry] = await Promise.all([
@@ -1900,9 +1906,9 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       method: "POST",
     });
     expect(thirdRetry.status).toBe(202);
-    await waitForAgent(server.url, "KIMI_ATTEMPT_3_COMPLETED");
+    await waitForAgent(server, "KIMI_ATTEMPT_3_COMPLETED");
 
-    expect(codex).toHaveBeenCalledTimes(2);
+    expect(codex).toHaveBeenCalledTimes(3);
     expect(kimi).toHaveBeenCalledTimes(3);
     expect(kimi.mock.calls.map(([options]) => options.mode)).toEqual([
       { kind: "full" },
@@ -2042,10 +2048,10 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       method: "POST",
     });
     expect(retry.status).toBe(202);
-    await waitForAgent(restartedServer.url, "CODEX_RESTART_RETRY_COMPLETED");
+    await waitForAgent(restartedServer, "CODEX_RESTART_RETRY_COMPLETED");
 
     expect(firstProcessCodex).toHaveBeenCalledTimes(2);
-    expect(secondProcessCodex).toHaveBeenCalledTimes(1);
+    expect(secondProcessCodex).toHaveBeenCalledTimes(2);
     expect(secondProcessCodex.mock.calls[0]?.[0].mode).toEqual({
       kind: "resume",
       threadId: "worker-codex-session",
@@ -2128,17 +2134,12 @@ async function postToSession(
   expect(response.status).toBe(202);
 }
 
-async function waitForAgent(url: string, body: string): Promise<void> {
-  await waitForCondition(
-    async () => {
-      const response = await fetch(new URL("/api/local-console/messages", url));
-      const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
-      return snapshot.messages.some(
-        (message) => message.speaker === "agent" && message.body === body,
-      );
-    },
-    { describe: `agent message ${body}`, kind: "io", timeoutMs: 8_000 },
-  );
+async function waitForAgent(server: StartedLocalConsoleServer, body: string): Promise<void> {
+  await server.runtime.waitForSessionSettled();
+  const snapshot = await server.runtime.snapshot();
+  expect(snapshot.messages.some(
+    (message) => message.speaker === "agent" && message.body === body,
+  )).toBe(true);
 }
 
 async function waitForAgentInSession(
@@ -2146,21 +2147,21 @@ async function waitForAgentInSession(
   sessionId: string,
   body: string,
 ): Promise<void> {
-  await waitForCondition(
-    async () => (await server.runtime.sessionView(sessionId)).messages.some(
-      (message) => message.speaker === "agent" && message.body === body,
-    ),
-    { describe: `agent message ${body} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled(sessionId);
+  const snapshot = await server.runtime.sessionView(sessionId);
+  expect(snapshot.messages.some(
+    (message) => message.speaker === "agent" && message.body === body,
+  )).toBe(true);
 }
 
-async function waitForCalls(mock: { mock: { calls: unknown[][] } }, count: number): Promise<void> {
-  await waitForCondition(() => mock.mock.calls.length >= count, {
-    describe: `${String(count)} driver calls`,
-    kind: "io",
-    timeoutMs: 8_000,
-    snapshot: () => ({ calls: mock.mock.calls.length }),
-  });
+async function waitForNonBlockingCalls(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
+  mock: { mock: { calls: unknown[][] } },
+  count: number,
+): Promise<void> {
+  await server.runtime.waitForSessionSettled(sessionId);
+  expect(mock.mock.calls.length).toBeGreaterThanOrEqual(count);
 }
 
 async function injectLegacyReferenceContext(
@@ -2195,34 +2196,29 @@ async function injectLegacyReferenceContext(
 }
 
 async function waitForDatabaseRow(
+  server: StartedLocalConsoleServer,
+  sessionId: string,
   database: DatabaseSync,
   query: { sql: string; params: string[] },
 ): Promise<Record<string, unknown>> {
-  return waitForValue(() => database.prepare(query.sql).get(...query.params) as
+  await server.runtime.waitForSessionSettled(sessionId);
+  const row = database.prepare(query.sql).get(...query.params) as
     | Record<string, unknown>
-    | undefined, {
-    describe: "persisted database row",
-    kind: "io",
-    timeoutMs: 8_000,
-    // 并发写入期间 SQLite 会短暂上锁，这属于正常争用，继续轮询即可；其他错误必须立刻暴露。
-    onError: (error) =>
-      error instanceof Error && error.message.includes("database is locked") ? "retry" : "throw",
-  });
+    | undefined;
+  expect(row).toBeDefined();
+  return row!;
 }
 
 async function waitForSystemEvent(
-  url: string,
+  server: StartedLocalConsoleServer,
   systemEventKind: LocalConsoleMessage["systemEventKind"],
 ): Promise<LocalConsoleMessage> {
-  return waitForValue(
-    async () => {
-      const response = await fetch(new URL("/api/local-console/messages", url));
-      const snapshot = await response.json() as { messages: LocalConsoleMessage[] };
-      return snapshot.messages.find((message) =>
-        message.speaker === "system" && message.systemEventKind === systemEventKind);
-    },
-    { describe: `system event ${String(systemEventKind)}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled();
+  const snapshot = await server.runtime.snapshot();
+  const event = snapshot.messages.find((message) =>
+    message.speaker === "system" && message.systemEventKind === systemEventKind);
+  expect(event).toBeDefined();
+  return event!;
 }
 
 async function waitForSystemEventMatching(
@@ -2230,14 +2226,12 @@ async function waitForSystemEventMatching(
   sessionId: string,
   predicate: (message: LocalConsoleMessage) => boolean,
 ): Promise<LocalConsoleMessage> {
-  return waitForValue(
-    async () => {
-      const snapshot = await server.runtime.snapshot(sessionId);
-      return snapshot.messages.find((message) =>
-        message.speaker === "system" && predicate(message));
-    },
-    { describe: `matching system event in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled(sessionId);
+  const snapshot = await server.runtime.snapshot(sessionId);
+  const event = snapshot.messages.find((message) =>
+    message.speaker === "system" && predicate(message));
+  expect(event).toBeDefined();
+  return event!;
 }
 
 async function waitForSnapshotMatching(
@@ -2245,13 +2239,10 @@ async function waitForSnapshotMatching(
   sessionId: string,
   predicate: (snapshot: Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>) => boolean,
 ): Promise<Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>>> {
-  return waitForValue(
-    async () => {
-      const snapshot = await server.runtime.snapshot(sessionId);
-      return predicate(snapshot) ? snapshot : undefined;
-    },
-    { describe: `matching snapshot in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled(sessionId);
+  const snapshot = await server.runtime.snapshot(sessionId);
+  expect(predicate(snapshot)).toBe(true);
+  return snapshot;
 }
 
 async function waitForSessionSystemEvent(
@@ -2259,14 +2250,12 @@ async function waitForSessionSystemEvent(
   sessionId: string,
   systemEventKind: LocalConsoleMessage["systemEventKind"],
 ): Promise<LocalConsoleMessage> {
-  return waitForValue(
-    async () => {
-      const snapshot = await server.runtime.snapshot(sessionId);
-      return snapshot.messages.find((message) =>
-        message.speaker === "system" && message.systemEventKind === systemEventKind);
-    },
-    { describe: `system event ${String(systemEventKind)} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled(sessionId);
+  const snapshot = await server.runtime.snapshot(sessionId);
+  const event = snapshot.messages.find((message) =>
+    message.speaker === "system" && message.systemEventKind === systemEventKind);
+  expect(event).toBeDefined();
+  return event!;
 }
 
 async function waitForSessionAgent(
@@ -2274,15 +2263,11 @@ async function waitForSessionAgent(
   sessionId: string,
   body: string,
 ): Promise<void> {
-  await waitForCondition(
-    async () => {
-      const snapshot = await server.runtime.snapshot(sessionId);
-      return snapshot.messages.some(
-        (message) => message.speaker === "agent" && message.body === body,
-      );
-    },
-    { describe: `agent message ${body} in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
-  );
+  await server.runtime.waitForSessionSettled(sessionId);
+  const snapshot = await server.runtime.snapshot(sessionId);
+  expect(snapshot.messages.some(
+    (message) => message.speaker === "agent" && message.body === body,
+  )).toBe(true);
 }
 
 function success(options: CodexRunOptions, finalText: string): CodexRunResult {

@@ -3,15 +3,20 @@ import {
   decidePendingFollowUp,
   decidePendingIteration,
   decidePendingPrimaryClaim,
+  decidePendingSessionWork,
+  decidePendingTurnResult,
   decidePendingWait,
   decidePendingWorkspace,
   planPendingSessionIds,
 } from "./pending-processing-plan.js";
+import { LocalPendingProcessingSignals } from "./pending-processing-signals.js";
 import type { LocalConsoleSessionSummary, LocalConsoleSessionWorkspaceSource } from "./types.js";
 
 export class LocalPendingProcessingRuntime {
   private readonly processingSessions = new Set<string>();
   private readonly pendingProcessSessions = new Set<string>();
+  private readonly sessionSignals = new LocalPendingProcessingSignals();
+  private closing = false;
 
   constructor(private readonly input: {
     stopping(sessionId: string): boolean;
@@ -30,9 +35,14 @@ export class LocalPendingProcessingRuntime {
   async process(sessionId: string): Promise<void> {
     const admission = decidePendingAdmission({
       stopping: this.input.stopping(sessionId),
+      closing: this.closing,
       processing: this.processingSessions.has(sessionId),
     });
-    if (admission.kind === "stop") return;
+    if (admission.kind === "stop") {
+      this.resolveProcessingTurn(sessionId, "stopped");
+      this.resolveSessionIdle(sessionId);
+      return;
+    }
     if (admission.kind === "queue") {
       this.pendingProcessSessions.add(sessionId);
       return;
@@ -54,6 +64,8 @@ export class LocalPendingProcessingRuntime {
       });
       if (followUp.kind === "rerun") void this.process(sessionId);
       if (followUp.kind === "clear") this.pendingProcessSessions.delete(sessionId);
+      this.resolveProcessingTurn(sessionId, decidePendingTurnResult(this.input.stopping(sessionId)));
+      this.resolveSessionIdle(sessionId);
     }
   }
 
@@ -63,32 +75,49 @@ export class LocalPendingProcessingRuntime {
   }
 
   async processAfterCurrent(sessionId: string): Promise<void> {
-    while (decidePendingWait({
-      stopping: this.input.stopping(sessionId),
-      processing: this.processingSessions.has(sessionId),
-    }).kind === "wait") {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    const ready = decidePendingWait({
-      stopping: this.input.stopping(sessionId),
-      processing: this.processingSessions.has(sessionId),
-    });
-    if (ready.kind === "ready") await this.process(sessionId);
+    await this.waitForProcessingTurn(sessionId);
+    await this.process(sessionId);
   }
 
   schedule(sessionId: string): void {
-    setTimeout(() => {
-      const ready = decidePendingWait({ stopping: this.input.stopping(sessionId), processing: false });
-      if (ready.kind === "ready") void this.process(sessionId);
-    }, 25);
+    this.sessionSignals.schedule({
+      sessionId,
+      stopping: () => this.input.stopping(sessionId),
+      closing: () => this.closing,
+      onReady: () => void this.process(sessionId),
+      onStopped: () => this.resolveProcessingTurn(sessionId, "stopped"),
+      otherWork: () => this.hasActiveSessionWork(sessionId),
+    });
   }
 
   beginClosing(): void {
+    this.closing = true;
     this.pendingProcessSessions.clear();
+    const affectedSessions = this.sessionSignals.cancelAll();
+    this.sessionSignals.resolveAllResults("stopped");
+    for (const sessionId of affectedSessions) this.resolveSessionIdle(sessionId);
   }
 
   hasOutstandingWork(): boolean {
     return this.processingSessions.size > 0;
+  }
+
+  hasSessionWork(sessionId: string): boolean {
+    return decidePendingSessionWork({
+      processing: this.processingSessions.has(sessionId),
+      pending: this.pendingProcessSessions.has(sessionId),
+      scheduled: this.sessionSignals.has(sessionId),
+    }).kind === "pending";
+  }
+
+  /**
+   * Event-driven quiescence for pending processing: no current turn, queued follow-up,
+   * or scheduled turn remains. The runtime-level settled signal composes this with worker
+   * dispatch idle and an empty active-run registry; no polling deadline can observe an
+   * intermediate state as complete.
+   */
+  async waitForSessionIdle(sessionId: string): Promise<void> {
+    await this.sessionSignals.waitForIdle(sessionId, this.hasActiveSessionWork(sessionId));
   }
 
   private async drain(sessionId: string): Promise<void> {
@@ -110,5 +139,32 @@ export class LocalPendingProcessingRuntime {
       const iteration = decidePendingIteration(await this.input.executePrimary(sessionId, workspace!));
       if (iteration.kind === "stop") return;
     }
+  }
+
+  private async waitForProcessingTurn(sessionId: string): Promise<"ready" | "stopped"> {
+    const ready = decidePendingWait({
+      stopping: this.input.stopping(sessionId),
+      closing: this.closing,
+      processing: this.processingSessions.has(sessionId),
+    });
+    if (ready.kind === "stop") return "stopped";
+    if (ready.kind === "ready") return "ready";
+    return await this.sessionSignals.waitForResult<"ready" | "stopped">(sessionId);
+  }
+
+  private resolveProcessingTurn(sessionId: string, result: "ready" | "stopped"): void {
+    this.sessionSignals.resolveResult(sessionId, result);
+  }
+
+  private resolveSessionIdle(sessionId: string): void {
+    this.sessionSignals.notifyIfIdle(sessionId, this.hasActiveSessionWork(sessionId));
+  }
+
+  private hasActiveSessionWork(sessionId: string): boolean {
+    return decidePendingSessionWork({
+      processing: this.processingSessions.has(sessionId),
+      pending: this.pendingProcessSessions.has(sessionId),
+      scheduled: false,
+    }).kind === "pending";
   }
 }

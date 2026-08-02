@@ -3,9 +3,10 @@ import type { LocalConsoleSessionSummary } from "./types.js";
 
 export function decidePendingAdmission(input: {
   stopping: boolean;
+  closing?: boolean;
   processing: boolean;
 }): { kind: "stop" } | { kind: "queue" } | { kind: "run" } {
-  if (input.stopping) return { kind: "stop" };
+  if (input.stopping || input.closing === true) return { kind: "stop" };
   return input.processing ? { kind: "queue" } : { kind: "run" };
 }
 
@@ -34,10 +35,25 @@ export function decidePendingFollowUp(input: {
 
 export function decidePendingWait(input: {
   stopping: boolean;
+  closing?: boolean;
   processing: boolean;
 }): { kind: "wait" } | { kind: "ready" } | { kind: "stop" } {
-  if (input.stopping) return { kind: "stop" };
+  if (input.stopping || input.closing === true) return { kind: "stop" };
   return input.processing ? { kind: "wait" } : { kind: "ready" };
+}
+
+export function decidePendingSessionWork(input: {
+  processing: boolean;
+  pending: boolean;
+  scheduled: boolean;
+}): { kind: "pending" } | { kind: "idle" } {
+  return input.processing || input.pending || input.scheduled
+    ? { kind: "pending" }
+    : { kind: "idle" };
+}
+
+export function decidePendingTurnResult(stopping: boolean): "stopped" | "ready" {
+  return stopping ? "stopped" : "ready";
 }
 
 export function planPendingSessionIds(sessions: readonly LocalConsoleSessionSummary[]): string[] {

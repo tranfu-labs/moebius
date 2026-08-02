@@ -37,6 +37,10 @@ export function decideWorkerOutstandingWork(wakeCount: number, laneCount: number
   return wakeCount > 0 || laneCount > 0 ? { kind: "pending" } : { kind: "idle" };
 }
 
+export function decideWorkerSessionOutstandingWork(laneWork: boolean, signalWork: boolean): { kind: "pending" } | { kind: "idle" } {
+  return laneWork || signalWork ? { kind: "pending" } : { kind: "idle" };
+}
+
 export function decideWorkerRunId(resumeRunId: string | null): { kind: "resume"; runId: string } | { kind: "fresh" } {
   return resumeRunId === null ? { kind: "fresh" } : { kind: "resume", runId: resumeRunId };
 }

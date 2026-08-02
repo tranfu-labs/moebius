@@ -278,6 +278,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       state: this.stateQueryRuntime,
       output: this.runOutputRuntime,
       workspace: this.workspaceQueryRuntime,
+      settlement: sessionWiring.settlement(this.pendingProcessingRuntime, this.workerDispatchRuntime),
     });
   }
 

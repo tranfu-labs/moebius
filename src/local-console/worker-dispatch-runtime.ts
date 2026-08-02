@@ -8,11 +8,13 @@ import {
   decideWorkerOutstandingWork,
   decideWorkerRunId,
   decideWorkerRedirectAbort,
+  decideWorkerSessionOutstandingWork,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
   planPreviousWorkerTask,
   planWorkerActiveLane,
 } from "./worker-runtime-plan.js";
+import { LocalSessionIdleSignals } from "./session-idle-signals.js";
 import type { LocalConsoleMessage, LocalConsoleSessionWorkspaceSource } from "./types.js";
 
 export interface LocalWorkerRunInput {
@@ -29,8 +31,8 @@ export interface LocalWorkerRunInput {
 }
 
 export class LocalWorkerDispatchRuntime {
-  private readonly wakeTasks = new Set<Promise<void>>();
   private readonly laneTails = new Map<string, Promise<void>>();
+  private readonly sessionSignals = new LocalSessionIdleSignals<Promise<void>>();
 
   constructor(private readonly input: {
     hasClaimCapability(): boolean;
@@ -60,7 +62,19 @@ export class LocalWorkerDispatchRuntime {
   }
 
   hasOutstandingWork(): boolean {
-    return decideWorkerOutstandingWork(this.wakeTasks.size, this.laneTails.size).kind === "pending";
+    return decideWorkerOutstandingWork(
+      this.sessionSignals.count(),
+      this.laneTails.size,
+    ).kind === "pending";
+  }
+
+  hasOutstandingWorkForSession(sessionId: string): boolean {
+    const laneWork = [...this.laneTails.keys()].some((key) => key.startsWith(`${sessionId}\u0000`));
+    return decideWorkerSessionOutstandingWork(laneWork, this.sessionSignals.has(sessionId)).kind === "pending";
+  }
+
+  async waitForSessionIdle(sessionId: string): Promise<void> {
+    await this.sessionSignals.waitForIdle(sessionId, this.hasScheduledWorker(sessionId));
   }
 
   async dispatch(sessionId: string, workspaceSource: LocalConsoleSessionWorkspaceSource): Promise<void> {
@@ -101,8 +115,12 @@ export class LocalWorkerDispatchRuntime {
   }
 
   scheduleWake(sessionId: string): void {
-    const task = this.wake(sessionId).finally(() => this.wakeTasks.delete(task));
-    this.wakeTasks.add(task);
+    const task = this.wake(sessionId);
+    this.sessionSignals.add(sessionId, task);
+    void task.then(
+      () => this.finishWakeTask(sessionId, task),
+      () => this.finishWakeTask(sessionId, task),
+    );
   }
 
   schedule(input: LocalWorkerRunInput): void {
@@ -151,17 +169,30 @@ export class LocalWorkerDispatchRuntime {
   private finishScheduledRun(input: LocalWorkerRunInput, key: string, task: Promise<void>): void {
     const release = decideWorkerTaskRelease(this.laneTails.get(key), task);
     if (release.kind === "release") this.laneTails.delete(key);
-    void this.input.applyPendingContext(input.sessionId).catch((error: unknown) => {
+    const contextTask = this.input.applyPendingContext(input.sessionId).catch((error: unknown) => {
       const report = decideWorkerContextFailureReport(this.input.stopping(input.sessionId));
       if (report.kind === "report") {
         const reason = this.input.setError(error);
         this.input.log("local-console-apply-pending-context-failed", input.sessionId, null, reason);
       }
     });
+    this.sessionSignals.add(input.sessionId, contextTask);
+    void contextTask.then(
+      () => this.finishContextTask(input.sessionId, contextTask),
+      () => this.finishContextTask(input.sessionId, contextTask),
+    );
     this.input.processPending(input.sessionId);
   }
 
   private laneKey(sessionId: string, role: string): string {
     return `${sessionId}\u0000${role}`;
+  }
+
+  private finishContextTask(sessionId: string, task: Promise<void>): void {
+    this.sessionSignals.remove(sessionId, task, this.hasScheduledWorker(sessionId));
+  }
+
+  private finishWakeTask(sessionId: string, task: Promise<void>): void {
+    this.sessionSignals.remove(sessionId, task, this.hasScheduledWorker(sessionId));
   }
 }
