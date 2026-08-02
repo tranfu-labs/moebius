@@ -62,7 +62,7 @@ application file，接受比 composition-root allowlist 更强的 shape 门禁�
 
 该 conversation 子树 facade 没有 AST 控制分支，故无逐行条件表。复算：wiring 0 + timing 0 +
 business 0 = AST 控制分支 0。文件只装配 transition、navigation、new-submission、analysis
-navigation、conversation-analysis 与 searched-session 六个具名 application bundle；目标预加载、
+navigation、conversation-analysis、searched-session 与 new-conversation launcher 七个具名 application bundle；目标预加载、
 异步 reference、草稿规划、搜索恢复、source migration 和 selection mutation 仍分别由独立 controller/domain modules 持有。该 facade 继续登记为
 application file，不进入 composition-root allowlist。
 

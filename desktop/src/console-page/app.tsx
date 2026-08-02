@@ -775,7 +775,8 @@ export function OperatorConsoleApp({
     composerDraft, selection, projects, actions, setClientError, t, coordinatorRef.current,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
     activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
-    agentTeamCatalogBundle, managedAttachments,
+    agentTeamCatalogBundle, pendingAgentTeamKey, setPendingAgentTeamKey,
+    resolveNewConversationAgentTeamKey, managedAttachments,
     readyComposerAttachmentIds(managedAttachments.attachments),
     hasBlockingComposerAttachment(managedAttachments.attachments), rememberConfirmedSelection,
     conversationDraftStoreRef.current, window.moebius, language.activeLocale,
@@ -790,6 +791,7 @@ export function OperatorConsoleApp({
   const analysisNavigationBundle = conversationControllersBundle.analysisNavigation;
   const analyzeConversation = conversationControllersBundle.analysis.analyze;
   const openSearchedSession = conversationControllersBundle.searchedSession.openSearchedSession;
+  const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
   const lastError = conversationTransitionBundle.transitionError ?? clientError ?? state?.lastError ?? null;
   const analysisEntriesFor = analysisNavigationBundle.entriesFor;
   const analysisPanelOpenBySession = analysisNavigationBundle.openBySession;
@@ -822,81 +824,6 @@ export function OperatorConsoleApp({
       },
     }).catch((error: unknown) => setClientError(formatError(error)));
   }, [commitComposerDraft, managedAttachments.replaceWithMessageAttachments, state]);
-
-  const preferredNewConversationTeamKey = useMemo(() => resolveNewConversationAgentTeamKey(
-    agentTeamCatalogBundle.state.status === "ready" ? agentTeamCatalogBundle.state.teams : [],
-    agentTeamCatalogBundle.lastUsedTeamKey,
-    pendingAgentTeamKey,
-  ), [agentTeamCatalogBundle.state, agentTeamCatalogBundle.lastUsedTeamKey, pendingAgentTeamKey]);
-
-  useEffect(() => {
-    if (
-      pendingAgentTeamKey === null
-      || newConversation === null
-      || !newConversation.isOpen
-      || agentTeamCatalogBundle.state.status !== "ready"
-    ) {
-      return;
-    }
-    const resolvedTeamKey = resolveNewConversationAgentTeamKey(
-      agentTeamCatalogBundle.state.teams,
-      agentTeamCatalogBundle.lastUsedTeamKey,
-      pendingAgentTeamKey,
-    );
-    if (newConversation.teamKey !== resolvedTeamKey) {
-      dispatchNewConversation({ type: "select-team", teamKey: resolvedTeamKey });
-    }
-    setPendingAgentTeamKey(null);
-  }, [agentTeamCatalogBundle.state, agentTeamCatalogBundle.lastUsedTeamKey, newConversation, pendingAgentTeamKey]);
-
-  useEffect(() => {
-    if (newConversation === null || !newConversation.isOpen || agentTeamCatalogBundle.state.status !== "ready") {
-      return;
-    }
-    const selectionIsUsable = agentTeamCatalogBundle.state.teams.some(
-      (team) => team.teamKey === newConversation.teamKey && team.canCreateConversation,
-    );
-    if (!selectionIsUsable && newConversation.teamKey !== preferredNewConversationTeamKey) {
-      dispatchNewConversation({ type: "select-team", teamKey: preferredNewConversationTeamKey });
-    }
-  }, [agentTeamCatalogBundle.state, newConversation, preferredNewConversationTeamKey]);
-
-  const startNewConversation = useCallback((projectId?: string) => {
-    const selectedProject = projectId === undefined
-      ? undefined
-      : projects.find((candidate) => candidate.projectId === projectId
-        && candidate.directoryAvailable !== false
-        && candidate.newConversationDisabledReason == null);
-    setClientError(null);
-    if (newConversation !== null) {
-      const draftProjectIsAvailable = newConversation.projectId === null
-        || projects.some((candidate) => candidate.projectId === newConversation.projectId
-          && candidate.directoryAvailable !== false
-          && candidate.newConversationDisabledReason == null);
-      const nextProject = selectedProject
-        ?? (draftProjectIsAvailable
-          ? projects.find((candidate) => candidate.projectId === newConversation.projectId)
-          : undefined);
-      if (newConversation.projectId !== (nextProject?.projectId ?? null)) {
-        dispatchNewConversation({ type: "select-project", projectId: nextProject?.projectId ?? null });
-        dispatchNewConversation({
-          type: "select-workspace",
-          workspaceMode: nextProject?.worktreeMode === true ? "worktree" : "direct",
-        });
-      }
-      dispatchNewConversation({ type: "show" });
-      return;
-    }
-    dispatchNewConversation({
-      type: "open",
-      draft: createNewConversationDraft({
-        projectId: selectedProject?.projectId,
-        workspaceMode: selectedProject?.worktreeMode === true ? "worktree" : "direct",
-        teamKey: preferredNewConversationTeamKey,
-        draft: conversationDraftStoreRef.current.read(NEW_CONVERSATION_DRAFT_KEY),
-      }),
-    });
-  }, [newConversation, preferredNewConversationTeamKey, projects]);
 
   const projectMutationsBundle = useProjectMutations(
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,

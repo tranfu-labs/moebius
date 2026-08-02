@@ -1,5 +1,6 @@
 import { useMemo, type Dispatch, type MutableRefObject } from "react";
 import {
+  type OperatorAgentTeam,
   type OperatorProject,
   type RightSidebarSourceTab,
   type RightSidebarTabsState,
@@ -24,6 +25,7 @@ import { useConversationNavigation } from "./use-conversation-navigation.js";
 import { useConversationTransition } from "./use-conversation-transition.js";
 import type { useManagedAttachmentDrafts } from "./use-managed-attachments.js";
 import { useNewConversationSubmission } from "./use-new-conversation-submission.js";
+import { useNewConversationLauncher } from "./use-new-conversation-launcher.js";
 import { useSearchedSessionNavigation } from "./use-searched-session-navigation.js";
 import { useSidebarSourceMigration } from "./use-sidebar-source-migration.js";
 import type { RightSidebarTabsBundle } from "./use-right-sidebar-tabs.js";
@@ -51,6 +53,13 @@ export function useConversationConsole(
   openTab: (state: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
   newConversation: Parameters<typeof useNewConversationSubmission>[0],
   agentTeams: AgentTeamCatalogBundle,
+  pendingTeamKey: string | null,
+  setPendingTeamKey: (teamKey: string | null) => void,
+  resolveTeamKey: (
+    teams: readonly OperatorAgentTeam[],
+    lastUsedTeamKey: string | null,
+    pendingTeamKey?: string | null,
+  ) => string | null,
   managedAttachments: ReturnType<typeof useManagedAttachmentDrafts>,
   readyAttachmentIds: readonly string[],
   attachmentsBlocked: boolean,
@@ -87,6 +96,10 @@ export function useConversationConsole(
     selectionPersistenceEnabledRef, rememberSelection, commitRoute, conversationDraftStore,
     activateComposer, desktopApi, setError, t,
   );
+  const launcher = useNewConversationLauncher(
+    projects, newConversation, dispatchNewConversation, agentTeams, pendingTeamKey,
+    setPendingTeamKey, conversationDraftStore, resolveTeamKey, setError,
+  );
   const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
   const analysisNavigation = useAnalysisPanelNavigation(
     sessions, locale, selectionRef, actions, commitRoute, tabs, openTab,
@@ -109,8 +122,9 @@ export function useConversationConsole(
     transition,
     navigation,
     submission,
+    launcher,
     analysisNavigation,
     analysis,
     searchedSession,
-  }), [analysis, analysisNavigation, navigation, searchedSession, submission, transition]);
+  }), [analysis, analysisNavigation, launcher, navigation, searchedSession, submission, transition]);
 }
