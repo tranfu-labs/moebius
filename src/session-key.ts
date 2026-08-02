@@ -1,4 +1,7 @@
-import type { RepositoryRef } from "./issue-source.js";
+interface RepositoryRef {
+  owner: string;
+  repo: string;
+}
 
 const GITHUB_SESSION_PREFIX = "github:";
 const ISSUE_KEY_PATTERN = /^([^/]+)\/([^#]+)#([1-9]\d*)$/;

@@ -58,8 +58,6 @@ export const CONFIG_PATH = RUNTIME_PATHS.configPath;
 export const LOCAL_CONFIG_PATH = RUNTIME_PATHS.localConfigPath;
 const LOCAL_CONFIG = loadMergedLocalConfig({ configPath: CONFIG_PATH, localConfigPath: LOCAL_CONFIG_PATH });
 
-export const WATCH_REPOSITORIES = LOCAL_CONFIG.watchRepositories;
-
 export const TICK_INTERVAL_MS = 1 * 60 * 1000;
 export const IDLE_REPOSITORY_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 export const ACTIVE_ISSUE_POLL_INTERVAL_MS = 1 * 60 * 1000;
@@ -279,7 +277,6 @@ export const CONFIG_LOG_FIELDS = {
   configPath: CONFIG_PATH,
   localConfigPath: LOCAL_CONFIG_PATH,
   dataRoot: DATA_ROOT,
-  watchedRepositories: WATCH_REPOSITORIES,
   tickIntervalMs: TICK_INTERVAL_MS,
   idleRepositoryScanIntervalMs: IDLE_REPOSITORY_SCAN_INTERVAL_MS,
   activeIssuePollIntervalMs: ACTIVE_ISSUE_POLL_INTERVAL_MS,
