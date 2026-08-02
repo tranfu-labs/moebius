@@ -12,3 +12,9 @@
 - [x] 运行 `pnpm test` 与 `pnpm typecheck`。
 
 测试说明：本 change 含可测逻辑（SQLite 状态、adapter、HTTP API、trigger 分支），必须有单元测试与集成测试。最终 `code-verified` 还必须提供真实 Codex 端到端验收证据；fake Codex 集成测试不能替代真实 Codex 验收。
+
+---
+
+## 30 批处置（归档）
+
+本 change 的 local 任务已全部完成，归档为事实。其中涉及 GitHub 对等/零漂移的验收前提随 `four-layer-30-github-runner` 失效，但已验证的 local 事实完整保留。

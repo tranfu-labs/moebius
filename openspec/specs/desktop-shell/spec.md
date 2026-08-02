@@ -1,7 +1,7 @@
 # desktop-shell 规格
 
 ## 域定位
-`desktop-shell` 负责把 runner 与 observer 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex、Claude Code 或 Kimi CLI。壳层只做装配、子进程监管、环境自检与更新提示，不承载任何业务规则；runner 行为事实源在 `github-issue-runner`，本地操作台与 observer 呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start` / `pnpm observer`）继续有效且行为不变。
+`desktop-shell` 负责把 local console 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex、Claude Code 或 Kimi CLI。壳层只做装配、环境自检与更新提示，不承载任何业务规则；本地操作台呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start`）继续有效且行为不变。
 
 ## 业务规则
 
@@ -59,10 +59,10 @@
 - **AND** the failure is not presented as the session having no agents.
 
 ### 启动与退出
-- MUST 启动应用即依次完成：数据根解析 → 按规范化有效数据根准备实例作用域并取得单实例锁 → 打开操作台主窗口 → PATH 修复 → 首启种子拷贝 → 环境自检 → 启动 observer 服务 → 启动 main 进程拥有的 local console server → 派生 runner 子进程。
-- MUST 按规范化有效数据根持有单实例锁：相同数据根的第二个应用实例启动时激活已有窗口后退出，不同数据根的实例可以并存；NEVER 让相同数据根的两个实例同时派生 runner 或并发写 `.state/`。
-- MUST 在种子拷贝失败时不派生 runner 子进程，并把失败原因呈现在状态页；NEVER 让 runner 在缺失 `config.toml` 的数据根上静默启动失败。
-- MUST 在关闭主窗口时先停止 runner 子进程（温和信号，超时后强杀）、再关闭 local console server 与 observer，然后退出应用；NEVER 留下孤儿子进程。
+- MUST 启动应用即依次完成：数据根解析 → 按规范化有效数据根准备实例作用域并取得单实例锁 → 打开操作台主窗口 → PATH 修复 → 首启种子拷贝 → 环境自检 → 启动 main 进程拥有的 local console server。
+- MUST 按规范化有效数据根持有单实例锁：相同数据根的第二个应用实例启动时激活已有窗口后退出，不同数据根的实例可以并存；NEVER 让相同数据根的两个实例同时启动 local console server 或并发写 `.state/`。
+- MUST 在种子拷贝失败时不启动 local console server，并把失败原因呈现在状态页；NEVER 让服务在缺失 `config.toml` 的数据根上静默启动失败。
+- MUST 在关闭主窗口时有界关闭 local console server 及仍在运行的 local provider / SQLite worker 资源，然后退出应用；NEVER 留下孤儿子进程。
 
 #### Scenario: 安装态与默认开发态并存
 - **GIVEN** 默认数据根为 `~/.moebius` 的安装态实例正在运行
@@ -74,7 +74,7 @@
 - **GIVEN** 一个实例已经持有规范化数据根 A 的实例作用域
 - **WHEN** 第二个实例以可规范化为同一数据根 A 的路径启动
 - **THEN** 第二个实例激活已有窗口后退出
-- **AND** 不启动第二套 runner、local console server 或 `.state` 写者。
+- **AND** 不启动第二套 local console server 或 `.state` 写者。
 
 #### Scenario: 跨运行形态显式共享数据根
 - **GIVEN** 安装态与开发态都通过 `MOEBIUS_DATA_ROOT` 显式指向同一规范化数据根
@@ -85,20 +85,16 @@
 ### 数据根
 - MUST 打包态数据根默认为 `~/.moebius`，开发态默认为仓库根；`MOEBIUS_DATA_ROOT` 环境变量为最高优先级覆盖。
 - MUST 让打包态默认数据根继续使用既有 Electron `userData`，避免迁移已有 Chromium 配置与缓存；其他规范化数据根 MUST 稳定派生各自独立的 Electron `userData` 实例作用域。
-- MUST 把 runner 子进程工作目录设为数据根，使 `.state/` 等相对路径状态文件落在数据根下。
+- MUST 把 local console server 的工作目录设为数据根，使 `.state/` 等相对路径状态文件落在数据根下。
 - MUST 让 `WORKDIR_ROOT` 默认派生自数据根（`<数据根>/workdir`），NEVER 以应用包或源码目录为基准。防止 workdir 落在应用包 / 源码附近 MUST 由该默认值本身保证，NEVER 依赖各入口逐个注入环境变量；`MOEBIUS_WORKDIR_ROOT` 仅作显式覆盖（如放到独立磁盘）。
 - MUST 首启把 `agents/`（含 `ceo-scripts/`）与示例 `config.toml` 种子拷贝到数据根；已存在的文件 NEVER 覆盖。
 - MUST 保持 `src/config.ts` 在未设置数据根环境变量时行为与终端形态完全一致，且此时 `WORKDIR_ROOT` 落在（作为数据根的）仓库根下。
-
-### observer 边界
-- MUST 在壳内以 `127.0.0.1` + 动态端口启动 observer，并把实际端口呈现在状态页。
-- MUST 保持 observer 只读旁路语义：壳层 NEVER 给 observer 增加写接口、操作按钮或 runner 控制能力；启停 runner 属于壳层主进程能力。
 
 ### 操作台主窗口
 - MUST load the desktop operator console as the default BrowserWindow content after application boot.
 - MUST use an integrated hidden-inset titlebar for the macOS main window so traffic-light controls visually belong to the console rail.
 - MUST provide a safe renderer drag region for the integrated main window while keeping interactive controls usable.
-- MUST keep status and observer diagnostics reachable from the operator console, but they must not be the default main-window experience.
+- MUST keep status diagnostics reachable from the operator console, but they must not be the default main-window experience.
 - MUST expose the local console server URL or equivalent local API capability to the renderer through preload, not through global Node integration.
 - MUST explicitly keep the Chromium sandbox and context isolation enabled and node integration disabled for renderer windows.
 - MUST keep the status page available as an auxiliary diagnostic window.
@@ -130,14 +126,7 @@
 ### local console server ownership
 - MUST ensure desktop mode starts exactly one local console server for the operator console.
 - SHOULD let the Electron main process own the local console server lifecycle so renderer reloads do not destroy active local runs.
-- MUST prevent the runner child from starting a duplicate local console server when the desktop main process already owns it.
-- MUST close the local console server during desktop shutdown along with runner and observer.
-
-### runner 子进程监管
-- MUST 用显式状态机监管 runner 子进程：停止 / 启动中 / 运行中 / 已崩溃。
-- MUST 在子进程异常退出后按退避策略自动重启；连续崩溃达上限（3 次）后停住并在状态页呈现失败原因与日志位置。
-- MUST 把壳层主动停止（退出收尾）与异常退出区分开：主动停止 NEVER 触发自动重启。
-- MUST 捕获 runner 子进程的 stdout/stderr 并落盘到数据根 `logs/` 下（按启动分文件），供崩溃排查；日志写入失败 NEVER 中断 runner 运行。
+- MUST close the local console server during desktop shutdown together with any live local provider and SQLite worker resources.
 
 ### 环境自检与 PATH
 - MUST 在 macOS 桌面主进程内按“继承 PATH 在前、登录 shell PATH 只补充缺失项”的稳定顺序修复 PATH，过滤空项并按首次出现去重，使终端启动时当前环境选择的可执行文件优先；继承 PATH 为 `undefined` 或空字符串时 MUST 使用登录 shell PATH，登录 shell 返回空 PATH、非零退出或探测抛错时 MUST 保底沿用原继承 PATH。
@@ -164,9 +153,51 @@
 - MUST 把版本比较、15 秒超时、结果分类与下载页决策保持为纯逻辑模块。
 
 ### 架构约束
-- MUST 把壳层业务逻辑（数据根解析、种子拷贝计划、自检解析、子进程状态机、更新分支）拆为不依赖 Electron 运行时的纯模块并配单元测试；装配层 NEVER 承载业务规则。
-- MUST 限定 preload IPC 为窄口：状态快照推送、local console URL、打开诊断状态页、打开观察页、打开数据目录，以及设置专用的应用信息读取、检查更新与固定版本复制；NEVER 暴露配置写接口。
-- MUST NOT 把 runner / observer 的行为规则复制进本域；本域只引用它们的编程入口（`start()`、`startObserverServer()`）。
+- MUST 把壳层业务逻辑（数据根解析、种子拷贝计划、自检解析、更新分支）拆为不依赖 Electron 运行时的纯模块并配单元测试；装配层 NEVER 承载业务规则。
+- MUST 限定 preload IPC 为窄口：状态快照推送、local console URL、打开诊断状态页、打开数据目录，以及设置专用的应用信息读取、检查更新与固定版本复制；NEVER 暴露配置写接口。
+- MUST NOT 把 local console 的行为规则复制进本域；本域只引用它的编程入口（`start()`）。
+
+## 退役 GitHub runner 后的装配约束
+
+### Requirement: Desktop 只装配本地运行形态
+Source: docs/product/prd.md#产品运行形态
+
+Desktop MUST 由 main process 持有 exactly one local console server，MUST NOT 派生 GitHub runner child、
+启动 observer server 或监管这些已退役进程。关闭应用 MUST 有界关闭 local server 与仍在运行的 local
+provider/SQLite worker 资源，且 MUST NOT 留下孤儿进程。
+
+#### Scenario: Desktop 启动
+
+- **GIVEN** 用户启动 Desktop
+- **WHEN** 主窗口完成初始化
+- **THEN** local console 可用且主页面能读取 local 状态
+- **AND** 进程树没有 `runner-child.js` 或 observer server
+
+### Requirement: 辅助状态面只呈现仍存在的能力
+Source: docs/product/prd.md#产品运行形态
+
+Desktop status snapshot、preload 与辅助状态页 MUST 继续呈现 local console、环境、数据根、seed、版本
+和更新事实，MUST NOT 暴露 runner/observer 状态字段、打开 observer 动作或对应占位 UI。
+
+#### Scenario: 打开辅助状态页
+
+- **GIVEN** Desktop 的 local console 正常运行
+- **WHEN** 用户打开辅助状态页
+- **THEN** 页面显示 local 与环境诊断
+- **AND** 页面不存在 GitHub runner、observer 或“打开观察页”动作
+
+### Requirement: 退役运行形态不得破坏历史数据
+Source: docs/product/prd.md#产品运行形态
+
+Desktop 与终端 local 入口 MUST NOT 为退役 GitHub runner 执行 destructive migration 或自动删除历史
+GitHub state。启动与退出过程中，未被 local runtime 使用的旧 GitHub state 文件/表 MUST 保持原内容。
+
+#### Scenario: 带历史状态启动
+
+- **GIVEN** 临时数据根包含代表性旧 GitHub state 文件或表
+- **WHEN** Desktop 启动并退出
+- **THEN** local console 可用
+- **AND** 旧 GitHub state 的内容哈希或表行数保持不变
 
 ## 场景
 
@@ -174,12 +205,12 @@
 Given the desktop app has finished booting
 When the main BrowserWindow finishes loading
 Then it displays the local operator console
-And the user can reach status/observer diagnostics from an auxiliary action.
+And the user can reach status diagnostics from an auxiliary action.
 
 ### 场景 DS.T4.2：桌面形态只有一个 local console server
 Given desktop main process starts a local console server
-When runner child starts
-Then runner child does not start a second local console server
+When the operator console renderer loads
+Then no second local console server is started
 And the renderer uses the main process provided local console URL.
 
 ### 场景 DS.T4.3：renderer 安全边界保持
@@ -199,7 +230,7 @@ Given the desktop operator console is loaded
 When the user chooses the open-project action
 Then the Electron main process opens a native directory picker
 And preload returns the selected folder path to the renderer
-And the IPC does not write SQLite, configuration, or runner state by itself.
+And the IPC does not write SQLite or configuration state by itself.
 
 ### 场景 DS.T4.7：renderer 仍走安全边界
 Given the renderer has received a selected folder path

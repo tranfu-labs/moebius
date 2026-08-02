@@ -46,7 +46,7 @@
   active command 文档；历史 roadmap/归档证据不改写
 - [x] 维护仍含 `github-issue-runner` delta 的未归档 change 冲突清单，交由主理人按纯 GitHub/混合 change
   逐项处置，不把 local/goal-ledger 内容连带删除
-- [ ] 完成 spec-delta，归档时退役 `github-issue-runner` spec 并修改 local-console/desktop-shell 事实源
+- [x] 完成 spec-delta，归档时退役 `github-issue-runner` spec 并修改 local-console/desktop-shell 事实源
 
 ## E · 验证与收口
 
@@ -56,7 +56,7 @@
 - [x] 执行 RA-12R：真实 Desktop 主窗口/local 状态页可用，无 runner child/observer UI 或进程
 - [x] 执行 RA-30D：带旧 GitHub state 的临时数据根启动前后哈希/表行数不变且无新 GitHub 写入
 - [x] 报告净删除行数、30/40 debt、测试 ledger、剩余纯比例新基线与闸门耗时；单样本不声明归因收益
-- [ ] QA/主理人复核后、合并前运行本 change 唯一一次完整 `pnpm test`；若红，修复后重跑完整闸门
+- [x] QA/主理人复核后、合并前运行本 change 唯一一次完整 `pnpm test`；若红，修复后重跑完整闸门
 
 ## 实施收口记录（复核前）
 
@@ -104,3 +104,50 @@
   `legacy_migration_sources=4`、`projects=1`、`schema_migrations=20`、`session_agent_contexts=1`、
   `session_role_threads=1`、`sessions=1`，总行数始终 **31**。local 新会话只写
   `.state/local-console.sqlite`，未改旧 `github-runner.sqlite`。
+
+## 合并点完整闸门（dev-manager 执行）
+
+- 由主理人在同一工作区执行本 change 唯一一次完整 `pnpm test`（Node 24.18.0），一次通过、无需返工：
+  root 97 files / 719 tests（另 1 file / 4 tests skipped）、slow 1 / 63、desktop 109 / 511、
+  console-ui 45 / 460；无 `FAIL` / `ELIFECYCLE` / `ERR_PNPM` 标记；总墙钟 124s。
+- 相对 20 批闸门（root 121/1,034、desktop 111/514）净减 24 个 root 测试文件、315 个 root 用例与
+  2 个 desktop 文件、3 个用例，合计 −318；与 test-deletion-ledger 登记的 322 条删除加本批新增用例
+  自洽。墙钟 133s → 124s 的差值来自测试规模缩小，按既有口径不声明可归因速度收益，记 0。
+- 覆盖流失独立核查：对基线 `d7373e3` 到 HEAD 被删的 27 个测试文件逐个比对同名生产文件，仅
+  `tests/runner.test.ts` 对应的 `src/runner.ts` 仍存活；其 70 行现由 `tests/runtime-start.test.ts`
+  接管，且覆盖强于原测试——`assertLocalOnlyArguments` 对 `[]` / `["--"]` / `["--github-mode"]` /
+  `["--", "--github-mode"]` / `["--unknown"]` 逐个断言，另有真起子进程的冷启动用例验证退役 flag
+  fail closed。`isDirectRun` 无直接单测，由该冷启动进程用例端到端覆盖。结论：无覆盖净流失。
+- 遗留清理项：`src/observer/` 在磁盘上残留空目录（git 不跟踪空目录，文件与 `package.json` 的
+  `observer` 脚本、`src/github-state-store.ts` 均已删除），归档前清掉目录壳。
+
+### 归档时 spec 应用与 change 冲突处置（dev-manager 执行）
+
+- `openspec/specs/github-issue-runner/` 整域删除（2,259 行），按 delta 的域退役指令执行，未采取"只删启动
+  Requirement"的做法，避免留下不可达的 intake / dispatch / publication / state / recovery 承诺。
+- `openspec/specs/local-console/spec.md` 3,056 → 2,763 行：删除 `辅助只读 observer 入口`、`Ledger-first
+  诊断呈现`、全部 `场景 LC.OBS.*`、`Local and GitHub runtime isolation`、`Operational startup
+  documentation` 及 observer 可验证行为条目；`Local default startup` 按 delta 重写为单形态 + 退役 flag
+  fail closed。残留的唯一 `--github-mode` 提及是刻意保留的 fail-closed 场景断言。
+- `openspec/specs/desktop-shell/spec.md`：删除 `observer 边界`、`runner 子进程监管` 两节，重写启动/退出
+  时序、数据根工作目录、local console server ownership、preload IPC 窄口与架构约束中的 runner/observer
+  引用，并追加 delta 的三条 ADDED Requirements。保留的 GitHub 提及均属发布渠道（GitHub Releases 更新
+  检查）与引导文案禁用词规则，与运行形态无关。
+- change 冲突清单按三档裁决逐个处置：`acceptance-governance-rules`、`ceo-default-plan-chain` 归档为历史；
+  `roundtable-topology-t6`、`visual-requirement-flow` 从未实施、显式作废（保留目录可追溯，不静默删除）；
+  `local-console-t2-e2e-spike`、`local-console-t3-sqlite-persistence`、`local-console-t45-handoff-loop`
+  已完成、归档；`conversation-console` 经复核实为**目标已达成**（其提案的「GitHub issue 总线并存或退役」
+  已按退役落地），归档；`local-console-t5-full-parity` 以已退役的 `github-issue-runner` 为 parity 事实源，
+  标记为**阻塞待重写**，目录保留不归档不作废，9 条未完成任务需由需求方确认后以 `local-console` 为事实源重写。
+- 修改 spec 后复跑完整 `pnpm test` 与 `check:boundaries` 均全绿（97/719、1/63、109/511、45/460；
+  569 source / 483 production / 3 roots），且全仓无 `github-issue-runner` 悬空引用。
+- `src/observer/` 残留空目录已清理。
+
+### 遗留：goal-ledger 成为孤儿域（移交 dev）
+
+删除前 `src/goal-ledger.ts` 的生产消费者为 `agent-prescripts/ceo-ledger-context.ts`、`github-state-store.ts`、
+`goal-ledger-state.ts`、`observer/model.ts`、`observer/read-state.ts`、`runner.ts`、`runner/*.ts`——**全部在
+GitHub 侧且已删除**，零个 local-console 消费者。现状：`src/goal-ledger.ts` 与 `tests/goal-ledger.test.ts`
+仍在，但已无生产调用者，仅门禁元数据（`four-layer-registry.ts`、`import-boundaries.ts`）在列它；
+`openspec/specs/goal-ledger/spec.md`（388 行）成为孤儿域。本项为删除生产源码，不由 dev-manager 执行，
+移交 dev 在 40 批前处理。

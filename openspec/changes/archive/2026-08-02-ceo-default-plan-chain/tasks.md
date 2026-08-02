@@ -9,3 +9,9 @@
 - [ ] 归档时把 `spec-delta/goal-ledger/spec.md` 合入 `openspec/specs/goal-ledger/spec.md`。
 - [x] 验证：运行 `pnpm test -- tests/runner.test.ts tests/ceo-ledger-context.test.ts tests/ceo-scripts.test.ts tests/ceo-orchestration.test.ts`；必要时运行全量 `pnpm test` 与 `pnpm typecheck`。
 - [x] 实现验收完成后，在 `docs/roadmap/milestone-4-local-console.md` 的 T1 下追记验收证据并勾选。
+
+---
+
+## 30 批处置（归档为历史）
+
+本 change 的产品前提（GitHub issue runner 运行形态）已于 `four-layer-30-github-runner` 随 GitHub runner 一并移除。已实施部分作为历史记录归档，其 GitHub spec/protocol 承诺不再有效；不回滚任何已形成的 local 事实。

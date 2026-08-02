@@ -8,3 +8,9 @@
 - [x] 归档时把 `spec-delta/github-issue-runner/spec.md` 合入 `openspec/specs/github-issue-runner/spec.md`。
 - [ ] 验证：运行文档 / persona 关键字检查、CEO persona-level 场景检查与 `git diff --check`；必要时运行 `pnpm test` / `pnpm typecheck` 确认文档改动未引入工程回归。
 - [ ] 实现验收完成后，在 `docs/roadmap/milestone-2-stability-oracle.md` 的 T5 下追记验收证据并勾选。
+
+---
+
+## 30 批处置（归档为历史）
+
+本 change 的产品前提（GitHub issue runner 运行形态）已于 `four-layer-30-github-runner` 随 GitHub runner 一并移除。已实施部分作为历史记录归档，其 GitHub spec/protocol 承诺不再有效；不回滚任何已形成的 local 事实。
