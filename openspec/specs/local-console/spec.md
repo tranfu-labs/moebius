@@ -274,10 +274,10 @@ Source: docs/product/pages/main-left-sidebar.md#入口与去向
 - MUST continue startup catch-up from the next unprocessed local trigger after restart.
 
 ### 边界
-- MUST keep GitHub runner semantics untouched while allowing local child sessions, primary-Agent closeout, and dead-letter/recovery in this domain.
+- MUST keep shared conversation, trigger, stage, and CEO guardrail semantics stable while allowing local child sessions, primary-Agent closeout, and dead-letter/recovery in this domain.
 - MUST allow child session orchestration only as local child session creation, `sessions.parent_session_id` persistence, and parent-timeline card aggregation.
 - MUST keep existing local acceptance tables readable as legacy history, but normal local execution MUST NOT write new acceptance facts or integration events and MUST NOT use them for routing, repair, join, or status.
-- MUST NOT modify `conversation`, `triggers`, agent mention parsing, stage parsing, CEO guardrail, goal-ledger business rules, GitHub issue timeline normalization, GitHub issue intake scheduling, GitHub comment publication, reaction targets, release artifact publication, issue media handling, issue worktree behavior, GitHub driver pool semantics, or other GitHub issue runner semantics to satisfy local-console behavior.
+- MUST NOT modify `conversation`, `triggers`, agent mention parsing, stage parsing, or CEO guardrail rules solely to satisfy local-console behavior.
 - MUST NOT implement unrelated GitHub parity such as artifact publishing, GitHub child issue side effects, extra worktree diff return behavior beyond the existing local store fact, or unconfirmed cross-mode behavior.
 
 ## 场景

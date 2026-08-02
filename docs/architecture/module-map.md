@@ -34,7 +34,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 - 职责边界：React/Radix/Tailwind 组件库只承载显示、交互 intent 与组件级可测协议，不读取数据根，不调用 provider、SQLite、HTTP 或 Electron IPC。真实 renderer 数据流属于 desktop-shell application 层。
 - 入口：`packages/console-ui/src/index.ts`、`packages/console-ui/src/console/*`、Storybook。
 - 上游：desktop renderer、Storybook、组件测试。
-- 禁止依赖：组件库不得反向 import `src/runner.ts`、`src/local-console/**`、`src/goal-ledger.ts` 或状态 adapter。[IB:console-ui-no-runtime-internals]；组件库不得调用 Codex adapter 或 child process。[IB:console-ui-no-side-effect-adapters]；组件不得复制业务事实或状态机。[NI:console-ui-no-business-fact-copy]（非 import：由组件隔离测试和 domain 单测对账）
+- 禁止依赖：组件库不得反向 import `src/runner.ts`、`src/local-console/**` 或状态 adapter。[IB:console-ui-no-runtime-internals]；组件库不得调用 Codex adapter 或 child process。[IB:console-ui-no-side-effect-adapters]；组件不得复制业务事实或状态机。[NI:console-ui-no-business-fact-copy]（非 import：由组件隔离测试和 domain 单测对账）
 
 ### local-console
 - 职责边界：本地操作台提供 loopback HTTP、SQLite 可变状态与 JSONL 会话事实；负责项目/会话、团队快照、消息 FIFO、主 Agent/成员接力、provider canonical session、恢复/中断/失败、附件、运行过程和文件引用。`runtime.ts` 仅保留窄 composition root；决策规则在纯 `*plan.ts` / `runtime-domain.ts`，时序在 application runtime，fs/SQLite/provider/HTTP 在 adapter。
@@ -95,12 +95,6 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 - 入口：`src/conversation.ts`、`src/local-console/timeline.ts`、`src/local-console/prompt.ts`。
 - 上游：local dispatch、route judgment、SQLite 历史兼容。
 - 禁止依赖：conversation 纯模块不得调用 provider 或文件系统 adapter。[IB:conversation-no-side-effect-adapters]；时间线正文不得被解释为 shell 命令或权限声明。[NI:conversation-no-shell-content]（非 import：需追踪外部文本到进程参数的数据流）
-
-### goal-ledger
-- 职责边界：保留独立的纯目标/里程碑/任务/验收事实模型与旧 issue reference schema 兼容，不再由活跃 GitHub adapter 持久化或驱动 local session。其存在不授权恢复 GitHub runner。
-- 入口：`src/goal-ledger.ts`。
-- 上游：纯单元测试与未来显式设计；当前 local runtime 无持久 adapter。
-- 禁止依赖：goal-ledger 纯模块不得调用 provider、文件系统或 child process。[IB:goal-ledger-no-side-effect-adapters]；旧 issue reference schema 不得被误解为活跃 GitHub 运行入口。[NI:goal-ledger-no-runner-revival]（非 import：属于产品能力与调用可达性）
 
 ### provider-adapters
 - 职责边界：`src/codex.ts`、`src/claude.ts`、`src/kimi.ts` 把三家 CLI 映射为统一执行契约；可执行文件解析、版本探测、原生 transcript/wire 读取与 canonical session 校验分别留在窄 adapter。业务 dispatch、重试与终局文案不进入 provider adapter。

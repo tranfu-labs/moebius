@@ -444,7 +444,6 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/conversation.ts",
   "src/execution-contract.ts",
   "src/execution-profile-registry.ts",
-  "src/goal-ledger.ts",
   "src/local-console/control-dispatch.ts",
   "src/local-console/agent-file.ts",
   "src/local-console/active-run.ts",

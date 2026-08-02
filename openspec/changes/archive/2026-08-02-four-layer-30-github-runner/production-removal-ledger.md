@@ -24,6 +24,7 @@
 | `src/github-response-intake.ts` | 412 | GitHub issue response folding |
 | `src/github-state-store.ts` | 168 | GitHub-mode state store composition |
 | `src/github.ts` | 689 | runner 的 `gh` issue/comment/reaction adapter |
+| `src/goal-ledger.ts` | 1,971 | 归档后可达性复核确认零个 local 生产消费者；随 GitHub runtime 一并退役 |
 | `src/goal-ledger-state.ts` | 250 | GitHub runner goal-ledger adapter；纯 `goal-ledger.ts` 保留 |
 | `src/issue-dispatcher.ts` | 162 | GitHub heartbeat dispatch |
 | `src/issue-media.ts` | 214 | GitHub issue body media preparation |
@@ -43,8 +44,9 @@
 | `src/state-persister.ts` | 58 | GitHub runner JSON state writer |
 | `src/state.ts` | 191 | GitHub role thread state |
 
-整文件删除合计 10,874 行生产代码。连同拆分文件内删除，本批生产范围 `+242/-14,960`，净删
-14,718 行；新增部分是 local parser/judgment/persona 与 local-only 入口，不是把 runner 搬入新目录。
+整文件删除合计 12,845 行生产代码。连同拆分文件内删除，本批及归档后补正的生产范围
+`+242/-16,931`，净删 16,689 行；新增部分是 local parser/judgment/persona 与 local-only 入口，不是把
+runner 搬入新目录。
 
 ## 拆分保留
 

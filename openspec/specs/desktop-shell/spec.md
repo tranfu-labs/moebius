@@ -1,7 +1,7 @@
 # desktop-shell 规格
 
 ## 域定位
-`desktop-shell` 负责把 local console 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex、Claude Code 或 Kimi CLI。壳层只做装配、环境自检与更新提示，不承载任何业务规则；本地操作台呈现事实源在 `local-console`，目标账本事实源在 `goal-ledger`。终端形态（`pnpm start`）继续有效且行为不变。
+`desktop-shell` 负责把 local console 装配成一个纯本地桌面应用（Electron 壳）：启动应用即启动当前全部功能，并按冻结的执行配置调用本机 Codex、Claude Code 或 Kimi CLI。壳层只做装配、环境自检与更新提示，不承载任何业务规则；本地操作台呈现事实源在 `local-console`。终端形态（`pnpm start`）继续有效且行为不变。
 
 ## 业务规则
 

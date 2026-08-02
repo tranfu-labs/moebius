@@ -117,7 +117,6 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     deniedRepositoryTargets: [
       exact("src/runner.ts"),
       prefix("src/local-console/"),
-      exact("src/goal-ledger.ts"),
     ],
   },
   {
@@ -173,12 +172,6 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     importers: [exact("src/conversation.ts")],
     deniedRepositoryTargets: codexAdapter,
     deniedExternalSpecifiers: filesystemAdapters,
-  },
-  {
-    id: "goal-ledger-no-side-effect-adapters",
-    importers: [exact("src/goal-ledger.ts")],
-    deniedRepositoryTargets: codexAdapter,
-    deniedExternalSpecifiers: [...filesystemAdapters, "node:child_process"],
   },
 ] as const;
 

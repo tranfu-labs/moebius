@@ -143,11 +143,24 @@
   569 source / 483 production / 3 roots），且全仓无 `github-issue-runner` 悬空引用。
 - `src/observer/` 残留空目录已清理。
 
-### 遗留：goal-ledger 成为孤儿域（移交 dev）
+### 归档后补正：移除孤儿 goal-ledger 域
 
 删除前 `src/goal-ledger.ts` 的生产消费者为 `agent-prescripts/ceo-ledger-context.ts`、`github-state-store.ts`、
 `goal-ledger-state.ts`、`observer/model.ts`、`observer/read-state.ts`、`runner.ts`、`runner/*.ts`——**全部在
-GitHub 侧且已删除**，零个 local-console 消费者。现状：`src/goal-ledger.ts` 与 `tests/goal-ledger.test.ts`
-仍在，但已无生产调用者，仅门禁元数据（`four-layer-registry.ts`、`import-boundaries.ts`）在列它；
-`openspec/specs/goal-ledger/spec.md`（388 行）成为孤儿域。本项为删除生产源码，不由 dev-manager 执行，
-移交 dev 在 40 批前处理。
+GitHub 侧且已删除**，零个 local-console 消费者。归档后的可达性复核据此删除：
+
+- `src/goal-ledger.ts`（1,971 行）及 `tests/goal-ledger.test.ts`（20 条纯单测）；
+- `openspec/specs/goal-ledger/` 整域（388 行）及无引用的 `docs/architecture/goal-intake.svg`；
+- `four-layer-registry.ts` 的纯闭包登记、`import-boundaries.ts` 的专属边界与 console-ui 失效精确目标；
+- `module-map.md` 的域条目、desktop/local 事实源悬空提及，以及 40 批 proposal 的失效基线行。
+
+历史 roadmap 与已归档 change 的原始设计判断保留；累计生产净删除修正为 **16,689 行**，测试删除 ledger
+修正为 **342 条**。本补正不删除或迁移任何历史 SQLite/JSON 数据，也不改变 local CLI/Desktop 行为。
+
+补正验证（Node 24.18.0）：
+
+- `pnpm check:boundaries`：568 source / 482 production / 3 roots，全绿；全仓 typecheck 全绿。
+- `pnpm run test --scope 99bb50a`：1 file / 11 tests，全绿。
+- 主理人点名的完整 `pnpm test` 一次通过，125s：root 96 files / 699 tests（另 1 file / 4 tests
+  skipped）、slow 1/63、desktop 109/511、console-ui 45/460。root 相比归档闸门恰好减少 20 项，与
+  `tests/goal-ledger.test.ts` ledger 逐条对上，无额外测试流失。

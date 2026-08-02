@@ -2,7 +2,7 @@
 
 基线：d7373e3。机械判据：标题存在于基线、在当前同路径测试中不存在。文件级分类不抵扣 local/shared 接缝；替代与保留证据见末节。
 
-删除 test-name 总数：322（含两条参数化展开用例）。
+删除 test-name 总数：342（含两条参数化展开用例和归档后补正删除的 20 条孤儿 goal-ledger 用例）。
 
 ## desktop/tests/runner-launch.test.ts
 
@@ -493,6 +493,32 @@
 - does not post a hook when an agent emits plan-written without a mention
 - uses ordinary mentions in agent messages after stage hooks are removed
 - ignores unsupported stages when there is no mention
+
+## tests/goal-ledger.test.ts
+
+处置：归档后可达性复核确认被测纯模块已无 local 生产消费者；模块及独立产品域随 GitHub runtime 退役，
+不存在可保留的运行时接缝。
+
+- admits partial goals as draft or pending with missing fields and provenance
+- marks a goal ready only after required fields are present
+- writes a pending goal-intake bundle without exposing active phase context
+- treats identical goal-intake proposals as idempotent and conflicts as fail-closed
+- confirms a goal-intake proposal into ready entries and a single active phase
+- validates entity references and ready invariants
+- accepts run manifest refs only when linked refs have a stable locator
+- computes missing dependencies by field presence so an empty confirmed list is valid
+- phase switch archives old active phase and starts the target phase with timestamps
+- phase switch fails closed without archive inputs and records explicit no-artifact archives
+- phase switch is a deterministic no-op when the target phase is already the only active phase
+- active phase context projection excludes old artifacts and uses the phase baseline
+- archived lookup returns completed phase summaries and references separately from current context
+- phase context fails closed for multiple active phases and returns no-active without fallback
+- old T1 phase records parse but projection and switch fail closed without current fields
+- different owners can each have one active phase while the same owner cannot have two
+- typed artifact references accept bounded summaries and locators while rejecting unsafe payloads
+- upserts child acceptance facts by a stable source key so repeated comments do not change join digest
+- evaluates integration acceptance join only when every in-scope child has a passed fact
+- records integration acceptance events idempotently by join key and status
 
 ## 保留与替代的 local/shared 接缝
 

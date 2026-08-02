@@ -6,7 +6,6 @@
 | --- | --- | --- | --- |
 | `openspec/specs/desktop-shell/spec.md` | desktop main/team/onboarding/provider/IPC Requirements | adapter 行为保持 | 无变更 |
 | `openspec/specs/local-console/spec.md` | store/provider/process 接缝 | adapter 行为保持 | 无变更 |
-| `openspec/specs/goal-ledger/spec.md` | ledger state adapter | schema 与原子性保持 | 无变更 |
 | `openspec/changes/four-layer-architecture-series/design.md` | `40 · Adapter convergence` | 本 change 系列契约 | 待主理人核验 |
 
 `spec-delta/` 保持为空。本 change 不修改数据层端口、schema、CLI/IPC/API 协议。
