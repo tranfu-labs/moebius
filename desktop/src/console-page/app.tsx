@@ -426,9 +426,6 @@ export function OperatorConsoleApp({
     : sidebarConversationDrafts.find((draft) => draft.draftId === activeSidebarConversationDraftId) ?? null;
   const conversationViewsBundle = rightSidebarBundle.conversationViews;
   const subSessionViews = conversationViewsBundle.subSessionViews;
-  const sidebarConversationViews = conversationViewsBundle.sidebarConversationViews;
-  const setSidebarConversationViews = conversationViewsBundle.setSidebarConversationViews;
-  const refreshSubSessionNow = conversationViewsBundle.refreshSubSessionNow;
   const processDataBundle = rightSidebarBundle.processData;
   const processOutputs = processDataBundle.outputs;
   const processInvocationStates = processDataBundle.invocations;
@@ -808,12 +805,11 @@ export function OperatorConsoleApp({
 
   const sessionControllersBundle = useSessionConsole(
     apiBase, managedSubSessionAttachments, conversationDraftStoreRef.current,
-    selectionRef, refresh, refreshSubSessionNow, browserSessionRunPort,
+    selectionRef, refresh, rightSidebarBundle, browserSessionRunPort,
     managedSidebarConversationAttachments, projects, agentTeamCatalogBundle,
     sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
-    rightSidebarTabsBundle, presentationRouteRef, commitPresentationRoute,
-    window.moebius, browserSidebarDraftPort, t, sidebarConversationViews,
-    setSidebarConversationViews, browserSidebarMessagePort, setClientError,
+    presentationRouteRef, commitPresentationRoute, window.moebius,
+    browserSidebarDraftPort, t, browserSidebarMessagePort, setClientError,
   );
   const sessionRunActionsBundle = sessionControllersBundle.runs;
   const activeSubSessionComposerValue = activeSubSessionId === null
