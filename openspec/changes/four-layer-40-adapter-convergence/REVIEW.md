@@ -22,9 +22,35 @@
 
 ---
 
-## 簇 2：ai-team-builder — **已放行，出账后直接实施**
+## 簇 2：ai-team-builder — 账已核 · 裁决：**通过，直接实施**（账 `d310438`）
 
 范围：`desktop/src/ai-team-builder/` 下 `index.ts`、`team-writer.ts`、`claude-spawner.ts`、`codex-spawner.ts`、`kimi-spawner.ts` 共 5 个文件。
+
+### 账目复核（dev-manager）
+
+底数逐项复算无误：五主体文件 454+232+129+263+174 = **1,252** 逻辑行、55+23+14+21+13 = **126** 原始 AST
+条件；目标 180+180+129+263+174 = **926**、5+8+10+16+10 = **49**。`index.ts` §5.1 复算
+55 = wiring 25 + timing 14 + business 16，与原始总数吻合。
+
+认可的关键判断：
+
+- **计数口径按要求分两栏**，并明写「去重违规不能反推原始 AST 数」——簇 1 目标算错 10 条的根因已堵上。
+- **拒绝宣称系统性收益**：「下降值只表示原边界收薄，不宣称全系统少了 77 个决策」。126→49 比簇 1 的
+  1,502→1,428 漂亮得多，但没有拿它当政绩。
+- 三条否决理由都成立：拆 adapter 摊薄判为「指标修绿」；先抽基类会「迫使 provider-specific 分支进基类」。
+- 三个 spawner 目标行数不变，只降条件数——没有靠挪行数凑好看。
+- `team-writer.ts` 是层级归位（adapter → application）而非切割，且自缚「层级变更必须与 fs/path 抽离同提交
+  完成，否则不允许摘 debt」，堵死了本簇最便宜的作弊路径。
+- 36 条留在 spawner 的条件已被 checker 机械识别为 codec/transport control，**permit 净增 0**——与簇 1 的
+  150 条形成对照，正说明两处判断都成立：worker 是不可约的协议分派，builder 是可下沉的业务逻辑。
+
+### 一处分类偏差（不拦实施，收口时重标）
+
+`stored draft migration L393-447` 的 14 条划为 **wiring**，去向却是 domain 的 `draft-persistence-plan.ts`。
+v1/v2/v3 的 JSON 版本迁移是数据解释，不是依赖装配；按 10 批口径更接近 business 或 codec。**去向对、标签错。**
+
+之所以要紧：三分法的全部价值在于「timing 0 / business 0」这句结论有分量。若 wiring 沦为「非 timing 非
+business 的兜底桶」，该结论即失去信息量。本簇收口复算与簇 3 立账时按严格口径重标，**不需返工代码**。
 
 ### 约束
 
