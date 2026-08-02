@@ -4,26 +4,14 @@ import {
   useI18n,
   OperatorConsole,
   resolveNewConversationAgentTeamKey,
-  type AgentTeamSaveAllFailureView,
-  type OperatorMessage,
-  type OperatorPendingDispatch,
-  type OperatorMemberIdentity,
-  type OperatorAgentTeam,
-  type OperatorChildSessionSummary,
-  type OperatorProject,
-  type OperatorProcessOutput,
-  type OperatorProcessTimelineEvent,
-  type OperatorRunSnapshot,
   type OperatorSession,
-  type TranslationKey,
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
-  type OperatorWorkspaceDiffSummary,
   processInvocationKey,
   openRightSidebarSourceTab,
   createRunOutputSourceKey,
 } from "@moebius/console-ui";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   loadExecutionProfileRegistry,
@@ -43,11 +31,7 @@ import {
   EMPTY_CONSOLE_PROJECT,
   NO_OPERATOR_MESSAGES,
 } from "./console-default-state.js";
-import {
-  ConsoleStateCoordinator,
-  type ConsoleSelection,
-  type SelectionMutationKind,
-} from "./console-state-coordinator.js";
+import { type SelectionMutationKind } from "./console-state-coordinator.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import {
@@ -64,17 +48,7 @@ import {
   writeSidebarVisibilityPreference,
   type SidebarVisibilityPreference,
 } from "./sidebar-preference.js";
-import {
-  clearConsoleSelectionPreference,
-  decideConsoleSelectionCommit,
-  isSameConsoleSelection,
-  readConsoleSelectionPreference,
-  writeConsoleSelectionPreference,
-} from "./selection-preference.js";
-import {
-  createNewConversationDraft,
-  reduceNewConversationDraft,
-} from "./new-conversation.js";
+import { reduceNewConversationDraft } from "./new-conversation.js";
 import {
   createRightSidebarTabsStore,
   parseConversationTabSourceKey,
@@ -85,16 +59,11 @@ import {
   type SidebarConversationDraftAttachmentPresence,
   type SidebarConversationDraft,
 } from "./sidebar-conversation-drafts.js";
-import {
-  createConsolePresentationRouteStore,
-  sidebarPresentationRoute,
-  type ConsolePresentationRoute,
-} from "./presentation-route.js";
+import { sidebarPresentationRoute } from "./presentation-route.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import {
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
-  getAgentTeamKey,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
@@ -124,6 +93,7 @@ import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
 import { SidebarConversationView } from "./sidebar-conversation-view.js";
 import { useDesktopRuntimeBridge } from "./use-desktop-runtime-bridge.js";
+import { useConsoleSelectionState } from "./use-console-selection-state.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -154,20 +124,28 @@ export function OperatorConsoleApp({
   const executionRegistryState = runtimeBridgeBundle.executionRegistryState;
   const attachmentCapability = runtimeBridgeBundle.attachmentCapability;
   const [sessionAnalysisNotice, setSessionAnalysisNotice] = useState<string | null>(null);
-  const [initialSelectionPreference] = useState<ConsoleSelection | null>(() =>
-    readConsoleSelectionPreference(window.localStorage),
-  );
-  const [selection, setSelection] = useState<ConsoleSelection>(
-    initialSelectionPreference ?? { projectId: "local", sessionId: "default" },
-  );
-  const selectionRef = useRef(selection);
-  const persistedSelectionRef = useRef(initialSelectionPreference);
-  const startupSelectionPendingRef = useRef(true);
-  const selectionPersistenceEnabledRef = useRef(false);
-  const coordinatorRef = useRef(new ConsoleStateCoordinator());
-  const [state, setState] = useState<LocalConsoleState | null>(null);
-  const stateRef = useRef<LocalConsoleState | null>(null);
   const conversationDraftStoreRef = useRef(createConversationDraftStore(window.localStorage));
+  const conversationReadingPositionStoreRef = useRef(
+    createConversationReadingPositionStore(window.localStorage),
+  );
+  const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
+  const selectionStateBundle = useConsoleSelectionState(
+    window.localStorage, conversationDraftStoreRef.current,
+    conversationReadingPositionStoreRef.current, dispatchNewConversation,
+  );
+  const selection = selectionStateBundle.selection;
+  const selectionRef = selectionStateBundle.selectionRef;
+  const selectionPersistenceEnabledRef = selectionStateBundle.selectionPersistenceEnabledRef;
+  const state = selectionStateBundle.state;
+  const stateRef = selectionStateBundle.stateRef;
+  const presentationRoute = selectionStateBundle.presentationRoute;
+  const presentationRouteRef = selectionStateBundle.presentationRouteRef;
+  const coordinator = selectionStateBundle.coordinator;
+  const commitSelection = selectionStateBundle.commitSelection;
+  const commitPresentationRoute = selectionStateBundle.commitPresentationRoute;
+  const forgetPersistedSelection = selectionStateBundle.forgetPersistedSelection;
+  const rememberConfirmedSelection = selectionStateBundle.rememberConfirmedSelection;
+  const commitConsoleState = selectionStateBundle.commitConsoleState;
   const rightSidebarTabsStore = useMemo(
     () => createRightSidebarTabsStore(window.localStorage),
     [],
@@ -175,16 +153,8 @@ export function OperatorConsoleApp({
   const sidebarConversationDraftStoreRef = useRef(
     createSidebarConversationDraftStore(window.localStorage),
   );
-  const presentationRouteStoreRef = useRef(createConsolePresentationRouteStore(window.localStorage));
-  const [presentationRoute, setPresentationRoute] = useState<ConsolePresentationRoute | null>(() =>
-    presentationRouteStoreRef.current.read(),
-  );
-  const presentationRouteRef = useRef<ConsolePresentationRoute | null>(presentationRoute);
   const [sidebarConversationDrafts, setSidebarConversationDrafts] = useState<SidebarConversationDraft[]>(() =>
     sidebarConversationDraftStoreRef.current.list(),
-  );
-  const conversationReadingPositionStoreRef = useRef(
-    createConversationReadingPositionStore(window.localStorage),
   );
   const [updatingConversationTitleSessionIds, setUpdatingConversationTitleSessionIds] =
     useState<Set<string>>(() => new Set());
@@ -214,7 +184,6 @@ export function OperatorConsoleApp({
   const [selectionMutationKind, setSelectionMutationKind] = useState<SelectionMutationKind | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
   const settingsBundle = useDesktopSettingsBundle(window.moebius);
-  const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const agentTeamControllersBundle = useAgentTeamConsole(
     window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t,
   );
@@ -294,16 +263,6 @@ export function OperatorConsoleApp({
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
   const managedSidebarConversationAttachments = attachmentDraftsBundle.sidebar;
 
-  useEffect(() => {
-    stateRef.current = state;
-    if (state === null) return;
-    conversationReadingPositionStoreRef.current.retain(
-      state.projects.flatMap((candidate) =>
-        candidate.sessions
-          .filter((session) => session.parentSessionId == null)
-          .map((session) => session.sessionId)),
-    );
-  }, [state]);
   const agentTeamDetailState = useMemo(() => planAgentTeamDetailState({
     activeTeamKey: agentTeamNavigationBundle.activeTeamKey,
     catalog: agentTeamCatalogBundle.state,
@@ -320,74 +279,9 @@ export function OperatorConsoleApp({
     agentTeamProfileBundle.primaryAgentChange,
   ]);
 
-  const commitSelection = useCallback((nextSelection: ConsoleSelection) => {
-    selectionRef.current = nextSelection;
-    setSelection(nextSelection);
-  }, []);
-
-  const commitPresentationRoute = useCallback((route: ConsolePresentationRoute) => {
-    presentationRouteStoreRef.current.write(route);
-    presentationRouteRef.current = route;
-    setPresentationRoute(route);
-  }, []);
-
   const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
-
-  const forgetPersistedSelection = useCallback(() => {
-    clearConsoleSelectionPreference(window.localStorage);
-    persistedSelectionRef.current = null;
-  }, []);
-
-  const rememberConfirmedSelection = useCallback((nextSelection: ConsoleSelection) => {
-    if (isSameConsoleSelection(persistedSelectionRef.current, nextSelection)) {
-      return;
-    }
-    writeConsoleSelectionPreference(window.localStorage, nextSelection);
-    persistedSelectionRef.current = nextSelection;
-  }, []);
-
-  const commitConsoleState = useCallback((nextState: LocalConsoleState) => {
-    const nextSelection = {
-      projectId: nextState.selectedProjectId,
-      sessionId: nextState.selectedSessionId,
-    };
-    const snapshot = {
-      ...nextSelection,
-      isRootSession: nextState.selectedSession !== null
-        && nextState.selectedSession.parentSessionId == null
-        && nextState.selectedSession.analysisParentSessionId == null,
-    };
-    const startupPending = startupSelectionPendingRef.current;
-    const decision = decideConsoleSelectionCommit({
-      startupPending,
-      persistenceEnabled: selectionPersistenceEnabledRef.current,
-      remembered: persistedSelectionRef.current,
-      snapshot,
-    });
-    startupSelectionPendingRef.current = false;
-    selectionPersistenceEnabledRef.current = decision.persistenceEnabled;
-
-    if (decision.action === "remember") {
-      rememberConfirmedSelection(nextSelection);
-    } else if (decision.action === "forget" || decision.action === "open-new-conversation") {
-      forgetPersistedSelection();
-    }
-    if (decision.action === "open-new-conversation") {
-      dispatchNewConversation({
-        type: "open",
-        draft: createNewConversationDraft({
-          teamKey: null,
-          draft: conversationDraftStoreRef.current.read(NEW_CONVERSATION_DRAFT_KEY),
-        }),
-      });
-    }
-
-    stateRef.current = nextState;
-    setState(nextState);
-  }, [forgetPersistedSelection, rememberConfirmedSelection]);
-
   const stateSyncBundle = useConsoleStateSync(
-    apiBase, state, coordinatorRef.current, selectionRef, commitConsoleState, commitSelection,
+    apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
     setClientError, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
     resultAcknowledgementsRef, browserConsoleStateSyncPort,
   );
@@ -483,14 +377,13 @@ export function OperatorConsoleApp({
         ? { ...current.selectedSession, ...updated }
         : current.selectedSession,
     };
-    stateRef.current = nextState;
-    setState(nextState);
+    selectionStateBundle.replaceState(nextState);
   }, []);
 
   const actions = useMemo(() => new ConsoleStateActions({
     apiBase,
     commands: browserConsoleCommandPort,
-    coordinator: coordinatorRef.current,
+    coordinator,
     t,
     getSelection: () => selectionRef.current,
     commitSelection,
@@ -526,7 +419,7 @@ export function OperatorConsoleApp({
 
   const conversationControllersBundle = useConversationConsole(
     composerDraft, composerDraftRef, commitComposerDraft,
-    selection, projects, actions, conversationSearchBundle, setClientError, t, coordinatorRef.current,
+    selection, projects, actions, conversationSearchBundle, setClientError, t, coordinator,
     selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation, commitPresentationRoute,
     activateComposerDraft, rightSidebarTabsBundle, openRightSidebarSourceTab, newConversation,
     agentTeamCatalogBundle, pendingAgentTeamKey, setPendingAgentTeamKey,

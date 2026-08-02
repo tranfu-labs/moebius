@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createConversationReadingPositionStore } from "../src/console-page/conversation-reading-position.js";
+import {
+  createConversationReadingPositionStore,
+  planRetainedConversationSessionIds,
+} from "../src/console-page/conversation-reading-position.js";
 
 describe("conversation reading position store", () => {
   it("isolates message anchors by root session", () => {
@@ -32,6 +35,17 @@ describe("conversation reading position store", () => {
     store.retain(["keep"]);
     expect(store.read("keep")).toBe(4);
     expect(store.read("remove")).toBeNull();
+  });
+
+  it("retains reading anchors only for root conversations", () => {
+    expect(planRetainedConversationSessionIds({
+      projects: [{ sessions: [
+        { sessionId: "root", parentSessionId: null, analysisParentSessionId: null },
+        { sessionId: "child", parentSessionId: "root", analysisParentSessionId: null },
+        { sessionId: "analysis", parentSessionId: null, analysisParentSessionId: "root" },
+      ] }],
+    })).toEqual(["root"]);
+    expect(planRetainedConversationSessionIds(null)).toEqual([]);
   });
 });
 
