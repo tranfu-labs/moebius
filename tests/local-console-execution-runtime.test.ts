@@ -1881,11 +1881,6 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       fetch(firstRetryUrl, { method: "POST" }),
     ]);
     expect([firstRetry.status, duplicateRetry.status]).toEqual([202, 202]);
-    await Promise.all([
-      server.runtime.processPending("default"),
-      server.runtime.processPending("default"),
-      server.runtime.processPending("default"),
-    ]);
     const secondFailure = await waitForSystemEventMatching(
       server,
       "default",
@@ -2230,13 +2225,30 @@ async function waitForSystemEventMatching(
   sessionId: string,
   predicate: (message: LocalConsoleMessage) => boolean,
 ): Promise<LocalConsoleMessage> {
+  let lastSnapshot: Awaited<ReturnType<StartedLocalConsoleServer["runtime"]["snapshot"]>> | undefined;
   return waitForValue(
     async () => {
-      const snapshot = await server.runtime.snapshot(sessionId);
-      return snapshot.messages.find((message) =>
+      lastSnapshot = await server.runtime.snapshot(sessionId);
+      return lastSnapshot.messages.find((message) =>
         message.speaker === "system" && predicate(message));
     },
-    { describe: `matching system event in ${sessionId}`, kind: "io", timeoutMs: 8_000 },
+    {
+      describe: `matching system event in ${sessionId}`,
+      kind: "io",
+      timeoutMs: 8_000,
+      snapshot: () => lastSnapshot === undefined ? undefined : {
+        status: lastSnapshot.status,
+        messageCount: lastSnapshot.messages.length,
+        latestMessage: lastSnapshot.messages.at(-1) === undefined
+          ? undefined
+          : {
+              speaker: lastSnapshot.messages.at(-1)?.speaker,
+              body: lastSnapshot.messages.at(-1)?.body,
+              error: lastSnapshot.messages.at(-1)?.error,
+              runId: lastSnapshot.messages.at(-1)?.runId,
+            },
+      },
+    },
   );
 }
 
