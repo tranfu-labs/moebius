@@ -65,6 +65,67 @@ export function installerCleanupBlockedDialogOptions(locale: DesktopLocale = "zh
   };
 }
 
+export function exitTaskDialogOptions(
+  runningTaskCount: number,
+  locale: DesktopLocale = "zh-CN",
+): {
+  type: "warning";
+  buttons: [string, string];
+  defaultId: 0;
+  cancelId: 0;
+  title: string;
+  message: string;
+  detail: string;
+  noLink: true;
+} {
+  return {
+    type: "warning",
+    buttons: [
+      translateDesktop(locale, "dialog.exit.stay"),
+      translateDesktop(locale, "dialog.exit.confirm"),
+    ],
+    defaultId: 0,
+    cancelId: 0,
+    title: translateDesktop(locale, "dialog.exit.title"),
+    message: translateDesktop(locale, "dialog.exit.message", { count: runningTaskCount }),
+    detail: translateDesktop(locale, "dialog.exit.detail"),
+    noLink: true,
+  };
+}
+
+export function installUpdateDialogOptions(
+  version: string,
+  runningTaskCount: number,
+  locale: DesktopLocale = "zh-CN",
+): {
+  type: "warning";
+  buttons: [string, string];
+  defaultId: 0;
+  cancelId: 0;
+  title: string;
+  message: string;
+  detail: string;
+  noLink: true;
+} {
+  const hasTasks = runningTaskCount > 0;
+  return {
+    type: "warning",
+    buttons: [
+      translateDesktop(locale, hasTasks ? "dialog.install.stay" : "dialog.install.cancel"),
+      translateDesktop(locale, hasTasks ? "dialog.install.stopAndRestart" : "dialog.install.restart"),
+    ],
+    defaultId: 0,
+    cancelId: 0,
+    title: translateDesktop(locale, hasTasks ? "dialog.install.runningTitle" : "dialog.install.title"),
+    message: translateDesktop(locale, hasTasks ? "dialog.install.runningMessage" : "dialog.install.message", {
+      version,
+      count: runningTaskCount,
+    }),
+    detail: translateDesktop(locale, "dialog.install.detail"),
+    noLink: true,
+  };
+}
+
 export function onboardingCliLabel(cli: OnboardingCli): string {
   return cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi";
 }

@@ -93,4 +93,12 @@ export class AiTeamBuilder implements AiTeamBuilderServicePort {
   commit(draftId: string, proposalRevision: number): Promise<AiTeamBuilderState> {
     return this.service.commit(draftId, proposalRevision);
   }
+
+  getRunningTaskCount(): number {
+    return this.service.getRunningTaskCount();
+  }
+
+  cancelAll(): Promise<void> {
+    return this.service.cancelAll();
+  }
 }

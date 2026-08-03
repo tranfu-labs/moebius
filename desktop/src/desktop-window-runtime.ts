@@ -21,7 +21,7 @@ export class DesktopWindowRuntime {
   readonly #status: DesktopStatusSnapshot;
   readonly #locale: () => DesktopLocale;
   readonly #isQuitting: () => boolean;
-  readonly #hasRunningInstallers: () => boolean;
+  readonly #hasRunningTasks: () => boolean;
   readonly #requestShutdown: () => Promise<void>;
   readonly #statusTitle: () => string;
   #mainWindow: BrowserWindow | null = null;
@@ -33,7 +33,7 @@ export class DesktopWindowRuntime {
     status: DesktopStatusSnapshot;
     locale(): DesktopLocale;
     isQuitting(): boolean;
-    hasRunningInstallers(): boolean;
+    hasRunningTasks(): boolean;
     requestShutdown(): Promise<void>;
     statusTitle(): string;
   }) {
@@ -42,7 +42,7 @@ export class DesktopWindowRuntime {
     this.#status = input.status;
     this.#locale = input.locale;
     this.#isQuitting = input.isQuitting;
-    this.#hasRunningInstallers = input.hasRunningInstallers;
+    this.#hasRunningTasks = input.hasRunningTasks;
     this.#requestShutdown = input.requestShutdown;
     this.#statusTitle = input.statusTitle;
   }
@@ -80,7 +80,7 @@ export class DesktopWindowRuntime {
     this.#mainWindow.on("close", (event) => {
       const closePlan = planMainWindowClose({
         isQuitting: this.#isQuitting(),
-        hasRunningInstallers: this.#hasRunningInstallers(),
+        hasRunningTasks: this.#hasRunningTasks(),
       });
       if (closePlan === "request-shutdown") {
         event.preventDefault();

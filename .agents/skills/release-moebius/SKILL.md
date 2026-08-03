@@ -5,7 +5,7 @@ description: Publish or repair a Moebius GitHub Release with synchronized versio
 
 # Release Moebius
 
-Publish or repair one production version of `tranfu-labs/moebius`. The target outcome is a verified, non-draft, non-prerelease GitHub Release `v<VERSION>` containing exactly one macOS arm64 DMG and one ZIP.
+Publish or repair one production version of `tranfu-labs/moebius`. The target outcome is a verified, non-draft, non-prerelease GitHub Release `v<VERSION>` containing exactly one macOS arm64 DMG, one final ZIP, one `latest-mac.yml`, and any ZIP blockmap sidecar explicitly referenced by that YML.
 
 A fresh release request authorizes release-metadata edits, a release commit, annotated tag, push, and GitHub Release creation. Replacing assets or changing an existing public Release requires an explicit repair/resume request. NEVER modify product behavior, move an existing tag, or include unrelated files.
 
@@ -13,7 +13,7 @@ A fresh release request authorizes release-metadata edits, a release commit, ann
 
 - Require Developer ID Application Team `QV657S58FL`.
 - Use notarytool Keychain profile `${MOEBIUS_NOTARY_PROFILE:-moebius-notary-qv657}`. The profile name is not a secret; NEVER print, store, or request the Apple ID password or app-specific password after the profile exists.
-- Produce only `Moebius-<VERSION>-mac-arm64.dmg` and `Moebius-<VERSION>-mac-arm64.zip` for macOS Apple Silicon.
+- Produce only `Moebius-<VERSION>-mac-arm64.dmg`, `Moebius-<VERSION>-mac-arm64.zip`, `latest-mac.yml`, and the final ZIP's `.blockmap` sidecar when the YML references it. The `.app` is inside the final ZIP; it is signed, notarized, and stapled before that ZIP is frozen. The ZIP itself is not described as stapled.
 
 ## Workflow
 
@@ -58,6 +58,7 @@ Skip this section in repair mode unless the user explicitly asks to repair missi
 - Run `xcrun stapler staple <APP>` and `xcrun stapler validate <APP>`.
 - Require `spctl --assess --type execute -vvv <APP>` to report `accepted` and `source=Notarized Developer ID`.
 - Rebuild the final ZIP and DMG from this stapled App using electron-builder `--prepackaged`. Do not upload artifacts produced before the App was stapled.
+- After every final signing/stapling operation, copy the final builder output into a clean staging directory with `pnpm release:prepare-update --input <builder-output> --output <release-dir> --version <VERSION>`. This copies only the final DMG, final ZIP, and final ZIP blockmap, generates `latest-mac.yml` from the frozen ZIP bytes, and excludes the DMG blockmap/intermediate files. Then run `pnpm release:validate-update --dir <release-dir> --version <VERSION>`; the validator parses the generated YML, requires its version and ZIP filename to match the final arm64 ZIP, and recomputes the ZIP byte size and SHA-512.
 
 ### 6. Sign and notarize the outer DMG
 
@@ -85,13 +86,13 @@ Skip this section in repair mode.
 - Write Chinese notes from the tagged diff. State macOS arm64-only support, Developer ID Team `QV657S58FL`, successful Apple notarization with stapled App/DMG tickets, and final SHA-256 hashes.
 - Fresh mode: create a verified-tag Draft Release titled `Moebius v<VERSION>`.
 - Repair mode: preserve the tag and release highlights. If the Release is public, temporarily change it to Draft immediately before asset replacement so users cannot download a mixed pair.
-- Upload exactly the final DMG and ZIP. Replace same-named assets only in repair mode.
-- Compare GitHub asset names, byte sizes, upload states, and digests with local artifacts. Publish only when both match and the notes describe the notarized artifacts.
+- Run `pnpm release:upload-assets --tag v<VERSION> --dir <release-dir> --version <VERSION>` to validate the local directory and upload an explicit whitelist of the final DMG, final ZIP, `latest-mac.yml`, and the YML-referenced ZIP blockmap sidecar. This command passes exact file paths to `gh`, never a globbed output directory, and never uploads a builder intermediate. Add `--replace` only in repair mode.
+- The upload command reads the Release asset list, rejects non-whitelisted remote assets, downloads the remote YML and final ZIP into a system temporary directory, and repeats the version, filename, byte-size, SHA-512, and sidecar checks before reporting success. Publish only when this passes and the notes describe the notarized App/DMG artifacts.
 - If replacement or upload fails, keep the Release as Draft, report uploaded/missing assets, and give the exact resumable step.
 
 ### 9. Verify completion
 
-- Require `isDraft=false`, `isPrerelease=false`, the expected HTTPS Release URL, exactly two matching assets, and a remote annotated tag that still dereferences to the release commit.
+- Require `isDraft=false`, `isPrerelease=false`, the expected HTTPS Release URL, the exact updater asset set validated above, and a remote annotated tag that still dereferences to the release commit. The final ZIP must contain the signed, notarized, stapled `.app`; do not describe the ZIP itself as stapled.
 - In fresh mode, require synchronized `main` immediately before tagging. Do not fail a later completion check merely because `main` advanced after publication; require the tag to remain unchanged and report whether current `main` descends from the release commit.
 - Require a clean working tree apart from unrelated pre-existing user files. Never delete, stash, or include them.
 - Report the Release URL, release commit/tag, gate results and explicit waivers, signing Team, App and DMG notarization submission IDs, Gatekeeper results, architecture, artifact sizes/hashes, and remaining risks.

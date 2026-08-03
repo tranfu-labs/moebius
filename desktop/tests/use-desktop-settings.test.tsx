@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
-import type { SettingsApplicationInfo } from "../src/settings-contract.js";
+import type { SettingsApplicationInfo, SettingsUpdateState } from "../src/settings-contract.js";
 import {
   type DesktopSettingsPort,
   useDesktopSettingsBundle,
@@ -37,16 +37,44 @@ describe("desktop settings bundle", () => {
     await act(async () => root.render(<SettingsHarness api={first} />));
     await act(async () => root.render(<SettingsHarness api={second} />));
     await act(async () => newer.resolve(applicationInfo("2.0.0")));
-    await waitFor(() => host.textContent === "2.0.0");
+    await waitFor(() => host.textContent?.startsWith("2.0.0") === true);
     await act(async () => older.resolve(applicationInfo("1.0.0")));
 
-    expect(host.textContent).toBe("2.0.0");
+    expect(host.textContent).toMatch(/^2\.0\.0/u);
+  });
+
+  it("ignores a late update event from the replaced port and accepts the current subscription", async () => {
+    const listeners: Array<(state: SettingsUpdateState) => void> = [];
+    const makePort = (): DesktopSettingsPort => ({
+      readApplicationInfo: async () => applicationInfo("2.0.0"),
+      onUpdateState: (listener) => {
+        listeners.push(listener);
+        return () => undefined;
+      },
+    });
+    const first = makePort();
+    const second = makePort();
+
+    await act(async () => root.render(<SettingsHarness api={first} />));
+    await act(async () => root.render(<SettingsHarness api={second} />));
+    await waitFor(() => listeners.length === 2);
+    const oldListener = listeners[0]!;
+    const currentListener = listeners[1]!;
+    await act(async () => {
+      oldListener({ status: "ready", currentVersion: "2.0.0", latestVersion: "1.0.0" });
+    });
+    expect(host.textContent).toContain("idle");
+    await act(async () => {
+      currentListener({ status: "ready", currentVersion: "2.0.0", latestVersion: "2.1.0" });
+    });
+    await waitFor(() => host.textContent?.includes("ready") === true);
+    expect(host.textContent).toContain("2.1.0");
   });
 });
 
 function SettingsHarness({ api }: { api: DesktopSettingsPort }): JSX.Element {
   const bundle = useDesktopSettingsBundle(api);
-  return <div>{bundle.settingsAbout.currentVersion}</div>;
+  return <div>{bundle.settingsAbout.currentVersion}:{bundle.settingsAbout.updateStatus}:{bundle.settingsAbout.latestVersion ?? ""}</div>;
 }
 
 function applicationInfo(version: string): SettingsApplicationInfo {

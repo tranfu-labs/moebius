@@ -39,12 +39,16 @@
 - 桌面开发态：`pnpm desktop`（数据根、种子拷贝、附件 capability 等行为见 `openspec/specs/desktop-shell/spec.md`；dev 期开放 CDP `9222` 供 AI 调试，见 ADR-0002，首选 `.mcp.json` 的 `electron` MCP server）
 - 桌面构建：`pnpm --filter @moebius/desktop build`（构建门禁见 desktop-shell spec）
 - 桌面打包：`pnpm --filter @moebius/desktop dist`（只产 macOS arm64 DMG/ZIP；正式发行使用 `v*` tag，红线见 desktop-shell spec）
+- Release 更新元数据校验：`pnpm release:validate-update --dir <release-dir> --version <version>`／`--remote v<version>`（只接受最终 arm64 DMG/ZIP、`latest-mac.yml` 与 YML 引用的 ZIP blockmap，并校验版本、文件名、大小、SHA-512）
+- Release 更新元数据生成：`pnpm release:prepare-update --input <builder-output> --output <release-dir> --version <version>`（从最终 DMG/ZIP 与 ZIP blockmap 生成干净 staging 和 `latest-mac.yml`，不复制 DMG blockmap 等中间文件）
+- Release 白名单上传：`pnpm release:upload-assets --tag v<version> --dir <release-dir> --version <version>`（先本地校验，再按精确路径上传，最后远端复验；修复已有 Draft 时显式加 `--replace`）
 - 组件库 Storybook：`pnpm --filter @moebius/console-ui storybook`（设计语言事实源是 `packages/console-ui/DESIGN.md`）
 - Storybook 门禁：`pnpm --filter @moebius/console-ui check:storybook`（检查 Component / Block / Page 分类并构建静态 Storybook）
 - 原型构建验证：`pnpm --filter @moebius/prototypes check`（沙盒规则见 `prototypes/AGENTS.md` 与 `openspec/specs/design-prototypes/spec.md`）
 - import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
+- 自动更新/退出保护隔离验收：`pnpm exec tsx scripts/acceptance/desktop-auto-update-shutdown.ts --app <独立临时 Moebius.app>`（只启动独立构建、临时数据根并记录自有 PID；不得传当前 `/Applications/Moebius.app`）
 - 会话日志压缩：`pnpm exec tsx scripts/compact-session-facts.ts [路径...]`（默认体检数据根下的 `sessions/`，加 `--write` 才落盘；只在应用未运行时执行）
 - Provider 原生过程记录验收：`pnpm exec tsx scripts/acceptance/provider-native-process-traces.ts`（实际调用 Claude/Kimi CLI，断言原生 transcript/wire 在真实 Electron 页面中的展示、resume 同源语义与记录删除后的降级；evidence 写系统临时目录）
 - Kimi ACP 空响应验收：`pnpm exec tsx scripts/acceptance/kimi-empty-response.ts`（实际调用 Kimi CLI，以真实 Electron 页面断言空 `end_turn` 的安全失败、canonical resume、重启保持与过程记录不可用降级；evidence 写系统临时目录；额度状态不再复现时会明确报告前提不成立）

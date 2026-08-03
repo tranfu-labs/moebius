@@ -16,6 +16,9 @@ import {
 export interface DesktopSettingsPort {
   readApplicationInfo?: () => Promise<SettingsApplicationInfo>;
   checkForUpdates?: () => Promise<SettingsUpdateCheckResult>;
+  readUpdateState?: () => Promise<SettingsUpdateCheckResult>;
+  onUpdateState?: (listener: (state: SettingsUpdateCheckResult) => void) => () => void;
+  installUpdate?: () => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   openExternalLink?: (url: string) => Promise<void>;
 }
@@ -34,8 +37,15 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     void api?.readApplicationInfo?.().then((info) => {
       if (active) dispatch({ type: "application-info-loaded", info });
     }).catch(() => undefined);
+    void api?.readUpdateState?.().then((state) => {
+      if (active) dispatch({ type: "update-state-received", state });
+    }).catch(() => undefined);
+    const unsubscribe = api?.onUpdateState?.((state) => {
+      if (active) dispatch({ type: "update-state-received", state });
+    });
     return () => {
       active = false;
+      unsubscribe?.();
     };
   }, [api]);
 
@@ -77,10 +87,19 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     await api!.openExternalLink!(url);
   }, [api]);
 
+  const onInstallUpdate = useCallback(async () => {
+    const availability = decideSettingsPortAvailability(api?.installUpdate !== undefined);
+    if (availability.kind === "unavailable") {
+      throw new Error("update installation service unavailable");
+    }
+    await api!.installUpdate!();
+  }, [api]);
+
   return {
     ...planDesktopSettingsView(state),
     onCheckSettingsUpdates,
     onCopySettingsVersion,
     onOpenSettingsExternalLink,
+    onInstallUpdate,
   };
 }

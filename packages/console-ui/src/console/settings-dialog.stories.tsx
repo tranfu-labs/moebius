@@ -102,7 +102,6 @@ const meta = {
     onSelectLocale: () => undefined,
     onRetry: () => undefined,
     onCheckForUpdates: () => undefined,
-    onDownloadUpdate: () => undefined,
     onCopyVersion: () => undefined,
     onOpenReleaseNotes: () => undefined,
     onOpenFeedback: () => undefined,

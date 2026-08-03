@@ -469,6 +469,7 @@ export interface OperatorConsoleProps {
   onSelectLocale?: (locale: Locale) => void;
   onRetryLocaleSave?: () => void;
   onCheckSettingsUpdates?: () => void;
+  onInstallUpdate?: () => void;
   onCopySettingsVersion?: () => void;
   onOpenSettingsExternalLink?: (url: string) => Promise<void>;
   renderSearchOverlay?: (onClose: () => void) => ReactNode;
@@ -669,6 +670,7 @@ export function OperatorConsole({
   onSelectLocale,
   onRetryLocaleSave,
   onCheckSettingsUpdates,
+  onInstallUpdate,
   onCopySettingsVersion,
   onOpenSettingsExternalLink,
   renderSearchOverlay,
@@ -835,7 +837,6 @@ export function OperatorConsole({
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsOpenRef = useRef(false);
   const previousLanguageSaveStatusRef = useRef(languageSaveStatus);
-  const previousUpdateStatusRef = useRef(settingsAbout?.updateStatus ?? "idle");
   const nextSettingsNotificationIdRef = useRef(1);
   const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
   const [currentRelayEventId, setCurrentRelayEventId] = useState<string | null>(null);
@@ -906,25 +907,6 @@ export function OperatorConsole({
       message,
     }]);
   }, [activeLocale, languageSaveStatus]);
-
-  useEffect(() => {
-    const currentStatus = settingsAbout?.updateStatus ?? "idle";
-    const previousStatus = previousUpdateStatusRef.current;
-    previousUpdateStatusRef.current = currentStatus;
-    if (previousStatus !== "checking" || currentStatus === "checking" || settingsOpenRef.current) {
-      return;
-    }
-    const message = currentStatus === "available"
-      ? t("settings.notification.updateAvailable", { version: settingsAbout?.latestVersion ?? "" })
-      : currentStatus === "latest"
-        ? t("settings.notification.updateLatest")
-        : t("settings.notification.updateFailed");
-    setSettingsNotifications((current) => [...current, {
-      id: nextSettingsNotificationIdRef.current++,
-      section: "about",
-      message,
-    }]);
-  }, [activeLocale, settingsAbout?.latestVersion, settingsAbout?.updateStatus]);
 
   const openSettingsExternalLink = (url: string | undefined): void => {
     if (url === undefined || onOpenSettingsExternalLink === undefined) {
@@ -1715,19 +1697,32 @@ export function OperatorConsole({
             label={translate(activeLocale, "sidebar.help")}
             onClick={onReplayOnboarding}
           />
-          <SidebarAction
-            icon={Settings}
-            label={translate(activeLocale, "sidebar.settings")}
-            buttonRef={settingsTriggerRef}
-            onClick={() => {
-              settingsOpenRef.current = true;
-              setSettingsSection(
-                settingsAbout?.updateStatus === "checking" ? "about" : "general",
-              );
-              setSettingsExternalLinkStatus("idle");
-              setSettingsOpen(true);
-            }}
-          />
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <SidebarAction
+                icon={Settings}
+                label={translate(activeLocale, "sidebar.settings")}
+                buttonRef={settingsTriggerRef}
+                onClick={() => {
+                  settingsOpenRef.current = true;
+                  setSettingsSection(
+                    settingsAbout?.updateStatus === "checking" ? "about" : "general",
+                  );
+                  setSettingsExternalLinkStatus("idle");
+                  setSettingsOpen(true);
+                }}
+              />
+            </div>
+            {settingsAbout?.updateStatus === "ready" ? (
+              <SidebarAction
+                icon={RefreshCw}
+                label={translate(activeLocale, "sidebar.installUpdate")}
+                className="w-auto shrink-0 px-2"
+                onClick={() => onInstallUpdate?.()}
+                testId="sidebar-install-update"
+              />
+            ) : null}
+          </div>
         </footer>
 
         <div
@@ -2486,7 +2481,6 @@ export function OperatorConsole({
           onRetry={() => onRetryLocaleSave?.()}
           onCheckForUpdates={() => onCheckSettingsUpdates?.()}
           onCopyVersion={() => onCopySettingsVersion?.()}
-          onDownloadUpdate={() => openSettingsExternalLink(settingsAbout?.downloadUrl)}
           onOpenReleaseNotes={() => openSettingsExternalLink(settingsExternalLinks?.releaseNotes)}
           onOpenFeedback={() => openSettingsExternalLink(settingsExternalLinks?.feedback)}
           onOpenRepository={() => openSettingsExternalLink(settingsExternalLinks?.repository)}
@@ -2883,6 +2877,8 @@ function SidebarAction({
   disabled = false,
   disabledReason,
   buttonRef,
+  className,
+  testId,
 }: {
   icon: LucideIcon;
   label: string;
@@ -2892,6 +2888,8 @@ function SidebarAction({
   disabled?: boolean;
   disabledReason?: string;
   buttonRef?: Ref<HTMLButtonElement>;
+  className?: string;
+  testId?: string;
 }): JSX.Element {
   return (
     <button
@@ -2900,7 +2898,9 @@ function SidebarAction({
       className={cn(
         "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13.5px] font-medium text-ink hover:bg-hover",
         selected ? "bg-sel" : "bg-transparent",
+        className,
       )}
+      data-testid={testId}
       aria-label={label}
       aria-current={selected ? "page" : undefined}
       aria-description={disabled ? disabledReason : undefined}

@@ -3,7 +3,6 @@ import {
   Check,
   CheckCircle2,
   Copy,
-  Download,
   ExternalLink,
   Info,
   Languages,
@@ -20,13 +19,21 @@ import { Button } from "@/ui/button";
 
 export type LanguageSaveStatus = "idle" | "saving" | "failed";
 export type SettingsSection = "general" | "about";
-export type UpdateCheckStatus = "idle" | "checking" | "latest" | "available" | "failed";
+export type UpdateCheckStatus =
+  | "idle"
+  | "checking"
+  | "latest"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "failed"
+  | "installing";
 export type VersionCopyStatus = "idle" | "copied" | "failed";
 
 export interface SettingsAboutState {
   currentVersion: string;
   latestVersion?: string;
-  downloadUrl?: string;
+  progress?: number;
   updateStatus: UpdateCheckStatus;
   copyStatus?: VersionCopyStatus;
 }
@@ -44,7 +51,6 @@ export interface SettingsDialogProps {
   onSelectLocale(locale: Locale): void;
   onRetry(): void;
   onCheckForUpdates?(): void;
-  onDownloadUpdate?(): void;
   onCopyVersion?(): void;
   onOpenReleaseNotes?(): void;
   onOpenFeedback?(): void;
@@ -66,7 +72,6 @@ export function SettingsDialog({
   onSelectLocale,
   onRetry,
   onCheckForUpdates,
-  onDownloadUpdate,
   onCopyVersion,
   onOpenReleaseNotes,
   onOpenFeedback,
@@ -138,7 +143,6 @@ export function SettingsDialog({
                 <AboutSettings
                   state={about}
                   onCheckForUpdates={onCheckForUpdates}
-                  onDownloadUpdate={onDownloadUpdate}
                   onCopyVersion={onCopyVersion}
                   onOpenReleaseNotes={onOpenReleaseNotes}
                   onOpenFeedback={onOpenFeedback}
@@ -266,7 +270,6 @@ function GeneralSettings({
 function AboutSettings({
   state,
   onCheckForUpdates,
-  onDownloadUpdate,
   onCopyVersion,
   onOpenReleaseNotes,
   onOpenFeedback,
@@ -275,7 +278,6 @@ function AboutSettings({
 }: {
   state: SettingsAboutState;
   onCheckForUpdates?: () => void;
-  onDownloadUpdate?: () => void;
   onCopyVersion?: () => void;
   onOpenReleaseNotes?: () => void;
   onOpenFeedback?: () => void;
@@ -331,7 +333,6 @@ function AboutSettings({
           <UpdateStatus
             state={state}
             onCheckForUpdates={onCheckForUpdates}
-            onDownloadUpdate={onDownloadUpdate}
           />
         </SettingsInfoRow>
       </dl>
@@ -370,14 +371,16 @@ function SettingsInfoRow({
 function UpdateStatus({
   state,
   onCheckForUpdates,
-  onDownloadUpdate,
 }: {
   state: SettingsAboutState;
   onCheckForUpdates?: () => void;
-  onDownloadUpdate?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const checking = state.updateStatus === "checking";
+  const checkDisabled = state.updateStatus === "available"
+    || state.updateStatus === "downloading"
+    || state.updateStatus === "installing";
+  const checkBlocked = checking || checkDisabled;
   const checkLabel = state.updateStatus === "failed"
     ? t("common.retry")
     : state.updateStatus === "idle"
@@ -393,15 +396,28 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "available" ? (
-        <div className="flex flex-wrap items-center justify-end gap-2 max-[620px]:justify-start">
-          <p className="text-sm font-medium">
-            {t("settings.update.available", { version: state.latestVersion ?? "" })}
-          </p>
-          <Button type="button" size="sm" onClick={onDownloadUpdate}>
-            <Download className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {t("settings.update.download")}
-          </Button>
-        </div>
+        <p className="text-sm font-medium">
+          {t("settings.update.downloading", { version: state.latestVersion ?? "" })}
+        </p>
+      ) : null}
+      {state.updateStatus === "downloading" ? (
+        <p className="text-sm font-medium">
+          {t("settings.update.downloadingProgress", {
+            version: state.latestVersion ?? "",
+            progress: Math.round(state.progress ?? 0),
+          })}
+        </p>
+      ) : null}
+      {state.updateStatus === "ready" ? (
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <CheckCircle2 className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
+          {t("settings.update.ready", { version: state.latestVersion ?? "" })}
+        </p>
+      ) : null}
+      {state.updateStatus === "installing" ? (
+        <p className="text-sm font-medium" aria-busy="true">
+          {t("settings.update.installing")}
+        </p>
       ) : null}
       {state.updateStatus === "failed" ? (
         <p className="text-right text-sm text-danger max-[620px]:text-left" role="alert">
@@ -412,9 +428,10 @@ function UpdateStatus({
         type="button"
         variant="outline"
         size="sm"
-        aria-disabled={checking}
+        disabled={checkDisabled}
+        aria-disabled={checkBlocked}
         onClick={() => {
-          if (!checking) {
+          if (!checkBlocked) {
             onCheckForUpdates?.();
           }
         }}

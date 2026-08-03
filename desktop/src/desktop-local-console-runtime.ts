@@ -6,6 +6,7 @@ import type { LocalConsoleStore } from "../../src/local-console/types.js";
 
 import {
   decideRequiredLocalConsoleSession,
+  decideLocalConsoleRunningTaskCount,
   decideLocalConsoleUrl,
   planLocalConsoleServerAccess,
 } from "./desktop-local-console-plan.js";
@@ -74,6 +75,10 @@ export class DesktopLocalConsoleRuntime {
       return null;
     }
     return this.#server!.runtime;
+  }
+
+  getRunningTaskCount(): number {
+    return decideLocalConsoleRunningTaskCount(this.#server);
   }
 
   async start(): Promise<void> {

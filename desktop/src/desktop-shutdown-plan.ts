@@ -8,7 +8,8 @@ export function planDesktopShutdownRequest(input: {
   shutdownComplete: boolean;
   shutdownPending: boolean;
   coordinationPending: boolean;
-  hasRunningInstallers: boolean;
+  hasRunningInstallers?: boolean;
+  hasRunningTasks?: boolean;
 }): DesktopShutdownRequestPlan {
   if (input.shutdownComplete || input.shutdownPending) {
     return "await-shutdown";
@@ -16,7 +17,9 @@ export function planDesktopShutdownRequest(input: {
   if (input.coordinationPending) {
     return "await-coordination";
   }
-  return input.hasRunningInstallers ? "coordinate-installers" : "shutdown";
+  return (input.hasRunningTasks ?? input.hasRunningInstallers ?? false)
+    ? "coordinate-installers"
+    : "shutdown";
 }
 
 export function planInstallerShutdownApproval(

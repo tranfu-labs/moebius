@@ -52,6 +52,7 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 
 const originalPath = process.env.PATH;
 const STANDARD_STORE_TIMEOUT_MS = 10_000;
+const ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS = 8_000;
 
 async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> {
   const projectRoot = options.projectRoot ?? process.cwd();
@@ -2586,8 +2587,15 @@ describe("local console", { timeout: 15_000 }, () => {
     try {
       const session = await createSession(started.url, "live Markdown");
       await postSessionMessage(started.url, session.sessionId, "@dev 展示进度");
-      const first = await waitForState(started.url, session.sessionId, (data) =>
-        data.activeRun?.liveMarkdown === "## 第一段\n\n正在检查。",
+      const first = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.activeRun?.liveMarkdown === "## 第一段\n\n正在检查。",
+        {
+          describe: "first active run live Markdown",
+          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
+          snapshot: (snapshot) => snapshot,
+        },
       );
       const runId = first.activeRun?.runId;
       expect(first.messages).toHaveLength(1);
@@ -2599,8 +2607,15 @@ describe("local console", { timeout: 15_000 }, () => {
         item: { type: "file_change", path: "/private/work/src/run-block.tsx", status: "completed" },
       });
       captured.options?.onVisibleAgentMarkdown?.("## 第二段\n\n检查完成。");
-      const second = await waitForState(started.url, session.sessionId, (data) =>
-        data.activeRun?.liveMarkdown === "## 第二段\n\n检查完成。",
+      const second = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.activeRun?.liveMarkdown === "## 第二段\n\n检查完成。",
+        {
+          describe: "second active run live Markdown",
+          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
+          snapshot: (snapshot) => snapshot,
+        },
       );
       expect(second.activeRun?.runId).toBe(runId);
       expect(second.messages).toHaveLength(1);
@@ -2625,8 +2640,15 @@ describe("local console", { timeout: 15_000 }, () => {
         stdoutPath: path.join(options.runDir, "stdout.jsonl"),
         stderrPath: path.join(options.runDir, "stderr.log"),
       });
-      const completed = await waitForState(started.url, session.sessionId, (data) =>
-        data.activeRun === null && data.messages.some((entry) => entry.speaker === "agent"),
+      const completed = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.activeRun === null && data.messages.some((entry) => entry.speaker === "agent"),
+        {
+          describe: "active run completion",
+          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
+          snapshot: (snapshot) => snapshot,
+        },
       );
       expect(completed.messages.map((entry) => entry.speaker)).toEqual(["user", "agent"]);
       expect(completed.messages[1]?.body).toBe("## 最终结果\n\n只落库一次。");

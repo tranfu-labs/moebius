@@ -180,6 +180,25 @@ describe("OperatorConsole", () => {
     }
   });
 
+  it("shows the ready update as a sibling sidebar action and delegates installation", () => {
+    const onInstallUpdate = vi.fn();
+    renderConsole({
+      settingsAbout: {
+        currentVersion: "0.1.4",
+        latestVersion: "0.1.5",
+        updateStatus: "ready",
+      },
+      onInstallUpdate,
+    });
+
+    const footer = screen.getByTestId("sidebar-footer");
+    const install = screen.getByRole("button", { name: "安装更新" });
+    expect(install).toHaveAttribute("data-testid", "sidebar-install-update");
+    expect(footer).toContainElement(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(install);
+    expect(onInstallUpdate).toHaveBeenCalledOnce();
+  });
+
   it("keeps all three application entries available when there are no projects", () => {
     renderConsole({ projects: [] });
 
@@ -239,15 +258,15 @@ describe("OperatorConsole", () => {
       settingsAbout={{
         currentVersion: "0.1.4",
         latestVersion: "0.1.5",
-        downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
-        updateStatus: "available",
+        updateStatus: "downloading",
+        progress: 42,
       }}
     />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("发现新版本 0.1.5");
-    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
-    expect(screen.getByText("新版 0.1.5")).toBeVisible();
-    expect(screen.getByRole("button", { name: "下载新版本" })).toBeEnabled();
+    expect(screen.queryByTestId("settings-notifications")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "关于" }));
+    expect(screen.getByText("正在下载新版 0.1.5 · 42%")).toBeVisible();
   });
 
   it("reports an external browser failure in About without leaving the workspace", async () => {

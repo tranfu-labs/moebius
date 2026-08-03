@@ -23,3 +23,9 @@ export function decideLocalConsoleUrl(
 ): string | null {
   return status.status === "running" ? status.url ?? null : null;
 }
+
+export function decideLocalConsoleRunningTaskCount(
+  server: { runtime: { getRunningTaskCount(): number } } | null | undefined,
+): number {
+  return server === undefined || server === null ? 0 : server.runtime.getRunningTaskCount();
+}

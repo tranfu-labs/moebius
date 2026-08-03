@@ -17,6 +17,8 @@ describe("settings IPC", () => {
       downloadUrl: "https://github.com/tranfu-labs/moebius/releases/tag/v0.1.5",
     };
     const checkForUpdates = vi.fn(async () => updateResult);
+    const readUpdateState = vi.fn(() => updateResult);
+    const installUpdate = vi.fn(async () => undefined);
     registerSettingsIpc({
       ipcMain: {
         handle(channel, listener) {
@@ -25,6 +27,8 @@ describe("settings IPC", () => {
       },
       getVersion: () => "0.1.4",
       checkForUpdates,
+      readUpdateState,
+      installUpdate,
       clipboard: { writeText },
     });
 
@@ -35,6 +39,9 @@ describe("settings IPC", () => {
     await expect(handlers.get(SETTINGS_IPC_CHANNELS.checkForUpdates)?.(undefined))
       .resolves.toEqual(updateResult);
     expect(checkForUpdates).toHaveBeenCalledWith("0.1.4");
+    expect(handlers.get(SETTINGS_IPC_CHANNELS.readUpdateState)?.(undefined)).toEqual(updateResult);
+    await expect(handlers.get(SETTINGS_IPC_CHANNELS.installUpdate)?.(undefined)).resolves.toBeUndefined();
+    expect(installUpdate).toHaveBeenCalledOnce();
     expect(handlers.get(SETTINGS_IPC_CHANNELS.copyVersionInfo)?.(undefined)).toEqual({ ok: true });
     expect(writeText).toHaveBeenCalledWith("Moebius 0.1.4 · Apple Silicon Mac");
   });

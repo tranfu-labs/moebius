@@ -88,6 +88,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly workerPreparationRuntime: LocalWorkerPreparationRuntime;
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
+
+  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length; }
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;

@@ -6,6 +6,9 @@ import {
   ipcMain,
   shell,
 } from "electron";
+// electron-updater exposes a CommonJS main entry; keep the runtime import compatible
+// with the ESM bundle emitted for the packaged desktop main process.
+import electronUpdater from "electron-updater";
 import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
@@ -38,7 +41,9 @@ import {
   createDesktopTeamRuntimeBindingPorts,
 } from "./desktop-team-wiring.js";
 import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
-import { checkDesktopUpdates, fetchLatestDesktopRelease } from "./updater.js";
+import { DesktopUpdateRuntime } from "./desktop-update-runtime.js";
+import type { DesktopUpdateProvider } from "./desktop-update-contract.js";
+import { createDesktopUpdateReadyStore } from "./desktop-update-store.js";
 import { registerDesktopCoreIpc } from "./desktop-core-ipc-register.js";
 import { configureDesktopProcess } from "./desktop-process-config.js";
 import { registerDesktopLifecycle } from "./desktop-lifecycle-register.js";
@@ -47,8 +52,8 @@ import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
 import {
-  installerCleanupBlockedDialogOptions,
-  installerQuitDialogOptions,
+  exitTaskDialogOptions,
+  installUpdateDialogOptions,
 } from "./onboarding/shutdown-coordination.js";
 import type { DesktopLocale } from "./language-preference-contract.js";
 import { registerLanguagePreferenceIpc } from "./language-preference-ipc.js";
@@ -57,6 +62,8 @@ import {
   saveLanguagePreference,
 } from "./language-preference.js";
 import { translateDesktop } from "./i18n/index.js";
+
+const { autoUpdater } = electronUpdater;
 
 const { dirname, dataRoot, seedRoot, seedTeamsRoot } = configureDesktopProcess({
   app,
@@ -71,8 +78,10 @@ const agentTeamService = createAgentTeamService(
   createDesktopAgentTeamServicePorts(),
 );
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
+let aiTeamBuilder: AiTeamBuilder | null = null;
 let activeLocale: DesktopLocale = "zh-CN";
 let shutdown!: DesktopShutdownRuntime;
+let localConsole!: DesktopLocalConsoleRuntime;
 
 const status: DesktopStatusSnapshot = {
   appVersion: app.getVersion(),
@@ -90,12 +99,28 @@ const windows = new DesktopWindowRuntime({
   status,
   locale: () => activeLocale,
   isQuitting: () => shutdown.isQuitting,
-  hasRunningInstallers: () => shutdown.hasRunningInstallers(),
+  hasRunningTasks: () => shutdown.hasRunningTasks(),
   requestShutdown: () => shutdown.request(),
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
 });
 
-const localConsole = new DesktopLocalConsoleRuntime({
+const updateRuntime = new DesktopUpdateRuntime({
+  platform: process.platform,
+  arch: process.arch,
+  isPackaged: app.isPackaged,
+  currentVersion: app.getVersion(),
+  provider: autoUpdater as unknown as DesktopUpdateProvider,
+  readyStore: createDesktopUpdateReadyStore(
+    path.join(status.dataRoot, ".state", "desktop-update-ready.json"),
+  ),
+  publish: (state) => windows.sendMain("settings:update-state", state),
+  onInstallFailure: async () => {
+    await localConsole.start();
+    shutdown.recoverAfterInstallFailure();
+  },
+});
+
+localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: {
     dataRoot: status.dataRoot,
@@ -133,16 +158,41 @@ shutdown = new DesktopShutdownRuntime({
   closeLocalConsole: () => localConsole.close(),
   closeStateWorkers: closeSqliteStateWorkers,
   quit: () => app.quit(),
-  getInstaller: () => onboardingCliInstaller,
-  confirmInstallerCancellation: async (running) => {
-    const response = await windows.showMessageBox(
-      installerQuitDialogOptions(running, activeLocale),
-    );
+  reportCleanupBlocked: async () => {
+    await windows.showMessageBox({
+      type: "error",
+      buttons: [translateDesktop(activeLocale, "dialog.quit.stay")],
+      defaultId: 0,
+      cancelId: 0,
+      title: translateDesktop(activeLocale, "dialog.cleanup.title"),
+      message: translateDesktop(activeLocale, "dialog.cleanup.message"),
+      detail: translateDesktop(activeLocale, "dialog.cleanup.detail"),
+      noLink: true,
+    });
+  },
+  getRunningTaskCount: () => localConsole.getRunningTaskCount()
+    + (aiTeamBuilder?.getRunningTaskCount() ?? 0)
+    + (onboardingCliInstaller?.getRunningClis().length ?? 0),
+  cancelRunningTasks: async () => {
+    await aiTeamBuilder?.cancelAll();
+    await onboardingCliInstaller?.cancelAll();
+  },
+  confirmExit: async (runningTaskCount) => {
+    if (runningTaskCount === 0) {
+      return true;
+    }
+    const response = await windows.showMessageBox(exitTaskDialogOptions(runningTaskCount, activeLocale));
     return response !== 0;
   },
-  reportCleanupBlocked: async () => {
-    await windows.showMessageBox(installerCleanupBlockedDialogOptions(activeLocale));
+  confirmInstall: async (runningTaskCount) => {
+    const response = await windows.showMessageBox(installUpdateDialogOptions(
+      updateRuntime.state.latestVersion ?? app.getVersion(),
+      runningTaskCount,
+      activeLocale,
+    ));
+    return response !== 0;
   },
+  installUpdate: () => updateRuntime.install(),
 });
 
 registerDesktopLifecycle({
@@ -168,10 +218,13 @@ async function boot(): Promise<void> {
       apply,
     }),
     createReadiness: () => new OnboardingCliReadinessService(),
-    createBuilder: (readiness, gate) => new AiTeamBuilder({
-      dataRoot: status.dataRoot,
-      resolveExecutionProfile: () => gate.afterReady(() => readiness.ensureBuilderExecutionProfile()),
-    }),
+    createBuilder: (readiness, gate) => {
+      aiTeamBuilder = new AiTeamBuilder({
+        dataRoot: status.dataRoot,
+        resolveExecutionProfile: () => gate.afterReady(() => readiness.ensureBuilderExecutionProfile()),
+      });
+      return aiTeamBuilder;
+    },
     createInstaller: (onInstallSucceeded) => new OnboardingCliInstallManager({ onInstallSucceeded }),
     setInstaller: (installer) => {
       onboardingCliInstaller = installer;
@@ -198,6 +251,7 @@ async function boot(): Promise<void> {
       dataRoot: status.dataRoot,
     }),
     startLocalConsole: () => localConsole.start(),
+    startUpdates: () => updateRuntime.start(),
     formatError: formatLocalError,
   });
 }
@@ -236,10 +290,9 @@ registerDesktopCoreIpc({
   selectLocationLabel: () => translateDesktop(activeLocale, "dialog.selectLocation"),
   dataRoot: status.dataRoot,
   getVersion: () => app.getVersion(),
-  checkForUpdates: (currentVersion) => checkDesktopUpdates({
-    currentVersion,
-    fetchLatestRelease: fetchLatestDesktopRelease,
-  }),
+  checkForUpdates: () => updateRuntime.check(),
+  readUpdateState: () => updateRuntime.state,
+  installUpdate: () => shutdown.requestInstall(),
 });
 
 const teamConversationPreference = createTeamConversationPreferenceService(

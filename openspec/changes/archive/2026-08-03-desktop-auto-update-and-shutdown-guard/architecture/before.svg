@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430">
+  <rect width="900" height="430" fill="#fff"/>
+  <style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202124}.box{fill:#f7f7f8;stroke:#5f6368;stroke-width:2}.arrow{stroke:#5f6368;stroke-width:2;marker-end:url(#a)}</style>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5f6368"/></marker></defs>
+  <text x="30" y="38" font-size="24" font-weight="700">Before · manual update and split quit paths</text>
+  <rect class="box" x="40" y="85" width="180" height="70" rx="10"/><text x="65" y="127" font-size="17">Settings renderer</text>
+  <rect class="box" x="280" y="85" width="210" height="70" rx="10"/><text x="310" y="127" font-size="17">settings IPC</text>
+  <rect class="box" x="550" y="85" width="280" height="70" rx="10"/><text x="590" y="115" font-size="16">GitHub API compare</text><text x="590" y="138" font-size="14">browser download only</text>
+  <path class="arrow" d="M220 120 H280"/><path class="arrow" d="M490 120 H550"/>
+  <rect class="box" x="40" y="245" width="180" height="70" rx="10"/><text x="65" y="287" font-size="17">Command + Q</text>
+  <rect class="box" x="280" y="225" width="210" height="110" rx="10"/><text x="310" y="260" font-size="16">before-quit</text><text x="310" y="284" font-size="14">shutdown runtime</text><text x="310" y="307" font-size="14">CLI installer only</text>
+  <rect class="box" x="550" y="245" width="280" height="70" rx="10"/><text x="582" y="287" font-size="16">window close / all closed</text>
+  <path class="arrow" d="M220 280 H280"/><path class="arrow" d="M490 280 H550"/>
+  <text x="40" y="385" font-size="15">No background download, no app install action, and lifecycle events can start separate paths.</text>
+</svg>
