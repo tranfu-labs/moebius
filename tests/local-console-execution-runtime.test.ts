@@ -1801,10 +1801,38 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
   it("retries a detached Kimi empty response from its claimed source and links only the successful attempt", async () => {
     const root = await fixtureRoot();
     const sqlitePath = path.join(root, "local-console.sqlite");
+    let releasePrimaryTail!: () => void;
+    const primaryTail = new Promise<void>((resolve) => {
+      releasePrimaryTail = resolve;
+    });
+    let markPrimaryTailStarted!: () => void;
+    const primaryTailStarted = new Promise<void>((resolve) => {
+      markPrimaryTailStarted = resolve;
+    });
+    const store = await createSqliteLocalConsoleStore({ sqlitePath });
+    let retryReleaseCount = 0;
+    let markRetryIntentRecorded!: () => void;
+    const retryIntentRecorded = new Promise<void>((resolve) => {
+      markRetryIntentRecorded = resolve;
+    });
+    const recordCodexResumeIntent = store.recordCodexResumeIntent.bind(store);
+    store.recordCodexResumeIntent = async (input) => {
+      await recordCodexResumeIntent(input);
+      if (input.reason === "retry") markRetryIntentRecorded();
+    };
+    const releaseMessageForRetry = store.releaseMessageForRetry.bind(store);
+    store.releaseMessageForRetry = async (input) => {
+      retryReleaseCount += 1;
+      await releaseMessageForRetry(input);
+    };
     let primaryCall = 0;
     const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       primaryCall += 1;
       await options.onThreadStarted?.("primary-codex-session");
+      if (primaryCall === 2) {
+        markPrimaryTailStarted();
+        await primaryTail;
+      }
       return {
         ...success(
           options,
@@ -1847,6 +1875,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       port: 0,
       projectRoot: root,
       sqlitePath,
+      store,
       listAgentFiles: async () => [],
       loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
         cli: "kimi",
@@ -1873,14 +1902,24 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(firstFailure.runId).not.toBeNull();
 
     await post(server.url, "AFTER_FAILURE_PUBLIC_DELTA");
-    await waitForAgent(server.url, "PRIMARY_DELTA_ACK");
+    await primaryTailStarted;
 
     const firstRetryUrl = retryUrl(server, "default", firstFailure.runId!);
-    const [firstRetry, duplicateRetry] = await Promise.all([
+    const retries = Promise.all([
       fetch(firstRetryUrl, { method: "POST" }),
       fetch(firstRetryUrl, { method: "POST" }),
     ]);
+    await retryIntentRecorded;
+    expect(retryReleaseCount).toBe(0);
+    releasePrimaryTail();
+    const [firstRetry, duplicateRetry] = await retries;
     expect([firstRetry.status, duplicateRetry.status]).toEqual([202, 202]);
+    expect(retryReleaseCount).toBe(1);
+    const factsAfterDuplicateRetry = await readFactEvents(
+      server.runtime.getSessionFactLogPath("default"),
+    );
+    expect(factsAfterDuplicateRetry.filter((fact) =>
+      fact.type === "codex_resume_intent" && fact.payload.reason === "retry")).toHaveLength(1);
     const secondFailure = await waitForSystemEventMatching(
       server,
       "default",
@@ -2053,6 +2092,120 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(workerStarts).toHaveLength(2);
     expect(new Set(workerStarts.map((fact) => fact.payload.requestedExternalSessionId)))
       .toEqual(new Set([null, "worker-codex-session"]));
+  });
+
+  it("recovers a retry accepted before shutdown exactly once after restart", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    let firstProcessCall = 0;
+    const firstProcessCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      firstProcessCall += 1;
+      const worker = firstProcessCall === 2;
+      await options.onThreadStarted?.(worker ? "worker-codex-session" : "primary-codex-session");
+      if (!worker) {
+        return {
+          ...success(options, "execute the Codex handoff @worker"),
+          threadId: "primary-codex-session",
+        };
+      }
+      return {
+        ok: false,
+        reason: "exit:1",
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+        stderrPath: path.join(options.runDir, "stderr.log"),
+      };
+    });
+    const firstServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => detachedWorkerSnapshot({
+        cli: "codex",
+        model: "gpt-5.6-sol",
+        effort: "high",
+      }),
+      runCodex: firstProcessCodex,
+      runExecution: createLocalExecutionRunner({ runCodex: firstProcessCodex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(firstServer);
+
+    await firstServer.runtime.switchSessionTeam({
+      sessionId: "default",
+      agentTeamOwnership: "user",
+      agentTeamId: "detached-codex",
+    });
+    await post(firstServer.url, "start detached Codex work");
+    const failure = await waitForSystemEventMatching(
+      firstServer,
+      "default",
+      (message) => message.error === "exit:1",
+    );
+    expect(failure.runId).not.toBeNull();
+
+    const retry = await fetch(retryUrl(firstServer, "default", failure.runId!), {
+      method: "POST",
+    });
+    expect(retry.status).toBe(202);
+    const factsBeforeShutdown = await readFactEvents(
+      firstServer.runtime.getSessionFactLogPath("default"),
+    );
+    const retryIntentsBeforeShutdown = factsBeforeShutdown.filter((fact) =>
+      fact.type === "codex_resume_intent" && fact.payload.reason === "retry");
+    expect(retryIntentsBeforeShutdown).toHaveLength(1);
+
+    await firstServer.close();
+    servers.splice(servers.indexOf(firstServer), 1);
+
+    const restartedCodex = vi.fn(async (options: CodexRunOptions) => {
+      await options.onThreadStarted?.("worker-codex-session");
+      return {
+        ...success(options, "CODEX_RETRY_AFTER_ACCEPTED_SHUTDOWN"),
+        threadId: "worker-codex-session",
+      };
+    });
+    const restartedServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [],
+      loadAgentTeamSnapshot: async () => {
+        throw new Error("persisted team snapshot should be restored from SQLite");
+      },
+      runCodex: restartedCodex,
+      runExecution: createLocalExecutionRunner({ runCodex: restartedCodex }),
+      isCodexThreadAvailable: async () => true,
+    });
+    servers.push(restartedServer);
+
+    await waitForAgent(restartedServer.url, "CODEX_RETRY_AFTER_ACCEPTED_SHUTDOWN");
+    expect(firstProcessCodex).toHaveBeenCalledTimes(2);
+    expect(restartedCodex).toHaveBeenCalledTimes(1);
+    expect(restartedCodex.mock.calls[0]?.[0].mode).toEqual({
+      kind: "resume",
+      threadId: "worker-codex-session",
+    });
+
+    const factsAfterRestart = await readFactEvents(
+      restartedServer.runtime.getSessionFactLogPath("default"),
+    );
+    const retryIntents = factsAfterRestart.filter((fact) =>
+      fact.type === "codex_resume_intent" && fact.payload.reason === "retry");
+    expect(retryIntents).toHaveLength(1);
+    const retryIntentIds = new Set(retryIntents.map((fact) => String(fact.payload.intentId)));
+    const retryConsumptions = factsAfterRestart.filter((fact) =>
+      fact.type === "codex_resume_consumed"
+      && retryIntentIds.has(String(fact.payload.intentId)));
+    expect(retryConsumptions).toHaveLength(1);
+    const workerStarts = factsAfterRestart.filter((fact) =>
+      fact.type === "provider_invocation"
+      && fact.payload.role === "worker"
+      && fact.payload.phase === "started");
+    expect(workerStarts).toHaveLength(2);
   });
 });
 

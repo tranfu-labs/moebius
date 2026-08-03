@@ -123,13 +123,7 @@ export function planRetryAdmission(input: {
 }
 
 export function planRetryAdmissionKey(admission: RetryAdmission): string {
-  return [
-    admission.sessionId,
-    admission.targetRunId,
-    String(admission.source.id),
-    admission.role ?? "",
-    admission.executionOverride?.overrideId ?? "retry",
-  ].join("\u0000");
+  return [admission.sessionId, String(admission.source.id)].join("\u0000");
 }
 
 export function decidePendingRetryAdmission(

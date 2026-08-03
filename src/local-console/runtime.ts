@@ -226,7 +226,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
-      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
+      runRetryAfterCurrent: (sessionId, action) => this.pendingProcessingRuntime.runRetryAfterCurrent(sessionId, action),
       repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),
