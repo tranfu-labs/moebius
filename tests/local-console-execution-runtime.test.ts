@@ -284,7 +284,25 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       }),
     });
     expect(createNew.status).toBe(201);
+    const createdSession = await createNew.json() as { session: { sessionId: string } };
     await waitForCalls(codex, 1);
+    await waitForSnapshotMatching(server, "default", (snapshot) =>
+      snapshot.activeRuns.length === 0
+      && snapshot.messages.filter((message) =>
+        message.speaker === "agent"
+        && message.body === "Kimi completed"
+        && message.status === "displayed",
+      ).length >= 3,
+    );
+    await waitForSnapshotMatching(server, createdSession.session.sessionId, (snapshot) =>
+      snapshot.activeRuns.length === 0
+      && snapshot.messages.some((message) =>
+        message.speaker === "agent"
+        && message.body === "Codex"
+        && message.status === "displayed",
+      ),
+    );
+    await server.runtime.snapshot(createdSession.session.sessionId);
 
     expect(kimi).toHaveBeenCalledTimes(3);
     for (const [index, [options]] of kimi.mock.calls.entries()) {
