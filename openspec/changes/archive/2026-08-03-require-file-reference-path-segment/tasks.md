@@ -1,0 +1,24 @@
+# 任务：require-file-reference-path-segment
+
+- [x] 落盘产品决策与方案
+  - [x] 更新 `main-conversation.md#时间线` 与 `#指标与验收`，明确根后路径段边界。
+  - [x] 完成 proposal、design、tasks 与 console-ui spec delta 自审。
+  - [x] 核对不涉及 wireframe、architecture、ADR、DESIGN token、模块地图或 AGENTS.md 更新。
+- [x] 收紧共享文件引用解析边界
+  - [x] 在 `parseMarkdownFileReference` 规范化后拒绝根 `/`，不在三个 AST 入口复制规则。
+  - [x] 保留 `/tmp`、无扩展名、不存在目标和 `:line[:column]` 的现有解析，不增加文件系统预判。
+- [x] 补行为测试
+  - [x] 覆盖单独 `/`、`A / B`、inline code 根目标与显式 Markdown 根目标均不进入文件回调。
+  - [x] 以 `/:2`、`/./`、`/tmp/..` 覆盖规范化后仍为根的代表性负例，并以 `/tmp/../var/log` 覆盖规范化后仍有实际段的正例，证明判据不依赖原始字符串外观。
+  - [x] 覆盖 `/tmp`、无扩展名、不存在目标和 `:line:column` 仍进入文件回调，并证明后续 mention 不被游标处理吞掉。
+  - [x] 回归 HTTPS、`file:`、fenced code、成员 mention 与私有 intent 隔离，不写镜像措辞测试。
+- [x] 扩展真实 Electron Dashboard 验收
+  - [x] 在系统临时 fixture 中只加入用户可见根路径负例、`/tmp` 目录与真实文本 `:2:3`；规范化等价类和协议/mention 回归不进入重型 Electron case。
+  - [x] 断言生产时间线根路径不可操作、inline code 视觉保留、显式根目标不进入文件引用。
+  - [x] 点击 `/tmp` 并断言右侧文件面板报告 `not-file`，点击真实文本并断言 canonical path、目标行列与突出内容。
+  - [x] evidence 只写系统临时目录，不为组件已充分覆盖的回归分支增加截图或真实 I/O。
+- [x] 实现阶段验证与符合度反思
+  - [x] 运行 `pnpm run test --scope a47b629c`、`pnpm typecheck`、`pnpm --filter @moebius/console-ui build` 与 `pnpm --filter @moebius/desktop build`，长日志写系统临时目录并只报告关键结果。
+  - [x] 运行 `pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`，逐条核对 proposal 六项验收清单。
+  - [x] 运行 `pnpm check:boundaries` 与 `git diff --check`，对照 PRD、spec delta 和原始目标检查漏做、多做及职责漂移。
+- [x] 独立复核通过后、合并前恰好运行一次完整 `pnpm test`；复核打回后的返工只重跑 scope 与关联验收。
