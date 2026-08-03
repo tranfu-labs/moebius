@@ -53,7 +53,8 @@ import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 
 export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
-  private readonly sessionId: string; private readonly storeTimeoutMs: number;
+  private readonly sessionId: string;
+  private readonly storeTimeoutMs: number;
   private readonly codexIdleTimeoutMs?: number;
   private readonly toolInFlightTimeoutMs?: number;
   private readonly codexMaxDurationMs?: number;
