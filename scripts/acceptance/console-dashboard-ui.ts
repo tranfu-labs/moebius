@@ -371,22 +371,64 @@ try {
     "machine-text placeholder remained in the real timeline",
   );
 
-  const reportReference = page.getByRole("button", { name: `${reportPath}:2`, exact: true });
+  const timeline = page.getByRole("region", { name: "会话时间线" });
+  const standaloneRootText = timeline.getByText("单独斜杠 / 保持普通文本。", { exact: true });
+  const separatorRootText = timeline.getByText("表达式 A / B 保持普通文本。", { exact: true });
+  await standaloneRootText.waitFor();
+  await separatorRootText.waitFor();
+  const inlineRootCode = timeline.locator("code").filter({ hasText: /^\/$/u });
+  await inlineRootCode.waitFor();
+  const rootBoundaryEvidence = {
+    standaloneText: await standaloneRootText.textContent(),
+    separatorText: await separatorRootText.textContent(),
+    inlineCodeText: await inlineRootCode.textContent(),
+    rootButtonCount: await timeline.getByRole("button", { name: "/", exact: true }).count(),
+    explicitRootButtonCount: await timeline.getByRole("button", { name: "根目标", exact: true }).count(),
+    fileTabCountBeforeValidReference: await page.getByTestId("file-reference-tab").count(),
+  };
+  assert(rootBoundaryEvidence.rootButtonCount === 0, "root slash became a file-reference button");
+  assert(rootBoundaryEvidence.explicitRootButtonCount === 0, "explicit Markdown root target became a file-reference button");
+  assert(rootBoundaryEvidence.inlineCodeText === "/", "inline root code did not preserve its code text");
+  assert(
+    rootBoundaryEvidence.fileTabCountBeforeValidReference === 0,
+    "a root-only target opened a file-reference tab",
+  );
+
+  const tmpReference = timeline.getByRole("button", { name: "/tmp", exact: true });
+  await tmpReference.waitFor();
+  await tmpReference.click();
+  const tmpTab = page.getByTestId("file-reference-tab");
+  await tmpTab.waitFor();
+  const tmpReason = tmpTab.getByText("这个引用没有指向普通文件。", { exact: true });
+  await tmpReason.waitFor();
+  const tmpDirectoryEvidence = {
+    visibleReference: await tmpReference.textContent(),
+    canonicalPath: await tmpTab.getByTestId("file-reference-path").textContent(),
+    reason: await tmpReason.textContent(),
+    targetLineCount: await tmpTab.getByTestId("file-reference-target-line").count(),
+  };
+  assert(tmpDirectoryEvidence.visibleReference === "/tmp", "/tmp was not preserved as a file reference");
+  assert(tmpDirectoryEvidence.targetLineCount === 0, "/tmp directory rendered file content");
+
+  const reportReference = timeline.getByRole("button", { name: `${reportPath}:2:3`, exact: true });
   await reportReference.waitFor();
   await reportReference.click();
   const reportTab = page.getByTestId("file-reference-tab");
   await reportTab.waitFor();
-  const reportCanonicalPath = await reportTab.getByTestId("file-reference-path").textContent();
   const reportTargetLine = reportTab.getByTestId("file-reference-target-line");
   await reportTargetLine.waitFor();
+  const reportTargetLocation = reportTab.getByText("目标位置：第 2 行，第 3 列", { exact: true });
+  await reportTargetLocation.waitFor();
+  const reportCanonicalPath = await reportTab.getByTestId("file-reference-path").textContent();
   const reportReferenceEvidence = {
     visibleReference: await reportReference.textContent(),
     canonicalPath: reportCanonicalPath,
+    targetLocation: await reportTargetLocation.textContent(),
     targetLineNumber: await reportTargetLine.getAttribute("data-target-line"),
     targetLineText: await reportTargetLine.textContent(),
   };
   assert(
-    reportReferenceEvidence.visibleReference === `${reportPath}:2`,
+    reportReferenceEvidence.visibleReference === `${reportPath}:2:3`,
     "bare absolute path was not shown unchanged in the timeline",
   );
   assert(
@@ -589,6 +631,8 @@ try {
       localFileReferences: {
         passed: true,
         exposedMachineText: exposedMachineTextEvidence,
+        rootBoundary: rootBoundaryEvidence,
+        tmpDirectory: tmpDirectoryEvidence,
         report: reportReferenceEvidence,
         binaryGuard: binaryGuardEvidence,
         longLineGuard: longLineGuardEvidence,
@@ -649,9 +693,10 @@ async function collectReferenceEvidence(page: Page): Promise<{
   await page.evaluate(async () => document.fonts.ready);
 
   const projectRow = page.locator("#project-a-row");
+  const projectRowContainer = projectRow.locator("xpath=..");
   await projectRow.hover();
   const projectNew = page.locator("[data-od-id='project-a-new']");
-  const projectMore = projectRow.locator(".row-actions .icon-btn").last();
+  const projectMore = projectRowContainer.locator(".row-actions .icon-btn").last();
   const projectActionsVisibleOnHover = await projectNew.isVisible() && await projectMore.isVisible();
   await projectMore.focus();
   const projectActionFocused = await projectMore.evaluate((element) => element === document.activeElement);
@@ -1466,7 +1511,7 @@ function fakeCodexSource(input: {
   longLinePath: string;
   activitySummary: string;
 }): string {
-  const reportReference = `${input.reportPath}:2`;
+  const reportReference = `${input.reportPath}:2:3`;
   return `#!/usr/bin/env node
 const prompt = process.argv.at(-1) ?? "";
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
@@ -1507,6 +1552,16 @@ if (prompt.includes("SUCCESS dashboard")) {
           "- 标题、消息与 composer 共用内容轴",
           "- 窄窗口不产生根级横向滚动",
           "- 右侧栏继续使用 embedded 密度",
+          "",
+          "单独斜杠 / 保持普通文本。",
+          "",
+          "表达式 A / B 保持普通文本。",
+          "",
+          "inline code \`/\` 保持代码视觉。",
+          "",
+          "显式 [根目标](/) 不进入文件引用。",
+          "",
+          "目录目标 /tmp。",
           "",
           "产物位于 ${reportReference}。",
           "",

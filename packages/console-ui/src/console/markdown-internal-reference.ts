@@ -43,7 +43,7 @@ export function parseMarkdownFileReference(value: string | null | undefined): Ma
 
   const located = /^(.*?):([1-9]\d*)(?::([1-9]\d*))?$/u.exec(decoded);
   const filePath = normalizeAbsolutePosixPath(located?.[1] ?? decoded);
-  if (filePath === null) {
+  if (filePath === null || filePath === "/") {
     return null;
   }
   return {

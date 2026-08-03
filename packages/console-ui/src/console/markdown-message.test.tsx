@@ -79,6 +79,76 @@ describe("MarkdownMessage", () => {
     expect(screen.queryByRole("button", { name: "/home/user/secret" })).not.toBeInTheDocument();
   });
 
+  it("keeps root-only targets as text while later paths and mentions stay interactive", () => {
+    const onOpenFileReference = vi.fn();
+    const onOpenTeamMember = vi.fn();
+    render(
+      <MarkdownMessage
+        content={[
+          "单独 /",
+          "",
+          "A / B",
+          "",
+          "`/`",
+          "",
+          "[根目标](/)",
+          "",
+          "目录 /tmp，无扩展名 /tmp/moebius-output，尚未创建 /tmp/not-created-yet:2:3，请 @implementer 复核。",
+        ].join("\n")}
+        memberIdentities={[{ slug: "implementer", displayName: "实现者" }]}
+        onOpenFileReference={onOpenFileReference}
+        onOpenTeamMember={onOpenTeamMember}
+      />,
+    );
+
+    expect(screen.getByText("单独 /", { exact: true })).toBeVisible();
+    expect(screen.getByText("A / B", { exact: true })).toBeVisible();
+    expect(screen.getByText("/", { selector: "code" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "/" })).not.toBeInTheDocument();
+    expect(screen.getByText("根目标", { exact: true })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "根目标" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp" }));
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/moebius-output" }));
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/not-created-yet:2:3" }));
+    fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
+
+    expect(onOpenFileReference.mock.calls).toEqual([
+      [{ path: "/tmp", line: 1, column: null }],
+      [{ path: "/tmp/moebius-output", line: 1, column: null }],
+      [{ path: "/tmp/not-created-yet", line: 2, column: 3 }],
+    ]);
+    expect(onOpenTeamMember).toHaveBeenCalledWith("implementer");
+  });
+
+  it("uses the normalized path rather than the raw target to qualify file references", () => {
+    const onOpenFileReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content={[
+          "[根行号](/:2)",
+          "[点路径](/./)",
+          "[父级归根](/tmp/..)",
+          "[规范化有效](/tmp/../var/log)",
+        ].join(" ")}
+        onOpenFileReference={onOpenFileReference}
+      />,
+    );
+
+    for (const label of ["根行号", "点路径", "父级归根"]) {
+      expect(screen.getByText(label, { exact: true })).toBeVisible();
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "规范化有效" }));
+    expect(onOpenFileReference).toHaveBeenCalledOnce();
+    expect(onOpenFileReference).toHaveBeenCalledWith({
+      path: "/var/log",
+      line: 1,
+      column: null,
+    });
+  });
+
   it("confirms a safe external link and never calls window.open", () => {
     const onOpenExternalLink = vi.fn();
     const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
