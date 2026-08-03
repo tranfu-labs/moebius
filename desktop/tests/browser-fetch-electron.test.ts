@@ -90,7 +90,8 @@ async function runElectron(mainPath: string): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     const environment = { ...process.env };
     delete environment.ELECTRON_RUN_AS_NODE;
-    const child = spawn(electronExecutable, [mainPath], {
+    const args = process.platform === "linux" ? ["--no-sandbox", mainPath] : [mainPath];
+    const child = spawn(electronExecutable, args, {
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });

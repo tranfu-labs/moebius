@@ -17,6 +17,7 @@ import {
   type LocalConsoleServerOptions,
   type StartedLocalConsoleServer,
 } from "../src/local-console/start.js";
+import { LocalPendingProcessingRuntime } from "../src/local-console/pending-processing-runtime.js";
 import { LocalConsoleRuntime, type LocalConsoleAgentFile } from "../src/local-console/runtime.js";
 import { readLocalConsoleOutputTail } from "../src/local-console/output-tail.js";
 import { buildLocalAgentPrompt } from "../src/local-console/prompt.js";
@@ -52,7 +53,7 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 
 const originalPath = process.env.PATH;
 const STANDARD_STORE_TIMEOUT_MS = 10_000;
-const ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS = 8_000;
+const LIVE_RUN_COMPLETION_WAIT_TIMEOUT_MS = 4_000;
 
 async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> {
   const projectRoot = options.projectRoot ?? process.cwd();
@@ -91,6 +92,76 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("“验收”“通过”“不通过”");
     expect(prompt).not.toContain("GitHub Issue");
     expect(prompt).not.toContain("role envelope");
+  });
+
+  it("releases a failed retry action and keeps other sessions independent", async () => {
+    const workspace: LocalConsoleSessionWorkspaceSource = {
+      projectId: "local",
+      title: "test workspace",
+      folderPath: process.cwd(),
+      workspaceMode: "direct",
+      workspacePendingMode: null,
+      baselineCommit: null,
+    };
+    let releasePrimary!: () => void;
+    const primaryRelease = new Promise<void>((resolve) => {
+      releasePrimary = resolve;
+    });
+    let markPrimaryStarted!: () => void;
+    const primaryStarted = new Promise<void>((resolve) => {
+      markPrimaryStarted = resolve;
+    });
+    const executedSessions: string[] = [];
+    const reported: Array<{ event: string; error: string }> = [];
+    let firstPrimary = true;
+    const runtime = new LocalPendingProcessingRuntime({
+      stopping: () => false,
+      repairStale: async () => undefined,
+      applyPendingContext: async () => undefined,
+      continuableWorkspace: async () => workspace,
+      dispatchWorkers: async () => undefined,
+      hasPersistedPrimary: async () => false,
+      executePrimary: async (sessionId) => {
+        executedSessions.push(sessionId);
+        if (sessionId === "session-a" && firstPrimary) {
+          firstPrimary = false;
+          markPrimaryStarted();
+          await primaryRelease;
+        }
+        return "stop";
+      },
+      listSessions: async () => [],
+      formatError: (error) => error instanceof Error ? error.message : String(error),
+      setError: () => undefined,
+      report: (event, error) => reported.push({ event, error }),
+    });
+
+    const current = runtime.process("session-a");
+    await primaryStarted;
+    let actionAttempts = 0;
+    const failedRetry = runtime.runRetryAfterCurrent("session-a", async () => {
+      actionAttempts += 1;
+      throw new Error("release failed");
+    });
+    const otherSession = runtime.process("session-b");
+    await otherSession;
+    expect(executedSessions).toContain("session-b");
+    expect(actionAttempts).toBe(0);
+
+    releasePrimary();
+    await expect(failedRetry).rejects.toThrow("release failed");
+    expect(reported).toEqual([{ event: "local-console-processing-failed", error: "release failed" }]);
+
+    const recovered = await runtime.runRetryAfterCurrent("session-a", async () => {
+      actionAttempts += 1;
+    });
+    expect(recovered).toBe(true);
+    expect(actionAttempts).toBe(2);
+    await current;
+    await waitForCondition(
+      () => executedSessions.filter((sessionId) => sessionId === "session-a").length === 2,
+      { describe: "retry drain after failed action", kind: "logic" },
+    );
   });
 
   it("stores user and agent messages in SQLite", async () => {
@@ -2566,6 +2637,7 @@ describe("local console", { timeout: 15_000 }, () => {
       options?: CodexRunOptions;
       finish?: (result: CodexRunResult) => void;
     } = {};
+    let firstMarkdownObserved = false;
     const runCodex = vi.fn((options: CodexRunOptions) => {
       captured.options = options;
       options.onStructuredActivity?.({
@@ -2573,6 +2645,7 @@ describe("local console", { timeout: 15_000 }, () => {
         item: { type: "command_execution", command: "pnpm test --filter /private/work" },
       });
       options.onVisibleAgentMarkdown?.("## 第一段\n\n正在检查。");
+      firstMarkdownObserved = true;
       return new Promise<CodexRunResult>((resolve) => {
         captured.finish = resolve;
       });
@@ -2587,16 +2660,14 @@ describe("local console", { timeout: 15_000 }, () => {
     try {
       const session = await createSession(started.url, "live Markdown");
       await postSessionMessage(started.url, session.sessionId, "@dev 展示进度");
-      const first = await waitForState(
-        started.url,
-        session.sessionId,
-        (data) => data.activeRun?.liveMarkdown === "## 第一段\n\n正在检查。",
-        {
-          describe: "first active run live Markdown",
-          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
-          snapshot: (snapshot) => snapshot,
-        },
-      );
+      await waitForCondition(() => firstMarkdownObserved, {
+        describe: "first active run live Markdown callback",
+        kind: "logic",
+        timeoutMs: 2_000,
+        snapshot: () => ({ firstMarkdownObserved, providerCalls: runCodex.mock.calls.length }),
+      });
+      const first = await getState(started.url, session.sessionId);
+      expect(first.activeRun?.liveMarkdown).toBe("## 第一段\n\n正在检查。");
       const runId = first.activeRun?.runId;
       expect(first.messages).toHaveLength(1);
       expect(first.activeRun?.startedAt).not.toBeNull();
@@ -2607,16 +2678,8 @@ describe("local console", { timeout: 15_000 }, () => {
         item: { type: "file_change", path: "/private/work/src/run-block.tsx", status: "completed" },
       });
       captured.options?.onVisibleAgentMarkdown?.("## 第二段\n\n检查完成。");
-      const second = await waitForState(
-        started.url,
-        session.sessionId,
-        (data) => data.activeRun?.liveMarkdown === "## 第二段\n\n检查完成。",
-        {
-          describe: "second active run live Markdown",
-          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
-          snapshot: (snapshot) => snapshot,
-        },
-      );
+      const second = await getState(started.url, session.sessionId);
+      expect(second.activeRun?.liveMarkdown).toBe("## 第二段\n\n检查完成。");
       expect(second.activeRun?.runId).toBe(runId);
       expect(second.messages).toHaveLength(1);
       expect(second.activeRun?.activity).toMatchObject({
@@ -2646,8 +2709,21 @@ describe("local console", { timeout: 15_000 }, () => {
         (data) => data.activeRun === null && data.messages.some((entry) => entry.speaker === "agent"),
         {
           describe: "active run completion",
-          timeoutMs: ACTIVE_RUN_STATE_WAIT_TIMEOUT_MS,
-          snapshot: (snapshot) => snapshot,
+          timeoutMs: LIVE_RUN_COMPLETION_WAIT_TIMEOUT_MS,
+          snapshot: (snapshot) => snapshot === null ? null : {
+            activeRun: snapshot.activeRun === null ? null : {
+              runId: snapshot.activeRun.runId,
+              liveMarkdown: snapshot.activeRun.liveMarkdown,
+              activity: snapshot.activeRun.activity,
+            },
+            activeRunCount: snapshot.activeRuns.length,
+            messages: snapshot.messages.map((entry) => ({
+              speaker: entry.speaker,
+              body: entry.body,
+              status: entry.status,
+              error: entry.error,
+            })),
+          },
         },
       );
       expect(completed.messages.map((entry) => entry.speaker)).toEqual(["user", "agent"]);
