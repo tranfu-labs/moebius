@@ -142,7 +142,7 @@ describe("run retry plan", () => {
 
   it("deduplicates only the same admission promise and releases only its current owner", async () => {
     const admission = retryAdmission();
-    expect(planRetryAdmissionKey(admission)).toBe("session-1\u0000run-1\u00001\u0000dev\u0000retry");
+    expect(planRetryAdmissionKey(admission)).toBe("session-1\u00001");
     const accepted = Promise.resolve(true);
     const replacement = Promise.resolve(false);
     expect(decidePendingRetryAdmission(undefined)).toEqual({ kind: "start" });

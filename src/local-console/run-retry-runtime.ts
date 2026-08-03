@@ -34,7 +34,7 @@ export class LocalConsoleRunRetryRuntime {
       createdAt: string;
     }): Promise<void>;
     releaseMessageForRetry(input: { userMessageId: number; sessionId: string; now: string }): Promise<void>;
-    processAfterCurrent(sessionId: string): void;
+    runRetryAfterCurrent(sessionId: string, action: () => Promise<void>): Promise<boolean>;
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
   }) {}
 
@@ -96,13 +96,12 @@ export class LocalConsoleRunRetryRuntime {
           createdAt: this.input.nowIso(),
         }));
     }
-    await this.input.storeCall("local-console-store-release-user-retry", () =>
-      this.input.releaseMessageForRetry({
-        userMessageId: admission.source.id,
-        sessionId: admission.sessionId,
-        now: this.input.nowIso(),
-      }));
-    this.input.processAfterCurrent(admission.sessionId);
-    return true;
+    return await this.input.runRetryAfterCurrent(admission.sessionId, () =>
+      this.input.storeCall("local-console-store-release-user-retry", () =>
+        this.input.releaseMessageForRetry({
+          userMessageId: admission.source.id,
+          sessionId: admission.sessionId,
+          now: this.input.nowIso(),
+        })));
   }
 }

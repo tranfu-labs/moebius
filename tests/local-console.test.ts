@@ -17,6 +17,7 @@ import {
   type LocalConsoleServerOptions,
   type StartedLocalConsoleServer,
 } from "../src/local-console/start.js";
+import { LocalPendingProcessingRuntime } from "../src/local-console/pending-processing-runtime.js";
 import { LocalConsoleRuntime, type LocalConsoleAgentFile } from "../src/local-console/runtime.js";
 import { readLocalConsoleOutputTail } from "../src/local-console/output-tail.js";
 import { buildLocalAgentPrompt } from "../src/local-console/prompt.js";
@@ -91,6 +92,76 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("“验收”“通过”“不通过”");
     expect(prompt).not.toContain("GitHub Issue");
     expect(prompt).not.toContain("role envelope");
+  });
+
+  it("releases a failed retry action and keeps other sessions independent", async () => {
+    const workspace: LocalConsoleSessionWorkspaceSource = {
+      projectId: "local",
+      title: "test workspace",
+      folderPath: process.cwd(),
+      workspaceMode: "direct",
+      workspacePendingMode: null,
+      baselineCommit: null,
+    };
+    let releasePrimary!: () => void;
+    const primaryRelease = new Promise<void>((resolve) => {
+      releasePrimary = resolve;
+    });
+    let markPrimaryStarted!: () => void;
+    const primaryStarted = new Promise<void>((resolve) => {
+      markPrimaryStarted = resolve;
+    });
+    const executedSessions: string[] = [];
+    const reported: Array<{ event: string; error: string }> = [];
+    let firstPrimary = true;
+    const runtime = new LocalPendingProcessingRuntime({
+      stopping: () => false,
+      repairStale: async () => undefined,
+      applyPendingContext: async () => undefined,
+      continuableWorkspace: async () => workspace,
+      dispatchWorkers: async () => undefined,
+      hasPersistedPrimary: async () => false,
+      executePrimary: async (sessionId) => {
+        executedSessions.push(sessionId);
+        if (sessionId === "session-a" && firstPrimary) {
+          firstPrimary = false;
+          markPrimaryStarted();
+          await primaryRelease;
+        }
+        return "stop";
+      },
+      listSessions: async () => [],
+      formatError: (error) => error instanceof Error ? error.message : String(error),
+      setError: () => undefined,
+      report: (event, error) => reported.push({ event, error }),
+    });
+
+    const current = runtime.process("session-a");
+    await primaryStarted;
+    let actionAttempts = 0;
+    const failedRetry = runtime.runRetryAfterCurrent("session-a", async () => {
+      actionAttempts += 1;
+      throw new Error("release failed");
+    });
+    const otherSession = runtime.process("session-b");
+    await otherSession;
+    expect(executedSessions).toContain("session-b");
+    expect(actionAttempts).toBe(0);
+
+    releasePrimary();
+    await expect(failedRetry).rejects.toThrow("release failed");
+    expect(reported).toEqual([{ event: "local-console-processing-failed", error: "release failed" }]);
+
+    const recovered = await runtime.runRetryAfterCurrent("session-a", async () => {
+      actionAttempts += 1;
+    });
+    expect(recovered).toBe(true);
+    expect(actionAttempts).toBe(2);
+    await current;
+    await waitForCondition(
+      () => executedSessions.filter((sessionId) => sessionId === "session-a").length === 2,
+      { describe: "retry drain after failed action", kind: "logic" },
+    );
   });
 
   it("stores user and agent messages in SQLite", async () => {
