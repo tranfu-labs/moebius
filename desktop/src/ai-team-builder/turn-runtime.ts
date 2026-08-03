@@ -28,7 +28,7 @@ export class AiTeamBuilderTurnRuntime {
     private readonly drivers: Readonly<Record<ExecutionCli, AiTeamBuilderDriverPort>>,
   ) {}
 
-  async run(initial: AiTeamBuilderDraft): Promise<AiTeamBuilderState> {
+  async run(initial: AiTeamBuilderDraft, signal?: AbortSignal): Promise<AiTeamBuilderState> {
     const expectedTurnRevision = initial.turnRevision;
     let running = initial;
     const profile = requireAiTeamBuilderExecutionProfile(running);
@@ -45,6 +45,7 @@ export class AiTeamBuilderTurnRuntime {
         onExternalSessionStarted: async (externalSessionId) => {
           running = await this.persistObservedExternalSessionId(running, externalSessionId);
         },
+        signal,
       });
     } catch (error) {
       return this.finishFailedTurn(
@@ -86,6 +87,7 @@ export class AiTeamBuilderTurnRuntime {
               observedExternalSessionId,
             );
           },
+          signal,
         });
       } catch (error) {
         return this.finishFailedTurn(

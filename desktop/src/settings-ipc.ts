@@ -4,6 +4,7 @@ import {
   formatSettingsVersionInfo,
   type SettingsApplicationInfo,
   type SettingsUpdateCheckResult,
+  type SettingsUpdateState,
   type SettingsVersionCopyResult,
 } from "./settings-contract.js";
 
@@ -15,6 +16,8 @@ export interface RegisterSettingsIpcOptions {
   ipcMain: SettingsIpcMain;
   getVersion(): string;
   checkForUpdates(currentVersion: string): Promise<SettingsUpdateCheckResult>;
+  readUpdateState?(): SettingsUpdateState;
+  installUpdate?(): Promise<void>;
   clipboard: { writeText(value: string): void };
 }
 
@@ -26,6 +29,17 @@ export function registerSettingsIpc(options: RegisterSettingsIpcOptions): void {
   options.ipcMain.handle(
     SETTINGS_IPC_CHANNELS.checkForUpdates,
     () => options.checkForUpdates(options.getVersion()),
+  );
+  options.ipcMain.handle(
+    SETTINGS_IPC_CHANNELS.readUpdateState,
+    (): SettingsUpdateState => options.readUpdateState?.() ?? {
+      status: "idle",
+      currentVersion: options.getVersion(),
+    },
+  );
+  options.ipcMain.handle(
+    SETTINGS_IPC_CHANNELS.installUpdate,
+    () => options.installUpdate?.(),
   );
   options.ipcMain.handle(
     SETTINGS_IPC_CHANNELS.copyVersionInfo,

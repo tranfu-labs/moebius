@@ -25,6 +25,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 - 禁止依赖：桌面壳不得复制 local runtime、团队校验或 provider session 的业务规则。[NI:desktop-no-business-rule-copy]（非 import：语义复制需由 controller/domain 测试与 composition-root 审计判定）；renderer 不得直接拼接 shell 命令或绕过 preload 调用 Node adapter。[NI:desktop-no-shell-concatenation]（非 import：需检查 IPC 与外部参数数据流）；用户团队资源不得写回打包资源目录。[NI:desktop-no-resource-writeback]（非 import：需验证文件系统写入目标）
 
 ![desktop-shell](desktop-shell.svg)
+![desktop-auto-update-and-shutdown](desktop-auto-update-and-shutdown.svg)
 ![local-console-operator](local-console-operator.svg)
 ![local-console-managed-attachments](local-console-managed-attachments.svg)
 ![local-console-streamdown-markdown](local-console-streamdown-markdown.svg)

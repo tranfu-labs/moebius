@@ -37,6 +37,7 @@ export async function runDesktopStartup(input: {
   executeSeedPlan(operations: readonly SeedCopyOperation[]): Promise<void>;
   seedTeams(): Promise<{ status: "seeded" | "skipped" | "conflict" }>;
   startLocalConsole(): Promise<void>;
+  startUpdates?(): Promise<void>;
   formatError(error: unknown): string;
 }): Promise<void> {
   input.setLocale(await input.readLocale());
@@ -87,4 +88,5 @@ export async function runDesktopStartup(input: {
   }
   input.publishStatus();
   await input.startLocalConsole();
+  await input.startUpdates?.();
 }

@@ -79,6 +79,7 @@ import {
   SETTINGS_IPC_CHANNELS,
   type SettingsApplicationInfo,
   type SettingsUpdateCheckResult,
+  type SettingsUpdateState,
   type SettingsVersionCopyResult,
 } from "./settings-contract.js";
 
@@ -94,6 +95,9 @@ export interface MoebiusDesktopApi {
   openDataRoot(): Promise<void>;
   readApplicationInfo(): Promise<SettingsApplicationInfo>;
   checkForUpdates(): Promise<SettingsUpdateCheckResult>;
+  readUpdateState(): Promise<SettingsUpdateState>;
+  onUpdateState(listener: (state: SettingsUpdateState) => void): () => void;
+  installUpdate(): Promise<void>;
   copyVersionInfo(): Promise<SettingsVersionCopyResult>;
   selectProjectFolder(): Promise<string | null>;
   selectFolderForRepair(projectId: string): Promise<string | null>;
@@ -208,6 +212,21 @@ const api: MoebiusDesktopApi = {
   },
   checkForUpdates() {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.checkForUpdates) as Promise<SettingsUpdateCheckResult>;
+  },
+  readUpdateState() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.readUpdateState) as Promise<SettingsUpdateState>;
+  },
+  onUpdateState(listener) {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: SettingsUpdateState): void => {
+      listener(state);
+    };
+    ipcRenderer.on(SETTINGS_IPC_CHANNELS.updateState, wrapped);
+    return () => {
+      ipcRenderer.off(SETTINGS_IPC_CHANNELS.updateState, wrapped);
+    };
+  },
+  installUpdate() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.installUpdate) as Promise<void>;
   },
   copyVersionInfo() {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.copyVersionInfo) as Promise<SettingsVersionCopyResult>;

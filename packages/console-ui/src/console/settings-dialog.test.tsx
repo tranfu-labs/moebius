@@ -36,33 +36,40 @@ describe("SettingsDialog", () => {
 
   it("renders the About candidate from controlled deterministic state", () => {
     const onCheckForUpdates = vi.fn();
-    const onDownloadUpdate = vi.fn();
     const onCopyVersion = vi.fn();
     renderDialog({
       activeSection: "about",
       about: {
         currentVersion: "0.1.4",
         latestVersion: "0.1.5",
-        updateStatus: "available",
+        updateStatus: "downloading",
+        progress: 42,
       },
       onCheckForUpdates,
-      onDownloadUpdate,
       onCopyVersion,
     });
 
     expect(screen.getByText("Moebius")).toBeVisible();
     expect(screen.getByText("0.1.4")).toBeVisible();
     expect(screen.getByText("Apple Silicon Mac")).toHaveClass("block", "w-full", "text-right");
-    expect(screen.getByText("新版 0.1.5")).toBeVisible();
+    expect(screen.getByText("正在下载新版 0.1.5 · 42%")).toBeVisible();
     expect(screen.getByText("查看发布记录")).toBeVisible();
     expect(screen.getAllByText("设置")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "再次检查" }));
-    fireEvent.click(screen.getByRole("button", { name: "下载新版本" }));
     fireEvent.click(screen.getByRole("button", { name: "复制版本信息" }));
-    expect(onCheckForUpdates).toHaveBeenCalledOnce();
-    expect(onDownloadUpdate).toHaveBeenCalledOnce();
+    expect(onCheckForUpdates).not.toHaveBeenCalled();
     expect(onCopyVersion).toHaveBeenCalledOnce();
+  });
+
+  it("shows ready state without an install action in About", () => {
+    renderDialog({
+      activeSection: "about",
+      about: { currentVersion: "0.1.4", latestVersion: "0.1.5", updateStatus: "ready" },
+    });
+
+    expect(screen.getByText("新版 0.1.5 已准备好，请从侧栏安装。")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /安装更新/u })).not.toBeInTheDocument();
   });
 
   it("delegates section changes without owning runtime integration", () => {

@@ -1,4 +1,5 @@
 import type {
+  DesktopUpdateState,
   SettingsApplicationInfo,
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
@@ -9,14 +10,15 @@ import {
   createSettingsFeedbackUrl,
 } from "../settings-contract.js";
 
-export type DesktopUpdateStatus = "idle" | "checking" | "latest" | "available" | "failed";
+export type DesktopUpdateStatus = SettingsUpdateCheckResult["status"];
 export type DesktopCopyStatus = "idle" | "copied" | "failed";
 
 export interface DesktopSettingsState {
   applicationInfo: SettingsApplicationInfo | null;
   updateStatus: DesktopUpdateStatus;
   latestVersion?: string;
-  downloadUrl?: string;
+  progress?: number;
+  updateFailureReason?: DesktopUpdateState["reason"];
   updateRequestId: number | null;
   copyStatus: DesktopCopyStatus;
   copyRequestId: number | null;
@@ -25,6 +27,7 @@ export interface DesktopSettingsState {
 export type DesktopSettingsAction =
   | { type: "application-info-loaded"; info: SettingsApplicationInfo }
   | { type: "update-started"; requestId: number }
+  | { type: "update-state-received"; state: SettingsUpdateCheckResult }
   | { type: "update-finished"; requestId: number; result: SettingsUpdateCheckResult }
   | { type: "copy-started"; requestId: number }
   | { type: "copy-finished"; requestId: number; result: SettingsVersionCopyResult };
@@ -55,7 +58,8 @@ export function planDesktopSettingsView(state: DesktopSettingsState) {
       currentVersion: state.applicationInfo?.version ?? "—",
       updateStatus: state.updateStatus,
       latestVersion: state.latestVersion,
-      downloadUrl: state.downloadUrl,
+      progress: state.progress,
+      updateFailureReason: state.updateFailureReason,
       copyStatus: state.copyStatus,
     },
     settingsExternalLinks: {
@@ -83,38 +87,17 @@ export function reduceDesktopSettings(
         ...state,
         updateStatus: "checking",
         latestVersion: undefined,
-        downloadUrl: undefined,
+        progress: undefined,
+        updateFailureReason: undefined,
         updateRequestId: action.requestId,
       };
     case "update-finished":
       if (state.updateRequestId !== action.requestId) {
         return state;
       }
-      if (action.result.status === "available") {
-        return {
-          ...state,
-          updateStatus: "available",
-          latestVersion: action.result.latestVersion,
-          downloadUrl: action.result.downloadUrl,
-          updateRequestId: null,
-        };
-      }
-      if (action.result.status === "latest") {
-        return {
-          ...state,
-          updateStatus: "latest",
-          latestVersion: action.result.latestVersion,
-          downloadUrl: undefined,
-          updateRequestId: null,
-        };
-      }
-      return {
-        ...state,
-        updateStatus: "failed",
-        latestVersion: undefined,
-        downloadUrl: undefined,
-        updateRequestId: null,
-      };
+      return applyUpdateState({ ...state, updateRequestId: null }, action.result);
+    case "update-state-received":
+      return applyUpdateState(state, action.state);
     case "copy-started":
       if (state.copyRequestId !== null) {
         return state;
@@ -130,4 +113,17 @@ export function reduceDesktopSettings(
         copyRequestId: null,
       };
   }
+}
+
+function applyUpdateState(
+  state: DesktopSettingsState,
+  update: SettingsUpdateCheckResult,
+): DesktopSettingsState {
+  return {
+    ...state,
+    updateStatus: update.status,
+    latestVersion: update.latestVersion,
+    progress: update.progress,
+    updateFailureReason: update.reason,
+  };
 }

@@ -27,6 +27,7 @@ export interface AiTeamBuilderWriterPort {
 
 export class AiTeamBuilderService {
   private readonly mutations = new Map<string, Promise<AiTeamBuilderState>>();
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly dataRoot: string,
@@ -42,13 +43,24 @@ export class AiTeamBuilderService {
     }));
   }
 
+  getRunningTaskCount(): number {
+    return this.mutations.size;
+  }
+
+  async cancelAll(): Promise<void> {
+    for (const controller of this.abortControllers.values()) {
+      controller.abort();
+    }
+    await Promise.all([...this.mutations.values()].map((pending) => pending.catch(() => undefined)));
+  }
+
   async start(draftId: string): Promise<AiTeamBuilderState> {
     return this.mutate(draftId, async () =>
       toAiTeamBuilderState(await this.ensureExecutionProfile(await this.drafts.load(draftId))));
   }
 
   async submit(draftId: string, text: string): Promise<AiTeamBuilderState> {
-    return this.mutate(draftId, async () => {
+    return this.mutate(draftId, async (signal) => {
       const current = await this.ensureExecutionProfile(await this.drafts.load(draftId));
       const submitPlan = planAiTeamBuilderSubmit(current);
       if (submitPlan.kind === "reject") {
@@ -56,12 +68,12 @@ export class AiTeamBuilderService {
       }
       const running = beginAiTeamBuilderTurn(current, text, { appendUserMessage: true });
       await this.drafts.save(running);
-      return this.turnRuntime.run(running);
+      return this.turnRuntime.run(running, signal);
     });
   }
 
   async adjust(draftId: string, text: string): Promise<AiTeamBuilderState> {
-    return this.mutate(draftId, async () => {
+    return this.mutate(draftId, async (signal) => {
       const current = await this.drafts.load(draftId);
       const adjustmentPlan = planAiTeamBuilderAdjustment(current);
       if (adjustmentPlan.kind === "reject") {
@@ -69,12 +81,12 @@ export class AiTeamBuilderService {
       }
       const running = beginAiTeamBuilderTurn(current, text, { appendUserMessage: true });
       await this.drafts.save(running);
-      return this.turnRuntime.run(running);
+      return this.turnRuntime.run(running, signal);
     });
   }
 
   async retry(draftId: string): Promise<AiTeamBuilderState> {
-    return this.mutate(draftId, async () => {
+    return this.mutate(draftId, async (signal) => {
       const current = await this.drafts.load(draftId);
       const retryPlan = planAiTeamBuilderRetry(current);
       if (retryPlan.kind === "reject") {
@@ -87,7 +99,7 @@ export class AiTeamBuilderService {
         appendUserMessage: false,
       });
       await this.drafts.save(running);
-      return this.turnRuntime.run(running);
+      return this.turnRuntime.run(running, signal);
     });
   }
 
@@ -133,18 +145,21 @@ export class AiTeamBuilderService {
 
   private async mutate(
     draftId: string,
-    operation: () => Promise<AiTeamBuilderState>,
+    operation: (signal: AbortSignal) => Promise<AiTeamBuilderState>,
   ): Promise<AiTeamBuilderState> {
     const mutationPlan = planAiTeamBuilderMutationAvailability(this.mutations.has(draftId));
     if (mutationPlan.kind === "reject") {
       throw new AiTeamBuilderRequestError(mutationPlan.message);
     }
-    const pending = operation();
+    const controller = new AbortController();
+    const pending = operation(controller.signal);
     this.mutations.set(draftId, pending);
+    this.abortControllers.set(draftId, controller);
     try {
       return await pending;
     } finally {
       this.mutations.delete(draftId);
+      this.abortControllers.delete(draftId);
     }
   }
 }

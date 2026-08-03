@@ -1,6 +1,16 @@
+import type {
+  DesktopUpdateFailureReason,
+  DesktopUpdateState,
+} from "./desktop-update-contract.js";
+
+export type { DesktopUpdateFailureReason, DesktopUpdateState } from "./desktop-update-contract.js";
+
 export const SETTINGS_IPC_CHANNELS = {
   readApplicationInfo: "settings:read-application-info",
   checkForUpdates: "settings:check-for-updates",
+  readUpdateState: "settings:read-update-state",
+  installUpdate: "settings:install-update",
+  updateState: "settings:update-state",
   copyVersionInfo: "settings:copy-version-info",
 } as const;
 
@@ -13,25 +23,9 @@ export interface SettingsApplicationInfo {
   platform: typeof SETTINGS_PLATFORM_LABEL;
 }
 
-export type SettingsUpdateFailureReason = "timeout" | "unavailable";
-
-export type SettingsUpdateCheckResult =
-  | {
-    status: "latest";
-    currentVersion: string;
-    latestVersion: string;
-  }
-  | {
-    status: "available";
-    currentVersion: string;
-    latestVersion: string;
-    downloadUrl: string;
-  }
-  | {
-    status: "failed";
-    currentVersion: string;
-    reason: SettingsUpdateFailureReason;
-  };
+export type SettingsUpdateFailureReason = DesktopUpdateFailureReason;
+export type SettingsUpdateCheckResult = DesktopUpdateState;
+export type SettingsUpdateState = DesktopUpdateState;
 
 export type SettingsVersionCopyResult =
   | { ok: true }

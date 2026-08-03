@@ -2522,17 +2522,24 @@ Source: docs/product/pages/settings.md#页面结构
 
 ### Requirement: 设置更新、复制与外链结果受控且键盘连续
 
-Source: docs/product/pages/settings.md#检查更新
+Source: docs/product/pages/settings.md#更新检查、下载与安装
 Source: docs/product/pages/settings.md#复制版本与公开链接
 
-`SettingsDialog` MUST 受控呈现 idle、checking、latest、available、failed 更新状态以及复制成功/失败和外链失败。检查中 MUST 禁止重复触发但 MUST 保持触发控件可聚焦；终态 MUST 原地更新并通过可访问状态通知读出，MUST NOT 自动抢焦点。下载、重试和公开链接 MUST 进入正常 Tab 顺序。打开外链失败 MUST 保留当前弹窗、分类和焦点。
+`SettingsDialog` MUST 受控呈现 idle、checking、latest、available、downloading、ready、installing、failed 更新状态以及复制成功/失败和外链失败。检查中、下载中、已准备好和安装准备中 MUST 禁止会造成重复检查、下载或安装的操作；触发控件 MUST 保持可聚焦。终态 MUST 原地更新并通过可访问状态通知读出，MUST NOT 自动抢焦点。关于页的下载、重试和公开链接 MUST 进入正常 Tab 顺序，但安装操作只从侧栏进入。打开外链失败 MUST 保留当前弹窗、分类和焦点。
 
 #### Scenario: 检查到新版
 
 - GIVEN 当前版本为 `0.1.4`
-- WHEN 受控状态变为 available 且最新版本为 `0.1.5`
-- THEN 更新组显示 `0.1.5`、下载新版本和再次检查
-- AND 不自动执行下载或浏览器动作
+- WHEN 受控状态变为 available 或 downloading 且最新版本为 `0.1.5`
+- THEN 更新组显示 `0.1.5` 和后台下载进度
+- AND 不显示安装按钮、不打开浏览器且不会创建第二次下载
+
+#### Scenario: 更新包已准备好
+
+- GIVEN 受控状态变为 ready 且最新版本为 `0.1.5`
+- WHEN 用户查看关于页
+- THEN 更新组显示“已准备好”和安装入口位于侧边栏的提示
+- AND 关于页不显示安装按钮
 
 #### Scenario: 更新检查失败
 
@@ -2541,19 +2548,73 @@ Source: docs/product/pages/settings.md#复制版本与公开链接
 - THEN 页面显示可理解失败说明和重试
 - AND MUST NOT 显示已是最新版
 
+### Requirement: 侧栏只在更新包就绪时提供安装入口
+
+Source: docs/product/pages/main-left-sidebar.md#底部应用操作
+
+`OperatorConsole` MUST 将“设置”和“安装更新”作为两个并列、各自可聚焦的底部操作。只有更新状态为 `ready-to-install` 时 MUST 渲染“安装更新”；检查中、下载中、失败、已是最新版和未知状态 MUST 不渲染该按钮，不显示更新红点或更新完成通知。
+
+#### Scenario: 更新包未就绪
+
+- GIVEN 更新状态为 checking、downloading、failed、latest 或 idle
+- WHEN 侧边栏底部渲染
+- THEN 只显示设置入口
+- AND 用户不会看到安装更新按钮或下载完成通知
+
+#### Scenario: 下载中的立即检查被阻止
+
+- GIVEN 更新状态为 `available` 或 `downloading`
+- WHEN 用户尝试点击关于页的立即检查
+- THEN 检查按钮不可用且不会重新发起下载
+- AND 当前版本与下载进度保持不变
+
+#### Scenario: 更新包已就绪
+
+- GIVEN 更新状态为 ready-to-install 且版本为 `0.2.1`
+- WHEN 侧边栏底部渲染
+- THEN 设置右侧显示独立的“安装更新”按钮
+- AND 该按钮具有本地化可访问名称并可用键盘聚焦
+
+### Requirement: 侧栏安装入口呈现安装确认
+
+Source: docs/product/pages/settings.md#更新检查、下载与安装
+
+设置“关于”只展示 `ready-to-install` 状态，不提供安装按钮。侧栏“安装更新” MUST 调用上层安装意图并先展示安装确认。无运行任务和有运行任务 MUST 使用不同的弹窗标题、说明与按钮；有运行任务时 MUST 提供“继续工作”和“停止任务并重启安装”，取消或继续工作 MUST 保留 ready 状态。
+
+#### Scenario: 无运行任务确认安装
+
+- GIVEN ready 状态且没有受管运行任务
+- WHEN 用户点击侧栏“安装更新”
+- THEN 显示说明应用将关闭、安装并重新打开的确认弹窗
+- AND 取消不改变当前页面或 ready 状态
+
+#### Scenario: 有运行任务的重启安装弹窗
+
+- GIVEN ready 状态且有受管运行任务
+- WHEN 用户点击侧栏“安装更新”
+- THEN 显示独立的重启安装保护弹窗
+- AND 弹窗说明停止任务会保留会话记录
+- AND 选择“继续工作”只关闭弹窗，不显示普通退出弹窗
+
+### Requirement: 更新异步状态对父级重渲染安全
+
+Source: docs/product/pages/settings.md#打开与关闭
+
+设置与侧栏的更新状态呈现 MUST 在父级重渲染、回调身份变化、慢返回、失败返回和迟到事件下保持同一状态机语义。重复检查/下载 MUST 被拦截，迟到的旧请求 MUST NOT 覆盖较新的 `ready`、failed 或 installing 状态，关闭并重新打开设置 MUST 恢复当前应用会话状态。
+
 ### Requirement: 工作区通知恢复设置异步结果
 
 Source: docs/product/pages/settings.md#打开与关闭
 
-`OperatorConsole` MUST 在设置关闭后仍保留进行中的语言保存和更新检查。操作在关闭后进入终态时 MUST 追加一次不抢焦点的本地通知；通知操作 MUST 重开设置并定位到“常规”或“关于”。从侧边栏重开设置时，若更新检查仍在进行，MUST 直接恢复“关于”及检查状态。弹窗保持打开时 MUST NOT 重复通知；多个终态通知 MUST NOT 互相覆盖。
+`OperatorConsole` MUST 在设置关闭后仍保留进行中的语言保存、更新检查和更新下载。从侧边栏重开设置时，若更新检查或下载仍在进行，MUST 直接恢复“关于”及当前状态。更新检查、下载完成和下载失败 MUST NOT 追加工作区通知；弹窗保持打开时 MUST NOT 重复通知；语言保存的既有通知 MUST NOT 被更新状态覆盖。
 
-#### Scenario: 关闭后更新完成
+#### Scenario: 关闭后更新状态恢复
 
-- GIVEN 更新检查进行中且用户关闭设置
-- WHEN 检查进入 latest、available 或 failed
-- THEN 工作区出现一次对应语言的轻量通知
-- AND 当前项目、对话、草稿、滚动位置与焦点不被通知改变
-- AND 激活通知后重开“关于”并显示该终态
+- GIVEN 更新检查或下载进行中且用户关闭设置
+- WHEN 用户从侧边栏重新打开设置
+- THEN 直接重开“关于”并显示当前更新状态
+- AND 不出现更新完成或失败通知
+- AND 当前项目、对话、草稿、滚动位置与焦点不被更新状态改变
 
 ### Requirement: 右侧栏承载普通会话且不复制会话布局
 

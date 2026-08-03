@@ -53,6 +53,7 @@ import type { DesktopLocale } from "../language-preference-contract.js";
 import type {
   SettingsApplicationInfo,
   SettingsUpdateCheckResult,
+  SettingsUpdateState,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
 export interface DesktopStatusSnapshot {
@@ -75,6 +76,9 @@ export interface DesktopApi {
   copySessionLogPath?: (sessionId: string) => Promise<CopySessionLogPathResult>;
   readApplicationInfo?: () => Promise<SettingsApplicationInfo>;
   checkForUpdates?: () => Promise<SettingsUpdateCheckResult>;
+  readUpdateState?: () => Promise<SettingsUpdateState>;
+  onUpdateState?: (listener: (state: SettingsUpdateState) => void) => () => void;
+  installUpdate?: () => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   onStatus?: (listener: (snapshot: DesktopStatusSnapshot) => void) => () => void;
   openStatusPage?: () => Promise<void>;

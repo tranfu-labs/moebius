@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520">
+  <rect width="980" height="520" fill="#fff"/>
+  <style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202124}.box{fill:#eef2ff;stroke:#4f46a5;stroke-width:2}.guard{fill:#fff7ed;stroke:#c2410c;stroke-width:2}.arrow{stroke:#4b5563;stroke-width:2;marker-end:url(#a)}</style>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4b5563"/></marker></defs>
+  <text x="30" y="38" font-size="24" font-weight="700">After · update coordinator and shared termination intent</text>
+  <rect class="box" x="35" y="80" width="220" height="90" rx="10"/><text x="70" y="118" font-size="17">DesktopUpdateRuntime</text><text x="70" y="144" font-size="14">check · download · ready</text>
+  <rect class="box" x="350" y="80" width="240" height="90" rx="10"/><text x="385" y="118" font-size="17">stable update DTO</text><text x="385" y="144" font-size="14">settings + sidebar</text>
+  <rect class="box" x="685" y="80" width="250" height="90" rx="10"/><text x="716" y="118" font-size="17">user install action</text><text x="716" y="144" font-size="14">confirmation required</text>
+  <path class="arrow" d="M255 125 H350"/><path class="arrow" d="M590 125 H685"/>
+  <rect class="guard" x="260" y="260" width="300" height="115" rx="10"/><text x="302" y="298" font-size="18" font-weight="700">Shared shutdown guard</text><text x="302" y="325" font-size="14">intent: exit | install-update</text><text x="302" y="348" font-size="14">one snapshot · one promise</text>
+  <rect class="box" x="35" y="280" width="165" height="70" rx="10"/><text x="75" y="322" font-size="16">Command + Q</text>
+  <rect class="box" x="685" y="280" width="250" height="70" rx="10"/><text x="712" y="322" font-size="16">Agent / builder / CLI tasks</text>
+  <path class="arrow" d="M200 315 H260"/><path class="arrow" d="M685 315 H560"/>
+  <rect class="box" x="260" y="425" width="300" height="60" rx="10"/><text x="310" y="462" font-size="16">close resources → quit / quitAndInstall once</text>
+  <path class="arrow" d="M410 375 V425"/>
+  <text x="35" y="510" font-size="15">Second-round Electron events only await the authorized termination intent.</text>
+</svg>

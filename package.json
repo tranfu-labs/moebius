@@ -29,6 +29,9 @@
     "brand:generate": "node scripts/generate-brand-assets.mjs",
     "brand:check": "node scripts/generate-brand-assets.mjs --check",
     "check:boundaries": "tsx scripts/check-import-boundaries.ts",
+    "release:prepare-update": "tsx scripts/release/prepare-update-metadata.ts",
+    "release:validate-update": "tsx scripts/release/validate-update-metadata.ts",
+    "release:upload-assets": "tsx scripts/release/upload-assets.ts",
     "test": "tsx scripts/test.ts",
     "typecheck": "tsc --noEmit && pnpm --filter @moebius/desktop typecheck && pnpm --filter @moebius/console-ui typecheck"
   },

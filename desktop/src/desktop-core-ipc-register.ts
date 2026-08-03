@@ -22,6 +22,8 @@ export function registerDesktopCoreIpc(input: {
   dataRoot: string;
   getVersion(): string;
   checkForUpdates: RegisterSettingsIpcOptions["checkForUpdates"];
+  readUpdateState?: RegisterSettingsIpcOptions["readUpdateState"];
+  installUpdate?: RegisterSettingsIpcOptions["installUpdate"];
 }): void {
   input.ipcMain.handle("action:open-status-page", async () => {
     input.openStatusPage();
@@ -61,6 +63,8 @@ export function registerDesktopCoreIpc(input: {
     ipcMain: input.ipcMain,
     getVersion: input.getVersion,
     checkForUpdates: input.checkForUpdates,
+    readUpdateState: input.readUpdateState,
+    installUpdate: input.installUpdate,
     clipboard: input.clipboard,
   });
 }

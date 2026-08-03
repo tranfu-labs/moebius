@@ -8,20 +8,41 @@ function createRuntime(input: {
     cancelAll(): Promise<unknown>;
   } | null;
   confirm?: boolean;
+  runningTaskCount?: number;
+  confirmExit?: boolean;
+  confirmInstall?: boolean;
+  installUpdate?: () => Promise<void>;
 }) {
   const closeLocalConsole = vi.fn(async () => undefined);
   const closeStateWorkers = vi.fn(async () => undefined);
   const quit = vi.fn();
   const reportCleanupBlocked = vi.fn(async () => undefined);
+  const confirmExit = vi.fn(async () => input.confirmExit ?? input.confirm ?? false);
+  const confirmInstall = vi.fn(async () => input.confirmInstall ?? input.confirm ?? false);
+  const cancelRunningTasks = vi.fn(async () => {
+    await input.installer?.cancelAll();
+  });
   const runtime = new DesktopShutdownRuntime({
     closeLocalConsole,
     closeStateWorkers,
     quit,
-    getInstaller: () => input.installer ?? null,
-    confirmInstallerCancellation: vi.fn(async () => input.confirm ?? false),
     reportCleanupBlocked,
+    getRunningTaskCount: () => input.runningTaskCount ?? (input.installer?.getRunningClis().length ?? 0),
+    cancelRunningTasks,
+    confirmExit,
+    confirmInstall,
+    installUpdate: input.installUpdate ?? (async () => undefined),
   });
-  return { runtime, closeLocalConsole, closeStateWorkers, quit, reportCleanupBlocked };
+  return {
+    runtime,
+    closeLocalConsole,
+    closeStateWorkers,
+    quit,
+    reportCleanupBlocked,
+    confirmExit,
+    confirmInstall,
+    cancelRunningTasks,
+  };
 }
 
 describe("desktop shutdown runtime", () => {
@@ -56,6 +77,60 @@ describe("desktop shutdown runtime", () => {
     await state.runtime.request();
     expect(state.reportCleanupBlocked).toHaveBeenCalledOnce();
     expect(state.closeLocalConsole).not.toHaveBeenCalled();
+    expect(state.quit).not.toHaveBeenCalled();
+  });
+
+  it("quits without a confirmation when no task is running", async () => {
+    const state = createRuntime({ runningTaskCount: 0 });
+
+    await state.runtime.request();
+
+    expect(state.confirmExit).not.toHaveBeenCalled();
+    expect(state.closeLocalConsole).toHaveBeenCalledOnce();
+    expect(state.quit).toHaveBeenCalledOnce();
+  });
+
+  it("resets the quit guard when runtime cleanup fails and permits a retry", async () => {
+    const state = createRuntime({ runningTaskCount: 0 });
+    state.closeLocalConsole.mockRejectedValueOnce(new Error("close failed"));
+
+    await state.runtime.request();
+
+    expect(state.reportCleanupBlocked).toHaveBeenCalledOnce();
+    expect(state.runtime.isQuitting).toBe(false);
+    expect(state.quit).not.toHaveBeenCalled();
+
+    await state.runtime.request();
+
+    expect(state.closeLocalConsole).toHaveBeenCalledTimes(2);
+    expect(state.quit).toHaveBeenCalledOnce();
+  });
+
+  it("uses a separate install confirmation and invokes installation once after cleanup", async () => {
+    const installUpdate = vi.fn(async () => undefined);
+    const state = createRuntime({
+      runningTaskCount: 0,
+      confirmInstall: true,
+      installUpdate,
+    });
+
+    await state.runtime.requestInstall();
+    await state.runtime.requestInstall();
+
+    expect(state.confirmInstall).toHaveBeenCalledOnce();
+    expect(state.confirmExit).not.toHaveBeenCalled();
+    expect(state.closeLocalConsole).toHaveBeenCalledOnce();
+    expect(installUpdate).toHaveBeenCalledOnce();
+    expect(state.quit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the app open when the running-task exit guard is cancelled", async () => {
+    const state = createRuntime({ runningTaskCount: 2, confirmExit: false });
+
+    await state.runtime.request();
+
+    expect(state.confirmExit).toHaveBeenCalledWith(2);
+    expect(state.cancelRunningTasks).not.toHaveBeenCalled();
     expect(state.quit).not.toHaveBeenCalled();
   });
 });

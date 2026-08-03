@@ -53,8 +53,7 @@ import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 
 export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
-  private readonly sessionId: string;
-  private readonly storeTimeoutMs: number;
+  private readonly sessionId: string; private readonly storeTimeoutMs: number;
   private readonly codexIdleTimeoutMs?: number;
   private readonly toolInFlightTimeoutMs?: number;
   private readonly codexMaxDurationMs?: number;
@@ -88,6 +87,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly workerPreparationRuntime: LocalWorkerPreparationRuntime;
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
+
+  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length; }
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
