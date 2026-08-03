@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-03
+
+### 新增
+
+- 新增桌面自动更新闭环：定时检查正式版本、下载进度与状态反馈、安装重启，并通过退出保护协调运行中的 Agent 与本地服务。
+- 新增内置「市场推广团队」种子，可直接用于内容策划、营销执行与复盘协作。
+
+### 变更
+
+- 将运行时和桌面代码收敛到 view / application / domain / adapter 四层架构，并加入可执行的 import 边界门禁。
+- 优化长会话加载、会话切换与 SQLite 状态 worker 复用，减少大型历史记录下的重复读取和资源开销。
+- 以 settled signal 取代本地执行轮询，降低等待噪声并统一执行终局判断。
+- 完善内置开发团队的派发事实单、方案来源类型门禁和真机验收规则，避免以替身或 fixture 抵扣真实用户动作验收。
+- 升级发布流程：要求 Developer ID Team `QV657S58FL`，对 App 与 DMG 完成 Apple 公证和票据装订，并对白名单更新资产及其哈希、大小和 updater 元数据做本地与远端双重校验。
+
+### 修复
+
+- 修复跨会话切换时对话草稿及其附件归属、附件存在状态和非活跃草稿确认不一致的问题。
+- 修复 provider 过程展示混入不可见分析片段的问题，只保留用户可见内容。
+
 ## [0.2.0] - 2026-07-31
 
 ### 新增
@@ -121,7 +141,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/tranfu-labs/moebius/compare/v0.1.2...v0.1.3
