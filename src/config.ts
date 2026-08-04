@@ -61,7 +61,7 @@ const LOCAL_CONFIG = loadMergedLocalConfig({ configPath: CONFIG_PATH, localConfi
 
 export const LOCAL_RUN_IDLE_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_RUN_IDLE_TIMEOUT_MS,
-) ?? 3 * 60 * 1000;
+) ?? 10 * 60 * 1000;
 export const LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
 ) ?? 30 * 60 * 1000;
