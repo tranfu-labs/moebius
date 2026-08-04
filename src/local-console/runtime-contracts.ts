@@ -116,4 +116,9 @@ export type LocalSessionRenameInput = {
   title: string;
   expectedTitleRevision: number;
 };
-export type LocalFileReferenceInput = { filePath: string; line: number; column: number | null };
+export type LocalFileReferenceInput = {
+  filePath: string;
+  line: number;
+  column: number | null;
+  hasExplicitLine: boolean;
+};

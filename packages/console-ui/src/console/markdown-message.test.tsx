@@ -73,8 +73,8 @@ describe("MarkdownMessage", () => {
     fireEvent.click(screen.getByRole("button", { name: "/Users/wing/private.txt" }));
     fireEvent.click(screen.getByRole("button", { name: "/tmp/private-run:4" }));
     expect(onOpenFileReference.mock.calls).toEqual([
-      [{ path: "/Users/wing/private.txt", line: 1, column: null }],
-      [{ path: "/tmp/private-run", line: 4, column: null }],
+      [{ path: "/Users/wing/private.txt", line: 1, column: null, hasExplicitLine: false }],
+      [{ path: "/tmp/private-run", line: 4, column: null, hasExplicitLine: true }],
     ]);
     expect(screen.queryByRole("button", { name: "/home/user/secret" })).not.toBeInTheDocument();
   });
@@ -114,9 +114,9 @@ describe("MarkdownMessage", () => {
     fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
 
     expect(onOpenFileReference.mock.calls).toEqual([
-      [{ path: "/tmp", line: 1, column: null }],
-      [{ path: "/tmp/moebius-output", line: 1, column: null }],
-      [{ path: "/tmp/not-created-yet", line: 2, column: 3 }],
+      [{ path: "/tmp", line: 1, column: null, hasExplicitLine: false }],
+      [{ path: "/tmp/moebius-output", line: 1, column: null, hasExplicitLine: false }],
+      [{ path: "/tmp/not-created-yet", line: 2, column: 3, hasExplicitLine: true }],
     ]);
     expect(onOpenTeamMember).toHaveBeenCalledWith("implementer");
   });
@@ -146,6 +146,7 @@ describe("MarkdownMessage", () => {
       path: "/var/log",
       line: 1,
       column: null,
+      hasExplicitLine: false,
     });
   });
 
@@ -194,6 +195,7 @@ describe("MarkdownMessage", () => {
       path: "/Users/wing/.codex/sessions/day/rollout.jsonl",
       line: 292,
       column: 7,
+      hasExplicitLine: true,
     });
     expect(onOpenExternalLink).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "确认打开外部链接" })).not.toBeInTheDocument();
@@ -257,6 +259,7 @@ describe("MarkdownMessage", () => {
       path: "/tmp/report(1).txt",
       line: 12,
       column: 3,
+      hasExplicitLine: true,
     });
     expect(screen.getByText((_text, element) =>
       element?.tagName === "P"

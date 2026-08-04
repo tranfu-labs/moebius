@@ -28,6 +28,48 @@ describe("right sidebar tabs store", () => {
     expect(storage.getItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY)).toContain("session-b");
   });
 
+  it("restores the selected Markdown mode on a file-reference tab", () => {
+    const storage = new MemoryStorage();
+    const store = createRightSidebarTabsStore(storage);
+    store.write("session-a", {
+      tabs: [{
+        id: "readme",
+        type: "file-reference",
+        title: "README.md",
+        sourceKey: "file-reference:v2:session-a:%2Fworkspace%2FREADME.md:1::0",
+        closable: true,
+        fileMode: "source",
+      }],
+      activeTabId: "readme",
+    });
+
+    expect(createRightSidebarTabsStore(storage).read("session-a").tabs[0]).toMatchObject({
+      type: "file-reference",
+      fileMode: "source",
+    });
+  });
+
+  it("restores per-path Markdown modes on a project-files tab", () => {
+    const storage = new MemoryStorage();
+    const store = createRightSidebarTabsStore(storage);
+    store.write("session-a", {
+      tabs: [{
+        id: "files",
+        type: "project-files",
+        title: "项目文件",
+        sourceKey: null,
+        closable: true,
+        projectFileModes: { "README.md": "source", "docs/guide.markdown": "preview" },
+      }],
+      activeTabId: "files",
+    });
+
+    expect(createRightSidebarTabsStore(storage).read("session-a").tabs[0]).toMatchObject({
+      type: "project-files",
+      projectFileModes: { "README.md": "source", "docs/guide.markdown": "preview" },
+    });
+  });
+
   it("drops unknown persisted types and tolerates corrupt storage", () => {
     const storage = new MemoryStorage();
     storage.setItem(rightSidebarTabsKey("session-a"), JSON.stringify({

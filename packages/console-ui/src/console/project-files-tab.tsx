@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
-  FileDiffView,
   WorkspaceFileTree,
   workspaceLocationCopy,
   type WorkspaceFileChange,
   type WorkspaceFileContent,
 } from "@/console/file-diff-view";
-import { useI18n } from "@/i18n";
+import { WorkspaceFileView } from "@/console/workspace-file-view";
+import type { FileViewMode } from "@/console/file-view-state";
+import { useI18n, type Translate } from "@/i18n";
 
 export type ProjectFilesData =
   | {
@@ -28,6 +29,8 @@ export interface ProjectFilesTabProps {
   workspaceMode: "direct" | "worktree";
   loadFiles(sessionId: string): Promise<ProjectFilesData>;
   loadFile(sessionId: string, filePath: string): Promise<WorkspaceFileContent>;
+  rememberedModes?: Readonly<Record<string, FileViewMode>>;
+  onModeChange?(filePath: string, mode: FileViewMode): void;
 }
 
 export function ProjectFilesTab({
@@ -35,6 +38,8 @@ export function ProjectFilesTab({
   workspaceMode,
   loadFiles,
   loadFile,
+  rememberedModes,
+  onModeChange,
 }: ProjectFilesTabProps): JSX.Element {
   const { t } = useI18n();
   const [files, setFiles] = useState<ProjectFilesData | null>(null);
@@ -43,6 +48,11 @@ export function ProjectFilesTab({
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentScrollTop, setContentScrollTop] = useState(0);
+  const [fileModes, setFileModes] = useState<Record<string, FileViewMode>>({});
+  const loadFilesRef = useRef(loadFiles);
+  const loadFileRef = useRef(loadFile);
+  loadFilesRef.current = loadFiles;
+  loadFileRef.current = loadFile;
   const location = workspaceLocationCopy(workspaceMode, t);
 
   useEffect(() => {
@@ -52,7 +62,7 @@ export function ProjectFilesTab({
     setSelectedPath(null);
     setContent(null);
     setContentScrollTop(0);
-    void loadFiles(sessionId).then((nextFiles) => {
+    void loadFilesRef.current(sessionId).then((nextFiles) => {
       if (cancelled) {
         return;
       }
@@ -75,7 +85,7 @@ export function ProjectFilesTab({
     return () => {
       cancelled = true;
     };
-  }, [loadFiles, sessionId, workspaceMode]);
+  }, [sessionId, workspaceMode]);
 
   useEffect(() => {
     if (selectedPath === null) {
@@ -84,7 +94,7 @@ export function ProjectFilesTab({
     }
     let cancelled = false;
     setContentLoading(true);
-    void loadFile(sessionId, selectedPath).then((nextContent) => {
+    void loadFileRef.current(sessionId, selectedPath).then((nextContent) => {
       if (!cancelled) {
         setContent(nextContent);
       }
@@ -100,7 +110,7 @@ export function ProjectFilesTab({
     return () => {
       cancelled = true;
     };
-  }, [loadFile, selectedPath, sessionId]);
+  }, [selectedPath, sessionId]);
 
   if (loading && files === null) {
     return <ProjectFilesMessage>{t("console.projectFiles.loading")}</ProjectFilesMessage>;
@@ -130,17 +140,50 @@ export function ProjectFilesTab({
             }}
             className="min-h-28 max-h-[42%] shrink-0 border-b border-line py-1"
           />
-          <FileDiffView
-            path={selectedPath}
-            content={content}
-            loading={contentLoading}
-            scrollTop={contentScrollTop}
-            onScrollTopChange={setContentScrollTop}
-          />
+          {contentLoading ? (
+            <ProjectFilesMessage>{t("console.fileDiff.loading")}</ProjectFilesMessage>
+          ) : content === null ? (
+            <ProjectFilesMessage>{t("console.fileDiff.loadFailed")}</ProjectFilesMessage>
+          ) : !content.available ? (
+            <ProjectFilesMessage>{projectFileUnavailableCopy(content.reason, t)}</ProjectFilesMessage>
+          ) : (
+            <WorkspaceFileView
+              targetKey={`${sessionId}:${content.path}`}
+              path={content.path}
+              text={content.text ?? content.lines.map((line) => line.text).join("\n")}
+              lines={content.lines.map((line, index) => ({
+                lineNumber: line.newLineNumber ?? index + 1,
+                text: line.text,
+              }))}
+              hasExplicitLine={false}
+              rememberedMode={rememberedModes?.[content.path] ?? fileModes[content.path]}
+              onModeChange={(mode) => {
+                setFileModes((current) => ({ ...current, [content.path]: mode }));
+                onModeChange?.(content.path, mode);
+              }}
+              scrollTop={contentScrollTop}
+              onScrollTopChange={setContentScrollTop}
+            />
+          )}
         </>
       )}
     </div>
   );
+}
+
+function projectFileUnavailableCopy(
+  reason: Extract<WorkspaceFileContent, { available: false }>["reason"],
+  t: Translate,
+): string {
+  const copy: Record<typeof reason, string> = {
+    "binary-file": t("console.fileDiff.binary"),
+    "file-too-large": t("console.fileDiff.tooLarge"),
+    "not-found": t("console.fileDiff.notFound"),
+    "not-file": t("console.fileDiff.notFile"),
+    "outside-workspace": t("console.fileDiff.outside"),
+    "workspace-unavailable": t("console.fileDiff.workspaceUnavailable"),
+  };
+  return copy[reason];
 }
 
 function ProjectFilesMessage({ children }: { children: React.ReactNode }): JSX.Element {

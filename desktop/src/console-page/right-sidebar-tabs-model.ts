@@ -23,6 +23,8 @@ export interface RightSidebarTabState {
     offsetPx: number;
     followLatest: boolean;
   };
+  fileMode?: "preview" | "source";
+  projectFileModes?: Record<string, "preview" | "source">;
 }
 
 export interface RightSidebarTabsState {

@@ -329,6 +329,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onLoadWorkspaceDiff={props.rightSidebar.files.readWorkspaceDiff}
       onLoadProjectFiles={props.rightSidebar.files.readProjectFiles}
       onLoadProjectFile={props.rightSidebar.files.readProjectFile}
+      onLoadWorkspaceDiffFile={props.rightSidebar.files.readWorkspaceDiffFile}
       onLoadFileReference={props.rightSidebar.files.readFileReference}
       onLoadProcessOutputPrevious={props.rightSidebar.processData.loadPrevious}
     />

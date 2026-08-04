@@ -1,6 +1,5 @@
 import { formatLocalError } from "./runtime-domain.js";
 import {
-  decideProjectFileRead,
   planProjectFiles,
   planUnavailableProjectFile,
   planUnavailableProjectFiles,
@@ -30,7 +29,13 @@ export class LocalConsoleWorkspaceQueryRuntime {
     listFiles(workspacePath: string): Promise<string[]>;
     readDiffFile(context: WorkspaceQueryContext, filePath: string): Promise<LocalConsoleFileContent>;
     readWorkspaceFile(workspacePath: string, filePath: string): Promise<LocalConsoleFileContent>;
-    readFileReference(input: { filePath: string; line: number; column: number | null }): Promise<LocalConsoleFileReferenceContent>;
+    readFileReference(input: {
+      workspacePath: string;
+      filePath: string;
+      line: number;
+      column: number | null;
+      hasExplicitLine: boolean;
+    }): Promise<LocalConsoleFileReferenceContent>;
     log(event: { event: string; [key: string]: unknown }): void;
   }) {}
 
@@ -65,10 +70,7 @@ export class LocalConsoleWorkspaceQueryRuntime {
   async projectFile(sessionId: string, filePath: string): Promise<LocalConsoleFileContent> {
     try {
       const context = await this.input.readContext(sessionId);
-      const source = decideProjectFileRead(await this.input.readDiff(context), filePath);
-      return source.kind === "diff"
-        ? await this.input.readDiffFile(context, filePath)
-        : await this.input.readWorkspaceFile(context.workspacePath, filePath);
+      return await this.input.readWorkspaceFile(context.workspacePath, filePath);
     } catch (error) {
       this.input.log({
         event: "local-console-project-file-unavailable",
@@ -80,12 +82,36 @@ export class LocalConsoleWorkspaceQueryRuntime {
     }
   }
 
+  async workspaceDiffFile(sessionId: string, filePath: string): Promise<LocalConsoleFileContent> {
+    try {
+      const context = await this.input.readContext(sessionId);
+      return await this.input.readDiffFile(context, filePath);
+    } catch (error) {
+      this.input.log({
+        event: "local-console-workspace-diff-file-unavailable",
+        sessionId,
+        filePath,
+        error: formatLocalError(error),
+      });
+      return planUnavailableProjectFile(filePath);
+    }
+  }
+
   async fileReference(
     sessionId: string,
-    input: { filePath: string; line: number; column: number | null },
+    input: {
+      filePath: string;
+      line: number;
+      column: number | null;
+      hasExplicitLine: boolean;
+    },
   ): Promise<LocalConsoleFileReferenceContent> {
     try {
-      return await this.input.readFileReference(input);
+      const context = await this.input.readContext(sessionId);
+      return await this.input.readFileReference({
+        workspacePath: context.workspacePath,
+        ...input,
+      });
     } catch (error) {
       this.input.log({
         event: "local-console-file-reference-unavailable",
@@ -96,11 +122,15 @@ export class LocalConsoleWorkspaceQueryRuntime {
       });
       return {
         available: false,
+        scope: null,
+        isComplete: null,
         path: input.filePath,
         lines: [],
         reason: "unavailable",
         targetLine: input.line,
         targetColumn: input.column,
+        relativePath: null,
+        text: null,
       };
     }
   }

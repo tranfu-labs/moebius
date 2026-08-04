@@ -366,17 +366,33 @@ async function handleRequest(
       return;
     }
 
+    const sessionWorkspaceDiffContentMatch = matchSessionRoute(url.pathname, "workspace-diff/content");
+    if (request.method === "GET" && sessionWorkspaceDiffContentMatch !== null) {
+      const filePath = url.searchParams.get("path");
+      if (filePath === null || filePath.trim() === "") {
+        sendJson(response, 400, { error: "Expected a non-empty path query parameter" });
+        return;
+      }
+      sendJson(response, 200, await runtime.workspaceDiffFile(
+        sessionWorkspaceDiffContentMatch.sessionId,
+        filePath,
+      ));
+      return;
+    }
+
     const sessionFileReferenceMatch = matchSessionRoute(url.pathname, "file-reference");
     if (request.method === "GET" && sessionFileReferenceMatch !== null) {
       const filePath = url.searchParams.get("path");
       const line = readPositiveQueryInteger(url.searchParams.get("line"));
       const rawColumn = url.searchParams.get("column");
       const column = rawColumn === null ? null : readPositiveQueryInteger(rawColumn);
+      const explicitLine = url.searchParams.get("explicitLine");
       if (
         filePath === null
         || !filePath.startsWith("/")
         || line === null
         || (rawColumn !== null && column === null)
+        || (explicitLine !== null && explicitLine !== "0" && explicitLine !== "1")
       ) {
         sendJson(response, 400, {
           error: "Expected an absolute path, a positive line, and an optional positive column",
@@ -387,6 +403,7 @@ async function handleRequest(
         filePath,
         line,
         column,
+        hasExplicitLine: explicitLine === "1",
       }));
       return;
     }
@@ -1289,6 +1306,7 @@ function matchSessionRoute(
     | "project"
     | "workspace"
     | "workspace-diff"
+    | "workspace-diff/content"
     | "files"
     | "files/content"
     | "file-reference"

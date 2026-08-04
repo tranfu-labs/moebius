@@ -90,8 +90,16 @@ function port(overrides: Partial<ProjectFilePort> = {}): ProjectFilePort {
       lines: [],
       reason: null,
     })),
+    readWorkspaceDiffFile: vi.fn(async () => ({
+      available: true as const,
+      path: "src/file.ts",
+      lines: [],
+      reason: null,
+    })),
     readFileReference: vi.fn(async () => ({
       available: true as const,
+      scope: "workspace-file" as const,
+      isComplete: true as const,
       path: "src/file.ts",
       lines: [],
       reason: null,
@@ -99,6 +107,8 @@ function port(overrides: Partial<ProjectFilePort> = {}): ProjectFilePort {
       targetColumn: null,
       truncatedBefore: false,
       truncatedAfter: false,
+      relativePath: "src/file.ts",
+      text: "",
     })),
     ...overrides,
   };

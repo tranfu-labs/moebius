@@ -1747,20 +1747,33 @@ Source: docs/product/pages/main-right-sidebar.md#项目文件标签
 - WHEN 客户端分别读取累计改动和项目文件树
 - THEN 改动响应只有改动文件，项目文件响应包含两个文件且分别标明 changed 真值
 
-## Requirement: 文件读取失败返回可显示原因
+## Requirement: 项目当前源码与会话累计 diff 分开读取
+Source: docs/product/pages/main-right-sidebar.md#项目文件标签
+
+local console MUST 为项目当前文件和会话累计 diff 提供不同的只读查询契约。项目文件查询成功时 MUST 返回完整当前 UTF-8 文本与单一当前行模型，MUST NOT 因文件相对基线有改动而返回 diff。累计 diff 查询 MUST 继续返回相对会话基线的新增、删除、上下文和旧 / 新行号。
+
+### Scenario: 已改动文件读取当前源码
+- GIVEN 会话工作空间中的 `src/a.ts` 相对基线有一行删除和两行新增
+- WHEN 请求项目当前文件
+- THEN 响应包含当前文件的完整文本
+- AND 不包含已删除行或 diff line kind
+- WHEN 请求该文件的累计 diff
+- THEN 响应包含一行删除、两行新增及其旧 / 新行号
+
+## Requirement: 项目文件读取失败返回可显示原因
 Source: docs/product/pages/main-right-sidebar.md#选择文件
 
-系统 MUST 对超出大小上限、非文本、缺失、非普通文件、越出工作空间和工作空间不可用分别返回稳定原因与空行数组。系统 MUST NOT 静默返回空白内容，也 MUST NOT 通过符号链接或路径穿越读取工作空间外的文件。
+项目文件查询 MUST 对超出大小上限、非文本、缺失、非普通文件、越出工作空间和工作空间不可用分别返回稳定原因与空行数组。系统 MUST NOT 静默返回空白内容，也 MUST NOT 通过项目文件相对路径、符号链接或路径穿越把外部文件升级为完整项目文件；正文文件引用的外部目标按下文 `external-preview` 契约处理。
 
 ### Scenario: 请求二进制与越界文件
 - GIVEN 当前项目包含一个二进制文件且请求还包含一个 `../` 越界路径
 - WHEN 客户端读取两个路径
 - THEN 响应分别返回 `binary-file` 与 `outside-workspace`，且都不包含文件内容
 
-## Requirement: 项目文件与改动读取通道保持只读
+## Requirement: 项目文件、文件引用与改动读取通道保持只读
 Source: docs/product/pages/main-right-sidebar.md#弹层与危险操作
 
-系统 MUST 只通过 GET 路由提供改动清单、项目树和文件内容。系统 MUST NOT 因任何读取请求修改文件、执行还原、暂存、提交、推送、切分支或创建分支。
+系统 MUST 只通过 GET 路由提供改动清单、项目树、项目当前源码、文件引用和累计 diff。每次文件引用请求 MUST 根据当前 session workspace 和 canonical 目标重新分类，MUST NOT 信任 renderer 传回的旧作用域。系统 MUST NOT 因任何读取请求修改文件、索引、会话或 git 状态，也 MUST NOT 执行还原、暂存、提交、推送、切分支或创建分支。
 
 ### Scenario: 连续读取同一文件
 - GIVEN 工作空间中的文件已有确定内容与 Git 状态
@@ -2301,35 +2314,64 @@ selection.
 - **THEN** it rejects the request without reading or writing the target
 - **AND** the run settles with a safe diagnostic.
 
-### Requirement: 文件引用读取不受位置根限制并保持窗口预算
+### Requirement: 文件引用按会话工作空间和 canonical 目标分流
 
-Source: docs/product/pages/main-right-sidebar.md#文件引用标签
+Source: docs/product/pages/main-conversation.md#时间线
 
-session-scoped 文件引用端点 MUST 只接受绝对 POSIX 文件路径、正整数 line 与可选正整数 column。runtime MUST 解析目标真实路径，并允许读取本机任意位置及任意符号链接真实目标的普通文件，MUST NOT 以当前会话工作空间、Codex sessions root 或其他目录白名单拒绝目标。
+session-scoped 文件引用端点 MUST 只接受绝对 POSIX 文件路径、正整数 line 与可选正整数 column。runtime MUST 使用该会话锁定的实际工作空间，并在每次读取时解析工作空间和目标的 canonical 真实路径。真实目标位于真实工作空间内时 MUST 返回 `workspace-file`；真实目标位于外部时 MUST 返回 `external-preview`。判定 MUST 使用路径段安全的包含关系，MUST NOT 使用字符串前缀、目录白名单或 renderer 提供的作用域结论。
 
-路径无法解析、目录、不存在、不可读、二进制或无效 UTF-8 MUST 返回结构化不可用结果，MUST NOT 回退读取相似路径。完成 `realpath` 后，可用响应以及后续 `line-too-large`、`response-too-large`、`line-not-found`、`scan-limit`、`binary-file`、`not-file` 或读取失败响应都 MUST 携带 canonical path；只有无法取得真实路径时保留输入路径。
+路径无法解析、目录、不存在、不可读、二进制或无效 UTF-8 MUST 返回结构化不可用结果，MUST NOT 回退读取相似路径。完成 `realpath` 后，可用响应以及后续 `line-too-large`、`response-too-large`、`line-not-found`、`scan-limit`、`binary-file`、`not-file` 或读取失败响应都 MUST 携带 canonical path 和已判定作用域；只有无法取得真实路径时保留输入路径和未知作用域。
 
-可用响应 MUST 只返回目标行前后固定有界窗口、真实行号、目标行列与前后截断事实。读取 MUST 流式扫描，并分别受最大扫描字节、单行 UTF-8 字节与响应总 UTF-8 字节硬上限约束；超过单行或响应上限 MUST 返回结构化不可用结果，MUST NOT 返回部分行或整份大型文件。读取 MUST NOT 仅因整文件超过项目文件的 2 MiB 上限而拒绝仍可在上述预算内定位和返回的目标。
+`workspace-file` 成功响应 MUST 包含整个普通 UTF-8 文本、真实行号、canonical path、工作区相对路径和 `isComplete: true`。完整文件超过项目文件整文件预算时 MUST 返回 `file-too-large`，MUST NOT 返回部分内容或降级为 `external-preview`。
+
+`external-preview` 成功响应 MUST 只包含目标行附近固定窗口、真实行号、目标行列、前后截断事实和 `isComplete: false`，并继续受既有扫描字节、单行字节和响应总字节硬上限约束。超过单行、扫描或响应上限 MUST 返回结构化不可用结果，MUST NOT 返回部分窗口或整份外部文件。
 
 #### Scenario: `/tmp` 普通文本
 
 - GIVEN `/tmp` 存在普通 UTF-8 文本文件且目标为第 12 行，该文件不在会话 workspace 或 Codex sessions root 内
 - WHEN renderer 请求该文件引用
-- THEN 响应可用，只包含第 12 行附近的有界窗口与真实行号
+- THEN 响应为 `external-preview`，只包含第 12 行附近的有界窗口与真实行号
 - AND 响应路径是该文件的 canonical path
 
 #### Scenario: 符号链接指向工作空间外
 
 - GIVEN workspace 内路径是一个符号链接，真实目标位于任意其他本机目录
 - WHEN renderer 请求该链接
-- THEN 响应按真实目标内容可用
+- THEN 响应为 `external-preview` 且不返回整个外部文件
 - AND 响应路径是链接目标的 canonical path
+
+#### Scenario: 外部别名指回工作区
+
+- GIVEN 输入路径位于工作区路径外但真实目标位于工作区内
+- WHEN renderer 请求该文件引用
+- THEN 响应为 `workspace-file`
+- AND 响应携带工作区相对路径和完整文本
+
+#### Scenario: 相似字符串前缀不是工作区
+
+- GIVEN 工作区为 `/work/app` 且目标为 `/work/application/a.ts`
+- WHEN renderer 请求该目标
+- THEN 目标按 `external-preview` 处理
+
+#### Scenario: 工作区单行 JSON 完整读取
+
+- GIVEN 工作区内 JSON 文件只有一行且整行在完整文件上限内
+- WHEN renderer 请求无显式行号的文件引用
+- THEN `workspace-file` 响应包含该行的全部文本
+- AND `isComplete` 为 true
+
+#### Scenario: 工作区文件超过完整读取上限
+
+- GIVEN 工作区内普通文本超过整文件上限
+- WHEN renderer 请求该文件引用
+- THEN 响应为 `file-too-large`
+- AND 不返回第 1 行附近窗口
 
 #### Scenario: 大文件目标窗口
 
-- GIVEN 任意位置的文本文件超过 2 MiB 且目标行在扫描预算内
+- GIVEN 工作区外文本文件超过 2 MiB 且目标行在扫描预算内
 - WHEN renderer 请求该目标行
-- THEN 响应可用且包含目标行
+- THEN `external-preview` 响应可用且包含目标行
 - AND 不返回整份文件
 
 #### Scenario: 目标行本身超过显示上限

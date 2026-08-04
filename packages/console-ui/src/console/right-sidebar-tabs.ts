@@ -27,6 +27,8 @@ export interface RightSidebarTab {
   conversationContext?: string;
   conversationCreatedAt?: string;
   processScroll?: RightSidebarProcessScrollSnapshot;
+  fileMode?: "preview" | "source";
+  projectFileModes?: Record<string, "preview" | "source">;
 }
 
 export interface RightSidebarProcessScrollSnapshot {
@@ -47,6 +49,7 @@ export interface RightSidebarSourceTab {
   sourceKey: string;
   conversationContext?: string;
   conversationCreatedAt?: string;
+  fileMode?: "preview" | "source";
 }
 
 export const EMPTY_RIGHT_SIDEBAR_TABS: RightSidebarTabsState = {
@@ -63,13 +66,15 @@ export const RIGHT_SIDEBAR_BUILTIN_TAB_TITLES = {
 
 const RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v2:";
 const STEP_RUN_OUTPUT_SOURCE_KEY_PREFIX = "run-output-v3:";
-const FILE_REFERENCE_SOURCE_KEY_PREFIX = "file-reference-v1:";
+const FILE_REFERENCE_SOURCE_KEY_PREFIX = "file-reference-v2:";
+const LEGACY_FILE_REFERENCE_SOURCE_KEY_PREFIX = "file-reference-v1:";
 
 export interface FileReferenceSourceLocator {
   sessionId: string;
   path: string;
   line: number;
   column: number | null;
+  hasExplicitLine: boolean;
 }
 
 export function createFileReferenceSourceKey(
@@ -82,15 +87,21 @@ export function createFileReferenceSourceKey(
     encodeURIComponent(reference.path),
     String(reference.line),
     column,
+    reference.hasExplicitLine ? "1" : "0",
   ].join(":")}`;
 }
 
 export function parseFileReferenceSourceKey(sourceKey: string | null): FileReferenceSourceLocator | null {
-  if (sourceKey === null || !sourceKey.startsWith(FILE_REFERENCE_SOURCE_KEY_PREFIX)) {
+  const prefix = sourceKey?.startsWith(FILE_REFERENCE_SOURCE_KEY_PREFIX)
+    ? FILE_REFERENCE_SOURCE_KEY_PREFIX
+    : sourceKey?.startsWith(LEGACY_FILE_REFERENCE_SOURCE_KEY_PREFIX)
+      ? LEGACY_FILE_REFERENCE_SOURCE_KEY_PREFIX
+      : null;
+  if (sourceKey === null || prefix === null) {
     return null;
   }
-  const parts = sourceKey.slice(FILE_REFERENCE_SOURCE_KEY_PREFIX.length).split(":");
-  if (parts.length !== 4) {
+  const parts = sourceKey.slice(prefix.length).split(":");
+  if (parts.length !== (prefix === FILE_REFERENCE_SOURCE_KEY_PREFIX ? 5 : 4)) {
     return null;
   }
   try {
@@ -98,9 +109,15 @@ export function parseFileReferenceSourceKey(sourceKey: string | null): FileRefer
     const filePath = decodeURIComponent(parts[1]!);
     const line = readPositiveInteger(parts[2]!);
     const column = parts[3] === "" ? null : readPositiveInteger(parts[3]!);
+    const explicit = prefix === FILE_REFERENCE_SOURCE_KEY_PREFIX
+      ? parts[4]
+      : line !== null && (line > 1 || column !== null)
+        ? "1"
+        : "0";
     return sessionId === "" || !filePath.startsWith("/") || line === null || (parts[3] !== "" && column === null)
+      || (explicit !== "0" && explicit !== "1")
       ? null
-      : { sessionId, path: filePath, line, column };
+      : { sessionId, path: filePath, line, column, hasExplicitLine: explicit === "1" };
   } catch {
     return null;
   }
@@ -378,6 +395,38 @@ export function updateRightSidebarProcessScroll(
   };
 }
 
+export function updateRightSidebarFileMode(
+  state: RightSidebarTabsState,
+  tabId: string,
+  fileMode: "preview" | "source",
+): RightSidebarTabsState {
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) =>
+      tab.id === tabId && tab.type === "file-reference"
+        ? { ...tab, fileMode }
+        : tab),
+  };
+}
+
+export function updateRightSidebarProjectFileMode(
+  state: RightSidebarTabsState,
+  tabId: string,
+  filePath: string,
+  fileMode: "preview" | "source",
+): RightSidebarTabsState {
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) =>
+      tab.id === tabId && tab.type === "project-files"
+        ? {
+            ...tab,
+            projectFileModes: { ...tab.projectFileModes, [filePath]: fileMode },
+          }
+        : tab),
+  };
+}
+
 export function closeRightSidebarTab(
   state: RightSidebarTabsState,
   tabId: string,
@@ -441,6 +490,13 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
       && entry.conversationCreatedAt.trim() !== ""
       ? entry.conversationCreatedAt
       : undefined;
+    const fileMode = entry.type === "file-reference"
+      && (entry.fileMode === "preview" || entry.fileMode === "source")
+      ? entry.fileMode
+      : undefined;
+    const projectFileModes = entry.type === "project-files"
+      ? parseProjectFileModes(entry.projectFileModes)
+      : undefined;
     return [{
       id: entry.id,
       type: entry.type,
@@ -449,6 +505,8 @@ export function parseRightSidebarTabsState(value: unknown): RightSidebarTabsStat
       closable: true,
       ...(conversationContext === undefined ? {} : { conversationContext }),
       ...(conversationCreatedAt === undefined ? {} : { conversationCreatedAt }),
+      ...(fileMode === undefined ? {} : { fileMode }),
+      ...(projectFileModes === undefined ? {} : { projectFileModes }),
     }];
   });
   const uniqueTabs = tabs.filter(
@@ -505,6 +563,15 @@ function uniqueRightSidebarTabId(state: RightSidebarTabsState, requestedId: stri
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function parseProjectFileModes(value: unknown): Record<string, "preview" | "source"> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, "preview" | "source"] =>
+      entry[0] !== "" && (entry[1] === "preview" || entry[1] === "source"),
+  );
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }
 
 function normalizeProcessScrollSnapshot(

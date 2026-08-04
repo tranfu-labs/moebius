@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">文件阅读模式变更后架构</title>
+  <desc id="desc">文件打开意图保留显式行号，服务端按会话工作空间分类，项目源码、外部预览和累计 diff 分流到独立视图。</desc>
+  <defs>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#D97706"/></marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.10"/></filter>
+    <style>
+      .title{font:700 28px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#172033}.subtitle{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#64748B}.lane{font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.boxTitle{font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#172033}.body{font:400 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.tagBlue{font:600 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1D4ED8}.tagGreen{font:600 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#047857}.legend{font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}
+    </style>
+  </defs>
+  <rect width="1200" height="760" fill="#F8FAFC"/>
+  <text x="60" y="58" class="title">改造后：按意图、作用域与数据语义分流</text>
+  <text x="60" y="84" class="subtitle">console-ui 只映射状态；canonical 判定、读取预算与快照一致性留在 local-console。</text>
+
+  <rect x="45" y="115" width="1110" height="145" rx="18" fill="#FFF7ED" stroke="#FED7AA"/>
+  <text x="68" y="143" class="lane">入口与意图</text>
+  <rect x="75" y="163" width="225" height="70" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="95" y="190" class="boxTitle">正文绝对路径</text><text x="95" y="213" class="body">path + line + hasExplicitLine</text>
+  <rect x="370" y="163" width="205" height="70" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="390" y="190" class="boxTitle">项目文件</text><text x="390" y="213" class="body">当前文件选择</text>
+  <rect x="645" y="163" width="205" height="70" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="665" y="190" class="boxTitle">结果卡片 · 改动</text><text x="665" y="213" class="body">会话累计基线</text>
+  <rect x="920" y="163" width="205" height="70" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="940" y="190" class="boxTitle">标签状态模型</text><text x="940" y="213" class="body">模式、目标、请求版本</text>
+
+  <rect x="45" y="290" width="1110" height="205" rx="18" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="68" y="320" class="lane">local-console · 只读事实与分流</text>
+  <rect x="75" y="350" width="265" height="105" rx="14" fill="#FFFFFF" stroke="#60A5FA" filter="url(#shadow)"/>
+  <text x="95" y="378" class="boxTitle">resolveFileTarget()</text><text x="95" y="402" class="body">session workspace + canonical realpath</text><text x="95" y="425" class="body">按请求判定工作区内外</text><text x="95" y="447" class="tagBlue">workspace / external / unavailable</text>
+  <rect x="465" y="350" width="245" height="105" rx="14" fill="#FFFFFF" stroke="#60A5FA" filter="url(#shadow)"/>
+  <text x="485" y="378" class="boxTitle">当前源码读取</text><text x="485" y="402" class="body">完整 UTF-8 + 单一行模型</text><text x="485" y="425" class="body">沿用既有整文件预算</text><text x="485" y="447" class="tagBlue">/files/content</text>
+  <rect x="840" y="350" width="245" height="105" rx="14" fill="#FFFFFF" stroke="#60A5FA" filter="url(#shadow)"/>
+  <text x="860" y="378" class="boxTitle">累计 Diff 读取</text><text x="860" y="402" class="body">新增 / 删除 / 上下文</text><text x="860" y="425" class="body">旧 / 新行号</text><text x="860" y="447" class="tagBlue">/workspace-diff/content</text>
+  <path d="M187 233 V300 C187 323 205 337 225 340" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M472 233 V340" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M747 233 V340" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M340 402 H455" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+
+  <rect x="45" y="525" width="1110" height="150" rx="18" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="68" y="555" class="lane">console-ui · 明确的呈现</text>
+  <rect x="75" y="580" width="235" height="70" rx="14" fill="#FFFFFF" stroke="#6EE7B7" filter="url(#shadow)"/>
+  <text x="95" y="607" class="boxTitle">FileSourceView</text><text x="95" y="630" class="tagGreen">完整源码 · 单行号</text>
+  <rect x="345" y="580" width="235" height="70" rx="14" fill="#FFFFFF" stroke="#6EE7B7" filter="url(#shadow)"/>
+  <text x="365" y="607" class="boxTitle">Markdown Preview</text><text x="365" y="630" class="tagGreen">完整文档 · 可切源码</text>
+  <rect x="615" y="580" width="235" height="70" rx="14" fill="#FFFFFF" stroke="#6EE7B7" filter="url(#shadow)"/>
+  <text x="635" y="607" class="boxTitle">External Preview</text><text x="635" y="630" class="tagGreen">明确有界 · 不渲染 Markdown</text>
+  <rect x="885" y="580" width="235" height="70" rx="14" fill="#FFFFFF" stroke="#6EE7B7" filter="url(#shadow)"/>
+  <text x="905" y="607" class="boxTitle">FileDiffView</text><text x="905" y="630" class="tagGreen">仅 ChangeTab · Review</text>
+  <path d="M565 455 C565 505 230 515 195 570" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M590 455 C590 510 475 525 465 570" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M245 455 C245 500 705 515 730 570" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M962 455 V570" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+
+  <rect x="60" y="706" width="14" height="14" rx="3" fill="#D97706"/><text x="84" y="718" class="legend">用户入口 / 意图</text>
+  <line x1="245" y1="713" x2="285" y2="713" stroke="#2563EB" stroke-width="3" marker-end="url(#arrowBlue)"/><text x="300" y="718" class="legend">只读数据流</text>
+  <rect x="475" y="698" width="660" height="33" rx="9" fill="#D1FAE5"/><text x="492" y="720" class="tagGreen">结果：完整阅读、Markdown 阅读与 Review 各自有稳定入口和可观察信号。</text>
+</svg>

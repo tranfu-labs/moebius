@@ -178,6 +178,13 @@ function parseRightSidebarTabsState(value: unknown): RightSidebarTabsState {
       && entry.conversationCreatedAt.trim() !== ""
       ? entry.conversationCreatedAt
       : undefined;
+    const fileMode = entry.type === "file-reference"
+      && (entry.fileMode === "preview" || entry.fileMode === "source")
+      ? entry.fileMode
+      : undefined;
+    const projectFileModes = entry.type === "project-files"
+      ? parseProjectFileModes(entry.projectFileModes)
+      : undefined;
     return [{
       id: entry.id,
       type: entry.type,
@@ -186,6 +193,8 @@ function parseRightSidebarTabsState(value: unknown): RightSidebarTabsState {
       closable: true,
       ...(conversationContext === undefined ? {} : { conversationContext }),
       ...(conversationCreatedAt === undefined ? {} : { conversationCreatedAt }),
+      ...(fileMode === undefined ? {} : { fileMode }),
+      ...(projectFileModes === undefined ? {} : { projectFileModes }),
     }];
   });
   const uniqueTabs = tabs.filter(
@@ -196,6 +205,15 @@ function parseRightSidebarTabsState(value: unknown): RightSidebarTabsState {
     ? value.activeTabId
     : uniqueTabs[0]?.id ?? null;
   return { tabs: uniqueTabs, activeTabId };
+}
+
+function parseProjectFileModes(value: unknown): Record<string, "preview" | "source"> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, "preview" | "source"] =>
+      entry[0] !== "" && (entry[1] === "preview" || entry[1] === "source"),
+  );
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }
 
 function serializeRightSidebarTabsState(state: RightSidebarTabsState): string {

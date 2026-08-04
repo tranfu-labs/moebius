@@ -1586,7 +1586,7 @@ describe("OperatorConsole", () => {
       messages: [message({ id: 2, speaker: "agent", role: "dev", body: "完成实现" })],
       workspaceDiff: { available: true, fileCount: 1, reason: null },
       onLoadWorkspaceDiff: loadDiff,
-      onLoadProjectFile: loadFile,
+      onLoadWorkspaceDiffFile: loadFile,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
@@ -1636,7 +1636,7 @@ describe("OperatorConsole", () => {
     const panel = await screen.findByTestId("project-files-tab");
     expect(within(panel).getByText("正在浏览完整项目树（项目文件夹）。")).toBeVisible();
     expect(within(panel).getByTitle("README.md")).toBeVisible();
-    expect(await within(panel).findByText("# Project")).toBeVisible();
+    expect(await within(panel).findByRole("heading", { name: "Project" })).toBeVisible();
     expect(loadFiles).toHaveBeenCalledWith("session-a");
     expect(loadFile).toHaveBeenCalledWith("session-a", "README.md");
   });
@@ -1729,6 +1729,8 @@ describe("OperatorConsole", () => {
   it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {
     const loadReference = vi.fn().mockResolvedValue({
       available: true,
+      scope: "external-preview",
+      isComplete: false,
       path: "/Users/wing/.codex/sessions/day/rollout.jsonl",
       lines: [
         { lineNumber: 291, text: "before" },
@@ -1739,6 +1741,8 @@ describe("OperatorConsole", () => {
       targetColumn: null,
       truncatedBefore: true,
       truncatedAfter: true,
+      relativePath: null,
+      text: null,
     });
     renderConsole({
       messages: [message({
@@ -1752,13 +1756,14 @@ describe("OperatorConsole", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "会话记录 (line 292)" }));
 
-    expect(await screen.findByRole("tab", { name: "rollout.jsonl:292" })).toBeVisible();
-    expect(await screen.findByTestId("file-reference-target-line")).toHaveTextContent("target evidence");
+    expect(await screen.findByRole("tab", { name: "预览 · rollout.jsonl:292" })).toBeVisible();
+    expect(await screen.findByTestId("file-source-target-line")).toHaveTextContent("target evidence");
     expect(loadReference).toHaveBeenCalledWith(
       "session-a",
       "/Users/wing/.codex/sessions/day/rollout.jsonl",
       292,
       null,
+      true,
     );
     expect(screen.getByRole("button", { name: "/tmp/private.txt" })).toBeVisible();
   });
@@ -1793,6 +1798,8 @@ describe("OperatorConsole", () => {
       column: number | null,
     ) => ({
       available: true as const,
+      scope: "workspace-file" as const,
+      isComplete: true as const,
       path: canonicalPath,
       lines: [{ lineNumber: line, text: "same target" }],
       reason: null,
@@ -1800,6 +1807,8 @@ describe("OperatorConsole", () => {
       targetColumn: column,
       truncatedBefore: false,
       truncatedAfter: false,
+      relativePath: "canonical.txt",
+      text: "same target",
     }));
     renderConsole({
       messages: [message({
@@ -1812,7 +1821,7 @@ describe("OperatorConsole", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "别名" }));
-    expect(await screen.findByTestId("file-reference-target-line")).toHaveTextContent("same target");
+    expect(await screen.findByTestId("file-source-target-line")).toHaveTextContent("same target");
     fireEvent.click(screen.getByRole("button", { name: "真实路径" }));
 
     await waitFor(() => {
@@ -1833,11 +1842,15 @@ describe("OperatorConsole", () => {
       column: number | null,
     ): Promise<FileReferenceContent> => ({
       available: false,
+      scope: "workspace-file",
+      isComplete: null,
       path: canonicalPath,
       lines: [],
       reason: "line-too-large",
       targetLine: line,
       targetColumn: column,
+      relativePath: "canonical.txt",
+      text: null,
     }));
     renderConsole({
       messages: [message({
@@ -1891,6 +1904,102 @@ describe("OperatorConsole", () => {
       expect(tabs).toHaveLength(2);
       expect(screen.getByRole("tab", { name: "first.txt:1" })).toBeVisible();
       expect(screen.getByRole("tab", { name: "second.txt:2" })).toBeVisible();
+    });
+    expect(screen.getByRole("tab", { name: "second.txt:2" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it.each([
+    ["old success", availableReference("/workspace/canonical.txt", 12, "old snapshot")],
+    ["old failure", unavailableReference("/workspace/canonical.txt", 12, "line-too-large", "external-preview")],
+  ] as const)("keeps a newer canonical snapshot when the %s arrives last", async (_label, oldContent) => {
+    const older = deferred<FileReferenceContent>();
+    const newer = deferred<FileReferenceContent>();
+    const loadReference = vi.fn((
+      _sessionId: string,
+      filePath: string,
+    ) => filePath.endsWith("/alias.txt") ? older.promise : newer.promise);
+    renderControlledConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "[旧请求](/workspace/alias.txt:12) [新请求](/workspace/canonical.txt:12)",
+      })],
+      onLoadFileReference: loadReference,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "旧请求" }));
+    fireEvent.click(screen.getByRole("button", { name: "新请求" }));
+    await act(async () => {
+      newer.resolve(availableReference("/workspace/canonical.txt", 12, "new snapshot"));
+      await newer.promise;
+    });
+    expect(await screen.findByText("new snapshot")).toBeVisible();
+    await act(async () => {
+      older.resolve(oldContent);
+      await older.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("new snapshot")).toBeVisible();
+      expect(screen.queryByText("old snapshot")).not.toBeInTheDocument();
+      expect(screen.queryByText("目标附近存在过长单行，无法安全显示。")).not.toBeInTheDocument();
+      expect(within(screen.getByRole("tablist", { name: "右侧栏标签" })).getAllByRole("tab")).toHaveLength(1);
+      expect(screen.getByRole("tab", { name: "canonical.txt:12" })).toHaveAttribute("aria-selected", "true");
+    });
+  });
+
+  it("keeps preview identity on a canonical external failure", async () => {
+    renderControlledConsole({
+      messages: [message({
+        id: 2,
+        speaker: "agent",
+        role: "implementer",
+        body: "[外部失败](/tmp/report.log:9)",
+      })],
+      onLoadFileReference: vi.fn().mockResolvedValue(
+        unavailableReference("/private/tmp/report.log", 9, "line-too-large", "external-preview"),
+      ),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "外部失败" }));
+    expect(await screen.findByTestId("external-file-preview-label")).toHaveTextContent("预览 · 工作空间外文件");
+    expect(screen.getByText("仅显示目标行附近内容")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "预览 · report.log:9" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("drops a file-open completion after the parent switches host sessions", async () => {
+    const oldRead = deferred<FileReferenceContent>();
+    const loadReference = vi.fn(() => oldRead.promise);
+    function Harness({ sessionId }: { sessionId: string }): JSX.Element {
+      const [tabs, setTabs] = useState<RightSidebarTabsState>({ tabs: [], activeTabId: null });
+      const selected = sessions.find((session) => session.sessionId === sessionId)!;
+      return (
+        <OperatorConsole
+          {...baseProps({
+            selectedSessionId: sessionId,
+            selectedSession: selected,
+            messages: sessionId === "session-a"
+              ? [message({ id: 2, sessionId, speaker: "agent", role: "implementer", body: "[旧会话文件](/workspace/old.txt:1)" })]
+              : [message({ id: 3, sessionId, body: "新会话" })],
+            onLoadFileReference: loadReference,
+          })}
+          rightSidebarTabs={tabs}
+          onRightSidebarTabsChange={setTabs}
+        />
+      );
+    }
+    const rendered = render(<Harness sessionId="session-a" />);
+    fireEvent.click(screen.getByRole("button", { name: "旧会话文件" }));
+    rendered.rerender(<Harness sessionId="session-b" />);
+    await act(async () => {
+      oldRead.resolve(availableReference("/workspace/old.txt", 1, "old session content"));
+      await oldRead.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: "old.txt:1" })).not.toBeInTheDocument();
+      expect(screen.queryByText("old session content")).not.toBeInTheDocument();
     });
   });
 
@@ -3314,16 +3423,40 @@ function message(input: Partial<OperatorMessage> & { id: number; body: string })
   };
 }
 
-function availableReference(filePath: string, line: number): FileReferenceContent {
+function availableReference(filePath: string, line: number, text = filePath): FileReferenceContent {
   return {
     available: true,
+    scope: "workspace-file",
+    isComplete: true,
     path: filePath,
-    lines: [{ lineNumber: line, text: filePath }],
+    lines: [{ lineNumber: line, text }],
     reason: null,
     targetLine: line,
     targetColumn: null,
     truncatedBefore: false,
     truncatedAfter: false,
+    relativePath: filePath.split("/").at(-1) ?? filePath,
+    text,
+  };
+}
+
+function unavailableReference(
+  filePath: string,
+  line: number,
+  reason: Extract<FileReferenceContent, { available: false }>["reason"],
+  scope: Extract<FileReferenceContent, { available: false }>["scope"],
+): FileReferenceContent {
+  return {
+    available: false,
+    scope,
+    isComplete: null,
+    path: filePath,
+    lines: [],
+    reason,
+    targetLine: line,
+    targetColumn: null,
+    relativePath: scope === "workspace-file" ? filePath.replace("/workspace/", "") : null,
+    text: null,
   };
 }
 

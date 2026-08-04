@@ -13,11 +13,17 @@ export interface ProjectFilePort {
     sessionId: string,
     filePath: string,
   ): Promise<WorkspaceFileContent>;
+  readWorkspaceDiffFile(
+    apiBase: string,
+    sessionId: string,
+    filePath: string,
+  ): Promise<WorkspaceFileContent>;
   readFileReference(
     apiBase: string,
     sessionId: string,
     filePath: string,
     line: number,
     column: number | null,
+    hasExplicitLine: boolean,
   ): Promise<FileReferenceContent>;
 }

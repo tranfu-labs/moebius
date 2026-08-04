@@ -56,6 +56,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/execution-profile-registry.ts",
   "packages/console-ui/src/console/file-diff-view.tsx",
   "packages/console-ui/src/console/file-reference-tab.tsx",
+  "packages/console-ui/src/console/file-source-view.tsx",
   "packages/console-ui/src/console/markdown-internal-reference.ts",
   "packages/console-ui/src/console/markdown-message.tsx",
   "packages/console-ui/src/console/member-name.ts",
@@ -83,6 +84,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/subtask-tab.tsx",
   "packages/console-ui/src/console/team-selection-label.ts",
   "packages/console-ui/src/console/text-fragment-list.tsx",
+  "packages/console-ui/src/console/workspace-file-view.tsx",
   "packages/console-ui/src/i18n/index.tsx",
   "packages/console-ui/src/i18n/locales/console.en.ts",
   "packages/console-ui/src/i18n/locales/console.zh-CN.ts",
@@ -398,6 +400,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
 ] as const;
 
 export const FOUR_LAYER_DOMAIN_FILES = [
+  "packages/console-ui/src/console/file-view-state.ts",
   "desktop/src/ai-team-builder/contract.ts",
   "desktop/src/ai-team-builder/builder-action-plan.ts",
   "desktop/src/ai-team-builder/draft-persistence-plan.ts",
