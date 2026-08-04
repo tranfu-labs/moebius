@@ -3,9 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   RIGHT_SIDEBAR_VISIBILITY_STORAGE_KEY,
   RIGHT_SIDEBAR_WIDTH_STORAGE_KEY,
-  DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX,
-  MAX_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX,
-  MIN_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX,
   readRightSidebarVisibilityPreference,
   readRightSidebarWidthPreference,
   writeRightSidebarVisibilityPreference,
@@ -20,12 +17,13 @@ describe("right sidebar preferences", () => {
     expect(readRightSidebarVisibilityPreference({ getItem: () => "open" })).toBe("open");
   });
 
-  it("restores and clamps the persisted width", () => {
-    expect(readRightSidebarWidthPreference({ getItem: () => null })).toBe(DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX);
+  it("distinguishes a missing preference and preserves legacy raw widths", () => {
+    expect(readRightSidebarWidthPreference({ getItem: () => null })).toBeNull();
     expect(readRightSidebarWidthPreference({ getItem: () => "512" })).toBe(512);
-    expect(readRightSidebarWidthPreference({ getItem: () => "-1" })).toBe(MIN_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX);
-    expect(readRightSidebarWidthPreference({ getItem: () => "9999" })).toBe(MAX_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX);
-    expect(readRightSidebarWidthPreference({ getItem: () => "not-a-number" })).toBe(DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX);
+    expect(readRightSidebarWidthPreference({ getItem: () => "420" })).toBe(420);
+    expect(readRightSidebarWidthPreference({ getItem: () => "9999" })).toBe(9999);
+    expect(readRightSidebarWidthPreference({ getItem: () => "-1" })).toBeNull();
+    expect(readRightSidebarWidthPreference({ getItem: () => "not-a-number" })).toBeNull();
   });
 
   it("persists both preferences without allowing storage failures to break controls", () => {

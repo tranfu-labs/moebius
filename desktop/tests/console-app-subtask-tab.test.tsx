@@ -118,6 +118,11 @@ describe("desktop App subtask tab wiring", () => {
     const close = host.querySelector<HTMLButtonElement>('button[aria-label="关闭标签：空状态验收"]');
     expect(close).not.toBeNull();
     await act(async () => close!.click());
+    const closingSidebar = host.querySelector<HTMLElement>('[data-testid="right-sidebar"]');
+    expect(closingSidebar?.getAttribute("data-motion-state")).toBe("closing");
+    expect(closingSidebar?.inert).toBe(true);
+    expect(host.querySelector('[data-testid="subtask-tab"]')).not.toBeNull();
+    await act(async () => closingSidebar!.dispatchEvent(new Event("transitionend", { bubbles: true })));
     expect(host.querySelector('[data-testid="subtask-tab"]')).toBeNull();
     expect(childRow.getAttribute("aria-pressed")).toBe("false");
     expect(requests.filter((request) => request.path.endsWith("/interrupt"))).toHaveLength(interruptCount);

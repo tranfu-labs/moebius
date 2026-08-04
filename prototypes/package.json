@@ -7,6 +7,7 @@
     "build:agent-conversation": "vite build --mode agent-conversation && node scripts/publish-agent-conversation.mjs",
     "build:main-conversation": "vite build --mode main-conversation && node scripts/publish-main-conversation.mjs",
     "build:main-left-sidebar": "vite build --mode main-left-sidebar && node scripts/publish-main-left-sidebar.mjs",
+    "build:main-right-sidebar": "vite build --mode main-right-sidebar && node scripts/publish-main-right-sidebar.mjs",
     "build:onboarding": "vite build && node scripts/publish-onboarding.mjs",
     "build:settings": "vite build --mode settings && node scripts/publish-settings.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
@@ -17,7 +18,8 @@
     "verify:main-left-sidebar": "node scripts/verify-main-left-sidebar.mjs && node scripts/verify-main-left-sidebar-interactive.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:settings": "node scripts/verify-settings.mjs && node scripts/verify-settings-interactive.mjs",
-    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding && pnpm build:agent-conversation && pnpm verify:agent-conversation && pnpm build:main-conversation && pnpm verify:main-conversation && pnpm build:main-left-sidebar && pnpm verify:main-left-sidebar && pnpm build:settings && pnpm verify:settings"
+    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding && pnpm build:agent-conversation && pnpm verify:agent-conversation && pnpm build:main-conversation && pnpm verify:main-conversation && pnpm build:main-left-sidebar && pnpm verify:main-left-sidebar && pnpm build:main-right-sidebar && pnpm verify:main-right-sidebar && pnpm build:settings && pnpm verify:settings",
+    "verify:main-right-sidebar": "node scripts/verify-main-right-sidebar.mjs && node scripts/verify-main-right-sidebar-interactive.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

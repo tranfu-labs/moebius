@@ -2712,7 +2712,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: /登录验收，负责成员/u })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("keeps the parent visible in a wide split, overlays narrow windows, and restores parent scroll after close", async () => {
+  it("keeps the parent visible in a wide split, fills narrow content, and restores parent scroll after close", async () => {
     setWindowWidth(1200);
     const onOpenSubSession = vi.fn();
     const onCloseSubSession = vi.fn();
@@ -2751,9 +2751,11 @@ describe("OperatorConsole", () => {
 
     setWindowWidth(700);
     expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-layout", "overlay");
-    expect(screen.getByTestId("right-sidebar")).toHaveClass("right-0", "z-50", "w-[min(420px,92vw)]");
-    expect(screen.getByTestId("operator-drawer-scrim")).toBeVisible();
+    expect(screen.getByTestId("right-sidebar")).toHaveClass("inset-0", "z-40", "w-full");
+    expect(screen.queryByTestId("operator-drawer-scrim")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭右侧栏并回到会话区" }));
+    expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-motion-state", "closing");
+    fireEvent.transitionEnd(screen.getByTestId("right-sidebar"), { propertyName: "transform" });
     expect(onCloseSubSession).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(timeline.scrollTop).toBe(240));
     await waitFor(() => expect(screen.getByRole("button", { name: "显示右侧栏" })).toHaveFocus());

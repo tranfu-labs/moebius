@@ -1,9 +1,5 @@
 export const RIGHT_SIDEBAR_VISIBILITY_STORAGE_KEY = "moebius.right-sidebar.visibility";
 export const RIGHT_SIDEBAR_WIDTH_STORAGE_KEY = "moebius.right-sidebar.width";
-export const DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX = 420;
-export const MIN_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX = 320;
-export const MAX_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX = 640;
-
 export type RightSidebarVisibilityPreference = "open" | "closed";
 
 interface RightSidebarPreferenceStorage {
@@ -34,18 +30,16 @@ export function writeRightSidebarVisibilityPreference(
 
 export function readRightSidebarWidthPreference(
   storage: Pick<RightSidebarPreferenceStorage, "getItem">,
-): number {
+): number | null {
   try {
     const value = storage.getItem(RIGHT_SIDEBAR_WIDTH_STORAGE_KEY);
     if (value === null || value.trim() === "") {
-      return DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX;
+      return null;
     }
     const width = Number(value);
-    return Number.isFinite(width)
-      ? clampRightSidebarWidthPreference(width)
-      : DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX;
+    return Number.isFinite(width) && width > 0 ? Math.round(width) : null;
   } catch {
-    return DEFAULT_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX;
+    return null;
   }
 }
 
@@ -53,16 +47,10 @@ export function writeRightSidebarWidthPreference(
   storage: Pick<RightSidebarPreferenceStorage, "setItem">,
   width: number,
 ): void {
+  if (!Number.isFinite(width) || width <= 0) return;
   try {
-    storage.setItem(RIGHT_SIDEBAR_WIDTH_STORAGE_KEY, String(clampRightSidebarWidthPreference(width)));
+    storage.setItem(RIGHT_SIDEBAR_WIDTH_STORAGE_KEY, String(Math.round(width)));
   } catch {
     // Preference persistence is best-effort; resizing must remain available.
   }
-}
-
-function clampRightSidebarWidthPreference(width: number): number {
-  return Math.min(
-    MAX_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX,
-    Math.max(MIN_RIGHT_SIDEBAR_WIDTH_PREFERENCE_PX, Math.round(width)),
-  );
 }

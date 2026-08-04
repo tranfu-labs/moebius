@@ -189,8 +189,13 @@ const TIMELINE_RESIZE_WIDTHS = [
 
 const args = process.argv.slice(2);
 const hold = args.includes("--hold");
-if (args.some((argument) => argument !== "--hold")) {
-  throw new Error("Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold]");
+const rightSidebarOnly = args.length === 2
+  && args[0] === "--case"
+  && args[1] === "right-sidebar-responsive";
+if ((!hold && args.length > 0 && !rightSidebarOnly) || (hold && rightSidebarOnly)) {
+  throw new Error(
+    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive]",
+  );
 }
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -219,6 +224,7 @@ const wideScreenshot = path.join(outputRoot, "dashboard-wide.png");
 const narrowScreenshot = path.join(outputRoot, "dashboard-narrow.png");
 const rightSidebarScreenshot = path.join(outputRoot, "dashboard-right-sidebar.png");
 const drawerScreenshot = path.join(outputRoot, "dashboard-narrow-drawer.png");
+const rightSidebarDarkScreenshot = path.join(outputRoot, "dashboard-right-sidebar-dark.png");
 
 await Promise.all([
   fs.mkdir(fixtureProjectRoot, { recursive: true }),
@@ -299,6 +305,7 @@ const cleanup = (): Promise<void> => {
 };
 
 try {
+  acceptanceRun: {
   referenceBrowser = await chromium.launch({ headless: true });
   const referencePage = await referenceBrowser.newPage({ viewport: { width: 1_400, height: 900 } });
   const referenceEvidence = await collectReferenceEvidence(referencePage);
@@ -641,21 +648,244 @@ try {
   await rightSidebar.waitFor();
   const processTab = page.getByTestId("process-tab");
   await processTab.waitFor();
-  const rightSidebarEvidence = {
-    box: await box(rightSidebar),
-    processTabVisible: await processTab.isVisible(),
-    mainVariantCount: await rightSidebar.locator("[data-testid='main-role-composer']").count(),
-    rootOverflow: await viewportGeometry(page),
-  };
+  const rightSidebarEvidence = await waitForValue(async () => {
+    const observation = {
+      box: await box(rightSidebar),
+      contentShell: await box(page.getByTestId("operator-content-shell")),
+      layout: await rightSidebar.getAttribute("data-layout"),
+      motionState: await rightSidebar.getAttribute("data-motion-state"),
+      processTabVisible: await processTab.isVisible(),
+      mainVariantCount: await rightSidebar.locator("[data-testid='main-role-composer']").count(),
+      rootOverflow: await viewportGeometry(page),
+    };
+    const expectedWidth = Math.round(observation.contentShell.width * 0.5);
+    return observation.motionState === "open" && Math.abs(observation.box.width - expectedWidth) <= 1
+      ? observation
+      : undefined;
+  }, {
+    describe: "right sidebar 150ms opening animation to settle at half of the content shell",
+    kind: "logic",
+  });
+  assert(rightSidebarEvidence.layout === "split", "wide right sidebar did not use split layout");
+  assertClose(
+    rightSidebarEvidence.box.width,
+    Math.round(rightSidebarEvidence.contentShell.width * 0.5),
+    1,
+  );
   assert(rightSidebarEvidence.processTabVisible, "process tab did not open in the real right sidebar");
   assert(rightSidebarEvidence.mainVariantCount === 0, "main composer variant leaked into the right sidebar");
   assert(
     rightSidebarEvidence.rootOverflow.scrollWidth <= rightSidebarEvidence.rootOverflow.width,
     "right-sidebar layout introduced root horizontal overflow",
   );
+  const originalThemeClass = await page.locator("html").getAttribute("class");
+  await page.evaluate(() => {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.classList.add("light");
+  });
+  const lightSidebarBackground = await rightSidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
   await page.screenshot({ path: rightSidebarScreenshot, fullPage: true });
-  await page.getByRole("button", { name: "隐藏右侧栏" }).click();
-  await rightSidebar.waitFor({ state: "hidden" });
+  await page.evaluate(() => {
+    document.documentElement.classList.remove("light");
+    document.documentElement.classList.add("dark");
+  });
+  const darkSidebarBackground = await rightSidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.screenshot({ path: rightSidebarDarkScreenshot, fullPage: true });
+  await page.locator("html").evaluate((element, className) => {
+    element.className = className ?? "";
+  }, originalThemeClass);
+  assert(lightSidebarBackground !== darkSidebarBackground, "right sidebar did not resolve distinct light/dark tokens");
+  const rightSeparator = rightSidebar.getByRole("separator", { name: "调整右侧栏宽度" });
+  const separatorBefore = Number(await rightSeparator.getAttribute("aria-valuenow"));
+  await rightSeparator.focus();
+  await rightSeparator.press("ArrowLeft");
+  await page.waitForFunction(
+    ({ selector, expected }) => Number(document.querySelector(selector)?.getAttribute("aria-valuenow")) === expected,
+    { selector: "[data-testid='right-sidebar-resize-handle']", expected: separatorBefore + 16 },
+  );
+  const separatorAfter = Number(await rightSeparator.getAttribute("aria-valuenow"));
+  assert(separatorAfter === separatorBefore + 16, "right sidebar keyboard resize did not use the 16px step");
+
+  await page.reload();
+  const restoredSeparator = page.getByTestId("right-sidebar").getByRole("separator", {
+    name: "调整右侧栏宽度",
+  });
+  await restoredSeparator.waitFor();
+  const restoredWidth = Number(await restoredSeparator.getAttribute("aria-valuenow"));
+  assert(restoredWidth === separatorAfter, "right sidebar width preference did not survive a renderer restart");
+
+  const separatorBox = await restoredSeparator.boundingBox();
+  assert(separatorBox !== null, "right sidebar separator did not expose a pointer target");
+  await page.mouse.move(separatorBox.x + separatorBox.width / 2, separatorBox.y + separatorBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(separatorBox.x + separatorBox.width / 2 - 32, separatorBox.y + separatorBox.height / 2, {
+    steps: 2,
+  });
+  await page.mouse.up();
+  const pointerWidth = Number(await restoredSeparator.getAttribute("aria-valuenow"));
+  assert(pointerWidth === restoredWidth + 32, "left pointer drag did not widen the right sidebar by 32px");
+
+  const rightToggle = page.getByTestId("main-window-drag-region").getByRole("button", { name: "隐藏右侧栏" });
+  await rightToggle.click();
+  assert(await rightSidebar.getAttribute("data-motion-state") === "closing", "right sidebar did not enter closing motion");
+  assert(await rightSidebar.evaluate((element) => element.inert), "closing right sidebar was not inert");
+  await page.getByTestId("main-window-drag-region").getByRole("button", { name: "显示右侧栏" }).click();
+  const reversalEvidence = await waitForValue(async () => {
+    const motion = await rightSidebar.getAttribute("data-motion-state");
+    const geometry = await box(rightSidebar);
+    return motion === "open" && Math.abs(geometry.width - pointerWidth) <= 1
+      ? { motion, geometry }
+      : undefined;
+  }, {
+    describe: "right sidebar rapid reversal to settle at its preserved width",
+    kind: "logic",
+  });
+  assert(reversalEvidence.geometry.width > 0, "right sidebar rapid reversal did not finish open");
+
+  const layoutContent = page.getByTestId("right-sidebar-content");
+  const activeTabIdBeforeLayoutSwitch = await page.getByRole("tab", { selected: true }).getAttribute("data-tab-id");
+  const readingPosition = await layoutContent.evaluate((element) => {
+    const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+    element.scrollTop = Math.min(40, maximum);
+    return element.scrollTop;
+  });
+  await page.getByRole("separator", { name: "调整右侧栏宽度" }).focus();
+  await setWindowSize(application, 900, 620);
+  const overlaySidebar = page.getByTestId("right-sidebar");
+  await page.waitForFunction(() => document.querySelector("[data-testid='right-sidebar']")?.getAttribute("data-layout") === "overlay");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "隐藏右侧栏");
+  const splitToOverlayFocus = {
+    focusLabel: await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
+    activeTabId: await page.getByRole("tab", { selected: true }).getAttribute("data-tab-id"),
+    readingPosition: await layoutContent.evaluate((element) => element.scrollTop),
+    motion: await overlaySidebar.getAttribute("data-motion-state"),
+  };
+  assert(splitToOverlayFocus.activeTabId === activeTabIdBeforeLayoutSwitch, "split-to-overlay changed the active tab");
+  assert(splitToOverlayFocus.readingPosition === readingPosition, "split-to-overlay changed the reading position");
+  assert(splitToOverlayFocus.motion === "open", "split-to-overlay changed the open motion state");
+  const overlayEvidence = {
+    sidebar: await box(overlaySidebar),
+    shell: await box(page.getByTestId("operator-content-shell")),
+    separatorCount: await overlaySidebar.getByRole("separator", { name: "调整右侧栏宽度" }).count(),
+  };
+  assertClose(overlayEvidence.sidebar.width, overlayEvidence.shell.width, 1);
+  assert(overlayEvidence.separatorCount === 0, "overlay right sidebar exposed a resize separator");
+
+  await overlaySidebar.getByRole("button", { name: "关闭右侧栏并回到会话区" }).focus();
+  await setWindowSize(application, 1_400, 900);
+  await page.waitForFunction(() => document.querySelector("[data-testid='right-sidebar']")?.getAttribute("data-layout") === "split");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "隐藏右侧栏");
+  const overlayToSplitFocus = {
+    focusLabel: await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
+    activeTabId: await page.getByRole("tab", { selected: true }).getAttribute("data-tab-id"),
+    readingPosition: await layoutContent.evaluate((element) => element.scrollTop),
+    motion: await page.getByTestId("right-sidebar").getAttribute("data-motion-state"),
+  };
+  assert(overlayToSplitFocus.activeTabId === activeTabIdBeforeLayoutSwitch, "overlay-to-split changed the active tab");
+  assert(overlayToSplitFocus.readingPosition === readingPosition, "overlay-to-split changed the reading position");
+  assert(overlayToSplitFocus.motion === "open", "overlay-to-split changed the open motion state");
+
+  await setWindowSize(application, 900, 620);
+  await page.waitForFunction(() => document.querySelector("[data-testid='right-sidebar']")?.getAttribute("data-layout") === "overlay");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await overlaySidebar.getByRole("button", { name: "关闭右侧栏并回到会话区" }).click();
+  await overlaySidebar.waitFor({ state: "detached" });
+  await page.getByTestId("main-window-drag-region").getByRole("button", { name: "显示右侧栏" }).click();
+  await page.getByTestId("right-sidebar").waitFor();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
+  await setWindowSize(application, 1_400, 900);
+  await page.waitForFunction(() => document.querySelector("[data-testid='right-sidebar']")?.getAttribute("data-layout") === "split");
+  const finalTabClose = page.getByTestId("right-sidebar").getByRole("button", { name: /^关闭标签/u });
+  assert(await finalTabClose.count() === 1, "right-sidebar snapshot fixture did not have exactly one tab");
+  await finalTabClose.click();
+  const closingSnapshot = page.getByTestId("right-sidebar");
+  const snapshotEvidence = {
+    motion: await closingSnapshot.getAttribute("data-motion-state"),
+    inert: await closingSnapshot.evaluate((element) => element.inert),
+    processVisible: await closingSnapshot.getByTestId("process-tab").isVisible(),
+  };
+  assert(snapshotEvidence.motion === "closing", "final-tab close did not enter the shared exit motion");
+  assert(snapshotEvidence.inert, "final-tab snapshot remained interactive");
+  assert(snapshotEvidence.processVisible, "final-tab content disappeared before exit completed");
+  await closingSnapshot.waitFor({ state: "detached" });
+  const rightSidebarInteractionEvidence = {
+    separator: {
+      before: separatorBefore,
+      after: separatorAfter,
+      step: separatorAfter - separatorBefore,
+      restoredAfterRendererRestart: restoredWidth,
+      pointerDrag: { before: restoredWidth, after: pointerWidth, delta: pointerWidth - restoredWidth },
+    },
+    rapidReverseFinishedOpen: true,
+    overlay: overlayEvidence,
+    layoutFocus: { splitToOverlay: splitToOverlayFocus, overlayToSplit: overlayToSplitFocus },
+    reducedMotionImmediate: true,
+    finalTabSnapshot: snapshotEvidence,
+    themes: { lightSidebarBackground, darkSidebarBackground },
+  };
+
+  if (rightSidebarOnly) {
+    const focusedElement = await page.evaluate(() => ({
+      tagName: document.activeElement?.tagName ?? null,
+      label: document.activeElement?.getAttribute("aria-label") ?? null,
+    }));
+    await application.close();
+    application = await electron.launch({
+      args: [desktopRoot],
+      cwd: desktopRoot,
+      env: {
+        ...process.env,
+        MOEBIUS_DATA_ROOT: runtimeRoot,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      },
+    });
+    const restartedPage = await application.firstWindow();
+    await setWindowSize(application, 1_400, 900);
+    await restartedPage.getByTestId("main-window-drag-region")
+      .getByRole("button", { name: "显示右侧栏" })
+      .click();
+    const applicationRestartSeparator = restartedPage.getByTestId("right-sidebar").getByRole("separator", {
+      name: "调整右侧栏宽度",
+    });
+    await applicationRestartSeparator.waitFor();
+    const applicationRestartWidth = Number(await applicationRestartSeparator.getAttribute("aria-valuenow"));
+    assert(
+      applicationRestartWidth === pointerWidth,
+      "right sidebar raw width preference did not survive an Electron application restart",
+    );
+    const evidence = {
+      environment: "real Electron",
+      entry: "Dashboard > 完整输出 > 右侧辅助工作区",
+      assertions: {
+        responsiveWidth: rightSidebarEvidence,
+        keyboardSeparator: rightSidebarInteractionEvidence.separator,
+        rapidReverseFinishedOpen: rightSidebarInteractionEvidence.rapidReverseFinishedOpen,
+        overlay: rightSidebarInteractionEvidence.overlay,
+        layoutFocus: rightSidebarInteractionEvidence.layoutFocus,
+        reducedMotionImmediate: rightSidebarInteractionEvidence.reducedMotionImmediate,
+        finalTabSnapshot: rightSidebarInteractionEvidence.finalTabSnapshot,
+        focusAfterExit: focusedElement,
+        applicationRestartWidth,
+        themes: rightSidebarInteractionEvidence.themes,
+      },
+      screenshots: {
+        light: rightSidebarScreenshot,
+        dark: rightSidebarDarkScreenshot,
+      },
+    };
+    await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      case: "right-sidebar-responsive",
+      evidence: evidencePath,
+      screenshots: [rightSidebarScreenshot, rightSidebarDarkScreenshot],
+    })}\n`);
+    break acceptanceRun;
+  }
+
   await selectSession(page, success.sessionId);
   const exposedSentence = "Send a direct message before handoff.";
   await page.getByText(exposedSentence, { exact: true }).waitFor();
@@ -968,6 +1198,7 @@ try {
         passed: true,
         ...rightSidebarEvidence,
         newConversation: rightSidebarNewConversationEvidence,
+        interactions: rightSidebarInteractionEvidence,
       },
       localFileReferences: {
         passed: true,
@@ -1006,6 +1237,7 @@ try {
       narrowScreenshot,
       drawerScreenshot,
       rightSidebarScreenshot,
+      rightSidebarDarkScreenshot,
     },
     hold,
   };
@@ -1013,7 +1245,14 @@ try {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     evidence: evidencePath,
-    screenshots: [referenceScreenshot, wideScreenshot, narrowScreenshot, drawerScreenshot, rightSidebarScreenshot],
+    screenshots: [
+      referenceScreenshot,
+      wideScreenshot,
+      narrowScreenshot,
+      drawerScreenshot,
+      rightSidebarScreenshot,
+      rightSidebarDarkScreenshot,
+    ],
     hold,
   })}\n`);
 
@@ -1022,6 +1261,7 @@ try {
     process.stdout.write("Electron acceptance fixture is ready. Press Ctrl+C to close it.\n");
     await interrupt;
     holdInterrupted = true;
+  }
   }
 } finally {
   await cleanup();
