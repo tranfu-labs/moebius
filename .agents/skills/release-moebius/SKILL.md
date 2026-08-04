@@ -34,6 +34,7 @@ Skip this section in repair mode unless the user explicitly asks to repair missi
 
 - Read the previous stable tag, Release, and commit diff. Require `<VERSION>` greater than the previous semantic version.
 - Set `<VERSION>` in `package.json`, `desktop/package.json`, `packages/console-ui/package.json`, and `prototypes/package.json`.
+- Set the release badge in `sites/marketeam/index.html` to `v<VERSION>` and require no stale semantic version to remain in that production page.
 - Update `CHANGELOG.md` in Keep a Changelog format using only changes since the previous tag. Preserve `[Unreleased]` and update compare links.
 - Require only expected release-metadata changes, then run `git diff --check`.
 
