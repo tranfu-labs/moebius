@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-04
+
+### 新增
+
+- 新增通用 managed-process runtime，让 Codex、Claude Code 与 Kimi 可通过统一 MCP bridge 托管跨 Agent 回合存活的本地服务和有限任务，并在主会话中查看状态、地址、日志及执行停止或清除操作。
+- 新增工作区源码阅读与 Review / Diff 分离模式；Markdown 支持预览与源码切换，显式行号可直接定位目标位置，工作区外文件继续使用有界预览。
+
+### 修复
+
+- 修复长时间线在窗口宽度变化后虚拟行重叠的问题，并保持中段阅读锚点、底部跟随及后续流式追加稳定。
+- 修复根路径或不含路径段的 Markdown 目标被误识别为文件引用的问题。
+- 修复 macOS Finder 启动桌面应用时 PATH 不完整，导致已安装的 Codex 等 CLI 被误报缺失的问题；CLI 探测与真实 provider 调用现在使用一致的安全解析结果。
+- 修复 local-console 当前执行结束与重试释放之间的竞态，并同步增强相关持久化等待和 CI Electron 运行稳定性。
+
 ## [0.3.0] - 2026-08-03
 
 ### 新增
@@ -141,7 +155,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...v0.1.4
