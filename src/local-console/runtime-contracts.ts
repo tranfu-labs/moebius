@@ -2,6 +2,7 @@ import type { CodexRunOptions, CodexRunResult } from "../codex.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
+import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
 import type { LocalRouteJudgment } from "./route-bus.js";
 import type {
   LocalConsoleAgentTeamOwnership,
@@ -28,6 +29,9 @@ export interface LocalConsoleRuntimeOptions {
   }>;
   runCodex(options: CodexRunOptions): Promise<CodexRunResult>;
   runExecution?: LocalExecutionRunner;
+  createManagedProcessMcp?(input: { sessionId: string; providerRunId: string; workspaceRoot: string }): ManagedProcessMcpInvocation | Promise<ManagedProcessMcpInvocation>;
+  getManagedProcessRunningCount?(): number;
+  beforeStoreClose?(): Promise<void>;
   makeRunDir(count: number, now?: Date): string;
   dataRoot?: string;
   projectRoot: string;
@@ -116,4 +120,9 @@ export type LocalSessionRenameInput = {
   title: string;
   expectedTitleRevision: number;
 };
-export type LocalFileReferenceInput = { filePath: string; line: number; column: number | null };
+export type LocalFileReferenceInput = {
+  filePath: string;
+  line: number;
+  column: number | null;
+  hasExplicitLine: boolean;
+};

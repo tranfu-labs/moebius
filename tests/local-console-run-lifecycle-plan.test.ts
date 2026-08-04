@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   decideRuntimeShutdownStart,
+  decideRuntimeShutdownAttempt,
+  decideRuntimeShutdownAttemptRelease,
   decideRunAttemptSource,
   decideShutdownDrain,
   planGracefulShutdownResume,
@@ -82,6 +84,10 @@ describe("run lifecycle plan", () => {
     } as ActiveLocalRun;
 
     expect(decideRuntimeShutdownStart(true)).toEqual({ kind: "skip" });
+    expect(decideRuntimeShutdownAttempt({ closed: true, attemptPending: false })).toEqual({ kind: "done" });
+    expect(decideRuntimeShutdownAttempt({ closed: false, attemptPending: true })).toEqual({ kind: "join" });
+    expect(decideRuntimeShutdownAttempt({ closed: false, attemptPending: false })).toEqual({ kind: "start" });
+    expect(decideRuntimeShutdownAttemptRelease({ closed: false, currentAttempt: true })).toEqual({ kind: "release" });
     expect(decideShutdownDrain({ pending: true, workers: false, beforeDeadline: true }))
       .toEqual({ kind: "wait" });
     expect(decideShutdownDrain({ pending: true, workers: true, beforeDeadline: false }))

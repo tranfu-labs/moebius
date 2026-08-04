@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readLocalFileReferenceWindow } from "../src/local-console/file-read.js";
+import {
+  readLocalFileReference,
+  readLocalFileReferenceWindow,
+} from "../src/local-console/file-read.js";
 
 const roots: string[] = [];
 
@@ -12,6 +15,96 @@ afterEach(async () => {
 });
 
 describe("local console file reference reader", () => {
+  it("returns a complete workspace file instead of a nearby line window", async () => {
+    const root = await temporaryRoot();
+    const workspace = path.join(root, "workspace");
+    const target = path.join(workspace, "single-line.json");
+    const text = JSON.stringify({ payload: "x".repeat(300 * 1024) });
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.writeFile(target, text, "utf8");
+
+    const result = await readLocalFileReference({
+      workspacePath: workspace,
+      filePath: target,
+      line: 1,
+      column: null,
+      hasExplicitLine: false,
+    });
+
+    expect(result).toMatchObject({
+      available: true,
+      scope: "workspace-file",
+      isComplete: true,
+      path: await fs.realpath(target),
+      relativePath: "single-line.json",
+      text,
+      truncatedBefore: false,
+      truncatedAfter: false,
+    });
+    expect(result.lines).toEqual([{ lineNumber: 1, text }]);
+  });
+
+  it("classifies symlinks by canonical target in both directions", async () => {
+    const root = await temporaryRoot();
+    const workspace = path.join(root, "workspace");
+    const inside = path.join(workspace, "inside.txt");
+    const outside = path.join(root, "outside.txt");
+    const insideAlias = path.join(workspace, "outside-alias.txt");
+    const outsideAlias = path.join(root, "inside-alias.txt");
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.writeFile(inside, "inside\n", "utf8");
+    await fs.writeFile(outside, "outside\n", "utf8");
+    await fs.symlink(outside, insideAlias);
+    await fs.symlink(inside, outsideAlias);
+
+    const [outward, inward] = await Promise.all([
+      readLocalFileReference({
+        workspacePath: workspace,
+        filePath: insideAlias,
+        line: 1,
+        column: null,
+        hasExplicitLine: false,
+      }),
+      readLocalFileReference({
+        workspacePath: workspace,
+        filePath: outsideAlias,
+        line: 1,
+        column: null,
+        hasExplicitLine: false,
+      }),
+    ]);
+
+    expect(outward).toMatchObject({ available: true, scope: "external-preview", isComplete: false, text: null });
+    expect(inward).toMatchObject({
+      available: true,
+      scope: "workspace-file",
+      isComplete: true,
+      relativePath: "inside.txt",
+      text: "inside\n",
+    });
+  });
+
+  it("keeps the existing workspace full-file budget", async () => {
+    const root = await temporaryRoot();
+    const workspace = path.join(root, "workspace");
+    const target = path.join(workspace, "large.txt");
+    await fs.mkdir(workspace, { recursive: true });
+    await fs.writeFile(target, "x".repeat(2 * 1024 * 1024 + 1), "utf8");
+
+    await expect(readLocalFileReference({
+      workspacePath: workspace,
+      filePath: target,
+      line: 1,
+      column: null,
+      hasExplicitLine: false,
+    })).resolves.toMatchObject({
+      available: false,
+      scope: "workspace-file",
+      reason: "file-too-large",
+      text: null,
+    });
+  });
+
   it("reads a bounded window with real line numbers from an arbitrary local path", async () => {
     const root = await temporaryRoot();
     const sessionsRoot = path.join(root, "codex", "sessions");
@@ -29,6 +122,8 @@ describe("local console file reference reader", () => {
 
     expect(result).toMatchObject({
       available: true,
+      scope: "external-preview",
+      isComplete: false,
       path: await fs.realpath(rollout),
       targetLine: 292,
       targetColumn: 7,
@@ -59,6 +154,8 @@ describe("local console file reference reader", () => {
       column: null,
     })).resolves.toEqual({
       available: true,
+      scope: "external-preview",
+      isComplete: false,
       path: await fs.realpath(outside),
       lines: [{ lineNumber: 1, text: "secret" }],
       reason: null,
@@ -66,6 +163,8 @@ describe("local console file reference reader", () => {
       targetColumn: null,
       truncatedBefore: false,
       truncatedAfter: false,
+      relativePath: null,
+      text: null,
     });
   });
 
@@ -84,11 +183,15 @@ describe("local console file reference reader", () => {
 
     expect(result).toEqual({
       available: false,
+      scope: "external-preview",
+      isComplete: null,
       path: await fs.realpath(target),
       lines: [],
       reason: "line-too-large",
       targetLine: 1,
       targetColumn: null,
+      relativePath: null,
+      text: null,
     });
   });
 
@@ -109,11 +212,15 @@ describe("local console file reference reader", () => {
 
     expect(result).toEqual({
       available: false,
+      scope: "external-preview",
+      isComplete: null,
       path: await fs.realpath(target),
       lines: [],
       reason: "line-too-large",
       targetLine: 1,
       targetColumn: null,
+      relativePath: null,
+      text: null,
     });
   });
 
@@ -134,11 +241,15 @@ describe("local console file reference reader", () => {
       })));
     const expected = {
       available: false,
+      scope: "external-preview",
+      isComplete: null,
       path: await fs.realpath(target),
       lines: [],
       reason: "binary-file",
       targetLine: 1,
       targetColumn: null,
+      relativePath: null,
+      text: null,
     };
 
     expect(directResult).toEqual(expected);
@@ -163,11 +274,15 @@ describe("local console file reference reader", () => {
 
     expect(result).toEqual({
       available: false,
+      scope: "external-preview",
+      isComplete: null,
       path: await fs.realpath(target),
       lines: [],
       reason: "response-too-large",
       targetLine: 3,
       targetColumn: null,
+      relativePath: null,
+      text: null,
     });
   });
 });

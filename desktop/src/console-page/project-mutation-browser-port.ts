@@ -3,6 +3,7 @@ import type {
   ProjectDesktopTransport,
   ProjectMutationPort,
 } from "./project-mutation-contract.js";
+import { ProjectMutationRequestError } from "./project-mutation-contract.js";
 
 async function readError(response: Response, fallback: string): Promise<void> {
   const body = await response.json() as { error?: string };
@@ -49,9 +50,9 @@ export const browserProjectMutationPort: ProjectMutationPort = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ force }),
     });
-    const body = await response.json() as { error?: string; archivedSessionIds?: string[] };
+    const body = await response.json() as { error?: string; code?: string; archivedSessionIds?: string[] };
     if (!response.ok) {
-      throw new Error(body.error ?? "remove project failed");
+      throw new ProjectMutationRequestError(body.error ?? "remove project failed", body.code);
     }
     return { archivedSessionIds: body.archivedSessionIds };
   },

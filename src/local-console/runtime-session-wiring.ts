@@ -36,7 +36,7 @@ export function createLocalRuntimeSessionWiring(input: {
   scheduleWorkerWake: MessagePorts["scheduleWorkerWake"];
   processPending: MessagePorts["processPending"];
   schedulePendingProcessing: MessagePorts["schedulePendingProcessing"];
-  processAfterCurrent: RetryPorts["processAfterCurrent"];
+  runRetryAfterCurrent: RetryPorts["runRetryAfterCurrent"];
   repairStale: PendingPorts["repairStale"];
   applyPendingContext: PendingPorts["applyPendingContext"];
   continuableWorkspace: PendingPorts["continuableWorkspace"];
@@ -53,7 +53,7 @@ export function createLocalRuntimeSessionWiring(input: {
     scheduleWorkerWake: input.scheduleWorkerWake,
     processPending: input.processPending,
     schedulePendingProcessing: input.schedulePendingProcessing,
-    processAfterCurrent: input.processAfterCurrent,
+    runRetryAfterCurrent: input.runRetryAfterCurrent,
     ...input.adapters,
   });
   return {

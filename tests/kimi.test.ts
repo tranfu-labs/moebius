@@ -130,7 +130,14 @@ function fakeChildProcess(): ChildProcessWithoutNullStreams {
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.exitCode = null;
-  child.kill = vi.fn(() => true);
+  child.kill = vi.fn((signal?: NodeJS.Signals | number) => {
+    queueMicrotask(() => {
+      if (child.exitCode !== null) return;
+      child.exitCode = signal === "SIGKILL" ? 137 : 0;
+      child.emit("exit", child.exitCode, typeof signal === "string" ? signal : null);
+    });
+    return true;
+  });
   return child as unknown as ChildProcessWithoutNullStreams;
 }
 
@@ -1417,6 +1424,103 @@ describe("Kimi ACP driver", () => {
     expect(transport.interrupt).toHaveBeenCalledTimes(1);
     expect(transport.terminate).toHaveBeenCalledTimes(1);
     expect(transport.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds a Kimi turn that hangs after a managed process tool completed", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => { promptStarted = resolve; });
+    const transport = fakeTransport();
+    let reportCompletion = (): void => undefined;
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") return { sessionId: "kimi-managed-hang", configOptions: configOptions() };
+      if (method === "session/prompt") { promptStarted(); return await new Promise(() => undefined); }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "start managed service",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      mcpServer: {
+        command: "/usr/bin/node",
+        args: [],
+        env: {},
+        onToolCompletion: (listener) => {
+          reportCompletion = () => listener({ providerRunId: "run-1", toolCallId: "rpc-3", completionKind: "completed", completedAt: new Date().toISOString() });
+          return () => { reportCompletion = (): void => undefined; };
+        },
+        close: () => undefined,
+      },
+    }).catch((error: unknown) => error);
+    await promptReady;
+    reportCompletion();
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.notify).toHaveBeenCalledWith("session/cancel", { sessionId: "kimi-managed-hang" });
+    expect(transport.interrupt).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({
+      code: "KIMI_ACP_TIMEOUT",
+      safeMessage: "Kimi 的托管进程工具已完成，但本轮没有正常结束。",
+    });
+  });
+
+  it("pauses managed settlement for a later tool and rearms after each real progress event", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => { promptStarted = resolve; });
+    let emitUpdate = (_update: unknown): void => undefined;
+    let reportCompletion = (): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => { emitUpdate = (_update: unknown): void => undefined; };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") return { sessionId: "kimi-managed-progress", configOptions: configOptions() };
+      if (method === "session/prompt") { promptStarted(); return await new Promise(() => undefined); }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "start managed service and verify it",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      mcpServer: {
+        command: "/usr/bin/node",
+        args: [],
+        env: {},
+        onToolCompletion: (listener) => {
+          reportCompletion = () => listener({ providerRunId: "run-1", toolCallId: "managed-1", completionKind: "completed", completedAt: new Date().toISOString() });
+          return () => { reportCompletion = (): void => undefined; };
+        },
+        close: () => undefined,
+      },
+    }).catch((error: unknown) => error);
+    await promptReady;
+    reportCompletion();
+    await vi.advanceTimersByTimeAsync(14_000);
+    emitUpdate({ update: { sessionUpdate: "tool_call", toolCallId: "curl-1", title: "curl localhost" } });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+
+    emitUpdate({ update: { sessionUpdate: "tool_call_update", toolCallId: "curl-1", status: "completed" } });
+    await vi.advanceTimersByTimeAsync(14_000);
+    emitUpdate({ update: { sessionUpdate: "agent_thought_chunk", content: { text: "verified, preparing reply" } } });
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.interrupt).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({ code: "KIMI_ACP_TIMEOUT" });
   });
 
   it("does not let config chatter refresh idle but does refresh on reasoning progress", async () => {

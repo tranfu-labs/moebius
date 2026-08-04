@@ -1874,15 +1874,16 @@ Source: docs/product/pages/main-right-sidebar.md#改动标签
 - WHEN 文件内容读取完成
 - THEN 三类行分别带 `addition`、`deletion`、`unchanged` 可观察标记并显示对应行号
 
-## Requirement: 验收 #9 改动与项目文件使用不同清单范围
+## Requirement: 验收 #9 项目文件使用源码视图且改动使用 Review 视图
 Source: docs/product/pages/main-right-sidebar.md#项目文件标签
 
-系统 MUST 让改动标签只列改动文件，并让项目文件标签列出包含未改动文件的完整项目树；项目文件中的改动文件 MUST 继续使用同一行级变化呈现。系统 MUST NOT 在改动标签混入未改动文件。
+系统 MUST 让改动标签只列改动文件，并让项目文件标签列出包含未改动文件的完整项目树。项目文件内容 MUST 显示完整当前文本和单一当前行号，MUST NOT 显示旧 / 新双行号、增删 line kind、`+` / `−` 或增删背景；改动标签 MUST 继续使用会话基线 diff，并以可访问且不只依赖颜色的信号区分新增、删除与上下文。
 
 ### Scenario: 浏览未改动文件
 - GIVEN 项目包含一个改动文件和一个未改动文件
 - WHEN 用户分别打开改动标签与项目文件标签
-- THEN 改动标签只列改动文件，项目文件标签同时列出两个文件且可读取未改动文件内容
+- THEN 改动标签只列改动文件并以 Review / Diff 呈现改动文件
+- AND 项目文件标签同时列出两个文件，且两者都以完整当前源码和一列当前行号呈现
 
 ## Requirement: 验收 #10 工作期间披露列表时点并允许手动刷新
 Source: docs/product/pages/main-right-sidebar.md#内容更新
@@ -2374,9 +2375,50 @@ create the Agent Teams sidebar repair indicator.
 
 Source: docs/product/pages/main-conversation.md#时间线
 
-共享 Markdown renderer MUST 把语法有效的显式 Markdown 绝对 POSIX 文件目标、普通文本中的裸绝对 POSIX 路径及其可选 `:line[:column]` 解析为应用内文件引用，并在存在宿主回调时呈现为可点击控件。点击 MUST 只把规范化的 path、line、column 交给文件引用回调，MUST NOT 触发浏览器导航、外链确认或 `window.open`。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
+共享 Markdown renderer MUST 只把规范化后在根 `/` 之外至少包含一个实际路径段的目标解析为应用内文件引用。该边界 MUST 同时适用于语法有效的显式 Markdown 绝对 POSIX 文件目标、普通文本中的裸绝对 POSIX 路径及整个 inline code；单独 `/`、规范化后仍为 `/` 的目标以及 `A / B` 中作为分隔符的 `/` MUST 保持原有文本语义，MUST NOT 登记文件 intent 或触发文件引用回调。
 
-普通文本中的尾随句子标点 MUST 留在文件引用外；整个 inline code 恰好是文件目标时 MUST 保留代码视觉并可点击。已有 Markdown link、图片与 fenced code MUST NOT 被递归拆成嵌套文件引用，其中的路径文本仍 MUST 保持原文。任何正文 HTTPS URL 都仍是普通外链并走既有确认回调；图片、`file:`、`javascript:`、data 与自定义协议仍按既有边界阻断。
+有效文件引用的可选 `:line[:column]`、URI 解码、路径规范化与私有 intent 身份 MUST 保持现有行为，并在 path、line、column 之外保留行号是否由正文显式给出；无行号路径与显式 `:1` MUST NOT 合并为同一初始显示意图。renderer MUST NOT 根据扩展名、磁盘存在性、目标是否为目录或可读性预判引用；`/tmp`、无扩展名路径和不存在目标仍 MUST 进入文件引用回调，点击后的目录、不存在或不可读结果 MUST 由文件面板反馈。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
+
+普通文本中的尾随句子标点 MUST 留在文件引用外；有效 inline code 文件目标 MUST 保留代码视觉并可点击。已有 Markdown link、图片与 fenced code MUST NOT 被递归拆成嵌套文件引用，其中的路径文本仍 MUST 保持原文。任何正文 HTTPS URL 都仍是普通外链并走既有确认回调；图片、`file:`、`javascript:`、data 与自定义协议仍按既有边界阻断。点击有效文件引用 MUST 只把规范化的 path、line、column 交给文件引用回调，MUST NOT 触发浏览器导航、外链确认或 `window.open`。
+
+#### Scenario: 单独斜杠保持普通文本
+
+- GIVEN 正文包含单独 `/`、`A / B` 与后续有效路径 `/tmp/report`
+- WHEN Markdown renderer 渲染并发生点击
+- THEN 两个作为文本的 `/` 均不登记文件 intent、不可触发文件回调
+- AND `/tmp/report` 仍可触发 path `/tmp/report`、line `1`、column `null` 的文件回调
+
+#### Scenario: Inline code 与显式 Markdown 根目标不提升
+
+- GIVEN 正文包含 inline code `` `/` ``、显式链接 `[根目标](/)` 与有效 inline code `` `/tmp/report.txt:2` ``
+- WHEN Markdown renderer 渲染并发生点击
+- THEN inline code `` `/` `` 保持代码视觉且不触发文件回调
+- AND 显式 Markdown 根目标不触发文件回调
+- AND 有效 inline code 保持代码视觉并触发 path `/tmp/report.txt`、line `2`、column `null` 的文件回调
+
+#### Scenario: 判据使用规范化结果
+
+- GIVEN 显式 Markdown 目标或完整 inline code 分别为 `/:2`、`/./`、`/tmp/..` 与 `/tmp/../var/log`
+- WHEN Markdown renderer 渲染并发生点击
+- THEN 前三个规范化后仍为 `/` 的目标均不登记文件 intent、不触发文件回调
+- AND `/tmp/../var/log` 触发 path `/var/log`、line `1`、column `null` 的文件回调
+- AND 系统不是按原始字符串是否包含行号、`.` 或 `..` 决定引用资格
+
+#### Scenario: 目录与不存在目标仍由文件面板判断
+
+- GIVEN 正文包含 `/tmp`、无扩展名路径 `/tmp/moebius-output` 与不存在目标 `/tmp/not-created-yet`
+- WHEN 主时间线渲染这些路径
+- THEN 三者均呈现为文件引用而不读取磁盘预判
+- WHEN 用户点击 `/tmp`
+- THEN 文件面板报告目标不是普通文件
+- AND renderer 不把该结果改写成普通文本或外链
+
+#### Scenario: 真实文本路径保留行列定位
+
+- GIVEN 正文包含指向真实临时文本的绝对路径并带 `:2:3`
+- WHEN 用户点击该文件引用
+- THEN 文件回调收到规范化 path、line `2`、column `3`
+- AND 右侧栏显示 canonical path、目标位置与突出显示的第 2 行
 
 #### Scenario: Agent 给出裸 `/tmp` 产物
 
@@ -2435,15 +2477,29 @@ Source: docs/product/pages/main-conversation.md#时间线
 
 Source: docs/product/pages/main-right-sidebar.md#文件引用标签
 
-系统 MUST 按 `sessionId + canonical file path + line + column` 打开或聚焦唯一 `file-reference` 标签，并把该类型纳入可恢复标签枚举但排除在加号类型选择之外。首次加载可用内容时 MUST 把目标行滚入视野、用非纯颜色方式突出，并显示可选择复制的路径与真实行号；列号存在时 MUST 显示目标列信息。
+系统 MUST 按 `sessionId + canonical file path + line + column + explicit-line intent` 打开或聚焦唯一 `file-reference` 标签，并把该类型纳入可恢复标签枚举但排除在加号类型选择之外。显式定位首次加载可用内容时 MUST 把目标行滚入视野、用非纯颜色方式突出，并显示可选择复制的路径与真实行号；列号存在时 MUST 显示目标列信息。
 
-不可用响应 MUST 显示原因且不得崩溃、导航或回退读取其他文件。大型文件响应只含目标附近窗口时，界面 MUST 保留其真实行号，MUST NOT 假装窗口首行为文件第一行。多个不同文件引用异步解析时，系统 MUST 基于每次完成时的最新标签状态原子合并结果，MUST NOT 让后完成的引用覆盖先完成的标签。
+右侧栏 MUST 根据服务端返回的目标作用域呈现文件。完整工作区文件 MUST 使用普通源码阅读或 Markdown Preview；工作区外结果在成功与失败时都 MUST 同时在标签与内容区明确标识“预览”和内容有界，MUST NOT 显示为完整文件或提供 Markdown Preview。不可用响应 MUST 清除上一目标内容、显示原因且不得崩溃、导航或回退读取其他文件。外部有界响应 MUST 保留真实行号，MUST NOT 假装窗口首行为文件第一行。
 
 #### Scenario: 重复点击同一引用
 
 - GIVEN 某会话的文件、行、列引用标签已经打开
 - WHEN 用户再次点击相同引用
 - THEN 右侧栏聚焦既有标签且标签总数不变
+
+#### Scenario: 裸路径与显式第一行保留不同意图
+
+- GIVEN 用户先后点击 `/workspace/README.md` 与 `/workspace/README.md:1`
+- WHEN 两个引用都解析到同一 canonical 文件
+- THEN 前者保留无显式定位意图，后者保留显式第一行意图
+- AND 两者首次显示模式不因 canonical 去重而互相覆盖
+
+#### Scenario: v1 标签按可恢复位置推断显式定位
+
+- GIVEN 旧版持久化标签没有 explicit-line 字段
+- WHEN 其目标行大于 1 或存在 column
+- THEN 恢复时按显式定位进入源码并定位目标
+- AND 只有 line 为 1 且没有 column 的旧标签按裸路径 best-effort 恢复
 
 #### Scenario: 符号链接与真实路径引用同一文件
 
@@ -2464,6 +2520,67 @@ Source: docs/product/pages/main-right-sidebar.md#文件引用标签
 - WHEN 文件引用标签呈现
 - THEN 行号从 250 起显示且第 292 行滚入视野并突出
 - AND 加号类型选择仍只有改动与项目文件
+
+### Requirement: 完整 Markdown 文件提供 Preview 与源码
+
+Source: docs/product/pages/main-right-sidebar.md#工作区文件与工作区外预览
+
+完整工作区 `.md` 与 `.markdown` 文件 MUST 提供 Preview 和源码模式。无显式行号的首次打开 MUST 默认 Preview；带显式行号的首次打开 MUST 默认源码并定位目标。用户切换模式后，选择 MUST 只作用于当前标签；切回源码 MUST 恢复目标位置。Preview 与源码 MUST 从同一次成功读取的完整文本快照派生。
+
+Preview MUST 复用既有 Markdown HTML 清洗、危险协议阻止、远程外链确认和严格 Mermaid 策略。Preview 中的绝对本地文件链接 MUST 继续进入应用内文件打开回调；文件正文 MUST NOT 激活团队 mention 或对话引用控制。相对本地链接、本地图片和 `.mdx` MUST NOT 因此获得新的本地解析能力。
+
+#### Scenario: 裸 README 默认 Preview
+
+- GIVEN `/workspace/README.md` 被完整读取且没有显式行号
+- WHEN 文件标签首次呈现
+- THEN Preview 为选中模式并显示渲染后的标题
+- WHEN 用户切换源码
+- THEN 显示同一快照的完整 Markdown 原文
+
+#### Scenario: 带行号 Markdown 默认源码
+
+- GIVEN `/workspace/README.md:42` 被完整读取
+- WHEN 文件标签首次呈现
+- THEN 源码为选中模式且第 42 行进入视野并突出
+- WHEN 用户切到 Preview 再切回源码
+- THEN 第 42 行再次进入视野并突出
+
+#### Scenario: Preview 中链接遵守既有安全边界
+
+- GIVEN Markdown 同时包含绝对本地文件链接、HTTPS、`javascript:` 与本地相对图片
+- WHEN 用户依次激活这些目标
+- THEN 绝对本地路径只进入应用内文件回调
+- AND HTTPS 只进入既有确认流程
+- AND 危险协议与本地相对图片不执行、不读取
+
+### Requirement: 文件异步加载只提交当前目标结果
+
+Source: docs/product/pages/main-right-sidebar.md#选择文件
+
+文件加载的成功与失败 MUST 同时匹配当前标签身份、session、目标和请求代次后才能提交。父级重渲染、回调身份变化、模式切换或较慢旧请求完成 MUST NOT 覆盖较新的目标、模式、内容、错误、活动标签或阅读位置。磁盘文件 MUST NOT 自动替换当前已呈现文本；重新选择、重新打开或使用既有刷新入口后的源码与 Preview MUST 从同一次新响应派生。
+
+#### Scenario: 慢旧请求晚于新请求返回
+
+- GIVEN 文件 A 的请求尚未完成时用户选择文件 B
+- WHEN B 先成功且 A 随后成功或失败
+- THEN 当前目标、活动标签与内容仍为 B
+- AND A 的内容或错误不出现
+
+#### Scenario: 父级更新回调身份
+
+- GIVEN 当前文件请求中父级重渲染并传入新回调实例
+- WHEN 原请求成功
+- THEN 匹配当前目标的结果仍可提交一次
+- AND 不重复请求、不回退到旧目标
+
+#### Scenario: 重新读取后两种模式使用同一文本
+
+- GIVEN 当前 Markdown 的源码与 Preview 都来自文本 V1
+- AND 文件在磁盘变为 V2
+- WHEN 用户尚未重新读取
+- THEN 两种模式继续显示 V1
+- WHEN 用户重新选择、重新打开或使用既有刷新入口且请求成功
+- THEN 两种模式都从同一次 V2 响应派生
 
 ### Requirement: Type-safe local interface translations
 
@@ -3292,3 +3409,117 @@ Given the four component Stories are rendered in light or dark mode
 When they are compared with the conversation-console design source and the AcceptCard component-library reference
 Then borders, radii, spacing, buttons, and neutral status presentation use the same flat visual language
 And only the open role-completion overlay has a shadow.
+
+### Requirement: 主会话顶栏按当前会话展示运行项入口
+
+Source: docs/product/pages/main-conversation.md#托管运行项入口与面板
+
+主会话应用顶栏 MUST 在当前 session 存在 managed-process DTO 时显示运行项入口，并置于分析面板开关与右侧栏开关之前。只有一个 active 条目时 MUST 显示可读 label 与状态；多个 active 条目时 MUST 显示数量。没有任何 active 或本次应用生命周期内尚未确认的 exited 条目时 MUST 不渲染空占位。最后一个 active 退出后入口 MUST 保持可达并显示单项 `label · 已退出` 或多项 `N 个已结束`，直到用户明确确认清除；active 数量 MUST NOT 把 exited 计入。
+
+入口与面板 MUST 只消费宿主提供的 serializable DTO、loading/error/log state 和 callbacks；console-ui MUST NOT 调用 HTTP、Electron IPC、Provider、child process 或 local-console runtime，也 MUST NOT 从 Agent 正文、elapsed 或 URL 文本推导运行项状态。
+
+managed-process active count MUST 与 Agent `runningCount` 分离。它 MAY 禁用普通归档并触发项目移除确认，但 MUST NOT 点亮侧边栏“正在运行”状态点、使结果卡冒充 Agent run，或让 ChangeTab 进入 Agent 工作中状态。
+
+#### Scenario: 单项与多项入口
+
+- **GIVEN** 当前 session 先有一个 ready 运行项，随后增加第二个 running 运行项
+- **WHEN** OperatorConsole 重渲染
+- **THEN** 单项时入口显示 label 与“已就绪”状态
+- **AND** 多项时显示“2 个运行项”
+- **AND** 分析面板和右侧栏开关仍是独立可聚焦控件。
+
+#### Scenario: 切换会话不显示旧条目
+
+- **GIVEN** 会话 A 有运行项且会话 B 没有
+- **WHEN** 宿主切换到 B 并进入 loading
+- **THEN** UI 不继续显示 A 的 label、endpoint 或日志
+- **AND** 不用 A 的旧数据填充 B 的面板
+- **AND** B 确认无条目后入口不占位。
+
+#### Scenario: 只有托管运行项时不冒充 Agent run
+
+- **GIVEN** Agent run 已结束且当前会话只剩一个 ready managed process
+- **WHEN** 用户观察侧边栏、结果卡、ChangeTab 与归档菜单
+- **THEN** 侧边栏不显示“正在运行”状态点，结果卡和 ChangeTab 不进入 Agent 工作态
+- **AND** 普通归档仍然禁用，运行项顶栏入口继续可见。
+
+#### Scenario: 窄窗口仍可操作
+
+- **GIVEN** 顶栏宽度不足以显示完整 label
+- **WHEN** 运行项入口收敛
+- **THEN** 可见内容 MAY 只保留图标或数量
+- **AND** aria-label 仍包含当前 active 数量和状态
+- **AND** 键盘仍能打开面板、逐项操作并把焦点返回入口。
+
+#### Scenario: 最后一个运行项退出后确认清理
+
+- **GIVEN** 当前 session 的最后一个 active 条目自行退出，且没有其他 active 或 stopping 条目
+- **WHEN** 顶栏收到 exited summary
+- **THEN** 入口不瞬间消失，而显示该条目“已退出”或退出条目数量
+- **AND** 用户能打开面板查看退出事实与有限日志
+- **WHEN** 用户激活“清除已退出”且宿主确认成功
+- **THEN** exited 条目与入口立即消失，不留下空 gap
+- **AND** 焦点移动到下一个可用顶栏控件；确认失败时入口、面板和日志保持并原位显示可重试原因。
+
+### Requirement: 运行项面板区分生命周期、地址、日志与停止
+
+Source: docs/product/pages/main-conversation.md#托管运行项入口与面板
+
+面板 MUST 按创建顺序稳定展示 label、kind、starting/running/ready/unhealthy/stopping/exited 状态、可选 endpoint、日志状态和安全 exit code/signal。spawn 存活与 readiness ready MUST 使用不同可读状态，不得只靠颜色区分。没有 endpoint 的 service/task/watcher MUST 保留 logs 与 stop；只有服务端 DTO 提供已校验 loopback endpoint 时才显示 open。
+
+每项 open、view logs 与 stop MUST 有包含 label 的独立可访问名称。stop 进行中 MUST 禁止重复激活，并保留其他条目操作。日志 MUST 使用可选择等宽文本、转义控制字符并显示 truncated/dropped 事实；loading、failed 与 empty MUST 彼此可区分，失败后可重试且不隐藏条目状态。
+
+面板存在 exited 条目时 MUST 提供明确的“清除已退出”动作。该动作只提交宿主 intent；宿主 MUST 只清除当前 session 已 settled 的 exited 内存记录，不影响 active/stopping 条目、会话 JSONL 或进程。确认 pending 时防止重复提交；失败时保留全部退出事实并允许重试。
+
+#### Scenario: readiness 与健康异常可辨认
+
+- **GIVEN** 同一条目依次收到 starting、ready、unhealthy DTO
+- **WHEN** 面板更新
+- **THEN** 用户分别读到“启动中”“已就绪”“健康异常”
+- **AND** processId 对应的条目不重复或换位
+- **AND** unhealthy 时 logs 与 stop 保持可用。
+
+#### Scenario: 无 URL 的 watcher 可管理
+
+- **GIVEN** watcher 状态 running 且 endpoint=null
+- **WHEN** 用户展开该条目
+- **THEN** 不显示 open 动作
+- **AND** 显示 view logs 与 stop
+- **AND** 可访问名称不声称它是网页服务。
+
+#### Scenario: 日志截断与失败恢复
+
+- **GIVEN** 日志 DTO 表示 truncated 且下一次增量读取失败
+- **WHEN** 面板展示日志
+- **THEN** 保留已经读取的安全尾部和“前文已截断”说明
+- **AND** 原位显示读取失败与重试
+- **AND** 不清空条目、endpoint 或 stop 操作。
+
+#### Scenario: 停止只提交一次
+
+- **GIVEN** 用户激活某条目的 stop，宿主随后以新 callback identity 重渲染
+- **WHEN** 用户重复点击或按键且旧 promise 尚未完成
+- **THEN** 组件只提交一次该 session/process 的 stop intent
+- **AND** 目标显示 stopping
+- **AND** 其他条目不被禁用或改成 stopping。
+
+### Requirement: 异步运行项状态对父级重渲染与迟到响应安全
+
+Source: docs/product/pages/main-conversation.md#托管运行项入口与面板
+
+宿主 MUST 以 session-scoped request revision 管理 summary、detail、logs 与 stop。切换 session、父级重渲染、callback identity 变化、慢返回、失败或旧请求迟到 MUST NOT 将旧 session 条目提交给当前 UI、重复 stop、覆盖较新的状态或丢失已读取日志。面板关闭 MAY 降低轮询频率，但 active 状态变化 MUST 继续在顶栏收敛；exited 后 MUST 停止无意义的高频日志轮询。
+
+#### Scenario: 旧 session 慢响应被丢弃
+
+- **GIVEN** 会话 A 的 list 请求未返回
+- **WHEN** 用户切换到会话 B，B 请求先返回，随后 A 才返回
+- **THEN** 当前入口与面板只显示 B 的条目
+- **AND** A 响应不覆盖 B 或产生闪现。
+
+#### Scenario: 面板关闭仍更新退出状态
+
+- **GIVEN** active 条目存在且面板已关闭
+- **WHEN** 目标进程自行退出
+- **THEN** 顶栏在下一次 summary refresh 后不再把它计入 active 数量
+- **AND** 重新打开面板仍能查看 exited 事实与有限日志
+- **AND** settled 后日志不继续高频轮询。

@@ -35,6 +35,7 @@ import {
 } from "./run-supervisor.js";
 import type { LocalConsoleExecutionProfile } from "./local-console/types.js";
 import type { LocalExecutionMode } from "./local-console/execution-driver.js";
+import type { ManagedProcessMcpInvocation } from "./local-console/execution-driver.js";
 
 const DEFAULT_VERSION_TIMEOUT_MS = 5_000;
 const DEFAULT_SIGNAL_GRACE_MS = 1_000;
@@ -81,6 +82,7 @@ export interface ClaudeRunOptions {
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onSessionStarted?: (sessionId: string) => void | Promise<void>;
+  mcpServer?: ManagedProcessMcpInvocation | null;
 }
 
 export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResult> {
@@ -175,10 +177,32 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
   }
 
   await fs.mkdir(path.join(runDir, "input-attachments"), { recursive: true });
+  const mcpServer = options.mcpServer;
+  const mcpConfigPath = mcpServer === null || mcpServer === undefined
+    ? null
+    : path.join(runDir, "managed-process-mcp.json");
+  if (mcpConfigPath !== null && mcpServer !== null && mcpServer !== undefined) {
+    await fs.writeFile(mcpConfigPath, JSON.stringify({
+      mcpServers: {
+        moebius_managed: {
+          type: "stdio",
+          command: mcpServer.command,
+          args: mcpServer.args,
+          env: mcpServer.env,
+        },
+      },
+    }), { mode: 0o600 });
+  }
   const sessionId = options.mode.kind === "resume"
     ? options.mode.externalSessionId
     : randomUUID();
-  const args = buildClaudeArgs(options, sessionId);
+  const args = buildClaudeArgs({
+    ...options,
+    extraArgs: [
+      ...(mcpConfigPath === null ? [] : ["--mcp-config", mcpConfigPath]),
+      ...(options.extraArgs ?? []),
+    ],
+  }, sessionId);
   const env = buildClaudeEnvironment(process.env);
   const stdoutFile = createWriteStream(stdoutPath, { flags: "a" });
   const stderrFile = createWriteStream(stderrPath, { flags: "a" });
@@ -189,6 +213,7 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
       env,
     });
   } catch {
+    if (mcpConfigPath !== null) await fs.unlink(mcpConfigPath).catch(() => undefined);
     await Promise.all([finishWritable(stdoutFile), finishWritable(stderrFile)]);
     return failed(
       "claude-cli-spawn-failed",
@@ -202,17 +227,21 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
   child.stdout.pipe(stdoutFile, { end: false });
   child.stderr.pipe(stderrFile, { end: false });
   child.stdin.end();
-  return runClaudeProcess({
-    ...options,
-    child,
-    sessionId,
-    args,
-    runDir,
-    stdoutPath,
-    stderrPath,
-    stdoutFile,
-    stderrFile,
-  });
+  try {
+    return await runClaudeProcess({
+      ...options,
+      child,
+      sessionId,
+      args,
+      runDir,
+      stdoutPath,
+      stderrPath,
+      stdoutFile,
+      stderrFile,
+    });
+  } finally {
+    if (mcpConfigPath !== null) await fs.unlink(mcpConfigPath).catch(() => undefined);
+  }
 }
 
 export function buildClaudeArgs(

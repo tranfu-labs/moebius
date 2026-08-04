@@ -31,7 +31,7 @@ export function createLocalMessageRetryWiring(input: {
   scheduleWorkerWake(sessionId: string): void;
   processPending(sessionId: string): void;
   schedulePendingProcessing(sessionId: string): void;
-  processAfterCurrent(sessionId: string): void;
+  runRetryAfterCurrent(sessionId: string, action: () => Promise<void>): Promise<boolean>;
   readExecutionSessionLinks: typeof import("./execution-context-reader.js").readExecutionSessionLinks;
   readCodexThreadLinks: typeof import("./codex-thread-link-reader.js").readCodexThreadLinks;
   readRunExecutionContexts: typeof import("./execution-context-reader.js").readRunExecutionContexts;
@@ -133,7 +133,7 @@ export function createLocalMessageRetryWiring(input: {
       recordRetryIntent: (retryInput) =>
         context.storePorts.requireRecoveryFacts().recordCodexResumeIntent(retryInput),
       releaseMessageForRetry: (retryInput) => options.store.releaseMessageForRetry(retryInput),
-      processAfterCurrent: input.processAfterCurrent,
+      runRetryAfterCurrent: input.runRetryAfterCurrent,
       storeCall: (label, operation) => context.storePorts.call(label, operation),
     },
   };

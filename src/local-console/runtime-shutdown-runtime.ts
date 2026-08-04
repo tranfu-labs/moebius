@@ -1,5 +1,7 @@
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import {
+  decideRuntimeShutdownAttempt,
+  decideRuntimeShutdownAttemptRelease,
   decideRuntimeShutdownStart,
   decideShutdownDrain,
   planGracefulShutdownResume,
@@ -9,6 +11,9 @@ import { decideRuntimeCapability } from "./runtime-domain.js";
 import type { LocalConsoleStore } from "./types.js";
 
 export class LocalRuntimeShutdownRuntime {
+  #closed = false;
+  #closePromise: Promise<void> | null = null;
+
   constructor(private readonly input: {
     context: LocalRuntimeWiringContext;
     store: LocalConsoleStore;
@@ -18,14 +23,30 @@ export class LocalRuntimeShutdownRuntime {
     beginClosing(): void;
     pendingWork(): boolean;
     workerWork(): boolean;
+    beforeStoreClose?(): Promise<void>;
     randomId(): string;
     reportFailure(sessionId: string, runId: string, error: string): void;
   }) {}
 
   async close(): Promise<void> {
-    const start = decideRuntimeShutdownStart(this.input.isClosing());
-    if (start.kind === "skip") return;
-    this.input.beginClosing();
+    const admission = decideRuntimeShutdownAttempt({ closed: this.#closed, attemptPending: this.#closePromise !== null });
+    if (admission.kind === "done") return;
+    const attempt = admission.kind === "join" ? this.#closePromise! : this.#performClose();
+    if (admission.kind === "start") this.#closePromise = attempt;
+    try {
+      await attempt;
+      this.#closed = true;
+    } finally {
+      const release = decideRuntimeShutdownAttemptRelease({
+        closed: this.#closed,
+        currentAttempt: this.#closePromise === attempt,
+      });
+      if (release.kind === "release") this.#closePromise = null;
+    }
+  }
+
+  async #performClose(): Promise<void> {
+    if (decideRuntimeShutdownStart(this.input.isClosing()).kind === "close") this.input.beginClosing();
     for (const active of [...this.input.activeRuns.values()]) {
       try {
         const resume = planGracefulShutdownResume({
@@ -66,6 +87,7 @@ export class LocalRuntimeShutdownRuntime {
     }).kind === "wait") {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
+    await this.input.beforeStoreClose?.();
     await this.input.store.close();
   }
 }

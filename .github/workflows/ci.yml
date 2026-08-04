@@ -40,7 +40,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test
+        run: xvfb-run -a pnpm test
 
       - name: Check Storybook catalog
         run: pnpm --filter @moebius/console-ui check:storybook

@@ -19,6 +19,8 @@ import {
   selectRightSidebarTab,
   serializeRightSidebarTabsState,
   updateRightSidebarProcessScroll,
+  updateRightSidebarFileMode,
+  updateRightSidebarProjectFileMode,
   type RightSidebarTabsState,
 } from "./right-sidebar-tabs";
 
@@ -47,6 +49,7 @@ describe("right sidebar tab model", () => {
       path: "/Users/wing/My Project/spec.md",
       line: 292,
       column: 7,
+      hasExplicitLine: true,
     });
 
     expect(parseFileReferenceSourceKey(sourceKey)).toEqual({
@@ -54,8 +57,64 @@ describe("right sidebar tab model", () => {
       path: "/Users/wing/My Project/spec.md",
       line: 292,
       column: 7,
+      hasExplicitLine: true,
     });
     expect(RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES).not.toContain("file-reference");
+  });
+
+  it("best-effort restores explicit locations from legacy file-reference keys", () => {
+    expect(parseFileReferenceSourceKey("file-reference-v1:session-a:%2Fworkspace%2FREADME.md:42:")).toMatchObject({
+      line: 42,
+      column: null,
+      hasExplicitLine: true,
+    });
+    expect(parseFileReferenceSourceKey("file-reference-v1:session-a:%2Fworkspace%2FREADME.md:1:3")).toMatchObject({
+      line: 1,
+      column: 3,
+      hasExplicitLine: true,
+    });
+    expect(parseFileReferenceSourceKey("file-reference-v1:session-a:%2Fworkspace%2FREADME.md:1:")).toMatchObject({
+      line: 1,
+      column: null,
+      hasExplicitLine: false,
+    });
+  });
+
+  it("remembers Markdown display mode on the current file tab", () => {
+    const opened = openRightSidebarSourceTab(EMPTY_RIGHT_SIDEBAR_TABS, {
+      id: "readme",
+      type: "file-reference",
+      title: "README.md",
+      sourceKey: createFileReferenceSourceKey("session-a", {
+        path: "/workspace/README.md",
+        line: 1,
+        column: null,
+        hasExplicitLine: false,
+      }),
+    });
+
+    expect(updateRightSidebarFileMode(opened, "readme", "source").tabs[0]).toMatchObject({
+      id: "readme",
+      fileMode: "source",
+    });
+  });
+
+  it("persists per-path Markdown modes inside the project-files tab", () => {
+    const state: RightSidebarTabsState = {
+      tabs: [{
+        id: "files",
+        type: "project-files",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.projectFiles,
+        sourceKey: null,
+        closable: true,
+      }],
+      activeTabId: "files",
+    };
+    const updated = updateRightSidebarProjectFileMode(state, "files", "README.md", "source");
+
+    expect(parseRightSidebarTabsState(JSON.parse(serializeRightSidebarTabsState(updated))).tabs[0]).toMatchObject({
+      projectFileModes: { "README.md": "source" },
+    });
   });
 
   it("deduplicates source tabs while never deduplicating plus-created blank tabs", () => {

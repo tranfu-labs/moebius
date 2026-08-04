@@ -240,6 +240,10 @@ export class LocalConsoleRuntimeFacade {
     return await this.facade.workspace.projectFile(sessionId, filePath);
   }
 
+  async workspaceDiffFile(sessionId: string, filePath: string): Promise<LocalConsoleFileContent> {
+    return await this.facade.workspace.workspaceDiffFile(sessionId, filePath);
+  }
+
   async fileReference(
     sessionId: string,
     input: LocalFileReferenceInput,

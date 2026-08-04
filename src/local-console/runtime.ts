@@ -89,7 +89,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
 
-  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length; }
+  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length + (this.options.getManagedProcessRunningCount?.() ?? 0); }
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
@@ -115,7 +115,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.storePorts = new LocalConsoleStorePorts(options.store, this.storeTimeoutMs);
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
       dataRoot: options.dataRoot ?? options.projectRoot,
-      runCodex: options.runCodex,
+      runCodex: options.runCodex, createManagedProcessMcp: options.createManagedProcessMcp,
     });
     const adapters = createLocalRuntimeAdapters({
       options,
@@ -226,7 +226,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
-      processAfterCurrent: (sessionId) => { void this.pendingProcessingRuntime.processAfterCurrent(sessionId); },
+      runRetryAfterCurrent: (sessionId, action) => this.pendingProcessingRuntime.runRetryAfterCurrent(sessionId, action),
       repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),
       continuableWorkspace: (sessionId) => this.sessionContinuationRuntime.continuableSessionWorkspace(sessionId),

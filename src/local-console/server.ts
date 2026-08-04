@@ -21,6 +21,8 @@ import {
   LocalConsoleSessionWorkspaceLockedError,
 } from "./types.js";
 import type { LocalConsoleRuntime, LocalConsoleAgentFile } from "./runtime.js";
+import { ManagedProcessAdmissionError, managedProcessArchiveScopeSessionIds, projectManagedProcessRunningCounts } from "./managed-process-contract.js";
+import type { ManagedProcessSupervisor } from "./managed-process-supervisor.js";
 
 let localRunDirSequence = 0;
 
@@ -33,9 +35,10 @@ export function createLocalConsoleHttpServer(
   runtime: LocalConsoleRuntime,
   attachmentManager?: LocalAttachmentManager,
   attachmentCapability?: string,
+  managedProcessSupervisor?: ManagedProcessSupervisor,
 ): http.Server {
   return http.createServer((request, response) => {
-    void handleRequest(runtime, request, response, attachmentManager, attachmentCapability);
+    void handleRequest(runtime, request, response, attachmentManager, attachmentCapability, managedProcessSupervisor);
   });
 }
 
@@ -45,6 +48,7 @@ async function handleRequest(
   response: http.ServerResponse,
   attachmentManager?: LocalAttachmentManager,
   attachmentCapability?: string,
+  managedProcessSupervisor?: ManagedProcessSupervisor,
 ): Promise<void> {
   try {
     if (request.method === "OPTIONS") {
@@ -53,6 +57,40 @@ async function handleRequest(
     }
 
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const managedRoute = matchManagedProcessRoute(url.pathname);
+    if (managedRoute !== null) {
+      if (managedProcessSupervisor === undefined) {
+        sendJson(response, 503, { error: "Managed processes are unavailable", code: "managed-process-unavailable" });
+        return;
+      }
+      if (request.method === "GET" && managedRoute.action === "list") {
+        sendJson(response, 200, { processes: await managedProcessSupervisor.list(managedRoute.sessionId) });
+        return;
+      }
+      if (request.method === "GET" && managedRoute.action === "inspect") {
+        sendJson(response, 200, { process: await managedProcessSupervisor.inspect(managedRoute.sessionId, managedRoute.processId) });
+        return;
+      }
+      if (request.method === "GET" && managedRoute.action === "logs") {
+        sendJson(response, 200, await managedProcessSupervisor.readLogs(
+          managedRoute.sessionId,
+          managedRoute.processId,
+          readOptionalString(url.searchParams.get("cursor")),
+        ));
+        return;
+      }
+      if (request.method === "POST" && managedRoute.action === "stop") {
+        sendJson(response, 200, { process: await managedProcessSupervisor.stop(managedRoute.sessionId, managedRoute.processId) });
+        return;
+      }
+      if (request.method === "POST" && managedRoute.action === "acknowledge-exited") {
+        await managedProcessSupervisor.acknowledgeExited(managedRoute.sessionId);
+        sendNoContent(response);
+        return;
+      }
+      sendJson(response, 405, { error: "Method not allowed" });
+      return;
+    }
     if (url.pathname.startsWith("/api/local-console/attachments")) {
       if (attachmentManager === undefined || attachmentCapability === undefined) {
         sendJson(response, 404, { error: "Managed attachments are unavailable" });
@@ -162,10 +200,16 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && url.pathname === "/api/local-console/state") {
-      const snapshot = await runtime.state({
+      const runtimeSnapshot = await runtime.state({
         sessionId: readOptionalString(url.searchParams.get("sessionId")),
         projectId: readOptionalString(url.searchParams.get("projectId")),
       });
+      const snapshot = managedProcessSupervisor === undefined
+        ? runtimeSnapshot
+        : projectManagedProcessRunningCounts(
+            runtimeSnapshot,
+            managedProcessSupervisor.getRunningCountsBySession(),
+          );
       const serialized = JSON.stringify(snapshot);
       const etag = `"${createHash("sha256").update(serialized).digest("base64url")}"`;
       if (request.headers["if-none-match"] === etag) {
@@ -235,12 +279,29 @@ async function handleRequest(
         return;
       }
       try {
+        if (managedProcessSupervisor !== undefined) {
+          const projectState = await runtime.state({ projectId: projectMatch.projectId });
+          const managed = (await Promise.all(projectState.project.sessions.map(async (session) =>
+            await managedProcessSupervisor.list(session.sessionId))))
+            .flat()
+            .filter((item) => item.state !== "exited");
+          if (managed.length > 0 && payload.force !== true) {
+            throw new ManagedProcessAdmissionError("managed-process-running", "项目仍有运行项；强制移除会先停止全部运行项。");
+          }
+          if (payload.force === true) {
+            for (const item of managed) await managedProcessSupervisor.stop(item.sessionId, item.id);
+          }
+        }
         const result = await runtime.removeProject({
           projectId: projectMatch.projectId,
           force: payload.force === true,
         });
         sendJson(response, 200, result);
       } catch (error) {
+        if (error instanceof ManagedProcessAdmissionError && error.code === "managed-process-running") {
+          sendJson(response, 409, { error: error.message, code: error.code });
+          return;
+        }
         if (error instanceof LocalConsoleProjectRunningError) {
           sendJson(response, 409, { error: error.message, code: error.code });
           return;
@@ -366,17 +427,33 @@ async function handleRequest(
       return;
     }
 
+    const sessionWorkspaceDiffContentMatch = matchSessionRoute(url.pathname, "workspace-diff/content");
+    if (request.method === "GET" && sessionWorkspaceDiffContentMatch !== null) {
+      const filePath = url.searchParams.get("path");
+      if (filePath === null || filePath.trim() === "") {
+        sendJson(response, 400, { error: "Expected a non-empty path query parameter" });
+        return;
+      }
+      sendJson(response, 200, await runtime.workspaceDiffFile(
+        sessionWorkspaceDiffContentMatch.sessionId,
+        filePath,
+      ));
+      return;
+    }
+
     const sessionFileReferenceMatch = matchSessionRoute(url.pathname, "file-reference");
     if (request.method === "GET" && sessionFileReferenceMatch !== null) {
       const filePath = url.searchParams.get("path");
       const line = readPositiveQueryInteger(url.searchParams.get("line"));
       const rawColumn = url.searchParams.get("column");
       const column = rawColumn === null ? null : readPositiveQueryInteger(rawColumn);
+      const explicitLine = url.searchParams.get("explicitLine");
       if (
         filePath === null
         || !filePath.startsWith("/")
         || line === null
         || (rawColumn !== null && column === null)
+        || (explicitLine !== null && explicitLine !== "0" && explicitLine !== "1")
       ) {
         sendJson(response, 400, {
           error: "Expected an absolute path, a positive line, and an optional positive column",
@@ -387,6 +464,7 @@ async function handleRequest(
         filePath,
         line,
         column,
+        hasExplicitLine: explicitLine === "1",
       }));
       return;
     }
@@ -701,8 +779,20 @@ async function handleRequest(
     const sessionArchiveMatch = matchSessionRoute(url.pathname, "archive");
     if (request.method === "POST" && sessionArchiveMatch !== null) {
       try {
+        if (managedProcessSupervisor !== undefined) {
+          const archiveState = await runtime.state({ sessionId: sessionArchiveMatch.sessionId });
+          const scope = managedProcessArchiveScopeSessionIds(archiveState.project.sessions, sessionArchiveMatch.sessionId);
+          const activeManaged = (await Promise.all(scope.map(async (sessionId) => await managedProcessSupervisor.list(sessionId))))
+            .flat()
+            .some((item) => item.state !== "exited");
+          if (activeManaged) throw new ManagedProcessAdmissionError("managed-process-running", "当前对话仍有运行项，请先停止后再归档。");
+        }
         sendJson(response, 200, await runtime.archiveSession(sessionArchiveMatch.sessionId));
       } catch (error) {
+        if (error instanceof ManagedProcessAdmissionError && error.code === "managed-process-running") {
+          sendJson(response, 409, { error: error.message, code: error.code });
+          return;
+        }
         if (error instanceof LocalConsoleSessionRunningError) {
           sendJson(response, 409, { error: error.message, code: error.code });
           return;
@@ -792,8 +882,29 @@ async function handleRequest(
       });
       return;
     }
+    if (error instanceof ManagedProcessAdmissionError) {
+      sendJson(response, error.code === "process-not-found" ? 404 : 409, {
+        error: error.message,
+        code: error.code,
+      });
+      return;
+    }
     sendJson(response, 500, { error: formatLocalError(error) });
   }
+}
+
+function matchManagedProcessRoute(pathname: string):
+  | { sessionId: string; action: "list" | "acknowledge-exited" }
+  | { sessionId: string; processId: string; action: "inspect" | "logs" | "stop" }
+  | null {
+  const match = /^\/api\/local-console\/sessions\/([^/]+)\/managed-processes(?:\/(acknowledge-exited)|\/([^/]+)(?:\/(logs|stop))?)?$/u.exec(pathname);
+  if (match === null) return null;
+  const sessionId = decodeURIComponent(match[1]!);
+  if (match[2] === "acknowledge-exited") return { sessionId, action: "acknowledge-exited" };
+  const processId = match[3] === undefined ? undefined : decodeURIComponent(match[3]);
+  if (processId === undefined) return { sessionId, action: "list" };
+  const suffix = match[4];
+  return { sessionId, processId, action: suffix === undefined ? "inspect" : suffix as "logs" | "stop" };
 }
 
 function readExecutionOverride(value: unknown): {
@@ -1289,6 +1400,7 @@ function matchSessionRoute(
     | "project"
     | "workspace"
     | "workspace-diff"
+    | "workspace-diff/content"
     | "files"
     | "files/content"
     | "file-reference"

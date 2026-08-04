@@ -75,11 +75,13 @@ import {
 } from "@/console/conversation-layout";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
+import { ManagedProcessPanel, type ManagedProcessPanelController } from "@/console/managed-process-panel";
 import type { WorkspaceFileContent } from "@/console/file-diff-view";
 import {
   FileReferenceTab,
   type FileReferenceContent,
 } from "@/console/file-reference-tab";
+import { decideInitialFileViewMode } from "@/console/file-view-state";
 import type {
   MarkdownConversationReference,
   MarkdownFileReference,
@@ -140,6 +142,8 @@ import {
   RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   openRightSidebarSourceTab,
   parseFileReferenceSourceKey,
+  updateRightSidebarFileMode,
+  updateRightSidebarProjectFileMode,
   updateRightSidebarProcessScroll,
   parseRunOutputSourceKey,
   type RightSidebarTabsState,
@@ -179,6 +183,7 @@ export const NARROW_WINDOW_WIDTH_PX = 760;
 export const STACKED_TEAM_ROW_WINDOW_WIDTH_PX = 1024;
 export const CONVERSATION_DOCK_GAP_PX = 12;
 const INITIAL_CONVERSATION_DOCK_HEIGHT_PX = 176;
+const TIMELINE_FOLLOW_THRESHOLD_PX = 48;
 interface SidebarResizeGesture {
   pointerId: number;
   startX: number;
@@ -235,6 +240,7 @@ export interface OperatorSession {
     recoveryAction: "repair-project" | "select-team" | "repair-or-select-team" | null;
   };
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;
@@ -262,6 +268,7 @@ export interface OperatorProject {
   newConversationDisabledReason?: string | null;
   sessions: OperatorSession[];
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;
@@ -423,6 +430,7 @@ export interface OperatorConsoleProps {
   selectedSession: OperatorSession | null;
   conversationNotice?: ReactNode;
   analysisPanel?: OperatorAnalysisPanelController;
+  managedProcesses?: ManagedProcessPanelController;
   messages: OperatorMessage[];
   initialReadingMessageId?: number | null;
   messageNavigationRequest?: OperatorMessageNavigationRequest | null;
@@ -513,11 +521,13 @@ export interface OperatorConsoleProps {
   onLoadWorkspaceDiff?: (sessionId: string) => Promise<WorkspaceDiffData>;
   onLoadProjectFiles?: (sessionId: string) => Promise<ProjectFilesData>;
   onLoadProjectFile?: (sessionId: string, filePath: string) => Promise<WorkspaceFileContent>;
+  onLoadWorkspaceDiffFile?: (sessionId: string, filePath: string) => Promise<WorkspaceFileContent>;
   onLoadFileReference?: (
     sessionId: string,
     filePath: string,
     line: number,
     column: number | null,
+    hasExplicitLine: boolean,
   ) => Promise<FileReferenceContent>;
   onChangeSessionProject?: (sessionId: string, projectId: string) => void;
   onShowProjectInFolder?: (folderPath: string) => void | Promise<void>;
@@ -631,6 +641,7 @@ export function OperatorConsole({
   selectedSession,
   conversationNotice,
   analysisPanel,
+  managedProcesses,
   messages,
   initialReadingMessageId = null,
   messageNavigationRequest = null,
@@ -706,6 +717,7 @@ export function OperatorConsole({
   onLoadWorkspaceDiff = unavailableWorkspaceDiff,
   onLoadProjectFiles = unavailableProjectFiles,
   onLoadProjectFile = unavailableProjectFile,
+  onLoadWorkspaceDiffFile = unavailableProjectFile,
   onLoadFileReference = unavailableFileReference,
   onChangeSessionProject,
   onShowProjectInFolder,
@@ -827,6 +839,11 @@ export function OperatorConsole({
   const conversationDockRef = useRef<HTMLDivElement | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
+  const timelineReadingAnchorRef = useRef<{ messageId: number; offset: number } | null>(null);
+  const timelineResizeAnchorLockedRef = useRef(false);
+  const timelineResizeAdjustedScrollTopRef = useRef<number | null>(null);
+  const timelineResizeFrameRef = useRef<number | null>(null);
+  const timelineResizeInProgressRef = useRef(false);
   const restoredReadingSessionRef = useRef<string | null>(null);
   const readingRestoreLayoutRef = useRef<string | null>(null);
   const readingSessionIdentityRef = useRef(selectedSessionId);
@@ -846,6 +863,7 @@ export function OperatorConsole({
   const [conversationDockHeight, setConversationDockHeight] = useState(
     INITIAL_CONVERSATION_DOCK_HEIGHT_PX,
   );
+  const conversationPaneWidthRef = useRef(conversationPaneWidth);
   const messageIndexById = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index] as const)),
     [messages],
@@ -859,11 +877,15 @@ export function OperatorConsole({
     overscan: 8,
     initialRect: { width: 760, height: 640 },
     scrollMargin: timelineListRef.current?.offsetTop ?? 0,
+    anchorTo: "end",
+    scrollEndThreshold: TIMELINE_FOLLOW_THRESHOLD_PX,
   });
   const virtualTimelineItems = timelineVirtualizer.getVirtualItems();
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
   const [fileReferenceContents, setFileReferenceContents] = useState<Record<string, FileReferenceContent>>({});
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
   const [pendingConversationRoute, setPendingConversationRoute] = useState<{
     run: ConversationRouteAction;
     cancel?: () => void;
@@ -957,6 +979,7 @@ export function OperatorConsole({
     ? "split"
     : "overlay";
   const analysisPanelReservesSpace = analysisPanel?.open === true && analysisPanelLayout === "split";
+  const hasManagedProcesses = (managedProcesses?.state.items.length ?? 0) > 0;
   const analysisPanelId = selectedSession === null
     ? "conversation-analysis-panel"
     : `conversation-analysis-panel-${encodeURIComponent(selectedSession.sessionId)}`;
@@ -989,6 +1012,8 @@ export function OperatorConsole({
   const latestRightSidebarTabsRef = useRef(effectiveRightSidebarTabs);
   latestRightSidebarTabsRef.current = effectiveRightSidebarTabs;
   const pendingFileReferenceOpensRef = useRef(0);
+  const latestFileReferenceOpenGenerationRef = useRef(0);
+  const fileReferenceSourceGenerationRef = useRef<Record<string, number>>({});
   const activeRightSidebarTab = effectiveRightSidebarTabs.tabs.find(
     (tab) => tab.id === effectiveRightSidebarTabs.activeTabId,
   ) ?? null;
@@ -998,24 +1023,100 @@ export function OperatorConsole({
 
   useEffect(() => {
     const updateResponsiveLayout = () => {
+      const pane = parentConversationPaneRef.current;
+      const paneWidth = pane === null
+        ? conversationPaneWidthRef.current
+        : Math.round(pane.getBoundingClientRect().width);
+      if (paneWidth !== conversationPaneWidthRef.current) {
+        conversationPaneWidthRef.current = paneWidth;
+        timelineResizeInProgressRef.current = true;
+        timelineResizeAnchorLockedRef.current = timelineReadingAnchorRef.current !== null
+          && !followTimelineRef.current;
+        timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+        timelineScrollRef.current?.setAttribute("data-resize-anchoring", "true");
+        setConversationPaneWidth(paneWidth);
+      }
       setIsNarrowWindow(viewportIsNarrow());
       setRightSidebarOverlay(viewportUsesRightSidebarOverlay());
       setUseStackedTeamRows(viewportUsesStackedTeamRows());
     };
     window.addEventListener("resize", updateResponsiveLayout);
     return () => window.removeEventListener("resize", updateResponsiveLayout);
-  }, []);
+  }, [timelineVirtualizer]);
 
   useLayoutEffect(() => {
     const pane = parentConversationPaneRef.current;
     if (pane === null) return;
-    const update = () => setConversationPaneWidth(Math.round(pane.getBoundingClientRect().width));
+    const update = () => {
+      const nextWidth = Math.round(pane.getBoundingClientRect().width);
+      if (nextWidth === conversationPaneWidthRef.current) return;
+      conversationPaneWidthRef.current = nextWidth;
+      timelineResizeInProgressRef.current = true;
+      timelineResizeAnchorLockedRef.current = timelineReadingAnchorRef.current !== null
+        && !followTimelineRef.current;
+      timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+      timelineScrollRef.current?.setAttribute("data-resize-anchoring", "true");
+      setConversationPaneWidth(nextWidth);
+    };
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(pane);
     return () => observer.disconnect();
-  }, [applicationView, newConversation]);
+  }, [applicationView, newConversation, timelineVirtualizer]);
+
+  useLayoutEffect(() => {
+    if (!timelineResizeInProgressRef.current) return;
+    if (followTimelineRef.current || timelineReadingAnchorRef.current === null) {
+      timelineResizeInProgressRef.current = false;
+      timelineResizeAnchorLockedRef.current = false;
+      timelineResizeAdjustedScrollTopRef.current = null;
+      timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+      timelineScrollRef.current?.setAttribute("data-resize-anchoring", "false");
+      return;
+    }
+    let cancelled = false;
+    let stableFrames = 0;
+    let frameCount = 0;
+    const reconcileReadingAnchor = () => {
+      if (cancelled) return;
+      frameCount += 1;
+      const timeline = timelineScrollRef.current;
+      const anchor = timelineReadingAnchorRef.current;
+      const element = anchor === null ? undefined : conversationMessageRefs.current.get(anchor.messageId);
+      if (timeline !== null && anchor !== null && element?.isConnected) {
+        const offset = element.getBoundingClientRect().top - timeline.getBoundingClientRect().top;
+        const delta = offset - anchor.offset;
+        if (Math.abs(delta) > 0.5) {
+          const nextScrollTop = timeline.scrollTop + delta;
+          timelineResizeAdjustedScrollTopRef.current = nextScrollTop;
+          timeline.scrollTop = nextScrollTop;
+          stableFrames = 0;
+        } else {
+          stableFrames += 1;
+        }
+      } else {
+        stableFrames = 0;
+      }
+      if (stableFrames >= 8 || frameCount >= 60) {
+        timelineResizeInProgressRef.current = false;
+        timelineResizeAnchorLockedRef.current = false;
+        timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+        timeline?.setAttribute("data-resize-anchoring", "false");
+        timelineResizeFrameRef.current = null;
+        return;
+      }
+      timelineResizeFrameRef.current = window.requestAnimationFrame(reconcileReadingAnchor);
+    };
+    timelineResizeFrameRef.current = window.requestAnimationFrame(reconcileReadingAnchor);
+    return () => {
+      cancelled = true;
+      if (timelineResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(timelineResizeFrameRef.current);
+        timelineResizeFrameRef.current = null;
+      }
+    };
+  }, [conversationPaneWidth, timelineVirtualizer]);
 
   useLayoutEffect(() => {
     const dock = conversationDockRef.current;
@@ -1040,11 +1141,12 @@ export function OperatorConsole({
     if (conversationHighlightTimerRef.current !== null) {
       window.clearTimeout(conversationHighlightTimerRef.current);
     }
+    timelineResizeAnchorLockedRef.current = false;
+    timelineResizeAdjustedScrollTopRef.current = null;
+    if (timelineResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(timelineResizeFrameRef.current);
+    }
   }, []);
-
-  useLayoutEffect(() => {
-    timelineVirtualizer.measure();
-  }, [conversationPaneWidth, timelineVirtualizer]);
 
   const revealConversationMessage = useCallback((messageId: number): boolean => {
     const mountedTarget = conversationMessageRefs.current.get(messageId);
@@ -1078,10 +1180,17 @@ export function OperatorConsole({
   useLayoutEffect(() => {
     if (readingSessionIdentityRef.current === selectedSessionId) return;
     readingSessionIdentityRef.current = selectedSessionId;
+    timelineReadingAnchorRef.current = null;
+    timelineResizeAnchorLockedRef.current = false;
+    timelineResizeAdjustedScrollTopRef.current = null;
+    timelineResizeInProgressRef.current = false;
+    timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    timelineScrollRef.current?.setAttribute("data-resize-anchoring", "false");
+    timelineScrollRef.current?.removeAttribute("data-reading-anchor-message-id");
     restoredReadingSessionRef.current = null;
     readingRestoreLayoutRef.current = null;
     suppressReadingScrollRef.current = true;
-  }, [selectedSessionId]);
+  }, [selectedSessionId, timelineVirtualizer]);
 
   useLayoutEffect(() => {
     if (restoredReadingSessionRef.current === selectedSessionId) return;
@@ -1215,25 +1324,56 @@ export function OperatorConsole({
 
   const openFileReference = (sessionId: string, reference: MarkdownFileReference) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
+    const openingHostSessionId = selectedSessionId;
+    const openGeneration = latestFileReferenceOpenGenerationRef.current + 1;
+    latestFileReferenceOpenGenerationRef.current = openGeneration;
     pendingFileReferenceOpensRef.current += 1;
     setRightSidebarOpen(true);
-    void onLoadFileReference(sessionId, reference.path, reference.line, reference.column)
+    void onLoadFileReference(
+      sessionId,
+      reference.path,
+      reference.line,
+      reference.column,
+      reference.hasExplicitLine,
+    )
       .catch(() => unavailableFileReference(
         sessionId,
         reference.path,
         reference.line,
         reference.column,
+        reference.hasExplicitLine,
       ))
       .then((content) => {
+        if (selectedSessionIdRef.current !== openingHostSessionId) {
+          return;
+        }
         const canonicalReference = { ...reference, path: content.path };
         const sourceKey = createFileReferenceSourceKey(sessionId, canonicalReference);
-        setFileReferenceContents((current) => ({ ...current, [sourceKey]: content }));
-        updateRightSidebarTabs((current) => openRightSidebarSourceTab(current, {
-          id: createRightSidebarTabId(nextRightSidebarTabIdRef),
-          type: "file-reference",
-          title: fileReferenceTabTitle(canonicalReference, t),
-          sourceKey,
-        }));
+        const sourceGeneration = fileReferenceSourceGenerationRef.current[sourceKey] ?? 0;
+        if (openGeneration >= sourceGeneration) {
+          fileReferenceSourceGenerationRef.current[sourceKey] = openGeneration;
+          setFileReferenceContents((current) => ({ ...current, [sourceKey]: content }));
+        }
+        updateRightSidebarTabs((current) => {
+          const opened = openRightSidebarSourceTab(current, {
+            id: createRightSidebarTabId(nextRightSidebarTabIdRef),
+            type: "file-reference",
+            title: fileReferenceTabTitle(
+              canonicalReference,
+              content.scope === "external-preview",
+              t,
+            ),
+            sourceKey,
+            fileMode: decideInitialFileViewMode({
+              path: canonicalReference.path,
+              scope: content.scope ?? "external-preview",
+              hasExplicitLine: canonicalReference.hasExplicitLine,
+            }),
+          });
+          return openGeneration === latestFileReferenceOpenGenerationRef.current
+            ? opened
+            : { ...opened, activeTabId: current.activeTabId };
+        });
       })
       .finally(() => {
         pendingFileReferenceOpensRef.current = Math.max(
@@ -1645,7 +1785,7 @@ export function OperatorConsole({
               return;
             }
             setProjectActionError(null);
-            if (target.runningCount > 0) {
+            if (target.runningCount > 0 || (target.managedRunningCount ?? 0) > 0) {
               setRunningRemovalTarget(target);
             } else {
               setRemovalRequest({ project: target, force: false });
@@ -1777,10 +1917,11 @@ export function OperatorConsole({
               <PanelLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
           ) : null}
+          {hasManagedProcesses && managedProcesses ? <ManagedProcessPanel controller={managedProcesses} t={t} /> : null}
           {analysisPanel && selectedSession ? (
             <button
               type="button"
-              className="window-no-drag z-20 ml-auto flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className={cn("window-no-drag z-20 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
               aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               aria-expanded={analysisPanel.open}
@@ -1794,7 +1935,7 @@ export function OperatorConsole({
             type="button"
             className={cn(
               "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink",
-              analysisPanel && selectedSession ? "ml-1" : "ml-auto",
+              (analysisPanel && selectedSession) || hasManagedProcesses ? "ml-1" : "ml-auto",
             )}
             aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
             title={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
@@ -1933,15 +2074,58 @@ export function OperatorConsole({
                   analysisPanelReservesSpace && "pr-[312px]",
                 )}
                 aria-label={t("console.operator.timeline")}
+                data-resize-anchoring={timelineResizeInProgressRef.current ? "true" : "false"}
                 ref={timelineScrollRef}
                 style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
                 onScroll={(event) => {
                   const timeline = event.currentTarget;
-                  const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
+                  const adjustedScrollTop = timelineResizeAdjustedScrollTopRef.current;
+                  if (adjustedScrollTop !== null && Math.abs(timeline.scrollTop - adjustedScrollTop) <= 1) {
+                    return;
+                  }
+                  if (timelineResizeInProgressRef.current) return;
+                  if (timelineResizeAnchorLockedRef.current) return;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                  const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight
+                    <= TIMELINE_FOLLOW_THRESHOLD_PX;
                   followTimelineRef.current = atBottom;
                   setShowJumpToBottom(!atBottom);
+                  if (!atBottom) {
+                    const bounds = timeline.getBoundingClientRect();
+                    const readingCenter = bounds.top + bounds.height / 2;
+                    let nearestMessageId: number | null = null;
+                    let nearestOffset = 0;
+                    let nearestDistance = Number.POSITIVE_INFINITY;
+                    for (const [messageId, element] of conversationMessageRefs.current) {
+                      if (!element.isConnected) continue;
+                      const rect = element.getBoundingClientRect();
+                      const distance = Math.abs(rect.top + rect.height / 2 - readingCenter);
+                      if (distance < nearestDistance) {
+                        nearestMessageId = messageId;
+                        nearestOffset = rect.top - bounds.top;
+                        nearestDistance = distance;
+                      }
+                    }
+                    if (nearestMessageId !== null) {
+                      timelineReadingAnchorRef.current = {
+                        messageId: nearestMessageId,
+                        offset: nearestOffset,
+                      };
+                      timeline.dataset.readingAnchorMessageId = String(nearestMessageId);
+                    }
+                  }
                   if (selectedSession?.sessionId !== selectedSessionId) return;
-                  if (atBottom || suppressReadingScrollRef.current) return;
+                  if (atBottom) {
+                    timelineReadingAnchorRef.current = null;
+                    timeline.removeAttribute("data-reading-anchor-message-id");
+                    const latestEvent = conversationRelayEvents.at(-1);
+                    if (latestEvent !== undefined && latestEvent.id !== currentRelayEventId) {
+                      setCurrentRelayEventId(latestEvent.id);
+                      onReadingMessageChange?.(selectedSessionId, latestEvent.messageId);
+                    }
+                    return;
+                  }
+                  if (suppressReadingScrollRef.current) return;
                   if (conversationFocusFrameRef.current !== null) return;
                   conversationFocusFrameRef.current = window.requestAnimationFrame(() => {
                     conversationFocusFrameRef.current = null;
@@ -1965,6 +2149,18 @@ export function OperatorConsole({
                     }
                   });
                 }}
+                onWheel={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                }}
+                onPointerDown={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                }}
+                onKeyDown={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                }}
               >
               {selectedSession ? (
                 <header
@@ -1984,6 +2180,7 @@ export function OperatorConsole({
                     >
                       {selectedSession.title}
                     </h1>
+                    {embeddedConversation && hasManagedProcesses && managedProcesses ? <ManagedProcessPanel controller={managedProcesses} t={t} /> : null}
                     {embeddedConversation && analysisPanel ? (
                       <button
                         type="button"
@@ -2027,6 +2224,7 @@ export function OperatorConsole({
                     <div
                       ref={timelineListRef}
                       className="relative"
+                      data-testid="virtual-timeline-list"
                       style={renderFullTimeline
                         ? undefined
                         : { height: `${String(timelineVirtualizer.getTotalSize())}px` }}
@@ -2422,8 +2620,19 @@ export function OperatorConsole({
                 filePath={locator.path}
                 line={locator.line}
                 column={locator.column}
+                hasExplicitLine={locator.hasExplicitLine}
+                rememberedMode={tab.fileMode}
                 initialContent={tab.sourceKey === null ? undefined : fileReferenceContents[tab.sourceKey]}
                 loadReference={onLoadFileReference}
+                onModeChange={(mode) => {
+                  updateRightSidebarTabs(updateRightSidebarFileMode(
+                    effectiveRightSidebarTabs,
+                    tab.id,
+                    mode,
+                  ));
+                }}
+                onOpenFileReference={(reference) => openFileReference(locator.sessionId, reference)}
+                onOpenExternalLink={onOpenExternalLink}
               />
             );
           },
@@ -2438,15 +2647,24 @@ export function OperatorConsole({
                 || selectedSession.runningCount > 0
               }
               loadDiff={onLoadWorkspaceDiff}
-              loadFile={onLoadProjectFile}
+              loadFile={onLoadWorkspaceDiffFile}
             />
           ),
-          "project-files": () => selectedSession === null ? null : (
+          "project-files": (tab) => selectedSession === null ? null : (
             <ProjectFilesTab
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
               loadFiles={onLoadProjectFiles}
               loadFile={onLoadProjectFile}
+              rememberedModes={tab.projectFileModes}
+              onModeChange={(filePath, mode) => {
+                updateRightSidebarTabs(updateRightSidebarProjectFileMode(
+                  effectiveRightSidebarTabs,
+                  tab.id,
+                  filePath,
+                  mode,
+                ));
+              }}
             />
           ),
           ...rightSidebarContentSlots,
@@ -2644,6 +2862,7 @@ export function OperatorConsole({
                 onRemoveProject,
                 setProjectActionError,
                 setRemovalRequest,
+                setRunningRemovalTarget,
               );
               if (removalRequest.project.projectId === activeProjectId) {
                 routeToConversation(remove);
@@ -2837,6 +3056,7 @@ async function submitProjectRemoval(
   onRemoveProject: OperatorConsoleProps["onRemoveProject"],
   setError: (error: string | null) => void,
   close: (value: { project: OperatorProject; force: boolean } | null) => void,
+  showRunningWarning: (project: OperatorProject | null) => void,
 ): Promise<void> {
   if (!onRemoveProject) {
     return;
@@ -2846,8 +3066,21 @@ async function submitProjectRemoval(
     await onRemoveProject(request.project.projectId, request.force);
     close(null);
   } catch (error) {
+    if (!request.force && isManagedProcessRunningConflict(error)) {
+      setError(null);
+      close(null);
+      showRunningWarning(request.project);
+      return;
+    }
     setError(error instanceof Error ? error.message : String(error));
   }
+}
+
+function isManagedProcessRunningConflict(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "managed-process-running";
 }
 
 async function submitProjectFolderRepair(
@@ -3379,6 +3612,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
       branchUnavailable: session.workspaceUnavailableReason != null,
       unreadSince: session.unreadSince,
       isRunning: session.status === "running" || session.runningCount > 0 || session.hasPendingControlWork === true,
+      hasManagedProcesses: (session.managedRunningCount ?? 0) > 0,
       hasPendingControlWork: session.hasPendingControlWork ?? false,
       unresolvedSystemEventKind: session.unresolvedSystemEventKind === "run-not-started"
         || session.unresolvedSystemEventKind === "run-stuck"
@@ -3560,20 +3794,33 @@ async function unavailableFileReference(
   filePath: string,
   line: number,
   column: number | null,
+  _hasExplicitLine: boolean,
 ): Promise<FileReferenceContent> {
   return {
     available: false,
+    scope: null,
+    isComplete: null,
     path: filePath,
     lines: [],
     reason: "unavailable",
     targetLine: line,
     targetColumn: column,
+    relativePath: null,
+    text: null,
   };
 }
 
-function fileReferenceTabTitle(reference: MarkdownFileReference, t: Translate): string {
+function fileReferenceTabTitle(
+  reference: MarkdownFileReference,
+  externalPreview: boolean,
+  t: Translate,
+): string {
   const name = reference.path.split("/").filter(Boolean).at(-1)
     ?? t("console.rightSidebar.fileReference");
-  const column = reference.column === null ? "" : `:${String(reference.column)}`;
-  return `${name}:${String(reference.line)}${column}`;
+  const locatedName = reference.hasExplicitLine
+    ? `${name}:${String(reference.line)}${reference.column === null ? "" : `:${String(reference.column)}`}`
+    : name;
+  return externalPreview
+    ? t("console.fileReference.previewTabTitle", { name: locatedName })
+    : locatedName;
 }

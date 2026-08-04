@@ -2,6 +2,7 @@ export interface MarkdownFileReference {
   path: string;
   line: number;
   column: number | null;
+  hasExplicitLine: boolean;
 }
 
 export interface MarkdownMemberIdentity {
@@ -43,13 +44,14 @@ export function parseMarkdownFileReference(value: string | null | undefined): Ma
 
   const located = /^(.*?):([1-9]\d*)(?::([1-9]\d*))?$/u.exec(decoded);
   const filePath = normalizeAbsolutePosixPath(located?.[1] ?? decoded);
-  if (filePath === null) {
+  if (filePath === null || filePath === "/") {
     return null;
   }
   return {
     path: filePath,
     line: located === null ? 1 : Number.parseInt(located[2]!, 10),
     column: located?.[3] === undefined ? null : Number.parseInt(located[3], 10),
+    hasExplicitLine: located !== null,
   };
 }
 

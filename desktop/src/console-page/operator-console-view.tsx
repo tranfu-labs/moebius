@@ -26,6 +26,7 @@ import type { useProjectMutations } from "./use-project-mutations.js";
 import type { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import type { useSessionConsole } from "./use-session-console.js";
 import type { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
+import type { ManagedProcessPanelController } from "@moebius/console-ui";
 
 export interface OperatorConsoleViewProps {
   language: ReturnType<typeof useDesktopLanguage>;
@@ -41,6 +42,7 @@ export interface OperatorConsoleViewProps {
   rightSidebar: ReturnType<typeof useRightSidebarConsole>;
   sidebarDraftClose: ReturnType<typeof useSidebarDraftClose>;
   agentTeams: ReturnType<typeof useAgentTeamConsole>;
+  managedProcesses: ManagedProcessPanelController;
   actions: ConsoleStateActions;
   newConversation: NewConversationDraftState | null;
   sessionAnalysisNotice: string | null;
@@ -153,6 +155,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
             onOpenChange: (open) => analysisNavigation.setPanelOpen(selectedSession.sessionId, open),
             onOpenEntry: (entry) => analysisNavigation.openEntry(selectedSession.sessionId, entry),
           }}
+      managedProcesses={props.managedProcesses}
       conversationNotice={conversationTransition.transitionError
         ?? props.sessionAnalysisNotice
         ?? (presentationRoute?.notice === "source-unavailable"
@@ -329,6 +332,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onLoadWorkspaceDiff={props.rightSidebar.files.readWorkspaceDiff}
       onLoadProjectFiles={props.rightSidebar.files.readProjectFiles}
       onLoadProjectFile={props.rightSidebar.files.readProjectFile}
+      onLoadWorkspaceDiffFile={props.rightSidebar.files.readWorkspaceDiffFile}
       onLoadFileReference={props.rightSidebar.files.readFileReference}
       onLoadProcessOutputPrevious={props.rightSidebar.processData.loadPrevious}
     />

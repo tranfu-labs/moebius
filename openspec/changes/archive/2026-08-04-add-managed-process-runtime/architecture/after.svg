@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="980" viewBox="0 0 1400 980" role="img" aria-labelledby="title desc">
+  <title id="title">托管运行项改造后架构</title>
+  <desc id="desc">三家 Provider 每轮临时注入同一 stdio MCP bridge，使用会话能力调用 local-console supervisor。Supervisor 通过 HMAC manifest 精确管理 launchd service、进程组、readiness 和日志，主会话显示状态，桌面退出统一回收。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#eef2f7" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0 0L10 4L0 8Z" fill="#5e6ad2"/>
+    </marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0 0L10 4L0 8Z" fill="#059669"/>
+    </marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700;letter-spacing:-.3px}
+      .eyebrow{font-size:13px;font-weight:700;letter-spacing:1.4px;fill:#5e6ad2}
+      .section{font-size:17px;font-weight:700}
+      .label{font-size:15px;font-weight:650}
+      .body{font-size:13px;fill:#526074}
+      .small{font-size:12px;fill:#64748b}
+      .good{fill:#047857}
+      .box{fill:#fff;stroke:#d8e0ec;stroke-width:1.5}
+      .violet{fill:#f8f7ff;stroke:#c9c5f7;stroke-width:1.5}
+      .cyan{fill:#f0fbfd;stroke:#9ddce7;stroke-width:1.5}
+      .green{fill:#f1fbf6;stroke:#9ed7b8;stroke-width:1.5}
+      .amber{fill:#fffbeb;stroke:#e8c96c;stroke-width:1.5}
+      .flow{fill:none;stroke:#5e6ad2;stroke-width:2;marker-end:url(#arrow)}
+      .goodFlow{fill:none;stroke:#059669;stroke-width:2;marker-end:url(#greenArrow)}
+      .dash{stroke-dasharray:7 6}
+    </style>
+  </defs>
+
+  <rect width="1400" height="980" fill="#fbfcfe"/>
+  <rect width="1400" height="980" fill="url(#grid)" opacity=".72"/>
+  <text x="64" y="52" class="eyebrow">AFTER · MOEBIUS OWNS THE LIFECYCLE</text>
+  <text x="64" y="88" class="title">统一 stdio MCP bridge + 会话级 managed-process supervisor</text>
+  <text x="64" y="116" class="body">结构化 argv · workspace admission · launchd service identity · readiness · 有界日志 · 正常退出回收 · 崩溃精确清理</text>
+
+  <rect x="64" y="150" width="1272" height="116" rx="18" class="box"/>
+  <text x="90" y="184" class="section">View · 当前主会话</text>
+  <rect x="90" y="202" width="516" height="40" rx="12" class="violet"/>
+  <text x="110" y="227" class="label">Storybook · 已就绪</text>
+  <text x="390" y="227" class="small">打开 · 日志 · 停止</text>
+  <rect x="624" y="202" width="320" height="40" rx="12" class="box"/>
+  <text x="784" y="227" text-anchor="middle" class="body">2 个运行项 · session-scoped</text>
+  <rect x="962" y="202" width="344" height="40" rx="12" class="box"/>
+  <text x="1134" y="227" text-anchor="middle" class="body">renderer 只消费 DTO + callbacks</text>
+
+  <path d="M700 266V300" class="flow"/>
+
+  <rect x="64" y="310" width="1272" height="174" rx="18" class="box"/>
+  <text x="90" y="344" class="section">Application · local-console supervisor</text>
+  <g transform="translate(90 366)">
+    <rect width="274" height="84" rx="14" class="violet"/>
+    <text x="137" y="29" text-anchor="middle" class="label">Session capability</text>
+    <text x="137" y="52" text-anchor="middle" class="small">session · workspace · providerRun</text>
+    <text x="137" y="70" text-anchor="middle" class="small">短期 token；调用后撤销</text>
+  </g>
+  <g transform="translate(386 366)">
+    <rect width="274" height="84" rx="14" class="green"/>
+    <text x="137" y="29" text-anchor="middle" class="label">ManagedProcessSupervisor</text>
+    <text x="137" y="52" text-anchor="middle" class="small">registry · owner · stop admission</text>
+    <text x="137" y="70" text-anchor="middle" class="small">starting → ready → exited</text>
+  </g>
+  <g transform="translate(682 366)">
+    <rect width="274" height="84" rx="14" class="cyan"/>
+    <text x="137" y="29" text-anchor="middle" class="label">Readiness + bounded logs</text>
+    <text x="137" y="52" text-anchor="middle" class="small">none · tcp · http · stdout literal</text>
+    <text x="137" y="70" text-anchor="middle" class="small">ring cursor · truncation fact</text>
+  </g>
+  <g transform="translate(978 366)">
+    <rect width="328" height="84" rx="14" class="amber"/>
+    <text x="164" y="29" text-anchor="middle" class="label">Shutdown + startup reconciliation</text>
+    <text x="164" y="52" text-anchor="middle" class="small">正常退出：stop all → reap → close</text>
+    <text x="164" y="70" text-anchor="middle" class="small">崩溃：精确 bootout，不重启</text>
+  </g>
+  <path d="M364 408H386" class="flow"/>
+  <path d="M660 408H682" class="goodFlow"/>
+  <path d="M956 408H978" class="goodFlow"/>
+
+  <path d="M522 484V542" class="goodFlow"/>
+  <text x="542" y="520" class="small">结构化 start/list/inspect/log/stop</text>
+
+  <rect x="64" y="552" width="1272" height="182" rx="18" class="box"/>
+  <text x="90" y="586" class="section">Provider invocation · 每轮临时 MCP 注入</text>
+  <g transform="translate(90 608)">
+    <rect width="258" height="90" rx="14" class="violet"/>
+    <text x="129" y="30" text-anchor="middle" class="label">Codex</text>
+    <text x="129" y="53" text-anchor="middle" class="small">process-scoped config overrides</text>
+    <text x="129" y="72" text-anchor="middle" class="small">不写 ~/.codex</text>
+  </g>
+  <g transform="translate(370 608)">
+    <rect width="258" height="90" rx="14" class="violet"/>
+    <text x="129" y="30" text-anchor="middle" class="label">Claude</text>
+    <text x="129" y="53" text-anchor="middle" class="small">run-local --mcp-config</text>
+    <text x="129" y="72" text-anchor="middle" class="small">additive · no strict</text>
+  </g>
+  <g transform="translate(650 608)">
+    <rect width="258" height="90" rx="14" class="cyan"/>
+    <text x="129" y="30" text-anchor="middle" class="label">Kimi ACP</text>
+    <text x="129" y="53" text-anchor="middle" class="small">session new/resume mcpServers</text>
+    <text x="129" y="72" text-anchor="middle" class="small">tool returned ≠ turn completed</text>
+  </g>
+  <g transform="translate(930 608)">
+    <rect width="376" height="90" rx="14" class="green"/>
+    <text x="188" y="30" text-anchor="middle" class="label">stdio MCP bridge</text>
+    <text x="188" y="53" text-anchor="middle" class="small">同一 schema · 不 spawn · capability 转发</text>
+    <text x="188" y="72" text-anchor="middle" class="small">Runtime Contract 覆盖 full / delta / resume</text>
+  </g>
+  <path d="M348 653H930" class="flow dash"/>
+  <path d="M628 668H930" class="flow dash"/>
+  <path d="M908 683H930" class="flow dash"/>
+  <path d="M1118 608C1118 530 700 534 700 484" class="flow"/>
+
+  <rect x="64" y="768" width="1272" height="142" rx="18" class="box"/>
+  <text x="90" y="802" class="section">Adapter · 系统可证明的进程所有权与清理</text>
+  <g transform="translate(90 824)">
+    <rect width="326" height="58" rx="14" class="green"/>
+    <text x="163" y="25" text-anchor="middle" class="label">launchd service · exact label</text>
+    <text x="163" y="45" text-anchor="middle" class="small">TERM → KILL → bootout</text>
+  </g>
+  <g transform="translate(444 824)">
+    <rect width="326" height="58" rx="14" class="box"/>
+    <text x="163" y="25" text-anchor="middle" class="label">Moebius wrapper + target argv</text>
+    <text x="163" y="45" text-anchor="middle" class="small">same job group · shell:false</text>
+  </g>
+  <g transform="translate(798 824)">
+    <rect width="236" height="58" rx="14" class="cyan"/>
+    <text x="118" y="25" text-anchor="middle" class="label">Loopback readiness</text>
+    <text x="118" y="45" text-anchor="middle" class="small">真实端口 / HTTP 状态</text>
+  </g>
+  <g transform="translate(1062 824)">
+    <rect width="244" height="58" rx="14" class="amber"/>
+    <text x="122" y="25" text-anchor="middle" class="label">HMAC manifest · 0600</text>
+    <text x="122" y="45" text-anchor="middle" class="small">label + digest，不保存命令</text>
+  </g>
+  <path d="M416 853H444" class="goodFlow"/>
+  <path d="M770 853H798" class="goodFlow"/>
+  <path d="M1034 853H1062" class="goodFlow"/>
+
+  <rect x="64" y="936" width="1272" height="2" fill="#e4e9f1"/>
+  <text x="64" y="964" class="small">Kimi post-tool settle timeout 只收束 Provider run；managed process 继续由 supervisor 独立持有并可在下一回合停止。</text>
+</svg>

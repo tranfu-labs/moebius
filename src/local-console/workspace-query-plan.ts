@@ -71,15 +71,6 @@ export function planUnavailableProjectFiles(
   };
 }
 
-export function decideProjectFileRead(
-  diff: WorkspaceDiffProjection,
-  filePath: string,
-): { kind: "diff" } | { kind: "workspace" } {
-  return diff.available && diff.files.some((file) => file.path === filePath)
-    ? { kind: "diff" }
-    : { kind: "workspace" };
-}
-
 export function planUnavailableProjectFile(filePath: string): LocalConsoleFileContent {
   return {
     available: false,

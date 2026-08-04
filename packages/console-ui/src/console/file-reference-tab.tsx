@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 
+import { FileSourceView } from "@/console/file-source-view";
+import {
+  reduceFileReadState,
+  type FileReadEvent,
+  type FileReadState,
+  type FileViewMode,
+} from "@/console/file-view-state";
+import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
+import { WorkspaceFileView } from "@/console/workspace-file-view";
 import { useI18n, type TranslationKey } from "@/i18n";
-import { cn } from "@/lib/utils";
 
 export interface FileReferenceLine {
   lineNumber: number;
@@ -11,6 +19,8 @@ export interface FileReferenceLine {
 export type FileReferenceContent =
   | {
       available: true;
+      scope: "workspace-file" | "external-preview";
+      isComplete: boolean;
       path: string;
       lines: FileReferenceLine[];
       reason: null;
@@ -18,9 +28,13 @@ export type FileReferenceContent =
       targetColumn: number | null;
       truncatedBefore: boolean;
       truncatedAfter: boolean;
+      relativePath: string | null;
+      text: string | null;
     }
   | {
       available: false;
+      scope: "workspace-file" | "external-preview" | null;
+      isComplete: null;
       path: string;
       lines: [];
       reason:
@@ -32,9 +46,13 @@ export type FileReferenceContent =
         | "response-too-large"
         | "line-not-found"
         | "scan-limit"
+        | "file-too-large"
+        | "workspace-unavailable"
         | "unavailable";
       targetLine: number;
       targetColumn: number | null;
+      relativePath: string | null;
+      text: null;
     };
 
 export interface FileReferenceTabProps {
@@ -42,13 +60,19 @@ export interface FileReferenceTabProps {
   filePath: string;
   line: number;
   column: number | null;
+  hasExplicitLine: boolean;
+  rememberedMode?: FileViewMode;
   initialContent?: FileReferenceContent;
   loadReference(
     sessionId: string,
     filePath: string,
     line: number,
     column: number | null,
+    hasExplicitLine: boolean,
   ): Promise<FileReferenceContent>;
+  onModeChange?: (mode: FileViewMode) => void;
+  onOpenFileReference?: (reference: MarkdownFileReference) => void;
+  onOpenExternalLink?: (url: string) => void;
 }
 
 export function FileReferenceTab({
@@ -56,121 +80,145 @@ export function FileReferenceTab({
   filePath,
   line,
   column,
+  hasExplicitLine,
+  rememberedMode,
   initialContent,
   loadReference,
+  onModeChange,
+  onOpenFileReference,
+  onOpenExternalLink,
 }: FileReferenceTabProps): JSX.Element {
   const { t } = useI18n();
-  const [content, setContent] = useState<FileReferenceContent | null>(initialContent ?? null);
-  const [loading, setLoading] = useState(initialContent === undefined);
-  const targetRef = useRef<HTMLDivElement | null>(null);
+  const targetKey = `${sessionId}:${filePath}:${String(line)}:${String(column)}:${hasExplicitLine ? "1" : "0"}`;
+  const [readState, dispatchRead] = useReducer(
+    (
+      state: FileReadState<FileReferenceContent>,
+      event: FileReadEvent<FileReferenceContent>,
+    ) => reduceFileReadState(state, event),
+    {
+      targetKey,
+      generation: 0,
+      loading: initialContent === undefined,
+      content: initialContent ?? null,
+    },
+  );
+  const { content, loading } = readState;
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [sourceScrollTop, setSourceScrollTop] = useState(0);
+  const loadReferenceRef = useRef(loadReference);
+  const requestGenerationRef = useRef(0);
+  loadReferenceRef.current = loadReference;
 
   useEffect(() => {
-    if (initialContent !== undefined) {
-      setContent(initialContent);
-      setLoading(false);
-      return;
+    const generation = requestGenerationRef.current + 1;
+    requestGenerationRef.current = generation;
+    dispatchRead({ type: "request-started", targetKey, generation });
+    if (initialContent !== undefined && reloadVersion === 0) {
+      dispatchRead({ type: "request-succeeded", targetKey, generation, content: initialContent });
+      return () => {
+        dispatchRead({ type: "request-invalidated", targetKey, generation });
+      };
     }
-    let cancelled = false;
-    setContent(null);
-    setLoading(true);
-    void loadReference(sessionId, filePath, line, column)
+    void loadReferenceRef.current(sessionId, filePath, line, column, hasExplicitLine)
       .then((nextContent) => {
-        if (!cancelled) {
-          setContent(nextContent);
-        }
+        dispatchRead({ type: "request-succeeded", targetKey, generation, content: nextContent });
       })
       .catch(() => {
-        if (!cancelled) {
-          setContent({
-            available: false,
-            path: filePath,
-            lines: [],
-            reason: "unavailable",
-            targetLine: line,
-            targetColumn: column,
-          });
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        dispatchRead({
+          type: "request-failed",
+          targetKey,
+          generation,
+          content: unavailableFileReference(filePath, line, column),
+        });
       });
     return () => {
-      cancelled = true;
+      dispatchRead({ type: "request-invalidated", targetKey, generation });
     };
-  }, [column, filePath, initialContent, line, loadReference, sessionId]);
+  }, [column, filePath, hasExplicitLine, initialContent, line, reloadVersion, sessionId, targetKey]);
 
   useEffect(() => {
-    if (content?.available) {
-      targetRef.current?.scrollIntoView?.({ block: "center" });
-    }
-  }, [content]);
+    setSourceScrollTop(0);
+  }, [column, filePath, hasExplicitLine, line, sessionId]);
+
+  const displayPath = content?.path ?? filePath;
+  if (content?.available && content.scope === "workspace-file") {
+    return (
+      <section
+        className="flex h-full min-h-0 flex-col overflow-hidden"
+        aria-label={t("console.fileReference.detail")}
+        data-testid="file-reference-tab"
+        data-file-scope="workspace-file"
+      >
+        <WorkspaceFileView
+          targetKey={`${sessionId}:${displayPath}:${String(line)}:${hasExplicitLine ? "1" : "0"}`}
+          path={displayPath}
+          text={content.text ?? content.lines.map((entry) => entry.text).join("\n")}
+          lines={content.lines}
+          hasExplicitLine={hasExplicitLine}
+          targetLine={hasExplicitLine ? content.targetLine : null}
+          rememberedMode={rememberedMode}
+          onModeChange={onModeChange}
+          onOpenFileReference={onOpenFileReference}
+          onOpenExternalLink={onOpenExternalLink}
+          scrollTop={sourceScrollTop}
+          onScrollTopChange={setSourceScrollTop}
+        />
+      </section>
+    );
+  }
 
   return (
     <section
       className="flex h-full min-h-0 flex-col overflow-hidden"
       aria-label={t("console.fileReference.detail")}
       data-testid="file-reference-tab"
+      data-file-scope={content?.scope ?? "unknown"}
     >
       <div className="shrink-0 border-b border-line px-3 py-2.5">
-        <div
-          className="select-text break-all font-mono text-xs leading-5 text-sub"
-          data-testid="file-reference-path"
-        >
-          {content?.path ?? filePath}
+        {content?.scope === "external-preview" ? (
+          <p className="mb-1 text-xs font-medium text-ink" data-testid="external-file-preview-label">
+            {t("console.fileReference.externalPreview")}
+          </p>
+        ) : null}
+        <div className="select-text break-all font-mono text-xs leading-5 text-sub" data-testid="file-reference-path">
+          {displayPath}
         </div>
         <p className="mt-1 text-xs text-hint">
           {column === null
             ? t("console.fileReference.targetLine", { line })
             : t("console.fileReference.targetLineColumn", { line, column })}
         </p>
+        {content?.scope === "external-preview" ? (
+          <p className="mt-1 text-xs text-hint">{t("console.fileReference.nearbyOnly")}</p>
+        ) : null}
       </div>
       {loading ? (
         <FileReferenceMessage>{t("console.fileReference.loading")}</FileReferenceMessage>
       ) : content === null || !content.available ? (
-        <FileReferenceMessage>{t(fileReferenceUnavailableKey(content?.reason ?? "unavailable"))}</FileReferenceMessage>
+        <FileReferenceMessage>
+          <p>{t(fileReferenceUnavailableKey(content?.reason ?? "unavailable"))}</p>
+          <button
+            type="button"
+            className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
+            onClick={() => setReloadVersion((current) => current + 1)}
+          >
+            {t("common.retry")}
+          </button>
+        </FileReferenceMessage>
       ) : (
-        <div className="scroll-thin min-h-0 flex-1 select-text overflow-auto font-mono text-xs leading-5">
+        <>
           {content.truncatedBefore ? (
-            <p className="border-b border-line px-3 py-1.5 text-center text-hint">
+            <p className="shrink-0 border-b border-line px-3 py-1.5 text-center text-xs text-hint">
               {t("console.fileReference.nearbyOnly")}
             </p>
           ) : null}
-          <div className="min-w-max py-1">
-            {content.lines.map((entry) => {
-              const target = entry.lineNumber === content.targetLine;
-              return (
-                <div
-                  key={entry.lineNumber}
-                  ref={target ? targetRef : undefined}
-                  className={cn(
-                    "flex min-w-max border-l-2 border-transparent",
-                    target && "border-accent bg-sel text-ink",
-                  )}
-                  data-testid={target ? "file-reference-target-line" : undefined}
-                  data-target-line={target ? "true" : undefined}
-                >
-                  <span
-                    className={cn(
-                      "sticky left-0 w-16 shrink-0 border-r border-line bg-canvas px-2 text-right text-hint",
-                      target && "bg-sel font-medium text-accent",
-                    )}
-                    aria-hidden="true"
-                  >
-                    {entry.lineNumber}
-                  </span>
-                  <span className="whitespace-pre px-3">{entry.text === "" ? "\u00a0" : entry.text}</span>
-                </div>
-              );
-            })}
-          </div>
+          <FileSourceView lines={content.lines} targetLine={content.targetLine} />
           {content.truncatedAfter ? (
-            <p className="border-t border-line px-3 py-1.5 text-center text-hint">
+            <p className="shrink-0 border-t border-line px-3 py-1.5 text-center text-xs text-hint">
               {t("console.fileReference.moreAfter")}
             </p>
           ) : null}
-        </div>
+        </>
       )}
     </section>
   );
@@ -179,9 +227,28 @@ export function FileReferenceTab({
 function FileReferenceMessage({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <div className="grid min-h-0 flex-1 place-items-center p-6 text-center text-sm leading-6 text-sub">
-      {children}
+      <div>{children}</div>
     </div>
   );
+}
+
+function unavailableFileReference(
+  filePath: string,
+  line: number,
+  column: number | null,
+): Extract<FileReferenceContent, { available: false }> {
+  return {
+    available: false,
+    scope: null,
+    isComplete: null,
+    path: filePath,
+    lines: [],
+    reason: "unavailable",
+    targetLine: line,
+    targetColumn: column,
+    relativePath: null,
+    text: null,
+  };
 }
 
 function fileReferenceUnavailableKey(
@@ -196,6 +263,8 @@ function fileReferenceUnavailableKey(
     "response-too-large": "console.fileReference.error.response-too-large",
     "line-not-found": "console.fileReference.error.line-not-found",
     "scan-limit": "console.fileReference.error.scan-limit",
+    "file-too-large": "console.fileDiff.tooLarge",
+    "workspace-unavailable": "console.fileDiff.workspaceUnavailable",
     unavailable: "console.fileReference.error.unavailable",
   };
   return keys[reason];

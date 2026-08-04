@@ -626,6 +626,25 @@ describe("ConversationSidebar", () => {
     expect(onArchiveSession).not.toHaveBeenCalled();
   });
 
+  it("blocks archive for managed work without showing the Agent running dot", async () => {
+    const onArchiveSession = vi.fn();
+    const managedProject: ConversationSidebarProject = {
+      ...project,
+      sessions: project.sessions.map((session) => session.id === "idle-refactor"
+        ? { ...session, hasManagedProcesses: true }
+        : session),
+    };
+    render(<ConversationSidebar projects={[managedProject]} onArchiveSession={onArchiveSession} />);
+
+    const row = screen.getByRole("button", { name: "导出功能重构" });
+    expect(row).toHaveAttribute("data-status-dot", "none");
+    fireEvent.contextMenu(row);
+    const archiveItem = await screen.findByRole("menuitem", { name: "归档" });
+    expect(archiveItem).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(archiveItem);
+    expect(onArchiveSession).not.toHaveBeenCalled();
+  });
+
   it("requests a new conversation for the project row that owns the button", () => {
     const onNewConversation = vi.fn();
     const secondProject = {

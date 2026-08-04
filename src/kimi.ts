@@ -8,6 +8,7 @@ import {
   DATA_ROOT,
   KIMI_CLI_SPAWN_TIMEOUT_MS,
   LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
+  KIMI_MANAGED_TOOL_SETTLE_TIMEOUT_MS,
 } from "./config.js";
 import {
   type CodexRunResult,
@@ -43,6 +44,7 @@ import type {
   LocalConsoleExecutionProfile,
 } from "./local-console/types.js";
 import type { LocalExecutionMode } from "./local-console/execution-driver.js";
+import type { ManagedProcessMcpInvocation } from "./local-console/execution-driver.js";
 
 const ACP_PROTOCOL_VERSION = 1;
 const MAX_ACP_LINE_BYTES = 4 * 1024 * 1024;
@@ -82,6 +84,7 @@ export interface KimiAcpRunOptions {
     env: NodeJS.ProcessEnv;
     allowWrites: boolean;
   }) => Promise<KimiAcpTransport>;
+  mcpServer?: ManagedProcessMcpInvocation | null;
 }
 
 export interface KimiAcpTransport {
@@ -121,7 +124,9 @@ export async function runKimiAcp(options: KimiAcpRunOptions): Promise<CodexRunRe
       readRoots: [options.cwd, path.join(runDir, "input-attachments")],
       stdoutPath,
       stderrPath,
-      env: withManagedKimiHome(process.env, runtimeHomes.managedHome),
+      env: {
+        ...withManagedKimiHome(process.env, runtimeHomes.managedHome),
+      },
       allowWrites: options.workspaceAccess !== "read-only",
     });
     await options.onProcessStarted?.();
@@ -196,6 +201,7 @@ export async function runKimiAcpWithTransport(
   let progressSequence = 0;
   let progressSupervisor = createRunSupervisorState(Date.now());
   let toolProjection = createProviderToolProjectionState();
+  const managedToolCallIds = new Set<string>();
   const terminalEvidence: KimiTerminalEvidence = {
     hasVisibleText: false,
     terminalToolCallIds: new Set(),
@@ -216,7 +222,7 @@ export async function runKimiAcpWithTransport(
   const raceLifecycle = async <T>(operation: Promise<T>): Promise<T> =>
     Promise.race([operation, lifecycleStopped]);
   const cancelAndEscalate = (
-    reason: "abort" | "idle" | "tool" | "max-duration" | "provider-busy",
+    reason: "abort" | "idle" | "tool" | "max-duration" | "provider-busy" | "managed-tool-settle",
   ): void => {
     if (settled || escalationStarted) return;
     escalationStarted = true;
@@ -268,6 +274,8 @@ export async function runKimiAcpWithTransport(
               "KIMI_ACP_TIMEOUT",
               reason === "tool"
                 ? "Kimi 的工具调用运行过久，已停止本次执行。"
+                : reason === "managed-tool-settle"
+                  ? "Kimi 的托管进程工具已完成，但本轮没有正常结束。"
                 : KIMI_TIMEOUT_MESSAGE,
               {
                 timeoutBasis: reason === "max-duration"
@@ -283,6 +291,25 @@ export async function runKimiAcpWithTransport(
   let toolTimer: NodeJS.Timeout | null = null;
   let maxTimer: NodeJS.Timeout | null = null;
   let busyTimer: NodeJS.Timeout | null = null;
+  let managedSettleTimer: NodeJS.Timeout | null = null;
+  let managedSettlementActive = false;
+  const armManagedSettle = (): void => {
+    if (!managedSettlementActive || settled || escalationStarted) return;
+    if (managedSettleTimer !== null) clearTimeout(managedSettleTimer);
+    managedSettleTimer = setTimeout(
+      () => cancelAndEscalate("managed-tool-settle"),
+      KIMI_MANAGED_TOOL_SETTLE_TIMEOUT_MS,
+    );
+  };
+  const clearManagedSettleTimer = (): void => {
+    if (managedSettleTimer === null) return;
+    clearTimeout(managedSettleTimer);
+    managedSettleTimer = null;
+  };
+  const clearManagedCompletion = options.mcpServer?.onToolCompletion?.(() => {
+    managedSettlementActive = true;
+    armManagedSettle();
+  }) ?? (() => undefined);
   const clearIdle = (): void => {
     if (idleTimer === null) return;
     clearTimeout(idleTimer);
@@ -329,6 +356,19 @@ export async function runKimiAcpWithTransport(
       });
   };
   const clearUpdate = transport.onSessionUpdate((update) => {
+    const managedUpdate = readKimiManagedToolUpdate(update);
+    if (managedUpdate?.managed === true) managedToolCallIds.add(managedUpdate.toolCallId);
+    if (managedUpdate?.completed === true && managedToolCallIds.has(managedUpdate.toolCallId)) {
+      managedSettlementActive = true;
+      armManagedSettle();
+    } else if (managedSettlementActive) {
+      const toolActivity = readKimiToolActivity(update);
+      if (toolActivity === "in-flight") {
+        clearManagedSettleTimer();
+      } else if (toolActivity === "settled" || isKimiSemanticPostToolProgress(update)) {
+        armManagedSettle();
+      }
+    }
     options.onStructuredActivity?.(update);
     const sequence = ++progressSequence;
     const toolLifecycle = projectKimiToolLifecycle(update, sequence, toolProjection);
@@ -406,11 +446,11 @@ export async function runKimiAcpWithTransport(
         ? {
             sessionId: options.mode.externalSessionId,
             cwd: path.resolve(options.cwd),
-            mcpServers: [],
+            mcpServers: kimiMcpServers(options.mcpServer),
           }
         : {
             cwd: path.resolve(options.cwd),
-            mcpServers: [],
+            mcpServers: kimiMcpServers(options.mcpServer),
           },
     ));
     const reportedSessionId = readOptionalSessionId(sessionResult);
@@ -569,6 +609,8 @@ export async function runKimiAcpWithTransport(
     if (toolTimer !== null) clearTimeout(toolTimer);
     if (maxTimer !== null) clearTimeout(maxTimer);
     if (busyTimer !== null) clearTimeout(busyTimer);
+    if (managedSettleTimer !== null) clearTimeout(managedSettleTimer);
+    clearManagedCompletion();
     options.signal?.removeEventListener("abort", abort);
     if (escalationCompletion !== null) {
       await escalationCompletion;
@@ -577,6 +619,52 @@ export async function runKimiAcpWithTransport(
       if (terminateGraceTimer !== null) clearTimeout(terminateGraceTimer);
     }
   }
+}
+
+function kimiMcpServers(server: ManagedProcessMcpInvocation | null | undefined): unknown[] {
+  if (server === null || server === undefined) return [];
+  return [{
+    name: "moebius_managed",
+    command: server.command,
+    args: [...server.args],
+    env: Object.entries(server.env)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, value]) => ({ name, value })),
+  }];
+}
+
+function readKimiManagedToolUpdate(value: unknown): { toolCallId: string; managed: boolean; completed: boolean } | null {
+  if (!isRecord(value)) return null;
+  const update = isRecord(value.update) ? value.update : value;
+  const kind = firstString(update.sessionUpdate, update.session_update, update.type);
+  if (kind !== "tool_call" && kind !== "tool_call_update") return null;
+  const toolCallId = firstString(update.toolCallId, update.tool_call_id);
+  if (toolCallId === null) return null;
+  const title = firstString(update.title, update.name) ?? "";
+  const status = firstString(update.status);
+  return {
+    toolCallId,
+    managed: title.startsWith("mcp__moebius_managed__managed_process_"),
+    completed: status === "completed" || status === "failed",
+  };
+}
+
+function isKimiSemanticPostToolProgress(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const update = isRecord(value.update) ? value.update : value;
+  const kind = firstString(update.sessionUpdate, update.session_update, update.type) ?? "";
+  if (kind !== "agent_message_chunk" && kind !== "agent_thought_chunk" && kind !== "plan") return false;
+  const content = isRecord(update.content) ? update.content : null;
+  return firstString(content?.text, update.text) !== null;
+}
+
+function readKimiToolActivity(value: unknown): "in-flight" | "settled" | null {
+  if (!isRecord(value)) return null;
+  const update = isRecord(value.update) ? value.update : value;
+  const kind = firstString(update.sessionUpdate, update.session_update, update.type);
+  if (kind !== "tool_call" && kind !== "tool_call_update") return null;
+  const status = firstString(update.status);
+  return status === "completed" || status === "failed" ? "settled" : "in-flight";
 }
 
 export async function confirmRuntimeConfig(
@@ -765,6 +853,7 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
   private closed = false;
   private terminalError: Error | null = null;
   private shutdownStage: "none" | "interrupt" | "terminate" | "kill" = "none";
+  private closePromise: Promise<void> | null = null;
 
   constructor(
     private readonly child: ChildProcessWithoutNullStreams,
@@ -838,12 +927,46 @@ class ProcessKimiAcpTransport implements KimiAcpTransport {
   }
 
   async close(): Promise<void> {
+    this.closePromise ??= this.closeOnce();
+    await this.closePromise;
+  }
+
+  private async closeOnce(): Promise<void> {
     this.closed = true;
-    if (this.child.exitCode === null && this.shutdownStage === "none") {
+    this.failAll(new KimiAcpError("KIMI_ACP_CLOSED", "Kimi ACP 已关闭。"));
+    this.child.stdin.end();
+    if (!this.hasExited()) {
       this.terminate();
+      if (!(await this.waitForExit(DEFAULT_SIGNAL_GRACE_MS))) {
+        this.kill();
+        await this.waitForExit(DEFAULT_SIGNAL_GRACE_MS);
+      }
     }
-    this.stdoutLog.end();
-    this.stderrLog.end();
+    await Promise.all([
+      new Promise<void>((resolve) => this.stdoutLog.end(resolve)),
+      new Promise<void>((resolve) => this.stderrLog.end(resolve)),
+    ]);
+  }
+
+  private hasExited(): boolean {
+    return this.child.exitCode !== null || this.child.signalCode !== null;
+  }
+
+  private async waitForExit(timeoutMs: number): Promise<boolean> {
+    if (this.hasExited()) return true;
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (exited: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.child.removeListener("exit", onExit);
+        resolve(exited);
+      };
+      const onExit = (): void => finish(true);
+      const timer = setTimeout(() => finish(this.hasExited()), timeoutMs);
+      this.child.once("exit", onExit);
+    });
   }
 
   interrupt(): void {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  decideProjectFileRead,
   planProjectFiles,
   planUnavailableProjectFiles,
 } from "../src/local-console/workspace-query-plan.js";
@@ -28,8 +27,6 @@ describe("local console workspace query plan", () => {
       reason: null,
       workspaceMode: "worktree",
     });
-    expect(decideProjectFileRead(diff, "src/changed.ts")).toEqual({ kind: "diff" });
-    expect(decideProjectFileRead(diff, "README.md")).toEqual({ kind: "workspace" });
   });
 
   it("preserves the selected workspace mode when reading is unavailable", () => {
