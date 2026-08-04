@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,9 +11,15 @@ import {
   type InstallerProcessSpawner,
 } from "../src/onboarding/cli-installer-manager.js";
 import { getTrustedCliInstaller } from "../src/onboarding/cli-installer-registry.js";
+import { OnboardingCliReadinessService } from "../src/onboarding/cli-readiness.js";
+import { capabilitySnapshotId } from "../src/team-execution-profile.js";
 
-afterEach(() => {
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
   vi.useRealTimers();
+  await Promise.all(temporaryRoots.splice(0).map((root) =>
+    fs.rm(root, { recursive: true, force: true })));
 });
 
 describe("trusted onboarding CLI installer registry", () => {
@@ -74,6 +83,62 @@ describe("onboarding CLI install manager", () => {
     expect(verified).toEqual(["codex"]);
     expect(events).toContain("codex:running:verifying");
     expect(manager.getRunningClis()).toEqual([]);
+  });
+
+  it("discovers a Codex binary placed in the repaired global bin immediately after npm succeeds", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-install-discovery-"));
+    temporaryRoots.push(root);
+    const globalBin = path.join(root, "npm-global", "bin");
+    await fs.mkdir(globalBin, { recursive: true });
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${globalBin}:/usr/bin:/bin`;
+    try {
+      const readiness = new OnboardingCliReadinessService({
+        probeCapabilities: async ({ knownCliVersion }) => {
+          const input = {
+            cli: "codex" as const,
+            cliVersion: knownCliVersion,
+            status: "available" as const,
+            models: [{
+              id: "gpt-5.6-sol",
+              displayName: "gpt-5.6-sol",
+              efforts: ["high"],
+              defaultEffort: "high",
+            }],
+          };
+          return {
+            ...input,
+            snapshotId: capabilitySnapshotId(input),
+            checkedAt: "2026-08-04T00:00:00.000Z",
+          };
+        },
+      });
+      await expect(readiness.check("codex")).resolves.toMatchObject({ status: "missing" });
+
+      const harness = processHarness();
+      const manager = new OnboardingCliInstallManager({
+        spawnProcess: harness.spawn,
+        onInstallSucceeded: (cli) => readiness.check(cli).then(() => undefined),
+      });
+      manager.start("codex");
+      await fs.writeFile(
+        path.join(globalBin, "codex"),
+        "#!/bin/sh\nprintf 'codex-cli 0.145.0\\n'\n",
+        { mode: 0o755 },
+      );
+      harness.children[0]!.exit(0);
+
+      await expect(manager.waitForCompletion("codex")).resolves.toMatchObject({
+        status: "succeeded",
+      });
+      expect(readiness.getSnapshot("codex")).toMatchObject({
+        status: "ready",
+        version: "codex-cli 0.145.0",
+      });
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
   });
 
   it("runs Kimi as curl piped to bash without a shell command", async () => {

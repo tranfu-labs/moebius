@@ -192,6 +192,8 @@ describe("main conversation timeline truth through the HTTP assembly", () => {
       const supplemented = await waitForState(harness.started.url, session.sessionId, (snapshot) =>
         snapshot.activeRun?.role === "manager"
         && snapshot.activeRuns.some((run) => run.role === "dev")
+        && managerOptions !== undefined
+        && finishManager !== undefined
       );
       expect(devOptions.signal?.aborted).toBe(false);
       expect(supplemented.pendingPrimaryMessages).toEqual([]);
