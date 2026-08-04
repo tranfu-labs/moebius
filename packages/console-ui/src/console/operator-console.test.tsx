@@ -2630,6 +2630,46 @@ describe("OperatorConsole", () => {
     expect(timeline.scrollTop).toBe(1_000);
   });
 
+  it("keeps bottom bookkeeping live after a height-only resize without an input-event prelude", () => {
+    const onReadingMessageChange = vi.fn();
+    renderConsole({
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "第一条" }),
+        message({ id: 2, speaker: "agent", role: "dev", body: "第二条" }),
+      ],
+      onReadingMessageChange,
+    });
+    const timeline = screen.getByRole("region", { name: "会话时间线" });
+    const pane = screen.getByTestId("parent-conversation-pane");
+    vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 0,
+      bottom: 600,
+      left: 0,
+      width: 0,
+      height: 600,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1_000 });
+    Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 400 });
+    timeline.scrollTop = 200;
+    fireEvent.scroll(timeline);
+    expect(screen.getByRole("button", { name: "回到底部" })).toBeVisible();
+
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+    fireEvent(window, new Event("resize"));
+    expect(timeline).toHaveAttribute("data-resize-anchoring", "false");
+
+    onReadingMessageChange.mockClear();
+    timeline.scrollTop = 600;
+    fireEvent.scroll(timeline);
+
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+    expect(onReadingMessageChange).toHaveBeenCalledWith("session-a", 2);
+  });
+
   it("owns one relay rail in the main conversation and keeps it out of the session sidebar", () => {
     const relayProps = {
       messages: [

@@ -179,6 +179,7 @@ export const NARROW_WINDOW_WIDTH_PX = 760;
 export const STACKED_TEAM_ROW_WINDOW_WIDTH_PX = 1024;
 export const CONVERSATION_DOCK_GAP_PX = 12;
 const INITIAL_CONVERSATION_DOCK_HEIGHT_PX = 176;
+const TIMELINE_FOLLOW_THRESHOLD_PX = 48;
 interface SidebarResizeGesture {
   pointerId: number;
   startX: number;
@@ -827,6 +828,11 @@ export function OperatorConsole({
   const conversationDockRef = useRef<HTMLDivElement | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
+  const timelineReadingAnchorRef = useRef<{ messageId: number; offset: number } | null>(null);
+  const timelineResizeAnchorLockedRef = useRef(false);
+  const timelineResizeAdjustedScrollTopRef = useRef<number | null>(null);
+  const timelineResizeFrameRef = useRef<number | null>(null);
+  const timelineResizeInProgressRef = useRef(false);
   const restoredReadingSessionRef = useRef<string | null>(null);
   const readingRestoreLayoutRef = useRef<string | null>(null);
   const readingSessionIdentityRef = useRef(selectedSessionId);
@@ -846,6 +852,7 @@ export function OperatorConsole({
   const [conversationDockHeight, setConversationDockHeight] = useState(
     INITIAL_CONVERSATION_DOCK_HEIGHT_PX,
   );
+  const conversationPaneWidthRef = useRef(conversationPaneWidth);
   const messageIndexById = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index] as const)),
     [messages],
@@ -859,6 +866,8 @@ export function OperatorConsole({
     overscan: 8,
     initialRect: { width: 760, height: 640 },
     scrollMargin: timelineListRef.current?.offsetTop ?? 0,
+    anchorTo: "end",
+    scrollEndThreshold: TIMELINE_FOLLOW_THRESHOLD_PX,
   });
   const virtualTimelineItems = timelineVirtualizer.getVirtualItems();
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
@@ -998,24 +1007,100 @@ export function OperatorConsole({
 
   useEffect(() => {
     const updateResponsiveLayout = () => {
+      const pane = parentConversationPaneRef.current;
+      const paneWidth = pane === null
+        ? conversationPaneWidthRef.current
+        : Math.round(pane.getBoundingClientRect().width);
+      if (paneWidth !== conversationPaneWidthRef.current) {
+        conversationPaneWidthRef.current = paneWidth;
+        timelineResizeInProgressRef.current = true;
+        timelineResizeAnchorLockedRef.current = timelineReadingAnchorRef.current !== null
+          && !followTimelineRef.current;
+        timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+        timelineScrollRef.current?.setAttribute("data-resize-anchoring", "true");
+        setConversationPaneWidth(paneWidth);
+      }
       setIsNarrowWindow(viewportIsNarrow());
       setRightSidebarOverlay(viewportUsesRightSidebarOverlay());
       setUseStackedTeamRows(viewportUsesStackedTeamRows());
     };
     window.addEventListener("resize", updateResponsiveLayout);
     return () => window.removeEventListener("resize", updateResponsiveLayout);
-  }, []);
+  }, [timelineVirtualizer]);
 
   useLayoutEffect(() => {
     const pane = parentConversationPaneRef.current;
     if (pane === null) return;
-    const update = () => setConversationPaneWidth(Math.round(pane.getBoundingClientRect().width));
+    const update = () => {
+      const nextWidth = Math.round(pane.getBoundingClientRect().width);
+      if (nextWidth === conversationPaneWidthRef.current) return;
+      conversationPaneWidthRef.current = nextWidth;
+      timelineResizeInProgressRef.current = true;
+      timelineResizeAnchorLockedRef.current = timelineReadingAnchorRef.current !== null
+        && !followTimelineRef.current;
+      timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+      timelineScrollRef.current?.setAttribute("data-resize-anchoring", "true");
+      setConversationPaneWidth(nextWidth);
+    };
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(pane);
     return () => observer.disconnect();
-  }, [applicationView, newConversation]);
+  }, [applicationView, newConversation, timelineVirtualizer]);
+
+  useLayoutEffect(() => {
+    if (!timelineResizeInProgressRef.current) return;
+    if (followTimelineRef.current || timelineReadingAnchorRef.current === null) {
+      timelineResizeInProgressRef.current = false;
+      timelineResizeAnchorLockedRef.current = false;
+      timelineResizeAdjustedScrollTopRef.current = null;
+      timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+      timelineScrollRef.current?.setAttribute("data-resize-anchoring", "false");
+      return;
+    }
+    let cancelled = false;
+    let stableFrames = 0;
+    let frameCount = 0;
+    const reconcileReadingAnchor = () => {
+      if (cancelled) return;
+      frameCount += 1;
+      const timeline = timelineScrollRef.current;
+      const anchor = timelineReadingAnchorRef.current;
+      const element = anchor === null ? undefined : conversationMessageRefs.current.get(anchor.messageId);
+      if (timeline !== null && anchor !== null && element?.isConnected) {
+        const offset = element.getBoundingClientRect().top - timeline.getBoundingClientRect().top;
+        const delta = offset - anchor.offset;
+        if (Math.abs(delta) > 0.5) {
+          const nextScrollTop = timeline.scrollTop + delta;
+          timelineResizeAdjustedScrollTopRef.current = nextScrollTop;
+          timeline.scrollTop = nextScrollTop;
+          stableFrames = 0;
+        } else {
+          stableFrames += 1;
+        }
+      } else {
+        stableFrames = 0;
+      }
+      if (stableFrames >= 8 || frameCount >= 60) {
+        timelineResizeInProgressRef.current = false;
+        timelineResizeAnchorLockedRef.current = false;
+        timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+        timeline?.setAttribute("data-resize-anchoring", "false");
+        timelineResizeFrameRef.current = null;
+        return;
+      }
+      timelineResizeFrameRef.current = window.requestAnimationFrame(reconcileReadingAnchor);
+    };
+    timelineResizeFrameRef.current = window.requestAnimationFrame(reconcileReadingAnchor);
+    return () => {
+      cancelled = true;
+      if (timelineResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(timelineResizeFrameRef.current);
+        timelineResizeFrameRef.current = null;
+      }
+    };
+  }, [conversationPaneWidth, timelineVirtualizer]);
 
   useLayoutEffect(() => {
     const dock = conversationDockRef.current;
@@ -1040,11 +1125,12 @@ export function OperatorConsole({
     if (conversationHighlightTimerRef.current !== null) {
       window.clearTimeout(conversationHighlightTimerRef.current);
     }
+    timelineResizeAnchorLockedRef.current = false;
+    timelineResizeAdjustedScrollTopRef.current = null;
+    if (timelineResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(timelineResizeFrameRef.current);
+    }
   }, []);
-
-  useLayoutEffect(() => {
-    timelineVirtualizer.measure();
-  }, [conversationPaneWidth, timelineVirtualizer]);
 
   const revealConversationMessage = useCallback((messageId: number): boolean => {
     const mountedTarget = conversationMessageRefs.current.get(messageId);
@@ -1078,10 +1164,17 @@ export function OperatorConsole({
   useLayoutEffect(() => {
     if (readingSessionIdentityRef.current === selectedSessionId) return;
     readingSessionIdentityRef.current = selectedSessionId;
+    timelineReadingAnchorRef.current = null;
+    timelineResizeAnchorLockedRef.current = false;
+    timelineResizeAdjustedScrollTopRef.current = null;
+    timelineResizeInProgressRef.current = false;
+    timelineVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    timelineScrollRef.current?.setAttribute("data-resize-anchoring", "false");
+    timelineScrollRef.current?.removeAttribute("data-reading-anchor-message-id");
     restoredReadingSessionRef.current = null;
     readingRestoreLayoutRef.current = null;
     suppressReadingScrollRef.current = true;
-  }, [selectedSessionId]);
+  }, [selectedSessionId, timelineVirtualizer]);
 
   useLayoutEffect(() => {
     if (restoredReadingSessionRef.current === selectedSessionId) return;
@@ -1933,15 +2026,58 @@ export function OperatorConsole({
                   analysisPanelReservesSpace && "pr-[312px]",
                 )}
                 aria-label={t("console.operator.timeline")}
+                data-resize-anchoring={timelineResizeInProgressRef.current ? "true" : "false"}
                 ref={timelineScrollRef}
                 style={{ paddingBottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
                 onScroll={(event) => {
                   const timeline = event.currentTarget;
-                  const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48;
+                  const adjustedScrollTop = timelineResizeAdjustedScrollTopRef.current;
+                  if (adjustedScrollTop !== null && Math.abs(timeline.scrollTop - adjustedScrollTop) <= 1) {
+                    return;
+                  }
+                  if (timelineResizeInProgressRef.current) return;
+                  if (timelineResizeAnchorLockedRef.current) return;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                  const atBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight
+                    <= TIMELINE_FOLLOW_THRESHOLD_PX;
                   followTimelineRef.current = atBottom;
                   setShowJumpToBottom(!atBottom);
+                  if (!atBottom) {
+                    const bounds = timeline.getBoundingClientRect();
+                    const readingCenter = bounds.top + bounds.height / 2;
+                    let nearestMessageId: number | null = null;
+                    let nearestOffset = 0;
+                    let nearestDistance = Number.POSITIVE_INFINITY;
+                    for (const [messageId, element] of conversationMessageRefs.current) {
+                      if (!element.isConnected) continue;
+                      const rect = element.getBoundingClientRect();
+                      const distance = Math.abs(rect.top + rect.height / 2 - readingCenter);
+                      if (distance < nearestDistance) {
+                        nearestMessageId = messageId;
+                        nearestOffset = rect.top - bounds.top;
+                        nearestDistance = distance;
+                      }
+                    }
+                    if (nearestMessageId !== null) {
+                      timelineReadingAnchorRef.current = {
+                        messageId: nearestMessageId,
+                        offset: nearestOffset,
+                      };
+                      timeline.dataset.readingAnchorMessageId = String(nearestMessageId);
+                    }
+                  }
                   if (selectedSession?.sessionId !== selectedSessionId) return;
-                  if (atBottom || suppressReadingScrollRef.current) return;
+                  if (atBottom) {
+                    timelineReadingAnchorRef.current = null;
+                    timeline.removeAttribute("data-reading-anchor-message-id");
+                    const latestEvent = conversationRelayEvents.at(-1);
+                    if (latestEvent !== undefined && latestEvent.id !== currentRelayEventId) {
+                      setCurrentRelayEventId(latestEvent.id);
+                      onReadingMessageChange?.(selectedSessionId, latestEvent.messageId);
+                    }
+                    return;
+                  }
+                  if (suppressReadingScrollRef.current) return;
                   if (conversationFocusFrameRef.current !== null) return;
                   conversationFocusFrameRef.current = window.requestAnimationFrame(() => {
                     conversationFocusFrameRef.current = null;
@@ -1964,6 +2100,18 @@ export function OperatorConsole({
                       onReadingMessageChange?.(selectedSessionId, nearest.messageId);
                     }
                   });
+                }}
+                onWheel={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                }}
+                onPointerDown={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
+                }}
+                onKeyDown={() => {
+                  timelineResizeAnchorLockedRef.current = false;
+                  timelineResizeAdjustedScrollTopRef.current = null;
                 }}
               >
               {selectedSession ? (
@@ -2027,6 +2175,7 @@ export function OperatorConsole({
                     <div
                       ref={timelineListRef}
                       className="relative"
+                      data-testid="virtual-timeline-list"
                       style={renderFullTimeline
                         ? undefined
                         : { height: `${String(timelineVirtualizer.getTotalSize())}px` }}
