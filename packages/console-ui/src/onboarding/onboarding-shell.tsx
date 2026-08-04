@@ -7,6 +7,7 @@ import {
   MessageSquarePlus,
   Play,
   RefreshCw,
+  Search,
   Square,
   Sparkles,
   Terminal,
@@ -26,6 +27,7 @@ import {
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
+import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import { MoebiusLogo } from "@/brand/moebius-logo";
 import {
   TeamBuilderView,
@@ -51,6 +53,7 @@ import {
   type OnboardingStep,
 } from "./onboarding-state";
 import { RelayDemo } from "./relay-demo/relay-demo";
+import { projectOnboardingTeamList } from "./onboarding-team-list-model";
 
 export type OnboardingMode = "first-run" | "replay";
 
@@ -104,7 +107,10 @@ export function OnboardingShell({
     createOnboardingShellState,
   );
   const [completionState, setCompletionState] = useState<"idle" | "saving" | "error">("idle");
+  const [teamQuery, setTeamQuery] = useState("");
+  const [pendingCreatedTeamFocus, setPendingCreatedTeamFocus] = useState<string | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const teamCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const usableTeams = useMemo(
     () => teamsState.status === "ready"
       ? teamsState.teams.filter((team) => team.canCreateConversation)
@@ -126,7 +132,10 @@ export function OnboardingShell({
   }, [environment, state.environmentPassed]);
 
   useEffect(() => {
-    if (state.selectedTeamKey !== null || usableTeams.length === 0) {
+    if (
+      usableTeams.length === 0
+      || usableTeams.some((team) => team.teamKey === state.selectedTeamKey)
+    ) {
       return;
     }
     const defaultTeamKey = resolveDefaultOnboardingTeamKey(usableTeams);
@@ -144,8 +153,20 @@ export function OnboardingShell({
     }
     dispatch({ type: "select-team", teamKey: createdTeamKey });
     dispatch({ type: "close-team-builder" });
+    setTeamQuery("");
+    setPendingCreatedTeamFocus(createdTeamKey);
     onCreatedTeamConsumed?.();
   }, [createdTeamKey, onCreatedTeamConsumed, usableTeams]);
+
+  useEffect(() => {
+    if (pendingCreatedTeamFocus === null || state.selectedTeamKey !== pendingCreatedTeamFocus) {
+      return;
+    }
+    const target = teamCardRefs.current.get(pendingCreatedTeamFocus);
+    if (target === undefined) return;
+    target.focus();
+    setPendingCreatedTeamFocus(null);
+  }, [pendingCreatedTeamFocus, state.selectedTeamKey, teamQuery]);
 
   const primaryDisabled = state.teamBuilderOpen
     || completionState === "saving"
@@ -173,24 +194,26 @@ export function OnboardingShell({
 
   return (
     <main
-      className="flex h-screen min-h-[560px] flex-col overflow-hidden bg-canvas text-ink"
+      className="flex h-screen h-dvh min-h-0 flex-col overflow-hidden bg-canvas text-ink"
       data-testid={`onboarding-step-${String(state.step)}`}
       data-onboarding-mode={mode}
     >
       <header
-        className="window-drag-region grid h-[var(--window-header-height)] shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-4"
+        className="window-drag-region relative flex h-[var(--window-header-height)] shrink-0 items-center border-b border-line pl-[78px] pr-4"
         aria-label={t("onboarding.windowTitle")}
       >
-        <InstallationAggregate
-          installations={installations}
-          onCancel={onCancelCliInstallation}
-        />
         <span className="flex items-center gap-2 text-xs font-semibold text-sub">
           <MoebiusLogo className="h-6 w-6" decorative />
           Moebius
         </span>
+        <span className="window-no-drag absolute left-1/2 -translate-x-1/2">
+          <InstallationAggregate
+            installations={installations}
+            onCancel={onCancelCliInstallation}
+          />
+        </span>
         {mode === "replay" ? (
-          <span className="window-no-drag flex items-center justify-self-end gap-1 text-xs text-hint">
+          <span className="window-no-drag ml-auto flex items-center gap-1 text-xs text-hint">
             <span>{t("onboarding.replay")}</span>
             <Button
               type="button"
@@ -204,7 +227,7 @@ export function OnboardingShell({
             </Button>
           </span>
         ) : (
-          <span className="justify-self-end text-xs tabular-nums text-hint">
+          <span className="ml-auto text-xs tabular-nums text-hint">
             {t("onboarding.firstRun")}
           </span>
         )}
@@ -212,21 +235,35 @@ export function OnboardingShell({
 
       <section
         className={cn(
-          "flex min-h-0 flex-1 justify-center overflow-y-auto px-6 max-sm:px-4",
-          state.step === 3 ? "py-4 max-sm:py-5" : "py-10 max-sm:py-7",
+          "flex min-h-0 flex-1 justify-center px-6 max-sm:px-4",
+          state.step === 2 && !state.teamBuilderOpen ? "overflow-hidden py-5" : "overflow-y-auto",
+          state.step === 3 ? "py-4 max-sm:py-5" : state.step === 2 ? null : "py-10 max-sm:py-7",
         )}
         data-testid="onboarding-stage"
       >
         <div
           className={cn(
             "flex w-full max-w-[780px] flex-col",
-            state.step === 3
+            state.step === 2 && !state.teamBuilderOpen
+              ? "min-h-0 justify-start"
+              : state.step === 3
               ? "justify-start"
               : "justify-center",
           )}
           data-testid="onboarding-layout-frame"
         >
           <header className="mx-auto w-full max-w-lg text-center">
+            <div className="mb-3 flex justify-center gap-1" aria-hidden="true" data-testid="onboarding-progress-bars">
+              {([1, 2, 3, 4] as const).map((step) => (
+                <i
+                  className={cn(
+                    "h-[3px] w-[22px] rounded-full",
+                    step < state.step ? "bg-sub" : step === state.step ? "bg-ink" : "bg-line",
+                  )}
+                  key={step}
+                />
+              ))}
+            </div>
             <p className="text-xs font-medium tabular-nums text-hint">
               {t("onboarding.progress", { step: state.step })}
             </p>
@@ -245,8 +282,9 @@ export function OnboardingShell({
           <div
             className={cn(
               "w-full",
-              state.step === 3 ? "mt-5" : "mt-7",
-              state.step === 3 || state.teamBuilderOpen ? null : "mx-auto max-w-lg",
+              state.step === 3 ? "mt-5" : state.step === 2 ? "mt-5" : "mt-7",
+              state.step === 2 && !state.teamBuilderOpen ? "flex min-h-0 flex-1 flex-col" : null,
+              state.step === 3 || state.teamBuilderOpen ? null : "mx-auto max-w-[640px]",
             )}
             data-testid="onboarding-content-column"
           >
@@ -282,6 +320,9 @@ export function OnboardingShell({
                   onSelect={(teamKey) => dispatch({ type: "select-team", teamKey })}
                   onRetry={onRetryTeams}
                   builderCli={builderCli}
+                  query={teamQuery}
+                  onQueryChange={setTeamQuery}
+                  teamCardRefs={teamCardRefs.current}
                   onOpenBuilder={() => {
                     dispatch({ type: "open-team-builder" });
                     void onOpenTeamBuilder();
@@ -630,6 +671,9 @@ function TeamSelectionStep({
   selectedTeamKey,
   environment,
   builderCli,
+  query,
+  onQueryChange,
+  teamCardRefs,
   onSelect,
   onRetry,
   onOpenBuilder,
@@ -638,56 +682,139 @@ function TeamSelectionStep({
   selectedTeamKey: string | null;
   environment: OnboardingEnvironmentState;
   builderCli: OnboardingCli | null;
+  query: string;
+  onQueryChange: (value: string) => void;
+  teamCardRefs: Map<string, HTMLButtonElement>;
   onSelect: (teamKey: string) => void;
   onRetry?: () => void | Promise<void>;
   onOpenBuilder: () => void;
 }): JSX.Element {
-  const { t } = useI18n();
-  if (teamsState.status === "loading") {
-    return (
-      <div className="flex min-h-32 items-center justify-center rounded-xl border border-line bg-card" role="status">
-        <LoaderCircle className="h-5 w-5 animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
-        <span className="ml-2 text-sm text-sub">{t("onboarding.teamsLoading")}</span>
-      </div>
-    );
-  }
-  if (teamsState.status !== "ready") {
-    return (
-      <div className="rounded-xl border border-line bg-card p-5 text-center">
-        <p className="text-sm text-sub">{t("onboarding.teamsUnavailable")}</p>
-        {onRetry ? (
-          <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
-            {t("onboarding.teamsReload")}
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-
-  const teams = teamsState.teams.filter((team) => team.canCreateConversation);
+  const { t, locale } = useI18n();
+  const teams = teamsState.status === "ready" ? teamsState.teams : [];
+  const projection = projectOnboardingTeamList({ teams, selectedTeamKey, query });
+  const ready = teamsState.status === "ready";
+  const canBuild = ready && projection.total > 0;
+  const countCopy = projection.query === ""
+    ? t("onboarding.teamCount", { count: projection.total })
+    : t("onboarding.teamMatchCount", { matched: projection.matched, total: projection.total });
   return (
-    <div className="grid gap-3">
-      {teams.map((team) => (
-        <TeamChoiceCard
-          key={team.teamKey}
-          team={team}
-          environment={environment}
-          selected={team.teamKey === selectedTeamKey}
-          onSelect={() => onSelect(team.teamKey)}
-        />
-      ))}
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="onboarding-team-selector">
+      <div className="mb-3 flex shrink-0 items-center gap-2.5">
+        <label className="relative min-w-0 flex-1">
+          <span className="sr-only">{t("onboarding.searchTeams")}</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-hint" strokeWidth={1.5} aria-hidden="true" />
+          <input
+            className="h-9 w-full rounded-sm border border-line bg-card pl-8 pr-9 text-[13px] text-ink outline-none placeholder:text-hint focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+            type="search"
+            value={query}
+            disabled={!ready}
+            placeholder={t("onboarding.searchTeamsPlaceholder")}
+            onChange={(event) => onQueryChange(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query !== "") {
+                event.preventDefault();
+                onQueryChange("");
+              }
+            }}
+          />
+          {query !== "" ? (
+            <button
+              type="button"
+              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              aria-label={t("onboarding.clearTeamSearch")}
+              onClick={() => onQueryChange("")}
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          ) : null}
+        </label>
+        <span className="shrink-0 text-xs tabular-nums text-hint" data-testid="onboarding-team-count">
+          {countCopy}
+        </span>
+      </div>
+      <div
+        className="scroll-thin min-h-[120px] flex-1 overflow-y-auto overscroll-contain pr-1"
+        data-testid="onboarding-team-scroll"
+      >
+        {teamsState.status === "loading" ? (
+          <div className="flex min-h-[120px] items-center justify-center rounded-lg border border-line bg-card" role="status" aria-busy="true">
+            <LoaderCircle className="h-5 w-5 motion-safe:animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
+            <span className="ml-2 text-sm text-sub">{t("onboarding.teamsLoading")}</span>
+          </div>
+        ) : teamsState.status !== "ready" ? (
+          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-line bg-card p-5 text-center" role="alert">
+            <p className="text-sm text-sub">{t("onboarding.teamsUnavailable")}</p>
+            {onRetry ? (
+              <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
+                {t("onboarding.teamsReload")}
+              </Button>
+            ) : null}
+          </div>
+        ) : projection.total === 0 ? (
+          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-line bg-card p-5 text-center" role="alert">
+            <p className="text-sm font-medium text-ink">{t("onboarding.noUsableTeams")}</p>
+            <p className="mt-1 text-xs leading-5 text-sub">{t("onboarding.noUsableTeamsDetail")}</p>
+            {onRetry ? (
+              <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
+                {t("onboarding.teamsReload")}
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="grid gap-2 py-0.5">
+            {projection.selectedOutsideResults ? (
+              <TeamGroup
+                label={t("onboarding.currentSelection")}
+                teams={[projection.selectedOutsideResults]}
+                allTeams={teams}
+                locale={locale}
+                environment={environment}
+                selectedTeamKey={selectedTeamKey}
+                teamCardRefs={teamCardRefs}
+                onSelect={onSelect}
+              />
+            ) : null}
+            <TeamGroup
+              label={t("onboarding.builtInTeams")}
+              teams={projection.builtInTeams}
+              allTeams={teams}
+              locale={locale}
+              environment={environment}
+              selectedTeamKey={selectedTeamKey}
+              teamCardRefs={teamCardRefs}
+              onSelect={onSelect}
+            />
+            <TeamGroup
+              label={t("onboarding.myTeams")}
+              teams={projection.userTeams}
+              allTeams={teams}
+              locale={locale}
+              environment={environment}
+              selectedTeamKey={selectedTeamKey}
+              teamCardRefs={teamCardRefs}
+              onSelect={onSelect}
+            />
+            {projection.matched === 0 ? (
+              <div className="rounded-lg border border-dashed border-line px-5 py-6 text-center text-xs leading-5 text-sub" role="status">
+                {t("onboarding.noTeamMatches", { query: query.trim() })}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
       <button
         type="button"
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-line-strong bg-card px-4 py-3 text-left transition-colors hover:bg-hover"
+        className="mt-3 flex w-full shrink-0 items-center gap-3 rounded-lg border border-dashed border-line-strong bg-card px-4 py-3 text-left transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 [@media(max-height:520px)]:mt-2 [@media(max-height:520px)]:py-2"
         onClick={onOpenBuilder}
+        disabled={!canBuild}
         data-testid="open-onboarding-team-builder"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sunken text-sub">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sunken text-sub [@media(max-height:520px)]:h-8 [@media(max-height:520px)]:w-8">
           <MessageSquarePlus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
           <strong className="block text-sm font-semibold text-ink">{t("onboarding.buildTeam")}</strong>
-          <small className="mt-0.5 block text-xs leading-5 text-sub">
+          <small className="mt-0.5 block text-xs leading-5 text-sub [@media(max-height:520px)]:hidden">
             {builderCli === null
               ? t("onboarding.buildTeamWaiting")
               : t("onboarding.buildTeamWithCli", {
@@ -704,35 +831,96 @@ function TeamSelectionStep({
   );
 }
 
+function TeamGroup({
+  label,
+  teams,
+  allTeams,
+  locale,
+  environment,
+  selectedTeamKey,
+  teamCardRefs,
+  onSelect,
+}: {
+  label: string;
+  teams: readonly OperatorAgentTeam[];
+  allTeams: readonly OperatorAgentTeam[];
+  locale: string;
+  environment: OnboardingEnvironmentState;
+  selectedTeamKey: string | null;
+  teamCardRefs: Map<string, HTMLButtonElement>;
+  onSelect: (teamKey: string) => void;
+}): JSX.Element | null {
+  if (teams.length === 0) return null;
+  return (
+    <section aria-label={label}>
+      <h2 className="px-1 pb-1 pt-1 text-[11.5px] font-medium tracking-[0.04em] text-hint">
+        {label} · {teams.length}
+      </h2>
+      <div className="grid gap-2">
+        {teams.map((team) => (
+          <TeamChoiceCard
+            key={team.teamKey}
+            team={team}
+            allTeams={allTeams}
+            locale={locale}
+            environment={environment}
+            selected={team.teamKey === selectedTeamKey}
+            buttonRef={(element) => {
+              if (element === null) teamCardRefs.delete(team.teamKey);
+              else teamCardRefs.set(team.teamKey, element);
+            }}
+            onSelect={() => onSelect(team.teamKey)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TeamChoiceCard({
   team,
+  allTeams,
+  locale,
   environment,
   selected,
+  buttonRef,
   onSelect,
 }: {
   team: OperatorAgentTeam;
+  allTeams: readonly OperatorAgentTeam[];
+  locale: string;
   environment: OnboardingEnvironmentState;
   selected: boolean;
+  buttonRef: (element: HTMLButtonElement | null) => void;
   onSelect: () => void;
 }): JSX.Element {
   const { t } = useI18n();
+  const label = getAgentTeamSelectionLabel({
+    team,
+    teams: allTeams,
+    locale,
+    untitledLabel: t("onboarding.unnamedTeam"),
+    officialLabel: t("onboarding.builtInTeam"),
+    userLabel: t("onboarding.myTeam"),
+  });
   const membersBySlug = new Map(team.members.map((member) => [member.slug, member]));
   const orderedMembers = team.memberOrder
     .map((slug) => membersBySlug.get(slug))
     .filter((member): member is NonNullable<typeof member> => member !== undefined)
-    .slice(0, 3);
+    .slice(0, 4);
   const compatibility = getOnboardingTeamCompatibility(team, environment, t);
   return (
     <button
       type="button"
+      ref={buttonRef}
       className={cn(
-        "w-full rounded-xl border bg-card p-4 text-left transition-colors",
+        "w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         selected ? "border-accent bg-sel" : "border-line hover:bg-hover",
       )}
       aria-pressed={selected}
       onClick={onSelect}
     >
-      <span className="flex items-center justify-between gap-4">
+      <span className="flex items-start justify-between gap-4">
         <span className="flex min-w-0 items-center gap-3">
           <span
             className={cn(
@@ -743,14 +931,23 @@ function TeamChoiceCard({
             {selected ? <i className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> : null}
           </span>
           <span className="min-w-0">
-            <strong className="block truncate text-sm font-semibold text-ink">
-              {team.name ?? t("onboarding.unnamedTeam")}
+            <strong className="block truncate text-sm font-semibold text-ink" title={label}>
+              {label}
             </strong>
-            <small className="mt-0.5 block text-xs text-sub">
-              {team.ownership === "system"
-                ? t("onboarding.builtInTeam")
-                : t("onboarding.myTeam")}
-            </small>
+            {orderedMembers.length > 0 ? (
+              <small className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sub">
+                {orderedMembers.map((member, index) => (
+                  <span className={cn(member.slug === team.primaryAgentSlug && "font-medium text-ink")} key={member.slug}>
+                    {index > 0 ? <span className="mr-1.5 text-hint" aria-hidden="true">│</span> : null}
+                    {member.slug === team.primaryAgentSlug ? <i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-hidden="true" /> : null}
+                    {member.displayName || `@${member.slug}`}
+                  </span>
+                ))}
+              </small>
+            ) : null}
+            {team.description ? (
+              <small className="mt-0.5 block truncate text-xs text-hint">{team.description}</small>
+            ) : null}
           </span>
         </span>
         {selected ? (
@@ -760,33 +957,9 @@ function TeamChoiceCard({
           </span>
         ) : null}
       </span>
-      {orderedMembers.length > 0 ? (
-        <span className="mt-4 grid grid-cols-3 gap-2 pl-[30px] max-sm:grid-cols-1">
-          {orderedMembers.map((member) => (
-            <span className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-sunken px-2.5 py-2" key={member.slug}>
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line bg-card text-xs font-semibold text-sub">
-                {(member.displayName || member.slug).slice(0, 1)}
-              </span>
-              <span className="min-w-0">
-                <strong className="block truncate text-xs font-semibold text-ink">
-                  {member.displayName || `@${member.slug}`}
-                </strong>
-                <small className="block truncate text-[11px] text-hint">
-                  {member.slug === team.primaryAgentSlug
-                    ? t("onboarding.primaryAgent")
-                    : member.description}
-                </small>
-              </span>
-            </span>
-          ))}
-        </span>
-      ) : null}
-      {team.description ? (
-        <span className="mt-3 block pl-[30px] text-xs leading-5 text-sub">{team.description}</span>
-      ) : null}
       {compatibility.affectedCount > 0 ? (
         <span
-          className="mt-3 flex items-start gap-2 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub"
+          className="mt-2 flex items-start gap-2 pl-[30px] text-xs leading-5 text-sub"
           data-testid="team-compatibility-warning"
         >
           <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />

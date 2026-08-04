@@ -345,10 +345,57 @@ export const DashboardShellAlignment: Story = {
   },
 };
 
+export const DashboardLoadingState: Story = {
+  args: {
+    ...DashboardShellAlignment.args,
+    projectListState: "loading",
+  },
+};
+
+export const DashboardEmptyState: Story = {
+  args: {
+    ...DashboardShellAlignment.args,
+    messages: [],
+    activeRun: null,
+    pendingPrimaryMessages: [],
+    selectedSession: { ...sessions[1]!, status: "idle", runningCount: 0 },
+  },
+};
+
 export const DashboardShellWithRightSidebar: Story = {
   args: {
     ...DashboardShellAlignment.args,
     rightSidebarOpen: true,
+    rightSidebarTabs: {
+      tabs: [{
+        id: "new-conversation",
+        type: "conversation",
+        title: "新会话",
+        sourceKey: "conversation:new",
+        closable: true,
+      }],
+      activeTabId: "new-conversation",
+    },
+  },
+};
+
+export const DashboardNarrowSidebarDrawer: Story = {
+  args: DashboardShellAlignment.args,
+  parameters: {
+    viewport: {
+      defaultViewport: "dashboardNarrow",
+      viewports: {
+        dashboardNarrow: {
+          name: "Dashboard narrow 700 × 600",
+          styles: { width: "700px", height: "600px" },
+        },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.getAttribute("aria-label") === "打开侧边栏")
+      ?.click();
   },
 };
 

@@ -33,6 +33,16 @@ const editorialTeam: OperatorAgentTeam = {
   canCreateConversation: true,
 };
 
+const twelveTeams: OperatorAgentTeam[] = Array.from({ length: 12 }, (_, index) => ({
+  ...editorialTeam,
+  teamKey: index < 3 ? `system:team-${String(index)}` : `user:team-${String(index)}`,
+  id: `team-${String(index)}`,
+  ownership: index < 3 ? "system" as const : "user" as const,
+  createdAt: index < 3 ? undefined : `2026-07-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+  name: index === 0 ? "开发团队" : index === 8 || index === 9 ? "内容团队" : `团队 ${String(index + 1)}`,
+  description: index === 0 ? "负责软件方案、实现、测试与复核" : editorialTeam.description,
+}));
+
 const meta = {
   title: "Page/Onboarding/OnboardingShell",
   component: OnboardingShell,
@@ -85,3 +95,40 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LongNameEditorialTeam: Story = {};
+
+export const TwelveTeamSelector: Story = {
+  args: {
+    teamsState: { status: "ready", teams: twelveTeams },
+  },
+  play: async ({ canvasElement }) => {
+    Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "继续")
+      ?.click();
+  },
+};
+
+export const TwelveTeamSelectorMinimumWindow: Story = {
+  args: TwelveTeamSelector.args,
+  parameters: {
+    viewport: {
+      defaultViewport: "onboardingMinimum",
+      viewports: {
+        onboardingMinimum: {
+          name: "Onboarding minimum 520 × 480",
+          styles: { width: "520px", height: "480px" },
+        },
+      },
+    },
+  },
+  play: TwelveTeamSelector.play,
+};
+
+export const TeamDirectoryLoading: Story = {
+  args: { teamsState: { status: "loading" } },
+  play: TwelveTeamSelector.play,
+};
+
+export const TeamDirectoryFailed: Story = {
+  args: { teamsState: { status: "error" } },
+  play: TwelveTeamSelector.play,
+};

@@ -95,6 +95,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/index.ts",
   "packages/console-ui/src/lib/utils.ts",
   "packages/console-ui/src/onboarding/onboarding-shell.tsx",
+  "packages/console-ui/src/onboarding/onboarding-team-list-model.ts",
   "packages/console-ui/src/onboarding/onboarding-state.ts",
   "packages/console-ui/src/onboarding/relay-demo/relay-demo.tsx",
   "packages/console-ui/src/onboarding/relay-demo/relay-geometry.ts",

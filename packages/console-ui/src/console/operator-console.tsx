@@ -824,9 +824,16 @@ export function OperatorConsole({
     body: string;
   } | null>(null);
   const [isNarrowWindow, setIsNarrowWindow] = useState(() => viewportIsNarrow());
+  const [narrowSidebarOpen, setNarrowSidebarOpen] = useState(false);
   const [rightSidebarOverlay, setRightSidebarOverlay] = useState(() => viewportUsesRightSidebarOverlay());
+  const [layoutAnnouncement, setLayoutAnnouncement] = useState("");
   const [useStackedTeamRows, setUseStackedTeamRows] = useState(() => viewportUsesStackedTeamRows());
   const sidebarResizeGestureRef = useRef<SidebarResizeGesture | null>(null);
+  const sidebarOpenButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const narrowSidebarWasOpenRef = useRef(false);
+  const rightSidebarToggleRef = useRef<HTMLButtonElement | null>(null);
+  const operatorMainRef = useRef<HTMLElement | null>(null);
   const nextRightSidebarTabIdRef = useRef(1);
   const timelineScrollRef = useRef<HTMLElement | null>(null);
   const followTimelineRef = useRef(true);
@@ -995,8 +1002,9 @@ export function OperatorConsole({
     hasPendingWork: messages.some((message) => message.status === "pending" || message.status === "running"),
   });
   const requestedSidebarOpen = sidebarOpen ?? uncontrolledSidebarOpen;
-  const sidebarAutoCollapsed = requestedSidebarOpen && isNarrowWindow;
-  const effectiveSidebarOpen = !embeddedConversation && requestedSidebarOpen && !isNarrowWindow;
+  const sidebarAutoCollapsed = requestedSidebarOpen && isNarrowWindow && !narrowSidebarOpen;
+  const effectiveSidebarOpen = !embeddedConversation
+    && (isNarrowWindow ? narrowSidebarOpen : requestedSidebarOpen);
   const requestedRightSidebarOpen = rightSidebarOpen ?? uncontrolledRightSidebarOpen;
   const effectiveRightSidebarOpen = !embeddedConversation
     && applicationView === "conversation"
@@ -1039,6 +1047,22 @@ export function OperatorConsole({
     window.addEventListener("resize", updateResponsiveLayout);
     return () => window.removeEventListener("resize", updateResponsiveLayout);
   }, [timelineVirtualizer]);
+
+  useEffect(() => {
+    setNarrowSidebarOpen(false);
+  }, [isNarrowWindow]);
+
+  useLayoutEffect(() => {
+    if (narrowSidebarOpen) {
+      narrowSidebarWasOpenRef.current = true;
+      sidebarCloseButtonRef.current?.focus();
+      return;
+    }
+    if (narrowSidebarWasOpenRef.current) {
+      narrowSidebarWasOpenRef.current = false;
+      sidebarOpenButtonRef.current?.focus();
+    }
+  }, [narrowSidebarOpen]);
 
   useLayoutEffect(() => {
     const pane = parentConversationPaneRef.current;
@@ -1460,6 +1484,16 @@ export function OperatorConsole({
   ]);
 
   const setSidebarOpen = (open: boolean) => {
+    if (isNarrowWindow) {
+      setNarrowSidebarOpen(open);
+      setLayoutAnnouncement(t(open
+        ? "console.operator.sidebarOpened"
+        : "console.operator.sidebarClosed"));
+      if (open) {
+        if (effectiveRightSidebarOpen) setRightSidebarOpen(false);
+      }
+      return;
+    }
     if (sidebarOpen === undefined) {
       setUncontrolledSidebarOpen(open);
     }
@@ -1480,6 +1514,9 @@ export function OperatorConsole({
   }
 
   function setRightSidebarOpen(open: boolean): void {
+    if (open && rightSidebarOverlay && narrowSidebarOpen) {
+      setNarrowSidebarOpen(false);
+    }
     if (open) {
       parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
     } else {
@@ -1491,6 +1528,14 @@ export function OperatorConsole({
       setUncontrolledRightSidebarOpen(open);
     }
     onRightSidebarOpenChange?.(open);
+    if (rightSidebarOverlay) {
+      setLayoutAnnouncement(t(open
+        ? "console.operator.rightSidebarOpened"
+        : "console.operator.rightSidebarClosed"));
+      if (!open) {
+        window.requestAnimationFrame(() => rightSidebarToggleRef.current?.focus());
+      }
+    }
   }
 
   function setRightSidebarWidth(width: number): void {
@@ -1655,6 +1700,23 @@ export function OperatorConsole({
       embeddedConversation ? "h-full min-h-0" : "h-screen min-h-0",
       className,
     )}>
+      {!embeddedConversation ? (
+        <a
+          href="#operator-main-content"
+          className="window-no-drag absolute left-3 top-2 z-[90] -translate-y-16 rounded-md bg-ink px-3 py-2 text-sm font-medium text-canvas focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-accent motion-reduce:transition-none"
+          onClick={(event) => {
+            event.preventDefault();
+            operatorMainRef.current?.focus();
+          }}
+        >
+          {t("console.operator.skipToContent")}
+        </a>
+      ) : null}
+      {layoutAnnouncement ? (
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {layoutAnnouncement}
+        </p>
+      ) : null}
       {!embeddedConversation && activeCliInstallations.length > 0 ? (
         <div
           className="window-no-drag absolute left-1/2 top-2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub shadow-sm"
@@ -1673,14 +1735,29 @@ export function OperatorConsole({
             : t("console.operator.installingClis", { count: activeCliInstallations.length })}
         </div>
       ) : null}
+      {!embeddedConversation && (narrowSidebarOpen || (rightSidebarOverlay && effectiveRightSidebarOpen)) ? (
+        <button
+          type="button"
+          className="window-no-drag absolute inset-0 z-40 bg-ink/20"
+          aria-label={narrowSidebarOpen
+            ? t("console.operator.closeSidebarOverlay")
+            : t("console.operator.closeRightSidebarOverlay")}
+          data-testid="operator-drawer-scrim"
+          onClick={() => {
+            if (narrowSidebarOpen) setSidebarOpen(false);
+            else setRightSidebarOpen(false);
+          }}
+        />
+      ) : null}
       {!embeddedConversation ? <aside
         className={cn(
           "relative shrink-0 flex-col overflow-visible border-r border-line bg-canvas",
+          isNarrowWindow && "absolute inset-y-0 left-0 z-50 w-[min(320px,88vw)] max-w-full",
           effectiveSidebarOpen ? "flex" : "hidden",
         )}
         data-testid="operator-sidebar"
         hidden={!effectiveSidebarOpen}
-        style={{ width: `${sidebarWidth}px` }}
+        style={isNarrowWindow ? undefined : { width: `${sidebarWidth}px` }}
       >
         <header
           className="window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center justify-end pl-[78px] pr-2.5"
@@ -1688,6 +1765,7 @@ export function OperatorConsole({
         >
           <button
             type="button"
+            ref={sidebarCloseButtonRef}
             className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
             aria-label={translate(activeLocale, "sidebar.close")}
             title={translate(activeLocale, "sidebar.close")}
@@ -1860,7 +1938,7 @@ export function OperatorConsole({
           </div>
         </footer>
 
-        <div
+        {!isNarrowWindow ? <div
           className="window-no-drag group absolute inset-y-0 right-0 z-30 w-1 cursor-col-resize touch-none"
           role="separator"
           aria-label={translate(activeLocale, "sidebar.resize")}
@@ -1887,11 +1965,14 @@ export function OperatorConsole({
           onPointerCancel={finishSidebarResize}
         >
           <span className="absolute inset-y-0 right-0 w-px bg-line transition-colors group-hover:bg-accent group-active:bg-accent" />
-        </div>
+        </div> : null}
       </aside> : null}
 
       <div className="relative flex min-w-0 flex-1" data-testid="operator-content-shell">
       <main
+        ref={operatorMainRef}
+        id="operator-main-content"
+        tabIndex={-1}
         className="relative flex min-w-0 flex-1 flex-col bg-canvas"
         data-testid="operator-main"
         data-sidebar-open={effectiveSidebarOpen ? "true" : "false"}
@@ -1904,6 +1985,7 @@ export function OperatorConsole({
           {!effectiveSidebarOpen ? (
             <button
               type="button"
+              ref={sidebarOpenButtonRef}
               className="window-no-drag z-20 ml-[96px] flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
               aria-label={t("console.operator.openSidebar")}
               title={t("console.operator.openSidebar")}
@@ -1928,6 +2010,7 @@ export function OperatorConsole({
           ) : null}
           <button
             type="button"
+            ref={rightSidebarToggleRef}
             className={cn(
               "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink",
               (analysisPanel && selectedSession) || hasManagedProcesses ? "ml-1" : "ml-auto",
@@ -1945,7 +2028,9 @@ export function OperatorConsole({
           </button>
         </div> : null}
 
-        {applicationView === "agent-teams" ? (
+        {projectListState === "loading" && !embeddedConversation ? (
+          <DashboardLoadingState t={t} />
+        ) : applicationView === "agent-teams" ? (
           <AgentTeamsPage
             state={agentTeamsState}
             selectedTeamKey={selectedAgentTeamKey}
@@ -3083,6 +3168,22 @@ async function submitProjectFolderRepair(
   } catch (error) {
     setError(error instanceof Error ? error.message : String(error));
   }
+}
+
+function DashboardLoadingState({ t }: { t: Translate }): JSX.Element {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-6 pt-[var(--window-header-height)] text-center" data-testid="dashboard-loading-state">
+      <div className="max-w-sm">
+        <RefreshCw className="mx-auto h-5 w-5 text-sub motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
+        <h1 className="mt-4 font-display text-xl font-semibold tracking-[-0.02em] text-ink">
+          {t("console.operator.loadingTitle")}
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-sub">
+          {t("console.operator.loadingDescription")}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function SidebarAction({

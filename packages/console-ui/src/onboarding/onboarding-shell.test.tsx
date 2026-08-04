@@ -243,7 +243,9 @@ describe("OnboardingShell", () => {
     renderShell();
 
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
-    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-lg");
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[640px]");
+    expect(screen.getByTestId("onboarding-progress-bars").children).toHaveLength(4);
+    expect(screen.getByTestId("onboarding-step-1")).not.toHaveClass("min-h-[560px]");
     expect(screen.getByTestId("onboarding-footer")).toHaveClass(
       "shrink-0",
       "border-t",
@@ -287,7 +289,7 @@ describe("OnboardingShell", () => {
     const onOpenTeamBuilder = vi.fn();
     renderShell({ onOpenTeamBuilder });
 
-    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-lg");
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[640px]");
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByTestId("open-onboarding-team-builder"));
 
@@ -295,7 +297,7 @@ describe("OnboardingShell", () => {
     expect(screen.getByText("使用 Codex CLI · 仍在第 2 步")).toBeInTheDocument();
     expect(screen.getByText("第 2 步，共 4 步")).toBeInTheDocument();
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
-    expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-lg");
+    expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-[640px]");
     expect(screen.queryByTestId("onboarding-footer")).not.toBeInTheDocument();
     expect(screen.queryByTestId("onboarding-actions")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "继续" })).not.toBeInTheDocument();
@@ -322,6 +324,119 @@ describe("OnboardingShell", () => {
 
     expect(screen.getByText("使用 Claude Code CLI · 仍在第 2 步")).toBeInTheDocument();
     expect(screen.queryByText("使用 Kimi CLI · 仍在第 2 步")).not.toBeInTheDocument();
+  });
+
+  it("keeps search, grouped compact teams, the AI entry, and the footer in separate scroll regions", async () => {
+    const launchTeam: OperatorAgentTeam = {
+      ...developmentTeam,
+      teamKey: "user:launch",
+      id: "launch",
+      ownership: "user",
+      name: "发布团队",
+      description: "准备发布材料",
+      createdAt: "2026-07-30T10:00:00.000Z",
+    };
+    renderShell({ teamsState: { status: "ready", teams: [developmentTeam, launchTeam] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    const search = screen.getByRole("searchbox", { name: "搜索团队" });
+    expect(search).toBeVisible();
+    expect(screen.getByTestId("onboarding-team-count")).toHaveTextContent("共 2 支团队");
+    expect(screen.getByRole("region", { name: "内置团队" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "我的团队" })).toBeVisible();
+
+    const scroll = screen.getByTestId("onboarding-team-scroll");
+    const aiEntry = screen.getByTestId("open-onboarding-team-builder");
+    const footer = screen.getByTestId("onboarding-footer");
+    expect(scroll).toHaveClass("min-h-[120px]", "overflow-y-auto", "flex-1");
+    expect(scroll).not.toContainElement(aiEntry);
+    expect(scroll).not.toContainElement(footer);
+
+    fireEvent.change(search, { target: { value: "发布" } });
+    expect(screen.getByTestId("onboarding-team-count")).toHaveTextContent("匹配 1 / 共 2 支团队");
+    expect(screen.getByRole("region", { name: "当前选择" })).toHaveTextContent("开发团队");
+    expect(screen.getByRole("region", { name: "我的团队" })).toHaveTextContent("发布团队");
+    search.focus();
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+  });
+
+  it("preserves a newer search and selection across parent rerenders and callback identity changes", () => {
+    const launchTeam: OperatorAgentTeam = {
+      ...developmentTeam,
+      teamKey: "user:launch",
+      id: "launch",
+      ownership: "user",
+      name: "发布团队",
+    };
+    const teamsState = { status: "ready" as const, teams: [developmentTeam, launchTeam] };
+    const view = renderShell({ teamsState });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索团队" }), { target: { value: "发布" } });
+    fireEvent.click(screen.getByRole("button", { name: /发布团队/ }));
+
+    view.rerender(
+      <I18nProvider locale="zh-CN">
+        <OnboardingShell {...createShellProps({ teamsState, onOpenTeamBuilder: vi.fn() })} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("searchbox", { name: "搜索团队" })).toHaveValue("发布");
+    expect(screen.getByRole("button", { name: /发布团队/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("distinguishes loading, directory failure, and no usable teams inside the stable selector frame", () => {
+    const view = renderShell({ teamsState: { status: "loading" } });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByRole("status")).toHaveTextContent("正在载入团队");
+    expect(screen.getByRole("searchbox", { name: "搜索团队" })).toBeDisabled();
+    expect(screen.getByTestId("open-onboarding-team-builder")).toBeDisabled();
+
+    view.rerender(
+      <I18nProvider locale="zh-CN">
+        <OnboardingShell {...createShellProps({ teamsState: { status: "error" } })} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("团队目录暂时无法读取");
+    expect(screen.getByRole("button", { name: "重新载入" })).toBeVisible();
+
+    view.rerender(
+      <I18nProvider locale="zh-CN">
+        <OnboardingShell {...createShellProps({ teamsState: { status: "ready", teams: [] } })} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("没有可用团队");
+    expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
+  });
+
+  it("clears stale search and focuses a newly created team after the builder returns", async () => {
+    const createdTeam: OperatorAgentTeam = {
+      ...developmentTeam,
+      teamKey: "user:created",
+      id: "created",
+      ownership: "user",
+      name: "新团队",
+    };
+    const teamsState = { status: "ready" as const, teams: [developmentTeam, createdTeam] };
+    const onCreatedTeamConsumed = vi.fn();
+    const view = renderShell({ teamsState, onCreatedTeamConsumed });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索团队" }), { target: { value: "开发" } });
+
+    view.rerender(
+      <I18nProvider locale="zh-CN">
+        <OnboardingShell {...createShellProps({
+          teamsState,
+          createdTeamKey: createdTeam.teamKey,
+          onCreatedTeamConsumed,
+        })} />
+      </I18nProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("searchbox", { name: "搜索团队" })).toHaveValue(""));
+    const created = screen.getByRole("button", { name: /^新团队/u });
+    expect(created).toHaveAttribute("aria-pressed", "true");
+    expect(created).toHaveFocus();
+    expect(onCreatedTeamConsumed).toHaveBeenCalledOnce();
   });
 
   it("ends partial compatibility messaging at the onboarding boundary", async () => {

@@ -380,6 +380,7 @@ Source: docs/product/pages/main-right-sidebar.md#会话重命名同步
 - MUST keep the sidebar visible during the first-run onboarding regardless of the persisted choice.
 - MUST preserve the currently selected session, project expanded/collapsed state, and project list scroll offset across a collapse+restore cycle.
 - MUST NOT re-mount the main content timeline or active run block as a side effect of the sidebar collapse/restore.
+- MUST 在窄窗口把显式打开动作投影为覆盖主内容的左侧抽屉和遮罩，不挤压主内容，也不改写宽窗的持久化开合偏好；打开后焦点 MUST 进入关闭按钮，关闭后 MUST 回到打开按钮，并通过状态播报公开开合结果。
 
 ### Requirement: Project row menu and directory repair
 
@@ -492,6 +493,40 @@ downloading、installing 或 verifying 阶段，并提供确认取消。活动�
 - **AND** 详情能区分三项自身阶段
 - **WHEN** Claude 任务结束
 - **THEN** 聚合数量按剩余两项更新。
+
+### Requirement: 引导四步使用固定操作区与响应式内容轴
+
+Source: docs/product/pages/onboarding.md#页面结构
+
+`OnboardingShell` MUST 使用 46px 应用标题栏、四段进度、640px 常规内容列和 780px 接力／AI 建队内容列。标题栏 MUST 左侧显示品牌、中间显示活动安装聚合、右侧显示首启或回看模式；主体与 footer MUST 分离，footer 在 `1180 × 760` 和正式最小窗口 `520 × 480` 都保持完整可达，根页面 MUST NOT 产生横向或纵向滚动。短高度 MAY 压缩辅助说明与垂直留白，但 MUST 保留当前步骤标题、主操作及所有必需状态。
+
+#### Scenario: 最小窗口仍可完成第 2 步
+
+- **GIVEN** onboarding 运行在 `520 × 480` 且团队列表有足够内容产生滚动
+- **WHEN** 用户查看第 2 步并滚动团队列表
+- **THEN** 标题、搜索、团队列表、AI 建队入口和 footer 均完整可见
+- **AND** 根页面没有横向或纵向滚动。
+
+### Requirement: 引导团队选择器支持大量团队且只滚动列表
+
+Source: docs/product/pages/onboarding.md#第-2-步-选团队
+
+第 2 步 MUST 始终显示可按团队名称、说明、成员名称或职责过滤的搜索框，并显示“共 n 支团队”或“匹配 m / 共 n 支团队”。可用团队 MUST 按“内置团队／我的团队”分组并使用紧凑团队行；同名团队 MUST 复用稳定、用户可读且不含内部 key 或路径的辨认标签。只有团队列表 MUST 占满剩余空间并独立滚动，最小高度为 120px；搜索、计数、列表外的 AI 建队入口和全局 footer MUST 保持固定可达。
+
+过滤 MUST NOT 取消当前选择；当前选择不匹配时 MUST 在结果外固定显示。`Escape` 和清空按钮 MUST 清除搜索且保持搜索焦点。AI 建队返回后 MUST 清除旧搜索、选中新团队并把焦点移到其团队行。默认选择 MUST 依次使用可用开发团队、第一支可用内置团队、第一支可用用户团队，完全无可用团队时 MUST 保持无选择并禁用继续。加载、目录读取失败、无可用团队和搜索无结果 MUST 是互不混淆的状态，读取失败 MUST 提供重试。
+
+#### Scenario: 十二支团队中搜索并保留隐藏选择
+
+- **GIVEN** 3 支内置团队和 9 支用户团队中已有一支团队被选择
+- **WHEN** 搜索只匹配另一支用户团队
+- **THEN** 计数显示匹配数与总数，结果按来源分组
+- **AND** 原选择仍在“当前选择”分组可见且“继续”使用该选择。
+
+#### Scenario: AI 建队返回到团队目录
+
+- **GIVEN** 用户带着非空搜索进入 AI 建队并成功创建团队
+- **WHEN** 正式团队目录返回该新团队
+- **THEN** 搜索被清空，新团队可见且选中，键盘焦点位于该团队行。
 
 ### Requirement: 引导贯穿团队 CLI 兼容提示
 
@@ -1634,12 +1669,12 @@ Source: docs/product/pages/main-right-sidebar.md#关闭标签
 ## Requirement: 验收 #17 加号只创建两类可选内容
 Source: docs/product/pages/main-right-sidebar.md#空白标签与类型选择
 
-系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中只提供“改动”和“项目文件”两种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。
+系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中提供“新会话”“改动”和“项目文件”三种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。参考 HTML 未包含“新会话”时，生产类型与既有普通会话行为仍 MUST 保留。
 
 ### Scenario: Git 项目打开空白标签
 - GIVEN 当前会话绑定的是 Git 项目
 - WHEN 用户点击标签条加号
-- THEN 新空白标签的类型选择恰好包含“改动”和“项目文件”
+- THEN 新空白标签的类型选择恰好包含“新会话”“改动”和“项目文件”
 
 ## Requirement: 验收 #18 空白标签说明受来源约束的内容入口
 Source: docs/product/pages/main-right-sidebar.md#空白标签与类型选择
@@ -1664,12 +1699,15 @@ Source: docs/product/pages/main-right-sidebar.md#内容更新
 ## Requirement: 验收 #23 窄窗右侧栏覆盖会话区并恢复滚动位
 Source: docs/product/pages/main-right-sidebar.md#窄窗口
 
-系统 MUST 在窗口不足以三栏并排时让右侧栏覆盖会话区，提供独立的关闭并回到会话区操作，并在关闭后恢复打开前的会话区滚动位。系统 MUST NOT 让用户必须依赖被覆盖的主内容按钮才能离开右侧栏。
+系统 MUST 在窗口不足以三栏并排时让右侧栏作为靠右抽屉覆盖会话区并保留部分遮罩，提供遮罩关闭与抽屉内独立的关闭并回到会话区操作，并在关闭后恢复打开前的会话区滚动位、把焦点返回右栏开关。系统 MUST NOT 挤压主内容，也 MUST NOT 让用户必须依赖被覆盖的主内容按钮才能离开右侧栏。
+
+标签条 MUST 使用单一 Tab 停靠点，并支持 `ArrowLeft`、`ArrowRight`、`Home`、`End` 在标签间选择和移动焦点；该行为 MUST 覆盖普通“新会话”标签。
 
 ### Scenario: 窄窗打开并关闭右侧栏
 - GIVEN 窄窗口中的会话区滚动位置为 320 像素
 - WHEN 用户打开右侧栏并使用覆盖层内的关闭操作
 - THEN 右侧栏消失且会话区滚动位置仍为 320 像素
+- AND 焦点返回“显示右侧栏”开关。
 
 ## Requirement: 过程标签以分层调试调用链呈现一次 Agent 执行
 Source: docs/product/pages/main-right-sidebar.md#过程标签
@@ -2960,6 +2998,8 @@ hover、focus、展开、折叠或状态切换 MUST NOT 改变同层文字的基
 Source: docs/product/pages/main-left-sidebar.md#响应式与窗口行为
 
 系统 MUST 让左侧栏与主会话使用同一不透明 canvas 背景，以语义选中、悬停和 card token 表达层级，并以 1px 语义分隔线表达侧栏右边界、顶部控制行底边、侧栏底部操作顶边和 composer 边界。品牌和页面标题 MUST 使用既有 display 字体，导航、列表与正文 MUST 使用既有 body 字体及对应层级。系统 MUST NOT 为本次对齐新增裸色、阴影或渐变。侧栏中只有项目 / 会话列表 MUST 独立滚动；主会话中只有时间线 MUST 独立滚动，顶部控制行、标题、底部操作和 composer MUST 保持可达，最后一条消息 MUST NOT 被 composer 遮挡。
+
+主页面 MUST 提供键盘可聚焦的“跳到主内容”入口。项目列表初次加载时 MUST 在主内容显示明确加载面，同时保留侧栏中的独立设置和团队入口；空会话 MUST 使用无插画的标题、说明和既有 composer。窄窗左右抽屉的开合结果 MUST 通过非阻断状态区域播报。
 
 #### Scenario: 短高度窗口分别滚动侧栏和主会话
 
