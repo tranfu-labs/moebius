@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-04
+
+### 修复
+
+- 将本地 Agent 执行的默认空闲超时从 3 分钟延长至 10 分钟，减少长时间无输出任务被过早终止的情况。
+- 同步官网稳定版本标识，并将版本 badge 纳入发布元数据门禁，避免发布后仍显示旧版本。
+
 ## [0.3.1] - 2026-08-04
 
 ### 新增
@@ -155,7 +162,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
