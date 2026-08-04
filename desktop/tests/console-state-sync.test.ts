@@ -19,6 +19,7 @@ import {
   loadExecutionProfileRegistry,
   loadProjectFiles,
   loadWorkspaceDiff,
+  loadWorkspaceDiffFile,
   restoreConsoleSession,
   retryPendingSessionMessage,
   retrySessionRun,
@@ -714,6 +715,12 @@ describe("workspace file readers", () => {
       }),
       jsonResponse({
         available: true,
+        path: "src/app.ts",
+        lines: [{ kind: "addition", oldLineNumber: null, newLineNumber: 1, text: "const current = true;" }],
+        reason: null,
+      }),
+      jsonResponse({
+        available: true,
         path: "/Users/wing/.codex/sessions/rollout.jsonl",
         lines: [{ lineNumber: 292, text: "target" }],
         reason: null,
@@ -740,12 +747,19 @@ describe("workspace file readers", () => {
       filePath: "docs/中文 文件.md",
       fetch,
     })).resolves.toMatchObject({ available: true, path: "README.md" });
+    await expect(loadWorkspaceDiffFile({
+      apiBase: "http://127.0.0.1:8787/",
+      sessionId: "session/a",
+      filePath: "src/app.ts",
+      fetch,
+    })).resolves.toMatchObject({ available: true, path: "src/app.ts" });
     await expect(loadFileReference({
       apiBase: "http://127.0.0.1:8787/",
       sessionId: "session/a",
       filePath: "/Users/wing/.codex/sessions/rollout.jsonl",
       line: 292,
       column: 7,
+      hasExplicitLine: true,
       fetch,
     })).resolves.toMatchObject({ available: true, targetLine: 292 });
 
@@ -759,9 +773,12 @@ describe("workspace file readers", () => {
       "/api/local-console/sessions/session%2Fa/files/content?path=docs%2F",
     );
     expect(String(fetch.mock.calls[3]?.[0])).toContain(
+      "/api/local-console/sessions/session%2Fa/workspace-diff/content?path=src%2Fapp.ts",
+    );
+    expect(String(fetch.mock.calls[4]?.[0])).toContain(
       "/api/local-console/sessions/session%2Fa/file-reference?path=%2FUsers%2Fwing",
     );
-    expect(String(fetch.mock.calls[3]?.[0])).toContain("line=292&column=7");
+    expect(String(fetch.mock.calls[4]?.[0])).toContain("line=292&column=7&explicitLine=1");
   });
 });
 

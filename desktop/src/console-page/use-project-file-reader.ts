@@ -28,22 +28,38 @@ export function useProjectFileReader(apiBase: string | null, port: ProjectFilePo
     return current.port.readProjectFile(availability.apiBase, sessionId, filePath);
   }, []);
 
+  const readWorkspaceDiffFile = useCallback((sessionId: string, filePath: string) => {
+    const current = inputRef.current;
+    const availability = decideProjectFileAvailability(current.apiBase);
+    if (availability.kind === "unavailable") return Promise.reject(availability.error);
+    return current.port.readWorkspaceDiffFile(availability.apiBase, sessionId, filePath);
+  }, []);
+
   const readFileReference = useCallback((
     sessionId: string,
     filePath: string,
     line: number,
     column: number | null,
+    hasExplicitLine: boolean,
   ) => {
     const current = inputRef.current;
     const availability = decideProjectFileAvailability(current.apiBase);
     if (availability.kind === "unavailable") return Promise.reject(availability.error);
-    return current.port.readFileReference(availability.apiBase, sessionId, filePath, line, column);
+    return current.port.readFileReference(
+      availability.apiBase,
+      sessionId,
+      filePath,
+      line,
+      column,
+      hasExplicitLine,
+    );
   }, []);
 
   return useMemo(() => ({
     readWorkspaceDiff,
     readProjectFiles,
     readProjectFile,
+    readWorkspaceDiffFile,
     readFileReference,
-  }), [readFileReference, readProjectFile, readProjectFiles, readWorkspaceDiff]);
+  }), [readFileReference, readProjectFile, readProjectFiles, readWorkspaceDiff, readWorkspaceDiffFile]);
 }

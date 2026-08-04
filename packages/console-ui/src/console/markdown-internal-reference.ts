@@ -2,6 +2,7 @@ export interface MarkdownFileReference {
   path: string;
   line: number;
   column: number | null;
+  hasExplicitLine: boolean;
 }
 
 export interface MarkdownMemberIdentity {
@@ -50,6 +51,7 @@ export function parseMarkdownFileReference(value: string | null | undefined): Ma
     path: filePath,
     line: located === null ? 1 : Number.parseInt(located[2]!, 10),
     column: located?.[3] === undefined ? null : Number.parseInt(located[3], 10),
+    hasExplicitLine: located !== null,
   };
 }
 

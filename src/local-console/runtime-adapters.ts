@@ -20,7 +20,7 @@ import {
 } from "./execution-context-reader.js";
 import {
   listLocalWorkspaceFiles,
-  readLocalFileReferenceWindow,
+  readLocalFileReference,
   readLocalWorkspaceTextFile,
 } from "./file-read.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
@@ -132,7 +132,7 @@ export function createLocalRuntimeAdapters(input: {
     }),
     readWorkspaceFile: async (workspacePath: string, filePath: string) =>
       await readLocalWorkspaceTextFile({ workspacePath, filePath }),
-    readFileReference: readLocalFileReferenceWindow,
+    readFileReference: readLocalFileReference,
     loadCeoScripts: async () => await loadCeoScripts({
       agentsDir: path.join(options.projectRoot, "agents"),
       required: false,

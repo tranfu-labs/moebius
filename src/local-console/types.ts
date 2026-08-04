@@ -280,6 +280,8 @@ export interface LocalConsoleFileReferenceLine {
 export type LocalConsoleFileReferenceContent =
   | {
       available: true;
+      scope: "workspace-file" | "external-preview";
+      isComplete: boolean;
       path: string;
       lines: LocalConsoleFileReferenceLine[];
       reason: null;
@@ -287,9 +289,13 @@ export type LocalConsoleFileReferenceContent =
       targetColumn: number | null;
       truncatedBefore: boolean;
       truncatedAfter: boolean;
+      relativePath: string | null;
+      text: string | null;
     }
   | {
       available: false;
+      scope: "workspace-file" | "external-preview" | null;
+      isComplete: null;
       path: string;
       lines: [];
       reason:
@@ -301,9 +307,13 @@ export type LocalConsoleFileReferenceContent =
         | "response-too-large"
         | "line-not-found"
         | "scan-limit"
+        | "file-too-large"
+        | "workspace-unavailable"
         | "unavailable";
       targetLine: number;
       targetColumn: number | null;
+      relativePath: string | null;
+      text: null;
     };
 
 export interface LocalConsoleProjectFileEntry {

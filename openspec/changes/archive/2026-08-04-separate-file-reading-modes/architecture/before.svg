@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">文件阅读模式变更前架构</title>
+  <desc id="desc">消息文件引用只读取附近窗口，项目文件和改动共用 diff 读取与 FileDiffView。</desc>
+  <defs>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#D97706"/></marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#2563EB"/></marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.10"/></filter>
+    <style>
+      .title{font:700 28px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#172033}.subtitle{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#64748B}.lane{font:700 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.boxTitle{font:700 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#172033}.body{font:400 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.tag{font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#92400E}.arrowLabel{font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.legend{font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}
+    </style>
+  </defs>
+  <rect width="1200" height="760" fill="#F8FAFC"/>
+  <text x="60" y="58" class="title">变更前：两套入口，共用含混的阅读语义</text>
+  <text x="60" y="84" class="subtitle">无行号被折成第 1 行；项目当前文件也进入 diff 数据与外观。</text>
+
+  <rect x="45" y="115" width="1110" height="165" rx="18" fill="#FFF7ED" stroke="#FED7AA"/>
+  <text x="68" y="143" class="lane">正文文件引用</text>
+  <rect x="75" y="165" width="210" height="82" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="95" y="194" class="boxTitle">MarkdownMessage</text><text x="95" y="219" class="body">绝对路径点击</text>
+  <rect x="365" y="165" width="220" height="82" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="385" y="194" class="boxTitle">路径解析</text><text x="385" y="219" class="body">无行号默认 line = 1</text>
+  <rect x="665" y="165" width="220" height="82" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="685" y="194" class="boxTitle">/file-reference</text><text x="685" y="219" class="body">任意文本仅返回 ±40 行</text>
+  <rect x="965" y="165" width="160" height="82" rx="14" fill="#FFFFFF" stroke="#FDBA74" filter="url(#shadow)"/>
+  <text x="985" y="194" class="boxTitle">文件引用标签</text><text x="985" y="219" class="body">附近证据</text>
+  <path d="M285 206 H355" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M585 206 H655" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M885 206 H955" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+
+  <rect x="45" y="310" width="1110" height="330" rx="18" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="68" y="340" class="lane">右侧栏项目与改动</text>
+  <rect x="75" y="375" width="210" height="82" rx="14" fill="#FFFFFF" stroke="#93C5FD" filter="url(#shadow)"/>
+  <text x="95" y="404" class="boxTitle">ProjectFilesTab</text><text x="95" y="429" class="body">完整项目树</text>
+  <rect x="75" y="510" width="210" height="82" rx="14" fill="#FFFFFF" stroke="#93C5FD" filter="url(#shadow)"/>
+  <text x="95" y="539" class="boxTitle">ChangeTab</text><text x="95" y="564" class="body">累计改动清单</text>
+  <rect x="405" y="422" width="260" height="120" rx="14" fill="#FFFFFF" stroke="#60A5FA" filter="url(#shadow)"/>
+  <text x="425" y="452" class="boxTitle">projectFile()</text><text x="425" y="478" class="body">按文件是否有改动决定</text><text x="425" y="500" class="body">返回当前行或 diff 行</text><text x="425" y="526" class="tag">同一个 /files/content</text>
+  <rect x="805" y="422" width="260" height="120" rx="14" fill="#FFFFFF" stroke="#60A5FA" filter="url(#shadow)"/>
+  <text x="825" y="452" class="boxTitle">FileDiffView</text><text x="825" y="478" class="body">旧 / 新双行号</text><text x="825" y="500" class="body">增删 line kind 与底色</text><text x="825" y="526" class="tag">两个标签共用</text>
+  <path d="M285 416 C340 416 345 455 395 470" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M285 551 C340 551 345 520 395 500" stroke="#D97706" stroke-width="3" fill="none" marker-end="url(#arrowOrange)"/>
+  <path d="M665 482 H795" stroke="#2563EB" stroke-width="3" fill="none" marker-end="url(#arrowBlue)"/>
+
+  <rect x="60" y="682" width="14" height="14" rx="3" fill="#D97706"/><text x="84" y="694" class="legend">用户触发 / UI 入口</text>
+  <line x1="255" y1="689" x2="295" y2="689" stroke="#2563EB" stroke-width="3" marker-end="url(#arrowBlue)"/><text x="310" y="694" class="legend">读取数据流</text>
+  <rect x="495" y="674" width="640" height="33" rx="9" fill="#FEF3C7"/><text x="512" y="696" class="tag">结果：压缩单行文件像“只有一行”，项目文件看起来也始终像 Review。</text>
+</svg>

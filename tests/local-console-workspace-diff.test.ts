@@ -73,11 +73,21 @@ describe("local console conversation workspace diff through HTTP", () => {
         lines: Array<{ kind: string; oldLineNumber: number | null; newLineNumber: number | null; text: string }>;
       }>(
         started.url,
-        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/files/content?path=committed.txt`,
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/workspace-diff/content?path=committed.txt`,
       );
       expect(changedFile.lines).toEqual([
         { kind: "deletion", oldLineNumber: 1, newLineNumber: null, text: "baseline" },
         { kind: "addition", oldLineNumber: null, newLineNumber: 1, text: "committed during conversation" },
+      ]);
+      const currentChangedFile = await getJson<{
+        available: true;
+        lines: Array<{ kind: string; oldLineNumber: number | null; newLineNumber: number | null; text: string }>;
+      }>(
+        started.url,
+        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/files/content?path=committed.txt`,
+      );
+      expect(currentChangedFile.lines).toEqual([
+        { kind: "unchanged", oldLineNumber: 1, newLineNumber: 1, text: "committed during conversation" },
       ]);
 
       const projectFiles = await getJson<{
@@ -154,7 +164,10 @@ describe("local console conversation workspace diff through HTTP", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       available: true,
+      scope: "workspace-file",
+      isComplete: true,
       path: await fs.realpath(evidencePath),
+      text: "one\ntwo\ntarget\nfour\n",
       targetLine: 3,
       targetColumn: 2,
       lines: expect.arrayContaining([{ lineNumber: 3, text: "target" }]),
@@ -169,6 +182,8 @@ describe("local console conversation workspace diff through HTTP", () => {
     expect(outsideResponse.status).toBe(200);
     await expect(outsideResponse.json()).resolves.toMatchObject({
       available: true,
+      scope: "external-preview",
+      isComplete: false,
       path: await fs.realpath(path.join(root, "outside.txt")),
       reason: null,
       lines: [{ lineNumber: 1, text: "secret" }],

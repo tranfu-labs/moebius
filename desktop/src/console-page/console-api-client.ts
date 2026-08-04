@@ -382,12 +382,33 @@ export async function loadProjectFile(options: {
   return body as WorkspaceFileContent;
 }
 
+export async function loadWorkspaceDiffFile(options: {
+  apiBase: string;
+  sessionId: string;
+  filePath: string;
+  fetch: FetchLike;
+}): Promise<WorkspaceFileContent> {
+  const url = endpoint(
+    options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/workspace-diff/content`,
+  );
+  url.searchParams.set("path", options.filePath);
+  const fetch = options.fetch;
+  const response = await fetch(url);
+  const body = await response.json() as WorkspaceFileContent | { error?: string };
+  if (!response.ok) {
+    throw new Error("error" in body && body.error ? body.error : "workspace diff file request failed");
+  }
+  return body as WorkspaceFileContent;
+}
+
 export async function loadFileReference(options: {
   apiBase: string;
   sessionId: string;
   filePath: string;
   line: number;
   column: number | null;
+  hasExplicitLine?: boolean;
   fetch: FetchLike;
 }): Promise<FileReferenceContent> {
   const url = endpoint(
@@ -399,6 +420,7 @@ export async function loadFileReference(options: {
   if (options.column !== null) {
     url.searchParams.set("column", String(options.column));
   }
+  url.searchParams.set("explicitLine", options.hasExplicitLine === true ? "1" : "0");
   const fetch = options.fetch;
   const response = await fetch(url);
   const body = await response.json() as FileReferenceContent | { error?: string };

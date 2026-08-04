@@ -80,6 +80,7 @@ import {
   FileReferenceTab,
   type FileReferenceContent,
 } from "@/console/file-reference-tab";
+import { decideInitialFileViewMode } from "@/console/file-view-state";
 import type {
   MarkdownConversationReference,
   MarkdownFileReference,
@@ -140,6 +141,8 @@ import {
   RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   openRightSidebarSourceTab,
   parseFileReferenceSourceKey,
+  updateRightSidebarFileMode,
+  updateRightSidebarProjectFileMode,
   updateRightSidebarProcessScroll,
   parseRunOutputSourceKey,
   type RightSidebarTabsState,
@@ -514,11 +517,13 @@ export interface OperatorConsoleProps {
   onLoadWorkspaceDiff?: (sessionId: string) => Promise<WorkspaceDiffData>;
   onLoadProjectFiles?: (sessionId: string) => Promise<ProjectFilesData>;
   onLoadProjectFile?: (sessionId: string, filePath: string) => Promise<WorkspaceFileContent>;
+  onLoadWorkspaceDiffFile?: (sessionId: string, filePath: string) => Promise<WorkspaceFileContent>;
   onLoadFileReference?: (
     sessionId: string,
     filePath: string,
     line: number,
     column: number | null,
+    hasExplicitLine: boolean,
   ) => Promise<FileReferenceContent>;
   onChangeSessionProject?: (sessionId: string, projectId: string) => void;
   onShowProjectInFolder?: (folderPath: string) => void | Promise<void>;
@@ -707,6 +712,7 @@ export function OperatorConsole({
   onLoadWorkspaceDiff = unavailableWorkspaceDiff,
   onLoadProjectFiles = unavailableProjectFiles,
   onLoadProjectFile = unavailableProjectFile,
+  onLoadWorkspaceDiffFile = unavailableProjectFile,
   onLoadFileReference = unavailableFileReference,
   onChangeSessionProject,
   onShowProjectInFolder,
@@ -873,6 +879,8 @@ export function OperatorConsole({
   const [applicationView, setApplicationView] = useState<OperatorApplicationView>("conversation");
   const [applicationOverlay, setApplicationOverlay] = useState<OperatorApplicationOverlay | null>(null);
   const [fileReferenceContents, setFileReferenceContents] = useState<Record<string, FileReferenceContent>>({});
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
   const [pendingConversationRoute, setPendingConversationRoute] = useState<{
     run: ConversationRouteAction;
     cancel?: () => void;
@@ -998,6 +1006,8 @@ export function OperatorConsole({
   const latestRightSidebarTabsRef = useRef(effectiveRightSidebarTabs);
   latestRightSidebarTabsRef.current = effectiveRightSidebarTabs;
   const pendingFileReferenceOpensRef = useRef(0);
+  const latestFileReferenceOpenGenerationRef = useRef(0);
+  const fileReferenceSourceGenerationRef = useRef<Record<string, number>>({});
   const activeRightSidebarTab = effectiveRightSidebarTabs.tabs.find(
     (tab) => tab.id === effectiveRightSidebarTabs.activeTabId,
   ) ?? null;
@@ -1308,25 +1318,56 @@ export function OperatorConsole({
 
   const openFileReference = (sessionId: string, reference: MarkdownFileReference) => {
     parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
+    const openingHostSessionId = selectedSessionId;
+    const openGeneration = latestFileReferenceOpenGenerationRef.current + 1;
+    latestFileReferenceOpenGenerationRef.current = openGeneration;
     pendingFileReferenceOpensRef.current += 1;
     setRightSidebarOpen(true);
-    void onLoadFileReference(sessionId, reference.path, reference.line, reference.column)
+    void onLoadFileReference(
+      sessionId,
+      reference.path,
+      reference.line,
+      reference.column,
+      reference.hasExplicitLine,
+    )
       .catch(() => unavailableFileReference(
         sessionId,
         reference.path,
         reference.line,
         reference.column,
+        reference.hasExplicitLine,
       ))
       .then((content) => {
+        if (selectedSessionIdRef.current !== openingHostSessionId) {
+          return;
+        }
         const canonicalReference = { ...reference, path: content.path };
         const sourceKey = createFileReferenceSourceKey(sessionId, canonicalReference);
-        setFileReferenceContents((current) => ({ ...current, [sourceKey]: content }));
-        updateRightSidebarTabs((current) => openRightSidebarSourceTab(current, {
-          id: createRightSidebarTabId(nextRightSidebarTabIdRef),
-          type: "file-reference",
-          title: fileReferenceTabTitle(canonicalReference, t),
-          sourceKey,
-        }));
+        const sourceGeneration = fileReferenceSourceGenerationRef.current[sourceKey] ?? 0;
+        if (openGeneration >= sourceGeneration) {
+          fileReferenceSourceGenerationRef.current[sourceKey] = openGeneration;
+          setFileReferenceContents((current) => ({ ...current, [sourceKey]: content }));
+        }
+        updateRightSidebarTabs((current) => {
+          const opened = openRightSidebarSourceTab(current, {
+            id: createRightSidebarTabId(nextRightSidebarTabIdRef),
+            type: "file-reference",
+            title: fileReferenceTabTitle(
+              canonicalReference,
+              content.scope === "external-preview",
+              t,
+            ),
+            sourceKey,
+            fileMode: decideInitialFileViewMode({
+              path: canonicalReference.path,
+              scope: content.scope ?? "external-preview",
+              hasExplicitLine: canonicalReference.hasExplicitLine,
+            }),
+          });
+          return openGeneration === latestFileReferenceOpenGenerationRef.current
+            ? opened
+            : { ...opened, activeTabId: current.activeTabId };
+        });
       })
       .finally(() => {
         pendingFileReferenceOpensRef.current = Math.max(
@@ -2571,8 +2612,19 @@ export function OperatorConsole({
                 filePath={locator.path}
                 line={locator.line}
                 column={locator.column}
+                hasExplicitLine={locator.hasExplicitLine}
+                rememberedMode={tab.fileMode}
                 initialContent={tab.sourceKey === null ? undefined : fileReferenceContents[tab.sourceKey]}
                 loadReference={onLoadFileReference}
+                onModeChange={(mode) => {
+                  updateRightSidebarTabs(updateRightSidebarFileMode(
+                    effectiveRightSidebarTabs,
+                    tab.id,
+                    mode,
+                  ));
+                }}
+                onOpenFileReference={(reference) => openFileReference(locator.sessionId, reference)}
+                onOpenExternalLink={onOpenExternalLink}
               />
             );
           },
@@ -2587,15 +2639,24 @@ export function OperatorConsole({
                 || selectedSession.runningCount > 0
               }
               loadDiff={onLoadWorkspaceDiff}
-              loadFile={onLoadProjectFile}
+              loadFile={onLoadWorkspaceDiffFile}
             />
           ),
-          "project-files": () => selectedSession === null ? null : (
+          "project-files": (tab) => selectedSession === null ? null : (
             <ProjectFilesTab
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
               loadFiles={onLoadProjectFiles}
               loadFile={onLoadProjectFile}
+              rememberedModes={tab.projectFileModes}
+              onModeChange={(filePath, mode) => {
+                updateRightSidebarTabs(updateRightSidebarProjectFileMode(
+                  effectiveRightSidebarTabs,
+                  tab.id,
+                  filePath,
+                  mode,
+                ));
+              }}
             />
           ),
           ...rightSidebarContentSlots,
@@ -3709,20 +3770,33 @@ async function unavailableFileReference(
   filePath: string,
   line: number,
   column: number | null,
+  _hasExplicitLine: boolean,
 ): Promise<FileReferenceContent> {
   return {
     available: false,
+    scope: null,
+    isComplete: null,
     path: filePath,
     lines: [],
     reason: "unavailable",
     targetLine: line,
     targetColumn: column,
+    relativePath: null,
+    text: null,
   };
 }
 
-function fileReferenceTabTitle(reference: MarkdownFileReference, t: Translate): string {
+function fileReferenceTabTitle(
+  reference: MarkdownFileReference,
+  externalPreview: boolean,
+  t: Translate,
+): string {
   const name = reference.path.split("/").filter(Boolean).at(-1)
     ?? t("console.rightSidebar.fileReference");
-  const column = reference.column === null ? "" : `:${String(reference.column)}`;
-  return `${name}:${String(reference.line)}${column}`;
+  const locatedName = reference.hasExplicitLine
+    ? `${name}:${String(reference.line)}${reference.column === null ? "" : `:${String(reference.column)}`}`
+    : name;
+  return externalPreview
+    ? t("console.fileReference.previewTabTitle", { name: locatedName })
+    : locatedName;
 }

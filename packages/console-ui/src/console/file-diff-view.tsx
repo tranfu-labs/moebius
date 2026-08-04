@@ -29,6 +29,7 @@ export type WorkspaceFileContent =
       path: string;
       lines: WorkspaceFileLine[];
       reason: null;
+      text?: string;
     }
   | {
       available: false;
