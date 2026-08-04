@@ -22,7 +22,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ### desktop-shell
 - 职责边界：Electron main 是桌面 composition root，负责数据根、PATH、种子、团队磁盘布局、onboarding、CLI 能力探测、local console server、IPC、窗口、日志和更新检查。renderer controller 负责页面状态编排，`packages/console-ui` 负责纯视图。桌面不再派生 runner child，也不再启动 observer server；辅助状态页只显示 local console、环境、版本和更新事实。
 - 入口：`desktop/src/main.ts`、`desktop/src/preload.ts`、`desktop/src/console-page/*`、`desktop/src/status-page/*`。
-- 上游：`pnpm desktop`、打包应用与 desktop 测试。
+- 上游：`pnpm desktop`、打包应用、desktop 测试，以及 `scripts/acceptance/desktop-cli-path-discovery.ts` 的隔离 GUI/login-shell PATH 验收。
 - 禁止依赖：桌面壳不得复制 local runtime、团队校验或 provider session 的业务规则。[NI:desktop-no-business-rule-copy]（非 import：语义复制需由 controller/domain 测试与 composition-root 审计判定）；renderer 不得直接拼接 shell 命令或绕过 preload 调用 Node adapter。[NI:desktop-no-shell-concatenation]（非 import：需检查 IPC 与外部参数数据流）；用户团队资源不得写回打包资源目录。[NI:desktop-no-resource-writeback]（非 import：需验证文件系统写入目标）
 
 ![desktop-shell](desktop-shell.svg)
