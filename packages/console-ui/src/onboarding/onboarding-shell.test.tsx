@@ -348,9 +348,25 @@ describe("OnboardingShell", () => {
     const scroll = screen.getByTestId("onboarding-team-scroll");
     const aiEntry = screen.getByTestId("open-onboarding-team-builder");
     const footer = screen.getByTestId("onboarding-footer");
-    expect(scroll).toHaveClass("min-h-[120px]", "overflow-y-auto", "flex-1");
+    expect(scroll).toHaveClass(
+      "min-h-[120px]",
+      "min-w-0",
+      "overflow-x-hidden",
+      "overflow-y-auto",
+      "flex-1",
+      "shrink-0",
+    );
+    expect(screen.getByTestId("onboarding-stage")).toHaveClass(
+      "[@media(max-height:520px)]:py-3",
+    );
+    expect(screen.getByTestId("onboarding-content-column")).toHaveClass(
+      "[@media(max-height:520px)]:mt-3",
+    );
     expect(scroll).not.toContainElement(aiEntry);
     expect(scroll).not.toContainElement(footer);
+    for (const team of screen.getAllByRole("button", { name: /团队/u })) {
+      if (scroll.contains(team)) expect(team).toHaveClass("min-w-0", "w-full", "max-w-full");
+    }
 
     fireEvent.change(search, { target: { value: "发布" } });
     expect(screen.getByTestId("onboarding-team-count")).toHaveTextContent("匹配 1 / 共 2 支团队");

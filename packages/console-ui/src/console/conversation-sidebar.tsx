@@ -633,7 +633,7 @@ function ProjectListSkeleton(): JSX.Element {
   return (
     <div className="space-y-3 px-2 py-2" aria-label={t("console.conversationSidebar.projectsLoading")} aria-busy="true" data-testid="conversation-sidebar-loading">
       {["first", "second", "third"].map((key, index) => (
-        <div key={key} className="animate-pulse space-y-2" aria-hidden="true">
+        <div key={key} className="animate-pulse space-y-2 motion-reduce:animate-none" aria-hidden="true">
           <div className="flex h-8 items-center gap-2">
             <span className="h-3 w-3 rounded-sm bg-line" />
             <span className={cn("h-3 rounded bg-line", index === 1 ? "w-24" : "w-32")} />
