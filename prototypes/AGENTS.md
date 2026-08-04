@@ -54,6 +54,8 @@
 - 最终 HTML 验证 settings：`pnpm --filter @moebius/prototypes verify:settings`
 - 构建并发布 main-left-sidebar：`pnpm --filter @moebius/prototypes build:main-left-sidebar`
 - 最终 HTML 验证 main-left-sidebar：`pnpm --filter @moebius/prototypes verify:main-left-sidebar`
+- 构建并发布 main-right-sidebar：`pnpm --filter @moebius/prototypes build:main-right-sidebar`
+- 最终 HTML 验证 main-right-sidebar：`pnpm --filter @moebius/prototypes verify:main-right-sidebar`
 - 完整门禁：`pnpm --filter @moebius/prototypes check`
 
 每份原型至少验证：

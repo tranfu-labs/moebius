@@ -1,14 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "@/i18n";
 
 import {
-  DEFAULT_RIGHT_SIDEBAR_WIDTH_PX,
-  MAX_RIGHT_SIDEBAR_WIDTH_PX,
-  MIN_RIGHT_SIDEBAR_WIDTH_PX,
   RightSidebar,
 } from "./right-sidebar";
+import {
+  RIGHT_SIDEBAR_MIN_WIDTH_PX,
+  projectRightSidebarLayout,
+} from "./right-sidebar-layout";
 import {
   addBlankRightSidebarTab,
   type RightSidebarTabsState,
@@ -206,7 +208,7 @@ describe("RightSidebar", () => {
 
   it("uses an overlay with its own route back to the conversation", () => {
     const onOpenChange = vi.fn();
-    renderSidebar({ narrow: true, onOpenChange });
+    renderSidebar({ layout: "overlay", onOpenChange });
 
     expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-layout", "overlay");
     expect(screen.queryByRole("separator", { name: "调整右侧栏宽度" })).not.toBeInTheDocument();
@@ -214,33 +216,195 @@ describe("RightSidebar", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("moves focus from disappearing layout controls to the host toggle without resetting content", () => {
+    const { rerender } = render(<LayoutFocusSidebar availableWidth={1_200} />);
+    const activeTab = screen.getByRole("tab", { name: "改动" });
+    const content = screen.getByTestId("right-sidebar-content");
+    content.scrollTop = 37;
+
+    screen.getByRole("separator", { name: "调整右侧栏宽度" }).focus();
+    rerender(<LayoutFocusSidebar availableWidth={959} />);
+
+    expect(screen.getByRole("button", { name: "切换右侧栏" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "改动" })).toBe(activeTab);
+    expect(screen.getByTestId("right-sidebar-content")).toBe(content);
+    expect(content.scrollTop).toBe(37);
+    expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-motion-state", "open");
+
+    screen.getByRole("button", { name: "关闭右侧栏并回到会话区" }).focus();
+    rerender(<LayoutFocusSidebar availableWidth={1_200} />);
+
+    expect(screen.getByRole("button", { name: "切换右侧栏" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "改动" })).toBe(activeTab);
+    expect(screen.getByTestId("right-sidebar-content")).toBe(content);
+    expect(content.scrollTop).toBe(37);
+    expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-motion-state", "open");
+  });
+
   it("resizes from the left boundary within the supported range", () => {
     const onWidthChange = vi.fn();
     renderSidebar({ onWidthChange });
 
     const handle = screen.getByRole("separator", { name: "调整右侧栏宽度" });
-    expect(handle).toHaveAttribute("aria-valuemin", String(MIN_RIGHT_SIDEBAR_WIDTH_PX));
-    expect(handle).toHaveAttribute("aria-valuemax", String(MAX_RIGHT_SIDEBAR_WIDTH_PX));
+    expect(handle).toHaveAttribute("aria-valuemin", String(RIGHT_SIDEBAR_MIN_WIDTH_PX));
+    expect(handle).toHaveAttribute("aria-valuemax", "720");
 
     firePointer(handle, "pointerdown", { pointerId: 4, button: 0, clientX: 800 });
     firePointer(handle, "pointermove", { pointerId: 4, clientX: 2_000 });
-    expect(onWidthChange).toHaveBeenLastCalledWith(MIN_RIGHT_SIDEBAR_WIDTH_PX);
+    expect(onWidthChange).toHaveBeenLastCalledWith(RIGHT_SIDEBAR_MIN_WIDTH_PX);
     firePointer(handle, "pointermove", { pointerId: 4, clientX: 0 });
-    expect(onWidthChange).toHaveBeenLastCalledWith(MAX_RIGHT_SIDEBAR_WIDTH_PX);
+    expect(onWidthChange).toHaveBeenLastCalledWith(720);
+  });
+
+  it("resizes from the keyboard with ordinary, large, and boundary steps", () => {
+    const onWidthChange = vi.fn();
+    renderSidebar({ onWidthChange });
+
+    const handle = screen.getByRole("separator", { name: "调整右侧栏宽度" });
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(onWidthChange).toHaveBeenLastCalledWith(616);
+    fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
+    expect(onWidthChange).toHaveBeenLastCalledWith(536);
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(onWidthChange).toHaveBeenLastCalledWith(480);
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(onWidthChange).toHaveBeenLastCalledWith(720);
+  });
+
+  it("keeps the final tab as an inert snapshot until exit and returns focus", () => {
+    const onExitComplete = vi.fn();
+    render(<ControlledSidebar onExitComplete={onExitComplete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭标签：改动" }));
+
+    const sidebar = screen.getByTestId("right-sidebar");
+    expect(sidebar).toHaveAttribute("data-motion-state", "closing");
+    expect(sidebar.inert).toBe(true);
+    expect(screen.getByRole("tab", { name: "改动", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "显示右侧栏" })).toHaveFocus();
+
+    fireEvent.transitionEnd(sidebar, { propertyName: "width" });
+    expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+    expect(onExitComplete).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "显示右侧栏" }));
+    expect(screen.getByTestId("right-sidebar-content")).toHaveTextContent("这个标签要看什么");
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
+  it("reverses a closing sidebar in place when the last intent is open", () => {
+    render(<ControlledSidebar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "隐藏右侧栏" }));
+    const sidebar = screen.getByTestId("right-sidebar");
+    expect(sidebar).toHaveAttribute("data-motion-state", "closing");
+    fireEvent.click(screen.getByRole("button", { name: "显示右侧栏" }));
+    fireEvent.transitionEnd(sidebar, { propertyName: "width" });
+
+    expect(screen.getByTestId("right-sidebar")).toBe(sidebar);
+    expect(sidebar).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("finishes immediately when reduced motion is enabled", () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({
+        matches: true,
+        media: "(prefers-reduced-motion: reduce)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
+    try {
+      const onExitComplete = vi.fn();
+      render(<ControlledSidebar onExitComplete={onExitComplete} />);
+      fireEvent.click(screen.getByRole("button", { name: "隐藏右侧栏" }));
+      expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+      expect(onExitComplete).toHaveBeenCalledOnce();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 });
+
+function ControlledSidebar({
+  onExitComplete = () => undefined,
+}: {
+  onExitComplete?: () => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(true);
+  const [state, setState] = useState(initialState());
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const projection = projectRightSidebarLayout(1_200, null);
+  return (
+    <I18nProvider locale="zh-CN">
+      <button ref={toggleRef} type="button" onClick={() => setOpen((current) => !current)}>
+        {open ? "隐藏右侧栏" : "显示右侧栏"}
+      </button>
+      <RightSidebar
+        open={open}
+        availableWidth={1_200}
+        width={projection.width}
+        minWidth={projection.minWidth}
+        maxWidth={projection.maxWidth}
+        layout={projection.layout}
+        isGitRepository
+        state={state}
+        onStateChange={setState}
+        onOpenChange={setOpen}
+        onWidthChange={() => undefined}
+        toggleButtonRef={toggleRef}
+        onExitComplete={onExitComplete}
+        createTabId={() => "generated"}
+      />
+    </I18nProvider>
+  );
+}
+
+function LayoutFocusSidebar({ availableWidth }: { availableWidth: number }): JSX.Element {
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const projection = projectRightSidebarLayout(availableWidth, null);
+  return (
+    <I18nProvider locale="zh-CN">
+      <button ref={toggleRef} type="button">切换右侧栏</button>
+      <RightSidebar
+        open
+        availableWidth={availableWidth}
+        width={projection.width}
+        minWidth={projection.minWidth}
+        maxWidth={projection.maxWidth}
+        layout={projection.layout}
+        isGitRepository
+        state={initialState()}
+        onStateChange={() => undefined}
+        onOpenChange={() => undefined}
+        onWidthChange={() => undefined}
+        toggleButtonRef={toggleRef}
+        createTabId={() => "generated"}
+      />
+    </I18nProvider>
+  );
+}
 
 function renderSidebar(
   overrides: Partial<React.ComponentProps<typeof RightSidebar>> = {},
   locale: "zh-CN" | "en" = "zh-CN",
 ) {
   let nextId = 1;
+  const projection = projectRightSidebarLayout(1_200, null);
   return render(
     <I18nProvider locale={locale}>
       <RightSidebar
         open
-        width={DEFAULT_RIGHT_SIDEBAR_WIDTH_PX}
-        narrow={false}
+        availableWidth={1_200}
+        width={projection.width}
+        minWidth={projection.minWidth}
+        maxWidth={projection.maxWidth}
+        layout={projection.layout}
         isGitRepository
         state={initialState()}
         onStateChange={() => undefined}

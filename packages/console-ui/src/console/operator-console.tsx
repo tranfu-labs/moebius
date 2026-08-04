@@ -128,12 +128,10 @@ import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-c
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import {
-  DEFAULT_RIGHT_SIDEBAR_WIDTH_PX,
-  RIGHT_SIDEBAR_OVERLAY_WIDTH_PX,
   RightSidebar,
-  clampRightSidebarWidth,
   type RightSidebarContentSlots,
 } from "@/console/right-sidebar";
+import { projectRightSidebarLayout } from "@/console/right-sidebar-layout";
 import {
   createFileReferenceSourceKey,
   createRunOutputSourceKey,
@@ -610,7 +608,7 @@ export interface OperatorConsoleProps {
   sidebarOpen?: boolean;
   onSidebarOpenChange?: (open: boolean) => void;
   rightSidebarOpen?: boolean;
-  rightSidebarWidth?: number;
+  rightSidebarWidth?: number | null;
   rightSidebarTabs?: RightSidebarTabsState;
   rightSidebarFocusTabId?: string | null;
   onRightSidebarFocusHandled?: (tabId: string) => void;
@@ -815,7 +813,7 @@ export function OperatorConsole({
   const [uncontrolledSidebarOpen, setUncontrolledSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH_PX);
   const [uncontrolledRightSidebarOpen, setUncontrolledRightSidebarOpen] = useState(false);
-  const [uncontrolledRightSidebarWidth, setUncontrolledRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH_PX);
+  const [uncontrolledRightSidebarWidth, setUncontrolledRightSidebarWidth] = useState<number | null>(null);
   const [uncontrolledRightSidebarTabs, setUncontrolledRightSidebarTabs] = useState<RightSidebarTabsState>(
     EMPTY_RIGHT_SIDEBAR_TABS,
   );
@@ -825,8 +823,10 @@ export function OperatorConsole({
   } | null>(null);
   const [isNarrowWindow, setIsNarrowWindow] = useState(() => viewportIsNarrow());
   const [narrowSidebarOpen, setNarrowSidebarOpen] = useState(false);
-  const [rightSidebarOverlay, setRightSidebarOverlay] = useState(() => viewportUsesRightSidebarOverlay());
   const [layoutAnnouncement, setLayoutAnnouncement] = useState("");
+  const [availableContentWidth, setAvailableContentWidth] = useState(() => typeof window === "undefined"
+    ? 960
+    : window.innerWidth);
   const [useStackedTeamRows, setUseStackedTeamRows] = useState(() => viewportUsesStackedTeamRows());
   const sidebarResizeGestureRef = useRef<SidebarResizeGesture | null>(null);
   const sidebarOpenButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -840,6 +840,7 @@ export function OperatorConsole({
   const parentScrollTopRef = useRef(0);
   const parentConversationPaneRef = useRef<HTMLDivElement | null>(null);
   const conversationDockObserverRef = useRef<ResizeObserver | null>(null);
+  const operatorContentShellRef = useRef<HTMLDivElement | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
   const timelineReadingAnchorRef = useRef<{ messageId: number; offset: number } | null>(null);
@@ -1025,9 +1026,12 @@ export function OperatorConsole({
   const effectiveRightSidebarOpen = !embeddedConversation
     && applicationView === "conversation"
     && requestedRightSidebarOpen;
-  const effectiveRightSidebarWidth = clampRightSidebarWidth(
-    rightSidebarWidth ?? uncontrolledRightSidebarWidth,
+  const rightSidebarLayout = projectRightSidebarLayout(
+    availableContentWidth,
+    rightSidebarWidth === undefined ? uncontrolledRightSidebarWidth : rightSidebarWidth,
   );
+  const rightSidebarIsOverlay = rightSidebarLayout.layout === "overlay";
+  const effectiveRightSidebarWidth = rightSidebarLayout.width;
   const effectiveRightSidebarTabs = rightSidebarTabs ?? uncontrolledRightSidebarTabs;
   const latestRightSidebarTabsRef = useRef(effectiveRightSidebarTabs);
   latestRightSidebarTabsRef.current = effectiveRightSidebarTabs;
@@ -1057,12 +1061,33 @@ export function OperatorConsole({
         setConversationPaneWidth(paneWidth);
       }
       setIsNarrowWindow(viewportIsNarrow());
-      setRightSidebarOverlay(viewportUsesRightSidebarOverlay());
+      const shellWidth = operatorContentShellRef.current === null
+        ? 0
+        : Math.round(operatorContentShellRef.current.getBoundingClientRect().width);
+      setAvailableContentWidth(shellWidth > 0
+        ? shellWidth
+        : Math.max(0, window.innerWidth - (effectiveSidebarOpen ? sidebarWidth : 0)));
       setUseStackedTeamRows(viewportUsesStackedTeamRows());
     };
     window.addEventListener("resize", updateResponsiveLayout);
     return () => window.removeEventListener("resize", updateResponsiveLayout);
-  }, [timelineVirtualizer]);
+  }, [effectiveSidebarOpen, sidebarWidth, timelineVirtualizer]);
+
+  useLayoutEffect(() => {
+    const shell = operatorContentShellRef.current;
+    if (shell === null) return;
+    const update = () => {
+      const nextWidth = Math.round(shell.getBoundingClientRect().width);
+      if (nextWidth > 0) {
+        setAvailableContentWidth((current) => current === nextWidth ? current : nextWidth);
+      }
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, [effectiveSidebarOpen]);
 
   useEffect(() => {
     setNarrowSidebarOpen(false);
@@ -1516,21 +1541,17 @@ export function OperatorConsole({
   }
 
   function setRightSidebarOpen(open: boolean): void {
-    if (open && rightSidebarOverlay && narrowSidebarOpen) {
+    if (open && rightSidebarIsOverlay && narrowSidebarOpen) {
       setNarrowSidebarOpen(false);
     }
     if (open) {
       parentScrollTopRef.current = timelineScrollRef.current?.scrollTop ?? 0;
-    } else {
-      restoreTimelineScroll(timelineScrollRef, parentScrollTopRef.current);
-      onCloseEvidence?.();
-      onCloseSubSession?.();
     }
     if (rightSidebarOpen === undefined) {
       setUncontrolledRightSidebarOpen(open);
     }
     onRightSidebarOpenChange?.(open);
-    if (rightSidebarOverlay) {
+    if (rightSidebarIsOverlay) {
       setLayoutAnnouncement(t(open
         ? "console.operator.rightSidebarOpened"
         : "console.operator.rightSidebarClosed"));
@@ -1541,11 +1562,16 @@ export function OperatorConsole({
   }
 
   function setRightSidebarWidth(width: number): void {
-    const clamped = clampRightSidebarWidth(width);
     if (rightSidebarWidth === undefined) {
-      setUncontrolledRightSidebarWidth(clamped);
+      setUncontrolledRightSidebarWidth(width);
     }
-    onRightSidebarWidthChange?.(clamped);
+    onRightSidebarWidthChange?.(width);
+  }
+
+  function finishRightSidebarExit(): void {
+    restoreTimelineScroll(timelineScrollRef, parentScrollTopRef.current);
+    onCloseEvidence?.();
+    onCloseSubSession?.();
   }
 
   const submitComposer = () => {
@@ -1737,18 +1763,13 @@ export function OperatorConsole({
             : t("console.operator.installingClis", { count: activeCliInstallations.length })}
         </div>
       ) : null}
-      {!embeddedConversation && (narrowSidebarOpen || (rightSidebarOverlay && effectiveRightSidebarOpen)) ? (
+      {!embeddedConversation && narrowSidebarOpen ? (
         <button
           type="button"
           className="window-no-drag absolute inset-0 z-40 bg-ink/20"
-          aria-label={narrowSidebarOpen
-            ? t("console.operator.closeSidebarOverlay")
-            : t("console.operator.closeRightSidebarOverlay")}
+          aria-label={t("console.operator.closeSidebarOverlay")}
           data-testid="operator-drawer-scrim"
-          onClick={() => {
-            if (narrowSidebarOpen) setSidebarOpen(false);
-            else setRightSidebarOpen(false);
-          }}
+          onClick={() => setSidebarOpen(false)}
         />
       ) : null}
       {!embeddedConversation ? <aside
@@ -1970,7 +1991,11 @@ export function OperatorConsole({
         </div> : null}
       </aside> : null}
 
-      <div className="relative flex min-w-0 flex-1" data-testid="operator-content-shell">
+      <div
+        ref={operatorContentShellRef}
+        className="relative flex min-w-0 flex-1"
+        data-testid="operator-content-shell"
+      >
       <main
         ref={operatorMainRef}
         id="operator-main-content"
@@ -2611,8 +2636,11 @@ export function OperatorConsole({
       </main>
       <RightSidebar
         open={effectiveRightSidebarOpen}
+        availableWidth={availableContentWidth}
         width={effectiveRightSidebarWidth}
-        narrow={rightSidebarOverlay}
+        minWidth={rightSidebarLayout.minWidth}
+        maxWidth={rightSidebarLayout.maxWidth}
+        layout={rightSidebarLayout.layout}
         isGitRepository={activeProject.isGitRepository === true}
         state={effectiveRightSidebarTabs}
         tabDiscriminators={rightSidebarTabDiscriminators}
@@ -2621,6 +2649,8 @@ export function OperatorConsole({
         onStateChange={updateRightSidebarTabs}
         onOpenChange={setRightSidebarOpen}
         onWidthChange={setRightSidebarWidth}
+        toggleButtonRef={rightSidebarToggleRef}
+        onExitComplete={finishRightSidebarExit}
         onBeforeCloseTab={onBeforeCloseRightSidebarTab}
         focusTabId={rightSidebarFocusTabId}
         onFocusTabHandled={onRightSidebarFocusHandled}
@@ -3017,10 +3047,6 @@ export function OperatorConsole({
 
 function viewportIsNarrow(): boolean {
   return typeof window !== "undefined" && window.innerWidth < NARROW_WINDOW_WIDTH_PX;
-}
-
-function viewportUsesRightSidebarOverlay(): boolean {
-  return typeof window !== "undefined" && window.innerWidth < RIGHT_SIDEBAR_OVERLAY_WIDTH_PX;
 }
 
 function viewportUsesStackedTeamRows(): boolean {

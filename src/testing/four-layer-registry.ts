@@ -69,6 +69,8 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/project-files-tab.tsx",
   "packages/console-ui/src/console/result-card.tsx",
   "packages/console-ui/src/console/right-sidebar-tabs.ts",
+  "packages/console-ui/src/console/right-sidebar-layout.ts",
+  "packages/console-ui/src/console/right-sidebar-motion.ts",
   "packages/console-ui/src/console/right-sidebar.tsx",
   "packages/console-ui/src/console/role-composer.tsx",
   "packages/console-ui/src/console/role-tag.tsx",

@@ -9,12 +9,27 @@ import {
   X,
 } from "lucide-react";
 import {
+  useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 
+import {
+  rightSidebarKeyboardWidth,
+  type RightSidebarLayout,
+  type RightSidebarResizeKey,
+} from "@/console/right-sidebar-layout";
+import {
+  rightSidebarToggleProgressAt,
+  startRightSidebarToggleMotion,
+  type RightSidebarToggleMotion,
+} from "@/console/right-sidebar-motion";
 import {
   RIGHT_SIDEBAR_BUILTIN_TAB_TITLES,
   RIGHT_SIDEBAR_SELECTABLE_TAB_TYPES,
@@ -30,11 +45,6 @@ import {
 import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-export const DEFAULT_RIGHT_SIDEBAR_WIDTH_PX = 420;
-export const MIN_RIGHT_SIDEBAR_WIDTH_PX = 320;
-export const MAX_RIGHT_SIDEBAR_WIDTH_PX = 640;
-export const RIGHT_SIDEBAR_OVERLAY_WIDTH_PX = 1_080;
-
 type RightSidebarContentType = Exclude<RightSidebarTabType, "blank">;
 
 export type RightSidebarContentSlots = Partial<Record<
@@ -44,8 +54,11 @@ export type RightSidebarContentSlots = Partial<Record<
 
 export interface RightSidebarProps {
   open: boolean;
+  availableWidth: number;
   width: number;
-  narrow: boolean;
+  minWidth: number;
+  maxWidth: number;
+  layout: RightSidebarLayout;
   isGitRepository: boolean;
   state: RightSidebarTabsState;
   onStateChange(state: RightSidebarTabsState): void;
@@ -59,6 +72,8 @@ export interface RightSidebarProps {
   tabDiscriminators?: Readonly<Record<string, string>>;
   updatingTabIds?: readonly string[];
   onRetryTitles?: () => void;
+  toggleButtonRef?: RefObject<HTMLButtonElement>;
+  onExitComplete?: () => void;
   className?: string;
 }
 
@@ -70,8 +85,11 @@ interface ResizeGesture {
 
 export function RightSidebar({
   open,
+  availableWidth,
   width,
-  narrow,
+  minWidth,
+  maxWidth,
+  layout,
   isGitRepository,
   state,
   onStateChange,
@@ -85,17 +103,130 @@ export function RightSidebar({
   tabDiscriminators = {},
   updatingTabIds = [],
   onRetryTitles,
+  toggleButtonRef,
+  onExitComplete,
   className,
 }: RightSidebarProps): JSX.Element | null {
   const { t } = useI18n();
+  const reducedMotion = usePrefersReducedMotion();
+  const asideRef = useRef<HTMLElement | null>(null);
+  const separatorRef = useRef<HTMLDivElement | null>(null);
+  const overlayCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const layoutControlFocusedRef = useRef(false);
   const resizeGestureRef = useRef<ResizeGesture | null>(null);
   const tabButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
   const focusedTabIdRef = useRef<string | null>(null);
-  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0] ?? null;
-  const tabLayoutKey = state.tabs
+  const [closingSnapshot, setClosingSnapshot] = useState<RightSidebarTabsState | null>(null);
+  const [mounted, setMounted] = useState(open);
+  const [expanded, setExpanded] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const [transitionDuration, setTransitionDuration] = useState(0);
+  const mountedRef = useRef(open);
+  const expandedRef = useRef(open);
+  const openRef = useRef(open);
+  const motionRef = useRef<RightSidebarToggleMotion | null>(null);
+  const exitTimerRef = useRef<number | null>(null);
+  const openFrameRef = useRef<number | null>(null);
+  const exitCompleteRef = useRef(onExitComplete);
+  const toggleButtonRefRef = useRef(toggleButtonRef);
+  exitCompleteRef.current = onExitComplete;
+  toggleButtonRefRef.current = toggleButtonRef;
+  openRef.current = open;
+  const renderedState = closingSnapshot ?? state;
+  const activeTab = renderedState.tabs.find((tab) => tab.id === renderedState.activeTabId)
+    ?? renderedState.tabs[0]
+    ?? null;
+  const tabLayoutKey = renderedState.tabs
     .map((tab) => `${tab.id}:${tab.title}:${tabDiscriminators[tab.id] ?? ""}`)
     .join("\u0000");
+
+  const completeExit = useCallback(() => {
+    if (openRef.current) return;
+    mountedRef.current = false;
+    expandedRef.current = false;
+    motionRef.current = null;
+    setMounted(false);
+    setExpanded(false);
+    setClosing(false);
+    setTransitionDuration(0);
+    setClosingSnapshot(null);
+    exitCompleteRef.current?.();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    if (openFrameRef.current !== null) {
+      window.cancelAnimationFrame(openFrameRef.current);
+      openFrameRef.current = null;
+    }
+    const now = performance.now();
+    const currentProgress = motionRef.current === null
+      ? expandedRef.current ? 1 : 0
+      : rightSidebarToggleProgressAt(motionRef.current, now);
+    const target = open ? 1 : 0;
+    const motion = reducedMotion
+      ? null
+      : startRightSidebarToggleMotion(currentProgress, target, now);
+    motionRef.current = motion;
+    setTransitionDuration(motion?.duration ?? 0);
+    if (open) {
+      mountedRef.current = true;
+      setMounted(true);
+      setClosing(false);
+      setClosingSnapshot(null);
+      if (reducedMotion) {
+        expandedRef.current = true;
+        setExpanded(true);
+      } else if (!expandedRef.current) {
+        openFrameRef.current = window.requestAnimationFrame(() => {
+          openFrameRef.current = null;
+          expandedRef.current = true;
+          setExpanded(true);
+        });
+      }
+      return;
+    }
+    if (!mountedRef.current) return;
+    setClosing(true);
+    expandedRef.current = false;
+    setExpanded(false);
+    if (asideRef.current?.contains(document.activeElement)) {
+      toggleButtonRefRef.current?.current?.focus();
+    }
+    if (reducedMotion) {
+      completeExit();
+      return;
+    }
+    exitTimerRef.current = window.setTimeout(completeExit, 200);
+  }, [completeExit, open, reducedMotion]);
+
+  useEffect(() => () => {
+    if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    if (openFrameRef.current !== null) window.cancelAnimationFrame(openFrameRef.current);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (asideRef.current !== null) asideRef.current.inert = closing;
+  }, [closing]);
+
+  useEffect(() => {
+    const trackLayoutControlFocus = (event: FocusEvent) => {
+      layoutControlFocusedRef.current = event.target === separatorRef.current
+        || event.target === overlayCloseButtonRef.current;
+    };
+    document.addEventListener("focusin", trackLayoutControlFocus);
+    return () => document.removeEventListener("focusin", trackLayoutControlFocus);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!layoutControlFocusedRef.current) return;
+    toggleButtonRefRef.current?.current?.focus();
+    layoutControlFocusedRef.current = false;
+  }, [layout]);
 
   useLayoutEffect(() => {
     if (
@@ -118,9 +249,9 @@ export function RightSidebar({
     if (target === undefined) return;
     target.focus();
     onFocusTabHandled?.(focusTabId);
-  }, [focusTabId, onFocusTabHandled, open, state.tabs]);
+  }, [focusTabId, onFocusTabHandled, open, renderedState.tabs]);
 
-  if (!open) {
+  if (!open && !mounted) {
     return null;
   }
 
@@ -129,7 +260,10 @@ export function RightSidebar({
     if (gesture === null || gesture.pointerId !== event.pointerId) {
       return;
     }
-    onWidthChange(clampRightSidebarWidth(gesture.startWidth + gesture.startX - event.clientX));
+    onWidthChange(Math.min(
+      maxWidth,
+      Math.max(minWidth, Math.round(gesture.startWidth + gesture.startX - event.clientX)),
+    ));
   };
 
   const finishResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -143,26 +277,56 @@ export function RightSidebar({
 
   return (
     <aside
+      ref={asideRef}
       className={cn(
-        "relative flex min-w-0 shrink-0 flex-col border-l border-line bg-canvas",
-        narrow && "absolute inset-y-0 right-0 z-50 w-[min(420px,92vw)] max-w-full",
+        "relative flex min-w-0 shrink-0 flex-col overflow-hidden border-l border-line bg-canvas motion-reduce:transition-none",
+        layout === "split"
+          ? "transition-[width] duration-150 ease-[var(--ease)]"
+          : "absolute inset-0 z-40 w-full border-l-0 transition-transform duration-150 ease-[var(--ease)]",
+        closing && "pointer-events-none",
         className,
       )}
-      style={narrow ? undefined : { width: `${width}px` }}
+      style={layout === "split"
+        ? {
+            width: expanded ? `${width}px` : "0px",
+            transitionDuration: `${String(transitionDuration)}ms`,
+          }
+        : {
+            transform: expanded ? "translateX(0)" : "translateX(100%)",
+            transitionDuration: `${String(transitionDuration)}ms`,
+          }}
       aria-label={t("console.rightSidebar.label")}
-      data-layout={narrow ? "overlay" : "split"}
+      aria-hidden={closing || undefined}
+      data-layout={layout}
+      data-motion-state={closing ? "closing" : expanded ? "open" : "opening"}
       data-testid="right-sidebar"
+      onTransitionEnd={(event) => {
+        if (event.target !== event.currentTarget) return;
+        motionRef.current = null;
+        setTransitionDuration(0);
+        if (!openRef.current) completeExit();
+      }}
     >
-      {!narrow ? (
+      <div
+        className={cn(
+          "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
+          layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
+        )}
+        style={layout === "split" ? { width: `${width}px` } : undefined}
+      >
+      {layout === "split" ? (
         <div
-          className="window-no-drag group absolute inset-y-0 left-0 z-30 w-1 -translate-x-1/2 cursor-col-resize touch-none"
+          ref={separatorRef}
+          className="window-no-drag group absolute inset-y-0 left-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
           role="separator"
+          tabIndex={0}
           aria-label={t("console.rightSidebar.resize")}
           aria-orientation="vertical"
-          aria-valuemin={MIN_RIGHT_SIDEBAR_WIDTH_PX}
-          aria-valuemax={MAX_RIGHT_SIDEBAR_WIDTH_PX}
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
           aria-valuenow={width}
           aria-valuetext={t("sidebar.widthPixels", { width })}
+          data-boundary={width <= minWidth ? "min" : width >= maxWidth ? "max" : "none"}
           data-testid="right-sidebar-resize-handle"
           onPointerDown={(event) => {
             if (event.button !== 0) {
@@ -179,8 +343,19 @@ export function RightSidebar({
           onPointerMove={resize}
           onPointerUp={finishResize}
           onPointerCancel={finishResize}
+          onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+            const keys: RightSidebarResizeKey[] = ["ArrowLeft", "ArrowRight", "Home", "End"];
+            if (!keys.includes(event.key as RightSidebarResizeKey)) return;
+            event.preventDefault();
+            onWidthChange(rightSidebarKeyboardWidth(
+              width,
+              event.key as RightSidebarResizeKey,
+              event.shiftKey,
+              availableWidth,
+            ));
+          }}
         >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line transition-colors group-hover:bg-accent group-active:bg-accent" />
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line transition-[width,background-color] group-hover:w-[3px] group-hover:bg-accent group-active:w-[3px] group-active:bg-accent group-focus-visible:w-[3px] group-focus-visible:bg-accent group-data-[boundary=min]:w-[3px] group-data-[boundary=min]:bg-accent group-data-[boundary=max]:w-[3px] group-data-[boundary=max]:bg-accent" />
         </div>
       ) : null}
 
@@ -190,7 +365,7 @@ export function RightSidebar({
           role="tablist"
           aria-label={t("console.rightSidebar.tabs")}
         >
-          {state.tabs.map((tab) => {
+          {renderedState.tabs.map((tab) => {
             const updating = updatingTabIds.includes(tab.id);
             const displayTitle = updating
               ? t("console.rightSidebar.titleUpdating")
@@ -236,26 +411,26 @@ export function RightSidebar({
                       focusedTabIdRef.current = null;
                     }
                   }}
-                  onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
+                  onClick={() => onStateChange(selectRightSidebarTab(renderedState, tab.id))}
                   onKeyDown={(event) => {
-                    const currentIndex = state.tabs.findIndex((candidate) => candidate.id === tab.id);
+                    const currentIndex = renderedState.tabs.findIndex((candidate) => candidate.id === tab.id);
                     if (currentIndex < 0) return;
                     let nextIndex: number | null = null;
                     if (event.key === "ArrowRight") {
-                      nextIndex = (currentIndex + 1) % state.tabs.length;
+                      nextIndex = (currentIndex + 1) % renderedState.tabs.length;
                     } else if (event.key === "ArrowLeft") {
-                      nextIndex = (currentIndex - 1 + state.tabs.length) % state.tabs.length;
+                      nextIndex = (currentIndex - 1 + renderedState.tabs.length) % renderedState.tabs.length;
                     } else if (event.key === "Home") {
                       nextIndex = 0;
                     } else if (event.key === "End") {
-                      nextIndex = state.tabs.length - 1;
+                      nextIndex = renderedState.tabs.length - 1;
                     }
                     if (nextIndex === null) return;
                     event.preventDefault();
-                    const nextTab = state.tabs[nextIndex];
+                    const nextTab = renderedState.tabs[nextIndex];
                     if (nextTab === undefined) return;
                     focusedTabIdRef.current = nextTab.id;
-                    onStateChange(selectRightSidebarTab(state, nextTab.id));
+                    onStateChange(selectRightSidebarTab(renderedState, nextTab.id));
                     window.requestAnimationFrame(() => tabButtonRefs.current.get(nextTab.id)?.focus());
                   }}
                 >
@@ -277,7 +452,11 @@ export function RightSidebar({
                     if (onBeforeCloseTab?.(tab) === false) {
                       return;
                     }
-                    const nextState = closeRightSidebarTab(state, tab.id);
+                    const nextState = closeRightSidebarTab(renderedState, tab.id);
+                    if (nextState.tabs.length === 0) {
+                      setClosingSnapshot(renderedState);
+                      toggleButtonRef?.current?.focus();
+                    }
                     onStateChange(nextState);
                     if (nextState.tabs.length === 0) {
                       onOpenChange(false);
@@ -296,18 +475,23 @@ export function RightSidebar({
           className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
           aria-label={t("console.rightSidebar.newTab")}
           title={t("console.rightSidebar.newTab")}
-          onClick={() => onStateChange(addBlankRightSidebarTab(state, createTabId()))}
+          onClick={() => onStateChange(addBlankRightSidebarTab(renderedState, createTabId()))}
         >
           <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </button>
 
-        {narrow ? (
+        {layout === "overlay" ? (
           <button
+            ref={overlayCloseButtonRef}
             type="button"
             className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
             aria-label={t("console.rightSidebar.closeReturn")}
             title={t("console.rightSidebar.return")}
-            onClick={() => onOpenChange(false)}
+            data-testid="right-sidebar-overlay-close"
+            onClick={() => {
+              toggleButtonRef?.current?.focus();
+              onOpenChange(false);
+            }}
           >
             <X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           </button>
@@ -336,21 +520,40 @@ export function RightSidebar({
           <BlankTab
             isGitRepository={isGitRepository}
             onSelect={(type) => {
-              const withBlank = addBlankRightSidebarTab(state, createTabId());
+              const withBlank = addBlankRightSidebarTab(renderedState, createTabId());
               onStateChange(convertBlankRightSidebarTab(withBlank, withBlank.activeTabId!, type));
             }}
           />
         ) : activeTab.type === "blank" ? (
           <BlankTab
             isGitRepository={isGitRepository}
-            onSelect={(type) => onStateChange(convertBlankRightSidebarTab(state, activeTab.id, type))}
+            onSelect={(type) => onStateChange(convertBlankRightSidebarTab(renderedState, activeTab.id, type))}
           />
         ) : (
           contentSlots[activeTab.type]?.(activeTab) ?? <ContentSlotPlaceholder tab={activeTab} />
         )}
       </div>
+      </div>
     </aside>
   );
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() => prefersReducedMotion());
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(media.matches);
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+  return reduced;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function BlankTab({
@@ -475,8 +678,4 @@ function TabIcon({
           ? ListTree
           : Plus;
   return <Icon className={cn("h-3.5 w-3.5 shrink-0", className)} strokeWidth={1.5} aria-hidden="true" />;
-}
-
-export function clampRightSidebarWidth(width: number): number {
-  return Math.min(MAX_RIGHT_SIDEBAR_WIDTH_PX, Math.max(MIN_RIGHT_SIDEBAR_WIDTH_PX, Math.round(width)));
 }

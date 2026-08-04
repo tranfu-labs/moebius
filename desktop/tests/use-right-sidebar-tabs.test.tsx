@@ -46,6 +46,7 @@ describe("right sidebar tabs controller", () => {
     });
     const firstCommit = vi.fn();
     await render("host-a", firstCommit);
+    expect(latest.width).toBeNull();
 
     act(() => latest.changeTabs({
       tabs: [{ id: "conversation", type: "conversation", title: "新会话", sourceKey: null, closable: true }],

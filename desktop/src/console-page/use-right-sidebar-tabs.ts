@@ -32,7 +32,7 @@ export interface RightSidebarTabsBundle {
   store: RightSidebarTabsStore;
   focusRequest: RightSidebarFocusRequest | null;
   visibilityPreference: RightSidebarVisibilityPreference;
-  width: number;
+  width: number | null;
   commitCurrent(state: RightSidebarTabsState): void;
   showHost(hostSessionId: string): RightSidebarTabsState;
   setOpen(open: boolean): void;
