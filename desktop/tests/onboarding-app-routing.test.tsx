@@ -64,13 +64,15 @@ describe("desktop onboarding routing", () => {
     await findElement('[data-testid="onboarding-step-4"]');
     await clickButton("开始使用");
 
-    const teamSelect = await findElement<HTMLSelectElement>('select[aria-label="Agent 团队"]');
-    await waitFor(() => teamSelect.value === "system:development");
+    const teamSelect = await findElement<HTMLButtonElement>(
+      '[data-testid="new-conversation-column"] button[aria-label="Agent 团队"]',
+    );
+    await waitFor(() => teamSelect.textContent?.includes("开发团队") === true);
     await waitFor(() => window.location.hash === "#/");
     await waitFor(() => window.history.state?.usr == null);
 
     expect(completeOnboarding).toHaveBeenCalledOnce();
-    expect(teamSelect.value).toBe("system:development");
+    expect(teamSelect.textContent).toContain("开发团队");
     expect(recordSuccessfulConversationAgentTeam).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid^="onboarding-step-"]')).toBeNull();
   });

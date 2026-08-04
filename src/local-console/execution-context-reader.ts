@@ -5,6 +5,7 @@ import {
   type LocalAgentTimelineCursorFact,
   type LocalExecutionSessionLinkFact,
   type LocalProviderSessionObservedFact,
+  type LocalProviderProcessStartedFact,
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import { readSessionFactLog } from "./session-fact-log.js";
@@ -33,4 +34,11 @@ export async function readProviderSessionObservations(logPath: string, sessionId
 
 export async function readAgentTimelineCursors(logPath: string, sessionId: string): Promise<LocalAgentTimelineCursorFact[]> {
   return await readTypedFacts(logPath, sessionId, "agent_timeline_cursor") as LocalAgentTimelineCursorFact[];
+}
+
+export async function readProviderProcessStartedFacts(
+  logPath: string,
+  sessionId: string,
+): Promise<LocalProviderProcessStartedFact[]> {
+  return await readTypedFacts(logPath, sessionId, "provider_process_started") as LocalProviderProcessStartedFact[];
 }

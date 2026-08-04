@@ -38,6 +38,12 @@ export function decidePendingAgentSource(
     : { kind: "snapshot", agentNames: snapshot.members.map((member) => member.name) };
 }
 
+export function decideAwaitingTeamRelease(
+  intentStatus: "waiting" | "failed" | null | undefined,
+): "hold" | "release" {
+  return intentStatus === "waiting" || intentStatus === "failed" ? "hold" : "release";
+}
+
 export type AwaitingDispatchResolutionPlan =
   | { kind: "skip" }
   | {

@@ -18,6 +18,7 @@ import {
   type ActiveRunOutputSource,
 } from "./run-output-plan.js";
 import type { LocalConsoleRunOutput, LocalConsoleStore } from "./types.js";
+import { LocalRunAgentAuditRuntime } from "./run-agent-audit-runtime.js";
 
 export class LocalConsoleRunOutputRuntime {
   constructor(private readonly input: {
@@ -31,6 +32,14 @@ export class LocalConsoleRunOutputRuntime {
     traceReader: LocalProcessTraceReader;
     traceDataRoot: string;
   }) {}
+
+  async runAgentInfo(input: { sessionId: string; runId: string }) {
+    return await new LocalRunAgentAuditRuntime(this.input.store).info(input);
+  }
+
+  async runAgentMarkdown(input: { sessionId: string; runId: string }): Promise<{ markdown: string }> {
+    return await new LocalRunAgentAuditRuntime(this.input.store).markdown(input);
+  }
 
   async runOutput(sessionId: string, runId: string): Promise<LocalConsoleRunOutput> {
     const messages = await this.input.storeCall("local-console-store-list-run-output", () =>

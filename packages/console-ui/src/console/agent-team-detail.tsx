@@ -165,7 +165,7 @@ export interface AgentTeamDetailProps {
   onRetryLoad(memberSlug: string): void;
   onDiscardMember(memberSlug: string): void;
   onDiscardAll(): void;
-  onSaveAll(): Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
+  onSaveAll(profileSuccessCount?: number): Promise<{ failures: AgentTeamSaveAllFailureView[]; successCount?: number }>;
   onRecheck?(): void | Promise<void>;
   onRelocate?(): void | Promise<void>;
   onRemoveRecord?(): void | Promise<void>;
@@ -353,12 +353,14 @@ export function AgentTeamDetail({
     }
     setSavingAll(true);
     try {
+      let profileSuccessCount = 0;
       for (const memberSlug of Object.keys(profileEditors)
         .filter((slug) => isProfileEditorDirty(profileEditors[slug]))) {
         const saved = await saveExecutionProfile(memberSlug);
         if (!saved) return;
+        profileSuccessCount += 1;
       }
-      const result = await onSaveAll();
+      const result = await onSaveAll(profileSuccessCount);
       if (result.failures.length === 0) {
         continueGuardedAction();
       } else {

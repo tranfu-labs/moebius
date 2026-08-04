@@ -17,6 +17,7 @@ import {
   deriveAgentTeamHealth,
   orderPrimaryFirst,
   planBoundTeamLocation,
+  projectRuntimeTeamIdentity,
   planRosterReadFailure,
   planSessionAgentSource,
   selectMemberExecutionBinding,
@@ -24,6 +25,7 @@ import {
   selectRuntimeExecutionProfile,
 } from "./team-runtime-binding-plan.js";
 import type { TeamLocation, TeamSnapshot } from "./team-store.js";
+import { finalizeAgentTeamSnapshot } from "../../src/local-console/session-team-snapshot.js";
 
 export interface TeamRuntimeBindingPorts {
   listSharedAgents(dataRoot: string): Promise<LocalConsoleAgentFile[]>;
@@ -116,13 +118,16 @@ export function createTeamRuntimeBindingService(ports: TeamRuntimeBindingPorts) 
         ...input,
         memberSlugs: snapshot.members.map((member) => member.slug),
       });
-      return {
+      return finalizeAgentTeamSnapshot({
+        team: projectRuntimeTeamIdentity({ ...input, snapshot }),
         members: orderPrimaryFirst(snapshot).map((member) => ({
           name: member.slug,
+          displayName: member.displayName,
+          description: member.description,
           agentMarkdown: member.agentMarkdown,
           executionProfile: selectRuntimeExecutionProfile(profiles[member.slug]),
         })),
-      };
+      }, { capturedAt: new Date().toISOString() });
     },
 
     resolveSessionAgentTeamHealth: async (input: {

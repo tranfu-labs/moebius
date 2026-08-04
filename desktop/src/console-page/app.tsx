@@ -55,6 +55,7 @@ import { useConsoleNavigationScene } from "./use-console-navigation-scene.js";
 import { useConsolePresentation } from "./use-console-presentation.js";
 import { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import { useManagedProcesses } from "./use-managed-processes.js";
+import { useTeamTraceabilityComposition } from "./use-team-traceability-composition.js";
 import { browserManagedProcessPort } from "./managed-process-client.js";
 import {
   DesktopApplicationRoot,
@@ -202,6 +203,11 @@ export function OperatorConsoleApp({
     updatingConversationTitleSessionIds, managedAttachmentClient, apiBase,
     attachmentCapability, t,
   );
+  const teamTraceability = useTeamTraceabilityComposition({
+    apiBase,
+    sessionId: presentationBundle.selectedSession?.sessionId ?? null,
+    sessionRevision: presentationBundle.selectedSession?.updatedAt ?? null,
+  });
   const projects = presentationBundle.projects;
   const stateActionsBundle = useConsoleStateActions(
     apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
@@ -278,6 +284,9 @@ export function OperatorConsoleApp({
       actions={actions}
       newConversation={newConversation}
       sessionAnalysisNotice={sessionAnalysisNotice}
+      sessionTeamUpdate={teamTraceability.sessionTeamUpdate}
+      loadRunAgentInfo={teamTraceability.loadHistoricalRunAgentInfo}
+      loadRunAgentMarkdown={teamTraceability.loadHistoricalRunAgentMarkdown}
       sidebarConversationDrafts={sidebarConversationDrafts}
       sidebarOpen={sidebarVisibilityPreference === "open"}
       setSidebarOpen={setSidebarOpen}

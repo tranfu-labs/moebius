@@ -394,7 +394,7 @@ describe("OperatorConsole", () => {
     expect(onStartNewConversation).toHaveBeenCalledWith("project-b");
   });
 
-  it("renders the controlled new-conversation page instead of the selected session", () => {
+  it("renders the controlled new-conversation page instead of the selected session", async () => {
     const userTeam = {
       ...agentTeam,
       teamKey: "user:my-team",
@@ -418,14 +418,16 @@ describe("OperatorConsole", () => {
       onSubmitNewConversation,
     });
 
-    const teamSelector = screen.getByRole("combobox", { name: "Agent 团队" });
-    expect(teamSelector).toHaveValue(userTeam.teamKey);
-    expect(screen.getByRole("region", { name: "新建对话" })).toBeVisible();
+    const newConversationRegion = screen.getByRole("region", { name: "新建对话" });
+    const teamSelector = within(newConversationRegion).getByRole("button", { name: "Agent 团队" });
+    expect(teamSelector).toHaveTextContent("我的团队");
+    expect(newConversationRegion).toBeVisible();
     expect(screen.getByRole("button", { name: "新建对话" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("region", { name: "会话时间线" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
 
-    fireEvent.change(teamSelector, { target: { value: agentTeam.teamKey } });
+    fireEvent.keyDown(teamSelector, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /开发团队/u }));
     expect(onNewConversationTeamChange).toHaveBeenCalledWith(agentTeam.teamKey);
     expect(onSubmitNewConversation).not.toHaveBeenCalled();
   });
@@ -1357,6 +1359,8 @@ describe("OperatorConsole", () => {
 
   it("renders real pending targets in submission order and independent worker stop controls", () => {
     const onInterrupt = vi.fn();
+    const onEditPendingMessage = vi.fn();
+    const onRemovePendingMessage = vi.fn();
     const devRun = { ...runSnapshot, runId: "run-dev", role: "dev" };
     const qaRun = { ...runSnapshot, runId: "run-qa", role: "qa" };
     renderConsole({
@@ -1388,6 +1392,8 @@ describe("OperatorConsole", () => {
         },
       ],
       onInterrupt,
+      onEditPendingMessage,
+      onRemovePendingMessage,
     });
 
     const pendingZone = screen.getByTestId("primary-pending-zone");
@@ -1407,6 +1413,23 @@ describe("OperatorConsole", () => {
     );
     expect(screen.getByRole("region", { name: "会话时间线" })).toHaveStyle({ paddingBottom: "188px" });
     expect(screen.getAllByTestId("active-run-block")).toHaveLength(3);
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "编辑" }));
+    expect(within(pendingZone).getByRole("button", { name: "保存" })).toBeVisible();
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "取消" }));
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "编辑" }));
+    fireEvent.change(within(pendingZone).getByRole("textbox", {
+      name: "编辑待发射内容或来源引用",
+    }), { target: { value: "@reviewer 更新后的新团队复核" } });
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "保存" }));
+    expect(onEditPendingMessage).toHaveBeenCalledWith(
+      "session-a",
+      9,
+      "@reviewer 更新后的新团队复核",
+    );
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "移除" }));
+    expect(onRemovePendingMessage).toHaveBeenCalledWith("session-a", 9);
 
     fireEvent.click(screen.getByRole("button", { name: "停下开发" }));
     expect(onInterrupt).toHaveBeenLastCalledWith("session-a", "run-dev");
@@ -2424,6 +2447,37 @@ describe("OperatorConsole", () => {
     expect(onRetryRun).toHaveBeenNthCalledWith(3, "session-a", "run-stuck");
   });
 
+  it("shows a planned-configuration audit avatar when a run fails before startup without a message role", async () => {
+    renderConsole({
+      messages: [message({
+        id: 2,
+        speaker: "system",
+        role: null,
+        runId: "run-startup-failed",
+        status: "failed",
+        systemEventKind: "run-not-started",
+        body: "没有找到 Codex CLI。",
+        error: "codex-cli-not-found",
+      })],
+      onLoadRunAgentInfo: async ({ sessionId, runId }) => ({
+        sessionId,
+        runId,
+        role: "assistant",
+        agent: { slug: "assistant", displayName: "通用助手", description: "处理一般任务" },
+        team: { name: "通用助手", ownership: "system", sourceName: "Moebius" },
+        profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+        loadedAt: "2026-08-05T00:00:00.000Z",
+        evidence: "planned-not-started",
+      }),
+      onLoadRunAgentMarkdown: async () => ({ markdown: "# 通用助手" }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 协作者 当时使用的信息" }));
+    expect(await screen.findByText("计划尝试 · 未开始执行")).toBeVisible();
+    expect(screen.getByText("codex / gpt-5.6-sol")).toBeVisible();
+    expect(screen.getByText("high")).toBeVisible();
+  });
+
   it("offers a single-run execution override after timeout and auth failures", () => {
     renderConsole({
       onRetryRun: vi.fn(),
@@ -2804,6 +2858,10 @@ describe("OperatorConsole", () => {
     expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
       "conversation-relay-rail",
     )).not.toBeInTheDocument();
+    expect(Number.parseInt(
+      screen.getByTestId("conversation-timeline-gutter").style.paddingLeft,
+      10,
+    )).toBeGreaterThan(32);
 
     fireEvent.mouseEnter(rail);
     expect(screen.getByTestId("relay-event-message-2")).toHaveAttribute(
@@ -2825,6 +2883,51 @@ describe("OperatorConsole", () => {
     expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
       "conversation-relay-rail",
     )).not.toBeInTheDocument();
+  });
+
+  it("keeps top, middle, and bottom Agent audit avatars clickable beside the expanded relay", async () => {
+    renderConsole({
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "开始" }),
+        message({ id: 2, speaker: "agent", role: "lead", runId: "run-lead", body: "顶部回复" }),
+        message({ id: 3, speaker: "user", role: null, body: "继续" }),
+        message({ id: 4, speaker: "agent", role: "dev", runId: "run-dev", body: "中部回复" }),
+        message({ id: 5, speaker: "user", role: null, body: "收尾" }),
+        message({ id: 6, speaker: "agent", role: "qa", runId: "run-qa", body: "底部回复" }),
+      ],
+      memberIdentities: [
+        { slug: "lead", displayName: "负责人" },
+        { slug: "dev", displayName: "开发" },
+        { slug: "qa", displayName: "测试" },
+      ],
+      onLoadRunAgentInfo: async ({ sessionId, runId }) => ({
+        sessionId,
+        runId,
+        role: runId.replace("run-", ""),
+        agent: { slug: runId.replace("run-", ""), displayName: "历史成员", description: null },
+        team: { name: "历史团队", ownership: "system", sourceName: "Moebius" },
+        profile: { cli: "codex", model: "gpt-5", effort: "high" },
+        loadedAt: "2026-08-04T10:00:00.000Z",
+        evidence: "executed",
+      }),
+      onLoadRunAgentMarkdown: async () => ({ markdown: "# 历史角色" }),
+    });
+
+    fireEvent.mouseEnter(screen.getByTestId("conversation-relay-rail"));
+    expect(Number.parseInt(
+      screen.getByTestId("conversation-timeline-gutter").style.paddingLeft,
+      10,
+    )).toBeGreaterThan(32);
+    const avatarButtons = ["负责人", "开发", "测试"].map((name) => screen.getByRole(
+      "button",
+      { name: `查看 ${name} 当时使用的信息` },
+    ));
+    for (const avatarButton of avatarButtons) {
+      fireEvent.click(avatarButton);
+      expect(await screen.findByText("历史团队 · Moebius")).toBeVisible();
+      fireEvent.click(avatarButton);
+      await waitFor(() => expect(screen.queryByText("历史团队 · Moebius")).not.toBeInTheDocument());
+    }
   });
 
   it("keeps the timeline position unchanged when a relay target disappears", () => {

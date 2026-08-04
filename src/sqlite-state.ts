@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
+import type { LocalConsoleAgentTeamSnapshot } from "./local-console/types.js";
 
 export type SqliteStateCommand =
   | { kind: "local-init" }
@@ -46,17 +47,17 @@ export type SqliteStateCommand =
       sessionId: string;
       agentTeamOwnership: "system" | "user";
       agentTeamId: string;
-      agentTeamSnapshot?: {
-        members: Array<{
-          name: string;
-          agentMarkdown: string;
-          executionProfile?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
-        }>;
-      };
+      agentTeamSnapshot?: LocalConsoleAgentTeamSnapshot;
       now: string;
     }
   | { kind: "local-apply-pending-session-context"; sessionId: string; now: string }
   | { kind: "local-list-session-agent-team-snapshot"; sessionId: string }
+  | { kind: "local-write-session-team-candidate"; sessionId: string; snapshot: LocalConsoleAgentTeamSnapshot | null }
+  | { kind: "local-read-session-team-update-record"; sessionId: string }
+  | { kind: "local-begin-session-team-update"; sessionId: string; expectedUpdateToken?: string | null; now: string }
+  | { kind: "local-retry-session-team-update"; sessionId: string; expectedUpdateToken?: string | null; now: string }
+  | { kind: "local-cancel-session-team-update"; sessionId: string; expectedUpdateToken?: string | null; now: string }
+  | { kind: "local-mark-session-team-update-failed"; sessionId: string; code: string; summary: string }
   | {
       kind: "local-record-project-workspace-status";
       projectId: string;
@@ -73,13 +74,7 @@ export type SqliteStateCommand =
       title: string;
       agentTeamOwnership?: "system" | "user";
       agentTeamId?: string;
-      agentTeamSnapshot?: {
-        members: Array<{
-          name: string;
-          agentMarkdown: string;
-          executionProfile?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
-        }>;
-      };
+      agentTeamSnapshot?: LocalConsoleAgentTeamSnapshot;
       workspaceMode?: "direct" | "worktree";
       initialMessage?: string;
       initialDispatch?: {
@@ -949,4 +944,3 @@ function isSerializedWorkerError(value: unknown): value is { message: string; st
     && typeof (value as { message?: unknown }).message === "string"
     && ((value as { stack?: unknown }).stack === undefined || typeof (value as { stack?: unknown }).stack === "string");
 }
-

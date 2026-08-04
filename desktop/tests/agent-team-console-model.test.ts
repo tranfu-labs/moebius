@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { OperatorAgentTeam } from "@moebius/console-ui";
 
 import {
   planAgentTeamBuilderDraftSource,
@@ -6,6 +7,7 @@ import {
   planAgentTeamCatalogRemove,
   planAgentTeamFallbackSelection,
   planAgentTeamMemberRemoval,
+  planAgentTeamMemberSummary,
   planBuilderOperation,
   planBuilderRetry,
   planSelectedBuilderTeamId,
@@ -67,9 +69,51 @@ describe("agent team console model", () => {
     expect(planAgentTeamMemberRemoval(state.teams[0], "writer", true)).toBe("remove");
     expect(planAgentTeamMemberRemoval(state.teams[0], "writer", false)).toBe("unavailable");
   });
+
+  it("merges a saved Markdown identity without dropping the member execution profile", () => {
+    const team = operatorTeam("user:first", "first", "lead");
+    team.members[0] = {
+      ...team.members[0]!,
+      executionProfile: {
+        effectiveProfile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        recommendation: null,
+        binding: {
+          source: "override",
+          profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+        },
+      },
+    };
+
+    const state = planAgentTeamMemberSummary(
+      { status: "ready", teams: [team] },
+      team.teamKey,
+      {
+        slug: "lead",
+        displayName: "新的负责人",
+        description: "新的说明",
+        agentMarkdown: "---\ndisplay_name: 新的负责人\n---\n",
+      },
+    );
+
+    expect(state).toMatchObject({
+      status: "ready",
+      teams: [{
+        members: [{
+          slug: "lead",
+          displayName: "新的负责人",
+          description: "新的说明",
+          available: true,
+          executionProfile: {
+            effectiveProfile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+            binding: { source: "override" },
+          },
+        }],
+      }],
+    });
+  });
 });
 
-function operatorTeam(teamKey: string, id: string, primaryAgentSlug: string) {
+function operatorTeam(teamKey: string, id: string, primaryAgentSlug: string): OperatorAgentTeam {
   return {
     teamKey,
     id,

@@ -43,6 +43,7 @@ import type {
   LocalConsoleSessionReferenceText,
   LocalConsoleSessionSearchResult,
   LocalConsoleSessionSummary,
+  LocalConsoleSessionTeamUpdateState,
   LocalConsoleSnapshot,
   LocalConsoleStateSnapshot,
   LocalConsoleTextFragment,
@@ -130,6 +131,30 @@ export class LocalConsoleRuntimeFacade {
 
   async switchSessionTeam(input: LocalSessionTeamSwitchInput): Promise<LocalConsoleSessionSummary> {
     return await this.facade.settings.switchTeam(input);
+  }
+
+  async inspectSessionTeamUpdate(sessionId: string): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.facade.settings.inspectTeamUpdate(sessionId);
+  }
+
+  async getRunAgentInfo(input: { sessionId: string; runId: string }) {
+    return await this.facade.output.runAgentInfo(input);
+  }
+
+  async getRunAgentMarkdown(input: { sessionId: string; runId: string }): Promise<{ markdown: string }> {
+    return await this.facade.output.runAgentMarkdown(input);
+  }
+
+  async applySessionTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.facade.settings.applyTeamUpdate(sessionId, expectedUpdateToken);
+  }
+
+  async retrySessionTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.facade.settings.retryTeamUpdate(sessionId, expectedUpdateToken);
+  }
+
+  async cancelSessionTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.facade.settings.cancelTeamUpdate(sessionId, expectedUpdateToken);
   }
 
   async archiveSession(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {

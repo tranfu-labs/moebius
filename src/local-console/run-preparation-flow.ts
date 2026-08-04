@@ -24,6 +24,7 @@ import {
   type LocalRunInvocationPlan,
 } from "./run-invocation-plan.js";
 import type {
+  LocalConsoleAgentTeamSnapshot,
   LocalConsoleExecutionProfile,
   LocalConsoleMessage,
 } from "./types.js";
@@ -53,6 +54,7 @@ export interface LocalRunPreparationInput {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  teamSnapshot?: LocalConsoleAgentTeamSnapshot | null;
   timeline: TimelineMessage[];
   timelineMessages: LocalConsoleMessage[];
   readOnly: boolean;
@@ -116,6 +118,7 @@ export async function executeLocalRunPreparationFlow(
     role: input.role,
     seed: contextSeed,
     team: input.team,
+    teamSnapshot: input.teamSnapshot,
     recordedAt: ports.nowIso(),
   });
   let recoveryPlan = planLocalExecutionRecoveryFromSeed({

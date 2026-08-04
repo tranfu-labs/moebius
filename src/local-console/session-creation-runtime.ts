@@ -1,4 +1,5 @@
 import { formatLocalError } from "./runtime-domain.js";
+import { withOptionalAgentTeamSnapshotLoadedAt } from "./session-team-snapshot.js";
 import {
   decideSessionCreationAgentNames,
   decideSessionCreationAttachmentRead,
@@ -96,9 +97,11 @@ export class LocalSessionCreationRuntime {
       agentTeam,
       portAvailable: this.input.loadAgentTeamSnapshot !== undefined,
     });
-    const snapshot = teamLoad.kind === "skip"
+    const loadedSnapshot = teamLoad.kind === "skip"
       ? undefined
       : await this.input.loadAgentTeamSnapshot!(teamLoad.binding);
+    const now = this.input.nowIso();
+    const snapshot = withOptionalAgentTeamSnapshotLoadedAt(loadedSnapshot, now);
     const agentNames = decideSessionCreationAgentNames(snapshot);
     let routeAgentNames = agentNames.kind === "snapshot" ? agentNames.names : [];
     if (agentNames.kind === "fallback") {
@@ -139,7 +142,7 @@ export class LocalSessionCreationRuntime {
         entryTemplate: metadata.entryTemplate,
         writePolicy: metadata.writePolicy,
         initialTextFragments: [],
-        now: this.input.nowIso(),
+        now,
       }));
     this.input.baselineCommits.set(sessionId, planSessionCreationBaselineCacheValue(baselineCommit));
     const processing = decideSessionCreationProcessing(content.hasInitialContent);

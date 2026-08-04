@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
-import type { LocalConsoleExecutionProfile } from "./types.js";
+import type { LocalConsoleAgentTeamSnapshot, LocalConsoleExecutionProfile } from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export interface LocalRunExecutionContextFact {
@@ -31,6 +31,7 @@ export interface LocalRunExecutionContextFact {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  teamSnapshot?: LocalConsoleAgentTeamSnapshot;
   /** Legacy facts may contain this field; normalization strips it before runtime reuse. */
   referenceContext?: string | null;
   recordedAt: string;
@@ -93,6 +94,14 @@ export interface LocalProviderInvocationFact {
   observedExternalSessionId: string | null;
   outcome: "started" | "succeeded" | "failed";
   recordedAt: string;
+}
+
+export interface LocalProviderProcessStartedFact {
+  sessionId: string;
+  runId: string;
+  role: string;
+  engine: "codex" | "claude" | "kimi";
+  startedAt: string;
 }
 
 export type LocalExecutionRecoveryPlan =
@@ -174,6 +183,7 @@ export function createRunExecutionContext(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  teamSnapshot?: LocalConsoleAgentTeamSnapshot | null;
   recordedAt: string;
   identitySalt?: string;
 }): LocalRunExecutionContextFact {
@@ -218,6 +228,7 @@ export function createRunExecutionContext(input: {
       agentMarkdown: member.agentMarkdown,
       executionProfile: member.executionProfile,
     })),
+    ...(input.teamSnapshot == null ? {} : { teamSnapshot: input.teamSnapshot }),
     recordedAt: input.recordedAt,
   };
 }
@@ -233,6 +244,7 @@ export function planLocalRunExecutionContext(input: {
     agentMarkdown: string;
     executionProfile: LocalConsoleExecutionProfile | null;
   }>;
+  teamSnapshot?: LocalConsoleAgentTeamSnapshot | null;
   recordedAt: string;
 }): LocalRunExecutionContextFact {
   return createRunExecutionContext({
@@ -243,6 +255,7 @@ export function planLocalRunExecutionContext(input: {
     profile: input.seed.profile,
     workspace: input.seed.workspace,
     team: input.team,
+    teamSnapshot: input.teamSnapshot,
     recordedAt: input.recordedAt,
     ...(input.seed.identitySalt === undefined ? {} : { identitySalt: input.seed.identitySalt }),
   });

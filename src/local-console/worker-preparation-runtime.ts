@@ -16,7 +16,7 @@ import {
   planWorkerProfile,
 } from "./worker-runtime-plan.js";
 import type { LocalWorkerRunInput } from "./worker-dispatch-runtime.js";
-import type { LocalConsoleMessage, LocalConsoleSessionSummary } from "./types.js";
+import type { LocalConsoleAgentTeamSnapshot, LocalConsoleMessage, LocalConsoleSessionSummary } from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export interface LocalPreparedWorkerRun extends Extract<LocalRunPreparationResult, { kind: "ready" }> {
@@ -40,6 +40,7 @@ export class LocalWorkerPreparationRuntime {
       agentMarkdown: string;
       executionProfile: LocalConsoleAgentFile["executionProfile"];
     }>>;
+    loadTeamSnapshot(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null>;
     loadRecoverySnapshot(sessionId: string): Promise<LocalRunRecoverySnapshot>;
     isCodexThreadAvailable(externalSessionId: string): Promise<boolean>;
     settleUnavailable(input: {
@@ -85,6 +86,7 @@ export class LocalWorkerPreparationRuntime {
       return { kind: "settled" };
     }
     const team = await this.input.loadAgentContents(input.agentFiles, input.selectedAgent, selectedMarkdown);
+    const teamSnapshot = await this.input.loadTeamSnapshot(input.sessionId);
     const preparation = await executeLocalRunPreparationFlow({
       lane: "worker",
       sessionId: input.sessionId,
@@ -95,6 +97,7 @@ export class LocalWorkerPreparationRuntime {
       defaultWorkspace: currentWorkspace,
       concurrentWorkspace: null,
       team: team.map((agent) => ({ ...agent, executionProfile: planWorkerProfile(agent.executionProfile) })),
+      teamSnapshot,
       timeline: input.timeline,
       timelineMessages: input.timelineMessages,
       readOnly: policy.writePolicy === "confirm-current-plan-before-write",

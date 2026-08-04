@@ -208,7 +208,7 @@ export function visibleComposerContextEntries(width: number): {
   return {
     branch: width >= 1_000,
     workspace: width >= 760,
-    team: width >= 560,
+    team: true,
     project: width >= 420,
   };
 }

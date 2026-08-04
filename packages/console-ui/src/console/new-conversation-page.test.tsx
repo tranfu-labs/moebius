@@ -21,7 +21,7 @@ describe("NewConversationPage", () => {
     expect(screen.getByRole("textbox", { name: "消息内容" })).toHaveAttribute("rows", "1");
   });
 
-  it("keeps drafting and team selection usable while project-dependent context and send stay unavailable", () => {
+  it("keeps drafting and team selection usable while project-dependent context and send stay unavailable", async () => {
     const onDraftChange = vi.fn();
     const onSelectTeam = vi.fn();
     renderPage({ selectedProjectId: null, onDraftChange, onSelectTeam });
@@ -34,7 +34,8 @@ describe("NewConversationPage", () => {
     expect(screen.queryByText("main")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "消息内容" }), { target: { value: "draft" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Agent 团队" }), { target: { value: "user:product" } });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Agent 团队" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /产品团队/u }));
     expect(onDraftChange).toHaveBeenCalledWith("draft");
     expect(onSelectTeam).toHaveBeenCalledWith("user:product");
   });
@@ -263,7 +264,7 @@ describe("NewConversationPage", () => {
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
   });
 
-  it("keeps an unavailable preselected team visible but blocks sending until repair or an explicit change", () => {
+  it("keeps an unavailable preselected team visible but blocks sending until repair or an explicit change", async () => {
     renderPage({
       teams: [{
         teamKey: "system:general-assistant",
@@ -274,7 +275,9 @@ describe("NewConversationPage", () => {
       selectedTeamKey: "system:general-assistant",
     });
 
-    expect(screen.getByRole("option", { name: "通用助手 · 官方来源" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Agent 团队" }), { key: "ArrowDown" });
+    expect(await screen.findByRole("menuitemcheckbox", { name: /通用助手 · 官方来源/u })).toHaveAttribute("data-disabled");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.getByText("所选 Agent 团队需要先修复")).toBeVisible();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });

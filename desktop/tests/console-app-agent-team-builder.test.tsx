@@ -119,8 +119,10 @@ describe("desktop App Agent Teams AI builder wiring", () => {
     expect(window.localStorage.getItem("moebius.agent-teams.ai-builder-draft")).toBeNull();
 
     await act(async () => (await findButton("新建对话")).click());
-    const teamSelector = await findElement<HTMLSelectElement>('select[aria-label="Agent 团队"]');
-    expect(teamSelector.value).toBe("system:development");
+    const teamSelector = await findElement<HTMLButtonElement>(
+      '[data-testid="new-conversation-column"] button[aria-label="Agent 团队"]',
+    );
+    expect(teamSelector.textContent).toContain("开发团队");
   });
 
   it("uses the committed English locale in callback error paths after a live language switch", async () => {

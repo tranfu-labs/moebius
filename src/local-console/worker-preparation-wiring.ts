@@ -8,6 +8,7 @@ import {
   decideWorkerDetachedCapability,
   planWorkerAgentContents,
 } from "./worker-runtime-plan.js";
+import { decideSessionTeamSnapshotRead } from "./session-team-update-plan.js";
 
 type WorkerPreparationPorts = ConstructorParameters<typeof LocalWorkerPreparationRuntime>[0];
 
@@ -61,6 +62,10 @@ export function createLocalWorkerPreparationPorts(input: {
       }));
       return planWorkerAgentContents(agents, selected.name, selectedMarkdown, fileMarkdown);
     },
+    loadTeamSnapshot: async (sessionId) => ({
+      empty: async () => null,
+      read: async () => await options.store.listSessionAgentTeamSnapshot!(sessionId),
+    })[decideSessionTeamSnapshotRead(options.store.listSessionAgentTeamSnapshot !== undefined)](),
     loadRecoverySnapshot: input.loadRecoverySnapshot,
     isCodexThreadAvailable: input.isCodexThreadAvailable,
     settleUnavailable: input.settleUnavailable,

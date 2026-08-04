@@ -56,6 +56,7 @@ import type {
   LocalAgentTimelineCursorFact,
   LocalExecutionSessionLinkFact,
   LocalProviderInvocationFact,
+  LocalProviderProcessStartedFact,
   LocalProviderSessionObservedFact,
   LocalRunExecutionContextFact,
 } from "./execution-context.js";
@@ -63,6 +64,7 @@ import {
   readAgentSessionLinks,
   readExecutionSessionLinks,
   readRunExecutionContexts,
+  readProviderProcessStartedFacts,
 } from "./execution-context-reader.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
 
@@ -190,6 +192,37 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
 
   async listSessionAgentTeamSnapshot(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null> {
     return this.run({ kind: "local-list-session-agent-team-snapshot", sessionId });
+  }
+
+  async writeSessionAgentTeamCandidate(input: {
+    sessionId: string;
+    snapshot: LocalConsoleAgentTeamSnapshot | null;
+  }): Promise<void> {
+    await this.run({ kind: "local-write-session-team-candidate", ...input });
+  }
+
+  async readSessionTeamUpdateRecord(sessionId: string): Promise<import("./types.js").LocalConsoleSessionTeamUpdateRecord> {
+    return this.run({ kind: "local-read-session-team-update-record", sessionId });
+  }
+
+  async beginSessionTeamUpdate(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void> {
+    await this.run({ kind: "local-begin-session-team-update", ...input });
+  }
+
+  async retrySessionTeamUpdate(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void> {
+    await this.run({ kind: "local-retry-session-team-update", ...input });
+  }
+
+  async cancelSessionTeamUpdate(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void> {
+    await this.run({ kind: "local-cancel-session-team-update", ...input });
+  }
+
+  async markSessionTeamUpdateFailed(input: {
+    sessionId: string;
+    code: string;
+    summary: string;
+  }): Promise<void> {
+    await this.run({ kind: "local-mark-session-team-update-failed", ...input });
   }
 
   async recordProjectWorkspaceStatus(input: {
@@ -960,6 +993,36 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       runId: input.runId,
       context: input,
     });
+  }
+
+  async recordProviderProcessStarted(input: LocalProviderProcessStartedFact): Promise<void> {
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "provider_process_started",
+        recordedAt: input.startedAt,
+        payload: input,
+        messageUpserts: [],
+      });
+    });
+  }
+
+  async readRunAgentAuditSource(input: { sessionId: string; runId: string }): Promise<{
+    context: LocalRunExecutionContextFact | null;
+    processStarted: boolean;
+  }> {
+    const logPath = this.getSessionFactLogPath(input.sessionId);
+    const [contexts, starts] = await Promise.all([
+      readRunExecutionContexts(logPath, input.sessionId),
+      readProviderProcessStartedFacts(logPath, input.sessionId),
+    ]);
+    return {
+      context: contexts.find((context) => context.runId === input.runId) ?? null,
+      processStarted: starts.some((fact) => fact.runId === input.runId),
+    };
   }
 
   async recordExecutionSessionLink(input: LocalExecutionSessionLinkFact): Promise<void> {

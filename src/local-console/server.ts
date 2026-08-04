@@ -475,6 +475,43 @@ async function handleRequest(
       return;
     }
 
+    const runAgentInfoMatch = matchRunAgentAuditRoute(url.pathname, "agent-info");
+    if (request.method === "GET" && runAgentInfoMatch !== null) {
+      if (url.searchParams.size > 0) {
+        sendJson(response, 400, { code: "RUN_AGENT_AUDIT_INVALID_REQUEST", error: "Agent 历史信息只接受会话与运行标识。" });
+        return;
+      }
+      try {
+        sendJson(response, 200, await runtime.getRunAgentInfo(runAgentInfoMatch));
+      } catch (error) {
+        const formatted = formatLocalError(error);
+        if (formatted.includes("RUN_AGENT_AUDIT_NOT_FOUND") || formatted.includes("RUN_AGENT_NOT_FOUND")) {
+          sendJson(response, 404, { code: "RUN_AGENT_AUDIT_NOT_FOUND", error: "找不到这次运行的 Agent 历史信息。" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+    const runAgentMarkdownMatch = matchRunAgentAuditRoute(url.pathname, "agent-markdown");
+    if (request.method === "GET" && runAgentMarkdownMatch !== null) {
+      if (url.searchParams.size > 0) {
+        sendJson(response, 400, { code: "RUN_AGENT_AUDIT_INVALID_REQUEST", error: "AGENT.md 历史读取只接受会话与运行标识。" });
+        return;
+      }
+      try {
+        sendJson(response, 200, await runtime.getRunAgentMarkdown(runAgentMarkdownMatch));
+      } catch (error) {
+        const formatted = formatLocalError(error);
+        if (formatted.includes("RUN_AGENT_AUDIT_NOT_FOUND") || formatted.includes("RUN_AGENT_NOT_FOUND")) {
+          sendJson(response, 404, { code: "RUN_AGENT_AUDIT_NOT_FOUND", error: "找不到这次运行的 AGENT.md。" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
     const processOutputMatch = matchProcessOutputRoute(url.pathname);
     if (request.method === "GET" && processOutputMatch !== null) {
       try {
@@ -600,6 +637,64 @@ async function handleRequest(
         agentTeamId: payload.agentTeamId,
       });
       sendJson(response, 200, { session });
+      return;
+    }
+
+    const sessionTeamUpdateMatch = matchSessionRoute(url.pathname, "team-update");
+    if (request.method === "GET" && sessionTeamUpdateMatch !== null) {
+      const update = await runtime.inspectSessionTeamUpdate(sessionTeamUpdateMatch.sessionId);
+      sendJson(response, 200, { update });
+      return;
+    }
+    const sessionTeamUpdateApplyMatch = matchSessionRoute(url.pathname, "team-update/apply");
+    if (request.method === "POST" && sessionTeamUpdateApplyMatch !== null) {
+      try {
+        const update = await runtime.applySessionTeamUpdate(
+          sessionTeamUpdateApplyMatch.sessionId,
+          readHeader(request.headers["x-moebius-update-token"]) ?? null,
+        );
+        sendJson(response, 200, { update });
+      } catch (error) {
+        if (/SESSION_TEAM_UPDATE_(?:CANDIDATE_MISSING|STALE)/u.test(formatLocalError(error))) {
+          sendJson(response, 409, { code: "SESSION_TEAM_UPDATE_STALE", error: "团队更新已变化，请重新检查。" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+    const sessionTeamUpdateRetryMatch = matchSessionRoute(url.pathname, "team-update/retry");
+    if (request.method === "POST" && sessionTeamUpdateRetryMatch !== null) {
+      try {
+        const update = await runtime.retrySessionTeamUpdate(
+          sessionTeamUpdateRetryMatch.sessionId,
+          readHeader(request.headers["x-moebius-update-token"]) ?? null,
+        );
+        sendJson(response, 200, { update });
+      } catch (error) {
+        if (formatLocalError(error).includes("SESSION_TEAM_UPDATE_STALE")) {
+          sendJson(response, 409, { code: "SESSION_TEAM_UPDATE_STALE", error: "团队更新已变化，请重新检查。" });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+    const sessionTeamUpdateCancelMatch = matchSessionRoute(url.pathname, "team-update/cancel");
+    if (request.method === "POST" && sessionTeamUpdateCancelMatch !== null) {
+      try {
+        const update = await runtime.cancelSessionTeamUpdate(
+          sessionTeamUpdateCancelMatch.sessionId,
+          readHeader(request.headers["x-moebius-update-token"]) ?? null,
+        );
+        sendJson(response, 200, { update });
+      } catch (error) {
+        if (formatLocalError(error).includes("SESSION_TEAM_UPDATE_STALE")) {
+          sendJson(response, 409, { code: "SESSION_TEAM_UPDATE_STALE", error: "团队更新已变化，请重新检查。" });
+          return;
+        }
+        throw error;
+      }
       return;
     }
 
@@ -1405,6 +1500,10 @@ function matchSessionRoute(
     | "files/content"
     | "file-reference"
     | "team"
+    | "team-update"
+    | "team-update/apply"
+    | "team-update/retry"
+    | "team-update/cancel"
     | "archive"
     | "attention"
     | "pin"
@@ -1428,6 +1527,18 @@ function matchRunOutputRoute(pathname: string): { sessionId: string; runId: stri
   if (match === null) {
     return null;
   }
+  return {
+    sessionId: decodeURIComponent(match[1] ?? ""),
+    runId: decodeURIComponent(match[2] ?? ""),
+  };
+}
+
+function matchRunAgentAuditRoute(
+  pathname: string,
+  action: "agent-info" | "agent-markdown",
+): { sessionId: string; runId: string } | null {
+  const match = new RegExp(`^/api/local-console/sessions/([^/]+)/runs/([^/]+)/${action}$`, "u").exec(pathname);
+  if (match === null) return null;
   return {
     sessionId: decodeURIComponent(match[1] ?? ""),
     runId: decodeURIComponent(match[2] ?? ""),

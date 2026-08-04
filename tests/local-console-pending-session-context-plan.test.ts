@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decideAwaitingTeamRelease,
   planAwaitingDispatchResolution,
   planPendingSessionContextPromotion,
 } from "../src/local-console/pending-session-context-plan.js";
@@ -44,5 +45,8 @@ describe("pending session context plan", () => {
       dispatches: [{ messageId: 2, lane: "worker", role: "qa", reason: "single-valid-mention" }],
     });
     expect(planAwaitingDispatchResolution([awaiting], [])).toEqual({ kind: "skip" });
+    expect(decideAwaitingTeamRelease("waiting")).toBe("hold");
+    expect(decideAwaitingTeamRelease("failed")).toBe("hold");
+    expect(decideAwaitingTeamRelease(null)).toBe("release");
   });
 });

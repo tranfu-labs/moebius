@@ -98,6 +98,8 @@ describe("session-scoped Agent team runtime binding", () => {
     expect(loaded.members).toEqual([
       {
         name: "dev",
+        displayName: "dev",
+        description: "负责 dev",
         agentMarkdown: "# dev\n\n负责 dev\n",
         executionProfile: {
           cli: "codex",

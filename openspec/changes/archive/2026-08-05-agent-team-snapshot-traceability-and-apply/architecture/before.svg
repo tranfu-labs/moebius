@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Agent team snapshot traceability before the change</title>
+  <desc id="desc">The desktop resolves team members into mutable effective and pending slots. Run contexts contain markdown and profiles but no historical team identity. The renderer joins the current team catalog and offers a name-only menu and non-interactive avatars.</desc>
+  <defs>
+    <style>
+      .bg{fill:#111318}.group{fill:none;stroke:#444c5a;stroke-width:2}.box{fill:#1b1f27;stroke:#596273;stroke-width:2}.warn{fill:#342d1c;stroke:#c9a854;stroke-width:2}.text{fill:#f3f5f7;font:16px system-ui,sans-serif}.label{fill:#f3f5f7;font:600 18px system-ui,sans-serif}.sub{fill:#aeb6c2;font:13px system-ui,sans-serif}.arrow{stroke:#8b95a5;stroke-width:2;fill:none;marker-end:url(#arrow)}.dash{stroke:#c9a854;stroke-width:2;fill:none;stroke-dasharray:6 5;marker-end:url(#warnArrow)}
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b95a5"/></marker>
+    <marker id="warnArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#c9a854"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="720"/>
+  <text class="label" x="48" y="48">Before · partial snapshot, current-catalog presentation</text>
+
+  <rect class="group" x="36" y="76" width="1128" height="142" rx="14"/>
+  <text class="sub" x="56" y="102">desktop-shell · disk ownership and renderer application</text>
+  <rect class="box" x="56" y="122" width="250" height="70" rx="10"/>
+  <text class="text" x="78" y="150">Saved team files</text>
+  <text class="sub" x="78" y="174">team.json · AGENT.md · profiles</text>
+  <rect class="box" x="380" y="122" width="300" height="70" rx="10"/>
+  <text class="text" x="402" y="150">team-runtime-binding</text>
+  <text class="sub" x="402" y="174">members: slug · Markdown · profile</text>
+  <rect class="warn" x="754" y="122" width="370" height="70" rx="10"/>
+  <text class="text" x="776" y="150">Current team catalog in renderer</text>
+  <text class="sub" x="776" y="174">name/source/members can overwrite history</text>
+  <path class="arrow" d="M306 157H380"/>
+
+  <rect class="group" x="36" y="246" width="1128" height="250" rx="14"/>
+  <text class="sub" x="56" y="272">local-console · mutable session state and historical facts</text>
+  <rect class="box" x="56" y="296" width="310" height="86" rx="10"/>
+  <text class="text" x="78" y="324">SQLite team slots</text>
+  <text class="sub" x="78" y="348">effective | pending</text>
+  <text class="sub" x="78" y="368">Markdown + profile; no team metadata</text>
+  <rect class="box" x="445" y="296" width="310" height="86" rx="10"/>
+  <text class="text" x="467" y="324">Pending switch runtime</text>
+  <text class="sub" x="467" y="348">waits active / queued worker work</text>
+  <text class="sub" x="467" y="368">no same-team apply intent</text>
+  <rect class="box" x="834" y="296" width="290" height="86" rx="10"/>
+  <text class="text" x="856" y="324">Run execution context</text>
+  <text class="sub" x="856" y="348">team Markdown + profile</text>
+  <text class="sub" x="856" y="368">no team identity / loaded time</text>
+  <path class="arrow" d="M366 339H445"/>
+  <path class="arrow" d="M755 339H834"/>
+  <rect class="warn" x="255" y="412" width="690" height="58" rx="10"/>
+  <text class="text" x="277" y="438">Missing: categorized comparison · frozen retry target · execution evidence projection</text>
+  <text class="sub" x="277" y="458">The saved team can change, but a conversation cannot explain or explicitly adopt it.</text>
+
+  <rect class="group" x="36" y="524" width="1128" height="150" rx="14"/>
+  <text class="sub" x="56" y="550">console-ui · presentation</text>
+  <rect class="warn" x="56" y="570" width="320" height="76" rx="10"/>
+  <text class="text" x="78" y="600">SessionTeamMenu</text>
+  <text class="sub" x="78" y="624">name-only choices + generic snapshot note</text>
+  <rect class="warn" x="440" y="570" width="320" height="76" rx="10"/>
+  <text class="text" x="462" y="600">NewConversationPage</text>
+  <text class="sub" x="462" y="624">separate native select</text>
+  <rect class="warn" x="824" y="570" width="300" height="76" rx="10"/>
+  <text class="text" x="846" y="600">Timeline avatars</text>
+  <text class="sub" x="846" y="624">decorative; no historical info entry</text>
+  <path class="dash" d="M939 192V568"/>
+</svg>

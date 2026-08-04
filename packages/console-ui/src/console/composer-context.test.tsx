@@ -38,6 +38,10 @@ describe("ComposerContext", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "Agent 团队：开发团队，点击切换" }), {
       key: "ArrowDown",
     });
+    expect(screen.getByRole("menu")).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(screen.getByRole("menu")).toHaveStyle({
+      maxHeight: "var(--radix-dropdown-menu-content-available-height)",
+    });
     expect(screen.getByText(/开始时载入的那份团队内容/u)).toBeVisible();
     expect(screen.getByText(/之后在 Agent 团队页的修改不影响它/u)).toBeVisible();
     fireEvent.click(screen.getByText("营销团队"));
@@ -61,7 +65,7 @@ describe("ComposerContext", () => {
     expect(screen.getByRole("status")).not.toHaveTextContent("工作空间");
   });
 
-  it("collapses branch, workspace, team, and project progressively in that order", () => {
+  it("keeps the team entry while less essential context collapses on narrow windows", () => {
     const { container } = renderContext();
     const visibleEntries = () => Array.from(container.querySelectorAll("[data-context-entry]"))
       .map((entry) => entry.getAttribute("data-context-entry"));
@@ -72,9 +76,10 @@ describe("ComposerContext", () => {
     resizeWindow(700);
     expect(visibleEntries()).toEqual(["project", "team"]);
     resizeWindow(500);
-    expect(visibleEntries()).toEqual(["project"]);
+    expect(visibleEntries()).toEqual(["project", "team"]);
     resizeWindow(350);
-    expect(visibleEntries()).toEqual([]);
+    expect(visibleEntries()).toEqual(["team"]);
+    expect(screen.getByRole("button", { name: "Agent 团队：开发团队，点击切换" })).toBeVisible();
   });
 });
 

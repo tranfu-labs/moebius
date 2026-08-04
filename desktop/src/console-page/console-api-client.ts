@@ -4,6 +4,8 @@ import type {
   OperatorProcessOutput,
   OperatorSession,
   OperatorSubSessionView,
+  AgentRunInfoView,
+  SessionTeamUpdateViewState,
   ExecutionModelRegistry,
   FileReferenceContent,
   ProjectFilesData,
@@ -22,6 +24,69 @@ import type { SessionSearchResult } from "./conversation-search-model.js";
 export type { SessionSearchResult } from "./conversation-search-model.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export async function loadSessionTeamUpdate(options: {
+  apiBase: string;
+  sessionId: string;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<SessionTeamUpdateViewState> {
+  const response = await options.fetch(endpoint(options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/team-update`),
+  options.signal === undefined ? undefined : { signal: options.signal });
+  const body = await response.json() as { update?: SessionTeamUpdateViewState; error?: string };
+  if (!response.ok || body.update === undefined) throw new Error(body.error ?? "team update inspection failed");
+  return body.update;
+}
+
+export async function mutateSessionTeamUpdate(options: {
+  apiBase: string;
+  sessionId: string;
+  action: "apply" | "retry" | "cancel";
+  updateToken?: string | null;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<SessionTeamUpdateViewState> {
+  const response = await options.fetch(endpoint(options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/team-update/${options.action}`), {
+    method: "POST",
+    ...(options.updateToken == null ? {} : { headers: { "x-moebius-update-token": options.updateToken } }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  const body = await response.json() as { update?: SessionTeamUpdateViewState; error?: string };
+  if (!response.ok || body.update === undefined) throw new Error(body.error ?? "team update mutation failed");
+  return body.update;
+}
+
+export async function loadRunAgentInfo(options: {
+  apiBase: string;
+  sessionId: string;
+  runId: string;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<AgentRunInfoView> {
+  const response = await options.fetch(endpoint(options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/runs/${encodeURIComponent(options.runId)}/agent-info`),
+  options.signal === undefined ? undefined : { signal: options.signal });
+  const body = await response.json() as AgentRunInfoView | { error?: string };
+  if (!response.ok) throw new Error("error" in body ? body.error : "run Agent info failed");
+  return body as AgentRunInfoView;
+}
+
+export async function loadRunAgentMarkdown(options: {
+  apiBase: string;
+  sessionId: string;
+  runId: string;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<{ markdown: string }> {
+  const response = await options.fetch(endpoint(options.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/runs/${encodeURIComponent(options.runId)}/agent-markdown`),
+  options.signal === undefined ? undefined : { signal: options.signal });
+  const body = await response.json() as { markdown?: string; error?: string };
+  if (!response.ok || typeof body.markdown !== "string") throw new Error(body.error ?? "run Agent Markdown failed");
+  return { markdown: body.markdown };
+}
 
 export async function acknowledgeDisplayedResult(options: {
   apiBase: string;

@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { AgentTeamOption } from "@/console/agent-team-option";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,9 @@ export function SessionTeamMenu({
   const accessibleLabel = needsAttention
     ? t("console.sessionTeam.switchWithState", { team: teamLabel, state: stateLabel })
     : t("console.sessionTeam.switch", { team: teamLabel });
-  const choices = teams.filter((candidate) => candidate.canCreateConversation);
+  const choices = teams.filter((candidate) => (
+    candidate.canCreateConversation && candidate.teamKey !== displayedTeam?.teamKey
+  ));
 
   return (
     <DropdownMenu>
@@ -77,18 +80,43 @@ export function SessionTeamMenu({
           <ChevronDown className="h-[11px] w-[11px] shrink-0 text-hint" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-72">
+      <DropdownMenuContent
+        align="end"
+        side="top"
+        collisionPadding={12}
+        className="scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain"
+        style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
+      >
+        {displayedTeam ? (
+          <div className="px-2 py-2" aria-label={t("console.sessionTeam.loadedVersion")}>
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.loaded")}</p>
+            <AgentTeamOption team={{
+              label: selectionLabel(displayedTeam),
+              ownership: displayedTeam.ownership,
+              description: displayedTeam.description,
+              primaryAgentSlug: displayedTeam.primaryAgentSlug,
+              members: displayedTeam.members,
+            }} />
+          </div>
+        ) : null}
+        <DropdownMenuSeparator />
+        <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.catalog")}</p>
         {choices.map((candidate) => (
           <DropdownMenuCheckboxItem
             key={candidate.teamKey}
-            checked={candidate.teamKey === displayedTeam?.teamKey}
+            checked={false}
+            className="items-start"
             onSelect={() => {
-              if (candidate.teamKey !== displayedTeam?.teamKey) {
-                onSelectTeam?.(candidate);
-              }
+              onSelectTeam?.(candidate);
             }}
           >
-            {selectionLabel(candidate)}
+            <AgentTeamOption team={{
+              label: selectionLabel(candidate),
+              ownership: candidate.ownership,
+              description: candidate.description,
+              primaryAgentSlug: candidate.primaryAgentSlug,
+              members: candidate.members,
+            }} />
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />

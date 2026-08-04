@@ -37,6 +37,7 @@ import {
   planPendingTeamPromotion,
   planSessionTeamWrite,
 } from "./local-console/session-settings-plan.js";
+import { planPersistedSessionTeamPromotion } from "./local-console/session-team-update-plan.js";
 import {
   assertAnalysisParent,
   assertChildProject,
@@ -303,6 +304,18 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return applyPendingLocalSessionContext(database, input.command);
       case "local-list-session-agent-team-snapshot":
         return listLocalSessionAgentTeamSnapshot(database, input.command.sessionId);
+      case "local-write-session-team-candidate":
+        return writeLocalSessionTeamCandidate(database, input.command);
+      case "local-read-session-team-update-record":
+        return readLocalSessionTeamUpdateRecord(database, input.command.sessionId);
+      case "local-begin-session-team-update":
+        return beginLocalSessionTeamUpdate(database, input.command);
+      case "local-retry-session-team-update":
+        return retryLocalSessionTeamUpdate(database, input.command);
+      case "local-cancel-session-team-update":
+        return cancelLocalSessionTeamUpdate(database, input.command);
+      case "local-mark-session-team-update-failed":
+        return markLocalSessionTeamUpdateFailed(database, input.command);
       case "local-record-project-workspace-status":
         return recordLocalProjectWorkspaceStatus(database, input.command);
       case "local-move-empty-session":
@@ -614,6 +627,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionsProjectId(database, now);
   ensureSessionAgentTeamColumns(database);
   ensureSessionAgentTeamProfileColumns(database);
+  migrateAgentTeamSnapshotTraceability(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
   migrateSessionAttentionState(database);
@@ -824,6 +838,88 @@ function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
   }
   migrateSessionAgentTeamProfileCliConstraint(database);
   markSchemaMigration(database, "agent-runtime-profiles-session-snapshot");
+}
+
+function migrateAgentTeamSnapshotTraceability(database: SqliteDatabase): void {
+  const migrationVersion = "agent-team-snapshot-traceability-and-apply";
+  if (database.prepare("SELECT 1 FROM schema_migrations WHERE version = ?").get(migrationVersion) !== undefined) {
+    return;
+  }
+  const beforeCount = readTableRowCount(database, "session_agent_team_members");
+  database.exec("PRAGMA foreign_keys = OFF");
+  try {
+    transaction(database, () => {
+      database.exec(`
+        CREATE TABLE session_agent_team_members_snapshot_migration (
+          session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          slot TEXT NOT NULL CHECK (slot IN ('effective', 'candidate', 'pending')),
+          member_name TEXT NOT NULL,
+          display_name TEXT,
+          member_description TEXT,
+          agent_markdown TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          execution_cli TEXT CHECK (
+            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi')
+          ),
+          execution_model TEXT,
+          execution_effort TEXT,
+          snapshot_key TEXT,
+          PRIMARY KEY(session_id, slot, member_name)
+        );
+        INSERT INTO session_agent_team_members_snapshot_migration
+          (session_id, slot, member_name, agent_markdown, sort_order,
+           execution_cli, execution_model, execution_effort)
+        SELECT session_id, slot, member_name, agent_markdown, sort_order,
+               execution_cli, execution_model, execution_effort
+        FROM session_agent_team_members
+        ORDER BY session_id, slot, sort_order, member_name;
+        DROP TABLE session_agent_team_members;
+        ALTER TABLE session_agent_team_members_snapshot_migration RENAME TO session_agent_team_members;
+        CREATE TABLE session_agent_team_snapshot_meta (
+          session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          slot TEXT NOT NULL CHECK (slot IN ('effective', 'candidate', 'pending')),
+          team_ownership TEXT CHECK (team_ownership IS NULL OR team_ownership IN ('system', 'user')),
+          team_id TEXT,
+          team_name TEXT,
+          team_description TEXT,
+          primary_agent_slug TEXT,
+          official_source_name TEXT,
+          team_created_at TEXT,
+          captured_at TEXT,
+          loaded_at TEXT,
+          snapshot_key TEXT,
+          agent_definition_digest TEXT,
+          execution_profile_digest TEXT,
+          team_information_digest TEXT,
+          PRIMARY KEY(session_id, slot)
+        );
+        CREATE TABLE session_team_update_intents (
+          session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+          from_snapshot_key TEXT,
+          target_snapshot_key TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('waiting', 'failed')),
+          requested_at TEXT NOT NULL,
+          failure_code TEXT,
+          failure_summary TEXT
+        );
+      `);
+      if (!tableHasColumn(database, "session_messages", "dispatch_snapshot_key")) {
+        database.exec("ALTER TABLE session_messages ADD COLUMN dispatch_snapshot_key TEXT");
+      }
+      const afterCount = readTableRowCount(database, "session_agent_team_members");
+      if (afterCount !== beforeCount) {
+        throw new Error("Row count changed during Agent team snapshot migration");
+      }
+      const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all();
+      if (foreignKeyViolations.length > 0) {
+        throw new Error("Foreign key check failed during Agent team snapshot migration");
+      }
+      markSchemaMigration(database, migrationVersion);
+      return null;
+    });
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 function migrateSessionAgentTeamProfileCliConstraint(database: SqliteDatabase): void {
@@ -2003,69 +2099,159 @@ function applyPendingLocalSessionContext(
   input: Extract<SqliteStateCommand, { kind: "local-apply-pending-session-context" }>,
 ): unknown {
   return transaction(database, () => {
+    const intent = database.prepare(
+      `SELECT from_snapshot_key, status, requested_at
+       FROM session_team_update_intents
+       WHERE session_id = ?`,
+    ).get(input.sessionId);
+    const fromSnapshotKey = isRecord(intent)
+      ? readNullableString(intent.from_snapshot_key, "from_snapshot_key")
+      : null;
+    const intentStatus = isRecord(intent)
+      ? readString(intent.status, "status") as "waiting" | "failed"
+      : null;
     const oldTeamWork = database
       .prepare(
         `SELECT 1 AS found
          FROM session_messages
          WHERE session_id = ?
-           AND (
-             status = 'running'
-             OR (
-               speaker = 'user'
-               AND status = 'pending'
-               AND dispatch_lane = 'worker'
-             )
-           )
+           AND status IN ('pending', 'running')
+           AND dispatch_lane != 'awaiting-team'
+           AND (? IS NULL OR dispatch_snapshot_key = ? OR dispatch_snapshot_key IS NULL)
          LIMIT 1`,
       )
-      .get(input.sessionId);
+      .get(input.sessionId, fromSnapshotKey, fromSnapshotKey);
     if (oldTeamWork !== undefined) {
       return requireLocalSession(database, input.sessionId);
     }
+    const unrecoverableOldWork = intentStatus === "waiting" && isRecord(intent)
+      ? database.prepare(
+          `SELECT 1 AS found
+           FROM session_messages
+           WHERE session_id = ?
+             AND status = 'stuck'
+             AND dispatch_lane != 'awaiting-team'
+             AND (? IS NULL OR dispatch_snapshot_key = ? OR dispatch_snapshot_key IS NULL)
+             AND updated_at >= ?
+           LIMIT 1`,
+        ).get(
+          input.sessionId,
+          fromSnapshotKey,
+          fromSnapshotKey,
+          readString(intent.requested_at, "requested_at"),
+        ) !== undefined
+      : false;
     const hasPendingTeam = database
       .prepare("SELECT 1 AS found FROM sessions WHERE session_id = ? AND agent_team_pending_id IS NOT NULL")
       .get(input.sessionId) !== undefined;
-    database.prepare(
-      `UPDATE sessions
-       SET agent_team_ownership = COALESCE(agent_team_pending_ownership, agent_team_ownership),
-           agent_team_id = COALESCE(agent_team_pending_id, agent_team_id),
-           agent_team_pending_ownership = NULL,
-           agent_team_pending_id = NULL,
-           updated_at = CASE
-             WHEN agent_team_pending_id IS NOT NULL THEN ?
-             ELSE updated_at
-           END
-       WHERE session_id = ? AND source_type = 'local'`,
-    ).run(input.now, input.sessionId);
-    const promotePendingTeam = () => {
+    const teamPromotion = planPersistedSessionTeamPromotion({
+      intentStatus,
+      hasPendingTeam,
+      hasUnrecoverableOldWork: unrecoverableOldWork,
+    });
+    const failTeamPromotion = () => {
       database.prepare(
-        "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'effective'",
+        `UPDATE session_team_update_intents
+         SET status = 'failed',
+             failure_code = 'TEAM_UPDATE_OLD_WORK_UNRECOVERABLE',
+             failure_summary = '旧工作在恢复时无法继续；团队更新仍未应用。'
+         WHERE session_id = ?`,
       ).run(input.sessionId);
-      database.prepare(
-        "UPDATE session_agent_team_members SET slot = 'effective' WHERE session_id = ? AND slot = 'pending'",
-      ).run(input.sessionId);
+      return requireLocalSession(database, input.sessionId);
     };
-    ({ promote: promotePendingTeam, skip: () => undefined })[planPendingTeamPromotion(hasPendingTeam)]();
-    return requireLocalSession(database, input.sessionId);
+    const applyReadyContext = () => {
+      database.prepare(
+        `UPDATE sessions
+         SET agent_team_ownership = COALESCE(agent_team_pending_ownership, agent_team_ownership),
+             agent_team_id = COALESCE(agent_team_pending_id, agent_team_id),
+             agent_team_pending_ownership = NULL,
+             agent_team_pending_id = NULL,
+             updated_at = CASE
+               WHEN agent_team_pending_id IS NOT NULL THEN ?
+               ELSE updated_at
+             END
+         WHERE session_id = ? AND source_type = 'local'`,
+      ).run(input.now, input.sessionId);
+      const promotePendingTeam = () => {
+        database.prepare(
+          "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'effective'",
+        ).run(input.sessionId);
+        database.prepare(
+          "DELETE FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = 'effective'",
+        ).run(input.sessionId);
+        database.prepare(
+          "UPDATE session_agent_team_members SET slot = 'effective' WHERE session_id = ? AND slot = 'pending'",
+        ).run(input.sessionId);
+        database.prepare(
+          `UPDATE session_agent_team_snapshot_meta
+           SET slot = 'effective', loaded_at = ?
+           WHERE session_id = ? AND slot = 'pending'`,
+        ).run(input.now, input.sessionId);
+        database.prepare(
+          "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'candidate'",
+        ).run(input.sessionId);
+        database.prepare(
+          "DELETE FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = 'candidate'",
+        ).run(input.sessionId);
+        database.prepare("DELETE FROM session_team_update_intents WHERE session_id = ?").run(input.sessionId);
+      };
+      ({ promote: promotePendingTeam, skip: () => undefined })[planPendingTeamPromotion(hasPendingTeam)]();
+      return requireLocalSession(database, input.sessionId);
+    };
+    return ({
+      fail: failTeamPromotion,
+      wait: () => requireLocalSession(database, input.sessionId),
+      promote: applyReadyContext,
+      skip: applyReadyContext,
+    })[teamPromotion]();
   });
 }
 
 function replaceLocalSessionAgentTeamSnapshot(
   database: SqliteDatabase,
   sessionId: string,
-  slot: "effective" | "pending",
+  slot: "effective" | "candidate" | "pending",
   snapshot: LocalConsoleAgentTeamSnapshot | undefined,
 ): void {
   database.prepare(
     "DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = ?",
   ).run(sessionId, slot);
+  database.prepare(
+    "DELETE FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = ?",
+  ).run(sessionId, slot);
   if (snapshot === undefined) {
     return;
   }
+  const team = snapshot.team;
+  const digests = snapshot.digests;
+  database.prepare(
+    `INSERT INTO session_agent_team_snapshot_meta
+      (session_id, slot, team_ownership, team_id, team_name, team_description,
+       primary_agent_slug, official_source_name, team_created_at, captured_at, loaded_at,
+       snapshot_key, agent_definition_digest, execution_profile_digest, team_information_digest)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    sessionId,
+    slot,
+    team?.ownership ?? null,
+    team?.id ?? null,
+    team?.name ?? null,
+    team?.description ?? null,
+    team?.primaryAgentSlug ?? null,
+    team?.officialSourceName ?? null,
+    team?.createdAt ?? null,
+    snapshot.capturedAt ?? null,
+    snapshot.loadedAt ?? null,
+    snapshot.snapshotKey ?? null,
+    digests?.agentDefinition ?? null,
+    digests?.executionProfile ?? null,
+    digests?.teamInformation ?? null,
+  );
   const insert = database.prepare(
     `INSERT INTO session_agent_team_members
-      (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (session_id, slot, member_name, display_name, member_description, agent_markdown,
+       execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   snapshot.members.forEach((member, index) => {
     const profile = member.executionProfile;
@@ -2073,11 +2259,14 @@ function replaceLocalSessionAgentTeamSnapshot(
       sessionId,
       slot,
       member.name,
+      member.displayName ?? null,
+      member.description ?? null,
       member.agentMarkdown,
       profile?.cli ?? null,
       profile?.model ?? null,
       profile?.effort ?? null,
       index,
+      snapshot.snapshotKey ?? null,
     );
   });
 }
@@ -2098,32 +2287,253 @@ function primaryAgentForSession(database: SqliteDatabase, sessionId: string): st
 function listLocalSessionAgentTeamSnapshot(
   database: SqliteDatabase,
   sessionId: string,
-): { members: Array<{
-  name: string;
-  agentMarkdown: string;
-  executionProfile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
-}> } | null {
+): LocalConsoleAgentTeamSnapshot | null {
+  return readLocalSessionAgentTeamSnapshotSlot(database, sessionId, "effective");
+}
+
+function readLocalSessionAgentTeamSnapshotSlot(
+  database: SqliteDatabase,
+  sessionId: string,
+  slot: "effective" | "candidate" | "pending",
+): LocalConsoleAgentTeamSnapshot | null {
   const rows = database.prepare(
-    `SELECT member_name, agent_markdown, execution_cli, execution_model, execution_effort
+    `SELECT member_name, display_name, member_description, agent_markdown,
+            execution_cli, execution_model, execution_effort, snapshot_key
      FROM session_agent_team_members
-     WHERE session_id = ? AND slot = 'effective'
+     WHERE session_id = ? AND slot = ?
      ORDER BY sort_order ASC, member_name ASC`,
-  ).all(sessionId);
+  ).all(sessionId, slot);
   if (rows.length === 0) {
     return null;
   }
+  const meta = database.prepare(
+    "SELECT * FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = ?",
+  ).get(sessionId, slot);
+  const metadata = isRecord(meta) ? meta : null;
   return {
+    ...(metadata === null || metadata.team_ownership === null || metadata.team_id === null
+      ? {}
+      : {
+          team: {
+            ownership: readNullableAgentTeamOwnership(metadata.team_ownership)!,
+            id: readString(metadata.team_id, "team_id"),
+            name: readNullableString(metadata.team_name, "team_name"),
+            description: readNullableString(metadata.team_description, "team_description"),
+            primaryAgentSlug: readNullableString(metadata.primary_agent_slug, "primary_agent_slug"),
+            officialSourceName: readNullableString(metadata.official_source_name, "official_source_name"),
+            createdAt: readNullableString(metadata.team_created_at, "team_created_at"),
+          },
+          capturedAt: readNullableString(metadata.captured_at, "captured_at"),
+          loadedAt: readNullableString(metadata.loaded_at, "loaded_at"),
+          snapshotKey: readNullableString(metadata.snapshot_key, "snapshot_key"),
+          digests: metadata.agent_definition_digest === null
+            || metadata.execution_profile_digest === null
+            || metadata.team_information_digest === null
+            ? undefined
+            : {
+                agentDefinition: readString(metadata.agent_definition_digest, "agent_definition_digest"),
+                executionProfile: readString(metadata.execution_profile_digest, "execution_profile_digest"),
+                teamInformation: readString(metadata.team_information_digest, "team_information_digest"),
+              },
+        }),
     members: rows.map((row) => {
       if (!isRecord(row)) {
         throw new Error("Invalid local session Agent team snapshot row");
       }
       return {
         name: readString(row.member_name, "member_name"),
+        displayName: readNullableString(row.display_name, "display_name"),
+        description: readNullableString(row.member_description, "member_description"),
         agentMarkdown: readString(row.agent_markdown, "agent_markdown"),
         executionProfile: readExecutionProfile(row),
       };
     }),
   };
+}
+
+function writeLocalSessionTeamCandidate(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-write-session-team-candidate" }>,
+): null {
+  return transaction(database, () => {
+    requireLocalSession(database, input.sessionId);
+    replaceLocalSessionAgentTeamSnapshot(database, input.sessionId, "candidate", input.snapshot ?? undefined);
+    return null;
+  });
+}
+
+function readLocalSessionTeamUpdateRecord(
+  database: SqliteDatabase,
+  sessionId: string,
+): import("./local-console/types.js").LocalConsoleSessionTeamUpdateRecord {
+  requireLocalSession(database, sessionId);
+  const row = database.prepare(
+    "SELECT * FROM session_team_update_intents WHERE session_id = ?",
+  ).get(sessionId);
+  const intent = isRecord(row)
+    ? {
+        status: readString(row.status, "status") as "waiting" | "failed",
+        targetSnapshotKey: readString(row.target_snapshot_key, "target_snapshot_key"),
+        failureCode: readNullableString(row.failure_code, "failure_code"),
+        failureSummary: readNullableString(row.failure_summary, "failure_summary"),
+      }
+    : null;
+  if (intent !== null && intent.status !== "waiting" && intent.status !== "failed") {
+    throw new Error("Invalid session team update intent status");
+  }
+  return {
+    candidate: readLocalSessionAgentTeamSnapshotSlot(database, sessionId, "candidate"),
+    pending: readLocalSessionAgentTeamSnapshotSlot(database, sessionId, "pending"),
+    intent,
+  };
+}
+
+function beginLocalSessionTeamUpdate(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-begin-session-team-update" }>,
+): null {
+  return transaction(database, () => {
+    requireLocalSession(database, input.sessionId);
+    const candidate = readLocalSessionAgentTeamSnapshotSlot(database, input.sessionId, "candidate");
+    if (candidate?.snapshotKey == null || candidate.team == null) {
+      throw new Error("SESSION_TEAM_UPDATE_CANDIDATE_MISSING");
+    }
+    if (input.expectedUpdateToken != null && candidate.snapshotKey !== input.expectedUpdateToken) {
+      throw new Error("SESSION_TEAM_UPDATE_STALE");
+    }
+    const effective = readLocalSessionAgentTeamSnapshotSlot(database, input.sessionId, "effective");
+    if (effective?.snapshotKey != null) {
+      database.prepare(
+        `UPDATE session_messages
+         SET dispatch_snapshot_key = ?
+         WHERE session_id = ?
+           AND dispatch_snapshot_key IS NULL
+           AND status IN ('pending', 'running')
+           AND dispatch_lane != 'awaiting-team'`,
+      ).run(effective.snapshotKey, input.sessionId);
+    }
+    database.prepare("DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'pending'").run(input.sessionId);
+    database.prepare("DELETE FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = 'pending'").run(input.sessionId);
+    database.prepare(
+      `INSERT INTO session_agent_team_members
+        (session_id, slot, member_name, display_name, member_description, agent_markdown,
+         execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+       SELECT session_id, 'pending', member_name, display_name, member_description, agent_markdown,
+              execution_cli, execution_model, execution_effort, sort_order, snapshot_key
+       FROM session_agent_team_members
+       WHERE session_id = ? AND slot = 'candidate'`,
+    ).run(input.sessionId);
+    database.prepare(
+      `INSERT INTO session_agent_team_snapshot_meta
+        (session_id, slot, team_ownership, team_id, team_name, team_description,
+         primary_agent_slug, official_source_name, team_created_at, captured_at, loaded_at,
+         snapshot_key, agent_definition_digest, execution_profile_digest, team_information_digest)
+       SELECT session_id, 'pending', team_ownership, team_id, team_name, team_description,
+              primary_agent_slug, official_source_name, team_created_at, captured_at, NULL,
+              snapshot_key, agent_definition_digest, execution_profile_digest, team_information_digest
+       FROM session_agent_team_snapshot_meta
+       WHERE session_id = ? AND slot = 'candidate'`,
+    ).run(input.sessionId);
+    database.prepare(
+      `UPDATE sessions
+       SET agent_team_pending_ownership = ?, agent_team_pending_id = ?, updated_at = ?
+       WHERE session_id = ?`,
+    ).run(candidate.team.ownership, candidate.team.id, input.now, input.sessionId);
+    database.prepare(
+      `INSERT INTO session_team_update_intents
+        (session_id, from_snapshot_key, target_snapshot_key, status, requested_at, failure_code, failure_summary)
+       VALUES (?, ?, ?, 'waiting', ?, NULL, NULL)
+       ON CONFLICT(session_id) DO UPDATE SET
+         from_snapshot_key = excluded.from_snapshot_key,
+         target_snapshot_key = excluded.target_snapshot_key,
+         status = 'waiting', requested_at = excluded.requested_at,
+         failure_code = NULL, failure_summary = NULL`,
+    ).run(input.sessionId, effective?.snapshotKey ?? null, candidate.snapshotKey, input.now);
+    return null;
+  });
+}
+
+function cancelLocalSessionTeamUpdate(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-cancel-session-team-update" }>,
+): null {
+  return transaction(database, () => {
+    requireLocalSession(database, input.sessionId);
+    if (input.expectedUpdateToken != null) {
+      const intent = database.prepare(
+        "SELECT target_snapshot_key FROM session_team_update_intents WHERE session_id = ?",
+      ).get(input.sessionId);
+      const candidate = readLocalSessionAgentTeamSnapshotSlot(database, input.sessionId, "candidate");
+      const pending = readLocalSessionAgentTeamSnapshotSlot(database, input.sessionId, "pending");
+      const targetMatches = isRecord(intent)
+        ? readString(intent.target_snapshot_key, "target_snapshot_key") === input.expectedUpdateToken
+        : candidate?.snapshotKey === input.expectedUpdateToken || pending?.snapshotKey === input.expectedUpdateToken;
+      if (!targetMatches) {
+        throw new Error("SESSION_TEAM_UPDATE_STALE");
+      }
+    }
+    database.prepare(
+      `UPDATE sessions
+       SET agent_team_pending_ownership = NULL, agent_team_pending_id = NULL, updated_at = ?
+       WHERE session_id = ?`,
+    ).run(input.now, input.sessionId);
+    database.prepare("DELETE FROM session_agent_team_members WHERE session_id = ? AND slot = 'pending'").run(input.sessionId);
+    database.prepare("DELETE FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = 'pending'").run(input.sessionId);
+    database.prepare("DELETE FROM session_team_update_intents WHERE session_id = ?").run(input.sessionId);
+    return null;
+  });
+}
+
+function retryLocalSessionTeamUpdate(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-retry-session-team-update" }>,
+): null {
+  requireLocalSession(database, input.sessionId);
+  const currentIntent = database.prepare(
+    "SELECT target_snapshot_key, status FROM session_team_update_intents WHERE session_id = ?",
+  ).get(input.sessionId);
+  if (!isRecord(currentIntent)) {
+    if (input.expectedUpdateToken == null) {
+      throw new Error("SESSION_TEAM_UPDATE_INTENT_MISSING");
+    }
+    return beginLocalSessionTeamUpdate(database, {
+      kind: "local-begin-session-team-update",
+      sessionId: input.sessionId,
+      expectedUpdateToken: input.expectedUpdateToken,
+      now: input.now,
+    });
+  }
+  return transaction(database, () => {
+    const targetSnapshotKey = readString(currentIntent.target_snapshot_key, "target_snapshot_key");
+    if (input.expectedUpdateToken != null && targetSnapshotKey !== input.expectedUpdateToken) {
+      throw new Error("SESSION_TEAM_UPDATE_STALE");
+    }
+    const pending = readLocalSessionAgentTeamSnapshotSlot(database, input.sessionId, "pending");
+    if (pending?.snapshotKey !== targetSnapshotKey) {
+      throw new Error("SESSION_TEAM_UPDATE_PENDING_MISSING");
+    }
+    database.prepare(
+      `UPDATE session_team_update_intents
+       SET status = 'waiting', requested_at = ?, failure_code = NULL, failure_summary = NULL
+       WHERE session_id = ?`,
+    ).run(input.now, input.sessionId);
+    return null;
+  });
+}
+
+function markLocalSessionTeamUpdateFailed(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-mark-session-team-update-failed" }>,
+): null {
+  const result = database.prepare(
+    `UPDATE session_team_update_intents
+     SET status = 'failed', failure_code = ?, failure_summary = ?
+     WHERE session_id = ?`,
+  ).run(input.code, input.summary, input.sessionId);
+  if (Number(result.changes ?? 0) !== 1) {
+    throw new Error("SESSION_TEAM_UPDATE_INTENT_MISSING");
+  }
+  return null;
 }
 
 function recordLocalProjectWorkspaceStatus(
@@ -2226,8 +2636,11 @@ function createLocalSession(
         .prepare(
           `INSERT INTO session_messages
             (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id,
-             text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
-          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?, ?, ?)`,
+             text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, dispatch_snapshot_key,
+             created_at, updated_at)
+          VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?,
+            (SELECT snapshot_key FROM session_agent_team_snapshot_meta WHERE session_id = ? AND slot = 'effective'),
+            ?, ?)`,
         )
         .run(
           input.sessionId,
@@ -2239,6 +2652,7 @@ function createLocalSession(
             firstTeamMemberName: input.agentTeamSnapshot?.members[0]?.name,
           }),
           input.initialDispatch?.reason ?? "no-valid-mention",
+          input.sessionId,
           input.now,
           input.now,
         );
@@ -2468,11 +2882,25 @@ function createLocalChildSession(
     );
     database.prepare(
       `INSERT INTO session_agent_team_members
-        (session_id, slot, member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order)
-       SELECT ?, 'effective', member_name, agent_markdown, execution_cli, execution_model, execution_effort, sort_order
+        (session_id, slot, member_name, display_name, member_description, agent_markdown,
+         execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+       SELECT ?, 'effective', member_name, display_name, member_description, agent_markdown,
+              execution_cli, execution_model, execution_effort, sort_order, snapshot_key
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'effective'
        ON CONFLICT(session_id, slot, member_name) DO NOTHING`,
+    ).run(input.childSessionId, input.parentSessionId);
+    database.prepare(
+      `INSERT INTO session_agent_team_snapshot_meta
+        (session_id, slot, team_ownership, team_id, team_name, team_description,
+         primary_agent_slug, official_source_name, team_created_at, captured_at, loaded_at,
+         snapshot_key, agent_definition_digest, execution_profile_digest, team_information_digest)
+       SELECT ?, 'effective', team_ownership, team_id, team_name, team_description,
+              primary_agent_slug, official_source_name, team_created_at, captured_at, loaded_at,
+              snapshot_key, agent_definition_digest, execution_profile_digest, team_information_digest
+       FROM session_agent_team_snapshot_meta
+       WHERE session_id = ? AND slot = 'effective'
+       ON CONFLICT(session_id, slot) DO NOTHING`,
     ).run(input.childSessionId, input.parentSessionId);
     database
       .prepare(
@@ -2905,8 +3333,13 @@ function appendUserMessage(
       .prepare(
         `INSERT INTO session_messages
           (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id,
-           text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
-        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?, ?, ?)`,
+           text_fragments_json, dispatch_lane, dispatch_role, dispatch_reason, dispatch_snapshot_key,
+           created_at, updated_at)
+        VALUES (?, 'user', NULL, ?, 'pending', NULL, NULL, NULL, 'local-message', NULL, ?, ?, ?, ?,
+          CASE WHEN ? = 'awaiting-team' THEN NULL ELSE (
+            SELECT snapshot_key FROM session_agent_team_snapshot_meta
+            WHERE session_id = ? AND slot = 'effective'
+          ) END, ?, ?)`,
       )
       .run(
         input.sessionId,
@@ -2917,6 +3350,8 @@ function appendUserMessage(
           ? primaryAgentForSession(database, input.sessionId)
           : input.dispatch.role,
         input.dispatch?.reason ?? "no-valid-mention",
+        input.dispatch?.lane ?? "primary",
+        input.sessionId,
         input.now,
         input.now,
       );
@@ -3430,11 +3865,15 @@ function claimNextPendingMessage(
            SET status = 'running',
                run_id = ?,
                error = NULL,
+               dispatch_snapshot_key = COALESCE(dispatch_snapshot_key, (
+                 SELECT snapshot_key FROM session_agent_team_snapshot_meta
+                 WHERE session_id = ? AND slot = 'effective'
+               )),
                activated_at = COALESCE(activated_at, ?),
                updated_at = ?
            WHERE id = ? AND status = 'pending'`,
         )
-        .run(claimRunId(input, message.id), input.now, input.now, message.id);
+        .run(claimRunId(input, message.id), input.sessionId, input.now, input.now, message.id);
       if (Number(result.changes ?? 0) !== 1) {
         return null;
       }
@@ -3510,6 +3949,10 @@ function claimNextPendingWorkerMessage(
          SET status = 'running',
              run_id = ?,
              error = NULL,
+             dispatch_snapshot_key = COALESCE(dispatch_snapshot_key, (
+               SELECT snapshot_key FROM session_agent_team_snapshot_meta
+               WHERE session_id = ? AND slot = 'effective'
+             )),
              activated_at = COALESCE(activated_at, ?),
              updated_at = ?
          WHERE id = ?
@@ -3517,7 +3960,7 @@ function claimNextPendingWorkerMessage(
            AND dispatch_lane = 'worker'
            AND dispatch_role = ?`,
       )
-      .run(input.runId, input.now, input.now, messageId, input.role);
+      .run(input.runId, input.sessionId, input.now, input.now, messageId, input.role);
     return Number(result.changes ?? 0) === 1
       ? requireLocalMessage(database, messageId, input.sessionId)
       : null;
@@ -3536,6 +3979,10 @@ function resolveAwaitingUserMessageDispatches(
            SET dispatch_lane = ?,
                dispatch_role = ?,
                dispatch_reason = ?,
+               dispatch_snapshot_key = (
+                 SELECT snapshot_key FROM session_agent_team_snapshot_meta
+                 WHERE session_id = ? AND slot = 'effective'
+               ),
                updated_at = ?
            WHERE id = ?
              AND session_id = ?
@@ -3547,6 +3994,7 @@ function resolveAwaitingUserMessageDispatches(
           dispatch.lane,
           dispatch.role,
           dispatch.reason,
+          input.sessionId,
           input.now,
           dispatch.messageId,
           input.sessionId,
@@ -4648,6 +5096,12 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
   const childCountRow = database
     .prepare("SELECT COUNT(*) AS count FROM sessions WHERE parent_session_id = ?")
     .get(sessionId);
+  const effectiveTeamSnapshot = summarizeAgentTeamSnapshot(
+    readLocalSessionAgentTeamSnapshotSlot(database, sessionId, "effective"),
+  );
+  const pendingTeamSnapshot = summarizeAgentTeamSnapshot(
+    readLocalSessionAgentTeamSnapshotSlot(database, sessionId, "pending"),
+  );
   return {
     sessionId,
     projectId: readString(row.project_id, "project_id"),
@@ -4664,6 +5118,8 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     agentTeamId: readNullableString(row.agent_team_id, "agent_team_id"),
     agentTeamPendingOwnership: readNullableAgentTeamOwnership(row.agent_team_pending_ownership),
     agentTeamPendingId: readNullableString(row.agent_team_pending_id, "agent_team_pending_id"),
+    agentTeamSnapshot: effectiveTeamSnapshot,
+    agentTeamPendingSnapshot: pendingTeamSnapshot,
     workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
     workspacePendingMode: null,
     title: planPersistedSessionTitle(
@@ -4707,6 +5163,21 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     childCount: isRecord(childCountRow) ? readNumber(childCountRow.count, "count") : 0,
     createdAt: readString(row.created_at, "created_at"),
     updatedAt: readString(row.updated_at, "updated_at"),
+  };
+}
+
+function summarizeAgentTeamSnapshot(
+  snapshot: LocalConsoleAgentTeamSnapshot | null,
+): import("./local-console/types.js").LocalConsoleAgentTeamSnapshotSummary | null {
+  if (snapshot?.team === undefined) return null;
+  return {
+    team: snapshot.team,
+    members: snapshot.members.map((member) => ({
+      name: member.name,
+      displayName: member.displayName ?? null,
+      description: member.description ?? null,
+    })),
+    loadedAt: snapshot.loadedAt ?? null,
   };
 }
 

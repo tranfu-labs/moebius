@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Agent team snapshot traceability and explicit apply after the change</title>
+  <desc id="desc">The desktop resolves a complete saved team version. Local-console classifies changes, persists effective candidate and pending slots plus an update intent, binds dispatches to snapshot generations, and appends run audit facts. Narrow APIs feed shared console UI menu, update notices, run popover, markdown dialog, and save feedback.</desc>
+  <defs>
+    <style>
+      .bg{fill:#111318}.group{fill:none;stroke:#444c5a;stroke-width:2}.box{fill:#1b1f27;stroke:#596273;stroke-width:2}.good{fill:#173128;stroke:#62b58c;stroke-width:2}.info{fill:#1b293d;stroke:#6395d6;stroke-width:2}.text{fill:#f3f5f7;font:16px system-ui,sans-serif}.label{fill:#f3f5f7;font:600 18px system-ui,sans-serif}.sub{fill:#aeb6c2;font:13px system-ui,sans-serif}.arrow{stroke:#8b95a5;stroke-width:2;fill:none;marker-end:url(#arrow)}.green{stroke:#62b58c;stroke-width:2;fill:none;marker-end:url(#greenArrow)}.blue{stroke:#6395d6;stroke-width:2;fill:none;marker-end:url(#blueArrow)}
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#8b95a5"/></marker>
+    <marker id="greenArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#62b58c"/></marker>
+    <marker id="blueArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#6395d6"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text class="label" x="48" y="44">After · complete versions, durable apply, run-scoped audit</text>
+
+  <rect class="group" x="36" y="70" width="1128" height="150" rx="14"/>
+  <text class="sub" x="56" y="96">desktop-shell · owns disk layout, static profiles and renderer orchestration</text>
+  <rect class="box" x="56" y="118" width="242" height="76" rx="10"/>
+  <text class="text" x="78" y="146">Saved team files</text>
+  <text class="sub" x="78" y="170">only valid persisted content</text>
+  <rect class="good" x="354" y="108" width="330" height="96" rx="10"/>
+  <text class="text" x="376" y="138">Complete version resolver</text>
+  <text class="sub" x="376" y="162">team/source · ordered identities</text>
+  <text class="sub" x="376" y="184">Markdown · CLI/model/effort</text>
+  <rect class="info" x="740" y="108" width="384" height="96" rx="10"/>
+  <text class="text" x="762" y="138">Desktop application layer</text>
+  <text class="sub" x="762" y="162">current request key/revision</text>
+  <text class="sub" x="762" y="184">save feedback from persisted mutations</text>
+  <path class="green" d="M298 156H354"/>
+
+  <rect class="group" x="36" y="246" width="1128" height="314" rx="14"/>
+  <text class="sub" x="56" y="272">local-console · domain decisions, SQLite flow state and JSONL historical truth</text>
+  <rect class="good" x="56" y="298" width="284" height="94" rx="10"/>
+  <text class="text" x="78" y="328">Pure snapshot/update plan</text>
+  <text class="sub" x="78" y="352">canonical key + 3 categories</text>
+  <text class="sub" x="78" y="374">no filesystem / SQLite / renderer</text>
+  <rect class="good" x="398" y="288" width="340" height="114" rx="10"/>
+  <text class="text" x="420" y="318">SQLite session flow</text>
+  <text class="sub" x="420" y="342">effective | candidate | pending</text>
+  <text class="sub" x="420" y="364">update intent: waiting | failed</text>
+  <text class="sub" x="420" y="386">dispatch_snapshot_key</text>
+  <rect class="good" x="796" y="288" width="328" height="114" rx="10"/>
+  <text class="text" x="818" y="318">Snapshot-generation runtime</text>
+  <text class="sub" x="818" y="342">old work and handoffs inherit old key</text>
+  <text class="sub" x="818" y="364">post-click messages await promotion</text>
+  <text class="sub" x="818" y="386">retry same target · cancel old version</text>
+  <path class="green" d="M340 345H398"/>
+  <path class="green" d="M738 345H796"/>
+
+  <rect class="info" x="56" y="438" width="322" height="92" rx="10"/>
+  <text class="text" x="78" y="468">Session JSONL run facts</text>
+  <text class="sub" x="78" y="492">complete historical run context</text>
+  <text class="sub" x="78" y="514">dedicated external-start evidence</text>
+  <rect class="info" x="440" y="438" width="300" height="92" rx="10"/>
+  <text class="text" x="462" y="468">Pure audit projector</text>
+  <text class="sub" x="462" y="492">executed · planned · unknown</text>
+  <text class="sub" x="462" y="514">legacy fields stay missing</text>
+  <rect class="info" x="802" y="438" width="322" height="92" rx="10"/>
+  <text class="text" x="824" y="468">Narrow loopback reads/actions</text>
+  <text class="sub" x="824" y="492">inspect/apply/retry/cancel</text>
+  <text class="sub" x="824" y="514">run info + explicit Markdown</text>
+  <path class="blue" d="M378 484H440"/>
+  <path class="blue" d="M740 484H802"/>
+  <path class="arrow" d="M960 402V436"/>
+  <path class="blue" d="M519 204V286"/>
+
+  <rect class="group" x="36" y="588" width="1128" height="134" rx="14"/>
+  <text class="sub" x="56" y="614">@moebius/console-ui · presentation and user intent only</text>
+  <rect class="good" x="56" y="638" width="244" height="58" rx="10"/>
+  <text class="text" x="78" y="664">Shared rich team option</text>
+  <text class="sub" x="78" y="686">SessionTeamMenu + new chat</text>
+  <rect class="good" x="328" y="638" width="244" height="58" rx="10"/>
+  <text class="text" x="350" y="664">Update notice</text>
+  <text class="sub" x="350" y="686">3 categories + waiting/failure</text>
+  <rect class="good" x="600" y="638" width="244" height="58" rx="10"/>
+  <text class="text" x="622" y="664">Run info + Markdown</text>
+  <text class="sub" x="622" y="686">Avatar · Popover · Dialog</text>
+  <rect class="good" x="872" y="638" width="252" height="58" rx="10"/>
+  <text class="text" x="894" y="664">Save feedback</text>
+  <text class="sub" x="894" y="686">single · partial · list success</text>
+  <path class="blue" d="M932 204V636"/>
+</svg>

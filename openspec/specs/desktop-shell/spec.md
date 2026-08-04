@@ -584,19 +584,32 @@ Source: docs/product/pages/agent-teams.md#软件内置团队
 - **AND** the sidebar entry shows no repair indicator.
 
 ## Requirement: #14 桌面运行名单只来自会话团队
-Source: docs/product/pages/main-conversation.md#操作与反馈
+Source: docs/product/pages/main-conversation.md#选择工作空间与团队
 
-系统 MUST 从会话绑定团队的内容快照解析名单并把主 Agent 排在首位；没有团队绑定的存量会话 MUST 按已登记兼容契约回退共享 agents 目录。系统 MUST NOT 在已绑定团队删除或需要修复时使用共享 agents 顶替，也 MUST NOT 把未绑定存量会话误判为团队已删除。
+The desktop main process MUST inject a resolver that loads one complete valid saved team version for a stable ownership/id binding. The version MUST contain core team identity, stable source disambiguation, ordered member identity and Markdown, and each persisted execution profile. The resolver MUST use recorded user-team locations and built-in locations, MUST reject deleted/needs-repair/invalid teams without falling back to shared agents, and MUST NOT move `teams/` layout or profile-store knowledge into local-console. A legacy session without a team binding MUST continue using the registered shared-agent compatibility resolver and MUST NOT be classified as deleted.
 
-### Scenario: 绑定团队不可解析
-- GIVEN 会话所绑团队已删除或需要修复且共享 agents 目录仍有文件
-- WHEN 桌面壳为该会话解析运行名单
-- THEN 返回可区分的团队错误且没有使用共享目录中的 Agent
+The same resolved version MUST serve new-session capture, explicit team switch and update inspection/application. It MUST exclude renderer drafts and onboarding orchestration.
 
-### Scenario: 未绑定存量会话
-- GIVEN 存量会话没有团队绑定且共享 agents 目录存在可用 Agent
-- WHEN 桌面壳解析名单与团队健康
-- THEN 使用共享目录名单并返回可继续状态
+### Scenario: One resolver supplies a complete version
+
+- GIVEN a usable user team at a relocated recorded path
+- WHEN local-console requests the saved version for creation or update inspection
+- THEN the result contains the recorded core, source identity, ordered members, Markdown and persisted profiles from that path
+- AND it contains no unsaved renderer draft or onboarding relay.
+
+### Scenario: Broken team is not a candidate
+
+- GIVEN the bound team has an unreadable member file
+- WHEN the resolver is called for update inspection
+- THEN it returns the existing needs-repair failure
+- AND no partial roster or candidate version is returned.
+
+### Scenario: Unbound legacy session keeps the compatibility roster
+
+- GIVEN a legacy session has no team ownership/id binding
+- WHEN desktop resolves its runtime roster
+- THEN it uses the registered shared-agent compatibility resolver
+- AND it does not create a team candidate or report team deletion.
 
 ## Requirement: #17 桌面团队健康接通恢复入口
 Source: docs/product/pages/main-conversation.md#三种不可继续状态的共同规则
@@ -1800,3 +1813,59 @@ Desktop renderer orchestration MUST 把目标根会话及分析后代的 active 
 - **THEN** Desktop 先等待 Agent run 与 managed process 全部停止
 - **AND** 再放弃待接回并提交项目移除
 - **AND** managed-process stop 失败时后两步均不发生。
+
+## Team snapshot traceability and apply
+
+### Requirement: Desktop console forwards team-update and run-audit intents through narrow APIs
+
+Source: docs/product/pages/main-conversation.md#团队按钮展开
+Source: docs/product/pages/main-conversation.md#Agent-头像与当时信息
+
+The renderer application layer MUST use the loopback local-console API for update inspection, apply, retry, cancel, run information and historical Markdown. Preload MUST NOT expose filesystem, SQLite or arbitrary team-file reads for these actions. Renderer requests MUST identify only the selected session/run and action; they MUST NOT submit Markdown, profiles, paths or internal snapshot keys.
+
+Late responses MUST be committed only when their session/run request key and revision are current. Parent re-render or callback identity change MUST NOT repeat a mutation, clear a newer result or let an old response replace current state.
+
+#### Scenario: Late inspection belongs to the old session
+
+- GIVEN update inspection for session A is slow
+- WHEN the user switches to session B and B's inspection completes first
+- THEN A's late result does not appear above B's composer
+- AND no apply callback for B is replaced by A's callback.
+
+#### Scenario: Markdown read has no path capability
+
+- GIVEN the user opens a historical Agent Markdown dialog
+- WHEN the renderer calls desktop application APIs
+- THEN the request contains session/run identity only
+- AND preload receives no arbitrary path or file-read capability.
+
+### Requirement: Team mutation feedback reflects only persisted results
+
+Source: docs/product/pages/agent-teams.md#保存后的生效反馈
+
+The desktop application layer MUST derive save feedback from completed team mutations. It MUST distinguish full success, partial success with per-item failures, and a valid external version loaded without an internal draft. It MUST preserve failed drafts and MUST NOT report success for rejected, conflicted, invalid, unreadable or needs-repair state.
+
+A successful mutation MUST be visible to the complete-version resolver without restarting the application. A save-all-and-leave success MUST commit a feedback payload containing the team and saved-item count before navigation; partial failure MUST keep the detail view active.
+
+#### Scenario: Partial save keeps failed draft out of snapshots
+
+- GIVEN two member Markdown drafts and one profile draft are being saved
+- WHEN one Markdown save fails and the other two mutations persist
+- THEN feedback marks only the two persisted items as saved
+- AND the failed draft remains editable
+- AND a subsequent complete team resolve uses the failed member's previous saved file.
+
+#### Scenario: Save all success survives navigation
+
+- GIVEN save-all-and-leave persists three items successfully
+- WHEN the team detail closes
+- THEN the list receives the team identity and count-three success payload
+- AND the payload is not lost during navigation.
+
+#### Scenario: Valid external load is distinct from conflict
+
+- GIVEN no internal draft exists for a member
+- WHEN a valid external change is loaded successfully
+- THEN an external-loaded success payload is emitted without restart
+- WHEN the external content is invalid or conflicts with a draft
+- THEN no success payload is emitted.
