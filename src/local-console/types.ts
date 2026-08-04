@@ -385,6 +385,7 @@ export interface LocalConsoleSessionSummary {
   lastMessageMentionsAgent?: boolean;
   hasPendingControlWork?: boolean;
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;
@@ -438,6 +439,7 @@ export interface LocalConsoleProjectSummary {
   newConversationDisabledReason?: string | null;
   sessions: LocalConsoleSessionSummary[];
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;

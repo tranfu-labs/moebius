@@ -26,6 +26,35 @@ async function runCodexUnexpected(_options: CodexRunOptions): Promise<CodexRunRe
 }
 
 describe("runtime startup catch-up: orphan run reconciliation", () => {
+  it("coalesces concurrent close calls behind managed cleanup", async () => {
+    const root = await makeRoot();
+    const store = await createSqliteLocalConsoleStore({ sqlitePath: path.join(root, ".state", "local-console.sqlite") });
+    let releaseCleanup!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    let cleanupCalls = 0;
+    const runtime = new LocalConsoleRuntime({
+      store,
+      listAgentFiles: async () => [],
+      runCodex: runCodexUnexpected,
+      makeRunDir: (count) => path.join(root, "runs", String(count)),
+      projectRoot: root,
+      workdirRoot: path.join(root, "workdir"),
+      beforeStoreClose: async () => {
+        cleanupCalls += 1;
+        await cleanupGate;
+      },
+    });
+    await runtime.init();
+
+    const first = runtime.close();
+    const second = runtime.close();
+    await Promise.resolve();
+    expect(cleanupCalls).toBe(1);
+    releaseCleanup();
+    await Promise.all([first, second]);
+    expect(cleanupCalls).toBe(1);
+  });
+
   it("重启后遗留的 running 消息被落成 stuck 并释放 cursor", async () => {
     const root = await makeRoot();
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");

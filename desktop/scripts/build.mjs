@@ -41,6 +41,15 @@ await build({
   entryPoints: [path.join(root, "src/main.ts")],
 });
 
+for (const entry of ["managed-process-wrapper", "managed-process-mcp-bridge"]) {
+  await build({
+    ...common,
+    entryPoints: [path.join(root, "..", `src/local-console/${entry}.ts`)],
+    outdir: undefined,
+    outfile: path.join(dist, `${entry}.js`),
+  });
+}
+
 const mainBundle = await fs.readFile(path.join(dist, "main.js"), "utf8");
 assertStaticNodeBundle(mainBundle, "main.js");
 

@@ -44,6 +44,7 @@ export interface CodexRunOptions {
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onThreadStarted?: (threadId: string) => void | Promise<void>;
+  extraEnv?: Readonly<Record<string, string>>;
 }
 
 export type CodexWatchdogKind = "idle" | "tool" | "max-duration";
@@ -302,7 +303,7 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
   const child = spawn("codex", buildCodexArgs(prompt, mode, imagePaths, execOptions), {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
-    env: process.env,
+    env: { ...process.env, ...options.extraEnv },
   });
   let abortReason: string | null = null;
   let timeoutReason: string | null = null;

@@ -54,6 +54,8 @@ import { useConsoleStateActions } from "./use-console-state-actions.js";
 import { useConsoleNavigationScene } from "./use-console-navigation-scene.js";
 import { useConsolePresentation } from "./use-console-presentation.js";
 import { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
+import { useManagedProcesses } from "./use-managed-processes.js";
+import { browserManagedProcessPort } from "./managed-process-client.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -244,6 +246,12 @@ export function OperatorConsoleApp({
     presentationRouteRef, commitPresentationRoute, window.moebius,
     browserSidebarDraftPort, t, browserSidebarMessagePort, clientErrors,
   );
+  const managedProcesses = useManagedProcesses({
+    apiBase,
+    sessionId: selection.sessionId,
+    port: browserManagedProcessPort,
+    openExternalLink: (url) => { void runtimeBridgeBundle.openExternalLink?.(url); },
+  });
 
   const setSidebarOpen = useCallback((open: boolean) => {
     const preference = planSidebarVisibilityPreference(open);
@@ -266,6 +274,7 @@ export function OperatorConsoleApp({
       rightSidebar={rightSidebarBundle}
       sidebarDraftClose={sidebarDraftCloseBundle}
       agentTeams={agentTeamControllersBundle}
+      managedProcesses={managedProcesses}
       actions={actions}
       newConversation={newConversation}
       sessionAnalysisNotice={sessionAnalysisNotice}

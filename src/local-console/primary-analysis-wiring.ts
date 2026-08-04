@@ -2,6 +2,7 @@ import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import { buildConfirmedPlanExecutionPrompt } from "./session-analysis-gate.js";
+import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "./prompt.js";
 import type { LocalPrimaryAnalysisRuntime } from "./primary-analysis-runtime.js";
 import { decideLocalActiveRunTarget, planLocalProviderExecutionOptions } from "./provider-invocation-plan.js";
 import { decidePrimaryResumedSession } from "./primary-runtime-plan.js";
@@ -20,13 +21,14 @@ export function createLocalPrimaryAnalysisPorts(input: {
     updateGate: input.updateGate,
     resumeConfirmed: async ({ run, preparation, confirmedVersion, externalSessionId }) =>
       await input.executionRunner({
-        prompt: buildConfirmedPlanExecutionPrompt(confirmedVersion),
+        prompt: `${buildConfirmedPlanExecutionPrompt(confirmedVersion)}\n\n${MANAGED_PROCESS_RUNTIME_CONTRACT}`,
         runDir: preparation.providerRunDir,
         cwd: preparation.workspace.cwd,
         profile: preparation.executionContext.profile,
         mode: { kind: "resume", externalSessionId },
         signal: preparation.controller.signal,
         workspaceAccess: "read-write",
+        managedProcess: { sessionId: run.sessionId, providerRunId: run.runId },
         ...planLocalProviderExecutionOptions({
           idleTimeoutMs: input.idleTimeoutMs,
           toolTimeoutMs: input.toolTimeoutMs,

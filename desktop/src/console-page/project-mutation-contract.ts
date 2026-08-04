@@ -3,6 +3,13 @@ export interface ProjectDesktopTransport {
   selectFolderForRepair?: (projectId: string) => Promise<string | null>;
 }
 
+export class ProjectMutationRequestError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = "ProjectMutationRequestError";
+  }
+}
+
 export interface ProjectMutationPort {
   showInFolder(transport: ProjectDesktopTransport | undefined, folderPath: string): Promise<void>;
   renameProject(apiBase: string, projectId: string, title: string): Promise<void>;
