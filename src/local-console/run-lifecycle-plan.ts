@@ -165,6 +165,21 @@ export function decideRuntimeShutdownStart(closing: boolean): { kind: "skip" } |
   return closing ? { kind: "skip" } : { kind: "close" };
 }
 
+export function decideRuntimeShutdownAttempt(input: {
+  closed: boolean;
+  attemptPending: boolean;
+}): { kind: "done" } | { kind: "join" } | { kind: "start" } {
+  if (input.closed) return { kind: "done" };
+  return input.attemptPending ? { kind: "join" } : { kind: "start" };
+}
+
+export function decideRuntimeShutdownAttemptRelease(input: {
+  closed: boolean;
+  currentAttempt: boolean;
+}): { kind: "keep" } | { kind: "release" } {
+  return !input.closed && input.currentAttempt ? { kind: "release" } : { kind: "keep" };
+}
+
 export function planGracefulShutdownResume(input: {
   active: ActiveLocalRun;
   intentId: string;

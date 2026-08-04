@@ -229,6 +229,16 @@ export const CODEX_PROVIDER_CONFIG = resolveCodexProviderConfig(LOCAL_CONFIG);
 export const CODEX_MODEL = resolveCodexModel(LOCAL_CONFIG);
 export const CODEX_EXEC_OPTIONS = buildCodexExecOptions(CODEX_PROVIDER_CONFIG, CODEX_MODEL);
 
+export const MANAGED_PROCESS_MAX_ITEMS_PER_SESSION = 8;
+export const MANAGED_PROCESS_MAX_LOG_BYTES = 2 * 1024 * 1024;
+export const MANAGED_PROCESS_MAX_LOG_READ_BYTES = 256 * 1024;
+export const MANAGED_PROCESS_READINESS_INTERVAL_MS = 250;
+export const MANAGED_PROCESS_READINESS_TIMEOUT_MS = 30_000;
+export const MANAGED_PROCESS_READINESS_FAILURE_THRESHOLD = 3;
+export const MANAGED_PROCESS_STOP_GRACE_MS = 5_000;
+export const MANAGED_PROCESS_MCP_PREFLIGHT_TIMEOUT_MS = 5_000;
+export const KIMI_MANAGED_TOOL_SETTLE_TIMEOUT_MS = 15_000;
+
 function buildCodexProviderOptions(config: CodexProviderConfig): string[] {
   const { provider, baseUrl } = config;
   const upper = provider.toUpperCase();

@@ -14,7 +14,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ![file-reading-modes](file-reading-modes.svg)
 
 ### four-layer-production-architecture
-- 职责边界：`src/**`、`desktop/src/**` 与 `packages/console-ui/src/**` 的生产 TS/TSX 文件必须唯一归入 view / application / domain / adapter。domain 是可直接单测的纯闭包；application 编排端口与时序；adapter 承接 fs、SQLite、provider CLI、HTTP/IPC；view 只映射状态到显示。最终机械基线为 534 个生产文件（view 79 / application 171 / domain 183 / adapter 101）、file/dependency debt 0、composition root 9、exact permit 193；新增文件、stale debt、stale permit 与未登记 root 均 fail closed。
+- 职责边界：`src/**`、`desktop/src/**` 与 `packages/console-ui/src/**` 的生产 TS/TSX 文件必须唯一归入 view / application / domain / adapter。domain 是可直接单测的纯闭包；application 编排端口与时序；adapter 承接 fs、SQLite、provider CLI、HTTP/IPC；view 只映射状态到显示。最终机械基线为 554 个生产文件（view 80 / application 176 / domain 190 / adapter 108）、file/dependency debt 0、composition root 9、exact permit 214；新增文件、stale debt、stale permit 与未登记 root 均 fail closed。
 - 入口：`src/testing/four-layer-registry.ts`、`src/testing/four-layer-boundaries.ts`、`scripts/check-import-boundaries.ts`。
 - 上游：完整测试与 scope 测试的 preflight、开发者定向执行；不进入产品运行时。
 - 禁止依赖：生产文件不得零归属或多重归属。[IB:architecture-layer-assignment-total]；四层之间不得出现矩阵未允许且未登记 exact debt 的运行时依赖。[IB:architecture-layer-dependency-matrix]；domain 不得经直接或传递运行时依赖到达 fs、SQLite、child process、provider、Electron、HTTP/IPC adapter。[IB:domain-pure-runtime-closure]；view 不得依赖 application、adapter 或副作用 runtime。[IB:view-no-side-effect-adapters]；application 不得依赖 view，只有 exact composition root 可装配 view。[IB:application-no-view-dependency]；adapter 不得反向调用 application use case。[IB:adapter-no-use-case-reentry]；未列名 application 文件不得同时装配 view 与 concrete adapter，stale root 也不得保留。[IB:composition-root-narrow-allowlist]；application use case 不得超过 300 逻辑行或复杂度 12，也不得在未委托 domain `decide*`/`plan*` 且无 exact transport permit 时保留条件分支。[IB:application-use-case-shape]；adapter 不得保留未归类 codec/transport control 且无 exact external-contract permit 的业务条件。[IB:adapter-boundary-branch-total]；view JSX 不得内联复制领域业务判据。[NI:view-intent-only]（非 import：由组件隔离测试与真实页面验收共同判定）
@@ -40,16 +40,17 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 - 禁止依赖：组件库不得反向 import `src/runner.ts`、`src/local-console/**` 或状态 adapter。[IB:console-ui-no-runtime-internals]；组件库不得调用 Codex adapter 或 child process。[IB:console-ui-no-side-effect-adapters]；组件不得复制业务事实或状态机。[NI:console-ui-no-business-fact-copy]（非 import：由组件隔离测试和 domain 单测对账）
 
 ### local-console
-- 职责边界：本地操作台提供 loopback HTTP、SQLite 可变状态与 JSONL 会话事实；负责项目/会话、团队快照、消息 FIFO、主 Agent/成员接力、provider canonical session、恢复/中断/失败、附件、运行过程和文件引用。`runtime.ts` 仅保留窄 composition root；决策规则在纯 `*plan.ts` / `runtime-domain.ts`，时序在 application runtime，fs/SQLite/provider/HTTP 在 adapter。
+- 职责边界：本地操作台提供 loopback HTTP、SQLite 可变状态与 JSONL 会话事实；负责项目/会话、团队快照、消息 FIFO、主 Agent/成员接力、provider canonical session、恢复/中断/失败、附件、运行过程、文件引用，以及当前应用生命周期内的会话级托管进程。托管进程由单轮 stdio MCP bridge 进入 supervisor，再由认证 launchd ownership job 持有；注册表不进入会话事实，重启只精确清理而不恢复或重放命令。`runtime.ts` 仅保留窄 composition root；决策规则在纯 `*plan.ts` / `runtime-domain.ts`，时序在 application runtime，fs/SQLite/provider/HTTP/launchd 在 adapter。
 - 入口：`src/runner.ts` → `src/local-console/start.ts`、`src/local-console/server.ts`、`src/local-console/runtime.ts`；Desktop main 直接调用同一 start API。
 - 上游：终端 local CLI、Electron main、local acceptance 与单元测试。
-- 禁止依赖：`control-dispatch.ts` 不得经直接或运行时传递依赖到达文件系统、SQLite、provider 或 execution driver adapter。[IB:local-control-planner-pure-closure]；`run-invocation-plan.ts` 不得经直接或运行时传递依赖到达文件系统、SQLite、provider 或 execution driver adapter。[IB:local-invocation-planner-pure-closure]；本地 child orchestration 只允许映射为 local child session，不得产生 GitHub issue、comment、reaction 或 state 写入。[NI:local-console-local-only]（非 import：需由真实进程树、网络边界与历史数据不变验收共同判定）；legacy GitHub 表只读保留，不得在 local 启动时迁移、清空或重写。[NI:local-console-legacy-state-nondestructive]（非 import：需对启动前后文件哈希和逐表行数）
+- 禁止依赖：`control-dispatch.ts` 不得经直接或运行时传递依赖到达文件系统、SQLite、provider 或 execution driver adapter。[IB:local-control-planner-pure-closure]；`run-invocation-plan.ts` 不得经直接或运行时传递依赖到达文件系统、SQLite、provider 或 execution driver adapter。[IB:local-invocation-planner-pure-closure]；本地 child orchestration 只允许映射为 local child session，不得产生 GitHub issue、comment、reaction 或 state 写入。[NI:local-console-local-only]（非 import：需由真实进程树、网络边界与历史数据不变验收共同判定）；托管进程不得退化为 shell 后台化、direct child、裸 PID/PGID reconciliation 或正文 JSON 协议，非 Darwin target spawn 必须为零。[NI:managed-process-owned-lifecycle]（非 import：由 argv 数据流、launchd 证据和进程树验收）；legacy GitHub 表只读保留，不得在 local 启动时迁移、清空或重写。[NI:local-console-legacy-state-nondestructive]（非 import：需对启动前后文件哈希和逐表行数）
 
 ![local-console-primary-agent-closeout](local-console-primary-agent-closeout.svg)
 ![local-console-primary-control-lanes](local-console-primary-control-lanes.svg)
 ![local-console-recovery-resume](local-console-recovery-resume.svg)
 ![local-runtime-decisions-and-import-boundaries](local-runtime-decisions-and-import-boundaries.svg)
 ![local-runtime-supervision](local-runtime-supervision.svg)
+![managed-process-runtime](managed-process-runtime.svg)
 
 ### local-entry
 - 职责边界：`src/runner.ts` 现在只是兼容包脚本的 local CLI shell：校验参数、启动 local server、打印地址并在 SIGINT/SIGTERM 时关闭。`--github-mode` 是已退役参数，必须在 server 启动前给出可读错误。

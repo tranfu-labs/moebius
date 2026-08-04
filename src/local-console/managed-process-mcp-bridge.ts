@@ -1,0 +1,162 @@
+import net from "node:net";
+import { watch, type FSWatcher } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+
+const socketPath = process.argv[2];
+const capabilityPath = process.argv[3];
+const token = process.env.MOEBIUS_MANAGED_PROCESS_CAPABILITY
+  ?? (capabilityPath === undefined ? undefined : await readFile(capabilityPath, "utf8").catch(() => undefined));
+if (socketPath === undefined || token === undefined) {
+  process.stderr.write("Managed process bridge requires a socket and capability.\n");
+  process.exitCode = 1;
+} else {
+  startBridge(socketPath, token, capabilityPath);
+}
+
+const emptySchema = { type: "object", additionalProperties: false, properties: {} };
+const idSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: { id: { type: "string" } },
+  required: ["id"],
+};
+const startSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    kind: { enum: ["service", "watcher", "task"] },
+    label: { type: "string" },
+    executable: { type: "string" },
+    args: { type: "array", items: { type: "string" } },
+    cwd: { type: "string" },
+    readiness: { oneOf: [
+      { type: "object", additionalProperties: false, properties: { type: { const: "none" } }, required: ["type"] },
+      { type: "object", additionalProperties: false, properties: { type: { const: "tcp" }, host: { enum: ["127.0.0.1", "localhost"] }, port: { type: "integer", minimum: 1, maximum: 65535 } }, required: ["type", "host", "port"] },
+      { type: "object", additionalProperties: false, properties: { type: { const: "http" }, url: { type: "string" } }, required: ["type", "url"] },
+      { type: "object", additionalProperties: false, properties: { type: { const: "stdout-pattern" }, pattern: { type: "string" } }, required: ["type", "pattern"] },
+    ] },
+    endpoint: { type: "object", additionalProperties: false, properties: { url: { type: "string" } }, required: ["url"] },
+  },
+  required: ["kind", "label", "executable", "args", "cwd"],
+};
+const tools = [
+  { name: "managed_process_start", description: "Start a supervised long-running service, watcher, or task without a shell.", inputSchema: startSchema },
+  { name: "managed_process_list", description: "List managed processes for this conversation.", inputSchema: emptySchema },
+  { name: "managed_process_inspect", description: "Inspect one managed process.", inputSchema: idSchema },
+  { name: "managed_process_read_logs", description: "Read bounded stdout and stderr for one managed process.", inputSchema: idSchema },
+  { name: "managed_process_stop", description: "Stop one managed process and its complete launchd-owned process group.", inputSchema: idSchema },
+] as const;
+
+function startBridge(supervisorSocket: string, capability: string, watchedCapabilityPath: string | undefined): void {
+  let buffer = "";
+  let inFlight = 0;
+  let shutdownRequested = false;
+  let capabilityWatcher: FSWatcher | null = null;
+  const finishIfIdle = (): void => {
+    if (!shutdownRequested || inFlight > 0) return;
+    capabilityWatcher?.close();
+    capabilityWatcher = null;
+    process.stdout.write("", () => process.exit(0));
+  };
+  const requestShutdown = (): void => {
+    shutdownRequested = true;
+    process.stdin.pause();
+    finishIfIdle();
+  };
+  const dispatch = (message: { id?: unknown; method?: unknown; params?: unknown }): void => {
+    inFlight += 1;
+    void handle(message, supervisorSocket, capability).finally(() => {
+      inFlight -= 1;
+      finishIfIdle();
+    });
+  };
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    for (;;) {
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) break;
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line === "") continue;
+      try {
+        dispatch(JSON.parse(line) as { id?: unknown; method?: unknown; params?: unknown });
+      } catch {
+        send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      }
+    }
+  });
+  process.stdin.once("end", requestShutdown);
+  process.stdin.once("close", requestShutdown);
+  process.stdin.once("error", requestShutdown);
+  if (watchedCapabilityPath !== undefined) {
+    try {
+      capabilityWatcher = watch(watchedCapabilityPath, requestShutdown);
+      void access(watchedCapabilityPath).catch(requestShutdown);
+    } catch {
+      requestShutdown();
+    }
+  }
+}
+
+async function handle(message: { id?: unknown; method?: unknown; params?: unknown }, socketPath: string, capability: string): Promise<void> {
+  if (message.method === "notifications/initialized") return;
+  if (message.method === "initialize") {
+    send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "moebius-managed-process", version: "1" } } });
+    return;
+  }
+  if (message.method === "ping") { send({ jsonrpc: "2.0", id: message.id, result: {} }); return; }
+  if (message.method === "tools/list") { send({ jsonrpc: "2.0", id: message.id, result: { tools } }); return; }
+  if (message.method === "tools/call") {
+    const params = message.params as { name?: unknown; arguments?: unknown } | undefined;
+    const method = toolMethod(params?.name);
+    try {
+      const result = await supervisorCall(socketPath, capability, method, params?.arguments ?? {});
+      send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false } });
+      await reportCompletion(socketPath, capability, message.id, "completed");
+    } catch (error) {
+      send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: safeMessage(error) }], isError: true } });
+      await reportCompletion(socketPath, capability, message.id, "failed").catch(() => undefined);
+    }
+    return;
+  }
+  if (message.id !== undefined) send({ jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } });
+}
+
+async function reportCompletion(socketPath: string, capability: string, id: unknown, completionKind: "completed" | "failed"): Promise<void> {
+  const toolCallId = typeof id === "string" || typeof id === "number" ? String(id) : "unknown";
+  await supervisorCall(socketPath, capability, "report_completion", { toolCallId, completionKind });
+}
+
+function toolMethod(name: unknown): string {
+  const mapping: Record<string, string> = {
+    managed_process_start: "start",
+    managed_process_list: "list",
+    managed_process_inspect: "inspect",
+    managed_process_read_logs: "read_logs",
+    managed_process_stop: "stop",
+  };
+  if (typeof name !== "string" || mapping[name] === undefined) throw new Error("Unknown managed process tool.");
+  return mapping[name];
+}
+
+async function supervisorCall(socketPath: string, capability: string, method: string, params: unknown): Promise<unknown> {
+  return await new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    let response = "";
+    socket.once("connect", () => socket.write(`${JSON.stringify({ token: capability, method, params })}\n`));
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => { response += chunk; });
+    socket.once("end", () => {
+      try {
+        const parsed = JSON.parse(response.trim()) as { result?: unknown; error?: { message?: string } };
+        if (parsed.error !== undefined) reject(new Error(parsed.error.message ?? "Managed process operation failed."));
+        else resolve(parsed.result);
+      } catch (error) { reject(error); }
+    });
+    socket.once("error", reject);
+  });
+}
+
+function send(value: unknown): void { process.stdout.write(`${JSON.stringify(value)}\n`); }
+function safeMessage(error: unknown): string { return error instanceof Error ? error.message : "Managed process operation failed."; }

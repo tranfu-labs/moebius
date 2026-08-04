@@ -3155,6 +3155,58 @@ describe("OperatorConsole", () => {
     await waitFor(() => expect(onRemoveProject).toHaveBeenCalledWith("local", true));
   });
 
+  it("uses managed work only for archive and removal guards, not Agent running presentation", async () => {
+    const onArchiveSession = vi.fn();
+    const onRemoveProject = vi.fn().mockResolvedValue(undefined);
+    const managedSession = {
+      ...sessions[1]!,
+      status: "idle" as const,
+      unresolvedSystemEventKind: null,
+      errorCount: 0,
+      managedRunningCount: 1,
+    };
+    renderConsole({
+      project: {
+        ...project,
+        sessions: [managedSession],
+        runningCount: 0,
+        managedRunningCount: 1,
+      },
+      selectedSessionId: managedSession.sessionId,
+      selectedSession: managedSession,
+      onArchiveSession,
+      onRemoveProject,
+    });
+
+    const sessionRow = screen.getByRole("button", { name: managedSession.title });
+    expect(sessionRow).toHaveAttribute("data-status-dot", "none");
+    fireEvent.contextMenu(sessionRow);
+    expect(await screen.findByRole("menuitem", { name: "归档" })).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await openProjectMenu("moebius");
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除项目" }));
+    expect(screen.getByRole("dialog", { name: "项目中仍有 Agent 正在运行" })).toBeVisible();
+  });
+
+  it("recovers a stale idle project snapshot through the managed-process removal conflict", async () => {
+    const conflict = Object.assign(new Error("项目仍有运行项"), { code: "managed-process-running" });
+    const onRemoveProject = vi.fn()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce(undefined);
+    renderConsole({ project: { ...project, runningCount: 0 }, onRemoveProject });
+
+    await openProjectMenu("moebius");
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除项目" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "项目中仍有 Agent 正在运行" })).toBeVisible());
+    expect(onRemoveProject).toHaveBeenCalledWith("local", false);
+
+    fireEvent.click(screen.getByRole("button", { name: "强制中止并继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "中止并移除" }));
+    await waitFor(() => expect(onRemoveProject).toHaveBeenCalledWith("local", true));
+  });
+
   it("keeps history readable while blocking work and confirms folder repair with both paths", async () => {
     const onSelectSession = vi.fn();
     const onSend = vi.fn();

@@ -89,7 +89,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly workerProviderRuntime: LocalWorkerProviderRuntime;
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
 
-  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length; }
+  getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length + (this.options.getManagedProcessRunningCount?.() ?? 0); }
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;
@@ -115,7 +115,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.storePorts = new LocalConsoleStorePorts(options.store, this.storeTimeoutMs);
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
       dataRoot: options.dataRoot ?? options.projectRoot,
-      runCodex: options.runCodex,
+      runCodex: options.runCodex, createManagedProcessMcp: options.createManagedProcessMcp,
     });
     const adapters = createLocalRuntimeAdapters({
       options,

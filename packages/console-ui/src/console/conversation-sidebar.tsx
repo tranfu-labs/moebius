@@ -38,6 +38,7 @@ export interface ConversationSidebarSession extends StatusDotFacts {
   readStateRevision?: number;
   manualUnreadAt?: string | null;
   hasUnacknowledgedAttention?: boolean;
+  hasManagedProcesses?: boolean;
   branchName?: string | null;
   branchUnavailable?: boolean;
   summary?: string;
@@ -773,7 +774,9 @@ function SessionRow({
   const accessibleName = [session.title, status === "none" ? null : t(statusLabelKey[status])]
     .filter((part): part is string => part !== null)
     .join("，");
-  const archiveDisabledReason = session.isRunning ? t("console.conversationSidebar.archiveRunning") : null;
+  const archiveDisabledReason = session.isRunning || session.hasManagedProcesses === true
+    ? t("console.conversationSidebar.archiveRunning")
+    : null;
   const hasMenu = onAnalyzeConversation !== undefined
     || onArchiveSession !== undefined
     || onCopySessionLogPath !== undefined

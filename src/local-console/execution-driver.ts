@@ -1,4 +1,5 @@
 import {
+  CODEX_EXEC_OPTIONS,
   CODEX_PROVIDER_CONFIG,
   buildCodexExecOptionsForRuntimeProfile,
 } from "../config.js";
@@ -13,6 +14,22 @@ import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
+
+export interface ManagedProcessMcpInvocation {
+  command: string;
+  args: readonly string[];
+  env: Readonly<Record<string, string>>;
+  preflight?(): Promise<void>;
+  onToolCompletion?(listener: (event: ManagedProcessToolCompletion) => void): () => void;
+  close(): void | Promise<void>;
+}
+
+export interface ManagedProcessToolCompletion {
+  providerRunId: string;
+  toolCallId: string;
+  completionKind: "completed" | "failed";
+  completedAt: string;
+}
 
 export type LocalExecutionEngine = "codex" | "claude" | "kimi";
 export type LocalExecutionMode =
@@ -31,6 +48,7 @@ export interface LocalExecutionRunOptions {
   toolTimeoutMs?: number;
   maxDurationMs?: number;
   workspaceAccess?: "read-write" | "read-only";
+  managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
@@ -54,6 +72,11 @@ export function createLocalExecutionRunner(input: {
   runCodex?: (options: CodexRunOptions) => Promise<CodexRunResult>;
   runClaude?: (options: ClaudeRunOptions) => Promise<CodexRunResult>;
   runKimi?: (options: KimiAcpRunOptions) => Promise<CodexRunResult>;
+  createManagedProcessMcp?: (input: {
+    sessionId: string;
+    providerRunId: string;
+    workspaceRoot: string;
+  }) => ManagedProcessMcpInvocation | Promise<ManagedProcessMcpInvocation>;
 } = {}): LocalExecutionRunner {
   const codex = input.runCodex ?? runCodex;
   const claude = input.runClaude ?? runClaude;
@@ -68,6 +91,14 @@ export function createLocalExecutionRunner(input: {
   const claudeReportsProcessStart = input.runClaude === undefined;
   const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
+    const managedMcp = options.managedProcess === undefined || input.createManagedProcessMcp === undefined
+      ? null
+      : await input.createManagedProcessMcp({
+          ...options.managedProcess,
+          workspaceRoot: options.cwd,
+        });
+    try {
+    await managedMcp?.preflight?.();
     const engine = options.profile?.cli ?? "codex";
     let observedExternalSessionId: string | null = null;
     let traceReadyExternalSessionId: string | null = null;
@@ -167,6 +198,7 @@ export function createLocalExecutionRunner(input: {
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
+        mcpServer: managedMcp,
         onSessionStarted: async (sessionId) => observeSessionAndTrace("claude", sessionId),
       });
       return await finishProviderRun("claude", result);
@@ -196,6 +228,7 @@ export function createLocalExecutionRunner(input: {
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
+        mcpServer: managedMcp,
         onSessionStarted: async (sessionId) => observeSession("kimi", sessionId),
         onExecutionTraceReady: async (sessionId) =>
           markExecutionTraceReady("kimi", sessionId),
@@ -208,7 +241,7 @@ export function createLocalExecutionRunner(input: {
       await options.onProcessStarted?.();
     }
     const configuredExecOptions = profile === null
-      ? undefined
+      ? (managedMcp === null ? undefined : CODEX_EXEC_OPTIONS)
       : buildCodexExecOptionsForRuntimeProfile(
           CODEX_PROVIDER_CONFIG,
           profile.model,
@@ -222,7 +255,7 @@ export function createLocalExecutionRunner(input: {
         ? { kind: "resume", threadId: options.mode.externalSessionId }
         : { kind: "full" },
       execOptions: withCodexSandbox(
-        configuredExecOptions,
+        withCodexManagedProcessMcp(configuredExecOptions, managedMcp),
         options.workspaceAccess === "read-only" ? "read-only" : null,
       ),
       signal: options.signal,
@@ -237,7 +270,39 @@ export function createLocalExecutionRunner(input: {
       onThreadStarted: async (threadId) => observeSessionAndTrace("codex", threadId),
     });
     return await finishProviderRun("codex", result);
+    } finally {
+      await managedMcp?.close();
+    }
   };
+}
+
+export function withCodexManagedProcessMcp(
+  options: readonly string[] | undefined,
+  mcp: ManagedProcessMcpInvocation | null,
+): string[] | undefined {
+  if (mcp === null) return options === undefined ? undefined : [...options];
+  return [
+    ...(options ?? []),
+    "-c", `mcp_servers.moebius_managed.command=${JSON.stringify(mcp.command)}`,
+    "-c", `mcp_servers.moebius_managed.args=${JSON.stringify(mcp.args)}`,
+    "-c", `mcp_servers.moebius_managed.env=${tomlInlineStringMap(mcp.env)}`,
+    "-c", "mcp_servers.moebius_managed.required=true",
+    "-c", `mcp_servers.moebius_managed.enabled_tools=${JSON.stringify([
+      "managed_process_start",
+      "managed_process_list",
+      "managed_process_inspect",
+      "managed_process_read_logs",
+      "managed_process_stop",
+    ])}`,
+    "-c", "mcp_servers.moebius_managed.default_tools_approval_mode=\"approve\"",
+  ];
+}
+
+function tomlInlineStringMap(values: Readonly<Record<string, string>>): string {
+  const entries = Object.entries(values)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${JSON.stringify(name)} = ${JSON.stringify(value)}`);
+  return `{ ${entries.join(", ")} }`;
 }
 
 export function withCodexSandbox(

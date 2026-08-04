@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">托管运行项改造前架构</title>
+  <desc id="desc">Moebius 启动 Provider CLI 并观察结构化过程，Provider 的终端工具自行启动子进程。后台化后进程脱离所有权，操作台没有注册表、健康状态和停止通道。</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#eef2f7" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0 0L10 4L0 8Z" fill="#64748b"/>
+    </marker>
+    <marker id="dangerArrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0 0L10 4L0 8Z" fill="#dc2626"/>
+    </marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700;letter-spacing:-.3px}
+      .eyebrow{font-size:13px;font-weight:700;letter-spacing:1.4px;fill:#5e6ad2}
+      .section{font-size:17px;font-weight:700}
+      .label{font-size:15px;font-weight:650}
+      .body{font-size:13px;fill:#526074}
+      .small{font-size:12px;fill:#64748b}
+      .danger{fill:#b91c1c}
+      .box{fill:#fff;stroke:#d8e0ec;stroke-width:1.5}
+      .provider{fill:#f8f7ff;stroke:#c9c5f7;stroke-width:1.5}
+      .dangerBox{fill:#fff7f7;stroke:#f1a9a9;stroke-width:1.5}
+      .mutedBox{fill:#f8fafc;stroke:#d8e0ec;stroke-width:1.5}
+      .flow{fill:none;stroke:#64748b;stroke-width:2;marker-end:url(#arrow)}
+      .broken{fill:none;stroke:#dc2626;stroke-width:2;stroke-dasharray:7 6;marker-end:url(#dangerArrow)}
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="#fbfcfe"/>
+  <rect width="1400" height="900" fill="url(#grid)" opacity=".72"/>
+  <text x="64" y="52" class="eyebrow">BEFORE · CURRENT OWNERSHIP GAP</text>
+  <text x="64" y="88" class="title">Provider 能启动后台进程，Moebius 只能观察命令</text>
+  <text x="64" y="116" class="body">基线：docs/architecture/module-map.md · local-runtime-supervision.svg · desktop-auto-update-and-shutdown.svg</text>
+
+  <rect x="64" y="160" width="1272" height="124" rx="18" class="box"/>
+  <rect x="84" y="182" width="48" height="48" rx="14" fill="#eef0ff"/>
+  <path d="M98 205h20M108 195v20" stroke="#5e6ad2" stroke-width="2.2" stroke-linecap="round"/>
+  <text x="154" y="201" class="section">Moebius local console + Electron</text>
+  <text x="154" y="227" class="body">拥有会话、Agent run、Provider canonical session、退出协调与过程记录</text>
+  <text x="154" y="251" class="small">能看到 command_execution / tool events，但没有目标 PID、PGID、readiness、endpoint 或跨回合 registry</text>
+  <rect x="1034" y="190" width="270" height="64" rx="14" class="mutedBox"/>
+  <text x="1169" y="216" text-anchor="middle" class="label">主会话顶栏</text>
+  <text x="1169" y="238" text-anchor="middle" class="small">分析面板 · 右侧栏；无运行项入口</text>
+
+  <path d="M700 284V334" class="flow"/>
+  <text x="720" y="313" class="small">spawn Provider CLI</text>
+
+  <rect x="64" y="344" width="1272" height="250" rx="18" fill="#fff" stroke="#d8e0ec" stroke-width="1.5"/>
+  <text x="90" y="378" class="section">Provider adapters 与原生终端工具</text>
+
+  <g transform="translate(92 408)">
+    <rect width="344" height="142" rx="16" class="provider"/>
+    <circle cx="38" cy="38" r="18" fill="#5e6ad2"/>
+    <text x="38" y="43" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">C</text>
+    <text x="68" y="35" class="label">Codex CLI</text>
+    <text x="68" y="58" class="small">exec / command_execution</text>
+    <rect x="22" y="82" width="300" height="40" rx="10" fill="#fff" stroke="#d8d5f6"/>
+    <text x="172" y="107" text-anchor="middle" class="body">shell command 可自行 &amp; / fork</text>
+  </g>
+  <g transform="translate(528 408)">
+    <rect width="344" height="142" rx="16" class="provider"/>
+    <circle cx="38" cy="38" r="18" fill="#7c6ee6"/>
+    <text x="38" y="43" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">A</text>
+    <text x="68" y="35" class="label">Claude Code</text>
+    <text x="68" y="58" class="small">Bash / tool_use</text>
+    <rect x="22" y="82" width="300" height="40" rx="10" fill="#fff" stroke="#d8d5f6"/>
+    <text x="172" y="107" text-anchor="middle" class="body">后台 Bash 由 CLI 自己维护</text>
+  </g>
+  <g transform="translate(964 408)">
+    <rect width="344" height="142" rx="16" class="provider"/>
+    <circle cx="38" cy="38" r="18" fill="#0891b2"/>
+    <text x="38" y="43" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">K</text>
+    <text x="68" y="35" class="label">Kimi ACP</text>
+    <text x="68" y="58" class="small">terminal tool / session update</text>
+    <rect x="22" y="82" width="300" height="40" rx="10" fill="#fff" stroke="#d8d5f6"/>
+    <text x="172" y="107" text-anchor="middle" class="body">mcpServers 当前为空</text>
+  </g>
+
+  <path d="M264 550V642" class="broken"/>
+  <path d="M700 550V642" class="broken"/>
+  <path d="M1136 550V642" class="broken"/>
+  <text x="720" y="626" class="danger small">后台化后句柄留在 Provider 或脱离到 PID 1</text>
+
+  <rect x="64" y="650" width="1272" height="166" rx="18" class="dangerBox"/>
+  <text x="90" y="684" class="section danger">未受托管的本地进程</text>
+  <g transform="translate(92 710)">
+    <rect width="360" height="72" rx="14" fill="#fff" stroke="#f1b7b7"/>
+    <text x="24" y="31" class="label">Storybook / Vite / Flask</text>
+    <text x="24" y="53" class="small">链接可能仍在，也可能已经失效</text>
+  </g>
+  <g transform="translate(520 710)">
+    <rect width="360" height="72" rx="14" fill="#fff" stroke="#f1b7b7"/>
+    <text x="24" y="31" class="label">Python worker / watcher</text>
+    <text x="24" y="53" class="small">没有 URL，更无法从正文反推健康</text>
+  </g>
+  <g transform="translate(948 710)">
+    <rect width="360" height="72" rx="14" fill="#fff" stroke="#f1b7b7"/>
+    <text x="24" y="31" class="label">退出与崩溃</text>
+    <text x="24" y="53" class="small">Moebius 无法精确停止、清理或恢复</text>
+  </g>
+
+  <rect x="64" y="844" width="1272" height="2" fill="#e4e9f1"/>
+  <text x="64" y="872" class="small">核心缺口：观察发生在命令执行之后；事后无法追回最终进程树所有权。</text>
+</svg>

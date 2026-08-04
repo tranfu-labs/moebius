@@ -75,6 +75,7 @@ import {
 } from "@/console/conversation-layout";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
+import { ManagedProcessPanel, type ManagedProcessPanelController } from "@/console/managed-process-panel";
 import type { WorkspaceFileContent } from "@/console/file-diff-view";
 import {
   FileReferenceTab,
@@ -239,6 +240,7 @@ export interface OperatorSession {
     recoveryAction: "repair-project" | "select-team" | "repair-or-select-team" | null;
   };
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;
@@ -266,6 +268,7 @@ export interface OperatorProject {
   newConversationDisabledReason?: string | null;
   sessions: OperatorSession[];
   runningCount: number;
+  managedRunningCount?: number;
   waitingCount: number;
   stuckCount: number;
   errorCount: number;
@@ -427,6 +430,7 @@ export interface OperatorConsoleProps {
   selectedSession: OperatorSession | null;
   conversationNotice?: ReactNode;
   analysisPanel?: OperatorAnalysisPanelController;
+  managedProcesses?: ManagedProcessPanelController;
   messages: OperatorMessage[];
   initialReadingMessageId?: number | null;
   messageNavigationRequest?: OperatorMessageNavigationRequest | null;
@@ -637,6 +641,7 @@ export function OperatorConsole({
   selectedSession,
   conversationNotice,
   analysisPanel,
+  managedProcesses,
   messages,
   initialReadingMessageId = null,
   messageNavigationRequest = null,
@@ -974,6 +979,7 @@ export function OperatorConsole({
     ? "split"
     : "overlay";
   const analysisPanelReservesSpace = analysisPanel?.open === true && analysisPanelLayout === "split";
+  const hasManagedProcesses = (managedProcesses?.state.items.length ?? 0) > 0;
   const analysisPanelId = selectedSession === null
     ? "conversation-analysis-panel"
     : `conversation-analysis-panel-${encodeURIComponent(selectedSession.sessionId)}`;
@@ -1779,7 +1785,7 @@ export function OperatorConsole({
               return;
             }
             setProjectActionError(null);
-            if (target.runningCount > 0) {
+            if (target.runningCount > 0 || (target.managedRunningCount ?? 0) > 0) {
               setRunningRemovalTarget(target);
             } else {
               setRemovalRequest({ project: target, force: false });
@@ -1911,10 +1917,11 @@ export function OperatorConsole({
               <PanelLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             </button>
           ) : null}
+          {hasManagedProcesses && managedProcesses ? <ManagedProcessPanel controller={managedProcesses} t={t} /> : null}
           {analysisPanel && selectedSession ? (
             <button
               type="button"
-              className="window-no-drag z-20 ml-auto flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className={cn("window-no-drag z-20 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
               aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               aria-expanded={analysisPanel.open}
@@ -1928,7 +1935,7 @@ export function OperatorConsole({
             type="button"
             className={cn(
               "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink",
-              analysisPanel && selectedSession ? "ml-1" : "ml-auto",
+              (analysisPanel && selectedSession) || hasManagedProcesses ? "ml-1" : "ml-auto",
             )}
             aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
             title={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
@@ -2173,6 +2180,7 @@ export function OperatorConsole({
                     >
                       {selectedSession.title}
                     </h1>
+                    {embeddedConversation && hasManagedProcesses && managedProcesses ? <ManagedProcessPanel controller={managedProcesses} t={t} /> : null}
                     {embeddedConversation && analysisPanel ? (
                       <button
                         type="button"
@@ -2854,6 +2862,7 @@ export function OperatorConsole({
                 onRemoveProject,
                 setProjectActionError,
                 setRemovalRequest,
+                setRunningRemovalTarget,
               );
               if (removalRequest.project.projectId === activeProjectId) {
                 routeToConversation(remove);
@@ -3047,6 +3056,7 @@ async function submitProjectRemoval(
   onRemoveProject: OperatorConsoleProps["onRemoveProject"],
   setError: (error: string | null) => void,
   close: (value: { project: OperatorProject; force: boolean } | null) => void,
+  showRunningWarning: (project: OperatorProject | null) => void,
 ): Promise<void> {
   if (!onRemoveProject) {
     return;
@@ -3056,8 +3066,21 @@ async function submitProjectRemoval(
     await onRemoveProject(request.project.projectId, request.force);
     close(null);
   } catch (error) {
+    if (!request.force && isManagedProcessRunningConflict(error)) {
+      setError(null);
+      close(null);
+      showRunningWarning(request.project);
+      return;
+    }
     setError(error instanceof Error ? error.message : String(error));
   }
+}
+
+function isManagedProcessRunningConflict(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "managed-process-running";
 }
 
 async function submitProjectFolderRepair(
@@ -3589,6 +3612,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
       branchUnavailable: session.workspaceUnavailableReason != null,
       unreadSince: session.unreadSince,
       isRunning: session.status === "running" || session.runningCount > 0 || session.hasPendingControlWork === true,
+      hasManagedProcesses: (session.managedRunningCount ?? 0) > 0,
       hasPendingControlWork: session.hasPendingControlWork ?? false,
       unresolvedSystemEventKind: session.unresolvedSystemEventKind === "run-not-started"
         || session.unresolvedSystemEventKind === "run-stuck"

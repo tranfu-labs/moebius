@@ -62,6 +62,7 @@ export function createLocalWorkerProviderPorts(input: {
         imagePaths: preparation.preparedAttachments.imagePaths,
       }),
       workspaceAccess: preparation.invocationPlan.workspaceAccess,
+      managedProcess: { sessionId: preparation.activeRun.sessionId, providerRunId: preparation.activeRun.runId },
       ...callbacks,
     }),
     onVisibleAgentMarkdown: (workerInput, text) => {
