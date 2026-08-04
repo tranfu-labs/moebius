@@ -145,7 +145,7 @@ export function RightSidebar({
     <aside
       className={cn(
         "relative flex min-w-0 shrink-0 flex-col border-l border-line bg-canvas",
-        narrow && "absolute inset-0 z-40 w-full border-l-0",
+        narrow && "absolute inset-y-0 right-0 z-50 w-[min(420px,92vw)] max-w-full",
         className,
       )}
       style={narrow ? undefined : { width: `${width}px` }}
@@ -220,6 +220,7 @@ export function RightSidebar({
                   className="flex min-w-0 items-center gap-1.5"
                   role="tab"
                   aria-selected={activeTab?.id === tab.id}
+                  tabIndex={activeTab?.id === tab.id ? 0 : -1}
                   data-tab-id={tab.id}
                   aria-label={accessibleTitle}
                   title={accessibleTitle}
@@ -236,6 +237,27 @@ export function RightSidebar({
                     }
                   }}
                   onClick={() => onStateChange(selectRightSidebarTab(state, tab.id))}
+                  onKeyDown={(event) => {
+                    const currentIndex = state.tabs.findIndex((candidate) => candidate.id === tab.id);
+                    if (currentIndex < 0) return;
+                    let nextIndex: number | null = null;
+                    if (event.key === "ArrowRight") {
+                      nextIndex = (currentIndex + 1) % state.tabs.length;
+                    } else if (event.key === "ArrowLeft") {
+                      nextIndex = (currentIndex - 1 + state.tabs.length) % state.tabs.length;
+                    } else if (event.key === "Home") {
+                      nextIndex = 0;
+                    } else if (event.key === "End") {
+                      nextIndex = state.tabs.length - 1;
+                    }
+                    if (nextIndex === null) return;
+                    event.preventDefault();
+                    const nextTab = state.tabs[nextIndex];
+                    if (nextTab === undefined) return;
+                    focusedTabIdRef.current = nextTab.id;
+                    onStateChange(selectRightSidebarTab(state, nextTab.id));
+                    window.requestAnimationFrame(() => tabButtonRefs.current.get(nextTab.id)?.focus());
+                  }}
                 >
                   <TabIcon type={tab.type} />
                   <span className="min-w-0">

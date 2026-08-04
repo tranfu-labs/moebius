@@ -327,10 +327,15 @@ describe("OperatorConsole", () => {
     renderConsole({ projectListState: "loading" });
 
     expect(screen.getByLabelText("项目正在加载")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "正在准备工作空间" })).toBeVisible();
+    expect(screen.getByText("正在读取项目与最近对话，请稍候。")).toBeVisible();
     expect(screen.getByRole("button", { name: "新建对话" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "搜索" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Agent 团队" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "设置" })).toBeEnabled();
+    const skipLink = screen.getByRole("link", { name: "跳到主内容" });
+    fireEvent.click(skipLink);
+    expect(screen.getByTestId("operator-main")).toHaveFocus();
   });
 
   it("shows project load failure with retry while Agent teams and Settings stay available", () => {
@@ -1109,7 +1114,7 @@ describe("OperatorConsole", () => {
     firePointer(resizeHandle, "pointerup", { pointerId: 7, button: 0, clientX: 1_000 });
   });
 
-  it("auto-collapses only for a narrow window and restores from the explicit user preference", () => {
+  it("auto-collapses into a focus-managed narrow drawer without changing the wide preference", async () => {
     setWindowWidth(NARROW_WINDOW_WIDTH_PX + 100);
     const onSidebarOpenChange = vi.fn();
     const { rerender } = renderConsole({ sidebarOpen: true, onSidebarOpenChange });
@@ -1120,6 +1125,19 @@ describe("OperatorConsole", () => {
     setWindowWidth(NARROW_WINDOW_WIDTH_PX - 1);
     expect(sidebar).not.toBeVisible();
     expect(main).toHaveAttribute("data-sidebar-auto-collapsed", "true");
+    expect(onSidebarOpenChange).not.toHaveBeenCalled();
+
+    const openButton = screen.getByRole("button", { name: "打开侧边栏" });
+    fireEvent.click(openButton);
+    expect(sidebar).toBeVisible();
+    expect(sidebar).toHaveClass("absolute", "z-50");
+    expect(sidebar).not.toHaveStyle({ width: `${DEFAULT_SIDEBAR_WIDTH_PX}px` });
+    expect(screen.getByTestId("operator-drawer-scrim")).toBeVisible();
+    expect(screen.queryByRole("separator", { name: "调整侧边栏宽度" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "关闭侧边栏" })).toHaveFocus());
+    fireEvent.click(screen.getByTestId("operator-drawer-scrim"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "打开侧边栏" })).toHaveFocus());
+    expect(sidebar).not.toBeVisible();
     expect(onSidebarOpenChange).not.toHaveBeenCalled();
 
     setWindowWidth(NARROW_WINDOW_WIDTH_PX + 100);
@@ -2705,9 +2723,12 @@ describe("OperatorConsole", () => {
 
     setWindowWidth(700);
     expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-layout", "overlay");
+    expect(screen.getByTestId("right-sidebar")).toHaveClass("right-0", "z-50", "w-[min(420px,92vw)]");
+    expect(screen.getByTestId("operator-drawer-scrim")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "关闭右侧栏并回到会话区" }));
     expect(onCloseSubSession).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(timeline.scrollTop).toBe(240));
+    await waitFor(() => expect(screen.getByRole("button", { name: "显示右侧栏" })).toHaveFocus());
   });
 
   it("follows new content only at the bottom and offers an explicit return after upward reading", () => {

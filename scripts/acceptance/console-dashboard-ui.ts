@@ -218,6 +218,7 @@ const referenceScreenshot = path.join(outputRoot, "dashboard-reference.png");
 const wideScreenshot = path.join(outputRoot, "dashboard-wide.png");
 const narrowScreenshot = path.join(outputRoot, "dashboard-narrow.png");
 const rightSidebarScreenshot = path.join(outputRoot, "dashboard-right-sidebar.png");
+const drawerScreenshot = path.join(outputRoot, "dashboard-narrow-drawer.png");
 
 await Promise.all([
   fs.mkdir(fixtureProjectRoot, { recursive: true }),
@@ -597,6 +598,39 @@ try {
   const shortWindowGeometry = await collectShortWindowGeometry(page);
   assertShortWindowGeometry(shortWindowGeometry);
 
+  await setWindowSize(application, 700, 600);
+  const narrowMainBeforeDrawer = await box(page.getByTestId("operator-main"));
+  const openSidebarButton = page.getByRole("button", { name: "打开侧边栏" });
+  await openSidebarButton.waitFor();
+  await openSidebarButton.click();
+  const narrowSidebar = page.getByTestId("operator-sidebar");
+  await narrowSidebar.waitFor({ state: "visible" });
+  const narrowMainWithDrawer = await box(page.getByTestId("operator-main"));
+  const drawerScrim = page.getByTestId("operator-drawer-scrim");
+  const narrowDrawerEvidence = {
+    sidebar: await box(narrowSidebar),
+    mainBefore: narrowMainBeforeDrawer,
+    mainWithDrawer: narrowMainWithDrawer,
+    scrimVisible: await drawerScrim.isVisible(),
+    resizeHandleCount: await page.getByTestId("sidebar-resize-handle").count(),
+  };
+  assert(narrowDrawerEvidence.sidebar.width <= 320, "narrow left drawer exceeded its supported width");
+  assertClose(
+    narrowDrawerEvidence.mainWithDrawer.width,
+    narrowDrawerEvidence.mainBefore.width,
+    1,
+    "narrow left drawer changed the main content width",
+  );
+  assert(narrowDrawerEvidence.scrimVisible, "narrow left drawer did not render its dismissal scrim");
+  assert(narrowDrawerEvidence.resizeHandleCount === 0, "narrow left drawer exposed the split resize handle");
+  await page.screenshot({ path: drawerScreenshot, fullPage: true });
+  await drawerScrim.click({ position: { x: 650, y: 300 } });
+  await narrowSidebar.waitFor({ state: "hidden" });
+  const drawerFocusReturned = await page.getByRole("button", { name: "打开侧边栏" }).evaluate(
+    (element) => element === document.activeElement,
+  );
+  assert(drawerFocusReturned, "closing the narrow left drawer did not return focus to its trigger");
+
   await setWindowSize(application, 1_400, 900);
   const mainStopEvidence = await exerciseMainStop(page);
   const outputButton = page.getByRole("button", { name: "完整输出" }).last();
@@ -619,7 +653,8 @@ try {
     "right-sidebar layout introduced root horizontal overflow",
   );
   await page.screenshot({ path: rightSidebarScreenshot, fullPage: true });
-
+  await page.getByRole("button", { name: "隐藏右侧栏" }).click();
+  await rightSidebar.waitFor({ state: "hidden" });
   await selectSession(page, success.sessionId);
   const exposedSentence = "Send a direct message before handoff.";
   await page.getByText(exposedSentence, { exact: true }).waitFor();
@@ -670,7 +705,7 @@ try {
     visibleReference: await tmpReference.textContent(),
     canonicalPath: await tmpTab.getByTestId("file-reference-path").textContent(),
     reason: await tmpReason.textContent(),
-    targetLineCount: await tmpTab.getByTestId("file-reference-target-line").count(),
+    targetLineCount: await tmpTab.getByTestId("file-source-target-line").count(),
   };
   assert(tmpDirectoryEvidence.visibleReference === "/tmp", "/tmp was not preserved as a file reference");
   assert(tmpDirectoryEvidence.targetLineCount === 0, "/tmp directory rendered file content");
@@ -680,8 +715,21 @@ try {
   await reportReference.click();
   const reportTab = page.getByTestId("file-reference-tab");
   await reportTab.waitFor();
-  const reportTargetLine = reportTab.getByTestId("file-reference-target-line");
-  await reportTargetLine.waitFor();
+  const reportTargetLine = reportTab.getByTestId("file-source-target-line");
+  try {
+    await reportTargetLine.waitFor({ timeout: 10_000 });
+  } catch {
+    throw new Error(`file reference target line unavailable: ${JSON.stringify({
+      activeTabs: await page.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => ({
+        name: tab.getAttribute("aria-label"),
+        selected: tab.getAttribute("aria-selected"),
+      }))),
+      reportTabText: await reportTab.textContent(),
+      reportTabScope: await reportTab.getAttribute("data-file-scope"),
+      currentSessionId: await page.locator("[data-testid='conversation-sidebar-session'][aria-current='page']")
+        .getAttribute("data-session-id"),
+    })}`);
+  }
   const reportTargetLocation = reportTab.getByText("目标位置：第 2 行，第 3 列", { exact: true });
   await reportTargetLocation.waitFor();
   const reportCanonicalPath = await reportTab.getByTestId("file-reference-path").textContent();
@@ -689,7 +737,7 @@ try {
     visibleReference: await reportReference.textContent(),
     canonicalPath: reportCanonicalPath,
     targetLocation: await reportTargetLocation.textContent(),
-    targetLineNumber: await reportTargetLine.getAttribute("data-target-line"),
+    targetLineLocation: await reportTargetLine.getAttribute("aria-current"),
     targetLineText: await reportTargetLine.textContent(),
   };
   assert(
@@ -701,7 +749,7 @@ try {
     "right sidebar did not show the canonical path for the /tmp file",
   );
   assert(
-    reportReferenceEvidence.targetLineNumber === "true"
+    reportReferenceEvidence.targetLineLocation === "location"
       && reportReferenceEvidence.targetLineText?.includes("真实 Electron 目标行") === true,
     "right sidebar did not highlight line 2 from the /tmp text file",
   );
@@ -712,7 +760,7 @@ try {
   await binaryReason.waitFor();
   const binaryGuardEvidence = {
     reason: await binaryReason.textContent(),
-    targetLineCount: await page.getByTestId("file-reference-target-line").count(),
+    targetLineCount: await page.getByTestId("file-source-target-line").count(),
     leakedContentCount: await page.getByText(/Moebius.*secret/u).count(),
   };
   assert(binaryGuardEvidence.targetLineCount === 0, "binary file rendered a target line");
@@ -724,7 +772,7 @@ try {
   await longLineReason.waitFor();
   const longLineGuardEvidence = {
     reason: await longLineReason.textContent(),
-    targetLineCount: await page.getByTestId("file-reference-target-line").count(),
+    targetLineCount: await page.getByTestId("file-source-target-line").count(),
   };
   assert(longLineGuardEvidence.targetLineCount === 0, "overlong line rendered file content");
 
@@ -814,6 +862,27 @@ try {
     }
   });
 
+  await selectSession(page, live.sessionId);
+  const finalRightSidebar = page.getByTestId("right-sidebar");
+  await finalRightSidebar.waitFor();
+  await finalRightSidebar.getByRole("button", { name: "新建空白标签" }).click();
+  const newConversationType = finalRightSidebar
+    .getByTestId("right-sidebar-content")
+    .getByRole("button", { name: /新会话/u });
+  await newConversationType.waitFor();
+  await newConversationType.click();
+  await finalRightSidebar.getByTestId("new-conversation-column").waitFor();
+  await finalRightSidebar.getByTestId("main-role-composer").waitFor();
+  const rightSidebarNewConversationEvidence = {
+    tabVisible: await finalRightSidebar.getByRole("tab", { name: "新会话" }).isVisible(),
+    composerVisible: await finalRightSidebar.getByTestId("main-role-composer").isVisible(),
+    nestedRightSidebarCount: await page.getByTestId("right-sidebar").count(),
+  };
+  assert(rightSidebarNewConversationEvidence.tabVisible, "right sidebar did not preserve the New conversation tab type");
+  assert(rightSidebarNewConversationEvidence.composerVisible, "right sidebar New conversation did not render its production composer");
+  assert(rightSidebarNewConversationEvidence.nestedRightSidebarCount === 1, "right sidebar New conversation created a nested sidebar");
+  await page.screenshot({ path: rightSidebarScreenshot, fullPage: true });
+
   const evidence = {
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -889,9 +958,15 @@ try {
         passed: true,
         geometry: shortWindowGeometry,
       },
+      narrowDrawer: {
+        passed: true,
+        ...narrowDrawerEvidence,
+        focusReturned: drawerFocusReturned,
+      },
       excludedRightSidebar: {
         passed: true,
         ...rightSidebarEvidence,
+        newConversation: rightSidebarNewConversationEvidence,
       },
       localFileReferences: {
         passed: true,
@@ -928,6 +1003,7 @@ try {
       referenceScreenshot,
       wideScreenshot,
       narrowScreenshot,
+      drawerScreenshot,
       rightSidebarScreenshot,
     },
     hold,
@@ -936,7 +1012,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     evidence: evidencePath,
-    screenshots: [referenceScreenshot, wideScreenshot, narrowScreenshot, rightSidebarScreenshot],
+    screenshots: [referenceScreenshot, wideScreenshot, narrowScreenshot, drawerScreenshot, rightSidebarScreenshot],
     hold,
   })}\n`);
 

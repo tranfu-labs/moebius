@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "@/i18n";
@@ -120,6 +120,31 @@ describe("RightSidebar", () => {
 
     expect(screen.getByRole("tab", { name: "分析运行耗时" })).toHaveFocus();
     expect(onFocusTabHandled).toHaveBeenCalledWith("conversation");
+  });
+
+  it("uses roving focus and standard arrow-key navigation across tabs", async () => {
+    const onStateChange = vi.fn();
+    renderSidebar({
+      state: {
+        tabs: [
+          { id: "conversation", type: "conversation", title: "新会话", sourceKey: "conversation:new", closable: true },
+          { id: "files", type: "project-files", title: "builtin:project-files", sourceKey: null, closable: true },
+        ],
+        activeTabId: "conversation",
+      },
+      onStateChange,
+    });
+
+    const conversationTab = screen.getByRole("tab", { name: "新会话" });
+    const filesTab = screen.getByRole("tab", { name: "项目文件" });
+    expect(conversationTab).toHaveAttribute("tabindex", "0");
+    expect(filesTab).toHaveAttribute("tabindex", "-1");
+
+    conversationTab.focus();
+    fireEvent.keyDown(conversationTab, { key: "ArrowRight" });
+
+    expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({ activeTabId: "files" }));
+    await waitFor(() => expect(filesTab).toHaveFocus());
   });
 
   it("gives same-title and updating tabs visible discriminators with matching accessible names", () => {

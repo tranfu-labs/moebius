@@ -182,5 +182,6 @@ export function resolveDefaultOnboardingTeamKey(
     team.ownership === "system" && team.canCreateConversation);
   return builtIn.find((team) => team.id === "development")?.teamKey
     ?? builtIn[0]?.teamKey
+    ?? teams.find((team) => team.ownership === "user" && team.canCreateConversation)?.teamKey
     ?? null;
 }

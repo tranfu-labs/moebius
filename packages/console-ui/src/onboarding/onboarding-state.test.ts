@@ -83,6 +83,29 @@ describe("onboarding shell state", () => {
     ])).toBe("system:development");
   });
 
+  it("falls back through other built-in and user teams before leaving selection empty", () => {
+    const otherBuiltIn = {
+      ...builtInDevelopmentTeam,
+      teamKey: "system:research",
+      id: "research",
+    };
+    const userTeam = {
+      ...builtInDevelopmentTeam,
+      teamKey: "user:custom",
+      id: "custom",
+      ownership: "user" as const,
+    };
+    expect(resolveDefaultOnboardingTeamKey([
+      { ...builtInDevelopmentTeam, canCreateConversation: false },
+      otherBuiltIn,
+      userTeam,
+    ])).toBe(otherBuiltIn.teamKey);
+    expect(resolveDefaultOnboardingTeamKey([userTeam])).toBe(userTeam.teamKey);
+    expect(resolveDefaultOnboardingTeamKey([
+      { ...userTeam, canCreateConversation: false },
+    ])).toBeNull();
+  });
+
   it("allows Codex-only, Kimi-only, and dual readiness but blocks dual failure", () => {
     const missing = { status: "missing" as const, revision: 1 };
     const ready = { status: "ready" as const, revision: 1 };

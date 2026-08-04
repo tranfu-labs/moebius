@@ -1,5 +1,3 @@
-import { Braces } from "lucide-react";
-
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -11,14 +9,17 @@ export interface ConversationEmptyStateProps {
 export function ConversationEmptyState({ projectName, className }: ConversationEmptyStateProps): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className={cn("grid min-h-full place-items-center pb-12 text-center", className)}>
-      <div>
-        <span className="mx-auto mb-5 flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-line-strong text-hint">
-          <Braces className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-        </span>
-        <h1 className="font-display text-[26px] font-medium leading-9 tracking-[-0.025em] text-ink">
+    <div className={cn("grid min-h-full place-items-center px-6 pb-12 text-center", className)}>
+      <div className="max-w-xl">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-hint">
+          {t("console.emptyState.eyebrow")}
+        </p>
+        <h1 className="font-display text-[28px] font-medium leading-9 tracking-[-0.025em] text-ink">
           {t("console.emptyState.promptBefore")} <span className="font-semibold">{projectName}</span> {t("console.emptyState.promptAfter")}
         </h1>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-sub">
+          {t("console.emptyState.description")}
+        </p>
       </div>
     </div>
   );
