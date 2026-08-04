@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { waitForCondition } from "../../src/testing/wait.js";
-import type { DesktopApi } from "../src/console-page/desktop-api-contract.js";
+import type { DesktopApi, DesktopStatusSnapshot } from "../src/console-page/desktop-api-contract.js";
 import { useDesktopRuntimeBridge } from "../src/console-page/use-desktop-runtime-bridge.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -64,6 +64,30 @@ describe("desktop runtime bridge", () => {
     await waitFor(() => latest.clientError === "link failed");
     expect(currentApi.startOnboardingClaudeUpdate).toHaveBeenCalledOnce();
     expect(currentApi.openExternalLink).toHaveBeenCalledWith("https://example.com");
+  });
+
+  it("uses status updates for the local API URL without promoting status errors to console errors", async () => {
+    let publishStatus: ((snapshot: DesktopStatusSnapshot) => void) | null = null;
+    const api: DesktopApi = {
+      onStatus(listener) {
+        publishStatus = listener;
+        return () => { publishStatus = null; };
+      },
+    };
+    await render(api, vi.fn(async () => ({ models: [], providers: [] }) as never));
+
+    await act(async () => {
+      publishStatus?.({
+        localConsole: {
+          status: "error",
+          url: "http://127.0.0.1:43123",
+          error: "stale local console failure",
+        },
+      });
+    });
+
+    await waitFor(() => latest.apiBase === "http://127.0.0.1:43123");
+    expect(latest.clientError).toBeNull();
   });
 
   async function render(

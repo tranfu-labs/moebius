@@ -341,7 +341,7 @@ describe("desktop App sidebar conversation regressions", () => {
     expectSelectedMainConversation("source-b", "来源会话 B");
   });
 
-  it("fails closed with accessible feedback when the composer owner no longer matches selection", async () => {
+  it("fails closed without resurrecting the retired global error bar when the composer owner mismatches", async () => {
     sessions = [
       createSession("source-a", "来源会话 A"),
       createSession("source-b", "来源会话 B"),
@@ -390,8 +390,8 @@ describe("desktop App sidebar conversation regressions", () => {
     expect(host.querySelector('[aria-label*="owner-a.txt"]')).not.toBeNull();
 
     await act(async () => operatorConsoleHarness.onSend?.());
-    await waitFor(() => host.querySelector('[role="alert"]') !== null);
-    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).not.toBe("");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).not.toContain("操作台遇到问题");
     expect(composer.value).toBe("属于 A 的正文");
     expect(host.querySelector('[aria-label*="owner-a.txt"]')).not.toBeNull();
     expect(window.localStorage.getItem("draft:source-a")).toBe("属于 A 的正文");

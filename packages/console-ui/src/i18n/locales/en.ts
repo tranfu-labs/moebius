@@ -271,7 +271,7 @@ export const en = {
   "console.agentTeams.loadFailed": "Agent teams could not be loaded",
   "console.agentTeams.loadFailedDescription": "The team data was not cleared. Try again later.",
   "console.agentTeams.configurationError": "Application configuration error",
-  "console.agentTeams.configurationErrorDescription": "The built-in Agent teams could not be read. Try again; if the problem continues, open diagnostics for help.",
+  "console.agentTeams.configurationErrorDescription": "The built-in Agent teams could not be read. Try again; if the problem continues, check the application configuration.",
   "console.agentTeams.registrationConflictTitle": "The official General Assistant cannot be added yet",
   "console.agentTeams.registrationStableIdentityConflict": "An existing user team conflicts with the system identity reserved for General Assistant.",
   "console.agentTeams.registrationDirectoryConflict": "Other files already occupy the planned General Assistant location.",

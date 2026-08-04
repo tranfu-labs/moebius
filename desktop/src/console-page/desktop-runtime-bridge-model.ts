@@ -37,12 +37,6 @@ export function planDesktopError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function planDesktopStatusUpdate(snapshot: DesktopStatusSnapshot): {
-  apiBase: string | null;
-  error: string | null;
-} {
-  return {
-    apiBase: snapshot.localConsole?.url ?? null,
-    error: snapshot.localConsole?.error ?? null,
-  };
+export function planDesktopStatusUpdate(snapshot: DesktopStatusSnapshot): string | null {
+  return snapshot.localConsole?.url ?? null;
 }

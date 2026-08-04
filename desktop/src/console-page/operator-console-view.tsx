@@ -81,11 +81,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
     ? ""
     : props.sessions.subSessionComposerValues[activeSubSessionId]
       ?? props.conversationDraftStore.read(sessionDraftKey(activeSubSessionId));
-  const lastError = conversationTransition.transitionError
-    ?? runtime.clientError
-    ?? runtime.statusError
-    ?? state?.lastError
-    ?? null;
   const renderSidebarConversation = () => (
     <SidebarConversationView
       activeDraft={activeSidebarDraft}
@@ -188,7 +183,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       composerAttachments={props.attachments.main.attachments}
       composerSubmissionBlockReason={conversationTransition.submissionBlockText}
       sqlitePath={props.presentation.sqlitePath}
-      lastError={lastError}
       projectListState={props.presentation.projectListState}
       agentTeamsState={props.agentTeams.catalog.state}
       lastUsedAgentTeamKey={props.agentTeams.catalog.lastUsedTeamKey}
@@ -261,7 +255,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onAnalyzeSession={(input) => void props.conversations.analysis.analyze({ kind: "conversation", ...input })}
       onAnalyzeConversation={(input) => void props.conversations.analysis.analyze({ kind: "message", ...input })}
       onEditAndResend={props.conversations.editResend.editAndResend}
-      onOpenDiagnostics={runtime.openDiagnostics}
       onReplayOnboarding={props.onReplayOnboarding}
       onOpenExternalLink={runtime.openExternalLink}
       onOpenConversationReference={analysisNavigation.openReference}

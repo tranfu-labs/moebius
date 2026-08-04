@@ -27,7 +27,6 @@ export function useDesktopRuntimeBridge(
     useState<ExecutionRegistryState>({ status: "loading" });
   const [executionRegistryReload, setExecutionRegistryReload] = useState(0);
   const [attachmentCapability, setAttachmentCapability] = useState<string | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
   const clientErrors = useConsoleErrorState();
   const shellActions = useDesktopShellActions(api, t, clientErrors.controller);
 
@@ -78,9 +77,8 @@ export function useDesktopRuntimeBridge(
   }, [api, apiBase]);
 
   useEffect(() => api?.onStatus?.((snapshot) => {
-    const update = planDesktopStatusUpdate(snapshot);
-    if (update.apiBase !== null) setApiBase(update.apiBase);
-    if (update.error !== null) setStatusError(update.error);
+    const apiBaseFromStatus = planDesktopStatusUpdate(snapshot);
+    if (apiBaseFromStatus !== null) setApiBase(apiBaseFromStatus);
   }), [api]);
 
   const reloadExecutionRegistry = useCallback(() => setExecutionRegistryReload((value) => value + 1), []);
@@ -89,10 +87,9 @@ export function useDesktopRuntimeBridge(
     executionRegistryState,
     reloadExecutionRegistry,
     attachmentCapability,
-    statusError,
     clientError: clientErrors.visibleMessage,
     clientErrors: clientErrors.controller,
     ...shellActions,
   }), [apiBase, attachmentCapability, executionRegistryState, reloadExecutionRegistry,
-    clientErrors, shellActions, statusError]);
+    clientErrors, shellActions]);
 }

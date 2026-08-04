@@ -13,11 +13,6 @@ export function useDesktopShellActions(
   t: Translate,
   errors: ConsoleErrorController,
 ) {
-  const openDiagnostics = useMemo(() => {
-    const availability = planDesktopActionAvailability(api?.openStatusPage !== undefined);
-    if (availability === "unavailable") return undefined;
-    return () => { void api?.openStatusPage?.(); };
-  }, [api]);
   const updateClaude = useCallback(() => {
     const availability = planDesktopActionAvailability(api?.startOnboardingClaudeUpdate !== undefined);
     if (availability === "unavailable") {
@@ -40,8 +35,7 @@ export function useDesktopShellActions(
     };
   }, [api, errors]);
   return useMemo(() => ({
-    openDiagnostics,
     updateClaude,
     openExternalLink,
-  }), [openDiagnostics, openExternalLink, updateClaude]);
+  }), [openExternalLink, updateClaude]);
 }

@@ -452,7 +452,6 @@ export interface OperatorConsoleProps {
   composerAttachments?: readonly ComposerAttachment[];
   composerSubmissionBlockReason?: string | null;
   sqlitePath?: string;
-  lastError?: string | null;
   projectListState?: OperatorProjectListState;
   agentTeamsState?: OperatorAgentTeamsState;
   lastUsedAgentTeamKey?: string | null;
@@ -557,7 +556,6 @@ export interface OperatorConsoleProps {
   }) => void;
   onUpdateClaude?: () => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
-  onOpenDiagnostics?: () => void;
   onReplayOnboarding?: () => void;
   onOpenExternalLink?: (url: string) => void;
   onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
@@ -660,7 +658,6 @@ export function OperatorConsole({
   composerValue,
   composerAttachments = [],
   composerSubmissionBlockReason = null,
-  lastError,
   projectListState = "ready",
   agentTeamsState = { status: "loading" },
   lastUsedAgentTeamKey = null,
@@ -739,7 +736,6 @@ export function OperatorConsole({
   onAnalyzeConversation,
   onUpdateClaude,
   onEditAndResend,
-  onOpenDiagnostics,
   onReplayOnboarding,
   onOpenExternalLink,
   onOpenConversationReference,
@@ -1616,7 +1612,6 @@ export function OperatorConsole({
             onAnalyzeConversation={onAnalyzeConversation}
             onUpdateClaude={onUpdateClaude}
             onEditAndResend={onEditAndResend}
-            onOpenDiagnostics={onOpenDiagnostics}
             onOpenExternalLink={onOpenExternalLink}
             onOpenConversationReference={onOpenConversationReference}
             onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
@@ -2292,17 +2287,6 @@ export function OperatorConsole({
                           fileCount: workspaceDiff.fileCount,
                         })}
                       />
-                    ) : null}
-
-                    {lastError ? (
-                      <div role="alert" className="mt-4 flex items-center justify-between gap-3 border-t border-line py-3 text-sm text-danger">
-                        <span>{t("console.operator.consoleError")}</span>
-                        {onOpenDiagnostics ? (
-                          <Button type="button" variant="outline" size="sm" onClick={onOpenDiagnostics}>
-                            {t("console.operator.viewLogs")}
-                          </Button>
-                        ) : null}
-                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -3253,7 +3237,6 @@ function TimelineEntry({
   onAnalyzeConversation,
   onUpdateClaude,
   onEditAndResend,
-  onOpenDiagnostics,
   onOpenExternalLink,
   onOpenConversationReference,
   onOpenFileReference,
@@ -3280,7 +3263,6 @@ function TimelineEntry({
   }) => void;
   onUpdateClaude?: () => void;
   onEditAndResend?: (target: OperatorEditAndResendTarget) => void;
-  onOpenDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
   onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
@@ -3381,7 +3363,6 @@ function TimelineEntry({
                 runId: message.runId,
               })
             : undefined}
-          onOpenDiagnostics={onOpenDiagnostics}
           onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
             kind: "run-output",
             sessionId: message.sessionId,
