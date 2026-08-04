@@ -7,6 +7,7 @@ import {
   decideLocalActiveRunTarget,
   planLocalProviderExecutionOptions,
 } from "./provider-invocation-plan.js";
+import { planProviderProcessStartedFact } from "./run-agent-audit-plan.js";
 
 type PrimaryProviderPorts = ConstructorParameters<typeof LocalPrimaryProviderRuntime>[0];
 
@@ -19,6 +20,7 @@ export function createLocalPrimaryProviderPorts(input: {
     | "recordAgentSessionLink"
     | "recordExecutionSessionLink"
     | "recordCodexThreadLink"
+    | "recordProviderProcessStarted"
   >;
   executionRunner: LocalExecutionRunner;
   activeRuns: LocalActiveRunRegistry;
@@ -62,7 +64,14 @@ export function createLocalPrimaryProviderPorts(input: {
           now: recordedAt,
         }));
     },
-    onProcessStarted: (runId) => input.lifecycle.markStarted(runId),
+    onProcessStarted: async (runId) => {
+      await input.lifecycle.markStarted(runId);
+      const plan = planProviderProcessStartedFact({ active: input.activeRuns.get(runId), runId, startedAt: input.nowIso() });
+      await ({
+        skip: async () => undefined,
+        record: async () => storePorts.recordProviderProcessStarted(plan.fact!),
+      })[plan.kind]();
+    },
     onStructuredActivity: (runId, event) => input.lifecycle.updateStructuredActivity(runId, event),
     onExecutionProgress: (runId, event) => input.lifecycle.updateExecutionProgress(runId, event),
     setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {

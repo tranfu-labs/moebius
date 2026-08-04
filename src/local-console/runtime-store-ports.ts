@@ -3,6 +3,7 @@ import type {
   LocalAgentTimelineCursorFact,
   LocalExecutionSessionLinkFact,
   LocalProviderInvocationFact,
+  LocalProviderProcessStartedFact,
   LocalProviderSessionObservedFact,
   LocalRunExecutionContextFact,
 } from "./execution-context.js";
@@ -86,6 +87,13 @@ export class LocalConsoleStorePorts {
     const record = this.store.recordRunExecutionContext;
     if (record === undefined) return;
     await this.call("local-console-store-record-run-execution-context", () =>
+      record.call(this.store, input));
+  }
+
+  async recordProviderProcessStarted(input: LocalProviderProcessStartedFact): Promise<void> {
+    const record = this.store.recordProviderProcessStarted;
+    if (record === undefined) return;
+    await this.call("local-console-store-record-provider-process-started", () =>
       record.call(this.store, input));
   }
 

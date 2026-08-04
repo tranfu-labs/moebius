@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   planConversationMessageReveal,
   planConversationReadingRestore,
+  planConversationRelayClearance,
 } from "./conversation-layout";
 
 describe("conversation timeline layout decisions", () => {
@@ -31,5 +32,11 @@ describe("conversation timeline layout decisions", () => {
       kind: "follow-latest",
       event: events[2],
     });
+  });
+
+  it("reserves the expanded relay hit area only when it would overlap the message column", () => {
+    expect(planConversationRelayClearance(760, 82)).toBe(106);
+    expect(planConversationRelayClearance(1_200, 82)).toBe(32);
+    expect(planConversationRelayClearance(1_200, 224)).toBe(248);
   });
 });

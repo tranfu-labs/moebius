@@ -65,6 +65,8 @@ describe("dashboard tokens", () => {
     expect(tokens).toContain("--dur: 150ms");
     expect(tokens).toContain("--ease: cubic-bezier(0.25, 0.46, 0.45, 0.94)");
     expect(tokens).toContain("--ease-enter: cubic-bezier(0.165, 0.84, 0.44, 1)");
+    expect(globals).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(globals).toContain("transition-duration: 0s !important");
   });
 
   it("self-hosts Inter Variable without imposing a global focus-visible style", () => {

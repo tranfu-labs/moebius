@@ -6,6 +6,7 @@ import {
   decideLocalActiveRunTarget,
   planLocalProviderExecutionOptions,
 } from "./provider-invocation-plan.js";
+import { planProviderProcessStartedFact } from "./run-agent-audit-plan.js";
 import {
   decideWorkerStopHandling,
 } from "./worker-runtime-plan.js";
@@ -21,6 +22,7 @@ export function createLocalWorkerProviderPorts(input: {
     | "recordAgentSessionLink"
     | "recordExecutionSessionLink"
     | "recordCodexThreadLink"
+    | "recordProviderProcessStarted"
   >;
   executionRunner: LocalExecutionRunner;
   idleTimeoutMs: number | undefined;
@@ -80,7 +82,14 @@ export function createLocalWorkerProviderPorts(input: {
           now: recordedAt,
         }));
     },
-    onProcessStarted: input.onProcessStarted,
+    onProcessStarted: async (runId) => {
+      await input.onProcessStarted(runId);
+      const plan = planProviderProcessStartedFact({ active: input.activeRun(runId), runId, startedAt: input.nowIso() });
+      await ({
+        skip: async () => undefined,
+        record: async () => storePorts.recordProviderProcessStarted(plan.fact!),
+      })[plan.kind]();
+    },
     onStructuredActivity: input.onStructuredActivity,
     onExecutionProgress: input.onExecutionProgress,
     setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {

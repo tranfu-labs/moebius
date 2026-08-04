@@ -9,6 +9,7 @@ import {
   decidePrimaryAttachmentPreparation,
   planPrimaryAgentContents,
 } from "./primary-runtime-plan.js";
+import { decideSessionTeamSnapshotRead } from "./session-team-update-plan.js";
 
 type PrimaryPreparationPorts = ConstructorParameters<typeof LocalPrimaryPreparationRuntime>[0];
 
@@ -58,6 +59,10 @@ export function createLocalPrimaryPreparationPorts(input: {
       }));
       return planPrimaryAgentContents(agents, selected.name, selectedMarkdown, fileMarkdown);
     },
+    loadTeamSnapshot: async (sessionId) => ({
+      empty: async () => null,
+      read: async () => await options.store.listSessionAgentTeamSnapshot!(sessionId),
+    })[decideSessionTeamSnapshotRead(options.store.listSessionAgentTeamSnapshot !== undefined)](),
     concurrentRecoveryWorkspace: input.concurrentRecoveryWorkspace,
     buildAnalysisContract: input.buildAnalysisContract,
     loadRecoverySnapshot: input.loadRecoverySnapshot,

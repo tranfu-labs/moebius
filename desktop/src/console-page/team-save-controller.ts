@@ -17,7 +17,7 @@ export async function saveAllAgentTeamDrafts(input: {
   alreadySavingReason: string;
   saveMember: (memberSlug: string, agentMarkdown: string) => Promise<string>;
   onTransition?: (state: AgentTeamDraftState) => void;
-}): Promise<{ state: AgentTeamDraftState; failures: AgentTeamSaveAllFailure[] }> {
+}): Promise<{ state: AgentTeamDraftState; failures: AgentTeamSaveAllFailure[]; successCount: number }> {
   let state = input.state;
   const failures: AgentTeamSaveAllFailure[] = [];
   const memberSlugs = getDirtyAgentTeamMemberSlugs(state, input.teamKey);
@@ -47,5 +47,5 @@ export async function saveAllAgentTeamDrafts(input: {
     input.onTransition?.(state);
   }
 
-  return { state, failures };
+  return { state, failures, successCount: memberSlugs.length - failures.length };
 }

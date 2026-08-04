@@ -111,7 +111,7 @@ export function useAgentTeamMemberSaving(input: {
   }, [persist]);
   const saveAll = useCallback(async (
     teamKey: string,
-  ): Promise<{ failures: AgentTeamSaveAllFailureView[] }> => {
+  ): Promise<{ failures: AgentTeamSaveAllFailureView[]; successCount: number }> => {
     const runtime = inputRef.current;
     const result = await saveAllAgentTeamDrafts({
       state: runtime.draft.draftsRef.current,
@@ -123,7 +123,7 @@ export function useAgentTeamMemberSaving(input: {
     });
     inputRef.current.draft.commitDrafts(result.state);
     inputRef.current.draft.setSaveAllFailures(result.failures);
-    return { failures: result.failures };
+    return { failures: result.failures, successCount: result.successCount };
   }, [persist]);
   return useMemo(() => ({ saveMember, overwriteExternal, saveAll }), [overwriteExternal, saveAll, saveMember]);
 }

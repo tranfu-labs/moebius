@@ -186,12 +186,86 @@ export type LocalConsoleContinuationStatus =
 
 export interface LocalConsoleAgentTeamSnapshotMember {
   name: string;
+  displayName?: string | null;
+  description?: string | null;
   agentMarkdown: string;
   executionProfile?: LocalConsoleExecutionProfile | null;
 }
 
 export interface LocalConsoleAgentTeamSnapshot {
+  team?: {
+    ownership: LocalConsoleAgentTeamOwnership;
+    id: string;
+    name: string | null;
+    description: string | null;
+    primaryAgentSlug: string | null;
+    officialSourceName?: string | null;
+    createdAt?: string | null;
+  };
   members: LocalConsoleAgentTeamSnapshotMember[];
+  capturedAt?: string | null;
+  loadedAt?: string | null;
+  snapshotKey?: string | null;
+  digests?: LocalConsoleAgentTeamSnapshotDigests;
+}
+
+export interface LocalConsoleAgentTeamSnapshotDigests {
+  agentDefinition: string;
+  executionProfile: string;
+  teamInformation: string;
+}
+
+export interface LocalConsoleAgentTeamSnapshotSummary {
+  team: NonNullable<LocalConsoleAgentTeamSnapshot["team"]>;
+  members: Array<{ name: string; displayName: string | null; description: string | null }>;
+  loadedAt: string | null;
+}
+
+export type LocalConsoleSessionTeamUpdateCategoryKind =
+  | "agent-definition"
+  | "execution-profile"
+  | "team-information";
+
+export interface LocalConsoleSessionTeamUpdateCategory {
+  kind: LocalConsoleSessionTeamUpdateCategoryKind;
+  affectedMemberCount: number;
+}
+
+export interface LocalConsoleSessionTeamUpdateState {
+  status: "idle" | "available" | "waiting" | "failed";
+  categories: LocalConsoleSessionTeamUpdateCategory[];
+  updateToken?: string | null;
+  failure?: { code: string; summary: string } | null;
+}
+
+export interface LocalConsoleSessionTeamUpdateRecord {
+  candidate: LocalConsoleAgentTeamSnapshot | null;
+  pending: LocalConsoleAgentTeamSnapshot | null;
+  intent: {
+    status: "waiting" | "failed";
+    targetSnapshotKey: string;
+    failureCode: string | null;
+    failureSummary: string | null;
+  } | null;
+}
+
+export interface LocalConsoleRunAgentInfo {
+  sessionId: string;
+  runId: string;
+  role: string;
+  agent: {
+    slug: string;
+    displayName: string | null;
+    description: string | null;
+  };
+  team: {
+    name: string | null;
+    ownership: LocalConsoleAgentTeamOwnership | null;
+    sourceName: string | null;
+  };
+  profile: LocalConsoleExecutionProfile | null;
+  loadedAt: string | null;
+  evidence: "executed" | "planned-not-started" | "bound-start-unknown";
 }
 
 export interface LocalConsoleExecutionProfile {
@@ -363,6 +437,8 @@ export interface LocalConsoleSessionSummary {
   continuation?: LocalConsoleContinuationStatus;
   agentTeamPendingOwnership?: LocalConsoleAgentTeamOwnership | null;
   agentTeamPendingId?: string | null;
+  agentTeamSnapshot?: LocalConsoleAgentTeamSnapshotSummary | null;
+  agentTeamPendingSnapshot?: LocalConsoleAgentTeamSnapshotSummary | null;
   analysisRecordAvailable?: boolean;
   workspaceMode: LocalConsoleWorkspaceMode;
   workspacePendingMode: LocalConsoleWorkspaceMode | null;
@@ -606,6 +682,19 @@ export interface LocalConsoleStore {
   }): Promise<LocalConsoleSessionSummary>;
   applyPendingSessionContext(input: { sessionId: string; now: string }): Promise<LocalConsoleSessionSummary>;
   listSessionAgentTeamSnapshot?(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null>;
+  writeSessionAgentTeamCandidate?(input: {
+    sessionId: string;
+    snapshot: LocalConsoleAgentTeamSnapshot | null;
+  }): Promise<void>;
+  readSessionTeamUpdateRecord?(sessionId: string): Promise<LocalConsoleSessionTeamUpdateRecord>;
+  beginSessionTeamUpdate?(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void>;
+  retrySessionTeamUpdate?(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void>;
+  cancelSessionTeamUpdate?(input: { sessionId: string; expectedUpdateToken?: string | null; now: string }): Promise<void>;
+  markSessionTeamUpdateFailed?(input: {
+    sessionId: string;
+    code: string;
+    summary: string;
+  }): Promise<void>;
   recordProjectWorkspaceStatus(input: {
     projectId: string;
     cwd: string;
@@ -819,6 +908,11 @@ export interface LocalConsoleStore {
     contextFingerprint?: string | null;
   }): Promise<void>;
   recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
+  recordProviderProcessStarted?(input: import("./execution-context.js").LocalProviderProcessStartedFact): Promise<void>;
+  readRunAgentAuditSource?(input: { sessionId: string; runId: string }): Promise<{
+    context: import("./execution-context.js").LocalRunExecutionContextFact | null;
+    processStarted: boolean;
+  }>;
   recordExecutionSessionLink?(input: import("./execution-context.js").LocalExecutionSessionLinkFact): Promise<void>;
   recordAgentSessionLink?(input: import("./execution-context.js").LocalAgentSessionLinkFact): Promise<void>;
   recordProviderSessionObserved?(input: import("./execution-context.js").LocalProviderSessionObservedFact): Promise<void>;

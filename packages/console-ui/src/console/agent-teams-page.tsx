@@ -9,13 +9,14 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   TeamBuilderView,
   type TeamBuilderViewState,
 } from "@/ai-team-builder/team-builder-view";
 import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentTeamSaveFeedback, type AgentTeamSaveFeedbackView } from "@/console/agent-team-save-feedback";
 import {
   AgentTeamDetail,
   type AgentExecutionProfile,
@@ -193,7 +194,7 @@ export function AgentTeamsPage({
   onRetryMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAll?: (teamKey: string) => void;
-  onSaveAll?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
+  onSaveAll?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[]; successCount?: number }>;
   onSaveExecutionProfile?: (
     teamKey: string,
     memberSlug: string,
@@ -232,6 +233,11 @@ export function AgentTeamsPage({
   const [mutationKey, setMutationKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [registrationRecoveryPending, setRegistrationRecoveryPending] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<AgentTeamSaveFeedbackView | null>(null);
+  const reloadedExternalMembersRef = useRef<{ teamKey: string | null; members: Set<string> }>({
+    teamKey: null,
+    members: new Set(),
+  });
   const contentView = view.kind === "information-dialog" ? view.returnView : view;
   const openedTeamKey = contentView.kind === "team-detail" ? contentView.teamKey : null;
   const openedTeam = state.status === "ready"
@@ -246,11 +252,34 @@ export function AgentTeamsPage({
     (member) => member.slug === openedDetailState?.selectedMemberSlug,
   );
 
+  useEffect(() => {
+    if (openedTeam === undefined || openedDetailState === null) {
+      reloadedExternalMembersRef.current = { teamKey: null, members: new Set() };
+      return;
+    }
+    const current = new Set(Object.values(openedDetailState.memberEditors)
+      .filter((editor) => editor?.externalChangeStatus === "reloaded")
+      .map((editor) => editor!.memberSlug));
+    const previous = reloadedExternalMembersRef.current.teamKey === openedTeam.teamKey
+      ? reloadedExternalMembersRef.current.members
+      : new Set<string>();
+    if ([...current].some((slug) => !previous.has(slug))) {
+      setSaveFeedback({
+        kind: "external-loaded",
+        teamName: teamName(t, openedTeam),
+        savedItemCount: current.size,
+        canApplyToExistingConversation: true,
+      });
+    }
+    reloadedExternalMembersRef.current = { teamKey: openedTeam.teamKey, members: current };
+  }, [openedDetailState, openedTeam, t]);
+
   const openTeam = (teamKey: string) => {
     listScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? 0;
     setDuplicateError(null);
     setFileManagerError(null);
     setActionError(null);
+    setSaveFeedback(null);
     onOpenTeam?.(teamKey);
     setView({ kind: "team-detail", teamKey });
     if (scrollContainerRef.current !== null) {
@@ -341,11 +370,13 @@ export function AgentTeamsPage({
           throw new Error(t("console.agentTeams.duplicateAgentUnavailable"));
         }
         await onDuplicateMember(operation.team.teamKey, operation.member.slug);
+        setSaveFeedback({ kind: "saved", teamName: teamName(t, operation.team), savedItemCount: 1, canApplyToExistingConversation: true });
       } else if (operation.kind === "trash-member") {
         if (onTrashMember === undefined) {
           throw new Error(t("console.agentTeams.deleteAgentUnavailable"));
         }
         await onTrashMember(operation.team.teamKey, operation.member.slug);
+        setSaveFeedback({ kind: "saved", teamName: teamName(t, operation.team), savedItemCount: 1, canApplyToExistingConversation: true });
       } else {
         if (onTrashUserTeam === undefined) {
           throw new Error(t("console.agentTeams.trashTeamUnavailable"));
@@ -441,6 +472,9 @@ export function AgentTeamsPage({
               </div>
             ) : (
               <>
+                {saveFeedback !== null ? (
+                  <div className="mb-4"><AgentTeamSaveFeedback feedback={saveFeedback} /></div>
+                ) : null}
                 {actionError !== null ? (
                   <div className="mb-4 border border-danger/30 bg-danger/5 px-3 py-2.5 text-sm text-danger" role="alert">
                     {actionError}
@@ -570,14 +604,24 @@ export function AgentTeamsPage({
                   ) : undefined}
                   onChangePrimaryAgent={onChangePrimaryAgent === undefined
                     ? undefined
-                    : (memberSlug) => onChangePrimaryAgent(openedTeam.teamKey, memberSlug)}
+                    : async (memberSlug) => {
+                        await onChangePrimaryAgent(openedTeam.teamKey, memberSlug);
+                        setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
+                      }}
                   readOnly={openedTeam.canEditContent === false}
                   onAddMember={openedTeam.canEditContent !== false && onAddMember !== undefined
-                    ? () => onAddMember(openedTeam.teamKey)
+                    ? async () => {
+                        await onAddMember(openedTeam.teamKey);
+                        setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
+                      }
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
-                  onSaveMember={(memberSlug) => onSaveMember?.(openedTeam.teamKey, memberSlug)}
+                  onSaveMember={async (memberSlug) => {
+                    if (onSaveMember === undefined) return;
+                    await onSaveMember(openedTeam.teamKey, memberSlug);
+                    setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
+                  }}
                   onCheckExternalChange={openedTeam.status !== "needs-repair"
                     && onCheckMemberExternalChange !== undefined
                     ? (memberSlug) => onCheckMemberExternalChange(openedTeam.teamKey, memberSlug)
@@ -588,11 +632,21 @@ export function AgentTeamsPage({
                   onRetryLoad={(memberSlug) => onRetryMember?.(openedTeam.teamKey, memberSlug)}
                   onDiscardMember={(memberSlug) => onDiscardMember?.(openedTeam.teamKey, memberSlug)}
                   onDiscardAll={() => onDiscardAll?.(openedTeam.teamKey)}
-                  onSaveAll={() => onSaveAll?.(openedTeam.teamKey) ?? Promise.resolve({ failures: [] })}
+                  onSaveAll={async (profileSuccessCount = 0) => {
+                    const result = await (onSaveAll?.(openedTeam.teamKey) ?? Promise.resolve({ failures: [], successCount: 0 }));
+                    const savedItemCount = profileSuccessCount + (result.successCount ?? 0);
+                    if (savedItemCount > 0) {
+                      setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount, canApplyToExistingConversation: true });
+                    }
+                    return result;
+                  }}
                   onSaveExecutionProfile={onSaveExecutionProfile === undefined
                     ? undefined
-                    : (memberSlug, profile) =>
-                      onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile)}
+                    : async (memberSlug, profile) => {
+                      const result = await onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile);
+                      setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
+                      return result;
+                    }}
                   onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined
                     ? undefined
                     : (memberSlug) => onRestoreRecommendedProfile(openedTeam.teamKey, memberSlug)}
@@ -690,6 +744,7 @@ export function AgentTeamsPage({
                 data-selected-team-key={selectedTeamKey ?? undefined}
                 data-selected-member-slug={selectedMemberSlug ?? undefined}
               >
+                {saveFeedback !== null ? <div className="mb-6"><AgentTeamSaveFeedback feedback={saveFeedback} /></div> : null}
                 {(state.registrationIssues?.length ?? 0) > 0 ? (
                   <div
                     className="mb-6 border border-warning/35 bg-warning/5 p-4"
@@ -811,6 +866,7 @@ export function AgentTeamsPage({
           onCancel={() => setView(view.returnView)}
           onConfirm={async (information) => {
             await onUpdateTeamInformation(view.team.teamKey, information);
+            setSaveFeedback({ kind: "saved", teamName: information.name, savedItemCount: 1, canApplyToExistingConversation: true });
             setView(view.returnView);
           }}
         />

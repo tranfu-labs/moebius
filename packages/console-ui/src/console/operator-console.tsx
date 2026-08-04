@@ -64,6 +64,7 @@ import {
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
 import {
+  deriveConversationRelayLayout,
   projectConversationRelayEvents,
   type ConversationRelayEvent,
 } from "@/console/conversation-relay-rail-model";
@@ -72,6 +73,7 @@ import {
   MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
   planConversationMessageReveal,
   planConversationReadingRestore,
+  planConversationRelayClearance,
 } from "@/console/conversation-layout";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
@@ -106,6 +108,8 @@ import {
 } from "@/console/conversation-sidebar";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
+import { SessionTeamUpdateNotice, type SessionTeamUpdateViewState } from "@/console/session-team-update-notice";
+import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
 import {
   SettingsDialog,
   type LanguageSaveStatus,
@@ -211,6 +215,8 @@ export interface OperatorSession {
   agentTeamHealthReason?: string | null;
   agentTeamPendingOwnership?: "system" | "user" | null;
   agentTeamPendingId?: string | null;
+  agentTeamSnapshot?: OperatorAgentTeamSnapshotSummary | null;
+  agentTeamPendingSnapshot?: OperatorAgentTeamSnapshotSummary | null;
   analysisRecordAvailable?: boolean;
   workspaceMode: "direct" | "worktree";
   workspacePendingMode: "direct" | "worktree" | null;
@@ -246,6 +252,20 @@ export interface OperatorSession {
   childCount?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OperatorAgentTeamSnapshotSummary {
+  team: {
+    ownership: "system" | "user";
+    id: string;
+    name: string | null;
+    description: string | null;
+    primaryAgentSlug: string | null;
+    officialSourceName?: string | null;
+    createdAt?: string | null;
+  };
+  members: Array<{ name: string; displayName: string | null; description: string | null }>;
+  loadedAt: string | null;
 }
 
 export interface OperatorProject {
@@ -454,6 +474,10 @@ export interface OperatorConsoleProps {
   agentTeamsState?: OperatorAgentTeamsState;
   lastUsedAgentTeamKey?: string | null;
   conversationAgentTeamKey?: string | null;
+  sessionTeamUpdate?: SessionTeamUpdateViewState;
+  onApplySessionTeamUpdate?: () => void;
+  onRetrySessionTeamUpdate?: () => void;
+  onCancelSessionTeamUpdate?: () => void;
   selectedAgentTeamKey?: string | null;
   selectedAgentTeamMemberSlug?: string | null;
   agentTeamDetailState?: AgentTeamDetailState | null;
@@ -574,7 +598,7 @@ export interface OperatorConsoleProps {
   onRetryAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onDiscardAllAgentTeamDrafts?: (teamKey: string) => void;
-  onSaveAllAgentTeamDrafts?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[] }>;
+  onSaveAllAgentTeamDrafts?: (teamKey: string) => Promise<{ failures: AgentTeamSaveAllFailureView[]; successCount?: number }>;
   onSaveAgentExecutionProfile?: (
     teamKey: string,
     memberSlug: string,
@@ -619,6 +643,8 @@ export interface OperatorConsoleProps {
   processOutputs?: Readonly<Record<string, OperatorProcessOutputState>>;
   processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
   onLoadProcessInvocation?: (sessionId: string, runId: string) => void;
+  onLoadRunAgentInfo?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<AgentRunInfoView>;
+  onLoadRunAgentMarkdown?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<{ markdown: string }>;
   onRightSidebarOpenChange?: (open: boolean) => void;
   onRightSidebarWidthChange?: (width: number) => void;
   onRightSidebarTabsChange?: (state: RightSidebarTabsState) => void;
@@ -660,6 +686,10 @@ export function OperatorConsole({
   agentTeamsState = { status: "loading" },
   lastUsedAgentTeamKey = null,
   conversationAgentTeamKey = null,
+  sessionTeamUpdate = { status: "idle", categories: [] },
+  onApplySessionTeamUpdate,
+  onRetrySessionTeamUpdate,
+  onCancelSessionTeamUpdate,
   selectedAgentTeamKey,
   selectedAgentTeamMemberSlug,
   agentTeamDetailState,
@@ -790,6 +820,8 @@ export function OperatorConsole({
   processOutputs = {},
   processInvocationStates = {},
   onLoadProcessInvocation,
+  onLoadRunAgentInfo,
+  onLoadRunAgentMarkdown,
   onRightSidebarOpenChange,
   onRightSidebarWidthChange,
   onRightSidebarTabsChange,
@@ -963,10 +995,15 @@ export function OperatorConsole({
   const sidebarProjects = visibleProjects.map((item) => toSidebarProject(item, t));
   const hasAgentTeamNeedingRepair = agentTeamsState.status === "ready"
     && agentTeamsState.teams.some((team) => team.status === "needs-repair");
-  const conversationAgentTeam = agentTeamsState.status === "ready"
+  const catalogConversationAgentTeam = agentTeamsState.status === "ready"
     ? agentTeamsState.teams.find((team) => team.teamKey === conversationAgentTeamKey)
     : undefined;
-  const pendingConversationAgentTeam = agentTeamsState.status === "ready"
+  const conversationAgentTeam = selectedSession?.agentTeamSnapshot
+    ? snapshotSummaryToOperatorTeam(selectedSession.agentTeamSnapshot)
+    : catalogConversationAgentTeam;
+  const pendingConversationAgentTeam = selectedSession?.agentTeamPendingSnapshot
+    ? snapshotSummaryToOperatorTeam(selectedSession.agentTeamPendingSnapshot)
+    : agentTeamsState.status === "ready"
     && selectedSession?.agentTeamPendingOwnership != null
     && selectedSession.agentTeamPendingId != null
     ? agentTeamsState.teams.find(
@@ -1011,6 +1048,12 @@ export function OperatorConsole({
     ),
     [memberIdentities, messages, t],
   );
+  const conversationRelayClearance = conversationRelayEvents.length === 0
+    ? null
+    : planConversationRelayClearance(
+        conversationPaneWidth,
+        deriveConversationRelayLayout(conversationRelayEvents, conversationPaneWidth).expandedWidth,
+      );
   const resultCardVisible = shouldShowResultCard({
     diffAvailable: workspaceDiff.available,
     isRunning: displayedActiveRuns.length > 0 || selectedSession?.status === "running" || (selectedSession?.runningCount ?? 0) > 0,
@@ -1690,6 +1733,8 @@ export function OperatorConsole({
             onOpenFileReference={(reference) => openFileReference(message.sessionId, reference)}
             onOpenTeamMember={openMentionedTeamMember}
             onOpenEvidence={openEvidence}
+            onLoadRunAgentInfo={onLoadRunAgentInfo}
+            onLoadRunAgentMarkdown={onLoadRunAgentMarkdown}
           />
         </div>
       </div>
@@ -2122,6 +2167,9 @@ export function OperatorConsole({
                     userLabel: t("console.agentTeamDetail.userTeam"),
                   }),
                   available: team.canCreateConversation,
+                  ownership: team.ownership,
+                  description: team.description,
+                  primaryAgentSlug: team.primaryAgentSlug,
                   members: team.members,
                 }))
               : []}
@@ -2326,7 +2374,15 @@ export function OperatorConsole({
                   projectName={activeProject.title}
                 />
               ) : (
-                <div className={MAIN_CONVERSATION_COLUMN_GUTTER_CLASS}>
+                <div
+                  className={conversationRelayClearance === null
+                    ? MAIN_CONVERSATION_COLUMN_GUTTER_CLASS
+                    : "pr-8"}
+                  data-testid="conversation-timeline-gutter"
+                  style={conversationRelayClearance === null
+                    ? undefined
+                    : { paddingLeft: conversationRelayClearance }}
+                >
                   <div className={cn("mx-auto", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
                     <div
                       ref={timelineListRef}
@@ -2438,6 +2494,14 @@ export function OperatorConsole({
               )}
               data-testid="conversation-bottom-dock"
             >
+                <div className={cn("pointer-events-auto mx-auto w-full", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
+                  <SessionTeamUpdateNotice
+                    state={sessionTeamUpdate}
+                    onApply={onApplySessionTeamUpdate}
+                    onRetry={onRetrySessionTeamUpdate}
+                    onCancel={onCancelSessionTeamUpdate}
+                  />
+                </div>
                 {visiblePendingDispatches.length > 0 ? (
                   <section
                     className={cn(
@@ -2489,14 +2553,23 @@ export function OperatorConsole({
                                 </span>
                               )}
                             </div>
-                            {message.error ? (
+                            {message.error || dispatch.waitingForTeam ? (
                               <div
-                                className="ml-5 mt-1 rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-xs text-danger"
-                                role="alert"
+                                className={cn(
+                                  "ml-5 mt-1 rounded-md border px-2 py-1.5 text-xs",
+                                  message.error
+                                    ? "border-danger/30 bg-danger/5 text-danger"
+                                    : "border-line bg-card text-sub",
+                                )}
+                                role={message.error ? "alert" : undefined}
                                 tabIndex={-1}
                               >
-                                <p>{message.error}</p>
-                                <p className="mt-0.5">{t("console.operator.pendingNotSent")}</p>
+                                {message.error ? (
+                                  <>
+                                    <p>{message.error}</p>
+                                    <p className="mt-0.5">{t("console.operator.pendingNotSent")}</p>
+                                  </>
+                                ) : null}
                                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                                   {editing ? (
                                     <>
@@ -2512,7 +2585,9 @@ export function OperatorConsole({
                                           setEditingPendingMessage(null);
                                         }}
                                       >
-                                        {t("console.operator.pendingSave")}
+                                        {t(message.error
+                                          ? "console.operator.pendingSave"
+                                          : "console.operator.pendingSaveEdit")}
                                       </button>
                                       <button
                                         type="button"
@@ -2524,13 +2599,15 @@ export function OperatorConsole({
                                     </>
                                   ) : (
                                     <>
-                                      <button
-                                        type="button"
-                                        className="rounded border border-line bg-card px-2 py-1 text-ink"
-                                        onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
-                                      >
-                                        {t("console.operator.pendingRetry")}
-                                      </button>
+                                      {message.error ? (
+                                        <button
+                                          type="button"
+                                          className="rounded border border-line bg-card px-2 py-1 text-ink"
+                                          onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
+                                        >
+                                          {t("console.operator.pendingRetry")}
+                                        </button>
+                                      ) : null}
                                       <button
                                         type="button"
                                         className="rounded border border-line bg-card px-2 py-1 text-ink"
@@ -3045,6 +3122,27 @@ export function OperatorConsole({
   );
 }
 
+function snapshotSummaryToOperatorTeam(snapshot: OperatorAgentTeamSnapshotSummary): OperatorAgentTeam {
+  return {
+    teamKey: `${snapshot.team.ownership}:${snapshot.team.id}`,
+    id: snapshot.team.id,
+    ownership: snapshot.team.ownership,
+    createdAt: snapshot.team.createdAt ?? undefined,
+    officialSourceName: snapshot.team.officialSourceName ?? undefined,
+    name: snapshot.team.name,
+    description: snapshot.team.description,
+    primaryAgentSlug: snapshot.team.primaryAgentSlug,
+    memberOrder: snapshot.members.map((member) => member.name),
+    members: snapshot.members.map((member) => ({
+      slug: member.name,
+      displayName: member.displayName ?? `@${member.name}`,
+      description: member.description ?? "",
+    })),
+    status: "usable",
+    canCreateConversation: true,
+  };
+}
+
 function viewportIsNarrow(): boolean {
   return typeof window !== "undefined" && window.innerWidth < NARROW_WINDOW_WIDTH_PX;
 }
@@ -3371,6 +3469,8 @@ function TimelineEntry({
   onOpenFileReference,
   onOpenTeamMember,
   onOpenEvidence,
+  onLoadRunAgentInfo,
+  onLoadRunAgentMarkdown,
 }: {
   message: OperatorMessage;
   processRole: string | null;
@@ -3397,6 +3497,8 @@ function TimelineEntry({
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
+  onLoadRunAgentInfo?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<AgentRunInfoView>;
+  onLoadRunAgentMarkdown?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<{ markdown: string }>;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
@@ -3420,6 +3522,7 @@ function TimelineEntry({
     );
   }
   const outcome = terminalOutcome(message);
+  const auditRole = message.role ?? processRole ?? "agent";
   if (outcome) {
     return (
       <div
@@ -3445,6 +3548,21 @@ function TimelineEntry({
               messageId: message.id,
             })}
           />
+        ) : null}
+        {message.runId !== null && onLoadRunAgentInfo && onLoadRunAgentMarkdown ? (
+          <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+            <AgentRunInfoPopover
+              sessionId={message.sessionId}
+              runId={message.runId}
+              role={auditRole}
+              displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+              loadInfo={onLoadRunAgentInfo}
+              loadMarkdown={onLoadRunAgentMarkdown}
+            />
+            <span className="font-semibold text-ink">
+              {resolveOperatorMemberName(auditRole, memberIdentities, t)}
+            </span>
+          </div>
         ) : null}
         <RunOutcome
           status={outcome}
@@ -3557,11 +3675,22 @@ function TimelineEntry({
     >
       <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
         {message.speaker === "agent" ? (
-          <RoleTag
-            label={resolveOperatorMemberName(message.role, memberIdentities, t)}
-            toneKey={message.role ?? "agent"}
-            className="h-6 w-6 text-xs"
-          />
+          message.runId !== null && message.role !== null && onLoadRunAgentInfo && onLoadRunAgentMarkdown ? (
+            <AgentRunInfoPopover
+              sessionId={message.sessionId}
+              runId={message.runId}
+              role={message.role}
+              displayName={resolveOperatorMemberName(message.role, memberIdentities, t)}
+              loadInfo={onLoadRunAgentInfo}
+              loadMarkdown={onLoadRunAgentMarkdown}
+            />
+          ) : (
+            <RoleTag
+              label={resolveOperatorMemberName(message.role, memberIdentities, t)}
+              toneKey={message.role ?? "agent"}
+              className="h-6 w-6 text-xs"
+            />
+          )
         ) : null}
         <span className="font-semibold text-ink">
           {message.speaker === "agent"

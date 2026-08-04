@@ -248,6 +248,7 @@ export function planAgentTeamMemberSummary(
           ...team,
           members: team.members.map((member) => member.slug === document.slug
             ? {
+                ...member,
                 slug: document.slug,
                 displayName: document.displayName,
                 description: document.description,

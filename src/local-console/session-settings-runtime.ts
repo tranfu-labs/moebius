@@ -1,4 +1,6 @@
 import { formatLocalError } from "./runtime-domain.js";
+import { withOptionalAgentTeamSnapshotLoadedAt } from "./session-team-snapshot.js";
+import { LocalSessionTeamUpdateRuntime } from "./session-team-update-runtime.js";
 import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
 import {
   decideSessionArchive,
@@ -13,12 +15,15 @@ import {
   type LocalConsoleAgentTeamOwnership,
   type LocalConsoleAgentTeamSnapshot,
   type LocalConsoleSessionArchiveResult,
+  type LocalConsoleSessionTeamUpdateState,
   type LocalConsoleSessionSummary,
   type LocalConsoleStore,
   type LocalConsoleWorkspaceMode,
 } from "./types.js";
 
 export class LocalSessionSettingsRuntime {
+  private readonly teamUpdates: LocalSessionTeamUpdateRuntime;
+
   constructor(private readonly input: {
     store: LocalConsoleStore;
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
@@ -30,7 +35,9 @@ export class LocalSessionSettingsRuntime {
     processPending(sessionId: string): void;
     readWorkspaceFacts(folderPath: string): Promise<{ isGitRepository: boolean }>;
     invalidateWorkspaceFacts(): void;
-  }) {}
+  }) {
+    this.teamUpdates = new LocalSessionTeamUpdateRuntime(input);
+  }
 
   async moveEmpty(input: { sessionId: string; projectId: string }): Promise<LocalConsoleSessionSummary> {
     return await this.input.storeCall("local-console-store-move-empty-session", () =>
@@ -82,11 +89,29 @@ export class LocalSessionSettingsRuntime {
     agentTeamId: string;
   }): Promise<LocalConsoleSessionSummary> {
     const load = decideTeamSnapshotLoad(this.input.loadAgentTeamSnapshot !== undefined);
-    const snapshot = load.kind === "load"
+    const loadedSnapshot = load.kind === "load"
       ? await this.input.loadAgentTeamSnapshot!({ ownership: input.agentTeamOwnership, id: input.agentTeamId })
       : undefined;
+    const now = this.input.nowIso();
+    const snapshot = withOptionalAgentTeamSnapshotLoadedAt(loadedSnapshot, now);
     return await this.input.storeCall("local-console-store-switch-session-team", () =>
-      this.input.store.switchSessionTeam({ ...input, agentTeamSnapshot: snapshot, now: this.input.nowIso() }));
+      this.input.store.switchSessionTeam({ ...input, agentTeamSnapshot: snapshot, now }));
+  }
+
+  async inspectTeamUpdate(sessionId: string): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.teamUpdates.inspect(sessionId);
+  }
+
+  async applyTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.teamUpdates.apply(sessionId, expectedUpdateToken);
+  }
+
+  async retryTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.teamUpdates.retry(sessionId, expectedUpdateToken);
+  }
+
+  async cancelTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
+    return await this.teamUpdates.cancel(sessionId, expectedUpdateToken);
   }
 
   async archive(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {

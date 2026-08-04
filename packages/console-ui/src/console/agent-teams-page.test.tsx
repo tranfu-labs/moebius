@@ -175,6 +175,7 @@ describe("AgentTeamsPage user-team file operations", () => {
 
     await waitFor(() => expect(onDiscardAll).toHaveBeenCalledWith(userTeam.teamKey));
     await waitFor(() => expect(onDuplicateMember).toHaveBeenCalledWith(userTeam.teamKey, "manager"));
+    expect(screen.getByRole("status")).toHaveTextContent("已保存 1 项，无需重启");
   });
 
   it("requires another primary Agent before deleting the current primary", async () => {
@@ -205,6 +206,7 @@ describe("AgentTeamsPage user-team file operations", () => {
     expect(dialog).toHaveTextContent("整个目录、AGENT.md 和相关文件");
     fireEvent.click(within(dialog).getByRole("button", { name: "删除 Agent" }));
     await waitFor(() => expect(onTrashMember).toHaveBeenCalledWith(userTeam.teamKey, "dev"));
+    expect(screen.getByRole("status")).toHaveTextContent("已保存 1 项，无需重启");
   });
 
   it("saves outstanding drafts before team deletion, then explains every affected file and preserved sessions", async () => {

@@ -1,4 +1,5 @@
 import {
+  decideAwaitingTeamRelease,
   decidePendingAgentSource,
   decidePendingDispatchCapability,
   planAwaitingDispatchResolution,
@@ -28,6 +29,8 @@ export class LocalPendingSessionContextRuntime {
     await this.input.storeCall("local-console-store-apply-pending-session-context", () =>
       this.input.store.applyPendingSessionContext({ sessionId, now: this.input.nowIso() }));
     if (promotion.kind === "promote-only") return;
+    const updateRecord = await this.input.store.readSessionTeamUpdateRecord?.(sessionId);
+    if (decideAwaitingTeamRelease(updateRecord?.intent?.status) === "hold") return;
     const resolveAwaiting = this.input.store.resolveAwaitingUserMessageDispatches;
     const capability = decidePendingDispatchCapability(resolveAwaiting !== undefined);
     if (capability.kind === "unavailable") {

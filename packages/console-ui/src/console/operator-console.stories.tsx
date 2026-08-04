@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
+import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import { OperatorConsole, type OperatorConsoleProps } from "@/console/operator-console";
 
 const agentMarkdown = [
@@ -145,6 +146,85 @@ const sample: OperatorConsoleProps = {
   onSelectSession: () => undefined,
   onInterrupt: () => undefined,
 };
+
+const traceabilityTeams: OperatorAgentTeam[] = [
+  {
+    teamKey: "system:development",
+    id: "development",
+    ownership: "system",
+    officialSourceName: "Moebius",
+    name: "研发团队（当前目录）",
+    description: "当前已保存的团队信息，用于与对话历史快照区分。",
+    primaryAgentSlug: "product-delivery-lead",
+    memberOrder: [
+      "product-delivery-lead",
+      "product-reviewer",
+      "implementation-lead",
+      "functional-qa",
+      "visual-qa",
+      "release",
+    ],
+    members: [
+      { slug: "product-delivery-lead", displayName: "交付负责人", description: "统筹交付" },
+      { slug: "product-reviewer", displayName: "产品评审", description: "产品复核" },
+      { slug: "implementation-lead", displayName: "实现负责人", description: "生产实现" },
+      { slug: "functional-qa", displayName: "功能验收", description: "功能验证" },
+      { slug: "visual-qa", displayName: "视觉验收", description: "视觉验证" },
+      { slug: "release", displayName: "发布", description: "发布收尾" },
+    ],
+    status: "usable",
+    canCreateConversation: true,
+  },
+];
+
+const traceabilitySession: OperatorConsoleProps["selectedSession"] = {
+  ...sessions[1]!,
+  agentTeamOwnership: "system",
+  agentTeamId: "development",
+  agentTeamHealth: "usable",
+  agentTeamSnapshot: {
+    team: {
+      ownership: "system",
+      id: "development",
+      name: "开发团队（对话已载入）",
+      description: "这份名称与成员身份来自对话冻结的历史版本。",
+      primaryAgentSlug: "product-delivery-lead",
+      officialSourceName: "Moebius",
+    },
+    members: traceabilityTeams[0]!.members.map((member) => ({
+      name: member.slug,
+      displayName: member.displayName,
+      description: member.description,
+    })),
+    loadedAt: "2026-08-04T10:00:00.000Z",
+  },
+};
+
+const traceabilityArgs = {
+  selectedSession: traceabilitySession,
+  conversationAgentTeamKey: "system:development",
+  agentTeamsState: { status: "ready", teams: traceabilityTeams } as const,
+  sessionTeamUpdate: {
+    status: "available",
+    categories: [
+      { kind: "agent-definition", affectedMemberCount: 2 },
+      { kind: "execution-profile", affectedMemberCount: 1 },
+      { kind: "team-information", affectedMemberCount: 1 },
+    ],
+  } as const,
+  onApplySessionTeamUpdate: () => undefined,
+  onLoadRunAgentInfo: async () => ({
+    sessionId: "running",
+    runId: "run-t65",
+    role: "dev",
+    agent: { slug: "dev", displayName: "开发", description: "生产实现" },
+    team: { name: "开发团队（对话已载入）", ownership: "system" as const, sourceName: "Moebius" },
+    profile: { cli: "codex" as const, model: "gpt-5", effort: "high" },
+    loadedAt: "2026-08-04T10:00:00.000Z",
+    evidence: "executed" as const,
+  }),
+  onLoadRunAgentMarkdown: async () => ({ markdown: "# 角色\n\n负责生产实现。" }),
+} satisfies Partial<OperatorConsoleProps>;
 
 const meta = {
   title: "Page/Console/OperatorConsole",
@@ -513,4 +593,40 @@ export const ConversationRelayProjectSidebarClosed: Story = {
     rightSidebarOpen: false,
     sidebarOpen: false,
   },
+};
+
+export const TeamTraceabilityLight: Story = {
+  args: traceabilityArgs,
+};
+
+export const TeamTraceabilityDark: Story = {
+  args: traceabilityArgs,
+  globals: { theme: "dark" },
+};
+
+export const TeamTraceabilityNarrow: Story = {
+  args: traceabilityArgs,
+  parameters: {
+    viewport: {
+      defaultViewport: "teamTraceabilityNarrow",
+      viewports: {
+        teamTraceabilityNarrow: {
+          name: "Team traceability narrow · 680 × 800",
+          styles: { width: "680px", height: "800px" },
+        },
+      },
+    },
+  },
+};
+
+export const TeamTraceabilityReducedMotion: Story = {
+  args: traceabilityArgs,
+  decorators: [
+    (Story) => (
+      <div data-reduced-motion-fixture>
+        <style>{`[data-reduced-motion-fixture] *, [data-reduced-motion-fixture] *::before, [data-reduced-motion-fixture] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }`}</style>
+        <Story />
+      </div>
+    ),
+  ],
 };

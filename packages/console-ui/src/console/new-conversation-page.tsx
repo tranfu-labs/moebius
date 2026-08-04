@@ -6,6 +6,7 @@ import {
   MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
 } from "@/console/conversation-layout";
 import { RoleComposer } from "@/console/role-composer";
+import { AgentTeamOption } from "@/console/agent-team-option";
 import {
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
@@ -36,6 +37,9 @@ export interface NewConversationTeamOption {
   teamKey: string;
   label: string;
   available?: boolean;
+  ownership?: "system" | "user";
+  description?: string | null;
+  primaryAgentSlug?: string | null;
   members: Array<{
     slug: string;
     displayName: string;
@@ -229,28 +233,33 @@ export function NewConversationPage({
                     </span>
                   </>
                 ) : null}
-                <label className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink">
-                  <Diamond className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-                  <span className="sr-only">{t("console.common.agentTeam")}</span>
-                  <select
-                    className="min-w-0 max-w-48 bg-transparent text-xs text-inherit outline-none"
-                    aria-label={t("console.common.agentTeam")}
-                    value={selectedTeamKey ?? ""}
-                    disabled={isSubmitting || teams.length === 0}
-                    onChange={(event) => onSelectTeam(event.currentTarget.value)}
-                  >
-                    {teams.length === 0 ? <option value="">{t("console.newConversation.noTeams")}</option> : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
+                      aria-label={t("console.common.agentTeam")}
+                      disabled={isSubmitting || teams.length === 0}
+                    >
+                      <Diamond className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                      <span className="max-w-48 truncate">{selectedTeam?.label ?? t("console.newConversation.noTeams")}</span>
+                      <ChevronDown className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top" className="w-[min(360px,calc(100vw-24px))]">
                     {teams.map((team) => (
-                      <option
+                      <DropdownMenuCheckboxItem
                         key={team.teamKey}
-                        value={team.teamKey}
+                        checked={team.teamKey === selectedTeamKey}
                         disabled={team.available === false}
+                        className="items-start"
+                        onSelect={() => team.teamKey !== selectedTeamKey && onSelectTeam(team.teamKey)}
                       >
-                        {team.label}
-                      </option>
+                        <AgentTeamOption team={team} />
+                      </DropdownMenuCheckboxItem>
                     ))}
-                  </select>
-                </label>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           />

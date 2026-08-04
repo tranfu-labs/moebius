@@ -2,6 +2,8 @@ import {
   createRunOutputSourceKey,
   openRightSidebarSourceTab,
   OperatorConsole,
+  type AgentRunInfoView,
+  type SessionTeamUpdateViewState,
   type Translate,
 } from "@moebius/console-ui";
 
@@ -46,6 +48,14 @@ export interface OperatorConsoleViewProps {
   actions: ConsoleStateActions;
   newConversation: NewConversationDraftState | null;
   sessionAnalysisNotice: string | null;
+  sessionTeamUpdate: {
+    state: SessionTeamUpdateViewState;
+    apply(): void;
+    retry(): void;
+    cancel(): void;
+  };
+  loadRunAgentInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
+  loadRunAgentMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
   sidebarConversationDrafts: SidebarConversationDraft[];
   sidebarOpen: boolean;
   setSidebarOpen(open: boolean): void;
@@ -65,6 +75,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
   const project = props.presentation.project;
   const projects = props.presentation.projects;
   const selectedSession = props.presentation.selectedSession;
+  const sessionTeamUpdate = props.sessionTeamUpdate;
   const conversationTransition = props.conversations.transition;
   const analysisNavigation = props.conversations.analysisNavigation;
   const rightSidebarTabs = props.rightSidebar.tabs;
@@ -142,6 +153,12 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       selectedSessionId={selection.sessionId}
       navigationSessionId={presentationRoute?.selectedSessionId}
       selectedSession={selectedSession}
+      sessionTeamUpdate={sessionTeamUpdate.state}
+      onApplySessionTeamUpdate={sessionTeamUpdate.apply}
+      onRetrySessionTeamUpdate={sessionTeamUpdate.retry}
+      onCancelSessionTeamUpdate={sessionTeamUpdate.cancel}
+      onLoadRunAgentInfo={props.loadRunAgentInfo}
+      onLoadRunAgentMarkdown={props.loadRunAgentMarkdown}
       analysisPanel={selectedSession === null
         ? undefined
         : {

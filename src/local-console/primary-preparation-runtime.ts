@@ -15,7 +15,7 @@ import {
   type LocalRunPreparationResult,
   type LocalRunRecoverySnapshot,
 } from "./run-preparation-flow.js";
-import type { LocalConsoleMessage, LocalConsoleSessionWorkspaceSource } from "./types.js";
+import type { LocalConsoleAgentTeamSnapshot, LocalConsoleMessage, LocalConsoleSessionWorkspaceSource } from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export interface LocalPrimaryRunInput {
@@ -53,6 +53,7 @@ export class LocalPrimaryPreparationRuntime {
       agentMarkdown: string;
       executionProfile: LocalConsoleAgentFile["executionProfile"];
     }>>;
+    loadTeamSnapshot(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null>;
     concurrentRecoveryWorkspace(sessionId: string): ResolvedLocalWorkspace | null;
     buildAnalysisContract(proposalVersion: string | null): string;
     loadRecoverySnapshot(sessionId: string): Promise<LocalRunRecoverySnapshot>;
@@ -95,6 +96,7 @@ export class LocalPrimaryPreparationRuntime {
     const workspaceCheckpoint = decidePrimaryInactive(this.input.inactive(input.sessionId));
     if (workspaceCheckpoint.kind === "stop") return { kind: "settled" };
     const team = await this.input.loadAgentContents(input.agentFiles, input.selectedAgent, selectedMarkdown);
+    const teamSnapshot = await this.input.loadTeamSnapshot(input.sessionId);
     const contractDecision = decidePrimaryAnalysisContract(input);
     const promptContract = contractDecision.kind === "include"
       ? this.input.buildAnalysisContract(input.proposalVersion)
@@ -109,6 +111,7 @@ export class LocalPrimaryPreparationRuntime {
       defaultWorkspace: workspace,
       concurrentWorkspace: this.input.concurrentRecoveryWorkspace(input.sessionId),
       team: team.map((agent) => ({ ...agent, executionProfile: planPrimaryProfile(agent.executionProfile) })),
+      teamSnapshot,
       timeline: input.timeline,
       timelineMessages: input.timelineMessages,
       readOnly: input.analysisGateEnabled,

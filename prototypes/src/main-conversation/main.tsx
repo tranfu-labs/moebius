@@ -34,12 +34,50 @@ import {
   previewForEvent,
   type RailEvent
 } from "./rail-model.js";
+import {
+  ApplyScene,
+  AvatarCardScene,
+  TeamMenuScene,
+  TeamSaveScene
+} from "./team-scenes.js";
 import "./styles.css";
 
 type Theme = "dark" | "light";
 type FrameWidth = "wide" | "medium" | "narrow";
 type FrameHeight = "tall" | "compact";
 type FocusPreset = "start" | "middle" | "end";
+type Scene = "rail" | "team-menu" | "apply" | "avatar-card" | "team-save";
+
+const SCENE_META: Record<
+  Scene,
+  { label: string; title: string; eyebrow: string }
+> = {
+  rail: {
+    label: "目录轨",
+    title: CONVERSATION.title,
+    eyebrow: "agent-moebius · 开发团队"
+  },
+  "team-menu": {
+    label: "团队菜单",
+    title: "团队选择器应该展示多少团队信息",
+    eyebrow: "agent-moebius · 交付团队"
+  },
+  apply: {
+    label: "变化与应用",
+    title: "配置改了，这段对话用哪一版",
+    eyebrow: "agent-moebius · 交付团队"
+  },
+  "avatar-card": {
+    label: "头像信息卡",
+    title: "这条发言当时用了什么配置",
+    eyebrow: "agent-moebius · 开发团队"
+  },
+  "team-save": {
+    label: "保存反馈",
+    title: "保存后生效了吗",
+    eyebrow: "agent-moebius · Agent 团队"
+  }
+};
 
 interface Inspection {
   eventId: string;
@@ -49,8 +87,15 @@ interface Inspection {
 
 function App(): JSX.Element {
   const [theme, setTheme] = useState<Theme>("dark");
+  const [scene, setScene] = useState<Scene>("team-menu");
   const [frameWidth, setFrameWidth] = useState<FrameWidth>("wide");
   const [frameHeight, setFrameHeight] = useState<FrameHeight>("tall");
+  const [sessionMode, setSessionMode] = useState<"new" | "existing">(
+    "existing"
+  );
+  const [hasOldWork, setHasOldWork] = useState(true);
+  const [failNextApply, setFailNextApply] = useState(false);
+  const [partialSaveFailure, setPartialSaveFailure] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [focusedEventId, setFocusedEventId] = useState(
     CONVERSATION.initialFocusId
@@ -87,6 +132,7 @@ function App(): JSX.Element {
   }, [theme]);
 
   useLayoutEffect(() => {
+    if (scene !== "rail") return;
     const main = mainRef.current;
     const railViewport = railViewportRef.current;
     if (!main || !railViewport) return;
@@ -103,13 +149,14 @@ function App(): JSX.Element {
     observer.observe(main);
     observer.observe(railViewport);
     return () => observer.disconnect();
-  }, []);
+  }, [scene]);
 
   useEffect(() => {
+    if (scene !== "rail") return;
     const timeline = timelineRef.current;
     if (!timeline) return;
     timeline.scrollTop = timeline.scrollHeight;
-  }, []);
+  }, [scene]);
 
   useEffect(() => {
     return () => {
@@ -247,19 +294,29 @@ function App(): JSX.Element {
   return (
     <main className="prototype-page">
       <PrototypeToolbar
+        failNextApply={failNextApply}
         failureArmed={failureArmed}
         frameHeight={frameHeight}
         frameWidth={frameWidth}
+        hasOldWork={hasOldWork}
+        onFailNextApplyChange={setFailNextApply}
         onFailureChange={setFailureArmed}
         onFocusPreset={applyFocusPreset}
         onFrameHeightChange={setFrameHeight}
         onFrameWidthChange={setFrameWidth}
+        onHasOldWorkChange={setHasOldWork}
+        onPartialSaveFailureChange={setPartialSaveFailure}
+        onSceneChange={setScene}
+        onSessionModeChange={setSessionMode}
         onThemeChange={setTheme}
+        partialSaveFailure={partialSaveFailure}
+        scene={scene}
+        sessionMode={sessionMode}
         theme={theme}
       />
 
       <section
-        aria-label="主会话目录轨设计原型"
+        aria-label={`主会话设计原型：${SCENE_META[scene].label}`}
         className="app-frame"
         data-frame-height={frameHeight}
         data-frame-width={frameWidth}
@@ -275,8 +332,8 @@ function App(): JSX.Element {
         >
           <header className="conversation-header">
             <div>
-              <p className="eyebrow">agent-moebius · 开发团队</p>
-              <h1>{CONVERSATION.title}</h1>
+              <p className="eyebrow">{SCENE_META[scene].eyebrow}</p>
+              <h1>{SCENE_META[scene].title}</h1>
             </div>
             <div aria-label="当前团队成员" className="team-avatars">
               {["product-lead", "product-reviewer", "ui-prototyper"].map(
@@ -297,117 +354,156 @@ function App(): JSX.Element {
             </div>
           </header>
 
-          <div className="timeline-stage">
-            <div
-              className="timeline-scroller"
-              data-testid="timeline"
-              onScroll={handleTimelineScroll}
-              ref={timelineRef}
-            >
-              <div className="timeline-top-rule" />
-              <div className="message-stack">
-                {CONVERSATION.events.map((event) => {
-                  const actor = actorById(event.actorId);
-                  const current = event.id === focusedEventId;
-                  const highlighted = event.id === highlightId;
-                  return (
-                    <article
-                      aria-current={current ? "location" : undefined}
-                      className={`timeline-message timeline-${event.kind}${
-                        highlighted ? " is-highlighted" : ""
-                      }`}
-                      data-message-id={event.id}
-                      data-testid={`timeline-message-${event.id}`}
-                      key={event.id}
-                      ref={registerMessage(event.id)}
-                      tabIndex={-1}
-                    >
-                      <div className="message-who">
-                        <span
-                          aria-hidden="true"
-                          className="actor-avatar"
-                          data-tone={actor.tone}
+          {scene === "rail" ? (
+            <>
+              <div className="timeline-stage">
+                <div
+                  className="timeline-scroller"
+                  data-testid="timeline"
+                  onScroll={handleTimelineScroll}
+                  ref={timelineRef}
+                >
+                  <div className="timeline-top-rule" />
+                  <div className="message-stack">
+                    {CONVERSATION.events.map((event) => {
+                      const actor = actorById(event.actorId);
+                      const current = event.id === focusedEventId;
+                      const highlighted = event.id === highlightId;
+                      return (
+                        <article
+                          aria-current={current ? "location" : undefined}
+                          className={`timeline-message timeline-${event.kind}${
+                            highlighted ? " is-highlighted" : ""
+                          }`}
+                          data-message-id={event.id}
+                          data-testid={`timeline-message-${event.id}`}
+                          key={event.id}
+                          ref={registerMessage(event.id)}
+                          tabIndex={-1}
                         >
-                          {actor.shortName}
-                        </span>
-                        <strong>{actor.name}</strong>
-                        <time>{event.time}</time>
-                      </div>
-                      <div className="message-body">{event.body}</div>
-                    </article>
-                  );
-                })}
+                          <div className="message-who">
+                            <span
+                              aria-hidden="true"
+                              className="actor-avatar"
+                              data-tone={actor.tone}
+                            >
+                              {actor.shortName}
+                            </span>
+                            <strong>{actor.name}</strong>
+                            <time>{event.time}</time>
+                          </div>
+                          <div className="message-body">{event.body}</div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rail-viewport" ref={railViewportRef}>
+                  <ConversationRail
+                    capacity={capacity}
+                    containerWidth={containerWidth}
+                    expanded={expanded}
+                    focusId={focusedEventId}
+                    inspectedId={inspected?.eventId ?? null}
+                    onActivate={locateEvent}
+                    onBrowse={(eventId) => {
+                      setFocusedEventId(eventId);
+                      setAnnouncement("目录焦点已移动；主时间线位置保持不变");
+                    }}
+                    onCancelCollapse={cancelCollapse}
+                    onClearInspect={() => setInspected(null)}
+                    onExpand={() => setExpanded(true)}
+                    onInspect={inspectEvent}
+                    onScheduleCollapse={scheduleCollapse}
+                    overlayWidth={overlayWidth}
+                  />
+                </div>
+
+                <button
+                  className="jump-latest"
+                  onClick={() => applyFocusPreset("end")}
+                  type="button"
+                >
+                  <ArrowDown aria-hidden="true" />
+                  回到最新
+                </button>
               </div>
-            </div>
 
-            <div className="rail-viewport" ref={railViewportRef}>
-              <ConversationRail
-                capacity={capacity}
-                containerWidth={containerWidth}
-                expanded={expanded}
-                focusId={focusedEventId}
-                inspectedId={inspected?.eventId ?? null}
-                onActivate={locateEvent}
-                onBrowse={(eventId) => {
-                  setFocusedEventId(eventId);
-                  setAnnouncement("目录焦点已移动；主时间线位置保持不变");
-                }}
-                onCancelCollapse={cancelCollapse}
-                onClearInspect={() => setInspected(null)}
-                onExpand={() => setExpanded(true)}
-                onInspect={inspectEvent}
-                onScheduleCollapse={scheduleCollapse}
-                overlayWidth={overlayWidth}
-              />
-            </div>
+              <footer className="composer-shell" aria-label="消息输入区示意">
+                <div className="composer-context">
+                  <span>
+                    <Folder aria-hidden="true" /> agent-moebius
+                  </span>
+                  <span>默认工作空间</span>
+                  <span>main</span>
+                  <span>
+                    <Users aria-hidden="true" /> 开发团队
+                  </span>
+                </div>
+                <div className="composer-row">
+                  <span>继续告诉主理人…</span>
+                  <button aria-label="添加附件" type="button">
+                    <Plus aria-hidden="true" />
+                  </button>
+                  <button
+                    aria-label="发送消息"
+                    className="send-button"
+                    type="button"
+                  >
+                    <ArrowDown aria-hidden="true" />
+                  </button>
+                </div>
+              </footer>
+            </>
+          ) : null}
 
-            <button
-              className="jump-latest"
-              onClick={() => applyFocusPreset("end")}
-              type="button"
-            >
-              <ArrowDown aria-hidden="true" />
-              回到最新
-            </button>
-          </div>
+          {scene === "team-menu" ? (
+            <TeamMenuScene
+              hasOldWork={hasOldWork}
+              mode={sessionMode}
+              onAnnounce={setAnnouncement}
+            />
+          ) : null}
 
-          <footer className="composer-shell" aria-label="消息输入区示意">
-            <div className="composer-context">
-              <span>
-                <Folder aria-hidden="true" /> agent-moebius
-              </span>
-              <span>默认工作空间</span>
-              <span>main</span>
-              <span>
-                <Users aria-hidden="true" /> 开发团队
-              </span>
-            </div>
-            <div className="composer-row">
-              <span>继续告诉主理人…</span>
-              <button aria-label="添加附件" type="button">
-                <Plus aria-hidden="true" />
-              </button>
-              <button aria-label="发送消息" className="send-button" type="button">
-                <ArrowDown aria-hidden="true" />
-              </button>
-            </div>
-          </footer>
+          {scene === "apply" ? (
+            <ApplyScene
+              failNext={failNextApply}
+              hasOldWork={hasOldWork}
+              onAnnounce={setAnnouncement}
+            />
+          ) : null}
+
+          {scene === "avatar-card" ? (
+            <AvatarCardScene onAnnounce={setAnnouncement} />
+          ) : null}
+
+          {scene === "team-save" ? (
+            <TeamSaveScene
+              onAnnounce={setAnnouncement}
+              partialFailure={partialSaveFailure}
+            />
+          ) : null}
         </section>
 
         <aside aria-label="主页面右侧栏示意" className="right-inspector">
-          <header>对话信息</header>
+          <header>场景说明</header>
           <dl>
+            <div>
+              <dt>当前场景</dt>
+              <dd>{SCENE_META[scene].label}</dd>
+            </div>
             <div>
               <dt>项目</dt>
               <dd>agent-moebius</dd>
             </div>
             <div>
-              <dt>团队</dt>
-              <dd>开发团队</dd>
-            </div>
-            <div>
-              <dt>目录事件</dt>
-              <dd>{CONVERSATION.events.length} 条</dd>
+              <dt>对应 PRD</dt>
+              <dd>
+                {scene === "team-save"
+                  ? "agent-teams.md"
+                  : "main-conversation.md"}
+              </dd>
             </div>
           </dl>
         </aside>
@@ -415,9 +511,10 @@ function App(): JSX.Element {
 
       <p className="prototype-note">
         设计原型 · 非正式产品实现 · 对应 docs/product/pages/main-conversation.md
+        与 docs/product/pages/agent-teams.md
       </p>
 
-      {inspected ? (
+      {inspected && scene === "rail" ? (
         <EventPreviewCard
           inspection={inspected}
           onCancelCollapse={cancelCollapse}
@@ -487,32 +584,67 @@ function AppSidebar(): JSX.Element {
 }
 
 function PrototypeToolbar({
+  failNextApply,
   failureArmed,
   frameHeight,
   frameWidth,
+  hasOldWork,
+  onFailNextApplyChange,
   onFailureChange,
   onFocusPreset,
   onFrameHeightChange,
   onFrameWidthChange,
+  onHasOldWorkChange,
+  onPartialSaveFailureChange,
+  onSceneChange,
+  onSessionModeChange,
   onThemeChange,
+  partialSaveFailure,
+  scene,
+  sessionMode,
   theme
 }: {
+  failNextApply: boolean;
   failureArmed: boolean;
   frameHeight: FrameHeight;
   frameWidth: FrameWidth;
+  hasOldWork: boolean;
+  onFailNextApplyChange: (value: boolean) => void;
   onFailureChange: (value: boolean) => void;
   onFocusPreset: (preset: FocusPreset) => void;
   onFrameHeightChange: (height: FrameHeight) => void;
   onFrameWidthChange: (width: FrameWidth) => void;
+  onHasOldWorkChange: (value: boolean) => void;
+  onPartialSaveFailureChange: (value: boolean) => void;
+  onSceneChange: (scene: Scene) => void;
+  onSessionModeChange: (mode: "new" | "existing") => void;
   onThemeChange: (theme: Theme) => void;
+  partialSaveFailure: boolean;
+  scene: Scene;
+  sessionMode: "new" | "existing";
   theme: Theme;
 }): JSX.Element {
   return (
     <section aria-label="原型场景控制" className="prototype-toolbar">
       <div className="toolbar-label">
-        <span>主会话目录轨</span>
+        <span>主会话 · 团队版本</span>
         <small>原型场景控制</small>
       </div>
+      <ControlGroup label="场景">
+        {(
+          ["rail", "team-menu", "apply", "avatar-card", "team-save"] as Scene[]
+        ).map((candidate) => (
+          <button
+            aria-pressed={scene === candidate}
+            data-testid={`scene-${candidate}`}
+            key={candidate}
+            onClick={() => onSceneChange(candidate)}
+            type="button"
+          >
+            {SCENE_META[candidate].label}
+          </button>
+        ))}
+      </ControlGroup>
       <ControlGroup label="主会话宽度">
         {(["wide", "medium", "narrow"] as FrameWidth[]).map((width) => (
           <button
@@ -537,21 +669,86 @@ function PrototypeToolbar({
           </button>
         ))}
       </ControlGroup>
-      <ControlGroup label="阅读焦点">
-        {(["start", "middle", "end"] as FocusPreset[]).map((preset) => (
-          <button key={preset} onClick={() => onFocusPreset(preset)} type="button">
-            {preset === "start" ? "开头" : preset === "middle" ? "中段" : "末尾"}
+      {scene === "rail" ? (
+        <>
+          <ControlGroup label="阅读焦点">
+            {(["start", "middle", "end"] as FocusPreset[]).map((preset) => (
+              <button
+                key={preset}
+                onClick={() => onFocusPreset(preset)}
+                type="button"
+              >
+                {preset === "start"
+                  ? "开头"
+                  : preset === "middle"
+                    ? "中段"
+                    : "末尾"}
+              </button>
+            ))}
+          </ControlGroup>
+          <button
+            aria-pressed={failureArmed}
+            className="failure-toggle"
+            onClick={() => onFailureChange(!failureArmed)}
+            type="button"
+          >
+            下次定位失败
           </button>
-        ))}
-      </ControlGroup>
-      <button
-        aria-pressed={failureArmed}
-        className="failure-toggle"
-        onClick={() => onFailureChange(!failureArmed)}
-        type="button"
-      >
-        下次定位失败
-      </button>
+        </>
+      ) : null}
+      {scene === "team-menu" ? (
+        <ControlGroup label="会话状态">
+          <button
+            aria-pressed={sessionMode === "new"}
+            data-testid="mode-new"
+            onClick={() => onSessionModeChange("new")}
+            type="button"
+          >
+            新对话
+          </button>
+          <button
+            aria-pressed={sessionMode === "existing"}
+            data-testid="mode-existing"
+            onClick={() => onSessionModeChange("existing")}
+            type="button"
+          >
+            已有会话
+          </button>
+        </ControlGroup>
+      ) : null}
+      {scene === "team-menu" || scene === "apply" ? (
+        <button
+          aria-pressed={hasOldWork}
+          className="failure-toggle"
+          data-testid="toggle-old-work"
+          onClick={() => onHasOldWorkChange(!hasOldWork)}
+          type="button"
+        >
+          旧工作运行中
+        </button>
+      ) : null}
+      {scene === "apply" ? (
+        <button
+          aria-pressed={failNextApply}
+          className="failure-toggle"
+          data-testid="toggle-apply-failure"
+          onClick={() => onFailNextApplyChange(!failNextApply)}
+          type="button"
+        >
+          下次应用失败
+        </button>
+      ) : null}
+      {scene === "team-save" ? (
+        <button
+          aria-pressed={partialSaveFailure}
+          className="failure-toggle"
+          data-testid="toggle-partial-failure"
+          onClick={() => onPartialSaveFailureChange(!partialSaveFailure)}
+          type="button"
+        >
+          部分保存失败
+        </button>
+      ) : null}
       <button
         aria-label={theme === "dark" ? "切换为亮色主题" : "切换为暗色主题"}
         className="theme-toggle"

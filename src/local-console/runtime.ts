@@ -90,6 +90,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly workerTerminalRuntime: LocalWorkerTerminalRuntime;
 
   getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length + (this.options.getManagedProcessRunningCount?.() ?? 0); }
+
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;

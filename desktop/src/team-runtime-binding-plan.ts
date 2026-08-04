@@ -47,6 +47,20 @@ export function planBoundTeamLocation(ownership: "system" | "user"): "system" | 
   return ownership;
 }
 
+export function projectRuntimeTeamIdentity(input: {
+  ownership: "system" | "user";
+  teamId: string;
+  snapshot: TeamSnapshot;
+}) {
+  return {
+    ownership: input.ownership,
+    id: input.teamId,
+    name: input.snapshot.definition?.name ?? null,
+    description: input.snapshot.definition?.description ?? null,
+    primaryAgentSlug: input.snapshot.definition?.primaryAgentSlug ?? null,
+  };
+}
+
 export function orderPrimaryFirst<T extends { slug: string }>(snapshot: {
   definition: { primaryAgentSlug: string | null } | null;
   members: T[];
