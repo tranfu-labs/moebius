@@ -327,6 +327,9 @@ describe("OperatorConsole", () => {
     renderConsole({ projectListState: "loading" });
 
     expect(screen.getByLabelText("项目正在加载")).toBeVisible();
+    for (const skeleton of screen.getByTestId("conversation-sidebar-loading").children) {
+      expect(skeleton).toHaveClass("animate-pulse", "motion-reduce:animate-none");
+    }
     expect(screen.getByRole("heading", { name: "正在准备工作空间" })).toBeVisible();
     expect(screen.getByText("正在读取项目与最近对话，请稍候。")).toBeVisible();
     expect(screen.getByRole("button", { name: "新建对话" })).toBeDisabled();
@@ -1204,6 +1207,21 @@ describe("OperatorConsole", () => {
 
   it("reserves the measured bottom dock height for the timeline, relay, and jump control", async () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    let dockHeight = 176;
+    let dockResizeCallback: ResizeObserverCallback | null = null;
+    class TestResizeObserver implements ResizeObserver {
+      readonly callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      disconnect(): void {}
+      observe(target: Element): void {
+        if ((target as HTMLElement).dataset.testid === "conversation-bottom-dock") {
+          dockResizeCallback = this.callback;
+        }
+      }
+      unobserve(): void {}
+    }
     const rect = (height: number): DOMRect => ({
       x: 0,
       y: 0,
@@ -1217,9 +1235,10 @@ describe("OperatorConsole", () => {
     });
     const bounds = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
       return (this as HTMLElement).dataset.testid === "conversation-bottom-dock"
-        ? rect(253)
+        ? rect(dockHeight)
         : originalGetBoundingClientRect.call(this);
     });
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
 
     try {
       renderConsole({
@@ -1230,6 +1249,14 @@ describe("OperatorConsole", () => {
 
       const timeline = screen.getByRole("region", { name: "会话时间线" });
       const relay = screen.getByTestId("main-conversation-relay-slot");
+      expect(timeline).toHaveStyle({ paddingBottom: "188px" });
+      expect(relay).toHaveStyle({ bottom: "176px" });
+
+      dockHeight = 253;
+      act(() => {
+        dockResizeCallback?.([], {} as ResizeObserver);
+      });
+      await waitFor(() => expect(timeline).toHaveStyle({ paddingBottom: "265px" }));
       expect(timeline).toHaveStyle({ paddingBottom: "265px" });
       expect(relay).toHaveStyle({ bottom: "253px" });
 
@@ -1241,6 +1268,7 @@ describe("OperatorConsole", () => {
       fireEvent.scroll(timeline);
       expect(await screen.findByTestId("jump-to-bottom")).toHaveStyle({ bottom: "265px" });
     } finally {
+      vi.unstubAllGlobals();
       bounds.mockRestore();
     }
   });

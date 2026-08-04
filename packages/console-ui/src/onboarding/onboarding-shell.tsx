@@ -236,7 +236,9 @@ export function OnboardingShell({
       <section
         className={cn(
           "flex min-h-0 flex-1 justify-center px-6 max-sm:px-4",
-          state.step === 2 && !state.teamBuilderOpen ? "overflow-hidden py-5" : "overflow-y-auto",
+          state.step === 2 && !state.teamBuilderOpen
+            ? "overflow-hidden py-5 [@media(max-height:520px)]:py-3"
+            : "overflow-y-auto",
           state.step === 3 ? "py-4 max-sm:py-5" : state.step === 2 ? null : "py-10 max-sm:py-7",
         )}
         data-testid="onboarding-stage"
@@ -282,7 +284,11 @@ export function OnboardingShell({
           <div
             className={cn(
               "w-full",
-              state.step === 3 ? "mt-5" : state.step === 2 ? "mt-5" : "mt-7",
+              state.step === 3
+                ? "mt-5"
+                : state.step === 2
+                ? "mt-5 [@media(max-height:520px)]:mt-3"
+                : "mt-7",
               state.step === 2 && !state.teamBuilderOpen ? "flex min-h-0 flex-1 flex-col" : null,
               state.step === 3 || state.teamBuilderOpen ? null : "mx-auto max-w-[640px]",
             )}
@@ -733,7 +739,7 @@ function TeamSelectionStep({
         </span>
       </div>
       <div
-        className="scroll-thin min-h-[120px] flex-1 overflow-y-auto overscroll-contain pr-1"
+        className="scroll-thin min-h-[120px] min-w-0 flex-1 shrink-0 overflow-x-hidden overflow-y-auto overscroll-contain pr-1"
         data-testid="onboarding-team-scroll"
       >
         {teamsState.status === "loading" ? (
@@ -852,11 +858,11 @@ function TeamGroup({
 }): JSX.Element | null {
   if (teams.length === 0) return null;
   return (
-    <section aria-label={label}>
+    <section className="min-w-0 max-w-full" aria-label={label}>
       <h2 className="px-1 pb-1 pt-1 text-[11.5px] font-medium tracking-[0.04em] text-hint">
         {label} · {teams.length}
       </h2>
-      <div className="grid gap-2">
+      <div className="grid min-w-0 max-w-full gap-2">
         {teams.map((team) => (
           <TeamChoiceCard
             key={team.teamKey}
@@ -914,13 +920,13 @@ function TeamChoiceCard({
       type="button"
       ref={buttonRef}
       className={cn(
-        "w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "min-w-0 w-full max-w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         selected ? "border-accent bg-sel" : "border-line hover:bg-hover",
       )}
       aria-pressed={selected}
       onClick={onSelect}
     >
-      <span className="flex items-start justify-between gap-4">
+      <span className="flex min-w-0 w-full items-start justify-between gap-4">
         <span className="flex min-w-0 items-center gap-3">
           <span
             className={cn(

@@ -277,6 +277,7 @@ const cleanup = (): Promise<void> => {
         await waitForChildExit(electronProcess, 5_000);
       }
     }
+    await terminateProcessesOwnedByRuntime(runtimeRoot);
     if (referenceBrowser !== null) {
       await referenceBrowser.close().catch(() => undefined);
       referenceBrowser = null;
@@ -1544,20 +1545,30 @@ async function collectDynamicDockGeometry(page: Page): Promise<DynamicDockEviden
     element.scrollTop = element.scrollHeight;
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
-  await page.waitForTimeout(100);
-
   const composerDock = page.getByTestId("conversation-bottom-dock");
   const composer = page.getByTestId("main-role-composer");
   const activeRun = page.getByTestId("active-run-block").last();
-  const bottomState = {
-    timeline: await box(timeline),
-    composerDock: await box(composerDock),
-    composer: await box(composer),
-    activeRun: await box(activeRun),
-    textarea: await box(page.getByRole("textbox", { name: "消息内容" })),
-    timelinePaddingBottom: await timeline.evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).paddingBottom)),
-  };
+  let lastBottomState: Omit<DynamicDockEvidence, "jumpToBottom"> | null = null;
+  const bottomState = await waitForValue(async () => {
+    lastBottomState = {
+      timeline: await box(timeline),
+      composerDock: await box(composerDock),
+      composer: await box(composer),
+      activeRun: await box(activeRun),
+      textarea: await box(page.getByRole("textbox", { name: "消息内容" })),
+      timelinePaddingBottom: await timeline.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).paddingBottom)),
+    };
+    return lastBottomState.timelinePaddingBottom >= lastBottomState.composerDock.height + 11
+      ? lastBottomState
+      : undefined;
+  }, {
+    describe: "timeline padding to follow the measured composer dock",
+    kind: "io",
+    timeoutMs: 5_000,
+    pollMs: 50,
+    snapshot: () => lastBottomState,
+  });
 
   await timeline.evaluate((element) => {
     element.scrollTop = 0;
@@ -1580,7 +1591,10 @@ function assertDynamicDockGeometry(value: DynamicDockEvidence): void {
   assert(value.composerDock.height >= 240, "dynamic composer fixture did not reach its tall state");
   assert(
     value.timelinePaddingBottom >= value.composerDock.height + 11,
-    "timeline padding did not follow the measured composer dock",
+    `timeline padding did not follow the measured composer dock: ${JSON.stringify({
+      dockHeight: value.composerDock.height,
+      timelinePaddingBottom: value.timelinePaddingBottom,
+    })}`,
   );
   assert(
     value.activeRun.y + value.activeRun.height <= dockTop + 1,
@@ -2508,6 +2522,61 @@ function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boole
     const onExit = () => finish(true);
     const timer = setTimeout(() => finish(false), timeoutMs);
     child.once("exit", onExit);
+  });
+}
+
+async function terminateProcessesOwnedByRuntime(runtimePath: string): Promise<void> {
+  const ownedProcesses = (await processRows()).filter((row) => row.command.includes(runtimePath));
+  for (const row of ownedProcesses) {
+    try {
+      process.kill(row.pid, "SIGTERM");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  if (ownedProcesses.length > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  const remainingAfterTerm = (await processRows()).filter((row) =>
+    row.command.includes(runtimePath)
+    && ownedProcesses.some((owned) => owned.pid === row.pid));
+  for (const row of remainingAfterTerm) {
+    try {
+      process.kill(row.pid, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+  await waitForValue(async () => {
+    const remaining = (await processRows()).filter((row) => row.command.includes(runtimePath));
+    return remaining.length === 0 ? true : undefined;
+  }, {
+    describe: `acceptance process cleanup for ${runtimePath}`,
+    kind: "io",
+    timeoutMs: 5_000,
+    pollMs: 100,
+  });
+}
+
+async function processRows(): Promise<Array<{ pid: number; command: string }>> {
+  const output = await new Promise<string>((resolve, reject) => {
+    const child = spawn("/bin/ps", ["-axo", "pid=,command="], { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout).toString("utf8"));
+        return;
+      }
+      reject(new Error(`/bin/ps exited ${String(code)}: ${Buffer.concat(stderr).toString("utf8")}`));
+    });
+  });
+  return output.split("\n").flatMap((line) => {
+    const match = /^\s*(\d+)\s+(.+)$/u.exec(line);
+    return match === null ? [] : [{ pid: Number(match[1]), command: match[2]! }];
   });
 }
 

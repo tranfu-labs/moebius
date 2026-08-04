@@ -839,7 +839,7 @@ export function OperatorConsole({
   const followTimelineRef = useRef(true);
   const parentScrollTopRef = useRef(0);
   const parentConversationPaneRef = useRef<HTMLDivElement | null>(null);
-  const conversationDockRef = useRef<HTMLDivElement | null>(null);
+  const conversationDockObserverRef = useRef<ResizeObserver | null>(null);
   const timelineListRef = useRef<HTMLDivElement | null>(null);
   const conversationMessageRefs = useRef(new Map<number, HTMLElement>());
   const timelineReadingAnchorRef = useRef<{ messageId: number; offset: number } | null>(null);
@@ -866,6 +866,22 @@ export function OperatorConsole({
   const [conversationDockHeight, setConversationDockHeight] = useState(
     INITIAL_CONVERSATION_DOCK_HEIGHT_PX,
   );
+  const attachConversationDock = useCallback((dock: HTMLDivElement | null) => {
+    conversationDockObserverRef.current?.disconnect();
+    conversationDockObserverRef.current = null;
+    if (dock === null) return;
+    const update = () => {
+      const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
+      if (nextHeight > 0) {
+        setConversationDockHeight((current) => current === nextHeight ? current : nextHeight);
+      }
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(dock);
+    conversationDockObserverRef.current = observer;
+  }, []);
   const conversationPaneWidthRef = useRef(conversationPaneWidth);
   const messageIndexById = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index] as const)),
@@ -1138,23 +1154,9 @@ export function OperatorConsole({
     };
   }, [conversationPaneWidth, timelineVirtualizer]);
 
-  useLayoutEffect(() => {
-    const dock = conversationDockRef.current;
-    if (dock === null) return;
-    const update = () => {
-      const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
-      if (nextHeight > 0) {
-        setConversationDockHeight((current) => current === nextHeight ? current : nextHeight);
-      }
-    };
-    update();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(update);
-    observer.observe(dock);
-    return () => observer.disconnect();
-  }, [applicationView, newConversation]);
-
   useEffect(() => () => {
+    conversationDockObserverRef.current?.disconnect();
+    conversationDockObserverRef.current = null;
     if (conversationFocusFrameRef.current !== null) {
       window.cancelAnimationFrame(conversationFocusFrameRef.current);
     }
@@ -2403,7 +2405,7 @@ export function OperatorConsole({
             ) : null}
 
             <div
-              ref={conversationDockRef}
+              ref={attachConversationDock}
               className={cn(
                 "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-4 pt-3",
                 MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
