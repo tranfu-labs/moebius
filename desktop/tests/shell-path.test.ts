@@ -8,7 +8,7 @@ import {
   resolveShellPath,
   type ShellPathResult,
 } from "../src/shell-path.js";
-import { waitForCondition } from "../../src/testing/wait.js";
+import { waitForCondition, waitForValue } from "../../src/testing/wait.js";
 
 const temporaryRoots: string[] = [];
 
@@ -178,34 +178,32 @@ describe("desktop shell path", () => {
   });
 
   it.each([
-    ["csh", "/bin/csh"],
-    ["tcsh", "/bin/tcsh"],
-  ])("loads the terminal PATH from a login-style %s invocation", async (_shellName, shellPath) => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-csh-path-"));
-    temporaryRoots.push(root);
-    const managerBin = path.join(root, "manager", "bin");
-    await fs.mkdir(managerBin, { recursive: true });
-    await fs.writeFile(
-      path.join(root, ".tcshrc"),
-      `setenv PATH ${shellQuote(`${managerBin}:/usr/bin:/bin`)}\n`,
-      "utf8",
+    ["csh", "/fixture/csh"],
+    ["tcsh", "/fixture/tcsh"],
+  ])("uses a login-style %s invocation without host shell dependencies", async (shellName, shellPath) => {
+    const managerBin = `/manager/${shellName}/bin`;
+    const runCommand = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: framedPath(`${managerBin}:/usr/bin:/bin`),
+      stderr: "",
+    }));
+
+    const result = await resolveShellPath({
+      platform: "darwin",
+      currentPath: "/usr/bin:/bin",
+      shellPath,
+      runCommand,
+    });
+
+    expect(result).toEqual({
+      path: `/usr/bin:/bin:${managerBin}`,
+      source: "login-shell",
+    });
+    expect(runCommand).toHaveBeenCalledWith(
+      shellPath,
+      ["-c", expect.stringContaining("$PATH")],
+      expect.objectContaining({ argv0: `-${shellName}` }),
     );
-    const originalHome = process.env.HOME;
-    process.env.HOME = root;
-    try {
-      const result = await resolveShellPath({
-        platform: "darwin",
-        currentPath: "/usr/bin:/bin",
-        shellPath,
-        timeoutMs: 2_000,
-      });
-      expect(result.source).toBe("login-shell");
-      expect(result.path.split(path.delimiter).slice(0, 2)).toEqual(["/usr/bin", "/bin"]);
-      expect(result.path.split(path.delimiter)).toContain(managerBin);
-    } finally {
-      if (originalHome === undefined) delete process.env.HOME;
-      else process.env.HOME = originalHome;
-    }
   });
 
   it.each([
@@ -246,30 +244,24 @@ describe("desktop shell path", () => {
   it("bounds interactive profile output and falls back without exposing it", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-shell-path-output-limit-"));
     temporaryRoots.push(root);
-    await fs.writeFile(
-      path.join(root, ".zshrc"),
-      "repeat 100 { printf 'secret-profile-noise' }\n",
-      "utf8",
-    );
-    const originalZdotdir = process.env.ZDOTDIR;
-    process.env.ZDOTDIR = root;
-    try {
-      await expect(resolveShellPath({
-        platform: "darwin",
-        currentPath: "/usr/bin:/bin",
-        shellPath: "/bin/zsh",
-        timeoutMs: 2_000,
-        maxOutputBytes: 64,
-        terminateGraceMs: 40,
-      })).resolves.toEqual({
-        path: "/usr/bin:/bin",
-        source: "fallback",
-        error: "shell-command-output-limit",
-      });
-    } finally {
-      if (originalZdotdir === undefined) delete process.env.ZDOTDIR;
-      else process.env.ZDOTDIR = originalZdotdir;
-    }
+    const shellPath = path.join(root, "zsh");
+    await writeNodeExecutable(shellPath, [
+      `process.stdout.write(${JSON.stringify("secret-profile-noise".repeat(100))});`,
+      "setInterval(() => {}, 1_000);",
+    ].join("\n"));
+
+    await expect(resolveShellPath({
+      platform: "darwin",
+      currentPath: "/usr/bin:/bin",
+      shellPath,
+      timeoutMs: 2_000,
+      maxOutputBytes: 64,
+      terminateGraceMs: 40,
+    })).resolves.toEqual({
+      path: "/usr/bin:/bin",
+      source: "fallback",
+      error: "shell-command-output-limit",
+    });
   });
 
   it("deduplicates PATH entries by first occurrence and ignores empty entries", () => {
@@ -359,46 +351,63 @@ describe("desktop shell path process cleanup", () => {
     temporaryRoots.push(root);
     const parentPidPath = path.join(root, "parent.pid");
     const childPidPath = path.join(root, "child.pid");
-    const stubbornChildSource = [
-      'const fs = require("node:fs");',
-      `fs.writeFileSync(${JSON.stringify(childPidPath)}, String(process.pid));`,
-      'process.on("SIGTERM", () => {});',
-      "setInterval(() => {}, 1_000);",
-    ].join("");
-    await fs.writeFile(path.join(root, ".zshrc"), [
-      `echo $$ > ${shellQuote(parentPidPath)}`,
-      `${shellQuote(process.execPath)} -e ${shellQuote(stubbornChildSource)} &`,
-      "child=$!",
-      `while [ ! -s ${shellQuote(childPidPath)} ]; do :; done`,
-      "wait $child",
-      "",
-    ].join("\n"), "utf8");
+    const shellPath = path.join(root, "zsh");
+    await writeShellExecutable(shellPath, [
+      `printf '%s' "$$" > ${shellQuote(parentPidPath)}`,
+      "(",
+      "  trap '' TERM",
+      "  while :; do sleep 1; done",
+      ") &",
+      "child_pid=$!",
+      `printf '%s' "$child_pid" > ${shellQuote(childPidPath)}`,
+      'wait "$child_pid"',
+    ].join("\n"));
 
     let appliedResult: ShellPathResult | null = null;
     let localConsoleStarted = false;
-    const originalZdotdir = process.env.ZDOTDIR;
-    process.env.ZDOTDIR = root;
-    try {
-      const gate = createShellPathReadinessGate({
-        resolve: () => resolveShellPath({
-          platform: "darwin",
-          currentPath: "/usr/bin:/bin",
-          shellPath: "/bin/zsh",
-          timeoutMs: 500,
-          terminateGraceMs: 80,
-        }),
-        apply: (result) => {
-          appliedResult = result;
-        },
-      });
-      gate.start();
-      await gate.afterReady(async () => {
-        localConsoleStarted = true;
-      });
-    } finally {
-      if (originalZdotdir === undefined) delete process.env.ZDOTDIR;
-      else process.env.ZDOTDIR = originalZdotdir;
-    }
+    const gate = createShellPathReadinessGate({
+      resolve: () => resolveShellPath({
+        platform: "darwin",
+        currentPath: "/usr/bin:/bin",
+        shellPath,
+        timeoutMs: 2_000,
+        terminateGraceMs: 80,
+      }),
+      apply: (result) => {
+        appliedResult = result;
+      },
+    });
+    gate.start();
+    let markerSnapshot: { parentPid: number | null; childPid: number | null } = {
+      parentPid: null,
+      childPid: null,
+    };
+    const { parentPid, childPid } = await waitForValue(async () => {
+      try {
+        const [parentPidRaw, childPidRaw] = await Promise.all([
+          fs.readFile(parentPidPath, "utf8"),
+          fs.readFile(childPidPath, "utf8"),
+        ]);
+        const parentPid = Number(parentPidRaw.trim());
+        const childPid = Number(childPidRaw.trim());
+        markerSnapshot = { parentPid, childPid };
+        return Number.isInteger(parentPid) && parentPid > 0
+            && Number.isInteger(childPid) && childPid > 0
+          ? { parentPid, childPid }
+          : undefined;
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+        throw error;
+      }
+    }, {
+      kind: "io",
+      timeoutMs: 1_000,
+      describe: "the shell PATH fixture parent and child PID markers",
+      snapshot: () => markerSnapshot,
+    });
+    await gate.afterReady(async () => {
+      localConsoleStarted = true;
+    });
 
     expect(appliedResult).toEqual({
       path: "/usr/bin:/bin",
@@ -406,8 +415,6 @@ describe("desktop shell path process cleanup", () => {
       error: "shell-command-timed-out",
     });
     expect(localConsoleStarted).toBe(true);
-    const parentPid = Number((await fs.readFile(parentPidPath, "utf8")).trim());
-    const childPid = Number((await fs.readFile(childPidPath, "utf8")).trim());
     await waitForCondition(
       () => !pidExists(parentPid) && !pidExists(childPid),
       {
@@ -432,6 +439,14 @@ function promiseWithResolvers<T>(): PromiseWithResolvers<T> {
 
 function framedPath(value: string): string {
   return `__MOEBIUS_SHELL_PATH_BEGIN__\n${value}\n__MOEBIUS_SHELL_PATH_END__\n`;
+}
+
+async function writeNodeExecutable(filePath: string, source: string): Promise<void> {
+  await fs.writeFile(filePath, `#!${process.execPath}\n${source}\n`, { mode: 0o755 });
+}
+
+async function writeShellExecutable(filePath: string, source: string): Promise<void> {
+  await fs.writeFile(filePath, `#!/bin/sh\n${source}\n`, { mode: 0o755 });
 }
 
 function shellQuote(value: string): string {
