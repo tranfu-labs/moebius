@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import type { ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -12,6 +12,7 @@ import {
   type Page,
 } from "playwright";
 
+import { waitForValue } from "../../src/testing/wait.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface SessionSummary {
@@ -121,6 +122,71 @@ interface SelectionGeometryEvidence {
   markerTextCount: number;
 }
 
+interface TimelineResizeGeometry {
+  viewport: { width: number; height: number; scrollWidth: number };
+  resizeAnchoring: boolean;
+  readingAnchorMessageId: string | null;
+  currentRelayMessageId: string | null;
+  latestRelayMessageId: string | null;
+  jumpToBottomVisible: boolean;
+  pane: Box;
+  timeline: Box & {
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+    bottomDistance: number;
+  };
+  list: Box;
+  rows: Array<{ index: number; messageId: string | null; box: Box }>;
+  activeRuns: Box[];
+  resultCard: Box | null;
+  anchorOffset: number | null;
+}
+
+interface TimelineResizeStageEvidence {
+  stage: "running" | "terminal";
+  middleAnchorMessageId: string;
+  middleAnchorOffset: number;
+  middle: TimelineResizeGeometry[];
+  bottom: TimelineResizeGeometry[];
+}
+
+interface TimelineNoInputScrollEvidence {
+  afterScroll: TimelineResizeGeometry;
+  afterResize: TimelineResizeGeometry;
+  afterConversationSwitch: TimelineResizeGeometry[];
+}
+
+interface TimelineHeightOnlyResizeEvidence {
+  baseline: TimelineResizeGeometry;
+  compact: TimelineResizeGeometry;
+  compactAfterScroll: TimelineResizeGeometry;
+  restored: TimelineResizeGeometry;
+  afterStream: TimelineResizeGeometry;
+  afterWidthResize: TimelineResizeGeometry;
+}
+
+const TIMELINE_FOLLOW_THRESHOLD_PX = 48;
+const TIMELINE_RESIZE_WIDTHS = [
+  1_180,
+  1_050,
+  920,
+  800,
+  700,
+  800,
+  920,
+  1_050,
+  1_180,
+  1_050,
+  920,
+  800,
+  700,
+  800,
+  920,
+  1_050,
+  1_180,
+] as const;
+
 const args = process.argv.slice(2);
 const hold = args.includes("--hold");
 if (args.some((argument) => argument !== "--hold")) {
@@ -144,6 +210,9 @@ const reportPath = path.join(fileReferenceRoot, "report.txt");
 const binaryPath = path.join(fileReferenceRoot, "binary.dat");
 const longLinePath = path.join(fileReferenceRoot, "long-line.txt");
 const activitySummary = `正在核对 ${reportPath} runId=run-live direct handoff`;
+const resizeReleasePath = path.join(runtimeRoot, "release-resize-run");
+const resizeStreamReleasePath = path.join(runtimeRoot, "release-resize-height-stream");
+const resizeImagePath = path.join(projectRoot, "assets", "brand", "generated", "ui-icon-64.png");
 const evidencePath = path.join(outputRoot, "console-dashboard-evidence.json");
 const referenceScreenshot = path.join(outputRoot, "dashboard-reference.png");
 const wideScreenshot = path.join(outputRoot, "dashboard-wide.png");
@@ -159,6 +228,20 @@ await Promise.all([
   fs.writeFile(longLinePath, `${"x".repeat(300 * 1024)}\n`, "utf8"),
   ...shortWindowProjectRoots.map((projectPath) => fs.mkdir(projectPath, { recursive: true })),
 ]);
+await fs.writeFile(path.join(fixtureProjectRoot, "README.md"), "dashboard acceptance baseline\n", "utf8");
+await runProcess("git", ["init", fixtureProjectRoot]);
+await runProcess("git", ["-C", fixtureProjectRoot, "add", "README.md"]);
+await runProcess("git", [
+  "-C",
+  fixtureProjectRoot,
+  "-c",
+  "user.name=Moebius Acceptance",
+  "-c",
+  "user.email=acceptance@moebius.invalid",
+  "commit",
+  "-m",
+  "acceptance baseline",
+]);
 await fs.writeFile(path.join(runtimeRoot, ".onboarding-completed"), `${new Date().toISOString()}\n`, "utf8");
 await fs.writeFile(
   attachmentPath,
@@ -170,6 +253,8 @@ await fs.writeFile(path.join(fakeBin, "codex"), fakeCodexSource({
   binaryPath,
   longLinePath,
   activitySummary,
+  resizeReleasePath,
+  resizeStreamReleasePath,
 }), { mode: 0o755 });
 
 let application: ElectronApplication | null = null;
@@ -276,6 +361,81 @@ try {
     return session?.unreadSince != null && session.runningCount === 0;
   });
 
+  const resize = await createSession(apiBase, {
+    projectId: primaryProject.projectId,
+    agentTeamId: "development",
+    initialMessage: "RESIZE-HISTORY-1 长中文与列表验收",
+  });
+  await waitForSessionMessage(apiBase, resize.sessionId, "RESIZE_REPLY_1");
+  for (const round of [2, 3]) {
+    const previousCount = await sessionMessageCount(apiBase, resize.sessionId);
+    await postSessionMessage(
+      apiBase,
+      resize.sessionId,
+      `RESIZE-HISTORY-${String(round)} ${Array.from(
+        { length: 12 },
+        (_, index) => `第 ${String(index + 1)} 段长中文用于窗口缩放重排`,
+      ).join("；")}`,
+    );
+    await waitForSessionMessageCount(apiBase, resize.sessionId, previousCount + 2);
+  }
+
+  await selectSession(page, resize.sessionId);
+  const imagePreviousCount = await sessionMessageCount(apiBase, resize.sessionId);
+  const resizeComposer = page.getByRole("textbox", { name: "消息内容" });
+  await resizeComposer.fill("RESIZE-HISTORY-IMAGE 图片附件高度验收");
+  await page.getByTestId("main-role-composer").locator("input[type='file']").setInputFiles(resizeImagePath);
+  await page.getByRole("article", { name: /ui-icon-64\.png/u }).waitFor();
+  await page.getByRole("button", { name: "发送消息" }).click();
+  await waitForSessionMessageCount(apiBase, resize.sessionId, imagePreviousCount + 2);
+
+  await postSessionMessage(apiBase, resize.sessionId, "@dev RESIZE-LIVE 保持运行态进行双向缩放");
+  await waitForState(apiBase, (state) => findSession(state, resize.sessionId)?.runningCount === 1);
+  await selectSession(page, resize.sessionId);
+  await page.getByTestId("active-run-block").waitFor();
+  const runningResizeEvidence = await exerciseTimelineResizeStage(
+    application,
+    page,
+    "running",
+  );
+  const heightOnlyResizeEvidence = await exerciseTimelineHeightOnlyResize(
+    application,
+    page,
+    resizeStreamReleasePath,
+  );
+
+  await fs.writeFile(resizeReleasePath, "release\n", "utf8");
+  await waitForSessionMessage(apiBase, resize.sessionId, "RESIZE_REPLY_TERMINAL");
+  await waitForState(apiBase, (state) => findSession(state, resize.sessionId)?.runningCount === 0);
+  const terminalPreviousCount = await sessionMessageCount(apiBase, resize.sessionId);
+  await postSessionMessage(apiBase, resize.sessionId, "RESIZE-TERMINAL-CLOSEOUT 展示最终结果卡片");
+  await waitForSessionMessageCount(apiBase, resize.sessionId, terminalPreviousCount + 2);
+  await selectSession(page, resize.sessionId);
+  await page.getByTestId("conversation-result-card").waitFor();
+  const terminalResizeEvidence = await exerciseTimelineResizeStage(
+    application,
+    page,
+    "terminal",
+  );
+  const resizeSwitchTarget = await createSession(apiBase, {
+    projectId: primaryProject.projectId,
+    initialMessage: "RESIZE-SWITCH-TARGET 切换对话后复测",
+  });
+  await waitForSessionMessage(apiBase, resizeSwitchTarget.sessionId, "fixture completed");
+  await waitForState(apiBase, (state) => {
+    const session = findSession(state, resizeSwitchTarget.sessionId);
+    return session?.runningCount === 0;
+  });
+  const noInputScrollEvidence = await exerciseTimelineNoInputScrollAfterResize(
+    application,
+    page,
+    resizeSwitchTarget.sessionId,
+    resize.sessionId,
+  );
+  await page.screenshot({ path: path.join(outputRoot, "dashboard-timeline-resize-terminal.png") });
+
+  await setWindowSize(application, 1_400, 900);
+
   const live = await createSession(apiBase, {
     projectId: primaryProject.projectId,
     initialMessage: [
@@ -312,6 +472,9 @@ try {
   await page.getByTestId("active-run-block").waitFor();
   await page.getByText("正在核对 dashboard", { exact: true }).waitFor();
   const selectionGeometry = await observeProductionSelectionGeometry(page, live.sessionId, success.sessionId);
+  const activeRun = page.getByTestId("active-run-block");
+  await activeRun.waitFor();
+  await activeRun.getByText("正在核对 dashboard", { exact: true }).waitFor();
   await prepareComposerStates(page, attachmentPath);
   await collapseSecondaryProject(page);
 
@@ -643,6 +806,14 @@ try {
         nonBlankStop: summaryStopEvidence,
         blank: blankSummaryEvidence,
         blankStop: blankStopEvidence,
+      },
+      timelineResize: {
+        passed: true,
+        sessionId: resize.sessionId,
+        running: runningResizeEvidence,
+        heightOnly: heightOnlyResizeEvidence,
+        terminal: terminalResizeEvidence,
+        noInputScroll: noInputScrollEvidence,
       },
     },
     styles: wideGeometry.styles,
@@ -1357,7 +1528,7 @@ async function updateProject(
 
 async function createSession(
   apiBase: string,
-  input: { projectId: string; title?: string; initialMessage?: string },
+  input: { projectId: string; agentTeamId?: string; title?: string; initialMessage?: string },
 ): Promise<{ sessionId: string }> {
   return (await requestJson<{ session: { sessionId: string } }>(
     apiBase,
@@ -1368,7 +1539,7 @@ async function createSession(
         projectId: input.projectId,
         workspaceMode: "direct",
         agentTeamOwnership: "system",
-        agentTeamId: "general-assistant",
+        agentTeamId: input.agentTeamId ?? "general-assistant",
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.initialMessage === undefined ? {} : { initialMessage: input.initialMessage }),
       }),
@@ -1390,6 +1561,70 @@ async function waitForState(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Timed out waiting for local-console state: ${JSON.stringify(latest)}`);
+}
+
+async function postSessionMessage(apiBase: string, sessionId: string, body: string): Promise<void> {
+  await requestJson(
+    apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(sessionId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    },
+    202,
+  );
+}
+
+async function waitForSessionMessage(
+  apiBase: string,
+  sessionId: string,
+  expectedText: string,
+): Promise<void> {
+  let latestBodies: string[] = [];
+  await waitForValue(async () => {
+    latestBodies = await sessionMessageBodies(apiBase, sessionId);
+    return latestBodies.some((body) => body.includes(expectedText)) ? true : undefined;
+  }, {
+    describe: `session ${sessionId} message containing ${expectedText}`,
+    kind: "io",
+    timeoutMs: 15_000,
+    pollMs: 50,
+    snapshot: () => ({ latestBodies: latestBodies.map((body) => body.slice(0, 120)) }),
+  });
+}
+
+async function sessionMessageCount(apiBase: string, sessionId: string): Promise<number> {
+  return (await sessionMessageBodies(apiBase, sessionId)).length;
+}
+
+async function waitForSessionMessageCount(
+  apiBase: string,
+  sessionId: string,
+  expectedCount: number,
+): Promise<void> {
+  let latestBodies: string[] = [];
+  await waitForValue(async () => {
+    latestBodies = await sessionMessageBodies(apiBase, sessionId);
+    return latestBodies.length >= expectedCount ? true : undefined;
+  }, {
+    describe: `session ${sessionId} to contain at least ${String(expectedCount)} messages`,
+    kind: "io",
+    timeoutMs: 15_000,
+    pollMs: 50,
+    snapshot: () => ({
+      expectedCount,
+      actualCount: latestBodies.length,
+      latestBodies: latestBodies.slice(-3).map((body) => body.slice(0, 120)),
+    }),
+  });
+}
+
+async function sessionMessageBodies(apiBase: string, sessionId: string): Promise<string[]> {
+  const value = await requestJson<{ messages: Array<{ body: string }> }>(
+    apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(sessionId)}/view`,
+  );
+  return value.messages.map((message) => message.body);
 }
 
 function findSession(state: ConsoleState, sessionId: string): SessionSummary | undefined {
@@ -1427,6 +1662,584 @@ async function setWindowSize(
   await new Promise((resolve) => setTimeout(resolve, 150));
 }
 
+async function exerciseTimelineResizeStage(
+  application: ElectronApplication,
+  page: Page,
+  stage: "running" | "terminal",
+): Promise<TimelineResizeStageEvidence> {
+  await setWindowSizeImmediate(application, 1_180, 820);
+  await waitForTimelineLayoutSettled(page, 1_180, null, `${stage} wide baseline`);
+  const timeline = page.getByRole("region", { name: "会话时间线" });
+  await timeline.evaluate((element) => {
+    element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1 }));
+    element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) * 0.45);
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  const middleBeforeAnchor = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    `${stage} middle before anchor`,
+  );
+  const anchor = await chooseTimelineAnchor(page, middleBeforeAnchor);
+  const middleBaseline = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    anchor,
+    `${stage} middle anchor baseline`,
+  );
+  if (middleBaseline.anchorOffset === null) {
+    throw new Error(`${stage} timeline anchor ${anchor} was not mounted at baseline`);
+  }
+  const middleAnchorOffset = middleBaseline.anchorOffset;
+  const middle: TimelineResizeGeometry[] = [];
+  for (const width of TIMELINE_RESIZE_WIDTHS) {
+    await setWindowSizeImmediate(application, width, 820);
+    const geometry = await waitForTimelineLayoutSettled(
+      page,
+      width,
+      anchor,
+      `${stage} middle at ${String(width)}px`,
+    );
+    assertTimelineResizeGeometry(geometry, stage);
+    assert(
+      geometry.anchorOffset !== null
+        && Math.abs(geometry.anchorOffset - middleAnchorOffset) <= 1,
+      `${stage} middle anchor moved after resize to ${String(width)}px: ${JSON.stringify({
+        expected: middleAnchorOffset,
+        actual: geometry.anchorOffset,
+        anchor,
+        appAnchor: geometry.readingAnchorMessageId,
+        scrollTop: geometry.timeline.scrollTop,
+      })}`,
+    );
+    middle.push(geometry);
+  }
+
+  await timeline.evaluate((element) => {
+    element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 1 }));
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await waitForTimelineLayoutSettled(page, 1_180, null, `${stage} bottom baseline`);
+  const bottom: TimelineResizeGeometry[] = [];
+  for (const width of TIMELINE_RESIZE_WIDTHS) {
+    await setWindowSizeImmediate(application, width, 820);
+    const geometry = await waitForTimelineLayoutSettled(
+      page,
+      width,
+      null,
+      `${stage} bottom at ${String(width)}px`,
+    );
+    assertTimelineResizeGeometry(geometry, stage);
+    assert(
+      geometry.timeline.bottomDistance <= 48,
+      `${stage} timeline left the 48px bottom-follow threshold at ${String(width)}px: ${JSON.stringify(
+        geometry.timeline,
+      )}`,
+    );
+    bottom.push(geometry);
+  }
+
+  return {
+    stage,
+    middleAnchorMessageId: anchor,
+    middleAnchorOffset,
+    middle,
+    bottom,
+  };
+}
+
+async function exerciseTimelineHeightOnlyResize(
+  application: ElectronApplication,
+  page: Page,
+  streamReleasePath: string,
+): Promise<TimelineHeightOnlyResizeEvidence> {
+  const timeline = page.getByRole("region", { name: "会话时间线" });
+  await setWindowSizeImmediate(application, 1_180, 760);
+  await timeline.evaluate((element) => {
+    element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 1 }));
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  const baseline = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "height-only resize baseline at 1180x760",
+  );
+  assertTimelineResizeGeometry(baseline, "running");
+  assertTimelineHeightOnlyBookkeeping(baseline, 760, "height-only resize baseline");
+
+  await setWindowSizeImmediate(application, 1_180, 600);
+  const compact = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "height-only resize at 1180x600",
+  );
+  assertTimelineResizeGeometry(compact, "running");
+  assertClose(compact.viewport.height, 600, 1, "height-only resize compact viewport height");
+  assert(!compact.resizeAnchoring, "height-only resize compact state left resize anchoring armed");
+
+  await timeline.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  const compactAfterScroll = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "height-only resize compact state after no-input scroll",
+  );
+  assertTimelineResizeGeometry(compactAfterScroll, "running");
+  assertTimelineHeightOnlyBookkeeping(
+    compactAfterScroll,
+    600,
+    "height-only resize compact state after no-input scroll",
+  );
+
+  await setWindowSizeImmediate(application, 1_180, 760);
+  const restored = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "height-only resize restored at 1180x760",
+  );
+  assertTimelineResizeGeometry(restored, "running");
+  assertTimelineHeightOnlyBookkeeping(restored, 760, "height-only resize restored state");
+
+  await fs.writeFile(streamReleasePath, "stream\n", "utf8");
+  await page.getByText("RESIZE_REPLY_HEIGHT_STREAM", { exact: false }).waitFor({ timeout: 15_000 });
+  await page.getByTestId("active-run-block").waitFor();
+  const afterStream = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "height-only resize after streaming message",
+  );
+  assertTimelineResizeGeometry(afterStream, "running");
+  assertTimelineHeightOnlyBookkeeping(
+    afterStream,
+    760,
+    "height-only resize after streaming message",
+  );
+
+  await setWindowSizeImmediate(application, 1_000, 760);
+  const afterWidthResize = await waitForTimelineLayoutSettled(
+    page,
+    1_000,
+    null,
+    "height-only resize followed by width resize",
+  );
+  assertTimelineResizeGeometry(afterWidthResize, "running");
+  assertTimelineHeightOnlyBookkeeping(
+    afterWidthResize,
+    760,
+    "height-only resize followed by width resize",
+  );
+
+  return { baseline, compact, compactAfterScroll, restored, afterStream, afterWidthResize };
+}
+
+function assertTimelineHeightOnlyBookkeeping(
+  geometry: TimelineResizeGeometry,
+  expectedHeight: number,
+  description: string,
+): void {
+  assertClose(geometry.viewport.height, expectedHeight, 1, `${description} viewport height`);
+  assert(!geometry.resizeAnchoring, `${description} left resize anchoring armed`);
+  assert(
+    geometry.readingAnchorMessageId === null,
+    `${description} retained a middle-reading anchor: ${String(geometry.readingAnchorMessageId)}`,
+  );
+  assertTimelineBottomBookkeeping(geometry, description);
+}
+
+async function exerciseTimelineNoInputScrollAfterResize(
+  application: ElectronApplication,
+  page: Page,
+  switchSessionId: string,
+  resizeSessionId: string,
+): Promise<TimelineNoInputScrollEvidence> {
+  await setWindowSizeImmediate(application, 1_180, 820);
+  await waitForTimelineLayoutSettled(page, 1_180, null, "no-input scroll wide baseline");
+  const timeline = page.getByRole("region", { name: "会话时间线" });
+  await timeline.evaluate((element) => {
+    element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1 }));
+    element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) * 0.45);
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await waitForTimelineLayoutSettled(page, 1_180, null, "no-input scroll middle baseline");
+  for (const width of [1_000, 1_180]) {
+    await setWindowSizeImmediate(application, width, 820);
+    const geometry = await waitForTimelineLayoutSettled(
+      page,
+      width,
+      null,
+      `no-input scroll resize setup at ${String(width)}px`,
+    );
+    assertTimelineResizeGeometry(geometry, "terminal");
+  }
+
+  await timeline.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  const afterScroll = await waitForTimelineLayoutSettled(
+    page,
+    1_180,
+    null,
+    "no-input scroll at bottom",
+  );
+  assertTimelineResizeGeometry(afterScroll, "terminal");
+  assertTimelineBottomBookkeeping(afterScroll, "no-input scroll at bottom");
+
+  await setWindowSizeImmediate(application, 1_000, 820);
+  const afterResize = await waitForTimelineLayoutSettled(
+    page,
+    1_000,
+    null,
+    "no-input scroll after another resize",
+  );
+  assertTimelineResizeGeometry(afterResize, "terminal");
+  assertTimelineBottomBookkeeping(afterResize, "no-input scroll after another resize");
+
+  await selectSession(page, switchSessionId);
+  await selectSession(page, resizeSessionId);
+  await page.getByTestId("conversation-result-card").waitFor();
+  const expectedLatestRelayMessageId = afterResize.latestRelayMessageId;
+  if (expectedLatestRelayMessageId === null) {
+    throw new Error(`no-input scroll resize snapshot had no latest Relay message: ${JSON.stringify(afterResize)}`);
+  }
+  await waitForCurrentRelayMessage(page, expectedLatestRelayMessageId);
+  const afterConversationSwitch: TimelineResizeGeometry[] = [];
+  for (const width of [1_000, 700, 1_180]) {
+    await setWindowSizeImmediate(application, width, 820);
+    const geometry = await waitForTimelineLayoutSettled(
+      page,
+      width,
+      null,
+      `no-input scroll after conversation switch at ${String(width)}px`,
+    );
+    assertTimelineResizeGeometry(geometry, "terminal");
+    assertTimelineBottomBookkeeping(
+      geometry,
+      `no-input scroll after conversation switch at ${String(width)}px`,
+      expectedLatestRelayMessageId,
+    );
+    afterConversationSwitch.push(geometry);
+  }
+
+  return { afterScroll, afterResize, afterConversationSwitch };
+}
+
+async function waitForCurrentRelayMessage(page: Page, expectedMessageId: string): Promise<void> {
+  let latestEventId: string | null = null;
+  await waitForValue(async () => {
+    latestEventId = await page.locator("[data-relay-event][aria-current='location']")
+      .getAttribute("data-relay-event");
+    return latestEventId === `message-${expectedMessageId}` ? true : undefined;
+  }, {
+    describe: `current Relay message ${expectedMessageId} after conversation switch`,
+    kind: "io",
+    timeoutMs: 10_000,
+    pollMs: 16,
+    snapshot: () => ({ expectedMessageId, latestEventId }),
+  });
+}
+
+async function setWindowSizeImmediate(
+  application: ElectronApplication,
+  width: number,
+  height: number,
+): Promise<void> {
+  await application.evaluate(({ BrowserWindow }, size) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height);
+  }, { width, height });
+}
+
+async function waitForTimelineLayoutSettled(
+  page: Page,
+  expectedWidth: number,
+  anchorMessageId: string | null,
+  description: string,
+): Promise<TimelineResizeGeometry> {
+  let latest: TimelineResizeGeometry | null = null;
+  let latestError: string | null = null;
+  let previous: TimelineResizeGeometry | null = null;
+  let stableFrames = 0;
+  return await waitForValue(async () => {
+    latest = await collectTimelineResizeGeometry(page, anchorMessageId);
+    latestError = null;
+    if (Math.abs(latest.viewport.width - expectedWidth) > 1) {
+      previous = latest;
+      stableFrames = 0;
+      return undefined;
+    }
+    if (latest.resizeAnchoring) {
+      previous = latest;
+      stableFrames = 0;
+      return undefined;
+    }
+    if (previous !== null && timelineGeometryIsStable(previous, latest)) {
+      stableFrames += 1;
+    } else {
+      stableFrames = 1;
+    }
+    previous = latest;
+    return stableFrames >= 3 ? latest : undefined;
+  }, {
+    describe: `stable timeline layout for ${description}`,
+    kind: "io",
+    timeoutMs: 10_000,
+    pollMs: 16,
+    tick: async () => {
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    },
+    onError: (error) => {
+      latestError = error instanceof Error ? error.message : String(error);
+      return "retry";
+    },
+    snapshot: () => ({ latest, latestError }),
+  });
+}
+
+async function collectTimelineResizeGeometry(
+  page: Page,
+  anchorMessageId: string | null,
+): Promise<TimelineResizeGeometry> {
+  return await page.evaluate((anchorId) => {
+    const timeline = document.querySelector<HTMLElement>("[aria-label='会话时间线']");
+    const pane = document.querySelector<HTMLElement>("[data-testid='parent-conversation-pane']");
+    const list = document.querySelector<HTMLElement>("[data-testid='virtual-timeline-list']");
+    if (timeline === null || pane === null || list === null) {
+      throw new Error(`timeline resize target is missing: ${JSON.stringify({
+        timeline: timeline !== null,
+        pane: pane !== null,
+        list: list !== null,
+      })}`);
+    }
+    const paneRect = pane.getBoundingClientRect();
+    const timelineRect = timeline.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    const rows = [...list.querySelectorAll<HTMLElement>(":scope > [data-index]")]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          index: Number(element.dataset.index),
+          messageId: element.querySelector<HTMLElement>("[data-message-id]")?.dataset.messageId ?? null,
+          box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        };
+      })
+      .sort((left, right) => left.index - right.index);
+    const activeRuns = [...timeline.querySelectorAll<HTMLElement>("[data-testid='active-run-block']")]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+    const resultElement = timeline.querySelector<HTMLElement>("[data-testid='conversation-result-card']");
+    const resultRect = resultElement?.getBoundingClientRect() ?? null;
+    const currentRelayEvent = document.querySelector<HTMLElement>(
+      "[data-relay-event][aria-current='location']",
+    )?.dataset.relayEvent ?? null;
+    const relayMessageIds = [...document.querySelectorAll<HTMLElement>("[data-relay-event]")]
+      .map((element) => element.dataset.relayEvent?.match(/^message-(\d+)$/)?.[1] ?? null)
+      .filter((messageId): messageId is string => messageId !== null);
+    const anchorElement = anchorId === null
+      ? null
+      : [...list.querySelectorAll<HTMLElement>("[data-message-id]")]
+        .find((element) => element.dataset.messageId === anchorId) ?? null;
+    const bottomDistance = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight;
+    return {
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scrollWidth: document.documentElement.scrollWidth,
+      },
+      resizeAnchoring: timeline.dataset.resizeAnchoring === "true",
+      readingAnchorMessageId: timeline.dataset.readingAnchorMessageId ?? null,
+      currentRelayMessageId: currentRelayEvent?.match(/^message-(\d+)$/)?.[1] ?? null,
+      latestRelayMessageId: relayMessageIds.at(-1) ?? null,
+      jumpToBottomVisible: timeline.querySelector("[data-testid='jump-to-bottom']") !== null,
+      pane: { x: paneRect.x, y: paneRect.y, width: paneRect.width, height: paneRect.height },
+      timeline: {
+        x: timelineRect.x,
+        y: timelineRect.y,
+        width: timelineRect.width,
+        height: timelineRect.height,
+        scrollTop: timeline.scrollTop,
+        scrollHeight: timeline.scrollHeight,
+        clientHeight: timeline.clientHeight,
+        bottomDistance,
+      },
+      list: { x: listRect.x, y: listRect.y, width: listRect.width, height: listRect.height },
+      rows,
+      activeRuns,
+      resultCard: resultRect === null
+        ? null
+        : { x: resultRect.x, y: resultRect.y, width: resultRect.width, height: resultRect.height },
+      anchorOffset: anchorElement === null
+        ? null
+        : anchorElement.getBoundingClientRect().top - timeline.getBoundingClientRect().top,
+    };
+  }, anchorMessageId);
+}
+
+async function chooseTimelineAnchor(page: Page, geometry: TimelineResizeGeometry): Promise<string> {
+  const resizeAnchorMessageId = await page
+    .getByRole("region", { name: "会话时间线" })
+    .getAttribute("data-reading-anchor-message-id");
+  if (
+    resizeAnchorMessageId !== null
+    && geometry.rows.some((row) => row.messageId === resizeAnchorMessageId)
+  ) {
+    return resizeAnchorMessageId;
+  }
+  const currentRelayEvent = await page
+    .locator("[data-relay-event][aria-current='location']")
+    .getAttribute("data-relay-event");
+  const currentMessageId = currentRelayEvent?.match(/^message-(\d+)$/)?.[1];
+  if (
+    currentMessageId !== undefined
+    && geometry.rows.some((row) => row.messageId === currentMessageId)
+  ) {
+    return currentMessageId;
+  }
+  const targetY = geometry.timeline.y + geometry.timeline.height / 2;
+  const candidate = geometry.rows
+    .filter((row) => row.messageId !== null)
+    .sort((left, right) => (
+      Math.abs(left.box.y + left.box.height / 2 - targetY)
+      - Math.abs(right.box.y + right.box.height / 2 - targetY)
+    ))[0];
+  if (candidate?.messageId == null) {
+    throw new Error(`timeline has no mounted message anchor: ${JSON.stringify(geometry)}`);
+  }
+  return candidate.messageId;
+}
+
+function timelineGeometryIsStable(
+  previous: TimelineResizeGeometry,
+  current: TimelineResizeGeometry,
+): boolean {
+  if (
+    previous.resizeAnchoring !== current.resizeAnchoring
+    || previous.readingAnchorMessageId !== current.readingAnchorMessageId
+    || previous.currentRelayMessageId !== current.currentRelayMessageId
+    || previous.latestRelayMessageId !== current.latestRelayMessageId
+    || previous.jumpToBottomVisible !== current.jumpToBottomVisible
+    || previous.rows.length !== current.rows.length
+    || previous.activeRuns.length !== current.activeRuns.length
+    || (previous.resultCard === null) !== (current.resultCard === null)
+    || previous.rows.some((row, index) => (
+      row.index !== current.rows[index]?.index
+      || row.messageId !== current.rows[index]?.messageId
+    ))
+  ) {
+    return false;
+  }
+  const previousNumbers = timelineGeometryNumbers(previous);
+  const currentNumbers = timelineGeometryNumbers(current);
+  return previousNumbers.length === currentNumbers.length
+    && previousNumbers.every((value, index) => Math.abs(value - (currentNumbers[index] ?? value)) <= 0.5);
+}
+
+function timelineGeometryNumbers(geometry: TimelineResizeGeometry): number[] {
+  const boxNumbers = (value: Box): number[] => [value.x, value.y, value.width, value.height];
+  return [
+    geometry.viewport.width,
+    geometry.viewport.height,
+    geometry.viewport.scrollWidth,
+    ...boxNumbers(geometry.pane),
+    ...boxNumbers(geometry.timeline),
+    geometry.timeline.scrollTop,
+    geometry.timeline.scrollHeight,
+    geometry.timeline.clientHeight,
+    geometry.timeline.bottomDistance,
+    ...boxNumbers(geometry.list),
+    ...geometry.rows.flatMap((row) => boxNumbers(row.box)),
+    ...geometry.activeRuns.flatMap(boxNumbers),
+    ...(geometry.resultCard === null ? [] : boxNumbers(geometry.resultCard)),
+    ...(geometry.anchorOffset === null ? [] : [geometry.anchorOffset]),
+  ];
+}
+
+function assertTimelineBottomBookkeeping(
+  geometry: TimelineResizeGeometry,
+  description: string,
+  expectedLatestRelayMessageId = geometry.latestRelayMessageId,
+): void {
+  assert(
+    geometry.timeline.bottomDistance <= TIMELINE_FOLLOW_THRESHOLD_PX,
+    `${description} left the bottom-follow threshold: ${JSON.stringify(geometry.timeline)}`,
+  );
+  assert(!geometry.jumpToBottomVisible, `${description} kept the jump-to-bottom control visible`);
+  assert(
+    expectedLatestRelayMessageId !== null
+      && geometry.currentRelayMessageId === expectedLatestRelayMessageId,
+    `${description} did not persist the latest Relay reading position: ${JSON.stringify({
+      current: geometry.currentRelayMessageId,
+      latest: geometry.latestRelayMessageId,
+      expected: expectedLatestRelayMessageId,
+    })}`,
+  );
+}
+
+function assertTimelineResizeGeometry(
+  geometry: TimelineResizeGeometry,
+  stage: "running" | "terminal",
+): void {
+  const listBottom = geometry.list.y + geometry.list.height;
+  for (let index = 1; index < geometry.rows.length; index += 1) {
+    const previous = geometry.rows[index - 1]!;
+    const current = geometry.rows[index]!;
+    assert(
+      current.box.y >= previous.box.y + previous.box.height - 1,
+      `${stage} timeline rows overlap: ${JSON.stringify({ previous, current })}`,
+    );
+  }
+  for (const row of geometry.rows) {
+    assert(
+      row.box.y + row.box.height <= listBottom + 1,
+      `${stage} timeline row escapes measured list: ${JSON.stringify({ row, list: geometry.list })}`,
+    );
+  }
+  assert(
+    geometry.viewport.scrollWidth <= geometry.viewport.width,
+    `${stage} timeline introduced horizontal overflow: ${JSON.stringify(geometry.viewport)}`,
+  );
+  if (stage === "running") {
+    assert(geometry.activeRuns.length > 0, "running resize stage has no active run block");
+    assert(geometry.resultCard === null, "running resize stage unexpectedly shows the result card");
+    assert(
+      geometry.activeRuns[0]!.y >= listBottom - 1,
+      `active run overlaps the virtual timeline list: ${JSON.stringify({
+        activeRun: geometry.activeRuns[0],
+        list: geometry.list,
+      })}`,
+    );
+    for (let index = 1; index < geometry.activeRuns.length; index += 1) {
+      const previous = geometry.activeRuns[index - 1]!;
+      const current = geometry.activeRuns[index]!;
+      assert(
+        current.y >= previous.y + previous.height - 1,
+        `active run blocks overlap: ${JSON.stringify({ previous, current })}`,
+      );
+    }
+    return;
+  }
+  assert(geometry.activeRuns.length === 0, "terminal resize stage still shows an active run block");
+  assert(geometry.resultCard !== null, "terminal resize stage has no result card");
+  assert(
+    geometry.resultCard.y >= listBottom - 1,
+    `result card overlaps the virtual timeline list: ${JSON.stringify({
+      resultCard: geometry.resultCard,
+      list: geometry.list,
+    })}`,
+  );
+}
+
 async function box(locator: Locator): Promise<Box> {
   const value = await locator.boundingBox();
   if (value === null) throw new Error(`Element has no layout box: ${await locator.evaluate((element) => element.outerHTML)}`);
@@ -1456,6 +2269,27 @@ function assertClose(actual: number, expected: number, tolerance: number, label:
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+async function runProcess(command: string, args: string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(
+        `${command} ${args.join(" ")} exited ${String(code)}: `
+        + `${Buffer.concat(stderr).toString("utf8")} ${Buffer.concat(stdout).toString("utf8")}`,
+      ));
+    });
+  });
 }
 
 function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
@@ -1510,12 +2344,17 @@ function fakeCodexSource(input: {
   binaryPath: string;
   longLinePath: string;
   activitySummary: string;
+  resizeReleasePath: string;
+  resizeStreamReleasePath: string;
 }): string {
   const reportReference = `${input.reportPath}:2:3`;
   return `#!/usr/bin/env node
 const prompt = process.argv.at(-1) ?? "";
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
-const threadId = "thread-dashboard-" + String(process.pid);
+const resumeIndex = process.argv.indexOf("resume");
+const threadId = resumeIndex >= 0
+  ? process.argv.at(-2)
+  : "thread-dashboard-" + String(process.pid);
 
 if (prompt.includes("SUMMARY dashboard")) {
   emit({
@@ -1528,6 +2367,90 @@ if (prompt.includes("SUMMARY dashboard")) {
 
 if (prompt.includes("BLANK dashboard")) {
   setInterval(() => {}, 1000);
+  return;
+}
+
+if (prompt.includes("RESIZE-HISTORY") && !prompt.includes("RESIZE-LIVE")) {
+  const round = prompt.includes("RESIZE-HISTORY-IMAGE")
+    ? "IMAGE"
+    : prompt.match(/RESIZE-HISTORY-(\\d+)/)?.[1] ?? "UNKNOWN";
+  emit({ type: "thread.started", thread_id: threadId });
+  emit({
+    type: "item.completed",
+    item: {
+      type: "agent_message",
+      text: [
+        "RESIZE_REPLY_" + round,
+        "",
+        "这是一段用于验证长会话在窄窗口重新换行的中文回复。",
+        "",
+        ...Array.from({ length: 14 }, (_, index) =>
+          "- 第 " + String(index + 1) + " 项包含较长说明、内联代码和连续中文内容，宽度变化后必须重新测量真实高度。"
+        )
+      ].join("\\n")
+    }
+  });
+  process.exit(0);
+}
+
+if (prompt.includes("RESIZE-LIVE")) {
+  const { existsSync, writeFileSync } = require("node:fs");
+  let heightStreamReleased = false;
+  emit({ type: "thread.started", thread_id: threadId });
+  emit({
+    type: "item.started",
+    item: { type: "command_execution", command: "timeline resize acceptance" }
+  });
+  emit({
+    type: "item.completed",
+    item: {
+      type: "agent_message",
+      text: [
+        "RESIZE_REPLY_RUNNING",
+        "",
+        ...Array.from({ length: 16 }, (_, index) =>
+          "- 运行态稳定输出 " + String(index + 1) + "：窗口缩放期间保持内容不再增长。"
+        )
+      ].join("\\n")
+    }
+  });
+  const timer = setInterval(() => {
+    if (!heightStreamReleased && existsSync(${JSON.stringify(input.resizeStreamReleasePath)})) {
+      heightStreamReleased = true;
+      emit({
+        type: "item.completed",
+        item: {
+          type: "agent_message",
+          text: [
+            "RESIZE_REPLY_HEIGHT_STREAM",
+            "",
+            ...Array.from({ length: 8 }, (_, index) =>
+              "- 纯高度缩放后的流式追加 " + String(index + 1) + "：仍需保持底部跟随和阅读簿记。"
+            )
+          ].join("\\n")
+        }
+      });
+    }
+    if (!existsSync(${JSON.stringify(input.resizeReleasePath)})) return;
+    clearInterval(timer);
+    writeFileSync("resize-result.txt", "timeline resize acceptance result\\n", "utf8");
+    emit({
+      type: "item.completed",
+      item: {
+        type: "agent_message",
+        text: [
+          "RESIZE_REPLY_TERMINAL",
+          "",
+          "运行态结束后，结果卡片必须位于完整最后回复之后。",
+          "",
+          ...Array.from({ length: 12 }, (_, index) =>
+            "- 终态结果段落 " + String(index + 1) + " 保持真实高度和正确顺序。"
+          )
+        ].join("\\n")
+      }
+    });
+    process.exit(0);
+  }, 20);
   return;
 }
 

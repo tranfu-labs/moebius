@@ -158,8 +158,8 @@ describe("main conversation timeline truth through the HTTP assembly", () => {
   it("runs the primary Agent beside an active member without interrupting the member", async () => {
     let devOptions!: CodexRunOptions;
     let finishDev!: (result: CodexRunResult) => void;
-    let managerOptions!: CodexRunOptions;
-    let finishManager!: (result: CodexRunResult) => void;
+    let managerOptions: CodexRunOptions | undefined;
+    let finishManager: ((result: CodexRunResult) => void) | undefined;
     let managerCallCount = 0;
     const harness = await startHarness((options) => {
       const role = roleFromPrompt(options.prompt);
@@ -193,13 +193,27 @@ describe("main conversation timeline truth through the HTTP assembly", () => {
         snapshot.activeRun?.role === "manager"
         && snapshot.activeRuns.some((run) => run.role === "dev")
       );
+      const managerInvocation = await waitForValue(() => {
+        const options = managerOptions;
+        const finish = finishManager;
+        return options !== undefined && finish !== undefined
+          ? { options, finish }
+          : undefined;
+      }, {
+        describe: "manager provider invocation capture",
+        kind: "logic",
+        snapshot: () => ({
+          optionsCaptured: managerOptions !== undefined,
+          resolverCaptured: finishManager !== undefined,
+        }),
+      });
       expect(devOptions.signal?.aborted).toBe(false);
       expect(supplemented.pendingPrimaryMessages).toEqual([]);
       expect(supplemented.messages).toEqual(expect.arrayContaining([
         expect.objectContaining({ speaker: "user", body: "补一句话给主 Agent", status: "running" }),
       ]));
 
-      finishManager(codexOk(managerOptions, "补充已送达主 Agent"));
+      managerInvocation.finish(codexOk(managerInvocation.options, "补充已送达主 Agent"));
       await waitForState(harness.started.url, session.sessionId, (snapshot) =>
         snapshot.activeRun === null && snapshot.activeRuns.some((run) => run.role === "dev")
       );
