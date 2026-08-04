@@ -70,7 +70,6 @@ describe("RunOutcome", () => {
     render(
       <RunOutcome
         status="user-stopped"
-        onOpenDiagnostics={vi.fn()}
         onEditAndResend={onEditAndResend}
         onRetry={onRetry}
         onOpenOutput={onOpenOutput}

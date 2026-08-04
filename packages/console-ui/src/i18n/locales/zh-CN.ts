@@ -270,7 +270,7 @@ export const zhCN = {
   "console.agentTeams.loadFailed": "暂时无法加载 Agent 团队",
   "console.agentTeams.loadFailedDescription": "团队数据没有被清空，稍后重试即可。",
   "console.agentTeams.configurationError": "应用配置异常",
-  "console.agentTeams.configurationErrorDescription": "软件自带的 Agent 团队无法读取。请重试；如果问题持续，请打开诊断信息寻求帮助。",
+  "console.agentTeams.configurationErrorDescription": "软件自带的 Agent 团队无法读取。请重试；如果问题持续，请检查应用配置。",
   "console.agentTeams.registrationConflictTitle": "还不能添加官方「通用助手」",
   "console.agentTeams.registrationStableIdentityConflict": "现有用户团队与系统的通用助手身份冲突。",
   "console.agentTeams.registrationDirectoryConflict": "通用助手的预定位置已有其他文件。",

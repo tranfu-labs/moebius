@@ -87,7 +87,7 @@ describe("OperatorConsole", () => {
   });
 
   it("renders the fixed sidebar skeleton around the only scrolling project region", () => {
-    renderConsole({ onOpenDiagnostics: vi.fn() });
+    renderConsole();
 
     const sidebar = screen.getByTestId("operator-sidebar");
     const root = screen.getByTestId("operator-content-shell").parentElement;
@@ -835,6 +835,8 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("heading", { name: "Agent 团队" })).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("应用配置异常");
     expect(screen.getByRole("alert")).toHaveTextContent("软件自带的 Agent 团队无法读取");
+    expect(screen.getByRole("alert")).toHaveTextContent("如果问题持续，请检查应用配置");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("诊断");
     expect(screen.queryByRole("button", { name: "新建团队" })).not.toBeInTheDocument();
     expect(screen.queryByText(/没有团队/u)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
@@ -1335,8 +1337,7 @@ describe("OperatorConsole", () => {
 
   it("emits a run-output intent beside the shared composer stop without using developer diagnostics", () => {
     const onOpenEvidence = vi.fn();
-    const onOpenDiagnostics = vi.fn();
-    renderConsole({ activeRun: runSnapshot, composerValue: "", onOpenEvidence, onOpenDiagnostics });
+    renderConsole({ activeRun: runSnapshot, composerValue: "", onOpenEvidence });
 
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /停下开发/u })).not.toBeInTheDocument();
@@ -1352,7 +1353,6 @@ describe("OperatorConsole", () => {
       role: "dev",
       fallbackOutput: "live tail from codex",
     });
-    expect(onOpenDiagnostics).not.toHaveBeenCalled();
   });
 
   it("renders real pending targets in submission order and independent worker stop controls", () => {
@@ -2381,12 +2381,10 @@ describe("OperatorConsole", () => {
   });
 
   it("keeps terminal outcomes readable and gives every fact a complete-output outlet", () => {
-    const onOpenDiagnostics = vi.fn();
     const onOpenEvidence = vi.fn();
     const onEditAndResend = vi.fn();
     const onRetryRun = vi.fn();
     renderConsole({
-      onOpenDiagnostics,
       onOpenEvidence,
       onEditAndResend,
       onRetryRun,
@@ -2410,7 +2408,6 @@ describe("OperatorConsole", () => {
 
     expect(screen.queryByRole("button", { name: "查看日志" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "完整输出" })).toHaveLength(4);
-    expect(onOpenDiagnostics).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
     expect(onEditAndResend).toHaveBeenCalledWith({
       stoppedMessageId: 1,
@@ -3329,7 +3326,6 @@ function baseProps(overrides: Partial<OperatorConsoleProps> = {}): OperatorConso
     activeRun: null,
     composerValue: "@dev next",
     sqlitePath: "/tmp/local-console.sqlite",
-    lastError: null,
     onComposerChange: vi.fn(),
     onSend: vi.fn(),
     onSelectSession: vi.fn(),

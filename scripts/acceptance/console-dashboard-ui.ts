@@ -315,11 +315,51 @@ try {
     },
   });
   const page = await application.firstWindow();
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __moebiusAcceptanceStatePollCount?: number };
+    target.__moebiusAcceptanceStatePollCount = 0;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (...fetchArgs) => {
+      const request = fetchArgs[0];
+      const requestUrl = new URL(
+        typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.href
+            : request.url,
+        window.location.href,
+      );
+      if (requestUrl.pathname === "/api/local-console/state") {
+        target.__moebiusAcceptanceStatePollCount =
+          (target.__moebiusAcceptanceStatePollCount ?? 0) + 1;
+      }
+      return await originalFetch(...fetchArgs);
+    };
+  });
+  await page.reload();
   await page.waitForLoadState("domcontentloaded");
   await page.getByRole("button", { name: "设置" }).waitFor({ timeout: 20_000 });
   await setWindowSize(application, 1_400, 900);
-
   const apiBase = await waitForApiBase(page);
+  let observedStatePolls = 0;
+  await waitForValue(async () => {
+    observedStatePolls = await page.evaluate(() =>
+      (window as typeof window & { __moebiusAcceptanceStatePollCount?: number })
+        .__moebiusAcceptanceStatePollCount ?? 0,
+    );
+    return observedStatePolls >= 3 ? observedStatePolls : undefined;
+  }, {
+    describe: "three real renderer console-state polls",
+    kind: "io",
+    timeoutMs: 10_000,
+    pollMs: 100,
+    snapshot: () => ({ observedStatePolls }),
+  });
+  const statePollingEvidence = {
+    requiredPolls: 3,
+    observedPolls: observedStatePolls,
+    source: "renderer fetches to /api/local-console/state",
+  };
   const initialState = await requestJson<ConsoleState>(apiBase, "/api/local-console/state");
   const primaryProject = initialState.projects[0]
     ?? await createProject(apiBase, fixtureProjectRoot);
@@ -329,7 +369,7 @@ try {
   });
   const secondaryProject = await createProject(apiBase, secondaryProjectRoot);
   await updateProject(apiBase, secondaryProject.projectId, { title: "dashboard-secondary" });
-  await createSession(apiBase, {
+  const secondarySession = await createSession(apiBase, {
     projectId: secondaryProject.projectId,
     title: "折叠项目占位会话",
   });
@@ -339,6 +379,21 @@ try {
       title: `短窗项目 ${String(index + 1).padStart(2, "0")}`,
     });
   }
+
+  await selectSession(page, secondarySession.sessionId);
+  const normalInput = page.getByRole("textbox", { name: "消息内容" });
+  await normalInput.fill("E1 普通导航与输入验收");
+  await normalInput.fill("");
+  const normalNavigationInputEvidence = {
+    navigatedToSession: secondarySession.sessionId,
+    composerInputRoundTrip: true,
+    composerValueAfterClear: await normalInput.inputValue(),
+  };
+  assert(
+    normalNavigationInputEvidence.composerValueAfterClear === "",
+    "ordinary composer input did not clear after the navigation/input exercise",
+  );
+  const normalConsoleErrorEvidence = await observeNoGenericConsoleError(page);
 
   const failed = await createSession(apiBase, {
     projectId: primaryProject.projectId,
@@ -351,6 +406,53 @@ try {
 
   await page.reload();
   await selectSession(page, failed.sessionId);
+  const failedOutcome = page.getByText(/这一步(?:没跑起来|反复没跑起来，已经不再重试)/u).first();
+  await failedOutcome.waitFor();
+  const failedRetry = page.getByRole("button", { name: "重试", exact: true }).first();
+  await failedRetry.waitFor();
+  assert(await failedRetry.isEnabled(), "the concrete failed-run recovery action was disabled");
+  const failedMessageCountBeforeRetry = await sessionMessageCount(apiBase, failed.sessionId);
+  await failedRetry.click();
+  await waitForSessionMessageCount(apiBase, failed.sessionId, failedMessageCountBeforeRetry + 1);
+  await waitForState(apiBase, (state) => {
+    const session = findSession(state, failed.sessionId);
+    return session?.unresolvedSystemEventKind != null && session.runningCount === 0;
+  });
+  const failedRetryOutcome = page.getByText(/这一步(?:没跑起来|反复没跑起来，已经不再重试)/u).first();
+  await failedRetryOutcome.waitFor();
+  const failedMessageCountAfterRetry = await sessionMessageCount(apiBase, failed.sessionId);
+  const failedConsoleErrorEvidence = {
+    genericSurface: await observeNoGenericConsoleError(page),
+    concreteFailure: await failedRetryOutcome.textContent(),
+    retryButtonEnabled: await failedRetry.isEnabled(),
+    recoveryAction: {
+      clicked: true,
+      messageCountBefore: failedMessageCountBeforeRetry,
+      messageCountAfter: failedMessageCountAfterRetry,
+      newAttemptRecorded: failedMessageCountAfterRetry > failedMessageCountBeforeRetry,
+      terminalFailureVisibleAgain: true,
+    },
+  };
+  assert(
+    failedConsoleErrorEvidence.recoveryAction.newAttemptRecorded,
+    "failed-run retry did not create a new recorded attempt",
+  );
+
+  const genericConsoleErrorEvidence = {
+    passed: true,
+    statePolling: statePollingEvidence,
+    normalNavigationInput: normalNavigationInputEvidence,
+    normal: normalConsoleErrorEvidence,
+    concreteFailure: failedConsoleErrorEvidence,
+  };
+  await fs.writeFile(
+    path.join(outputRoot, "console-error-removal-evidence.json"),
+    `${JSON.stringify(genericConsoleErrorEvidence, null, 2)}\n`,
+    "utf8",
+  );
+  process.stdout.write(`${JSON.stringify({
+    consoleErrorRemovalEvidence: path.join(outputRoot, "console-error-removal-evidence.json"),
+  })}\n`);
 
   const success = await createSession(apiBase, {
     projectId: primaryProject.projectId,
@@ -800,6 +902,9 @@ try {
         binaryGuard: binaryGuardEvidence,
         longLineGuard: longLineGuardEvidence,
       },
+      genericConsoleErrorRemoval: {
+        ...genericConsoleErrorEvidence,
+      },
       activeRunMachineText: {
         passed: true,
         nonBlank: activitySummaryEvidence,
@@ -819,6 +924,7 @@ try {
     styles: wideGeometry.styles,
     artifacts: {
       evidence: evidencePath,
+      consoleErrorRemovalEvidence: path.join(outputRoot, "console-error-removal-evidence.json"),
       referenceScreenshot,
       wideScreenshot,
       narrowScreenshot,
@@ -1154,6 +1260,27 @@ async function observeStatusDots(
   assert(observed.success === "blue", `expected success blue dot, received ${String(observed.success)}`);
   assert(observed.live === "blink", `expected live blink dot, received ${String(observed.live)}`);
   return observed;
+}
+
+async function observeNoGenericConsoleError(page: Page): Promise<{
+  genericCopyCount: number;
+  genericAlertCount: number;
+  viewLogsButtonCount: number;
+}> {
+  const genericCopyCount = await page.getByText(
+    /操作台遇到问题，请打开开发者诊断查看日志。|The console encountered a problem\. Open developer diagnostics to view logs\./u,
+  ).count();
+  const genericAlertCount = await page.locator('[role="alert"]').filter({
+    hasText: /操作台遇到问题|developer diagnostics/u,
+  }).count();
+  const viewLogsButtonCount = await page.getByRole(
+    "button",
+    { name: /查看日志|View logs/u, exact: true },
+  ).count();
+  assert(genericCopyCount === 0, "the retired generic console error copy is visible in the real Electron page");
+  assert(genericAlertCount === 0, "the retired generic console error alert is visible in the real Electron page");
+  assert(viewLogsButtonCount === 0, "the retired generic view-logs button is visible in the real Electron page");
+  return { genericCopyCount, genericAlertCount, viewLogsButtonCount };
 }
 
 async function collectWideGeometry(

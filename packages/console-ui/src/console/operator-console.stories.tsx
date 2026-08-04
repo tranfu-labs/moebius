@@ -140,7 +140,6 @@ const sample: OperatorConsoleProps = {
   },
   composerValue: "@",
   sqlitePath: ".state/local-console.sqlite",
-  lastError: null,
   onComposerChange: () => undefined,
   onSend: () => undefined,
   onSelectSession: () => undefined,

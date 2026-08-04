@@ -45,7 +45,6 @@ export interface RunOutcomeProps {
   completedAt?: string | null;
   defaultOpen?: boolean;
   onOpenOutput?: (rawOutput: string | null) => void;
-  onOpenDiagnostics?: () => void;
   onRetry?: () => void | Promise<void>;
   onEditAndResend?: () => void;
   initialProfile?: RegistryExecutionProfile | null;
@@ -95,7 +94,6 @@ export function RunOutcome({
   completedAt,
   defaultOpen: _defaultOpen,
   onOpenOutput,
-  onOpenDiagnostics: _onOpenDiagnostics,
   onRetry,
   onEditAndResend,
   initialProfile,

@@ -94,7 +94,7 @@
 - MUST load the desktop operator console as the default BrowserWindow content after application boot.
 - MUST use an integrated hidden-inset titlebar for the macOS main window so traffic-light controls visually belong to the console rail.
 - MUST provide a safe renderer drag region for the integrated main window while keeping interactive controls usable.
-- MUST keep status diagnostics reachable from the operator console, but they must not be the default main-window experience.
+- MUST NOT make the operator console's generic error surface promise or provide a status-diagnostics/log action.
 - MUST expose the local console server URL or equivalent local API capability to the renderer through preload, not through global Node integration.
 - MUST explicitly keep the Chromium sandbox and context isolation enabled and node integration disabled for renderer windows.
 - MUST keep the status page available as an auxiliary diagnostic window.
@@ -179,10 +179,10 @@ Source: docs/product/prd.md#产品运行形态
 Desktop status snapshot、preload 与辅助状态页 MUST 继续呈现 local console、环境、数据根、seed、版本
 和更新事实，MUST NOT 暴露 runner/observer 状态字段、打开 observer 动作或对应占位 UI。
 
-#### Scenario: 打开辅助状态页
+#### Scenario: 壳层调用辅助状态页能力
 
 - **GIVEN** Desktop 的 local console 正常运行
-- **WHEN** 用户打开辅助状态页
+- **WHEN** Desktop 壳层调用辅助状态页窗口能力
 - **THEN** 页面显示 local 与环境诊断
 - **AND** 页面不存在 GitHub runner、observer 或“打开观察页”动作
 
@@ -205,7 +205,7 @@ GitHub state。启动与退出过程中，未被 local runtime 使用的旧 GitH
 Given the desktop app has finished booting
 When the main BrowserWindow finishes loading
 Then it displays the local operator console
-And the user can reach status diagnostics from an auxiliary action.
+And the status diagnostics capability remains available as a separate auxiliary window; the main operator console does not expose a generic error-to-diagnostics action.
 
 ### 场景 DS.T4.2：桌面形态只有一个 local console server
 Given desktop main process starts a local console server
