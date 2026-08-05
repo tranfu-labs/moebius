@@ -64,6 +64,10 @@ describe("Storybook catalog contract", () => {
       'const meta = { title: "Page/Console/Main" }; export default meta;\n',
     );
     await fs.writeFile(
+      path.join(fixtureRoot, "interactive-page.stories.tsx"),
+      'const meta = { title: "Page/Console/Interactive", parameters: { layout: "fullscreen" } }; export default meta; export const Interactive: Story = { parameters: { userActionCoverage: { required: true, actions: ["menu.open"] } } };\n',
+    );
+    await fs.writeFile(
       path.join(fixtureRoot, "legacy.stories.tsx"),
       'const meta = { title: "Console/Legacy" }; export default meta;\n',
     );
@@ -72,6 +76,9 @@ describe("Storybook catalog contract", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("expected exactly one Meta.title");
     expect(result.stderr).toContain('Page stories must set meta parameters.layout to "fullscreen"');
+    expect(result.stderr).toContain(
+      "Interactive: action-covered Page stories must provide local render, play, and a non-empty action list",
+    );
   });
 });
 

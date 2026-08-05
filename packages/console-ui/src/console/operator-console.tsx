@@ -889,6 +889,7 @@ export function OperatorConsole({
   const handledMessageNavigationRequestRef = useRef<number | null>(null);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsOpenRef = useRef(false);
+  const projectActionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const previousLanguageSaveStatusRef = useRef(languageSaveStatus);
   const nextSettingsNotificationIdRef = useRef(1);
   const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
@@ -1915,6 +1916,7 @@ export function OperatorConsole({
           onRenameProject={onRenameProject === undefined ? undefined : (sidebarProject) => {
             const target = visibleProjects.find((candidate) => candidate.projectId === sidebarProject.id);
             if (target) {
+              projectActionTriggerRef.current = findProjectMenuTrigger(sidebarProject.id);
               setProjectActionError(null);
               setRenameTarget(target);
               setRenameValue(target.title);
@@ -1925,6 +1927,7 @@ export function OperatorConsole({
             if (!target) {
               return;
             }
+            projectActionTriggerRef.current = findProjectMenuTrigger(sidebarProject.id);
             setProjectActionError(null);
             if (target.runningCount > 0 || (target.managedRunningCount ?? 0) > 0) {
               setRunningRemovalTarget(target);
@@ -2931,6 +2934,7 @@ export function OperatorConsole({
           title={t("console.operator.renameTitle")}
           description={t("console.operator.renameDescription")}
           error={projectActionError}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => {
             if (!isProjectMutationPending) {
               setRenameTarget(null);
@@ -2940,7 +2944,6 @@ export function OperatorConsole({
           <label className="grid gap-1.5 text-sm font-medium text-ink">
             {t("console.operator.displayName")}
             <Input
-              autoFocus
               value={renameValue}
               disabled={isProjectMutationPending}
               onChange={(event) => setRenameValue(event.target.value)}
@@ -3000,6 +3003,7 @@ export function OperatorConsole({
           title={t("console.operator.runningTitle")}
           description={t("console.operator.runningDescription", { project: runningRemovalTarget.title })}
           icon={<AlertTriangle className="h-5 w-5 text-danger" strokeWidth={1.5} aria-hidden="true" />}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => setRunningRemovalTarget(null)}
         >
           <DialogButtons
@@ -3020,6 +3024,7 @@ export function OperatorConsole({
           title={t("console.operator.removeTitle")}
           description={t("console.operator.removeDescription", { project: removalRequest.project.title })}
           error={projectActionError}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => {
             if (!isProjectMutationPending) {
               setRemovalRequest(null);
@@ -3161,12 +3166,35 @@ function createRightSidebarTabId(counter: { current: number }): string {
   return id;
 }
 
+function findProjectMenuTrigger(projectId: string): HTMLButtonElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("[data-project-row-action='project-menu']"))
+    .find((element) => element.dataset.projectMenuProjectId === projectId) ?? null;
+}
+
+const DIALOG_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function dialogFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR))
+    .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+}
+
 function ProjectActionDialog({
   title,
   description,
   icon,
   error,
   onCancel,
+  returnFocusElement,
   children,
 }: {
   title: string;
@@ -3174,10 +3202,57 @@ function ProjectActionDialog({
   icon?: JSX.Element;
   error?: string | null;
   onCancel(): void;
+  returnFocusElement?: HTMLElement | null;
   children: ReactNode;
 }): JSX.Element {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const dialog = dialogRef.current;
+    if (overlay === null || dialog === null) {
+      return;
+    }
+
+    const backgroundElements = overlay.parentElement === null
+      ? []
+      : Array.from(overlay.parentElement.children).filter(
+        (element): element is HTMLElement => element instanceof HTMLElement && element !== overlay,
+      );
+    const previousInert = backgroundElements.map((element) => ({ element, inert: element.inert }));
+    backgroundElements.forEach((element) => {
+      element.inert = true;
+    });
+
+    const focusInitialElement = (): void => {
+      const firstFocusable = dialogFocusableElements(dialog)[0];
+      (firstFocusable ?? dialog).focus();
+    };
+    const focusFrame = window.requestAnimationFrame(focusInitialElement);
+    const handleFocusIn = (event: FocusEvent): void => {
+      if (event.target instanceof Node && dialog.contains(event.target)) {
+        return;
+      }
+      focusInitialElement();
+    };
+    document.addEventListener("focusin", handleFocusIn);
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      window.cancelAnimationFrame(focusFrame);
+      previousInert.forEach(({ element, inert }) => {
+        element.inert = inert;
+      });
+      if (returnFocusElement?.isConnected) {
+        returnFocusElement.focus();
+      }
+    };
+  }, [returnFocusElement]);
+
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
       role="presentation"
       onMouseDown={(event) => {
@@ -3186,7 +3261,40 @@ function ProjectActionDialog({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink" role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        ref={dialogRef}
+        className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+            return;
+          }
+          if (event.key !== "Tab") {
+            return;
+          }
+          const focusable = dialogFocusableElements(event.currentTarget);
+          if (focusable.length === 0) {
+            event.preventDefault();
+            event.currentTarget.focus();
+            return;
+          }
+          const activeElement = document.activeElement;
+          const activeIndex = activeElement instanceof HTMLElement ? focusable.indexOf(activeElement) : -1;
+          const shouldWrapBackward = event.shiftKey && (activeIndex <= 0);
+          const shouldWrapForward = !event.shiftKey && (activeIndex === -1 || activeIndex === focusable.length - 1);
+          if (shouldWrapBackward || shouldWrapForward) {
+            event.preventDefault();
+            const nextIndex = event.shiftKey ? focusable.length - 1 : 0;
+            focusable[nextIndex]?.focus();
+          }
+        }}
+      >
         <div className="flex items-start gap-3">
           {icon}
           <div className="min-w-0">
