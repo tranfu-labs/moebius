@@ -337,6 +337,11 @@ try {
     },
   );
 
+  // The process tab intentionally keeps the right sidebar open across session switches.
+  // Close it through the real overlay control before returning to the main composer.
+  await desktop.page.getByTestId("right-sidebar-overlay-close").click();
+  await desktop.page.getByTestId("right-sidebar").waitFor({ state: "detached" });
+
   const hungTool = await createSession(desktop.apiBase, codexTeam.teamId, "Codex 挂死工具被监督");
   await openSession(desktop.page, hungTool);
   const hungToolStartedAt = Date.now();
