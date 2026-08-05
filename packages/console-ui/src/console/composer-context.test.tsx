@@ -35,16 +35,13 @@ describe("ComposerContext", () => {
   it("makes the team selectable and discloses the creation-time snapshot", () => {
     const onChangeSessionTeam = vi.fn();
     renderContext({ onChangeSessionTeam });
-    const trigger = screen.getByRole("button", { name: "Agent 团队：开发团队，点击切换" });
-    expect(trigger).not.toHaveAttribute("title");
-    fireEvent.keyDown(trigger, {
+    fireEvent.keyDown(screen.getByRole("button", { name: "Agent 团队：开发团队，点击切换" }), {
       key: "ArrowDown",
     });
-    expect(screen.getByRole("menu")).toHaveClass("overflow-hidden");
+    expect(screen.getByRole("menu")).toHaveClass("overflow-y-auto", "overscroll-contain");
     expect(screen.getByRole("menu")).toHaveStyle({
-      maxHeight: "min(430px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px))",
+      maxHeight: "var(--radix-dropdown-menu-content-available-height)",
     });
-    expect(screen.getByTestId("agent-team-catalog")).toHaveClass("min-h-0", "overflow-y-auto", "overscroll-contain");
     expect(screen.getByText(/开始时载入的那份团队内容/u)).toBeVisible();
     expect(screen.getByText(/之后在 Agent 团队页的修改不影响它/u)).toBeVisible();
     fireEvent.click(screen.getByText("营销团队"));

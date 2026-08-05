@@ -419,7 +419,7 @@ describe("built-in team seed", () => {
     ]);
   });
 
-  it("packages a valid product development team with separate specification and user-task reviewers", async () => {
+  it("packages a valid product development team with six ordered members", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
 
@@ -440,7 +440,6 @@ describe("built-in team seed", () => {
           "product-delivery-lead",
           "product-reviewer",
           "ui-prototyper",
-          "user-reviewer",
           "implementation-lead",
           "functional-qa",
           "visual-qa",
@@ -460,12 +459,9 @@ describe("built-in team seed", () => {
           { speakerSlug: "product-reviewer" },
           { speakerSlug: "ui-prototyper" },
           { speakerSlug: "implementation-lead" },
-          { speakerSlug: "user-reviewer" },
-          { speakerSlug: "product-delivery-lead" },
           { speakerSlug: "functional-qa" },
           { speakerSlug: "implementation-lead" },
           { speakerSlug: "visual-qa" },
-          { speakerSlug: "user-reviewer" },
           { speakerSlug: "product-delivery-lead" },
         ],
       },

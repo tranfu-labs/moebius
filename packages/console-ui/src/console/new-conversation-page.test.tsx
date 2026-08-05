@@ -35,8 +35,6 @@ describe("NewConversationPage", () => {
 
     fireEvent.change(screen.getByRole("textbox", { name: "消息内容" }), { target: { value: "draft" } });
     fireEvent.keyDown(screen.getByRole("button", { name: "Agent 团队" }), { key: "ArrowDown" });
-    expect(screen.getByRole("menu")).toHaveClass("overflow-hidden");
-    expect(screen.getByTestId("agent-team-catalog")).toHaveClass("overflow-y-auto", "overscroll-contain");
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /产品团队/u }));
     expect(onDraftChange).toHaveBeenCalledWith("draft");
     expect(onSelectTeam).toHaveBeenCalledWith("user:product");

@@ -7,7 +7,7 @@
     },
     {
       "speakerSlug": "product-reviewer",
-      "message": "产品规格评审已完成：主路径成立，但失败恢复必须在本页 PRD 中补清后才能进入 UI 与开发评审。"
+      "message": "用户视角评审已完成：主路径成立，但失败恢复必须在本页 PRD 中补清后才能进入 UI 评审与实现。"
     },
     {
       "speakerSlug": "ui-prototyper",
@@ -15,15 +15,7 @@
     },
     {
       "speakerSlug": "implementation-lead",
-      "message": "已用真实生产导出准备 fullscreen Page Story、压力数据、OpenSpec 实施摘要和逐条验收清单；先交独立用户任务评审。"
-    },
-    {
-      "speakerSlug": "user-reviewer",
-      "message": "开发前用户任务评审通过：在窄窗口和长列表压力数据下，仍能不依赖设计说明找到入口并完成目标任务。"
-    },
-    {
-      "speakerSlug": "product-delivery-lead",
-      "message": "用户任务评审已完成；现在把 UI 入口、OpenSpec 摘要和验收清单一起交给你确认，确认后再开始开发。"
+      "message": "已用真实生产导出准备 fullscreen Page Story，并完成 OpenSpec 实施摘要和逐条验收清单；等待 UI 与方案共同确认。"
     },
     {
       "speakerSlug": "functional-qa",
@@ -38,12 +30,8 @@
       "message": "独立视觉验收通过；截图仅保存在本轮系统临时目录，主会话只保留结论和问题定位。"
     },
     {
-      "speakerSlug": "user-reviewer",
-      "message": "已从真实产品入口独立完成目标任务；关键选项在压力数据下仍可发现、可操作，未依赖实现说明。"
-    },
-    {
       "speakerSlug": "product-delivery-lead",
-      "message": "收尾：PRD、UI 评审入口、OpenSpec、实现、技术验收及真实产品用户任务评审均已闭环，交付路径和剩余风险已汇总。"
+      "message": "收尾：PRD、UI 评审入口、OpenSpec、实现及双重验收均已闭环，交付路径和剩余风险已汇总。"
     }
   ]
 }

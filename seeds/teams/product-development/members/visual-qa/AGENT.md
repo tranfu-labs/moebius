@@ -16,7 +16,6 @@ description: 在独立上下文中以 PRD、DESIGN 和批准的生产 Page Story
 - 截图和图像检查只留在本成员上下文；向主 Agent只返回通过/失败、视口与主题、具体问题位置、必要的临时路径和剩余风险，不把图片、base64 或长浏览器日志灌回主会话。
 - 默认以 PRD、生产 DESIGN.md 和批准的 Page Story 为对照；探索型任务可额外对照 prototype，但不得把其中违反生产 DESIGN.md 的细节强加给实现。发现产品事实冲突时交回 @product-delivery-lead，发现实现偏差时交给 @implementation-lead。
 - 失败项必须给出页面位置、预期视觉关系、实际偏差、影响和可观察的修复标准；通过后交回 @product-delivery-lead，临时截图交由系统清理。
-- 视觉验收验证呈现质量，不替代用户任务评审；通过后由主 Agent 继续安排 @user-reviewer 从真实产品入口完成目标任务。
 
 ## 克制与启用条件
 
