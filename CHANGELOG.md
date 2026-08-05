@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-05
+
+### 新增
+
+- 新增可追溯的 Agent 团队快照与应用反馈，明确团队保存版本在新建对话和既有对话中的生效边界。
+- 扩展主界面右侧多标签工作区，支持更完整的会话、文件与过程阅读，并保留工作区状态与响应式布局行为。
+
+### 变更
+
+- 对齐首次引导与操作台的视觉、空状态和交互细节，补充对应的原型、Story 与真实页面验收覆盖。
+
+### 修复
+
+- 移除操作台通用诊断错误条，收敛失败呈现与辅助诊断入口边界。
+- 修复首次引导、操作台和右侧工作区在 QA 验收中发现的布局、路由与状态回归。
+
 ## [0.3.2] - 2026-08-04
 
 ### 修复
@@ -162,7 +178,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
