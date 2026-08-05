@@ -18,6 +18,7 @@ import {
 import {
   createRunSupervisorState,
   observeRunProgress,
+  settleRunSupervisorTools,
 } from "../src/run-supervisor.js";
 
 describe("execution progress contract", () => {
@@ -322,5 +323,28 @@ describe("semantic run supervisor", () => {
     }, 300);
     expect(reused.kind).toBe("progress-observed");
     expect(reused.state.activeToolIds).toEqual(new Set(["provider-reused"]));
+  });
+
+  it("settles all active tools without fabricating progress", () => {
+    let state = createRunSupervisorState(0);
+    state = observeRunProgress(state, {
+      kind: "tool-started",
+      toolId: "first-tool",
+      toolKind: "command",
+      sequence: 1,
+    }, 100).state;
+    state = observeRunProgress(state, {
+      kind: "tool-started",
+      toolId: "second-tool",
+      toolKind: "command",
+      sequence: 2,
+    }, 200).state;
+
+    const settled = settleRunSupervisorTools(state);
+
+    expect(settled.activeToolIds).toEqual(new Set());
+    expect(settled.lastProgressAt).toBe(200);
+    expect(settled.lastSequence).toBe(2);
+    expect(settleRunSupervisorTools(settled)).toBe(settled);
   });
 });

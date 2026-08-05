@@ -64,7 +64,7 @@ export const LOCAL_RUN_IDLE_TIMEOUT_MS = parseOptionalPositiveInteger(
 ) ?? 10 * 60 * 1000;
 export const LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
-) ?? 30 * 60 * 1000;
+) ?? 2 * 60 * 60 * 1000;
 export const LOCAL_PROVIDER_BUSY_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_PROVIDER_BUSY_TIMEOUT_MS,
 ) ?? 5 * 60 * 1000;
