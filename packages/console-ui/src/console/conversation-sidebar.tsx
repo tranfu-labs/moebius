@@ -432,10 +432,19 @@ export function ConversationSidebar({
                   draggingProjectId === project.id && "cursor-grabbing bg-sel opacity-80",
                 )}
                 onPointerDown={(event) => {
+                  // Radix menus render their content through a React portal. The
+                  // portal event still bubbles through this row in React even
+                  // though the menu item is not a DOM descendant of the row.
+                  // Only a pointer that started inside the row may begin its
+                  // drag/collapse gesture.
+                  const target = event.target;
+                  if (!(target instanceof Element) || !event.currentTarget.contains(target)) {
+                    return;
+                  }
                   if (
                     event.button !== 0
                     || gestureRef.current !== null
-                    || (event.target as Element).closest("[data-project-row-action]") !== null
+                    || target.closest("[data-project-row-action]") !== null
                   ) {
                     return;
                   }
@@ -556,6 +565,7 @@ export function ConversationSidebar({
                         aria-label={t("console.conversationSidebar.projectMenu", { project: projectName })}
                         title={t("console.conversationSidebar.projectMenu", { project: projectName })}
                         data-project-row-action="project-menu"
+                        data-project-menu-project-id={project.id}
                         disabled={disabled || projectActionsDisabled}
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -575,7 +585,10 @@ export function ConversationSidebar({
                       ) : null}
                       {onRemoveProject ? <DropdownMenuSeparator /> : null}
                       {onRemoveProject ? (
-                        <DropdownMenuItem className="text-danger focus:text-danger" onSelect={() => onRemoveProject(project)}>
+                        <DropdownMenuItem
+                          className="text-danger focus:text-danger"
+                          onSelect={() => onRemoveProject(project)}
+                        >
                           {t("console.conversationSidebar.removeProject")}
                         </DropdownMenuItem>
                       ) : null}
