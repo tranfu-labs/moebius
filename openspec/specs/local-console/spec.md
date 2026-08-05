@@ -2619,7 +2619,7 @@ Source: docs/product/pages/agent-conversation.md#运行耗时
 
 只有新增非空 Agent 正文、非空 reasoning、唯一工具调用 started/finished 和明确文件改动 MUST 刷新 local run 的 progress idle deadline。provider retry、配置更新、usage、状态心跳、空 delta、重复或已消费事件 MUST NOT 刷新该 deadline；其中可识别 provider retry 进入下述独立 busy phase，不能识别为结构化 retry 的普通文本回显仍由 progress idle 收敛。Codex/Claude stdout 字节与 Kimi 任意 `session/update` 到达 MUST NOT 自身构成进展。
 
-工具调用从唯一 started 到匹配 finished/result 之间 MUST 被视为已知在途工作，并暂停通用 progress idle、启动独立且更宽的工具执行 deadline；该 deadline 默认三十分钟，覆盖 open-tool 集合从空变为非空到再次清空的连续在途区间，同一区间新增或结束部分并行工具 MUST NOT 重置它。匹配结束且集合清空后 MUST 撤销工具 deadline 并从结束时刻重新计时。Claude 的 streamed `content_block_stop` 只表示模型输出块闭合，MUST NOT 被当成工具完成；系统必须等待对应 `tool_result`，并正确处理一轮中的并行工具结果。provider 缺失 tool id 时，adapter MUST 以本地发生次序稳定配对同类 start/finish；同一 provider id 在前一实例结束后再次出现 MUST 被视为新生命周期，不能被永久去重。没有匹配 started 的 completed/finished MUST 安全降级为非进展 status，不能误删其他在途工具或刷新 idle。工具在途期间 MAY 继续显示当前工具活动，但 local runtime MUST NOT 仅因该工具静默超过普通 idle 窗口而终结 run；工具 deadline 到期 MUST 停止 run 并形成 `timeout{tool}`。
+工具调用从唯一 started 到匹配 finished/result 之间 MUST 被视为已知在途工作，并暂停通用 progress idle、启动独立且更宽的工具执行 deadline；该 deadline 默认两小时（`7_200_000` 毫秒），覆盖 open-tool 集合从空变为非空到再次清空的连续在途区间，同一区间新增或结束部分并行工具 MUST NOT 重置它。local console MUST centrally resolve this deadline: when `MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS` is absent or empty, it MUST use exactly `7_200_000` milliseconds; when the variable contains a positive integer, it MUST use that integer exactly. Existing validation for non-integer, zero, or negative values MUST remain fail-fast, and MUST NOT produce an unlimited deadline. 匹配结束且集合清空后 MUST 撤销工具 deadline 并从结束时刻重新计时。Claude 的 streamed `content_block_stop` 只表示模型输出块闭合，MUST NOT 被当成工具完成；系统必须等待对应 `tool_result`，并正确处理一轮中的并行工具结果。provider 缺失 tool id 时，adapter MUST 以本地发生次序稳定配对同类 start/finish；同一 provider id 在前一实例结束后再次出现 MUST 被视为新生命周期，不能被永久去重。没有匹配 started 的 completed/finished MUST 安全降级为非进展 status，不能误删其他在途工具或刷新 idle。工具在途期间 MAY 继续显示当前工具活动，但 local runtime MUST NOT 仅因该工具静默超过普通 idle 窗口而终结 run；工具 deadline 到期 MUST 停止 run 并形成 `timeout{tool}`。
 
 local console MUST NOT 因总墙钟达到固定上限而停止仍有真实进展的 run。长运行报告阈值 MAY 生成一次可见监督提示，但 MUST NOT 终结 run 或刷新 progress idle。其他运行模式或 provider 自身产生的 max timeout 仍 MUST 被结构化表达，不得与 local long-run report 混同。
 
@@ -2682,6 +2682,21 @@ local console MUST NOT 因总墙钟达到固定上限而停止仍有真实进展
 - **THEN** 活动行在运行中显示观察到的 retry 次数
 - **AND** run 以 rate-limited 终局停止
 - **AND** 系统不自动调用其他 CLI。
+
+### Scenario: 默认工具 deadline 为两小时
+
+- **GIVEN** local console 未设置 `MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS`
+- **WHEN** runtime 解析连续工具在途区间的工具 deadline
+- **THEN** deadline 为精确的 `7_200_000` 毫秒
+- **AND** open-tool 集合的连续区间和并行工具计时语义保持不变。
+
+### Scenario: 正数环境覆盖按原值使用
+
+- **GIVEN** local console 将 `MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS` 设置为正整数
+- **WHEN** runtime 解析连续工具在途区间的工具 deadline
+- **THEN** deadline 使用该整数
+- **AND** Codex、Claude 与 Kimi 的 ordinary tool execution paths 收到相同值
+- **AND** idle、provider busy、long-run report 与 managed-process 语义不变。
 
 ## Requirement: 异常终局持久保留可见正文
 

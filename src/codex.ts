@@ -22,6 +22,7 @@ import {
 import {
   createRunSupervisorState,
   observeRunProgress,
+  settleRunSupervisorTools,
 } from "./run-supervisor.js";
 
 export type CodexRunMode = { kind: "full" } | { kind: "resume"; threadId: string };
@@ -409,6 +410,11 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
       } catch (error) {
         stderrFile.write(`[moebius] codex-progress-callback-failed:${formatUnknownError(error)}\n`);
       }
+    }
+    if (isCodexTurnCompleted(event)) {
+      progressSupervisor = settleRunSupervisorTools(progressSupervisor);
+      toolProjection = createProviderToolProjectionState();
+      watchdogs.setToolInFlight(false);
     }
     try {
       options.onStructuredActivity?.(event);
@@ -831,6 +837,10 @@ function parseJsonLine(line: string): unknown | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCodexTurnCompleted(value: unknown): boolean {
+  return isRecord(value) && value.type === "turn.completed";
 }
 
 function isAssistantEvent(value: unknown): boolean {

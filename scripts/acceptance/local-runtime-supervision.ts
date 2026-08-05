@@ -269,6 +269,74 @@ try {
     },
   );
 
+  const overlongTool = await createSession(desktop.apiBase, codexTeam.teamId, "Codex 超大输出后完成");
+  await openSession(desktop.page, overlongTool);
+  await sendMessage(desktop.page, "OVERSIZED_TOOL_OUTPUT");
+  const overlongToolActive = await waitForState(desktop.apiBase, overlongTool.sessionId, (state) =>
+    state.activeRuns.find((run) => run.activity?.object === "acceptance-overlong-tool") ?? null);
+  await desktop.page.getByText("acceptance-overlong-tool", { exact: true }).waitFor();
+  assertEvidence(
+    "A13-overlong-tool-start-is-visible",
+    await desktop.page.getByTestId("active-run-block").count() === 1
+      && await desktop.page.getByText("acceptance-overlong-tool", { exact: true }).isVisible(),
+    { runId: overlongToolActive.runId, activity: overlongToolActive.activity },
+  );
+  await desktop.page.getByText("OVERSIZED_TOOL_SUCCESS", { exact: true }).waitFor({ timeout: 20_000 });
+  const overlongToolCompleted = await waitForState(
+    desktop.apiBase,
+    overlongTool.sessionId,
+    (state) => {
+      const message = state.messages.find((candidate) =>
+        candidate.speaker === "agent" && candidate.body === "OVERSIZED_TOOL_SUCCESS");
+      return message !== undefined && !state.activeRuns.some((run) => run.runId === overlongToolActive.runId)
+        ? { state, message }
+        : null;
+    },
+  );
+  await waitFor(async () =>
+    await desktop!.page.getByTestId("active-run-block").count() === 0 ? true : null);
+  const overlongMainText = await desktop.page.getByTestId("operator-main").innerText();
+  assertEvidence(
+    "A13-overlong-tool-settles-main-timeline",
+    overlongToolCompleted.message.runTiming?.status === "completed"
+      && !overlongToolCompleted.state.activeRuns.some((run) => run.runId === overlongToolActive.runId)
+      && !overlongMainText.includes("正在运行命令"),
+    {
+      runId: overlongToolActive.runId,
+      message: terminalEvidence(overlongToolCompleted.message),
+      activeRunIds: overlongToolCompleted.state.activeRuns.map((run) => run.runId),
+      activeBlockCount: await desktop.page.getByTestId("active-run-block").count(),
+    },
+  );
+
+  await desktop.page.getByText("OVERSIZED_TOOL_SUCCESS", { exact: true }).hover();
+  const overlongOutputButton = desktop.page.getByRole("button", { name: "完整输出" }).last();
+  await overlongOutputButton.waitFor();
+  await overlongOutputButton.click();
+  const overlongProcessTab = desktop.page.getByTestId("process-tab");
+  await overlongProcessTab.waitFor();
+  await overlongProcessTab.getByText("acceptance-overlong-tool", { exact: true }).waitFor();
+  const overlongProcessText = await waitFor(async () => {
+    const text = await overlongProcessTab.innerText();
+    return text.includes("acceptance-overlong-tool") && text.includes("completed") ? text : null;
+  });
+  assertEvidence(
+    "A13-overlong-tool-settles-full-output",
+    overlongProcessText.includes("acceptance-overlong-tool")
+      && overlongProcessText.includes("completed")
+      && !overlongProcessText.includes("running")
+      && overlongToolCompleted.message.runTiming?.status === "completed"
+      && !overlongToolCompleted.state.activeRuns.some((run) => run.runId === overlongToolActive.runId)
+      && await desktop.page.getByTestId("active-run-block").count() === 0,
+    {
+      runId: overlongToolActive.runId,
+      processText: overlongProcessText,
+      processTabVisible: await overlongProcessTab.isVisible(),
+      activeRunIds: overlongToolCompleted.state.activeRuns.map((run) => run.runId),
+      activeBlockCount: await desktop.page.getByTestId("active-run-block").count(),
+    },
+  );
+
   const hungTool = await createSession(desktop.apiBase, codexTeam.teamId, "Codex 挂死工具被监督");
   await openSession(desktop.page, hungTool);
   const hungToolStartedAt = Date.now();
@@ -360,6 +428,12 @@ try {
       sessionId: longTool.sessionId,
       runId: longToolActive.runId,
       elapsedMs: longToolElapsedMs,
+    },
+    overlongTool: {
+      sessionId: overlongTool.sessionId,
+      runId: overlongToolActive.runId,
+      mainTimeline: terminalEvidence(overlongToolCompleted.message),
+      fullOutput: overlongProcessText,
     },
     hungTool: terminalEvidence(hungToolTerminal),
     longRunId: longActive.runId,
@@ -708,6 +782,7 @@ process.on("SIGTERM", () => stop("SIGTERM"));
 function codexShimSource(): string {
   return `#!/usr/bin/env node
 const fs = require("node:fs");
+const path = require("node:path");
 const logPath = ${JSON.stringify(providerLog)};
 const args = process.argv.slice(2);
 if (args.includes("--version")) {
@@ -719,6 +794,8 @@ const mode = resumeIndex >= 0 ? "resume" : "full";
 const prompt = args.at(-1) || "";
 const marker = prompt.includes("QUOTA_CONFIRMED")
   ? "QUOTA_CONFIRMED"
+  : prompt.includes("OVERSIZED_TOOL_OUTPUT")
+    ? "OVERSIZED_TOOL_OUTPUT"
   : prompt.includes("LONG_TOOL")
     ? "LONG_TOOL"
     : prompt.includes("HUNG_TOOL")
@@ -732,7 +809,87 @@ fs.appendFileSync(logPath, JSON.stringify({
   recordedAt: new Date().toISOString(),
 }) + "\\n");
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
-emit({ type: "thread.started", thread_id: "codex-override-" + String(process.pid) });
+const threadId = "codex-override-" + String(process.pid);
+emit({ type: "thread.started", thread_id: threadId });
+if (marker === "OVERSIZED_TOOL_OUTPUT") {
+  const rolloutPath = path.join(
+    ${JSON.stringify(codexHome)},
+    "sessions",
+    "2026",
+    "08",
+    "05",
+    "rollout-acceptance-" + threadId + ".jsonl",
+  );
+  fs.mkdirSync(path.dirname(rolloutPath), { recursive: true });
+  const rolloutRecords = [
+    {
+      type: "session_meta",
+      payload: {
+        base_instructions: { text: "Codex runtime acceptance fixture" },
+        model_provider: "fixture",
+        cli_version: "0.145.0",
+        cwd: process.cwd(),
+      },
+    },
+    {
+      type: "turn_context",
+      payload: { model: "gpt-5.6-sol", effort: "high", cwd: process.cwd() },
+    },
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "OVERSIZED_TOOL_OUTPUT" }],
+      },
+    },
+    {
+      type: "response_item",
+      payload: {
+        type: "command_execution",
+        command: "acceptance-overlong-tool",
+        status: "completed",
+        output: "completed output",
+        exit_code: 0,
+      },
+    },
+    {
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "OVERSIZED_TOOL_SUCCESS" }],
+      },
+    },
+  ];
+  fs.writeFileSync(
+    rolloutPath,
+    rolloutRecords.map((record) => JSON.stringify({ timestamp: new Date().toISOString(), ...record })).join("\\n") + "\\n",
+  );
+  emit({
+    type: "item.started",
+    item: {
+      id: "acceptance-overlong-tool",
+      type: "command_execution",
+      command: "acceptance-overlong-tool",
+    },
+  });
+  setTimeout(() => {
+    process.stdout.write(JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "acceptance-overlong-tool",
+        type: "command_execution",
+        command: "acceptance-overlong-tool",
+        output: "x".repeat(1024 * 1024),
+      },
+    }) + "\\n");
+    emit({ type: "item.completed", item: { type: "agent_message", text: "OVERSIZED_TOOL_SUCCESS" } });
+    emit({ type: "turn.completed" });
+    setTimeout(() => {}, 1_000);
+  }, 2_000);
+  return;
+}
 if (marker === "LONG_TOOL") {
   emit({
     type: "item.started",

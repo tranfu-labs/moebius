@@ -877,6 +877,132 @@ setTimeout(() => {
     }
   });
 
+  it("settles a dropped overlong command completion at turn.completed and still returns the final message", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const emit = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+emit({ type: "thread.started", thread_id: "overlong-tool-thread" });
+emit({ type: "item.started", item: { id: "overlong-command", type: "command_execution", command: "acceptance-overlong-tool" } });
+setTimeout(() => {
+  process.stdout.write(JSON.stringify({
+    type: "item.completed",
+    item: {
+      id: "overlong-command",
+      type: "command_execution",
+      command: "acceptance-overlong-tool",
+      output: "x".repeat(1024 * 1024)
+    }
+  }) + "\\n");
+  emit({ type: "item.completed", item: { type: "agent_message", text: "OVERLONG_TOOL_SUCCESS" } });
+  emit({ type: "turn.completed" });
+  setTimeout(() => {}, 1_000);
+}, 50);
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    const progressKinds: string[] = [];
+    try {
+      const result = await run({
+        prompt: "run an overlong command and continue",
+        runDir,
+        idleTimeoutMs: 2_000,
+        toolTimeoutMs: 500,
+        interruptTerminationDelayMs: 10,
+        interruptKillDelayMs: 10,
+        onExecutionProgress: (event) => progressKinds.push(event.kind),
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        finalText: "OVERLONG_TOOL_SUCCESS",
+      });
+      if (!result.ok) throw new Error("expected the overlong command run to complete");
+      expect(progressKinds.filter((kind) => kind === "tool-finished")).toEqual([]);
+      await expect(fs.readFile(result.stderrPath, "utf8")).resolves.toContain(
+        "codex-jsonl-line-too-large",
+      );
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("does not treat an empty turn.completed body as a successful run", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "empty-turn-thread" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "turn.completed" }) + "\\n");
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      await expect(run({ prompt: "return no final message", runDir })).resolves.toMatchObject({
+        ok: false,
+        reason: "no-final-message",
+        terminal: { kind: "crashed", safeCode: "codex-no-complete-result" },
+      });
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("does not settle an in-flight tool when the provider emits turn.failed", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    await fs.mkdir(binDir);
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const emit = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+emit({ type: "thread.started", thread_id: "failed-turn-thread" });
+emit({ type: "item.started", item: { id: "failed-command", type: "command_execution", command: "acceptance-failed-tool" } });
+emit({ type: "turn.failed", error: { message: "provider failed" } });
+setInterval(() => {}, 1_000);
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      await expect(run({
+        prompt: "run a failed tool",
+        runDir,
+        idleTimeoutMs: 1_000,
+        toolTimeoutMs: 100,
+        interruptTerminationDelayMs: 10,
+        interruptKillDelayMs: 10,
+      })).resolves.toMatchObject({
+        ok: false,
+        reason: "tool-timeout:100ms",
+        terminal: { kind: "timeout", basis: "tool" },
+      });
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
   it("stops a command that remains in flight past the tool deadline", async () => {
     // This fake tool never completes, so it must outlive the 3s tool deadline
     // after idle supervision has been suspended.

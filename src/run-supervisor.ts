@@ -26,6 +26,19 @@ export function createRunSupervisorState(now: number): RunSupervisorState {
   };
 }
 
+/**
+ * A provider-level terminal event can close the invocation even when a bounded
+ * live stream dropped the matching tool-finished item. This only settles the
+ * temporary tool set; it is not a progress observation or a run terminal.
+ */
+export function settleRunSupervisorTools(previous: RunSupervisorState): RunSupervisorState {
+  if (previous.activeToolIds.size === 0) return previous;
+  return {
+    ...previous,
+    activeToolIds: new Set(),
+  };
+}
+
 export function observeRunProgress(
   previous: RunSupervisorState,
   event: ExecutionProgressEvent,

@@ -628,6 +628,25 @@ describe("Codex rollout projection", () => {
       timestamp: "2026-07-23T01:00:01.000Z",
       type: "response_item",
       payload: {
+        type: "command_execution",
+        command: "acceptance-overlong-tool",
+        status: "completed",
+        output: "completed output",
+        exit_code: 0,
+      },
+    }, { runId: "run-a", lineOffset: 60 })).toEqual([
+      expect.objectContaining({
+        kind: "command",
+        phase: "completed",
+        status: "completed",
+        input: "acceptance-overlong-tool",
+      }),
+    ]);
+
+    expect(projectCodexRolloutRecord({
+      timestamp: "2026-07-23T01:00:01.250Z",
+      type: "response_item",
+      payload: {
         type: "custom_tool_call",
         name: "exec",
         input: "pnpm test",
