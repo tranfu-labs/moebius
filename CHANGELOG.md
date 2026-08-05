@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-05
+
+### 变更
+
+- 延长本地工具调用的默认运行时限，并在工具完成事件到达后正确恢复运行状态与完整输出。
+
 ## [0.3.3] - 2026-08-05
 
 ### 新增
