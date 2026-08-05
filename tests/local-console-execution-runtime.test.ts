@@ -329,12 +329,14 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(facts).not.toContain("new Codex team");
     const database = new DatabaseSync(path.join(root, "local-console.sqlite"), { readOnly: true });
     try {
-      expect(database.prepare(
-        "SELECT COUNT(*) AS count FROM local_run_execution_contexts WHERE session_id = 'default'",
-      ).get()).toEqual({ count: 3 });
-      expect(database.prepare(
-        "SELECT COUNT(*) AS count FROM local_execution_session_links WHERE session_id = 'default'",
-      ).get()).toEqual({ count: 3 });
+      expect(await waitForDatabaseRow(database, {
+        sql: "SELECT COUNT(*) AS count FROM local_run_execution_contexts WHERE session_id = 'default'",
+        params: [],
+      })).toEqual({ count: 3 });
+      expect(await waitForDatabaseRow(database, {
+        sql: "SELECT COUNT(*) AS count FROM local_execution_session_links WHERE session_id = 'default'",
+        params: [],
+      })).toEqual({ count: 3 });
     } finally {
       database.close();
     }
@@ -614,20 +616,23 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
         status: "displayed",
         system_event_kind: "run-not-started",
       });
-      expect(database.prepare(
-        "SELECT agent_team_ownership, agent_team_id FROM sessions WHERE session_id = ?",
-      ).get(created.session.sessionId)).toEqual({
+      expect(await waitForDatabaseRow(database, {
+        sql: "SELECT agent_team_ownership, agent_team_id FROM sessions WHERE session_id = ?",
+        params: [created.session.sessionId],
+      })).toEqual({
         agent_team_ownership: "user",
         agent_team_id: "development",
       });
-      expect(database.prepare(
-        "SELECT body, status FROM session_messages WHERE session_id = ? AND speaker = 'user'",
-      ).get(created.session.sessionId)).toEqual({ body: "first message", status: "failed" });
-      expect(database.prepare(
-        `SELECT execution_cli, execution_model, execution_effort
-         FROM session_agent_team_members
-         WHERE session_id = ? AND slot = 'effective' AND sort_order = 0`,
-      ).get(created.session.sessionId)).toEqual({
+      expect(await waitForDatabaseRow(database, {
+        sql: "SELECT body, status FROM session_messages WHERE session_id = ? AND speaker = 'user'",
+        params: [created.session.sessionId],
+      })).toEqual({ body: "first message", status: "failed" });
+      expect(await waitForDatabaseRow(database, {
+        sql: `SELECT execution_cli, execution_model, execution_effort
+              FROM session_agent_team_members
+              WHERE session_id = ? AND slot = 'effective' AND sort_order = 0`,
+        params: [created.session.sessionId],
+      })).toEqual({
         execution_cli: "kimi",
         execution_model: "future-model",
         execution_effort: "future-effort",
@@ -1290,11 +1295,12 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     ).toBe(true);
     const database = new DatabaseSync(path.join(root, "local-console.sqlite"), { readOnly: true });
     try {
-      expect(database.prepare(
-        `SELECT execution_cli, execution_model, execution_effort
-         FROM session_agent_team_members
-         WHERE session_id = 'default' AND slot = 'effective'`,
-      ).all()).toEqual([{
+      expect(await waitForDatabaseRows(database, {
+        sql: `SELECT execution_cli, execution_model, execution_effort
+              FROM session_agent_team_members
+              WHERE session_id = 'default' AND slot = 'effective'`,
+        params: [],
+      })).toEqual([{
         execution_cli: "kimi",
         execution_model: "kimi-code/kimi-for-coding",
         execution_effort: "on",
@@ -2367,13 +2373,31 @@ async function waitForDatabaseRow(
   return waitForValue(() => database.prepare(query.sql).get(...query.params) as
     | Record<string, unknown>
     | undefined, {
-    describe: "persisted database row",
-    kind: "io",
+    ...databaseWaitOptions("persisted database row"),
+  });
+}
+
+async function waitForDatabaseRows(
+  database: DatabaseSync,
+  query: { sql: string; params: string[] },
+): Promise<Record<string, unknown>[]> {
+  return waitForValue(() => {
+    const rows = database.prepare(query.sql).all(...query.params) as Record<string, unknown>[];
+    return rows.length > 0 ? rows : undefined;
+  }, databaseWaitOptions("persisted database rows"));
+}
+
+function databaseWaitOptions(describe: string) {
+  return {
+    describe,
+    kind: "io" as const,
     timeoutMs: 8_000,
     // 并发写入期间 SQLite 会短暂上锁，这属于正常争用，继续轮询即可；其他错误必须立刻暴露。
-    onError: (error) =>
-      error instanceof Error && error.message.includes("database is locked") ? "retry" : "throw",
-  });
+    onError: (error: unknown) => {
+      if (error instanceof Error && error.message.includes("database is locked")) return "retry" as const;
+      return "throw" as const;
+    },
+  };
 }
 
 async function waitForSystemEvent(
