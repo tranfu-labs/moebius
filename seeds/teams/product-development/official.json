@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "officialVersion": "2",
+  "officialVersion": "3",
   "members": {
     "product-delivery-lead": {
       "recommendedProfile": {
@@ -17,6 +17,13 @@
       }
     },
     "ui-prototyper": {
+      "recommendedProfile": {
+        "cli": "codex",
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      }
+    },
+    "user-reviewer": {
       "recommendedProfile": {
         "cli": "codex",
         "model": "gpt-5.6-sol",

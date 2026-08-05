@@ -6,7 +6,7 @@ import {
   MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
 } from "@/console/conversation-layout";
 import { RoleComposer } from "@/console/role-composer";
-import { AgentTeamOption } from "@/console/agent-team-option";
+import { AgentTeamMenuContent, AgentTeamOption } from "@/console/agent-team-option";
 import {
   hasBlockingComposerAttachment,
   readyComposerAttachmentIds,
@@ -246,7 +246,7 @@ export function NewConversationPage({
                       <ChevronDown className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" className="w-[min(360px,calc(100vw-24px))]">
+                  <AgentTeamMenuContent align="start">
                     {teams.map((team) => (
                       <DropdownMenuCheckboxItem
                         key={team.teamKey}
@@ -258,7 +258,7 @@ export function NewConversationPage({
                         <AgentTeamOption team={team} />
                       </DropdownMenuCheckboxItem>
                     ))}
-                  </DropdownMenuContent>
+                  </AgentTeamMenuContent>
                 </DropdownMenu>
               </div>
             )}

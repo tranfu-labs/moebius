@@ -9,7 +9,7 @@ const meta = {
     team: {
       label: "同名团队 · 用户来源",
       ownership: "user",
-      description: "负责从产品定义到生产交付，并覆盖一个很长的团队用途描述。",
+      description: "负责从产品定义到生产交付，并用压力数据验证狭窄窗口中的摘要与成员披露。",
       primaryAgentSlug: "product-delivery-lead",
       members: [
         { slug: "product-delivery-lead", displayName: "交付负责人" },
@@ -18,6 +18,9 @@ const meta = {
         { slug: "functional-qa", displayName: "功能验收" },
         { slug: "visual-qa", displayName: "视觉验收" },
         { slug: "release", displayName: "发布" },
+        { slug: "security", displayName: "安全复核" },
+        { slug: "analytics", displayName: "数据分析" },
+        { slug: "support", displayName: "用户支持" },
       ],
     },
   },

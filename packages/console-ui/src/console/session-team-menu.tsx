@@ -1,15 +1,13 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
-import { AgentTeamOption } from "@/console/agent-team-option";
+import { AgentTeamMenuContent, AgentTeamOption } from "@/console/agent-team-option";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 
@@ -67,7 +65,6 @@ export function SessionTeamMenu({
               : "border-line text-ink hover:bg-hover",
           )}
           aria-label={accessibleLabel}
-          title={accessibleLabel}
           disabled={disabled}
         >
           {needsAttention ? (
@@ -80,14 +77,9 @@ export function SessionTeamMenu({
           <ChevronDown className="h-[11px] w-[11px] shrink-0 text-hint" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
+      <AgentTeamMenuContent
         align="end"
-        side="top"
-        collisionPadding={12}
-        className="scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain"
-        style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
-      >
-        {displayedTeam ? (
+        header={displayedTeam ? (
           <div className="px-2 py-2" aria-label={t("console.sessionTeam.loadedVersion")}>
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.loaded")}</p>
             <AgentTeamOption team={{
@@ -98,9 +90,10 @@ export function SessionTeamMenu({
               members: displayedTeam.members,
             }} />
           </div>
-        ) : null}
-        <DropdownMenuSeparator />
-        <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.catalog")}</p>
+        ) : undefined}
+        catalogLabel={t("console.sessionTeam.catalog")}
+        footer={t("console.sessionTeam.snapshotNotice")}
+      >
         {choices.map((candidate) => (
           <DropdownMenuCheckboxItem
             key={candidate.teamKey}
@@ -119,11 +112,7 @@ export function SessionTeamMenu({
             }} />
           </DropdownMenuCheckboxItem>
         ))}
-        <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-xs leading-5 text-sub">
-          {t("console.sessionTeam.snapshotNotice")}
-        </p>
-      </DropdownMenuContent>
+      </AgentTeamMenuContent>
     </DropdownMenu>
   );
 }
