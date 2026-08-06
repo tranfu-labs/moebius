@@ -4,7 +4,6 @@ import {
   app,
   clipboard,
   ipcMain,
-  safeStorage,
   shell,
 } from "electron";
 // electron-updater exposes a CommonJS main entry; keep the runtime import compatible
@@ -98,7 +97,6 @@ const providerWiring = createDesktopProviderProfileWiring({
   dirname,
   agentTeamService,
   seedPending: () => status.seed.status === "pending",
-  safeStorage,
   getSessionRuntime: () => localConsole?.pathSource ?? null,
 });
 const { runPi } = providerWiring;

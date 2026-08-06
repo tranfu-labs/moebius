@@ -1,47 +1,13 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SafeStorage } from "electron";
 
-const VAULT_VERSION = 1;
-
-export interface SafeStoragePort {
-  isEncryptionAvailable(): Promise<boolean>;
-  encryptString(value: string): Promise<Buffer>;
-  decryptString(value: Buffer): Promise<string>;
-}
-
-// Electron 38's safeStorage API is synchronous and only usable from the main
-// process after app.whenReady(). safeStorage.encryptString/decryptString run
-// against a handful of bytes (an API key), so the synchronous call is a
-// microsecond-scale main-thread cost — not worth spawning a helper process
-// for. A prior helper-process design relied on Electron's unpackaged-only
-// "argv path becomes the app entry" behavior, which silently launches a
-// second full app instance (and hits the single-instance lock) in packaged
-// builds instead of running the helper script.
-export function createElectronSafeStoragePort(
-  safeStorage: Pick<SafeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString">,
-): SafeStoragePort {
-  return {
-    async isEncryptionAvailable() {
-      try {
-        return safeStorage.isEncryptionAvailable();
-      } catch {
-        return false;
-      }
-    },
-    async encryptString(value) {
-      return safeStorage.encryptString(value);
-    },
-    async decryptString(value) {
-      return safeStorage.decryptString(value);
-    },
-  };
-}
+const VAULT_VERSION = 2;
+const LEGACY_VAULT_FILE_NAME = "provider-credentials-v1.json";
 
 interface CredentialVaultDocument {
   version: typeof VAULT_VERSION;
-  credentials: Record<string, { ciphertext: string; createdAt: string }>;
+  credentials: Record<string, { apiKey: string; createdAt: string }>;
 }
 
 export interface CredentialVault {
@@ -52,54 +18,64 @@ export interface CredentialVault {
   pruneExcept(retainedCredentialRefs: ReadonlySet<string>): Promise<string[]>;
 }
 
+// API Keys are stored as plaintext in a 0600 file under the data root — the
+// same model as aider / Claude Code on Linux / OpenClaw. An earlier design
+// encrypted records with Electron safeStorage; the Keychain master key lives
+// on the same machine, so encryption added an environment dependency
+// (packaged builds, CI, isolated acceptance environments) without meaningful
+// protection for a user's own key on their own machine. Legacy v1 ciphertext
+// files are not migrated: they are removed on first access and affected
+// profiles fall into the existing "needs attention → replace key" repair
+// path via CREDENTIAL_NOT_FOUND.
 export function createProviderCredentialVault(input: {
   filePath: string;
-  safeStorage: SafeStoragePort;
+  legacyFilePath?: string;
   allocateId?: () => string;
 }): CredentialVault {
   const allocateId = input.allocateId ?? randomUUID;
+  const legacyFilePath = input.legacyFilePath
+    ?? path.join(path.dirname(input.filePath), LEGACY_VAULT_FILE_NAME);
+  let legacyCleanup: Promise<void> | null = null;
+  const ensureLegacyCleanup = (): Promise<void> => {
+    legacyCleanup ??= fs.rm(legacyFilePath, { force: true }).then(
+      () => undefined,
+      () => undefined,
+    );
+    return legacyCleanup;
+  };
 
   return {
     async stage(apiKey, now = new Date().toISOString()) {
       const normalizedKey = normalizeApiKey(apiKey);
-      await assertEncryptionAvailable(input.safeStorage);
-      let encrypted: Buffer;
-      try {
-        encrypted = await input.safeStorage.encryptString(normalizedKey);
-      } catch {
-        throw new CredentialVaultError("CREDENTIAL_ENCRYPTION_FAILED", "无法使用系统凭据保护 API Key。");
-      }
+      await ensureLegacyCleanup();
       const credentialRef = `provider-credential:${allocateId()}`;
       const document = await readDocument(input.filePath);
       document.credentials[credentialRef] = {
-        ciphertext: encrypted.toString("base64"),
+        apiKey: normalizedKey,
         createdAt: now,
       };
       try {
         await writeDocument(input.filePath, document);
       } catch {
-        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法保存系统凭据。");
+        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法保存本机凭据。");
       }
       return credentialRef;
     },
 
     async read(credentialRef) {
       assertCredentialRef(credentialRef);
-      await assertEncryptionAvailable(input.safeStorage);
+      await ensureLegacyCleanup();
       const document = await readDocument(input.filePath);
       const record = document.credentials[credentialRef];
       if (record === undefined) {
         throw new CredentialVaultError("CREDENTIAL_NOT_FOUND", "找不到这个 AI 服务商的凭据。");
       }
-      try {
-        return normalizeApiKey(await input.safeStorage.decryptString(Buffer.from(record.ciphertext, "base64")));
-      } catch {
-        throw new CredentialVaultError("CREDENTIAL_DECRYPTION_FAILED", "系统凭据已无法读取，请替换 API Key。");
-      }
+      return normalizeApiKey(record.apiKey);
     },
 
     async remove(credentialRef) {
       assertCredentialRef(credentialRef);
+      await ensureLegacyCleanup();
       const document = await readDocument(input.filePath);
       if (document.credentials[credentialRef] === undefined) {
         return;
@@ -108,16 +84,18 @@ export function createProviderCredentialVault(input: {
       try {
         await writeDocument(input.filePath, document);
       } catch {
-        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法删除系统凭据。");
+        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法删除本机凭据。");
       }
     },
 
     async has(credentialRef) {
       assertCredentialRef(credentialRef);
+      await ensureLegacyCleanup();
       return (await readDocument(input.filePath)).credentials[credentialRef] !== undefined;
     },
 
     async pruneExcept(retainedCredentialRefs) {
+      await ensureLegacyCleanup();
       const document = await readDocument(input.filePath);
       const removed = Object.keys(document.credentials)
         .filter((credentialRef) => !retainedCredentialRefs.has(credentialRef));
@@ -126,7 +104,7 @@ export function createProviderCredentialVault(input: {
       try {
         await writeDocument(input.filePath, document);
       } catch {
-        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法清理未完成操作留下的系统凭据。");
+        throw new CredentialVaultError("CREDENTIAL_WRITE_FAILED", "无法清理未完成操作留下的本机凭据。");
       }
       return removed;
     },
@@ -136,9 +114,6 @@ export function createProviderCredentialVault(input: {
 export class CredentialVaultError extends Error {
   constructor(
     readonly code:
-      | "CREDENTIAL_ENCRYPTION_UNAVAILABLE"
-      | "CREDENTIAL_ENCRYPTION_FAILED"
-      | "CREDENTIAL_DECRYPTION_FAILED"
       | "CREDENTIAL_NOT_FOUND"
       | "CREDENTIAL_WRITE_FAILED"
       | "CREDENTIAL_DOCUMENT_INVALID"
@@ -147,15 +122,6 @@ export class CredentialVaultError extends Error {
   ) {
     super(message);
     this.name = "CredentialVaultError";
-  }
-}
-
-async function assertEncryptionAvailable(safeStorage: SafeStoragePort): Promise<void> {
-  if (!(await safeStorage.isEncryptionAvailable())) {
-    throw new CredentialVaultError(
-      "CREDENTIAL_ENCRYPTION_UNAVAILABLE",
-      "当前系统无法使用安全凭据存储，请稍后重试。",
-    );
   }
 }
 
@@ -181,7 +147,7 @@ async function readDocument(filePath: string): Promise<CredentialVaultDocument> 
     if (isNodeError(error) && error.code === "ENOENT") {
       return { version: VAULT_VERSION, credentials: {} };
     }
-    throw new CredentialVaultError("CREDENTIAL_DOCUMENT_INVALID", "无法读取系统凭据文件。");
+    throw new CredentialVaultError("CREDENTIAL_DOCUMENT_INVALID", "无法读取本机凭据文件。");
   }
   try {
     const value = JSON.parse(text) as unknown;
@@ -193,15 +159,14 @@ async function readDocument(filePath: string): Promise<CredentialVaultDocument> 
       assertCredentialRef(credentialRef);
       if (
         !isRecord(record)
-        || typeof record.ciphertext !== "string"
-        || !/^[A-Za-z0-9+/]*={0,2}$/u.test(record.ciphertext)
+        || typeof record.apiKey !== "string"
         || typeof record.createdAt !== "string"
         || !Number.isFinite(Date.parse(record.createdAt))
       ) {
         throw new Error("invalid credential record");
       }
       credentials[credentialRef] = {
-        ciphertext: record.ciphertext,
+        apiKey: record.apiKey,
         createdAt: record.createdAt,
       };
     }
@@ -210,7 +175,7 @@ async function readDocument(filePath: string): Promise<CredentialVaultDocument> 
     if (error instanceof CredentialVaultError) {
       throw error;
     }
-    throw new CredentialVaultError("CREDENTIAL_DOCUMENT_INVALID", "系统凭据文件已损坏。");
+    throw new CredentialVaultError("CREDENTIAL_DOCUMENT_INVALID", "本机凭据文件已损坏。");
   }
 }
 

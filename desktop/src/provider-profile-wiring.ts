@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { SafeStorage } from "electron";
 
 import {
   createPiExecutionAdapter,
@@ -10,10 +9,7 @@ import { PiHostClient } from "../../src/pi-host-client.js";
 import { formatProviderTeamReferenceOwner, getProviderCatalogModel, normalizeProviderModel } from "../../src/provider-profile.js";
 import { createSqliteProviderProfileStore } from "../../src/provider-profile-store.js";
 import type { LocalConsoleExecutionProfile } from "../../src/local-console/types.js";
-import {
-  createProviderCredentialVault,
-  createElectronSafeStoragePort,
-} from "./provider-credential-vault.js";
+import { createProviderCredentialVault } from "./provider-credential-vault.js";
 import { createProviderProfileService } from "./provider-profile-service.js";
 import { createProviderReferenceMutationPort } from "./provider-reference-mutation.js";
 import { readAiTeamBuilderProviderReferences } from "./provider-reference-reader.js";
@@ -24,7 +20,6 @@ export function createDesktopProviderProfileWiring(input: {
   dirname: string;
   agentTeamService: AgentTeamService;
   seedPending: () => boolean;
-  safeStorage: Pick<SafeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString">;
   getSessionRuntime(): {
     updateSessionMemberExecution(input: {
       sessionId: string;
@@ -38,8 +33,7 @@ export function createDesktopProviderProfileWiring(input: {
     sqlitePath: path.join(input.dataRoot, ".state", "local-console.sqlite"),
   });
   const vault = createProviderCredentialVault({
-    filePath: path.join(input.dataRoot, ".state", "provider-credentials-v1.json"),
-    safeStorage: createElectronSafeStoragePort(input.safeStorage),
+    filePath: path.join(input.dataRoot, ".state", "provider-credentials-v2.json"),
   });
   const hostEntryPath = path.join(input.dirname, "pi-host.js");
   const listReferences = async (profileId: string) => {

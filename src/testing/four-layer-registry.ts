@@ -652,7 +652,6 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     fingerprints: [
       "\"auth\"",
       "\"credential-invalid\"",
-      "\"CREDENTIAL_DECRYPTION_FAILED\"",
       "\"CREDENTIAL_NOT_FOUND\"",
       "\"model-unavailable\"",
       "\"model-incompatible\"",
