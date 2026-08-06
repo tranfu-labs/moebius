@@ -240,6 +240,7 @@ export function NewConversationPage({
                       className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
                       aria-label={t("console.common.agentTeam")}
                       disabled={isSubmitting || teams.length === 0}
+                      data-testid="new-conversation-team-picker"
                     >
                       <Diamond className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                       <span className="max-w-48 truncate">{selectedTeam?.label ?? t("console.newConversation.noTeams")}</span>
@@ -253,6 +254,8 @@ export function NewConversationPage({
                         checked={team.teamKey === selectedTeamKey}
                         disabled={team.available === false}
                         className="items-start"
+                        data-testid="new-conversation-team-option"
+                        data-team-key={team.teamKey}
                         onSelect={() => team.teamKey !== selectedTeamKey && onSelectTeam(team.teamKey)}
                       >
                         <AgentTeamOption team={team} />

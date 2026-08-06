@@ -215,8 +215,9 @@ async function listFiles(root: string): Promise<string[]> {
 }
 
 let application = await launch();
+let page: Page | undefined;
 try {
-  let page = await mainWindow(application);
+  page = await mainWindow(application);
   await openProviders(page);
   const emptyState = page.getByText("尚未配置 AI 服务商。", { exact: true });
   await emptyState.waitFor();
@@ -359,7 +360,7 @@ try {
   });
   await page.waitForFunction(() => window.innerWidth === 1_440 && window.innerHeight === 920);
   await page.getByRole("button", { name: "关闭" }).click();
-  await page.getByRole("button", { name: "Agent 团队" }).click();
+  await page.getByTestId("sidebar-nav-agent-teams").click();
   const teamRow = page.getByTestId("agent-team-row").first();
   await teamRow.waitFor();
   const teamKey = await teamRow.getAttribute("data-team-key");
@@ -437,7 +438,12 @@ try {
       screenObservation: "项目在页面中显示为当前上下文，后续对话直接使用该项目；未通过 HTTP 接口预置项目。",
     },
   );
-  await newConversation.getByRole("combobox", { name: "Agent 团队" }).selectOption(teamKey);
+  await newConversation.getByTestId("new-conversation-team-picker").click();
+  const teamOption = page.locator(`[data-testid="new-conversation-team-option"][data-team-key="${teamKey}"]`);
+  await teamOption.waitFor();
+  // 团队菜单高于视口时选项可能落在视口外（Radix 内容无 max-height 约束），
+  // 用键盘 Enter 选中与真实键盘操作等价，且不依赖视口内点击坐标。
+  await teamOption.press("Enter");
   await newConversation.locator('input[type="file"]').setInputFiles(attachmentPath);
   await newConversation.getByText("acceptance-context.txt", { exact: true }).waitFor();
   const taskPrompt = "@editorial-production 请直接使用工具完成这个确定性任务，不要转交，也不要只给文字说明：先调用 read_file 读取附件并记住其中的 ATTACHMENT_SENTINEL；再调用 read_file 读取 fixture.txt，用 edit_file、apply_patch 或 write_file 把唯一一行 alpha 改为 beta；然后调用 exec_command 运行 node verify.mjs。只有命令退出码为 0 后，才在最终回复中写出附件里的完整 sentinel。";
@@ -607,25 +613,36 @@ try {
 
   await application.close();
   const files = await listFiles(runtimeRoot);
-  let invalidSecretPersisted = false;
-  let validSecretPersisted = false;
+  const credentialsFile = path.join(runtimeRoot, ".state", "provider-credentials-v2.json");
+  const invalidKeyFiles: string[] = [];
+  const strayValidKeyFiles: string[] = [];
+  let credentialsFileContainsValidKey = false;
   for (const file of files) {
     const contents = await fs.readFile(file).catch(() => null);
-    if (contents?.includes(Buffer.from(invalidKey)) === true) {
-      invalidSecretPersisted = true;
+    if (contents === null) continue;
+    if (contents.includes(Buffer.from(invalidKey))) invalidKeyFiles.push(path.relative(runtimeRoot, file));
+    if (contents.includes(Buffer.from(validKey))) {
+      if (file === credentialsFile) credentialsFileContainsValidKey = true;
+      else strayValidKeyFiles.push(path.relative(runtimeRoot, file));
     }
-    if (contents?.includes(Buffer.from(validKey)) === true) validSecretPersisted = true;
   }
   assertions.push({
-    id: "plaintext-keys-not-persisted",
-    passed: !invalidSecretPersisted && !validSecretPersisted,
-    observed: { scannedFileCount: files.length, invalidSecretPersisted, validSecretPersisted },
+    id: "keys-confined-to-credentials-file",
+    passed: credentialsFileContainsValidKey && strayValidKeyFiles.length === 0 && invalidKeyFiles.length === 0,
+    observed: { scannedFileCount: files.length, credentialsFileContainsValidKey, strayValidKeyFiles, invalidKeyFiles },
   });
 } catch (error) {
-  const message = (error instanceof Error ? error.message : String(error))
-    .split(validKey).join("[redacted]")
-    .split(invalidKey).join("[redacted]");
-  assertions.push({ id: "acceptance-script-completed", passed: false, observed: { message } });
+  const redact = (value: string) => value.split(validKey).join("[redacted]").split(invalidKey).join("[redacted]");
+  const message = redact(error instanceof Error ? error.message : String(error));
+  let pageSnapshot: string | undefined;
+  try {
+    if (page !== undefined) {
+      pageSnapshot = redact((await page.locator("body").innerText({ timeout: 5_000 })).slice(0, 3_000));
+    }
+  } catch {
+    pageSnapshot = undefined;
+  }
+  assertions.push({ id: "acceptance-script-completed", passed: false, observed: { message, pageSnapshot } });
 } finally {
   await application.close().catch(() => undefined);
   const evidence: ByokPiEvidence = {

@@ -1873,14 +1873,14 @@ A successful mutation MUST be visible to the complete-version resolver without r
 
 Source: `docs/product/pages/settings.md#ai-服务商`
 
-Desktop main MUST 是 Provider catalog、档案事务与凭据能力的唯一 composition root。Preload MUST 只暴露列出安全档案、提交输入 Key、验证、生命周期动作和 operation 状态的窄 IPC；renderer MUST NOT 读取 credentialRef 对应 blob、解密 Key、Base URL 或原始 Provider 错误。
+Desktop main MUST 是 Provider catalog、档案事务与凭据能力的唯一 composition root。Preload MUST 只暴露列出安全档案、提交输入 Key、验证、生命周期动作和 operation 状态的窄 IPC；renderer MUST NOT 读取 credentialRef 对应 blob、Key、Base URL 或原始 Provider 错误。
 
 #### Scenario: Renderer 列出档案
 
 - **GIVEN** 主进程保存了一个已就绪 DeepSeek 档案
 - **WHEN** renderer 请求 AI 服务商列表
 - **THEN** DTO 只含稳定 ID、显示名、服务商、模型、状态、Key 脱敏尾号和可执行动作
-- **AND** 不含 Key、ciphertext、凭据文件路径或 Authorization。
+- **AND** 不含 Key、凭据文件路径或 Authorization。
 
 ### Requirement: Provider 凭据明文原子持久化于本机数据根
 

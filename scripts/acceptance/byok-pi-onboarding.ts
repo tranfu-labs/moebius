@@ -183,7 +183,7 @@ try {
     {
       entrance: "完成引导后退出并重启应用",
       action: "重启后打开设置 → AI 服务商",
-      screenObservation: "应用直接进入主操作台，Provider 仍为“已就绪”，证明引导进度与 safeStorage 凭据可恢复。",
+      screenObservation: "应用直接进入主操作台，Provider 仍为“已就绪”，证明引导进度与 Provider 凭据可恢复。",
     },
   );
 
@@ -204,15 +204,20 @@ try {
   );
 
   const files = await listFiles(runtimeRoot);
-  let plaintextKeyPersisted = false;
+  const credentialsFile = path.join(runtimeRoot, ".state", "provider-credentials-v2.json");
+  const keyBytes = Buffer.from(apiKey);
+  const strayKeyFiles: string[] = [];
+  let credentialsFileContainsKey = false;
   for (const file of files) {
     const bytes = await fs.readFile(file).catch(() => null);
-    if (bytes?.includes(Buffer.from(apiKey)) === true) plaintextKeyPersisted = true;
+    if (bytes?.includes(keyBytes) !== true) continue;
+    if (file === credentialsFile) credentialsFileContainsKey = true;
+    else strayKeyFiles.push(path.relative(runtimeRoot, file));
   }
   assertions.push({
-    id: "onboarding-plaintext-key-not-persisted",
-    passed: !plaintextKeyPersisted,
-    observed: { scannedFileCount: files.length, plaintextKeyPersisted },
+    id: "onboarding-key-confined-to-credentials-file",
+    passed: credentialsFileContainsKey && strayKeyFiles.length === 0,
+    observed: { scannedFileCount: files.length, credentialsFileContainsKey, strayKeyFiles },
   });
 } catch (error) {
   assertions.push({
