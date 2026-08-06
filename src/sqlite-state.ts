@@ -3,9 +3,23 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
 import type { LocalConsoleAgentTeamSnapshot } from "./local-console/types.js";
+import type { ProviderOperation, ProviderProfile } from "./provider-profile.js";
 
 export type SqliteStateCommand =
   | { kind: "local-init" }
+  | { kind: "provider-list-profiles" }
+  | { kind: "provider-get-profile"; profileId: string }
+  | { kind: "provider-put-profile"; profile: ProviderProfile; expectedRevision: number | null }
+  | {
+      kind: "provider-commit-profile-operation";
+      profile: ProviderProfile;
+      expectedRevision: number | null;
+      operation: ProviderOperation;
+    }
+  | { kind: "provider-delete-profile"; profileId: string; expectedRevision: number }
+  | { kind: "provider-list-operations"; profileId?: string }
+  | { kind: "provider-put-operation"; operation: ProviderOperation }
+  | { kind: "provider-list-session-references"; profileId: string }
   | { kind: "local-session-fact-migration-status" }
   | { kind: "local-complete-session-fact-migration"; now: string }
   | { kind: "local-list-session-message-indexes" }
@@ -48,6 +62,14 @@ export type SqliteStateCommand =
       agentTeamOwnership: "system" | "user";
       agentTeamId: string;
       agentTeamSnapshot?: LocalConsoleAgentTeamSnapshot;
+      now: string;
+    }
+  | {
+      kind: "local-update-session-member-execution";
+      sessionId: string;
+      memberName: string;
+      action: "migrate" | "end";
+      executionProfile?: import("./local-console/types.js").LocalConsoleExecutionProfile;
       now: string;
     }
   | { kind: "local-apply-pending-session-context"; sessionId: string; now: string }

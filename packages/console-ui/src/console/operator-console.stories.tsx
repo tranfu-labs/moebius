@@ -245,6 +245,25 @@ type Story = StoryObj<typeof meta>;
 
 export const T65Running: Story = {};
 
+export const PiApiRunning: Story = {
+  args: {
+    activeRun: {
+      ...sample.activeRun!,
+      engine: "pi",
+      activity: {
+        cursor: 3,
+        kind: "edit",
+        phase: "running",
+        action: "正在修改",
+        object: "src/provider-profile.ts",
+        occurredAt: "2026-08-05T08:01:00.000Z",
+      },
+      lastOutputSummary: "Pi API 正在通过 DeepSeek 执行编码任务",
+      liveMarkdown: "## 正在执行\n\n已读取项目并准备运行定向测试。",
+    },
+  },
+};
+
 export const SidebarConversationManagement: Story = {
   args: {
     project: {

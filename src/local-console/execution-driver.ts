@@ -31,7 +31,7 @@ export interface ManagedProcessToolCompletion {
   completedAt: string;
 }
 
-export type LocalExecutionEngine = "codex" | "claude" | "kimi";
+export type LocalExecutionEngine = "codex" | "claude" | "kimi" | "pi";
 export type LocalExecutionMode =
   | { kind: "full" }
   | { kind: "resume"; externalSessionId: string };
@@ -60,8 +60,14 @@ export interface LocalExecutionRunOptions {
   onExecutionTraceReady?: (input: {
     engine: LocalExecutionEngine;
     externalSessionId: string;
+    tracePath?: string;
   }) => void | Promise<void>;
 }
+
+export type PiExecutionRunOptions = LocalExecutionRunOptions & {
+  profile: Extract<LocalConsoleExecutionProfile, { cli: "pi" }>;
+  mcpServer?: ManagedProcessMcpInvocation;
+};
 
 export type LocalExecutionRunner = (
   options: LocalExecutionRunOptions,
@@ -72,6 +78,7 @@ export function createLocalExecutionRunner(input: {
   runCodex?: (options: CodexRunOptions) => Promise<CodexRunResult>;
   runClaude?: (options: ClaudeRunOptions) => Promise<CodexRunResult>;
   runKimi?: (options: KimiAcpRunOptions) => Promise<CodexRunResult>;
+  runPi?: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
   createManagedProcessMcp?: (input: {
     sessionId: string;
     providerRunId: string;
@@ -129,6 +136,7 @@ export function createLocalExecutionRunner(input: {
     const markExecutionTraceReady = async (
       observedEngine: LocalExecutionEngine,
       externalSessionId: string,
+      tracePath?: string,
     ): Promise<void> => {
       if (observedExternalSessionId === null) {
         throw new Error("provider-execution-trace-ready-before-session-observed");
@@ -146,6 +154,7 @@ export function createLocalExecutionRunner(input: {
       await options.onExecutionTraceReady?.({
         engine: observedEngine,
         externalSessionId,
+        ...(tracePath === undefined ? {} : { tracePath }),
       });
     };
     const observeSessionAndTrace = async (
@@ -234,6 +243,26 @@ export function createLocalExecutionRunner(input: {
           markExecutionTraceReady("kimi", sessionId),
       });
       return await finishProviderRun("kimi", result);
+    }
+    if (engine === "pi") {
+      const profile = options.profile;
+      if (profile === null || profile.cli !== "pi" || input.runPi === undefined) {
+        throw new Error("Pi execution requires a complete Pi profile and desktop Pi adapter");
+      }
+      const result = await input.runPi({
+        ...options,
+        profile,
+        ...(managedMcp === null ? {} : { mcpServer: managedMcp }),
+        onSessionStarted: async ({ engine: reportedEngine, externalSessionId }) => {
+          if (reportedEngine !== "pi") throw new Error("pi-reported-conflicting-engine");
+          await observeSession("pi", externalSessionId);
+        },
+        onExecutionTraceReady: async ({ engine: reportedEngine, externalSessionId, tracePath }) => {
+          if (reportedEngine !== "pi") throw new Error("pi-reported-conflicting-engine");
+          await markExecutionTraceReady("pi", externalSessionId, tracePath);
+        },
+      });
+      return await finishProviderRun("pi", result);
     }
 
     const profile = options.profile;

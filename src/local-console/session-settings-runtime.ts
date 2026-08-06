@@ -20,6 +20,7 @@ import {
   type LocalConsoleStore,
   type LocalConsoleWorkspaceMode,
 } from "./types.js";
+import { updateSessionMemberExecution } from "./session-execution-settings-runtime.js";
 
 export class LocalSessionSettingsRuntime {
   private readonly teamUpdates: LocalSessionTeamUpdateRuntime;
@@ -112,6 +113,21 @@ export class LocalSessionSettingsRuntime {
 
   async cancelTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
     return await this.teamUpdates.cancel(sessionId, expectedUpdateToken);
+  }
+
+  async updateMemberExecution(input: {
+    sessionId: string;
+    memberName: string;
+    action: "migrate" | "end";
+    executionProfile?: import("./types.js").LocalConsoleExecutionProfile;
+  }): Promise<LocalConsoleAgentTeamSnapshot> {
+    return await updateSessionMemberExecution({
+      store: this.input.store,
+      storeCall: this.input.storeCall,
+      nowIso: this.input.nowIso,
+      hasActiveRun: this.input.hasActiveRun,
+      request: input,
+    });
   }
 
   async archive(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {

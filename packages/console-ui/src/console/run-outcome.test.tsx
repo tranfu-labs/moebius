@@ -100,6 +100,39 @@ describe("RunOutcome", () => {
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
   });
 
+  it("shows provider recovery actions instead of retrying a disabled Pi profile", () => {
+    const onRetry = vi.fn();
+    const onOpenProviderSettings = vi.fn();
+    const onSelectTeam = vi.fn();
+    render(
+      <RunOutcome
+        status="run-crashed"
+        providerUnavailable="disabled"
+        rawReason="pi-provider-disabled"
+        rawOutput="当前 Pi API 档案已停用。"
+        onRetry={onRetry}
+        onOverrideAndRetry={vi.fn()}
+        onSelectTeam={onSelectTeam}
+        maintenanceAction={{
+          label: "前往设置重新启用",
+          onClick: onOpenProviderSettings,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Pi API 档案已停用")).toBeVisible();
+    expect(screen.getByText(/没有请求服务商/u)).toBeVisible();
+    expect(screen.queryByText(/PiHost/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "换执行配置重跑" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "前往设置重新启用" }));
+    fireEvent.click(screen.getByRole("button", { name: "改选团队" }));
+    expect(onOpenProviderSettings).toHaveBeenCalledOnce();
+    expect(onSelectTeam).toHaveBeenCalledOnce();
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
   it("shows the same custom member name for every terminal fact", () => {
     for (const fixture of outcomeFixtures) {
       const { unmount } = render(
@@ -193,6 +226,94 @@ describe("RunOutcome", () => {
     );
     expect(screen.getByRole("combobox", { name: "CLI" })).toBeVisible();
     expect(screen.getByText("保留的中断内容")).toBeVisible();
+  });
+
+  it("offers ready Pi provider profiles for a single-run override", async () => {
+    const onOverrideAndRetry = vi.fn();
+    render(
+      <RunOutcome
+        status="auth-failed"
+        initialProfile={{
+          cli: "pi",
+          providerId: "deepseek",
+          providerProfileId: "profile-old",
+          model: "deepseek-v4-pro",
+          effort: "high",
+        }}
+        providerProfiles={[
+          {
+            id: "profile-ready",
+            providerId: "deepseek",
+            displayName: "DeepSeek 工作档案",
+            defaultModel: "deepseek-v4-flash",
+            verifiedModels: ["deepseek-v4-flash"],
+            readiness: "ready",
+          },
+          {
+            id: "profile-disabled",
+            providerId: "deepseek",
+            displayName: "停用档案",
+            defaultModel: "deepseek-v4-pro",
+            verifiedModels: ["deepseek-v4-pro"],
+            readiness: "disabled",
+          },
+        ]}
+        onOverrideAndRetry={onOverrideAndRetry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "换执行配置重跑" }));
+    expect(screen.getByRole("combobox", { name: "AI 服务商" })).toHaveValue("profile-ready");
+    expect(screen.queryByRole("option", { name: "停用档案" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("deepseek-v4-flash");
+    fireEvent.click(screen.getByRole("button", { name: "仅本次重跑" }));
+    await waitFor(() => expect(onOverrideAndRetry).toHaveBeenCalledWith({
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "profile-ready",
+      model: "deepseek-v4-flash",
+      effort: "high",
+    }));
+  });
+
+  it("makes permanent Pi migration and ending continuation explicit actions", async () => {
+    const onMigrateAndContinue = vi.fn();
+    const onEndContinuation = vi.fn();
+    const providerProfiles = [{
+      id: "profile-ready",
+      providerId: "deepseek" as const,
+      displayName: "DeepSeek 工作档案",
+      defaultModel: "deepseek-v4-pro" as const,
+      verifiedModels: ["deepseek-v4-pro" as const],
+      readiness: "ready" as const,
+    }];
+    render(
+      <RunOutcome
+        status="resume-unavailable"
+        initialProfile={{
+          cli: "pi",
+          providerId: "deepseek",
+          providerProfileId: "profile-missing",
+          model: "deepseek-v4-flash",
+          effort: "high",
+        }}
+        providerProfiles={providerProfiles}
+        onMigrateAndContinue={onMigrateAndContinue}
+        onEndContinuation={onEndContinuation}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "迁移当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "迁移并继续" }));
+    await waitFor(() => expect(onMigrateAndContinue).toHaveBeenCalledWith({
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "profile-ready",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "结束并保留历史" }));
+    await waitFor(() => expect(onEndContinuation).toHaveBeenCalledOnce());
   });
 
   it("uses the latest callback and blocks duplicate override submissions", async () => {

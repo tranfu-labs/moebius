@@ -1,8 +1,14 @@
-export interface SessionExecutionOverride {
+export type SessionExecutionOverride = {
   cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
-}
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
 
 export interface SessionRunPort {
   interrupt(
@@ -22,5 +28,12 @@ export interface SessionRunPort {
     sessionId: string,
     runId: string,
     executionOverride?: SessionExecutionOverride,
+  ): Promise<void>;
+  updateMemberExecution?(
+    apiBase: string,
+    sessionId: string,
+    memberName: string,
+    action: "migrate" | "end",
+    executionProfile?: SessionExecutionOverride,
   ): Promise<void>;
 }

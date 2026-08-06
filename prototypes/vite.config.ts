@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => {
         ? resolve(here, "src/main-left-sidebar/index.html")
       : mode === "main-right-sidebar"
         ? resolve(here, "src/main-right-sidebar/index.html")
+      : mode === "byok-agent-runtime"
+        ? resolve(here, "src/byok-agent-runtime/index.html")
       : mode === "settings"
         ? resolve(here, "src/settings/index.html")
       : resolve(here, "index.html");

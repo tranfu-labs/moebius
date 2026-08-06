@@ -34,6 +34,7 @@ export const TEAM_IPC_CHANNELS = {
   trashUserTeam: "agent-teams:trash-user-team",
   readExecutionProfile: "agent-teams:read-execution-profile",
   saveExecutionProfile: "agent-teams:save-execution-profile",
+  replaceUnavailableExecutionProfiles: "agent-teams:replace-unavailable-execution-profiles",
   restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
   prepareOfficialUpdate: "agent-teams:prepare-official-update",
   applyOfficialUpdate: "agent-teams:apply-official-update",
@@ -157,6 +158,20 @@ export interface AgentTeamExecutionProfileDocument extends AgentTeamExecutionPro
 }
 
 export interface AgentTeamExecutionProfileSaveRequest extends AgentTeamMemberRequest {
+  profile: ExecutionProfile;
+}
+
+export interface AgentTeamExecutionProfilesReplaceRequest {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlugs: string[];
+  profile: ExecutionProfile;
+}
+
+export interface AgentTeamExecutionProfilesReplaceResult {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlugs: string[];
   profile: ExecutionProfile;
 }
 

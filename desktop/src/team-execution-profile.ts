@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
 
 export type ExecutionCli = "codex" | "claude" | "kimi";
+export type ExecutionEngine = ExecutionCli | "pi";
 
-export interface ExecutionProfile {
+export type ExecutionProfile = {
   cli: ExecutionCli;
   model: string;
   effort: string;
-}
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
 
 export const DEFAULT_TEAM_EXECUTION_PROFILE = Object.freeze<ExecutionProfile>({
   cli: "codex",
@@ -54,8 +61,8 @@ export function normalizeExecutionProfile(value: unknown): ExecutionProfile {
     throw new ExecutionProfileError("CLI 必须是 Codex、Claude Code 或 Kimi。");
   }
   const cli = typeof value.cli === "string" ? value.cli.trim() : "";
-  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
-    throw new ExecutionProfileError("CLI 必须是 Codex、Claude Code 或 Kimi。");
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi") {
+    throw new ExecutionProfileError("执行引擎必须是 Codex、Claude Code、Kimi 或 Pi API。");
   }
   if (typeof value.model !== "string" || value.model.trim().length === 0) {
     throw new ExecutionProfileError("Model 不能为空。");
@@ -63,17 +70,30 @@ export function normalizeExecutionProfile(value: unknown): ExecutionProfile {
   if (typeof value.effort !== "string" || value.effort.trim().length === 0) {
     throw new ExecutionProfileError("思考程度不能为空。");
   }
-  return {
-    cli,
-    model: value.model.trim(),
-    effort: value.effort.trim(),
-  };
+  if (cli === "pi") {
+    if (value.providerId !== "deepseek") {
+      throw new ExecutionProfileError("Pi API 服务商当前必须是 DeepSeek。");
+    }
+    if (typeof value.providerProfileId !== "string" || value.providerProfileId.trim().length === 0) {
+      throw new ExecutionProfileError("Pi API 必须选择 AI 服务商档案。");
+    }
+    return {
+      cli,
+      providerId: "deepseek",
+      providerProfileId: value.providerProfileId.trim(),
+      model: value.model.trim(),
+      effort: value.effort.trim(),
+    };
+  }
+  return { cli, model: value.model.trim(), effort: value.effort.trim() };
 }
 
 export function profileFingerprint(profile: ExecutionProfile): string {
   return createHash("sha256")
     .update("moebius-execution-profile-v1\0")
     .update(profile.cli)
+    .update("\0")
+    .update(profile.cli === "pi" ? `${profile.providerId}\0${profile.providerProfileId}\0` : "")
     .update("\0")
     .update(profile.model)
     .update("\0")
@@ -124,6 +144,13 @@ export function evaluateExecutionProfile(
   profile: ExecutionProfile,
   capability: ExecutionCapabilitySnapshot | undefined,
 ): ExecutionProfileStatus {
+  if (profile.cli === "pi") {
+    return {
+      status: "unable-to-verify",
+      profile,
+      reason: "Pi API 的可用性由所选 AI 服务商档案决定。",
+    };
+  }
   if (capability === undefined || capability.status !== "available") {
     return {
       status: "unable-to-verify",

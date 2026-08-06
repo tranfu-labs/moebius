@@ -18,6 +18,51 @@ import { localProcessFactReader } from "../src/local-console/process-fact-reader
 import { localProcessTraceReader } from "../src/local-console/process-trace-reader.js";
 
 describe("provider-native process traces", () => {
+  it("reads only the durable safe Pi trace inside the application data root", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-pi-trace-"));
+    const cwd = path.join(root, "workspace");
+    const traceRoot = path.join(root, ".state", "pi-traces");
+    const tracePath = path.join(traceRoot, "trace-a.jsonl");
+    const outside = path.join(root, "outside.jsonl");
+    try {
+      await fs.mkdir(traceRoot, { recursive: true });
+      await fs.mkdir(cwd, { recursive: true });
+      await fs.writeFile(tracePath, jsonl([
+        { version: 1, type: "assistant-delta", delta: "安全输出" },
+        { version: 1, type: "tool-started", toolCallId: "tool-1", toolName: "read_file", safeSummary: "读取 fixture.txt" },
+        { version: 1, type: "tool-finished", toolCallId: "tool-1", toolName: "read_file", isError: false },
+        { version: 1, type: "compacted" },
+      ]), { mode: 0o600 });
+      await fs.writeFile(outside, jsonl([{ version: 1, type: "assistant-delta", delta: "MUST_NOT_LEAK" }]));
+      const context = executionContext("pi", cwd);
+      const resolution = await resolveProviderTrace({
+        link: traceLink("pi", path.join(root, "pi-session.jsonl"), tracePath),
+        context,
+        options: { dataRoot: root },
+      });
+      expect(resolution).toMatchObject({ status: "available", engine: "pi" });
+      if (resolution.status !== "available" || resolution.engine !== "pi") return;
+      const page = await readProviderTracePage({ resolution, runId: "run-1" });
+      expect(page.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ engine: "pi", kind: "agent-output", output: "安全输出" }),
+        expect.objectContaining({ engine: "pi", kind: "tool", phase: "started", name: "read_file" }),
+        expect.objectContaining({ engine: "pi", kind: "tool", phase: "completed", name: "context_compaction" }),
+      ]));
+      expect(JSON.stringify(page.events)).not.toContain("MUST_NOT_LEAK");
+      expect(await readProviderTraceContext(resolution)).toMatchObject({
+        metadata: { model: "deepseek-v4-pro", provider: "DeepSeek", cwd: path.resolve(cwd) },
+        sections: [expect.objectContaining({ source: "provider-native", status: "recorded" })],
+      });
+      await expect(resolveProviderTrace({
+        link: traceLink("pi", path.join(root, "pi-session.jsonl"), outside),
+        context,
+        options: { dataRoot: root },
+      })).resolves.toMatchObject({ status: "unavailable", engine: "pi", reason: "outside-root" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("locates a Claude transcript by exact session id and projects thinking/tools/results", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-claude-trace-"));
     const projectsRoot = path.join(root, "projects");
@@ -582,8 +627,9 @@ describe("provider-native process traces", () => {
 });
 
 function traceLink(
-  engine: "claude" | "kimi",
+  engine: "claude" | "kimi" | "pi",
   externalSessionId: string,
+  tracePath?: string,
 ): ProviderTraceLink {
   return {
     sessionId: "session-a",
@@ -592,13 +638,14 @@ function traceLink(
     role: "dev",
     engine,
     externalSessionId,
+    ...(tracePath === undefined ? {} : { tracePath }),
     contextFingerprint: "context-fingerprint",
     startedAt: "2026-07-30T00:00:00.000Z",
   };
 }
 
 function executionContext(
-  engine: "claude" | "kimi",
+  engine: "claude" | "kimi" | "pi",
   cwd: string,
 ): LocalRunExecutionContextFact {
   return {
@@ -607,7 +654,15 @@ function executionContext(
     sourceMessageId: 1,
     role: "dev",
     engine,
-    profile: { cli: engine, model: "", effort: "" },
+    profile: engine === "pi"
+      ? {
+          cli: "pi",
+          providerId: "deepseek",
+          providerProfileId: "profile-a",
+          model: "deepseek-v4-pro",
+          effort: "high",
+        }
+      : { cli: engine, model: "", effort: "" },
     profileFingerprint: "profile-fingerprint",
     agentIdentityFingerprint: "agent-fingerprint",
     contextFingerprint: "context-fingerprint",

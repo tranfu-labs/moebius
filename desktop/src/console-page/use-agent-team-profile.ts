@@ -77,7 +77,9 @@ export function useAgentTeamProfile(input: {
   const saveExecutionProfile = useCallback(async (
     teamKey: string,
     memberSlug: string,
-    profile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+    profile:
+      | { cli: "codex" | "claude" | "kimi"; model: string; effort: string }
+      | { cli: "pi"; providerId: "deepseek"; providerProfileId: string; model: string; effort: string },
   ) => {
     const runtime = inputRef.current;
     const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);

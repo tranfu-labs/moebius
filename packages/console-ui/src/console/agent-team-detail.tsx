@@ -18,8 +18,10 @@ import {
 } from "@/console/agent-markdown-mention-editor";
 import {
   findExecutionModel,
+  findPiExecutionModel,
   isRegisteredExecutionEffort,
   listExecutionModels,
+  PI_EXECUTION_MODELS,
   resolveProfileForCli,
   resolveProfileForModel,
 } from "@/console/execution-profile-registry";
@@ -35,10 +37,27 @@ export interface AgentTeamDetailMember {
   executionProfile?: AgentExecutionProfileDocument;
 }
 
-export interface AgentExecutionProfile {
+export type AgentExecutionProfile = {
   cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
+
+export interface AgentExecutionProviderProfile {
+  id: string;
+  providerId: "deepseek";
+  providerName: string;
+  displayName: string;
+  defaultModel: "deepseek-v4-flash" | "deepseek-v4-pro" | null;
+  verifiedModels: Array<"deepseek-v4-flash" | "deepseek-v4-pro">;
+  readiness: "ready" | "needs-attention" | "disabled";
+  reason: string | null;
 }
 
 export interface AgentExecutionProfileDocument {
@@ -174,6 +193,8 @@ export interface AgentTeamDetailProps {
     profile: AgentExecutionProfile,
   ): Promise<AgentExecutionProfileDocument>;
   onRestoreRecommendedProfile?(memberSlug: string): Promise<AgentExecutionProfileDocument>;
+  providerProfiles?: readonly AgentExecutionProviderProfile[];
+  onOpenProviderSettings?(): void;
   onApplyOfficialUpdate?(): Promise<AgentOfficialUpdateResult>;
   onOpenCopiedTeam?(teamId: string): void;
   onLeave(): void;
@@ -203,6 +224,8 @@ export function AgentTeamDetail({
   onRemoveRecord,
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
+  providerProfiles = [],
+  onOpenProviderSettings,
   onApplyOfficialUpdate,
   onOpenCopiedTeam,
   onLeave,
@@ -247,6 +270,7 @@ export function AgentTeamDetail({
     && profileDraft !== null
     && (
       profileDraft.cli !== profileDocument.effectiveProfile.cli
+      || providerProfileIdentity(profileDraft) !== providerProfileIdentity(profileDocument.effectiveProfile)
       || profileDraft.model !== profileDocument.effectiveProfile.model
       || profileDraft.effort !== profileDocument.effectiveProfile.effort
     );
@@ -271,15 +295,29 @@ export function AgentTeamDetail({
   const profileEffortError = profileDraft !== null && profileDraft.effort.trim().length === 0
     ? t("console.agentTeamDetail.enterEffort")
     : null;
+  const selectedProviderProfile = profileDraft?.cli === "pi"
+    ? providerProfiles.find((profile) => profile.id === profileDraft.providerProfileId) ?? null
+    : null;
+  const selectableProviderProfiles = providerProfiles.filter((profile) => profile.readiness === "ready");
+  const profileProviderError = profileDraft?.cli === "pi" && (
+    selectedProviderProfile === null
+    || selectedProviderProfile.readiness !== "ready"
+  ) ? t("console.agentTeamDetail.selectReadyProviderProfile") : null;
   const profileDraftValid = profileDraft !== null
     && profileModelError === null
-    && profileEffortError === null;
+    && profileEffortError === null
+    && profileProviderError === null
+    && (profileDraft.cli !== "pi" || selectedProviderProfile?.verifiedModels.includes(profileDraft.model as "deepseek-v4-flash" | "deepseek-v4-pro") === true);
   const profileModelDefinition = profileDraft === null
     ? null
-    : findExecutionModel(profileDraft.cli, profileDraft.model);
+    : profileDraft.cli === "pi"
+      ? findPiExecutionModel(profileDraft.model)
+      : findExecutionModel(profileDraft.cli, profileDraft.model);
   const profileModelUnsupported = profileDraft !== null && profileModelDefinition === null;
   const profileEffortUnsupported = profileDraft !== null
-    && !isRegisteredExecutionEffort(profileDraft.cli, profileDraft.model, profileDraft.effort);
+    && !(profileDraft.cli === "pi"
+      ? findPiExecutionModel(profileDraft.model)?.efforts.includes(profileDraft.effort) === true
+      : isRegisteredExecutionEffort(profileDraft.cli, profileDraft.model, profileDraft.effort));
 
   useEffect(() => {
     const teamChanged = profileEditorsTeamKeyRef.current !== team.teamKey;
@@ -991,22 +1029,58 @@ export function AgentTeamDetail({
                 <>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <label className="grid gap-1.5 text-xs text-hint">
-                      CLI
+                      {t("console.agentTeamDetail.executionEngineLabel")}
                       <select
-                        aria-label="CLI"
+                        aria-label={t("console.agentTeamDetail.executionEngineLabel")}
                         className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                          draft: resolveProfileForCli(event.currentTarget.value as "codex" | "claude" | "kimi"),
+                          draft: resolveProfileForEngine(event.currentTarget.value as AgentExecutionProfile["cli"], selectableProviderProfiles),
                           error: null,
                         })}
                       >
                         <option value="codex">Codex</option>
                         <option value="claude">Claude Code</option>
                         <option value="kimi">Kimi</option>
+                        <option value="pi">Pi API</option>
                       </select>
                     </label>
+                    {profileDraft.cli === "pi" ? (
+                      <label className="grid gap-1.5 text-xs text-hint">
+                        Provider
+                        <select
+                          aria-label="Provider"
+                          className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                          value={profileDraft.providerProfileId}
+                          disabled={readOnly || profileStatus === "saving"}
+                          aria-invalid={profileProviderError !== null}
+                          onChange={(event) => updateProfileEditor(selectedMember.slug, {
+                            draft: resolvePiProviderProfile(event.currentTarget.value, selectableProviderProfiles),
+                            error: null,
+                          })}
+                        >
+                          <option value="">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</option>
+                          {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
+                            <option value={selectedProviderProfile.id}>
+                              {t("console.agentTeamDetail.providerUnavailableOption", {
+                                providerName: selectedProviderProfile.providerName,
+                                displayName: selectedProviderProfile.displayName,
+                              })}
+                            </option>
+                          ) : null}
+                          {selectableProviderProfiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>{profile.providerName} · {profile.displayName}</option>
+                          ))}
+                        </select>
+                        {profileProviderError !== null ? <span className="text-danger">{profileProviderError}</span> : null}
+                        {selectableProviderProfiles.length === 0 && onOpenProviderSettings !== undefined ? (
+                          <button type="button" className="w-fit text-xs text-accent hover:underline" onClick={onOpenProviderSettings}>
+                            {t("console.agentTeamDetail.goToProviderSettings")}
+                          </button>
+                        ) : null}
+                      </label>
+                    ) : null}
                     <label className="grid gap-1.5 text-xs text-hint">
                       Model
                       <select
@@ -1016,15 +1090,20 @@ export function AgentTeamDetail({
                         disabled={readOnly || profileStatus === "saving"}
                         aria-invalid={profileModelError !== null}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...resolveProfileForModel(profileDraft, event.currentTarget.value),
+                          ...resolveSelectedModel(profileDraft, event.currentTarget.value),
                         }, error: null })}
                       >
-                        {profileModelUnsupported ? (
+                        {profileDraft.cli === "pi" && profileDraft.model === "" ? (
+                          <option value="">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</option>
+                        ) : null}
+                        {profileModelUnsupported && profileDraft.model !== "" ? (
                           <option value={profileDraft.model}>
                             {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
                           </option>
                         ) : null}
-                        {listExecutionModels(profileDraft.cli).map((model) => (
+                        {(profileDraft.cli === "pi"
+                          ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
+                          : listExecutionModels(profileDraft.cli)).map((model) => (
                           <option key={model.value} value={model.value}>
                             {model.membershipRestricted
                               ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
@@ -1431,9 +1510,57 @@ function isProfileEditorDirty(
     && editor.draft !== null
     && (
       editor.draft.cli !== editor.document.effectiveProfile.cli
+      || providerProfileIdentity(editor.draft) !== providerProfileIdentity(editor.document.effectiveProfile)
       || editor.draft.model !== editor.document.effectiveProfile.model
       || editor.draft.effort !== editor.document.effectiveProfile.effort
     );
+}
+
+function providerProfileIdentity(profile: AgentExecutionProfile): string {
+  return profile.cli === "pi" ? profile.providerProfileId : "";
+}
+
+function resolveProfileForEngine(
+  engine: AgentExecutionProfile["cli"],
+  providers: readonly AgentExecutionProviderProfile[],
+): AgentExecutionProfile {
+  if (engine !== "pi") return resolveProfileForCli(engine);
+  return providers.length === 1
+    ? resolvePiProviderProfile(providers[0]!.id, providers)
+    : { cli: "pi", providerId: "deepseek", providerProfileId: "", model: "", effort: "high" };
+}
+
+function resolvePiProviderProfile(
+  profileId: string,
+  providers: readonly AgentExecutionProviderProfile[],
+): AgentExecutionProfile {
+  const profile = providers.find((candidate) => candidate.id === profileId);
+  const model = profile?.defaultModel !== null
+    && profile?.verifiedModels.includes(profile.defaultModel) === true
+    ? profile.defaultModel
+    : "";
+  return {
+    cli: "pi",
+    providerId: "deepseek",
+    providerProfileId: profile?.id ?? "",
+    model,
+    effort: findPiExecutionModel(model)?.defaultEffort ?? "high",
+  };
+}
+
+function resolveSelectedModel(
+  profile: AgentExecutionProfile,
+  model: string,
+): AgentExecutionProfile {
+  if (profile.cli !== "pi") return resolveProfileForModel(profile, model);
+  const definition = findPiExecutionModel(model);
+  return {
+    ...profile,
+    model,
+    effort: profile.model !== "" && definition?.efforts.includes(profile.effort) === true
+      ? profile.effort
+      : definition?.defaultEffort ?? profile.effort,
+  };
 }
 
 function createProfileEditors(

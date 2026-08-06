@@ -9,7 +9,7 @@ export interface TrustedExecutionModel {
 }
 
 export type TrustedExecutionRegistry = Readonly<Record<
-  LocalConsoleExecutionProfile["cli"],
+  Exclude<LocalConsoleExecutionProfile["cli"], "pi">,
   readonly TrustedExecutionModel[]
 >>;
 
@@ -51,6 +51,12 @@ export const TRUSTED_EXECUTION_REGISTRY: TrustedExecutionRegistry = {
 export function isTrustedExecutionProfile(
   value: LocalConsoleExecutionProfile,
 ): boolean {
+  if (value.cli === "pi") {
+    return value.providerId === "deepseek"
+      && value.providerProfileId.length > 0
+      && (value.model === "deepseek-v4-flash" || value.model === "deepseek-v4-pro")
+      && (value.effort === "high" || value.effort === "max");
+  }
   return TRUSTED_EXECUTION_REGISTRY[value.cli].some((candidate) =>
     candidate.value === value.model && candidate.efforts.includes(value.effort));
 }

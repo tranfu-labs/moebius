@@ -22,7 +22,7 @@ import type { AiTeamBuilderTurnRuntime } from "./turn-runtime.js";
 import type { AiTeamBuilderProposal } from "./validator.js";
 
 export interface AiTeamBuilderWriterPort {
-  create(dataRoot: string, proposal: AiTeamBuilderProposal): Promise<{ teamId: string }>;
+  create(dataRoot: string, proposal: AiTeamBuilderProposal, profile: import("../team-execution-profile.js").ExecutionProfile): Promise<{ teamId: string }>;
 }
 
 export class AiTeamBuilderService {
@@ -115,7 +115,7 @@ export class AiTeamBuilderService {
     const committing = beginAiTeamBuilderCommit(current, proposalRevision);
     await this.drafts.save(committing);
     try {
-      const result = await this.writer.create(this.dataRoot, committing.proposal!);
+      const result = await this.writer.create(this.dataRoot, committing.proposal!, committing.executionProfile!);
       const selected = selectAiTeamBuilderTeam(committing, result.teamId);
       await this.drafts.save(selected);
       return toAiTeamBuilderState(selected);

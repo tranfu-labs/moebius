@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import type { ProviderSettingsController } from "@/console/provider-settings-panel";
 import { I18nProvider } from "@/i18n";
 import { OnboardingShell } from "./onboarding-shell";
 
@@ -42,6 +43,47 @@ const twelveTeams: OperatorAgentTeam[] = Array.from({ length: 12 }, (_, index) =
   name: index === 0 ? "开发团队" : index === 8 || index === 9 ? "内容团队" : `团队 ${String(index + 1)}`,
   description: index === 0 ? "负责软件方案、实现、测试与复核" : editorialTeam.description,
 }));
+
+const apiOnlyProvider: ProviderSettingsController = {
+  state: {
+    status: "ready",
+    profiles: [{
+      id: "deepseek-api-only",
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      displayName: "我的 DeepSeek",
+      keySuffix: "7K2M",
+      defaultModel: "deepseek-v4-pro",
+      verifiedModels: ["deepseek-v4-pro"],
+      readiness: "ready",
+      reason: null,
+      revision: 1,
+      updatedAt: "2026-08-05T08:00:00.000Z",
+      references: [],
+      activity: null,
+    }],
+  },
+  busyProfileId: null,
+  error: null,
+  canRetryCreateSave: false,
+  refresh: () => undefined,
+  create: async () => true,
+  retryCreateSave: async () => true,
+  discardCreateSave: () => undefined,
+  rotateKey: async () => true,
+  addModel: async () => true,
+  setDefaultModel: async () => true,
+  removeModel: async () => true,
+  replaceDefaultAndRemoveModel: async () => true,
+  rename: async () => true,
+  disable: async () => undefined,
+  enable: async () => undefined,
+  migrateReferences: async () => true,
+  retryReferenceOperation: async () => true,
+  endReference: async () => true,
+  delete: async () => undefined,
+  cancel: () => undefined,
+};
 
 const meta = {
   title: "Page/Onboarding/OnboardingShell",
@@ -131,4 +173,15 @@ export const TeamDirectoryLoading: Story = {
 export const TeamDirectoryFailed: Story = {
   args: { teamsState: { status: "error" } },
   play: TwelveTeamSelector.play,
+};
+
+export const ApiOnlyDeepSeek: Story = {
+  args: {
+    environment: {
+      codex: { status: "missing", revision: 1 },
+      claude: { status: "missing", revision: 1 },
+      kimi: { status: "missing", revision: 1 },
+    },
+    providerSettings: apiOnlyProvider,
+  },
 };

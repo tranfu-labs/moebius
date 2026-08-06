@@ -698,6 +698,39 @@ async function handleRequest(
       return;
     }
 
+    const memberExecutionMatch = matchSessionMemberExecutionRoute(url.pathname);
+    if (request.method === "PATCH" && memberExecutionMatch !== null) {
+      const payload = await readJsonBody(request);
+      if (!isRecord(payload) || (payload.action !== "migrate" && payload.action !== "end")) {
+        sendJson(response, 400, { error: "Expected action to be migrate or end" });
+        return;
+      }
+      const profile = payload.action === "migrate"
+        ? readExecutionOverride({
+            executionOverride: {
+              overrideId: "session-migration",
+              scope: "single-run",
+              profile: payload.executionProfile,
+            },
+          })?.profile
+        : undefined;
+      try {
+        const snapshot = await runtime.updateSessionMemberExecution({
+          ...memberExecutionMatch,
+          action: payload.action,
+          ...(profile === undefined ? {} : { executionProfile: profile }),
+        });
+        sendJson(response, 200, { snapshot });
+      } catch (error) {
+        if (error instanceof LocalConsoleSessionRunningError) {
+          sendJson(response, 409, { code: "SESSION_RUNNING", error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
     const sessionMessagesMatch = matchSessionRoute(url.pathname, "messages");
     if (request.method === "POST" && sessionMessagesMatch !== null) {
       const payload = await readJsonBody(request);
@@ -1002,7 +1035,7 @@ function matchManagedProcessRoute(pathname: string):
   return { sessionId, processId, action: suffix === undefined ? "inspect" : suffix as "logs" | "stop" };
 }
 
-function readExecutionOverride(value: unknown): {
+export function readExecutionOverride(value: unknown): {
   overrideId: string;
   profile: import("./types.js").LocalConsoleExecutionProfile;
   scope: "single-run";
@@ -1020,7 +1053,7 @@ function readExecutionOverride(value: unknown): {
   }
   const { cli, model, effort } = override.profile;
   if (
-    (cli !== "codex" && cli !== "claude" && cli !== "kimi")
+    (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi")
     || typeof model !== "string"
     || model.trim() === ""
     || typeof effort !== "string"
@@ -1028,11 +1061,36 @@ function readExecutionOverride(value: unknown): {
   ) {
     throw new Error("Expected executionOverride.profile to contain cli/model/effort");
   }
+  const profile: import("./types.js").LocalConsoleExecutionProfile = cli === "pi"
+    ? {
+        cli,
+        providerId: override.profile.providerId === "deepseek"
+          ? "deepseek"
+          : failExecutionOverride("Expected Pi executionOverride.profile.providerId to be deepseek"),
+        providerProfileId: readExecutionOverrideString(
+          override.profile.providerProfileId,
+          "providerProfileId",
+        ),
+        model: model.trim(),
+        effort: effort.trim(),
+      }
+    : { cli, model: model.trim(), effort: effort.trim() };
   return {
     overrideId: override.overrideId,
-    profile: { cli, model, effort },
+    profile,
     scope: "single-run",
   };
+}
+
+function readExecutionOverrideString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Expected Pi executionOverride.profile.${field}`);
+  }
+  return value.trim();
+}
+
+function failExecutionOverride(message: string): never {
+  throw new Error(message);
 }
 
 async function submitMessage(
@@ -1553,6 +1611,16 @@ function matchPendingMessageRoute(pathname: string): { sessionId: string; messag
   return {
     sessionId: decodeURIComponent(match[1]!),
     messageId,
+  };
+}
+
+function matchSessionMemberExecutionRoute(
+  pathname: string,
+): { sessionId: string; memberName: string } | null {
+  const match = /^\/api\/local-console\/sessions\/([^/]+)\/members\/([^/]+)\/execution$/u.exec(pathname);
+  return match === null ? null : {
+    sessionId: decodeURIComponent(match[1]!),
+    memberName: decodeURIComponent(match[2]!),
   };
 }
 

@@ -225,6 +225,16 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     await this.run({ kind: "local-mark-session-team-update-failed", ...input });
   }
 
+  async updateSessionMemberExecution(input: {
+    sessionId: string;
+    memberName: string;
+    action: "migrate" | "end";
+    executionProfile?: import("./types.js").LocalConsoleExecutionProfile;
+    now: string;
+  }): Promise<LocalConsoleAgentTeamSnapshot> {
+    return this.runFact({ kind: "local-update-session-member-execution", ...input }, [input.sessionId]);
+  }
+
   async recordProjectWorkspaceStatus(input: {
     projectId: string;
     cwd: string;
@@ -891,7 +901,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "claude" | "kimi";
+    engine: import("./types.js").LocalConsoleExecutionEngine;
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;
@@ -1840,14 +1850,22 @@ function normalizeTerminal(value: unknown): LocalConsoleTerminal | null {
 function normalizeExecutionProfile(value: unknown): LocalConsoleTerminal["actualProfile"] {
   if (!isRecord(value)) throw new Error("Invalid terminal.actualProfile");
   const cli = readString(value.cli, "terminal.actualProfile.cli");
-  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi") {
     throw new Error(`Invalid terminal.actualProfile.cli: ${cli}`);
   }
-  return {
-    cli,
-    model: readString(value.model, "terminal.actualProfile.model"),
-    effort: readString(value.effort, "terminal.actualProfile.effort"),
-  };
+  const model = readString(value.model, "terminal.actualProfile.model");
+  const effort = readString(value.effort, "terminal.actualProfile.effort");
+  if (cli === "pi") {
+    if (value.providerId !== "deepseek") throw new Error("Invalid terminal.actualProfile.providerId");
+    return {
+      cli,
+      providerId: "deepseek",
+      providerProfileId: readString(value.providerProfileId, "terminal.actualProfile.providerProfileId"),
+      model,
+      effort,
+    };
+  }
+  return { cli, model, effort };
 }
 
 function normalizeTextFragment(value: unknown): LocalConsoleTextFragment {

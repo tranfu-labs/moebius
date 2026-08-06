@@ -56,6 +56,9 @@ import { useConsolePresentation } from "./use-console-presentation.js";
 import { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import { useManagedProcesses } from "./use-managed-processes.js";
 import { useTeamTraceabilityComposition } from "./use-team-traceability-composition.js";
+import { hasProviderSettingsPort } from "./provider-settings-port.js";
+import { useProviderSettings } from "./use-provider-settings.js";
+import { buildProviderSettingsMessages } from "./provider-settings-messages.js";
 import { browserManagedProcessPort } from "./managed-process-client.js";
 import {
   DesktopApplicationRoot,
@@ -76,6 +79,9 @@ export function OperatorConsoleApp({
 }): JSX.Element {
   const language = useDesktopLanguage();
   const { t } = useI18n();
+  const providerSettings = useProviderSettings(
+    hasProviderSettingsPort(window.moebius) ? window.moebius : undefined, buildProviderSettingsMessages(t),
+  );
   const desktopShellBundle = useDesktopConsoleShell(
     window.moebius, window.MOEBIUS_LOCAL_CONSOLE_URL, window.location.search,
     loadExecutionProfileRegistry, window.fetch, browserConversationSearchPort, t,
@@ -127,9 +133,7 @@ export function OperatorConsoleApp({
   const commitComposerDraft = composerBundle.commit;
   const activateComposerDraft = composerBundle.activate;
   const clearComposerDraft = composerBundle.clear;
-  const agentTeamControllersBundle = useAgentTeamConsole(
-    window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t,
-  );
+  const agentTeamControllersBundle = useAgentTeamConsole(window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t);
   const agentTeamCatalogBundle = agentTeamControllersBundle.catalog;
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,
@@ -204,8 +208,7 @@ export function OperatorConsoleApp({
     attachmentCapability, t,
   );
   const teamTraceability = useTeamTraceabilityComposition({
-    apiBase,
-    sessionId: presentationBundle.selectedSession?.sessionId ?? null,
+    apiBase, sessionId: presentationBundle.selectedSession?.sessionId ?? null,
     sessionRevision: presentationBundle.selectedSession?.updatedAt ?? null,
   });
   const projects = presentationBundle.projects;
@@ -281,6 +284,7 @@ export function OperatorConsoleApp({
       sidebarDraftClose={sidebarDraftCloseBundle}
       agentTeams={agentTeamControllersBundle}
       managedProcesses={managedProcesses}
+      providerSettings={providerSettings}
       actions={actions}
       newConversation={newConversation}
       sessionAnalysisNotice={sessionAnalysisNotice}

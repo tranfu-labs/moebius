@@ -4,6 +4,7 @@ import {
   type AgentTeamDuplicateBuiltInRequest,
   type AgentTeamDuplicateUserRequest,
   type AgentTeamExecutionProfileSaveRequest,
+  type AgentTeamExecutionProfilesReplaceRequest,
   type AgentTeamListItem,
   type AgentTeamMemberAddRequest,
   type AgentTeamMemberRequest,
@@ -64,6 +65,15 @@ export function selectRecommendationsOrEmpty(
 
 export function selectMemberSlugs(snapshot: TeamSnapshot): string[] {
   return snapshot.definition?.memberOrder ?? snapshot.members.map((member) => member.slug);
+}
+
+export function assertRequestedMembersAvailable(
+  requested: readonly string[],
+  available: readonly string[],
+): void {
+  if (requested.some((slug) => !available.includes(slug))) {
+    throw new AgentTeamIpcRequestError("批量替换的 Agent 已不在当前团队中。");
+  }
 }
 
 export function selectExecutionBinding(input: {
@@ -180,6 +190,23 @@ export function parseExecutionProfileSaveRequest(value: unknown): AgentTeamExecu
   const member = parseMemberRequest(value);
   if (!isPlainObject(value)) throw new AgentTeamIpcRequestError("保存运行配置需要有效的配置内容。");
   return { ...member, profile: normalizeExecutionProfile(value.profile) };
+}
+
+export function parseExecutionProfilesReplaceRequest(value: unknown): AgentTeamExecutionProfilesReplaceRequest {
+  const team = parseTeamRequest(value);
+  if (!isPlainObject(value) || !Array.isArray(value.memberSlugs)) {
+    throw new AgentTeamIpcRequestError("批量替换需要有效的 Agent 列表。");
+  }
+  const memberSlugs = [...new Set(value.memberSlugs.map((slug) => {
+    if (typeof slug !== "string" || !isValidPathSegment(slug) || slug.trim() !== slug) {
+      throw new AgentTeamIpcRequestError("批量替换包含无效的 Agent slug。");
+    }
+    return slug;
+  }))];
+  if (memberSlugs.length === 0 || memberSlugs.length > 256) {
+    throw new AgentTeamIpcRequestError("批量替换至少需要一名 Agent。");
+  }
+  return { ...team, memberSlugs, profile: normalizeExecutionProfile(value.profile) };
 }
 
 export function parseOfficialTeamRequest(value: unknown): { teamId: string; ownership: "system" } {

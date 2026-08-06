@@ -3,7 +3,11 @@ import path from "node:path";
 
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
-import type { LocalConsoleAgentTeamSnapshot, LocalConsoleExecutionProfile } from "./types.js";
+import type {
+  LocalConsoleAgentTeamSnapshot,
+  LocalConsoleExecutionEngine,
+  LocalConsoleExecutionProfile,
+} from "./types.js";
 import type { ResolvedLocalWorkspace } from "./workspace-source.js";
 
 export interface LocalRunExecutionContextFact {
@@ -11,7 +15,7 @@ export interface LocalRunExecutionContextFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   profile: LocalConsoleExecutionProfile | null;
   profileFingerprint: string;
   agentIdentityFingerprint: string;
@@ -42,8 +46,9 @@ export interface LocalExecutionSessionLinkFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   externalSessionId: string;
+  tracePath?: string;
   profileFingerprint: string;
   agentIdentityFingerprint?: string;
   contextFingerprint: string;
@@ -54,7 +59,7 @@ export interface LocalAgentSessionLinkFact {
   sessionId: string;
   agentIdentityFingerprint: string;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   externalSessionId: string;
   profileFingerprint: string;
   contextFingerprint: string;
@@ -66,7 +71,7 @@ export interface LocalProviderSessionObservedFact {
   runId: string;
   sourceMessageId: number;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   agentIdentityFingerprint: string;
   contextFingerprint: string;
   externalSessionId: string | null;
@@ -100,7 +105,7 @@ export interface LocalProviderProcessStartedFact {
   sessionId: string;
   runId: string;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   startedAt: string;
 }
 
@@ -133,7 +138,8 @@ export type LocalExecutionRecoveryPlan =
         | "session-link-conflict"
         | "provider-id-missing"
         | "rollout-unavailable"
-        | "external-session-unavailable";
+        | "external-session-unavailable"
+        | "continuation-ended";
     };
 
 export interface LocalExecutionContextSeed {
@@ -159,6 +165,9 @@ export function executionProfileFingerprint(
     : {
         kind: "profile",
         cli: profile.cli,
+        ...(profile.cli === "pi"
+          ? { providerId: profile.providerId, providerProfileId: profile.providerProfileId }
+          : {}),
         model: profile.model,
         effort: profile.effort,
       });
@@ -435,7 +444,7 @@ export function localAgentIdentityFingerprint(input: {
 
 export function executionContextFingerprint(input: {
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   profileFingerprint: string;
   workspace: { cwd: string; mode: string };
   team: Array<{

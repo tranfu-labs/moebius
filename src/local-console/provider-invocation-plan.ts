@@ -93,6 +93,10 @@ export function planLocalProviderSessionFacts(continuingSameRun: boolean): Local
   return continuingSameRun ? { kind: "skip" } : { kind: "record" };
 }
 
+export function planProviderTracePath(tracePath: string | undefined): { tracePath?: string } {
+  return tracePath === undefined ? {} : { tracePath };
+}
+
 export type LocalProviderTraceDecision =
   | { kind: "error"; reason: "execution-trace-ready-session-mismatch" | "execution-trace-ready-session-conflict" }
   | {

@@ -4,6 +4,8 @@ import type {
   AgentTeamDuplicateUserRequest,
   AgentTeamExecutionProfileDocument,
   AgentTeamExecutionProfileSaveRequest,
+  AgentTeamExecutionProfilesReplaceRequest,
+  AgentTeamExecutionProfilesReplaceResult,
   AgentTeamListItem,
   AgentTeamListResponse,
   AgentTeamMemberAddRequest,
@@ -56,6 +58,21 @@ import type {
   SettingsUpdateState,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
+import type {
+  ProviderProfileCreateRequest,
+  ProviderProfileCancelRequest,
+  ProviderProfileIpcResult,
+  ProviderProfileMigrateReferencesRequest,
+  ProviderProfileRetryReferenceOperationRequest,
+  ProviderProfileEndReferencesRequest,
+  ProviderProfileListResult,
+  ProviderProfileModelRequest,
+  ProviderProfileRenameRequest,
+  ProviderProfileRevisionRequest,
+  ProviderProfileRotateKeyRequest,
+  ProviderProfileSummaryDto,
+  ProviderProfileReplaceDefaultAndRemoveModelRequest,
+} from "../provider-profile-contract.js";
 export interface DesktopStatusSnapshot {
   localConsole?: {
     status: "starting" | "running" | "error" | "stopped";
@@ -80,6 +97,23 @@ export interface DesktopApi {
   onUpdateState?: (listener: (state: SettingsUpdateState) => void) => () => void;
   installUpdate?: () => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
+  listProviderProfiles?: () => Promise<ProviderProfileListResult>;
+  createProviderProfile?: (request: ProviderProfileCreateRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  retryCreateProviderProfileSave?: (request: ProviderProfileCancelRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  discardCreateProviderProfileSave?: (request: ProviderProfileCancelRequest) => Promise<ProviderProfileIpcResult<null>>;
+  rotateProviderProfileKey?: (request: ProviderProfileRotateKeyRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  addProviderProfileModel?: (request: ProviderProfileModelRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  setProviderProfileDefaultModel?: (request: ProviderProfileModelRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  removeProviderProfileModel?: (request: ProviderProfileModelRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  replaceProviderProfileDefaultAndRemoveModel?: (request: ProviderProfileReplaceDefaultAndRemoveModelRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  renameProviderProfile?: (request: ProviderProfileRenameRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  disableProviderProfile?: (request: ProviderProfileRevisionRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  enableProviderProfile?: (request: ProviderProfileRevisionRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  deleteProviderProfile?: (request: ProviderProfileRevisionRequest) => Promise<ProviderProfileIpcResult<null>>;
+  migrateProviderProfileReferences?: (request: ProviderProfileMigrateReferencesRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  retryProviderProfileReferenceOperation?: (request: ProviderProfileRetryReferenceOperationRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  endProviderProfileReferences?: (request: ProviderProfileEndReferencesRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  cancelProviderProfileOperation?: (request: ProviderProfileCancelRequest) => Promise<ProviderProfileIpcResult<null>>;
   onStatus?: (listener: (snapshot: DesktopStatusSnapshot) => void) => () => void;
   openStatusPage?: () => Promise<void>;
   selectProjectFolder?: () => Promise<string | null>;
@@ -105,6 +139,9 @@ export interface DesktopApi {
   saveAgentTeamExecutionProfile?: (
     request: AgentTeamExecutionProfileSaveRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
+  replaceUnavailableAgentTeamExecutionProfiles?: (
+    request: AgentTeamExecutionProfilesReplaceRequest,
+  ) => Promise<AgentTeamExecutionProfilesReplaceResult>;
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;

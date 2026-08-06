@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
+import { ProviderSettingsPanel, type ProviderSettingsController } from "@/console/provider-settings-panel";
 import {
   createOnboardingShellState,
   canContinueOnboardingEnvironment,
@@ -47,6 +48,7 @@ import {
   resolveDefaultOnboardingTeamKey,
   runningOnboardingInstallations,
   type OnboardingCli,
+  type OnboardingEngine,
   type OnboardingCliInstallation,
   type OnboardingEnvironmentState,
   type OnboardingInstallationState,
@@ -64,11 +66,20 @@ export interface OnboardingShellProps {
   teamsState: OperatorAgentTeamsState;
   teamBuilderState: TeamBuilderViewState;
   createdTeamKey?: string | null;
+  providerSettings?: ProviderSettingsController;
   onRecheckEnvironment: () => void | Promise<void>;
   onInstallCli: (cli: OnboardingCli) => void | Promise<void>;
   onUpdateClaude?: () => void | Promise<void>;
   onCancelCliInstallation: (cli: OnboardingCli) => void | Promise<void>;
   onRetryTeams?: () => void | Promise<void>;
+  onReplaceTeamWithProvider?: (input: {
+    teamId: string;
+    ownership: "system" | "user";
+    memberSlugs: string[];
+    providerProfileId: string;
+    model: "deepseek-v4-flash" | "deepseek-v4-pro";
+    effort: "high" | "max";
+  }) => void | Promise<void>;
   onOpenTeamBuilder: () => void | Promise<void>;
   onTeamBuilderSubmit: (text: string) => void | Promise<void>;
   onTeamBuilderAdjust: (text: string) => void | Promise<void>;
@@ -86,11 +97,13 @@ export function OnboardingShell({
   teamsState,
   teamBuilderState,
   createdTeamKey = null,
+  providerSettings,
   onRecheckEnvironment,
   onInstallCli,
   onUpdateClaude,
   onCancelCliInstallation,
   onRetryTeams,
+  onReplaceTeamWithProvider,
   onOpenTeamBuilder,
   onTeamBuilderSubmit,
   onTeamBuilderAdjust,
@@ -103,7 +116,7 @@ export function OnboardingShell({
   const { t } = useI18n();
   const [state, dispatch] = useReducer(
     reduceOnboardingShell,
-    canContinueOnboardingEnvironment(environment),
+    canContinueOnboardingEnvironment(environment, readyProviderProfiles(providerSettings)),
     createOnboardingShellState,
   );
   const [completionState, setCompletionState] = useState<"idle" | "saving" | "error">("idle");
@@ -118,18 +131,19 @@ export function OnboardingShell({
     [teamsState],
   );
   const selectedTeam = usableTeams.find((team) => team.teamKey === state.selectedTeamKey) ?? null;
-  const compatibility = getOnboardingTeamCompatibility(selectedTeam, environment, t);
-  const builderCli = chooseOnboardingBuilderCli(environment);
+  const providerProfiles = readyProviderProfiles(providerSettings);
+  const compatibility = getOnboardingTeamCompatibility(selectedTeam, environment, t, providerProfiles);
+  const builderCli = chooseOnboardingBuilderCli(environment, providerProfiles);
 
   useEffect(() => {
     titleRef.current?.focus();
   }, [state.step]);
 
   useEffect(() => {
-    if (canContinueOnboardingEnvironment(environment) && !state.environmentPassed) {
+    if (canContinueOnboardingEnvironment(environment, providerProfiles) && !state.environmentPassed) {
       dispatch({ type: "environment-passed" });
     }
-  }, [environment, state.environmentPassed]);
+  }, [environment, providerProfiles, state.environmentPassed]);
 
   useEffect(() => {
     if (
@@ -170,7 +184,7 @@ export function OnboardingShell({
 
   const primaryDisabled = state.teamBuilderOpen
     || completionState === "saving"
-    || (state.step === 1 && !canContinueOnboardingEnvironment(environment))
+    || (state.step === 1 && !canContinueOnboardingEnvironment(environment, providerProfiles))
     || (state.step >= 2 && selectedTeam === null);
 
   const advance = async () => {
@@ -298,6 +312,7 @@ export function OnboardingShell({
             <EnvironmentStep
               environment={environment}
               installations={installations}
+              providerSettings={providerSettings}
               onInstall={onInstallCli}
               onUpdateClaude={onUpdateClaude}
               onCancel={onCancelCliInstallation}
@@ -323,8 +338,10 @@ export function OnboardingShell({
                   teamsState={teamsState}
                   selectedTeamKey={state.selectedTeamKey}
                   environment={environment}
+                  providerProfiles={providerProfiles}
                   onSelect={(teamKey) => dispatch({ type: "select-team", teamKey })}
                   onRetry={onRetryTeams}
+                  onReplaceTeamWithProvider={onReplaceTeamWithProvider}
                   builderCli={builderCli}
                   query={teamQuery}
                   onQueryChange={setTeamQuery}
@@ -404,12 +421,14 @@ export function OnboardingShell({
 function EnvironmentStep({
   environment,
   installations,
+  providerSettings,
   onInstall,
   onUpdateClaude,
   onCancel,
 }: {
   environment: OnboardingEnvironmentState;
   installations: OnboardingInstallationState;
+  providerSettings?: ProviderSettingsController;
   onInstall: (cli: OnboardingCli) => void | Promise<void>;
   onUpdateClaude?: () => void | Promise<void>;
   onCancel: (cli: OnboardingCli) => void | Promise<void>;
@@ -432,6 +451,11 @@ function EnvironmentStep({
           onCancel={onCancel}
         />
       ))}
+      {providerSettings !== undefined ? (
+        <div className="border-b border-line p-4">
+          <ProviderSettingsPanel controller={providerSettings} />
+        </div>
+      ) : null}
       <div className="flex items-start gap-2 border-t border-line bg-sunken px-4 py-3 text-xs leading-5 text-sub">
         <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
         <p>{t("onboarding.environmentMinimum")}</p>
@@ -676,23 +700,27 @@ function TeamSelectionStep({
   teamsState,
   selectedTeamKey,
   environment,
+  providerProfiles,
   builderCli,
   query,
   onQueryChange,
   teamCardRefs,
   onSelect,
   onRetry,
+  onReplaceTeamWithProvider,
   onOpenBuilder,
 }: {
   teamsState: OperatorAgentTeamsState;
   selectedTeamKey: string | null;
   environment: OnboardingEnvironmentState;
-  builderCli: OnboardingCli | null;
+  providerProfiles: readonly import("@/console/provider-settings-panel").ProviderSettingsProfile[];
+  builderCli: OnboardingEngine | null;
   query: string;
   onQueryChange: (value: string) => void;
   teamCardRefs: Map<string, HTMLButtonElement>;
   onSelect: (teamKey: string) => void;
   onRetry?: () => void | Promise<void>;
+  onReplaceTeamWithProvider?: OnboardingShellProps["onReplaceTeamWithProvider"];
   onOpenBuilder: () => void;
 }): JSX.Element {
   const { t, locale } = useI18n();
@@ -703,6 +731,17 @@ function TeamSelectionStep({
   const countCopy = projection.query === ""
     ? t("onboarding.teamCount", { count: projection.total })
     : t("onboarding.teamMatchCount", { matched: projection.matched, total: projection.total });
+  const [replacementState, setReplacementState] = useState<"idle" | "saving" | "error">("idle");
+  const selectedTeam = ready
+    ? teams.find((team) => team.canCreateConversation && team.teamKey === selectedTeamKey) ?? null
+    : null;
+  const selectedCompatibility = getOnboardingTeamCompatibility(selectedTeam, environment, t, providerProfiles);
+  const replacementTarget = providerProfiles.flatMap((profile) => {
+    const model = profile.defaultModel ?? profile.verifiedModels[0];
+    return profile.readiness === "ready" && model !== undefined
+      ? [{ profileId: profile.id, model }]
+      : [];
+  })[0];
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="onboarding-team-selector">
       <div className="mb-3 flex shrink-0 items-center gap-2.5">
@@ -775,6 +814,7 @@ function TeamSelectionStep({
                 allTeams={teams}
                 locale={locale}
                 environment={environment}
+                providerProfiles={providerProfiles}
                 selectedTeamKey={selectedTeamKey}
                 teamCardRefs={teamCardRefs}
                 onSelect={onSelect}
@@ -786,6 +826,7 @@ function TeamSelectionStep({
               allTeams={teams}
               locale={locale}
               environment={environment}
+              providerProfiles={providerProfiles}
               selectedTeamKey={selectedTeamKey}
               teamCardRefs={teamCardRefs}
               onSelect={onSelect}
@@ -796,6 +837,7 @@ function TeamSelectionStep({
               allTeams={teams}
               locale={locale}
               environment={environment}
+              providerProfiles={providerProfiles}
               selectedTeamKey={selectedTeamKey}
               teamCardRefs={teamCardRefs}
               onSelect={onSelect}
@@ -808,6 +850,47 @@ function TeamSelectionStep({
           </div>
         )}
       </div>
+      {selectedTeam !== null
+        && selectedCompatibility.affectedCount > 0
+        && replacementTarget !== undefined
+        && onReplaceTeamWithProvider !== undefined ? (
+          <div className="mt-3 shrink-0 rounded-xl border border-line bg-sunken p-3" data-testid="onboarding-api-replacement">
+            <p className="text-xs leading-5 text-sub">
+              {t("onboarding.replaceTeamWithApiDescription", { count: selectedCompatibility.affectedCount })}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={replacementState === "saving"}
+                onClick={async () => {
+                  setReplacementState("saving");
+                  try {
+                    await onReplaceTeamWithProvider({
+                      teamId: selectedTeam.id,
+                      ownership: selectedTeam.ownership,
+                      memberSlugs: selectedCompatibility.memberSlugs,
+                      providerProfileId: replacementTarget.profileId,
+                      model: replacementTarget.model,
+                      effort: "high",
+                    });
+                    setReplacementState("idle");
+                  } catch {
+                    setReplacementState("error");
+                  }
+                }}
+              >
+                {replacementState === "saving"
+                  ? t("onboarding.replacingTeamWithApi")
+                  : t("onboarding.replaceTeamWithApi")}
+              </Button>
+              <span className="text-xs text-hint">{t("onboarding.keepTeamForNow")}</span>
+            </div>
+            {replacementState === "error" ? (
+              <p className="mt-2 text-xs text-danger" role="alert">{t("onboarding.replaceTeamWithApiFailed")}</p>
+            ) : null}
+          </div>
+        ) : null}
       <button
         type="button"
         className="mt-3 flex w-full shrink-0 items-center gap-3 rounded-lg border border-dashed border-line-strong bg-card px-4 py-3 text-left transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 [@media(max-height:520px)]:mt-2 [@media(max-height:520px)]:py-2"
@@ -843,6 +926,7 @@ function TeamGroup({
   allTeams,
   locale,
   environment,
+  providerProfiles,
   selectedTeamKey,
   teamCardRefs,
   onSelect,
@@ -852,6 +936,7 @@ function TeamGroup({
   allTeams: readonly OperatorAgentTeam[];
   locale: string;
   environment: OnboardingEnvironmentState;
+  providerProfiles: readonly import("@/console/provider-settings-panel").ProviderSettingsProfile[];
   selectedTeamKey: string | null;
   teamCardRefs: Map<string, HTMLButtonElement>;
   onSelect: (teamKey: string) => void;
@@ -870,6 +955,7 @@ function TeamGroup({
             allTeams={allTeams}
             locale={locale}
             environment={environment}
+            providerProfiles={providerProfiles}
             selected={team.teamKey === selectedTeamKey}
             buttonRef={(element) => {
               if (element === null) teamCardRefs.delete(team.teamKey);
@@ -888,6 +974,7 @@ function TeamChoiceCard({
   allTeams,
   locale,
   environment,
+  providerProfiles,
   selected,
   buttonRef,
   onSelect,
@@ -896,6 +983,7 @@ function TeamChoiceCard({
   allTeams: readonly OperatorAgentTeam[];
   locale: string;
   environment: OnboardingEnvironmentState;
+  providerProfiles: readonly import("@/console/provider-settings-panel").ProviderSettingsProfile[];
   selected: boolean;
   buttonRef: (element: HTMLButtonElement | null) => void;
   onSelect: () => void;
@@ -913,8 +1001,8 @@ function TeamChoiceCard({
   const orderedMembers = team.memberOrder
     .map((slug) => membersBySlug.get(slug))
     .filter((member): member is NonNullable<typeof member> => member !== undefined)
-    .slice(0, 4);
-  const compatibility = getOnboardingTeamCompatibility(team, environment, t);
+    .slice(0, 3);
+  const compatibility = getOnboardingTeamCompatibility(team, environment, t, providerProfiles);
   return (
     <button
       type="button"
@@ -976,6 +1064,10 @@ function TeamChoiceCard({
       ) : null}
     </button>
   );
+}
+
+function readyProviderProfiles(controller: ProviderSettingsController | undefined) {
+  return controller?.state.status === "ready" ? controller.state.profiles : [];
 }
 
 function ReadyStep({

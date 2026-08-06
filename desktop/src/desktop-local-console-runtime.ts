@@ -14,7 +14,7 @@ import type { DesktopStatusSnapshot } from "./status.js";
 
 type TeamRuntimeOptions = Pick<
   LocalConsoleServerOptions,
-  "listAgentFiles" | "loadAgentTeamSnapshot" | "resolveAgentTeamHealth"
+  "listAgentFiles" | "loadAgentTeamSnapshot" | "resolveAgentTeamHealth" | "runPi"
 >;
 
 interface DesktopLocalConsolePaths {

@@ -36,6 +36,14 @@ export function decideSessionRestore(
   return capabilityAvailable ? { kind: "restore" } : { kind: "unavailable" };
 }
 
+export function decideSessionMemberExecutionUpdate(input: {
+  activeRun: boolean;
+  capabilityAvailable: boolean;
+}): { kind: "update" } | { kind: "running" } | { kind: "unavailable" } {
+  if (input.activeRun) return { kind: "running" };
+  return input.capabilityAvailable ? { kind: "update" } : { kind: "unavailable" };
+}
+
 export function assertSessionWorkspaceMutable(hasMessages: boolean): void {
   if (hasMessages) throw new Error("SESSION_WORKSPACE_LOCKED");
 }

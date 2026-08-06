@@ -123,6 +123,23 @@ describe("local run preparation application flow", () => {
     });
     expect(consumed).toEqual([{ intentId: "intent-override", mode: "full-fallback" }]);
   });
+
+  it("fails closed before attachments when the member continuation was explicitly ended", async () => {
+    const events: string[] = [];
+    const result = await executeLocalRunPreparationFlow({
+      ...baseInput(),
+      continuationEnded: true,
+    }, basePorts(emptySnapshot(), {
+      settleUnavailable: async (plan) => { events.push(plan.reason); },
+      prepareAttachments: async () => {
+        events.push("attachments");
+        return { promptSuffix: "", imagePaths: [] };
+      },
+    }));
+
+    expect(result).toEqual({ kind: "settled-unavailable" });
+    expect(events).toEqual(["continuation-ended"]);
+  });
 });
 
 function baseInput(): LocalRunPreparationInput {

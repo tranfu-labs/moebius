@@ -16,6 +16,7 @@ import { RunTime } from "@/console/run-time";
 import type {
   ExecutionRegistryState,
   RegistryExecutionProfile,
+  RegistryProviderProfile,
 } from "@/console/execution-profile-registry";
 import { StructuredAttachmentList, type ComposerAttachment } from "@/console/structured-attachments";
 import { cn } from "@/lib/utils";
@@ -43,7 +44,14 @@ export interface SubtaskTabProps {
   onComposerAttachmentRetry?: (clientId: string) => void;
   onSend(): void;
   onRetry(runId: string, executionOverride?: RegistryExecutionProfile): void | Promise<void>;
+  onUpdateMemberExecution?: (
+    sessionId: string,
+    memberName: string,
+    action: "migrate" | "end",
+    profile?: RegistryExecutionProfile,
+  ) => void | Promise<void>;
   executionRegistryState?: ExecutionRegistryState;
+  providerProfiles?: readonly RegistryProviderProfile[];
   onReloadExecutionRegistry?: () => void;
   onInterrupt(sessionId: string, runId: string): void;
   onOpenOutput?(input: {
@@ -73,7 +81,9 @@ export function SubtaskTab({
   onComposerAttachmentRetry,
   onSend,
   onRetry,
+  onUpdateMemberExecution,
   executionRegistryState,
+  providerProfiles = [],
   onReloadExecutionRegistry,
   onInterrupt,
   onOpenOutput,
@@ -133,7 +143,9 @@ export function SubtaskTab({
                 processRole={resolveMessageProcessRole(message, view.messages)}
                 memberIdentities={memberIdentities}
                 onRetry={onRetry}
+                onUpdateMemberExecution={onUpdateMemberExecution}
                 executionRegistryState={executionRegistryState}
+                providerProfiles={providerProfiles}
                 onReloadExecutionRegistry={onReloadExecutionRegistry}
                 onOpenOutput={onOpenOutput}
                 onOpenExternalLink={onOpenExternalLink}
@@ -217,7 +229,9 @@ function SubtaskTimelineEntry({
   processRole,
   memberIdentities,
   onRetry,
+  onUpdateMemberExecution,
   executionRegistryState,
+  providerProfiles,
   onReloadExecutionRegistry,
   onOpenOutput,
   onOpenExternalLink,
@@ -228,7 +242,9 @@ function SubtaskTimelineEntry({
   processRole: string | null;
   memberIdentities: NonNullable<OperatorSubSessionView["memberIdentities"]>;
   onRetry(runId: string, executionOverride?: RegistryExecutionProfile): void | Promise<void>;
+  onUpdateMemberExecution?: SubtaskTabProps["onUpdateMemberExecution"];
   executionRegistryState?: ExecutionRegistryState;
+  providerProfiles: readonly RegistryProviderProfile[];
   onReloadExecutionRegistry?: () => void;
   onOpenOutput?: SubtaskTabProps["onOpenOutput"];
   onOpenExternalLink?: (url: string) => void;
@@ -250,6 +266,7 @@ function SubtaskTimelineEntry({
         contentIncomplete={message.terminal?.contentIncomplete}
         initialProfile={message.terminal?.actualProfile}
         executionRegistryState={executionRegistryState}
+        providerProfiles={providerProfiles}
         onReloadExecutionRegistry={onReloadExecutionRegistry}
         elapsedMs={message.runTiming?.elapsedMs}
         completedAt={message.runTiming?.completedAt}
@@ -271,6 +288,16 @@ function SubtaskTimelineEntry({
             ? (profile) => onRetry(message.runId!, profile)
             : undefined
         }
+        onMigrateAndContinue={message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateMemberExecution !== undefined
+          ? (profile) => onUpdateMemberExecution?.(message.sessionId, processRole, "migrate", profile)
+          : undefined}
+        onEndContinuation={message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateMemberExecution !== undefined
+          ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
+          : undefined}
         onOpenOutput={message.runId === null
           || onOpenOutput === undefined
           ? undefined

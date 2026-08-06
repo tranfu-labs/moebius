@@ -26,7 +26,21 @@ export interface CodexRunFailure {
     | "claude-resume-unavailable"
     | "claude-protocol-invalid"
     | "claude-timeout"
-    | "claude-cancelled";
+    | "claude-cancelled"
+    | "pi-auth-required"
+    | "pi-model-unavailable"
+    | "pi-model-incompatible"
+    | "pi-rate-limited"
+    | "pi-quota-exhausted"
+    | "pi-network-unavailable"
+    | "pi-provider-unavailable"
+    | "pi-provider-disabled"
+    | "pi-provider-needs-attention"
+    | "pi-provider-missing"
+    | "pi-resume-unavailable"
+    | "pi-host-crashed"
+    | "pi-no-complete-result"
+    | "pi-cancelled";
   message: string;
   action?: "update-claude";
 }
@@ -37,6 +51,7 @@ export function planExecutionFailureTerminal(
 ): ExecutionFailureTerminal {
   switch (failure.code) {
     case "claude-auth-required":
+    case "pi-auth-required":
       return {
         kind: "auth",
         retryable: false,
@@ -45,6 +60,7 @@ export function planExecutionFailureTerminal(
       };
     case "claude-billing-unavailable":
     case "kimi-quota-exhausted":
+    case "pi-quota-exhausted":
       return {
         kind: "quota-exhausted",
         retryable: false,
@@ -54,6 +70,9 @@ export function planExecutionFailureTerminal(
     case "claude-rate-limited":
     case "claude-service-unavailable":
     case "kimi-rate-limited":
+    case "pi-rate-limited":
+    case "pi-network-unavailable":
+    case "pi-provider-unavailable":
       return {
         kind: "rate-limited",
         retryable: true,
@@ -62,6 +81,7 @@ export function planExecutionFailureTerminal(
       };
     case "claude-cancelled":
     case "kimi-acp-interrupted":
+    case "pi-cancelled":
       return { kind: "interrupted", actor: "user", cause: "user", partialText };
     case "claude-timeout":
     case "kimi-acp-timeout":
@@ -81,6 +101,14 @@ export function planExecutionFailureTerminal(
     case "claude-permission-denied":
     case "claude-resume-unavailable":
     case "claude-protocol-invalid":
+    case "pi-model-unavailable":
+    case "pi-model-incompatible":
+    case "pi-provider-disabled":
+    case "pi-provider-needs-attention":
+    case "pi-provider-missing":
+    case "pi-resume-unavailable":
+    case "pi-host-crashed":
+    case "pi-no-complete-result":
       return { kind: "crashed", partialText, safeCode: failure.code };
     default:
       return assertFailureNever(failure.code);

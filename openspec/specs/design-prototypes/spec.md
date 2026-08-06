@@ -180,3 +180,33 @@ The prototype MUST place Settings over a representative active workspace, expose
 - **THEN** the first failure keeps the Chinese workspace and dialog active
 - **AND** the retry commits English across the representative workspace and dialog
 - **AND** no required resource request leaves the local file.
+
+### Requirement: Self-contained BYOK Agent runtime flow prototype
+
+Source: `docs/product/flows/byok-agent-runtime.md#指标与验收`
+
+The isolated BYOK Agent runtime prototype MUST build to `docs/product/flows/byok-agent-runtime.prototype.html` as one self-contained file that opens from a local file URL without network access. It MUST keep its authoring source under `prototypes/src/byok-agent-runtime/` and MUST use only deterministic local fixtures.
+
+The prototype MUST project the same Provider profile across onboarding, Settings, Agent Teams, the main conversation, and the single-Agent process view. Review-only scene and theme controls MUST be visibly identified as outside the product interface.
+
+#### Scenario: Reviewer completes the API-only first-run journey
+
+- **GIVEN** the prototype starts without a ready CLI or Provider profile
+- **WHEN** the reviewer observes a deterministic validation failure, retries successfully, and explicitly rebinds the affected team members
+- **THEN** the Provider becomes ready only after model reply, tool call, and local save stages finish
+- **AND** the four-step onboarding reaches a conversation that visibly uses the selected DeepSeek profile.
+
+#### Scenario: Reviewer compares temporary rerun and permanent migration
+
+- **GIVEN** a Pi run is blocked by a Provider problem or removed frozen model
+- **WHEN** the reviewer opens the repair, one-time rerun, and migration paths
+- **THEN** repair returns to the original conversation without automatically creating a new request
+- **AND** one-time rerun states that the frozen conversation and team defaults remain unchanged
+- **AND** permanent migration preserves visible history while showing that the native Pi context was rebuilt.
+
+#### Scenario: Reviewer validates the artifact across presentation modes
+
+- **GIVEN** the published prototype is opened from `file://`
+- **WHEN** the reviewer uses keyboard scene navigation and inspects wide, narrow, light, dark, and reduced-motion states
+- **THEN** the five product scenes remain operable and readable
+- **AND** no required resource request leaves the local file.

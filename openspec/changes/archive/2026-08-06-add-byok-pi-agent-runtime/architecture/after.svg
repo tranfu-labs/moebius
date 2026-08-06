@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title desc">
+  <title id="title">BYOK Pi Agent Runtime 改造后架构</title>
+  <desc id="desc">新增 Provider 档案服务、safeStorage 凭据仓库、执行配置 v2、短生命周期 Pi Host 和受控插件，同时保留 Moebius JSONL 事实源及既有托管进程。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#526078"/></marker>
+    <style>
+      .bg{fill:#f7f8fb}.view{fill:#edf3ff;stroke:#5774ad;stroke-width:2}.app{fill:#ecf8f1;stroke:#4f886a;stroke-width:2}.adapter{fill:#fff7e8;stroke:#a47832;stroke-width:2}.store{fill:#f4efff;stroke:#765fa7;stroke-width:2}.boundary{fill:#fff;stroke:#a8b0c0;stroke-width:2}.danger{fill:#fff0f0;stroke:#b35e63;stroke-width:2}.title{font:700 28px system-ui,sans-serif;fill:#202634}.h{font:700 17px system-ui,sans-serif;fill:#202634}.t{font:14px system-ui,sans-serif;fill:#394150}.small{font:12px system-ui,sans-serif;fill:#5d6574}.line{fill:none;stroke:#526078;stroke-width:2.3;marker-end:url(#arrow)}.dash{fill:none;stroke:#7d8798;stroke-width:2;stroke-dasharray:7 7;marker-end:url(#arrow)}.label{font:12px system-ui,sans-serif;fill:#526078}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="1040"/>
+  <text class="title" x="65" y="55">改造后 · BYOK Provider + 第四执行引擎 Pi API</text>
+  <text class="small" x="65" y="82">四层边界：view → application → domain ← adapter；密钥仅驻留 Electron main 与单轮 Pi Host 内存</text>
+
+  <rect class="view" x="65" y="115" rx="14" width="300" height="145"/>
+  <text class="h" x="105" y="155">console-ui view</text>
+  <text class="t" x="105" y="187">Onboarding · Settings · Teams</text>
+  <text class="t" x="105" y="215">Main / Agent Conversation</text>
+  <text class="small" x="105" y="240">安全 DTO + callbacks；无运行时依赖</text>
+
+  <rect class="boundary" x="450" y="115" rx="14" width="270" height="145"/>
+  <text class="h" x="495" y="155">Desktop preload</text>
+  <text class="t" x="495" y="187">Provider 窄 IPC</text>
+  <text class="t" x="495" y="215">状态 / 动作 / operation</text>
+  <text class="small" x="495" y="240">永不返回明文 Key</text>
+
+  <rect class="app" x="805" y="105" rx="14" width="350" height="165"/>
+  <text class="h" x="845" y="145">Electron main composition root</text>
+  <text class="t" x="845" y="177">ProviderProfileService</text>
+  <text class="t" x="845" y="205">CredentialTransactionCoordinator</text>
+  <text class="small" x="845" y="235">safeStorage main-only · app ready 后调用</text>
+
+  <path class="line" d="M365 187 H450"/>
+  <path class="line" d="M720 187 H805"/>
+
+  <rect class="store" x="1255" y="105" rx="14" width="280" height="165"/>
+  <text class="h" x="1295" y="145">CredentialVault</text>
+  <text class="t" x="1295" y="177">safeStorage encrypted blob</text>
+  <text class="t" x="1295" y="205">mode 0600 · revision</text>
+  <text class="small" x="1295" y="235">无明文 fallback</text>
+  <path class="line" d="M1155 187 H1255"/>
+
+  <rect class="app" x="440" y="350" rx="14" width="720" height="200"/>
+  <text class="h" x="480" y="390">local-console application</text>
+  <text class="t" x="480" y="425">execution profile v2 · immutable session snapshot · execution generation</text>
+  <text class="t" x="480" y="455">FIFO · attempt/run · attachment · progress · terminal · recovery</text>
+  <text class="t" x="480" y="485">Codex / Claude / Kimi / Pi invocation planner</text>
+  <text class="small" x="480" y="520">Key rotation 不改变 identity；迁移封存旧代并建立新 native session</text>
+  <path class="line" d="M980 270 V320 H800 V350"/>
+
+  <rect class="adapter" x="65" y="645" rx="14" width="330" height="185"/>
+  <text class="h" x="105" y="685">三套 CLI adapters</text>
+  <text class="t" x="105" y="720">Codex · Claude · Kimi</text>
+  <text class="small" x="105" y="750">存量 full/resume 不变</text>
+  <text class="small" x="105" y="775">既有 managed-process tools</text>
+
+  <rect class="adapter" x="470" y="620" rx="14" width="420" height="235"/>
+  <text class="h" x="510" y="660">短生命周期 Pi Host</text>
+  <text class="t" x="510" y="695">私有 stdin frame 注入 Key</text>
+  <text class="t" x="510" y="725">Pi SDK · DeepSeek Chat Completions</text>
+  <text class="t" x="510" y="755">受控文件 / 结构化命令 / Plan / Skills</text>
+  <text class="t" x="510" y="785">MCP · Web · 前台子任务 · 压缩</text>
+  <text class="small" x="510" y="820">turn 结束有界退出；禁后台逃逸</text>
+
+  <rect class="boundary" x="965" y="645" rx="14" width="270" height="185"/>
+  <text class="h" x="1005" y="685">Managed process</text>
+  <text class="t" x="1005" y="720">跨回合服务唯一入口</text>
+  <text class="t" x="1005" y="750">session/workspace/run</text>
+  <text class="small" x="1005" y="780">无 env/shell/PID/PGID</text>
+
+  <path class="line" d="M600 550 V590 H230 V645"/>
+  <path class="line" d="M800 550 V620"/>
+  <path class="dash" d="M890 737 H965"/>
+  <text class="label" x="905" y="720">显式工具</text>
+
+  <rect class="store" x="65" y="915" rx="14" width="340" height="90"/>
+  <text class="h" x="105" y="952">sessions/*.jsonl</text>
+  <text class="t" x="105" y="980">公开会话唯一事实源</text>
+
+  <rect class="store" x="475" y="915" rx="14" width="340" height="90"/>
+  <text class="h" x="515" y="952">local-console.sqlite</text>
+  <text class="t" x="515" y="980">档案元数据 / operation / 索引</text>
+
+  <rect class="store" x="885" y="915" rx="14" width="340" height="90"/>
+  <text class="h" x="925" y="952">Pi native sessions</text>
+  <text class="t" x="925" y="980">mode 0600 · Provider 原生记录</text>
+
+  <rect class="danger" x="1300" y="645" rx="14" width="235" height="185"/>
+  <text class="h" x="1335" y="685">明确禁止</text>
+  <text class="t" x="1335" y="720">任意插件自动发现</text>
+  <text class="t" x="1335" y="750">shell 字符串 / env 注入</text>
+  <text class="t" x="1335" y="780">另一套后台进程</text>
+  <text class="small" x="1335" y="807">Key 进入 DTO / 事实 / 日志</text>
+
+  <path class="line" d="M615 855 V885 H235 V915"/>
+  <path class="line" d="M720 855 V885 H645 V915"/>
+  <path class="line" d="M810 855 V885 H1055 V915"/>
+</svg>

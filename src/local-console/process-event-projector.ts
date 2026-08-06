@@ -1,6 +1,8 @@
+import type { LocalConsoleExecutionEngine } from "./types.js";
+
 export interface LocalConsoleProcessEventBase {
   key: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   timestamp: string | null;
   protocolType: string;
   rawPayload: string;
@@ -135,6 +137,70 @@ export function malformedCodexRolloutEvent(
     message: "过程记录读取异常",
     detail,
   };
+}
+
+export function projectPiSafeTraceRecord(
+  value: unknown,
+  context: ProjectCodexRolloutContext,
+): LocalConsoleProcessEvent[] {
+  const key = `${context.runId}:pi:${String(context.lineOffset)}`;
+  if (!isRecord(value) || value.version !== 1 || typeof value.type !== "string") {
+    return [providerUnsupported("pi", key, null, "unknown", value)];
+  }
+  const base = providerBase("pi", key, null, `pi-host · ${value.type}`, value);
+  if (value.type === "assistant-delta" && typeof value.delta === "string") {
+    return [{ ...base, kind: "agent-output", output: value.delta }];
+  }
+  if (value.type === "reasoning-delta" && typeof value.delta === "string") {
+    return [{ ...base, kind: "thinking", thinking: value.delta }];
+  }
+  if (value.type === "tool-started") {
+    return [{
+      ...base,
+      kind: readString(value.toolName) === "exec_command" ? "command" : "tool",
+      phase: "started",
+      name: readString(value.toolName) ?? "tool",
+      callId: readString(value.toolCallId),
+      status: null,
+      input: readString(value.safeSummary),
+      output: null,
+      ...(readString(value.toolName) === "exec_command" ? { exitCode: null } : {}),
+    } as LocalConsoleProcessEvent];
+  }
+  if (value.type === "tool-finished") {
+    return [{
+      ...base,
+      kind: readString(value.toolName) === "exec_command" ? "command" : "tool",
+      phase: "completed",
+      name: readString(value.toolName) ?? "tool",
+      callId: readString(value.toolCallId),
+      status: value.isError === true ? "failed" : "completed",
+      input: null,
+      output: null,
+      ...(readString(value.toolName) === "exec_command" ? { exitCode: null } : {}),
+    } as LocalConsoleProcessEvent];
+  }
+  if (value.type === "compacted") {
+    return [{
+      ...base,
+      kind: "tool",
+      phase: "completed",
+      name: "context_compaction",
+      callId: null,
+      status: "completed",
+      input: null,
+      output: "已整理较早上下文",
+    }];
+  }
+  if (value.type === "failed") {
+    return [{
+      ...base,
+      kind: "error",
+      message: readString(value.message) ?? "Pi API 运行失败",
+      detail: readString(value.reason),
+    }];
+  }
+  return [];
 }
 
 function projectEventMessage(
@@ -655,7 +721,7 @@ export function projectKimiWireRecord(
 }
 
 export function malformedProviderProcessEvent(
-  engine: "claude" | "kimi",
+  engine: "claude" | "kimi" | "pi",
   runId: string,
   lineOffset: number,
 ): LocalConsoleProcessEvent {
@@ -669,12 +735,12 @@ export function malformedProviderProcessEvent(
     ),
     kind: "error",
     message: "过程记录读取异常",
-    detail: `这一条 ${engine === "claude" ? "Claude" : "Kimi"} 过程记录无法解析。`,
+    detail: `这一条 ${engine === "claude" ? "Claude" : engine === "kimi" ? "Kimi" : "Pi"} 过程记录无法解析。`,
   };
 }
 
 function providerBase(
-  engine: "claude" | "kimi",
+  engine: "claude" | "kimi" | "pi",
   key: string,
   timestamp: string | null,
   protocolType: string,
@@ -704,7 +770,7 @@ function redactOpaqueProviderPayload(value: unknown): unknown {
 }
 
 function providerUnsupported(
-  engine: "claude" | "kimi",
+  engine: "claude" | "kimi" | "pi",
   key: string,
   timestamp: string | null,
   protocolType: string,

@@ -7,6 +7,7 @@ import { planConsoleErrorMessage } from "./console-state-plan.js";
 import type { SessionExecutionOverride, SessionRunPort } from "./session-run-contract.js";
 import {
   decideSessionRunAvailability,
+  decideMemberExecutionUpdateCapability,
   planSubSessionComposerBody,
   planSubSessionMessage,
 } from "./session-run-model.js";
@@ -129,6 +130,44 @@ export function useSessionRunActions(
     }
   }, []);
 
+  const updateMemberExecution = useCallback(async (
+    sessionId: string,
+    memberName: string,
+    action: "migrate" | "end",
+    executionProfile?: SessionExecutionOverride,
+  ) => {
+    const current = inputRef.current;
+    const availability = decideSessionRunAvailability({
+      apiBase: current.apiBase,
+      sending: current.sendingSessionId !== null,
+    });
+    if (availability.kind !== "available") throw new Error("session execution update unavailable");
+    const errorOperation = current.errors.begin({ family: "session-run", scope: `${sessionId}:execution` });
+    setSendingSessionId(sessionId);
+    try {
+      const capability = decideMemberExecutionUpdateCapability(current.port.updateMemberExecution !== undefined);
+      if (capability.kind === "unavailable") throw new Error("session execution update unavailable");
+      await current.port.updateMemberExecution!(
+        availability.apiBase,
+        sessionId,
+        memberName,
+        action,
+        executionProfile,
+      );
+      const latest = inputRef.current;
+      await Promise.all([
+        latest.refreshSubSession(sessionId),
+        latest.refreshCurrent(latest.selectionRef.current),
+      ]);
+      latest.errors.succeed(errorOperation);
+    } catch (error) {
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
+      throw error;
+    } finally {
+      setSendingSessionId(null);
+    }
+  }, []);
+
   const interruptSubSession = useCallback(async (sessionId: string, runId: string) => {
     const current = inputRef.current;
     const availability = decideSessionRunAvailability({ apiBase: current.apiBase, sending: false });
@@ -154,6 +193,7 @@ export function useSessionRunActions(
     interrupt,
     sendSubSessionMessage,
     retryRun,
+    updateMemberExecution,
     interruptSubSession,
-  }), [editComposer, interrupt, interruptSubSession, retryRun, sendSubSessionMessage, sendingSessionId]);
+  }), [editComposer, interrupt, interruptSubSession, retryRun, sendSubSessionMessage, sendingSessionId, updateMemberExecution]);
 }

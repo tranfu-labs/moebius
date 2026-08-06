@@ -52,6 +52,8 @@
 - 最终 HTML 验证：`pnpm --filter @moebius/prototypes verify:onboarding`
 - 构建并发布 settings：`pnpm --filter @moebius/prototypes build:settings`
 - 最终 HTML 验证 settings：`pnpm --filter @moebius/prototypes verify:settings`
+- 构建并发布 BYOK / Pi 流程：`pnpm --filter @moebius/prototypes build:byok-agent-runtime`
+- 最终 HTML 验证 BYOK / Pi 流程：`pnpm --filter @moebius/prototypes verify:byok-agent-runtime`
 - 构建并发布 main-left-sidebar：`pnpm --filter @moebius/prototypes build:main-left-sidebar`
 - 最终 HTML 验证 main-left-sidebar：`pnpm --filter @moebius/prototypes verify:main-left-sidebar`
 - 构建并发布 main-right-sidebar：`pnpm --filter @moebius/prototypes build:main-right-sidebar`

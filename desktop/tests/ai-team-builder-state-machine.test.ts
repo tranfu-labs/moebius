@@ -62,4 +62,10 @@ describe("AI team builder state machine", () => {
       proposalRevision: 1,
     });
   });
+
+  it("keeps a draft read-only after its continuation is ended", () => {
+    const ended = { ...createAiTeamBuilderDraft("draft"), continuationEnded: true };
+    expect(() => beginAiTeamBuilderTurn(ended, "继续", { appendUserMessage: true }))
+      .toThrow("read-only");
+  });
 });

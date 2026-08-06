@@ -10,6 +10,7 @@ import {
   profileFingerprint,
   resolveEffectiveExecutionProfile,
   type ExecutionCapabilitySnapshot,
+  type ExecutionCli,
   type ExecutionProfile,
 } from "../desktop/src/team-execution-profile.js";
 
@@ -26,7 +27,7 @@ const kimiProfile: ExecutionProfile = {
 };
 
 function capability(
-  profile: ExecutionProfile,
+  profile: Extract<ExecutionProfile, { cli: ExecutionCli }>,
 ): ExecutionCapabilitySnapshot {
   const models = [{
     id: profile.model,
@@ -74,7 +75,26 @@ describe("team execution profiles", () => {
       cli: "other",
       model: "model",
       effort: "high",
-    })).toThrow("CLI 必须");
+    })).toThrow("执行引擎必须");
+    expect(normalizeExecutionProfile({
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "deepseek-default",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    })).toEqual({
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "deepseek-default",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    });
+    expect(() => normalizeExecutionProfile({
+      cli: "pi",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    })).toThrow("必须选择 AI 服务商档案");
   });
 
   it("uses stable fingerprints without leaking the profile values", () => {

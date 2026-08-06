@@ -1516,6 +1516,45 @@ describe("OperatorConsole", () => {
     expect(screen.getByText("→ 开发")).toBeVisible();
   });
 
+  it("keeps an ended target as an explicit unsent item that can be resubmitted, edited, or removed", () => {
+    const onRetryPendingMessage = vi.fn();
+    const onEditPendingMessage = vi.fn();
+    const onRemovePendingMessage = vi.fn();
+    renderConsole({
+      pendingDispatchMessages: [{
+        message: message({
+          id: 17,
+          body: "@dev 继续处理",
+          status: "pending",
+          error: "TARGET_CONTINUATION_ENDED",
+        }),
+        targetLane: "worker",
+        targetRole: "dev",
+        waitingForTeam: false,
+        targetUnavailable: true,
+      }],
+      onRetryPendingMessage,
+      onEditPendingMessage,
+      onRemovePendingMessage,
+    });
+
+    const pendingZone = screen.getByTestId("primary-pending-zone");
+    expect(within(pendingZone).getByText("未发送 · 原目标不可继续")).toBeVisible();
+    expect(within(pendingZone).queryByText("TARGET_CONTINUATION_ENDED")).not.toBeInTheDocument();
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "重新提交" }));
+    expect(onRetryPendingMessage).toHaveBeenCalledWith("session-a", 17);
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "编辑" }));
+    fireEvent.change(within(pendingZone).getByRole("textbox", { name: "编辑待发射内容或来源引用" }), {
+      target: { value: "@dev 由新团队继续" },
+    });
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "保存并重试" }));
+    expect(onEditPendingMessage).toHaveBeenCalledWith("session-a", 17, "@dev 由新团队继续");
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "移除" }));
+    expect(onRemovePendingMessage).toHaveBeenCalledWith("session-a", 17);
+  });
+
   it("keeps a source-failed queue head in place with retry, edit, and remove recovery", () => {
     const onRetryPendingMessage = vi.fn();
     const onEditPendingMessage = vi.fn();
