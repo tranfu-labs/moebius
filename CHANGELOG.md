@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-06
+
+### 新增
+
+- 新增 BYOK（自带密钥）AI Provider 体系，作为 Codex / Claude Code / Kimi 之外的第四种 Agent 执行引擎，首个预设支持 DeepSeek：应用级凭据保管库、保存前真实校验、密钥轮换与禁用/启用、迁移与删除均支持崩溃安全恢复。
+- 该引擎接入首次引导（免 CLI 的纯 API 路径）、设置（AI Provider 管理）、Agent 团队（按成员配置 Provider/模型/推理强度）、主会话（运行、迁移、一键重跑、续聊）与单 Agent 视图，使零 CLI 用户也能运行完整 Agent 团队。
+
+### 修复
+
+- 修复项目行的指针捕获与 Radix 弹出菜单事件冲突，项目操作对话框补齐焦点陷阱、背景 inert 与焦点归还，使其在交互上真正模态。
+
 ## [0.3.4] - 2026-08-05
 
 ### 变更
@@ -184,7 +195,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tranfu-labs/moebius/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
