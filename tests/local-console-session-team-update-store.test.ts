@@ -138,6 +138,57 @@ describe("persisted session team update state", () => {
     }
   });
 
+  it("keeps the Pi execution binding and continuation state through candidate promotion", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-team-update-pi-"));
+    const sqlitePath = path.join(root, "state.sqlite");
+    const store = await createSqliteLocalConsoleStore({
+      sqlitePath,
+      sessionLogRoot: path.join(root, "sessions"),
+    });
+    try {
+      await store.init();
+      const effective = piSnapshot("old-pi", "2026-08-04T00:00:00.000Z");
+      const candidateBase = piSnapshot("new-pi", "2026-08-04T00:01:00.000Z");
+      const candidate: LocalConsoleAgentTeamSnapshot = {
+        ...candidateBase,
+        members: candidateBase.members.map((member) => ({ ...member, continuationEnded: true })),
+      };
+      await store.createSession({
+        sessionId: "team-update-pi",
+        title: "pi",
+        agentTeamOwnership: "user",
+        agentTeamId: "team-a",
+        agentTeamSnapshot: effective,
+        now: "2026-08-04T00:00:00.000Z",
+      });
+      await store.writeSessionAgentTeamCandidate({ sessionId: "team-update-pi", snapshot: candidate });
+      await store.beginSessionTeamUpdate({
+        sessionId: "team-update-pi",
+        expectedUpdateToken: candidate.snapshotKey,
+        now: "2026-08-04T00:02:00.000Z",
+      });
+      await store.applyPendingSessionContext({ sessionId: "team-update-pi", now: "2026-08-04T00:03:00.000Z" });
+
+      expect(await store.listSessionAgentTeamSnapshot("team-update-pi")).toMatchObject({
+        snapshotKey: candidate.snapshotKey,
+        members: [{
+          agentMarkdown: "new-pi",
+          executionProfile: {
+            cli: "pi",
+            providerId: "deepseek",
+            providerProfileId: "profile-1",
+            model: "deepseek-chat",
+            effort: "medium",
+          },
+          continuationEnded: true,
+        }],
+      });
+    } finally {
+      await store.close();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("retries the frozen pending snapshot instead of a newer candidate", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-team-update-retry-"));
     const sqlitePath = path.join(root, "state.sqlite");
@@ -200,6 +251,31 @@ describe("persisted session team update state", () => {
     }
   });
 });
+
+function piSnapshot(agentMarkdown: string, capturedAt: string): LocalConsoleAgentTeamSnapshot {
+  return finalizeAgentTeamSnapshot({
+    team: {
+      ownership: "user",
+      id: "team-a",
+      name: "Team A",
+      description: "Purpose",
+      primaryAgentSlug: "lead",
+    },
+    members: [{
+      name: "lead",
+      displayName: "Lead",
+      description: "Leads",
+      agentMarkdown,
+      executionProfile: {
+        cli: "pi",
+        providerId: "deepseek",
+        providerProfileId: "profile-1",
+        model: "deepseek-chat",
+        effort: "medium",
+      },
+    }],
+  }, { capturedAt });
+}
 
 function snapshot(
   agentMarkdown: string,
