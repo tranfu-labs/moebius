@@ -858,6 +858,7 @@ function listProviderSessionReferences(database: SqliteDatabase, profileId: stri
      WHERE execution_cli = 'pi'
        AND provider_profile_id = ?
        AND continuation_ended = 0
+       AND slot IN ('effective', 'pending')
      ORDER BY session_id, slot, sort_order, member_name`,
   ).all(profileId).map((row) => {
     if (!isRecord(row)) throw new Error("Invalid Provider session reference row");
