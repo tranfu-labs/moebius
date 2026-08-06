@@ -90,6 +90,7 @@ describe("Agent team snapshot traceability schema migration", () => {
             model: row.model,
             effort: row.effort,
           },
+          continuationEnded: false,
         })));
         expect(snapshot?.team).toBeUndefined();
         expect(snapshot?.loadedAt).toBeUndefined();

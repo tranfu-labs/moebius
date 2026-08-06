@@ -5,7 +5,7 @@ import type {
   AiTeamBuilderPhase,
 } from "./state-machine.js";
 import type { AiTeamBuilderProposal } from "./validator.js";
-import type { ExecutionCli } from "../team-execution-profile.js";
+import type { ExecutionEngine } from "../team-execution-profile.js";
 
 export type AiTeamBuilderAction = "retry" | "cancel" | "commit" | "adjust";
 
@@ -15,7 +15,7 @@ export interface AiTeamBuilderErrorSummary {
 }
 
 export interface AiTeamBuilderState {
-  builderCli: ExecutionCli | null;
+  builderCli: ExecutionEngine | null;
   phase: AiTeamBuilderPhase;
   messages: AiTeamBuilderMessage[];
   proposal: AiTeamBuilderProposal | null;
@@ -39,6 +39,7 @@ export function toAiTeamBuilderState(draft: AiTeamBuilderDraft): AiTeamBuilderSt
 }
 
 function actionsForDraft(draft: AiTeamBuilderDraft): AiTeamBuilderAction[] {
+  if (draft.continuationEnded === true) return [];
   switch (draft.phase) {
     case "running":
     case "committing":

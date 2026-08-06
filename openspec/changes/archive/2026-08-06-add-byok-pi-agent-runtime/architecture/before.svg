@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860" role="img" aria-labelledby="title desc">
+  <title id="title">BYOK Pi Agent Runtime 改造前架构</title>
+  <desc id="desc">现有 Electron renderer 经 preload 和 desktop main 连接 local console，local console 只驱动 Codex、Claude 和 Kimi 三个 CLI，并将事实写入 JSONL 与 SQLite。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#55627a"/>
+    </marker>
+    <style>
+      .bg{fill:#f7f8fb}.panel{fill:#fff;stroke:#a8b0c0;stroke-width:2}.accent{fill:#edf3ff;stroke:#5f76a8;stroke-width:2}.store{fill:#f4f0ff;stroke:#7565a8;stroke-width:2}.muted{fill:#f3f4f6;stroke:#9aa1ae;stroke-width:2}.title{font:700 28px system-ui,sans-serif;fill:#202634}.h{font:700 18px system-ui,sans-serif;fill:#202634}.t{font:15px system-ui,sans-serif;fill:#394150}.small{font:13px system-ui,sans-serif;fill:#5d6574}.line{fill:none;stroke:#55627a;stroke-width:2.5;marker-end:url(#arrow)}.dash{fill:none;stroke:#8b93a2;stroke-width:2;stroke-dasharray:7 7;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1400" height="860"/>
+  <text class="title" x="70" y="60">改造前 · 三套 CLI 执行引擎</text>
+  <text class="small" x="70" y="88">基线：docs/architecture/module-map.md</text>
+
+  <rect class="accent" x="70" y="135" rx="14" width="250" height="125"/>
+  <text class="h" x="105" y="178">console-ui renderer</text>
+  <text class="t" x="105" y="210">Onboarding / Teams</text>
+  <text class="t" x="105" y="235">Conversation / Settings</text>
+
+  <rect class="panel" x="410" y="135" rx="14" width="250" height="125"/>
+  <text class="h" x="455" y="178">Desktop preload</text>
+  <text class="t" x="455" y="210">窄 IPC / 安全 DTO</text>
+  <text class="small" x="455" y="235">无 Provider 档案能力</text>
+
+  <rect class="panel" x="750" y="135" rx="14" width="260" height="125"/>
+  <text class="h" x="805" y="178">Electron main</text>
+  <text class="t" x="805" y="210">composition root</text>
+  <text class="small" x="805" y="235">无产品级凭据仓库</text>
+
+  <path class="line" d="M320 197 H410"/>
+  <path class="line" d="M660 197 H750"/>
+
+  <rect class="accent" x="420" y="360" rx="14" width="570" height="180"/>
+  <text class="h" x="455" y="402">local-console execution driver</text>
+  <text class="t" x="455" y="435">会话 / FIFO / 执行段 / 恢复 / 附件</text>
+  <text class="t" x="455" y="465">Codex adapter · Claude adapter · Kimi adapter</text>
+  <text class="small" x="455" y="500">执行配置：cli + model + effort</text>
+
+  <path class="line" d="M880 260 V330 H705 V360"/>
+
+  <rect class="muted" x="80" y="650" rx="14" width="280" height="120"/>
+  <text class="h" x="125" y="695">本机 CLI 进程</text>
+  <text class="t" x="125" y="728">Codex / Claude / Kimi</text>
+  <text class="small" x="125" y="752">订阅登录或本机配置</text>
+
+  <rect class="store" x="510" y="650" rx="14" width="300" height="120"/>
+  <text class="h" x="560" y="695">sessions/*.jsonl</text>
+  <text class="t" x="560" y="728">公开会话唯一事实源</text>
+
+  <rect class="store" x="950" y="650" rx="14" width="300" height="120"/>
+  <text class="h" x="1010" y="695">local-console.sqlite</text>
+  <text class="t" x="1010" y="728">状态与可重建索引</text>
+
+  <path class="line" d="M540 540 V600 H220 V650"/>
+  <path class="line" d="M705 540 V650"/>
+  <path class="line" d="M870 540 V600 H1100 V650"/>
+
+  <rect class="muted" x="1070" y="325" rx="14" width="260" height="165"/>
+  <text class="h" x="1110" y="370">Managed process</text>
+  <text class="t" x="1110" y="405">跨回合服务事实</text>
+  <text class="t" x="1110" y="435">session/workspace 绑定</text>
+  <text class="small" x="1110" y="465">三 Provider 共享</text>
+  <path class="dash" d="M990 445 H1070"/>
+</svg>

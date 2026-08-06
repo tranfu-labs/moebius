@@ -108,6 +108,7 @@ export class LocalPrimaryPreparationRuntime {
       sourceMessage: input.sourceMessage,
       role: input.role,
       defaultProfile: planPrimaryProfile(input.selectedAgent.executionProfile),
+      continuationEnded: input.selectedAgent.continuationEnded === true,
       defaultWorkspace: workspace,
       concurrentWorkspace: this.input.concurrentRecoveryWorkspace(input.sessionId),
       team: team.map((agent) => ({ ...agent, executionProfile: planPrimaryProfile(agent.executionProfile) })),

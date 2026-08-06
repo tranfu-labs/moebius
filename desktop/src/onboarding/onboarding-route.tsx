@@ -19,6 +19,8 @@ import {
 } from "../team-builder-view-state.js";
 import { useOnboardingInstallations } from "./use-onboarding-installations.js";
 import { useOnboardingReadiness } from "./use-onboarding-readiness.js";
+import { hasProviderSettingsPort } from "../console-page/provider-settings-port.js";
+import { useProviderSettings } from "../console-page/use-provider-settings.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
 
@@ -33,6 +35,11 @@ export function OnboardingRoute({
 }): JSX.Element {
   const { t } = useI18n();
   const api = window.moebius;
+  const providerSettings = useProviderSettings(hasProviderSettingsPort(api) ? api : undefined, {
+    bridgeUnavailable: t("settings.providers.bridgeUnavailable"),
+    listFailed: t("settings.providers.listFailed"),
+    operationFailed: t("settings.providers.operationFailed"),
+  });
   const [teamsState, setTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [teamBuilderState, setTeamBuilderState] = useState<TeamBuilderViewState>(
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
@@ -179,11 +186,30 @@ export function OnboardingRoute({
       teamsState={teamsState}
       teamBuilderState={teamBuilderState}
       createdTeamKey={createdTeamKey}
+      providerSettings={providerSettings}
       onRecheckEnvironment={checkEnvironment}
       onInstallCli={install}
       onUpdateClaude={updateClaude}
       onCancelCliInstallation={cancel}
       onRetryTeams={async () => {
+        await loadTeams();
+      }}
+      onReplaceTeamWithProvider={async (request) => {
+        if (api?.replaceUnavailableAgentTeamExecutionProfiles === undefined) {
+          throw new Error("Agent team replacement is unavailable");
+        }
+        await api.replaceUnavailableAgentTeamExecutionProfiles({
+          teamId: request.teamId,
+          ownership: request.ownership,
+          memberSlugs: request.memberSlugs,
+          profile: {
+            cli: "pi",
+            providerId: "deepseek",
+            providerProfileId: request.providerProfileId,
+            model: request.model,
+            effort: request.effort,
+          },
+        });
         await loadTeams();
       }}
       onOpenTeamBuilder={async () => {

@@ -21,7 +21,7 @@ export interface OperatorProcessPromptLayer {
 export interface OperatorProcessContextSection {
   key: string;
   label: string;
-  source: "codex-rollout" | "claude-transcript" | "kimi-wire";
+  source: "codex-rollout" | "claude-transcript" | "kimi-wire" | "provider-native";
   status: "recorded" | "not-recorded";
   contents: string[];
 }
@@ -31,7 +31,7 @@ export type OperatorProcessDebugInvocation =
       status: "available";
       sessionId: string;
       runId: string;
-      engine?: "codex" | "claude" | "kimi";
+      engine?: "codex" | "claude" | "kimi" | "pi";
       sections?: OperatorProcessContextSection[];
       prompts: {
         system: OperatorProcessPromptLayer;
@@ -74,7 +74,7 @@ type RunStatus =
 
 interface DebugEventBase {
   key: string;
-  engine?: "codex" | "claude" | "kimi";
+  engine?: "codex" | "claude" | "kimi" | "pi";
   timestamp: string | null;
   protocolType: string;
   rawPayload: string;
@@ -87,7 +87,7 @@ export type OperatorProcessTimelineEvent =
       runId: string;
       attempt: number;
       role: string;
-      engine: "codex" | "claude" | "kimi";
+      engine: "codex" | "claude" | "kimi" | "pi";
       model: string | null;
       effort: string | null;
       provider: string | null;
@@ -426,13 +426,15 @@ function PromptDisclosure({
 }
 
 function defaultContextSections(
-  engine: "codex" | "claude" | "kimi",
+  engine: "codex" | "claude" | "kimi" | "pi",
 ): OperatorProcessContextSection[] {
   const definitions = engine === "claude"
     ? [["user", "USER"], ["assistant", "ASSISTANT"], ["session-metadata", "SESSION_METADATA"]]
     : engine === "kimi"
       ? [["system", "SYSTEM_PROMPT"], ["turn", "TURN_PROMPT"], ["context", "CONTEXT"], ["request", "LLM_REQUEST"]]
-      : [["system", "SYSTEM_PROMPT"], ["developer", "DEVELOPER_PROMPT"], ["user", "USER_INPUT"]];
+      : engine === "pi"
+        ? [["system", "SYSTEM_PROMPT"], ["turn", "TURN_PROMPT"], ["context", "SAFE_PI_TRACE"]]
+        : [["system", "SYSTEM_PROMPT"], ["developer", "DEVELOPER_PROMPT"], ["user", "USER_INPUT"]];
   return definitions.map(([key, label]) => ({
     key: key!,
     label: label!,
@@ -440,7 +442,9 @@ function defaultContextSections(
       ? "claude-transcript"
       : engine === "kimi"
         ? "kimi-wire"
-        : "codex-rollout",
+        : engine === "pi"
+          ? "provider-native"
+          : "codex-rollout",
     status: "not-recorded",
     contents: [],
   }));

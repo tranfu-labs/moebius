@@ -6,7 +6,7 @@ import {
   forgetTrashedUserTeamRecord,
   registerUserTeamSnapshot,
 } from "../team-record-store.js";
-import type { ExecutionCli } from "../team-execution-profile.js";
+import type { ExecutionEngine } from "../team-execution-profile.js";
 import {
   AiTeamBuilderService,
   type AiTeamBuilderWriterPort,
@@ -25,6 +25,7 @@ import {
 import { AiTeamBuilderKimiSpawner } from "./kimi-spawner.js";
 import { AiTeamWriteFileStore } from "./team-write-store.js";
 import { AiTeamWriter } from "./team-writer.js";
+import { removeTeamExecutionBindings, replaceTeamExecutionBindings } from "../team-management-store.js";
 import { AiTeamBuilderTurnRuntime } from "./turn-runtime.js";
 
 export { AiTeamBuilderRequestError } from "./request-error.js";
@@ -37,6 +38,7 @@ export interface AiTeamBuilderOptions {
   codex?: AiTeamBuilderDriverPort;
   claude?: AiTeamBuilderDriverPort;
   kimi?: AiTeamBuilderDriverPort;
+  pi?: AiTeamBuilderDriverPort;
   resolveExecutionProfile?: AiTeamBuilderExecutionProfileResolver;
   writer?: AiTeamBuilderWriterPort;
 }
@@ -46,10 +48,11 @@ export class AiTeamBuilder implements AiTeamBuilderServicePort {
 
   constructor(options: AiTeamBuilderOptions) {
     const dataRoot = path.resolve(options.dataRoot);
-    const drivers: Readonly<Record<ExecutionCli, AiTeamBuilderDriverPort>> = {
+    const drivers: Readonly<Partial<Record<ExecutionEngine, AiTeamBuilderDriverPort>>> = {
       codex: options.codex ?? new AiTeamBuilderCodexSpawner(),
       claude: options.claude ?? new AiTeamBuilderClaudeSpawner(),
       kimi: options.kimi ?? new AiTeamBuilderKimiSpawner(),
+      ...(options.pi === undefined ? {} : { pi: options.pi }),
     };
     const drafts = new AiTeamBuilderDraftRepository(
       new AiTeamBuilderDraftFileStore(dataRoot),
@@ -59,6 +62,8 @@ export class AiTeamBuilder implements AiTeamBuilderServicePort {
       store: new AiTeamWriteFileStore(),
       register: registerUserTeamSnapshot,
       rollbackRecord: forgetTrashedUserTeamRecord,
+      replaceBindings: replaceTeamExecutionBindings,
+      removeBindings: removeTeamExecutionBindings,
       createId: randomUUID,
     });
     this.service = new AiTeamBuilderService(

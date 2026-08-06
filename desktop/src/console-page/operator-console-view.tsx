@@ -29,6 +29,7 @@ import type { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import type { useSessionConsole } from "./use-session-console.js";
 import type { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import type { ManagedProcessPanelController } from "@moebius/console-ui";
+import type { ProviderSettingsController } from "@moebius/console-ui";
 
 export interface OperatorConsoleViewProps {
   language: ReturnType<typeof useDesktopLanguage>;
@@ -45,6 +46,7 @@ export interface OperatorConsoleViewProps {
   sidebarDraftClose: ReturnType<typeof useSidebarDraftClose>;
   agentTeams: ReturnType<typeof useAgentTeamConsole>;
   managedProcesses: ManagedProcessPanelController;
+  providerSettings: ProviderSettingsController;
   actions: ConsoleStateActions;
   newConversation: NewConversationDraftState | null;
   sessionAnalysisNotice: string | null;
@@ -137,6 +139,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       pendingLocale={props.language.pendingLocale}
       languageSaveStatus={props.language.status}
       {...props.desktopShell.settings}
+      providerSettings={props.providerSettings}
       onSelectLocale={props.language.selectLocale}
       onRetryLocaleSave={props.language.retry}
       renderSearchOverlay={(close) => (
@@ -263,6 +266,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
         props.conversations.sessionMutations.renameSession(session, title)}
       onInterrupt={props.sessions.runs.interrupt}
       onRetryRun={props.sessions.runs.retryRun}
+      onUpdateSessionMemberExecution={props.sessions.runs.updateMemberExecution}
       onRetryPendingMessage={(sessionId, messageId) =>
         void props.sessions.sidebarMessages.retryPendingMessage(sessionId, messageId)}
       onEditPendingMessage={(sessionId, messageId, body) =>

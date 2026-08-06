@@ -113,6 +113,7 @@ export function projectPendingDispatch(message: LocalConsoleMessage) {
     targetLane,
     targetRole: message.dispatchRole ?? null,
     waitingForTeam: targetLane === "awaiting-team",
+    ...(message.error === "TARGET_CONTINUATION_ENDED" ? { targetUnavailable: true } : {}),
   };
 }
 

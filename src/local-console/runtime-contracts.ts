@@ -1,7 +1,7 @@
 import type { CodexRunOptions, CodexRunResult } from "../codex.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalAttachmentManager } from "./attachments.js";
-import type { LocalExecutionRunner } from "./execution-driver.js";
+import type { LocalExecutionRunner, PiExecutionRunOptions } from "./execution-driver.js";
 import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
 import type { LocalRouteJudgment } from "./route-bus.js";
 import type {
@@ -29,6 +29,7 @@ export interface LocalConsoleRuntimeOptions {
   }>;
   runCodex(options: CodexRunOptions): Promise<CodexRunResult>;
   runExecution?: LocalExecutionRunner;
+  runPi?: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
   createManagedProcessMcp?(input: { sessionId: string; providerRunId: string; workspaceRoot: string }): ManagedProcessMcpInvocation | Promise<ManagedProcessMcpInvocation>;
   getManagedProcessRunningCount?(): number;
   beforeStoreClose?(): Promise<void>;
@@ -71,6 +72,12 @@ export type LocalSessionTeamSwitchInput = {
   sessionId: string;
   agentTeamOwnership: LocalConsoleAgentTeamOwnership;
   agentTeamId: string;
+};
+export type LocalSessionMemberExecutionUpdateInput = {
+  sessionId: string;
+  memberName: string;
+  action: "migrate" | "end";
+  executionProfile?: import("./types.js").LocalConsoleExecutionProfile;
 };
 export type LocalSessionSearchInput = { query: string; includeArchived: boolean };
 export type LocalSessionReferenceInput = {

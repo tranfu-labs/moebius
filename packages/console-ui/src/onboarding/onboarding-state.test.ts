@@ -119,6 +119,29 @@ describe("onboarding shell state", () => {
     expect(chooseOnboardingBuilderCli({ codex: missing, claude: ready, kimi: missing })).toBe("claude");
   });
 
+  it("allows an API-only environment and selects Pi for AI team building", () => {
+    const missing = { status: "missing" as const, revision: 1 };
+    const environment = { codex: missing, claude: missing, kimi: missing };
+    const providers = [{
+      id: "deepseek-work",
+      providerId: "deepseek" as const,
+      providerName: "DeepSeek",
+      displayName: "工作档案",
+      keySuffix: "1234",
+      defaultModel: "deepseek-v4-pro" as const,
+      verifiedModels: ["deepseek-v4-pro" as const],
+      readiness: "ready" as const,
+      reason: null,
+      revision: 1,
+      updatedAt: "2026-08-04T12:00:00.000Z",
+      references: [],
+      activity: null,
+    }];
+
+    expect(canContinueOnboardingEnvironment(environment, providers)).toBe(true);
+    expect(chooseOnboardingBuilderCli(environment, providers)).toBe("pi");
+  });
+
   it("reports affected members without changing their configured CLI", () => {
     const team: OperatorAgentTeam = {
       ...builtInDevelopmentTeam,
@@ -154,6 +177,7 @@ describe("onboarding shell state", () => {
 
     expect(result).toEqual({
       affectedCount: 1,
+      memberSlugs: ["qa"],
       clis: ["kimi"],
       copy: "其中 1 名成员仍需完成 Kimi 准备",
     });

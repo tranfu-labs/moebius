@@ -17,6 +17,7 @@ import {
   type LocalRunExecutionContextFact,
 } from "./execution-context.js";
 import {
+  decideMemberContinuation,
   planLocalExecutingAgentPrompt,
   planLocalRunAttachmentMessages,
   planLocalRunContext,
@@ -47,6 +48,7 @@ export interface LocalRunPreparationInput {
   sourceMessage: Pick<LocalConsoleMessage, "id" | "body">;
   role: string;
   defaultProfile: LocalConsoleExecutionProfile | null;
+  continuationEnded?: boolean;
   defaultWorkspace: ResolvedLocalWorkspace;
   concurrentWorkspace: ResolvedLocalWorkspace | null;
   team: Array<{
@@ -121,6 +123,15 @@ export async function executeLocalRunPreparationFlow(
     teamSnapshot: input.teamSnapshot,
     recordedAt: ports.nowIso(),
   });
+  if (decideMemberContinuation(input.continuationEnded).kind === "ended") {
+    await ports.settleUnavailable({
+      kind: "unavailable",
+      intent: null,
+      context: currentContext,
+      reason: "continuation-ended",
+    });
+    return { kind: "settled-unavailable" };
+  }
   let recoveryPlan = planLocalExecutionRecoveryFromSeed({
     sourceMessageId: input.sourceMessage.id,
     role: input.role,

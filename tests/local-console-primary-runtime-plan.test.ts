@@ -51,13 +51,13 @@ describe("primary runtime plan", () => {
       "qa",
       "# qa",
       new Map([["dev", "# dev"]]),
-    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null, continuationEnded: false }]);
     expect(decidePrimaryAgentFileSource(undefined)).toEqual({ kind: "fallback" });
     expect(planPrimarySnapshotAgents([{
       name: "dev",
       agentMarkdown: "# dev",
       executionProfile: null,
-    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null, continuationEnded: false }]);
     expect(decidePrimaryRecoveryFactSource(null)).toEqual({ kind: "skip" });
     expect(decidePrimaryRunLookup(null)).toEqual({ kind: "skip" });
     expect(decidePrimaryRunLookup("run-1")).toEqual({ kind: "read", runId: "run-1" });

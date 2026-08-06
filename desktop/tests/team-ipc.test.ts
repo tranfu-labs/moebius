@@ -25,6 +25,7 @@ const {
   listAgentTeams,
   readAgentTeamExecutionProfile,
   readAgentTeamMember,
+  replaceUnavailableAgentTeamExecutionProfiles,
   restoreAgentTeamRecommendedProfile,
   saveAgentTeamExecutionProfile,
   setAgentTeamPrimaryAgent,
@@ -171,6 +172,36 @@ describe("Agent team IPC service", () => {
       await expect(restoreAgentTeamRecommendedProfile(dataRoot, request)).resolves.toMatchObject({
         binding: { source: "recommended" },
         effectiveProfile: { cli: "codex", model: "recommended-model", effort: "high" },
+      });
+      const piProfile = {
+        cli: "pi" as const,
+        providerId: "deepseek" as const,
+        providerProfileId: "profile-ready",
+        model: "deepseek-v4-pro",
+        effort: "high",
+      };
+      await expect(replaceUnavailableAgentTeamExecutionProfiles(dataRoot, {
+        teamId: "development",
+        ownership: "system",
+        memberSlugs: ["manager"],
+        profile: piProfile,
+      })).resolves.toMatchObject({
+        teamId: "development",
+        memberSlugs: ["manager"],
+        profile: piProfile,
+      });
+      await expect(replaceUnavailableAgentTeamExecutionProfiles(dataRoot, {
+        teamId: "development",
+        ownership: "system",
+        memberSlugs: ["manager", "missing"],
+        profile: { ...piProfile, model: "deepseek-v4-flash" },
+      })).rejects.toThrow("已不在当前团队");
+      await expect(readTeamExecutionBindings({
+        dataRoot,
+        ownership: "system",
+        teamId: "development",
+      })).resolves.toMatchObject({
+        manager: { source: "explicit", profile: piProfile },
       });
       await expect(fs.readFile(shimLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {

@@ -1,5 +1,6 @@
 import type { LocalRunActivity } from "./run-activity.js";
 import type {
+  LocalConsoleExecutionEngine,
   LocalConsoleExecutionProfile,
   LocalConsoleRunTiming,
 } from "./types.js";
@@ -27,7 +28,7 @@ export interface LocalRunLifecycleActiveRun {
   resuming: boolean;
   stepId: string;
   attempt: number;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   profile: LocalConsoleExecutionProfile | null;
   processOutputAvailable: boolean;
   terminalRecorded: boolean;
@@ -43,7 +44,7 @@ export interface LocalRunLifecycleFactStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "claude" | "kimi";
+    engine: LocalConsoleExecutionEngine;
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;

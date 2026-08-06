@@ -21,6 +21,7 @@ import {
   AgentTeamDetail,
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
+  type AgentExecutionProviderProfile,
   type AgentOfficialUpdateResult,
   type AgentOfficialManagementState,
   type AgentTeamDetailMember,
@@ -137,6 +138,8 @@ export function AgentTeamsPage({
   detailState,
   useStackedRows,
   aiTeamBuilder,
+  providerProfiles,
+  onOpenProviderSettings,
   onRetry,
   onCreateTeam,
   onOpenTeam,
@@ -178,6 +181,8 @@ export function AgentTeamsPage({
   detailState?: AgentTeamDetailState | null;
   useStackedRows: boolean;
   aiTeamBuilder?: AgentTeamBuilderController;
+  providerProfiles?: readonly AgentExecutionProviderProfile[];
+  onOpenProviderSettings?: () => void;
   onRetry?: () => void;
   onCreateTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
   onOpenTeam?: (teamKey: string) => void;
@@ -488,6 +493,8 @@ export function AgentTeamsPage({
                 <AgentTeamDetail
                   team={openedTeam}
                   state={openedDetailState}
+                  providerProfiles={providerProfiles}
+                  onOpenProviderSettings={onOpenProviderSettings}
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">

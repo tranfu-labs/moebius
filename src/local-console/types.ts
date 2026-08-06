@@ -113,6 +113,7 @@ export interface LocalConsolePendingDispatch {
   targetLane: LocalUserMessageDispatchLane;
   targetRole: string | null;
   waitingForTeam: boolean;
+  targetUnavailable?: boolean;
 }
 
 export interface LocalConsoleRunTiming {
@@ -123,7 +124,7 @@ export interface LocalConsoleRunTiming {
   elapsedMs: number | null;
   completedAt: string | null;
   status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   processOutputAvailable: boolean;
 }
 
@@ -190,6 +191,7 @@ export interface LocalConsoleAgentTeamSnapshotMember {
   description?: string | null;
   agentMarkdown: string;
   executionProfile?: LocalConsoleExecutionProfile | null;
+  continuationEnded?: boolean;
 }
 
 export interface LocalConsoleAgentTeamSnapshot {
@@ -268,11 +270,19 @@ export interface LocalConsoleRunAgentInfo {
   evidence: "executed" | "planned-not-started" | "bound-start-unknown";
 }
 
-export interface LocalConsoleExecutionProfile {
+export type LocalConsoleExecutionProfile = {
   cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
-}
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
+
+export type LocalConsoleExecutionEngine = LocalConsoleExecutionProfile["cli"];
 
 export interface LocalConsoleMemberIdentity {
   slug: string;
@@ -593,7 +603,7 @@ export interface LocalConsoleRunSnapshot {
   elapsedMs: number | null;
   stepId: string;
   attempt: number;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
   runDir: string | null;
@@ -695,6 +705,13 @@ export interface LocalConsoleStore {
     code: string;
     summary: string;
   }): Promise<void>;
+  updateSessionMemberExecution?(input: {
+    sessionId: string;
+    memberName: string;
+    action: "migrate" | "end";
+    executionProfile?: LocalConsoleExecutionProfile;
+    now: string;
+  }): Promise<LocalConsoleAgentTeamSnapshot>;
   recordProjectWorkspaceStatus(input: {
     projectId: string;
     cwd: string;
@@ -927,7 +944,7 @@ export interface LocalConsoleStore {
     attempt: number;
     phase: "created" | "started" | "paused" | "resumed" | "terminal";
     role: string | null;
-    engine: "codex" | "claude" | "kimi";
+    engine: LocalConsoleExecutionEngine;
     processOutputAvailable: boolean;
     createdAt: string;
     startedAt: string | null;

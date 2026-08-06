@@ -13,8 +13,8 @@ afterEach(async () => {
     fs.rm(root, { recursive: true, force: true })));
 });
 
-describe("Claude execution profile schema migration", () => {
-  it("rebuilds the old two-CLI CHECK transactionally and remains idempotent", async () => {
+describe("execution profile schema migration", () => {
+  it("rebuilds the old two-CLI CHECK for Claude and Pi transactionally and remains idempotent", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-claude-schema-"));
     roots.push(root);
     const sqlitePath = path.join(root, "local-console.sqlite");
@@ -44,7 +44,10 @@ describe("Claude execution profile schema migration", () => {
           PRIMARY KEY(session_id, slot, member_name)
         );
         DELETE FROM schema_migrations
-        WHERE version = 'support-claude-cli-session-profile-constraint';
+        WHERE version IN (
+          'support-claude-cli-session-profile-constraint',
+          'support-pi-api-session-profile-v2'
+        );
       `);
       legacy.prepare(
         `INSERT INTO session_agent_team_members
@@ -69,6 +72,8 @@ describe("Claude execution profile schema migration", () => {
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'session_agent_team_members'",
       ).get() as { sql: string };
       expect(sql.sql).toContain("'claude'");
+      expect(sql.sql).toContain("'pi'");
+      expect(sql.sql).toContain("provider_profile_id");
       expect(database.prepare(
         `SELECT member_name, execution_cli, execution_model, execution_effort, sort_order
          FROM session_agent_team_members ORDER BY sort_order`,
@@ -97,6 +102,12 @@ describe("Claude execution profile schema migration", () => {
           (session_id, slot, member_name, agent_markdown, sort_order,
            execution_cli, execution_model, execution_effort)
          VALUES (?, 'pending', 'claude', '# claude', 0, 'claude', 'fable', 'xhigh')`,
+      ).run(session.session_id)).not.toThrow();
+      expect(() => database.prepare(
+        `INSERT INTO session_agent_team_members
+          (session_id, slot, member_name, agent_markdown, sort_order,
+           execution_cli, execution_model, execution_effort, provider_id, provider_profile_id)
+         VALUES (?, 'pending', 'pi', '# pi', 1, 'pi', 'deepseek-v4-pro', 'high', 'deepseek', 'profile-1')`,
       ).run(session.session_id)).not.toThrow();
     } finally {
       database.close();

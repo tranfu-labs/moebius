@@ -14,6 +14,10 @@ import {
   forgetTrashedUserTeamRecord,
   registerUserTeamSnapshot,
 } from "../src/team-record-store.js";
+import {
+  removeTeamExecutionBindings,
+  replaceTeamExecutionBindings,
+} from "../src/team-management-store.js";
 
 const { listAgentTeams } = createTestAgentTeamService();
 
@@ -91,7 +95,14 @@ describe("AiTeamWriter", () => {
     await fs.writeFile(lastUsedPath, '{"teamId":"development"}\n', "utf8");
     const writer = createWriter({ createId: () => "12345678-abcd" });
 
-    const created = await writer.create(dataRoot, proposal);
+    const piProfile = {
+      cli: "pi" as const,
+      providerId: "deepseek" as const,
+      providerProfileId: "deepseek-work",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    };
+    const created = await writer.create(dataRoot, proposal, piProfile);
 
     expect(created.teamId).toBe("launch-team-12345678abcd");
     const listed = await listAgentTeams({ dataRoot, seedPending: false });
@@ -113,8 +124,8 @@ describe("AiTeamWriter", () => {
         relayBeats: proposal.relayBeats,
       },
       members: [
-        { slug: "launch-lead", displayName: "发布负责人" },
-        { slug: "content-planner", displayName: "内容策划" },
+        { slug: "launch-lead", displayName: "发布负责人", executionProfile: { effectiveProfile: piProfile } },
+        { slug: "content-planner", displayName: "内容策划", executionProfile: { effectiveProfile: piProfile } },
       ],
     });
     expect(created.snapshot.members.map((member) => member.agentMarkdown)).toEqual([
@@ -211,6 +222,8 @@ function createWriter(options: Partial<AiTeamWriterOptions> = {}): AiTeamWriter 
     store: new AiTeamWriteFileStore(),
     register: registerUserTeamSnapshot,
     rollbackRecord: forgetTrashedUserTeamRecord,
+    replaceBindings: replaceTeamExecutionBindings,
+    removeBindings: removeTeamExecutionBindings,
     createId: () => "generated",
     ...options,
   });

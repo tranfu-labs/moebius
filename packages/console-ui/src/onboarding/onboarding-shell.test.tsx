@@ -44,6 +44,92 @@ const developmentTeam: OperatorAgentTeam = {
 };
 
 describe("OnboardingShell", () => {
+  it("lets a user with no CLI continue after a ready API Provider is present", async () => {
+    const missing = { status: "missing" as const, revision: 1 };
+    renderShell({
+      environment: { codex: missing, claude: missing, kimi: missing },
+      providerSettings: {
+        state: { status: "ready", profiles: [{
+          id: "deepseek-work",
+          providerId: "deepseek",
+          providerName: "DeepSeek",
+          displayName: "工作档案",
+          keySuffix: "1234",
+          defaultModel: "deepseek-v4-pro",
+          verifiedModels: ["deepseek-v4-pro"],
+          readiness: "ready",
+          reason: null,
+          revision: 1,
+          updatedAt: "2026-08-04T12:00:00.000Z",
+          references: [],
+          activity: null,
+        }] },
+        busyProfileId: null,
+        error: null,
+        canRetryCreateSave: false,
+        refresh: vi.fn(),
+        create: vi.fn(async () => true),
+        retryCreateSave: vi.fn(async () => true),
+        discardCreateSave: vi.fn(),
+        rotateKey: vi.fn(async () => true),
+        addModel: vi.fn(async () => true),
+        setDefaultModel: vi.fn(async () => true),
+        removeModel: vi.fn(async () => true),
+        replaceDefaultAndRemoveModel: vi.fn(async () => true),
+        rename: vi.fn(async () => true),
+        disable: vi.fn(async () => undefined),
+        enable: vi.fn(async () => undefined),
+        migrateReferences: vi.fn(async () => true),
+        retryReferenceOperation: vi.fn(async () => true),
+        endReference: vi.fn(async () => true),
+        delete: vi.fn(async () => undefined),
+        cancel: vi.fn(),
+      },
+    });
+
+    expect(screen.getByText("DeepSeek · Key •••• 1234")).toBeVisible();
+    expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(screen.getByText(/Pi API/u)).toBeVisible());
+  });
+
+  it("offers one atomic API replacement for every unavailable member", async () => {
+    const onReplaceTeamWithProvider = vi.fn(async () => undefined);
+    const missing = { status: "missing" as const, revision: 1 };
+    renderShell({
+      environment: { codex: missing, claude: missing, kimi: missing },
+      providerSettings: createReadyProviderSettings(),
+      teamsState: {
+        status: "ready",
+        teams: [{
+          ...developmentTeam,
+          members: developmentTeam.members.map((member) => ({
+            ...member,
+            executionProfile: {
+              binding: { source: "explicit" as const, profile: { cli: "codex" as const, model: "gpt", effort: "high" } },
+              recommendation: null,
+              effectiveProfile: { cli: "codex" as const, model: "gpt", effort: "high" },
+            },
+          })),
+        }],
+      },
+      onReplaceTeamWithProvider,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "改用这个 API" })).toBeVisible());
+    expect(screen.getByText("也可以暂不替换并继续")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "改用这个 API" }));
+    await waitFor(() => expect(onReplaceTeamWithProvider).toHaveBeenCalledWith({
+      teamId: "development",
+      ownership: "system",
+      memberSlugs: ["dev-manager", "dev"],
+      providerProfileId: "deepseek-work",
+      model: "deepseek-v4-pro",
+      effort: "high",
+    }));
+  });
+
   it("renders replay copy, exit, and completion without changing first-run copy", async () => {
     const onExit = vi.fn();
     const onComplete = vi.fn(async () => undefined);
@@ -590,5 +676,45 @@ function createInstallations(
     claude: { cli: "claude", status: "idle", revision: 0 },
     kimi: { cli: "kimi", status: "idle", revision: 0 },
     ...overrides,
+  };
+}
+
+function createReadyProviderSettings(): NonNullable<OnboardingShellProps["providerSettings"]> {
+  return {
+    state: { status: "ready", profiles: [{
+      id: "deepseek-work",
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      displayName: "工作档案",
+      keySuffix: "1234",
+      defaultModel: "deepseek-v4-pro",
+      verifiedModels: ["deepseek-v4-pro"],
+      readiness: "ready",
+      reason: null,
+      revision: 1,
+      updatedAt: "2026-08-04T12:00:00.000Z",
+      references: [],
+      activity: null,
+    }] },
+    busyProfileId: null,
+    error: null,
+    canRetryCreateSave: false,
+    refresh: vi.fn(),
+    create: vi.fn(async () => true),
+    retryCreateSave: vi.fn(async () => true),
+    discardCreateSave: vi.fn(),
+    rotateKey: vi.fn(async () => true),
+    addModel: vi.fn(async () => true),
+    setDefaultModel: vi.fn(async () => true),
+    removeModel: vi.fn(async () => true),
+    replaceDefaultAndRemoveModel: vi.fn(async () => true),
+    rename: vi.fn(async () => true),
+    disable: vi.fn(async () => undefined),
+    enable: vi.fn(async () => undefined),
+    migrateReferences: vi.fn(async () => true),
+    retryReferenceOperation: vi.fn(async () => true),
+    endReference: vi.fn(async () => true),
+    delete: vi.fn(async () => undefined),
+    cancel: vi.fn(),
   };
 }

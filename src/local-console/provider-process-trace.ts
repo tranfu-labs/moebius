@@ -19,6 +19,7 @@ import {
   malformedProviderProcessEvent,
   projectClaudeTranscriptRecord,
   projectKimiWireRecord,
+  projectPiSafeTraceRecord,
   type LocalConsoleProcessEvent,
 } from "./process-event-projector.js";
 import {
@@ -45,6 +46,7 @@ export interface ProviderTraceLink {
   role: string;
   engine: LocalProcessEngine;
   externalSessionId: string;
+  tracePath?: string;
   contextFingerprint: string;
   startedAt: string;
   legacyCodex?: boolean;
@@ -86,6 +88,14 @@ export type ProviderTraceResolution =
       identity: TrustedJsonlIdentity;
     }
   | {
+      status: "available";
+      engine: "pi";
+      externalSessionId: string;
+      file: TrustedJsonlFile;
+      identity: TrustedJsonlIdentity;
+      context: LocalRunExecutionContextFact;
+    }
+  | {
       status: "unavailable";
       engine: LocalProcessEngine;
       reason: ProviderTraceUnavailableReason | string;
@@ -103,7 +113,7 @@ export interface ProviderTraceResolverOptions {
 export interface ProviderContextSection {
   key: string;
   label: string;
-  source: "codex-rollout" | "claude-transcript" | "kimi-wire";
+  source: "codex-rollout" | "claude-transcript" | "kimi-wire" | "provider-native";
   status: "recorded" | "not-recorded";
   contents: string[];
 }
@@ -186,7 +196,10 @@ export async function resolveProviderTrace(input: {
   if (input.link.engine === "claude") {
     return await resolveClaudeTrace(input.link, input.context!, input.options);
   }
-  return await resolveKimiTrace(input.link, input.context!, input.options);
+  if (input.link.engine === "kimi") {
+    return await resolveKimiTrace(input.link, input.context!, input.options);
+  }
+  return await resolvePiTrace(input.link, input.context!, input.options);
 }
 
 export async function readProviderTracePage(input: {
@@ -235,6 +248,9 @@ export async function readProviderTracePage(input: {
           await hydrateClaudeToolResult(value, resolution),
           { runId: input.runId, ...context },
         );
+      }
+      if (resolution.engine === "pi") {
+        return projectPiSafeTraceRecord(value, { runId: input.runId, ...context });
       }
       return projectKimiWireRecord(
         await validateKimiBlobReferences(value, resolution),
@@ -290,6 +306,9 @@ export async function readProviderTraceAppend(input: {
           { runId: input.runId, ...context },
         );
       }
+      if (resolution.engine === "pi") {
+        return projectPiSafeTraceRecord(value, { runId: input.runId, ...context });
+      }
       return projectKimiWireRecord(
         await validateKimiBlobReferences(value, resolution),
         { runId: input.runId, ...context },
@@ -302,7 +321,7 @@ export async function readProviderTraceAppend(input: {
 }
 
 export async function readProviderTraceContext(
-  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" }>,
+  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" | "pi" }>,
 ): Promise<ProviderTraceContext | { status: "malformed"; reason: string }> {
   let loaded;
   try {
@@ -318,7 +337,36 @@ export async function readProviderTraceContext(
   }
   return resolution.engine === "claude"
     ? claudeContext(loaded.records)
-    : kimiContext(loaded.records);
+    : resolution.engine === "kimi"
+      ? kimiContext(loaded.records)
+      : piContext(resolution, loaded.records);
+}
+
+async function resolvePiTrace(
+  link: ProviderTraceLink,
+  context: LocalRunExecutionContextFact,
+  options: ProviderTraceResolverOptions | undefined,
+): Promise<ProviderTraceResolution> {
+  if (link.tracePath === undefined || options?.dataRoot === undefined) {
+    return { status: "unavailable", engine: "pi", reason: "not-found" };
+  }
+  const traceRoot = path.resolve(options.dataRoot, ".state", "pi-traces");
+  const trustedRoot = await resolveTrustedJsonlRoot(traceRoot);
+  if (trustedRoot === null) {
+    return { status: "unavailable", engine: "pi", reason: "root-unavailable" };
+  }
+  const inspection = await inspectTrustedJsonlCandidate(trustedRoot, path.resolve(link.tracePath));
+  if (inspection.status !== "available") {
+    return { status: "unavailable", engine: "pi", reason: inspection.reason };
+  }
+  return {
+    status: "available",
+    engine: "pi",
+    externalSessionId: link.externalSessionId,
+    file: inspection.file,
+    identity: inspection.file.identity,
+    context,
+  };
 }
 
 function resolveClaudeProjectsRoot(options: ProviderTraceResolverOptions | undefined): string {
@@ -718,6 +766,26 @@ function kimiContext(records: unknown[]): ProviderTraceContext {
       provider,
       cliVersion: null,
       cwd: null,
+    },
+  };
+}
+
+function piContext(
+  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "pi" }>,
+  records: unknown[],
+): ProviderTraceContext {
+  const profile = resolution.context.profile?.cli === "pi" ? resolution.context.profile : null;
+  const contents = records
+    .filter((record) => isRecord(record) && record.version === 1)
+    .map(serialize);
+  return {
+    sections: [section("safe-pi-trace", "SAFE_PI_TRACE", "provider-native", contents)],
+    metadata: {
+      model: profile?.model ?? null,
+      effort: profile?.effort ?? null,
+      provider: profile?.providerId === "deepseek" ? "DeepSeek" : null,
+      cliVersion: null,
+      cwd: resolution.context.workspace.cwd,
     },
   };
 }

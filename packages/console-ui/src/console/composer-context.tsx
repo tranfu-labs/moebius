@@ -29,6 +29,8 @@ export function ComposerContext({
   onChangeSessionProject,
   onChangeSessionWorkspace,
   onChangeSessionTeam,
+  teamMenuOpen,
+  onTeamMenuOpenChange,
 }: {
   project: OperatorProject;
   projects: OperatorProject[];
@@ -43,6 +45,8 @@ export function ComposerContext({
   onChangeSessionProject?: (sessionId: string, projectId: string) => void;
   onChangeSessionWorkspace?: (sessionId: string, workspaceMode: WorkspaceMode) => void;
   onChangeSessionTeam?: (sessionId: string, team: OperatorAgentTeam) => void;
+  teamMenuOpen?: boolean;
+  onTeamMenuOpenChange?: (open: boolean) => void;
 }): JSX.Element {
   const { t } = useI18n();
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1440 : window.innerWidth);
@@ -174,6 +178,8 @@ export function ComposerContext({
           health={agentTeamHealth}
           teams={teams}
           disabled={disabled}
+          open={teamMenuOpen}
+          onOpenChange={onTeamMenuOpenChange}
           onSelectTeam={selectedSession && onChangeSessionTeam
             ? (team) => onChangeSessionTeam(selectedSession.sessionId, team)
             : undefined}

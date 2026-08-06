@@ -27,6 +27,8 @@ import {
   type AgentTeamMemberTrashRequest,
   type AgentTeamExecutionProfileDocument,
   type AgentTeamExecutionProfileSaveRequest,
+  type AgentTeamExecutionProfilesReplaceRequest,
+  type AgentTeamExecutionProfilesReplaceResult,
   type AgentTeamOfficialUpdateCommitRequest,
   type AgentTeamOfficialUpdateCommitResponse,
   type AgentTeamOfficialUpdatePrepareResponse,
@@ -82,6 +84,22 @@ import {
   type SettingsUpdateState,
   type SettingsVersionCopyResult,
 } from "./settings-contract.js";
+import {
+  PROVIDER_PROFILE_IPC_CHANNELS,
+  type ProviderProfileCreateRequest,
+  type ProviderProfileCancelRequest,
+  type ProviderProfileListResult,
+  type ProviderProfileModelRequest,
+  type ProviderProfileRenameRequest,
+  type ProviderProfileRevisionRequest,
+  type ProviderProfileRotateKeyRequest,
+  type ProviderProfileIpcResult,
+  type ProviderProfileMigrateReferencesRequest,
+  type ProviderProfileRetryReferenceOperationRequest,
+  type ProviderProfileEndReferencesRequest,
+  type ProviderProfileSummaryDto,
+  type ProviderProfileReplaceDefaultAndRemoveModelRequest,
+} from "./provider-profile-contract.js";
 
 export interface MoebiusDesktopApi {
   readLanguagePreference(): Promise<DesktopLocale>;
@@ -99,6 +117,23 @@ export interface MoebiusDesktopApi {
   onUpdateState(listener: (state: SettingsUpdateState) => void): () => void;
   installUpdate(): Promise<void>;
   copyVersionInfo(): Promise<SettingsVersionCopyResult>;
+  listProviderProfiles(): Promise<ProviderProfileListResult>;
+  createProviderProfile(request: ProviderProfileCreateRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  retryCreateProviderProfileSave(request: ProviderProfileCancelRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  discardCreateProviderProfileSave(request: ProviderProfileCancelRequest): Promise<ProviderProfileIpcResult<null>>;
+  rotateProviderProfileKey(request: ProviderProfileRotateKeyRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  addProviderProfileModel(request: ProviderProfileModelRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  setProviderProfileDefaultModel(request: ProviderProfileModelRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  removeProviderProfileModel(request: ProviderProfileModelRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  replaceProviderProfileDefaultAndRemoveModel(request: ProviderProfileReplaceDefaultAndRemoveModelRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  renameProviderProfile(request: ProviderProfileRenameRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  disableProviderProfile(request: ProviderProfileRevisionRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  enableProviderProfile(request: ProviderProfileRevisionRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  deleteProviderProfile(request: ProviderProfileRevisionRequest): Promise<ProviderProfileIpcResult<null>>;
+  migrateProviderProfileReferences(request: ProviderProfileMigrateReferencesRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  retryProviderProfileReferenceOperation(request: ProviderProfileRetryReferenceOperationRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  endProviderProfileReferences(request: ProviderProfileEndReferencesRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  cancelProviderProfileOperation(request: ProviderProfileCancelRequest): Promise<ProviderProfileIpcResult<null>>;
   selectProjectFolder(): Promise<string | null>;
   selectFolderForRepair(projectId: string): Promise<string | null>;
   showInFolder(folderPath: string): Promise<void>;
@@ -122,6 +157,9 @@ export interface MoebiusDesktopApi {
   saveAgentTeamExecutionProfile(
     request: AgentTeamExecutionProfileSaveRequest,
   ): Promise<AgentTeamExecutionProfileDocument>;
+  replaceUnavailableAgentTeamExecutionProfiles(
+    request: AgentTeamExecutionProfilesReplaceRequest,
+  ): Promise<AgentTeamExecutionProfilesReplaceResult>;
   restoreAgentTeamRecommendedProfile(
     request: AgentTeamMemberRequest,
   ): Promise<AgentTeamExecutionProfileDocument>;
@@ -231,6 +269,57 @@ const api: MoebiusDesktopApi = {
   copyVersionInfo() {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.copyVersionInfo) as Promise<SettingsVersionCopyResult>;
   },
+  listProviderProfiles() {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.list) as Promise<ProviderProfileListResult>;
+  },
+  createProviderProfile(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.create, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  retryCreateProviderProfileSave(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.retryCreateSave, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  discardCreateProviderProfileSave(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.discardCreateSave, request) as Promise<ProviderProfileIpcResult<null>>;
+  },
+  rotateProviderProfileKey(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.rotateKey, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  addProviderProfileModel(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.addModel, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  setProviderProfileDefaultModel(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.setDefaultModel, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  removeProviderProfileModel(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.removeModel, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  replaceProviderProfileDefaultAndRemoveModel(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.replaceDefaultAndRemoveModel, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  renameProviderProfile(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.rename, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  disableProviderProfile(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.disable, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  enableProviderProfile(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.enable, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  deleteProviderProfile(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.delete, request) as Promise<ProviderProfileIpcResult<null>>;
+  },
+  migrateProviderProfileReferences(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.migrateReferences, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  retryProviderProfileReferenceOperation(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.retryReferenceOperation, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  endProviderProfileReferences(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.endReferences, request) as Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
+  },
+  cancelProviderProfileOperation(request) {
+    return ipcRenderer.invoke(PROVIDER_PROFILE_IPC_CHANNELS.cancel, request) as Promise<ProviderProfileIpcResult<null>>;
+  },
   selectProjectFolder() {
     return ipcRenderer.invoke("project:select-folder") as Promise<string | null>;
   },
@@ -297,6 +386,12 @@ const api: MoebiusDesktopApi = {
       TEAM_IPC_CHANNELS.saveExecutionProfile,
       request,
     ) as Promise<AgentTeamExecutionProfileDocument>;
+  },
+  replaceUnavailableAgentTeamExecutionProfiles(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.replaceUnavailableExecutionProfiles,
+      request,
+    ) as Promise<AgentTeamExecutionProfilesReplaceResult>;
   },
   restoreAgentTeamRecommendedProfile(request) {
     return ipcRenderer.invoke(

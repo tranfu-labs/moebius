@@ -1,4 +1,4 @@
-import type { ExecutionCli } from "../team-execution-profile.js";
+import type { ExecutionEngine } from "../team-execution-profile.js";
 import type { AiTeamBuilderDriverPort } from "./driver.js";
 import {
   requireAiTeamBuilderExecutionProfile,
@@ -25,7 +25,7 @@ export class AiTeamBuilderTurnRuntime {
   constructor(
     private readonly dataRoot: string,
     private readonly drafts: AiTeamBuilderDraftRepositoryPort,
-    private readonly drivers: Readonly<Record<ExecutionCli, AiTeamBuilderDriverPort>>,
+    private readonly drivers: Readonly<Partial<Record<ExecutionEngine, AiTeamBuilderDriverPort>>>,
   ) {}
 
   async run(initial: AiTeamBuilderDraft, signal?: AbortSignal): Promise<AiTeamBuilderState> {
@@ -33,6 +33,12 @@ export class AiTeamBuilderTurnRuntime {
     let running = initial;
     const profile = requireAiTeamBuilderExecutionProfile(running);
     const driver = this.drivers[profile.cli];
+    if (driver === undefined) {
+      return this.finishFailedTurn(running, {
+        kind: "engine-failed",
+        internalReason: `${profile.cli} builder driver is unavailable`,
+      });
+    }
     const wasResume = running.externalSessionId !== null;
     let rawResult: Awaited<ReturnType<AiTeamBuilderDriverPort["execute"]>>;
     try {

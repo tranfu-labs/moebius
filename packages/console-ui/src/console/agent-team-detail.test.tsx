@@ -271,14 +271,14 @@ describe("AgentTeamDetail", () => {
     renderDetail({ onSaveExecutionProfile });
 
     expect(screen.getByTestId("agent-execution-profile-editor")).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex");
+    expect(screen.getByRole("combobox", { name: "执行引擎" })).toHaveValue("codex");
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.6-sol");
     expect(within(screen.getByRole("combobox", { name: "Model" })).getAllByRole("option"))
       .toHaveLength(6);
     expect(within(screen.getByRole("combobox", { name: "思考程度" })).getAllByRole("option")
       .map((option) => option.getAttribute("value"))).toEqual(["low", "medium", "high", "xhigh", "max"]);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "claude" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "claude" } });
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("sonnet");
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
     expect(within(screen.getByRole("combobox", { name: "Model" })).getAllByRole("option")
@@ -291,7 +291,7 @@ describe("AgentTeamDetail", () => {
         "low", "medium", "high", "xhigh", "max",
       ]);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "kimi" } });
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("kimi-code/kimi-for-coding");
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("on");
     expect(screen.getByRole("option", { name: "k3（需相应会员权限）" })).toBeVisible();
@@ -306,6 +306,60 @@ describe("AgentTeamDetail", () => {
       "manager",
       { cli: "kimi", model: "kimi-code/k3", effort: "max" },
     ));
+  });
+
+  it("requires an explicit model when a ready Pi profile has no usable default", async () => {
+    const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile: AgentExecutionProfile) =>
+      executionProfileDocument(profile));
+    renderDetail({
+      onSaveExecutionProfile,
+      providerProfiles: [{
+        id: "deepseek-work",
+        providerId: "deepseek",
+        providerName: "DeepSeek",
+        displayName: "工作档案",
+        defaultModel: null,
+        verifiedModels: ["deepseek-v4-flash", "deepseek-v4-pro"],
+        readiness: "ready",
+        reason: null,
+      }],
+    });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
+    expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("deepseek-work");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "deepseek-v4-flash" } });
+    expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
+    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith("manager", {
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "deepseek-work",
+      model: "deepseek-v4-flash",
+      effort: "high",
+    }));
+  });
+
+  it("does not silently choose between multiple ready Pi profiles", () => {
+    const profiles = ["one", "two"].map((id) => ({
+      id,
+      providerId: "deepseek" as const,
+      providerName: "DeepSeek",
+      displayName: id,
+      defaultModel: "deepseek-v4-pro" as const,
+      verifiedModels: ["deepseek-v4-pro" as const],
+      readiness: "ready" as const,
+      reason: null,
+    }));
+    renderDetail({ providerProfiles: profiles, onSaveExecutionProfile: vi.fn() });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
+
+    expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("");
+    expect(screen.getByText("请选择已就绪的 AI 服务商档案")).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
   });
 
   it("preserves an unsupported historical profile until a supported model is selected", async () => {
@@ -361,20 +415,20 @@ describe("AgentTeamDetail", () => {
       onLeave,
     });
     const { rerender } = render(<AgentTeamDetail {...base} />);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
-    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "执行引擎" })).toHaveValue("codex"));
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "kimi" } });
 
     rerender(<AgentTeamDetail
       {...base}
       state={{ ...base.state, selectedMemberSlug: "dev" }}
     />);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "执行引擎" })).toHaveValue("codex"));
 
     rerender(<AgentTeamDetail
       {...base}
       state={{ ...base.state, selectedMemberSlug: "manager" }}
     />);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("kimi"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "执行引擎" })).toHaveValue("kimi"));
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     expect(onLeave).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByRole("dialog", { name: "还有未保存的修改" }))
@@ -438,8 +492,8 @@ describe("AgentTeamDetail", () => {
         : base.team}
     />);
 
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "CLI" })).toHaveValue("codex"));
-    fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), { target: { value: "kimi" } });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "执行引擎" })).toHaveValue("codex"));
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "kimi" } });
     fireEvent.click(screen.getByRole("button", { name: buttonName }));
 
     expect(screen.getByRole("dialog", { name: "还有未保存的修改" })).toBeVisible();

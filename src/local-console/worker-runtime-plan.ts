@@ -54,6 +54,7 @@ export function planWorkerSnapshotAgents(
     name: member.name,
     agentMarkdown: member.agentMarkdown,
     executionProfile: member.executionProfile ?? null,
+    continuationEnded: member.continuationEnded === true,
   }));
 }
 
@@ -81,6 +82,7 @@ export function planWorkerAgentContents(
       ? selectedMarkdown
       : agent.agentMarkdown ?? fileMarkdown.get(agent.name)!,
     executionProfile: agent.executionProfile ?? null,
+    continuationEnded: agent.continuationEnded === true,
   }));
 }
 

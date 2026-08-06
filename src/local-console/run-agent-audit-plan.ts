@@ -2,7 +2,7 @@ import type {
   LocalProviderProcessStartedFact,
   LocalRunExecutionContextFact,
 } from "./execution-context.js";
-import type { LocalConsoleRunAgentInfo } from "./types.js";
+import type { LocalConsoleExecutionEngine, LocalConsoleRunAgentInfo } from "./types.js";
 import type { LocalConsoleMessage } from "./types.js";
 
 export function projectRunAgentInfo(input: {
@@ -50,7 +50,7 @@ export function readRunAgentMarkdown(
 }
 
 export function planProviderProcessStartedFact(input: {
-  active?: { sessionId: string; role: string | null; engine: "codex" | "claude" | "kimi" };
+  active?: { sessionId: string; role: string | null; engine: LocalConsoleExecutionEngine };
   runId: string;
   startedAt: string;
 }): { kind: "skip" | "record"; fact: LocalProviderProcessStartedFact | null } {

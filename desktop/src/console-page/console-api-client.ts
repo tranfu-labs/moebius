@@ -20,6 +20,7 @@ import {
 import { planSidebarAnalysisParent } from "./console-state-plan.js";
 import type { CreatedSession } from "./console-state-action-contract.js";
 import type { SessionSearchResult } from "./conversation-search-model.js";
+import type { SessionExecutionOverride } from "./session-run-contract.js";
 
 export type { SessionSearchResult } from "./conversation-search-model.js";
 
@@ -366,11 +367,7 @@ export async function retrySessionRun(options: {
   apiBase: string;
   sessionId: string;
   runId: string;
-  executionOverride?: {
-    cli: "codex" | "claude" | "kimi";
-    model: string;
-    effort: string;
-  };
+  executionOverride?: SessionExecutionOverride;
   fetch: FetchLike;
 }): Promise<void> {
   const fetch = options.fetch;
@@ -401,6 +398,32 @@ export async function retrySessionRun(options: {
   if (!response.ok) {
     throw new Error(responseBody.error ?? "retry failed");
   }
+}
+
+export async function updateSessionMemberExecution(options: {
+  apiBase: string;
+  sessionId: string;
+  memberName: string;
+  action: "migrate" | "end";
+  executionProfile?: SessionExecutionOverride;
+  fetch: FetchLike;
+}): Promise<void> {
+  const response = await options.fetch(
+    endpoint(
+      options.apiBase,
+      `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/members/${encodeURIComponent(options.memberName)}/execution`,
+    ),
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: options.action,
+        ...(options.executionProfile === undefined ? {} : { executionProfile: options.executionProfile }),
+      }),
+    },
+  );
+  const responseBody = await response.json() as { error?: string };
+  if (!response.ok) throw new Error(responseBody.error ?? "session execution update failed");
 }
 
 export async function loadWorkspaceDiff(options: {

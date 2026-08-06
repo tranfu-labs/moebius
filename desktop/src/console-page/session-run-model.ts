@@ -9,6 +9,12 @@ export function decideSessionRunAvailability(input: {
   return input.sending ? { kind: "busy" } : { kind: "available", apiBase: input.apiBase };
 }
 
+export function decideMemberExecutionUpdateCapability(available: boolean):
+  | { kind: "update" }
+  | { kind: "unavailable" } {
+  return available ? { kind: "update" } : { kind: "unavailable" };
+}
+
 export function planSubSessionMessage(input: {
   body: string;
   attachmentIds: readonly string[];

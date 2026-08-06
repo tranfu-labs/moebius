@@ -8,6 +8,7 @@ import type { ClaudeRunOptions } from "../src/claude.js";
 import type { CodexRunOptions } from "../src/codex.js";
 import {
   createLocalExecutionRunner,
+  type PiExecutionRunOptions,
   withCodexSandbox,
 } from "../src/local-console/execution-driver.js";
 
@@ -120,7 +121,46 @@ describe("local console execution access modes", () => {
     });
   });
 
-  it.each(["codex", "claude", "kimi"] as const)("injects one invocation-scoped MCP into %s and revokes it after the turn", async (engine) => {
+  it("routes Pi API profiles through the Pi adapter and preserves native session identity", async () => {
+    const observed = vi.fn();
+    const traceReady = vi.fn();
+    const runPi = vi.fn(async (options): Promise<CodexRunResult> => {
+      await options.onSessionStarted?.({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+      await options.onExecutionTraceReady?.({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+      return {
+        ok: true,
+        finalText: "done",
+        threadId: "/tmp/pi/session.jsonl",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "pi-process.jsonl"),
+        stderrPath: path.join(options.runDir, "pi-error.txt"),
+      };
+    });
+    const codex = vi.fn();
+    const runner = createLocalExecutionRunner({ runCodex: codex, runPi });
+    await runner({
+      prompt: "fix the test",
+      runDir: "/tmp/run",
+      cwd: "/tmp/workspace",
+      profile: {
+        cli: "pi",
+        providerId: "deepseek",
+        providerProfileId: "deepseek-default",
+        model: "deepseek-v4-pro",
+        effort: "high",
+      },
+      mode: { kind: "full" },
+      onSessionStarted: observed,
+      onExecutionTraceReady: traceReady,
+    });
+    expect(runPi).toHaveBeenCalledOnce();
+    expect(codex).not.toHaveBeenCalled();
+    expect(observed).toHaveBeenCalledWith({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+    expect(traceReady).toHaveBeenCalledWith({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+  });
+
+  it.each(["codex", "claude", "kimi", "pi"] as const)("injects one invocation-scoped MCP into %s and revokes it after the turn", async (engine) => {
     const close = vi.fn();
     const createManagedProcessMcp = vi.fn(() => ({
       command: "/usr/bin/node",
@@ -128,11 +168,11 @@ describe("local console execution access modes", () => {
       env: { MOEBIUS_MANAGED_PROCESS_CAPABILITY: "secret-token" },
       close,
     }));
-    let observed: CodexRunOptions | ClaudeRunOptions | KimiAcpRunOptions | null = null;
+    let observed: CodexRunOptions | ClaudeRunOptions | KimiAcpRunOptions | PiExecutionRunOptions | null = null;
     const result = (runDir: string): CodexRunResult => ({
       ok: true,
       finalText: "done",
-      threadId: `${engine}-session`,
+      threadId: engine === "pi" ? "/tmp/pi/session.jsonl" : `${engine}-session`,
       cachedInputTokens: null,
       runDir,
       stdoutPath: path.join(runDir, "out"),
@@ -155,12 +195,21 @@ describe("local console execution access modes", () => {
         await options.onSessionStarted?.("kimi-session");
         return result(options.runDir);
       }),
+      runPi: vi.fn(async (options) => {
+        observed = options;
+        await options.onSessionStarted?.({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+        return result(options.runDir);
+      }),
     });
     await runner({
       prompt: "start a service",
       runDir: "/tmp/run",
       cwd: "/tmp/workspace",
-      profile: engine === "codex" ? null : { cli: engine, model: "model", effort: "high" },
+      profile: engine === "codex"
+        ? null
+        : engine === "pi"
+          ? { cli: "pi", providerId: "deepseek", providerProfileId: "deepseek-default", model: "deepseek-v4-pro", effort: "high" }
+          : { cli: engine, model: "model", effort: "high" },
       mode: { kind: "full" },
       managedProcess: { sessionId: "session-1", providerRunId: "run-1" },
     });
@@ -174,7 +223,7 @@ describe("local console execution access modes", () => {
       expect(execOptions?.join(" ")).toContain("MOEBIUS_MANAGED_PROCESS_CAPABILITY");
       expect((observed as unknown as CodexRunOptions).extraEnv).toBeUndefined();
     } else {
-      expect((observed as unknown as ClaudeRunOptions | KimiAcpRunOptions).mcpServer?.command).toBe("/usr/bin/node");
+      expect((observed as unknown as ClaudeRunOptions | KimiAcpRunOptions | PiExecutionRunOptions).mcpServer?.command).toBe("/usr/bin/node");
     }
     expect(close).toHaveBeenCalledOnce();
   });
@@ -196,13 +245,14 @@ describe("local console execution access modes", () => {
     expect(codex).not.toHaveBeenCalled();
   });
 
-  it.each(["codex", "claude", "kimi"] as const)("revokes the capability and fails before %s spawn when MCP preflight cannot discover tools", async (engine) => {
+  it.each(["codex", "claude", "kimi", "pi"] as const)("revokes the capability and fails before %s spawn when MCP preflight cannot discover tools", async (engine) => {
     const provider = vi.fn();
     const close = vi.fn();
     const runner = createLocalExecutionRunner({
       runCodex: provider,
       runClaude: provider,
       runKimi: provider,
+      runPi: provider,
       createManagedProcessMcp: () => ({
         command: "/missing/bridge",
         args: [],
@@ -215,7 +265,11 @@ describe("local console execution access modes", () => {
       prompt: "start without shell fallback",
       runDir: "/tmp/run",
       cwd: "/tmp/workspace",
-      profile: engine === "codex" ? null : { cli: engine, model: "model", effort: "high" },
+      profile: engine === "codex"
+        ? null
+        : engine === "pi"
+          ? { cli: "pi", providerId: "deepseek", providerProfileId: "deepseek-default", model: "deepseek-v4-pro", effort: "high" }
+          : { cli: engine, model: "model", effort: "high" },
       mode: { kind: "full" },
       managedProcess: { sessionId: "s", providerRunId: "r" },
     })).rejects.toThrow("tools were not discoverable");

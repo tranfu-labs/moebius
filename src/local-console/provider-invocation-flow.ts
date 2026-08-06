@@ -7,6 +7,7 @@ import {
   planLocalKimiProviderFallback,
   planLocalProviderInvocationStart,
   planLocalProviderSessionFacts,
+  planProviderTracePath,
 } from "./provider-invocation-plan.js";
 import {
   type LocalAgentSessionLinkFact,
@@ -24,7 +25,11 @@ export interface LocalProviderInvocationCallbacks {
   onStructuredActivity(event: unknown): void;
   onExecutionProgress(event: ExecutionProgressEvent): void;
   onSessionStarted(input: { engine: LocalExecutionEngine; externalSessionId: string }): Promise<void>;
-  onExecutionTraceReady(input: { engine: LocalExecutionEngine; externalSessionId: string }): Promise<void>;
+  onExecutionTraceReady(input: {
+    engine: LocalExecutionEngine;
+    externalSessionId: string;
+    tracePath?: string;
+  }): Promise<void>;
 }
 
 export interface LocalProviderInvocationFlowInput {
@@ -128,7 +133,7 @@ export async function executeLocalProviderInvocationFlow(
             linkedAt: ports.nowIso(),
           });
         },
-        onExecutionTraceReady: async ({ engine, externalSessionId }) => {
+        onExecutionTraceReady: async ({ engine, externalSessionId, tracePath }) => {
           const traceDecision = decideLocalProviderTrace({
             engine,
             externalSessionId,
@@ -146,6 +151,7 @@ export async function executeLocalProviderInvocationFlow(
               role: input.role,
               engine,
               externalSessionId,
+              ...planProviderTracePath(tracePath),
               startedAt: ports.nowIso(),
               profileFingerprint: input.executionContext.profileFingerprint,
               agentIdentityFingerprint: input.executionContext.agentIdentityFingerprint,
