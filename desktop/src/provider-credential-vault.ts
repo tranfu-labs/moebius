@@ -1,13 +1,9 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import type { SafeStorage } from "electron";
 
 const VAULT_VERSION = 1;
-const CREDENTIAL_HELPER_TIMEOUT_MS = 5_000;
-const CREDENTIAL_HELPER_MAX_OUTPUT_BYTES = 64 * 1024;
-const SENSITIVE_ENVIRONMENT_NAME = /(?:api_?key|token|secret|password|authorization|credential|private_?key)/iu;
 
 export interface SafeStoragePort {
   isEncryptionAvailable(): Promise<boolean>;
@@ -15,58 +11,30 @@ export interface SafeStoragePort {
   decryptString(value: Buffer): Promise<string>;
 }
 
-export type SafeStorageHelperRequest =
-  | { operation: "is-available" }
-  | { operation: "encrypt"; value: string }
-  | { operation: "decrypt"; value: string };
-
-export type SafeStorageHelperResponse =
-  | { ok: true; operation: "is-available"; available: boolean }
-  | { ok: true; operation: "encrypt"; ciphertext: string }
-  | { ok: true; operation: "decrypt"; value: string }
-  | { ok: false; message: string };
-
-export interface SafeStorageHelperRunner {
-  (request: SafeStorageHelperRequest): Promise<SafeStorageHelperResponse>;
-}
-
-export function createElectronSafeStoragePort(input: {
-  helperEntryPath: string;
-  appName: string;
-  nodePath?: string;
-  homeDir?: string;
-  timeoutMs?: number;
-  runHelper?: SafeStorageHelperRunner;
-}): SafeStoragePort {
-  const runHelper = input.runHelper ?? ((request) => runCredentialHelper({
-    ...input,
-    request,
-  }));
+// Electron 38's safeStorage API is synchronous and only usable from the main
+// process after app.whenReady(). safeStorage.encryptString/decryptString run
+// against a handful of bytes (an API key), so the synchronous call is a
+// microsecond-scale main-thread cost — not worth spawning a helper process
+// for. A prior helper-process design relied on Electron's unpackaged-only
+// "argv path becomes the app entry" behavior, which silently launches a
+// second full app instance (and hits the single-instance lock) in packaged
+// builds instead of running the helper script.
+export function createElectronSafeStoragePort(
+  safeStorage: Pick<SafeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString">,
+): SafeStoragePort {
   return {
     async isEncryptionAvailable() {
       try {
-        const response = await runHelper({ operation: "is-available" });
-        return response.ok && response.operation === "is-available" && response.available;
+        return safeStorage.isEncryptionAvailable();
       } catch {
         return false;
       }
     },
     async encryptString(value) {
-      const response = await runHelper({ operation: "encrypt", value });
-      if (!response.ok || response.operation !== "encrypt") {
-        throw new Error("credential helper encryption failed");
-      }
-      return decodeHelperBuffer(response.ciphertext);
+      return safeStorage.encryptString(value);
     },
     async decryptString(value) {
-      const response = await runHelper({
-        operation: "decrypt",
-        value: value.toString("base64"),
-      });
-      if (!response.ok || response.operation !== "decrypt") {
-        throw new Error("credential helper decryption failed");
-      }
-      return response.value;
+      return safeStorage.decryptString(value);
     },
   };
 }
@@ -189,120 +157,6 @@ async function assertEncryptionAvailable(safeStorage: SafeStoragePort): Promise<
       "当前系统无法使用安全凭据存储，请稍后重试。",
     );
   }
-}
-
-async function runCredentialHelper(input: {
-  helperEntryPath: string;
-  appName: string;
-  request: SafeStorageHelperRequest;
-  nodePath?: string;
-  homeDir?: string;
-  timeoutMs?: number;
-}): Promise<SafeStorageHelperResponse> {
-  const child = spawn(input.nodePath ?? process.execPath, [input.helperEntryPath], {
-    shell: false,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: createCredentialHelperEnvironment({
-      source: process.env,
-      homeDir: input.homeDir ?? os.userInfo().homedir,
-      appName: input.appName,
-    }),
-  });
-  return await collectCredentialHelperResponse(child, input.request, input.timeoutMs ?? CREDENTIAL_HELPER_TIMEOUT_MS);
-}
-
-function createCredentialHelperEnvironment(input: {
-  source: NodeJS.ProcessEnv;
-  homeDir: string;
-  appName: string;
-}): NodeJS.ProcessEnv {
-  const environment = Object.fromEntries(
-    Object.entries(input.source).filter(([name]) =>
-      name !== "ELECTRON_RUN_AS_NODE" && !SENSITIVE_ENVIRONMENT_NAME.test(name)),
-  );
-  return {
-    ...environment,
-    HOME: input.homeDir,
-    USERPROFILE: input.homeDir,
-    MOEBIUS_SAFE_STORAGE_APP_NAME: input.appName,
-  };
-}
-
-async function collectCredentialHelperResponse(
-  child: ChildProcessWithoutNullStreams,
-  request: SafeStorageHelperRequest,
-  timeoutMs: number,
-): Promise<SafeStorageHelperResponse> {
-  return await new Promise<SafeStorageHelperResponse>((resolve, reject) => {
-    let settled = false;
-    let outputBytes = 0;
-    const stdout: Buffer[] = [];
-    const finish = (callback: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      callback();
-    };
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(() => reject(new Error("credential helper timed out")));
-    }, timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => {
-      if (settled) return;
-      outputBytes += chunk.byteLength;
-      if (outputBytes > CREDENTIAL_HELPER_MAX_OUTPUT_BYTES) {
-        child.kill("SIGKILL");
-        finish(() => reject(new Error("credential helper response is too large")));
-        return;
-      }
-      stdout.push(chunk);
-    });
-    child.stderr.resume();
-    child.once("error", () => finish(() => reject(new Error("credential helper could not start"))));
-    child.once("close", (code) => finish(() => {
-      if (code !== 0) {
-        reject(new Error("credential helper exited unexpectedly"));
-        return;
-      }
-      try {
-        const line = Buffer.concat(stdout).toString("utf8").trim();
-        const value = JSON.parse(line) as unknown;
-        resolve(parseSafeStorageHelperResponse(value));
-      } catch {
-        reject(new Error("credential helper response is invalid"));
-      }
-    }));
-    child.stdin.end(`${JSON.stringify(request)}\n`);
-  });
-}
-
-function parseSafeStorageHelperResponse(value: unknown): SafeStorageHelperResponse {
-  if (!isRecord(value) || typeof value.ok !== "boolean") {
-    throw new Error("invalid helper response");
-  }
-  if (!value.ok) {
-    if (typeof value.message !== "string" || value.message.length === 0 || value.message.length > 256) {
-      throw new Error("invalid helper failure");
-    }
-    return { ok: false, message: value.message };
-  }
-  if (value.operation === "is-available" && typeof value.available === "boolean") {
-    return { ok: true, operation: "is-available", available: value.available };
-  }
-  if (value.operation === "encrypt" && typeof value.ciphertext === "string") {
-    return { ok: true, operation: "encrypt", ciphertext: value.ciphertext };
-  }
-  if (value.operation === "decrypt" && typeof value.value === "string") {
-    return { ok: true, operation: "decrypt", value: value.value };
-  }
-  throw new Error("invalid helper success");
-}
-
-function decodeHelperBuffer(value: string): Buffer {
-  if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
-    throw new Error("credential helper returned invalid ciphertext");
-  }
-  return Buffer.from(value, "base64");
 }
 
 function normalizeApiKey(value: string): string {

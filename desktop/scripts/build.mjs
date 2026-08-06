@@ -60,13 +60,6 @@ await build({
   outfile: path.join(dist, "pi-host.js"),
 });
 
-await build({
-  ...common,
-  entryPoints: [path.join(root, "src/provider-credential-helper.ts")],
-  outdir: undefined,
-  outfile: path.join(dist, "provider-credential-helper.js"),
-});
-
 const mainBundle = await fs.readFile(path.join(dist, "main.js"), "utf8");
 assertStaticNodeBundle(mainBundle, "main.js");
 

@@ -363,7 +363,6 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/onboarding/ipc.ts",
   "desktop/src/preload.ts",
   "desktop/src/provider-credential-vault.ts",
-  "desktop/src/provider-credential-helper.ts",
   "desktop/src/provider-profile-contract.ts",
   "desktop/src/provider-profile-ipc.ts",
   "desktop/src/provider-profile-service.ts",

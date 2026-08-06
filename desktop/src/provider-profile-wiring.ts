@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type { SafeStorage } from "electron";
 
 import {
   createPiExecutionAdapter,
@@ -23,6 +24,7 @@ export function createDesktopProviderProfileWiring(input: {
   dirname: string;
   agentTeamService: AgentTeamService;
   seedPending: () => boolean;
+  safeStorage: Pick<SafeStorage, "isEncryptionAvailable" | "encryptString" | "decryptString">;
   getSessionRuntime(): {
     updateSessionMemberExecution(input: {
       sessionId: string;
@@ -37,14 +39,7 @@ export function createDesktopProviderProfileWiring(input: {
   });
   const vault = createProviderCredentialVault({
     filePath: path.join(input.dataRoot, ".state", "provider-credentials-v1.json"),
-    safeStorage: createElectronSafeStoragePort({
-      helperEntryPath: path.join(input.dirname, "provider-credential-helper.js"),
-      // Electron's development package name is `@moebius/desktop`; macOS
-      // safeStorage cannot use that slash-delimited package scope as an app
-      // identity. Keep the credential service name stable across dev and
-      // packaged builds.
-      appName: "Moebius",
-    }),
+    safeStorage: createElectronSafeStoragePort(input.safeStorage),
   });
   const hostEntryPath = path.join(input.dirname, "pi-host.js");
   const listReferences = async (profileId: string) => {

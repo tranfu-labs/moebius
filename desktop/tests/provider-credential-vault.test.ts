@@ -1,12 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CredentialVaultError,
   createElectronSafeStoragePort,
   createProviderCredentialVault,
-  type SafeStorageHelperRequest,
   type SafeStoragePort,
 } from "../src/provider-credential-vault.js";
 
@@ -115,34 +114,59 @@ describe("provider credential vault", () => {
     await expect(vault.has(orphaned)).resolves.toBe(false);
   });
 
-  it("uses an asynchronous helper transport instead of invoking safeStorage in the caller", async () => {
-    const calls: SafeStorageHelperRequest[] = [];
-    const safeStorage = createElectronSafeStoragePort({
-      helperEntryPath: "/tmp/provider-credential-helper.js",
-      appName: "Moebius",
-      runHelper: async (request) => {
-        calls.push(request);
-        if (request.operation === "is-available") {
-          return { ok: true, operation: request.operation, available: true };
-        }
-        if (request.operation === "encrypt") {
-          return {
-            ok: true,
-            operation: request.operation,
-            ciphertext: Buffer.from(`protected:${request.value}`, "utf8").toString("base64"),
-          };
-        }
-        return {
-          ok: true,
-          operation: request.operation,
-          value: Buffer.from(request.value, "base64").toString("utf8").slice("protected:".length),
-        };
+  it("delegates directly to the injected safeStorage without spawning a subprocess", async () => {
+    // Regression guard: an earlier design spawned a child process to reach
+    // Electron's safeStorage, which only worked because unpackaged Electron
+    // treats an argv path as an app entry — packaged builds ignore that and
+    // relaunch the app's real entry instead, hitting the single-instance
+    // lock and never running the helper. Calling safeStorage synchronously,
+    // in-process, sidesteps that entirely.
+    const isEncryptionAvailable = vi.fn(() => true);
+    const encryptString = vi.fn((value: string) => Buffer.from(`protected:${value}`, "utf8"));
+    const decryptString = vi.fn((value: Buffer) => value.toString("utf8").slice("protected:".length));
+    const port = createElectronSafeStoragePort({ isEncryptionAvailable, encryptString, decryptString });
+
+    expect(await port.isEncryptionAvailable()).toBe(true);
+    const ciphertext = await port.encryptString("sk-secret-value");
+    await expect(port.decryptString(ciphertext)).resolves.toBe("sk-secret-value");
+    expect(isEncryptionAvailable).toHaveBeenCalledOnce();
+    expect(encryptString).toHaveBeenCalledWith("sk-secret-value");
+    expect(decryptString).toHaveBeenCalledWith(ciphertext);
+  });
+
+  it("fails closed instead of throwing when isEncryptionAvailable itself throws", async () => {
+    const port = createElectronSafeStoragePort({
+      isEncryptionAvailable: () => {
+        throw new Error("keychain unavailable");
+      },
+      encryptString: () => {
+        throw new Error("unused");
+      },
+      decryptString: () => {
+        throw new Error("unused");
       },
     });
 
-    expect(await safeStorage.isEncryptionAvailable()).toBe(true);
-    const ciphertext = await safeStorage.encryptString("sk-secret-value");
-    await expect(safeStorage.decryptString(ciphertext)).resolves.toBe("sk-secret-value");
-    expect(calls.map((call) => call.operation)).toEqual(["is-available", "encrypt", "decrypt"]);
+    expect(await port.isEncryptionAvailable()).toBe(false);
+  });
+
+  it("wraps a failing injected safeStorage into CredentialVaultError end to end", async () => {
+    const { filePath } = await fixture();
+    const vault = createProviderCredentialVault({
+      filePath,
+      safeStorage: createElectronSafeStoragePort({
+        isEncryptionAvailable: () => true,
+        encryptString: () => {
+          throw new Error("native encryption failed");
+        },
+        decryptString: () => {
+          throw new Error("unused");
+        },
+      }),
+    });
+
+    await expect(vault.stage("sk-secret-value")).rejects.toMatchObject({
+      code: "CREDENTIAL_ENCRYPTION_FAILED",
+    });
   });
 });

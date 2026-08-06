@@ -8,6 +8,14 @@ import {
   resolveDesktopInstanceUserDataPath,
 } from "./data-root.js";
 
+// Electron's dev package name is the scoped `@moebius/desktop`; macOS
+// safeStorage cannot use that slash-delimited scope as a Keychain service
+// identity. Set the app name explicitly and before the first
+// app.getPath("userData") call below so dev and packaged builds resolve the
+// same safeStorage identity (packaged builds already read this name from
+// electron-builder's productName, so this is a no-op there).
+const SAFE_STORAGE_APP_NAME = "Moebius";
+
 export function configureDesktopProcess(input: {
   app: App;
   moduleUrl: string;
@@ -19,6 +27,7 @@ export function configureDesktopProcess(input: {
   seedRoot: string;
   seedTeamsRoot: string;
 } {
+  input.app.setName(SAFE_STORAGE_APP_NAME);
   const dirname = path.dirname(fileURLToPath(input.moduleUrl));
   const projectRoot = path.resolve(dirname, "..", "..");
   const dataRoot = resolveDesktopDataRoot({
