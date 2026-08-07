@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-07
+
+### 修复
+
+- 修复 Markdown 渲染将普通中文文本中的斜杠误识别为文件引用的问题：收紧裸路径起止判定并增加形状门禁，「成本/收益」类文本不再成链，工程路径带扩展名或行号时仍可点击（#198）。
+- 修复 Kimi ACP 流式输出把独立成 chunk 的空白（`##`/`-` 后的空格、`\n\n`）整体丢弃导致 Agent 输出无法按 Markdown 渲染的问题：chunk 原文无条件累积，空响应契约改由可见性判定层守住（#200）。
+
+### 变更
+
+- 主会话目录轨收起态留白改为覆盖式悬浮面板：正文、标题与输入框位置不随展开变化，composer 与消息列左缘对齐（#199）。
+- 移除 Agent 正文 68ch 限宽，正文占满内容列（#199）。
+- 退役 console-ui design-refs 参考资产：dashboard/onboarding/app.css 与图标集删除，home-page.html 迁至官网目录，brand-spec 与 refs 迁入 docs/design-explorations/console-ui（#199）。
+- 限制团队选择器菜单高度，并将团队评审变更范围收敛到 Agent 提示词（#199）。
+
 ## [0.4.1] - 2026-08-07
 
 ### 修复
@@ -205,7 +219,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tranfu-labs/moebius/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...v0.3.4
