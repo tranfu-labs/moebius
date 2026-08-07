@@ -48,6 +48,7 @@ export interface NewConversationTeamOption {
     executionProfile?: {
       effectiveProfile: {
         cli: "codex" | "claude" | "kimi" | "pi";
+        providerId?: string;
       };
     };
   }>;
@@ -264,7 +265,20 @@ export function NewConversationPage({
                         data-team-key={team.teamKey}
                         onSelect={() => team.teamKey !== selectedTeamKey && onSelectTeam(team.teamKey)}
                       >
-                        <AgentTeamOption team={team} />
+                        <AgentTeamOption
+                          team={{
+                            ...team,
+                            members: team.members.map((member) => ({
+                              ...member,
+                              engine: member.executionProfile === undefined
+                                ? undefined
+                                : {
+                                    cli: member.executionProfile.effectiveProfile.cli,
+                                    providerId: member.executionProfile.effectiveProfile.providerId,
+                                  },
+                            })),
+                          }}
+                        />
                       </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuContent>

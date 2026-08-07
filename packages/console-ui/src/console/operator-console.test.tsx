@@ -862,19 +862,19 @@ describe("OperatorConsole", () => {
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.tagName === "BUTTON")).toBe(true);
     expect(rows.every((row) => row.querySelector("svg") === null)).toBe(true);
-    expect(within(rows[0]).getByText("官方来源")).toBeVisible();
+    const groups = screen.getAllByTestId("agent-team-group");
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["official", "mine"]);
+    expect(within(groups[0]!).getAllByTestId("agent-team-row")).toHaveLength(1);
+    expect(within(groups[1]!).getAllByTestId("agent-team-row")).toHaveLength(2);
     expect(within(rows[1]).getByText("未完成")).toBeVisible();
     expect(within(rows[2]).getByText("需要修复")).toBeVisible();
-    expect(within(rows[0]).getByText("5 名成员 · 主 Agent：开发经理")).toBeVisible();
+    expect(within(rows[0]).getByText("开发经理 接单 · 5 人")).toBeVisible();
 
+    // 主 Agent 占据卡片主头像后，成员条只承载「还有谁」：5 人 → 其余 4 人全部铺开
     const memberStrip = within(rows[0]).getByTestId("agent-team-members");
-    expect(within(memberStrip).getByTitle("开发经理")).toHaveAccessibleName("开发经理");
-    expect(memberStrip.querySelectorAll("[data-agent-initial-avatar]")).toHaveLength(3);
-    for (const memberName of ["开发经理", "开发", "测试"]) {
-      expect(within(memberStrip).getByTitle(memberName)).toHaveClass("w-28");
-    }
-    expect(within(memberStrip).getByText("· 主 Agent")).toBeVisible();
-    expect(within(memberStrip).getByLabelText("还有 2 名成员")).toHaveTextContent("＋2");
+    expect(memberStrip.querySelectorAll("[data-agent-portrait]")).toHaveLength(4);
+    expect(within(memberStrip).getByRole("group"))
+      .toHaveAccessibleName("成员：开发经理、开发、测试、产品、安全");
     expect(screen.queryByText("修改信息")).not.toBeInTheDocument();
     expect(screen.queryByText("复制并编辑")).not.toBeInTheDocument();
     expect(screen.queryByText("删除团队")).not.toBeInTheDocument();
@@ -916,9 +916,8 @@ describe("OperatorConsole", () => {
     const row = screen.getByTestId("agent-team-row");
     expect(screen.getAllByTestId("agent-team-row")).toHaveLength(1);
     expect(row).toHaveAttribute("data-layout", "narrow");
-    expect(row).toHaveClass("grid-cols-1");
-    expect(within(row).getByTestId("agent-team-members")).toHaveClass("border-t");
-    expect(within(row).getByLabelText("还有 2 名成员")).toHaveTextContent("＋2");
+    expect(within(row).getByTestId("agent-team-members").querySelectorAll("[data-agent-portrait]"))
+      .toHaveLength(4);
   });
 
   it("opens the real detail editor for the whole row and restores list scroll on return", () => {
