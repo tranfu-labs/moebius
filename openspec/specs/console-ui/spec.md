@@ -2458,9 +2458,11 @@ Source: docs/product/pages/main-conversation.md#时间线
 
 共享 Markdown renderer MUST 只把规范化后在根 `/` 之外至少包含一个实际路径段的目标解析为应用内文件引用。该边界 MUST 同时适用于语法有效的显式 Markdown 绝对 POSIX 文件目标、普通文本中的裸绝对 POSIX 路径及整个 inline code；单独 `/`、规范化后仍为 `/` 的目标以及 `A / B` 中作为分隔符的 `/` MUST 保持原有文本语义，MUST NOT 登记文件 intent 或触发文件引用回调。
 
-有效文件引用的可选 `:line[:column]`、URI 解码、路径规范化与私有 intent 身份 MUST 保持现有行为，并在 path、line、column 之外保留行号是否由正文显式给出；无行号路径与显式 `:1` MUST NOT 合并为同一初始显示意图。renderer MUST NOT 根据扩展名、磁盘存在性、目标是否为目录或可读性预判引用；`/tmp`、无扩展名路径和不存在目标仍 MUST 进入文件引用回调，点击后的目录、不存在或不可读结果 MUST 由文件面板反馈。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
+有效文件引用的可选 `:line[:column]`、URI 解码、路径规范化与私有 intent 身份 MUST 保持现有行为，并在 path、line、column 之外保留行号是否由正文显式给出；无行号路径与显式 `:1` MUST NOT 合并为同一初始显示意图。renderer MUST NOT 根据磁盘存在性、目标是否为目录或可读性预判引用，也不对 inline code、显式 Markdown 文件链接与宽松档裸路径做扩展名约束；`/tmp`、无扩展名路径和不存在目标在通过边界判定后仍 MUST 进入文件引用回调，点击后的目录、不存在或不可读结果 MUST 由文件面板反馈。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
 
 普通文本中的尾随句子标点 MUST 留在文件引用外；有效 inline code 文件目标 MUST 保留代码视觉并可点击。已有 Markdown link、图片与 fenced code MUST NOT 被递归拆成嵌套文件引用，其中的路径文本仍 MUST 保持原文。任何正文 HTTPS URL 都仍是普通外链并走既有确认回调；图片、`file:`、`javascript:`、data 与自定义协议仍按既有边界阻断。点击有效文件引用 MUST 只把规范化的 path、line、column 交给文件引用回调，MUST NOT 触发浏览器导航、外链确认或 `window.open`。
+
+普通文本中的裸绝对 POSIX 路径 MUST 按斜杠前一个字符分级判定起点：空白、行首与半角符号之后使用宽松档（规范化路径至少一个段含拉丁字母）；中日韩文字与全角标点之后使用严格档（末段带扩展名，即 `.` 加 1–8 位拉丁字母数字，或整体带显式 `:行号`）；拉丁字母、数字、`.`、`_`、`-`、`:`、`/` 与 `~` 之后不构成路径起点。全角括号 `（）「」【】` 与反斜杠 MUST 终止裸路径扫描，`~` MUST NOT 成为路径起点。这些约束只作用于裸文本扫描，不改变 inline code 与显式 Markdown 文件链接的既有行为。紧贴中日韩文字且无扩展名、无显式行号的目标保持普通文本，路径含全角括号的目标在括号处截断，均属接受代价；日期（`2026/08/07`）、分数（`1/2`）与 HTTPS URL MUST NOT 成为文件引用。
 
 #### Scenario: 单独斜杠保持普通文本
 
@@ -2535,6 +2537,36 @@ Source: docs/product/pages/main-conversation.md#时间线
 - WHEN 用户点击该链接
 - THEN 它只进入外链确认流程
 - AND 文件引用与成员 mention 回调都不触发
+
+#### Scenario: 紧贴中日韩文字的裸路径需要更强形状证据
+
+- GIVEN 正文包含 `工程文件在/工程/笔记.md`、`产物在/Users/wing/app.ts` 与 `见/src/index.ts:42`
+- WHEN 主时间线渲染这些文本
+- THEN 三者均呈现为文件引用并分别携带路径与行号信息
+- GIVEN 正文包含 `在我构建过程中被另一个正在运行的进程/会话实时修改（i18n 文件`、`成本/收益如何计算` 与 `成本/收益ROI计算`
+- WHEN 主时间线渲染
+- THEN 三者均保持普通文本，不登记文件 intent
+
+#### Scenario: 宽松档要求至少一个拉丁字母段
+
+- GIVEN 正文包含 `取 /2 作为系数` 与 `rm -rf /tmp/cache && node /app/x.js`
+- WHEN 主时间线渲染
+- THEN `/2` 保持普通文本
+- AND `/tmp/cache` 与 `/app/x.js` 各自呈现为文件引用
+
+#### Scenario: 全角括号与反斜杠终止裸路径
+
+- GIVEN 正文包含 `/tmp/a（备份）`、`正则 /\d+/ 匹配数字` 与 `家目录 ~/projects/x`
+- WHEN 主时间线渲染
+- THEN 只呈现 `/tmp/a` 为文件引用且全角括号保持普通文本
+- AND `/\d+/` 与 `~/projects/x` 整体保持普通文本
+
+#### Scenario: 日期、分数与 URL 不进入文件引用
+
+- GIVEN 正文包含 `2026/08/07`、`1/2`、`(1/2)` 与 `https://example.com/a`
+- WHEN 主时间线渲染
+- THEN 日期与分数保持普通文本
+- AND HTTPS URL 走既有外链确认流程而不进入文件引用回调
 
 ### Requirement: 已知团队 mention 显示可读名称并连接既有团队详情
 
