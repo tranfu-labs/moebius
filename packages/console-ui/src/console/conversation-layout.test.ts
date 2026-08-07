@@ -34,9 +34,11 @@ describe("conversation timeline layout decisions", () => {
     });
   });
 
-  it("reserves the expanded relay hit area only when it would overlap the message column", () => {
-    expect(planConversationRelayClearance(760, 82)).toBe(106);
-    expect(planConversationRelayClearance(1_200, 82)).toBe(32);
-    expect(planConversationRelayClearance(1_200, 224)).toBe(248);
+  it("reserves only the collapsed relay rail footprint and overlays when expanded", () => {
+    expect(planConversationRelayClearance(760)).toBe(56);
+    expect(planConversationRelayClearance(903)).toBe(56);
+    expect(planConversationRelayClearance(951)).toBe(56);
+    expect(planConversationRelayClearance(952)).toBe(32);
+    expect(planConversationRelayClearance(1_200)).toBe(32);
   });
 });

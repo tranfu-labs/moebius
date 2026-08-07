@@ -1202,8 +1202,9 @@ describe("OperatorConsole", () => {
     expect(title).toHaveClass("w-full", "max-w-[840px]", "text-left");
     expect(composer).toHaveClass("w-full", "max-w-[840px]");
     expect(composer).not.toHaveClass("max-w-[720px]");
-    expect(composerHost).toHaveClass("px-8");
-    expect(composerHost).not.toHaveClass("px-6");
+    expect(composerHost).toHaveClass("pr-8");
+    expect(composerHost).not.toHaveClass("px-8", "px-6");
+    expect(composerHost).toHaveStyle({ paddingLeft: "56px" });
     expect(title).not.toHaveClass("pl-10");
   });
 
@@ -1743,7 +1744,7 @@ describe("OperatorConsole", () => {
     expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
     expect(outputButton).not.toHaveTextContent("完整输出");
     expect(outputButton.querySelector("svg")).not.toBeNull();
-    expect(outputButton.parentElement).toHaveClass("relative", "max-w-[68ch]", "pl-8");
+    expect(outputButton.parentElement).toHaveClass("relative", "pl-8");
     expect(screen.queryByText(/路径已隐藏/u)).not.toBeInTheDocument();
   });
 

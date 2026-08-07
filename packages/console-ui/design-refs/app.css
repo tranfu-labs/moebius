@@ -359,7 +359,7 @@ textarea:focus-visible,
 }
 .msg:hover .msg-time { opacity: 1; }
 .msg-body { font-size: 14px; color: var(--fg); padding-left: 32px; }
-/* 成员长消息限宽:正文 ≤68ch(约 39 个汉字/行),短消息不受影响;你的气泡另有 75% 上限 */
+/* 已废止(2026-08-06 产品决定):成员正文不再限宽 68ch,占满 840px 内容列,保留 32px 左缩进;见 openspec/changes/fix-conversation-relay-clearance-state */
 .msg:not(.is-user) .msg-body { max-width: 68ch; }
 /* 时间空隙分隔:相邻消息间隔 ≥15 分钟时标出真实会话节奏,与 hover 才显示的精确时间互补 */
 .msg-gap {
