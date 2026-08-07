@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { MarkdownMessage, safeMarkdownUrlTransform } from "./markdown-message";
+import type { MarkdownFileReference } from "./markdown-internal-reference";
 
 describe("MarkdownMessage", () => {
   it("renders user and agent Markdown with GFM structure", () => {
@@ -324,5 +325,125 @@ describe("MarkdownMessage", () => {
     expect(onOpenTeamMember).toHaveBeenCalledWith("implementer");
     expect(screen.getByText((_text, element) =>
       element?.tagName === "P" && element.textContent === "请@实现者接手")).toBeInTheDocument();
+  });
+
+  it.each<[string, string, MarkdownFileReference]>([
+    ["工程文件在/工程/笔记.md", "/工程/笔记.md", { path: "/工程/笔记.md", line: 1, column: null, hasExplicitLine: false }],
+    ["产物在/Users/wing/app.ts", "/Users/wing/app.ts", { path: "/Users/wing/app.ts", line: 1, column: null, hasExplicitLine: false }],
+    ["见/src/index.ts:42", "/src/index.ts:42", { path: "/src/index.ts", line: 42, column: null, hasExplicitLine: true }],
+    ["产物在 /Users/wing/app.ts 里", "/Users/wing/app.ts", { path: "/Users/wing/app.ts", line: 1, column: null, hasExplicitLine: false }],
+    ["见 /src/index.ts:42:7", "/src/index.ts:42:7", { path: "/src/index.ts", line: 42, column: 7, hasExplicitLine: true }],
+    ["路径是 /a/b.ts。", "/a/b.ts", { path: "/a/b.ts", line: 1, column: null, hasExplicitLine: false }],
+    ["[说明](/docs/a.md)", "说明", { path: "/docs/a.md", line: 1, column: null, hasExplicitLine: false }],
+  ])("links the bare absolute path in %s", (content, buttonName, expected) => {
+    const onOpenFileReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content={content}
+        onOpenFileReference={onOpenFileReference}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+
+    expect(onOpenFileReference).toHaveBeenCalledOnce();
+    expect(onOpenFileReference).toHaveBeenCalledWith(expected);
+  });
+
+  it("links every absolute path in a command line", () => {
+    const onOpenFileReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content="rm -rf /tmp/cache && node /app/x.js"
+        onOpenFileReference={onOpenFileReference}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/cache" }));
+    fireEvent.click(screen.getByRole("button", { name: "/app/x.js" }));
+
+    expect(onOpenFileReference.mock.calls).toEqual([
+      [{ path: "/tmp/cache", line: 1, column: null, hasExplicitLine: false }],
+      [{ path: "/app/x.js", line: 1, column: null, hasExplicitLine: false }],
+    ]);
+  });
+
+  it.each([
+    "在我构建过程中被另一个正在运行的进程/会话实时修改（i18n 文件",
+    "成本/收益如何计算",
+    "性能/价格 权衡",
+    "成本/收益ROI计算",
+    "正则 /\\d+/ 匹配数字",
+    "参考 https：/example.com/a",
+    "家目录 ~/projects/x",
+    "取 /2 作为系数",
+    "（1 /2）作为系数",
+  ])("keeps the natural-language slash in %s as plain text", (content) => {
+    render(
+      <MarkdownMessage
+        content={content}
+        onOpenFileReference={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(content, { exact: true })).toBeVisible();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("keeps a slash inside emphasis as plain text", () => {
+    render(
+      <MarkdownMessage
+        content="*强调/强调*"
+        onOpenFileReference={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("强调/强调")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "/强调" })).not.toBeInTheDocument();
+  });
+
+  it("keeps full-width parentheses outside a bare path", () => {
+    const onOpenFileReference = vi.fn();
+    render(
+      <MarkdownMessage
+        content="/tmp/a（备份）"
+        onOpenFileReference={onOpenFileReference}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/a" }));
+
+    expect(onOpenFileReference).toHaveBeenCalledOnce();
+    expect(onOpenFileReference).toHaveBeenCalledWith({
+      path: "/tmp/a",
+      line: 1,
+      column: null,
+      hasExplicitLine: false,
+    });
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P" && element.textContent === "/tmp/a（备份）")).toBeVisible();
+  });
+
+  it("keeps dates, fractions and HTTPS URLs outside file-reference detection", () => {
+    const onOpenFileReference = vi.fn();
+    const onOpenExternalLink = vi.fn();
+    render(
+      <MarkdownMessage
+        content="日期 2026/08/07 与分数 1/2、(1/2)，外链 https://example.com/a"
+        onOpenFileReference={onOpenFileReference}
+        onOpenExternalLink={onOpenExternalLink}
+      />,
+    );
+
+    expect(screen.getByText((_text, element) =>
+      element?.tagName === "P"
+      && element.textContent === "日期 2026/08/07 与分数 1/2、(1/2)，外链 https://example.com/a")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^\// })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "https://example.com/a" }));
+    fireEvent.click(screen.getByRole("button", { name: /打开链接/u }));
+
+    expect(onOpenFileReference).not.toHaveBeenCalled();
+    expect(onOpenExternalLink).toHaveBeenCalledWith("https://example.com/a");
   });
 });
