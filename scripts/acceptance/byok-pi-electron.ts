@@ -184,7 +184,25 @@ async function waitForPartialMigrationAndCrash(
     timeoutMs: 10_000,
     snapshot: () => ({ exitCode: child.exitCode, signalCode: child.signalCode }),
   });
-  return progress;
+  // The detection snapshot predates the kill; the migration keeps committing
+  // in between. The restart UI reflects the post-mortem journal, so compare
+  // against the final committed set, not the detection-time one.
+  return {
+    ...progress,
+    completedOwnerIds: readFinalCompletedOwnerIds(sqlitePath, progress.operationId),
+  };
+}
+
+function readFinalCompletedOwnerIds(sqlitePath: string, operationId: string): string[] {
+  const database = new DatabaseSync(sqlitePath);
+  try {
+    const row = database.prepare(
+      `SELECT completed_targets_json FROM provider_operations WHERE operation_id = ?`,
+    ).get(operationId) as Record<string, unknown> | undefined;
+    return row === undefined ? [] : parseStringArray(row.completed_targets_json);
+  } finally {
+    database.close();
+  }
 }
 
 function parseStringArray(value: unknown): string[] {
@@ -271,6 +289,7 @@ try {
   await replacementInput.fill(validKey);
   await readyCard.getByRole("button", { name: "验证全部 1 个模型" }).click();
   await replacementInput.waitFor({ state: "detached", timeout: 120_000 });
+  await readyCard.getByText("已就绪", { exact: true }).waitFor({ timeout: 120_000 });
   record(
     "real-key-rotation-validates-all-models",
     await readyCard.getByText("已就绪", { exact: true }).isVisible(),
@@ -441,9 +460,9 @@ try {
   await newConversation.getByTestId("new-conversation-team-picker").click();
   const teamOption = page.locator(`[data-testid="new-conversation-team-option"][data-team-key="${teamKey}"]`);
   await teamOption.waitFor();
-  // 团队菜单高于视口时选项可能落在视口外（Radix 内容无 max-height 约束），
-  // 用键盘 Enter 选中与真实键盘操作等价，且不依赖视口内点击坐标。
-  await teamOption.press("Enter");
+  // 团队菜单已有 max-height + 滚动约束（见 new-conversation-page 的 DropdownMenuContent），
+  // 选项始终落在视口内，直接鼠标点击即真实用户路径。
+  await teamOption.click();
   await newConversation.locator('input[type="file"]').setInputFiles(attachmentPath);
   await newConversation.getByText("acceptance-context.txt", { exact: true }).waitFor();
   const taskPrompt = "@editorial-production 请直接使用工具完成这个确定性任务，不要转交，也不要只给文字说明：先调用 read_file 读取附件并记住其中的 ATTACHMENT_SENTINEL；再调用 read_file 读取 fixture.txt，用 edit_file、apply_patch 或 write_file 把唯一一行 alpha 改为 beta；然后调用 exec_command 运行 node verify.mjs。只有命令退出码为 0 后，才在最终回复中写出附件里的完整 sentinel。";

@@ -247,7 +247,13 @@ export function NewConversationPage({
                       <ChevronDown className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" className="w-[min(360px,calc(100vw-24px))]">
+                  <DropdownMenuContent
+                    align="start"
+                    side="top"
+                    collisionPadding={12}
+                    className="scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain"
+                    style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
+                  >
                     {teams.map((team) => (
                       <DropdownMenuCheckboxItem
                         key={team.teamKey}
