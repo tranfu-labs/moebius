@@ -64,7 +64,6 @@ import {
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
 import {
-  deriveConversationRelayLayout,
   projectConversationRelayEvents,
   type ConversationRelayEvent,
 } from "@/console/conversation-relay-rail-model";
@@ -1082,10 +1081,7 @@ export function OperatorConsole({
   );
   const conversationRelayClearance = conversationRelayEvents.length === 0
     ? null
-    : planConversationRelayClearance(
-        conversationPaneWidth,
-        deriveConversationRelayLayout(conversationRelayEvents, conversationPaneWidth).expandedWidth,
-      );
+    : planConversationRelayClearance(conversationPaneWidth);
   const resultCardVisible = shouldShowResultCard({
     diffAvailable: workspaceDiff.available,
     isRunning: displayedActiveRuns.length > 0 || selectedSession?.status === "running" || (selectedSession?.runningCount ?? 0) > 0,
@@ -2533,10 +2529,15 @@ export function OperatorConsole({
               ref={attachConversationDock}
               className={cn(
                 "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-4 pt-3",
-                MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+                conversationRelayClearance === null
+                  ? MAIN_CONVERSATION_COLUMN_GUTTER_CLASS
+                  : "pr-8",
                 analysisPanelReservesSpace && "pr-[312px]",
               )}
               data-testid="conversation-bottom-dock"
+              style={conversationRelayClearance === null
+                ? undefined
+                : { paddingLeft: conversationRelayClearance }}
             >
                 <div className={cn("pointer-events-auto mx-auto w-full", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
                   <SessionTeamUpdateNotice
@@ -3927,7 +3928,7 @@ function TimelineEntry({
           />
         ) : null}
       </div>
-      <div className="relative max-w-[68ch] pl-8">
+      <div className="relative pl-8">
       {message.speaker === "system" ? (
         <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message, t)}</div>
       ) : (

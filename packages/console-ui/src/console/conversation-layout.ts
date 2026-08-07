@@ -1,21 +1,19 @@
+import { CONVERSATION_RELAY_COLLAPSED_WIDTH } from "@/console/conversation-relay-rail-model";
+
 export const MAIN_CONVERSATION_COLUMN_WIDTH_CLASS = "max-w-[840px]";
 export const MAIN_CONVERSATION_COLUMN_GUTTER_CLASS = "px-8";
 const MAIN_CONVERSATION_COLUMN_MAX_WIDTH_PX = 840;
 const MAIN_CONVERSATION_COLUMN_GUTTER_PX = 32;
 const CONVERSATION_RELAY_LEFT_PX = 12;
-const CONVERSATION_RELAY_GAP_PX = 12;
 
-export function planConversationRelayClearance(
-  paneWidth: number,
-  relayExpandedWidth: number,
-): number {
+export function planConversationRelayClearance(paneWidth: number): number {
   const naturalColumnLeft = Math.max(
     MAIN_CONVERSATION_COLUMN_GUTTER_PX,
     Math.floor((paneWidth - MAIN_CONVERSATION_COLUMN_MAX_WIDTH_PX) / 2),
   );
-  const requiredColumnLeft = CONVERSATION_RELAY_LEFT_PX
-    + relayExpandedWidth
-    + CONVERSATION_RELAY_GAP_PX;
+  // 覆盖式展开：留白只让开收起态目录轨（12px 内缩 + 44px 收起视口），
+  // 展开面板以悬浮覆盖层呈现、不参与留白计算（见 design.md 分支阈值推导）。
+  const requiredColumnLeft = CONVERSATION_RELAY_LEFT_PX + CONVERSATION_RELAY_COLLAPSED_WIDTH;
   return naturalColumnLeft >= requiredColumnLeft
     ? MAIN_CONVERSATION_COLUMN_GUTTER_PX
     : requiredColumnLeft;

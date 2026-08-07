@@ -4,14 +4,14 @@
 
 ## 正式文件
 
-- `index.html`：当前正式营销页；2026-07-29 经用户明确确认，由 `packages/console-ui/design-refs/home-page.html` 提升为深色工作台首页，并接入公开 GitHub 仓库与 Releases 下载。
+- `index.html`：当前正式营销页；2026-07-29 经用户明确确认，由 `sites/marketeam/design-refs/home-page.html` 提升为深色工作台首页，并接入公开 GitHub 仓库与 Releases 下载。
 - `rebrand-narrative-plan.md`：2026-07-30 品牌与叙事改版方案（待评审）。诊断两层病灶（无可占有品牌资产、无情绪叙事），决策走风格化不拟人路线（Leader Agent 固定词 + 「欲望开场、对照收尾」叙事线 + 战吼口号；旧世界对照按参照站实证放页面后段作情绪高潮，不用痛开场）；视觉签名不由文字拍板，列了三个候选方向（首选角色色板系统），由样张同视口截图对比决出。名字故事只以文案存在，明确不做环形/缎带/∞ 字面隐喻图形。实施须按该文档「实施拆分」先出样张，评审收敛前不改 `index.html`。
 - `index-pre-atlas.html`：Atlas 提升前的正式营销页归档，只用于回看和差异比较，不作为部署入口。
 - `DEPLOY.md`：静态站点部署说明。
 
 ### 深色工作台首页正式收敛（2026-07-29）
 
-设计参考 HTML 继续留在 `packages/console-ui/design-refs/` 作为来源锚点；正式 `index.html` 在其基础上接入生产品牌资产、GitHub 仓库、Releases 与可降级的最新 Apple Silicon DMG 解析。`index-field-atlas-a31f.html` 和 `style-atlas-a31f.html` 只保留为历史设计参考，不再代表正式入口。
+设计参考 HTML 保留在 `sites/marketeam/design-refs/` 作为来源锚点；正式 `index.html` 在其基础上接入生产品牌资产、GitHub 仓库、Releases 与可降级的最新 Apple Silicon DMG 解析。`index-field-atlas-a31f.html` 和 `style-atlas-a31f.html` 只保留为历史设计参考，不再代表正式入口。
 
 ## 品牌叙事样张（2026-07-30）
 

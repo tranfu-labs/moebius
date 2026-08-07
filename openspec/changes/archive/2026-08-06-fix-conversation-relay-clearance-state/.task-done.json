@@ -1,0 +1,7 @@
+{
+  "phase": "implement",
+  "status": "done",
+  "change": "fix-conversation-relay-clearance-state",
+  "completedAt": "2026-08-06",
+  "summary": "窄容器留白改为固定收起态 56px + 展开面板覆盖式;composer 接入同一 clearance;移除 68ch 限宽;A/B/C 三组真实运行验收全过(evidence 见系统临时目录 moebius-relay-overlay-clearance-*)"
+}
