@@ -11,6 +11,7 @@ import {
   serializeTeamOnboardingOrchestration,
 } from "../team-onboarding-orchestration.js";
 import type { AiTeamBuilderProposal } from "./validator.js";
+import { DEFAULT_TEAM_EXECUTION_PROFILE, type ExecutionProfile, type ExecutionProfileBinding } from "../team-execution-profile.js";
 import type { AiTeamWriteStorePort } from "./team-write-contract.js";
 import { AiTeamWriterError } from "./team-write-error.js";
 import {
@@ -32,13 +33,15 @@ export interface AiTeamWriterOptions {
   store: AiTeamWriteStorePort;
   register: (snapshot: TeamSnapshot) => Promise<void>;
   rollbackRecord: (input: { dataRoot: string; teamId: string }) => Promise<void>;
+  replaceBindings?: (input: { dataRoot: string; ownership: "user"; teamId: string; bindings: Readonly<Record<string, ExecutionProfileBinding>> }) => Promise<void>;
+  removeBindings?: (input: { dataRoot: string; ownership: "user"; teamId: string }) => Promise<void>;
   createId: () => string;
 }
 
 export class AiTeamWriter {
   constructor(private readonly options: AiTeamWriterOptions) {}
 
-  async create(dataRoot: string, proposal: AiTeamBuilderProposal): Promise<AiTeamWriterResult> {
+  async create(dataRoot: string, proposal: AiTeamBuilderProposal, profile: ExecutionProfile = DEFAULT_TEAM_EXECUTION_PROFILE): Promise<AiTeamWriterResult> {
     const writePlan = planAiTeamWrite(proposal, this.options.createId());
     if (!writePlan.ok) {
       throw new AiTeamWriterError("The current AI team proposal is invalid.");
@@ -53,6 +56,7 @@ export class AiTeamWriter {
     }
 
     let renamed = false;
+    let registered = false;
     let staging: string | null = null;
     try {
       const readback = await this.options.store.stage(locations, {
@@ -105,12 +109,31 @@ export class AiTeamWriter {
       );
       try {
         await this.options.register(snapshot);
+        registered = true;
+        await this.options.replaceBindings?.({
+          dataRoot: locations.dataRoot,
+          ownership: "user",
+          teamId: locations.teamId,
+          bindings: Object.fromEntries(proposal.members.map((member) => [member.slug, {
+            source: "explicit" as const,
+            profile,
+          }])),
+        });
       } catch (error) {
         await this.options.rollbackRecord({ dataRoot: locations.dataRoot, teamId: locations.teamId });
+        registered = false;
+        await this.options.removeBindings?.({
+          dataRoot: locations.dataRoot,
+          ownership: "user",
+          teamId: locations.teamId,
+        }).catch(() => undefined);
         throw error;
       }
       return { teamId: locations.teamId, snapshot };
     } catch (error) {
+      if (registered) {
+        await this.options.rollbackRecord({ dataRoot: locations.dataRoot, teamId: locations.teamId }).catch(() => undefined);
+      }
       const cleanup = planAiTeamWriteCleanup({
         renamed,
         staging,

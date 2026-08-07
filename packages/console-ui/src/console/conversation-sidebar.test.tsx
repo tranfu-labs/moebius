@@ -702,21 +702,48 @@ describe("ConversationSidebar", () => {
     expect(projectToggle).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("keeps the project menu independent from row dragging and collapsing", () => {
+  it("keeps every project menu action independent from row dragging and collapsing", () => {
     const onShowProjectInFolder = vi.fn();
-    render(<ConversationSidebar projects={[project]} onShowProjectInFolder={onShowProjectInFolder} />);
+    const onRenameProject = vi.fn();
+    const onRemoveProject = vi.fn();
+    render(
+      <ConversationSidebar
+        projects={[project]}
+        onShowProjectInFolder={onShowProjectInFolder}
+        onRenameProject={onRenameProject}
+        onRemoveProject={onRemoveProject}
+      />,
+    );
     const projectRow = screen.getByTestId("conversation-sidebar-project");
     const projectToggle = screen.getByRole("button", { name: "moebius 项目，已展开" });
     const menuTrigger = screen.getByRole("button", { name: "moebius 项目菜单" });
 
-    firePointer(menuTrigger, "pointerdown", { pointerId: 4, button: 0, clientX: 190, clientY: 10 });
-    firePointer(menuTrigger, "pointerup", { pointerId: 4, button: 0, clientX: 190, clientY: 10 });
-    fireEvent.click(menuTrigger);
+    const openMenu = (pointerId: number): void => {
+      firePointer(menuTrigger, "pointerdown", { pointerId, button: 0, clientX: 190, clientY: 10 });
+      firePointer(menuTrigger, "pointerup", { pointerId, button: 0, clientX: 190, clientY: 10 });
+      fireEvent.click(menuTrigger);
+      expect(screen.getByRole("menu")).toBeVisible();
+    };
+    const selectWithPointer = (
+      name: string,
+      pointerId: number,
+      callback: ReturnType<typeof vi.fn>,
+    ): void => {
+      const item = screen.getByRole("menuitem", { name });
+      firePointer(item, "pointerdown", { pointerId, button: 0, clientX: 250, clientY: 10 });
+      firePointer(item, "pointerup", { pointerId, button: 0, clientX: 250, clientY: 10 });
+      fireEvent.click(item);
+      expect(callback).toHaveBeenCalledWith(project);
+      expect(projectRow).not.toHaveClass("cursor-grabbing");
+      expect(projectToggle).toHaveAttribute("aria-expanded", "true");
+    };
 
-    expect(projectRow).not.toHaveClass("cursor-grabbing");
-    expect(projectToggle).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(screen.getByRole("menuitem", { name: "在文件管理器中显示" }));
-    expect(onShowProjectInFolder).toHaveBeenCalledWith(project);
+    openMenu(4);
+    selectWithPointer("在文件管理器中显示", 5, onShowProjectInFolder);
+    openMenu(6);
+    selectWithPointer("修改显示名称", 7, onRenameProject);
+    openMenu(8);
+    selectWithPointer("移除项目", 9, onRemoveProject);
   });
 
   it("requires 5px and 150ms before reordering and does not toggle after a drag", async () => {

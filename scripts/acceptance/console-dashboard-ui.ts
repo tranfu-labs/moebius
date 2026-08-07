@@ -112,6 +112,87 @@ interface IconMetric {
   strokeWidth: string;
 }
 
+interface UserActionEvidence {
+  environment: "真机";
+  entry: string;
+  operation: string;
+  screenObservation: string;
+  consistent: true;
+}
+
+interface ShowInFolderShellCall {
+  path: string;
+  outcome: "returned" | "threw";
+  error?: string;
+}
+
+interface ShowInFolderShellEvidence {
+  invoked: true;
+  targetPath: string;
+  outcome: "returned";
+  pathExists: true;
+}
+
+interface ProjectDialogFocusEvidence {
+  environment: "真机";
+  entry: string;
+  operation: string;
+  screenObservation: string;
+  consistent: true;
+  initialControlFocused: true;
+  tabForwardWrapped: true;
+  tabBackwardWrapped: true;
+  focusReturnedAfterClose: true;
+}
+
+interface ProjectActionsEvidence {
+  environment: "真实 Electron + production preload/local-console/renderer + temporary fake Codex";
+  gestures: {
+    collapse: {
+      environment: "真机";
+      entry: string;
+      operation: string;
+      screenObservation: string;
+      consistent: true;
+      expandedAfter: false;
+    };
+    reorder: {
+      environment: "真机";
+      entry: string;
+      operation: string;
+      screenObservation: string;
+      consistent: true;
+      orderBefore: string[];
+      orderAfterDrag: string[];
+      expandedAfter: true;
+    };
+  };
+  menuActions: {
+    showInFolder: UserActionEvidence & {
+      menuClosed: true;
+      projectStillVisible: true;
+      projectStillCollapsed: true;
+      shell: ShowInFolderShellEvidence;
+      keyboard: UserActionEvidence & {
+        menuClosed: true;
+        projectStillCollapsed: true;
+        shell: ShowInFolderShellEvidence;
+      };
+    };
+    rename: UserActionEvidence & {
+      focus: ProjectDialogFocusEvidence;
+      persistedTitle: string;
+      persistedAfterReload: true;
+      projectStillCollapsed: true;
+    };
+    remove: UserActionEvidence & {
+      focus: ProjectDialogFocusEvidence;
+      projectAbsent: true;
+      folderStillExists: true;
+    };
+  };
+}
+
 interface SelectionGeometryEvidence {
   selected: Box;
   unselected: Box;
@@ -1079,6 +1160,15 @@ try {
     }
   });
 
+  const projectActionsEvidence = await exerciseProductionProjectActions(
+    application,
+    page,
+    apiBase,
+    primaryProject.projectId,
+    secondaryProject.projectId,
+    secondaryProjectRoot,
+  );
+
   await selectSession(page, live.sessionId);
   const finalRightSidebar = page.getByTestId("right-sidebar");
   await finalRightSidebar.waitFor();
@@ -1121,7 +1211,8 @@ try {
         passed: true,
         statusDots: statusEvidence,
         selectionGeometry,
-        collapsedSecondaryProject: true,
+        collapsedSecondaryProject: projectActionsEvidence.gestures.collapse.expandedAfter === false,
+        projectActions: projectActionsEvidence,
         geometry: {
           sidebar: wideGeometry.sidebar,
           windowControls: wideGeometry.sidebarWindowControls,
@@ -1797,6 +1888,481 @@ async function collapseSecondaryProject(page: Page): Promise<void> {
       .map((element) => element.getAttribute("title"));
     return !names.includes("折叠项目占位会话");
   });
+}
+
+async function exerciseProductionProjectActions(
+  application: ElectronApplication,
+  page: Page,
+  apiBase: string,
+  primaryProjectId: string,
+  secondaryProjectId: string,
+  secondaryProjectRoot: string,
+): Promise<ProjectActionsEvidence> {
+  const projectList = page.getByRole("navigation", { name: "项目列表" });
+  await projectList.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await collapseSecondaryProject(page);
+
+  const primaryRow = projectRow(page, primaryProjectId);
+  const secondaryRow = projectRow(page, secondaryProjectId);
+  const secondaryToggle = secondaryRow.getByTestId("conversation-sidebar-project-toggle");
+  await primaryRow.waitFor();
+  await secondaryRow.waitFor();
+  await secondaryToggle.waitFor();
+  const collapsed = await secondaryToggle.getAttribute("aria-expanded") === "false";
+  assert(collapsed, "secondary project did not collapse from the real project-row pointer sequence");
+
+  await secondaryToggle.click();
+  await page.waitForFunction((projectId) =>
+    document.querySelector(
+      `[data-testid='conversation-sidebar-project'][data-project-id="${String(projectId)}"] [data-testid='conversation-sidebar-project-toggle']`,
+    )?.getAttribute("aria-expanded") === "true", secondaryProjectId);
+
+  const initialOrderState = await waitForState(apiBase, (state) => {
+    const order = state.projects.map((candidate) => candidate.projectId);
+    return order.includes(primaryProjectId) && order.includes(secondaryProjectId);
+  });
+  const orderBefore = initialOrderState.projects.map((candidate) => candidate.projectId);
+  const primaryStartsBeforeSecondary = orderBefore.indexOf(primaryProjectId) < orderBefore.indexOf(secondaryProjectId);
+  await waitForProjectGeometryOrder(
+    page,
+    primaryProjectId,
+    secondaryProjectId,
+    primaryStartsBeforeSecondary,
+  );
+  const source = primaryStartsBeforeSecondary ? secondaryRow : primaryRow;
+  const target = primaryStartsBeforeSecondary ? primaryRow : secondaryRow;
+  const sourceProjectId = primaryStartsBeforeSecondary ? secondaryProjectId : primaryProjectId;
+  const targetProjectId = primaryStartsBeforeSecondary ? primaryProjectId : secondaryProjectId;
+  await dragProjectRow(page, source, target, false);
+  const orderAfterDragState = await waitForState(apiBase, (state) => {
+    const order = state.projects.map((candidate) => candidate.projectId);
+    return order.includes(primaryProjectId)
+      && order.includes(secondaryProjectId)
+      && order.indexOf(sourceProjectId) < order.indexOf(targetProjectId);
+  });
+  const orderAfterDrag = orderAfterDragState.projects.map((candidate) => candidate.projectId);
+  await waitForProjectOrder(page, orderAfterDrag);
+  await waitForProjectActionsReady(page, [primaryProjectId, secondaryProjectId]);
+  const expandedAfterDrag = await secondaryToggle.getAttribute("aria-expanded") === "true"
+    && await primaryRow.getByTestId("conversation-sidebar-project-toggle").getAttribute("aria-expanded") === "true";
+  assert(expandedAfterDrag, "project drag changed project expansion state");
+
+  await secondaryToggle.click();
+  await page.waitForFunction((projectId) =>
+    document.querySelector(
+      `[data-testid='conversation-sidebar-project'][data-project-id="${String(projectId)}"] [data-testid='conversation-sidebar-project-toggle']`,
+    )?.getAttribute("aria-expanded") === "false", secondaryProjectId);
+
+  const menuTrigger = secondaryRow.locator("[data-project-row-action='project-menu']");
+  await installShowInFolderTrace(application);
+  const shellTraceBeforePointer = await readShowInFolderTrace(application);
+  await secondaryRow.hover();
+  await clickWithRealPointer(page, menuTrigger);
+  await page.getByRole("menu").waitFor();
+  const showItem = page.getByRole("menuitem", { name: "在文件管理器中显示", exact: true });
+  await showItem.waitFor();
+  await clickWithRealPointer(page, showItem);
+  await page.getByRole("menu").waitFor({ state: "detached" });
+  const showMenuClosed = await page.getByRole("menu").count() === 0;
+  const showProjectStillVisible = await secondaryRow.isVisible();
+  const showProjectStillCollapsed = await secondaryToggle.getAttribute("aria-expanded") === "false";
+  const pointerShowShell = await waitForShowInFolderCall(
+    application,
+    shellTraceBeforePointer.calls.length,
+    secondaryProjectRoot,
+    "real pointer show-in-folder IPC",
+  );
+  assert(showMenuClosed, "show-in-folder menu did not close after the real pointer click");
+  assert(showProjectStillVisible, "show-in-folder removed the project row from the screen");
+  assert(showProjectStillCollapsed, "show-in-folder pointer sequence toggled the project row");
+
+  await menuTrigger.focus();
+  assert(
+    await menuTrigger.evaluate((element) => element === document.activeElement),
+    "project menu trigger did not accept keyboard focus before the keyboard path",
+  );
+  await menuTrigger.press("Enter");
+  const keyboardMenu = page.getByRole("menu");
+  await keyboardMenu.waitFor();
+  const keyboardShowItem = keyboardMenu.getByRole("menuitem", { name: "在文件管理器中显示", exact: true });
+  await keyboardShowItem.focus();
+  assert(
+    await keyboardShowItem.evaluate((element) => element === document.activeElement),
+    "keyboard menu item did not receive focus",
+  );
+  const shellTraceBeforeKeyboard = await readShowInFolderTrace(application);
+  await page.keyboard.press("Enter");
+  await keyboardMenu.waitFor({ state: "detached" });
+  const keyboardShowMenuClosed = await page.getByRole("menu").count() === 0;
+  const keyboardShowProjectStillCollapsed = await secondaryToggle.getAttribute("aria-expanded") === "false";
+  const keyboardShowShell = await waitForShowInFolderCall(
+    application,
+    shellTraceBeforeKeyboard.calls.length,
+    secondaryProjectRoot,
+    "real keyboard show-in-folder IPC",
+  );
+  assert(keyboardShowMenuClosed, "keyboard show-in-folder menu did not close after Enter");
+  assert(keyboardShowProjectStillCollapsed, "keyboard show-in-folder toggled the project row");
+
+  await clickWithRealPointer(page, menuTrigger);
+  await page.getByRole("menu").waitFor();
+  await clickWithRealPointer(page, page.getByRole("menuitem", { name: "修改显示名称", exact: true }));
+  const renameDialog = page.getByRole("dialog", { name: "修改显示名称" });
+  await renameDialog.waitFor();
+  const renameInput = renameDialog.getByRole("textbox", { name: "显示名称" });
+  const renameSave = renameDialog.getByRole("button", { name: "保存", exact: true });
+  const renameFocusCycle = await exerciseProjectDialogFocus(
+    page,
+    renameInput,
+    renameSave,
+    "real rename dialog focus",
+  );
+  const renamedTitle = "dashboard-secondary-renamed";
+  await renameInput.fill(renamedTitle);
+  await renameSave.click();
+  await waitForState(apiBase, (state) =>
+    state.projects.some((candidate) => candidate.projectId === secondaryProjectId && candidate.title === renamedTitle));
+  await page.getByText(renamedTitle, { exact: true }).waitFor();
+  await renameDialog.waitFor({ state: "detached" });
+  const renameFocusReturned = await waitForProjectMenuFocus(menuTrigger, "real rename dialog focus return");
+  const renamedProjectStillCollapsed = await secondaryToggle.getAttribute("aria-expanded") === "false";
+  assert(renamedProjectStillCollapsed, "rename pointer sequence toggled the project row");
+  await page.reload();
+  await page.waitForLoadState("domcontentloaded");
+  await page.getByRole("button", { name: "设置" }).waitFor({ timeout: 20_000 });
+  await page.getByText(renamedTitle, { exact: true }).waitFor();
+  const renamedStateAfterReload = await waitForState(apiBase, (state) =>
+    state.projects.some((candidate) => candidate.projectId === secondaryProjectId && candidate.title === renamedTitle));
+  const renamedPersistedAfterReload = renamedStateAfterReload.projects.some(
+    (candidate) => candidate.projectId === secondaryProjectId && candidate.title === renamedTitle,
+  );
+  assert(renamedPersistedAfterReload, "renamed project title did not survive a real Electron page reload");
+  if (await secondaryToggle.getAttribute("aria-expanded") === "true") {
+    await secondaryToggle.click();
+    await page.waitForFunction((projectId) =>
+      document.querySelector(
+        `[data-testid='conversation-sidebar-project'][data-project-id="${String(projectId)}"] [data-testid='conversation-sidebar-project-toggle']`,
+      )?.getAttribute("aria-expanded") === "false", secondaryProjectId);
+  }
+
+  await clickWithRealPointer(page, menuTrigger);
+  await page.getByRole("menu").waitFor();
+  await clickWithRealPointer(page, page.getByRole("menuitem", { name: "移除项目", exact: true }));
+  const removeDialog = page.getByRole("dialog", { name: "移除项目？" });
+  await removeDialog.waitFor();
+  const removeCancel = removeDialog.getByRole("button", { name: "取消", exact: true });
+  const removeConfirm = removeDialog.getByRole("button", { name: "移除项目", exact: true });
+  const removeFocusCycle = await exerciseProjectDialogFocus(
+    page,
+    removeCancel,
+    removeConfirm,
+    "real remove dialog focus",
+  );
+  await page.keyboard.press("Escape");
+  await removeDialog.waitFor({ state: "detached" });
+  const removeFocusReturned = await waitForProjectMenuFocus(menuTrigger, "real remove dialog focus return");
+
+  await clickWithRealPointer(page, menuTrigger);
+  await page.getByRole("menu").waitFor();
+  await clickWithRealPointer(page, page.getByRole("menuitem", { name: "移除项目", exact: true }));
+  await removeDialog.waitFor();
+  await removeDialog.getByRole("button", { name: "移除项目", exact: true }).click();
+  await waitForState(apiBase, (state) =>
+    !state.projects.some((candidate) => candidate.projectId === secondaryProjectId));
+  await secondaryRow.waitFor({ state: "detached" });
+  await page.reload();
+  await page.waitForLoadState("domcontentloaded");
+  await page.getByRole("button", { name: "设置" }).waitFor({ timeout: 20_000 });
+  const removedStateAfterReload = await waitForState(apiBase, (state) =>
+    !state.projects.some((candidate) => candidate.projectId === secondaryProjectId));
+  assert(
+    !removedStateAfterReload.projects.some((candidate) => candidate.projectId === secondaryProjectId),
+    "removed project reappeared after a real Electron page reload",
+  );
+  await secondaryRow.waitFor({ state: "detached" });
+  await fs.stat(secondaryProjectRoot);
+
+  return {
+    environment: "真实 Electron + production preload/local-console/renderer + temporary fake Codex",
+    gestures: {
+      collapse: {
+        environment: "真机",
+        entry: "真实左侧栏项目行",
+        operation: "鼠标 pointerdown → pointerup 点击 dashboard-secondary 项目行",
+        screenObservation: "项目子对话消失，项目行保留且 aria-expanded=false",
+        consistent: true,
+        expandedAfter: false,
+      },
+      reorder: {
+        environment: "真机",
+        entry: "真实左侧栏项目行",
+        operation: "按住当前排在后面的项目行，移动到前一个项目行之前后松开",
+        screenObservation: "项目顺序改变并写回 local-console；两行展开状态均保持不变，未误触发折叠",
+        consistent: true,
+        orderBefore,
+        orderAfterDrag,
+        expandedAfter: true,
+      },
+    },
+    menuActions: {
+      showInFolder: {
+        environment: "真机",
+        entry: "dashboard-secondary 项目行的更多菜单",
+        operation: "真实鼠标打开菜单并选择“在文件管理器中显示”",
+        screenObservation: "菜单收起；真实 Electron shell.showItemInFolder 已以目标项目路径返回，项目仍在侧栏且保持折叠",
+        consistent: true,
+        menuClosed: showMenuClosed,
+        projectStillVisible: showProjectStillVisible,
+        projectStillCollapsed: showProjectStillCollapsed,
+        shell: pointerShowShell,
+        keyboard: {
+          environment: "真机",
+          entry: "dashboard-secondary 项目行的更多菜单",
+          operation: "键盘聚焦更多菜单，Enter 打开菜单，聚焦“在文件管理器中显示”后再次按 Enter",
+          screenObservation: "菜单收起；真实 Electron shell.showItemInFolder 再次以目标项目路径返回，项目仍保持折叠",
+          consistent: true,
+          menuClosed: keyboardShowMenuClosed,
+          projectStillCollapsed: keyboardShowProjectStillCollapsed,
+          shell: keyboardShowShell,
+        },
+      },
+      rename: {
+        environment: "真机",
+        entry: "dashboard-secondary 项目行的更多菜单",
+        operation: "真实鼠标选择“修改显示名称”，输入新名称并确认",
+        screenObservation: "弹层关闭，侧栏显示新名称，local-console 状态中的项目标题已持久化",
+        consistent: true,
+        focus: {
+          environment: "真机",
+          entry: "真实鼠标打开的“修改显示名称”弹窗",
+          operation: "弹窗打开后验证输入框初始焦点、Tab 正向/反向循环，保存后观察焦点回返菜单触发器",
+          screenObservation: "输入框获得焦点；Tab 在弹窗控件之间闭环；保存关闭弹窗后焦点回到项目更多菜单触发器",
+          consistent: true,
+          ...renameFocusCycle,
+          focusReturnedAfterClose: renameFocusReturned,
+        },
+        persistedTitle: renamedTitle,
+        persistedAfterReload: renamedPersistedAfterReload,
+        projectStillCollapsed: renamedProjectStillCollapsed,
+      },
+      remove: {
+        environment: "真机",
+        entry: "dashboard-secondary 项目行的更多菜单",
+        operation: "真实鼠标选择“移除项目”，在确认弹层再次确认",
+        screenObservation: "项目从侧栏消失、local-console 状态移除项目记录，原项目文件夹仍存在",
+        consistent: true,
+        focus: {
+          environment: "真机",
+          entry: "真实鼠标打开的“移除项目”确认弹窗",
+          operation: "弹窗打开后验证取消按钮初始焦点、Tab 正向/反向循环，Escape 关闭后观察焦点回返菜单触发器",
+          screenObservation: "取消按钮获得焦点；Tab 在确认/取消控件之间闭环；Escape 关闭弹窗后焦点回到项目更多菜单触发器",
+          consistent: true,
+          ...removeFocusCycle,
+          focusReturnedAfterClose: removeFocusReturned,
+        },
+        projectAbsent: true,
+        folderStillExists: true,
+      },
+    },
+  };
+}
+
+function projectRow(page: Page, projectId: string): Locator {
+  return page.locator(`[data-testid='conversation-sidebar-project'][data-project-id="${projectId}"]`);
+}
+
+async function waitForProjectGeometryOrder(
+  page: Page,
+  firstProjectId: string,
+  secondProjectId: string,
+  firstBeforeSecond: boolean,
+): Promise<void> {
+  await page.waitForFunction(({ firstProjectId: firstId, secondProjectId: secondId, firstBefore }) => {
+    const firstRow = document.querySelector(
+      `[data-testid='conversation-sidebar-project'][data-project-id="${String(firstId)}"]`,
+    );
+    const secondRow = document.querySelector(
+      `[data-testid='conversation-sidebar-project'][data-project-id="${String(secondId)}"]`,
+    );
+    if (firstRow === null || secondRow === null) return false;
+    const firstTop = firstRow.getBoundingClientRect().top;
+    const secondTop = secondRow.getBoundingClientRect().top;
+    return firstBefore ? firstTop < secondTop : firstTop > secondTop;
+  }, { firstProjectId, secondProjectId, firstBefore: firstBeforeSecond });
+}
+
+async function waitForProjectActionsReady(page: Page, projectIds: readonly string[]): Promise<void> {
+  await page.waitForFunction((ids) => ids.every((projectId) => {
+    const trigger = document.querySelector(
+      `[data-testid='conversation-sidebar-project'][data-project-id="${String(projectId)}"] [data-project-row-action='project-menu']`,
+    );
+    return trigger instanceof HTMLButtonElement && !trigger.disabled;
+  }), [...projectIds]);
+}
+
+async function isFocused(locator: Locator): Promise<boolean> {
+  return await locator.evaluate((element) => element === document.activeElement);
+}
+
+async function waitForElementFocus(locator: Locator, description: string): Promise<true> {
+  await waitForValue(async () => {
+    try {
+      return await isFocused(locator) ? true : undefined;
+    } catch {
+      return undefined;
+    }
+  }, {
+    describe: description,
+    kind: "logic",
+  });
+  return true;
+}
+
+async function waitForProjectMenuFocus(menuTrigger: Locator, description: string): Promise<true> {
+  return await waitForElementFocus(menuTrigger, description);
+}
+
+async function exerciseProjectDialogFocus(
+  page: Page,
+  firstFocusable: Locator,
+  lastFocusable: Locator,
+  description: string,
+): Promise<{
+  initialControlFocused: true;
+  tabForwardWrapped: true;
+  tabBackwardWrapped: true;
+}> {
+  const initialControlFocused = await waitForElementFocus(firstFocusable, `${description} initial control`);
+
+  await lastFocusable.focus();
+  await page.keyboard.press("Tab");
+  const tabForwardWrapped = await isFocused(firstFocusable);
+  assert(tabForwardWrapped, `${description} did not wrap forward from the last control`);
+
+  await firstFocusable.focus();
+  await page.keyboard.press("Shift+Tab");
+  const tabBackwardWrapped = await isFocused(lastFocusable);
+  assert(tabBackwardWrapped, `${description} did not wrap backward from the first control`);
+
+  return {
+    initialControlFocused,
+    tabForwardWrapped: true,
+    tabBackwardWrapped: true,
+  };
+}
+
+async function installShowInFolderTrace(application: ElectronApplication): Promise<void> {
+  await application.evaluate(({ shell }) => {
+    type Trace = { calls: ShowInFolderShellCall[] };
+    const scope = globalThis as typeof globalThis & {
+      __moebiusAcceptanceShowInFolderTrace?: Trace;
+    };
+    if (scope.__moebiusAcceptanceShowInFolderTrace !== undefined) return;
+    const trace: Trace = { calls: [] };
+    const original = shell.showItemInFolder.bind(shell);
+    shell.showItemInFolder = (folderPath: string) => {
+      try {
+        original(folderPath);
+        trace.calls.push({ path: folderPath, outcome: "returned" });
+      } catch (error) {
+        trace.calls.push({
+          path: folderPath,
+          outcome: "threw",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    };
+    scope.__moebiusAcceptanceShowInFolderTrace = trace;
+  });
+}
+
+async function readShowInFolderTrace(application: ElectronApplication): Promise<{
+  calls: ShowInFolderShellCall[];
+}> {
+  return await application.evaluate(() => {
+    const scope = globalThis as typeof globalThis & {
+      __moebiusAcceptanceShowInFolderTrace?: { calls: ShowInFolderShellCall[] };
+    };
+    return {
+      calls: scope.__moebiusAcceptanceShowInFolderTrace?.calls.map((call) => ({ ...call })) ?? [],
+    };
+  });
+}
+
+async function waitForShowInFolderCall(
+  application: ElectronApplication,
+  previousCallCount: number,
+  expectedPath: string,
+  description: string,
+): Promise<ShowInFolderShellEvidence> {
+  let latestCalls: ShowInFolderShellCall[] = [];
+  await waitForValue(async () => {
+    latestCalls = (await readShowInFolderTrace(application)).calls;
+    const latest = latestCalls.at(-1);
+    return latestCalls.length > previousCallCount
+      && latest?.path === expectedPath
+      && latest.outcome === "returned"
+      ? latest
+      : undefined;
+  }, {
+    describe: description,
+    kind: "io",
+    snapshot: () => ({ previousCallCount, latestCalls }),
+  });
+  await fs.stat(expectedPath);
+  return {
+    invoked: true,
+    targetPath: expectedPath,
+    outcome: "returned",
+    pathExists: true,
+  };
+}
+
+async function clickWithRealPointer(page: Page, target: Locator): Promise<void> {
+  await target.hover();
+  await page.mouse.down();
+  await page.mouse.up();
+}
+
+async function dragProjectRow(
+  page: Page,
+  source: Locator,
+  target: Locator,
+  placeAfter: boolean,
+): Promise<void> {
+  const projectList = page.getByRole("navigation", { name: "项目列表" });
+  await projectList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await page.waitForTimeout(50);
+  await source.hover();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  assert(sourceBox !== null && targetBox !== null, "project rows were not measurable for drag acceptance");
+  await page.mouse.down();
+  await page.waitForTimeout(220);
+  await page.mouse.move(
+    targetBox!.x + targetBox!.width / 2,
+    targetBox!.y + targetBox!.height * (placeAfter ? 0.8 : 0.2),
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+}
+
+async function waitForProjectOrder(page: Page, expected: readonly string[]): Promise<void> {
+  await page.waitForFunction((order) => {
+    const actual = [...document.querySelectorAll<HTMLElement>("[data-testid='conversation-sidebar-project']")]
+      .map((element) => element.getAttribute("data-project-id"))
+      .filter((projectId): projectId is string => projectId !== null);
+    return JSON.stringify(actual) === JSON.stringify(order);
+  }, [...expected]);
 }
 
 async function selectSession(page: Page, sessionId: string): Promise<void> {

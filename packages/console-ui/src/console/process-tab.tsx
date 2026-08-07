@@ -30,7 +30,7 @@ export interface OperatorProcessAttemptMeta {
   runId: string;
   attempt: number;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: "codex" | "claude" | "kimi" | "pi";
   model: string | null;
   effort: string | null;
   provider: string | null;
@@ -51,7 +51,7 @@ export interface OperatorProcessOutput {
   role: string | null;
   status: "running" | "settled" | "unavailable";
   unavailableReason: string | null;
-  unavailableEngine?: "codex" | "claude" | "kimi" | null;
+  unavailableEngine?: "codex" | "claude" | "kimi" | "pi" | null;
   attempts: OperatorProcessAttemptMeta[];
   events: OperatorProcessTimelineEvent[];
   previousCursor: string | null;
@@ -362,8 +362,8 @@ export function ProcessTab({
   );
 }
 
-function processProviderName(engine: "codex" | "claude" | "kimi"): string {
-  return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : "Kimi";
+function processProviderName(engine: "codex" | "claude" | "kimi" | "pi"): string {
+  return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : engine === "kimi" ? "Kimi" : "Pi API";
 }
 
 export function nextProcessTabTitle(

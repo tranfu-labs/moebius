@@ -43,6 +43,7 @@ export interface AiTeamBuilderDraft {
   error: AiTeamBuilderInternalError | null;
   failedFrom: "turn" | "commit" | null;
   selectedTeamId: string | null;
+  continuationEnded?: boolean;
 }
 
 export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
@@ -65,6 +66,7 @@ export function createAiTeamBuilderDraft(draftId: string): AiTeamBuilderDraft {
     error: null,
     failedFrom: null,
     selectedTeamId: null,
+    continuationEnded: false,
   };
 }
 
@@ -73,6 +75,9 @@ export function beginAiTeamBuilderTurn(
   prompt: string,
   options: { appendUserMessage: boolean },
 ): AiTeamBuilderDraft {
+  if (draft.continuationEnded === true) {
+    throw new AiTeamBuilderTransitionError("This AI team builder draft is read-only.");
+  }
   const normalizedPrompt = prompt.trim();
   if (normalizedPrompt.length === 0) {
     throw new AiTeamBuilderTransitionError("AI team builder input cannot be empty.");
@@ -173,6 +178,9 @@ export function beginAiTeamBuilderCommit(
   draft: AiTeamBuilderDraft,
   proposalRevision: number,
 ): AiTeamBuilderDraft {
+  if (draft.continuationEnded === true) {
+    throw new AiTeamBuilderTransitionError("This AI team builder draft is read-only.");
+  }
   const canCommit = draft.phase === "proposal"
     || (draft.phase === "failed" && draft.failedFrom === "commit");
   if (!canCommit || draft.proposal === null || draft.proposalRevision === null) {

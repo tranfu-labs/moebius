@@ -13,6 +13,7 @@ import {
   saveTeamExecutionBinding,
   writeOfficialTeamStateDocument,
 } from "../desktop/src/team-management-store.js";
+import { ExecutionProfileError } from "../desktop/src/team-execution-profile.js";
 
 const temporaryRoots: string[] = [];
 
@@ -123,6 +124,6 @@ describe("team management state store", () => {
         },
       },
     }));
-    await expect(readExecutionBindingDocument(dataRoot)).rejects.toThrow("CLI 必须");
+    await expect(readExecutionBindingDocument(dataRoot)).rejects.toBeInstanceOf(ExecutionProfileError);
   });
 });

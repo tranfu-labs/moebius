@@ -22,6 +22,7 @@ import type {
   LocalRunRetryInput,
   LocalSessionCreationMetadata,
   LocalSessionMoveInput,
+  LocalSessionMemberExecutionUpdateInput,
   LocalSessionPinInput,
   LocalSessionReadStateInput,
   LocalSessionReferenceInput,
@@ -155,6 +156,10 @@ export class LocalConsoleRuntimeFacade {
 
   async cancelSessionTeamUpdate(sessionId: string, expectedUpdateToken?: string | null): Promise<LocalConsoleSessionTeamUpdateState> {
     return await this.facade.settings.cancelTeamUpdate(sessionId, expectedUpdateToken);
+  }
+
+  async updateSessionMemberExecution(input: LocalSessionMemberExecutionUpdateInput) {
+    return await this.facade.settings.updateMemberExecution(input);
   }
 
   async archiveSession(sessionId: string): Promise<LocalConsoleSessionArchiveResult> {

@@ -17,7 +17,9 @@ import type {
 } from "./team-official-update.js";
 import {
   assertRecommendedProfileAvailable,
+  assertRequestedMembersAvailable,
   parseExecutionProfileSaveRequest,
+  parseExecutionProfilesReplaceRequest,
   parseMemberRequest,
   parseOfficialTeamRequest,
   parseOfficialUpdateCommitRequest,
@@ -150,6 +152,39 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
         profile: request.profile,
       } });
       return { ...request, ...await resolveStoredMemberProfile({ dataRoot, ...request }) };
+    },
+    replaceUnavailableAgentTeamExecutionProfiles: async (dataRoot: string, raw: unknown) => {
+      const request = parseExecutionProfilesReplaceRequest(raw);
+      const location = ports.resolveLocation({ dataRoot, teamId: request.teamId, ownership: request.ownership });
+      const snapshot = await ports.readSnapshot(location);
+      const memberSlugs = selectMemberSlugs(snapshot);
+      assertRequestedMembersAvailable(request.memberSlugs, memberSlugs);
+      const stored = await ports.readBindings({ dataRoot, teamId: request.teamId, ownership: request.ownership });
+      const official = await loadOfficial(dataRoot, request.teamId, request.ownership);
+      const bindings = materializeExplicitBindings({
+        memberSlugs,
+        bindings: Object.fromEntries(memberSlugs.map((slug) => [slug, selectExecutionBinding({
+          binding: stored[slug],
+          recommendation: selectRecommendation(official?.appliedRecommendations, slug),
+          defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE,
+        })])),
+        recommendations: selectRecommendationsOrEmpty(official?.appliedRecommendations),
+      });
+      for (const slug of request.memberSlugs) {
+        bindings[slug] = { source: "explicit", profile: { ...request.profile } };
+      }
+      await ports.replaceBindings({
+        dataRoot,
+        teamId: request.teamId,
+        ownership: request.ownership,
+        bindings,
+      });
+      return {
+        teamId: request.teamId,
+        ownership: request.ownership,
+        memberSlugs: [...request.memberSlugs],
+        profile: { ...request.profile },
+      };
     },
     restoreAgentTeamRecommendedProfile: async (dataRoot: string, raw: unknown) => {
       const request = parseMemberRequest(raw);

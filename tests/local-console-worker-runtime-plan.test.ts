@@ -99,7 +99,7 @@ describe("worker runtime plan", () => {
       name: "dev",
       agentMarkdown: "# dev",
       executionProfile: null,
-    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    }])).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null, continuationEnded: false }]);
     const messages = [
       { id: 1, status: "pending", sourceKind: null },
       { id: 2, status: "completed", sourceKind: "local-worker-run" },
@@ -113,7 +113,7 @@ describe("worker runtime plan", () => {
       "qa",
       "# qa",
       new Map([["dev", "# dev"]]),
-    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null }]);
+    )).toEqual([{ name: "dev", agentMarkdown: "# dev", executionProfile: null, continuationEnded: false }]);
   });
 
   it("plans only configured provider execution options", () => {

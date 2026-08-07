@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EXECUTION_PROFILES,
   EXECUTION_MODEL_REGISTRY,
+  PI_EXECUTION_MODELS,
   resolveProfileForCli,
   resolveProfileForModel,
 } from "./execution-profile-registry";
@@ -43,6 +44,13 @@ describe("Agent Team execution profile registry", () => {
       ["fable", ["low", "medium", "high", "xhigh", "max"], "high"],
       ["sonnet", ["low", "medium", "high", "max"], "high"],
       ["opus", ["low", "medium", "high", "max"], "high"],
+    ]);
+  });
+
+  it("publishes only the DeepSeek V4 reasoning levels the API actually distinguishes", () => {
+    expect(PI_EXECUTION_MODELS.map((model) => [model.value, model.efforts, model.defaultEffort])).toEqual([
+      ["deepseek-v4-flash", ["high", "max"], "high"],
+      ["deepseek-v4-pro", ["high", "max"], "high"],
     ]);
   });
 

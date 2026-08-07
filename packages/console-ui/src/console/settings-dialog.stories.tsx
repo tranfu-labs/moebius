@@ -8,8 +8,54 @@ import {
   type SettingsDialogProps,
   type SettingsSection,
 } from "./settings-dialog";
+import type { ProviderSettingsController } from "./provider-settings-panel";
 
 const currentVersion = "0.1.4";
+
+const providerController: ProviderSettingsController = {
+  state: {
+    status: "ready",
+    profiles: [{
+      id: "deepseek-production",
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      displayName: "生产 DeepSeek",
+      keySuffix: "7K2M",
+      defaultModel: "deepseek-v4-pro",
+      verifiedModels: ["deepseek-v4-pro", "deepseek-v4-flash"],
+      readiness: "ready",
+      reason: null,
+      revision: 4,
+      updatedAt: "2026-08-05T08:00:00.000Z",
+      references: [
+        { kind: "team-member", ownerId: "team-editor", label: "内容团队 · 编辑", profileId: "deepseek-production", model: "deepseek-v4-pro" },
+        { kind: "resumable-session", ownerId: "session-release", label: "发布准备 · 编辑", profileId: "deepseek-production", model: "deepseek-v4-pro" },
+        { kind: "queued-task", ownerId: "session-pending", label: "排队中的团队切换 · 编辑", profileId: "deepseek-production", model: "deepseek-v4-flash" },
+      ],
+      activity: null,
+    }],
+  },
+  busyProfileId: null,
+  error: null,
+  canRetryCreateSave: false,
+  refresh: () => undefined,
+  create: async () => true,
+  retryCreateSave: async () => true,
+  discardCreateSave: () => undefined,
+  rotateKey: async () => true,
+  addModel: async () => true,
+  setDefaultModel: async () => true,
+  removeModel: async () => true,
+  replaceDefaultAndRemoveModel: async () => true,
+  rename: async () => true,
+  disable: async () => undefined,
+  enable: async () => undefined,
+  migrateReferences: async () => true,
+  retryReferenceOperation: async () => true,
+  endReference: async () => true,
+  delete: async () => undefined,
+  cancel: () => undefined,
+};
 
 function SettingsStoryCanvas(args: SettingsDialogProps): JSX.Element {
   const [open, setOpen] = useState(args.open);
@@ -120,6 +166,13 @@ export const About: Story = {
   },
 };
 
+export const AiProviders: Story = {
+  args: {
+    activeSection: "providers",
+    providers: providerController,
+  },
+};
+
 export const CheckingForUpdates: Story = {
   args: {
     activeSection: "about",
@@ -177,6 +230,24 @@ export const NarrowWindow: Story = {
         settingsNarrow: {
           name: "Settings narrow · 560 × 640",
           styles: { width: "560px", height: "640px" },
+        },
+      },
+    },
+  },
+};
+
+export const AiProvidersNarrowWindow: Story = {
+  args: {
+    activeSection: "providers",
+    providers: providerController,
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "settingsProviderNarrow",
+      viewports: {
+        settingsProviderNarrow: {
+          name: "AI Providers narrow · 560 × 720",
+          styles: { width: "560px", height: "720px" },
         },
       },
     },

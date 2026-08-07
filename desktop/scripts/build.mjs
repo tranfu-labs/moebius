@@ -50,6 +50,16 @@ for (const entry of ["managed-process-wrapper", "managed-process-mcp-bridge"]) {
   });
 }
 
+await build({
+  ...common,
+  banner: {
+    js: 'import { createRequire as __moebiusCreateRequire } from "node:module"; const require = __moebiusCreateRequire(import.meta.url);',
+  },
+  entryPoints: [path.join(root, "..", "src/pi-host.ts")],
+  outdir: undefined,
+  outfile: path.join(dist, "pi-host.js"),
+});
+
 const mainBundle = await fs.readFile(path.join(dist, "main.js"), "utf8");
 assertStaticNodeBundle(mainBundle, "main.js");
 

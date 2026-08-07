@@ -47,7 +47,7 @@ export interface NewConversationTeamOption {
     available?: boolean;
     executionProfile?: {
       effectiveProfile: {
-        cli: "codex" | "claude" | "kimi";
+        cli: "codex" | "claude" | "kimi" | "pi";
       };
     };
   }>;
@@ -240,19 +240,28 @@ export function NewConversationPage({
                       className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
                       aria-label={t("console.common.agentTeam")}
                       disabled={isSubmitting || teams.length === 0}
+                      data-testid="new-conversation-team-picker"
                     >
                       <Diamond className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                       <span className="max-w-48 truncate">{selectedTeam?.label ?? t("console.newConversation.noTeams")}</span>
                       <ChevronDown className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" className="w-[min(360px,calc(100vw-24px))]">
+                  <DropdownMenuContent
+                    align="start"
+                    side="top"
+                    collisionPadding={12}
+                    className="scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain"
+                    style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
+                  >
                     {teams.map((team) => (
                       <DropdownMenuCheckboxItem
                         key={team.teamKey}
                         checked={team.teamKey === selectedTeamKey}
                         disabled={team.available === false}
                         className="items-start"
+                        data-testid="new-conversation-team-option"
+                        data-team-key={team.teamKey}
                         onSelect={() => team.teamKey !== selectedTeamKey && onSelectTeam(team.teamKey)}
                       >
                         <AgentTeamOption team={team} />

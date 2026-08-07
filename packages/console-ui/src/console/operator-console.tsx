@@ -45,7 +45,7 @@ import {
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
-import type { ExecutionRegistryState } from "@/console/execution-profile-registry";
+import type { ExecutionRegistryState, RegistryProviderProfile } from "@/console/execution-profile-registry";
 import { MoebiusLogo } from "@/brand/moebius-logo";
 import { I18nProvider, translate, useI18n, type Locale, type Translate } from "@/i18n";
 import {
@@ -115,6 +115,7 @@ import {
   type SettingsAboutState,
   type SettingsSection,
 } from "@/console/settings-dialog";
+import type { ProviderSettingsController } from "@/console/provider-settings-panel";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -125,7 +126,11 @@ import {
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
 import { MarkdownMessage } from "@/console/markdown-message";
-import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
+import {
+  RunOutcome,
+  type ProviderUnavailableKind,
+  type RunOutcomeStatus,
+} from "@/console/run-outcome";
 import { RunTime } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
@@ -291,6 +296,20 @@ export interface OperatorProject {
   errorCount: number;
 }
 
+export type OperatorExecutionEngine = "codex" | "claude" | "kimi" | "pi";
+
+export type OperatorExecutionProfile = {
+  cli: "codex" | "claude" | "kimi";
+  model: string;
+  effort: string;
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
+
 export interface OperatorMessage {
   id: number;
   sessionId: string;
@@ -309,11 +328,7 @@ export interface OperatorMessage {
     retryable: boolean | null;
     partialMarkdown: string;
     contentIncomplete: true;
-    actualProfile: {
-      cli: "codex" | "claude" | "kimi";
-      model: string;
-      effort: string;
-    } | null;
+    actualProfile: OperatorExecutionProfile | null;
   } | null;
   sourceKind?: string | null;
   sourceId?: string | null;
@@ -325,7 +340,7 @@ export interface OperatorMessage {
     elapsedMs: number | null;
     completedAt: string | null;
     status: "created" | "running" | "completed" | "failed" | "interrupted" | "stuck" | "paused";
-    engine: "codex" | "claude" | "kimi";
+    engine: OperatorExecutionEngine;
     processOutputAvailable: boolean;
   } | null;
   createdAt: string;
@@ -341,6 +356,7 @@ export interface OperatorPendingDispatch {
   targetLane: "primary" | "worker" | "awaiting-team";
   targetRole: string | null;
   waitingForTeam: boolean;
+  targetUnavailable?: boolean;
 }
 
 export interface OperatorSubSessionView {
@@ -385,7 +401,7 @@ export interface OperatorRunSnapshot {
   elapsedMs: number | null;
   stepId?: string;
   attempt?: number;
-  engine?: "codex" | "claude" | "kimi";
+  engine?: OperatorExecutionEngine;
   processOutputAvailable?: boolean;
   activity?: {
     cursor: number;
@@ -489,6 +505,7 @@ export interface OperatorConsoleProps {
   pendingLocale?: Locale | null;
   languageSaveStatus?: LanguageSaveStatus;
   settingsAbout?: SettingsAboutState;
+  providerSettings?: ProviderSettingsController;
   settingsExternalLinks?: {
     releaseNotes: string;
     feedback: string;
@@ -533,7 +550,7 @@ export interface OperatorConsoleProps {
   onSubSessionRetry?: (
     sessionId: string,
     runId: string,
-    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+    executionOverride?: OperatorExecutionProfile,
   ) => void | Promise<void>;
   onSubSessionInterrupt?: (sessionId: string, runId: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
@@ -564,7 +581,13 @@ export interface OperatorConsoleProps {
   onRetryRun?: (
     sessionId: string,
     runId: string,
-    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+    executionOverride?: OperatorExecutionProfile,
+  ) => void | Promise<void>;
+  onUpdateSessionMemberExecution?: (
+    sessionId: string,
+    memberName: string,
+    action: "migrate" | "end",
+    profile?: OperatorExecutionProfile,
   ) => void | Promise<void>;
   onRetryPendingMessage?: (sessionId: string, messageId: number) => void;
   onEditPendingMessage?: (sessionId: string, messageId: number, body: string) => void;
@@ -701,6 +724,7 @@ export function OperatorConsole({
   pendingLocale = null,
   languageSaveStatus = "idle",
   settingsAbout,
+  providerSettings,
   settingsExternalLinks,
   onSelectLocale,
   onRetryLocaleSave,
@@ -756,6 +780,7 @@ export function OperatorConsole({
   onRenameSession,
   onInterrupt,
   onRetryRun,
+  onUpdateSessionMemberExecution,
   onRetryPendingMessage,
   onEditPendingMessage,
   onRemovePendingMessage,
@@ -840,6 +865,7 @@ export function OperatorConsole({
       targetLane: "primary" as const,
       targetRole: null,
       waitingForTeam: false,
+      targetUnavailable: false,
     }));
   const [uncontrolledSidebarOpen, setUncontrolledSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH_PX);
@@ -888,6 +914,7 @@ export function OperatorConsole({
   const handledMessageNavigationRequestRef = useRef<number | null>(null);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsOpenRef = useRef(false);
+  const projectActionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const previousLanguageSaveStatusRef = useRef(languageSaveStatus);
   const nextSettingsNotificationIdRef = useRef(1);
   const [conversationPaneWidth, setConversationPaneWidth] = useState(760);
@@ -944,6 +971,7 @@ export function OperatorConsole({
   const [conversationRouteConflictOpen, setConversationRouteConflictOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [providerRecoveryTeamMenuOpen, setProviderRecoveryTeamMenuOpen] = useState(false);
   const [settingsExternalLinkStatus, setSettingsExternalLinkStatus] = useState<"idle" | "failed">("idle");
   const [settingsNotifications, setSettingsNotifications] = useState<Array<{
     id: number;
@@ -958,6 +986,10 @@ export function OperatorConsole({
   const [repairRequest, setRepairRequest] = useState<{ project: OperatorProject; folderPath: string } | null>(null);
   const [repairPickerProjectId, setRepairPickerProjectId] = useState<string | null>(null);
   const [projectActionError, setProjectActionError] = useState<string | null>(null);
+  const openProviderSettings = useCallback(() => {
+    setSettingsSection("providers");
+    setSettingsOpen(true);
+  }, []);
   const visibleProjects = projects ?? [project];
   const activeProjectId = selectedProjectId ?? project.projectId;
   const activeProject = visibleProjects.find((item) => item.projectId === activeProjectId) ?? project;
@@ -1719,7 +1751,11 @@ export function OperatorConsole({
             openedSubSessionId={openedSubSessionId}
             onOpenSubSession={openSubSession}
             onRetryRun={onRetryRun}
+            onUpdateSessionMemberExecution={onUpdateSessionMemberExecution}
+            onOpenProviderSettings={openProviderSettings}
+            onOpenTeamMenu={() => setProviderRecoveryTeamMenuOpen(true)}
             executionRegistryState={executionRegistryState}
+            providerProfiles={providerSettings?.state.status === "ready" ? providerSettings.state.profiles : []}
             onReloadExecutionRegistry={onReloadExecutionRegistry}
             onAnalyzeConversation={onAnalyzeConversation}
             onUpdateClaude={onUpdateClaude}
@@ -1881,6 +1917,7 @@ export function OperatorConsole({
             statusIndicatorLabel={hasAgentTeamNeedingRepair ? t("console.operator.teamNeedsRepair") : undefined}
             disabled={activeProjectUnavailable}
             disabledReason={activeProject.directoryUnavailableReason ?? undefined}
+            testId="sidebar-nav-agent-teams"
             onClick={() => setApplicationView("agent-teams")}
           />
         </nav>
@@ -1911,6 +1948,7 @@ export function OperatorConsole({
           onRenameProject={onRenameProject === undefined ? undefined : (sidebarProject) => {
             const target = visibleProjects.find((candidate) => candidate.projectId === sidebarProject.id);
             if (target) {
+              projectActionTriggerRef.current = findProjectMenuTrigger(sidebarProject.id);
               setProjectActionError(null);
               setRenameTarget(target);
               setRenameValue(target.title);
@@ -1921,6 +1959,7 @@ export function OperatorConsole({
             if (!target) {
               return;
             }
+            projectActionTriggerRef.current = findProjectMenuTrigger(sidebarProject.id);
             setProjectActionError(null);
             if (target.runningCount > 0 || (target.managedRunningCount ?? 0) > 0) {
               setRunningRemovalTarget(target);
@@ -2101,6 +2140,11 @@ export function OperatorConsole({
         ) : applicationView === "agent-teams" ? (
           <AgentTeamsPage
             state={agentTeamsState}
+            providerProfiles={providerSettings?.state.status === "ready" ? providerSettings.state.profiles : []}
+            onOpenProviderSettings={() => {
+              setSettingsSection("providers");
+              setSettingsOpen(true);
+            }}
             selectedTeamKey={selectedAgentTeamKey}
             selectedMemberSlug={selectedAgentTeamMemberSlug}
             detailState={agentTeamDetailState}
@@ -2522,7 +2566,9 @@ export function OperatorConsole({
                             <div className="flex min-w-0 gap-2">
                               <span className="shrink-0 text-sub">{index + 1}</span>
                               <span className="shrink-0 text-accent">
-                                {dispatch.waitingForTeam
+                                {dispatch.targetUnavailable
+                                  ? t("console.operator.pendingTargetUnavailable")
+                                  : dispatch.waitingForTeam
                                   ? t("console.operator.pendingNewTeam")
                                   : t("console.operator.pendingTarget", {
                                       target: resolveOperatorMemberName(
@@ -2554,7 +2600,7 @@ export function OperatorConsole({
                                 </span>
                               )}
                             </div>
-                            {message.error || dispatch.waitingForTeam ? (
+                            {message.error || dispatch.waitingForTeam || dispatch.targetUnavailable ? (
                               <div
                                 className={cn(
                                   "ml-5 mt-1 rounded-md border px-2 py-1.5 text-xs",
@@ -2565,9 +2611,11 @@ export function OperatorConsole({
                                 role={message.error ? "alert" : undefined}
                                 tabIndex={-1}
                               >
-                                {message.error ? (
+                                {message.error || dispatch.targetUnavailable ? (
                                   <>
-                                    <p>{message.error}</p>
+                                    <p>{dispatch.targetUnavailable
+                                      ? t("console.operator.pendingTargetUnavailableDetail")
+                                      : message.error}</p>
                                     <p className="mt-0.5">{t("console.operator.pendingNotSent")}</p>
                                   </>
                                 ) : null}
@@ -2600,13 +2648,15 @@ export function OperatorConsole({
                                     </>
                                   ) : (
                                     <>
-                                      {message.error ? (
+                                      {message.error || dispatch.targetUnavailable ? (
                                         <button
                                           type="button"
                                           className="rounded border border-line bg-card px-2 py-1 text-ink"
                                           onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
                                         >
-                                          {t("console.operator.pendingRetry")}
+                                          {t(dispatch.targetUnavailable
+                                            ? "console.operator.pendingResubmit"
+                                            : "console.operator.pendingRetry")}
                                         </button>
                                       ) : null}
                                       <button
@@ -2691,6 +2741,8 @@ export function OperatorConsole({
                       onChangeSessionProject={onChangeSessionProject}
                       onChangeSessionWorkspace={messages.length === 0 ? onChangeSessionWorkspace : undefined}
                       onChangeSessionTeam={onChangeSessionTeam}
+                      teamMenuOpen={providerRecoveryTeamMenuOpen}
+                      onTeamMenuOpenChange={setProviderRecoveryTeamMenuOpen}
                     />
                   }
                   className={cn(
@@ -2753,7 +2805,9 @@ export function OperatorConsole({
                 onSend={() => onSubSessionSend?.(sessionId)}
                 onRetry={(runId, executionOverride) =>
                   onSubSessionRetry?.(sessionId, runId, executionOverride)}
+                onUpdateMemberExecution={onUpdateSessionMemberExecution}
                 executionRegistryState={executionRegistryState}
+                providerProfiles={providerSettings?.state.status === "ready" ? providerSettings.state.profiles : []}
                 onReloadExecutionRegistry={onReloadExecutionRegistry}
                 onInterrupt={onSubSessionInterrupt ?? onInterrupt}
                 onOpenOutput={(input) => openEvidence({
@@ -2865,6 +2919,7 @@ export function OperatorConsole({
           saveStatus={languageSaveStatus}
           activeSection={settingsSection}
           about={settingsAbout}
+          providers={providerSettings}
           externalLinkStatus={settingsExternalLinkStatus}
           onOpenChange={(open) => {
             settingsOpenRef.current = open;
@@ -2932,6 +2987,7 @@ export function OperatorConsole({
           title={t("console.operator.renameTitle")}
           description={t("console.operator.renameDescription")}
           error={projectActionError}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => {
             if (!isProjectMutationPending) {
               setRenameTarget(null);
@@ -2941,7 +2997,6 @@ export function OperatorConsole({
           <label className="grid gap-1.5 text-sm font-medium text-ink">
             {t("console.operator.displayName")}
             <Input
-              autoFocus
               value={renameValue}
               disabled={isProjectMutationPending}
               onChange={(event) => setRenameValue(event.target.value)}
@@ -3001,6 +3056,7 @@ export function OperatorConsole({
           title={t("console.operator.runningTitle")}
           description={t("console.operator.runningDescription", { project: runningRemovalTarget.title })}
           icon={<AlertTriangle className="h-5 w-5 text-danger" strokeWidth={1.5} aria-hidden="true" />}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => setRunningRemovalTarget(null)}
         >
           <DialogButtons
@@ -3021,6 +3077,7 @@ export function OperatorConsole({
           title={t("console.operator.removeTitle")}
           description={t("console.operator.removeDescription", { project: removalRequest.project.title })}
           error={projectActionError}
+          returnFocusElement={projectActionTriggerRef.current}
           onCancel={() => {
             if (!isProjectMutationPending) {
               setRemovalRequest(null);
@@ -3162,12 +3219,35 @@ function createRightSidebarTabId(counter: { current: number }): string {
   return id;
 }
 
+function findProjectMenuTrigger(projectId: string): HTMLButtonElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("[data-project-row-action='project-menu']"))
+    .find((element) => element.dataset.projectMenuProjectId === projectId) ?? null;
+}
+
+const DIALOG_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function dialogFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR))
+    .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+}
+
 function ProjectActionDialog({
   title,
   description,
   icon,
   error,
   onCancel,
+  returnFocusElement,
   children,
 }: {
   title: string;
@@ -3175,10 +3255,57 @@ function ProjectActionDialog({
   icon?: JSX.Element;
   error?: string | null;
   onCancel(): void;
+  returnFocusElement?: HTMLElement | null;
   children: ReactNode;
 }): JSX.Element {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const dialog = dialogRef.current;
+    if (overlay === null || dialog === null) {
+      return;
+    }
+
+    const backgroundElements = overlay.parentElement === null
+      ? []
+      : Array.from(overlay.parentElement.children).filter(
+        (element): element is HTMLElement => element instanceof HTMLElement && element !== overlay,
+      );
+    const previousInert = backgroundElements.map((element) => ({ element, inert: element.inert }));
+    backgroundElements.forEach((element) => {
+      element.inert = true;
+    });
+
+    const focusInitialElement = (): void => {
+      const firstFocusable = dialogFocusableElements(dialog)[0];
+      (firstFocusable ?? dialog).focus();
+    };
+    const focusFrame = window.requestAnimationFrame(focusInitialElement);
+    const handleFocusIn = (event: FocusEvent): void => {
+      if (event.target instanceof Node && dialog.contains(event.target)) {
+        return;
+      }
+      focusInitialElement();
+    };
+    document.addEventListener("focusin", handleFocusIn);
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      window.cancelAnimationFrame(focusFrame);
+      previousInert.forEach(({ element, inert }) => {
+        element.inert = inert;
+      });
+      if (returnFocusElement?.isConnected) {
+        returnFocusElement.focus();
+      }
+    };
+  }, [returnFocusElement]);
+
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
       role="presentation"
       onMouseDown={(event) => {
@@ -3187,7 +3314,40 @@ function ProjectActionDialog({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink" role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        ref={dialogRef}
+        className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+            return;
+          }
+          if (event.key !== "Tab") {
+            return;
+          }
+          const focusable = dialogFocusableElements(event.currentTarget);
+          if (focusable.length === 0) {
+            event.preventDefault();
+            event.currentTarget.focus();
+            return;
+          }
+          const activeElement = document.activeElement;
+          const activeIndex = activeElement instanceof HTMLElement ? focusable.indexOf(activeElement) : -1;
+          const shouldWrapBackward = event.shiftKey && (activeIndex <= 0);
+          const shouldWrapForward = !event.shiftKey && (activeIndex === -1 || activeIndex === focusable.length - 1);
+          if (shouldWrapBackward || shouldWrapForward) {
+            event.preventDefault();
+            const nextIndex = event.shiftKey ? focusable.length - 1 : 0;
+            focusable[nextIndex]?.focus();
+          }
+        }}
+      >
         <div className="flex items-start gap-3">
           {icon}
           <div className="min-w-0">
@@ -3460,7 +3620,11 @@ function TimelineEntry({
   openedSubSessionId = null,
   onOpenSubSession,
   onRetryRun,
+  onUpdateSessionMemberExecution,
+  onOpenProviderSettings,
+  onOpenTeamMenu,
   executionRegistryState,
+  providerProfiles,
   onReloadExecutionRegistry,
   onAnalyzeConversation,
   onUpdateClaude,
@@ -3482,9 +3646,18 @@ function TimelineEntry({
   onRetryRun?: (
     sessionId: string,
     runId: string,
-    executionOverride?: { cli: "codex" | "claude" | "kimi"; model: string; effort: string },
+    executionOverride?: OperatorExecutionProfile,
   ) => void | Promise<void>;
+  onUpdateSessionMemberExecution?: (
+    sessionId: string,
+    memberName: string,
+    action: "migrate" | "end",
+    profile?: OperatorExecutionProfile,
+  ) => void | Promise<void>;
+  onOpenProviderSettings?: () => void;
+  onOpenTeamMenu?: () => void;
   executionRegistryState?: ExecutionRegistryState;
+  providerProfiles: readonly RegistryProviderProfile[];
   onReloadExecutionRegistry?: () => void;
   onAnalyzeConversation?: (input: {
     sessionId: string;
@@ -3525,6 +3698,7 @@ function TimelineEntry({
   const outcome = terminalOutcome(message);
   const auditRole = message.role ?? processRole ?? "agent";
   if (outcome) {
+    const providerUnavailable = resolveProviderUnavailableKind(message.terminal?.safeCode);
     return (
       <div
         className="relative my-4"
@@ -3570,16 +3744,18 @@ function TimelineEntry({
           role={processRole}
           memberIdentities={memberIdentities}
           rawReason={message.error ?? message.body}
-          rawOutput={message.error ?? message.body}
+          rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
           description={terminalOutcomeDescription(message)}
           partialMarkdown={message.terminal?.partialMarkdown}
           contentIncomplete={message.terminal?.contentIncomplete}
           initialProfile={message.terminal?.actualProfile}
           executionRegistryState={executionRegistryState}
+          providerProfiles={providerProfiles}
           onReloadExecutionRegistry={onReloadExecutionRegistry}
           elapsedMs={message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
-          onRetry={outcome !== "retry-exhausted" && message.runId !== null
+          providerUnavailable={providerUnavailable}
+          onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
             ? () => onRetryRun?.(message.sessionId, message.runId!)
             : undefined}
           onOverrideAndRetry={
@@ -3597,7 +3773,37 @@ function TimelineEntry({
               ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
               : undefined
           }
-          maintenanceAction={message.error === "claude-cli-unsupported-version"
+          onMigrateAndContinue={providerUnavailable === null
+            && message.terminal?.actualProfile?.cli === "pi"
+            && processRole !== null
+            && onUpdateSessionMemberExecution !== undefined
+            ? (profile) => onUpdateSessionMemberExecution(message.sessionId, processRole, "migrate", profile)
+            : undefined}
+          onEndContinuation={providerUnavailable === null
+            && message.terminal?.actualProfile?.cli === "pi"
+            && processRole !== null
+            && onUpdateSessionMemberExecution !== undefined
+            ? () => onUpdateSessionMemberExecution(message.sessionId, processRole, "end")
+            : undefined}
+          onSelectTeam={providerUnavailable !== null && onOpenTeamMenu !== undefined
+            ? onOpenTeamMenu
+            : undefined}
+          maintenanceAction={providerUnavailable === "disabled" && onOpenProviderSettings !== undefined
+            ? {
+                label: t("console.runOutcome.reenableProvider"),
+                onClick: onOpenProviderSettings,
+              }
+            : providerUnavailable === "needs-attention" && onOpenProviderSettings !== undefined
+              ? {
+                  label: t("console.runOutcome.repairProvider"),
+                  onClick: onOpenProviderSettings,
+                }
+              : providerUnavailable === "missing" && onOpenProviderSettings !== undefined
+                ? {
+                    label: t("console.runOutcome.openProviderSettings"),
+                    onClick: onOpenProviderSettings,
+                  }
+                : message.error === "claude-cli-unsupported-version"
             && onUpdateClaude !== undefined
             ? {
                 label: t("onboarding.updateClaude"),
@@ -3930,6 +4136,17 @@ function terminalOutcome(message: OperatorMessage): RunOutcomeStatus | null {
     : null;
 }
 
+function resolveProviderUnavailableKind(
+  safeCode: string | null | undefined,
+): ProviderUnavailableKind | null {
+  switch (safeCode) {
+    case "pi-provider-disabled": return "disabled";
+    case "pi-provider-needs-attention": return "needs-attention";
+    case "pi-provider-missing": return "missing";
+    default: return null;
+  }
+}
+
 function terminalOutcomeDescription(message: OperatorMessage): string | null {
   return message.terminal !== null && message.terminal !== undefined
     ? nonBlank(message.body)
@@ -3963,7 +4180,10 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
     || error === "claude-resume-unavailable"
     || error === "claude-protocol-invalid"
     || error === "claude-timeout"
-    || error === "claude-cancelled";
+    || error === "claude-cancelled"
+    || error === "pi-provider-disabled"
+    || error === "pi-provider-needs-attention"
+    || error === "pi-provider-missing";
 }
 
 function systemSummary(message: OperatorMessage, t: Translate): string {

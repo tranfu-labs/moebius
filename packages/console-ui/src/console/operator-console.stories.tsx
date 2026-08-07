@@ -1,7 +1,12 @@
+import { act, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
-import { OperatorConsole, type OperatorConsoleProps } from "@/console/operator-console";
+import {
+  OperatorConsole,
+  type OperatorConsoleProps,
+  type OperatorProject,
+} from "@/console/operator-console";
 
 const agentMarkdown = [
   "## 结论",
@@ -240,6 +245,25 @@ type Story = StoryObj<typeof meta>;
 
 export const T65Running: Story = {};
 
+export const PiApiRunning: Story = {
+  args: {
+    activeRun: {
+      ...sample.activeRun!,
+      engine: "pi",
+      activity: {
+        cursor: 3,
+        kind: "edit",
+        phase: "running",
+        action: "正在修改",
+        object: "src/provider-profile.ts",
+        occurredAt: "2026-08-05T08:01:00.000Z",
+      },
+      lastOutputSummary: "Pi API 正在通过 DeepSeek 执行编码任务",
+      liveMarkdown: "## 正在执行\n\n已读取项目并准备运行定向测试。",
+    },
+  },
+};
+
 export const SidebarConversationManagement: Story = {
   args: {
     project: {
@@ -424,6 +448,301 @@ export const DashboardShellAlignment: Story = {
     rightSidebarOpen: false,
   },
 };
+
+export const ProjectActions: Story = {
+  parameters: {
+    userActionCoverage: {
+      required: true,
+      actions: [
+        "project-row.collapse",
+        "project-row.reorder",
+        "project-menu.show-in-folder",
+        "project-menu.rename",
+        "project-menu.remove",
+      ],
+    },
+  },
+  render: () => <ProjectActionsStory />,
+  play: async ({ canvasElement }) => {
+    const secondaryProjectId = "project-actions-secondary";
+    const secondaryRow = () => projectActionsRow(canvasElement, secondaryProjectId);
+    const feedback = () => canvasElement.querySelector<HTMLElement>("[data-testid='project-actions-feedback']");
+
+    const secondaryToggle = secondaryRow().querySelector<HTMLElement>(
+      "[data-testid='conversation-sidebar-project-toggle']",
+    );
+    if (secondaryToggle === null) {
+      throw new Error("ProjectActions story requires a secondary project toggle");
+    }
+    secondaryToggle.focus();
+    await dispatchStoryKey(secondaryToggle, "Enter");
+    await nextStoryFrame();
+    if (secondaryToggle.getAttribute("aria-expanded") !== "false") {
+      throw new Error("ProjectActions story did not collapse the secondary project");
+    }
+
+    const sourceRow = secondaryRow();
+    await dispatchStoryPointer(sourceRow, "pointerdown", 2, 180, 20);
+    await waitStoryMilliseconds(160);
+    await dispatchStoryPointer(sourceRow, "pointermove", 2, 180, -10);
+    await dispatchStoryPointer(sourceRow, "pointerup", 2, 180, -10);
+    await nextStoryFrame();
+    await nextStoryFrame();
+    const projectOrder = Array.from(canvasElement.querySelectorAll<HTMLElement>(
+      "[data-testid='conversation-sidebar-project']",
+    )).map((element) => element.getAttribute("data-project-id"));
+    if (projectOrder.join(",") !== `${secondaryProjectId},project-actions`) {
+      throw new Error(`ProjectActions story did not reorder projects: ${projectOrder.join(",")}`);
+    }
+    if (feedback()?.textContent?.trim() !== "项目顺序已保存。") {
+      throw new Error("ProjectActions story did not show reorder feedback");
+    }
+
+    await chooseProjectAction(canvasElement, secondaryProjectId, "在文件管理器中显示", 3);
+    if (feedback()?.textContent?.trim() !== "已触发“在文件管理器中显示”，项目仍保持可用。") {
+      throw new Error("ProjectActions story did not show show-in-folder feedback");
+    }
+
+    await chooseProjectAction(canvasElement, secondaryProjectId, "修改显示名称", 4);
+    const renameInput = document.querySelector<HTMLInputElement>("[role='dialog'] input");
+    if (renameInput === null) {
+      throw new Error("ProjectActions story did not open the rename dialog");
+    }
+    await setStoryInputValue(renameInput, "docs-site-renamed");
+    const saveButton = Array.from(document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button"))
+      .find((button) => button.textContent?.trim() === "保存");
+    if (saveButton === undefined) {
+      throw new Error("ProjectActions story did not expose the rename confirmation");
+    }
+    await clickStoryElement(saveButton);
+    await nextStoryFrame();
+    if (canvasElement.textContent?.includes("docs-site-renamed") !== true) {
+      throw new Error("ProjectActions story did not show the renamed project");
+    }
+    if (feedback()?.textContent?.trim() !== "项目显示名称已更新。") {
+      throw new Error("ProjectActions story did not show rename feedback");
+    }
+
+    await chooseProjectAction(canvasElement, secondaryProjectId, "移除项目", 5);
+    const removeButton = Array.from(document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button"))
+      .find((button) => button.textContent?.trim() === "移除项目");
+    if (removeButton === undefined) {
+      throw new Error("ProjectActions story did not expose the remove confirmation");
+    }
+    await clickStoryElement(removeButton);
+    await nextStoryFrame();
+    if (canvasElement.querySelector(`[data-testid='conversation-sidebar-project'][data-project-id='${secondaryProjectId}']`) !== null) {
+      throw new Error("ProjectActions story did not remove the secondary project");
+    }
+    if (feedback()?.textContent?.trim() !== "项目已从侧栏移除，磁盘文件夹保留。") {
+      throw new Error("ProjectActions story did not show remove feedback");
+    }
+  },
+};
+
+function projectActionsRow(canvasElement: HTMLElement, projectId: string): HTMLElement {
+  const row = canvasElement.querySelector<HTMLElement>(
+    `[data-testid='conversation-sidebar-project'][data-project-id='${projectId}']`,
+  );
+  if (row === null) {
+    throw new Error(`ProjectActions story could not find project row ${projectId}`);
+  }
+  return row;
+}
+
+async function chooseProjectAction(
+  canvasElement: HTMLElement,
+  projectId: string,
+  label: string,
+  pointerId: number,
+): Promise<void> {
+  const trigger = projectActionsRow(canvasElement, projectId).querySelector<HTMLButtonElement>(
+    "[data-project-row-action='project-menu']",
+  );
+  if (trigger === null) {
+    throw new Error(`ProjectActions story could not find project menu ${projectId}`);
+  }
+  await dispatchStoryPointer(trigger, "pointerdown", pointerId, 180, 20);
+  await dispatchStoryPointer(trigger, "pointerup", pointerId, 180, 20);
+  await clickStoryElement(trigger);
+  await nextStoryFrame();
+  const menuItem = Array.from(document.querySelectorAll<HTMLElement>("[role='menuitem']"))
+    .find((element) => element.textContent?.trim() === label);
+  if (menuItem === undefined) {
+    throw new Error(`ProjectActions story could not find menu item ${label}`);
+  }
+  await dispatchStoryPointer(menuItem, "pointerdown", pointerId, 180, 20);
+  await dispatchStoryPointer(menuItem, "pointerup", pointerId, 180, 20);
+  await clickStoryElement(menuItem);
+  await nextStoryFrame();
+}
+
+async function clickStoryElement(element: Element): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  });
+}
+
+async function setStoryInputValue(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function ProjectActionsStory(): JSX.Element {
+  const [projects, setProjects] = useState<OperatorProject[]>(createProjectActionsFixture);
+  const [selectedProjectId, setSelectedProjectId] = useState("project-actions");
+  const [selectedSessionId, setSelectedSessionId] = useState("project-actions-session");
+  const [feedback, setFeedback] = useState("打开项目更多菜单，完成一个动作后这里会显示结果。");
+  const selectedProject = projects.find((candidate) => candidate.projectId === selectedProjectId)
+    ?? projects[0]!;
+  const selectedSession = selectedProject.sessions.find((candidate) => candidate.sessionId === selectedSessionId)
+    ?? selectedProject.sessions[0]
+    ?? null;
+
+  return (
+    <OperatorConsole
+      {...sample}
+      project={selectedProject}
+      projects={projects}
+      selectedProjectId={selectedProject.projectId}
+      selectedSessionId={selectedSession?.sessionId ?? ""}
+      selectedSession={selectedSession}
+      messages={[]}
+      activeRun={null}
+      composerValue=""
+      conversationNotice={<span data-testid="project-actions-feedback">{feedback}</span>}
+      onSelectSession={({ sessionId, projectId }) => {
+        setSelectedSessionId(sessionId);
+        setSelectedProjectId(projectId);
+        setFeedback("已打开所选对话。");
+      }}
+      onShowProjectInFolder={() => {
+        setFeedback("已触发“在文件管理器中显示”，项目仍保持可用。");
+      }}
+      onRenameProject={async (projectId, title) => {
+        const nextTitle = title.trim() || "project-actions";
+        setProjects((current) => current.map((candidate) => candidate.projectId === projectId
+          ? { ...candidate, title: nextTitle }
+          : candidate));
+        setFeedback("项目显示名称已更新。");
+      }}
+      onRemoveProject={async (projectId) => {
+        setProjects((current) => {
+          const next = current.filter((candidate) => candidate.projectId !== projectId);
+          const fallback = next[0];
+          if (fallback !== undefined) {
+            setSelectedProjectId(fallback.projectId);
+            setSelectedSessionId(fallback.sessions[0]?.sessionId ?? "");
+          }
+          return next;
+        });
+        setFeedback("项目已从侧栏移除，磁盘文件夹保留。");
+      }}
+      onReorderProjects={async (projectIds) => {
+        setProjects((current) => {
+          const byId = new Map(current.map((candidate) => [candidate.projectId, candidate]));
+          return projectIds.flatMap((projectId) => {
+            const candidate = byId.get(projectId);
+            return candidate === undefined ? [] : [candidate];
+          });
+        });
+        setFeedback("项目顺序已保存。");
+        return true;
+      }}
+    />
+  );
+}
+
+function createProjectActionsFixture(): OperatorProject[] {
+  const primarySession = {
+    ...sessions[1]!,
+    sessionId: "project-actions-session",
+    projectId: "project-actions",
+    title: "菜单动作旅程",
+    status: "idle" as const,
+    runningCount: 0,
+  };
+  const secondarySession = {
+    ...sessions[2]!,
+    sessionId: "project-actions-secondary-session",
+    projectId: "project-actions-secondary",
+    title: "拖拽与折叠复核",
+    status: "idle" as const,
+    runningCount: 0,
+  };
+  return [
+    {
+      ...sample.project,
+      projectId: "project-actions",
+      title: "moebius",
+      folderPath: "/Users/example/moebius",
+      sessions: [primarySession],
+      runningCount: 0,
+      waitingCount: 0,
+    },
+    {
+      ...sample.project,
+      projectId: "project-actions-secondary",
+      title: "docs-site",
+      folderPath: "/Users/example/docs-site",
+      sessions: [secondarySession],
+      runningCount: 0,
+      waitingCount: 0,
+    },
+  ];
+}
+
+async function dispatchStoryPointer(
+  element: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  pointerId: number,
+  clientX: number,
+  clientY: number,
+): Promise<void> {
+  const event = typeof globalThis.PointerEvent === "function"
+    ? new globalThis.PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerId,
+      clientX,
+      clientY,
+    })
+    : new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX,
+      clientY,
+    });
+  if (!("pointerId" in event)) {
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+  }
+  await act(async () => {
+    element.dispatchEvent(event);
+  });
+}
+
+async function dispatchStoryKey(element: Element, key: string): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key,
+    }));
+  });
+}
+
+async function nextStoryFrame(): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+}
+
+async function waitStoryMilliseconds(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 export const DashboardLoadingState: Story = {
   args: {

@@ -24,6 +24,7 @@ export function planPrimaryAgentContents(
       ? selectedMarkdown
       : agent.agentMarkdown ?? fileMarkdown.get(agent.name)!,
     executionProfile: agent.executionProfile ?? null,
+    continuationEnded: agent.continuationEnded === true,
   }));
 }
 
@@ -42,12 +43,14 @@ export function planPrimarySnapshotAgents(
     name: string;
     agentMarkdown: string;
     executionProfile?: LocalConsoleAgentFile["executionProfile"];
+    continuationEnded?: boolean;
   }[],
 ): LocalConsoleAgentFile[] {
   return members.map((member) => ({
     name: member.name,
     agentMarkdown: member.agentMarkdown,
     executionProfile: member.executionProfile ?? null,
+    continuationEnded: member.continuationEnded === true,
   }));
 }
 

@@ -6,19 +6,21 @@ import {
   ExternalLink,
   Info,
   Languages,
+  KeyRound,
   LoaderCircle,
   RefreshCw,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { MoebiusLogo } from "@/brand/moebius-logo";
 import { useI18n, type Locale } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { ProviderSettingsPanel, type ProviderSettingsController } from "./provider-settings-panel";
 
 export type LanguageSaveStatus = "idle" | "saving" | "failed";
-export type SettingsSection = "general" | "about";
+export type SettingsSection = "general" | "providers" | "about";
 export type UpdateCheckStatus =
   | "idle"
   | "checking"
@@ -45,6 +47,7 @@ export interface SettingsDialogProps {
   saveStatus: LanguageSaveStatus;
   activeSection?: SettingsSection;
   about?: SettingsAboutState;
+  providers?: ProviderSettingsController;
   externalLinkStatus?: "idle" | "failed";
   onOpenChange(open: boolean): void;
   onSectionChange?(section: SettingsSection): void;
@@ -66,6 +69,7 @@ export function SettingsDialog({
   saveStatus,
   activeSection = "general",
   about,
+  providers,
   externalLinkStatus = "idle",
   onOpenChange,
   onSectionChange,
@@ -79,7 +83,15 @@ export function SettingsDialog({
 }: SettingsDialogProps): JSX.Element {
   const { t } = useI18n();
   const selectedLocale = pendingLocale ?? activeLocale;
-  const visibleSection = activeSection === "about" && about !== undefined ? "about" : "general";
+  const visibleSection = activeSection === "providers" && providers !== undefined
+    ? "providers"
+    : activeSection === "about" && about !== undefined ? "about" : "general";
+
+  useEffect(() => {
+    if (open && visibleSection === "providers") {
+      providers?.refresh();
+    }
+  }, [open, providers?.refresh, visibleSection]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -121,6 +133,14 @@ export function SettingsDialog({
                 label={t("settings.general")}
                 onClick={() => onSectionChange?.("general")}
               />
+              {providers !== undefined ? (
+                <SettingsNavItem
+                  active={visibleSection === "providers"}
+                  icon={<KeyRound className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
+                  label={t("settings.providers")}
+                  onClick={() => onSectionChange?.("providers")}
+                />
+              ) : null}
               {about !== undefined ? (
                 <SettingsNavItem
                   active={visibleSection === "about"}
@@ -139,6 +159,8 @@ export function SettingsDialog({
                   onSelectLocale={onSelectLocale}
                   onRetry={onRetry}
                 />
+              ) : visibleSection === "providers" && providers !== undefined ? (
+                <ProviderSettingsPanel controller={providers} />
               ) : about !== undefined ? (
                 <AboutSettings
                   state={about}

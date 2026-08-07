@@ -78,6 +78,7 @@ function parseStoredDraft(
         executionProfile: { ...legacyExecutionProfile },
         externalSessionId: typeof legacyThreadId === "string" ? legacyThreadId : null,
         error: legacyError,
+        continuationEnded: false,
       } as unknown as AiTeamBuilderDraft,
     };
   }
@@ -95,6 +96,7 @@ function parseStoredDraft(
         externalSessionId: typeof value.externalSessionId === "string"
           ? value.externalSessionId
           : null,
+        continuationEnded: false,
       } as unknown as AiTeamBuilderDraft,
     };
   }
@@ -112,6 +114,7 @@ function parseStoredDraft(
       externalSessionId: typeof value.externalSessionId === "string"
         ? value.externalSessionId
         : null,
+      continuationEnded: value.continuationEnded === true,
     } as unknown as AiTeamBuilderDraft,
   };
 }

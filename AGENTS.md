@@ -48,6 +48,9 @@
 - import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
+- BYOK / Pi Electron 验收：`pnpm exec tsx scripts/acceptance/byok-pi-electron.ts`（从真实设置入口验证 DeepSeek 失败恢复、重启一致性、窄窗口与秘密落盘边界；临时数据与 evidence 均写系统临时目录）
+- BYOK / Pi API-only 引导验收：`pnpm exec tsx scripts/acceptance/byok-pi-onboarding.ts [--app <独立 Moebius.app>]`（在三套 CLI 均不可用的真实引导页验证 DeepSeek 建档、团队原子替换、完成与重启；传 `--app` 时同时验证签名 arm64 应用、safeStorage 与退出进程树；临时数据与 evidence 均写系统临时目录）
+- Pi Agent 能力验收：`pnpm exec tsx scripts/acceptance/pi-agent-capabilities.ts`（从本机 Keychain 的 `moebius-byok-acceptance` 项读取临时 Key，在隔离工作区真实验证 DeepSeek 工具循环、原生 resume 与秘密落盘边界；临时数据与 evidence 均写系统临时目录）
 - Desktop CLI PATH 验收：`pnpm exec tsx scripts/acceptance/desktop-cli-path-discovery.ts`（以隔离数据根、受限 GUI PATH、Bourne/csh 登录 shell fixture 和假 npm/Codex 验证首次发现、安装失败重试、安装后复检、继承 PATH 优先级及超时 fallback 进程树清理；evidence 写系统临时目录）
 - 文件阅读模式验收：`pnpm exec tsx scripts/acceptance/file-reading-modes.ts`（真实 Electron 中从消息、项目文件与结果卡入口断言完整源码、Review、Markdown Preview、外部预览及既有失败边界；临时数据与 evidence 均写系统临时目录）
 - 自动更新/退出保护隔离验收：`pnpm exec tsx scripts/acceptance/desktop-auto-update-shutdown.ts --app <独立临时 Moebius.app>`（只启动独立构建、临时数据根并记录自有 PID；不得传当前 `/Applications/Moebius.app`）

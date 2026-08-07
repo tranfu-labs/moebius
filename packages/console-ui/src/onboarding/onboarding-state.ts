@@ -1,8 +1,10 @@
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import type { ProviderSettingsProfile } from "@/console/provider-settings-panel";
 import type { Translate } from "@/i18n";
 
 export type OnboardingStep = 1 | 2 | 3 | 4;
 export type OnboardingCli = "codex" | "claude" | "kimi";
+export type OnboardingEngine = OnboardingCli | "pi";
 
 export type OnboardingCliReadinessStatus =
   | "checking"
@@ -73,27 +75,32 @@ export function isOnboardingCliReady(state: OnboardingCliReadiness): boolean {
 
 export function canContinueOnboardingEnvironment(
   environment: OnboardingEnvironmentState,
+  providerProfiles: readonly ProviderSettingsProfile[] = [],
 ): boolean {
   return isOnboardingCliReady(environment.codex)
     || isOnboardingCliReady(environment.claude)
-    || isOnboardingCliReady(environment.kimi);
+    || isOnboardingCliReady(environment.kimi)
+    || providerProfiles.some((profile) => profile.readiness === "ready");
 }
 
 export function chooseOnboardingBuilderCli(
   environment: OnboardingEnvironmentState,
-): OnboardingCli | null {
+  providerProfiles: readonly ProviderSettingsProfile[] = [],
+): OnboardingEngine | null {
   if (isOnboardingCliReady(environment.codex)) {
     return "codex";
   }
   if (isOnboardingCliReady(environment.kimi)) {
     return "kimi";
   }
-  return isOnboardingCliReady(environment.claude) ? "claude" : null;
+  if (isOnboardingCliReady(environment.claude)) return "claude";
+  return providerProfiles.some((profile) => profile.readiness === "ready") ? "pi" : null;
 }
 
 export interface OnboardingTeamCompatibility {
   affectedCount: number;
-  clis: OnboardingCli[];
+  memberSlugs: string[];
+  clis: OnboardingEngine[];
   copy: string;
 }
 
@@ -101,25 +108,35 @@ export function getOnboardingTeamCompatibility(
   team: OperatorAgentTeam | null,
   environment: OnboardingEnvironmentState,
   t: Translate,
+  providerProfiles: readonly ProviderSettingsProfile[] = [],
 ): OnboardingTeamCompatibility {
   if (team === null) {
-    return { affectedCount: 0, clis: [], copy: "" };
+    return { affectedCount: 0, memberSlugs: [], clis: [], copy: "" };
   }
-  const missing = team.members.flatMap((member): OnboardingCli[] => {
+  const missingMembers = team.members.flatMap((member): Array<{ slug: string; cli: OnboardingEngine }> => {
     const cli = member.executionProfile?.effectiveProfile.cli;
+    if (cli === "pi") {
+      const profileId = member.executionProfile?.effectiveProfile.cli === "pi"
+        ? member.executionProfile.effectiveProfile.providerProfileId
+        : "";
+      return providerProfiles.some((profile) => profile.id === profileId && profile.readiness === "ready")
+        ? []
+        : [{ slug: member.slug, cli: "pi" }];
+    }
     return (cli === "codex" || cli === "claude" || cli === "kimi")
       && !isOnboardingCliReady(environment[cli])
-      ? [cli]
+      ? [{ slug: member.slug, cli }]
       : [];
   });
-  const clis = [...new Set(missing)];
+  const clis = [...new Set(missingMembers.map(({ cli }) => cli))];
   return {
-    affectedCount: missing.length,
+    affectedCount: missingMembers.length,
+    memberSlugs: missingMembers.map(({ slug }) => slug),
     clis,
-    copy: missing.length === 0
+    copy: missingMembers.length === 0
       ? ""
       : t("onboarding.teamCompatibility", {
-          count: missing.length,
+          count: missingMembers.length,
           clis: clis
             .map(onboardingCliLabel)
             .join(" / "),
@@ -135,8 +152,8 @@ export function runningOnboardingInstallations(
     .filter((installation) => installation.status === "running");
 }
 
-export function onboardingCliLabel(cli: OnboardingCli): string {
-  return cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi";
+export function onboardingCliLabel(cli: OnboardingEngine): string {
+  return cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : cli === "kimi" ? "Kimi" : "Pi API";
 }
 
 export function reduceOnboardingShell(

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "@/i18n";
+import type { ProviderSettingsController } from "./provider-settings-panel";
 import { SettingsDialog, type SettingsDialogProps } from "./settings-dialog";
 
 function renderDialog(overrides: Partial<SettingsDialogProps> = {}) {
@@ -24,6 +25,38 @@ function renderDialog(overrides: Partial<SettingsDialogProps> = {}) {
 }
 
 describe("SettingsDialog", () => {
+  it("refreshes canonical Provider references whenever the Provider section becomes visible", () => {
+    const refresh = vi.fn();
+    const providers: ProviderSettingsController = {
+      state: { status: "ready", profiles: [] },
+      busyProfileId: null,
+      error: null,
+      canRetryCreateSave: false,
+      refresh,
+      create: async () => true,
+      retryCreateSave: async () => true,
+      discardCreateSave: () => undefined,
+      rotateKey: async () => true,
+      addModel: async () => true,
+      setDefaultModel: async () => true,
+      removeModel: async () => true,
+      replaceDefaultAndRemoveModel: async () => true,
+      rename: async () => true,
+      disable: async () => undefined,
+      enable: async () => undefined,
+      migrateReferences: async () => true,
+      retryReferenceOperation: async () => true,
+      endReference: async () => true,
+      delete: async () => undefined,
+      cancel: () => undefined,
+    };
+    renderDialog({ activeSection: "general", providers });
+    expect(refresh).not.toHaveBeenCalled();
+
+    renderDialog({ activeSection: "providers", providers });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it("shows only General and the two language options", () => {
     renderDialog();
 

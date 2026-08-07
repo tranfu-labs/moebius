@@ -11,7 +11,7 @@ import {
   planGracefulResumeTargets,
 } from "./run-recovery-plan.js";
 import type { LocalRunLifecycleFactStore } from "./run-lifecycle-runtime.js";
-import type { LocalConsoleMessage, LocalConsoleStore } from "./types.js";
+import type { LocalConsoleExecutionEngine, LocalConsoleMessage, LocalConsoleStore } from "./types.js";
 
 interface LocalRunRecoveryFactStore {
   getSessionFactLogPath(sessionId: string): string;
@@ -60,7 +60,7 @@ export class LocalRunRecoveryRuntime {
     sourceMessage: LocalConsoleMessage;
     intent: LocalCodexResumeIntentFact | null;
     role: string;
-    engine: "codex" | "claude" | "kimi";
+    engine: LocalConsoleExecutionEngine;
     reason: string;
     runDir: string | null;
   }): Promise<void> {

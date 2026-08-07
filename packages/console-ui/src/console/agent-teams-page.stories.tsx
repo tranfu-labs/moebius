@@ -52,6 +52,26 @@ const userTeam: OperatorAgentTeam = {
       slug: "product-manager",
       displayName: "产品经理",
       description: "澄清需求、拆分功能点并验收最终交付。",
+      executionProfile: {
+        binding: {
+          source: "explicit",
+          profile: {
+            cli: "pi",
+            providerId: "deepseek",
+            providerProfileId: "deepseek-production",
+            model: "deepseek-v4-pro",
+            effort: "high",
+          },
+        },
+        recommendation: null,
+        effectiveProfile: {
+          cli: "pi",
+          providerId: "deepseek",
+          providerProfileId: "deepseek-production",
+          model: "deepseek-v4-pro",
+          effort: "high",
+        },
+      },
     },
     {
       slug: "dev",
@@ -85,3 +105,23 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = {};
+
+export const PiApiMember: Story = {
+  args: {
+    selectedTeamKey: userTeam.teamKey,
+    selectedMemberSlug: "product-manager",
+    providerProfiles: [{
+      id: "deepseek-production",
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      displayName: "生产 DeepSeek",
+      defaultModel: "deepseek-v4-pro",
+      verifiedModels: ["deepseek-v4-pro", "deepseek-v4-flash"],
+      readiness: "ready",
+      reason: null,
+    }],
+    onSaveExecutionProfile: async () => userTeam.members[1]!.executionProfile!,
+    onRestoreRecommendedProfile: async () => userTeam.members[1]!.executionProfile!,
+    onOpenProviderSettings: () => undefined,
+  },
+};

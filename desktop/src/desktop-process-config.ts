@@ -8,6 +8,13 @@ import {
   resolveDesktopInstanceUserDataPath,
 } from "./data-root.js";
 
+// Electron's dev package name is the scoped `@moebius/desktop`; keep the
+// user-facing app name (and name-derived default paths) identical between dev
+// and packaged builds by setting it explicitly before the first
+// app.getPath("userData") call below (packaged builds already read this name
+// from electron-builder's productName, so this is a no-op there).
+const APP_NAME = "Moebius";
+
 export function configureDesktopProcess(input: {
   app: App;
   moduleUrl: string;
@@ -19,6 +26,7 @@ export function configureDesktopProcess(input: {
   seedRoot: string;
   seedTeamsRoot: string;
 } {
+  input.app.setName(APP_NAME);
   const dirname = path.dirname(fileURLToPath(input.moduleUrl));
   const projectRoot = path.resolve(dirname, "..", "..");
   const dataRoot = resolveDesktopDataRoot({

@@ -94,6 +94,7 @@ export class LocalWorkerPreparationRuntime {
       sourceMessage: input.sourceMessage,
       role: input.role,
       defaultProfile: planWorkerProfile(input.selectedAgent.executionProfile),
+      continuationEnded: input.selectedAgent.continuationEnded === true,
       defaultWorkspace: currentWorkspace,
       concurrentWorkspace: null,
       team: team.map((agent) => ({ ...agent, executionProfile: planWorkerProfile(agent.executionProfile) })),

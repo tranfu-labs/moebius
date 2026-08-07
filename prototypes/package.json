@@ -1,10 +1,11 @@
 {
   "name": "@moebius/prototypes",
-  "version": "0.3.4",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "scripts": {
     "build:agent-conversation": "vite build --mode agent-conversation && node scripts/publish-agent-conversation.mjs",
+    "build:byok-agent-runtime": "vite build --mode byok-agent-runtime && node scripts/publish-byok-agent-runtime.mjs",
     "build:main-conversation": "vite build --mode main-conversation && node scripts/publish-main-conversation.mjs",
     "build:main-left-sidebar": "vite build --mode main-left-sidebar && node scripts/publish-main-left-sidebar.mjs",
     "build:main-right-sidebar": "vite build --mode main-right-sidebar && node scripts/publish-main-right-sidebar.mjs",
@@ -14,11 +15,12 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "verify:agent-conversation": "node scripts/verify-agent-conversation.mjs",
+    "verify:byok-agent-runtime": "node scripts/verify-byok-agent-runtime.mjs && node scripts/verify-byok-agent-runtime-interactive.mjs",
     "verify:main-conversation": "node scripts/verify-main-conversation.mjs && node scripts/verify-main-conversation-interactive.mjs",
     "verify:main-left-sidebar": "node scripts/verify-main-left-sidebar.mjs && node scripts/verify-main-left-sidebar-interactive.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:settings": "node scripts/verify-settings.mjs && node scripts/verify-settings-interactive.mjs",
-    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding && pnpm build:agent-conversation && pnpm verify:agent-conversation && pnpm build:main-conversation && pnpm verify:main-conversation && pnpm build:main-left-sidebar && pnpm verify:main-left-sidebar && pnpm build:main-right-sidebar && pnpm verify:main-right-sidebar && pnpm build:settings && pnpm verify:settings",
+    "check": "pnpm check:boundaries && pnpm test && pnpm typecheck && pnpm build:onboarding && pnpm verify:onboarding && pnpm build:agent-conversation && pnpm verify:agent-conversation && pnpm build:main-conversation && pnpm verify:main-conversation && pnpm build:main-left-sidebar && pnpm verify:main-left-sidebar && pnpm build:main-right-sidebar && pnpm verify:main-right-sidebar && pnpm build:settings && pnpm verify:settings && pnpm build:byok-agent-runtime && pnpm verify:byok-agent-runtime",
     "verify:main-right-sidebar": "node scripts/verify-main-right-sidebar.mjs && node scripts/verify-main-right-sidebar-interactive.mjs"
   },
   "dependencies": {

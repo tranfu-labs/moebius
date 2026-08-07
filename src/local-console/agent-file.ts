@@ -5,4 +5,5 @@ export interface LocalConsoleAgentFile {
   path?: string;
   agentMarkdown?: string;
   executionProfile?: LocalConsoleExecutionProfile | null;
+  continuationEnded?: boolean;
 }

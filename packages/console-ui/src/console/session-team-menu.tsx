@@ -20,6 +20,8 @@ export function SessionTeamMenu({
   health,
   teams,
   disabled,
+  open,
+  onOpenChange,
   onSelectTeam,
 }: {
   team?: OperatorAgentTeam;
@@ -28,6 +30,8 @@ export function SessionTeamMenu({
   health?: "usable" | "deleted" | "needs-repair" | null;
   teams: readonly OperatorAgentTeam[];
   disabled?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onSelectTeam?: (team: OperatorAgentTeam) => void;
 }): JSX.Element | null {
   const { locale, t } = useI18n();
@@ -56,7 +60,7 @@ export function SessionTeamMenu({
   ));
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"

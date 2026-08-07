@@ -1,9 +1,26 @@
 export type ExecutionProfileCli = "codex" | "claude" | "kimi";
 
-export interface RegistryExecutionProfile {
+export interface RegistryCliExecutionProfile {
   cli: ExecutionProfileCli;
   model: string;
   effort: string;
+}
+
+export type RegistryExecutionProfile = RegistryCliExecutionProfile | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
+};
+
+export interface RegistryProviderProfile {
+  id: string;
+  providerId: "deepseek";
+  displayName: string;
+  defaultModel: "deepseek-v4-flash" | "deepseek-v4-pro" | null;
+  verifiedModels: Array<"deepseek-v4-flash" | "deepseek-v4-pro">;
+  readiness: "ready" | "needs-attention" | "disabled";
 }
 
 export interface ExecutionModelRegistryEntry {
@@ -56,7 +73,7 @@ export const DEFAULT_EXECUTION_PROFILES = {
   codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
   claude: { cli: "claude", model: "sonnet", effort: "high" },
   kimi: { cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" },
-} as const satisfies Record<ExecutionProfileCli, RegistryExecutionProfile>;
+} as const satisfies Record<ExecutionProfileCli, RegistryCliExecutionProfile>;
 
 export function listExecutionModels(
   cli: ExecutionProfileCli,
@@ -76,7 +93,7 @@ export function findExecutionModel(
 export function resolveProfileForCli(
   cli: ExecutionProfileCli,
   registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
-): RegistryExecutionProfile {
+): RegistryCliExecutionProfile {
   const preferred = DEFAULT_EXECUTION_PROFILES[cli];
   const model = findExecutionModel(cli, preferred.model, registry) ?? registry[cli][0];
   return model === undefined
@@ -85,10 +102,10 @@ export function resolveProfileForCli(
 }
 
 export function resolveProfileForModel(
-  profile: RegistryExecutionProfile,
+  profile: RegistryCliExecutionProfile,
   model: string,
   registry: ExecutionModelRegistry = EXECUTION_MODEL_REGISTRY,
-): RegistryExecutionProfile {
+): RegistryCliExecutionProfile {
   const definition = findExecutionModel(profile.cli, model, registry);
   if (definition === null) {
     return { ...profile };
@@ -143,6 +160,29 @@ function claudeModel(
     label: value,
     efforts,
     defaultEffort: "high",
+    membershipRestricted: false,
+  };
+}
+
+export const PI_EXECUTION_MODELS: readonly ExecutionModelRegistryEntry[] = [
+  piModel("deepseek-v4-flash", "DeepSeek V4 Flash", "high"),
+  piModel("deepseek-v4-pro", "DeepSeek V4 Pro", "high"),
+];
+
+export function findPiExecutionModel(model: string): ExecutionModelRegistryEntry | null {
+  return PI_EXECUTION_MODELS.find((candidate) => candidate.value === model) ?? null;
+}
+
+function piModel(
+  value: string,
+  label: string,
+  defaultEffort: string,
+): ExecutionModelRegistryEntry {
+  return {
+    value,
+    label,
+    efforts: ["high", "max"],
+    defaultEffort,
     membershipRestricted: false,
   };
 }

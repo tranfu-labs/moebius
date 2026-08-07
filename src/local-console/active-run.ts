@@ -1,6 +1,6 @@
 import type { LocalRunSourceDisposition } from "./codex-resume.js";
 import type { LocalRunActivity } from "./run-activity.js";
-import type { LocalConsoleExecutionProfile } from "./types.js";
+import type { LocalConsoleExecutionEngine, LocalConsoleExecutionProfile } from "./types.js";
 
 export interface ActiveLocalRun {
   sessionId: string;
@@ -28,7 +28,7 @@ export interface ActiveLocalRun {
   resuming: boolean;
   stepId: string;
   attempt: number;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   profile: LocalConsoleExecutionProfile | null;
   processOutputAvailable: boolean;
   terminalRecorded: boolean;

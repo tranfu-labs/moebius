@@ -15,7 +15,7 @@ import type {
   ProviderTraceResolverOptions,
 } from "./provider-process-trace.js";
 import type { LocalConsoleProcessEvent } from "./process-event-projector.js";
-import type { LocalConsoleMessage, LocalConsoleRunTiming } from "./types.js";
+import type { LocalConsoleExecutionEngine, LocalConsoleMessage, LocalConsoleRunTiming } from "./types.js";
 import type { TrustedJsonlIdentity } from "../trusted-jsonl.js";
 import {
   ProcessCursorError,
@@ -26,7 +26,7 @@ export interface LocalConsoleProcessAttemptMeta {
   runId: string;
   attempt: number;
   role: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   model: string | null;
   effort: string | null;
   provider: string | null;
@@ -49,7 +49,7 @@ export type LocalConsoleProcessTimelineEvent =
       runId: string;
       attempt: number;
       role: string;
-      engine: "codex" | "claude" | "kimi";
+      engine: LocalConsoleExecutionEngine;
       model: string | null;
       effort: string | null;
       provider: string | null;
@@ -83,7 +83,7 @@ export interface LocalConsoleProcessHistoryPage {
   role: string | null;
   status: "running" | "settled" | "unavailable";
   unavailableReason: LocalConsoleProcessUnavailableReason | null;
-  unavailableEngine: "codex" | "claude" | "kimi" | null;
+  unavailableEngine: LocalConsoleExecutionEngine | null;
   attempts: LocalConsoleProcessAttemptMeta[];
   events: LocalConsoleProcessTimelineEvent[];
   previousCursor: string | null;
@@ -103,7 +103,7 @@ export type LocalConsoleProcessDebugInvocation =
       status: "available";
       sessionId: string;
       runId: string;
-      engine: "codex" | "claude" | "kimi";
+      engine: LocalConsoleExecutionEngine;
       sections?: ProviderContextSection[];
       prompts: {
         system: CodexRolloutPromptLayer;
@@ -177,7 +177,7 @@ export type PreviousCursorState =
       sourceMessageId: number;
       attemptIndex: number;
       runId: string;
-      engine: "codex" | "claude" | "kimi";
+      engine: LocalConsoleExecutionEngine;
       stage: "output";
       position: number | null;
       identity: CursorIdentity | null;
@@ -190,7 +190,7 @@ export type PreviousCursorState =
       sourceMessageId: number;
       attemptIndex: number;
       runId: string;
-      engine: "codex" | "claude" | "kimi";
+      engine: LocalConsoleExecutionEngine;
       stage: "intro";
       position: number;
       identity: null;
@@ -204,7 +204,7 @@ export interface AppendCursorState {
   sourceMessageId: number;
   attemptIndex: number;
   runId: string;
-  engine: "codex" | "claude" | "kimi";
+  engine: LocalConsoleExecutionEngine;
   position: number;
   identity: CursorIdentity;
 }
@@ -236,7 +236,7 @@ export type ProcessAttemptsPreparation =
   | {
       kind: "unavailable";
       unavailableReason: LocalConsoleProcessUnavailableReason;
-      unavailableEngine: "codex" | "claude" | "kimi" | null;
+      unavailableEngine: LocalConsoleExecutionEngine | null;
     };
 
 export function decideProcessAttemptsAvailability(
@@ -271,7 +271,7 @@ export function planDebugTraceResolution(
 ):
   | { kind: "unavailable"; reason: string }
   | { kind: "codex"; resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "codex" }> }
-  | { kind: "native"; resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" }> } {
+  | { kind: "native"; resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" | "pi" }> } {
   if (resolution.status !== "available") return { kind: "unavailable", reason: resolution.reason };
   return resolution.engine === "codex"
     ? { kind: "codex", resolution }
@@ -330,7 +330,7 @@ export function planNativeDebugInvocation(input: {
   options: { sessionId: string; runId: string };
   link: ProviderTraceLink;
   context: LocalRunExecutionContextFact | undefined;
-  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" }>;
+  resolution: Extract<ProviderTraceResolution, { status: "available"; engine: "claude" | "kimi" | "pi" }>;
   providerContext: Awaited<ReturnType<LocalProcessTraceReader["readContext"]>>;
 }): LocalConsoleProcessDebugInvocation {
   if ("status" in input.providerContext) {
@@ -675,7 +675,7 @@ export function planProcessAttemptSelection(input: {
   requestedRunId: string;
 }):
   | { kind: "selected"; anchor: ProviderTraceLink; grouped: ProviderTraceLink[] }
-  | { kind: "unavailable"; reason: LocalConsoleProcessUnavailableReason; engine: "codex" | "claude" | "kimi" | null } {
+  | { kind: "unavailable"; reason: LocalConsoleProcessUnavailableReason; engine: LocalConsoleExecutionEngine | null } {
   const anchor = input.links.find((link) => link.runId === input.requestedRunId);
   if (anchor === undefined) {
     return {
@@ -712,6 +712,7 @@ export function planProcessAttemptMetadata(input: {
       cliVersion: null,
       metadataSource: model !== null || effort !== null ? "immutable-context" : "not-recorded",
       externalSessionId: link.externalSessionId,
+      ...(link.tracePath === undefined ? {} : { tracePath: link.tracePath }),
       identityLabel: link.engine === "codex" ? "thread" : "session",
       threadId: link.externalSessionId,
       startedAt: timing?.startedAt ?? link.startedAt,
@@ -780,7 +781,7 @@ export function planUnavailableProcessInvocation(
 export function planUnavailableProcessPage(
   options: Pick<LoadLocalProcessHistoryOptions, "sessionId" | "requestedRunId">,
   reason: LocalConsoleProcessUnavailableReason,
-  engine: "codex" | "claude" | "kimi" | null,
+  engine: LocalConsoleExecutionEngine | null,
   attempts: LocalConsoleProcessAttemptMeta[] = [],
 ): LocalConsoleProcessHistoryPage {
   return {
@@ -1059,6 +1060,7 @@ function sameProcessLink(left: ProviderTraceLink, right: ProviderTraceLink): boo
     && left.role === right.role
     && left.engine === right.engine
     && left.externalSessionId === right.externalSessionId
+    && left.tracePath === right.tracePath
     && left.contextFingerprint === right.contextFingerprint
     && left.startedAt === right.startedAt;
 }
@@ -1086,8 +1088,8 @@ export function planPromptFromSections(
   };
 }
 
-function planProviderDisplayName(engine: "codex" | "claude" | "kimi"): string {
-  return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : "Kimi";
+function planProviderDisplayName(engine: LocalConsoleExecutionEngine): string {
+  return engine === "codex" ? "Codex" : engine === "claude" ? "Claude" : engine === "kimi" ? "Kimi" : "Pi API";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

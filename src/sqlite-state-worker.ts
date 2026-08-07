@@ -24,6 +24,14 @@ import type {
 import { serializeTextFragmentReferences } from "./local-console/session-reference-text.js";
 import { appendSessionFactLogLineSync, canonicalJson } from "./local-console/session-fact-log.js";
 import {
+  normalizeProviderModel,
+  normalizeProviderProfile,
+  type ProviderOperation,
+  type ProviderProfile,
+  type ProviderReference,
+  formatProviderSessionReferenceOwner,
+} from "./provider-profile.js";
+import {
   assertCompleteProjectOrder,
   assertProjectRemovalIdle,
   decideDefaultProjectIdentity,
@@ -214,6 +222,27 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
     switch (input.command.kind) {
       case "local-init":
         return initLocalConsole(database);
+      case "provider-list-profiles":
+        return listProviderProfiles(database);
+      case "provider-get-profile":
+        return getProviderProfile(database, input.command.profileId);
+      case "provider-put-profile":
+        return putProviderProfile(database, input.command.profile, input.command.expectedRevision);
+      case "provider-commit-profile-operation":
+        return commitProviderProfileOperation(
+          database,
+          input.command.profile,
+          input.command.expectedRevision,
+          input.command.operation,
+        );
+      case "provider-delete-profile":
+        return deleteProviderProfile(database, input.command.profileId, input.command.expectedRevision);
+      case "provider-list-operations":
+        return listProviderOperations(database, input.command.profileId);
+      case "provider-put-operation":
+        return putProviderOperation(database, input.command.operation);
+      case "provider-list-session-references":
+        return listProviderSessionReferences(database, input.command.profileId);
       case "local-session-fact-migration-status":
         return sessionFactMigrationStatus(database);
       case "local-complete-session-fact-migration":
@@ -275,6 +304,7 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
       case "local-mark-pending-reference-error":
       case "local-update-pending-user":
       case "local-remove-pending-user":
+      case "local-update-session-member-execution":
         return rejectDirectSessionMessageWrite(input.command);
       case "local-commit-session-fact-write":
         return commitSessionFactWrite(database, input.command.factCommand, input.command.facts);
@@ -610,7 +640,39 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       updated_at TEXT NOT NULL,
       UNIQUE(session_id, run_id)
     );
+    CREATE TABLE IF NOT EXISTS provider_profiles (
+      profile_id TEXT PRIMARY KEY,
+      provider_id TEXT NOT NULL CHECK (provider_id = 'deepseek'),
+      display_name TEXT NOT NULL,
+      credential_ref TEXT NOT NULL,
+      key_suffix TEXT NOT NULL,
+      default_model TEXT,
+      verified_models_json TEXT NOT NULL,
+      readiness TEXT NOT NULL CHECK (readiness IN ('ready', 'needs-attention', 'disabled')),
+      safe_reason TEXT,
+      catalog_revision INTEGER NOT NULL CHECK (catalog_revision >= 1),
+      revision INTEGER NOT NULL CHECK (revision >= 1),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS provider_operations (
+      operation_id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('create', 'rotate-key', 'enable', 'add-model', 'set-default-model', 'remove-model', 'migrate', 'delete')),
+      status TEXT NOT NULL CHECK (status IN ('validating', 'saving', 'migrating', 'deleting', 'completed', 'failed', 'cancelled')),
+      base_revision INTEGER,
+      target_models_json TEXT NOT NULL,
+      completed_targets_json TEXT NOT NULL,
+      target_profile_id TEXT,
+      target_owner_ids_json TEXT NOT NULL DEFAULT '[]',
+      safe_reason TEXT,
+      started_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_operations_profile_updated
+      ON provider_operations(profile_id, updated_at DESC);
   `);
+  ensureProviderOperationColumns(database);
   migrateSessionEdgesHiddenKey(database);
   migrateLocalAcceptanceFactsHistory(database);
   migrateLocalMessageFailureMetadata(database);
@@ -646,6 +708,256 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   markSchemaMigration(database, "main-sidebar-t3-session-attention-state");
   markSchemaMigration(database, "local-console-managed-attachments");
   markSchemaMigration(database, "sidebar-chat-session-analysis");
+  markSchemaMigration(database, "byok-provider-profiles-v1");
+}
+
+function listProviderProfiles(database: SqliteDatabase): ProviderProfile[] {
+  return database.prepare(
+    "SELECT * FROM provider_profiles ORDER BY created_at ASC, profile_id ASC",
+  ).all().map((row) => readProviderProfile(row as Record<string, unknown>));
+}
+
+function getProviderProfile(database: SqliteDatabase, profileId: string): ProviderProfile | null {
+  const row = database.prepare("SELECT * FROM provider_profiles WHERE profile_id = ?").get(profileId);
+  return row === undefined ? null : readProviderProfile(row as Record<string, unknown>);
+}
+
+function putProviderProfile(
+  database: SqliteDatabase,
+  value: ProviderProfile,
+  expectedRevision: number | null,
+): ProviderProfile {
+  const profile = normalizeProviderProfile(value);
+  return transaction(database, () => writeProviderProfile(database, profile, expectedRevision));
+}
+
+function commitProviderProfileOperation(
+  database: SqliteDatabase,
+  value: ProviderProfile,
+  expectedRevision: number | null,
+  operation: ProviderOperation,
+): ProviderProfile {
+  const profile = normalizeProviderProfile(value);
+  return transaction(database, () => {
+    const saved = writeProviderProfile(database, profile, expectedRevision);
+    putProviderOperation(database, operation);
+    return saved;
+  });
+}
+
+function writeProviderProfile(
+  database: SqliteDatabase,
+  profile: ProviderProfile,
+  expectedRevision: number | null,
+): ProviderProfile {
+    const current = getProviderProfile(database, profile.id);
+    if (expectedRevision === null) {
+      if (current !== null) {
+        throw new Error("Provider profile already exists");
+      }
+    } else if (current?.revision !== expectedRevision) {
+      throw new Error("Provider profile revision conflict");
+    }
+    database.prepare(
+      `INSERT INTO provider_profiles (
+        profile_id, provider_id, display_name, credential_ref, key_suffix, default_model,
+        verified_models_json, readiness, safe_reason, catalog_revision, revision, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(profile_id) DO UPDATE SET
+        provider_id = excluded.provider_id,
+        display_name = excluded.display_name,
+        credential_ref = excluded.credential_ref,
+        key_suffix = excluded.key_suffix,
+        default_model = excluded.default_model,
+        verified_models_json = excluded.verified_models_json,
+        readiness = excluded.readiness,
+        safe_reason = excluded.safe_reason,
+        catalog_revision = excluded.catalog_revision,
+        revision = excluded.revision,
+        updated_at = excluded.updated_at`,
+    ).run(
+      profile.id,
+      profile.providerId,
+      profile.displayName,
+      profile.credentialRef,
+      profile.keySuffix,
+      profile.defaultModel,
+      JSON.stringify(profile.verifiedModels),
+      profile.readiness,
+      profile.reason,
+      profile.catalogRevision,
+      profile.revision,
+      profile.createdAt,
+      profile.updatedAt,
+    );
+  return getProviderProfile(database, profile.id)!;
+}
+
+function deleteProviderProfile(
+  database: SqliteDatabase,
+  profileId: string,
+  expectedRevision: number,
+): boolean {
+  return transaction(database, () => {
+    const current = getProviderProfile(database, profileId);
+    if (current === null) {
+      return false;
+    }
+    if (current.revision !== expectedRevision) {
+      throw new Error("Provider profile revision conflict");
+    }
+    const result = database.prepare("DELETE FROM provider_profiles WHERE profile_id = ?").run(profileId);
+    return Number(result.changes ?? 0) === 1;
+  });
+}
+
+function putProviderOperation(database: SqliteDatabase, operation: ProviderOperation): ProviderOperation {
+  assertProviderOperation(operation);
+  database.prepare(
+    `INSERT INTO provider_operations (
+      operation_id, profile_id, kind, status, base_revision, target_models_json,
+      completed_targets_json, target_profile_id, target_owner_ids_json, safe_reason, started_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(operation_id) DO UPDATE SET
+      status = excluded.status,
+      completed_targets_json = excluded.completed_targets_json,
+      target_profile_id = excluded.target_profile_id,
+      target_owner_ids_json = excluded.target_owner_ids_json,
+      safe_reason = excluded.safe_reason,
+      updated_at = excluded.updated_at`,
+  ).run(
+    operation.id,
+    operation.profileId,
+    operation.kind,
+    operation.status,
+    operation.baseRevision,
+    JSON.stringify(operation.targetModels),
+    JSON.stringify(operation.completedTargets),
+    operation.targetProfileId ?? null,
+    JSON.stringify(operation.targetOwnerIds ?? []),
+    operation.safeReason,
+    operation.startedAt,
+    operation.updatedAt,
+  );
+  return operation;
+}
+
+function listProviderOperations(database: SqliteDatabase, profileId?: string): ProviderOperation[] {
+  const rows = profileId === undefined
+    ? database.prepare("SELECT * FROM provider_operations ORDER BY updated_at DESC, operation_id ASC").all()
+    : database.prepare(
+      "SELECT * FROM provider_operations WHERE profile_id = ? ORDER BY updated_at DESC, operation_id ASC",
+    ).all(profileId);
+  return rows.map((row) => readProviderOperation(row as Record<string, unknown>));
+}
+
+function listProviderSessionReferences(database: SqliteDatabase, profileId: string): ProviderReference[] {
+  return database.prepare(
+    `SELECT session_id, slot, member_name, execution_model
+     FROM session_agent_team_members
+     WHERE execution_cli = 'pi'
+       AND provider_profile_id = ?
+       AND continuation_ended = 0
+       AND slot IN ('effective', 'pending')
+     ORDER BY session_id, slot, sort_order, member_name`,
+  ).all(profileId).map((row) => {
+    if (!isRecord(row)) throw new Error("Invalid Provider session reference row");
+    const sessionId = readString(row.session_id, "session_id");
+    const slot = readString(row.slot, "slot");
+    if (slot !== "effective" && slot !== "pending") {
+      throw new Error("Invalid Provider session reference slot");
+    }
+    const memberName = readString(row.member_name, "member_name");
+    return {
+      kind: slot === "effective" ? "resumable-session" : "queued-task",
+      ownerId: formatProviderSessionReferenceOwner({ sessionId, slot, memberName }),
+      label: `${sessionId} · ${memberName}`,
+      profileId,
+      model: normalizeProviderModel("deepseek", readString(row.execution_model, "execution_model")),
+    };
+  });
+}
+
+function readProviderProfile(row: Record<string, unknown>): ProviderProfile {
+  return normalizeProviderProfile({
+    id: row.profile_id,
+    providerId: row.provider_id,
+    displayName: row.display_name,
+    credentialRef: row.credential_ref,
+    keySuffix: row.key_suffix,
+    defaultModel: row.default_model,
+    verifiedModels: parseJsonArray(row.verified_models_json, "verified_models_json"),
+    readiness: row.readiness,
+    reason: row.safe_reason,
+    catalogRevision: readNumber(row.catalog_revision, "catalog_revision"),
+    revision: readNumber(row.revision, "revision"),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
+function readProviderOperation(row: Record<string, unknown>): ProviderOperation {
+  const targetOwnerIds = parseJsonArray(row.target_owner_ids_json ?? "[]", "target_owner_ids_json") as string[];
+  const targetProfileId = typeof row.target_profile_id === "string" && row.target_profile_id.length > 0
+    ? row.target_profile_id
+    : undefined;
+  const operation: ProviderOperation = {
+    id: readString(row.operation_id, "operation_id"),
+    profileId: readString(row.profile_id, "profile_id"),
+    kind: row.kind as ProviderOperation["kind"],
+    status: row.status as ProviderOperation["status"],
+    baseRevision: row.base_revision === null ? null : readNumber(row.base_revision, "base_revision"),
+    targetModels: parseJsonArray(row.target_models_json, "target_models_json") as ProviderOperation["targetModels"],
+    completedTargets: parseJsonArray(row.completed_targets_json, "completed_targets_json") as string[],
+    ...(targetProfileId === undefined ? {} : { targetProfileId }),
+    ...(targetOwnerIds.length === 0 ? {} : { targetOwnerIds }),
+    safeReason: row.safe_reason as ProviderOperation["safeReason"],
+    startedAt: readString(row.started_at, "started_at"),
+    updatedAt: readString(row.updated_at, "updated_at"),
+  };
+  assertProviderOperation(operation);
+  return operation;
+}
+
+function ensureProviderOperationColumns(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "provider_operations", "target_profile_id")) {
+    database.exec("ALTER TABLE provider_operations ADD COLUMN target_profile_id TEXT");
+  }
+  if (!tableHasColumn(database, "provider_operations", "target_owner_ids_json")) {
+    database.exec("ALTER TABLE provider_operations ADD COLUMN target_owner_ids_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  markSchemaMigration(database, "byok-provider-reference-operation-recovery-v2");
+}
+
+function assertProviderOperation(operation: ProviderOperation): void {
+  const kinds: readonly ProviderOperation["kind"][] = ["create", "rotate-key", "enable", "add-model", "set-default-model", "remove-model", "migrate", "delete"];
+  const statuses: readonly ProviderOperation["status"][] = [
+    "validating", "saving", "migrating", "deleting", "completed", "failed", "cancelled",
+  ];
+  if (
+    operation.id.length === 0
+    || operation.profileId.length === 0
+    || !kinds.includes(operation.kind)
+    || !statuses.includes(operation.status)
+    || !Array.isArray(operation.targetModels)
+    || !Array.isArray(operation.completedTargets)
+    || (operation.targetOwnerIds !== undefined && !Array.isArray(operation.targetOwnerIds))
+    || !Number.isFinite(Date.parse(operation.startedAt))
+    || !Number.isFinite(Date.parse(operation.updatedAt))
+  ) {
+    throw new Error("Invalid provider operation");
+  }
+}
+
+function parseJsonArray(value: unknown, field: string): unknown[] {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid SQLite row ${field}`);
+  }
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Invalid SQLite row ${field}`);
+  }
+  return parsed;
 }
 
 function migrateLocalTerminalFacts(database: SqliteDatabase): void {
@@ -836,7 +1148,16 @@ function ensureSessionAgentTeamProfileColumns(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "session_agent_team_members", "execution_effort")) {
     database.exec("ALTER TABLE session_agent_team_members ADD COLUMN execution_effort TEXT");
   }
+  if (!tableHasColumn(database, "session_agent_team_members", "provider_id")) {
+    database.exec("ALTER TABLE session_agent_team_members ADD COLUMN provider_id TEXT");
+  }
+  if (!tableHasColumn(database, "session_agent_team_members", "provider_profile_id")) {
+    database.exec("ALTER TABLE session_agent_team_members ADD COLUMN provider_profile_id TEXT");
+  }
   migrateSessionAgentTeamProfileCliConstraint(database);
+  if (!tableHasColumn(database, "session_agent_team_members", "continuation_ended")) {
+    database.exec("ALTER TABLE session_agent_team_members ADD COLUMN continuation_ended INTEGER NOT NULL DEFAULT 0");
+  }
   markSchemaMigration(database, "agent-runtime-profiles-session-snapshot");
 }
 
@@ -849,6 +1170,7 @@ function migrateAgentTeamSnapshotTraceability(database: SqliteDatabase): void {
   database.exec("PRAGMA foreign_keys = OFF");
   try {
     transaction(database, () => {
+      const sourceHasPiColumns = tableHasColumn(database, "session_agent_team_members", "provider_profile_id");
       database.exec(`
         CREATE TABLE session_agent_team_members_snapshot_migration (
           session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -859,18 +1181,21 @@ function migrateAgentTeamSnapshotTraceability(database: SqliteDatabase): void {
           agent_markdown TEXT NOT NULL,
           sort_order INTEGER NOT NULL,
           execution_cli TEXT CHECK (
-            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi')
+            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi', 'pi')
           ),
           execution_model TEXT,
           execution_effort TEXT,
+          provider_id TEXT CHECK (provider_id IS NULL OR provider_id = 'deepseek'),
+          provider_profile_id TEXT,
+          continuation_ended INTEGER NOT NULL DEFAULT 0,
           snapshot_key TEXT,
           PRIMARY KEY(session_id, slot, member_name)
         );
         INSERT INTO session_agent_team_members_snapshot_migration
           (session_id, slot, member_name, agent_markdown, sort_order,
-           execution_cli, execution_model, execution_effort)
+           execution_cli, execution_model, execution_effort${sourceHasPiColumns ? ", provider_id, provider_profile_id, continuation_ended" : ""})
         SELECT session_id, slot, member_name, agent_markdown, sort_order,
-               execution_cli, execution_model, execution_effort
+               execution_cli, execution_model, execution_effort${sourceHasPiColumns ? ", provider_id, provider_profile_id, continuation_ended" : ""}
         FROM session_agent_team_members
         ORDER BY session_id, slot, sort_order, member_name;
         DROP TABLE session_agent_team_members;
@@ -923,7 +1248,7 @@ function migrateAgentTeamSnapshotTraceability(database: SqliteDatabase): void {
 }
 
 function migrateSessionAgentTeamProfileCliConstraint(database: SqliteDatabase): void {
-  const migrationVersion = "support-claude-cli-session-profile-constraint";
+  const migrationVersion = "support-pi-api-session-profile-v2";
   if (
     database.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
       .get(migrationVersion) !== undefined
@@ -936,47 +1261,57 @@ function migrateSessionAgentTeamProfileCliConstraint(database: SqliteDatabase): 
   if (
     isRecord(tableSql)
     && typeof tableSql.sql === "string"
-    && tableSql.sql.includes("'claude'")
+    && tableSql.sql.includes("'pi'")
+    && tableSql.sql.includes("provider_profile_id")
   ) {
     markSchemaMigration(database, migrationVersion);
     return;
   }
   const beforeCount = readTableRowCount(database, "session_agent_team_members");
+  const sourceHasSnapshotTraceabilityColumns = tableHasColumn(database, "session_agent_team_members", "snapshot_key");
+  const traceabilityColumns = sourceHasSnapshotTraceabilityColumns
+    ? ", display_name, member_description, snapshot_key"
+    : "";
   database.exec("PRAGMA foreign_keys = OFF");
   try {
     transaction(database, () => {
       database.exec(`
-        CREATE TABLE session_agent_team_members_claude_migration (
+        CREATE TABLE session_agent_team_members_pi_migration (
           session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-          slot TEXT NOT NULL CHECK (slot IN ('effective', 'pending')),
+          slot TEXT NOT NULL CHECK (slot IN ('effective', 'candidate', 'pending')),
           member_name TEXT NOT NULL,
+          display_name TEXT,
+          member_description TEXT,
           agent_markdown TEXT NOT NULL,
           sort_order INTEGER NOT NULL,
           execution_cli TEXT CHECK (
-            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi')
+            execution_cli IS NULL OR execution_cli IN ('codex', 'claude', 'kimi', 'pi')
           ),
           execution_model TEXT,
           execution_effort TEXT,
+          provider_id TEXT CHECK (provider_id IS NULL OR provider_id = 'deepseek'),
+          provider_profile_id TEXT,
+          snapshot_key TEXT,
           PRIMARY KEY(session_id, slot, member_name)
         );
-        INSERT INTO session_agent_team_members_claude_migration
+        INSERT INTO session_agent_team_members_pi_migration
           (session_id, slot, member_name, agent_markdown, sort_order,
-           execution_cli, execution_model, execution_effort)
+           execution_cli, execution_model, execution_effort, provider_id, provider_profile_id${traceabilityColumns})
         SELECT session_id, slot, member_name, agent_markdown, sort_order,
-               execution_cli, execution_model, execution_effort
+               execution_cli, execution_model, execution_effort, provider_id, provider_profile_id${traceabilityColumns}
         FROM session_agent_team_members
         ORDER BY session_id, slot, sort_order, member_name;
         DROP TABLE session_agent_team_members;
-        ALTER TABLE session_agent_team_members_claude_migration
+        ALTER TABLE session_agent_team_members_pi_migration
           RENAME TO session_agent_team_members;
       `);
       const afterCount = readTableRowCount(database, "session_agent_team_members");
       if (afterCount !== beforeCount) {
-        throw new Error("Row count changed during Claude execution profile migration");
+        throw new Error("Row count changed during Pi execution profile migration");
       }
       const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all();
       if (foreignKeyViolations.length > 0) {
-        throw new Error("Foreign key check failed during Claude execution profile migration");
+        throw new Error("Foreign key check failed during Pi execution profile migration");
       }
       markSchemaMigration(database, migrationVersion);
       return null;
@@ -1653,6 +1988,7 @@ function executeSessionFactWrite(database: SqliteDatabase, command: SqliteStateC
     case "local-record-dead-letter": return recordLocalDeadLetter(database, command);
     case "local-record-workspace-diff": return recordLocalWorkspaceDiff(database, command);
     case "local-mark-stale-running": return markStaleRunning(database, command);
+    case "local-update-session-member-execution": return updateLocalSessionMemberExecution(database, command);
     default:
       throw new Error(`Unsupported session fact write command: ${command.kind}`);
   }
@@ -2064,6 +2400,7 @@ function switchLocalSessionTeam(
            AND speaker = 'user'
            AND status = 'pending'
            AND dispatch_lane = 'worker'
+           AND COALESCE(error, '') <> 'TARGET_CONTINUATION_ENDED'
          LIMIT 1`,
       )
       .get(input.sessionId) !== undefined;
@@ -2094,6 +2431,63 @@ function switchLocalSessionTeam(
   });
 }
 
+function updateLocalSessionMemberExecution(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-update-session-member-execution" }>,
+): unknown {
+  return transaction(database, () => {
+    requireLocalSession(database, input.sessionId);
+    if (hasRunningMessage(database, input.sessionId)) {
+      throw new Error("SESSION_EXECUTION_MIGRATION_BUSY");
+    }
+    const existing = database.prepare(
+      `SELECT 1 AS found
+       FROM session_agent_team_members
+       WHERE session_id = ? AND slot = 'effective' AND member_name = ?`,
+    ).get(input.sessionId, input.memberName);
+    if (existing === undefined) {
+      throw new Error("SESSION_MEMBER_NOT_FOUND");
+    }
+    if (input.action === "migrate") {
+      const profile = input.executionProfile;
+      if (profile === undefined) throw new Error("SESSION_EXECUTION_PROFILE_REQUIRED");
+      database.prepare(
+        `UPDATE session_agent_team_members
+         SET execution_cli = ?, execution_model = ?, execution_effort = ?,
+             provider_id = ?, provider_profile_id = ?, continuation_ended = 0
+         WHERE session_id = ? AND slot = 'effective' AND member_name = ?`,
+      ).run(
+        profile.cli,
+        profile.model,
+        profile.effort,
+        profile.cli === "pi" ? profile.providerId : null,
+        profile.cli === "pi" ? profile.providerProfileId : null,
+        input.sessionId,
+        input.memberName,
+      );
+    } else {
+      database.prepare(
+        `UPDATE session_agent_team_members
+         SET continuation_ended = 1
+         WHERE session_id = ? AND slot = 'effective' AND member_name = ?`,
+      ).run(input.sessionId, input.memberName);
+      database.prepare(
+        `UPDATE session_messages
+         SET error = 'TARGET_CONTINUATION_ENDED', updated_at = ?
+         WHERE session_id = ?
+           AND speaker = 'user'
+           AND status = 'pending'
+           AND dispatch_lane IN ('primary', 'worker')
+           AND dispatch_role = ?`,
+      ).run(input.now, input.sessionId, input.memberName);
+    }
+    database.prepare(
+      "UPDATE sessions SET updated_at = ? WHERE session_id = ? AND source_type = 'local'",
+    ).run(input.now, input.sessionId);
+    return listLocalSessionAgentTeamSnapshot(database, input.sessionId);
+  });
+}
+
 function applyPendingLocalSessionContext(
   database: SqliteDatabase,
   input: Extract<SqliteStateCommand, { kind: "local-apply-pending-session-context" }>,
@@ -2118,6 +2512,7 @@ function applyPendingLocalSessionContext(
            AND status IN ('pending', 'running')
            AND dispatch_lane != 'awaiting-team'
            AND (? IS NULL OR dispatch_snapshot_key = ? OR dispatch_snapshot_key IS NULL)
+           AND (status != 'pending' OR COALESCE(error, '') <> 'TARGET_CONTINUATION_ENDED')
          LIMIT 1`,
       )
       .get(input.sessionId, fromSnapshotKey, fromSnapshotKey);
@@ -2250,8 +2645,9 @@ function replaceLocalSessionAgentTeamSnapshot(
   const insert = database.prepare(
     `INSERT INTO session_agent_team_members
       (session_id, slot, member_name, display_name, member_description, agent_markdown,
-       execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+       continuation_ended, sort_order, snapshot_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   snapshot.members.forEach((member, index) => {
     const profile = member.executionProfile;
@@ -2265,6 +2661,9 @@ function replaceLocalSessionAgentTeamSnapshot(
       profile?.cli ?? null,
       profile?.model ?? null,
       profile?.effort ?? null,
+      profile?.cli === "pi" ? profile.providerId : null,
+      profile?.cli === "pi" ? profile.providerProfileId : null,
+      member.continuationEnded === true ? 1 : 0,
       index,
       snapshot.snapshotKey ?? null,
     );
@@ -2298,7 +2697,8 @@ function readLocalSessionAgentTeamSnapshotSlot(
 ): LocalConsoleAgentTeamSnapshot | null {
   const rows = database.prepare(
     `SELECT member_name, display_name, member_description, agent_markdown,
-            execution_cli, execution_model, execution_effort, snapshot_key
+            execution_cli, execution_model, execution_effort,
+            provider_id, provider_profile_id, continuation_ended
      FROM session_agent_team_members
      WHERE session_id = ? AND slot = ?
      ORDER BY sort_order ASC, member_name ASC`,
@@ -2346,6 +2746,7 @@ function readLocalSessionAgentTeamSnapshotSlot(
         description: readNullableString(row.member_description, "member_description"),
         agentMarkdown: readString(row.agent_markdown, "agent_markdown"),
         executionProfile: readExecutionProfile(row),
+        continuationEnded: row.continuation_ended === 1,
       };
     }),
   };
@@ -2417,9 +2818,11 @@ function beginLocalSessionTeamUpdate(
     database.prepare(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, display_name, member_description, agent_markdown,
-         execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+         execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+         continuation_ended, sort_order, snapshot_key)
        SELECT session_id, 'pending', member_name, display_name, member_description, agent_markdown,
-              execution_cli, execution_model, execution_effort, sort_order, snapshot_key
+              execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+              continuation_ended, sort_order, snapshot_key
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'candidate'`,
     ).run(input.sessionId);
@@ -2883,9 +3286,11 @@ function createLocalChildSession(
     database.prepare(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, display_name, member_description, agent_markdown,
-         execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+         execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+         continuation_ended, sort_order, snapshot_key)
        SELECT ?, 'effective', member_name, display_name, member_description, agent_markdown,
-              execution_cli, execution_model, execution_effort, sort_order, snapshot_key
+              execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+              continuation_ended, sort_order, snapshot_key
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'effective'
        ON CONFLICT(session_id, slot, member_name) DO NOTHING`,
@@ -3759,6 +4164,7 @@ function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string)
          AND speaker = 'user'
          AND status = 'pending'
          AND dispatch_lane IN ('worker', 'awaiting-team')
+         AND COALESCE(error, '') <> 'TARGET_CONTINUATION_ENDED'
        LIMIT 1`,
     )
     .get(sessionId) !== undefined;
@@ -3785,6 +4191,7 @@ function hasPendingLocalControlWork(database: SqliteDatabase, sessionId: string)
              (speaker = 'user' AND status IN ('pending', 'running'))
              OR (speaker = 'agent' AND status = 'displayed')
            )
+           AND COALESCE(error, '') <> 'TARGET_CONTINUATION_ENDED'
          LIMIT 1`,
       )
       .get(sessionId, processedThroughMessageId) !== undefined;
@@ -3841,6 +4248,9 @@ function claimNextPendingMessage(
     }
     const message = readLocalMessageRow(row);
     if (message.speaker === "user" && message.dispatchLane === "awaiting-team") {
+      return null;
+    }
+    if (message.speaker === "user" && message.error === "TARGET_CONTINUATION_ENDED") {
       return null;
     }
     if (message.speaker === "user" && message.dispatchLane === "worker") {
@@ -3935,6 +4345,7 @@ function claimNextPendingWorkerMessage(
            AND status = 'pending'
            AND dispatch_lane = 'worker'
            AND dispatch_role = ?
+           AND COALESCE(error, '') <> 'TARGET_CONTINUATION_ENDED'
          ORDER BY id ASC
          LIMIT 1`,
       )
@@ -5461,14 +5872,22 @@ function readLocalExecutionProfile(
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) throw new Error("Invalid terminal.actualProfile");
   const cli = readString(value.cli, "terminal.actualProfile.cli");
-  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi") {
     throw new Error("Invalid terminal.actualProfile.cli");
   }
-  return {
-    cli,
-    model: readString(value.model, "terminal.actualProfile.model"),
-    effort: readString(value.effort, "terminal.actualProfile.effort"),
-  };
+  const model = readString(value.model, "terminal.actualProfile.model");
+  const effort = readString(value.effort, "terminal.actualProfile.effort");
+  if (cli === "pi") {
+    if (value.providerId !== "deepseek") throw new Error("Invalid terminal.actualProfile.providerId");
+    return {
+      cli,
+      providerId: "deepseek",
+      providerProfileId: readString(value.providerProfileId, "terminal.actualProfile.providerProfileId"),
+      model,
+      effort,
+    };
+  }
+  return { cli, model, effort };
 }
 
 function ensureSession(
@@ -5528,6 +5947,12 @@ function readExecutionProfile(row: Record<string, unknown>): {
   cli: "codex" | "claude" | "kimi";
   model: string;
   effort: string;
+} | {
+  cli: "pi";
+  providerId: "deepseek";
+  providerProfileId: string;
+  model: string;
+  effort: string;
 } | null {
   const cli = row.execution_cli;
   const model = row.execution_model;
@@ -5536,13 +5961,19 @@ function readExecutionProfile(row: Record<string, unknown>): {
     return null;
   }
   if (
-    (cli !== "codex" && cli !== "claude" && cli !== "kimi")
+    (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi")
     || typeof model !== "string"
     || model.length === 0
     || typeof effort !== "string"
     || effort.length === 0
   ) {
     throw new Error("Invalid local session execution profile");
+  }
+  if (cli === "pi") {
+    if (row.provider_id !== "deepseek" || typeof row.provider_profile_id !== "string" || row.provider_profile_id.length === 0) {
+      throw new Error("Invalid Pi local session execution profile");
+    }
+    return { cli, providerId: "deepseek", providerProfileId: row.provider_profile_id, model, effort };
   }
   return { cli, model, effort };
 }

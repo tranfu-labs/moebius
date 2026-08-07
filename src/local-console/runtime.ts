@@ -116,7 +116,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.storePorts = new LocalConsoleStorePorts(options.store, this.storeTimeoutMs);
     this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
       dataRoot: options.dataRoot ?? options.projectRoot,
-      runCodex: options.runCodex, createManagedProcessMcp: options.createManagedProcessMcp,
+      runCodex: options.runCodex, runPi: options.runPi, createManagedProcessMcp: options.createManagedProcessMcp,
     });
     const adapters = createLocalRuntimeAdapters({
       options,

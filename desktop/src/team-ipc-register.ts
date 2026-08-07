@@ -56,6 +56,8 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
     await service.readAgentTeamExecutionProfile(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.saveExecutionProfile, async (_event, request: unknown) =>
     await service.saveAgentTeamExecutionProfile(options.dataRoot, request));
+  ipcMain.handle(TEAM_IPC_CHANNELS.replaceUnavailableExecutionProfiles, async (_event, request: unknown) =>
+    await service.replaceUnavailableAgentTeamExecutionProfiles(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
     await service.restoreAgentTeamRecommendedProfile(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.prepareOfficialUpdate, async (_event, request: unknown) =>

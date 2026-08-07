@@ -1517,6 +1517,45 @@ describe("OperatorConsole", () => {
     expect(screen.getByText("→ 开发")).toBeVisible();
   });
 
+  it("keeps an ended target as an explicit unsent item that can be resubmitted, edited, or removed", () => {
+    const onRetryPendingMessage = vi.fn();
+    const onEditPendingMessage = vi.fn();
+    const onRemovePendingMessage = vi.fn();
+    renderConsole({
+      pendingDispatchMessages: [{
+        message: message({
+          id: 17,
+          body: "@dev 继续处理",
+          status: "pending",
+          error: "TARGET_CONTINUATION_ENDED",
+        }),
+        targetLane: "worker",
+        targetRole: "dev",
+        waitingForTeam: false,
+        targetUnavailable: true,
+      }],
+      onRetryPendingMessage,
+      onEditPendingMessage,
+      onRemovePendingMessage,
+    });
+
+    const pendingZone = screen.getByTestId("primary-pending-zone");
+    expect(within(pendingZone).getByText("未发送 · 原目标不可继续")).toBeVisible();
+    expect(within(pendingZone).queryByText("TARGET_CONTINUATION_ENDED")).not.toBeInTheDocument();
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "重新提交" }));
+    expect(onRetryPendingMessage).toHaveBeenCalledWith("session-a", 17);
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "编辑" }));
+    fireEvent.change(within(pendingZone).getByRole("textbox", { name: "编辑待发射内容或来源引用" }), {
+      target: { value: "@dev 由新团队继续" },
+    });
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "保存并重试" }));
+    expect(onEditPendingMessage).toHaveBeenCalledWith("session-a", 17, "@dev 由新团队继续");
+
+    fireEvent.click(within(pendingZone).getByRole("button", { name: "移除" }));
+    expect(onRemovePendingMessage).toHaveBeenCalledWith("session-a", 17);
+  });
+
   it("keeps a source-failed queue head in place with retry, edit, and remove recovery", () => {
     const onRetryPendingMessage = vi.fn();
     const onEditPendingMessage = vi.fn();
@@ -3275,16 +3314,43 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "修改显示名称" }));
     const renameDialog = screen.getByRole("dialog", { name: "修改显示名称" });
     expect(renameDialog).toHaveTextContent("不会重命名磁盘文件夹");
+    const renameInput = screen.getByRole("textbox", { name: "显示名称" });
+    const renameSave = screen.getByRole("button", { name: "保存" });
+    await waitFor(() => expect(renameInput).toHaveFocus());
+    renameSave.focus();
+    fireEvent.keyDown(renameSave, { key: "Tab" });
+    expect(renameInput).toHaveFocus();
+    fireEvent.keyDown(renameInput, { key: "Tab", shiftKey: true });
+    expect(renameSave).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "moebius 项目菜单" })).toHaveFocus());
+
+    await openProjectMenu("moebius");
+    fireEvent.click(screen.getByRole("menuitem", { name: "修改显示名称" }));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "显示名称" })).toHaveFocus());
     fireEvent.change(screen.getByRole("textbox", { name: "显示名称" }), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(onRenameProject).toHaveBeenCalledWith("local", ""));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改显示名称" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "moebius 项目菜单" })).toHaveFocus());
 
     await openProjectMenu("moebius");
     fireEvent.click(screen.getByRole("menuitem", { name: "移除项目" }));
     const removeDialog = screen.getByRole("dialog", { name: "移除项目？" });
     expect(removeDialog).toHaveTextContent("绝不会删除或修改磁盘上的项目文件夹");
     expect(removeDialog).toHaveTextContent("/Users/example/moebius");
+    const removeCancel = screen.getByRole("button", { name: "取消" });
+    const removeConfirm = screen.getByRole("button", { name: "移除项目" });
+    await waitFor(() => expect(removeCancel).toHaveFocus());
+    fireEvent.keyDown(removeCancel, { key: "Tab", shiftKey: true });
+    expect(removeConfirm).toHaveFocus();
+    fireEvent.keyDown(removeConfirm, { key: "Tab" });
+    expect(removeCancel).toHaveFocus();
+    fireEvent.keyDown(removeCancel, { key: "Escape" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "moebius 项目菜单" })).toHaveFocus());
+
+    await openProjectMenu("moebius");
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除项目" }));
     fireEvent.click(screen.getByRole("button", { name: "移除项目" }));
     await waitFor(() => expect(onRemoveProject).toHaveBeenCalledWith("local", false));
   });

@@ -114,18 +114,31 @@ function parseExecutionOverride(
     throw new Error("invalid execution override");
   }
   const cli = readString(value.profile.cli, "executionOverride.profile.cli");
-  if (cli !== "codex" && cli !== "claude" && cli !== "kimi") {
+  if (cli !== "codex" && cli !== "claude" && cli !== "kimi" && cli !== "pi") {
     throw new Error(`invalid execution override cli: ${cli}`);
   }
   return {
     overrideId: readString(value.overrideId, "executionOverride.overrideId"),
-    profile: {
-      cli,
-      model: readString(value.profile.model, "executionOverride.profile.model"),
-      effort: readString(value.profile.effort, "executionOverride.profile.effort"),
-    },
+    profile: cli === "pi"
+      ? {
+          cli,
+          providerId: readDeepSeekProviderId(value.profile.providerId),
+          providerProfileId: readString(value.profile.providerProfileId, "executionOverride.profile.providerProfileId"),
+          model: readString(value.profile.model, "executionOverride.profile.model"),
+          effort: readString(value.profile.effort, "executionOverride.profile.effort"),
+        }
+      : {
+          cli,
+          model: readString(value.profile.model, "executionOverride.profile.model"),
+          effort: readString(value.profile.effort, "executionOverride.profile.effort"),
+        },
     scope: "single-run",
   };
+}
+
+function readDeepSeekProviderId(value: unknown): "deepseek" {
+  if (value !== "deepseek") throw new Error("invalid Pi provider id");
+  return value;
 }
 
 function parseAgentHandoffRepairIntentId(value: unknown, sessionId: string): string {

@@ -17,7 +17,6 @@ import {
   buildSeedCopyPlan,
   executeSeedCopyPlan,
 } from "./data-root.js";
-import { checkCodex } from "./env-doctor.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
 import { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
 import { DesktopShutdownRuntime } from "./desktop-shutdown-runtime.js";
@@ -26,6 +25,7 @@ import { createShellPathReadinessGate, resolveShellPath } from "./shell-path.js"
 import type { DesktopStatusSnapshot } from "./status.js";
 import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
+import { AiTeamBuilderPiSpawner } from "./ai-team-builder/pi-spawner.js";
 import { createAgentTeamService } from "./team-ipc.js";
 import { registerTeamIpc } from "./team-ipc-register.js";
 import { seedBuiltInTeams } from "./team-seed.js";
@@ -44,9 +44,10 @@ import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
 import { DesktopUpdateRuntime } from "./desktop-update-runtime.js";
 import type { DesktopUpdateProvider } from "./desktop-update-contract.js";
 import { createDesktopUpdateReadyStore } from "./desktop-update-store.js";
-import { registerDesktopCoreIpc } from "./desktop-core-ipc-register.js";
+import { registerDesktopMainInfrastructureIpc } from "./desktop-main-infrastructure-ipc.js";
 import { configureDesktopProcess } from "./desktop-process-config.js";
 import { registerDesktopLifecycle } from "./desktop-lifecycle-register.js";
+import { createDesktopProviderProfileWiring } from "./provider-profile-wiring.js";
 import { registerOnboardingIpc } from "./onboarding/register.js";
 import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
@@ -56,10 +57,8 @@ import {
   installUpdateDialogOptions,
 } from "./onboarding/shutdown-coordination.js";
 import type { DesktopLocale } from "./language-preference-contract.js";
-import { registerLanguagePreferenceIpc } from "./language-preference-ipc.js";
 import {
   readLanguagePreference,
-  saveLanguagePreference,
 } from "./language-preference.js";
 import { translateDesktop } from "./i18n/index.js";
 
@@ -92,6 +91,15 @@ const status: DesktopStatusSnapshot = {
   seed: { status: "pending", copied: 0, skipped: 0 },
   update: null,
 };
+
+const providerWiring = createDesktopProviderProfileWiring({
+  dataRoot,
+  dirname,
+  agentTeamService,
+  seedPending: () => status.seed.status === "pending",
+  getSessionRuntime: () => localConsole?.pathSource ?? null,
+});
+const { runPi } = providerWiring;
 
 const windows = new DesktopWindowRuntime({
   dirname,
@@ -136,6 +144,7 @@ localConsole = new DesktopLocalConsoleRuntime({
   startServer: startLocalConsoleServer,
   createCapability: () => randomBytes(32).toString("base64url"),
   createTeamOptions: (findSession) => ({
+    runPi,
     listAgentFiles: async (sessionId) => teamRuntimeBinding.listSessionAgentFiles({
       dataRoot: status.dataRoot,
       session: await findSession(sessionId),
@@ -154,6 +163,7 @@ localConsole = new DesktopLocalConsoleRuntime({
   formatError: formatLocalError,
 });
 
+let providerProfileOperations: { getRunningTaskCount(): number; cancelAll(): void } | null = null;
 shutdown = new DesktopShutdownRuntime({
   closeLocalConsole: () => localConsole.close(),
   closeStateWorkers: closeSqliteStateWorkers,
@@ -172,10 +182,12 @@ shutdown = new DesktopShutdownRuntime({
   },
   getRunningTaskCount: () => localConsole.getRunningTaskCount()
     + (aiTeamBuilder?.getRunningTaskCount() ?? 0)
-    + (onboardingCliInstaller?.getRunningClis().length ?? 0),
+    + (onboardingCliInstaller?.getRunningClis().length ?? 0)
+    + (providerProfileOperations?.getRunningTaskCount() ?? 0),
   cancelRunningTasks: async () => {
     await aiTeamBuilder?.cancelAll();
     await onboardingCliInstaller?.cancelAll();
+    providerProfileOperations?.cancelAll();
   },
   confirmExit: async (runningTaskCount) => {
     if (runningTaskCount === 0) {
@@ -212,7 +224,7 @@ async function boot(): Promise<void> {
     setLocale: (locale) => {
       activeLocale = locale;
     },
-    registerLanguage: registerDesktopLanguagePreferenceIpc,
+    registerLanguage: () => undefined,
     createShellPathGate: (apply) => createShellPathReadinessGate({
       resolve: () => resolveShellPath({ platform: process.platform, currentPath: process.env.PATH }),
       apply,
@@ -221,7 +233,14 @@ async function boot(): Promise<void> {
     createBuilder: (readiness, gate) => {
       aiTeamBuilder = new AiTeamBuilder({
         dataRoot: status.dataRoot,
-        resolveExecutionProfile: () => gate.afterReady(() => readiness.ensureBuilderExecutionProfile()),
+        pi: new AiTeamBuilderPiSpawner(runPi),
+        resolveExecutionProfile: () => gate.afterReady(async () => {
+          try {
+            return await readiness.ensureBuilderExecutionProfile();
+          } catch {
+            return await providerWiring.resolveReadyExecutionProfile();
+          }
+        }),
       });
       return aiTeamBuilder;
     },
@@ -256,43 +275,20 @@ async function boot(): Promise<void> {
   });
 }
 
-function registerDesktopLanguagePreferenceIpc(): void {
-  registerLanguagePreferenceIpc({
-    ipcMain,
-    dependencies: {
-      getActiveLocale: () => activeLocale,
-      setActiveLocale: (locale) => {
-        activeLocale = locale;
-      },
-      persist: (locale) => saveLanguagePreference(status.dataRoot, locale),
-      getBroadcastTargets: () => windows.getBroadcastTargets(),
-    },
-  });
-}
-
-registerDesktopCoreIpc({
+providerProfileOperations = registerDesktopMainInfrastructureIpc({
   ipcMain,
   clipboard,
   shell,
-  openStatusPage: () => windows.openStatusPage(),
-  refreshDoctor: async () => {
-    status.doctor = null;
-    windows.publishStatus();
-    status.doctor = { codex: await checkCodex() };
-    windows.publishStatus();
-  },
-  getLocalConsoleUrl: () => localConsole.url,
-  getAttachmentCapability: () => localConsole.attachmentCapability,
-  getPathSource: () => localConsole.pathSource,
-  selectDirectory: (options) => windows.selectDirectory(options),
-  openProjectTitle: () => translateDesktop(activeLocale, "dialog.openProject"),
-  repairProjectTitle: () => translateDesktop(activeLocale, "dialog.repairProject"),
-  selectLocationLabel: () => translateDesktop(activeLocale, "dialog.selectLocation"),
+  windows,
+  localConsole,
+  updateRuntime,
+  shutdown,
+  providerProfileService: providerWiring.service,
+  status,
   dataRoot: status.dataRoot,
-  getVersion: () => app.getVersion(),
-  checkForUpdates: () => updateRuntime.check(),
-  readUpdateState: () => updateRuntime.state,
-  installUpdate: () => shutdown.requestInstall(),
+  getLocale: () => activeLocale,
+  setLocale: (locale) => { activeLocale = locale; },
+  appVersion: app.getVersion(),
 });
 
 const teamConversationPreference = createTeamConversationPreferenceService(

@@ -174,3 +174,9 @@ export function planLocalRunAttachmentMessages<T>(input: {
         input.attachmentTimelineIndexes.has(index))
     : input.timelineMessages;
 }
+
+export function decideMemberContinuation(ended: boolean | undefined):
+  | { kind: "continue" }
+  | { kind: "ended" } {
+  return ended === true ? { kind: "ended" } : { kind: "continue" };
+}

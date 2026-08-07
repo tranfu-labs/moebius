@@ -26,12 +26,18 @@ export const Unavailable: Story = {
   args: { unavailable: true },
 };
 
+export const PiApiSafeProcess: Story = {
+  args: { pi: true },
+};
+
 function ProcessTabStory({
   unavailable = false,
   live = false,
+  pi = false,
 }: {
   unavailable?: boolean;
   live?: boolean;
+  pi?: boolean;
 }): JSX.Element {
   const [extraEvents, setExtraEvents] = useState(0);
   const state: OperatorProcessOutputState = unavailable
@@ -55,7 +61,32 @@ function ProcessTabStory({
             ],
           },
         }
-      : longHistoryState;
+      : pi
+        ? {
+            status: "ready",
+            output: {
+              ...longHistoryOutput,
+              attempts: longHistoryOutput.attempts.map((attempt) => ({
+                ...attempt,
+                engine: "pi" as const,
+                model: "deepseek-v4-pro",
+                provider: "deepseek",
+                cliVersion: null,
+                identityLabel: "session" as const,
+                threadId: "pi-session-safe-7f2a",
+              })),
+              events: longHistoryOutput.events.map((event) => event.kind === "attempt-header" ? {
+                ...event,
+                engine: "pi" as const,
+                model: "deepseek-v4-pro",
+                provider: "deepseek",
+                cliVersion: null,
+                identityLabel: "session" as const,
+                threadId: "pi-session-safe-7f2a",
+              } : event),
+            },
+          }
+        : longHistoryState;
   return (
     <main className="relative flex h-screen justify-end bg-canvas">
       {live ? (
