@@ -996,7 +996,6 @@ function classifyValidationError(error: unknown): SafeProviderReason {
     switch (error.code) {
       case "auth":
       case "credential-invalid":
-      case "CREDENTIAL_DECRYPTION_FAILED":
       case "CREDENTIAL_NOT_FOUND":
         return "credential-invalid";
       case "model-unavailable":

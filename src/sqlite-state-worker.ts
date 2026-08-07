@@ -858,6 +858,7 @@ function listProviderSessionReferences(database: SqliteDatabase, profileId: stri
      WHERE execution_cli = 'pi'
        AND provider_profile_id = ?
        AND continuation_ended = 0
+       AND slot IN ('effective', 'pending')
      ORDER BY session_id, slot, sort_order, member_name`,
   ).all(profileId).map((row) => {
     if (!isRecord(row)) throw new Error("Invalid Provider session reference row");
@@ -2817,9 +2818,11 @@ function beginLocalSessionTeamUpdate(
     database.prepare(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, display_name, member_description, agent_markdown,
-         execution_cli, execution_model, execution_effort, sort_order, snapshot_key)
+         execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+         continuation_ended, sort_order, snapshot_key)
        SELECT session_id, 'pending', member_name, display_name, member_description, agent_markdown,
-              execution_cli, execution_model, execution_effort, sort_order, snapshot_key
+              execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
+              continuation_ended, sort_order, snapshot_key
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'candidate'`,
     ).run(input.sessionId);
@@ -3284,10 +3287,10 @@ function createLocalChildSession(
       `INSERT INTO session_agent_team_members
         (session_id, slot, member_name, display_name, member_description, agent_markdown,
          execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
-         sort_order, snapshot_key)
+         continuation_ended, sort_order, snapshot_key)
        SELECT ?, 'effective', member_name, display_name, member_description, agent_markdown,
               execution_cli, execution_model, execution_effort, provider_id, provider_profile_id,
-              sort_order, snapshot_key
+              continuation_ended, sort_order, snapshot_key
        FROM session_agent_team_members
        WHERE session_id = ? AND slot = 'effective'
        ON CONFLICT(session_id, slot, member_name) DO NOTHING`,

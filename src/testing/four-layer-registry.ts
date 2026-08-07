@@ -363,7 +363,6 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "desktop/src/onboarding/ipc.ts",
   "desktop/src/preload.ts",
   "desktop/src/provider-credential-vault.ts",
-  "desktop/src/provider-credential-helper.ts",
   "desktop/src/provider-profile-contract.ts",
   "desktop/src/provider-profile-ipc.ts",
   "desktop/src/provider-profile-service.ts",
@@ -653,7 +652,6 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     fingerprints: [
       "\"auth\"",
       "\"credential-invalid\"",
-      "\"CREDENTIAL_DECRYPTION_FAILED\"",
       "\"CREDENTIAL_NOT_FOUND\"",
       "\"model-unavailable\"",
       "\"model-incompatible\"",

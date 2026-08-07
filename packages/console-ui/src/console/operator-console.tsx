@@ -1921,6 +1921,7 @@ export function OperatorConsole({
             statusIndicatorLabel={hasAgentTeamNeedingRepair ? t("console.operator.teamNeedsRepair") : undefined}
             disabled={activeProjectUnavailable}
             disabledReason={activeProject.directoryUnavailableReason ?? undefined}
+            testId="sidebar-nav-agent-teams"
             onClick={() => setApplicationView("agent-teams")}
           />
         </nav>

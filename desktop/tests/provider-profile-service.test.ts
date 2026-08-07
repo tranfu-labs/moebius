@@ -210,8 +210,8 @@ describe("provider profile service", () => {
     const originalRead = vault.read.bind(vault);
     vi.spyOn(vault, "read").mockImplementation(async (credentialRef) => {
       if (credentialRef === undecryptableCredentialRef) {
-        throw Object.assign(new Error("safeStorage identity mismatch"), {
-          code: "CREDENTIAL_DECRYPTION_FAILED",
+        throw Object.assign(new Error("credential record missing"), {
+          code: "CREDENTIAL_NOT_FOUND",
         });
       }
       return await originalRead(credentialRef);

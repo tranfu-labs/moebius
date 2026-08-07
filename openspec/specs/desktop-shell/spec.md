@@ -1873,27 +1873,27 @@ A successful mutation MUST be visible to the complete-version resolver without r
 
 Source: `docs/product/pages/settings.md#ai-服务商`
 
-Desktop main MUST 是 Provider catalog、档案事务与凭据能力的唯一 composition root。Preload MUST 只暴露列出安全档案、提交输入 Key、验证、生命周期动作和 operation 状态的窄 IPC；renderer MUST NOT 读取 credentialRef 对应 blob、解密 Key、Base URL 或原始 Provider 错误。
+Desktop main MUST 是 Provider catalog、档案事务与凭据能力的唯一 composition root。Preload MUST 只暴露列出安全档案、提交输入 Key、验证、生命周期动作和 operation 状态的窄 IPC；renderer MUST NOT 读取 credentialRef 对应 blob、Key、Base URL 或原始 Provider 错误。
 
 #### Scenario: Renderer 列出档案
 
 - **GIVEN** 主进程保存了一个已就绪 DeepSeek 档案
 - **WHEN** renderer 请求 AI 服务商列表
 - **THEN** DTO 只含稳定 ID、显示名、服务商、模型、状态、Key 脱敏尾号和可执行动作
-- **AND** 不含 Key、ciphertext、凭据文件路径或 Authorization。
+- **AND** 不含 Key、凭据文件路径或 Authorization。
 
-### Requirement: SafeStorage 凭据 fail closed 且原子持久化
+### Requirement: Provider 凭据明文原子持久化于本机数据根
 
 Source: `docs/product/flows/byok-agent-runtime.md#2-输入-key-与选择模型`
 
-Desktop MUST 在 `app.whenReady()` 后仅由 main process 使用 Electron safeStorage 保护有界 API Key，并将 encrypted blob 以 mode `0600` 原子写入应用数据根。加密不可用、解密失败、blob 损坏或原子写失败 MUST 形成可修复的安全状态，MUST NOT 回退明文或把 Key 交给 renderer/local-console server。
+Desktop MUST 仅由 main process 把有界 API Key 以 UTF-8 明文写入应用数据根的凭据文件，写入 MUST 原子（临时文件 + rename）且文件 mode 为 `0600`。凭据记录缺失、凭据文件损坏或原子写失败 MUST 形成可修复的安全状态（档案进入“需要处理”并阻止新运行），MUST NOT 把 Key 交给 renderer/local-console server，也 MUST NOT 使用空 Key 或旧缓存继续运行。
 
-#### Scenario: 重启后解密失败
+#### Scenario: 凭据记录缺失或无法解析
 
-- **GIVEN** 档案元数据存在但系统凭据无法解密对应 blob
-- **WHEN** 应用重启并检查档案
+- **GIVEN** 档案元数据存在但凭据文件中没有对应记录或记录无法解析（含旧版 safeStorage 密文记录）
+- **WHEN** 应用重启并校准档案
 - **THEN** 档案进入“需要处理”且新运行被阻止
-- **AND** 历史仍可读，应用不使用空 Key、旧缓存或明文 fallback。
+- **AND** 历史仍可读，用户在设置中替换 Key 并重新验证保存后恢复“已就绪”。
 
 #### Scenario: Key 轮换提交失败
 

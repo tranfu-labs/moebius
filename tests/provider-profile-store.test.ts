@@ -159,4 +159,33 @@ describe("SQLite provider profile store", () => {
       }),
     ]);
   });
+
+  it("ignores candidate slot rows when listing session references", async () => {
+    const store = await fixture();
+    await store.putProfile(profile(), null);
+    const sqlitePath = sqlitePaths[0]!;
+    await closeSqliteStateWorkers({ sqlitePath });
+    const database = new DatabaseSync(sqlitePath);
+    database.prepare(
+      `INSERT INTO sessions
+        (session_id, source_type, status, title, created_at, updated_at)
+       VALUES (?, 'fixture', 'open', '候选槽位', ?, ?)`,
+    ).run("local:session-1", "2026-08-04T12:00:00.000Z", "2026-08-04T12:00:00.000Z");
+    const insertMember = database.prepare(
+      `INSERT INTO session_agent_team_members
+        (session_id, slot, member_name, agent_markdown, sort_order,
+         execution_cli, execution_model, execution_effort, provider_id, provider_profile_id)
+       VALUES (?, ?, ?, '# Agent', ?, 'pi', 'deepseek-v4-pro', 'high', 'deepseek', 'profile-1')`,
+    );
+    insertMember.run("local:session-1", "effective", "@effective", 0);
+    insertMember.run("local:session-1", "candidate", "@candidate", 0);
+    database.close();
+
+    await expect(store.listSessionReferences("profile-1")).resolves.toEqual([
+      expect.objectContaining({
+        kind: "resumable-session",
+        ownerId: 'session:["local:session-1","effective","@effective"]',
+      }),
+    ]);
+  });
 });
