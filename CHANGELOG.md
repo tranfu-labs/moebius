@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-07
+
+### 修复
+
+- 修复生产安装包保存 BYOK API Key 报「两项验证已通过，但本地保存失败」的根因：safeStorage 子进程 helper 依赖未打包 Electron 的隐式行为，打包态下撞单实例锁直接退出导致保存必失败，改为主进程内直调 safeStorage。
+- BYOK 凭据改为纯明文存储（原子写 + 0600 权限），删除加解密路径；旧密文档案不迁移，走「需要处理 → 替换 Key」修复路径。
+- 修复设置页 AI Provider 候选槽位未过滤导致的整页崩溃。
+- 修复团队候选晋升为正式成员与子会话创建两处丢失 Pi Provider 绑定的问题。
+- 修复新建对话团队菜单高度溢出视口导致无法点击的问题。
+
 ## [0.4.0] - 2026-08-06
 
 ### 新增
@@ -195,7 +205,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tranfu-labs/moebius/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...v0.3.3
