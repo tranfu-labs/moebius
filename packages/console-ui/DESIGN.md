@@ -2,7 +2,7 @@
 
 本文件是 `@moebius/console-ui` 的包内设计语言事实源：新组件与组件修改必须组合这里记录的令牌、状态语义与模式，不得引入临时视觉值。引入本目录未收录的新模式时，必须在同一个 change 里回流更新本文件。全局原则见 `docs/product/prd.md`「视觉语言原则」，本文件是令牌与组件级的执行细则。
 
-灵感来源（仅溯源，不复制其内容）：Linear 的产品界面（行结构、冷灰阶、字重层级、图标精度）与近黑底暗色 SaaS dashboard（状态 tinted pill、大圆角、可见描边卡片）。视觉参数自 2026-07 起对齐 `moebius-desktop-spec.html` v1.1（灰阶梯、零阴影零渐变、侧栏与主区同底、圆角分级）；与该规范冲突时以 `docs/product/prd.md` 为准的两条已登记裁决：accent 保持靛蓝 `#5E6AD2`（不采用规范薰衣草紫 `#c090ff`）、completed 保持中性灰（不采用规范亮绿 Done pill）。
+灵感来源（仅溯源，不复制其内容）：Linear 的产品界面（行结构、冷灰阶、字重层级、图标精度）与近黑底暗色 SaaS dashboard（状态 tinted pill、大圆角、可见描边卡片）。视觉参数以本文件与 `src/styles/tokens.css` 为唯一事实源（灰阶梯、零阴影零渐变、侧栏与主区同底、圆角分级），不再引用外部规范文件；以 `docs/product/prd.md` 为准的两条已登记裁决：accent 保持靛蓝 `#5E6AD2`（不采用薰衣草紫 `#c090ff`）、completed 保持中性灰（不采用亮绿 Done pill）。
 
 ## 令牌纪律
 
@@ -56,7 +56,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 ## 组件模式目录
 
 - **inbox 行**：`src/console/agent-message.tsx`——32px 圆形角色头像（右下角 15px stage 角标）+ 行 1（角色名 510 + stage muted + 右侧状态图标与 tnum 时间）+ 行 2 结论 + 行 3 箭头 + handoff；行间发丝线（行内 `border-t`），hover 行底色，无常驻卡片边框。
-- **Agent 首字头像与角色标签**：`src/console/agent-initial-avatar.tsx`（团队页 20/32px）与 `src/console/role-tag.tsx`（时间线 who 行 20px）共用同一身份体系——彩底正圆 + 深色首字，底色按 slug/toneKey 稳定取自身份色板（`--ident-1…6`，moebius-desktop-spec 6.6 采样，亮暗共用），同一角色全产品同色；头像自身保持装饰性，旁边必须保留可读名称。
+- **Agent 首字头像与角色标签**：`src/console/agent-initial-avatar.tsx`（团队页 20/32px）与 `src/console/role-tag.tsx`（时间线 who 行 20px）共用同一身份体系——彩底正圆 + 深色首字，底色按 slug/toneKey 稳定取自身份色板（`--ident-1…6`，六色粉彩身份色板，亮暗共用），同一角色全产品同色；头像自身保持装饰性，旁边必须保留可读名称。
 - **主会话消息层级**：`operator-console.tsx` 的 `TimelineEntry`——主会话用户与 Agent 使用 24px 身份头像；Agent / system 正文左缩进 32px，占满 840px 内容列（68ch 限宽于 2026-08-06 按产品决定移除）。「你」的消息 who 行右对齐，正文包在右侧 `rounded-[10px] border bg-card` 气泡内（max-w 75%）。右侧子任务的 `SubtaskTimelineEntry` 保持 embedded 密度，不继承这些主会话参数。
 - **主会话目录轨**：`src/console/conversation-relay-rail.tsx` + `conversation-relay-rail-model.ts`——只固定在当前根会话面板左缘；收起为共同左端对齐的紧凑短横线，用户使用前景色、Agent 使用稳定身份色，当前阅读位置以更长更强的横线突出。展开时面板从同一左锚点向右打开，用户事件留在固定主干，Agent 圆点按成员首次出现顺序进入内容驱动的泳道；成员色分支从前一可见事件平滑分叉、纵向穿过该成员回复并在后一可见事件并回，省略区两侧必须收束断开。hover band 在轨迹下方、整条事件行在轨迹上方作为唯一节点命中区；当前节点使用身份色描边环。预览 Popover 相对整个面板边缘保持固定间距并沿事件行纵向跟随，只显示可读成员名、时间与有限行原文。目录滚轮 / 方向键只浏览，点击、Enter 或 Space 后才定位主时间线；不得使用全宽等距散点、逐相邻事件 S 线、居中膨胀或邻近项金字塔，reduced-motion 必须即时呈现等价静态信息。窄容器下消息列与输入框左缘固定让出收起态目录轨（56px = 12px 内缩 + 44px 收起视口），展开面板以悬浮覆盖层呈现（z-index 高于正文列），正文、标题、输入框位置不随展开变化。
 - **侧栏共享会话信息面**：`src/console/conversation-sidebar.tsx`——整个对话列表始终复用一个位于 rail 外侧的信息面 DOM；指针或键盘焦点切换行时只替换名称、文件夹和可用的真实分支，并以 150ms `transform` 沿纵轴跟随。信息面组合 `bg-sunken`、`border-line` 与包内 shadow 级别，不复制刻度轨、邻项缩放或金字塔形变；离开列表、打开菜单或弹层时收起，`prefers-reduced-motion` 下即时定位。

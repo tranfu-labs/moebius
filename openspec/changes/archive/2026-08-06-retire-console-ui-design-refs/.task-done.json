@@ -1,0 +1,7 @@
+{
+  "phase": "implement",
+  "status": "done",
+  "change": "retire-console-ui-design-refs",
+  "completedAt": "2026-08-06",
+  "summary": "design-refs 四类归宿（退役/官网锚点搬迁/规范文档入 docs/design-explorations/纯删）；验收脚本 reference 依赖切断；两批过期断言修正（68ch 三处 + 窄几何两处基准换 timelineColumn）；QA 真实 Electron 全量复跑退出码 0（evidence 见 moebius-console-dashboard-ui-T0d5g3）；spec-delta 两处已合并"
+}

@@ -1671,7 +1671,7 @@ Source: docs/product/pages/main-right-sidebar.md#关闭标签
 ## Requirement: 验收 #17 加号只创建两类可选内容
 Source: docs/product/pages/main-right-sidebar.md#空白标签与类型选择
 
-系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中提供“新会话”“改动”和“项目文件”三种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。参考 HTML 未包含“新会话”时，生产类型与既有普通会话行为仍 MUST 保留。
+系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中提供“新会话”“改动”和“项目文件”三种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。没有“新会话”类型时，生产类型与既有普通会话行为仍 MUST 保留。
 
 ### Scenario: Git 项目打开空白标签
 - GIVEN 当前会话绑定的是 Git 项目
@@ -3045,11 +3045,11 @@ Source: docs/product/pages/main-left-sidebar.md#响应式与窗口行为；docs/
 hover、focus、展开、折叠或状态切换 MUST NOT 改变同层文字的基线或横向起点。该规则 MUST NOT
 自动应用到品牌 Logo 或右侧栏内部。
 
-#### Scenario: 参考页与生产页的对应图标几何一致
+#### Scenario: 生产侧栏与主会话图标按宿主盒对齐
 
-- **GIVEN** `dashboard.html` 与真实 Electron 分别显示侧栏和主会话代表状态
-- **WHEN** 检查 shell、导航、项目/会话操作、消息/活动工具、子会话、状态、上下文和 Composer
-- **THEN** 具有直接对应关系的参考与生产图标使用相符的图形尺寸、描边和自然居中方式
+- **GIVEN** 生产侧栏与主会话显示 shell、导航、项目/会话操作、消息/活动工具、子会话、状态、上下文和 Composer 代表状态
+- **WHEN** 检查这些图标与其宿主
+- **THEN** 具有相同视觉角色与密度的图标使用相符的图形尺寸、描边和自然居中方式
 - **AND** 单行图标中心与宿主行或按钮中心的垂直差不超过 0.5px
 - **AND** 图标与文字基线自然，同一行相邻按钮视觉重量一致
 - **AND** 其他已经自然对齐且视觉重量一致的生产图标保持既有尺寸和布局

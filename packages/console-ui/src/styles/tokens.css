@@ -1,15 +1,14 @@
 /* ============================================================
-   Design tokens: dark-first dashboard baseline (aligned with
-   moebius-desktop-spec v1.1). A five-step neutral ladder
-   (#101010 → #171717 → #1c1c1c → #242424 → #2d2d2d) carries all
-   surfaces; sidebar shares the canvas color; layering relies on
-   luminance steps and a single 1px border — zero shadows, zero
-   gradients. Indigo #5E6AD2 remains the single interaction
-   accent in both themes (PRD mandate, overrides the spec's
-   lavender); a status hue family (amber / blue / violet /
-   neutral) powers status pills; green/red remain reserved for
-   verdict and danger facts (the red unread-count badge is the
-   single registered exception). Corner radius baseline is 14px.
+   Design tokens: dark-first dashboard baseline. A five-step
+   neutral ladder (#101010 → #171717 → #1c1c1c → #242424 → #2d2d2d)
+   carries all surfaces; sidebar shares the canvas color; layering
+   relies on luminance steps and a single 1px border — zero
+   shadows, zero gradients. Indigo #5E6AD2 remains the single
+   interaction accent in both themes (PRD mandate); a status hue
+   family (amber / blue / violet / neutral) powers status pills;
+   green/red remain reserved for verdict and danger facts (the
+   red unread-count badge is the single registered exception).
+   Corner radius baseline is 14px.
    ============================================================ */
 :root {
   --window-header-height: 46px;
@@ -32,7 +31,7 @@
   --danger: #CB1124;
   --ava-bg: rgba(24, 26, 42, 0.06);
   --ava-fg: #636363;
-  /* 身份色板（moebius-desktop-spec 6.6 采样）：彩底 + 深字，亮暗双主题共用同一组值 */
+  /* 身份色板（六色粉彩，彩底 + 深字）：亮暗双主题共用同一组值 */
   --ident-1: #E8B4C8;
   --ident-2: #F0C9A0;
   --ident-3: #BCD9F7;

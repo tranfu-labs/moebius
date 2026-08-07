@@ -2,11 +2,10 @@ import fs from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   _electron as electron,
   chromium,
-  type Browser,
   type ElectronApplication,
   type Locator,
   type Page,
@@ -219,7 +218,6 @@ const resizeReleasePath = path.join(runtimeRoot, "release-resize-run");
 const resizeStreamReleasePath = path.join(runtimeRoot, "release-resize-height-stream");
 const resizeImagePath = path.join(projectRoot, "assets", "brand", "generated", "ui-icon-64.png");
 const evidencePath = path.join(outputRoot, "console-dashboard-evidence.json");
-const referenceScreenshot = path.join(outputRoot, "dashboard-reference.png");
 const wideScreenshot = path.join(outputRoot, "dashboard-wide.png");
 const narrowScreenshot = path.join(outputRoot, "dashboard-narrow.png");
 const rightSidebarScreenshot = path.join(outputRoot, "dashboard-right-sidebar.png");
@@ -265,7 +263,6 @@ await fs.writeFile(path.join(fakeBin, "codex"), fakeCodexSource({
 }), { mode: 0o755 });
 
 let application: ElectronApplication | null = null;
-let referenceBrowser: Browser | null = null;
 let cleanupPromise: Promise<void> | null = null;
 let holdInterrupted = false;
 const cleanup = (): Promise<void> => {
@@ -284,10 +281,6 @@ const cleanup = (): Promise<void> => {
       }
     }
     await terminateProcessesOwnedByRuntime(runtimeRoot);
-    if (referenceBrowser !== null) {
-      await referenceBrowser.close().catch(() => undefined);
-      referenceBrowser = null;
-    }
     await fs.rm(runtimeRoot, {
       recursive: true,
       force: true,
@@ -306,13 +299,6 @@ const cleanup = (): Promise<void> => {
 
 try {
   acceptanceRun: {
-  referenceBrowser = await chromium.launch({ headless: true });
-  const referencePage = await referenceBrowser.newPage({ viewport: { width: 1_400, height: 900 } });
-  const referenceEvidence = await collectReferenceEvidence(referencePage);
-  await referencePage.screenshot({ path: referenceScreenshot, fullPage: true });
-  await referenceBrowser.close();
-  referenceBrowser = null;
-
   application = await electron.launch({
     args: [desktopRoot],
     cwd: desktopRoot,
@@ -572,7 +558,7 @@ try {
   const agentMessage = page.locator("[data-testid^='timeline-message-']").last();
   await agentMessage.waitFor();
   const agentAvatar = agentMessage.locator(".h-6.w-6").first();
-  const agentBody = agentMessage.locator(".max-w-\\[68ch\\].pl-8").first();
+  const agentBody = agentMessage.locator(".relative.pl-8").first();
   await agentBody.waitFor();
   const agentGeometry = {
     avatar: await box(agentAvatar),
@@ -1178,10 +1164,8 @@ try {
       },
       iconAlignment: {
         passed: true,
-        reference: referenceEvidence,
         production: productionIconEvidence,
         visualObservation: {
-          reference: "1400×900 参考页中，图标与所在文字行基线自然，相邻项目操作与 Composer 操作视觉重量一致。",
           electron: "1400×900 真实 Electron 中，项目 disclosure/操作、会话菜单与 Composer 操作视觉重量一致，未见单枚图标上下漂移。",
         },
       },
@@ -1232,7 +1216,6 @@ try {
     artifacts: {
       evidence: evidencePath,
       consoleErrorRemovalEvidence: path.join(outputRoot, "console-error-removal-evidence.json"),
-      referenceScreenshot,
       wideScreenshot,
       narrowScreenshot,
       drawerScreenshot,
@@ -1246,7 +1229,6 @@ try {
     ok: true,
     evidence: evidencePath,
     screenshots: [
-      referenceScreenshot,
       wideScreenshot,
       narrowScreenshot,
       drawerScreenshot,
@@ -1267,97 +1249,6 @@ try {
   await cleanup();
 }
 if (holdInterrupted) process.exit(0);
-
-async function collectReferenceEvidence(page: Page): Promise<{
-  icons: Record<string, IconMetric>;
-  selection: SelectionGeometryEvidence;
-  interactions: {
-    projectActionsVisibleOnHover: boolean;
-    projectActionFocused: boolean;
-  };
-}> {
-  const referencePath = path.join(
-    projectRoot,
-    "packages",
-    "console-ui",
-    "design-refs",
-    "dashboard.html",
-  );
-  await page.goto(pathToFileURL(referencePath).href);
-  await page.evaluate(async () => document.fonts.ready);
-
-  const projectRow = page.locator("#project-a-row");
-  const projectRowContainer = projectRow.locator("xpath=..");
-  await projectRow.hover();
-  const projectNew = page.locator("[data-od-id='project-a-new']");
-  const projectMore = projectRowContainer.locator(".row-actions .icon-btn").last();
-  const projectActionsVisibleOnHover = await projectNew.isVisible() && await projectMore.isVisible();
-  await projectMore.focus();
-  const projectActionFocused = await projectMore.evaluate((element) => element === document.activeElement);
-
-  const icons = {
-    sidebarClose: await iconMetric(page.locator("[data-od-id='close-sidebar']")),
-    navigation: await iconMetric(page.locator("[data-od-id='nav-new-conversation']")),
-    projectDisclosure: await iconMetric(projectRow, projectRow.locator(":scope > .icon.chev")),
-    projectNew: await iconMetric(projectNew),
-    projectMore: await iconMetric(projectMore),
-    mainRightToggle: await iconMetric(page.locator("[data-od-id='toggle-rbar']")),
-    messageTool: await iconMetric(page.locator(".msg-tools .icon-btn").first()),
-    subSession: await iconMetric(
-      page.locator(".subcard-row").first(),
-      page.locator(".subcard-row > .icon").first(),
-    ),
-    systemFact: await iconMetric(
-      page.locator(".sys-rec").first(),
-      page.locator(".sys-rec > .icon").first(),
-    ),
-    result: await iconMetric(
-      page.locator(".result-card").first(),
-      page.locator(".result-card > .icon").first(),
-    ),
-    context: await iconMetric(
-      page.locator(".chip-project").first(),
-      page.locator(".chip-project > .icon").first(),
-    ),
-    attachment: await iconMetric(page.locator("footer.composer [data-od-id='attach']")),
-    send: await iconMetric(page.locator("footer.composer [data-od-id='send']")),
-  };
-
-  const selectedTitle = page.locator("#conv-landing .name");
-  const selected = await box(selectedTitle);
-  await page.locator("#conv-copy").click();
-  const unselected = await box(selectedTitle);
-  const markerElementCount = await page.locator(".sel-mark").count();
-  const markerTextCount = await page.locator(".conv-row").evaluateAll((rows) =>
-    rows.filter((row) => /»|>>/u.test(row.textContent ?? "")).length);
-  const selection = selectionEvidence(selected, unselected, markerElementCount, markerTextCount);
-
-  assert(projectActionsVisibleOnHover, "reference project actions were not visible on hover");
-  assert(projectActionFocused, "reference project action did not accept keyboard focus");
-  assertIconMetric(icons.sidebarClose, { host: 28, icon: 16 }, "reference sidebar close");
-  assertIconMetric(icons.navigation, { hostHeight: 34, icon: 16 }, "reference navigation");
-  assertIconMetric(icons.projectDisclosure, { hostHeight: 32, icon: 14 }, "reference project disclosure");
-  assertIconMetric(icons.projectNew, { host: 28, icon: 14 }, "reference project new");
-  assertIconMetric(icons.projectMore, { host: 28, icon: 14 }, "reference project more");
-  assertIconMetric(icons.mainRightToggle, { host: 28, icon: 16 }, "reference main right toggle");
-  assertIconMetric(icons.messageTool, { host: 24, icon: 14 }, "reference message tool");
-  assertIconMetric(icons.subSession, { icon: 14 }, "reference sub-session");
-  assertIconMetric(icons.systemFact, { icon: 15 }, "reference system fact");
-  assertIconMetric(icons.result, { icon: 15 }, "reference result");
-  assertIconMetric(icons.context, { icon: 13 }, "reference context");
-  assertIconMetric(icons.attachment, { host: 32, icon: 16 }, "reference attachment");
-  assertIconMetric(icons.send, { host: 32, icon: 16 }, "reference send");
-  assertSelectionEvidence(selection, "reference selection");
-
-  return {
-    icons,
-    selection,
-    interactions: {
-      projectActionsVisibleOnHover,
-      projectActionFocused,
-    },
-  };
-}
 
 async function observeProductionSelectionGeometry(
   page: Page,
@@ -1690,6 +1581,7 @@ async function collectNarrowGeometry(page: Page): Promise<{
   main: Box;
   title: Box;
   composer: Box;
+  timelineColumn: Box;
   gutterLeft: number;
   gutterRight: number;
   timelineScrollbarWidth: number;
@@ -1698,10 +1590,14 @@ async function collectNarrowGeometry(page: Page): Promise<{
   const main = await box(page.getByTestId("operator-main"));
   const title = await box(page.getByTestId("conversation-title-header").locator("h1"));
   const composer = await box(page.getByTestId("main-role-composer"));
+  const timelineColumn = await box(
+    page.getByTestId("conversation-timeline-gutter").locator(":scope > div"),
+  );
   return {
     main,
     title,
     composer,
+    timelineColumn,
     gutterLeft: title.x - main.x,
     gutterRight: main.x + main.width - (title.x + title.width),
     timelineScrollbarWidth: await page.getByRole("region", { name: "会话时间线" })
@@ -1744,7 +1640,7 @@ function assertWideGeometry(value: GeometryEvidence): void {
     value.userBubble.width <= value.userMessageContainer.width * 0.75 + 1,
     "user bubble exceeded 75 percent",
   );
-  assert(value.agentBody.width <= 68 * 14 + 1, "agent body exceeded its 68ch readable bound");
+  assertClose(value.agentBody.width, value.title.width, 1, "agent body does not fill the content column");
   assert(value.textarea.height >= 32 && value.textarea.height <= 120, "main textarea escaped 32–120px range");
   assertClose(value.attachmentButton.width, 32, 1, "attachment button width");
   assertClose(value.sendButton.width, 32, 1, "send button width");
@@ -1769,12 +1665,12 @@ function assertNarrowGeometry(value: Awaited<ReturnType<typeof collectNarrowGeom
     1,
     "narrow right gutter plus scrollbar",
   );
-  assertClose(value.title.x, value.composer.x, 1, "narrow title/composer left edge");
+  assertClose(value.timelineColumn.x, value.composer.x, 1, "narrow timeline column/composer left edge");
   assertClose(
-    value.title.width + value.timelineScrollbarWidth,
     value.composer.width,
+    value.timelineColumn.width + value.timelineScrollbarWidth,
     1,
-    "narrow title/composer content width",
+    "narrow composer/timeline column width",
   );
   assert(value.viewport.scrollWidth <= value.viewport.width, "narrow renderer overflowed horizontally");
 }
@@ -2982,7 +2878,7 @@ if (prompt.includes("SUCCESS dashboard")) {
         text: [
           "## Dashboard 对齐完成",
           "",
-          "这是一段用于真实 Electron 验收的长回复。它验证 Agent 正文保持 32px 缩进和 68ch 可读宽度，同时保留 Markdown 与完整输出入口。",
+          "这是一段用于真实 Electron 验收的长回复。它验证 Agent 正文保持 32px 缩进并占满内容列宽度，同时保留 Markdown 与完整输出入口。",
           "",
           "- 标题、消息与 composer 共用内容轴",
           "- 窄窗口不产生根级横向滚动",
