@@ -1,4 +1,16 @@
-"""Round 3: anthropomorphic cats, same framing as the human round.
+"""Reference generator for a style-consistent portrait set.
+
+Run:
+    pip install openai pillow numpy
+    export IMG_API_KEY=...            # required
+    export IMG_BASE_URL=...           # optional, for an OpenAI-compatible proxy
+    python generate.py                # writes a 3x3 sheet plus per-cell crops
+
+CAST and the style block below are the CAT EXAMPLE this skill was written from. Replace
+them with your own subjects; keep the STYLE section byte-identical across batches, which
+is what holds the look together (see SKILL.md).
+
+Round 3: anthropomorphic cats, same framing as the human round.
 
 The species swap is not a style change. Framing, personality beats and collar hints all carry
 over from round 2 unchanged; only the creature differs. Two things this buys us:
@@ -104,7 +116,8 @@ def main() -> int:
     if not key:
         print("IMG_API_KEY not set", file=sys.stderr)
         return 2
-    client = OpenAI(api_key=key, base_url="https://api-direct.derouter.ai/openai/v1", timeout=240.0)
+    # Any OpenAI-compatible image endpoint works; leave IMG_BASE_URL unset for the official API.
+    client = OpenAI(api_key=key, base_url=os.environ.get("IMG_BASE_URL") or None, timeout=240.0)
     result = client.images.generate(
         model="gpt-image-2", prompt=PROMPT, size="1024x1024", quality="high",
     )

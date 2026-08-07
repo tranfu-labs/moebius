@@ -9,6 +9,24 @@ description: 用图像模型批量生成一整套「风格必须统一」的角�
 
 **核心难点从来不是「能不能生成一张好看的头像」，而是「N 张放在一起像不像一套」。** 下面每一条都是为这个目标服务的。
 
+## 零、跑起来需要什么
+
+```bash
+pip install openai pillow numpy
+export IMG_API_KEY=...      # 必需
+export IMG_BASE_URL=...     # 可选，走 OpenAI 兼容代理时才需要；不设就用官方端点
+```
+
+三个脚本按顺序用，每步的产物是下一步的输入：
+
+```bash
+python scripts/generate.py                      # → 一张 3×3 品红幕布网格图
+python scripts/dekey.py sheet.png out/ a,b,c…   # → 按幕布色定位切分 + 去背，9 张透明图
+python scripts/frame.py out/ final/             # → 按固定占比烘焙，得到可直接进产品的素材
+```
+
+`generate.py` 里的 `CAST` 和 STYLE 段落是本 skill 写作时用的**猫的示例**，换成自己的角色清单即可；STYLE 段落跨批必须逐字不变（见第二节）。
+
 ## 一、批内一致：网格法（最重要的一条）
 
 **永远不要逐张生成。** 逐张调用 N 次，画风、构图、光照、色调必然漂移，拼在一列里一眼就散。
