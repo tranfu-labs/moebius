@@ -397,7 +397,9 @@ export async function runKimiAcpWithTransport(
     const text = readAgentTextChunk(update);
     if (text !== null) {
       finalText += text;
-      terminalEvidence.hasVisibleText = true;
+      if (text.trim().length > 0) {
+        terminalEvidence.hasVisibleText = true;
+      }
       options.onVisibleAgentMarkdown?.(finalText);
     }
     const terminalToolCallId = readTerminalToolCallId(update);
@@ -505,9 +507,11 @@ export async function runKimiAcpWithTransport(
       prompt: content,
     }));
     const resultText = readPromptResultText(promptResult);
-    if (resultText !== null && !finalText.endsWith(resultText)) {
+    if (resultText !== null && !finalText.trim().endsWith(resultText.trim())) {
       finalText += resultText;
-      terminalEvidence.hasVisibleText = true;
+      if (resultText.trim().length > 0) {
+        terminalEvidence.hasVisibleText = true;
+      }
       options.onVisibleAgentMarkdown?.(finalText);
     }
     const stopReason = readPromptStopReason(promptResult);
@@ -1255,12 +1259,20 @@ function readAgentTextChunk(value: unknown): string | null {
   const kind = firstString(update.sessionUpdate, update.session_update, update.type);
   if (kind !== "agent_message_chunk") return null;
   const content = isRecord(update.content) ? update.content : update;
-  return firstString(content.text);
+  // Every text chunk participates in accumulation, including whitespace-only
+  // ones: kimi streams markdown boundary whitespace (" ", "\n", "\n\n") as
+  // standalone chunks, and dropping them would break headings, list items and
+  // paragraph breaks. Whether the accumulated text counts as visible evidence
+  // is decided at the accumulation site (hasVisibleText).
+  return typeof content.text === "string" ? content.text : null;
 }
 
 function readPromptResultText(value: unknown): string | null {
   if (!isRecord(value)) return null;
-  return firstString(value.text, value.finalText, value.final_text);
+  for (const candidate of [value.text, value.finalText, value.final_text]) {
+    if (typeof candidate === "string") return candidate;
+  }
+  return null;
 }
 
 function readPromptStopReason(value: unknown): string | null {

@@ -314,11 +314,11 @@ export function projectKimiProgress(
   if (kind === null) return null;
   const content = isRecord(update.content) ? update.content : update;
   if (kind === "agent_message_chunk") {
-    const delta = firstString(content.text);
+    const delta = readText(content.text);
     return delta === null ? statusProgress(sequence) : { kind: "assistant-output", delta, sequence };
   }
   if (kind === "agent_thought_chunk") {
-    const delta = firstString(content.text, content.thought);
+    const delta = readText(content.text) ?? readText(content.thought);
     return delta === null ? statusProgress(sequence) : { kind: "reasoning-output", delta, sequence };
   }
   if (kind === "tool_call" || kind === "tool_call_update") return statusProgress(sequence);
