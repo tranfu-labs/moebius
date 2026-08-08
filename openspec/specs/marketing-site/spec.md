@@ -97,7 +97,7 @@ Source: docs/product/pages/home-page.md#响应式与窗口行为
 
 Source: docs/product/pages/home-page.md#页面结构
 
-正式首页 MUST 采用页头、首屏、Leader Agent 宣言、团队/对话/分析三个能力段、最终行动与页脚的连续结构。页头与最终行动 MUST 提供可用的 Apple Silicon macOS 下载和 GitHub 源码入口。
+正式首页 MUST 采用页头、首屏、Leader Agent 宣言、团队/对话/分析三个能力段、单 Agent 与团队的产物对照段、最终行动与页脚的连续结构。页头与最终行动 MUST 提供可用的 Apple Silicon macOS 下载和 GitHub 源码入口。
 
 ### Scenario: 访客理解产品并采取行动
 
@@ -111,6 +111,8 @@ Source: docs/product/pages/home-page.md#页面结构
 - 首屏 MUST 用“把整个开发团队装进一次对话”这一定位建立产品心智（中文页用该原句，英文页用其对应表达），并展示桌面端真实 UI 预览。
 - 宣言段 MUST 说明用户只需和 Leader Agent 聊清楚，而不是逐个管理 Agent。
 - 三个能力段 MUST 依次说明团队匹配、会话内自主推进和对话分析。
+- 对照段 MUST 给出题目原文，并并排展示同一道题下「一个 Agent」与「两个 Agent」各自的真实产物；两份产物 MUST 内联在页面内、不依赖外部资源。对照段 MUST NOT 给出评分、名次或任何质量数字，读者据产物本身判断。
+- 对照段的产物含动画时，MUST 在 `prefers-reduced-motion: reduce` 下停止播放并停在首帧；由于 SMIL 不受 CSS 动画降级影响，页面 MUST 显式暂停其时间轴。
 - 页面 MUST 描述产品行为，MUST NOT 使用虚构的质量数字推动转化。
 - 页头 MUST 提供团队 / 对话 / 分析三个页内锚点，页脚 MUST 回收产品定位和平台范围。
 
