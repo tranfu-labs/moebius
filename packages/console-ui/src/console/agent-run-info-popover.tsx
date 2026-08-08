@@ -20,11 +20,13 @@ export interface AgentRunInfoView {
 
 type LoadState<T> = { status: "idle" | "loading" } | { status: "ready"; value: T } | { status: "error" };
 
-export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadInfo, loadMarkdown }: {
+export function AgentRunInfoPopover({ sessionId, runId, role, displayName, portraitId, loadInfo, loadMarkdown }: {
   sessionId: string;
   runId: string;
   role: string;
   displayName: string;
+  /** Chosen face; absent or null keeps the slug-derived default. */
+  portraitId?: string | null;
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
   loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
 }): JSX.Element {
@@ -96,6 +98,7 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
             <AgentPortrait
               displayName={displayName}
               slug={role}
+              portraitId={portraitId}
               engine={info.status === "ready" && info.value.profile !== null
                 ? { cli: info.value.profile.cli }
                 : undefined}

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { translate } from "@/i18n";
 
-import { resolveOperatorMemberName } from "./member-name";
+import {
+  resolveOperatorMemberEngine,
+  resolveOperatorMemberName,
+  resolveOperatorMemberPortrait,
+} from "./member-name";
 
 const customMembers = [
   { slug: "plan-supervisor", displayName: "方案监督者" },
@@ -36,5 +40,29 @@ describe("resolveOperatorMemberName", () => {
 
     expect(names).toEqual(["Developer", "QA", "Collaborator"]);
     expect(names.join(" ")).not.toMatch(/\p{Script=Han}/u);
+  });
+});
+
+describe("resolveOperatorMemberPortrait", () => {
+  it("resolves the chosen face from the roster and falls back to the default when absent", () => {
+    const roster = [
+      { slug: "plan-supervisor", displayName: "方案监督者", portraitId: "cat-12" },
+      { slug: "plan-executor", displayName: "方案执行者", portraitId: null },
+      { slug: "unnamed-reviewer", displayName: "" },
+    ];
+
+    expect(resolveOperatorMemberPortrait("plan-supervisor", roster)).toBe("cat-12");
+    expect(resolveOperatorMemberPortrait("plan-executor", roster)).toBeNull();
+    expect(resolveOperatorMemberPortrait("unnamed-reviewer", roster)).toBeUndefined();
+    expect(resolveOperatorMemberPortrait("missing", roster)).toBeUndefined();
+    expect(resolveOperatorMemberPortrait(null, roster)).toBeUndefined();
+  });
+
+  it("carries the engine mark alongside the face for the timeline badge", () => {
+    const roster = [
+      { slug: "dev", displayName: "开发", engine: { cli: "kimi" as const } },
+    ];
+    expect(resolveOperatorMemberEngine("dev", roster)).toEqual({ cli: "kimi" });
+    expect(resolveOperatorMemberEngine("missing", roster)).toBeUndefined();
   });
 });

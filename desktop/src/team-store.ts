@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  parseAgentMarkdownFrontmatter,
+  serializeAgentMarkdownFrontmatter,
+} from "../../src/agent-frontmatter.js";
+import {
   DEFAULT_NEW_AGENT_IDENTITY,
   TEAM_AGENT_FILE,
   TEAM_MANIFEST_FILE,
@@ -340,6 +344,30 @@ export async function writeMemberAgentMarkdown(
   const memberDirectory = getMemberDirectory(location, slug);
   await fs.mkdir(memberDirectory, { recursive: true });
   await fs.writeFile(getMemberAgentPath(location, slug), agentMarkdown, "utf8");
+}
+
+/**
+ * Persists a portrait choice into the member's AGENT.md frontmatter. The file on disk is the
+ * single source of truth, so the write is a read-modify-write of the current file rather than
+ * a patch of whatever markdown the renderer happens to hold in a draft. `null` removes the
+ * explicit `portrait_id` instead of freezing today's slug default as an explicit choice.
+ */
+export async function writeMemberAgentPortrait(
+  location: TeamLocation,
+  slug: string,
+  portraitId: string | null,
+): Promise<void> {
+  assertTeamWritable(location);
+  const agentFile = getMemberAgentPath(location, slug);
+  const source = await fs.readFile(agentFile, "utf8");
+  const parsed = parseAgentMarkdownFrontmatter(source);
+  const frontmatter = { ...(parsed.frontmatter ?? {}) };
+  if (portraitId === null) {
+    delete frontmatter.portrait_id;
+  } else {
+    frontmatter.portrait_id = portraitId;
+  }
+  await fs.writeFile(agentFile, serializeAgentMarkdownFrontmatter(frontmatter, parsed.body), "utf8");
 }
 
 export async function createUserTeam(dataRoot: string, information: TeamInformation): Promise<TeamSnapshot> {

@@ -631,8 +631,10 @@ export function AgentTeamsPage({
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
                   onChangeMemberPortrait={onChangeMemberPortrait === undefined
                     ? undefined
-                    : (memberSlug, portraitId) =>
-                      onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId)}
+                    : async (memberSlug, portraitId) => {
+                        await onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId);
+                        setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
+                      }}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;

@@ -471,6 +471,7 @@ export const en = {
   "console.agentTeamDetail.saving": "Saving…",
   "console.agentTeamDetail.saved": "Saved",
   "console.agentTeamDetail.switchFailed": "Switch failed: {error}",
+  "console.agentTeamDetail.portraitChangeFailed": "Portrait update failed: {error}",
   "console.agentTeamDetail.tryAgain": "Try again",
   "console.agentTeamDetail.members": "Team members",
   "console.agentTeamDetail.adding": "Adding",

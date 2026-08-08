@@ -470,6 +470,7 @@ export const zhCN = {
   "console.agentTeamDetail.saving": "正在保存…",
   "console.agentTeamDetail.saved": "已保存",
   "console.agentTeamDetail.switchFailed": "切换失败：{error}",
+  "console.agentTeamDetail.portraitChangeFailed": "头像更新失败：{error}",
   "console.agentTeamDetail.tryAgain": "请重试",
   "console.agentTeamDetail.members": "团队成员",
   "console.agentTeamDetail.adding": "正在添加",

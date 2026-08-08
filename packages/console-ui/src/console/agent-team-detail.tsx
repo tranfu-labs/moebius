@@ -162,6 +162,9 @@ export interface AgentTeamDetailState {
   saveAllFailures: AgentTeamSaveAllFailureView[];
   primaryAgentChangeStatus?: "idle" | "saving" | "saved" | "failed";
   primaryAgentChangeError?: string | null;
+  /** Portrait writes are immediate persists (no draft); this mirrors primary-agent status. */
+  portraitChangeStatus?: "idle" | "saving" | "saved" | "failed";
+  portraitChangeError?: string | null;
 }
 
 export interface AgentOfficialUpdateResult {
@@ -285,6 +288,8 @@ export function AgentTeamDetail({
   const primaryMember = availableMembers.find((member) => member.slug === team.primaryAgentSlug);
   const primaryAgentChangeStatus = state.primaryAgentChangeStatus ?? "idle";
   const primaryAgentChangeError = state.primaryAgentChangeError ?? null;
+  const portraitChangeStatus = state.portraitChangeStatus ?? "idle";
+  const portraitChangeError = state.portraitChangeError ?? null;
   const mentionMembers = useMemo(() => orderedMembers.filter((member) => member.available !== false).map((member) => ({
     slug: member.slug,
     displayName: state.memberEditors[member.slug]?.displayName || member.displayName,
@@ -1036,6 +1041,29 @@ export function AgentTeamDetail({
               </div>
               {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
             </div>
+            {portraitChangeStatus !== "idle" ? (
+              <span className="mt-1.5 flex min-h-5 items-center gap-1.5 text-xs text-sub" aria-live="polite">
+                {portraitChangeStatus === "saving" ? (
+                  <span className="inline-flex items-center" role="status">
+                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saving")}
+                  </span>
+                ) : null}
+                {portraitChangeStatus === "saved" ? (
+                  <span className="inline-flex items-center" role="status">
+                    <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saved")}
+                  </span>
+                ) : null}
+                {portraitChangeStatus === "failed" ? (
+                  <span className="text-danger" role="alert">
+                    {t("console.agentTeamDetail.portraitChangeFailed", {
+                      error: portraitChangeError || t("console.agentTeamDetail.tryAgain"),
+                    })}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
 
             <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
               <div className="flex flex-wrap items-center justify-between gap-3">

@@ -287,6 +287,8 @@ export type LocalConsoleExecutionEngine = LocalConsoleExecutionProfile["cli"];
 export interface LocalConsoleMemberIdentity {
   slug: string;
   displayName: string;
+  /** Chosen face id from the member AGENT.md frontmatter; absent keeps the slug default. */
+  portraitId?: string;
 }
 
 export interface LocalConsoleSessionWorkspaceSource {

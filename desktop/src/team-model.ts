@@ -22,6 +22,8 @@ export interface TeamDefinition {
 export interface AgentMarkdownIdentity {
   displayName: string;
   description: string;
+  /** Chosen face id; absent or null keeps the slug-derived default. */
+  portraitId?: string | null;
 }
 
 export interface TeamInformation {
@@ -124,6 +126,9 @@ export function parseAgentMarkdownIdentity(source: string): AgentMarkdownIdentit
   const frontmatter = parsed.frontmatter;
   const hasDisplayName = frontmatter !== null && Object.hasOwn(frontmatter, "display_name");
   const hasDescription = frontmatter !== null && Object.hasOwn(frontmatter, "description");
+  const portraitId = frontmatter !== null && Object.hasOwn(frontmatter, "portrait_id")
+    ? parseOptionalPortraitId(frontmatter.portrait_id)
+    : undefined;
   if (hasDisplayName || hasDescription) {
     if (!hasDisplayName || !hasDescription) {
       throw new AgentMarkdownMetadataError(
@@ -133,10 +138,12 @@ export function parseAgentMarkdownIdentity(source: string): AgentMarkdownIdentit
     return {
       displayName: parseIdentityField(frontmatter?.display_name, "display_name"),
       description: parseIdentityField(frontmatter?.description, "description"),
+      ...(portraitId === undefined ? {} : { portraitId }),
     };
   }
 
-  return parseLegacyAgentMarkdownIdentity(parsed.body);
+  const legacy = parseLegacyAgentMarkdownIdentity(parsed.body);
+  return portraitId === undefined ? legacy : { ...legacy, portraitId };
 }
 
 export function tryParseAgentMarkdownIdentity(
@@ -287,6 +294,19 @@ function parseIdentityField(value: unknown, field: "display_name" | "description
     throw new AgentMarkdownMetadataError(`Agent frontmatter ${field} must be a non-empty single-line string`);
   }
   return normalized;
+}
+
+/**
+ * The portrait is cosmetic: unlike the identity fields it never fails the team read, it only
+ * falls back to the slug default when it is absent or not a clean single-line string. Unknown
+ * ids are the UI's problem (`AgentPortrait` already falls back per-id), not a team health issue.
+ */
+function parseOptionalPortraitId(value: unknown): string | null {
+  if (typeof value !== "string" || /\r|\n/u.test(value)) {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length === 0 ? null : normalized;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
