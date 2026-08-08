@@ -289,6 +289,9 @@ async function main(): Promise<void> {
       // 允许的例外：语言菜单里对方语言的自名、字体族名、语言标记本身
       const allowed = ["简体中文", "PingFang SC", "zh-Hans", "zh_CN", "zh-CN"];
       let scanned = enHtml;
+      // 引文例外：`data-verbatim` 区块是被引用的原始材料（题面原文、运行记录里的原话），
+      // 按规格保持来源语言，不算作本页残留。它们必须自带 lang，见下一条断言。
+      scanned = scanned.replace(/<(\w+)[^>]*\sdata-verbatim[^>]*>[\s\S]*?<\/\1>/gu, "");
       for (const token of allowed) scanned = scanned.split(token).join("");
       const cjk = scanned.match(/[一-鿿]/gu) ?? [];
       check("English page has no Chinese leftovers", cjk.length === 0, cjk.slice(0, 12).join(""));
@@ -296,6 +299,36 @@ async function main(): Promise<void> {
       const zhHtml = await fs.readFile(path.join(siteRoot, "zh/index.html"), "utf8");
       check("Chinese page keeps its Chinese copy", zhHtml.includes("把整个开发团队"));
       check("Chinese page declares lang=zh-CN", zhHtml.includes('<html lang="zh-CN">'));
+    }
+
+    // Requirement: 引文保持来源语言，但必须自报语言
+    for (const [label, route, locale] of [
+      ["en", "/", "en-US"],
+      ["zh", "/zh/", "zh-CN"],
+    ] as const) {
+      const { context } = await openContext(locale);
+      const page = await context.newPage();
+      await page.goto(server.origin + route, { waitUntil: "networkidle" });
+      const verbatim = await page.$$eval("[data-verbatim]", (nodes) =>
+        nodes.map((node) => ({
+          tagged: Boolean(node.getAttribute("lang")),
+          childrenTagged:
+            node.children.length > 0
+            && [...node.children].every((child) => Boolean(child.getAttribute("lang"))),
+          chars: (node.textContent ?? "").trim().length,
+        })),
+      );
+      check(`${label}: the page quotes source material verbatim`, verbatim.length >= 5, String(verbatim.length));
+      check(
+        `${label}: every verbatim block declares its language`,
+        verbatim.every((v) => v.tagged || v.childrenTagged),
+        JSON.stringify(verbatim.filter((v) => !v.tagged && !v.childrenTagged)),
+      );
+      check(
+        `${label}: no verbatim block is empty`,
+        verbatim.every((v) => v.chars > 0),
+      );
+      await context.close();
     }
 
     // 结构平价：两页只允许在文案、语言标记、资源相对深度与语言脚本上不同
