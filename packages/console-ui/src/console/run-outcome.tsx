@@ -194,14 +194,9 @@ export function RunOutcome({
       : fallbackDescription;
 
   return (
-    <div
-      className={cn(
-        "max-w-[720px] rounded-[10px] border border-line bg-card px-3.5 py-2.5",
-        className,
-      )}
-    >
+    <div className={cn("max-w-[720px]", className)}>
       {partialMarkdown?.trim() ? (
-        <div className="mb-2.5 border-b border-line pb-2.5">
+        <div className="mb-2.5">
           <MarkdownMessage content={partialMarkdown} mode="static" />
           {contentIncomplete ? (
             <span className="mt-2 inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
@@ -252,7 +247,7 @@ export function RunOutcome({
           </Button>
         ) : null}
         {onOverrideAndRetry !== undefined ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => {
+          <Button type="button" variant="ghost" size="sm" onClick={() => {
             setOverrideAction("retry");
             setOverrideOpen((open) => !open || overrideAction !== "retry");
           }}>
@@ -260,7 +255,7 @@ export function RunOutcome({
           </Button>
         ) : null}
         {!providerBlocked && onMigrateAndContinue !== undefined ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => {
+          <Button type="button" variant="ghost" size="sm" onClick={() => {
             setOverrideAction("migrate");
             setOverrideOpen((open) => !open || overrideAction !== "migrate");
           }}>
@@ -294,7 +289,7 @@ export function RunOutcome({
         {status === "user-stopped" && onEditAndResend !== undefined ? (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-label={t("console.runOutcome.editResendLabel")}
             onClick={onEditAndResend}
@@ -311,7 +306,7 @@ export function RunOutcome({
         </span>
       </div>
       {overrideOpen && (onOverrideAndRetry !== undefined || onMigrateAndContinue !== undefined) ? (
-        <div className="mt-2.5 border-t border-line pt-2.5">
+        <div className="mt-2.5 rounded-md bg-sunken p-2.5">
           {executionRegistryState.status === "loading" ? (
             <p className="text-xs text-sub" role="status">
               {t("console.runOutcome.registryLoading")}
