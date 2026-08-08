@@ -549,8 +549,152 @@
   .pk-art{ display:block; width:100%; height:auto; background:#cfe0ea; }
   .pk-foot{ margin-top:20px; color:var(--faint); font-size:13.5px; }
   .pk-foot a{ color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+
+  /* ---- run record: both runs on one time axis; a step opens its own detail ----
+     Step selection is native radio + :checked, so it works with no JavaScript
+     and with the keyboard. Segment widths are real: each is its own share of the
+     longer run (32 min 31 s). The 23-second sign-off gets a floor width so it
+     stays clickable — the only place the bars are not exactly to scale. */
+  .pk-run{ margin-top:60px; padding-top:44px; border-top:1px solid var(--border); }
+  .pk-run h3{ font:600 clamp(22px,2.6vw,30px)/1.2 var(--font-display); letter-spacing:-.015em; }
+  .pk-run-sub{ margin-top:12px; max-width:64ch; color:var(--muted); font-size:16px; }
+  .pk-vh{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap;
+  }
+
+  .pk-tl{ --pk-lab:108px; --pk-tot:150px; margin-top:30px; position:relative; }
+  .pk-r{ position:absolute; width:1px; height:1px; opacity:0; margin:0; }
+
+  .pk-ruler, .pk-row{
+    display:grid; grid-template-columns:var(--pk-lab) minmax(0,1fr) var(--pk-tot);
+    align-items:center; gap:0 16px;
+  }
+  .pk-ruler{ height:20px; }
+  .pk-ruler-track{ position:relative; height:100%; }
+  .pk-ruler-track i{
+    position:absolute; top:0; font:11px/1 var(--font-mono);
+    color:var(--faint); font-style:normal; padding-left:5px; white-space:nowrap;
+    border-left:1px solid var(--border); height:100%;
+  }
+
+  .pk-row + .pk-row{ margin-top:10px; }
+  .pk-row-lab{
+    margin:0; color:var(--faint); font:600 11px/1.3 var(--font-body);
+    letter-spacing:.08em; text-transform:uppercase;
+  }
+  .pk-bar{ display:flex; height:46px; }
+  .pk-seg{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
+    padding:0 12px; cursor:pointer; white-space:nowrap; container-type:inline-size;
+    background:var(--surface); border:1px solid var(--border);
+    transition:background .18s ease, border-color .18s ease, color .18s ease;
+  }
+  /* A short step has no room for its duration; the panel and the totals carry it. */
+  @container (max-width: 168px){ .pk-seg i{ display:none; } }
+  @container (max-width: 74px){ .pk-seg b{ display:none; } }
+  /* The 23-second sign-off is 9px wide at full scale. Keep that width so the bar
+     stays honest, and widen only the pointer target with an overlay. */
+  .pk-seg-tiny{ position:relative; padding:0; }
+  .pk-seg-tiny::after{ content:""; position:absolute; inset:-7px -9px; }
+  .pk-seg + .pk-seg{ border-left:none; }
+  .pk-bar > .pk-seg:first-child{ border-radius:10px 0 0 10px; }
+  .pk-bar > .pk-seg:last-child{ border-radius:0 10px 10px 0; }
+  .pk-bar > .pk-seg:only-child{ border-radius:10px; }
+  .pk-seg b{ font:600 13px/1.3 var(--font-body); color:var(--muted); }
+  .pk-seg i{ font:12px/1.3 var(--font-mono); font-style:normal; color:var(--faint); }
+  .pk-seg:hover{ background:var(--hover); }
+  .pk-seg-review{ background:rgba(192,144,255,.09); border-color:rgba(192,144,255,.26); }
+  .pk-seg-review:hover{ background:rgba(192,144,255,.15); }
+  .pk-row-tot{ margin:0; display:flex; flex-direction:column; gap:2px; }
+  .pk-row-tot b{ font:600 16px/1.2 var(--font-display); letter-spacing:-.01em; }
+  .pk-row-tot span{ color:var(--faint); font-size:12.5px; }
+
+  .pk-cap{ margin:14px 0 0; padding-left:calc(var(--pk-lab) + 16px); color:var(--faint); font-size:13px; line-height:1.65; }
+  .pk-cap b{ color:var(--muted); font-weight:600; }
+
+  /* selected + focused step, driven by the radio that precedes the rows */
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"] b{ color:var(--fg); }
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"] i{ color:var(--muted); }
+  #pk-s1:focus-visible ~ .pk-rows label[for="pk-s1"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s1:checked ~ .pk-panels #pk-p1{ display:block; }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"] b{ color:var(--fg); }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"] i{ color:var(--muted); }
+  #pk-s2:focus-visible ~ .pk-rows label[for="pk-s2"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s2:checked ~ .pk-panels #pk-p2{ display:block; }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"] b{ color:var(--fg); }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"] i{ color:var(--muted); }
+  #pk-s3:focus-visible ~ .pk-rows label[for="pk-s3"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s3:checked ~ .pk-panels #pk-p3{ display:block; }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"] b{ color:var(--fg); }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"] i{ color:var(--muted); }
+  #pk-s4:focus-visible ~ .pk-rows label[for="pk-s4"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s4:checked ~ .pk-panels #pk-p4{ display:block; }
+
+  .pk-panels{ margin-top:22px; }
+  .pk-panel{
+    display:none; border:1px solid var(--border); border-radius:14px;
+    background:var(--surface); padding:20px 22px;
+  }
+  .pk-panel-head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+  .pk-panel-head b{ font:600 16px/1.3 var(--font-body); }
+  .pk-panel-head span{ color:var(--faint); font:12.5px/1.5 var(--font-mono); }
+  .pk-run code{ font-family:var(--font-mono); font-size:.92em; color:var(--fg); }
+
+  /* Verbatim transcript: exactly what the agent wrote in that step. `data-verbatim`
+     marks it as quoted source material, so it stays in the language of the run
+     even on the other language's page. */
+  .pk-src{ margin-top:14px; color:var(--faint); font-size:13px; line-height:1.65; max-width:84ch; }
+  .pk-tr{
+    margin-top:10px; list-style:none; max-height:360px; overflow-y:auto; overscroll-behavior:contain;
+    border:1px solid var(--border); border-radius:10px; background:var(--bg); padding:14px 16px;
+  }
+  .pk-tr > li{ display:grid; grid-template-columns:70px minmax(0,1fr); gap:0 14px; }
+  .pk-tr > li + li{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .pk-tr time{ color:var(--faint); font:12px/1.75 var(--font-mono); }
+  .pk-tr p{ color:var(--muted); font-size:13.5px; line-height:1.75; white-space:pre-wrap; max-width:78ch; }
+  .pk-tr strong{ color:var(--fg); font-weight:600; }
+  .pk-elide{
+    display:inline-block; margin:3px 0; padding:2px 9px; white-space:normal;
+    border:1px dashed var(--border); border-radius:6px;
+    color:var(--faint); font:12px/1.7 var(--font-mono);
+  }
+  .pk-gloss{ margin-top:12px; color:var(--muted); font-size:13.5px; line-height:1.7; max-width:82ch; }
+  .pk-checks{
+    margin:12px 0 0; padding:0; list-style:none;
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px 18px;
+  }
+  .pk-checks li{ position:relative; padding-left:15px; color:var(--muted); font-size:13px; line-height:1.6; }
+  .pk-checks li::before{
+    content:""; position:absolute; left:1px; top:.62em;
+    width:5px; height:5px; border-radius:50%; background:var(--accent);
+  }
+  .pk-method{ margin-top:12px; color:var(--faint); font-size:13px; line-height:1.65; max-width:88ch; }
+
   @media (max-width: 900px){
     .pk-grid{ grid-template-columns:1fr; }
+    .pk-ruler-track i:last-child{ display:none; }
+    .pk-checks{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+  @media (max-width: 720px){
+    /* Label above the bar, totals below it: the bar keeps its full width. */
+    .pk-tl{ --pk-lab:0px; --pk-tot:0px; }
+    .pk-ruler{ display:none; }
+    .pk-row{ display:block; }
+    .pk-row + .pk-row{ margin-top:26px; }
+    .pk-row-lab{ margin-bottom:8px; }
+    .pk-row-tot{ margin-top:10px; flex-direction:row; align-items:baseline; gap:10px; }
+    .pk-cap{ padding-left:0; }
+  }
+  @media (max-width: 560px){
+    .pk-checks{ grid-template-columns:1fr; }
+    .pk-seg:not(.pk-seg-tiny){ padding:0 9px; }
+    .pk-tr > li{ grid-template-columns:1fr; }
+    .pk-tr time{ display:block; margin-bottom:5px; }
   }
   @media (max-width: 560px){
     .pelican-in{ padding:0 20px; }
@@ -905,7 +1049,7 @@
   <div class="pelican-in reveal">
     <h2>同一道题，一个 Agent，和一支团队。</h2>
     <p class="pk-sub">两次都用 Claude Opus 5。唯一的差别是交付前有没有第二个 Agent 复核。</p>
-    <div class="pk-prompt"><b>题目</b>Generate an animated SVG of a California brown pelican riding a bicycle. The bicycle must have spokes and a correctly shaped bicycle frame. The pelican must have its characteristic large pouch, and there should be a clear indication of feathers. The pelican must be clearly pedaling the bicycle. The image should show the full breeding plumage of the California brown pelican. The SVG must be animated using only SMIL or CSS contained inside the file: both wheels must rotate continuously, the crank and pedals must rotate in phase with the rear wheel, the pelican&#39;s legs must follow the pedals, and the animation must loop seamlessly.</div>
+    <div class="pk-prompt" data-verbatim lang="en"><b>题目</b>Generate an animated SVG of a California brown pelican riding a bicycle. The bicycle must have spokes and a correctly shaped bicycle frame. The pelican must have its characteristic large pouch, and there should be a clear indication of feathers. The pelican must be clearly pedaling the bicycle. The image should show the full breeding plumage of the California brown pelican. The SVG must be animated using only SMIL or CSS contained inside the file: both wheels must rotate continuously, the crank and pedals must rotate in phase with the rear wheel, the pelican&#39;s legs must follow the pedals, and the animation must loop seamlessly.</div>
     <div class="pk-grid">
       <figure class="pk-card" data-od-id="pelican-single">
         <figcaption class="pk-head"><strong>一个 Agent</strong><span>产出即交付。</span></figcaption>
@@ -1712,7 +1856,200 @@
 </svg>
       </figure>
     </div>
-    <p class="pk-foot">题面取自 Simon Willison 的<a href="https://simonwillison.net/2025/Nov/18/gemini-3/" target="_blank" rel="noreferrer">鹈鹕基准</a>，另加了一条动画要求。</p>
+    <!-- Run record. Every figure below is read off the two recorded sessions:
+         local:2026-08-08T08:29:40.051Z-3k50ha (one agent) and
+         local:2026-08-08T09:14:17.615Z-hg7p56 (two agents). -->
+    <div class="pk-run" data-od-id="pelican-run">
+      <h3>这两份产物各自是怎么跑出来的。</h3>
+      <p class="pk-run-sub">两次运行都被完整记录下来，放在下面同一条时间轴上。点任意一步，看那个 Agent 当时在做什么、花了多少钱、说了什么。</p>
+
+      <div class="pk-tl" role="group" aria-label="两次运行的各个步骤">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s1">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s2">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s3" checked>
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s4">
+
+        <div class="pk-rows">
+          <div class="pk-ruler" aria-hidden="true">
+            <span></span>
+            <div class="pk-ruler-track">
+              <i style="left:0">0</i>
+              <i style="left:30.755%">10 分钟</i>
+              <i style="left:61.511%">20 分钟</i>
+              <i style="left:92.266%">30 分钟</i>
+            </div>
+            <span></span>
+          </div>
+
+          <div class="pk-row" data-od-id="pelican-run-single">
+            <p class="pk-row-lab">一个 Agent</p>
+            <div class="pk-bar">
+              <label class="pk-seg" for="pk-s1" style="width:100%">
+                <b>执行</b><i>32 分 31 秒</i>
+                <span class="pk-vh">一个 Agent，执行，32 分 31 秒</span>
+              </label>
+            </div>
+            <p class="pk-row-tot"><b>32 分 31 秒</b><span>$7.28 · 139.1k token</span></p>
+          </div>
+
+          <div class="pk-row" data-od-id="pelican-run-team">
+            <p class="pk-row-lab">两个 Agent</p>
+            <div class="pk-bar">
+              <label class="pk-seg" for="pk-s2" style="width:71.694%">
+                <b>执行</b><i>23 分 19 秒</i>
+                <span class="pk-vh">两个 Agent，执行，23 分 19 秒</span>
+              </label>
+              <label class="pk-seg pk-seg-review" for="pk-s3" style="width:26.782%">
+                <b>复核</b><i>8 分 42 秒</i>
+                <span class="pk-vh">两个 Agent，复核，8 分 42 秒</span>
+              </label>
+              <label class="pk-seg pk-seg-tiny" for="pk-s4" style="width:1.175%">
+                <span class="pk-vh">两个 Agent，执行定稿，23 秒</span>
+              </label>
+            </div>
+            <p class="pk-row-tot"><b>32 分 24 秒</b><span>$8.14 · 121.2k token</span></p>
+          </div>
+
+          <p class="pk-cap">同样的墙钟时间，切分方式不同。<b>两个 Agent 生成的 token 反而比一个少 13%</b>——多出来的 $0.85 花在上下文上：两条会话各自带着自己的历史。两条轴都按上面那把尺子的真实比例画——第二条末尾那一小条就是 23 秒的定稿。</p>
+        </div>
+
+        <div class="pk-panels">
+          <div class="pk-panel" id="pk-p1">
+            <div class="pk-panel-head"><b>一个 Agent · 执行</b><span>32 分 31 秒 · 40 轮模型往返 · 39 次工具调用 · $7.28 · 08:29:40 → 09:02:11</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步写下的全部 11 条消息，未经编辑。它这一轮是用英文工作的。只把它贴进对话的 SVG 源码折叠了。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="en"><time>08:31:12</time><p>I&#x27;ll compute the leg inverse-kinematics keyframes first so the feet track the pedals exactly, then assemble the SVG.</p></li>
+              <li lang="en"><time>08:34:15</time><p>Geometry is settled; recomputing the IK against the final frame dimensions.</p></li>
+              <li lang="en"><time>08:38:22</time><p>Feet track the pedals to within 0.14px. Now assembling the SVG.</p></li>
+              <li lang="en"><time>08:41:39</time><p>XML comments can&#x27;t contain <code>--</code> — my divider comments are invalid. Fixing.</p></li>
+              <li lang="en"><time>08:44:05</time><p>The bike reads well; the pelican&#x27;s proportions are wrong and the legs are lost behind it. Let me check the current markup around the bird before replacing it.</p></li>
+              <li lang="en"><time>08:48:37</time><p>The proportions are still off and the legs are buried under the wing. Rewriting with a smaller, lighter bird and the pedalling leg drawn in front.</p></li>
+              <li lang="en"><time>08:54:26</time><p>The static renderer ignores SMIL, so that PNG shows the un-animated pose. Let me bake explicit poses at several crank angles to verify the geometry.</p></li>
+              <li lang="en"><time>08:55:47</time><p>Mechanics check out at every phase. Now improving leg readability and the pouch attachment.</p></li>
+              <li lang="en"><time>08:56:25</time><p>Baked poses are correct. Now confirming SMIL actually runs in a real browser.</p></li>
+              <li lang="en"><time>08:57:58</time><p>Everything checks out mechanically. One last fix so the chain shares the exact 1.2 s master period.</p></li>
+              <li lang="en"><time>09:02:05</time><p>Here is the finished animated SVG. Save it as a <code>.svg</code> file and open it in a browser (also embeddable via <code>&lt;img&gt;</code>, <code>&lt;object&gt;</code>, or inline in HTML). It&#x27;s fully self-contained — no external fonts, images, scripts, or CSS.
+
+<strong>How it&#x27;s built</strong>
+
+- <strong>Bicycle</strong> — a true diamond frame: seat tube, top tube, down tube, head tube, chainstay and seat stay, plus a raked fork, seatpost/saddle, stem and bar. Both wheels carry 16 radial spokes, a rim, a tyre and a hub, with an orange valve so the rotation is unambiguous.
+- <strong>Drivetrain</strong> — the chainring is welded in phase to the crank, the rear sprocket to the rear wheel, and the chain&#x27;s link dashes travel forward on the taut upper run and back along the sagging lower run, at exactly the chainring&#x27;s surface speed.
+- <strong>Legs</strong> — I solved the two-link inverse kinematics offline (hip → knee → ankle, 84 and 94 units against a 28-unit crank) and baked 36 keyframes per joint. The feet aren&#x27;t approximately near the pedals, they&#x27;re <em>on</em> them: measured live in Chrome, the worst foot-to-spindle gap over a full revolution is <strong>0.225 px</strong>.
+- <strong>Plumage</strong> — full breeding dress of the California race: bright red gular pouch, dark chestnut hindneck, pale straw-yellow crown, white side-neck stripe, ochre patch at the base of the foreneck, silvery scapular streaking on the mantle, layered wing coverts, long flight feathers sweeping back over the flank, a feathered thigh and webbed totipalmate feet.
+- <strong>Loop</strong> — everything runs on a 1.2 s master period (the bob and speed lines at 0.6 s divide it evenly). Sampling the full transform state of all 157 rendered nodes at <em>t</em> and <em>t</em>+1.2 s differs by at most <strong>0.0002 px</strong>, so the loop is seamless.
+<span class="pk-elide">[ 25,877 字节的 SVG 源码 ]</span>
+One honest caveat: I made the crank turn 1:1 with the rear wheel, since you asked for them to be in phase. A real bike gears that up several times over — if you&#x27;d rather have realistic gearing, change the two wheel <code>dur=&quot;1.2s&quot;</code> values to <code>dur=&quot;0.4s&quot;</code> for a 3:1 ratio; the legs and chain stay tied to the crank and nothing else needs touching.
+
+A working copy is also on disk at <code>scratchpad/pelican.svg</code>.</p></li>
+            </ol>
+            <p class="pk-gloss">逐条大意：先解腿部逆运动学关键帧、组装 SVG，发现 XML 注释里的 <code>--</code> 非法，两次重画鹈鹕的比例与腿的层次，烘焙多个曲柄相位验证几何，确认 SMIL 在真实浏览器里确实在走，最后把链条统一到 1.2 秒主周期。</p>
+            <p class="pk-method">然后就交付了。它一路上核过自己的几何，上面看得到——但没有任何一步把题面拿回来对着成品逐条核。这次运行没有第二步。</p>
+          </div>
+
+          <div class="pk-panel" id="pk-p2">
+            <div class="pk-panel-head"><b>两个 Agent · 执行</b><span>23 分 19 秒 · 38 轮模型往返 · 37 次工具调用 · $5.20 · 09:14:17 → 09:37:36</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步写下的全部 9 条消息，未经编辑。只把它贴进对话的 SVG 源码折叠了。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:16:07</time><p>我来先算好腿部 IK 关键帧，再组装 SVG。</p></li>
+              <li lang="zh-CN"><time>09:17:41</time><p>IK 校验通过（伸展范围 90.1–171.3，落在 |L1−L2|=4 与 L1+L2=184 之间，无死点）。现在组装成品。</p></li>
+              <li lang="zh-CN"><time>09:22:38</time><p>结构对了，但头颈/嘴/嗉囊的解剖和翼、尾的可读性不够。重做这几处，并把脚重画成蹼足。</p></li>
+              <li lang="en"><time>09:27:59</time><p>Improving readability of head, neck, wing and tail.</p></li>
+              <li lang="en"><time>09:29:14</time><p>Now the neck, head, bill and pouch.</p></li>
+              <li lang="zh-CN"><time>09:31:11</time><p>头被喙盖住了，眼睛也被压在喙下。调整头部与喙的相对位置。</p></li>
+              <li lang="zh-CN"><time>09:32:48</time><p>头部现在读得清楚了。做最后微调，然后烘焙中间帧验证腿是否始终踩在踏板上。</p></li>
+              <li lang="en"><time>09:33:17</time><p>Now baking intermediate frames to verify the legs stay locked to the pedals.</p></li>
+              <li lang="zh-CN"><time>09:37:30</time><p>成品 — 单个自包含 <code>&lt;svg&gt;</code>，无外部字体/图片/脚本，动画全部为文件内 SMIL。已用 rsvg 逐帧烘焙验证：0°/60°/120°/180°/240°/300° 六个相位下双脚始终贴合踏板。
+
+<strong>文件</strong>：<code>workspace/pelican-bicycle.svg</code>
+<span class="pk-elide">[ 30,286 字节的 SVG 源码 ]</span>
+<strong>实现要点</strong>
+
+- <strong>传动同相</strong>：后轮、前轮、曲柄三个 <code>animateTransform type=&quot;rotate&quot; from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot;</code> 完全同周期同相位；后飞轮画在后轮旋转组内，随轮同转。两个踏板板面各带一个 <code>to=&quot;-360&quot;</code> 的反向旋转，抵消曲柄旋转后始终保持水平。
+- <strong>腿部跟随</strong>：腿不是靠猜的关键帧，而是先解二连杆逆运动学 —— 髋点固定 (400,325)/(392,328)，大腿 94、小腿 90，末端严格落在曲柄圆 <code>C(420,455)+40·(cosθ, sinθ)</code> 上，取&quot;膝向前&quot;解，采样 24 个相位。伸展范围 90.1–171.3，落在 |L1−L2|=4 与 L1+L2=184 之间，全程无死点、无翻转。第 i 帧对应曲柄角 360·i/24，与旋转动画逐帧对齐。
+- <strong>无缝循环</strong>：所有 <code>values</code> 列表首尾同值，旋转为整圈，链条 <code>stroke-dashoffset</code> 每周期正好走一个 dash 周期。
+- <strong>繁殖羽</strong>：草黄色顶冠、深栗色后颈带（下缘一道清晰白边）、白色脸与前颈、前颈基部淡黄晕、鲜红膨大的喉囊、淡色虹膜配蓝灰裸眼周、喙基泛红、灰褐带银灰羽缘的体羽 + 深褐腹部、黑色蹼足。
+- <strong>自行车</strong>：菱形车架（座管/上管/下管/座撑/链撑/头管/前叉）、下弯把、每轮 16 根辐条 + 双层轮圈 + 胎纹、五爪牙盘、上下两段链条。
+
+已验证：XML 良构；无 <code>&lt;script&gt;</code>/<code>&lt;style&gt;</code>/外链资源；5 组 <code>d</code> 动画均为 25 关键帧、首尾一致、命令数一致（可插值）；rsvg 烘焙 6 个相位确认双脚全程贴合踏板。
+
+@verifier</p></li>
+            </ol>
+          </div>
+
+          <div class="pk-panel" id="pk-p3">
+            <div class="pk-panel-head"><b>两个 Agent · 复核</b><span>8 分 42 秒 · 24 轮模型往返 · 23 次工具调用 · $1.94 · 09:37:36 → 09:46:19</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步只写了这一条，未经编辑。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:46:12</time><p>核对对象：<code>workspace/pelican-bicycle.svg</code>（30,286 字节，唯一交付文件）。验收方式：XML 解析 + 静态属性核查 + 用 stdlib 烘焙 6 个相位后 rsvg-convert 渲染 + Chrome headless 在 4 个虚拟时间点实拍（确认 SMIL 在浏览器里真的走）+ 对全部 24 个关键帧做几何计算。
+
+<strong>逐条结论</strong>
+
+- <strong>产出一个动画 SVG，内容是加州褐鹈鹕骑自行车</strong>：通过 —— 单个根 <code>&lt;svg viewBox=&quot;0 0 900 600&quot;&gt;</code>（第 1 行），XML 解析无误。渲染图（frame0）中鹈鹕跨坐于车架之上、双翼腕部搭在车把（第 311–313 行的腕部形状落在第 183–184 行的把位上），构图明确是&quot;骑车&quot;。
+
+- <strong>自行车必须有辐条</strong>：通过 —— 第 57–74 行 <code>&lt;g id=&quot;spokes&quot;&gt;</code> 定义 16 条 <code>y2=&quot;-78&quot;</code> 放射线，每 22.5° 一根；第 81 行被 <code>&lt;g id=&quot;wheel&quot;&gt;</code> 引用，第 147、156 行两轮各 <code>&lt;use href=&quot;#wheel&quot;&gt;</code>。渲染的前后轮辐条条条可见（见轮部对比图）。
+
+- <strong>车架形状正确</strong>：通过 —— 第 161–167 行五根管构成菱形主体：座管 (420,455)→(352,300)、上管 (352,300)→(585,300)、下管 (420,455)→(605,352)、座撑 (352,300)→(250,430)、链撑 (420,455)→(250,430)；第 168 行头管 (586,294)→(609,356)（离垂直 20.3°，即 69.7° 头管角）、第 169 行前叉接前轴 (650,430)。前后三角闭合、五通 (420,455) 位于轴线 (y=430) 下方 25px、轮底 y=520 贴合路面 y=518，无悬空、无断开。
+
+- <strong>鹈鹕有其标志性的大喉囊</strong>：通过 —— 第 361–374 行 <code>pouchG</code> 填充的喉囊路径自 (640,160) 延伸至 (798,196)，横跨约 158px，远大于头部（第 335 行 rx=36）；第 373 行下颌骨支沿囊顶走，第 364–369 行囊面褶纹。头部特写图中红色喉囊为画面最显眼元素。
+
+- <strong>有清晰的羽毛表现</strong>：通过 —— 第 260–269 行躯干鳞状羽缘（5 排扇贝形描边，被 <code>bodyClip</code> 裁形）、第 274–285 行 4 片叠压的收拢初级飞羽、第 296–308 行翼上覆羽与 4 枚分离的大覆羽、第 248–252 行尾羽扇。躯干特写图中羽片分层与羽缘均可辨。
+
+- <strong>鹈鹕明确在蹬车</strong>：通过 —— 两条腿末端严格落在曲柄圆上：对全部 25 个关键帧计算，末端点与 <code>C(420,455)+40·(cosθ,sinθ)</code> 的最大偏差 <strong>0.060px</strong>（近腿第 393–402 行、远腿第 130–134 行）；两腿相位差 180°（第 0 帧近腿末端 (460,455)=θ0°，远腿末端 (380,455)=θ180°）。第 403–407 行蹼足多边形逐帧位移与踏板位移完全一致（如第 6 帧偏移 (−40,+40)，踏板由 (460,455)→(420,495) 亦为 (−40,+40)）。烘焙的 0°/120°/180°/240°/300° 各相位放大图中，双足始终压在踏板板面上。
+
+- <strong>完整繁殖羽</strong>：通过 —— 草黄色顶冠（第 338 行 <code>#f0cf6d</code>）、深栗色后颈带（第 319 行 <code>napeG</code>，延伸至枕部第 341 行）、下缘白色分界带（第 324 行）、前颈基部淡黄斑（第 326 行）、鲜红膨大喉囊（第 361 行 <code>pouchG</code> 红系，正是 <em>californicus</em> 区别于 <em>carolinensis</em> 的关键特征）、淡色虹膜配蓝灰裸眼周（第 350–353 行）、喙基泛红（第 383 行）。头部特写图中以上七项同时可见。
+
+- <strong>动画只用文件内的 SMIL 或 CSS</strong>：通过 —— 标签清点结果：无 <code>&lt;script&gt;</code>、无 <code>&lt;style&gt;</code>、无 <code>&lt;image&gt;</code>、无 <code>&lt;text&gt;</code>；全部 <code>href</code>/<code>xlink:href</code> 只有 <code>#spokes</code> 与 <code>#wheel</code> 两个内部锚点；动画由 11 个 <code>&lt;animate&gt;</code> + 6 个 <code>&lt;animateTransform&gt;</code> 共 17 个 SMIL 元素构成。所有涂色均为文件内 <code>url(#…)</code> 渐变。
+
+- <strong>两个轮子都连续旋转</strong>：通过 —— 第 146 行（后轮，<code>translate(250,430)</code> 内）与第 155 行（前轮，<code>translate(650,430)</code> 内）各有 <code>type=&quot;rotate&quot; from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot; repeatCount=&quot;indefinite&quot;</code>。前轮气门嘴标记（第 84 行 rect）在 6 个相位图中依次走到 上→右上→右下→下→左下→左上，顺时针，与车头朝右的行进方向一致；后轮同理。
+
+- <strong>曲柄与踏板与后轮同相位旋转</strong>：通过 —— 曲柄组第 204 行的 <code>from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot; repeatCount=&quot;indefinite&quot;</code> 与后轮第 146 行完全同参数，两者均无 <code>begin</code> 偏移，故周期与相位严格相同（气门嘴与曲柄臂在同一帧图中角度一致）。踏板（第 220、234 行）随曲柄绕五通公转的同时各自 <code>to=&quot;-360&quot;</code> 反转，使板面保持水平——这是踏板的正确物理行为，公转仍与后轮同相。
+
+- <strong>动画无缝循环</strong>：通过 —— 6 个 <code>animateTransform</code> 全为整圈 ±360，天然闭合；11 个 <code>&lt;animate&gt;</code> 中 8 个 <code>values</code> 首尾同值（5 组 <code>d</code> 均为 25 帧且首末相同、命令序列一致可插值；喉囊第 359 行与 3 条速度线首尾同值）。余下 3 个 <code>stroke-dashoffset</code> 首尾不同值但恰好走满一个 dash 周期：路面 <code>0→-88</code> 对 <code>stroke-dasharray=&quot;48 40&quot;</code>（88，第 112–113 行）、链条 <code>0→∓16</code> 对 <code>dasharray=&quot;6 10&quot;</code>（16，第 191–197 行），因此同样无跳变。所有 17 个动画 <code>repeatCount=&quot;indefinite&quot;</code>。
+
+<strong>总判定</strong>
+全部通过（11/11）。不再交回修正。</p></li>
+            </ol>
+            <p class="pk-method">它从题面里拆出的十一条要求：</p>
+            <ul class="pk-checks">
+              <li>是一份鹈鹕骑车的动画 SVG</li>
+              <li>自行车有辐条</li>
+              <li>车架形状正确</li>
+              <li>标志性的大喉囊</li>
+              <li>有清晰的羽毛表现</li>
+              <li>鹈鹕明确在蹬车</li>
+              <li>完整的加州繁殖羽</li>
+              <li>动画只用文件内的 SMIL 或 CSS</li>
+              <li>两个轮子都连续旋转</li>
+              <li>曲柄踏板与后轮同相位</li>
+              <li>动画无缝循环</li>
+            </ul>
+            <p class="pk-method">怎么核的：解析 XML、核查静态属性、烘焙六个曲柄相位后用 <code>rsvg-convert</code> 渲染、在 headless Chrome 的四个虚拟时间点实拍以确认 SMIL 真的在走，再对全部 24 个关键帧逐帧算几何。</p>
+          </div>
+
+          <div class="pk-panel" id="pk-p4">
+            <div class="pk-panel-head"><b>两个 Agent · 执行定稿</b><span>23 秒 · 1 轮模型往返 · $0.99 · 09:46:19 → 09:46:42</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步只写了这一条，未经编辑。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:46:36</time><p>复核已全部通过（11/11），无需修正，成品定稿。
+
+<strong>交付</strong>：<code>workspace/pelican-bicycle.svg</code>（30,286 字节，单文件自包含），完整源码已在上一条回复中给出。
+
+复核补充确认的两点值得记下：
+
+- 腿末端与曲柄圆的最大偏差 <strong>0.060px</strong>，即两条腿在全部 24 个相位上都是真正锁在踏板上的，不是视觉近似——这来自先解二连杆 IK 再逐帧烘焙的做法。
+- Chrome headless 在 4 个虚拟时间点实拍确认 SMIL 在浏览器中确实运行，不只是静态属性正确。
+
+关于三条 <code>stroke-dashoffset</code> 动画首尾值不同：这是有意的。它们分别位移 88 与 ±16，正好等于各自 <code>stroke-dasharray</code> 的一个完整周期（48+40、6+10），视觉上仍然无缝——路面与链条要表现的是持续流动，用首尾同值反而会来回弹跳。
+
+文件可直接在浏览器打开、<code>&lt;img&gt;</code> 引用或嵌入 HTML 使用。</p></li>
+            </ol>
+            <p class="pk-method">只有一条消息，仍然花了 $0.99：执行方在回答前把整条会话重读了一遍。这是缓存里的上下文，不是新干的活。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="pk-foot">题面取自 Simon Willison 的<a href="https://simonwillison.net/2025/Nov/18/gemini-3/" target="_blank" rel="noreferrer">鹈鹕基准</a>，另加了一条动画要求。用时、往返次数与 token 数取自两次运行的会话记录，花费是这些 token 按 Claude Opus 5 公开 API 价目折算，取到分。每一步的记录都是原话——那个 Agent 写的每一条消息，未经编辑，用它当时工作的语言；只把它贴进对话的 SVG 源码折叠了。用本页口吻写的都是概述，并已标明。一道题跑两次是个例，不是基准测试。</p>
   </div>
 </section>
 
