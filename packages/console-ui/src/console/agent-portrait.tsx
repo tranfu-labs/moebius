@@ -95,7 +95,8 @@ export type PortraitId = keyof typeof PORTRAITS;
 /** Pool order is the picker's grid order, so it stays fixed: append new faces, never reorder. */
 export const PORTRAIT_IDS = Object.keys(PORTRAITS) as PortraitId[];
 
-export type AgentPortraitSize = "compact" | "stack" | "heading" | "hero";
+/** `preview` exists for surfaces whose whole job is showing the face itself, not labelling a row. */
+export type AgentPortraitSize = "compact" | "stack" | "heading" | "hero" | "preview";
 
 /** The face a slug falls back to when the user has not chosen one. */
 export function defaultPortraitId(slug: string): PortraitId {
@@ -123,6 +124,7 @@ const MARK_SIZE: Record<AgentPortraitSize, { badge: string; glyph: string; offse
   stack: { badge: "h-3.5 w-3.5", glyph: "h-2.5 w-2.5", offset: "-bottom-0.5 -right-0.5" },
   heading: { badge: "h-4 w-4", glyph: "h-2.5 w-2.5", offset: "-bottom-0.5 -right-0.5" },
   hero: { badge: "h-5 w-5", glyph: "h-3 w-3", offset: "-bottom-1 -right-1" },
+  preview: { badge: "h-6 w-6", glyph: "h-3.5 w-3.5", offset: "-bottom-1 -right-1" },
 };
 
 const FRAME_SIZE: Record<AgentPortraitSize, string> = {
@@ -130,6 +132,7 @@ const FRAME_SIZE: Record<AgentPortraitSize, string> = {
   stack: "h-7 w-7",
   heading: "h-8 w-8",
   hero: "h-14 w-14",
+  preview: "h-20 w-20",
 };
 
 export function AgentPortrait({

@@ -70,50 +70,50 @@ export function AgentPortraitPicker({
       >
         {trigger}
       </PopoverTrigger>
-      {/* 328px is what puts six columns at a 40px face. See PortraitGrid on why 40. */}
-      <PopoverContent align="start" className="w-[328px] p-3">
-        <p className="text-xs text-sub">{t("console.agentPortrait.hint")}</p>
+      {/* 352px is what leaves the selection ring a 2px gap around a 40px face; see PortraitGrid. */}
+      <PopoverContent align="start" className="w-[352px] p-3">
+        {/*
+          A standing preview at the size the portrait is actually worn, so the face being judged
+          is never the 40px thumbnail. It sits above the grid and stays put: picking updates it
+          in place rather than closing the popover, which is what makes comparing successive
+          candidates possible at all — the previous build committed and dismissed on first click,
+          so a user could only ever see one candidate large, and only after the choice was made.
+        */}
+        <div className="flex flex-col items-center gap-2 pb-1">
+          <AgentPortrait
+            displayName={displayName}
+            slug={slug}
+            portraitId={portraitId}
+            size="preview"
+            engine={engine}
+          />
+          <p className="max-w-full truncate text-sm text-ink">{displayName || `@${slug}`}</p>
+        </div>
         <PortraitGrid
           effectiveId={effectiveId}
           fallbackId={fallbackId}
           background={background}
-          onPick={(picked) => {
-            onChange(picked === fallbackId ? null : picked);
-            setOpen(false);
-          }}
+          onPick={(picked) => onChange(picked === fallbackId ? null : picked)}
         />
-        <button
-          type="button"
-          disabled={portraitId === null}
-          className={cn(
-            "mt-3 w-full rounded-md border border-line px-2 py-1.5 text-xs transition-colors",
-            portraitId === null ? "text-hint" : "text-sub hover:bg-hover hover:text-ink",
-          )}
-          onClick={() => {
-            onChange(null);
-            setOpen(false);
-          }}
-        >
-          {t("console.agentPortrait.restoreDefault")}
-        </button>
       </PopoverContent>
     </Popover>
   );
 }
 
 /**
- * A radiogroup with roving tabindex: 36 candidates would otherwise be 36 tab stops between the
- * hint text and the restore button.
+ * A radiogroup with roving tabindex: 36 candidates would otherwise be 36 tab stops to cross.
  *
  * Faces render at 40px, not at the 28px a denser grid would allow. `generate-avatar-set` records
  * that many portrait styles simply stop reading at 28–32px, and a candidate you cannot make out
- * is not a candidate. Enlarging the tiles outright is deliberate in preference to magnifying one
- * on hover: hover does not exist for keyboard or touch, so the people who most need the larger
- * view would be the ones who never get it — and neighbour-scaling is a form this product has
- * already ruled out for the relay rail and the sidebar info panel.
+ * is not a candidate. Legibility beyond that is the standing preview's job, not a hover state's:
+ * the preview serves pointer, keyboard and touch identically, and it survives the choice.
  *
  * Each button fills its grid column instead of carrying a fixed width, so the columns stay the
- * single source of the layout and cannot be overflowed by a mismatched tile size.
+ * single source of the layout and cannot be overflowed by a mismatched tile size. The popover
+ * width is then chosen so those columns land on 48px: minus the 2px selection border that leaves
+ * 44px around a 40px face, i.e. a 2px gap. Sizing the column any tighter presses the ring flat
+ * against the portrait, where it stops reading as a selection and starts reading as a heavy
+ * outline on the artwork.
  */
 function PortraitGrid({
   effectiveId,
@@ -187,17 +187,23 @@ function PortraitGrid({
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={t(
-              id === fallbackId ? "console.agentPortrait.optionDefault" : "console.agentPortrait.option",
-              { index: String(index + 1), total: String(PORTRAIT_IDS.length) },
-            )}
+            aria-label={t("console.agentPortrait.option", {
+              index: String(index + 1),
+              total: String(PORTRAIT_IDS.length),
+            })}
             tabIndex={index === focusedIndex ? 0 : -1}
             className={cn(
               "inline-flex aspect-square w-full items-center justify-center rounded-full border-2 transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               selected ? "border-accent" : "border-transparent hover:border-line-strong",
             )}
-            onClick={() => onPick(id)}
+            // Selection and roving focus move together, as a radiogroup requires. Letting focus
+            // lag behind leaves two accented rings on screen at once and makes the arrow keys
+            // resume from whatever was selected when the popover opened.
+            onClick={() => {
+              move(index);
+              onPick(id);
+            }}
           >
             <span
               aria-hidden="true"

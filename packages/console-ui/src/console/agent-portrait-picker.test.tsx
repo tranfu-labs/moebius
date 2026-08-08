@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentPortraitPicker } from "./agent-portrait-picker";
@@ -48,28 +49,57 @@ describe("AgentPortraitPicker", () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
-  it("only offers restore once a face is actually stored", async () => {
+  it("stays open on a pick and grows the chosen face into the preview, so candidates can be compared", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
-    const { rerender } = render(
-      <AgentPortraitPicker displayName="软件测试" slug="qa" portraitId={null} onChange={onChange} />,
-    );
+    const Harness = (): JSX.Element => {
+      const [portraitId, setPortraitId] = useState<string | null>(null);
+      return (
+        <AgentPortraitPicker
+          displayName="软件测试"
+          slug="qa"
+          portraitId={portraitId}
+          onChange={setPortraitId}
+        />
+      );
+    };
+    render(<Harness />);
 
     await user.click(screen.getByRole("button", { name: /软件测试/u }));
-    expect(screen.getByRole("button", { name: "恢复默认画像" })).toBeDisabled();
-    await user.keyboard("{Escape}");
+    const preview = (): string | null =>
+      screen.getByRole("dialog").querySelector("[data-agent-portrait] img")?.getAttribute("src") ?? null;
+    const options = within(screen.getByRole("radiogroup")).getAllByRole("radio");
 
-    rerender(
+    await user.click(options[2]!);
+    expect(screen.getByRole("radiogroup")).toBeVisible();
+    expect(preview()).toBe(portraitSrc(PORTRAIT_IDS[2]!));
+
+    // The whole point of not dismissing: a second candidate can be judged against the first.
+    await user.click(options[9]!);
+    expect(screen.getByRole("radiogroup")).toBeVisible();
+    expect(preview()).toBe(portraitSrc(PORTRAIT_IDS[9]!));
+
+    // Focus follows the pick, so only one ring is lit and the arrows resume from here.
+    expect(options.filter((option) => option.tabIndex === 0)).toEqual([options[9]]);
+    expect(document.activeElement).toBe(options[9]);
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(options[10]);
+  });
+
+  it("keeps no restore affordance: the default face is simply one of the tiles", async () => {
+    const user = userEvent.setup();
+    render(
       <AgentPortraitPicker
         displayName="软件测试"
         slug="qa"
         portraitId={PORTRAIT_IDS[3]!}
-        onChange={onChange}
+        onChange={vi.fn()}
       />,
     );
+
     await user.click(screen.getByRole("button", { name: /软件测试/u }));
-    await user.click(screen.getByRole("button", { name: "恢复默认画像" }));
-    expect(onChange).toHaveBeenCalledWith(null);
+    expect(screen.queryByRole("button", { name: /恢复|默认|restore|default/iu })).toBeNull();
+    // Nothing labels one tile "the default" either; that distinction is ours, not the user's.
+    expect(screen.getByRole("radiogroup").textContent).toBe("");
   });
 
   it("renders every candidate on the member's own identity colour, so the grid is not a preview lie", async () => {
