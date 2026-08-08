@@ -180,6 +180,14 @@ export function RunOutcome({
       : providerUnavailable === "missing"
         ? "console.runOutcome.providerMissing.description"
         : outcomeDescriptionKeys[status];
+  // 历史消息体是运行时写死的「标题句 + 指引」（如「这一步卡住了。你可以…」），
+  // 与卡片标题复读；以标题句开头的描述视为这类遗留数据，丢弃并回落 i18n 描述。
+  const trimmedDescription = description?.trim();
+  const displayDescription = trimmedDescription !== undefined
+    && trimmedDescription !== ""
+    && !trimmedDescription.startsWith(t(outcomeLabelKey))
+      ? trimmedDescription
+      : t(outcomeDescriptionKey);
 
   return (
     <div
@@ -211,7 +219,7 @@ export function RunOutcome({
             ) : null}
           </span>
           <span className="mt-0.5 block text-xs text-sub">
-            {description?.trim() || t(outcomeDescriptionKey)}
+            {displayDescription}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">

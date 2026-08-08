@@ -1,0 +1,330 @@
+import type { Meta, StoryObj } from "@storybook/react";
+
+import {
+  OperatorConsole,
+  type OperatorConsoleProps,
+  type OperatorMessage,
+} from "@/console/operator-console";
+
+const pmMarkdown = [
+  "## 计划",
+  "按两条线检查：",
+  "",
+  "- 首页文案——措辞与英文版一致性",
+  "- 分享卡片——OG 图与标题截断",
+  "",
+  "交棒：@dev 先跑构建与截图",
+].join("\n");
+
+const devMarkdown = [
+  "## 结论",
+  "构建通过，两处待确认。",
+  "",
+  "## 依据",
+  "- sites/marketing/src/pages/index.astro",
+  "- sites/marketing/src/components/share-card.tsx",
+  "",
+  "```bash",
+  "pnpm --filter marketing-site build",
+  "```",
+  "",
+  "## 下一步",
+  "交棒：@qa 按验收场景走查分享卡片",
+  "",
+  "<!-- moebius:stage=code-verified -->",
+].join("\n");
+
+const qaMarkdown = [
+  "## 验收结果",
+  "",
+  "| 场景 | 结果 |",
+  "| --- | --- |",
+  "| 分享卡片标题 ≤ 40 字 | 通过 |",
+  "| OG 图 1200×630 | 通过 |",
+  "",
+  "交棒：@release 可以发布",
+].join("\n");
+
+const messages: OperatorMessage[] = [
+  {
+    id: 1,
+    sessionId: "review",
+    speaker: "user",
+    role: null,
+    body: "请对 marketing-site 做一轮发布前检查，重点是首页文案和分享卡片。",
+    status: "displayed",
+    runId: null,
+    runDir: null,
+    error: null,
+    createdAt: "2026-07-11T10:00:00.000Z",
+    updatedAt: "2026-07-11T10:00:00.000Z",
+  },
+  {
+    id: 2,
+    sessionId: "review",
+    speaker: "agent",
+    role: "pm",
+    body: pmMarkdown,
+    status: "displayed",
+    runId: "run-1",
+    runDir: "/tmp/review-run-1",
+    error: null,
+    createdAt: "2026-07-11T10:01:00.000Z",
+    updatedAt: "2026-07-11T10:02:00.000Z",
+  },
+  {
+    id: 3,
+    sessionId: "review",
+    speaker: "agent",
+    role: "dev",
+    body: devMarkdown,
+    status: "displayed",
+    runId: "run-2",
+    runDir: "/tmp/review-run-2",
+    error: null,
+    createdAt: "2026-07-11T10:03:00.000Z",
+    updatedAt: "2026-07-11T10:06:00.000Z",
+  },
+  {
+    id: 4,
+    sessionId: "review",
+    speaker: "agent",
+    role: "qa",
+    body: "开始走查分享卡片……",
+    status: "failed",
+    runId: "run-3",
+    runDir: "/tmp/review-run-3",
+    error: "Playwright 启动超时（120s）",
+    createdAt: "2026-07-11T10:07:00.000Z",
+    updatedAt: "2026-07-11T10:09:00.000Z",
+  },
+  {
+    id: 5,
+    sessionId: "review",
+    speaker: "user",
+    role: null,
+    body: "重试一下，只跑分享卡片那部分。",
+    status: "displayed",
+    runId: null,
+    runDir: null,
+    error: null,
+    createdAt: "2026-07-11T10:10:00.000Z",
+    updatedAt: "2026-07-11T10:10:00.000Z",
+  },
+  {
+    id: 6,
+    sessionId: "review",
+    speaker: "agent",
+    role: "qa",
+    body: qaMarkdown,
+    status: "displayed",
+    runId: "run-4",
+    runDir: "/tmp/review-run-4",
+    error: null,
+    createdAt: "2026-07-11T10:11:00.000Z",
+    updatedAt: "2026-07-11T10:14:00.000Z",
+  },
+];
+
+const session: OperatorConsoleProps["selectedSession"] = {
+  sessionId: "review",
+  projectId: "local",
+  workspaceMode: "worktree",
+  workspacePendingMode: null,
+  title: "发布前检查",
+  status: "running",
+  awaitsHumanReason: null,
+  unreadSince: null,
+  runningCount: 1,
+  waitingCount: 0,
+  stuckCount: 0,
+  errorCount: 0,
+  interruptedCount: 0,
+  createdAt: "2026-07-11T10:00:00.000Z",
+  updatedAt: "2026-07-11T10:14:00.000Z",
+  agentTeamOwnership: "system",
+  agentTeamId: "development",
+  agentTeamHealth: "usable",
+  agentTeamSnapshot: {
+    team: {
+      ownership: "system",
+      id: "development",
+      name: "研发团队",
+      description: "发布前检查所用的研发团队。",
+      primaryAgentSlug: "pm",
+      officialSourceName: "Moebius",
+    },
+    members: [
+      { name: "pm", displayName: "交付负责人", description: "统筹交付" },
+      { name: "dev", displayName: "开发", description: "生产实现" },
+      { name: "qa", displayName: "测试", description: "功能验证" },
+      { name: "release", displayName: "发布", description: "发布收尾" },
+    ],
+    loadedAt: "2026-07-11T10:00:00.000Z",
+  },
+};
+
+const sample: OperatorConsoleProps = {
+  presentation: "conversation",
+  project: {
+    projectId: "local",
+    sourceType: "local-folder",
+    title: "moebius",
+    folderPath: "/Users/example/moebius",
+    worktreeMode: true,
+    workspaceCwd: "/tmp/review-cwd",
+    workspaceMode: "worktree",
+    worktreePath: "/tmp/review-worktree",
+    worktreeUnavailableReason: null,
+    workspaceUpdatedAt: "2026-07-11T10:14:00.000Z",
+    sessions: [session],
+    runningCount: 1,
+    waitingCount: 0,
+    stuckCount: 0,
+    errorCount: 0,
+  },
+  selectedProjectId: "local",
+  selectedSessionId: "review",
+  selectedSession: session,
+  messages,
+  activeRun: {
+    sessionId: "review",
+    runId: "run-5",
+    role: "release",
+    status: "running",
+    startedAt: "2026-07-11T10:15:00.000Z",
+    elapsedMs: 47_000,
+    runDir: "/tmp/review-run-5",
+    cwd: "/tmp/review-cwd",
+    workspaceMode: "worktree",
+    worktreeUnavailableReason: null,
+    stdoutTail: "pushing tag v0.4.3",
+    stderrTail: null,
+    liveMarkdown: "## 正在发布\n\n- 生成 changelog\n- 推送 tag",
+    lastOutputSummary: "正在发布",
+    tailDiagnostic: null,
+    interruptible: true,
+  },
+  memberIdentities: [
+    { slug: "pm", displayName: "交付负责人", engine: { cli: "codex" } },
+    { slug: "dev", displayName: "开发", engine: { cli: "claude" } },
+    { slug: "qa", displayName: "测试", engine: { cli: "codex" } },
+    { slug: "release", displayName: "发布", engine: { cli: "codex" } },
+    { slug: "reviewer", displayName: "交付审查员", engine: { cli: "codex" } },
+  ],
+  composerValue: "",
+  onComposerChange: () => undefined,
+  onSend: () => undefined,
+  onSelectSession: () => undefined,
+  onInterrupt: () => undefined,
+};
+
+const meta = {
+  title: "Block/Console/ConversationView",
+  component: OperatorConsole,
+  args: sample,
+  parameters: {
+    layout: "fullscreen",
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ height: "100vh" }}>
+        <Story />
+      </div>
+    ),
+  ],
+} satisfies Meta<typeof OperatorConsole>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const RelayRunning: Story = {};
+
+export const RelayIdle: Story = {
+  args: {
+    activeRun: null,
+    selectedSession: { ...session, status: "waiting", awaitsHumanReason: "acceptance", runningCount: 0, waitingCount: 1 },
+  },
+};
+
+const outcomeMessages: OperatorMessage[] = [
+  {
+    id: 1,
+    sessionId: "review",
+    speaker: "user",
+    role: null,
+    body: "继续做发布前检查。",
+    status: "displayed",
+    runId: null,
+    runDir: null,
+    error: null,
+    createdAt: "2026-07-11T10:00:00.000Z",
+    updatedAt: "2026-07-11T10:00:00.000Z",
+  },
+  {
+    id: 2,
+    sessionId: "review",
+    speaker: "system",
+    role: "reviewer",
+    body: "这一步卡住了。你可以直接告诉主理人下一步怎么处理。",
+    status: "stuck",
+    systemEventKind: "run-stuck",
+    terminal: {
+      kind: "timeout",
+      subkind: null,
+      safeCode: null,
+      retryable: true,
+      partialMarkdown: "",
+    },
+    runTiming: { elapsedMs: 767_000, completedAt: "2026-07-11T10:13:00.000Z" },
+    runId: "run-stuck",
+    runDir: "/tmp/review-run-stuck",
+    error: null,
+    createdAt: "2026-07-11T10:13:00.000Z",
+    updatedAt: "2026-07-11T10:13:00.000Z",
+  },
+  {
+    id: 3,
+    sessionId: "review",
+    speaker: "system",
+    role: "dev",
+    body: "你让这一步停下了。已经产生的文件改动会保留。",
+    status: "interrupted",
+    systemEventKind: "user-stopped",
+    terminal: {
+      kind: "interrupted",
+      subkind: "user",
+      safeCode: null,
+      retryable: true,
+      partialMarkdown: "",
+    },
+    runTiming: { elapsedMs: 121_000, completedAt: "2026-07-11T10:16:00.000Z" },
+    runId: "run-stopped",
+    runDir: "/tmp/review-run-stopped",
+    error: null,
+    createdAt: "2026-07-11T10:16:00.000Z",
+    updatedAt: "2026-07-11T10:16:00.000Z",
+  },
+  {
+    id: 4,
+    sessionId: "review",
+    speaker: "system",
+    role: "qa",
+    body: "这一步没跑起来。你可以直接告诉主理人下一步怎么处理。",
+    status: "failed",
+    systemEventKind: "run-not-started",
+    runId: "run-failed",
+    runDir: null,
+    error: null,
+    createdAt: "2026-07-11T10:18:00.000Z",
+    updatedAt: "2026-07-11T10:18:00.000Z",
+  },
+];
+
+export const RunOutcomes: Story = {
+  args: {
+    messages: outcomeMessages,
+    activeRun: null,
+    selectedSession: { ...session, status: "stuck", runningCount: 0, stuckCount: 1 },
+  },
+};
