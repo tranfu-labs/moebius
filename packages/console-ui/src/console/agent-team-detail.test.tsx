@@ -54,6 +54,7 @@ describe("AgentTeamDetail", () => {
     const onSaveMember = vi.fn();
     renderDetail({ onChangeMember, onSaveMember });
 
+    enterMarkdownEdit();
     replaceEditorText(
       screen.getByRole("textbox", { name: "开发经理 AGENT.md" }),
       "# 开发经理\n\n新的职责\n",
@@ -99,7 +100,9 @@ describe("AgentTeamDetail", () => {
     />);
     const tabs = within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab");
     expect(tabs[0]).toHaveTextContent("开发· 主 Agent");
+    enterMarkdownEdit();
     expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
+    enterMarkdownEdit();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
     expect(screen.getAllByLabelText("未保存")).toHaveLength(1);
@@ -139,6 +142,7 @@ describe("AgentTeamDetail", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("正在保存");
     expect(screen.getByRole("button", { name: "正在保存" })).toBeDisabled();
+    enterMarkdownEdit();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .toHaveAttribute("aria-disabled", "true");
 
@@ -147,6 +151,7 @@ describe("AgentTeamDetail", () => {
       state: stateWith(managerEditor({ saveStatus: "failed", saveError: "文件被占用" })),
     })} />);
     expect(screen.getByRole("alert")).toHaveTextContent("保存失败：文件被占用");
+    enterMarkdownEdit();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n新职责\n");
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
@@ -159,7 +164,9 @@ describe("AgentTeamDetail", () => {
     }));
     const { rerender } = renderDetail({ state: baseState });
 
+    enterMarkdownEdit();
     expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
+    enterMarkdownEdit();
     const rawMarkdown = screen.getByRole("textbox", { name: "开发经理 AGENT.md" });
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
 
@@ -238,6 +245,7 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
+    enterMarkdownEdit();
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
@@ -333,7 +341,7 @@ describe("AgentTeamDetail", () => {
     });
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
     fireEvent.change(screen.getByRole("combobox", { name: "思考程度" }), { target: { value: "max" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
       { cli: "kimi", model: "kimi-code/k3", effort: "max" },
@@ -360,11 +368,11 @@ describe("AgentTeamDetail", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("deepseek-work");
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("");
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "deepseek-v4-flash" } });
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith("manager", {
       cli: "pi",
       providerId: "deepseek",
@@ -391,7 +399,7 @@ describe("AgentTeamDetail", () => {
 
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("");
     expect(screen.getByText("请选择已就绪的 AI 服务商档案")).toBeVisible();
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
   it("preserves an unsupported historical profile until a supported model is selected", async () => {
@@ -400,6 +408,8 @@ describe("AgentTeamDetail", () => {
     const base = detailProps();
     renderDetail({
       onSaveExecutionProfile,
+      // 单一保存反映的是整名成员，所以要让正文保持干净，禁用才等价于「运行配置无可保存」。
+      state: stateWith(managerEditor({ isDirty: false })),
       team: {
         ...base.team,
         members: base.team.members.map((member) => member.slug === "manager"
@@ -422,12 +432,12 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("option", { name: "future-model（旧版自定义配置）" })).toBeVisible();
     expect(screen.getByRole("option", { name: "future-effort（当前列表不支持）" })).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("旧版自定义配置会保留");
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     expect(onSaveExecutionProfile).not.toHaveBeenCalled();
 
     fireEvent.change(model, { target: { value: "kimi-code/k3-256k" } });
     expect(effort).toHaveValue("high");
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
@@ -749,6 +759,17 @@ describe("AgentTeamDetail", () => {
 
 function renderDetail(overrides: Partial<AgentTeamDetailProps> = {}) {
   return render(<AgentTeamDetail {...detailProps(overrides)} />);
+}
+
+/**
+ * `AGENT.md` now reads by default; editing is an explicit step, so tests take it too. Idempotent
+ * because the component keeps edit mode across a rerender.
+ */
+function enterMarkdownEdit(): void {
+  const enter = screen.queryByRole("button", { name: "编辑" });
+  if (enter !== null) {
+    fireEvent.click(enter);
+  }
 }
 
 function detailProps(overrides: Partial<AgentTeamDetailProps> = {}): AgentTeamDetailProps {

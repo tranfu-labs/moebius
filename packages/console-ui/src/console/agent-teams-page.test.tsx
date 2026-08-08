@@ -92,6 +92,7 @@ describe("AgentTeamsPage built-in duplication", () => {
       .toHaveAttribute("data-team-key", copiedTeam.teamKey));
     expect(onDuplicate).toHaveBeenCalledWith(builtInTeam.teamKey);
     expect(screen.getByText("用户团队")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).not.toHaveAttribute("readonly");
     expect(screen.queryByRole("button", { name: "复制团队" })).not.toBeInTheDocument();
   });

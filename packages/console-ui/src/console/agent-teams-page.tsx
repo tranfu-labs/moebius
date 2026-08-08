@@ -150,6 +150,8 @@ export function AgentTeamsPage({
   onCloseTeam,
   onSelectMember,
   onChangeMemberPortrait,
+  onChangeMemberIdentity,
+  onReorderMembers,
   onChangePrimaryAgent,
   onAddMember,
   onUpdateTeamInformation,
@@ -194,6 +196,12 @@ export function AgentTeamsPage({
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
   onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void;
+  onChangeMemberIdentity?: (
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => void;
+  onReorderMembers?: (teamKey: string, memberSlugs: string[]) => void | Promise<void>;
   onChangePrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onAddMember?: (teamKey: string) => void | Promise<void>;
   onUpdateTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
@@ -633,6 +641,13 @@ export function AgentTeamsPage({
                     ? undefined
                     : (memberSlug, portraitId) =>
                       onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId)}
+                  onChangeMemberIdentity={onChangeMemberIdentity === undefined
+                    ? undefined
+                    : (memberSlug, identity) =>
+                      onChangeMemberIdentity(openedTeam.teamKey, memberSlug, identity)}
+                  onReorderMembers={onReorderMembers === undefined
+                    ? undefined
+                    : (memberSlugs) => onReorderMembers(openedTeam.teamKey, memberSlugs)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;

@@ -940,6 +940,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
@@ -962,6 +963,7 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .not.toHaveAttribute("aria-readonly", "true");
     fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
