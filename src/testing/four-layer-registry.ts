@@ -39,8 +39,10 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ai-team-builder/team-proposal-card.tsx",
   "packages/console-ui/src/brand/moebius-logo.tsx",
   "packages/console-ui/src/console/accept-card.tsx",
-  "packages/console-ui/src/console/agent-initial-avatar.tsx",
   "packages/console-ui/src/console/agent-markdown-mention-editor.tsx",
+  "packages/console-ui/src/console/agent-member-stack.tsx",
+  "packages/console-ui/src/console/agent-portrait.tsx",
+  "packages/console-ui/src/console/provider-mark.tsx",
   "packages/console-ui/src/console/agent-message.tsx",
   "packages/console-ui/src/console/agent-run-info-popover.tsx",
   "packages/console-ui/src/console/agent-team-option.tsx",
@@ -443,6 +445,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
 ] as const;
 
 export const FOUR_LAYER_DOMAIN_FILES = [
+  "packages/console-ui/src/console/identity.ts",
   "packages/console-ui/src/console/file-view-state.ts",
   "desktop/src/console-page/managed-process-sync-contract.ts",
   "desktop/src/console-page/managed-process-sync-model.ts",

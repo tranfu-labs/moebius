@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentPortrait } from "@/console/agent-portrait";
+import { type ExecutionEngine } from "@/console/provider-mark";
 import {
   AgentMarkdownMentionEditor,
   CopyableAgentSlug,
@@ -35,6 +36,16 @@ export interface AgentTeamDetailMember {
   description: string;
   available?: boolean;
   executionProfile?: AgentExecutionProfileDocument;
+}
+
+/** Shapes an execution profile for the portrait badge. Exported: other views need it too. */
+export function profileEngine(
+  profile: AgentExecutionProfile | undefined,
+): { cli: ExecutionEngine; providerId?: string } | undefined {
+  if (profile === undefined) {
+    return undefined;
+  }
+  return { cli: profile.cli, providerId: "providerId" in profile ? profile.providerId : undefined };
 }
 
 export type AgentExecutionProfile = {
@@ -869,7 +880,11 @@ export function AgentTeamDetail({
                 )}
                 onClick={() => onSelectMember(member.slug)}
               >
-                <AgentInitialAvatar displayName={member.displayName} slug={member.slug} />
+                <AgentPortrait
+                  displayName={member.displayName}
+                  slug={member.slug}
+                  engine={profileEngine(member.executionProfile?.effectiveProfile)}
+                />
                 <span>{member.displayName || `@${member.slug}`}</span>
                 {primary ? (
                   <span className="text-xs text-hint">
@@ -979,10 +994,11 @@ export function AgentTeamDetail({
           <>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex min-w-0 items-start gap-3">
-                <AgentInitialAvatar
+                <AgentPortrait
                   displayName={selectedEditor.displayName || selectedMember.displayName}
                   slug={selectedMember.slug}
                   size="heading"
+                  engine={profileEngine(selectedMember.executionProfile?.effectiveProfile)}
                   className="mt-0.5"
                 />
                 <div className="min-w-0">

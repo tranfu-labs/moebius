@@ -3,6 +3,22 @@ import type { Translate, TranslationKey } from "@/i18n";
 export interface OperatorMemberIdentity {
   slug: string;
   displayName: string;
+  /**
+   * Execution engine behind this member. Optional because the timeline can render before the
+   * team's execution profiles are known; the portrait simply omits the badge until they are.
+   */
+  engine?: { cli: "codex" | "claude" | "kimi" | "pi"; providerId?: string };
+}
+
+/** Engine for a role, or undefined when the roster does not carry one. */
+export function resolveOperatorMemberEngine(
+  role: string | null,
+  identities: readonly OperatorMemberIdentity[],
+): OperatorMemberIdentity["engine"] {
+  if (role === null) {
+    return undefined;
+  }
+  return identities.find((identity) => identity.slug === role)?.engine;
 }
 
 const builtInMemberKeys: Readonly<Record<string, TranslationKey>> = {

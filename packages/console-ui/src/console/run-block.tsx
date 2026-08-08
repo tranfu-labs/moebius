@@ -14,6 +14,7 @@ import {
 import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
 import {
+  resolveOperatorMemberEngine,
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
@@ -117,6 +118,7 @@ export function RunBlock({
         <RoleTag
           label={roleLabel}
           toneKey={role}
+          engine={resolveOperatorMemberEngine(role, memberIdentities)}
           className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
         />
         <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
