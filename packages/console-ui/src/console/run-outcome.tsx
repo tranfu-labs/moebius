@@ -78,16 +78,18 @@ const outcomeLabelKeys: Record<RunOutcomeStatus, TranslationKey> = {
   "run-crashed": "console.runOutcome.crashed.title",
 };
 
-const outcomeDescriptionKeys: Record<RunOutcomeStatus, TranslationKey> = {
-  "retry-exhausted": "console.runOutcome.retryExhausted.description",
-  "run-not-started": "console.runOutcome.notStarted.description",
+// null = the title already says it all and the card collapses to one line;
+// descriptions are reserved for facts the title cannot carry.
+const outcomeDescriptionKeys: Record<RunOutcomeStatus, TranslationKey | null> = {
+  "retry-exhausted": null,
+  "run-not-started": null,
   "user-stopped": "console.runOutcome.userStopped.description",
   "system-stopped": "console.runOutcome.systemStopped.description",
-  "resume-unavailable": "console.runOutcome.resumeUnavailable.description",
-  "run-stuck": "console.runOutcome.stuck.description",
-  "quota-exhausted": "console.runOutcome.quota.description",
+  "resume-unavailable": null,
+  "run-stuck": null,
+  "quota-exhausted": null,
   "rate-limited": "console.runOutcome.rateLimited.description",
-  "auth-failed": "console.runOutcome.auth.description",
+  "auth-failed": null,
   "run-crashed": "console.runOutcome.crashed.description",
 };
 
@@ -180,14 +182,16 @@ export function RunOutcome({
       : providerUnavailable === "missing"
         ? "console.runOutcome.providerMissing.description"
         : outcomeDescriptionKeys[status];
-  // 历史消息体是运行时写死的「标题句 + 指引」（如「这一步卡住了。你可以…」），
-  // 与卡片标题复读；以标题句开头的描述视为这类遗留数据，丢弃并回落 i18n 描述。
+  // Legacy runtime rows hard-coded "title sentence + guidance" into the message
+  // body, duplicating the card title; treat title-prefixed descriptions as that
+  // legacy data and fall back to the i18n description.
   const trimmedDescription = description?.trim();
+  const fallbackDescription = outcomeDescriptionKey === null ? "" : t(outcomeDescriptionKey);
   const displayDescription = trimmedDescription !== undefined
     && trimmedDescription !== ""
     && !trimmedDescription.startsWith(t(outcomeLabelKey))
       ? trimmedDescription
-      : t(outcomeDescriptionKey);
+      : fallbackDescription;
 
   return (
     <div
@@ -218,9 +222,11 @@ export function RunOutcome({
               <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
             ) : null}
           </span>
-          <span className="mt-0.5 block text-xs text-sub">
-            {displayDescription}
-          </span>
+          {displayDescription === "" ? null : (
+            <span className="mt-0.5 block text-xs text-sub">
+              {displayDescription}
+            </span>
+          )}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
         {maintenanceAction !== undefined ? (
