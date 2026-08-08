@@ -70,7 +70,8 @@ export function AgentPortraitPicker({
       >
         {trigger}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[268px] p-3">
+      {/* 328px is what puts six columns at a 40px face. See PortraitGrid on why 40. */}
+      <PopoverContent align="start" className="w-[328px] p-3">
         <p className="text-xs text-sub">{t("console.agentPortrait.hint")}</p>
         <PortraitGrid
           effectiveId={effectiveId}
@@ -103,6 +104,16 @@ export function AgentPortraitPicker({
 /**
  * A radiogroup with roving tabindex: 36 candidates would otherwise be 36 tab stops between the
  * hint text and the restore button.
+ *
+ * Faces render at 40px, not at the 28px a denser grid would allow. `generate-avatar-set` records
+ * that many portrait styles simply stop reading at 28–32px, and a candidate you cannot make out
+ * is not a candidate. Enlarging the tiles outright is deliberate in preference to magnifying one
+ * on hover: hover does not exist for keyboard or touch, so the people who most need the larger
+ * view would be the ones who never get it — and neighbour-scaling is a form this product has
+ * already ruled out for the relay rail and the sidebar info panel.
+ *
+ * Each button fills its grid column instead of carrying a fixed width, so the columns stay the
+ * single source of the layout and cannot be overflowed by a mismatched tile size.
  */
 function PortraitGrid({
   effectiveId,
@@ -182,7 +193,7 @@ function PortraitGrid({
             )}
             tabIndex={index === focusedIndex ? 0 : -1}
             className={cn(
-              "inline-flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors",
+              "inline-flex aspect-square w-full items-center justify-center rounded-full border-2 transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               selected ? "border-accent" : "border-transparent hover:border-line-strong",
             )}
@@ -190,7 +201,7 @@ function PortraitGrid({
           >
             <span
               aria-hidden="true"
-              className="inline-block h-7 w-7 overflow-hidden rounded-full"
+              className="inline-block h-10 w-10 overflow-hidden rounded-full"
               style={{ backgroundColor: background }}
             >
               <img src={portraitSrc(id)} alt="" loading="lazy" decoding="async" className="h-full w-full" />

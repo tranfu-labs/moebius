@@ -86,6 +86,25 @@ describe("AgentPortraitPicker", () => {
     expect(new Set(swatches).size).toBe(1);
   });
 
+  it("keeps candidates large enough to actually tell apart, without relying on hover", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentPortraitPicker displayName="软件测试" slug="qa" portraitId={null} onChange={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /软件测试/u }));
+    const options = within(screen.getByRole("radiogroup")).getAllByRole("radio");
+
+    for (const option of options) {
+      // 40px faces: portrait styles stop reading around 28px, and a candidate the user cannot
+      // make out is not a candidate. Fixed and permanent, not revealed by pointer hover.
+      expect(option.querySelector("span")).toHaveClass("h-10", "w-10");
+      // Tiles follow the grid column rather than a fixed width, so they cannot overflow it.
+      expect(option).toHaveClass("aspect-square", "w-full");
+      expect(option.className).not.toMatch(/hover:scale|hover:h-|hover:w-/u);
+    }
+  });
+
   it("keeps the whole grid to a single tab stop and moves focus with arrow keys", async () => {
     const user = userEvent.setup();
     render(
