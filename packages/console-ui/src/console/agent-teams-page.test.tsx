@@ -93,7 +93,7 @@ describe("AgentTeamsPage built-in duplication", () => {
     expect(onDuplicate).toHaveBeenCalledWith(builtInTeam.teamKey);
     expect(screen.getByText("用户团队")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).not.toHaveAttribute("readonly");
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" })).not.toHaveAttribute("readonly");
     expect(screen.queryByRole("button", { name: "复制团队" })).not.toBeInTheDocument();
   });
 
@@ -101,8 +101,8 @@ describe("AgentTeamsPage built-in duplication", () => {
     render(<DuplicateTeamHarness onDuplicate={() => undefined} />);
     fireEvent.click(screen.getByTestId("agent-team-row"));
 
-    expect(screen.queryByRole("button", { name: "团队更多操作" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "开发经理更多操作" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "团队 的操作" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开发经理 的操作" })).not.toBeInTheDocument();
     expect(screen.queryByText("删除 Agent")).not.toBeInTheDocument();
     expect(screen.queryByText(/废纸篓|回收站/u)).not.toBeInTheDocument();
   });
@@ -169,7 +169,7 @@ describe("AgentTeamsPage user-team file operations", () => {
       onDuplicateMember,
     });
 
-    await openMenu("开发经理更多操作");
+    await openMenu("开发经理 的操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "复制 Agent" }));
 
     const dialog = screen.getByRole("dialog", { name: "还有未保存的修改" });
@@ -186,7 +186,7 @@ describe("AgentTeamsPage user-team file operations", () => {
     const onTrashMember = vi.fn();
     renderUserTeam({ onTrashMember });
 
-    await openMenu("开发经理更多操作");
+    await openMenu("开发经理 的操作");
     const item = screen.getByRole("menuitem", { name: "删除 Agent（请先更换主 Agent）" });
     expect(item).toHaveAttribute("data-disabled");
     fireEvent.click(item);
@@ -201,7 +201,7 @@ describe("AgentTeamsPage user-team file operations", () => {
       onTrashMember,
     });
 
-    await openMenu("开发更多操作");
+    await openMenu("开发 的操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "删除 Agent" }));
 
     const dialog = screen.getByRole("dialog", { name: "删除“开发”？" });
@@ -222,7 +222,7 @@ describe("AgentTeamsPage user-team file operations", () => {
       onTrashUserTeam,
     });
 
-    await openMenu("我的开发团队更多操作");
+    await openMenu("我的开发团队 的操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "移到废纸篓 / 回收站" }));
     const draftDialog = screen.getByRole("dialog", { name: "还有未保存的修改" });
     expect(onTrashUserTeam).not.toHaveBeenCalled();
@@ -244,7 +244,7 @@ describe("AgentTeamsPage user-team file operations", () => {
     const onDuplicateUserTeam = vi.fn().mockResolvedValue(userTeam.teamKey);
     renderUserTeam({ onDuplicateUserTeam });
 
-    await openMenu("我的开发团队更多操作");
+    await openMenu("我的开发团队 的操作");
     fireEvent.click(screen.getByRole("menuitem", { name: "复制团队" }));
     await waitFor(() => expect(onDuplicateUserTeam).toHaveBeenCalledWith(userTeam.teamKey));
   });
@@ -258,11 +258,11 @@ describe("AgentTeamsPage file manager actions", () => {
     fireEvent.click(screen.getByTestId("agent-team-row"));
     expect(screen.queryByRole("menuitem", { name: "在 Finder 中打开" })).not.toBeInTheDocument();
 
-    await openMenu("开发团队更多操作");
+    await openMenu("开发团队 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在 Finder 中打开" }));
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("user:development-copy", undefined));
 
-    await openMenu("开发经理更多操作");
+    await openMenu("开发经理 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在 Finder 中打开" }));
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("user:development-copy", "manager"));
   });
@@ -280,11 +280,11 @@ describe("AgentTeamsPage file manager actions", () => {
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
 
-    await openMenu("开发团队更多操作");
+    await openMenu("开发团队 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在文件资源管理器中显示" }));
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("system:development", undefined));
 
-    await openMenu("开发经理更多操作");
+    await openMenu("开发经理 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在文件资源管理器中显示" }));
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("system:development", "manager"));
   });
@@ -294,7 +294,7 @@ describe("AgentTeamsPage file manager actions", () => {
     render(<LocationHarness team={copiedTeam} onOpenLocation={onOpenLocation} fileManagerActionLabel="在文件管理器中打开" />);
 
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    await openMenu("开发经理更多操作");
+    await openMenu("开发经理 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在文件管理器中打开" }));
 
     const alert = await screen.findByRole("alert");
@@ -320,9 +320,9 @@ describe("AgentTeamsPage file manager actions", () => {
 
     fireEvent.click(screen.getByTestId("agent-team-row"));
     expect(screen.getByRole("button", { name: "添加第一个 Agent" })).toBeVisible();
-    expect(screen.getAllByRole("button", { name: /更多操作/u })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: / 的操作/u })).toHaveLength(1);
 
-    await openMenu("草稿团队更多操作");
+    await openMenu("草稿团队 的操作");
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "在 Finder 中打开" }));
 
     await waitFor(() => expect(onOpenLocation).toHaveBeenCalledWith("user:draft", undefined));

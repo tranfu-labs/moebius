@@ -3,8 +3,39 @@ import { Check, ChevronRight } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { useGrowFromAnchor } from "@/ui/overlay-grow";
 
-const DropdownMenu = DropdownMenuPrimitive.Root;
+const OpenContext = React.createContext(false);
+
+/**
+ * Wraps Radix's root so the open state is always readable. Callers here are mostly uncontrolled
+ * (`<DropdownMenu>` with no `open`), but the enter and exit animations need to know the state.
+ * Passing `open` from outside still works; both usages hold.
+ */
+function DropdownMenu({
+  open,
+  defaultOpen,
+  onOpenChange,
+  children,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>): JSX.Element {
+  const [uncontrolled, setUncontrolled] = React.useState(defaultOpen ?? false);
+  const isOpen = open ?? uncontrolled;
+  const handleOpenChange = React.useCallback((next: boolean) => {
+    if (open === undefined) {
+      setUncontrolled(next);
+    }
+    onOpenChange?.(next);
+  }, [open, onOpenChange]);
+
+  return (
+    <OpenContext.Provider value={isOpen}>
+      <DropdownMenuPrimitive.Root open={isOpen} onOpenChange={handleOpenChange} {...props}>
+        {children}
+      </DropdownMenuPrimitive.Root>
+    </OpenContext.Provider>
+  );
+}
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
@@ -45,16 +76,36 @@ DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayNam
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 6, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal>
-    <DropdownMenuPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn("z-50 min-w-36 rounded-md border border-line bg-sunken p-1 text-ink", className)}
-      {...props}
-    />
-  </DropdownMenuPrimitive.Portal>
-));
+>(({ className, sideOffset = 6, ...props }, forwardedRef) => {
+  const open = React.useContext(OpenContext);
+  // Shares the popover's behaviour: the menu grows out of the corner it is anchored to, and is
+  // interruptible and reversible.
+  const { present, ref } = useGrowFromAnchor(open, "dropdown-menu");
+  const setRefs = React.useCallback((node: HTMLDivElement | null) => {
+    ref(node);
+    if (typeof forwardedRef === "function") {
+      forwardedRef(node);
+    } else if (forwardedRef !== null) {
+      forwardedRef.current = node;
+    }
+  }, [ref, forwardedRef]);
+
+  if (!present) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuPrimitive.Portal forceMount>
+      <DropdownMenuPrimitive.Content
+        ref={setRefs}
+        sideOffset={sideOffset}
+        className={cn("z-50 min-w-36 rounded-md border border-line bg-sunken p-1 text-ink", className)}
+        data-overlay-clip=""
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  );
+});
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 const DropdownMenuItem = React.forwardRef<

@@ -459,6 +459,13 @@ function TeamDetailHarness({
       onSaveMember={async (_teamKey, memberSlug) => {
         setDirty((previous) => ({ ...previous, [memberSlug]: false }));
       }}
+      // 接上对象级操作，菜单才有内容可审——空壳菜单是审不出设计的。
+      fileManagerActionLabel="在 Finder 中显示"
+      onOpenLocation={() => undefined}
+      onDuplicateUserTeam={async () => team.teamKey}
+      onTrashUserTeam={async () => undefined}
+      onDuplicateMember={async () => undefined}
+      onTrashMember={async () => undefined}
     />
   );
 }

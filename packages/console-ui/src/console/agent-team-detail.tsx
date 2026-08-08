@@ -833,8 +833,9 @@ export function AgentTeamDetail({
         ) : null}
 
         {/*
-          没有主 Agent 下拉：任命就是把成员拖到第一位，能力长在成员条自己身上，
-          不需要第二个入口去做同一件事。切换结果仍在这里播报。
+          No primary-Agent select. Appointing is dragging a member into first place, so the
+          ability lives on the member strip itself; a second entry point for the same act only
+          gives the two a chance to disagree. The outcome is still announced here.
         */}
         <div className="text-xs text-sub empty:hidden" aria-live="polite">
           {primaryAgentChangeStatus === "saving" ? (
@@ -865,7 +866,7 @@ export function AgentTeamDetail({
             <h2 className="text-sm font-medium text-ink">
               {t("console.agentTeamDetail.members")}
             </h2>
-            {/* 常驻可见，不是 sr-only：能拖这件事必须让看得见的人也知道。 */}
+            {/* Standing and visible, not sr-only: sighted users have to learn this too. */}
             {canReorder ? (
               <span id="agent-team-member-reorder-hint" className="truncate text-xs text-hint">
                 {t("console.agentTeamDetail.reorderHint")}
@@ -1019,27 +1020,31 @@ export function AgentTeamDetail({
         ) : (
           <>
             {/*
-              两栏而不是一路往下堆：配置是主线，正文是参考，两者并排看才有主次；
-              单列时它们只是两条等宽的横带，而右侧近一半的横向空间是浪费的。
+              Two columns rather than one long stack. Configuration is the main line and the
+              body is reference; side by side, that ranking is visible. Stacked they are just two
+              bands of equal width, and half the horizontal space goes unused.
             */}
             <div className="grid gap-6 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
             {/*
-              整栏 sticky：只钉卡片的话，它后面的保存行会照样滚走。
-              self-start 不能少——网格项默认拉伸到整行高，那样 sticky 就没有可移动的余地了。
+              The whole column sticks, not just the card: pinning the card alone lets the save
+              row below it scroll away. `self-start` is required — a grid item stretches to the
+              row height by default, which leaves a sticky element no room to move.
             */}
             <div className="lg:sticky lg:top-4 lg:self-start">
             {/*
-              正文不设内部滚动条：把一份长 persona 关进一个小窗里读，比整页滚更难受。
-              让它自然撑开、整页滚动，同时把主线（运行配置）钉住，这样读正文时配置仍在视野里。
+              The body gets no inner scrollbar: reading a long persona through a small window is
+              worse than scrolling the page. It extends naturally and the panel scrolls, while the
+              main line stays pinned so configuration is still in view while reading.
             */}
             <div
               className="rounded-lg border border-line bg-card p-4"
               data-testid="agent-execution-profile-editor"
             >
               {/*
-                身份并进这张卡，而不是在上方单独占一条横带：那条横带除了「可编辑」之外，
-                没有给出成员条没给的信息，读起来就是选中态的复读——画像和名字各出现两次。
-                成员条负责「选谁」，这张卡负责「是谁、怎么跑」。
+                Identity belongs in this card rather than in a band of its own above it. That
+                band added nothing the member strip had not already shown — it simply restated the
+                selection, with the portrait and the name each appearing twice. The strip answers
+                "which member"; this card answers "who is it and how does it run".
               */}
               <div className="flex items-center gap-3">
                 <AgentPortraitPicker
@@ -1299,16 +1304,19 @@ export function AgentTeamDetail({
 
             <div className="min-w-0">
             {/*
-              右栏不做成卡片：左栏是控制面（字段、下拉），描边合理；正文是阅读内容，
-              把它也框起来只是「什么都装进盒子」。这里靠留白和字号分组，不再画线。
+              The right column is not a card. The left one is a control surface — fields and
+              selects — so a border earns its place there; the body is reading material, and
+              boxing it too is just habit. Grouping here is whitespace and type, not rules.
             */}
             <div>
             {/*
-              编辑入口按「历史消息轻操作」那套：绝对定位覆盖在正文右上，默认透明，
-              整块 hover / focus-within 时才出现——像代码块的复制按钮。它不值得占一整行。
+              The edit entry follows the registered light-action pattern: absolutely positioned
+              over the top-right of the body, transparent until the block is hovered or takes
+              keyboard focus — a code block's copy button. It does not deserve its own row.
 
-              同一行原来的 @slug 与复制按钮删了：编辑器里输入 @ 就有成员补全，
-              手动复制 slug 是个不存在的需求，留着只是占地方。
+              The `@slug` and its copy button that used to share that row are gone: typing `@` in
+              the editor already completes member names, so copying a slug by hand is a need that
+              does not exist, and it only took up space.
             */}
             <div className="group relative">
               {readOnly ? null : (

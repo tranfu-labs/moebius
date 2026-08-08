@@ -941,7 +941,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
@@ -964,7 +964,7 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
 
@@ -1017,8 +1017,9 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByTestId("agent-team-row"));
     const detail = screen.getByRole("region", { name: "开发团队详情" });
     expect(detail).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "主 Agent" }), { target: { value: "dev" } });
-    expect(onChangeAgentTeamPrimaryAgent).toHaveBeenCalledWith("user:development", "dev");
+    // 主 Agent 由成员条的第一位表达，页面不再有单独的选择器。
+    expect(screen.queryByRole("combobox", { name: "主 Agent" })).toBeNull();
+    expect(onChangeAgentTeamPrimaryAgent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "开发" }));
     expect(onSelectAgentTeamMember).toHaveBeenCalledWith("user:development", "dev");
     expect(screen.queryByTestId("agent-team-list")).not.toBeInTheDocument();

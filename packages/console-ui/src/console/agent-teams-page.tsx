@@ -980,9 +980,15 @@ function TeamMoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label={triggerLabel}>
+        {/*
+          Icon only, matching the member's own ···. This used to also spell out "More", but all
+          three entries act on the object itself — open its location, copy it, delete it — while
+          "More" suggests there is more of the screen to see. It said nothing about what the menu
+          was, and left two identically named buttons with different scopes on one page. Scope is
+          carried by the accessible name and by placement instead.
+        */}
+        <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={triggerLabel}>
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          {t("console.agentTeams.more")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

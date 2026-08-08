@@ -150,14 +150,16 @@ function MemberChip({
         // First place is a slot, not merely the head of a queue: the primary Agent is legible
         // from the shape alone, so the meaning of position needs no caption.
         item.primary && "border-accent/70",
-            // 不放抓手图标：整个胶囊都可拖，抓手却暗示「只能从这里拖」，语义本身就是错的。
-        // 而且它没有不留痕迹的落点——留在流里每个胶囊左边常年空一块，绝对定位又会在
-        // 悬浮时突出到胶囊外。可拖这件事由常驻提示、cursor-grab 和主 Agent 槽位共同表达。
+            // No grip handle. The whole chip is draggable, so a grip would claim "drag from here"
+        // and be wrong about it — and there is nowhere to put one without a cost: left in flow it
+        // leaves a permanent gap on every chip, absolutely positioned it juts outside the chip on
+        // hover. Draggability is carried by the standing hint, the grab cursor and the primary slot.
         reorderable && "cursor-grab active:cursor-grabbing",
         sortable.isDragging && "z-10 opacity-60",
       )}
       onClick={() => onSelect(item.slug)}
-      // dnd-kit 的 attributes 含 role="button"，会盖掉 tablist 语义，所以只取排序相关的几项。
+      // dnd-kit's attributes include role="button", which would override the tablist semantics,
+      // so only the sorting-related ones are taken.
       aria-roledescription={sortable.attributes["aria-roledescription"]}
       aria-describedby={sortable.attributes["aria-describedby"]}
       tabIndex={sortable.attributes.tabIndex}
