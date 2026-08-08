@@ -15,11 +15,14 @@ import { cn } from "@/lib/utils";
 export function RoleTag({
   label,
   toneKey,
+  portraitId,
   engine,
   className,
 }: {
   label: string;
   toneKey?: string;
+  /** The face chosen for this member, when the surrounding data carries it. */
+  portraitId?: string | null;
   /** Execution engine behind this agent, when the surrounding data carries it. */
   engine?: { cli: ExecutionEngine; providerId?: string };
   className?: string;
@@ -39,7 +42,15 @@ export function RoleTag({
       </span>
     );
   }
-  return <AgentPortrait displayName={label} slug={key} engine={engine} className={className} />;
+  return (
+    <AgentPortrait
+      displayName={label}
+      slug={key}
+      portraitId={portraitId}
+      engine={engine}
+      className={className}
+    />
+  );
 }
 
 export { identityToken } from "@/console/identity";

@@ -42,6 +42,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/agent-markdown-mention-editor.tsx",
   "packages/console-ui/src/console/agent-member-stack.tsx",
   "packages/console-ui/src/console/agent-portrait.tsx",
+  "packages/console-ui/src/console/agent-portrait-picker.tsx",
   "packages/console-ui/src/console/provider-mark.tsx",
   "packages/console-ui/src/console/agent-message.tsx",
   "packages/console-ui/src/console/agent-run-info-popover.tsx",

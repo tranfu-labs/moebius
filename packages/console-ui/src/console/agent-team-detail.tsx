@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AgentPortrait } from "@/console/agent-portrait";
+import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
+import { AgentPortraitPicker } from "@/console/agent-portrait-picker";
 import { type ExecutionEngine } from "@/console/provider-mark";
 import {
   AgentMarkdownMentionEditor,
@@ -35,6 +36,8 @@ export interface AgentTeamDetailMember {
   displayName: string;
   description: string;
   available?: boolean;
+  /** Chosen face; null or absent leaves the member on the slug default. */
+  portraitId?: string | null;
   executionProfile?: AgentExecutionProfileDocument;
 }
 
@@ -187,6 +190,8 @@ export interface AgentTeamDetailProps {
   onAddMember?(): void | Promise<void>;
   onChangePrimaryAgent?(memberSlug: string): void | Promise<void>;
   onSelectMember(memberSlug: string): void;
+  /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
+  onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
   onChangeMember(memberSlug: string, agentMarkdown: string): void;
   onSaveMember(memberSlug: string): void | Promise<void>;
   onCheckExternalChange?(memberSlug: string): void | Promise<void>;
@@ -221,6 +226,7 @@ export function AgentTeamDetail({
   onAddMember,
   onChangePrimaryAgent,
   onSelectMember,
+  onChangeMemberPortrait,
   onChangeMember,
   onSaveMember,
   onCheckExternalChange,
@@ -883,6 +889,7 @@ export function AgentTeamDetail({
                 <AgentPortrait
                   displayName={member.displayName}
                   slug={member.slug}
+                  portraitId={member.portraitId}
                   engine={profileEngine(member.executionProfile?.effectiveProfile)}
                 />
                 <span>{member.displayName || `@${member.slug}`}</span>
@@ -994,13 +1001,16 @@ export function AgentTeamDetail({
           <>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex min-w-0 items-start gap-3">
-                <AgentPortrait
-                  displayName={selectedEditor.displayName || selectedMember.displayName}
-                  slug={selectedMember.slug}
-                  size="heading"
-                  engine={profileEngine(selectedMember.executionProfile?.effectiveProfile)}
-                  className="mt-0.5"
-                />
+                <div className="mt-0.5">
+                  <AgentPortraitPicker
+                    displayName={selectedEditor.displayName || selectedMember.displayName}
+                    slug={selectedMember.slug}
+                    portraitId={selectedMember.portraitId ?? null}
+                    engine={profileEngine(selectedMember.executionProfile?.effectiveProfile)}
+                    disabled={readOnly || onChangeMemberPortrait === undefined}
+                    onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
+                  />
+                </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate text-lg font-semibold tracking-[-0.01em] text-ink">

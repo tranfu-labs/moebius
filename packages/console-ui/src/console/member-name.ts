@@ -3,6 +3,8 @@ import type { Translate, TranslationKey } from "@/i18n";
 export interface OperatorMemberIdentity {
   slug: string;
   displayName: string;
+  /** Chosen face; absent leaves the timeline on the slug default, same as everywhere else. */
+  portraitId?: string | null;
   /**
    * Execution engine behind this member. Optional because the timeline can render before the
    * team's execution profiles are known; the portrait simply omits the badge until they are.
@@ -19,6 +21,17 @@ export function resolveOperatorMemberEngine(
     return undefined;
   }
   return identities.find((identity) => identity.slug === role)?.engine;
+}
+
+/** Chosen face for a role, or undefined when the roster does not carry one. */
+export function resolveOperatorMemberPortrait(
+  role: string | null,
+  identities: readonly OperatorMemberIdentity[],
+): string | null | undefined {
+  if (role === null) {
+    return undefined;
+  }
+  return identities.find((identity) => identity.slug === role)?.portraitId;
 }
 
 const builtInMemberKeys: Readonly<Record<string, TranslationKey>> = {

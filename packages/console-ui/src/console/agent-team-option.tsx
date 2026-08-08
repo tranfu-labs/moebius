@@ -12,6 +12,7 @@ export interface AgentTeamOptionView {
   members: ReadonlyArray<{
     slug: string;
     displayName: string;
+    portraitId?: string | null;
     engine?: { cli: ExecutionEngine; providerId?: string };
   }>;
 }
@@ -43,7 +44,7 @@ export function AgentTeamOption({ team, memberLimit = 3 }: {
       <span className="flex flex-wrap items-center gap-1.5">
         {visibleMembers.map((member) => (
           <span key={member.slug} className="inline-flex items-center gap-1 text-[11px] font-normal text-sub">
-            <AgentPortrait displayName={member.displayName} slug={member.slug} engine={member.engine} className="h-5 w-5" />
+            <AgentPortrait displayName={member.displayName} slug={member.slug} portraitId={member.portraitId} engine={member.engine} className="h-5 w-5" />
             <span>{member.displayName || `@${member.slug}`}</span>
           </span>
         ))}

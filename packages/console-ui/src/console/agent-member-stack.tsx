@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 export interface AgentMemberStackMember {
   slug: string;
   displayName: string;
+  portraitId?: string | null;
   engine?: { cli: ExecutionEngine; providerId?: string };
 }
 
@@ -59,6 +60,7 @@ export function AgentMemberStack({
             size="stack"
             displayName={member.displayName}
             slug={member.slug}
+            portraitId={member.portraitId}
             engine={member.engine}
             title={title}
           />

@@ -15,6 +15,7 @@ import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
 import {
   resolveOperatorMemberEngine,
+  resolveOperatorMemberPortrait,
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
@@ -118,6 +119,7 @@ export function RunBlock({
         <RoleTag
           label={roleLabel}
           toneKey={role}
+          portraitId={resolveOperatorMemberPortrait(role, memberIdentities)}
           engine={resolveOperatorMemberEngine(role, memberIdentities)}
           className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
         />

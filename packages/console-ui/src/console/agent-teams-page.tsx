@@ -17,7 +17,7 @@ import {
   type TeamBuilderViewState,
 } from "@/ai-team-builder/team-builder-view";
 import { AgentMemberStack } from "@/console/agent-member-stack";
-import { AgentPortrait } from "@/console/agent-portrait";
+import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
 import { type ExecutionEngine } from "@/console/provider-mark";
 import { AgentTeamSaveFeedback, type AgentTeamSaveFeedbackView } from "@/console/agent-team-save-feedback";
 import {
@@ -49,6 +49,7 @@ export interface OperatorAgentTeamMember {
   displayName: string;
   description: string;
   available?: boolean;
+  portraitId?: string | null;
   executionProfile?: AgentTeamDetailMember["executionProfile"];
 }
 
@@ -148,6 +149,7 @@ export function AgentTeamsPage({
   onOpenTeam,
   onCloseTeam,
   onSelectMember,
+  onChangeMemberPortrait,
   onChangePrimaryAgent,
   onAddMember,
   onUpdateTeamInformation,
@@ -191,6 +193,7 @@ export function AgentTeamsPage({
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
+  onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void;
   onChangePrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onAddMember?: (teamKey: string) => void | Promise<void>;
   onUpdateTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
@@ -626,6 +629,10 @@ export function AgentTeamsPage({
                       }
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
+                  onChangeMemberPortrait={onChangeMemberPortrait === undefined
+                    ? undefined
+                    : (memberSlug, portraitId) =>
+                      onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;
@@ -1276,6 +1283,7 @@ function AgentTeamRow({
             shape="squircle"
             displayName={primaryAgent.displayName}
             slug={primaryAgent.slug}
+            portraitId={primaryAgent.portraitId}
             engine={memberEngine(primaryAgent)}
             className="rounded-xl"
             title={teamName(t, team)}

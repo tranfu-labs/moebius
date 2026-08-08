@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 
+import type { AgentTeamDetailState } from "@/console/agent-team-detail";
 import {
   AgentTeamsPage,
   type OperatorAgentTeam,
@@ -354,3 +356,59 @@ export const ProviderMarks: Story = {
     },
   },
 };
+
+/**
+ * 在团队详情里更换当前成员的画像：入口是标题上的画像本身，候选一律用该成员现有底色渲染。
+ * 换完之后成员选择器、团队横行的主 Agent 方形画像会一起跟上。
+ */
+export const MemberPortrait: Story = {
+  name: "更换成员画像",
+  render: (args) => {
+    const [portraits, setPortraits] = useState<Record<string, string | null>>({});
+    const [selected, setSelected] = useState("dev-manager");
+    const team: OperatorAgentTeam = {
+      ...userTeam,
+      members: userTeam.members.map((member) => ({
+        ...member,
+        portraitId: portraits[member.slug] ?? null,
+      })),
+    };
+    return (
+      <AgentTeamsPage
+        {...args}
+        state={{ status: "ready", teams: [team] }}
+        selectedTeamKey={team.teamKey}
+        selectedMemberSlug={selected}
+        detailState={readyDetailState(team, selected)}
+        onOpenTeam={() => undefined}
+        onSelectMember={(_teamKey, memberSlug) => setSelected(memberSlug)}
+        onChangeMemberPortrait={(_teamKey, memberSlug, portraitId) => {
+          setPortraits((previous) => ({ ...previous, [memberSlug]: portraitId }));
+        }}
+      />
+    );
+  },
+};
+
+function readyDetailState(team: OperatorAgentTeam, selectedMemberSlug: string): AgentTeamDetailState {
+  return {
+    teamKey: team.teamKey,
+    selectedMemberSlug,
+    saveAllFailures: [],
+    memberEditors: Object.fromEntries(team.members.map((member) => [
+      member.slug,
+      {
+        memberSlug: member.slug,
+        loadStatus: "ready" as const,
+        loadError: null,
+        draftMarkdown: `---\ndisplay_name: ${member.displayName}\ndescription: ${member.description}\n---\n\n# ${member.displayName}\n\n${member.description}\n`,
+        isDirty: false,
+        saveStatus: "idle" as const,
+        saveError: null,
+        externalChangeStatus: "none" as const,
+        displayName: member.displayName,
+        description: member.description,
+      },
+    ])),
+  };
+}

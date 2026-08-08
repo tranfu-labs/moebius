@@ -47,50 +47,74 @@ import { cn } from "@/lib/utils";
  *
  * The pool carries no occupation meaning: a "legal" agent may draw any face in it. A portrait
  * is an identity anchor for scanning, not a description of the role.
+ *
+ * Keyed by a stable id rather than ordered by position, because a chosen portrait is persisted:
+ * storing an index would silently re-point every existing choice the moment the pool grows.
  */
-const PORTRAITS = [
+const PORTRAITS = {
   bengal,
-  blackSmoke,
-  blackWhiteCow,
-  blackWhitePatch,
-  blueCream,
-  bluePoint,
-  britishBlue,
-  brownTabby,
-  brownTabbyWhite,
+  "black-smoke": blackSmoke,
+  "black-white-cow": blackWhiteCow,
+  "black-white-patch": blackWhitePatch,
+  "blue-cream": blueCream,
+  "blue-point": bluePoint,
+  "british-blue": britishBlue,
+  "brown-tabby": brownTabby,
+  "brown-tabby-white": brownTabbyWhite,
   calico,
-  chocolateBurmese,
-  cinnamonAby,
-  creamMaine,
-  creamWhiteFluff,
-  egyptianMau,
-  fawnOriental,
-  gingerTabby,
-  gingerWhite,
-  goldenShaded,
-  greyWhiteTuxedo,
-  lilacPoint,
-  orangeChonk,
+  "chocolate-burmese": chocolateBurmese,
+  "cinnamon-aby": cinnamonAby,
+  "cream-maine": creamMaine,
+  "cream-white-fluff": creamWhiteFluff,
+  "egyptian-mau": egyptianMau,
+  "fawn-oriental": fawnOriental,
+  "ginger-tabby": gingerTabby,
+  "ginger-white": gingerWhite,
+  "golden-shaded": goldenShaded,
+  "grey-white-tuxedo": greyWhiteTuxedo,
+  "lilac-point": lilacPoint,
+  "orange-chonk": orangeChonk,
   ragdoll,
-  redLonghair,
-  russianBlue,
-  sealPoint,
-  silverMackerel,
-  silverShaded,
-  silverTabbyLonghair,
-  smokeGrey,
+  "red-longhair": redLonghair,
+  "russian-blue": russianBlue,
+  "seal-point": sealPoint,
+  "silver-mackerel": silverMackerel,
+  "silver-shaded": silverShaded,
+  "silver-tabby-longhair": silverTabbyLonghair,
+  "smoke-grey": smokeGrey,
   sphynx,
   torbie,
   tortoiseshell,
   tuxedo,
-  whiteLonghair,
-  whiteOddEyed,
-] as const;
+  "white-longhair": whiteLonghair,
+  "white-odd-eyed": whiteOddEyed,
+} as const;
+
+export type PortraitId = keyof typeof PORTRAITS;
+
+/** Pool order is the picker's grid order, so it stays fixed: append new faces, never reorder. */
+export const PORTRAIT_IDS = Object.keys(PORTRAITS) as PortraitId[];
 
 export type AgentPortraitSize = "compact" | "stack" | "heading" | "hero";
 
-export function portraitFor(slug: string): string {
-  return PORTRAITS[portraitHash(slug) % PORTRAITS.length]!;
+/** The face a slug falls back to when the user has not chosen one. */
+export function defaultPortraitId(slug: string): PortraitId {
+  return PORTRAIT_IDS[portraitHash(slug) % PORTRAIT_IDS.length]!;
+}
+
+export function portraitSrc(id: PortraitId): string {
+  return PORTRAITS[id];
+}
+
+/**
+ * Resolves to the chosen face, or the slug's default. An unknown id also falls back rather than
+ * rendering an empty frame: a stored choice can outlive the asset it names once the pool changes.
+ */
+export function portraitFor(slug: string, portraitId?: string | null): string {
+  if (portraitId !== undefined && portraitId !== null && portraitId in PORTRAITS) {
+    return PORTRAITS[portraitId as PortraitId];
+  }
+  return PORTRAITS[defaultPortraitId(slug)];
 }
 
 /** Engine mark scales with the portrait so callers never size the badge by hand. */
@@ -111,6 +135,7 @@ const FRAME_SIZE: Record<AgentPortraitSize, string> = {
 export function AgentPortrait({
   displayName,
   slug,
+  portraitId,
   size = "compact",
   shape = "circle",
   engine,
@@ -119,6 +144,8 @@ export function AgentPortrait({
 }: {
   displayName: string;
   slug: string;
+  /** The face this member has been given; omitted or unknown falls back to the slug's default. */
+  portraitId?: string | null;
   size?: AgentPortraitSize;
   /** Circle for individuals, rounded square for teams — the usual container/person split. */
   shape?: "circle" | "squircle";
@@ -142,7 +169,7 @@ export function AgentPortrait({
       style={{ backgroundColor: `var(${identityToken(slug)})` }}
     >
       {/* Proportion is baked into the asset, so the image simply fills the frame. */}
-      <img src={portraitFor(slug)} alt="" loading="lazy" decoding="async" className="h-full w-full" />
+      <img src={portraitFor(slug, portraitId)} alt="" loading="lazy" decoding="async" className="h-full w-full" />
     </span>
   );
 
