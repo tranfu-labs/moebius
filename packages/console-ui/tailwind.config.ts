@@ -85,20 +85,23 @@ const config = {
           "0%,100%": { opacity: "1" },
           "50%": { opacity: ".35" }
         },
-        // Overlays fade only. Scaling or sliding one in is the "位移缩放飞入" the motion
-        // red line rules out, and opacity is the one channel that carries no direction.
+        // Overlay entrance: scale + fade anchored at the trigger, driven by the critically
+        // damped spring in --ease-spring. Anchoring is Radix's own transform-origin, so the
+        // panel grows out of what was clicked. Opacity lands early so the panel reads as
+        // arriving rather than as fading; the spring's long tail then settles the scale.
         "overlay-in": {
-          from: { opacity: "0" },
-          to: { opacity: "1" }
+          from: { opacity: "0", transform: "scale(.92)" },
+          "30%": { opacity: "1" },
+          to: { opacity: "1", transform: "scale(1)" }
         },
         "overlay-out": {
-          from: { opacity: "1" },
-          to: { opacity: "0" }
+          from: { opacity: "1", transform: "scale(1)" },
+          to: { opacity: "0", transform: "scale(.96)" }
         }
       },
       animation: {
         breathe: "breathe 2s ease-in-out infinite",
-        "overlay-in": "overlay-in var(--dur-fast) var(--ease-enter)",
+        "overlay-in": "overlay-in var(--dur-overlay) var(--ease-spring)",
         "overlay-out": "overlay-out var(--dur-fast) var(--ease)"
       }
     }

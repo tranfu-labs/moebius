@@ -50,7 +50,9 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 - 零阴影零渐变：`--shadow-pop` 恒为 `none`，浮层（dropdown / popover / 对话框）只靠 1px 描边与 `bg-sunken` 亮一档的底色分层；禁止任何投影与渐变（包括滚动淡出渐变）。
 - 不设置组件库级全局 `:focus-visible` 样式；需要可视键盘焦点的控件由组件按交互语义局部声明。
-- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。右侧辅助工作区是登记的空间动效例外：允许在 150ms 内以宽度裁切完成并排开合、以右缘位移完成覆盖开合，中途反向从当前进度继续；内容不得缩放，响应式布局切换不得追加开关动画，`prefers-reduced-motion` 下立即完成。禁止 bounce / elastic 曲线；按钮按下用 `active:scale-[0.98]`，不做更夸张的形变。持续加载 pulse 必须在 `prefers-reduced-motion: reduce` 下取消动画并保留等价静态骨架。
+- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场为淡入 + `scale(.92) → 1`，变换原点取 Radix 的 `--radix-popover-content-transform-origin`，即从触发器长出来而不是从自身中心；时长 `--dur-overlay`，曲线 `--ease-spring`；退场 `--dur-fast` + `--ease`。
+
+`--ease-spring` 是**临界阻尼**弹簧（等价于 SwiftUI `spring(duration: 0.36, bounce: 0)`）采样成的 CSS `linear()`，定义与重算公式在 `tokens.css`。**它不违反上面的「禁止 bounce / elastic」**：bounce = 0 的弹簧数学上永不过冲，实测 scale 全程不超过 1.000。选弹簧而非贝塞尔的理由是速度剖面——贝塞尔的结束是硬停，弹簧起步有加速度、收尾像真实物体一样停住；WWDC23《Animate with springs》给的默认建议也是 bounce = 0，bounce > 40% 被明确点名为 UI 里应避免。仍然禁止：任何 bounce > 0 的弹簧、goo / clip-path morph、以及为动效引入 framer-motion 之类运行时（`linear()` 在 Electron 38 / Chromium 140 上原生可用，不需要）。右侧辅助工作区是登记的空间动效例外：允许在 150ms 内以宽度裁切完成并排开合、以右缘位移完成覆盖开合，中途反向从当前进度继续；内容不得缩放，响应式布局切换不得追加开关动画，`prefers-reduced-motion` 下立即完成。禁止 bounce / elastic 曲线；按钮按下用 `active:scale-[0.98]`，不做更夸张的形变。持续加载 pulse 必须在 `prefers-reduced-motion: reduce` 下取消动画并保留等价静态骨架。
 - Card 维持无默认阴影的中性面：可见细边、圆角基线 `--radius: 14px`（Tailwind lg/md/sm 由 calc 派生）。
 
 ## 组件模式目录
@@ -73,7 +75,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **运行项入口面板**：`src/console/managed-process-panel.tsx`——仅在当前会话存在托管进程或未确认的结束事实时占用 46px 顶栏，位于分析入口之前；单项显示名称与状态，多项显示数量。Popover 只展示服务端事实、loopback 打开入口、有限日志、停止与结束确认，不提供 restart、命令编辑或工作流编排；最后一项结束后保留到用户明确确认，确认后由 Radix 焦点回返顶栏触发器再移除入口。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。
-- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-md`（12px）+ `bg-sunken`，无阴影。Popover 入场 / 退场只做 opacity（`animate-overlay-in` / `animate-overlay-out`，`--dur-fast` + `--ease-enter`），且写在共用组件上，让全产品浮层行为一致；opacity 是唯一不带方向的通道，缩放、位移、clip-path morph 与 spring/bounce 都属于动效红线里的「位移缩放飞入」与「禁止 bounce / elastic」。想要更强的浮层动效，必须像右侧辅助工作区那样先在红线里登记成例外，而不是给单个浮层偷偷开口子。
+- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-md`（12px）+ `bg-sunken`，无阴影。Popover 入场 / 退场见动效红线里登记的浮层例外（`animate-overlay-in` / `animate-overlay-out`），写在共用组件上让全产品浮层一致，单个浮层不得自带另一套。锚点取 Radix **碰撞处理之后**的 `--radix-popover-content-transform-origin`，贴边翻转时生长方向自动跟着翻。不引入 framer-motion / Animate UI：那类库给的是弹簧**运行时**，其真正不可替代的能力是中途打断时保留速度并重定向目标——那对拖拽和手势有意义，对一个离散开合的浮层没有；而弹簧的曲线形状用 CSS `linear()` 就能精确表达。顺带一提 Animate UI popover 的默认 `stiffness: 300, damping: 25` 阻尼比约 0.72，是会过冲的，比苹果自己的默认更弹。
 - **团队版本追溯与应用**：`src/console/agent-team-option.tsx`、`session-team-update-notice.tsx`、`agent-run-info-popover.tsx`、`agent-team-save-feedback.tsx`——团队选项用用途、来源、主 Agent 与可展开成员建立选择依据；composer 更新提示按定义/运行配置/团队信息保持独立中性行，但任一操作都应用完整版本；历史头像 Popover 只展示 run 冻结事实并通过只读 Dialog 延迟读取完整 `AGENT.md`。浮层沿用 Radix collision handling、视口边界与焦点回返，不显示内部摘要、路径、mtime 或 diff。
 - **空状态**：`src/console/conversation-empty-state.tsx`——中性插画图标 + 短句邀请，无彩色引导。
 - **需要修复面板**：`src/console/agent-team-detail.tsx`——危险事实使用红色图标与细边浅底，正文用普通语言列出不可用范围；修复动作保持 outline，只有“移除记录”等不可逆应用状态变更使用 danger 按钮，并在确认层明确磁盘文件不受影响。
