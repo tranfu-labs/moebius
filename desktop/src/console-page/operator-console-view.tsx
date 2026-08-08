@@ -288,6 +288,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onCloseAgentTeam={props.agentTeams.intents.close}
       onSelectAgentTeamMember={props.agentTeams.navigation.selectMember}
       onChangeAgentTeamPrimaryAgent={props.agentTeams.profile.changePrimaryAgent}
+      onChangeAgentTeamMemberPortrait={props.agentTeams.profile.changeMemberPortrait}
       onAddAgentTeamMember={props.agentTeams.memberMutations.addMember}
       onUpdateAgentTeamInformation={props.agentTeams.recordMutations.updateInformation}
       onChangeAgentTeamMember={props.agentTeams.intents.changeMember}

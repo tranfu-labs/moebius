@@ -61,6 +61,7 @@ import {
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
+import { type PortraitId } from "@/console/agent-portrait";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
 import {
@@ -96,6 +97,8 @@ import {
 } from "@/console/process-tab";
 import type { OperatorProcessInvocationState } from "@/console/process-event";
 import {
+  resolveOperatorMemberEngine,
+  resolveOperatorMemberPortrait,
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
@@ -610,6 +613,11 @@ export interface OperatorConsoleProps {
   onCloseAgentTeam?: () => void;
   onSelectAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onChangeAgentTeamPrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
+  onChangeAgentTeamMemberPortrait?: (
+    teamKey: string,
+    memberSlug: string,
+    portraitId: PortraitId | null,
+  ) => void | Promise<void>;
   onAddAgentTeamMember?: (teamKey: string) => void | Promise<void>;
   onUpdateAgentTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
   onChangeAgentTeamMember?: (teamKey: string, memberSlug: string, agentMarkdown: string) => void;
@@ -798,6 +806,7 @@ export function OperatorConsole({
   onCloseAgentTeam,
   onSelectAgentTeamMember,
   onChangeAgentTeamPrimaryAgent,
+  onChangeAgentTeamMemberPortrait,
   onAddAgentTeamMember,
   onUpdateAgentTeamInformation,
   onChangeAgentTeamMember,
@@ -2156,6 +2165,7 @@ export function OperatorConsole({
             onCloseTeam={onCloseAgentTeam}
             onSelectMember={onSelectAgentTeamMember}
             onChangePrimaryAgent={onChangeAgentTeamPrimaryAgent}
+            onChangeMemberPortrait={onChangeAgentTeamMemberPortrait}
             onAddMember={onAddAgentTeamMember}
             onUpdateTeamInformation={onUpdateAgentTeamInformation}
             onChangeMember={onChangeAgentTeamMember}
@@ -3731,6 +3741,7 @@ function TimelineEntry({
               runId={message.runId}
               role={auditRole}
               displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+              portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
               loadInfo={onLoadRunAgentInfo}
               loadMarkdown={onLoadRunAgentMarkdown}
             />
@@ -3888,6 +3899,7 @@ function TimelineEntry({
               runId={message.runId}
               role={message.role}
               displayName={resolveOperatorMemberName(message.role, memberIdentities, t)}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
               loadInfo={onLoadRunAgentInfo}
               loadMarkdown={onLoadRunAgentMarkdown}
             />
@@ -3895,6 +3907,8 @@ function TimelineEntry({
             <RoleTag
               label={resolveOperatorMemberName(message.role, memberIdentities, t)}
               toneKey={message.role ?? "agent"}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+              engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               className="h-6 w-6 text-xs"
             />
           )

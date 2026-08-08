@@ -376,6 +376,47 @@ description: 描述这个 Agent 负责什么。
     })).resolves.toMatchObject({ displayName: "官方团队新经理" });
   });
 
+  it("persists a portrait choice into the member AGENT.md and removes it on null", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
+    await Promise.all([createUsableTeam(builtIn), createUsableTeam(user)]);
+    const agentFile = path.join(user.directory, "members", "manager", "AGENT.md");
+
+    const request = { teamId: "my-team", ownership: "user" as const, memberSlug: "manager" };
+    await expect(writeAgentTeamMember(dataRoot, { ...request, portraitId: "cat-12" })).resolves.toMatchObject({
+      slug: "manager",
+      displayName: "开发经理",
+      portraitId: "cat-12",
+    });
+    expect(await fs.readFile(agentFile, "utf8")).toContain("portrait_id: cat-12");
+    expect(await fs.readFile(agentFile, "utf8")).toContain("# 开发经理");
+
+    await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
+      status: "ready",
+      teams: [
+        { id: "development", members: [{ slug: "manager", portraitId: null }] },
+        { id: "my-team", members: [{ slug: "manager", portraitId: "cat-12" }] },
+      ],
+    });
+
+    await expect(writeAgentTeamMember(dataRoot, { ...request, portraitId: null })).resolves.toMatchObject({
+      slug: "manager",
+      portraitId: null,
+    });
+    expect(await fs.readFile(agentFile, "utf8")).not.toContain("portrait_id");
+    expect(await fs.readFile(agentFile, "utf8")).toContain("# 开发经理");
+
+    await expect(writeAgentTeamMember(dataRoot, {
+      ...request,
+      agentMarkdown: "# 新经理\n",
+      portraitId: "cat-03",
+    })).rejects.toMatchObject({ code: "AGENT_TEAM_IPC_REQUEST_INVALID" });
+    await expect(writeAgentTeamMember(dataRoot, request)).rejects.toMatchObject({
+      code: "AGENT_TEAM_IPC_REQUEST_INVALID",
+    });
+  });
+
   it("rejects malformed member requests before resolving a disk location", async () => {
     const dataRoot = await makeDataRoot();
     await expect(readAgentTeamMember(dataRoot, {

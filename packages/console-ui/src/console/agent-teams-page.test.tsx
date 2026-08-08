@@ -44,7 +44,7 @@ describe("AgentTeamsPage official team registration recovery", () => {
 });
 
 describe("AgentTeamsPage member identity avatars", () => {
-  it("shows the same neutral initial avatar in the team row, member selector, and current member heading", () => {
+  it("shows the same portrait for one agent across the member selector and current member heading", () => {
     const { container } = render(
       <AgentTeamsPage
         state={{ status: "ready", teams: [userTeam] }}
@@ -63,13 +63,16 @@ describe("AgentTeamsPage member identity avatars", () => {
     );
 
     const row = screen.getByTestId("agent-team-row");
-    const rowAvatar = row.querySelector('[data-agent-initial-avatar="manager"]');
-    expect(rowAvatar).toHaveTextContent("开");
+    const rowAvatar = row.querySelector('[data-agent-portrait="manager"]');
+    expect(rowAvatar).not.toBeNull();
 
     fireEvent.click(row);
-    const detailAvatars = container.querySelectorAll('[data-agent-initial-avatar="manager"]');
+    const detailAvatars = container.querySelectorAll('[data-agent-portrait="manager"]');
     expect(detailAvatars).toHaveLength(2);
-    expect([...detailAvatars].every((avatar) => avatar.textContent === "开")).toBe(true);
+    // 同一角色到哪都是同一张脸——身份体系的核心不变式
+    const sources = new Set([rowAvatar, ...detailAvatars]
+      .map((avatar) => avatar?.querySelector("img")?.getAttribute("src")));
+    expect(sources.size).toBe(1);
   });
 });
 

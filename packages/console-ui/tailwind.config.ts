@@ -84,7 +84,7 @@ const config = {
         breathe: {
           "0%,100%": { opacity: "1" },
           "50%": { opacity: ".35" }
-        }
+        },
       },
       animation: {
         breathe: "breathe 2s ease-in-out infinite"

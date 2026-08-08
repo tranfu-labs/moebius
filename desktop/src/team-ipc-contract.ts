@@ -57,6 +57,8 @@ export interface AgentTeamMemberSummary {
   description: string;
   available?: boolean;
   executionProfile?: AgentTeamExecutionProfileSummary;
+  /** Chosen face id; absent or null keeps the slug-derived default. */
+  portraitId?: string | null;
 }
 
 export interface AgentTeamListItem {
@@ -98,7 +100,14 @@ export interface AgentTeamMemberRequest {
 }
 
 export interface AgentTeamMemberWriteRequest extends AgentTeamMemberRequest {
-  agentMarkdown: string;
+  /** Full AGENT.md content; present when the write is a markdown save. */
+  agentMarkdown?: string;
+  /**
+   * Present when the write is a portrait choice; `null` removes the explicit choice so the
+   * member falls back to its slug-derived default face. Exactly one of `agentMarkdown` and
+   * `portraitId` must be present (see `parseMemberWriteRequest`).
+   */
+  portraitId?: string | null;
 }
 
 export interface AgentTeamPrimaryAgentWriteRequest {

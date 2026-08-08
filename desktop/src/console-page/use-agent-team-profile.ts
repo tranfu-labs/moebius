@@ -4,7 +4,9 @@ import type { Translate } from "@moebius/console-ui";
 import type {
   AgentTeamExecutionProfileDocument,
   AgentTeamExecutionProfileSaveRequest,
+  AgentTeamMemberDocument,
   AgentTeamMemberRequest,
+  AgentTeamMemberWriteRequest,
   AgentTeamOfficialUpdateCommitRequest,
   AgentTeamOfficialUpdateCommitResponse,
   AgentTeamOfficialUpdatePrepareResponse,
@@ -15,6 +17,8 @@ import type {
 import {
   planAgentTeamCatalogAddIfMissing,
   planAgentTeamCatalogReplace,
+  planAgentTeamMemberSummary,
+  planAgentTeamPortraitOperation,
   planAgentTeamPrimaryOperation,
   planAgentTeamProfileOperation,
   planAgentTeamOfficialUpdate,
@@ -27,6 +31,7 @@ import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 
 interface AgentTeamProfilePort {
   setAgentTeamPrimaryAgent?: (request: AgentTeamPrimaryAgentWriteRequest) => Promise<AgentTeamListItem>;
+  writeAgentTeamMember?: (request: AgentTeamMemberWriteRequest) => Promise<AgentTeamMemberDocument>;
   saveAgentTeamExecutionProfile?: (
     request: AgentTeamExecutionProfileSaveRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
@@ -47,6 +52,12 @@ export interface PrimaryAgentChangeState {
   error: string | null;
 }
 
+export interface PortraitChangeState {
+  teamKey: string;
+  status: "saving" | "saved" | "failed";
+  error: string | null;
+}
+
 export function useAgentTeamProfile(input: {
   api: AgentTeamProfilePort | undefined;
   catalog: AgentTeamCatalogBundle;
@@ -55,7 +66,9 @@ export function useAgentTeamProfile(input: {
   const inputRef = useRef(input);
   inputRef.current = input;
   const [primaryAgentChange, setPrimaryAgentChange] = useState<PrimaryAgentChangeState | null>(null);
+  const [portraitChange, setPortraitChange] = useState<PortraitChangeState | null>(null);
   const clearPrimaryAgentChange = useCallback(() => setPrimaryAgentChange(null), []);
+  const clearPortraitChange = useCallback(() => setPortraitChange(null), []);
   const changePrimaryAgent = useCallback(async (teamKey: string, memberSlug: string): Promise<void> => {
     const runtime = inputRef.current;
     const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
@@ -72,6 +85,29 @@ export function useAgentTeamProfile(input: {
       setPrimaryAgentChange({ teamKey, status: "saved", error: null });
     } catch (error) {
       setPrimaryAgentChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
+    }
+  }, []);
+  const changeMemberPortrait = useCallback(async (
+    teamKey: string,
+    memberSlug: string,
+    portraitId: string | null,
+  ): Promise<void> => {
+    const runtime = inputRef.current;
+    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
+    const operation = runtime.api?.writeAgentTeamMember;
+    if (planAgentTeamPortraitOperation(team, memberSlug, operation !== undefined) === "skip") return;
+    setPortraitChange({ teamKey, status: "saving", error: null });
+    try {
+      const document = await operation!.call(runtime.api, {
+        teamId: team!.id,
+        ownership: team!.ownership,
+        memberSlug,
+        portraitId,
+      });
+      inputRef.current.catalog.setState((current) => planAgentTeamMemberSummary(current, teamKey, document));
+      setPortraitChange({ teamKey, status: "saved", error: null });
+    } catch (error) {
+      setPortraitChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
     }
   }, []);
   const saveExecutionProfile = useCallback(async (
@@ -135,14 +171,20 @@ export function useAgentTeamProfile(input: {
   return useMemo(() => ({
     primaryAgentChange,
     clearPrimaryAgentChange,
+    portraitChange,
+    clearPortraitChange,
     changePrimaryAgent,
+    changeMemberPortrait,
     saveExecutionProfile,
     restoreRecommendedProfile,
     applyOfficialUpdate,
   }), [
     applyOfficialUpdate,
+    changeMemberPortrait,
     changePrimaryAgent,
+    clearPortraitChange,
     clearPrimaryAgentChange,
+    portraitChange,
     primaryAgentChange,
     restoreRecommendedProfile,
     saveExecutionProfile,

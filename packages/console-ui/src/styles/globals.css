@@ -74,6 +74,65 @@
   }
 }
 
+/*
+ * 浮层展开的起点：面板从「它被锚定的那个角」长出来，而不是从自身中心缩放。
+ * Radix 在碰撞处理之后给出 data-side / data-align，两者各定一个轴：
+ *   side  决定面板贴着触发器的哪条边（bottom → 贴上边，因此从上边开始长）
+ *   align 决定在那条边上靠哪一端（start → 靠左，于是起点是面板左上角
+ *         ＝ side=bottom 时触发器的左下角）
+ * 长大的只有容器，内容始终是最终尺寸，触发器本身完全不参与。
+ */
+[data-overlay-clip] {
+  --clip-t: 0;
+  --clip-r: 50%;
+  --clip-b: 100%;
+  --clip-l: 50%;
+}
+
+[data-overlay-clip][data-side="bottom"] {
+  --clip-t: 0;
+  --clip-b: 100%;
+}
+
+[data-overlay-clip][data-side="top"] {
+  --clip-t: 100%;
+  --clip-b: 0;
+}
+
+[data-overlay-clip][data-side="right"] {
+  --clip-l: 0;
+  --clip-r: 100%;
+}
+
+[data-overlay-clip][data-side="left"] {
+  --clip-l: 100%;
+  --clip-r: 0;
+}
+
+[data-overlay-clip][data-side="bottom"][data-align="start"],
+[data-overlay-clip][data-side="top"][data-align="start"] {
+  --clip-l: 0;
+  --clip-r: 100%;
+}
+
+[data-overlay-clip][data-side="bottom"][data-align="end"],
+[data-overlay-clip][data-side="top"][data-align="end"] {
+  --clip-l: 100%;
+  --clip-r: 0;
+}
+
+[data-overlay-clip][data-side="left"][data-align="start"],
+[data-overlay-clip][data-side="right"][data-align="start"] {
+  --clip-t: 0;
+  --clip-b: 100%;
+}
+
+[data-overlay-clip][data-side="left"][data-align="end"],
+[data-overlay-clip][data-side="right"][data-align="end"] {
+  --clip-t: 100%;
+  --clip-b: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

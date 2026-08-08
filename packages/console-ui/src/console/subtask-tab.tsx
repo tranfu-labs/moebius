@@ -22,7 +22,11 @@ import { StructuredAttachmentList, type ComposerAttachment } from "@/console/str
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { resolveOperatorMemberName } from "@/console/member-name";
+import {
+  resolveOperatorMemberEngine,
+  resolveOperatorMemberName,
+  resolveOperatorMemberPortrait,
+} from "@/console/member-name";
 import { useI18n, type Translate } from "@/i18n";
 
 export type OperatorSubSessionViewState =
@@ -350,6 +354,8 @@ function SubtaskTimelineEntry({
           <RoleTag
             label={resolveOperatorMemberName(message.role, memberIdentities, t)}
             toneKey={message.role ?? "agent"}
+            portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+            engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
           />
         ) : null}
         <span className="font-semibold text-ink">

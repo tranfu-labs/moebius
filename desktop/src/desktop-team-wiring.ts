@@ -38,6 +38,7 @@ import {
   trashUserTeamDirectory,
   updateTeamInformation,
   writeMemberAgentMarkdown,
+  writeMemberAgentPortrait,
 } from "./team-store.js";
 import {
   readLastUsedAgentTeamStore,
@@ -73,6 +74,7 @@ export function createDesktopAgentTeamServicePorts(): AgentTeamServicePorts {
     }),
     resolveUser: resolveRecordedTeamLocation,
     writeMember: writeMemberAgentMarkdown,
+    writeMemberPortrait: writeMemberAgentPortrait,
     addMember: addTeamMember,
     updateInformation: updateTeamInformation,
     setPrimary: setTeamPrimaryAgent,

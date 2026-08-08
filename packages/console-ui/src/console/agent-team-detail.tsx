@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
+import { AgentPortraitPicker } from "@/console/agent-portrait-picker";
+import { type ExecutionEngine } from "@/console/provider-mark";
 import {
   AgentMarkdownMentionEditor,
   CopyableAgentSlug,
@@ -34,7 +36,19 @@ export interface AgentTeamDetailMember {
   displayName: string;
   description: string;
   available?: boolean;
+  /** Chosen face; null or absent leaves the member on the slug default. */
+  portraitId?: string | null;
   executionProfile?: AgentExecutionProfileDocument;
+}
+
+/** Shapes an execution profile for the portrait badge. Exported: other views need it too. */
+export function profileEngine(
+  profile: AgentExecutionProfile | undefined,
+): { cli: ExecutionEngine; providerId?: string } | undefined {
+  if (profile === undefined) {
+    return undefined;
+  }
+  return { cli: profile.cli, providerId: "providerId" in profile ? profile.providerId : undefined };
 }
 
 export type AgentExecutionProfile = {
@@ -148,6 +162,9 @@ export interface AgentTeamDetailState {
   saveAllFailures: AgentTeamSaveAllFailureView[];
   primaryAgentChangeStatus?: "idle" | "saving" | "saved" | "failed";
   primaryAgentChangeError?: string | null;
+  /** Portrait writes are immediate persists (no draft); this mirrors primary-agent status. */
+  portraitChangeStatus?: "idle" | "saving" | "saved" | "failed";
+  portraitChangeError?: string | null;
 }
 
 export interface AgentOfficialUpdateResult {
@@ -176,6 +193,8 @@ export interface AgentTeamDetailProps {
   onAddMember?(): void | Promise<void>;
   onChangePrimaryAgent?(memberSlug: string): void | Promise<void>;
   onSelectMember(memberSlug: string): void;
+  /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
+  onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
   onChangeMember(memberSlug: string, agentMarkdown: string): void;
   onSaveMember(memberSlug: string): void | Promise<void>;
   onCheckExternalChange?(memberSlug: string): void | Promise<void>;
@@ -210,6 +229,7 @@ export function AgentTeamDetail({
   onAddMember,
   onChangePrimaryAgent,
   onSelectMember,
+  onChangeMemberPortrait,
   onChangeMember,
   onSaveMember,
   onCheckExternalChange,
@@ -256,11 +276,20 @@ export function AgentTeamDetail({
     : profileEditors[selectedMember.slug];
   const profileDocument = profileEditor?.document ?? null;
   const profileDraft = profileEditor?.draft ?? null;
+  /**
+   * The engine mark follows the unsaved draft, not the saved binding: the user changing the
+   * engine dropdown is exactly when they look at the portrait to check it took effect, and a
+   * mark that still shows the old engine reads as "the change did not register".
+   */
+  const memberEngineMark = (member: AgentTeamDetailMember): ReturnType<typeof profileEngine> =>
+    profileEngine(profileEditors[member.slug]?.draft ?? member.executionProfile?.effectiveProfile);
   const profileStatus = profileEditor?.status ?? "idle";
   const profileError = profileEditor?.error ?? null;
   const primaryMember = availableMembers.find((member) => member.slug === team.primaryAgentSlug);
   const primaryAgentChangeStatus = state.primaryAgentChangeStatus ?? "idle";
   const primaryAgentChangeError = state.primaryAgentChangeError ?? null;
+  const portraitChangeStatus = state.portraitChangeStatus ?? "idle";
+  const portraitChangeError = state.portraitChangeError ?? null;
   const mentionMembers = useMemo(() => orderedMembers.filter((member) => member.available !== false).map((member) => ({
     slug: member.slug,
     displayName: state.memberEditors[member.slug]?.displayName || member.displayName,
@@ -869,7 +898,12 @@ export function AgentTeamDetail({
                 )}
                 onClick={() => onSelectMember(member.slug)}
               >
-                <AgentInitialAvatar displayName={member.displayName} slug={member.slug} />
+                <AgentPortrait
+                  displayName={member.displayName}
+                  slug={member.slug}
+                  portraitId={member.portraitId}
+                  engine={memberEngineMark(member)}
+                />
                 <span>{member.displayName || `@${member.slug}`}</span>
                 {primary ? (
                   <span className="text-xs text-hint">
@@ -979,12 +1013,16 @@ export function AgentTeamDetail({
           <>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex min-w-0 items-start gap-3">
-                <AgentInitialAvatar
-                  displayName={selectedEditor.displayName || selectedMember.displayName}
-                  slug={selectedMember.slug}
-                  size="heading"
-                  className="mt-0.5"
-                />
+                <div className="mt-0.5">
+                  <AgentPortraitPicker
+                    displayName={selectedEditor.displayName || selectedMember.displayName}
+                    slug={selectedMember.slug}
+                    portraitId={selectedMember.portraitId ?? null}
+                    engine={memberEngineMark(selectedMember)}
+                    disabled={readOnly || onChangeMemberPortrait === undefined}
+                    onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
+                  />
+                </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate text-lg font-semibold tracking-[-0.01em] text-ink">
@@ -1003,6 +1041,29 @@ export function AgentTeamDetail({
               </div>
               {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
             </div>
+            {portraitChangeStatus !== "idle" ? (
+              <span className="mt-1.5 flex min-h-5 items-center gap-1.5 text-xs text-sub" aria-live="polite">
+                {portraitChangeStatus === "saving" ? (
+                  <span className="inline-flex items-center" role="status">
+                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saving")}
+                  </span>
+                ) : null}
+                {portraitChangeStatus === "saved" ? (
+                  <span className="inline-flex items-center" role="status">
+                    <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saved")}
+                  </span>
+                ) : null}
+                {portraitChangeStatus === "failed" ? (
+                  <span className="text-danger" role="alert">
+                    {t("console.agentTeamDetail.portraitChangeFailed", {
+                      error: portraitChangeError || t("console.agentTeamDetail.tryAgain"),
+                    })}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
 
             <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1028,7 +1089,7 @@ export function AgentTeamDetail({
               {profileDraft !== null && profileDocument !== null ? (
                 <>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
                       <select
                         aria-label={t("console.agentTeamDetail.executionEngineLabel")}
@@ -1047,7 +1108,7 @@ export function AgentTeamDetail({
                       </select>
                     </label>
                     {profileDraft.cli === "pi" ? (
-                      <label className="grid gap-1.5 text-xs text-hint">
+                      <label className="grid content-start gap-1.5 text-xs text-hint">
                         Provider
                         <select
                           aria-label="Provider"
@@ -1081,7 +1142,7 @@ export function AgentTeamDetail({
                         ) : null}
                       </label>
                     ) : null}
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       Model
                       <select
                         aria-label="Model"
@@ -1113,7 +1174,7 @@ export function AgentTeamDetail({
                       </select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
                       <select
                         aria-label={t("console.agentTeamDetail.effort")}

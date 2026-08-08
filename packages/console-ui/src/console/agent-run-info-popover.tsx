@@ -1,7 +1,7 @@
 import { FileText, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentPortrait } from "@/console/agent-portrait";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/ui/dialog";
@@ -20,11 +20,13 @@ export interface AgentRunInfoView {
 
 type LoadState<T> = { status: "idle" | "loading" } | { status: "ready"; value: T } | { status: "error" };
 
-export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadInfo, loadMarkdown }: {
+export function AgentRunInfoPopover({ sessionId, runId, role, displayName, portraitId, loadInfo, loadMarkdown }: {
   sessionId: string;
   runId: string;
   role: string;
   displayName: string;
+  /** Chosen face; absent or null keeps the slug-derived default. */
+  portraitId?: string | null;
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
   loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
 }): JSX.Element {
@@ -77,6 +79,7 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
 
   return (
     <Popover
+        group="agent-run-info"
         open={open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen && dialogOpenRef.current) return;
@@ -90,7 +93,17 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
             className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={t("console.agentRunInfo.view", { name: displayName })}
           >
-            <AgentInitialAvatar displayName={displayName} slug={role} className="h-6 w-6 text-xs" />
+            {/* The run's engine only arrives with the popover payload, so the badge appears
+                once loaded rather than being threaded in separately. */}
+            <AgentPortrait
+              displayName={displayName}
+              slug={role}
+              portraitId={portraitId}
+              engine={info.status === "ready" && info.value.profile !== null
+                ? { cli: info.value.profile.cli }
+                : undefined}
+              className="h-6 w-6"
+            />
           </button>
         </PopoverTrigger>
         <PopoverContent

@@ -17,10 +17,17 @@ const BUILT_IN_MEMBER_NAMES: Readonly<Record<string, string>> = {
 export function projectLocalConsoleMemberIdentities(
   snapshot: LocalConsoleAgentTeamSnapshot | null | undefined,
 ): LocalConsoleMemberIdentity[] {
-  return snapshot?.members.map((member) => ({
-    slug: member.name,
-    displayName: readSnapshotDisplayName(member.agentMarkdown),
-  })) ?? [];
+  return snapshot?.members.map((member) => {
+    const identity: LocalConsoleMemberIdentity = {
+      slug: member.name,
+      displayName: readSnapshotDisplayName(member.agentMarkdown),
+    };
+    const portraitId = readSnapshotPortraitId(member.agentMarkdown);
+    if (portraitId !== undefined) {
+      identity.portraitId = portraitId;
+    }
+    return identity;
+  }) ?? [];
 }
 
 export function resolveLocalConsoleMemberName(
@@ -62,6 +69,23 @@ function readSingleLineDisplayName(value: unknown): string {
     return "";
   }
   return value.trim();
+}
+
+function readSnapshotPortraitId(agentMarkdown: string): string | undefined {
+  try {
+    const frontmatter = parseAgentMarkdownFrontmatter(agentMarkdown).frontmatter;
+    if (frontmatter === null || !Object.hasOwn(frontmatter, "portrait_id")) {
+      return undefined;
+    }
+    const value = frontmatter.portrait_id;
+    if (typeof value !== "string" || /\r|\n/u.test(value)) {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized.length === 0 ? undefined : normalized;
+  } catch {
+    return undefined;
+  }
 }
 
 function readLegacyDisplayName(body: string): string {

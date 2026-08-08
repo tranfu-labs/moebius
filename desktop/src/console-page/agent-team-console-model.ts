@@ -190,6 +190,11 @@ export function planAgentTeamDetailState(input: {
     status: "saving" | "saved" | "failed";
     error: string | null;
   } | null;
+  portraitChange: {
+    teamKey: string;
+    status: "saving" | "saved" | "failed";
+    error: string | null;
+  } | null;
 }): AgentTeamDetailState | null {
   if (input.activeTeamKey === null) return null;
   const team = planFindOperatorAgentTeam(input.catalog, input.activeTeamKey);
@@ -231,6 +236,12 @@ export function planAgentTeamDetailState(input: {
     primaryAgentChangeError: input.primaryAgentChange?.teamKey === input.activeTeamKey
       ? input.primaryAgentChange.error
       : null,
+    portraitChangeStatus: input.portraitChange?.teamKey === input.activeTeamKey
+      ? input.portraitChange.status
+      : "idle",
+    portraitChangeError: input.portraitChange?.teamKey === input.activeTeamKey
+      ? input.portraitChange.error
+      : null,
   };
 }
 
@@ -252,6 +263,7 @@ export function planAgentTeamMemberSummary(
                 slug: document.slug,
                 displayName: document.displayName,
                 description: document.description,
+                portraitId: document.portraitId ?? null,
               }
             : member),
         }),
@@ -328,6 +340,20 @@ export function planAgentTeamPrimaryOperation(
   hasOperation: boolean,
 ): "save" | "skip" {
   return hasOperation && planAgentTeamPrimaryChange(team, memberSlug) === "save" ? "save" : "skip";
+}
+
+export function planAgentTeamPortraitChange(team: OperatorAgentTeam | undefined, memberSlug: string): "save" | "skip" {
+  return team !== undefined && team.members.some((member) => member.slug === memberSlug)
+    ? "save"
+    : "skip";
+}
+
+export function planAgentTeamPortraitOperation(
+  team: OperatorAgentTeam | undefined,
+  memberSlug: string,
+  hasOperation: boolean,
+): "save" | "skip" {
+  return hasOperation && planAgentTeamPortraitChange(team, memberSlug) === "save" ? "save" : "skip";
 }
 
 export function planAgentTeamProfileOperation(

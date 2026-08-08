@@ -60,11 +60,13 @@ export function useAgentTeamConsole(
     drafts: member.drafts,
     saveAllFailures: member.saveAllFailures,
     primaryAgentChange: profile.primaryAgentChange,
+    portraitChange: profile.portraitChange,
   }), [catalog.selection, catalog.state, member.drafts, member.saveAllFailures,
-    navigation.activeTeamKey, profile.primaryAgentChange]);
+    navigation.activeTeamKey, profile.primaryAgentChange, profile.portraitChange]);
   const close = useCallback(() => {
     navigation.close();
     profile.clearPrimaryAgentChange();
+    profile.clearPortraitChange();
   }, [navigation, profile]);
   const changeMember = useCallback((teamKey: string, memberSlug: string, agentMarkdown: string) => {
     member.commitDrafts(updateAgentTeamMemberDraft(

@@ -35,6 +35,7 @@ import {
   trashUserTeamDirectory,
   updateTeamInformation,
   writeMemberAgentMarkdown,
+  writeMemberAgentPortrait,
 } from "../../src/team-store.js";
 
 export function createTestAgentTeamService() {
@@ -47,6 +48,7 @@ export function createTestAgentTeamService() {
     resolveSystem: ({ dataRoot, teamId }) => resolveTeamLocation({ dataRoot, teamId, ownership: "system" }),
     resolveUser: resolveRecordedTeamLocation,
     writeMember: writeMemberAgentMarkdown,
+    writeMemberPortrait: writeMemberAgentPortrait,
     addMember: addTeamMember,
     updateInformation: updateTeamInformation,
     setPrimary: setTeamPrimaryAgent,

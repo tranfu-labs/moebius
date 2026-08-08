@@ -1,6 +1,8 @@
-import { ArrowRight, Check, ChevronRight, Circle, CheckCircle2, Code2, FileText } from "lucide-react";
+import { ArrowRight, ChevronRight, Circle, CheckCircle2 } from "lucide-react";
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 
+import { AgentPortrait } from "@/console/agent-portrait";
+import { type ExecutionEngine } from "@/console/provider-mark";
 import { cn } from "@/lib/utils";
 import { MarkdownMessage } from "@/console/markdown-message";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
@@ -9,6 +11,8 @@ export type AgentStage = "in-progress" | "plan-written" | "code-verified";
 
 export interface AgentMessageProps {
   role: string;
+  /** Execution engine behind this agent, when the message data carries it. */
+  engine?: { cli: ExecutionEngine; providerId?: string };
   rawMarkdown: string;
   stage?: AgentStage | string | null;
   conclusion?: string | null;
@@ -30,15 +34,8 @@ const roleLabelKeys: Record<string, TranslationKey> = {
   user: "console.common.you",
 };
 
-const roleAvatars: Record<string, string> = {
-  ceo: "C",
-  dev: "D",
-  "dev-manager": "T",
-  "hermes-user": "U",
-  "product-manager": "P",
-  qa: "Q",
-  secretary: "S",
-};
+/** Only the human needs an initial; every agent draws from the shared portrait pool. */
+const USER_ROLES = new Set(["user", "hermes-user"]);
 
 const stageLabelKeys: Record<AgentStage, TranslationKey> = {
   "code-verified": "console.agentMessage.codeVerified",
@@ -48,6 +45,7 @@ const stageLabelKeys: Record<AgentStage, TranslationKey> = {
 
 export function AgentMessage({
   role,
+  engine,
   rawMarkdown,
   stage,
   conclusion,
@@ -85,14 +83,22 @@ export function AgentMessage({
           }
         }}
       >
-        <span className="relative mt-0.5 h-8 w-8" aria-hidden="true">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ava-bg text-xs font-medium text-ava-fg">
-            {roleAvatars[role] ?? "A"}
+        {USER_ROLES.has(role) ? (
+          <span
+            aria-hidden="true"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ava-bg text-xs font-medium text-ava-fg"
+          >
+            {Array.from(roleLabel.trim())[0] ?? "U"}
           </span>
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-line bg-card text-sub">
-            <StageBadgeIcon stage={resolvedStage} />
-          </span>
-        </span>
+        ) : (
+          <AgentPortrait
+            size="heading"
+            displayName={roleLabel}
+            slug={role}
+            engine={engine}
+            className="mt-0.5"
+          />
+        )}
         <span className="min-w-0">
           <span className="flex min-w-0 items-center gap-2">
             <span className="font-medium text-ink">{roleLabel}</span>
@@ -119,17 +125,6 @@ export function AgentMessage({
       </div>
     </details>
   );
-}
-
-function StageBadgeIcon({ stage }: { stage: string | null }): JSX.Element {
-  const className = "h-2.5 w-2.5";
-  if (stage === "plan-written") {
-    return <FileText className={className} strokeWidth={2} />;
-  }
-  if (stage === "code-verified") {
-    return <Check className={className} strokeWidth={2} />;
-  }
-  return <Code2 className={className} strokeWidth={2} />;
 }
 
 function StageStatusIcon({ stage }: { stage: string | null }): JSX.Element {
