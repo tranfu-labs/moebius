@@ -16,7 +16,14 @@ const PopoverContent = React.forwardRef<
       ref={ref}
       align={align}
       sideOffset={sideOffset}
-      className={cn("z-50 rounded-md border border-line bg-sunken p-3 text-ink", className)}
+      className={cn(
+        "z-50 rounded-md border border-line bg-sunken p-3 text-ink",
+        // Opacity only, on the shared component so every popover in the product behaves the
+        // same way. Radix keeps the node mounted through the closed-state animation, and the
+        // global prefers-reduced-motion rule already collapses both to nothing.
+        "data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out",
+        className,
+      )}
       {...props}
     />
   </PopoverPrimitive.Portal>

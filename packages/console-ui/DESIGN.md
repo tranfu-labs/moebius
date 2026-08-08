@@ -73,7 +73,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **运行项入口面板**：`src/console/managed-process-panel.tsx`——仅在当前会话存在托管进程或未确认的结束事实时占用 46px 顶栏，位于分析入口之前；单项显示名称与状态，多项显示数量。Popover 只展示服务端事实、loopback 打开入口、有限日志、停止与结束确认，不提供 restart、命令编辑或工作流编排；最后一项结束后保留到用户明确确认，确认后由 Radix 焦点回返顶栏触发器再移除入口。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。
-- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-md`（12px）+ `bg-sunken`，无阴影。
+- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-md`（12px）+ `bg-sunken`，无阴影。Popover 入场 / 退场只做 opacity（`animate-overlay-in` / `animate-overlay-out`，`--dur-fast` + `--ease-enter`），且写在共用组件上，让全产品浮层行为一致；opacity 是唯一不带方向的通道，缩放、位移、clip-path morph 与 spring/bounce 都属于动效红线里的「位移缩放飞入」与「禁止 bounce / elastic」。想要更强的浮层动效，必须像右侧辅助工作区那样先在红线里登记成例外，而不是给单个浮层偷偷开口子。
 - **团队版本追溯与应用**：`src/console/agent-team-option.tsx`、`session-team-update-notice.tsx`、`agent-run-info-popover.tsx`、`agent-team-save-feedback.tsx`——团队选项用用途、来源、主 Agent 与可展开成员建立选择依据；composer 更新提示按定义/运行配置/团队信息保持独立中性行，但任一操作都应用完整版本；历史头像 Popover 只展示 run 冻结事实并通过只读 Dialog 延迟读取完整 `AGENT.md`。浮层沿用 Radix collision handling、视口边界与焦点回返，不显示内部摘要、路径、mtime 或 diff。
 - **空状态**：`src/console/conversation-empty-state.tsx`——中性插画图标 + 短句邀请，无彩色引导。
 - **需要修复面板**：`src/console/agent-team-detail.tsx`——危险事实使用红色图标与细边浅底，正文用普通语言列出不可用范围；修复动作保持 outline，只有“移除记录”等不可逆应用状态变更使用 danger 按钮，并在确认层明确磁盘文件不受影响。

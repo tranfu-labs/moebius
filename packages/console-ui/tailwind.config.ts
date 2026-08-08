@@ -84,10 +84,22 @@ const config = {
         breathe: {
           "0%,100%": { opacity: "1" },
           "50%": { opacity: ".35" }
+        },
+        // Overlays fade only. Scaling or sliding one in is the "位移缩放飞入" the motion
+        // red line rules out, and opacity is the one channel that carries no direction.
+        "overlay-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" }
+        },
+        "overlay-out": {
+          from: { opacity: "1" },
+          to: { opacity: "0" }
         }
       },
       animation: {
-        breathe: "breathe 2s ease-in-out infinite"
+        breathe: "breathe 2s ease-in-out infinite",
+        "overlay-in": "overlay-in var(--dur-fast) var(--ease-enter)",
+        "overlay-out": "overlay-out var(--dur-fast) var(--ease)"
       }
     }
   },
