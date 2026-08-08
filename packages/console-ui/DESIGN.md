@@ -52,7 +52,11 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - 不设置组件库级全局 `:focus-visible` 样式；需要可视键盘焦点的控件由组件按交互语义局部声明。
 - 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场是**容器自己长大**：`clip-path: inset()` 从「它被锚定的那个角」的零尺寸方块展开到全尺寸，时长 `--dur-overlay`，曲线 `--ease-spring`；关闭是同一段动画倒放，缩回同一个角，不是另换一段淡出。
 
-**必须可打断且位置连续**：全过程由 Web Animations API 驱动、只维护一个「关 → 开」的 animation 对象，反向就是 `playbackRate = -1`，WAAPI 从当前时间倒着走。不要退回 CSS keyframes——CSS 动画只能从自己的首帧重启，实测中途反向会让面板从 39% 直接弹到全尺寸再淡出。代价是 presence 必须自己持有（Radix 靠 CSS `animationend` 决定卸载，WAAPI 不会触发它），所以 `Portal` 用 `forceMount`，`open` 经 context 传给 `PopoverContent`；jsdom 无 WAAPI、以及 `prefers-reduced-motion` 下直接落到终态。
+**必须可打断且位置连续**：全过程由 Web Animations API 驱动，每次状态翻转都以元素**当前计算值**为起点新建动画。不要退回 CSS keyframes——CSS 动画只能从自己的首帧重启，实测中途反向会让面板从 39% 直接弹到全尺寸再淡出。代价是 presence 必须自己持有（Radix 靠 CSS `animationend` 决定卸载，WAAPI 不会触发它），所以 `Portal` 用 `forceMount`，`open` 经 context 传给 `PopoverContent`；jsdom 无 WAAPI、以及 `prefers-reduced-motion` 下直接落到终态。新挂载时计算值是 `none`，兜底必须跟方向走（开→收起态、关→展开态），否则入场会从展开动到展开、等于没播。
+
+**退场不是入场的倒放**：临界阻尼弹簧的长尾倒过来播会变成「起步几乎不动、末尾撞停」——实测倒放到 240ms 时才走了 7.7%。退场走 `--ease` + `--dur-overlay-out`，第一帧就动。
+
+**同组抢占**：`<Popover group="...">` 声明所属集合，一个组 = 一个「同时可能有多个实例」的组件（如每条消息的 run 信息浮层）。组内另一个打开时，其余成员的退场缩短到 `--dur-overlay-preempt`；已经在退场的用 `updatePlaybackRate` 原地提速，不重启。**只有被抢占的退场才快**：无人接管的关闭仍走全程，因为那时它就是屏幕上的主体。接管者的入场同样不压缩——它是新焦点。不要改成「排队」（等前一个退完再开）：那是纯延迟，切换会变迟钝。
 
 用 clip 而不是 `scale`：scale 会把面板内容一起缩放，读成整体放大而不是「卡片长出来」。角的位置由 Radix **碰撞处理之后**的 `data-side` / `data-align` 两个轴共同决定（side 定贴哪条边、align 定靠那条边的哪一端），映射写在 `globals.css` 的 `[data-overlay-clip]` 规则里，翻转时自动跟着换角。**触发器本身不参与动画**：它是另一个元素，任何让它缩放或被当作动画起始快照的做法（例如与面板共用 `view-transition-name`）都会把它拉伸并盖住原点，已验证不可取。
 

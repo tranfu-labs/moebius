@@ -77,6 +77,7 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
 
   return (
     <Popover
+        group="agent-run-info"
         open={open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen && dialogOpenRef.current) return;

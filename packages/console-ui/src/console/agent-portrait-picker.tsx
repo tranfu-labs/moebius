@@ -64,7 +64,7 @@ export function AgentPortraitPicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover group="agent-portrait" open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={t("console.agentPortrait.change", { name: displayName || `@${slug}` })}
         className="rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
