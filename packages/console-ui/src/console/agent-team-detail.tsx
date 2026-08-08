@@ -273,6 +273,13 @@ export function AgentTeamDetail({
     : profileEditors[selectedMember.slug];
   const profileDocument = profileEditor?.document ?? null;
   const profileDraft = profileEditor?.draft ?? null;
+  /**
+   * The engine mark follows the unsaved draft, not the saved binding: the user changing the
+   * engine dropdown is exactly when they look at the portrait to check it took effect, and a
+   * mark that still shows the old engine reads as "the change did not register".
+   */
+  const memberEngineMark = (member: AgentTeamDetailMember): ReturnType<typeof profileEngine> =>
+    profileEngine(profileEditors[member.slug]?.draft ?? member.executionProfile?.effectiveProfile);
   const profileStatus = profileEditor?.status ?? "idle";
   const profileError = profileEditor?.error ?? null;
   const primaryMember = availableMembers.find((member) => member.slug === team.primaryAgentSlug);
@@ -890,7 +897,7 @@ export function AgentTeamDetail({
                   displayName={member.displayName}
                   slug={member.slug}
                   portraitId={member.portraitId}
-                  engine={profileEngine(member.executionProfile?.effectiveProfile)}
+                  engine={memberEngineMark(member)}
                 />
                 <span>{member.displayName || `@${member.slug}`}</span>
                 {primary ? (
@@ -1006,7 +1013,7 @@ export function AgentTeamDetail({
                     displayName={selectedEditor.displayName || selectedMember.displayName}
                     slug={selectedMember.slug}
                     portraitId={selectedMember.portraitId ?? null}
-                    engine={profileEngine(selectedMember.executionProfile?.effectiveProfile)}
+                    engine={memberEngineMark(selectedMember)}
                     disabled={readOnly || onChangeMemberPortrait === undefined}
                     onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
                   />
@@ -1054,7 +1061,7 @@ export function AgentTeamDetail({
               {profileDraft !== null && profileDocument !== null ? (
                 <>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
                       <select
                         aria-label={t("console.agentTeamDetail.executionEngineLabel")}
@@ -1073,7 +1080,7 @@ export function AgentTeamDetail({
                       </select>
                     </label>
                     {profileDraft.cli === "pi" ? (
-                      <label className="grid gap-1.5 text-xs text-hint">
+                      <label className="grid content-start gap-1.5 text-xs text-hint">
                         Provider
                         <select
                           aria-label="Provider"
@@ -1107,7 +1114,7 @@ export function AgentTeamDetail({
                         ) : null}
                       </label>
                     ) : null}
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       Model
                       <select
                         aria-label="Model"
@@ -1139,7 +1146,7 @@ export function AgentTeamDetail({
                       </select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
                       <select
                         aria-label={t("console.agentTeamDetail.effort")}

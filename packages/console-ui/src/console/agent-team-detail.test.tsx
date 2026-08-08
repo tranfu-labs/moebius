@@ -262,6 +262,38 @@ describe("AgentTeamDetail", () => {
     expect(screen.queryByRole("button", { name: "用当前内容覆盖" })).not.toBeInTheDocument();
   });
 
+  it("moves the engine mark to the drafted engine before the profile is saved", () => {
+    renderDetail({ onSaveExecutionProfile: vi.fn() });
+
+    const marks = () => [...document.querySelectorAll('[data-agent-portrait="manager"]')]
+      .map((portrait) => portrait.parentElement?.querySelector("svg path")?.getAttribute("d"))
+      .filter((path): path is string => typeof path === "string");
+
+    const codexMarks = marks();
+    expect(codexMarks.length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "claude" } });
+    const claudeMarks = marks();
+
+    expect(claudeMarks).toHaveLength(codexMarks.length);
+    expect(claudeMarks.every((path) => !codexMarks.includes(path))).toBe(true);
+    // Every place this member appears agrees; two engines on screen at once is worse than none.
+    expect(new Set(claudeMarks).size).toBe(1);
+  });
+
+  it("keeps the runtime dropdowns on one line when a field below one of them shows an error", () => {
+    renderDetail({ onSaveExecutionProfile: vi.fn() });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
+    expect(screen.getByText("请选择已就绪的 AI 服务商档案")).toBeVisible();
+
+    // The error lives in one column only; the labels must not absorb the extra height by
+    // stretching their own rows, which is what pushed that column's dropdown out of line.
+    for (const name of ["执行引擎", "Provider", "Model"]) {
+      expect(screen.getByRole("combobox", { name }).closest("label")).toHaveClass("content-start");
+    }
+  });
+
   it("links model and effort dropdowns for the selected CLI", async () => {
     const onSaveExecutionProfile = vi.fn().mockImplementation(async (_slug, profile) => ({
       binding: { source: "explicit", profile },
