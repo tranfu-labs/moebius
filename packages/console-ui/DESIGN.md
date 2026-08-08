@@ -50,7 +50,11 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 - 零阴影零渐变：`--shadow-pop` 恒为 `none`，浮层（dropdown / popover / 对话框）只靠 1px 描边与 `bg-sunken` 亮一档的底色分层；禁止任何投影与渐变（包括滚动淡出渐变）。
 - 不设置组件库级全局 `:focus-visible` 样式；需要可视键盘焦点的控件由组件按交互语义局部声明。
-- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场为淡入 + `scale(.92) → 1`，变换原点取 Radix 的 `--radix-popover-content-transform-origin`，即从触发器长出来而不是从自身中心；时长 `--dur-overlay`，曲线 `--ease-spring`；退场 `--dur-fast` + `--ease`。
+- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场是**容器自己长大**：`clip-path: inset()` 从「它被锚定的那个角」的零尺寸方块展开到全尺寸，时长 `--dur-overlay`，曲线 `--ease-spring`；关闭是同一段动画倒放，缩回同一个角，不是另换一段淡出。
+
+**必须可打断且位置连续**：全过程由 Web Animations API 驱动、只维护一个「关 → 开」的 animation 对象，反向就是 `playbackRate = -1`，WAAPI 从当前时间倒着走。不要退回 CSS keyframes——CSS 动画只能从自己的首帧重启，实测中途反向会让面板从 39% 直接弹到全尺寸再淡出。代价是 presence 必须自己持有（Radix 靠 CSS `animationend` 决定卸载，WAAPI 不会触发它），所以 `Portal` 用 `forceMount`，`open` 经 context 传给 `PopoverContent`；jsdom 无 WAAPI、以及 `prefers-reduced-motion` 下直接落到终态。
+
+用 clip 而不是 `scale`：scale 会把面板内容一起缩放，读成整体放大而不是「卡片长出来」。角的位置由 Radix **碰撞处理之后**的 `data-side` / `data-align` 两个轴共同决定（side 定贴哪条边、align 定靠那条边的哪一端），映射写在 `globals.css` 的 `[data-overlay-clip]` 规则里，翻转时自动跟着换角。**触发器本身不参与动画**：它是另一个元素，任何让它缩放或被当作动画起始快照的做法（例如与面板共用 `view-transition-name`）都会把它拉伸并盖住原点，已验证不可取。
 
 `--ease-spring` 是**临界阻尼**弹簧（等价于 SwiftUI `spring(duration: 0.36, bounce: 0)`）采样成的 CSS `linear()`，定义与重算公式在 `tokens.css`。**它不违反上面的「禁止 bounce / elastic」**：bounce = 0 的弹簧数学上永不过冲，实测 scale 全程不超过 1.000。选弹簧而非贝塞尔的理由是速度剖面——贝塞尔的结束是硬停，弹簧起步有加速度、收尾像真实物体一样停住；WWDC23《Animate with springs》给的默认建议也是 bounce = 0，bounce > 40% 被明确点名为 UI 里应避免。仍然禁止：任何 bounce > 0 的弹簧、goo / clip-path morph、以及为动效引入 framer-motion 之类运行时（`linear()` 在 Electron 38 / Chromium 140 上原生可用，不需要）。右侧辅助工作区是登记的空间动效例外：允许在 150ms 内以宽度裁切完成并排开合、以右缘位移完成覆盖开合，中途反向从当前进度继续；内容不得缩放，响应式布局切换不得追加开关动画，`prefers-reduced-motion` 下立即完成。禁止 bounce / elastic 曲线；按钮按下用 `active:scale-[0.98]`，不做更夸张的形变。持续加载 pulse 必须在 `prefers-reduced-motion: reduce` 下取消动画并保留等价静态骨架。
 - Card 维持无默认阴影的中性面：可见细边、圆角基线 `--radius: 14px`（Tailwind lg/md/sm 由 calc 派生）。

@@ -166,6 +166,24 @@ describe("AgentPortraitPicker", () => {
     expect(triggerPortraitSrc("qa")).toBe(portraitSrc(defaultPortraitId("qa")));
   });
 
+  it("opens without the View Transition API and leaves no transition name behind", async () => {
+    const user = userEvent.setup();
+    expect("startViewTransition" in document).toBe(false); // jsdom: the fallback path
+
+    render(
+      <AgentPortraitPicker displayName="软件测试" slug="qa" portraitId={null} onChange={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /软件测试/u }));
+    expect(screen.getByRole("radiogroup")).toBeVisible();
+
+    // A name left on a detached or idle element would collide with the next morph anywhere in
+    // the product, so it must only exist while one is running.
+    const named = [...document.querySelectorAll<HTMLElement>("[style]")]
+      .filter((element) => element.style.viewTransitionName !== "");
+    expect(named).toEqual([]);
+  });
+
   it("stops being a trigger when the detail is read-only", () => {
     render(
       <AgentPortraitPicker

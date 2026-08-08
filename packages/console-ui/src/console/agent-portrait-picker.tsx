@@ -48,7 +48,7 @@ export function AgentPortraitPicker({
   const effectiveId = isPortraitId(portraitId) ? portraitId : fallbackId;
   const background = `var(${identityToken(slug)})`;
 
-  const trigger = (
+  const portrait = (
     <AgentPortrait
       displayName={displayName}
       slug={slug}
@@ -57,6 +57,7 @@ export function AgentPortraitPicker({
       engine={engine}
     />
   );
+  const trigger = portrait;
 
   if (disabled) {
     return trigger;
