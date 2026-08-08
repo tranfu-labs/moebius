@@ -491,6 +491,8 @@ export const en = {
   "console.agentTeamDetail.readingAgentFile": "Reading AGENT.md…",
   "console.agentTeamDetail.runtimeConfiguration": "Runtime configuration",
   "console.agentTeamDetail.modelLabel": "Model",
+  "console.agentTeamDetail.teamNameLabel": "Team name",
+  "console.agentTeamDetail.teamDescriptionLabel": "One-line description of the team",
   "console.agentTeamDetail.memberNameLabel": "Agent name",
   "console.agentTeamDetail.memberDescriptionLabel": "One-line description",
   "console.agentTeamDetail.memberDescriptionPlaceholder": "One line on what it is responsible for",

@@ -30,6 +30,19 @@ import { MarkdownMessage } from "@/console/markdown-message";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
+
+/**
+ * The trigger renders its own label rather than leaning on Radix's `SelectValue`. That component
+ * learns the text from mounted items, and this package owns overlay presence, so the list is not
+ * mounted while closed — leaving every trigger blank.
+ */
+const EXECUTION_ENGINE_LABELS: Record<AgentExecutionProfile["cli"], string> = {
+  codex: "Codex",
+  claude: "Claude Code",
+  kimi: "Kimi",
+  pi: "Pi API",
+};
 
 export interface AgentTeamDetailMember {
   slug: string;
@@ -195,6 +208,12 @@ export interface AgentTeamDetailProps {
    */
   onReorderMembers?(memberSlugs: string[]): void | Promise<void>;
   onSelectMember(memberSlug: string): void;
+  /**
+   * Team name and one-line description, edited in place. Absent leaves both read-only.
+   * Reported on blur: this is the same shape of data as a member's identity, and the page
+   * already commits the primary-Agent change immediately, so a second Save would be noise.
+   */
+  onChangeTeamInformation?(information: { name: string; description: string }): void | Promise<void>;
   /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
   onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
   /**
@@ -234,6 +253,7 @@ export function AgentTeamDetail({
   state,
   readOnly = false,
   teamActions,
+  onChangeTeamInformation,
   memberSelectorActions,
   memberActions,
   onAddMember,
@@ -278,6 +298,37 @@ export function AgentTeamDetail({
   const profileEditorsTeamKeyRef = useRef(team.teamKey);
   /** Reading is the default; switching members returns to it rather than carrying edit mode over. */
   const [editingMarkdown, setEditingMarkdown] = useState(false);
+  /**
+   * A successful save is the expected outcome, so it earns the smallest possible acknowledgement:
+   * the unsaved count disappears, Save greys out, and this sits beside them briefly. A banner for
+   * every routine success pushes the page down and, worse, tends to fill itself with system rules.
+   */
+  const [justSaved, setJustSaved] = useState(false);
+  const teamInformationEditable = !readOnly && onChangeTeamInformation !== undefined;
+  const [teamNameDraft, setTeamNameDraft] = useState(team.name ?? "");
+  const [teamDescriptionDraft, setTeamDescriptionDraft] = useState(team.description ?? "");
+  const teamInformationRef = useRef({ name: team.name ?? "", description: team.description ?? "" });
+  if (
+    teamInformationRef.current.name !== (team.name ?? "")
+    || teamInformationRef.current.description !== (team.description ?? "")
+  ) {
+    // The host is the source of truth; adopt its value when it changes underneath us.
+    teamInformationRef.current = { name: team.name ?? "", description: team.description ?? "" };
+    setTeamNameDraft(team.name ?? "");
+    setTeamDescriptionDraft(team.description ?? "");
+  }
+  /**
+   * Team information is a draft like everything else on this page. One page, one save model:
+   * typing has an in-between state, so it belongs in a draft — unlike dragging a member into
+   * first place, which either happened or did not and so commits immediately.
+   */
+  const teamInformationDirty = teamInformationEditable
+    && (teamNameDraft.trim() !== (team.name ?? "").trim()
+      || teamDescriptionDraft.trim() !== (team.description ?? "").trim());
+  const discardTeamInformation = (): void => {
+    setTeamNameDraft(team.name ?? "");
+    setTeamDescriptionDraft(team.description ?? "");
+  };
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
@@ -332,7 +383,16 @@ export function AgentTeamDetail({
    * but the user gets one Save. Splitting the button was leaking an implementation boundary into
    * the interface and left two save controls 421px apart on the page.
    */
-  const unsavedItemCount = (selectedEditor?.isDirty === true ? 1 : 0) + (profileDirty ? 1 : 0);
+  const unsavedItemCount = (selectedEditor?.isDirty === true ? 1 : 0)
+    + (profileDirty ? 1 : 0)
+    + (teamInformationDirty ? 1 : 0);
+  // A fresh edit retires the acknowledgement; it should never linger over unsaved work.
+  useEffect(() => {
+    if (unsavedItemCount > 0) {
+      setJustSaved(false);
+    }
+  }, [unsavedItemCount]);
+
   const canAddMember = !readOnly
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
@@ -477,20 +537,25 @@ export function AgentTeamDetail({
 
   const canReorder = !readOnly && onReorderMembers !== undefined && orderedMembers.length > 1;
 
-  const canSaveCurrentMember = !readOnly
-    && selectedMember !== null
-    && selectedEditor?.loadStatus === "ready"
-    && selectedEditor.externalChangeStatus !== "conflict"
-    && selectedEditor.saveStatus !== "saving"
-    && profileStatus !== "saving"
+  const canSavePendingChanges = !readOnly
     && unsavedItemCount > 0
+    && selectedEditor?.externalChangeStatus !== "conflict"
+    && selectedEditor?.saveStatus !== "saving"
+    && profileStatus !== "saving"
     && (!profileDirty || profileDraftValid);
 
   /**
-   * Saves everything dirty on the current member. Each half still reports its own outcome, so a
-   * failing execution profile does not roll back an already-saved `AGENT.md`.
+   * Saves everything the page is holding: team information plus the current member's identity,
+   * body and execution profile. Each part still reports its own outcome, so a failing execution
+   * profile does not roll back an already-saved file.
    */
-  const saveCurrentMember = async (): Promise<void> => {
+  const savePendingChanges = async (): Promise<void> => {
+    if (teamInformationDirty) {
+      await onChangeTeamInformation?.({
+        name: teamNameDraft.trim(),
+        description: teamDescriptionDraft.trim(),
+      });
+    }
     if (selectedMember === null) {
       return;
     }
@@ -500,6 +565,7 @@ export function AgentTeamDetail({
     if (selectedEditor?.isDirty === true) {
       await onSaveMember(selectedMember.slug);
     }
+    setJustSaved(true);
   };
 
   const saveExecutionProfile = async (
@@ -610,13 +676,29 @@ export function AgentTeamDetail({
         {t("console.agentTeamDetail.back")}
       </button>
 
-      <header>
+      <header className="sticky top-0 z-20 -mx-1 bg-canvas px-1 pb-3 pt-1">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
-                {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
-              </h1>
+              {/*
+                Edited in place, exactly like a member's name below. Sending the same shape of
+                data through a modal on one half of the page and an inline field on the other is
+                the sort of split that makes a page feel assembled rather than designed.
+              */}
+              {teamInformationEditable ? (
+                <input
+                  id="agent-team-detail-title"
+                  className="min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-2xl font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
+                  aria-label={t("console.agentTeamDetail.teamNameLabel")}
+                  value={teamNameDraft}
+                  placeholder={t("console.agentTeamDetail.unnamed")}
+                  onChange={(event) => setTeamNameDraft(event.currentTarget.value)}
+                />
+              ) : (
+                <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
+                  {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
+                </h1>
+              )}
               <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[11px] font-medium text-sub">
                 {team.ownership === "system"
                   ? t("console.agentTeamDetail.official")
@@ -638,11 +720,85 @@ export function AgentTeamDetail({
                 </span>
               ) : null}
             </div>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-sub">
-              {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
-            </p>
+            {teamInformationEditable ? (
+              <input
+                className="mt-1 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+                aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
+                value={teamDescriptionDraft}
+                placeholder={t("console.agentTeamDetail.noDescription")}
+                onChange={(event) => setTeamDescriptionDraft(event.currentTarget.value)}
+              />
+            ) : (
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-sub">
+                {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
+              </p>
+            )}
           </div>
-          {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
+          <div className="flex shrink-0 items-center gap-2">
+            {/*
+              One page, one save. Team information, the member's identity, its body and its
+              execution profile all land here — a page that saves in two places asks the user to
+              work out which button owns what.
+            */}
+            {/*
+              Nothing to save while an external change is unresolved: the only way forward is to
+              take the file on disk or to overwrite it, and leaving Save reachable would offer a
+              third path the product does not have.
+            */}
+            {!readOnly && selectedEditor?.externalChangeStatus !== "conflict" ? (
+              <>
+                {selectedEditor?.saveStatus === "saving" || profileStatus === "saving" ? (
+                  <span className="inline-flex items-center text-sm text-sub" role="status">
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saving")}
+                  </span>
+                ) : unsavedItemCount > 0 ? (
+                  <span className="text-sm text-sub">
+                    {t("console.agentTeamDetail.unsavedCount", { count: String(unsavedItemCount) })}
+                  </span>
+                ) : justSaved ? (
+                  <span className="inline-flex items-center text-sm text-sub" role="status">
+                    <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saved")}
+                  </span>
+                ) : null}
+                {/* Hidden when there is nothing to discard: a permanently greyed button is just noise. */}
+                {unsavedItemCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={selectedEditor?.saveStatus === "saving"}
+                  onClick={() => {
+                    discardTeamInformation();
+                    if (profileDirty && profileDocument !== null && selectedMember !== null) {
+                      updateProfileEditor(selectedMember.slug, {
+                        draft: profileDocument.effectiveProfile,
+                        error: null,
+                      });
+                    }
+                    if (selectedMember !== null) {
+                      onDiscardMember(selectedMember.slug);
+                    }
+                  }}
+                >
+                  {t("console.agentTeamDetail.discardChanges")}
+                </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!canSavePendingChanges}
+                  onClick={() => void savePendingChanges()}
+                >
+                  {selectedEditor?.saveStatus === "saving" || profileStatus === "saving"
+                    ? t("console.agentTeamDetail.savingNoEllipsis")
+                    : t("console.agentTeamDetail.save")}
+                </Button>
+              </>
+            ) : null}
+            {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
+          </div>
         </div>
 
         {team.ownership === "system" && team.officialManagement?.updateStatus === "available" ? (
@@ -1046,39 +1202,43 @@ export function AgentTeamDetail({
                 selection, with the portrait and the name each appearing twice. The strip answers
                 "which member"; this card answers "who is it and how does it run".
               */}
+              {/*
+                Portrait beside the name, description on its own full-width row. Keeping all three
+                on one line left the description about 300px inside a 400px card, which truncated
+                the very sentence that explains what the member is for.
+              */}
               <div className="flex items-center gap-3">
                 <AgentPortraitPicker
                   displayName={selectedEditor.displayName || selectedMember.displayName}
                   slug={selectedMember.slug}
                   portraitId={selectedMember.portraitId ?? null}
                   engine={memberEngineMark(selectedMember)}
+                  size="hero"
                   disabled={readOnly || onChangeMemberPortrait === undefined}
                   onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
                 />
-                <div className="min-w-0 flex-1">
-                  <input
-                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
-                    aria-label={t("console.agentTeamDetail.memberNameLabel")}
-                    value={selectedEditor.displayName}
-                    placeholder={`@${selectedMember.slug}`}
-                    disabled={readOnly || onChangeMemberIdentity === undefined}
-                    onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
-                      displayName: event.currentTarget.value,
-                    })}
-                  />
-                  <input
-                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
-                    aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
-                    value={selectedEditor.description}
-                    placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}
-                    disabled={readOnly || onChangeMemberIdentity === undefined}
-                    onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
-                      description: event.currentTarget.value,
-                    })}
-                  />
-                </div>
+                <input
+                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                  aria-label={t("console.agentTeamDetail.memberNameLabel")}
+                  value={selectedEditor.displayName}
+                  placeholder={`@${selectedMember.slug}`}
+                  disabled={readOnly || onChangeMemberIdentity === undefined}
+                  onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                    displayName: event.currentTarget.value,
+                  })}
+                />
                 {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
               </div>
+              <input
+                className="mt-2 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
+                value={selectedEditor.description}
+                placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}
+                disabled={readOnly || onChangeMemberIdentity === undefined}
+                onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                  description: event.currentTarget.value,
+                })}
+              />
 
               <div className="mt-7 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
@@ -1099,49 +1259,57 @@ export function AgentTeamDetail({
                   <div className="mt-4 grid gap-3">
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.executionEngineLabel")}
-                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
+                      <Select
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                          draft: resolveProfileForEngine(event.currentTarget.value as AgentExecutionProfile["cli"], selectableProviderProfiles),
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, {
+                          draft: resolveProfileForEngine(value as AgentExecutionProfile["cli"], selectableProviderProfiles),
                           error: null,
                         })}
                       >
-                        <option value="codex">Codex</option>
-                        <option value="claude">Claude Code</option>
-                        <option value="kimi">Kimi</option>
-                        <option value="pi">Pi API</option>
-                      </select>
+                        <SelectTrigger aria-label={t("console.agentTeamDetail.executionEngineLabel")}>
+                          {EXECUTION_ENGINE_LABELS[profileDraft.cli]}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="codex">Codex</SelectItem>
+                          <SelectItem value="claude">Claude Code</SelectItem>
+                          <SelectItem value="kimi">Kimi</SelectItem>
+                          <SelectItem value="pi">Pi API</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </label>
                     {profileDraft.cli === "pi" ? (
                       <label className="grid content-start gap-1.5 text-xs text-hint">
                         Provider
-                        <select
-                          aria-label="Provider"
-                          className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
+                        <Select
                           value={profileDraft.providerProfileId}
                           disabled={readOnly || profileStatus === "saving"}
-                          aria-invalid={profileProviderError !== null}
-                          onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                            draft: resolvePiProviderProfile(event.currentTarget.value, selectableProviderProfiles),
+                          onValueChange={(value) => updateProfileEditor(selectedMember.slug, {
+                            draft: resolvePiProviderProfile(value, selectableProviderProfiles),
                             error: null,
                           })}
                         >
-                          <option value="">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</option>
-                          {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
-                            <option value={selectedProviderProfile.id}>
-                              {t("console.agentTeamDetail.providerUnavailableOption", {
-                                providerName: selectedProviderProfile.providerName,
-                                displayName: selectedProviderProfile.displayName,
-                              })}
-                            </option>
-                          ) : null}
-                          {selectableProviderProfiles.map((profile) => (
-                            <option key={profile.id} value={profile.id}>{profile.providerName} · {profile.displayName}</option>
-                          ))}
-                        </select>
+                          <SelectTrigger aria-label="Provider" aria-invalid={profileProviderError !== null}>
+                            {selectedProviderProfile === null
+                              ? <span className="text-hint">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</span>
+                              : `${selectedProviderProfile.providerName} · ${selectedProviderProfile.displayName}`}
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
+                              <SelectItem value={selectedProviderProfile.id}>
+                                {t("console.agentTeamDetail.providerUnavailableOption", {
+                                  providerName: selectedProviderProfile.providerName,
+                                  displayName: selectedProviderProfile.displayName,
+                                })}
+                              </SelectItem>
+                            ) : null}
+                            {selectableProviderProfiles.map((profile) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.providerName} · {profile.displayName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {profileProviderError !== null ? <span className="text-danger">{profileProviderError}</span> : null}
                         {selectableProviderProfiles.length === 0 && onOpenProviderSettings !== undefined ? (
                           <button type="button" className="w-fit text-xs text-accent hover:underline" onClick={onOpenProviderSettings}>
@@ -1152,58 +1320,65 @@ export function AgentTeamDetail({
                     ) : null}
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.modelLabel")}
-                      <select
-                        aria-label="Model"
-                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
+                      <Select
                         value={profileDraft.model}
                         disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileModelError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...resolveSelectedModel(profileDraft, event.currentTarget.value),
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, { draft: {
+                          ...resolveSelectedModel(profileDraft, value),
                         }, error: null })}
                       >
-                        {profileDraft.cli === "pi" && profileDraft.model === "" ? (
-                          <option value="">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</option>
-                        ) : null}
-                        {profileModelUnsupported && profileDraft.model !== "" ? (
-                          <option value={profileDraft.model}>
-                            {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
-                          </option>
-                        ) : null}
-                        {(profileDraft.cli === "pi"
-                          ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
-                          : listExecutionModels(profileDraft.cli)).map((model) => (
-                          <option key={model.value} value={model.value}>
-                            {model.membershipRestricted
-                              ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
-                              : model.label}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger aria-label="Model" aria-invalid={profileModelError !== null}>
+                          {profileDraft.model === ""
+                            ? <span className="text-hint">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</span>
+                            : profileModelUnsupported
+                              ? t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })
+                              : profileModelDefinition?.label ?? profileDraft.model}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profileModelUnsupported && profileDraft.model !== "" ? (
+                            <SelectItem value={profileDraft.model}>
+                              {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
+                            </SelectItem>
+                          ) : null}
+                          {(profileDraft.cli === "pi"
+                            ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
+                            : listExecutionModels(profileDraft.cli)).map((model) => (
+                            <SelectItem key={model.value} value={model.value}>
+                              {model.membershipRestricted
+                                ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
+                                : model.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.effort")}
-                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
+                      <Select
                         value={profileDraft.effort}
                         disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileEffortError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, { draft: {
                           ...profileDraft,
-                          effort: event.currentTarget.value,
+                          effort: value,
                         }, error: null })}
                       >
-                        {profileEffortUnsupported ? (
-                          <option value={profileDraft.effort}>
-                            {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
-                          </option>
-                        ) : null}
-                        {profileModelDefinition?.efforts.map((effort) => (
-                          <option key={effort} value={effort}>{effort}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger aria-label={t("console.agentTeamDetail.effort")} aria-invalid={profileEffortError !== null}>
+                          {profileEffortUnsupported
+                            ? t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })
+                            : profileDraft.effort}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profileEffortUnsupported ? (
+                            <SelectItem value={profileDraft.effort}>
+                              {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
+                            </SelectItem>
+                          ) : null}
+                          {profileModelDefinition?.efforts.map((effort) => (
+                            <SelectItem key={effort} value={effort}>{effort}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {profileEffortError !== null ? <span className="text-danger">{profileEffortError}</span> : null}
                     </label>
                   </div>
@@ -1260,45 +1435,6 @@ export function AgentTeamDetail({
                   })}
                 </p>
               )}
-              {!readOnly && selectedEditor.externalChangeStatus !== "conflict" ? (
-                <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-                  {selectedEditor.saveStatus === "saving" || profileStatus === "saving" ? (
-                    <span className="mr-auto inline-flex items-center text-sm text-sub" role="status">
-                      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeamDetail.saving")}
-                    </span>
-                  ) : unsavedItemCount > 0 ? (
-                    <span className="mr-auto text-sm text-sub">
-                      {t("console.agentTeamDetail.unsavedCount", { count: String(unsavedItemCount) })}
-                    </span>
-                  ) : null}
-                    <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={unsavedItemCount === 0 || selectedEditor.saveStatus === "saving"}
-                    onClick={() => {
-                      if (profileDirty && profileDocument !== null) {
-                        updateProfileEditor(selectedMember.slug, {
-                          draft: profileDocument.effectiveProfile,
-                          error: null,
-                        });
-                      }
-                      onDiscardMember(selectedMember.slug);
-                    }}
-                  >
-                    {t("console.agentTeamDetail.discardChanges")}
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={!canSaveCurrentMember}
-                    onClick={() => void saveCurrentMember()}
-                  >
-                    {selectedEditor.saveStatus === "saving" || profileStatus === "saving"
-                      ? t("console.agentTeamDetail.savingNoEllipsis")
-                      : t("console.agentTeamDetail.save")}
-                  </Button>
-                </div>
-              ) : null}
             </div>
             </div>
 

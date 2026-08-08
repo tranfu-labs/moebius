@@ -490,6 +490,8 @@ export const zhCN = {
   "console.agentTeamDetail.readingAgentFile": "正在读取 AGENT.md…",
   "console.agentTeamDetail.runtimeConfiguration": "运行配置",
   "console.agentTeamDetail.modelLabel": "模型",
+  "console.agentTeamDetail.teamNameLabel": "团队名称",
+  "console.agentTeamDetail.teamDescriptionLabel": "团队的一句话描述",
   "console.agentTeamDetail.memberNameLabel": "Agent 名称",
   "console.agentTeamDetail.memberDescriptionLabel": "一句话描述",
   "console.agentTeamDetail.memberDescriptionPlaceholder": "一句话说明它负责什么",

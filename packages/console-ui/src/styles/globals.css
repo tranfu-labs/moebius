@@ -99,24 +99,24 @@
   --clip-b: 0;
 }
 
-[data-overlay-clip][data-side="right"] {
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="right"] {
   --clip-l: 0;
   --clip-r: 100%;
 }
 
-[data-overlay-clip][data-side="left"] {
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="left"] {
   --clip-l: 100%;
   --clip-r: 0;
 }
 
-[data-overlay-clip][data-side="bottom"][data-align="start"],
-[data-overlay-clip][data-side="top"][data-align="start"] {
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="bottom"][data-align="start"],
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="top"][data-align="start"] {
   --clip-l: 0;
   --clip-r: 100%;
 }
 
-[data-overlay-clip][data-side="bottom"][data-align="end"],
-[data-overlay-clip][data-side="top"][data-align="end"] {
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="bottom"][data-align="end"],
+[data-overlay-clip]:not([data-overlay-clip="vertical"])[data-side="top"][data-align="end"] {
   --clip-l: 100%;
   --clip-r: 0;
 }
@@ -132,6 +132,23 @@
   --clip-t: 100%;
   --clip-b: 0;
 }
+
+/*
+ * 下拉列表只做纵向：它的宽度就等于触发器宽度，横向没有可生长的余地，
+ * 做成 2D 角落展开的话横向那一半是假动作。它该「卷下来」，贴上边就向下卷，
+ * 贴下边（贴边翻转后）就向上卷。
+ */
+[data-overlay-clip="vertical"] {
+  --clip-l: 0;
+  --clip-r: 0;
+}
+
+/* 纵向变体也可能贴边翻转，仍按 side 决定从上还是从下卷 */
+[data-overlay-clip="vertical"][data-side="top"] {
+  --clip-t: 100%;
+  --clip-b: 0;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   *,

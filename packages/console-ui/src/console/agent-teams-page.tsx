@@ -512,21 +512,6 @@ export function AgentTeamsPage({
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
-                        {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => requestGuardedAction(() => setView({
-                                kind: "information-dialog",
-                                mode: "edit",
-                                team: openedTeam,
-                                returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
-                              }))}
-                          >
-                            {t("console.agentTeams.editInformation")}
-                          </Button>
-                        ) : null}
                         <Button
                           type="button"
                           disabled={duplicatingTeamKey !== null || onDuplicateBuiltInTeam === undefined}
@@ -556,21 +541,6 @@ export function AgentTeamsPage({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => requestGuardedAction(() => setView({
-                              kind: "information-dialog",
-                              mode: "edit",
-                              team: openedTeam,
-                              returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
-                            }))}
-                        >
-                          {t("console.agentTeams.editInformation")}
-                        </Button>
-                      ) : null}
                       <TeamMoreMenu
                         triggerLabel={t("console.agentTeams.moreActions", {
                           name: teamName(t, openedTeam),
@@ -637,6 +607,11 @@ export function AgentTeamsPage({
                       }
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
+                  onChangeTeamInformation={onUpdateTeamInformation === undefined
+                    ? undefined
+                    : async (information) => {
+                      await onUpdateTeamInformation(openedTeam.teamKey, information);
+                    }}
                   onChangeMemberPortrait={onChangeMemberPortrait === undefined
                     ? undefined
                     : (memberSlug, portraitId) =>
@@ -651,8 +626,9 @@ export function AgentTeamsPage({
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;
+                    // A routine save raises no banner: the header already says "saved", and the
+                    // banner is reserved for one-shot file operations whose result is news.
                     await onSaveMember(openedTeam.teamKey, memberSlug);
-                    setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
                   }}
                   onCheckExternalChange={openedTeam.status !== "needs-repair"
                     && onCheckMemberExternalChange !== undefined
@@ -676,7 +652,6 @@ export function AgentTeamsPage({
                     ? undefined
                     : async (memberSlug, profile) => {
                       const result = await onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile);
-                      setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
                       return result;
                     }}
                   onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined

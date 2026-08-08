@@ -125,6 +125,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ui/input.tsx",
   "packages/console-ui/src/ui/overlay-grow.ts",
   "packages/console-ui/src/ui/popover.tsx",
+  "packages/console-ui/src/ui/select.tsx",
   "packages/console-ui/src/ui/tooltip.tsx",
   "desktop/src/console-page/conversation-search-overlay.tsx",
   "desktop/src/console-page/mount-console-app.tsx",

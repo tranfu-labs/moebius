@@ -1038,18 +1038,15 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "修改信息" }));
-
-    const dialog = screen.getByRole("dialog", { name: "修改团队信息" });
-    expect(within(dialog).getAllByRole("textbox")).toHaveLength(2);
-    expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "团队名称" }), {
+    // 名称与描述就地编辑，不再走弹窗：同一页上同一类数据只该有一种编辑方式。
+    expect(screen.queryByRole("button", { name: "修改信息" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "团队名称" }), {
       target: { value: "研发团队" },
     });
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "一句话描述" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "团队的一句话描述" }), {
       target: { value: "负责研发交付" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onUpdateAgentTeamInformation).toHaveBeenCalledWith(
       userTeam.teamKey,

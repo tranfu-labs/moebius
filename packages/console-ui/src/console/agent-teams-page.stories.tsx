@@ -404,6 +404,9 @@ function TeamDetailHarness({
   const [portraits, setPortraits] = useState<Record<string, string | null>>({});
   const [identities, setIdentities] = useState<Record<string, { displayName: string; description: string }>>({});
   const [order, setOrder] = useState((memberOverrides ?? userTeam.members).map((member) => member.slug));
+  const [info, setInfo] = useState({ name: userTeam.name, description: userTeam.description });
+  const [bodies, setBodies] = useState<Record<string, string>>({});
+  const [profiles, setProfiles] = useState<Record<string, EngineProfile>>({});
   const [selected, setSelected] = useState(((memberOverrides ?? userTeam.members)[0])!.slug);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
@@ -418,12 +421,16 @@ function TeamDetailHarness({
   });
   const team: OperatorAgentTeam = {
     ...userTeam,
-    members,
+    ...info,
+    members: members.map((member) => ({
+      ...member,
+      executionProfile: profiles[member.slug] ?? member.executionProfile,
+    })),
     memberOrder: order,
     // 位置即任命：第一位就是主 Agent，没有第二条真相。
     primaryAgentSlug: order[0]!,
   };
-  const detail = readyDetailState(team, selected, bodyFor);
+  const detail = readyDetailState(team, selected, (slug) => bodies[slug] ?? (bodyFor ?? defaultBody)(slug));
   for (const member of members) {
     detail.memberEditors[member.slug] = {
       ...detail.memberEditors[member.slug]!,
@@ -456,6 +463,45 @@ function TeamDetailHarness({
         setDirty((previous) => ({ ...previous, [memberSlug]: true }));
       }}
       onReorderMembers={(_teamKey, memberSlugs) => setOrder(memberSlugs)}
+      onUpdateTeamInformation={(_teamKey, next) => setInfo(next)}
+      onChangeMember={(_teamKey, memberSlug, agentMarkdown) => {
+        const body = agentMarkdown.replace(/^---\n[\s\S]*?\n---\n\n/u, "");
+        setBodies((previous) => ({ ...previous, [memberSlug]: body }));
+        setDirty((previous) => ({ ...previous, [memberSlug]: true }));
+      }}
+      onDiscardMember={(_teamKey, memberSlug) => {
+        setBodies((previous) => {
+          const next = { ...previous };
+          delete next[memberSlug];
+          return next;
+        });
+        setIdentities((previous) => {
+          const next = { ...previous };
+          delete next[memberSlug];
+          return next;
+        });
+        setDirty((previous) => ({ ...previous, [memberSlug]: false }));
+      }}
+      onDiscardAll={() => {
+        setBodies({});
+        setIdentities({});
+        setDirty({});
+      }}
+      onSaveAll={async () => {
+        setDirty({});
+        return { failures: [] };
+      }}
+      onSaveExecutionProfile={async (_teamKey, memberSlug, profile) => {
+        const document = {
+          binding: { source: "explicit" as const, profile },
+          recommendation: null,
+          effectiveProfile: profile,
+        };
+        setProfiles((previous) => ({ ...previous, [memberSlug]: document }));
+        return document;
+      }}
+      onAddMember={() => undefined}
+      onCloseTeam={() => undefined}
       onSaveMember={async (_teamKey, memberSlug) => {
         setDirty((previous) => ({ ...previous, [memberSlug]: false }));
       }}
@@ -470,10 +516,13 @@ function TeamDetailHarness({
   );
 }
 
+const defaultBody = (): string =>
+  "## 工作方式\n\n先确认用户真正要达到的结果，再决定动手范围。\n\n## 交接\n\n完成后把已核实的事实、剩余风险和下一步建议一并交回。\n";
+
 function readyDetailState(
   team: OperatorAgentTeam,
   selectedMemberSlug: string,
-  bodyFor: (slug: string) => string = () => "## 工作方式\n\n先确认用户真正要达到的结果，再决定动手范围。\n\n## 交接\n\n完成后把已核实的事实、剩余风险和下一步建议一并交回。\n",
+  bodyFor: (slug: string) => string = defaultBody,
 ): AgentTeamDetailState {
   return {
     teamKey: team.teamKey,
