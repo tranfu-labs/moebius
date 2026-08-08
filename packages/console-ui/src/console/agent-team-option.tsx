@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentPortrait } from "@/console/agent-portrait";
+import { type ExecutionEngine } from "@/console/provider-mark";
 import { useI18n } from "@/i18n";
 
 export interface AgentTeamOptionView {
@@ -8,7 +9,12 @@ export interface AgentTeamOptionView {
   ownership?: "system" | "user";
   description?: string | null;
   primaryAgentSlug?: string | null;
-  members: ReadonlyArray<{ slug: string; displayName: string }>;
+  members: ReadonlyArray<{
+    slug: string;
+    displayName: string;
+    portraitId?: string | null;
+    engine?: { cli: ExecutionEngine; providerId?: string };
+  }>;
 }
 
 export function AgentTeamOption({ team, memberLimit = 3 }: {
@@ -38,7 +44,7 @@ export function AgentTeamOption({ team, memberLimit = 3 }: {
       <span className="flex flex-wrap items-center gap-1.5">
         {visibleMembers.map((member) => (
           <span key={member.slug} className="inline-flex items-center gap-1 text-[11px] font-normal text-sub">
-            <AgentInitialAvatar displayName={member.displayName} slug={member.slug} className="h-5 w-5 text-[10px]" />
+            <AgentPortrait displayName={member.displayName} slug={member.slug} portraitId={member.portraitId} engine={member.engine} className="h-5 w-5" />
             <span>{member.displayName || `@${member.slug}`}</span>
           </span>
         ))}

@@ -54,8 +54,9 @@ describe("AgentTeamDetail", () => {
     const onSaveMember = vi.fn();
     renderDetail({ onChangeMember, onSaveMember });
 
+    enterMarkdownEdit();
     replaceEditorText(
-      screen.getByRole("textbox", { name: "开发经理 AGENT.md" }),
+      screen.getByRole("textbox", { name: "开发经理 的职责说明" }),
       "# 开发经理\n\n新的职责\n",
     );
     expect(onChangeMember).toHaveBeenCalledWith("manager", "# 开发经理\n\n新的职责\n");
@@ -66,12 +67,12 @@ describe("AgentTeamDetail", () => {
     expect(screen.getAllByLabelText("未保存")).toHaveLength(1);
   });
 
-  it("keeps the user primary Agent selector visible, saves immediately, and preserves member drafts after reordering", () => {
-    const onChangePrimaryAgent = vi.fn();
+  it("expresses the primary Agent by first place alone, with no separate selector", () => {
+    const onReorderMembers = vi.fn();
     const onSaveMember = vi.fn();
     const onChangeMember = vi.fn();
     const props = detailProps({
-      onChangePrimaryAgent,
+      onReorderMembers,
       onSaveMember,
       onChangeMember,
       state: stateWith(managerEditor({
@@ -80,39 +81,37 @@ describe("AgentTeamDetail", () => {
     });
     const { rerender } = render(<AgentTeamDetail {...props} />);
 
-    const selector = screen.getByRole("combobox", { name: "主 Agent" });
-    expect(selector).toHaveValue("manager");
-    expect(within(selector).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual([
-      "manager",
-      "dev",
-      "qa",
-    ]);
-    fireEvent.change(selector, { target: { value: "dev" } });
-    expect(onChangePrimaryAgent).toHaveBeenCalledWith("dev");
-    expect(onSaveMember).not.toHaveBeenCalled();
-    expect(onChangeMember).not.toHaveBeenCalled();
+    // Appointing is dragging into first place; a second control for the same act would only give
+    // the two a chance to disagree.
+    expect(screen.queryByRole("combobox", { name: "主 Agent" })).toBeNull();
+    const tabs = within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab");
+    expect(tabs[0]).toHaveTextContent("开发经理· 主 Agent");
 
     rerender(<AgentTeamDetail
       {...props}
-      team={{ ...props.team, primaryAgentSlug: "dev" }}
+      team={{ ...props.team, primaryAgentSlug: "dev", memberOrder: ["dev", "manager", "qa"] }}
       state={{ ...props.state, primaryAgentChangeStatus: "saved" }}
     />);
-    const tabs = within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab");
-    expect(tabs[0]).toHaveTextContent("开发· 主 Agent");
-    expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    const reordered = within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab");
+    expect(reordered[0]).toHaveTextContent("开发· 主 Agent");
+    expect(onSaveMember).not.toHaveBeenCalled();
+    expect(onChangeMember).not.toHaveBeenCalled();
+
+    // The member's own draft is untouched by a change of primary.
+    enterMarkdownEdit();
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
     expect(screen.getAllByLabelText("未保存")).toHaveLength(1);
-    expect(screen.getByRole("status")).toHaveTextContent("已保存");
+    expect(screen.getAllByRole("status").map((node) => node.textContent).join(" "))
+      .toContain("已保存");
   });
 
-  it("shows primary Agent progress and keeps the selector available for official teams", () => {
+  it("still reports the outcome of a primary change, and keeps official teams reorderable", () => {
     const props = detailProps();
     const { rerender } = render(<AgentTeamDetail
       {...props}
       state={{ ...props.state, primaryAgentChangeStatus: "saving" }}
     />);
-    expect(screen.getByRole("combobox", { name: "主 Agent" })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("正在保存");
 
     rerender(<AgentTeamDetail
@@ -126,7 +125,8 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("切换失败：磁盘暂时不可写");
 
     rerender(<AgentTeamDetail {...props} team={{ ...props.team, ownership: "system" }} />);
-    expect(screen.getByRole("combobox", { name: "主 Agent" })).toBeVisible();
+    // Official teams reorder like any other; the ability is never hidden behind a menu.
+    expect(within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab")).toHaveLength(3);
     expect(screen.getByText("官方来源")).toBeVisible();
   });
 
@@ -139,7 +139,8 @@ describe("AgentTeamDetail", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("正在保存");
     expect(screen.getByRole("button", { name: "正在保存" })).toBeDisabled();
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    enterMarkdownEdit();
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .toHaveAttribute("aria-disabled", "true");
 
     rerender(<AgentTeamDetail {...detailProps({
@@ -147,7 +148,8 @@ describe("AgentTeamDetail", () => {
       state: stateWith(managerEditor({ saveStatus: "failed", saveError: "文件被占用" })),
     })} />);
     expect(screen.getByRole("alert")).toHaveTextContent("保存失败：文件被占用");
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    enterMarkdownEdit();
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n新职责\n");
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onSaveMember).toHaveBeenCalledWith("manager");
@@ -159,8 +161,10 @@ describe("AgentTeamDetail", () => {
     }));
     const { rerender } = renderDetail({ state: baseState });
 
+    enterMarkdownEdit();
     expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
-    const rawMarkdown = screen.getByRole("textbox", { name: "开发经理 AGENT.md" });
+    enterMarkdownEdit();
+    const rawMarkdown = screen.getByRole("textbox", { name: "开发经理 的职责说明" });
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
 
     rerender(<AgentTeamDetail {...detailProps({
@@ -181,21 +185,13 @@ describe("AgentTeamDetail", () => {
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
   });
 
-  it("keeps the current member @slug visible and copyable", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
+  it("keeps no standing slug display or copy control", () => {
     renderDetail();
 
-    const copySlug = screen.getByRole("button", { name: "复制 @manager" });
-    expect(copySlug).toHaveTextContent("@manager");
-    await act(async () => {
-      fireEvent.click(copySlug);
-      await Promise.resolve();
-    });
-    expect(writeText).toHaveBeenCalledWith("@manager");
+    // Typing `@` in the body already completes member names, so copying a slug by hand is a need
+    // that does not exist; a standing control for it is only clutter.
+    expect(screen.queryByRole("button", { name: /复制 @/u })).toBeNull();
+    expect(screen.queryByText("@manager")).toBeNull();
   });
 
   it("offers all three leave choices and stays when save-all reports a partial failure", async () => {
@@ -238,7 +234,8 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    enterMarkdownEdit();
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
     expect(screen.getByRole("button", { name: "放弃修改" })).toBeVisible();
@@ -260,6 +257,38 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("status")).toHaveTextContent("文件在软件外面改过了，已载入最新内容");
     expect(screen.queryByRole("button", { name: "载入外部版本" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "用当前内容覆盖" })).not.toBeInTheDocument();
+  });
+
+  it("moves the engine mark to the drafted engine before the profile is saved", () => {
+    renderDetail({ onSaveExecutionProfile: vi.fn() });
+
+    const marks = () => [...document.querySelectorAll('[data-agent-portrait="manager"]')]
+      .map((portrait) => portrait.parentElement?.querySelector("svg path")?.getAttribute("d"))
+      .filter((path): path is string => typeof path === "string");
+
+    const codexMarks = marks();
+    expect(codexMarks.length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "claude" } });
+    const claudeMarks = marks();
+
+    expect(claudeMarks).toHaveLength(codexMarks.length);
+    expect(claudeMarks.every((path) => !codexMarks.includes(path))).toBe(true);
+    // Every place this member appears agrees; two engines on screen at once is worse than none.
+    expect(new Set(claudeMarks).size).toBe(1);
+  });
+
+  it("keeps the runtime dropdowns on one line when a field below one of them shows an error", () => {
+    renderDetail({ onSaveExecutionProfile: vi.fn() });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
+    expect(screen.getByText("请选择已就绪的 AI 服务商档案")).toBeVisible();
+
+    // The error lives in one column only; the labels must not absorb the extra height by
+    // stretching their own rows, which is what pushed that column's dropdown out of line.
+    for (const name of ["执行引擎", "Provider", "Model"]) {
+      expect(screen.getByRole("combobox", { name }).closest("label")).toHaveClass("content-start");
+    }
   });
 
   it("links model and effort dropdowns for the selected CLI", async () => {
@@ -301,7 +330,7 @@ describe("AgentTeamDetail", () => {
     });
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
     fireEvent.change(screen.getByRole("combobox", { name: "思考程度" }), { target: { value: "max" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
       { cli: "kimi", model: "kimi-code/k3", effort: "max" },
@@ -328,11 +357,11 @@ describe("AgentTeamDetail", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "执行引擎" }), { target: { value: "pi" } });
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("deepseek-work");
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("");
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "deepseek-v4-flash" } });
     expect(screen.getByRole("combobox", { name: "思考程度" })).toHaveValue("high");
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith("manager", {
       cli: "pi",
       providerId: "deepseek",
@@ -359,7 +388,7 @@ describe("AgentTeamDetail", () => {
 
     expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("");
     expect(screen.getByText("请选择已就绪的 AI 服务商档案")).toBeVisible();
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
   it("preserves an unsupported historical profile until a supported model is selected", async () => {
@@ -368,6 +397,8 @@ describe("AgentTeamDetail", () => {
     const base = detailProps();
     renderDetail({
       onSaveExecutionProfile,
+      // 单一保存反映的是整名成员，所以要让正文保持干净，禁用才等价于「运行配置无可保存」。
+      state: stateWith(managerEditor({ isDirty: false })),
       team: {
         ...base.team,
         members: base.team.members.map((member) => member.slug === "manager"
@@ -390,12 +421,12 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("option", { name: "future-model（旧版自定义配置）" })).toBeVisible();
     expect(screen.getByRole("option", { name: "future-effort（当前列表不支持）" })).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("旧版自定义配置会保留");
-    expect(screen.getByRole("button", { name: "保存运行配置" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     expect(onSaveExecutionProfile).not.toHaveBeenCalled();
 
     fireEvent.change(model, { target: { value: "kimi-code/k3-256k" } });
     expect(effort).toHaveValue("high");
-    fireEvent.click(screen.getByRole("button", { name: "保存运行配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSaveExecutionProfile).toHaveBeenCalledWith(
       "manager",
@@ -705,18 +736,27 @@ describe("AgentTeamDetail", () => {
       memberActions: <button type="button">删除 Agent</button>,
     });
 
-    const primarySelector = screen.getByRole("combobox", { name: "主 Agent" });
-    expect(within(primarySelector).queryByRole("option", { name: "开发经理" })).not.toBeInTheDocument();
-    expect(within(primarySelector).getByRole("option", { name: "开发" })).toBeVisible();
-    fireEvent.change(primarySelector, { target: { value: "dev" } });
-    expect(onChangePrimaryAgent).toHaveBeenCalledWith("dev");
+    expect(screen.queryByRole("combobox", { name: "主 Agent" })).toBeNull();
+    // The unavailable member stays visible and stays marked, but cannot take first place.
     expect(screen.getByRole("tab", { name: /开发经理.*不可用/u })).toBeVisible();
+    expect(onChangePrimaryAgent).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "删除 Agent" })).toBeVisible();
   });
 });
 
 function renderDetail(overrides: Partial<AgentTeamDetailProps> = {}) {
   return render(<AgentTeamDetail {...detailProps(overrides)} />);
+}
+
+/**
+ * `AGENT.md` now reads by default; editing is an explicit step, so tests take it too. Idempotent
+ * because the component keeps edit mode across a rerender.
+ */
+function enterMarkdownEdit(): void {
+  const enter = screen.queryByRole("button", { name: "编辑" });
+  if (enter !== null) {
+    fireEvent.click(enter);
+  }
 }
 
 function detailProps(overrides: Partial<AgentTeamDetailProps> = {}): AgentTeamDetailProps {

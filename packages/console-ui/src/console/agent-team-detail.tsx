@@ -11,11 +11,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
-import {
-  AgentMarkdownMentionEditor,
-  CopyableAgentSlug,
-} from "@/console/agent-markdown-mention-editor";
+import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
+import { AgentMemberStrip } from "@/console/agent-member-strip";
+import { AgentPortraitPicker } from "@/console/agent-portrait-picker";
+import { type ExecutionEngine } from "@/console/provider-mark";
+import { AgentMarkdownMentionEditor } from "@/console/agent-markdown-mention-editor";
 import {
   findExecutionModel,
   findPiExecutionModel,
@@ -25,6 +25,8 @@ import {
   resolveProfileForCli,
   resolveProfileForModel,
 } from "@/console/execution-profile-registry";
+import { splitAgentMarkdown, withAgentMarkdownBody } from "@/console/agent-markdown-body";
+import { MarkdownMessage } from "@/console/markdown-message";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
@@ -34,7 +36,19 @@ export interface AgentTeamDetailMember {
   displayName: string;
   description: string;
   available?: boolean;
+  /** Chosen face; null or absent leaves the member on the slug default. */
+  portraitId?: string | null;
   executionProfile?: AgentExecutionProfileDocument;
+}
+
+/** Shapes an execution profile for the portrait badge. Exported: other views need it too. */
+export function profileEngine(
+  profile: AgentExecutionProfile | undefined,
+): { cli: ExecutionEngine; providerId?: string } | undefined {
+  if (profile === undefined) {
+    return undefined;
+  }
+  return { cli: profile.cli, providerId: "providerId" in profile ? profile.providerId : undefined };
 }
 
 export type AgentExecutionProfile = {
@@ -175,7 +189,22 @@ export interface AgentTeamDetailProps {
   memberActions?: AgentTeamActionSlot;
   onAddMember?(): void | Promise<void>;
   onChangePrimaryAgent?(memberSlug: string): void | Promise<void>;
+  /**
+   * New full order after a drag or a keyboard move. The first entry is the primary Agent — the
+   * position *is* the appointment, so the host does not receive a separate primary change.
+   */
+  onReorderMembers?(memberSlugs: string[]): void | Promise<void>;
   onSelectMember(memberSlug: string): void;
+  /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
+  onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
+  /**
+   * Identity edits are reported as fields. The host owns writing them back into the file's
+   * frontmatter, so this view never has to parse or serialise YAML.
+   */
+  onChangeMemberIdentity?(
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ): void;
   onChangeMember(memberSlug: string, agentMarkdown: string): void;
   onSaveMember(memberSlug: string): void | Promise<void>;
   onCheckExternalChange?(memberSlug: string): void | Promise<void>;
@@ -209,7 +238,10 @@ export function AgentTeamDetail({
   memberActions,
   onAddMember,
   onChangePrimaryAgent,
+  onReorderMembers,
   onSelectMember,
+  onChangeMemberPortrait,
+  onChangeMemberIdentity,
   onChangeMember,
   onSaveMember,
   onCheckExternalChange,
@@ -244,6 +276,8 @@ export function AgentTeamDetail({
     () => createProfileEditors(team),
   );
   const profileEditorsTeamKeyRef = useRef(team.teamKey);
+  /** Reading is the default; switching members returns to it rather than carrying edit mode over. */
+  const [editingMarkdown, setEditingMarkdown] = useState(false);
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
@@ -256,6 +290,13 @@ export function AgentTeamDetail({
     : profileEditors[selectedMember.slug];
   const profileDocument = profileEditor?.document ?? null;
   const profileDraft = profileEditor?.draft ?? null;
+  /**
+   * The engine mark follows the unsaved draft, not the saved binding: the user changing the
+   * engine dropdown is exactly when they look at the portrait to check it took effect, and a
+   * mark that still shows the old engine reads as "the change did not register".
+   */
+  const memberEngineMark = (member: AgentTeamDetailMember): ReturnType<typeof profileEngine> =>
+    profileEngine(profileEditors[member.slug]?.draft ?? member.executionProfile?.effectiveProfile);
   const profileStatus = profileEditor?.status ?? "idle";
   const profileError = profileEditor?.error ?? null;
   const primaryMember = availableMembers.find((member) => member.slug === team.primaryAgentSlug);
@@ -286,6 +327,12 @@ export function AgentTeamDetail({
     && selectedEditor.isDirty
     && selectedEditor.externalChangeStatus !== "conflict"
     && selectedEditor.saveStatus !== "saving";
+  /**
+   * The two drafts stay separate underneath — that is the isolation rule for a partial failure —
+   * but the user gets one Save. Splitting the button was leaking an implementation boundary into
+   * the interface and left two save controls 421px apart on the page.
+   */
+  const unsavedItemCount = (selectedEditor?.isDirty === true ? 1 : 0) + (profileDirty ? 1 : 0);
   const canAddMember = !readOnly
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
@@ -428,6 +475,33 @@ export function AgentTeamDetail({
     }
   };
 
+  const canReorder = !readOnly && onReorderMembers !== undefined && orderedMembers.length > 1;
+
+  const canSaveCurrentMember = !readOnly
+    && selectedMember !== null
+    && selectedEditor?.loadStatus === "ready"
+    && selectedEditor.externalChangeStatus !== "conflict"
+    && selectedEditor.saveStatus !== "saving"
+    && profileStatus !== "saving"
+    && unsavedItemCount > 0
+    && (!profileDirty || profileDraftValid);
+
+  /**
+   * Saves everything dirty on the current member. Each half still reports its own outcome, so a
+   * failing execution profile does not roll back an already-saved `AGENT.md`.
+   */
+  const saveCurrentMember = async (): Promise<void> => {
+    if (selectedMember === null) {
+      return;
+    }
+    if (profileDirty && !await saveExecutionProfile(selectedMember.slug)) {
+      return;
+    }
+    if (selectedEditor?.isDirty === true) {
+      await onSaveMember(selectedMember.slug);
+    }
+  };
+
   const saveExecutionProfile = async (
     memberSlug = selectedMember?.slug,
   ): Promise<boolean> => {
@@ -529,14 +603,14 @@ export function AgentTeamDetail({
     <section className="min-h-0" aria-labelledby="agent-team-detail-title" data-testid="agent-team-detail">
       <button
         type="button"
-        className="mb-7 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+        className="mb-4 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
         onClick={() => requestGuardedAction(onLeave)}
       >
         <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         {t("console.agentTeamDetail.back")}
       </button>
 
-      <header className="border-b border-line pb-7">
+      <header>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
@@ -564,7 +638,7 @@ export function AgentTeamDetail({
                 </span>
               ) : null}
             </div>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-sub">
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-sub">
               {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
             </p>
           </div>
@@ -758,70 +832,47 @@ export function AgentTeamDetail({
           </div>
         ) : null}
 
-        <div className="mt-6 flex min-h-8 flex-wrap items-center gap-3 text-sm">
-          <span className="text-hint">{t("console.agentTeamDetail.primaryAgent")}</span>
-          {!readOnly ? (
-            <div className="relative">
-              <select
-                className="h-8 min-w-40 appearance-none rounded-md border border-line bg-card py-1 pl-2.5 pr-8 text-sm text-ink transition-colors hover:bg-hover disabled:cursor-wait disabled:text-sub"
-                aria-label={t("console.agentTeamDetail.primaryAgent")}
-                value={primaryMember?.slug ?? ""}
-                disabled={
-                  onChangePrimaryAgent === undefined
-                  || primaryAgentChangeStatus === "saving"
-                  || availableMembers.length === 0
-                }
-                onChange={(event) => void onChangePrimaryAgent?.(event.currentTarget.value)}
-              >
-                {primaryMember === undefined ? (
-                  <option value="" disabled>{t("console.agentTeamDetail.notSet")}</option>
-                ) : null}
-                {availableMembers.map((member) => (
-                  <option key={member.slug} value={member.slug}>
-                    {member.displayName || `@${member.slug}`}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-hint"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </div>
-          ) : (
-            <span className="rounded-md border border-line bg-card px-2.5 py-1.5 text-ink">
-              {primaryMember?.displayName || t("console.agentTeamDetail.notSet")}
+        {/*
+          No primary-Agent select. Appointing is dragging a member into first place, so the
+          ability lives on the member strip itself; a second entry point for the same act only
+          gives the two a chance to disagree. The outcome is still announced here.
+        */}
+        <div className="text-xs text-sub empty:hidden" aria-live="polite">
+          {primaryAgentChangeStatus === "saving" ? (
+            <span className="inline-flex items-center" role="status">
+              <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+              {t("console.agentTeamDetail.saving")}
             </span>
-          )}
-          <span className="min-h-5 text-xs text-sub" aria-live="polite">
-            {primaryAgentChangeStatus === "saving" ? (
-              <span className="inline-flex items-center" role="status">
-                <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                {t("console.agentTeamDetail.saving")}
-              </span>
-            ) : null}
-            {primaryAgentChangeStatus === "saved" ? (
-              <span className="inline-flex items-center" role="status">
-                <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                {t("console.agentTeamDetail.saved")}
-              </span>
-            ) : null}
-            {primaryAgentChangeStatus === "failed" ? (
-              <span className="text-danger" role="alert">
-                {t("console.agentTeamDetail.switchFailed", {
-                  error: primaryAgentChangeError || t("console.agentTeamDetail.tryAgain"),
-                })}
-              </span>
-            ) : null}
-          </span>
+          ) : null}
+          {primaryAgentChangeStatus === "saved" ? (
+            <span className="inline-flex items-center" role="status">
+              <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("console.agentTeamDetail.saved")}
+            </span>
+          ) : null}
+          {primaryAgentChangeStatus === "failed" ? (
+            <span className="text-danger" role="alert">
+              {t("console.agentTeamDetail.switchFailed", {
+                error: primaryAgentChangeError || t("console.agentTeamDetail.tryAgain"),
+              })}
+            </span>
+          ) : null}
         </div>
       </header>
 
-      <div className="border-b border-line py-6">
+      <div className="pt-7">
         <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
-            {t("console.agentTeamDetail.members")}
-          </h2>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2 className="text-sm font-medium text-ink">
+              {t("console.agentTeamDetail.members")}
+            </h2>
+            {/* Standing and visible, not sr-only: sighted users have to learn this too. */}
+            {canReorder ? (
+              <span id="agent-team-member-reorder-hint" className="truncate text-xs text-hint">
+                {t("console.agentTeamDetail.reorderHint")}
+              </span>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             {memberSelectorActions}
             {canAddMember && orderedMembers.length > 0 ? (
@@ -844,34 +895,25 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         </div>
-        <div
-          className="scroll-thin flex min-w-0 flex-nowrap gap-2 overflow-x-auto pb-2"
-          role="tablist"
-          aria-label={t("console.agentTeamDetail.members")}
-          data-testid="agent-team-member-selector"
-        >
-          {orderedMembers.map((member) => {
-            const selected = member.slug === selectedMember?.slug;
-            const dirty = state.memberEditors[member.slug]?.isDirty === true;
-            const primary = member.slug === team.primaryAgentSlug;
-            return (
-              <button
-                key={member.slug}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls="agent-team-member-editor"
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors",
-                  selected
-                    ? "border-line-strong bg-sel text-ink"
-                    : "border-line bg-card text-sub hover:bg-hover hover:text-ink",
-                )}
-                onClick={() => onSelectMember(member.slug)}
-              >
-                <AgentInitialAvatar displayName={member.displayName} slug={member.slug} />
+        <AgentMemberStrip
+          reorderable={canReorder}
+          onSelect={onSelectMember}
+          onReorder={(slugs) => void onReorderMembers?.(slugs)}
+          items={orderedMembers.map((member) => ({
+            slug: member.slug,
+            selected: member.slug === selectedMember?.slug,
+            primary: member.slug === team.primaryAgentSlug,
+            disabled: member.available === false,
+            content: (
+              <>
+                <AgentPortrait
+                  displayName={member.displayName}
+                  slug={member.slug}
+                  portraitId={member.portraitId}
+                  engine={memberEngineMark(member)}
+                />
                 <span>{member.displayName || `@${member.slug}`}</span>
-                {primary ? (
+                {member.slug === team.primaryAgentSlug ? (
                   <span className="text-xs text-hint">
                     {t("console.agentTeamDetail.primarySuffix")}
                   </span>
@@ -881,17 +923,17 @@ export function AgentTeamDetail({
                     {t("console.agentTeamDetail.unavailableSuffix")}
                   </span>
                 ) : null}
-                {dirty ? (
+                {state.memberEditors[member.slug]?.isDirty === true ? (
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-accent"
                     title={t("console.agentTeamDetail.unsaved")}
                     aria-label={t("console.agentTeamDetail.unsaved")}
                   />
                 ) : null}
-              </button>
-            );
-          })}
-        </div>
+              </>
+            ),
+          }))}
+        />
         {addMemberStatus === "failed" && orderedMembers.length > 0 ? (
           <p className="mt-2 text-sm text-danger" role="alert">
             {t("console.agentTeamDetail.addFailed", {
@@ -923,7 +965,7 @@ export function AgentTeamDetail({
         ) : null}
 
         {selectedMember === null ? (
-          <div className="border-y border-line px-6 py-12 text-center">
+          <div className="rounded-lg bg-sunken px-6 py-12 text-center">
             <p className="text-sm font-medium text-ink">
               {t("console.agentTeamDetail.noMembers")}
             </p>
@@ -956,7 +998,7 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         ) : selectedEditor?.loadStatus === "failed" ? (
-          <div className="border-y border-line py-8" role="alert">
+          <div className="rounded-lg bg-sunken px-6 py-8" role="alert">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <p className="text-sm font-medium text-danger">
                 {t("console.agentTeamDetail.agentFileUnreadable", {
@@ -971,54 +1013,81 @@ export function AgentTeamDetail({
             </Button>
           </div>
         ) : selectedEditor?.loadStatus !== "ready" ? (
-          <div className="flex min-h-48 items-center justify-center border-y border-line text-sm text-sub" role="status">
+          <div className="flex min-h-48 items-center justify-center rounded-lg bg-sunken text-sm text-sub" role="status">
             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
             {t("console.agentTeamDetail.readingAgentFile")}
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <AgentInitialAvatar
+            {/*
+              Two columns rather than one long stack. Configuration is the main line and the
+              body is reference; side by side, that ranking is visible. Stacked they are just two
+              bands of equal width, and half the horizontal space goes unused.
+            */}
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+            {/*
+              The whole column sticks, not just the card: pinning the card alone lets the save
+              row below it scroll away. `self-start` is required — a grid item stretches to the
+              row height by default, which leaves a sticky element no room to move.
+            */}
+            <div className="lg:sticky lg:top-4 lg:self-start">
+            {/*
+              The body gets no inner scrollbar: reading a long persona through a small window is
+              worse than scrolling the page. It extends naturally and the panel scrolls, while the
+              main line stays pinned so configuration is still in view while reading.
+            */}
+            <div
+              className="rounded-lg border border-line bg-card p-4"
+              data-testid="agent-execution-profile-editor"
+            >
+              {/*
+                Identity belongs in this card rather than in a band of its own above it. That
+                band added nothing the member strip had not already shown — it simply restated the
+                selection, with the portrait and the name each appearing twice. The strip answers
+                "which member"; this card answers "who is it and how does it run".
+              */}
+              <div className="flex items-center gap-3">
+                <AgentPortraitPicker
                   displayName={selectedEditor.displayName || selectedMember.displayName}
                   slug={selectedMember.slug}
-                  size="heading"
-                  className="mt-0.5"
+                  portraitId={selectedMember.portraitId ?? null}
+                  engine={memberEngineMark(selectedMember)}
+                  disabled={readOnly || onChangeMemberPortrait === undefined}
+                  onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
                 />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate text-lg font-semibold tracking-[-0.01em] text-ink">
-                      {selectedEditor.displayName || selectedMember.displayName || `@${selectedMember.slug}`}
-                    </h2>
-                    {selectedEditor.isDirty ? (
-                      <span className="text-xs font-medium text-accent">
-                        {t("console.agentTeamDetail.unsaved")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-sub">
-                    {selectedEditor.description || selectedMember.description || `@${selectedMember.slug}`}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <input
+                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                    aria-label={t("console.agentTeamDetail.memberNameLabel")}
+                    value={selectedEditor.displayName}
+                    placeholder={`@${selectedMember.slug}`}
+                    disabled={readOnly || onChangeMemberIdentity === undefined}
+                    onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                      displayName: event.currentTarget.value,
+                    })}
+                  />
+                  <input
+                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                    aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
+                    value={selectedEditor.description}
+                    placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}
+                    disabled={readOnly || onChangeMemberIdentity === undefined}
+                    onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                      description: event.currentTarget.value,
+                    })}
+                  />
                 </div>
+                {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
               </div>
-              {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
-            </div>
 
-            <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-7 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+                  <h3 className="text-[13px] font-semibold tracking-[0.02em] text-ink">
                     {t("console.agentTeamDetail.runtimeConfiguration")}
                   </h3>
-                  <p className="mt-1 text-sm text-sub">
-                    {t("console.agentTeamDetail.runtimeOwnership", {
-                      team: team.name?.trim() || t("console.agentTeamDetail.unnamed"),
-                      slug: selectedMember.slug,
-                    })}
-                  </p>
                 </div>
                 {profileDocument !== null ? (
-                  <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-sub">
+                  <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-[11px] font-medium text-sub">
                     {profileDocument.binding.source === "recommended"
                       ? t("console.agentTeamDetail.followRecommendation")
                       : t("console.agentTeamDetail.userOverride")}
@@ -1027,12 +1096,12 @@ export function AgentTeamDetail({
               </div>
               {profileDraft !== null && profileDocument !== null ? (
                 <>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <label className="grid gap-1.5 text-xs text-hint">
+                  <div className="mt-4 grid gap-3">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
                       <select
                         aria-label={t("console.agentTeamDetail.executionEngineLabel")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
                         onChange={(event) => updateProfileEditor(selectedMember.slug, {
@@ -1047,11 +1116,11 @@ export function AgentTeamDetail({
                       </select>
                     </label>
                     {profileDraft.cli === "pi" ? (
-                      <label className="grid gap-1.5 text-xs text-hint">
+                      <label className="grid content-start gap-1.5 text-xs text-hint">
                         Provider
                         <select
                           aria-label="Provider"
-                          className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                          className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
                           value={profileDraft.providerProfileId}
                           disabled={readOnly || profileStatus === "saving"}
                           aria-invalid={profileProviderError !== null}
@@ -1081,11 +1150,11 @@ export function AgentTeamDetail({
                         ) : null}
                       </label>
                     ) : null}
-                    <label className="grid gap-1.5 text-xs text-hint">
-                      Model
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
+                      {t("console.agentTeamDetail.modelLabel")}
                       <select
                         aria-label="Model"
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
                         value={profileDraft.model}
                         disabled={readOnly || profileStatus === "saving"}
                         aria-invalid={profileModelError !== null}
@@ -1113,11 +1182,11 @@ export function AgentTeamDetail({
                       </select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
-                    <label className="grid gap-1.5 text-xs text-hint">
+                    <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
                       <select
                         aria-label={t("console.agentTeamDetail.effort")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                        className="h-9 rounded-md border border-line-strong bg-sunken px-2 text-sm text-ink transition-colors hover:border-accent/60 focus:border-accent focus:outline-none"
                         value={profileDraft.effort}
                         disabled={readOnly || profileStatus === "saving"}
                         aria-invalid={profileEffortError !== null}
@@ -1143,9 +1212,6 @@ export function AgentTeamDetail({
                       {t("console.agentTeamDetail.legacyProfileNotice")}
                     </p>
                   ) : null}
-                  <p className="mt-3 text-sm text-sub">
-                    {t("console.agentTeamDetail.runtimeValidationNotice")}
-                  </p>
                   {!profileDraftValid ? (
                     <p className="mt-2 text-sm text-sub">
                       {t("console.agentTeamDetail.savedUnchanged")}
@@ -1184,19 +1250,6 @@ export function AgentTeamDetail({
                             {t("console.agentTeamDetail.restoreRecommendation")}
                           </Button>
                         ) : null}
-                      <Button
-                        type="button"
-                        disabled={
-                          !profileDirty
-                          || profileStatus === "saving"
-                          || !profileDraftValid
-                        }
-                        onClick={() => void saveExecutionProfile(selectedMember.slug)}
-                      >
-                        {profileStatus === "saving"
-                          ? t("console.agentTeamDetail.saving")
-                          : t("console.agentTeamDetail.saveRuntime")}
-                      </Button>
                     </div>
                   ) : null}
                 </>
@@ -1207,26 +1260,117 @@ export function AgentTeamDetail({
                   })}
                 </p>
               )}
+              {!readOnly && selectedEditor.externalChangeStatus !== "conflict" ? (
+                <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                  {selectedEditor.saveStatus === "saving" || profileStatus === "saving" ? (
+                    <span className="mr-auto inline-flex items-center text-sm text-sub" role="status">
+                      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                      {t("console.agentTeamDetail.saving")}
+                    </span>
+                  ) : unsavedItemCount > 0 ? (
+                    <span className="mr-auto text-sm text-sub">
+                      {t("console.agentTeamDetail.unsavedCount", { count: String(unsavedItemCount) })}
+                    </span>
+                  ) : null}
+                    <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={unsavedItemCount === 0 || selectedEditor.saveStatus === "saving"}
+                    onClick={() => {
+                      if (profileDirty && profileDocument !== null) {
+                        updateProfileEditor(selectedMember.slug, {
+                          draft: profileDocument.effectiveProfile,
+                          error: null,
+                        });
+                      }
+                      onDiscardMember(selectedMember.slug);
+                    }}
+                  >
+                    {t("console.agentTeamDetail.discardChanges")}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!canSaveCurrentMember}
+                    onClick={() => void saveCurrentMember()}
+                  >
+                    {selectedEditor.saveStatus === "saving" || profileStatus === "saving"
+                      ? t("console.agentTeamDetail.savingNoEllipsis")
+                      : t("console.agentTeamDetail.save")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <label htmlFor="agent-team-markdown-editor" className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
-                AGENT.md
-              </label>
-              <div className="flex items-center gap-1 text-xs text-hint">
-                {readOnly ? <span>{t("console.agentTeamDetail.readOnlyPrefix")}</span> : null}
-                <CopyableAgentSlug slug={selectedMember.slug} />
+            <div className="min-w-0">
+            {/*
+              The right column is not a card. The left one is a control surface — fields and
+              selects — so a border earns its place there; the body is reading material, and
+              boxing it too is just habit. Grouping here is whitespace and type, not rules.
+            */}
+            <div>
+            {/*
+              The edit entry follows the registered light-action pattern: absolutely positioned
+              over the top-right of the body, transparent until the block is hovered or takes
+              keyboard focus — a code block's copy button. It does not deserve its own row.
+
+              The `@slug` and its copy button that used to share that row are gone: typing `@` in
+              the editor already completes member names, so copying a slug by hand is a need that
+              does not exist, and it only took up space.
+            */}
+            <div className="group relative">
+              {readOnly ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1 z-10 h-7 bg-canvas px-2 text-xs opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                  aria-pressed={editingMarkdown}
+                  onClick={() => setEditingMarkdown((editing) => !editing)}
+                >
+                  {editingMarkdown
+                    ? t("console.agentTeamDetail.doneEditingMarkdown")
+                    : t("console.agentTeamDetail.editMarkdown")}
+                </Button>
+              )}
+            {/*
+              Reading is the common case on this page — people come here to adjust how a member
+              runs, not to write its persona — so the body is rendered by default and editing is
+              an explicit second step. Both views show the same draft, so an unsaved change is
+              still visible after leaving the editor.
+            */}
+            {editingMarkdown && !readOnly ? (
+              <AgentMarkdownMentionEditor
+                id="agent-team-markdown-editor"
+                value={splitAgentMarkdown(selectedEditor.draftMarkdown).body}
+                members={mentionMembers}
+                label={t("console.agentTeamDetail.responsibilitiesLabel", {
+                  name: selectedEditor.displayName || selectedMember.displayName || selectedMember.slug,
+                })}
+                readOnly={readOnly}
+                disabled={selectedEditor.saveStatus === "saving"}
+                onValueChange={(body) => onChangeMember(
+                  selectedMember.slug,
+                  withAgentMarkdownBody(selectedEditor.draftMarkdown, body),
+                )}
+              />
+            ) : (
+              <div
+                id="agent-team-markdown-editor"
+                className="min-h-[220px] px-1"
+                data-testid="agent-team-markdown-preview"
+              >
+                {splitAgentMarkdown(selectedEditor.draftMarkdown).body.trim() === "" ? (
+                  <p className="text-sm text-hint">{t("console.agentTeamDetail.emptyMarkdown")}</p>
+                ) : (
+                  <MarkdownMessage content={splitAgentMarkdown(selectedEditor.draftMarkdown).body} />
+                )}
               </div>
+            )}
             </div>
-            <AgentMarkdownMentionEditor
-              id="agent-team-markdown-editor"
-              value={selectedEditor.draftMarkdown}
-              members={mentionMembers}
-              label={`${selectedEditor.displayName || selectedMember.displayName || selectedMember.slug} AGENT.md`}
-              readOnly={readOnly}
-              disabled={selectedEditor.saveStatus === "saving"}
-              onValueChange={(agentMarkdown) => onChangeMember(selectedMember.slug, agentMarkdown)}
-            />
+            </div>
+            </div>
+            </div>
 
             {selectedEditor.externalChangeStatus === "reloaded" ? (
               <div className="mt-3 border-l-2 border-line-strong bg-sunken px-3 py-2 text-sm text-sub" role="status">
@@ -1284,33 +1428,6 @@ export function AgentTeamDetail({
               </div>
             ) : null}
 
-            {!readOnly && selectedEditor.externalChangeStatus !== "conflict" ? (
-              <div className="mt-4 flex items-center justify-end gap-2">
-                {selectedEditor.saveStatus === "saving" ? (
-                  <span className="mr-auto inline-flex items-center text-sm text-sub" role="status">
-                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                    {t("console.agentTeamDetail.saving")}
-                  </span>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={!selectedEditor.isDirty || selectedEditor.saveStatus === "saving"}
-                  onClick={() => onDiscardMember(selectedMember.slug)}
-                >
-                  {t("console.agentTeamDetail.discardChanges")}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!canSaveCurrent}
-                  onClick={() => void onSaveMember(selectedMember.slug)}
-                >
-                  {selectedEditor.saveStatus === "saving"
-                    ? t("console.agentTeamDetail.savingNoEllipsis")
-                    : t("console.agentTeamDetail.save")}
-                </Button>
-              </div>
-            ) : null}
           </>
         )}
       </div>

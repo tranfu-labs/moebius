@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ChevronDown,
+  ChevronLeft,
   Copy,
   FolderOpen,
   LoaderCircle,
@@ -15,7 +16,9 @@ import {
   TeamBuilderView,
   type TeamBuilderViewState,
 } from "@/ai-team-builder/team-builder-view";
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentMemberStack } from "@/console/agent-member-stack";
+import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
+import { type ExecutionEngine } from "@/console/provider-mark";
 import { AgentTeamSaveFeedback, type AgentTeamSaveFeedbackView } from "@/console/agent-team-save-feedback";
 import {
   AgentTeamDetail,
@@ -46,6 +49,7 @@ export interface OperatorAgentTeamMember {
   displayName: string;
   description: string;
   available?: boolean;
+  portraitId?: string | null;
   executionProfile?: AgentTeamDetailMember["executionProfile"];
 }
 
@@ -145,6 +149,9 @@ export function AgentTeamsPage({
   onOpenTeam,
   onCloseTeam,
   onSelectMember,
+  onChangeMemberPortrait,
+  onChangeMemberIdentity,
+  onReorderMembers,
   onChangePrimaryAgent,
   onAddMember,
   onUpdateTeamInformation,
@@ -188,6 +195,13 @@ export function AgentTeamsPage({
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
+  onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void;
+  onChangeMemberIdentity?: (
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => void;
+  onReorderMembers?: (teamKey: string, memberSlugs: string[]) => void | Promise<void>;
   onChangePrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onAddMember?: (teamKey: string) => void | Promise<void>;
   onUpdateTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
@@ -623,6 +637,17 @@ export function AgentTeamsPage({
                       }
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
+                  onChangeMemberPortrait={onChangeMemberPortrait === undefined
+                    ? undefined
+                    : (memberSlug, portraitId) =>
+                      onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId)}
+                  onChangeMemberIdentity={onChangeMemberIdentity === undefined
+                    ? undefined
+                    : (memberSlug, identity) =>
+                      onChangeMemberIdentity(openedTeam.teamKey, memberSlug, identity)}
+                  onReorderMembers={onReorderMembers === undefined
+                    ? undefined
+                    : (memberSlugs) => onReorderMembers(openedTeam.teamKey, memberSlugs)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;
@@ -688,19 +713,33 @@ export function AgentTeamsPage({
         ) : (
           <>
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="mb-2 text-xs font-medium text-hint">{t("console.agentTeams.appManagement")}</p>
-                <h1 id="agent-teams-title" className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-                  {t("console.agentTeams.title")}
-                </h1>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-sub">
-                  {t("console.agentTeams.description")}
-                </p>
+              <div className="flex min-w-0 items-start gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="-ml-2 shrink-0"
+                  aria-label={t("console.agentTeams.returnConversation")}
+                  onClick={onBack}
+                >
+                  <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+                </Button>
+                <div className="min-w-0">
+                  <h1
+                    id="agent-teams-title"
+                    className="text-[28px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink"
+                  >
+                    {t("console.agentTeams.title")}
+                  </h1>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-sub">
+                    {t("console.agentTeams.description")}
+                  </p>
+                </div>
               </div>
               {state.status === "ready" && (onCreateTeam !== undefined || aiTeamBuilder !== undefined) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" className="mt-6 shrink-0">
+                    <Button type="button" className="shrink-0">
                       <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                       {t("console.agentTeams.newTeam")}
                       <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -823,22 +862,53 @@ export function AgentTeamsPage({
                     </div>
                   </div>
                 ) : null}
-                <div className="divide-y divide-line border-y border-line" data-testid="agent-team-list">
-                  {state.teams.map((team) => (
-                    <AgentTeamRow
-                      key={team.teamKey}
-                      team={team}
-                      useStackedLayout={useStackedRows}
-                      onOpen={() => openTeam(team.teamKey)}
-                    />
-                  ))}
-                </div>
+                {state.teams.length === 0 ? (
+                  <div
+                    className="rounded-[14px] border border-line bg-card px-5 py-10 text-center"
+                    data-testid="agent-teams-empty"
+                  >
+                    <p className="text-sm font-medium text-ink">{t("console.agentTeams.emptyTitle")}</p>
+                    <p className="mt-1.5 text-sm leading-6 text-sub">
+                      {t("console.agentTeams.emptyDescription")}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-7" data-testid="agent-team-list">
+                    {teamGroups(state.teams).map((group) => (
+                      <section key={group.kind} data-testid="agent-team-group" data-group={group.kind}>
+                        <h2 className="mb-2.5 flex items-center gap-2 text-[12.5px] font-medium text-sub">
+                          {t(group.kind === "official"
+                            ? "console.agentTeams.groupOfficial"
+                            : "console.agentTeams.groupMine")}
+                          <span className="tabular-nums text-hint">{group.teams.length}</span>
+                        </h2>
+                        <div
+                          className={cn(
+                            "grid gap-3",
+                            // Column count follows available width, not team count: a card
+                            // has a minimum readable width and the container fits as many as
+                            // it can. Keying off count instead let a lone team stretch to the
+                            // full 960px measure, far past what its content can fill.
+                            useStackedRows
+                              ? "grid-cols-1"
+                              : "grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))]",
+                          )}
+                        >
+                          {group.teams.map((team) => (
+                            <AgentTeamRow
+                              key={team.teamKey}
+                              team={team}
+                              useStackedLayout={useStackedRows}
+                              onOpen={() => openTeam(team.teamKey)}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : null}
-
-            <Button type="button" variant="outline" className="mt-6" onClick={onBack}>
-              {t("console.agentTeams.returnConversation")}
-            </Button>
           </>
         )}
       </div>
@@ -910,9 +980,15 @@ function TeamMoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label={triggerLabel}>
+        {/*
+          Icon only, matching the member's own ···. This used to also spell out "More", but all
+          three entries act on the object itself — open its location, copy it, delete it — while
+          "More" suggests there is more of the screen to see. It said nothing about what the menu
+          was, and left two identically named buttons with different scopes on one page. Scope is
+          carried by the accessible name and by placement instead.
+        */}
+        <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={triggerLabel}>
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          {t("console.agentTeams.more")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -1200,19 +1276,15 @@ function AgentTeamRow({
 }): JSX.Element {
   const { t } = useI18n();
   const orderedMembers = orderTeamMembers(team);
-  const visibleMemberLimit = 3;
-  const visibleMembers = orderedMembers.slice(0, visibleMemberLimit);
-  const hiddenMemberCount = Math.max(0, orderedMembers.length - visibleMembers.length);
   const primaryAgent = orderedMembers.find((member) => member.slug === team.primaryAgentSlug);
+  const showAllMembers = team.status !== "needs-repair";
 
   return (
     <button
       type="button"
       className={cn(
-        "group grid w-full text-left transition-colors hover:bg-hover focus-visible:bg-hover",
-        useStackedLayout
-          ? "grid-cols-1"
-          : "grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]",
+        "group flex h-full w-full flex-col rounded-[14px] border border-line bg-card p-4 text-left",
+        "transition-colors hover:bg-hover focus-visible:bg-hover",
       )}
       data-testid="agent-team-row"
       data-team-key={team.teamKey}
@@ -1220,13 +1292,29 @@ function AgentTeamRow({
       data-can-create-conversation={team.canCreateConversation ? "true" : "false"}
       onClick={onOpen}
     >
-      <span className="min-w-0 px-5 py-5">
-        <span className="flex min-w-0 items-start gap-2">
-          <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">
-            {teamName(t, team)}
-          </span>
-          <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
-            {team.ownership === "system" ? <TeamStatusBadge kind="official" /> : null}
+      <span className="flex min-w-0 items-start gap-3">
+        {primaryAgent === undefined || team.status === "needs-repair" ? (
+          <span
+            aria-hidden="true"
+            className="inline-flex h-14 w-14 shrink-0 rounded-xl border border-dashed border-line-strong"
+          />
+        ) : (
+          <AgentPortrait
+            size="hero"
+            shape="squircle"
+            displayName={primaryAgent.displayName}
+            slug={primaryAgent.slug}
+            portraitId={primaryAgent.portraitId}
+            engine={memberEngine(primaryAgent)}
+            className="rounded-xl"
+            title={teamName(t, team)}
+          />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+            <span className="max-w-full truncate text-[17px] font-semibold leading-6 tracking-[-0.01em] text-ink">
+              {teamName(t, team)}
+            </span>
             {team.officialManagement?.customizationStatus === "customized"
               ? <TeamStatusBadge kind="customized" />
               : null}
@@ -1236,77 +1324,58 @@ function AgentTeamRow({
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
-        </span>
-        <span className="mt-2 block line-clamp-2 text-sm leading-5 text-sub">
-          {teamDescription(t, team)}
-        </span>
-        <span className="mt-3 block text-xs text-hint">
-          {teamMemberSummary(t, team, primaryAgent?.displayName)}
+          <span className="mt-1 line-clamp-2 text-[13.5px] leading-5 text-sub">
+            {teamDescription(t, team)}
+          </span>
         </span>
       </span>
 
-      <span
-        className={cn(
-          "flex min-w-0 items-center gap-2 px-5 py-5",
-          useStackedLayout ? "border-t border-line pt-4" : "border-l border-line",
-        )}
-        data-testid="agent-team-members"
-      >
-        {team.status === "needs-repair" ? (
-          <span className="text-sm text-sub">{t("console.agentTeams.membersUnavailable")}</span>
-        ) : visibleMembers.map((member) => {
-          const isPrimary = member.slug === team.primaryAgentSlug;
-          return (
-            <span
-              key={member.slug}
-              className="inline-flex h-8 w-28 shrink-0 items-center rounded-md border border-line bg-canvas px-2 text-xs font-normal text-ink"
-              title={member.displayName}
-            >
-              <AgentInitialAvatar displayName={member.displayName} slug={member.slug} className="mr-1.5" />
-              <span className="min-w-0 flex-1 truncate">{member.displayName}</span>
-              {isPrimary ? (
-                <span className="ml-1 whitespace-nowrap text-hint">
-                  {t("console.agentTeams.primarySuffix")}
-                </span>
-              ) : null}
+      <span className="mt-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pt-4">
+        <span data-testid="agent-team-members">
+          {showAllMembers ? (
+            // The primary agent already owns the big portrait above; repeating it here
+            // is the same face twice in one card. This strip answers "who else".
+            <AgentMemberStack
+              members={withEngines(orderedMembers.filter((member) => member.slug !== team.primaryAgentSlug))}
+              primarySlug={team.primaryAgentSlug}
+              allMembers={withEngines(orderedMembers)}
+              limit={5}
+            />
+          ) : (
+            <span className="text-[12.5px] leading-5 text-sub">
+              {t("console.agentTeams.membersUnavailable")}
             </span>
-          );
-        })}
-        {team.status !== "needs-repair" && hiddenMemberCount > 0 ? (
-          <span
-            className="inline-flex h-8 shrink-0 items-center rounded-md border border-line bg-canvas px-2.5 text-xs font-normal text-sub"
-            aria-label={t("console.agentTeams.moreMembers", { count: hiddenMemberCount })}
-          >
-            ＋{hiddenMemberCount}
-          </span>
-        ) : null}
+          )}
+        </span>
+        <span className="min-w-0 truncate text-[12.5px] text-hint">
+          {teamMetaLine(t, team, primaryAgent?.displayName)}
+        </span>
+
       </span>
     </button>
   );
 }
 
 function TeamStatusBadge({ kind }: {
-  kind: "official" | "customized" | "update" | "unfinished" | "needs-repair";
+  kind: "customized" | "update" | "unfinished" | "needs-repair";
 }): JSX.Element {
   const { t } = useI18n();
-  const label = kind === "official"
-    ? t("console.agentTeams.official")
-    : kind === "customized"
-      ? t("console.agentTeams.customized")
-      : kind === "update"
-        ? t("console.agentTeams.updateAvailable")
-        : kind === "unfinished"
-          ? t("console.agentTeams.unfinished")
-          : t("console.agentTeams.needsRepair");
+  const label = kind === "customized"
+    ? t("console.agentTeams.customized")
+    : kind === "update"
+      ? t("console.agentTeams.updateAvailable")
+      : kind === "unfinished"
+        ? t("console.agentTeams.unfinished")
+        : t("console.agentTeams.needsRepair");
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] font-medium",
+        "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-[11.5px] font-medium",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
-          : kind === "unfinished" || kind === "customized"
-            ? "border-line-strong bg-sunken text-sub"
-            : "border-line bg-canvas text-sub",
+          : kind === "update"
+            ? "border-[var(--status-info-line)] bg-[var(--status-info-bg)] text-[color:var(--status-info-fg)]"
+            : "border-line-strong text-hint",
       )}
     >
       {label}
@@ -1350,7 +1419,7 @@ function teamDescription(t: Translate, team: OperatorAgentTeam): string {
   return t("console.agentTeams.noDescription");
 }
 
-function teamMemberSummary(
+function teamMetaLine(
   t: Translate,
   team: OperatorAgentTeam,
   primaryAgentName?: string,
@@ -1358,16 +1427,51 @@ function teamMemberSummary(
   if (team.status === "needs-repair") {
     return t("console.agentTeams.cannotCreateConversation");
   }
+  const count = team.members.length;
   if (primaryAgentName !== undefined) {
-    return t("console.agentTeams.memberSummaryPrimary", {
-      count: team.members.length,
-      primary: primaryAgentName,
-    });
+    return t("console.agentTeams.teamMetaPrimary", { primary: primaryAgentName, count });
   }
   if (team.status === "unfinished-draft") {
-    return t("console.agentTeams.memberSummaryUnset", { count: team.members.length });
+    return t("console.agentTeams.teamMetaUnset", { count });
   }
-  return t("console.agentTeams.memberSummaryUnavailable", { count: team.members.length });
+  return t("console.agentTeams.teamMetaUnavailable", { count });
+}
+
+/** The engine a member actually runs on, shaped for the avatar mark. */
+function memberEngine(member: OperatorAgentTeamMember): { cli: ExecutionEngine; providerId?: string } | undefined {
+  const profile = member.executionProfile?.effectiveProfile;
+  if (profile === undefined) {
+    return undefined;
+  }
+  return {
+    cli: profile.cli,
+    providerId: "providerId" in profile ? profile.providerId : undefined,
+  };
+}
+
+function withEngines(members: readonly OperatorAgentTeamMember[]): Array<{
+  slug: string;
+  displayName: string;
+  engine?: { cli: ExecutionEngine; providerId?: string };
+}> {
+  return members.map((member) => ({
+    slug: member.slug,
+    displayName: member.displayName,
+    engine: memberEngine(member),
+  }));
+}
+
+/** Official first, user-built second; empty groups are dropped. */
+function teamGroups(teams: readonly OperatorAgentTeam[]): Array<{
+  kind: "official" | "mine";
+  teams: OperatorAgentTeam[];
+}> {
+  return ([["official", "system"], ["mine", "user"]] as const)
+    .map(([kind, ownership]) => ({
+      kind,
+      teams: teams.filter((team) => team.ownership === ownership),
+    }))
+    .filter((group) => group.teams.length > 0);
 }
 
 function hasTeamLocationIssue(team: OperatorAgentTeam): boolean {
@@ -1378,25 +1482,33 @@ function hasTeamLocationIssue(team: OperatorAgentTeam): boolean {
 function AgentTeamsLoading(): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="mt-8 space-y-4" role="status" aria-label={t("console.agentTeams.loading")}>
-      {[0, 1].map((index) => (
-        <div
-          key={index}
-          className="grid min-h-28 animate-pulse grid-cols-[minmax(0,1fr)_minmax(180px,0.65fr)] overflow-hidden rounded-xl border border-line"
-          data-testid="agent-team-loading-row"
-        >
-          <div className="space-y-3 border-r border-line p-5">
-            <div className="h-4 w-32 rounded bg-hover" />
-            <div className="h-3 w-48 max-w-full rounded bg-hover" />
-            <div className="h-3 w-24 rounded bg-hover" />
+    <div
+      className="mt-8 overflow-hidden rounded-[14px] border border-line bg-card"
+      role="status"
+      aria-label={t("console.agentTeams.loading")}
+    >
+      <div className="h-[38px] border-b border-line bg-sunken" />
+      <div className="divide-y divide-line">
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            className="flex animate-pulse items-start gap-4 px-5 py-3.5"
+            data-testid="agent-team-loading-row"
+          >
+            <div className="mt-0.5 h-8 w-8 shrink-0 rounded-full bg-hover" />
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <div className="h-5 w-36 rounded bg-hover" />
+              <div className="h-3 w-64 max-w-full rounded bg-hover" />
+              <div className="h-3 w-28 rounded bg-hover" />
+            </div>
+            <div className="flex w-[160px] shrink-0 items-center gap-1.5">
+              <div className="h-7 w-7 rounded-full bg-hover" />
+              <div className="h-7 w-7 rounded-full bg-hover" />
+              <div className="h-7 w-7 rounded-full bg-hover" />
+            </div>
           </div>
-          <div className="flex items-center gap-2 p-5">
-            <div className="h-9 w-16 rounded-md bg-hover" />
-            <div className="h-9 w-16 rounded-md bg-hover" />
-            <div className="h-9 w-16 rounded-md bg-hover" />
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
       <span className="sr-only">{t("console.agentTeams.readingInformation")}</span>
     </div>
   );

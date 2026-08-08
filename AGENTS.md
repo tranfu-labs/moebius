@@ -100,7 +100,7 @@
 | 目标账本（goal / milestone / task / 验收 fact） | `openspec/specs/goal-ledger/spec.md` | |
 | 本地会话运行时（jsonl 事实源 / 主 Agent 控制 / 恢复 resume / 附件 / 运行过程） | `openspec/specs/local-console/spec.md` | |
 | 桌面壳（数据根 / 种子 / 团队 / preload 边界 / 打包发布 / 更新） | `openspec/specs/desktop-shell/spec.md` | ADR-0002（CDP 调试通道） |
-| 操作台 UI（时间线 / composer / 侧栏 / onboarding / RelayDemo / Markdown 渲染） | `openspec/specs/console-ui/spec.md` | 设计语言 `packages/console-ui/DESIGN.md` |
+| 操作台 UI（时间线 / composer / 侧栏 / onboarding / RelayDemo / Markdown 渲染） | `openspec/specs/console-ui/spec.md` | 设计语言 `packages/console-ui/DESIGN.md`；Agent 画像资产的生成与再生成流程见 `.claude/skills/generate-avatar-set/` |
 | 设计原型沙盒 | `openspec/specs/design-prototypes/spec.md` | `prototypes/AGENTS.md` |
 | 官网 | `openspec/specs/marketing-site/spec.md` | `sites/marketeam/DEPLOY.md` |
 | 产品标识与品牌资产 | `openspec/specs/product-identity/spec.md` | |

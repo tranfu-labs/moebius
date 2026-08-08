@@ -96,6 +96,8 @@ import {
 } from "@/console/process-tab";
 import type { OperatorProcessInvocationState } from "@/console/process-event";
 import {
+  resolveOperatorMemberEngine,
+  resolveOperatorMemberPortrait,
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
@@ -3895,6 +3897,8 @@ function TimelineEntry({
             <RoleTag
               label={resolveOperatorMemberName(message.role, memberIdentities, t)}
               toneKey={message.role ?? "agent"}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+              engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               className="h-6 w-6 text-xs"
             />
           )
