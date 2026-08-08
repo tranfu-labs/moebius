@@ -590,11 +590,7 @@ describe("OperatorConsole", () => {
   });
 
   it("routes Agent Teams to the real data container and restores the current conversation", () => {
-    renderConsole({
-      agentTeamsState: { status: "ready", teams: [agentTeam] },
-      selectedAgentTeamKey: "system:development",
-      selectedAgentTeamMemberSlug: "manager",
-    });
+    renderConsole({ agentTeamsState: { status: "ready", teams: [agentTeam] } });
     const teamsEntry = screen.getByRole("button", { name: "Agent 团队" });
 
     fireEvent.click(teamsEntry);
@@ -602,14 +598,29 @@ describe("OperatorConsole", () => {
     expect(teamsEntry).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { name: "Agent 团队" })).toBeVisible();
     expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-team-count", "1");
-    expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-selected-team-key", "system:development");
-    expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-selected-member-slug", "manager");
     expect(screen.queryByRole("region", { name: "会话时间线" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "返回当前对话" }));
     expect(teamsEntry).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("region", { name: "会话时间线" })).toBeVisible();
     expect(screen.getByRole("button", { name: "默认会话，正在运行" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens the selected team's detail directly when the host already knows which one it is", () => {
+    // The sidebar's error badge and the in-session repair link both point at one specific team, so
+    // a host-supplied selection has to land on it rather than on the list with the team merely
+    // marked — otherwise every deep entry costs the user an extra click.
+    renderConsole({
+      agentTeamsState: { status: "ready", teams: [agentTeam] },
+      selectedAgentTeamKey: "system:development",
+      selectedAgentTeamMemberSlug: "manager",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+
+    expect(screen.getByTestId("agent-team-detail-view")).toHaveAttribute("data-team-key", "system:development");
+    expect(screen.getByRole("region", { name: "开发团队详情" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Agent 团队" })).not.toBeInTheDocument();
   });
 
   it("routes sidebar conversation selection through the conversation entry and protects unsaved team drafts", () => {

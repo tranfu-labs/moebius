@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
 import { AgentMemberStrip } from "@/console/agent-member-strip";
@@ -248,6 +248,47 @@ export interface AgentTeamDetailProps {
   onLeave(): void;
 }
 
+/**
+ * Reports whether the page header has reached the top of whatever is scrolling it.
+ *
+ * Read from geometry, not from a scroll threshold: how far the header travels before it pins
+ * depends on what the host page puts above it, which this view has no way to know. The sentinel
+ * stays at the header's static position, so the moment the two separate is exactly the moment the
+ * header is pinned.
+ *
+ * Listening on `document` in the capture phase catches scroll from any ancestor — element scroll
+ * events do not bubble, and the scrolling ancestor belongs to the page, not to this component.
+ */
+function useHeaderPinned(): {
+  pinned: boolean;
+  sentinelRef: RefObject<HTMLDivElement>;
+  headerRef: RefObject<HTMLElement>;
+} {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    const check = (): void => {
+      const sentinel = sentinelRef.current;
+      const header = headerRef.current;
+      if (sentinel === null || header === null) {
+        return;
+      }
+      setPinned(header.getBoundingClientRect().top - sentinel.getBoundingClientRect().top > 0.5);
+    };
+    check();
+    document.addEventListener("scroll", check, { capture: true, passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      document.removeEventListener("scroll", check, { capture: true });
+      window.removeEventListener("resize", check);
+    };
+  }, []);
+
+  return { pinned, sentinelRef, headerRef };
+}
+
 export function AgentTeamDetail({
   team,
   state,
@@ -283,6 +324,7 @@ export function AgentTeamDetail({
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
   const { t } = useI18n();
+  const { pinned: headerPinned, sentinelRef: headerSentinelRef, headerRef } = useHeaderPinned();
   const pendingGuardedActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [externalConflictPromptOpen, setExternalConflictPromptOpen] = useState(false);
@@ -667,16 +709,35 @@ export function AgentTeamDetail({
 
   return (
     <section className="min-h-0" aria-labelledby="agent-team-detail-title" data-testid="agent-team-detail">
-      <button
-        type="button"
-        className="mb-4 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
-        onClick={() => requestGuardedAction(onLeave)}
-      >
-        <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-        {t("console.agentTeamDetail.back")}
-      </button>
+      {/* Sits at the header's resting position so `headerPinned` can be read as a gap, not a guess. */}
+      <div ref={headerSentinelRef} aria-hidden="true" className="h-0" />
 
-      <header className="sticky top-0 z-20 -mx-1 bg-canvas px-1 pb-3 pt-1">
+      <header ref={headerRef} className="sticky top-0 z-20 -mx-1 px-1 pb-3 pt-1">
+        {/*
+          The bar reaches back up over the page's top inset. The scrolling container pads its
+          content down by `--page-inset-top` to clear the window chrome, and a bar that started at
+          its own top edge would leave that band live: text kept drifting past above the title,
+          which read as a floating slab rather than a page header. The plate is opaque rather than
+          a fade — this package draws no gradients.
+          The hairline only appears once something is actually underneath, so at rest the page is
+          not divided by a rule that means nothing.
+        */}
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 top-[calc(var(--page-inset-top,0px)*-1)] -z-10 border-b bg-canvas transition-colors",
+            headerPinned ? "border-line" : "border-transparent",
+          )}
+        />
+        <button
+          type="button"
+          className="mb-1 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          onClick={() => requestGuardedAction(onLeave)}
+        >
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+          {t("console.agentTeamDetail.back")}
+        </button>
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
@@ -720,19 +781,6 @@ export function AgentTeamDetail({
                 </span>
               ) : null}
             </div>
-            {teamInformationEditable ? (
-              <input
-                className="mt-1 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
-                aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
-                value={teamDescriptionDraft}
-                placeholder={t("console.agentTeamDetail.noDescription")}
-                onChange={(event) => setTeamDescriptionDraft(event.currentTarget.value)}
-              />
-            ) : (
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-sub">
-                {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
-              </p>
-            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {/*
@@ -1016,7 +1064,26 @@ export function AgentTeamDetail({
         </div>
       </header>
 
-      <div className="pt-7">
+      {/*
+        Left out of the pinned bar deliberately. The bar has to keep carrying identity and the save
+        controls, so everything put in it is viewport the page never gets back; the description is
+        prose, and prose can scroll away like the rest of the page.
+      */}
+      {teamInformationEditable ? (
+        <input
+          className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+          aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
+          value={teamDescriptionDraft}
+          placeholder={t("console.agentTeamDetail.noDescription")}
+          onChange={(event) => setTeamDescriptionDraft(event.currentTarget.value)}
+        />
+      ) : (
+        <p className="max-w-2xl px-2 text-sm leading-6 text-sub">
+          {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
+        </p>
+      )}
+
+      <div className="pt-6">
         <div className="mb-3 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-2">
             <h2 className="text-sm font-medium text-ink">

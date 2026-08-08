@@ -244,7 +244,27 @@ export function AgentTeamsPage({
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const listScrollTopRef = useRef(0);
   const pendingListScrollRestoreRef = useRef(false);
-  const [view, setView] = useState<AgentTeamsPageView>({ kind: "list" });
+  const [view, setView] = useState<AgentTeamsPageView>(
+    selectedTeamKey === undefined || selectedTeamKey === null
+      ? { kind: "list" }
+      : { kind: "team-detail", teamKey: selectedTeamKey },
+  );
+  /**
+   * The host owns which team is open. Before this, `selectedTeamKey` only decorated the list and
+   * the detail could be reached solely by clicking a row — so nothing outside this component
+   * could send a user to a specific team, which the repair red dot and the in-session team error
+   * both promise to do. It also meant every story of the detail had to open with a fake click.
+   *
+   * Applied on change rather than on every render, so the back button still returns to the list
+   * instead of being immediately overridden by a host that keeps passing the same key.
+   */
+  const appliedSelectedTeamKey = useRef(selectedTeamKey);
+  if (appliedSelectedTeamKey.current !== selectedTeamKey) {
+    appliedSelectedTeamKey.current = selectedTeamKey;
+    if (selectedTeamKey !== undefined && selectedTeamKey !== null) {
+      setView({ kind: "team-detail", teamKey: selectedTeamKey });
+    }
+  }
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
@@ -438,7 +458,12 @@ export function AgentTeamsPage({
   return (
     <section
       ref={scrollContainerRef}
-      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 sm:px-8"
+      /*
+       * The top inset clears the window drag region, and it is published as a variable because a
+       * sticky header inside pins below it rather than at the viewport edge — it needs to know how
+       * far back up to reach so no content stays legible above it.
+       */
+      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 [--page-inset-top:4rem] sm:px-8"
       aria-labelledby={contentView.kind === "list" ? "agent-teams-title" : undefined}
     >
       <div className="mx-auto max-w-[960px]">
