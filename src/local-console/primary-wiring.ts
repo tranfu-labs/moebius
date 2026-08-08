@@ -87,8 +87,8 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
       storePorts: context.storePorts,
       nowIso: context.nowIso,
       classifyFailure: input.classifyFailure,
-      recordFailure: (run, result) =>
-        input.failure.recordDirect(run.sourceMessage, run.sessionId, run.runId, result),
+      recordFailure: (run, result, observedExternalSessionId) =>
+        input.failure.recordDirect(run.sourceMessage, run.sessionId, run.runId, result, observedExternalSessionId),
       sourceDirectoryAvailable: (sessionId) => input.continuation.sessionProjectDirectoryAvailable(sessionId),
       executeChildSession: input.executeChildSession,
       recordWorkspaceDiff: (run, preparation, result) =>
@@ -135,7 +135,9 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
         setError: context.setError,
         report: input.report,
         recordFailure: (message, sessionId, runId, runDir, error) =>
-          input.failure.recordStartFailure(message, sessionId, runId, runDir, error),
+          input.failure.recordRetryableStartFailure(message, sessionId, runId, runDir, error),
+        recordCompletionFailure: (message, sessionId, runId, runDir, error) =>
+          input.failure.recordCompletionFailure(message, sessionId, runId, runDir, error),
         applyPendingContext: (sessionId) => input.pendingContext.applyWhenIdle(sessionId),
         invalidateWorkspace: input.invalidateWorkspace,
       });

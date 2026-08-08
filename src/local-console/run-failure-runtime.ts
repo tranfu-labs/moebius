@@ -1,6 +1,7 @@
 import type { CodexRunResult } from "../codex.js";
 import { localTerminalFromResult } from "./runtime-domain.js";
 import {
+  decideStartFailureRecovery,
   planActiveFailureContext,
   planDetachedRunFailure,
   decideDetachedTerminalCapability,
@@ -35,6 +36,8 @@ export class LocalRunFailureRuntime {
     logTimeout(input: { event: string; runDir: string; reason: string }): void;
     activeRun(runId: string): ActiveFailureContext | undefined;
     recordError(event: string, error: unknown, originalError?: string): void;
+    failureRetryLimit?: number;
+    scheduleReprocess(sessionId: string): void;
   }) {}
 
   async recordDirect(
@@ -42,6 +45,7 @@ export class LocalRunFailureRuntime {
     sessionId: string,
     runId: string,
     result: Extract<CodexRunResult, { ok: false }>,
+    observedExternalSessionId: string | null = null,
   ): Promise<void> {
     const active = planActiveFailureContext(this.input.activeRun(runId));
     const terminal = localTerminalFromResult(result, active.liveMarkdown, active.profile);
@@ -72,7 +76,7 @@ export class LocalRunFailureRuntime {
       );
       return;
     }
-    await this.recordFailure(message, sessionId, runId, result.runDir, result.reason, plan.body, terminal);
+    await this.recordFailureWithAutoRetry(message, sessionId, runId, result.runDir, result.reason, plan.body, terminal, observedExternalSessionId);
   }
 
   async recordDetached(
@@ -99,32 +103,6 @@ export class LocalRunFailureRuntime {
       }
       return;
     }
-    if (plan.kind === "stuck") {
-      await this.recordDetachedTerminal({
-        sessionId,
-        body: plan.body,
-        systemEventKind: plan.systemEventKind,
-        runId,
-        runDir: result.runDir,
-        error: result.reason,
-        status: plan.status,
-        terminal,
-      });
-      return;
-    }
-    if (plan.kind === "interrupted") {
-      await this.recordDetachedTerminal({
-        sessionId,
-        body: plan.body,
-        systemEventKind: plan.systemEventKind,
-        runId,
-        runDir: result.runDir,
-        error: result.reason,
-        status: plan.status,
-        terminal,
-      });
-      return;
-    }
     await this.recordDetachedTerminal({
       sessionId,
       body: plan.body,
@@ -137,14 +115,81 @@ export class LocalRunFailureRuntime {
     });
   }
 
-  async recordStartFailure(
+  /**
+   * Deterministic dispatch failures (missing agent, broken route, missing
+   * retry trigger): retrying cannot change the outcome, so they land as a
+   * terminal record immediately.
+   */
+  async recordStartFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string | null, error: string): Promise<void> {
+    await this.recordFailure(message, sessionId, runId, runDir, error, undefined, null);
+  }
+
+  /** Infra failures where the run may simply not have started: eligible for silent auto-retry. */
+  async recordRetryableStartFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string | null, error: string): Promise<void> {
+    await this.recordFailureWithAutoRetry(message, sessionId, runId, runDir, error, undefined, null, null);
+  }
+
+  /**
+   * Terminal-only variant for failures where the run itself already produced a
+   * result (e.g. success bookkeeping failed): auto-retry would run the agent a
+   * second time, so these always land as a terminal record.
+   */
+  async recordCompletionFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string | null, error: string): Promise<void> {
+    await this.recordFailure(message, sessionId, runId, runDir, error, undefined, null);
+  }
+
+  /**
+   * PRD boundary: a failure with no agent-visible output is "did not start" —
+   * re-running duplicates nothing the user saw, so it is safe to retry
+   * silently. Anything with visible output stays terminal.
+   */
+  private async recordFailureWithAutoRetry(
     message: LocalConsoleMessage,
     sessionId: string,
     runId: string,
     runDir: string | null,
     error: string,
+    body: string | undefined,
+    terminal: LocalConsoleTerminal | null,
+    observedExternalSessionId: string | null,
   ): Promise<void> {
-    await this.recordFailure(message, sessionId, runId, runDir, error, undefined, null);
+    const recovery = decideStartFailureRecovery({
+      speaker: message.speaker,
+      failureCount: message.failureCount,
+      partialMarkdown: terminal?.partialMarkdown,
+      liveMarkdown: this.input.activeRun(runId)?.liveMarkdown,
+      diagnosticBody: body,
+      observedExternalSessionId,
+      failureRetryLimit: this.input.failureRetryLimit,
+    });
+    if (recovery.kind === "terminal") {
+      await this.recordFailure(message, sessionId, runId, runDir, error, body, terminal);
+      return;
+    }
+    if (recovery.kind === "retry") {
+      try {
+        await this.input.storeCall("local-console-store-record-retryable-failure", () =>
+          this.input.store.recordRetryableFailure(
+            { userMessageId: message.id, sessionId, error, runId, runDir, now: this.input.nowIso() },
+          ));
+        // The message is pending again but the current processing cycle is about
+        // to end on this failure; without a kick nothing re-claims it.
+        this.input.scheduleReprocess(sessionId);
+      } catch (recordError) {
+        this.input.recordError("local-console-record-retryable-failure-failed", recordError, error);
+        await this.releaseForRetry(message, sessionId);
+      }
+      return;
+    }
+    try {
+      await this.input.storeCall("local-console-store-record-dead-letter", () =>
+        this.input.store.recordDeadLetter(
+          { userMessageId: message.id, sessionId, error, runId, runDir, failureCount: recovery.attempt, now: this.input.nowIso() },
+        ));
+    } catch (recordError) {
+      this.input.recordError("local-console-record-dead-letter-failed", recordError, error);
+      await this.recordFailure(message, sessionId, runId, runDir, error, body, terminal);
+    }
   }
 
   async recordDetachedStartFailure(input: {

@@ -53,8 +53,8 @@ describe("local console persisted system event kinds", () => {
         ["failed", "retryable", "stuck", "tool-stuck", "stopped", "system-stopped", "dead-letter", "neutral"]
           .map((name) => store.listMessages(`local:${name}`)),
       )).flat().filter((message) => message.speaker === "system");
+      // retryable 失败静默重试，不再往对话里插系统消息，所以列表里没有它。
       expect(systemMessages.map((message) => message.systemEventKind)).toEqual([
-        "run-not-started",
         "run-not-started",
         "run-stuck",
         "run-stuck",

@@ -40,6 +40,7 @@ export function createLocalRuntimeFoundationWiring(input: {
   longRunReportMs: LifecyclePorts["longRunReportMs"];
   getSessionFactLogPath(sessionId: string): string;
   hasScheduledWorker(sessionId: string): boolean;
+  scheduleReprocess(sessionId: string): void;
   report(input: { event: string; [key: string]: unknown }): void;
 }) {
   const { context, options } = input;
@@ -81,6 +82,8 @@ export function createLocalRuntimeFoundationWiring(input: {
       activeRun: (runId) => input.activeRuns.get(runId),
       recordError: (event, error, originalError) =>
         input.report({ event, error: context.formatAndSetError(error), originalError }),
+      failureRetryLimit: options.failureRetryLimit,
+      scheduleReprocess: input.scheduleReprocess,
     } satisfies FailurePorts,
     lifecycle: {
       activeRun: (runId) => input.activeRuns.get(runId),

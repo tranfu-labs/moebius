@@ -4844,17 +4844,8 @@ function recordRetryableFailure(
     const source = requireLocalMessage(database, input.userMessageId, input.sessionId);
     const nextFailureCount = source.failureCount + 1;
     const nextStatus = source.speaker === "user" ? "pending" : source.status;
-    insertSystemMessage(
-      database,
-      input.sessionId,
-      "这一步没跑起来。系统会继续尝试；你也可以直接说话、换一个成员接手。",
-      input.runId,
-      input.runDir,
-      input.error,
-      input.now,
-      "displayed",
-      "run-not-started",
-    );
+    // 自动重试静默进行：不往对话里插系统消息，失败事实记在源消息的
+    // failure_count / last_failure_reason 上；反复失败由死信路径终局呈现。
     database
       .prepare(
         `UPDATE session_messages

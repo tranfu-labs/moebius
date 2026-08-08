@@ -115,6 +115,37 @@ export function planDetachedRunFailure(input: {
   };
 }
 
+const START_FAILURE_MAX_ATTEMPTS = 3;
+
+/**
+ * PRD boundary: a failure with no agent-visible output is "did not start" —
+ * re-running duplicates nothing the user saw, so it may retry silently.
+ * Four things force a terminal record instead: visible output (a re-run would
+ * duplicate work), a non-user source, an engine-authored diagnostic (that
+ * message is actionable; silently retrying would replace it with a generic
+ * dead letter), or an already-observed external session — the prompt has been
+ * consumed remotely, so an automatic full re-run would double-send it.
+ */
+export function decideStartFailureRecovery(input: {
+  speaker: LocalConsoleMessage["speaker"];
+  failureCount: number;
+  partialMarkdown: string | null | undefined;
+  liveMarkdown: string | null | undefined;
+  diagnosticBody: string | undefined;
+  observedExternalSessionId: string | null;
+  failureRetryLimit: number | undefined;
+}): { kind: "terminal" } | { kind: "retry" } | { kind: "dead-letter"; attempt: number } {
+  const visibleOutput = (input.partialMarkdown ?? input.liveMarkdown ?? "").trim();
+  const forcedTerminal = input.speaker !== "user"
+    || visibleOutput !== ""
+    || input.diagnosticBody !== undefined
+    || input.observedExternalSessionId !== null;
+  if (forcedTerminal) return { kind: "terminal" };
+  const attempt = input.failureCount + 1;
+  const maxAttempts = input.failureRetryLimit ?? START_FAILURE_MAX_ATTEMPTS;
+  return attempt < maxAttempts ? { kind: "retry" } : { kind: "dead-letter", attempt };
+}
+
 export function planGracefulWorkerPlaceholder(
   messages: readonly LocalConsoleMessage[],
   runId: string,

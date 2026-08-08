@@ -136,7 +136,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       baselineCommits: this.conversationBaselineCommits,
       ...adapters,
       getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
-      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
+      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId), scheduleReprocess: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
     });
     this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime(foundationWiring.conversation);
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime(foundationWiring.continuation);

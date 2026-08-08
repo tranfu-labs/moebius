@@ -34,7 +34,7 @@ export class LocalPrimaryTerminalRuntime {
     };
     pauseLifecycle(runId: string): Promise<void>;
     finishLifecycle(runId: string, status: "completed" | "failed" | "interrupted" | "stuck" | "paused"): Promise<void>;
-    recordFailure(run: LocalPrimaryRunInput, result: Extract<CodexRunResult, { ok: false }>): Promise<void>;
+    recordFailure(run: LocalPrimaryRunInput, result: Extract<CodexRunResult, { ok: false }>, observedExternalSessionId: string | null): Promise<void>;
     sourceDirectoryAvailable(sessionId: string): Promise<boolean>;
     executeChildSession(
       run: LocalPrimaryRunInput,
@@ -82,7 +82,7 @@ export class LocalPrimaryTerminalRuntime {
       classifyFailure: (result) => this.input.classifyFailure(result),
       pauseLifecycle: () => this.input.pauseLifecycle(run.runId),
       finishLifecycle: (status) => this.input.finishLifecycle(run.runId, status),
-      recordFailed: (result) => this.input.recordFailure(run, result),
+      recordFailed: (result) => this.input.recordFailure(run, result, provider.observedExternalSessionId),
       recordUsage: (cachedInputTokens) => this.recordUsage(run, cachedInputTokens),
       sourceDirectoryAvailable: () => this.input.sourceDirectoryAvailable(run.sessionId),
       executeChildSession: (result) => this.input.executeChildSession(run, result),
