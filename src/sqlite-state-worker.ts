@@ -15,6 +15,7 @@ import {
   type LocalConsoleTerminal,
   type MoveEmptySessionResult,
 } from "./local-console/types.js";
+import type { LocalRunActivity } from "./local-console/run-activity.js";
 import type {
   SqliteStateCommand,
   SqliteStateWorkerConfiguration,
@@ -106,6 +107,7 @@ interface WorkerLocalMessage {
   error: string | null;
   systemEventKind: LocalConsoleSystemEventKind;
   terminal?: LocalConsoleTerminal | null;
+  processSteps: LocalRunActivity[];
   failureCount: number;
   lastFailureReason: string | null;
   sourceKind: string | null;
@@ -696,6 +698,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSessionSidebarMetadata(database);
   migrateSystemEventKinds(database);
   migrateLocalTerminalFacts(database);
+  migrateLocalMessageProcessSteps(database);
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_sessions_local_project_created_at ON sessions(project_id, created_at DESC, session_id ASC) WHERE source_type = 'local'",
   );
@@ -965,6 +968,13 @@ function migrateLocalTerminalFacts(database: SqliteDatabase): void {
     database.exec("ALTER TABLE session_messages ADD COLUMN terminal_json TEXT");
   }
   markSchemaMigration(database, "local-runtime-structured-terminal-v1");
+}
+
+function migrateLocalMessageProcessSteps(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "session_messages", "process_steps_json")) {
+    database.exec("ALTER TABLE session_messages ADD COLUMN process_steps_json TEXT");
+  }
+  markSchemaMigration(database, "local-runtime-message-process-steps-v1");
 }
 
 function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
@@ -1764,9 +1774,9 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
     const insert = database.prepare(
       `INSERT INTO session_messages
         (id, session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, terminal_json,
-         failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at,
+         process_steps_json, failure_count, last_failure_reason, source_kind, source_id, text_fragments_json, activated_at,
          dispatch_lane, dispatch_role, dispatch_reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          speaker = excluded.speaker,
          role = excluded.role,
@@ -1777,6 +1787,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
          error = excluded.error,
          system_event_kind = excluded.system_event_kind,
          terminal_json = excluded.terminal_json,
+         process_steps_json = excluded.process_steps_json,
          failure_count = excluded.failure_count,
          last_failure_reason = excluded.last_failure_reason,
          source_kind = excluded.source_kind,
@@ -1802,6 +1813,7 @@ function rebuildSessionMessageIndex(database: SqliteDatabase, sessionId: string,
         message.error,
         message.systemEventKind,
         message.terminal == null ? null : JSON.stringify(message.terminal),
+        message.processSteps.length === 0 ? null : JSON.stringify(message.processSteps),
         message.failureCount,
         message.lastFailureReason,
         message.sourceKind,
@@ -2010,6 +2022,7 @@ function readSessionFactMessage(value: unknown): WorkerLocalMessage {
     error: readNullableString(value.error, "error"),
     systemEventKind: readSystemEventKind(value.systemEventKind),
     terminal: "terminal" in value ? readLocalTerminal(value.terminal) : null,
+    processSteps: "processSteps" in value ? readProcessSteps(value.processSteps) : [],
     failureCount: readNumber(value.failureCount, "failureCount"),
     lastFailureReason: readNullableString(value.lastFailureReason, "lastFailureReason"),
     sourceKind: readNullableString(value.sourceKind, "sourceKind"),
@@ -4433,10 +4446,19 @@ function recordAgentResponse(
     database
       .prepare(
         `INSERT INTO session_messages
-          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, created_at, updated_at)
-        VALUES (?, 'agent', ?, ?, 'displayed', ?, ?, NULL, 'local-message', NULL, ?, ?)`,
+          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, process_steps_json, created_at, updated_at)
+        VALUES (?, 'agent', ?, ?, 'displayed', ?, ?, NULL, 'local-message', NULL, ?, ?, ?)`,
       )
-      .run(input.sessionId, input.role, input.body, input.runId, input.runDir, input.now, input.now);
+      .run(
+        input.sessionId,
+        input.role,
+        input.body,
+        input.runId,
+        input.runDir,
+        input.processSteps.length === 0 ? null : JSON.stringify(input.processSteps),
+        input.now,
+        input.now,
+      );
     updateSessionAttentionAfterAgentResponse(database, input.sessionId, input.body, input.now);
     completeSourceMessage(database, source, "completed", null, input.runId, input.runDir, input.now);
     return null;
@@ -4453,10 +4475,19 @@ function recordDetachedAgentResponse(
     database
       .prepare(
         `INSERT INTO session_messages
-          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, created_at, updated_at)
-        VALUES (?, 'agent', ?, ?, 'displayed', ?, ?, NULL, 'local-message', NULL, ?, ?)`,
+          (session_id, speaker, role, body, status, run_id, run_dir, error, source_kind, source_id, process_steps_json, created_at, updated_at)
+        VALUES (?, 'agent', ?, ?, 'displayed', ?, ?, NULL, 'local-message', NULL, ?, ?, ?)`,
       )
-      .run(input.sessionId, input.role, input.body, input.runId, input.runDir, input.now, input.now);
+      .run(
+        input.sessionId,
+        input.role,
+        input.body,
+        input.runId,
+        input.runDir,
+        input.processSteps.length === 0 ? null : JSON.stringify(input.processSteps),
+        input.now,
+        input.now,
+      );
     updateSessionAttentionAfterAgentResponse(database, input.sessionId, input.body, input.now);
     return null;
   });
@@ -4508,6 +4539,8 @@ function recordDetachedRunTerminal(
       "local-message",
       null,
       input.terminal ?? null,
+      input.role,
+      input.processSteps,
     );
     return null;
   });
@@ -4807,6 +4840,8 @@ function recordSystemMessage(
       "local-message",
       null,
       input.terminal ?? null,
+      input.role,
+      input.processSteps,
     );
     return null;
   });
@@ -4829,6 +4864,8 @@ function recordFailure(database: SqliteDatabase, input: Extract<SqliteStateComma
       input.sourceKind ?? "local-message",
       input.sourceId ?? null,
       input.terminal ?? null,
+      input.role,
+      input.processSteps,
     );
     completeSourceMessage(database, source, "failed", input.error, input.runId, input.runDir, input.now);
     return null;
@@ -4844,17 +4881,8 @@ function recordRetryableFailure(
     const source = requireLocalMessage(database, input.userMessageId, input.sessionId);
     const nextFailureCount = source.failureCount + 1;
     const nextStatus = source.speaker === "user" ? "pending" : source.status;
-    insertSystemMessage(
-      database,
-      input.sessionId,
-      "这一步没跑起来。系统会继续尝试；你也可以直接说话、换一个成员接手。",
-      input.runId,
-      input.runDir,
-      input.error,
-      input.now,
-      "displayed",
-      "run-not-started",
-    );
+    // 自动重试静默进行：不往对话里插系统消息，失败事实记在源消息的
+    // failure_count / last_failure_reason 上；反复失败由死信路径终局呈现。
     database
       .prepare(
         `UPDATE session_messages
@@ -4892,6 +4920,11 @@ function recordDeadLetterAndComplete(
       input.now,
       "displayed",
       "retry-exhausted",
+      "local-message",
+      null,
+      null,
+      input.role,
+      input.processSteps,
     );
     database
       .prepare(
@@ -4946,6 +4979,8 @@ function recordInterrupted(database: SqliteDatabase, input: Extract<SqliteStateC
       "local-message",
       null,
       input.terminal ?? null,
+      input.role,
+      input.processSteps,
     );
     completeSourceMessage(database, source, "interrupted", input.reason, input.runId, input.runDir, input.now);
     return null;
@@ -4974,6 +5009,8 @@ function recordStuck(database: SqliteDatabase, input: Extract<SqliteStateCommand
         "local-message",
         null,
         input.terminal ?? null,
+        input.role,
+        input.processSteps,
       );
       return null;
     }
@@ -4990,6 +5027,8 @@ function recordStuck(database: SqliteDatabase, input: Extract<SqliteStateCommand
       "local-message",
       null,
       input.terminal ?? null,
+      input.role,
+      input.processSteps,
     );
     completeSourceMessage(database, source, "stuck", input.reason, input.runId, input.runDir, input.now);
     return null;
@@ -5142,6 +5181,10 @@ function markStaleRunning(
           input.now,
           "stuck",
           "run-stuck",
+          "local-message",
+          null,
+          null,
+          input.roles[row.id],
         );
         count += 1;
         continue;
@@ -5156,6 +5199,10 @@ function markStaleRunning(
         input.now,
         "stuck",
         "run-stuck",
+        "local-message",
+        null,
+        null,
+        input.roles[row.id],
       );
       completeSourceMessage(database, row, "stuck", input.reason, row.runId, row.runDir, input.now);
       count += 1;
@@ -5195,6 +5242,10 @@ function markStaleRunning(
         input.now,
         "stuck",
         "run-stuck",
+        "local-message",
+        null,
+        null,
+        input.roles[source.id],
       );
       completeSourceMessage(database, source, "stuck", input.reason, activeRunId, source.runDir, input.now);
       count += 1;
@@ -5383,16 +5434,19 @@ function insertSystemMessage(
   sourceKind = "local-message",
   sourceId: string | null = null,
   terminal: LocalConsoleTerminal | null = null,
+  role: string | null = null,
+  processSteps: readonly LocalRunActivity[] = [],
 ): void {
   ensureSession(database, sessionId, now, undefined, LOCAL_CONSOLE_PROJECT_ID);
   database
     .prepare(
       `INSERT INTO session_messages
-        (session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, source_kind, source_id, terminal_json, created_at, updated_at)
-      VALUES (?, 'system', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (session_id, speaker, role, body, status, run_id, run_dir, error, system_event_kind, source_kind, source_id, terminal_json, process_steps_json, created_at, updated_at)
+      VALUES (?, 'system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       sessionId,
+      role,
       body,
       status,
       runId,
@@ -5402,6 +5456,7 @@ function insertSystemMessage(
       sourceKind,
       sourceId,
       terminal === null ? null : JSON.stringify(terminal),
+      processSteps.length === 0 ? null : JSON.stringify(processSteps),
       now,
       now,
     );
@@ -5711,6 +5766,7 @@ function readLocalMessageRow(row: unknown): WorkerLocalMessage {
     error: readNullableString(row.error, "error"),
     systemEventKind: readSystemEventKind(row.system_event_kind),
     terminal: "terminal_json" in row ? readTerminalJson(row.terminal_json) : null,
+    processSteps: "process_steps_json" in row ? readProcessStepsJson(row.process_steps_json) : [],
     failureCount: "failure_count" in row ? readNumber(row.failure_count, "failure_count") : 0,
     lastFailureReason: "last_failure_reason" in row ? readNullableString(row.last_failure_reason, "last_failure_reason") : null,
     sourceKind: "source_kind" in row ? readNullableString(row.source_kind, "source_kind") : null,
@@ -5832,6 +5888,59 @@ function readTerminalJson(value: unknown): LocalConsoleTerminal | null {
   } catch {
     throw new Error("Invalid terminal_json");
   }
+}
+
+function readProcessStepsJson(value: unknown): LocalRunActivity[] {
+  const serialized = readNullableString(value, "process_steps_json");
+  if (serialized === null || serialized === "[]") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    throw new Error("Invalid process_steps_json");
+  }
+  return readProcessSteps(parsed);
+}
+
+function readProcessSteps(value: unknown): LocalRunActivity[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Invalid process steps");
+  }
+  const seen = new Set<number>();
+  return value.map((step) => {
+    if (!isRecord(step)) {
+      throw new Error("Invalid process step");
+    }
+    const cursor = readNumber(step.cursor, "process step cursor");
+    if (seen.has(cursor)) {
+      throw new Error("Process step cursors must be unique");
+    }
+    seen.add(cursor);
+    const kind = readString(step.kind, "process step kind");
+    if (
+      kind !== "command"
+      && kind !== "tool"
+      && kind !== "search"
+      && kind !== "read"
+      && kind !== "edit"
+      && kind !== "thinking"
+      && kind !== "progress"
+    ) {
+      throw new Error(`Invalid process step kind: ${kind}`);
+    }
+    const phase = readString(step.phase, "process step phase");
+    if (phase !== "running" && phase !== "completed") {
+      throw new Error(`Invalid process step phase: ${phase}`);
+    }
+    return {
+      cursor,
+      kind,
+      phase,
+      action: readString(step.action, "process step action"),
+      object: readNullableString(step.object, "process step object"),
+      occurredAt: readString(step.occurredAt, "process step occurredAt"),
+    };
+  });
 }
 
 function readLocalTerminal(value: unknown): LocalConsoleTerminal | null {

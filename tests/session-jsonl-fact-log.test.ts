@@ -138,6 +138,7 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
         body: "blocked",
         runId: "run-blocked",
         runDir: "/tmp/blocked",
+        processSteps: [],
         now,
       },
       {
@@ -158,9 +159,11 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
         runDir: null,
         error: null,
         systemEventKind: "other",
+        role: null,
+        processSteps: [],
         now,
       },
-      { kind: "local-record-failure", userMessageId: messageId, sessionId, error: "blocked", runId: null, runDir: null, now },
+      { kind: "local-record-failure", userMessageId: messageId, sessionId, error: "blocked", runId: null, runDir: null, role: null, processSteps: [], now },
       { kind: "local-record-retryable-failure", userMessageId: messageId, sessionId, error: "blocked", runId: null, runDir: null, now },
       {
         kind: "local-record-dead-letter-and-complete",
@@ -170,11 +173,13 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
         runId: null,
         runDir: null,
         failureCount: 5,
+        role: null,
+        processSteps: [],
         now,
       },
-      { kind: "local-record-interrupted", userMessageId: messageId, sessionId, reason: "blocked", runId: null, runDir: null, now },
-      { kind: "local-record-stuck", userMessageId: messageId, sessionId, reason: "blocked", runId: null, runDir: null, now },
-      { kind: "local-mark-stale-running", sessionId, cutoffIso: now, now, reason: "blocked" },
+      { kind: "local-record-interrupted", userMessageId: messageId, sessionId, reason: "blocked", runId: null, runDir: null, role: null, processSteps: [], now },
+      { kind: "local-record-stuck", userMessageId: messageId, sessionId, reason: "blocked", runId: null, runDir: null, role: null, processSteps: [], now },
+      { kind: "local-mark-stale-running", sessionId, cutoffIso: now, now, reason: "blocked", roles: {} },
     ];
 
     for (const command of commands) {
@@ -286,6 +291,7 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       body: "@qa handoff",
       runId: "run-manager",
       runDir: "/tmp/run-manager",
+      processSteps: [],
       now: "2026-07-22T01:02:03.000Z",
     });
     const handoffSource = (await store.listMessages(managerSource.sessionId)).find((message) =>
@@ -384,6 +390,8 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       runDir: "/tmp/run-running-owner",
       error: "stopped",
       status: "interrupted",
+      role: null,
+      processSteps: [],
       now: "2026-07-22T01:02:07.600Z",
     });
 
@@ -409,6 +417,8 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       runDir: null,
       error: "stopped",
       status: "interrupted",
+      role: null,
+      processSteps: [],
       now: "2026-07-22T01:02:07.900Z",
     });
     await expect(store.repairAgentHandoffResumeSource({
@@ -434,6 +444,8 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       runId: "run-placeholder",
       runDir: null,
       error: null,
+      role: null,
+      processSteps: [],
       now: "2026-07-22T01:02:08.000Z",
     });
     const systemSource = (await store.listMessages(managerSource.sessionId)).find((message) =>
@@ -507,6 +519,7 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       body: "agent response",
       runId: "run-agent",
       runDir: "/tmp/agent",
+      processSteps: [],
       now: "2026-07-22T00:01:02.000Z",
     });
 
@@ -574,23 +587,25 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       runId: null,
       runDir: null,
       error: null,
+      role: null,
+      processSteps: [],
       now: "2026-07-22T00:07:00.000Z",
     });
 
     const failure = await claimed("failure", "2026-07-22T00:08:00.000Z");
-    await store.recordFailure({ userMessageId: failure.messageId, sessionId: failure.sessionId, error: "failed", runId: null, runDir: null, now: "2026-07-22T00:08:01.000Z" });
+    await store.recordFailure({ userMessageId: failure.messageId, sessionId: failure.sessionId, error: "failed", runId: null, runDir: null, role: null, processSteps: [], now: "2026-07-22T00:08:01.000Z" });
 
     const retryable = await claimed("retryable", "2026-07-22T00:09:00.000Z");
     await store.recordRetryableFailure({ userMessageId: retryable.messageId, sessionId: retryable.sessionId, error: "retryable", runId: null, runDir: null, now: "2026-07-22T00:09:01.000Z" });
 
     const deadLetter = await claimed("dead-letter", "2026-07-22T00:10:00.000Z");
-    await store.recordDeadLetter({ userMessageId: deadLetter.messageId, sessionId: deadLetter.sessionId, error: "dead", runId: null, runDir: null, failureCount: 5, now: "2026-07-22T00:10:01.000Z" });
+    await store.recordDeadLetter({ userMessageId: deadLetter.messageId, sessionId: deadLetter.sessionId, error: "dead", runId: null, runDir: null, failureCount: 5, role: null, processSteps: [], now: "2026-07-22T00:10:01.000Z" });
 
     const interrupted = await claimed("interrupted", "2026-07-22T00:11:00.000Z");
-    await store.recordInterrupted({ userMessageId: interrupted.messageId, sessionId: interrupted.sessionId, reason: "stopped", runId: null, runDir: null, now: "2026-07-22T00:11:01.000Z" });
+    await store.recordInterrupted({ userMessageId: interrupted.messageId, sessionId: interrupted.sessionId, reason: "stopped", runId: null, runDir: null, role: null, processSteps: [], now: "2026-07-22T00:11:01.000Z" });
 
     const stuck = await claimed("stuck", "2026-07-22T00:12:00.000Z");
-    await store.recordStuck({ userMessageId: stuck.messageId, sessionId: stuck.sessionId, reason: "stuck", runId: null, runDir: null, now: "2026-07-22T00:12:01.000Z" });
+    await store.recordStuck({ userMessageId: stuck.messageId, sessionId: stuck.sessionId, reason: "stuck", runId: null, runDir: null, role: null, processSteps: [], now: "2026-07-22T00:12:01.000Z" });
 
     const stale = await claimed("stale", "2026-07-22T00:13:00.000Z");
     await expect(store.markStaleRunning({
@@ -598,6 +613,7 @@ describe("ADR-0004 per-session JSONL fact logs", () => {
       cutoffIso: "2026-07-22T00:13:01.000Z",
       now: "2026-07-22T00:13:02.000Z",
       reason: "stale",
+      roles: { [stale.messageId]: null },
     })).resolves.toBe(1);
 
     await store.createSession({

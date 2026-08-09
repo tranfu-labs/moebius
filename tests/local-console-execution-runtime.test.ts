@@ -556,6 +556,67 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     expect(facts).not.toContain("replacement Kimi rules");
   });
 
+  it("freezes accumulated activity steps onto the completed agent message and restores them after restart", async () => {
+    const root = await fixtureRoot();
+    const sqlitePath = path.join(root, "local-console.sqlite");
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      await options.onThreadStarted?.("codex-steps-thread");
+      options.onStructuredActivity?.({ type: "thinking" });
+      options.onStructuredActivity?.({ type: "tool_use", name: "read_file" });
+      return {
+        ...success(options, "steps completed"),
+        threadId: "codex-steps-thread",
+      };
+    });
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [{
+        name: "dev",
+        agentMarkdown: "# dev\n\nrecord steps",
+        executionProfile: null,
+      }],
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+    });
+    servers.push(server);
+
+    await post(server.url, "@dev do it");
+    await waitForAgent(server.url, "steps completed");
+    const completed = await waitForSnapshotMatching(server, "default", (snapshot) =>
+      snapshot.activeRuns.length === 0
+      && snapshot.messages.some((message) =>
+        message.speaker === "agent" && message.body === "steps completed"));
+    const agent = completed.messages.find((message) =>
+      message.speaker === "agent" && message.body === "steps completed")!;
+    expect(agent.processSteps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "thinking" }),
+      expect.objectContaining({ kind: "tool", object: "read_file" }),
+    ]));
+
+    await server.close();
+    servers.splice(servers.indexOf(server), 1);
+    const restartedServer = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      sqlitePath,
+      listAgentFiles: async () => [{
+        name: "dev",
+        agentMarkdown: "# dev\n\nrecord steps",
+        executionProfile: null,
+      }],
+      runCodex: codex,
+      runExecution: createLocalExecutionRunner({ runCodex: codex }),
+    });
+    servers.push(restartedServer);
+    const restored = (await restartedServer.runtime.snapshot("default")).messages.find((message) =>
+      message.speaker === "agent" && message.body === "steps completed");
+    expect(restored?.processSteps).toEqual(agent.processSteps);
+  });
+
   it("persists a new session, first message, and bound snapshot before a missing driver fails", async () => {
     const root = await fixtureRoot();
     const sqlitePath = path.join(root, "local-console.sqlite");
@@ -1796,6 +1857,8 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
       runDir: null,
       body: "This retry association is intentionally invalid.",
       systemEventKind: "run-not-started",
+      role: null,
+      processSteps: [],
       ...(invalidCase === "missing-link"
         ? {}
         : {

@@ -15,6 +15,7 @@ import {
   planPrimaryTimelineMessages,
 } from "./primary-runtime-plan.js";
 import { resolveTrigger } from "../triggers/index.js";
+import { planTerminalRecord } from "./terminal-record-plan.js";
 import type {
   LocalConsoleMessage,
   LocalConsoleSessionSummary,
@@ -110,6 +111,7 @@ export class LocalPrimaryDispatchRuntime {
       }));
     }
     if (controlAction.kind === "record-retry-trigger-missing") {
+      const terminalRecord = planTerminalRecord({ role: claimedMessage.dispatchRole });
       await this.input.storeCall("local-console-store-record-retry-trigger-missing", () =>
         this.input.store.recordFailure({
           userMessageId: claimedMessage.id,
@@ -121,6 +123,8 @@ export class LocalPrimaryDispatchRuntime {
           systemEventKind: "run-not-started",
           sourceKind: "local-retry-intent",
           sourceId: controlAction.intent.intentId,
+          role: terminalRecord.role,
+          processSteps: terminalRecord.processSteps,
           now: this.input.nowIso(),
         }));
       return { kind: "continue" };

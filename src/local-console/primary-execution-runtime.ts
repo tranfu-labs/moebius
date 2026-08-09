@@ -24,6 +24,7 @@ export class LocalPrimaryExecutionRuntime {
     setError(error: string | null): void;
     report(event: string, error: string): void;
     recordFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string | null, error: string): Promise<void>;
+    recordCompletionFailure(message: LocalConsoleMessage, sessionId: string, runId: string, runDir: string | null, error: string): Promise<void>;
     activeRun(runId: string | null): ActiveLocalRun | undefined;
     pauseLifecycle(runId: string): Promise<void>;
     failLifecycle(runId: string): Promise<void>;
@@ -74,7 +75,7 @@ export class LocalPrimaryExecutionRuntime {
         ready,
         { result, observedExternalSessionId: provider.observedExternalSessionId },
         async (error, successResult) => {
-          await this.input.recordFailure(
+          await this.input.recordCompletionFailure(
             run.sourceMessage,
             run.sessionId,
             run.runId,

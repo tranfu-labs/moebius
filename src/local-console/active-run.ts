@@ -18,6 +18,8 @@ export interface ActiveLocalRun {
   originalRepoRoot: string | null;
   liveMarkdown: string | null;
   activity: LocalRunActivity | null;
+  /** Steps this run has taken (thinking / tool / command / file), for the timeline trail. */
+  activitySteps: LocalRunActivity[];
   activitySequence: number;
   activityFactTail: Promise<void>;
   longRunReported: boolean;

@@ -97,6 +97,7 @@ describe("local console member identity projection", () => {
       body: "监督结论",
       runId: "run-supervisor",
       runDir: path.join(root, "runs", "supervisor"),
+      processSteps: [],
       now: "2026-07-25T00:00:01.000Z",
     });
     await store.recordDetachedAgentResponse({
@@ -105,6 +106,7 @@ describe("local console member identity projection", () => {
       body: "执行结论",
       runId: "run-executor",
       runDir: path.join(root, "runs", "executor"),
+      processSteps: [],
       now: "2026-07-25T00:00:02.000Z",
     });
 
