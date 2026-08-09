@@ -5,6 +5,21 @@ import {
   type OperatorConsoleProps,
   type OperatorMessage,
 } from "@/console/operator-console";
+import type { ProcessStep } from "@/console/process-trail";
+
+const devTrail: ProcessStep[] = [
+  { id: "d1", kind: "thinking", title: "先确认构建能过，再看两处细节", status: "done" },
+  { id: "d2", kind: "command", title: "pnpm --filter marketing-site build", detail: "退出码 0", status: "done" },
+  { id: "d3", kind: "file", title: "读取 index.astro", status: "done" },
+  { id: "d4", kind: "file", title: "读取 share-card.tsx", status: "done" },
+  { id: "d5", kind: "search", title: "搜索标题截断逻辑", detail: "3 处命中", status: "done" },
+];
+
+const releaseTrail: ProcessStep[] = [
+  { id: "r1", kind: "thinking", title: "确认版本号与 changelog 是否齐了", status: "done" },
+  { id: "r2", kind: "command", title: "git tag v0.4.3", status: "done" },
+  { id: "r3", kind: "tool", title: "生成 changelog", status: "running" },
+];
 
 const pmMarkdown = [
   "## 计划",
@@ -77,6 +92,7 @@ const messages: OperatorMessage[] = [
     sessionId: "review",
     speaker: "agent",
     role: "dev",
+    processSteps: devTrail,
     body: devMarkdown,
     status: "displayed",
     runId: "run-2",
@@ -201,6 +217,7 @@ const sample: OperatorConsoleProps = {
     stdoutTail: "pushing tag v0.4.3",
     stderrTail: null,
     liveMarkdown: "## 正在发布\n\n- 生成 changelog\n- 推送 tag",
+    processSteps: releaseTrail,
     lastOutputSummary: "正在发布",
     tailDiagnostic: null,
     interruptible: true,

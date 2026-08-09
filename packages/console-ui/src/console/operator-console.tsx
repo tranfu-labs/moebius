@@ -128,6 +128,7 @@ import {
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
+import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { MarkdownMessage } from "@/console/markdown-message";
 import {
@@ -319,6 +320,8 @@ export type OperatorExecutionProfile = {
 
 export interface OperatorMessage {
   id: number;
+  /** Thinking and tool calls that produced this message; folded once it lands. */
+  processSteps?: readonly ProcessStep[];
   sessionId: string;
   speaker: OperatorMessageSpeaker;
   role: string | null;
@@ -425,6 +428,7 @@ export interface OperatorRunSnapshot {
   stdoutTail: string | null;
   stderrTail: string | null;
   liveMarkdown: string | null;
+  processSteps?: readonly ProcessStep[];
   lastOutputSummary: string;
   tailDiagnostic: string | null;
   interruptible: boolean;
@@ -2460,6 +2464,7 @@ export function OperatorConsole({
                             memberIdentities={memberIdentities}
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
+                            processSteps={run.processSteps}
                             processOutputAvailable
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
@@ -3863,6 +3868,9 @@ function TimelineEntry({
           </div>
         ) : null}
         <div className={showIdentityHeader ? "pl-8" : undefined}>
+        {message.processSteps?.length ? (
+          <ProcessTrail steps={message.processSteps} collapsed className="mb-2" />
+        ) : null}
         {partialMarkdown === "" ? null : (
           <MarkdownMessage
             content={partialMarkdown}
@@ -3994,6 +4002,9 @@ function TimelineEntry({
         ) : null}
       </div>
       <div className="relative pl-8">
+      {message.speaker === "agent" && message.processSteps?.length ? (
+        <ProcessTrail steps={message.processSteps} collapsed className="mb-2" />
+      ) : null}
       {message.speaker === "system" ? (
         <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message, t)}</div>
       ) : (

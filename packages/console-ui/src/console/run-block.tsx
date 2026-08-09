@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
 import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
 import {
@@ -44,6 +45,8 @@ export interface RunBlockProps {
   summary?: string | null;
   rawOutput?: string | null;
   steps?: RunBlockStep[] | null;
+  /** Thinking and tool calls so far; shown open while the run is live. */
+  processSteps?: readonly ProcessStep[] | null;
   liveMarkdown?: string | null;
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
@@ -67,6 +70,7 @@ export function RunBlock({
   summary,
   rawOutput,
   steps,
+  processSteps,
   liveMarkdown,
   onOpenExternalLink,
   onOpenFileReference,
@@ -186,6 +190,13 @@ export function RunBlock({
           ) : null}
         </span>
       </div>
+
+      {processSteps?.length ? (
+        <ProcessTrail
+          steps={processSteps}
+          className={cn("mt-2.5", variant === "main" ? "pl-8" : "pl-7")}
+        />
+      ) : null}
 
       {usableSteps ? (
         <div className={cn("mt-2.5 space-y-2.5", variant === "main" ? "pl-8" : "pl-7")}>
