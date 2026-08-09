@@ -7,6 +7,49 @@ import {
 } from "@/console/operator-console";
 import type { ProcessStep } from "@/console/process-trail";
 
+/**
+ * 点头像弹出的运行信息：这一步实际用的成员、团队与执行配置。
+ * 按 runId 查，让每个头像给出的是它自己那次运行的事实。
+ */
+const runAgentFacts: Record<string, {
+  role: string;
+  displayName: string;
+  description: string;
+  profile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string };
+  evidence: "executed" | "planned-not-started";
+}> = {
+  "run-1": { role: "pm", displayName: "交付负责人", description: "统筹交付", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" }, evidence: "executed" },
+  "run-2": { role: "dev", displayName: "开发", description: "生产实现", profile: { cli: "claude", model: "sonnet", effort: "high" }, evidence: "executed" },
+  "run-3": { role: "qa", displayName: "测试", description: "功能验证", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "medium" }, evidence: "executed" },
+  "run-4": { role: "qa", displayName: "测试", description: "功能验证", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "medium" }, evidence: "executed" },
+  "run-5": { role: "release", displayName: "发布", description: "发布收尾", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "low" }, evidence: "executed" },
+  "run-stuck": { role: "reviewer", displayName: "交付审查员", description: "交付前复核", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" }, evidence: "executed" },
+  "run-stopped": { role: "dev", displayName: "开发", description: "生产实现", profile: { cli: "claude", model: "sonnet", effort: "high" }, evidence: "executed" },
+  "run-failed": { role: "qa", displayName: "测试", description: "功能验证", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "medium" }, evidence: "planned-not-started" },
+};
+
+const loadRunAgentInfo: OperatorConsoleProps["onLoadRunAgentInfo"] = async ({ sessionId, runId }) => {
+  const fact = runAgentFacts[runId];
+  return {
+    sessionId,
+    runId,
+    role: fact?.role ?? null,
+    agent: {
+      slug: fact?.role ?? "unknown",
+      displayName: fact?.displayName ?? null,
+      description: fact?.description ?? null,
+    },
+    team: { name: "研发团队", ownership: "system" as const, sourceName: "Moebius" },
+    profile: fact?.profile ?? null,
+    loadedAt: "2026-07-11T10:00:00.000Z",
+    evidence: fact?.evidence ?? "bound-start-unknown",
+  };
+};
+
+const loadRunAgentMarkdown: OperatorConsoleProps["onLoadRunAgentMarkdown"] = async ({ runId }) => ({
+  markdown: `# ${runAgentFacts[runId]?.displayName ?? "成员"}\n\n${runAgentFacts[runId]?.description ?? "这次运行没有留下角色说明。"}`,
+});
+
 const devTrail: ProcessStep[] = [
   { id: "d1", kind: "thinking", title: "先确认构建能过，再看两处细节", status: "done" },
   { id: "d2", kind: "command", title: "pnpm --filter marketing-site build", detail: "退出码 0", status: "done" },
@@ -230,6 +273,8 @@ const sample: OperatorConsoleProps = {
     { slug: "reviewer", displayName: "交付审查员", engine: { cli: "codex" } },
   ],
   composerValue: "",
+  onLoadRunAgentInfo: loadRunAgentInfo,
+  onLoadRunAgentMarkdown: loadRunAgentMarkdown,
   onComposerChange: () => undefined,
   onSend: () => undefined,
   onSelectSession: () => undefined,

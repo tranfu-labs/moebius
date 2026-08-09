@@ -3606,6 +3606,13 @@ function roleCompletionsForTeam(team: OperatorAgentTeam | undefined): RoleComple
     })) ?? [];
 }
 
+/**
+ * Terminal records are stored with `role = NULL` (see openspec change
+ * `terminal-record-member-attribution`), so the member has to be recovered from
+ * a sibling message sharing the same step. This is a compatibility path for rows
+ * written before that change, not redundancy — do not delete it until no stored
+ * row has `speaker='system' AND run_id IS NOT NULL AND role IS NULL`.
+ */
 function resolveMessageProcessRole(
   message: OperatorMessage | null,
   messages: readonly OperatorMessage[],
@@ -3709,6 +3716,10 @@ function TimelineEntry({
     );
   }
   const outcome = terminalOutcome(message);
+  // The final `"agent"` step makes an unattributable run resolve to the generic
+  // collaborator label and a default portrait — an invented member for a machine
+  // failure. It exists only because terminal records drop the role at write time;
+  // openspec change `terminal-record-member-attribution` removes the need for it.
   const auditRole = message.role ?? processRole ?? "agent";
   if (outcome) {
     const providerUnavailable = resolveProviderUnavailableKind(message.terminal?.safeCode);
@@ -3725,6 +3736,8 @@ function TimelineEntry({
     // A terminal record always has an owner: the member header when we know who
     // ran, otherwise the existing avatar-less system-notice header. A record must
     // never float in the timeline with neither an identity nor the body indent.
+    // The system-notice fallback is a symptom of the same dropped role — see
+    // openspec change `terminal-record-member-attribution`.
     const showMemberIdentity = identityRole !== null || canAudit;
     const strippedDetail = stripLegacyOutcomeBoilerplate(terminalOutcomeDescription(message));
     const descriptionKey = resolveOutcomeDescriptionKey(outcome, providerUnavailable);
