@@ -24,6 +24,11 @@ afterEach(() => {
   setWindowWidth(originalWindowWidth);
 });
 
+/** 消息底部工具条那一行（图标动作都在里面）。 */
+function toolbarRow0(node: HTMLElement): HTMLElement {
+  return node.closest("div.mt-1")!;
+}
+
 describe("OperatorConsole", () => {
   it("keeps the composer editable while a host-provided submission block disables send", () => {
     const onSend = vi.fn();
@@ -1754,6 +1759,8 @@ describe("OperatorConsole", () => {
 
   it("keeps historical Markdown and gives the message a standing bottom toolbar", () => {
     renderConsole({
+      onRetryRun: vi.fn(),
+      onAnalyzeConversation: vi.fn(),
       messages: [message({
         id: 2,
         speaker: "agent",
@@ -1773,6 +1780,9 @@ describe("OperatorConsole", () => {
     expect(outputButton).toHaveAccessibleName("完整输出");
     // 轻操作改为消息底部常驻的工具条：始终可见但压到最低强度，
     // 整条消息 hover / focus-within 时提亮——看不见的工具条不算工具条。
+    // 每条 Agent 消息的工具条组成一致：查看、重试、更多——成功消息也不例外
+    expect([...toolbarRow0(outputButton).querySelectorAll("button")].map((node) =>
+      node.getAttribute("aria-label"))).toEqual(["完整输出", "重试", "更多操作"]);
     const toolbarRow = outputButton.closest("span")!;
     expect(toolbarRow).toHaveClass(
       "text-hint",

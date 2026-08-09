@@ -127,6 +127,7 @@ import {
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
+import { RotateCcw } from "lucide-react";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { IncidentNotice } from "@/console/incident-card";
 import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
@@ -3830,18 +3831,6 @@ function TimelineEntry({
             }
           : undefined}
       >
-        {onAnalyzeConversation ? (
-          <ConversationAnalysisMenu
-            open={analysisMenuOpen}
-            onOpenChange={setAnalysisMenuOpen}
-            returnFocusTarget={analysisMenuReturnFocusRef.current}
-            onSelect={() => onAnalyzeConversation({
-              sessionId: message.sessionId,
-              runId: message.runId,
-              messageId: message.id,
-            })}
-          />
-        ) : null}
         <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
           {showMemberIdentity ? (
             canAudit ? (
@@ -3922,6 +3911,19 @@ function TimelineEntry({
             />
           ) : null}
           {recoveryActions}
+          {onAnalyzeConversation ? (
+            <ConversationAnalysisMenu
+              toolbar
+              open={analysisMenuOpen}
+              onOpenChange={setAnalysisMenuOpen}
+              returnFocusTarget={analysisMenuReturnFocusRef.current}
+              onSelect={() => onAnalyzeConversation({
+                sessionId: message.sessionId,
+                runId: message.runId,
+                messageId: message.id,
+              })}
+            />
+          ) : null}
         </MessageToolbar>
         </div>
       </div>
@@ -4014,19 +4016,6 @@ function TimelineEntry({
         ) : (
           <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
         )}
-        {message.speaker === "agent" && onAnalyzeConversation ? (
-          <ConversationAnalysisMenu
-            inline
-            open={analysisMenuOpen}
-            onOpenChange={setAnalysisMenuOpen}
-            returnFocusTarget={analysisMenuReturnFocusRef.current}
-            onSelect={() => onAnalyzeConversation({
-              sessionId: message.sessionId,
-              runId: message.runId,
-              messageId: message.id,
-            })}
-          />
-        ) : null}
       </div>
       <div className="relative pl-8">
       {message.speaker === "agent" && message.processSteps?.length ? (
@@ -4054,22 +4043,42 @@ function TimelineEntry({
           />
         </>
       )}
-      {message.speaker === "agent"
-      && message.runId !== null
-      && onOpenEvidence ? (
+      {message.speaker === "agent" && message.runId !== null ? (
         <MessageToolbar>
-          <MessageAction
-            icon={FileText}
-            label={t("console.common.fullOutput")}
-            onClick={() => onOpenEvidence({
-              kind: "run-output",
-              sessionId: message.sessionId,
-              runId: message.runId!,
-              stepId: message.runTiming?.stepId ?? null,
-              role: message.role,
-              fallbackOutput: message.body,
-            })}
-          />
+          {onOpenEvidence ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenEvidence({
+                kind: "run-output",
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: message.role,
+                fallbackOutput: message.body,
+              })}
+            />
+          ) : null}
+          {onRetryRun ? (
+            <MessageAction
+              icon={RotateCcw}
+              label={t("common.retry")}
+              onClick={() => onRetryRun(message.sessionId, message.runId!)}
+            />
+          ) : null}
+          {onAnalyzeConversation ? (
+            <ConversationAnalysisMenu
+              toolbar
+              open={analysisMenuOpen}
+              onOpenChange={setAnalysisMenuOpen}
+              returnFocusTarget={analysisMenuReturnFocusRef.current}
+              onSelect={() => onAnalyzeConversation({
+                sessionId: message.sessionId,
+                runId: message.runId,
+                messageId: message.id,
+              })}
+            />
+          ) : null}
         </MessageToolbar>
       ) : null}
       </div>
@@ -4093,12 +4102,15 @@ function TimelinePerformanceBoundary({
 
 function ConversationAnalysisMenu({
   inline = false,
+  toolbar = false,
   open,
   onOpenChange,
   returnFocusTarget,
   onSelect,
 }: {
   inline?: boolean;
+  /** Rendered as one item of the message toolbar, which owns emphasis and placement. */
+  toolbar?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   returnFocusTarget?: HTMLElement | null;
@@ -4106,12 +4118,17 @@ function ConversationAnalysisMenu({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className={inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
+    <div className={toolbar ? undefined : inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-opacity hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md hover:bg-hover hover:text-ink",
+              toolbar
+                ? undefined
+                : "text-sub opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
+            )}
             aria-label={t("console.sessionAnalysis.moreActions")}
             title={t("console.sessionAnalysis.moreActions")}
           >
