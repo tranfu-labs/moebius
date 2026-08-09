@@ -138,6 +138,7 @@ type AgentTeamsPageView =
 export function AgentTeamsPage({
   state,
   selectedTeamKey,
+  openTeamKey,
   selectedMemberSlug,
   detailState,
   useStackedRows,
@@ -183,7 +184,18 @@ export function AgentTeamsPage({
   onBack,
 }: {
   state: OperatorAgentTeamsState;
+  /**
+   * Which team's data the host has loaded. Deliberately **not** a request to open that team: the
+   * desktop reconciles this to the first team whenever nothing else is selected, so treating it
+   * as an intent would mean the page never shows its list again.
+   */
   selectedTeamKey?: string | null;
+  /**
+   * Opens straight into a team's detail — the entry the repair red dot and the in-session team
+   * error need, and what lets a story of the detail render without a staged click. Only a caller
+   * that means "take the user to this team" may pass it.
+   */
+  openTeamKey?: string | null;
   selectedMemberSlug?: string | null;
   detailState?: AgentTeamDetailState | null;
   useStackedRows: boolean;
@@ -245,24 +257,19 @@ export function AgentTeamsPage({
   const listScrollTopRef = useRef(0);
   const pendingListScrollRestoreRef = useRef(false);
   const [view, setView] = useState<AgentTeamsPageView>(
-    selectedTeamKey === undefined || selectedTeamKey === null
+    openTeamKey === undefined || openTeamKey === null
       ? { kind: "list" }
-      : { kind: "team-detail", teamKey: selectedTeamKey },
+      : { kind: "team-detail", teamKey: openTeamKey },
   );
   /**
-   * The host owns which team is open. Before this, `selectedTeamKey` only decorated the list and
-   * the detail could be reached solely by clicking a row — so nothing outside this component
-   * could send a user to a specific team, which the repair red dot and the in-session team error
-   * both promise to do. It also meant every story of the detail had to open with a fake click.
-   *
    * Applied on change rather than on every render, so the back button still returns to the list
    * instead of being immediately overridden by a host that keeps passing the same key.
    */
-  const appliedSelectedTeamKey = useRef(selectedTeamKey);
-  if (appliedSelectedTeamKey.current !== selectedTeamKey) {
-    appliedSelectedTeamKey.current = selectedTeamKey;
-    if (selectedTeamKey !== undefined && selectedTeamKey !== null) {
-      setView({ kind: "team-detail", teamKey: selectedTeamKey });
+  const appliedOpenTeamKey = useRef(openTeamKey);
+  if (appliedOpenTeamKey.current !== openTeamKey) {
+    appliedOpenTeamKey.current = openTeamKey;
+    if (openTeamKey !== undefined && openTeamKey !== null) {
+      setView({ kind: "team-detail", teamKey: openTeamKey });
     }
   }
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);

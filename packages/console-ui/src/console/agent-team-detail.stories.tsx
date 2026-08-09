@@ -128,6 +128,7 @@ function TeamDetailHarness({
       {...args}
       state={{ status: "ready", teams: [team] }}
       selectedTeamKey={team.teamKey}
+      openTeamKey={team.teamKey}
       selectedMemberSlug={selected}
       detailState={detail}
       onOpenTeam={() => undefined}
