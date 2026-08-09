@@ -361,6 +361,8 @@ function SubtaskTimelineEntry({
                 : t(resolveOutcomeDescriptionKey(outcome, null)!)),
               contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
               severity: outcomeSeverity(outcome),
+              elapsedMs: identityRole !== null ? null : message.runTiming?.elapsedMs,
+              completedAt: message.runTiming?.completedAt,
             }}
           />
         )}

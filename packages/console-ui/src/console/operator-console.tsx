@@ -3882,6 +3882,8 @@ function TimelineEntry({
               detail: incidentDetail,
               contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
               severity: outcomeSeverity(outcome),
+              elapsedMs: showIdentityHeader ? null : message.runTiming?.elapsedMs,
+              completedAt: message.runTiming?.completedAt,
             }}
           />
         )}

@@ -373,9 +373,44 @@ const outcomeMessages: OperatorMessage[] = [
   },
 ];
 
+const headerlessFailure: OperatorMessage = {
+  id: 5,
+  sessionId: "review",
+  speaker: "system",
+  role: null,
+  body: "",
+  status: "failed",
+  systemEventKind: "other",
+  terminal: {
+    kind: "crashed",
+    subkind: null,
+    safeCode: null,
+    retryable: true,
+    partialMarkdown: "",
+    contentIncomplete: true,
+    actualProfile: null,
+  },
+  runTiming: {
+    stepId: "step-crashed",
+    attempt: 1,
+    createdAt: "2026-07-11T10:19:00.000Z",
+    startedAt: "2026-07-11T10:19:00.000Z",
+    elapsedMs: 38_000,
+    completedAt: "2026-07-11T10:19:38.000Z",
+    status: "failed",
+    engine: "codex",
+    processOutputAvailable: false,
+  },
+  runId: "run-crashed",
+  runDir: null,
+  error: null,
+  createdAt: "2026-07-11T10:19:38.000Z",
+  updatedAt: "2026-07-11T10:19:38.000Z",
+};
+
 export const RunOutcomes: Story = {
   args: {
-    messages: outcomeMessages,
+    messages: [...outcomeMessages, headerlessFailure],
     activeRun: null,
     selectedSession: { ...session, status: "stuck", runningCount: 0, stuckCount: 1 },
   },
