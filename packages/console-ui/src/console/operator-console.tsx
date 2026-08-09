@@ -3732,7 +3732,6 @@ function TimelineEntry({
       <RunOutcome
         status={outcome}
         rawReason={message.error ?? message.body}
-        rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
         initialProfile={message.terminal?.actualProfile}
         executionRegistryState={executionRegistryState}
         providerProfiles={providerProfiles}
@@ -3800,14 +3799,6 @@ function TimelineEntry({
               runId: message.runId,
             })
           : undefined}
-        onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
-          kind: "run-output",
-          sessionId: message.sessionId,
-          runId: message.runId!,
-          stepId: message.runTiming?.stepId ?? null,
-          role: processRole,
-          fallbackOutput,
-        })}
       />
     );
     return (
@@ -3883,11 +3874,28 @@ function TimelineEntry({
             onOpenTeamMember={onOpenTeamMember}
           />
         )}
-        {outcome === "user-stopped" ? (
-          <MessageToolbar>{recoveryActions}</MessageToolbar>
-        ) : (
+        <MessageToolbar className={partialMarkdown === "" ? undefined : undefined}>
+          {message.runId !== null && onOpenEvidence ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenEvidence({
+                kind: "run-output",
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: processRole,
+                fallbackOutput: providerUnavailable === null
+                  ? message.error ?? message.body
+                  : message.body,
+              })}
+            />
+          ) : null}
+          {outcome === "user-stopped" ? recoveryActions : null}
+        </MessageToolbar>
+        {outcome === "user-stopped" ? null : (
           <IncidentCard
-            className={partialMarkdown === "" ? undefined : "mt-2"}
+            className="mt-1.5"
             incident={{
               label: t(resolveOutcomeLabelKey(outcome, providerUnavailable)),
               detail: incidentDetail,

@@ -49,9 +49,7 @@ export type ProviderUnavailableKind = "disabled" | "needs-attention" | "missing"
 export interface RunOutcomeProps {
   status: RunOutcomeStatus;
   rawReason?: string | null;
-  rawOutput?: string | null;
   defaultOpen?: boolean;
-  onOpenOutput?: (rawOutput: string | null) => void;
   onRetry?: () => void | Promise<void>;
   onEditAndResend?: () => void;
   initialProfile?: RegistryExecutionProfile | null;
@@ -125,9 +123,7 @@ export function outcomeSeverity(status: RunOutcomeStatus): "warning" | "danger" 
 export function RunOutcome({
   status,
   rawReason: _rawReason,
-  rawOutput,
   defaultOpen: _defaultOpen,
-  onOpenOutput,
   onRetry,
   onEditAndResend,
   initialProfile,
@@ -254,13 +250,6 @@ export function RunOutcome({
                 icon={PenLine}
                 label={t("console.runOutcome.editResendLabel")}
                 onClick={onEditAndResend}
-              />
-            ) : null}
-            {onOpenOutput ? (
-              <OutcomeAction
-                icon={FileText}
-                label={t("console.common.fullOutput")}
-                onClick={() => onOpenOutput(nonBlank(rawOutput))}
               />
             ) : null}
           </span>

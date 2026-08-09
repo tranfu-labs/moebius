@@ -18,27 +18,23 @@ const outcomeFixtures: Array<{ status: RunOutcomeStatus; summary: string; reason
 ];
 
 describe("RunOutcome", () => {
-  it("keeps retry separate from the complete-output action", () => {
+  it("offers retry as a labelled action", () => {
     const onRetry = vi.fn();
     const onOpenOutput = vi.fn();
     render(
       <RunOutcome
         status="run-not-started"
         rawReason="exit:42"
-        rawOutput="complete failure output"
         onRetry={onRetry}
-        onOpenOutput={onOpenOutput}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
-    expect(onOpenOutput).toHaveBeenCalledWith("complete failure output");
     expect(screen.queryByText("exit:42")).not.toBeInTheDocument();
   });
 
-  it("keeps the accessible edit-and-resend and complete-output actions for a user interruption", () => {
+  it("keeps the accessible edit-and-resend action for a user interruption", () => {
     const onEditAndResend = vi.fn();
     const onOpenOutput = vi.fn();
     const onRetry = vi.fn();
@@ -47,7 +43,6 @@ describe("RunOutcome", () => {
         status="user-stopped"
         onEditAndResend={onEditAndResend}
         onRetry={onRetry}
-        onOpenOutput={onOpenOutput}
       />,
     );
 
@@ -55,8 +50,6 @@ describe("RunOutcome", () => {
     expect(onRetry).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
     expect(onEditAndResend).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
-    expect(onOpenOutput).toHaveBeenCalledWith(null);
   });
 
   it("does not expose edit or resend on other outcomes", () => {
@@ -83,7 +76,6 @@ describe("RunOutcome", () => {
         status="run-crashed"
         providerUnavailable="disabled"
         rawReason="pi-provider-disabled"
-        rawOutput="当前 Pi API 档案已停用。"
         onRetry={onRetry}
         onOverrideAndRetry={vi.fn()}
         onSelectTeam={onSelectTeam}

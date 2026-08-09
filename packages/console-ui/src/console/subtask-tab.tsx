@@ -9,6 +9,7 @@ import type {
   OperatorSubSessionView,
 } from "@/console/operator-console";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
+import { FileText } from "lucide-react";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
 import {
@@ -18,7 +19,7 @@ import {
   resolveOutcomeLabelKey,
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
-import { MessageToolbar } from "@/console/message-toolbar";
+import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { IncidentCard } from "@/console/incident-card";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { RunTime } from "@/console/run-time";
@@ -275,7 +276,6 @@ function SubtaskTimelineEntry({
       <RunOutcome
       status={outcome}
       rawReason={message.error ?? message.body}
-      rawOutput={message.error ?? message.body}
       initialProfile={message.terminal?.actualProfile}
       executionRegistryState={executionRegistryState}
       providerProfiles={providerProfiles}
@@ -308,16 +308,6 @@ function SubtaskTimelineEntry({
         && onUpdateMemberExecution !== undefined
         ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
         : undefined}
-      onOpenOutput={message.runId === null
-        || onOpenOutput === undefined
-        ? undefined
-        : (fallbackOutput) => onOpenOutput({
-            sessionId: message.sessionId,
-            runId: message.runId!,
-            stepId: message.runTiming?.stepId ?? null,
-            role: processRole,
-            fallbackOutput,
-          })}
       />
     );
     return (
@@ -359,11 +349,25 @@ function SubtaskTimelineEntry({
             {t("console.runOutcome.incomplete")}
           </span>
         ) : null}
-      {outcome === "user-stopped" ? (
-          <MessageToolbar>{recoveryActions}</MessageToolbar>
-        ) : (
+      <MessageToolbar>
+          {message.runId !== null && onOpenOutput !== undefined ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenOutput({
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: processRole,
+                fallbackOutput: message.error ?? message.body,
+              })}
+            />
+          ) : null}
+          {outcome === "user-stopped" ? recoveryActions : null}
+        </MessageToolbar>
+        {outcome === "user-stopped" ? null : (
           <IncidentCard
-            className={partialMarkdown === "" ? undefined : "mt-2"}
+            className="mt-1.5"
             incident={{
               label: t(resolveOutcomeLabelKey(outcome, null)),
               detail: stripLegacyOutcomeBoilerplate(
