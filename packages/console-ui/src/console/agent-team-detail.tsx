@@ -729,9 +729,14 @@ export function AgentTeamDetail({
             headerPinned ? "border-line" : "border-transparent",
           )}
         />
+        {/*
+          Pulled left by the chevron's own side bearing: lucide draws the glyph 6px inside a 16px
+          box, so a button sitting flush on the column would still put visible ink 6px in. What
+          lines up down the left edge of a page is ink, not boxes.
+        */}
         <button
           type="button"
-          className="mb-1 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          className="-ml-1.5 mb-1 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
           onClick={() => requestGuardedAction(onLeave)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -746,10 +751,16 @@ export function AgentTeamDetail({
                 data through a modal on one half of the page and an inline field on the other is
                 the sort of split that makes a page feel assembled rather than designed.
               */}
+              {/*
+                The -9px is this field's own invisible chrome — 1px transparent border plus 8px of
+                padding — pulled back out so the title's ink lands on the column and not one
+                indent to the right of everything below it. The hover surface still bleeds left,
+                which is what makes it read as a field rather than a heading that shifted.
+              */}
               {teamInformationEditable ? (
                 <input
                   id="agent-team-detail-title"
-                  className="min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-2xl font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
+                  className="-ml-[9px] min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-2xl font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
                   aria-label={t("console.agentTeamDetail.teamNameLabel")}
                   value={teamNameDraft}
                   placeholder={t("console.agentTeamDetail.unnamed")}
@@ -1071,14 +1082,14 @@ export function AgentTeamDetail({
       */}
       {teamInformationEditable ? (
         <input
-          className="w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+          className="-ml-[9px] w-[calc(100%+9px)] rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
           aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
           value={teamDescriptionDraft}
           placeholder={t("console.agentTeamDetail.noDescription")}
           onChange={(event) => setTeamDescriptionDraft(event.currentTarget.value)}
         />
       ) : (
-        <p className="max-w-2xl px-2 text-sm leading-6 text-sub">
+        <p className="max-w-2xl text-sm leading-6 text-sub">
           {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
         </p>
       )}
