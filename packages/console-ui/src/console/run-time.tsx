@@ -55,14 +55,16 @@ export function RunTime({
   const accessible = completedLabel === null
     ? visible
     : t("console.runTime.accessible", { duration: visible, completed: completedLabel });
+  // The completion time is a fact to be read, like the duration — not something
+  // to hide in a tooltip. A bare number leaves the reader unsure what moment it
+  // refers to.
   return (
     <span
-      className={cn("tnum whitespace-nowrap text-xs text-sub", className)}
+      className={cn("tnum inline-flex items-center gap-x-1.5 whitespace-nowrap text-xs text-sub", className)}
       aria-label={accessible}
-      title={completedLabel ?? visible}
-      tabIndex={completedLabel === null ? undefined : 0}
     >
-      {visible}
+      <span>{visible}</span>
+      {completedLabel === null ? null : <span className="text-hint">{completedLabel}</span>}
     </span>
   );
 }

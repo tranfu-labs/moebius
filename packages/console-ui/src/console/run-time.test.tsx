@@ -28,6 +28,8 @@ describe("run time", () => {
     );
 
     expect(screen.getByText("耗时 02:18")).toBeVisible();
-    expect(screen.getByText("耗时 02:18")).toHaveAttribute("aria-label", expect.stringContaining("完成于"));
+    // 完成于要看得见，不是只有悬停才知道
+    expect(screen.getByText("耗时 02:18")).toBeVisible();
+    expect(screen.getByText(/^完成于/u)).toBeVisible();
   });
 });
