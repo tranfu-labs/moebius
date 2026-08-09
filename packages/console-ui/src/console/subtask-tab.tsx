@@ -11,7 +11,15 @@ import type {
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
-import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
+import {
+  RunOutcome,
+  outcomeSeverity,
+  resolveOutcomeDescriptionKey,
+  resolveOutcomeLabelKey,
+  type RunOutcomeStatus,
+} from "@/console/run-outcome";
+import { MessageToolbar } from "@/console/message-toolbar";
+import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { RunTime } from "@/console/run-time";
 import type {
   ExecutionRegistryState,
@@ -262,6 +270,55 @@ function SubtaskTimelineEntry({
     // body; produced content renders normally and the status is a bubble below it.
     const partialMarkdown = message.terminal?.partialMarkdown?.trim() ?? "";
     const identityRole = message.role ?? processRole;
+    const recoveryActions = (
+      <RunOutcome
+      status={outcome}
+      rawReason={message.error ?? message.body}
+      rawOutput={message.error ?? message.body}
+      initialProfile={message.terminal?.actualProfile}
+      executionRegistryState={executionRegistryState}
+      providerProfiles={providerProfiles}
+      onReloadExecutionRegistry={onReloadExecutionRegistry}
+      onRetry={outcome !== "retry-exhausted" && message.runId !== null
+        ? () => onRetry(message.runId!)
+        : undefined}
+      onOverrideAndRetry={
+        message.runId !== null
+        && message.terminal !== null
+        && message.terminal !== undefined
+        && (
+          message.terminal.kind === "interrupted"
+          || message.terminal.kind === "timeout"
+          || message.terminal.kind === "quota-exhausted"
+          || message.terminal.kind === "rate-limited"
+          || message.terminal.kind === "auth"
+          || message.terminal.kind === "crashed"
+        )
+          ? (profile) => onRetry(message.runId!, profile)
+          : undefined
+      }
+      onMigrateAndContinue={message.terminal?.actualProfile?.cli === "pi"
+        && processRole !== null
+        && onUpdateMemberExecution !== undefined
+        ? (profile) => onUpdateMemberExecution?.(message.sessionId, processRole, "migrate", profile)
+        : undefined}
+      onEndContinuation={message.terminal?.actualProfile?.cli === "pi"
+        && processRole !== null
+        && onUpdateMemberExecution !== undefined
+        ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
+        : undefined}
+      onOpenOutput={message.runId === null
+        || onOpenOutput === undefined
+        ? undefined
+        : (fallbackOutput) => onOpenOutput({
+            sessionId: message.sessionId,
+            runId: message.runId!,
+            stepId: message.runTiming?.stepId ?? null,
+            role: processRole,
+            fallbackOutput,
+          })}
+      />
+    );
     return (
       <article className="group py-4 text-sm">
         {identityRole === null ? null : (
@@ -301,59 +358,25 @@ function SubtaskTimelineEntry({
             {t("console.runOutcome.incomplete")}
           </span>
         ) : null}
-      <RunOutcome
-        status={outcome}
-        role={identityRole === null ? processRole : null}
-        memberIdentities={memberIdentities}
-        rawReason={message.error ?? message.body}
-        rawOutput={message.error ?? message.body}
-        description={message.terminal === null || message.terminal === undefined ? null : message.body}
-        elapsedMs={identityRole === null ? message.runTiming?.elapsedMs : null}
-        initialProfile={message.terminal?.actualProfile}
-        executionRegistryState={executionRegistryState}
-        providerProfiles={providerProfiles}
-        onReloadExecutionRegistry={onReloadExecutionRegistry}
-        completedAt={message.runTiming?.completedAt}
-        onRetry={outcome !== "retry-exhausted" && message.runId !== null
-          ? () => onRetry(message.runId!)
-          : undefined}
-        onOverrideAndRetry={
-          message.runId !== null
-          && message.terminal !== null
-          && message.terminal !== undefined
-          && (
-            message.terminal.kind === "interrupted"
-            || message.terminal.kind === "timeout"
-            || message.terminal.kind === "quota-exhausted"
-            || message.terminal.kind === "rate-limited"
-            || message.terminal.kind === "auth"
-            || message.terminal.kind === "crashed"
-          )
-            ? (profile) => onRetry(message.runId!, profile)
-            : undefined
-        }
-        onMigrateAndContinue={message.terminal?.actualProfile?.cli === "pi"
-          && processRole !== null
-          && onUpdateMemberExecution !== undefined
-          ? (profile) => onUpdateMemberExecution?.(message.sessionId, processRole, "migrate", profile)
-          : undefined}
-        onEndContinuation={message.terminal?.actualProfile?.cli === "pi"
-          && processRole !== null
-          && onUpdateMemberExecution !== undefined
-          ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
-          : undefined}
-        onOpenOutput={message.runId === null
-          || onOpenOutput === undefined
-          ? undefined
-          : (fallbackOutput) => onOpenOutput({
-              sessionId: message.sessionId,
-              runId: message.runId!,
-              stepId: message.runTiming?.stepId ?? null,
-              role: processRole,
-              fallbackOutput,
-            })}
-        presentation={outcome === "user-stopped" ? "quiet-actions" : "bubble"}
-      />
+      <MessageToolbar
+          incident={outcome === "user-stopped" ? null : {
+            label: t(resolveOutcomeLabelKey(outcome, null)),
+            detail: stripLegacyOutcomeBoilerplate(
+              message.terminal === null || message.terminal === undefined ? null : message.body,
+            ) || (resolveOutcomeDescriptionKey(outcome, null) === null
+              ? null
+              : t(resolveOutcomeDescriptionKey(outcome, null)!)),
+            contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+            elapsedMs: message.runTiming?.elapsedMs,
+            completedAt: message.runTiming?.completedAt,
+            severity: outcomeSeverity(outcome),
+          }}
+          incidentDetail={outcome === "user-stopped" ? undefined : (
+            <div className="mt-2">{recoveryActions}</div>
+          )}
+        >
+          {outcome === "user-stopped" ? recoveryActions : null}
+        </MessageToolbar>
         </div>
         </div>
       </article>

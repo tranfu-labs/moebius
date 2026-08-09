@@ -6,7 +6,6 @@ const meta = {
   title: "Component/Console/RunOutcome",
   component: RunOutcome,
   args: {
-    role: "dev",
     status: "run-not-started",
     rawReason: "exit:42",
     rawOutput: "line one\n<failure reason=\"exit\"> & exit:42",

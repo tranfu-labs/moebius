@@ -373,6 +373,8 @@ export const consoleZhCN = {
   "console.runBlock.progress": "正在推进这一步…",
   "console.runBlock.stopMember": "停下{member}",
   "console.runBlock.waiting": "等待开始",
+  "console.messageToolbar.incidentLabel": "查看事故详情：{state}",
+  "console.messageToolbar.incompleteHint": "上面的内容在中途停下，不是完整结论。",
   "console.runOutcome.editResend": "改一改重发",
   "console.runOutcome.editResendLabel": "改一改重发这轮消息",
   "console.runOutcome.notStarted.title": "没有启动",

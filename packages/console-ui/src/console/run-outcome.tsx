@@ -20,12 +20,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
 import {
-  resolveOperatorMemberName,
-  type OperatorMemberIdentity,
-} from "@/console/member-name";
-import { RunTime } from "@/console/run-time";
-import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
-import {
   findExecutionModel,
   findPiExecutionModel,
   listExecutionModels,
@@ -54,13 +48,8 @@ export type ProviderUnavailableKind = "disabled" | "needs-attention" | "missing"
 
 export interface RunOutcomeProps {
   status: RunOutcomeStatus;
-  role?: string | null;
-  memberIdentities?: readonly OperatorMemberIdentity[];
   rawReason?: string | null;
   rawOutput?: string | null;
-  description?: string | null;
-  elapsedMs?: number | null;
-  completedAt?: string | null;
   defaultOpen?: boolean;
   onOpenOutput?: (rawOutput: string | null) => void;
   onRetry?: () => void | Promise<void>;
@@ -75,12 +64,6 @@ export interface RunOutcomeProps {
   providerUnavailable?: ProviderUnavailableKind | null;
   onSelectTeam?: () => void;
   maintenanceAction?: { label: string; onClick: () => void };
-  /**
-   * "bubble" shows a standing status chip; "quiet-actions" keeps only the
-   * hover-revealed recovery actions, for a stop the user performed themselves —
-   * they already know it happened, so restating it is noise.
-   */
-  presentation?: "bubble" | "quiet-actions";
   className?: string;
 }
 
@@ -112,15 +95,37 @@ const outcomeDescriptionKeys: Record<RunOutcomeStatus, TranslationKey | null> = 
   "run-crashed": "console.runOutcome.crashed.description",
 };
 
+export function resolveOutcomeLabelKey(
+  status: RunOutcomeStatus,
+  providerUnavailable: ProviderUnavailableKind | null,
+): TranslationKey {
+  if (providerUnavailable === "disabled") return "console.runOutcome.providerDisabled.title";
+  if (providerUnavailable === "needs-attention") return "console.runOutcome.providerNeedsAttention.title";
+  if (providerUnavailable === "missing") return "console.runOutcome.providerMissing.title";
+  return outcomeLabelKeys[status];
+}
+
+export function resolveOutcomeDescriptionKey(
+  status: RunOutcomeStatus,
+  providerUnavailable: ProviderUnavailableKind | null,
+): TranslationKey | null {
+  if (providerUnavailable === "disabled") return "console.runOutcome.providerDisabled.description";
+  if (providerUnavailable === "needs-attention") return "console.runOutcome.providerNeedsAttention.description";
+  if (providerUnavailable === "missing") return "console.runOutcome.providerMissing.description";
+  return outcomeDescriptionKeys[status];
+}
+
+/** A terminal state severe enough that the incident marker reads as an error, not a warning. */
+export function outcomeSeverity(status: RunOutcomeStatus): "warning" | "danger" {
+  return status === "resume-unavailable" || status === "auth-failed" || status === "quota-exhausted"
+    ? "danger"
+    : "warning";
+}
+
 export function RunOutcome({
   status,
-  role,
-  memberIdentities = [],
   rawReason: _rawReason,
   rawOutput,
-  description,
-  elapsedMs,
-  completedAt,
   defaultOpen: _defaultOpen,
   onOpenOutput,
   onRetry,
@@ -135,7 +140,6 @@ export function RunOutcome({
   providerUnavailable = null,
   onSelectTeam,
   maintenanceAction,
-  presentation = "bubble",
   className,
 }: RunOutcomeProps): JSX.Element {
   const { t } = useI18n();
@@ -182,54 +186,12 @@ export function RunOutcome({
       ));
     }
   }, [executionRegistryState, overrideProfile, providerProfiles]);
-  const roleLabel = role
-    ? resolveOperatorMemberName(role, memberIdentities, t, t("console.common.collaborator"))
-    : null;
-  const quiet = presentation === "quiet-actions";
   const providerBlocked = providerUnavailable !== null;
-  const outcomeLabelKey = providerUnavailable === "disabled"
-    ? "console.runOutcome.providerDisabled.title"
-    : providerUnavailable === "needs-attention"
-      ? "console.runOutcome.providerNeedsAttention.title"
-      : providerUnavailable === "missing"
-        ? "console.runOutcome.providerMissing.title"
-        : outcomeLabelKeys[status];
-  const outcomeDescriptionKey = providerUnavailable === "disabled"
-    ? "console.runOutcome.providerDisabled.description"
-    : providerUnavailable === "needs-attention"
-      ? "console.runOutcome.providerNeedsAttention.description"
-      : providerUnavailable === "missing"
-        ? "console.runOutcome.providerMissing.description"
-        : outcomeDescriptionKeys[status];
-  const strippedDescription = stripLegacyOutcomeBoilerplate(description);
-  const displayDescription = strippedDescription !== ""
-    ? strippedDescription
-    : outcomeDescriptionKey === null ? "" : t(outcomeDescriptionKey);
 
   return (
     <div className={cn("max-w-[720px]", className)}>
       <TooltipProvider delayDuration={200} skipDelayDuration={100}>
-        <div className={cn(
-          "inline-flex max-w-full flex-wrap items-center gap-x-2 rounded-[10px]",
-          quiet
-            ? "opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-            : "bg-sunken py-1 pl-2.5 pr-1",
-        )}>
-          {quiet ? null : (
-            <>
-              <span className="flex shrink-0" aria-hidden="true">
-                <OutcomeIcon status={status} />
-              </span>
-              <span className="text-[12.5px] leading-5 text-ink">{t(outcomeLabelKey)}</span>
-              {roleLabel ? <span className="text-xs text-sub">{roleLabel}</span> : null}
-              {elapsedMs !== null && elapsedMs !== undefined ? (
-                <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
-              ) : null}
-              {displayDescription === "" ? null : (
-                <span className="text-xs text-sub">{displayDescription}</span>
-              )}
-            </>
-          )}
+        <div className="flex flex-wrap items-center gap-x-2">
           <span className="flex shrink-0 items-center">
             {maintenanceAction !== undefined ? (
               <OutcomeAction icon={Settings} label={maintenanceAction.label} onClick={maintenanceAction.onClick} />

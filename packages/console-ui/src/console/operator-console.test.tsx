@@ -24,6 +24,13 @@ afterEach(() => {
   setWindowWidth(originalWindowWidth);
 });
 
+/** 状态与恢复动作现在折叠在消息工具条的事故三角后面，断言前先展开。 */
+function openIncident(index = 0): void {
+  // 打开一个弹层后 Radix 会把其它内容标记为 aria-hidden，查询要带上 hidden。
+  const markers = screen.getAllByRole("button", { name: /查看事故详情/u, hidden: true });
+  fireEvent.click(markers[index]!);
+}
+
 describe("OperatorConsole", () => {
   it("keeps the composer editable while a host-provided submission block disables send", () => {
     const onSend = vi.fn();
@@ -1770,22 +1777,20 @@ describe("OperatorConsole", () => {
       element?.tagName === "P"
       && element.textContent === "产物位于 /tmp/private-run，runId=run-secret。")).toBeVisible();
     const outputButton = screen.getByRole("button", { name: "完整输出" });
-    expect(outputButton).toHaveAttribute("title", "完整输出");
-    expect(outputButton).toHaveClass(
-      "absolute",
-      "left-8",
-      "top-full",
-      "h-6",
-      "w-6",
+    expect(outputButton).toHaveAccessibleName("完整输出");
+    // 轻操作从"绝对定位的单个图标"改为消息底部的安静工具条：
+    // 行内不跳版，默认透明，整条消息 hover / focus-within 时浮出。
+    const toolbarRow = outputButton.closest("span")!;
+    expect(toolbarRow).toHaveClass(
       "opacity-0",
       "group-hover:opacity-100",
       "group-focus-within:opacity-100",
-      "focus-visible:opacity-100",
-    );
+    )
     expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
     expect(outputButton).not.toHaveTextContent("完整输出");
     expect(outputButton.querySelector("svg")).not.toBeNull();
-    expect(outputButton.parentElement).toHaveClass("relative", "pl-8");
+    // 工具条挂在正文下方、与正文同一左边界，不再是绝对定位的孤立图标。
+    expect(outputButton.closest("div")).toHaveClass("mt-1", "flex", "h-6", "items-center");
     expect(screen.queryByText(/路径已隐藏/u)).not.toBeInTheDocument();
   });
 
@@ -2507,19 +2512,8 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    // 用户自己按的停止不再报状态——他知道自己按了；恢复动作仍在（下面断言）。
+    // 用户自己按的停止不报状态，恢复动作直接留在工具条上。
     expect(screen.queryByText("已停止")).not.toBeInTheDocument();
-    expect(screen.getByText("没有启动")).toBeVisible();
-    expect(screen.getByText(
-      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
-    )).toBeVisible();
-    expect(screen.getByText("无响应")).toBeVisible();
-    expect(screen.getByText("多次未能启动")).toBeVisible();
-    expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();
-    expect(screen.queryByText("idle-timeout:10ms")).not.toBeInTheDocument();
-
-    expect(screen.queryByRole("button", { name: "查看日志" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "完整输出" })).toHaveLength(4);
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
     expect(onEditAndResend).toHaveBeenCalledWith({
       stoppedMessageId: 1,
@@ -2527,13 +2521,32 @@ describe("OperatorConsole", () => {
       runId: "run-stop",
     });
     expect(screen.getAllByRole("button", { name: /改一改重发/u })).toHaveLength(1);
-    const retryButtons = screen.getAllByRole("button", { name: "重试" });
-    fireEvent.click(retryButtons[0]!);
-    fireEvent.click(retryButtons[1]!);
-    fireEvent.click(retryButtons[2]!);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetryRun).toHaveBeenNthCalledWith(1, "session-a", "run-stop");
-    expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-fail");
-    expect(onRetryRun).toHaveBeenNthCalledWith(3, "session-a", "run-stuck");
+
+    // 三条失败各自折叠在一个事故入口后面，一次展开一个。
+    expect(screen.getAllByRole("button", { name: /查看事故详情/u, hidden: true })).toHaveLength(3);
+    const incidents = [
+      { label: "没有启动", runId: "run-fail", detail: "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。" },
+      { label: "无响应", runId: "run-stuck", detail: null },
+      { label: "多次未能启动", runId: null, detail: null },
+    ];
+    incidents.forEach((incident, index) => {
+      openIncident(index);
+      expect(screen.getByText(incident.label)).toBeVisible();
+      if (incident.detail !== null) {
+        expect(screen.getByText(incident.detail)).toBeVisible();
+      }
+      expect(screen.getAllByRole("button", { name: "完整输出", hidden: true }).length).toBeGreaterThan(0);
+      if (incident.runId !== null) {
+        fireEvent.click(screen.getAllByRole("button", { name: "重试", hidden: true }).at(-1)!);
+        expect(onRetryRun).toHaveBeenLastCalledWith("session-a", incident.runId);
+      }
+    });
+
+    expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();
+    expect(screen.queryByText("idle-timeout:10ms")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看日志" })).not.toBeInTheDocument();
   });
 
   it("shows a planned-configuration audit avatar when a run fails before startup without a message role", async () => {
@@ -2606,7 +2619,13 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getAllByRole("button", { name: "换执行配置重跑" })).toHaveLength(2);
+    // 两条失败各自在事故弹层里提供「仅本次换执行配置」的入口。
+    expect(screen.getAllByRole("button", { name: /查看事故详情/u, hidden: true })).toHaveLength(2);
+    openIncident(0);
+    expect(screen.getAllByRole("button", { name: "换执行配置重跑", hidden: true })).toHaveLength(1);
+    openIncident(1);
+    expect(screen.getAllByRole("button", { name: "换执行配置重跑", hidden: true })).toHaveLength(1);
+    openIncident(0);
   });
 
   it("exposes the trusted Claude update action for a runtime version gate", () => {
@@ -2626,6 +2645,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
+    openIncident();
     expect(screen.getByText("Claude Code 版本过旧，需要 2.1.170 或更高版本。")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "更新 Claude Code" }));
     expect(onUpdateClaude).toHaveBeenCalledOnce();
@@ -2657,6 +2677,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
+    openIncident();
     expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
@@ -2686,6 +2707,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
+    openIncident();
     expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.getByText(body)).toBeVisible();
     expect(screen.queryByText("/Users/private/.kimi-code/bin/kimi")).not.toBeInTheDocument();
@@ -2707,6 +2729,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
+    openIncident();
     expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText(/机器信息已隐藏/u)).not.toBeInTheDocument();
   });
@@ -3167,6 +3190,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "/tmp/project" })).toBeVisible();
     expect(screen.getByRole("button", { name: "/tmp/run" })).toBeVisible();
     expect(screen.queryByText("正在推进这一步…")).not.toBeInTheDocument();
+    openIncident();
     expect(screen.getByText("多次未能启动")).toBeVisible();
     expect(screen.queryByText(/\/tmp\/moebius-run/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/cwd=\/tmp/u)).not.toBeInTheDocument();

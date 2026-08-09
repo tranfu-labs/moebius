@@ -18,16 +18,6 @@ const outcomeFixtures: Array<{ status: RunOutcomeStatus; summary: string; reason
 ];
 
 describe("RunOutcome", () => {
-  it("maps terminal outcomes to readable summaries without rendering machine reasons", () => {
-    for (const fixture of outcomeFixtures) {
-      const { unmount } = render(<RunOutcome status={fixture.status} role="dev" rawReason={fixture.reason} />);
-
-      expect(screen.getByText(fixture.summary)).toBeVisible();
-      expect(screen.queryByText(fixture.reason)).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
   it("keeps retry separate from the complete-output action", () => {
     const onRetry = vi.fn();
     const onOpenOutput = vi.fn();
@@ -48,21 +38,6 @@ describe("RunOutcome", () => {
     expect(screen.queryByText("exit:42")).not.toBeInTheDocument();
   });
 
-  it("shows an actionable safe description without exposing the machine reason", () => {
-    render(
-      <RunOutcome
-        status="run-not-started"
-        rawReason="codex-cli-upgrade-required"
-        description="Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。"
-      />,
-    );
-
-    expect(screen.getByText(
-      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
-    )).toBeVisible();
-    expect(screen.queryByText("codex-cli-upgrade-required")).not.toBeInTheDocument();
-  });
-
   it("keeps the accessible edit-and-resend and complete-output actions for a user interruption", () => {
     const onEditAndResend = vi.fn();
     const onOpenOutput = vi.fn();
@@ -76,7 +51,6 @@ describe("RunOutcome", () => {
       />,
     );
 
-    expect(screen.getByText("已停止")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
@@ -120,8 +94,6 @@ describe("RunOutcome", () => {
       />,
     );
 
-    expect(screen.getByText("Pi API 档案已停用")).toBeVisible();
-    expect(screen.getByText(/没有请求服务商/u)).toBeVisible();
     expect(screen.queryByText(/PiHost/u)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "换执行配置重跑" })).toBeVisible();
@@ -131,35 +103,6 @@ describe("RunOutcome", () => {
     expect(onOpenProviderSettings).toHaveBeenCalledOnce();
     expect(onSelectTeam).toHaveBeenCalledOnce();
     expect(onRetry).not.toHaveBeenCalled();
-  });
-
-  it("shows the same custom member name for every terminal fact", () => {
-    for (const fixture of outcomeFixtures) {
-      const { unmount } = render(
-        <RunOutcome
-          status={fixture.status}
-          role="plan-executor"
-          memberIdentities={[{ slug: "plan-executor", displayName: "方案执行者" }]}
-        />,
-      );
-      expect(screen.getByText("方案执行者")).toBeVisible();
-      expect(screen.queryByText("协作者")).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it("shows terminal duration once and omits a fake zero duration when no process started", () => {
-    const { rerender } = render(
-      <RunOutcome
-        status="run-stuck"
-        elapsedMs={138_000}
-        completedAt="2026-07-26T06:32:00.000Z"
-      />,
-    );
-    expect(screen.getByText("耗时 02:18")).toBeVisible();
-
-    rerender(<RunOutcome status="run-not-started" elapsedMs={null} />);
-    expect(screen.queryByText(/耗时|00:00/u)).not.toBeInTheDocument();
   });
 
   it("submits a single-run profile override", async () => {

@@ -127,9 +127,14 @@ import {
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
+import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
+import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { MarkdownMessage } from "@/console/markdown-message";
 import {
   RunOutcome,
+  outcomeSeverity,
+  resolveOutcomeDescriptionKey,
+  resolveOutcomeLabelKey,
   type ProviderUnavailableKind,
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
@@ -3712,6 +3717,93 @@ function TimelineEntry({
       && onLoadRunAgentInfo !== undefined
       && onLoadRunAgentMarkdown !== undefined;
     const showIdentityHeader = identityRole !== null || canAudit;
+    const strippedDetail = stripLegacyOutcomeBoilerplate(terminalOutcomeDescription(message));
+    const descriptionKey = resolveOutcomeDescriptionKey(outcome, providerUnavailable);
+    const incidentDetail = strippedDetail !== ""
+      ? strippedDetail
+      : descriptionKey === null ? null : t(descriptionKey);
+    const recoveryActions = (
+      <RunOutcome
+        status={outcome}
+        rawReason={message.error ?? message.body}
+        rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
+        initialProfile={message.terminal?.actualProfile}
+        executionRegistryState={executionRegistryState}
+        providerProfiles={providerProfiles}
+        onReloadExecutionRegistry={onReloadExecutionRegistry}
+        providerUnavailable={providerUnavailable}
+        onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
+          ? () => onRetryRun?.(message.sessionId, message.runId!)
+          : undefined}
+        onOverrideAndRetry={
+          message.runId !== null
+          && message.terminal !== null
+          && message.terminal !== undefined
+          && (
+            message.terminal.kind === "interrupted"
+            || message.terminal.kind === "timeout"
+            || message.terminal.kind === "quota-exhausted"
+            || message.terminal.kind === "rate-limited"
+            || message.terminal.kind === "auth"
+            || message.terminal.kind === "crashed"
+          )
+            ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
+            : undefined
+        }
+        onMigrateAndContinue={providerUnavailable === null
+          && message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateSessionMemberExecution !== undefined
+          ? (profile) => onUpdateSessionMemberExecution(message.sessionId, processRole, "migrate", profile)
+          : undefined}
+        onEndContinuation={providerUnavailable === null
+          && message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateSessionMemberExecution !== undefined
+          ? () => onUpdateSessionMemberExecution(message.sessionId, processRole, "end")
+          : undefined}
+        onSelectTeam={providerUnavailable !== null && onOpenTeamMenu !== undefined
+          ? onOpenTeamMenu
+          : undefined}
+        maintenanceAction={providerUnavailable === "disabled" && onOpenProviderSettings !== undefined
+          ? {
+              label: t("console.runOutcome.reenableProvider"),
+              onClick: onOpenProviderSettings,
+            }
+          : providerUnavailable === "needs-attention" && onOpenProviderSettings !== undefined
+            ? {
+                label: t("console.runOutcome.repairProvider"),
+                onClick: onOpenProviderSettings,
+              }
+            : providerUnavailable === "missing" && onOpenProviderSettings !== undefined
+              ? {
+                  label: t("console.runOutcome.openProviderSettings"),
+                  onClick: onOpenProviderSettings,
+                }
+              : message.error === "claude-cli-unsupported-version"
+          && onUpdateClaude !== undefined
+          ? {
+              label: t("onboarding.updateClaude"),
+              onClick: onUpdateClaude,
+            }
+          : undefined}
+        onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
+          ? () => onEditAndResend({
+              stoppedMessageId: message.id,
+              sessionId: message.sessionId,
+              runId: message.runId,
+            })
+          : undefined}
+        onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
+          kind: "run-output",
+          sessionId: message.sessionId,
+          runId: message.runId!,
+          stepId: message.runTiming?.stepId ?? null,
+          role: processRole,
+          fallbackOutput,
+        })}
+      />
+    );
     return (
       <div
         className="group relative py-3 text-sm"
@@ -3782,104 +3874,25 @@ function TimelineEntry({
             onOpenTeamMember={onOpenTeamMember}
           />
         )}
-        <div className={cn("flex flex-wrap items-center gap-2", partialMarkdown === "" ? undefined : "mt-2")}>
-        {partialMarkdown !== "" && message.terminal?.contentIncomplete ? (
-          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
-            {t("console.runOutcome.incomplete")}
-          </span>
-        ) : null}
-        <RunOutcome
-          status={outcome}
-          role={showIdentityHeader ? null : processRole}
-          memberIdentities={memberIdentities}
-          rawReason={message.error ?? message.body}
-          rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
-          description={terminalOutcomeDescription(message)}
-          initialProfile={message.terminal?.actualProfile}
-          executionRegistryState={executionRegistryState}
-          providerProfiles={providerProfiles}
-          onReloadExecutionRegistry={onReloadExecutionRegistry}
-          elapsedMs={showIdentityHeader ? null : message.runTiming?.elapsedMs}
-          completedAt={message.runTiming?.completedAt}
-          providerUnavailable={providerUnavailable}
-          onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
-            ? () => onRetryRun?.(message.sessionId, message.runId!)
-            : undefined}
-          onOverrideAndRetry={
-            message.runId !== null
-            && message.terminal !== null
-            && message.terminal !== undefined
-            && (
-              message.terminal.kind === "interrupted"
-              || message.terminal.kind === "timeout"
-              || message.terminal.kind === "quota-exhausted"
-              || message.terminal.kind === "rate-limited"
-              || message.terminal.kind === "auth"
-              || message.terminal.kind === "crashed"
-            )
-              ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
-              : undefined
-          }
-          onMigrateAndContinue={providerUnavailable === null
-            && message.terminal?.actualProfile?.cli === "pi"
-            && processRole !== null
-            && onUpdateSessionMemberExecution !== undefined
-            ? (profile) => onUpdateSessionMemberExecution(message.sessionId, processRole, "migrate", profile)
-            : undefined}
-          onEndContinuation={providerUnavailable === null
-            && message.terminal?.actualProfile?.cli === "pi"
-            && processRole !== null
-            && onUpdateSessionMemberExecution !== undefined
-            ? () => onUpdateSessionMemberExecution(message.sessionId, processRole, "end")
-            : undefined}
-          onSelectTeam={providerUnavailable !== null && onOpenTeamMenu !== undefined
-            ? onOpenTeamMenu
-            : undefined}
-          maintenanceAction={providerUnavailable === "disabled" && onOpenProviderSettings !== undefined
-            ? {
-                label: t("console.runOutcome.reenableProvider"),
-                onClick: onOpenProviderSettings,
-              }
-            : providerUnavailable === "needs-attention" && onOpenProviderSettings !== undefined
-              ? {
-                  label: t("console.runOutcome.repairProvider"),
-                  onClick: onOpenProviderSettings,
-                }
-              : providerUnavailable === "missing" && onOpenProviderSettings !== undefined
-                ? {
-                    label: t("console.runOutcome.openProviderSettings"),
-                    onClick: onOpenProviderSettings,
-                  }
-                : message.error === "claude-cli-unsupported-version"
-            && onUpdateClaude !== undefined
-            ? {
-                label: t("onboarding.updateClaude"),
-                onClick: onUpdateClaude,
-              }
-            : undefined}
-          onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
-            ? () => onEditAndResend({
-                stoppedMessageId: message.id,
-                sessionId: message.sessionId,
-                runId: message.runId,
-              })
-            : undefined}
-          onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
-            kind: "run-output",
-            sessionId: message.sessionId,
-            runId: message.runId!,
-            stepId: message.runTiming?.stepId ?? null,
-            role: processRole,
-            fallbackOutput,
-          })}
-          presentation={outcome === "user-stopped" ? "quiet-actions" : "bubble"}
-        />
-        </div>
+        <MessageToolbar
+          incident={outcome === "user-stopped" ? null : {
+            label: t(resolveOutcomeLabelKey(outcome, providerUnavailable)),
+            detail: incidentDetail,
+            contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+            elapsedMs: message.runTiming?.elapsedMs,
+            completedAt: message.runTiming?.completedAt,
+            severity: outcomeSeverity(outcome),
+          }}
+          incidentDetail={outcome === "user-stopped" ? undefined : (
+            <div className="mt-2">{recoveryActions}</div>
+          )}
+        >
+          {outcome === "user-stopped" ? recoveryActions : null}
+        </MessageToolbar>
         </div>
       </div>
     );
   }
-
   if (message.speaker === "user") {
     return (
       <div className="group py-3 text-sm">
@@ -4006,22 +4019,20 @@ function TimelineEntry({
       {message.speaker === "agent"
       && message.runId !== null
       && onOpenEvidence ? (
-        <button
-          type="button"
-          className="absolute left-8 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
-          aria-label={t("console.common.fullOutput")}
-          title={t("console.common.fullOutput")}
-          onClick={() => onOpenEvidence({
-            kind: "run-output",
-            sessionId: message.sessionId,
-            runId: message.runId!,
-            stepId: message.runTiming?.stepId ?? null,
-            role: message.role,
-            fallbackOutput: message.body,
-          })}
-        >
-          <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-        </button>
+        <MessageToolbar>
+          <MessageAction
+            icon={FileText}
+            label={t("console.common.fullOutput")}
+            onClick={() => onOpenEvidence({
+              kind: "run-output",
+              sessionId: message.sessionId,
+              runId: message.runId!,
+              stepId: message.runTiming?.stepId ?? null,
+              role: message.role,
+              fallbackOutput: message.body,
+            })}
+          />
+        </MessageToolbar>
       ) : null}
       </div>
     </div>

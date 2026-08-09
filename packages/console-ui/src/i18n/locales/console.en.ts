@@ -373,6 +373,8 @@ export const consoleEn = {
   "console.runBlock.progress": "Working on this step…",
   "console.runBlock.stopMember": "Stop {member}",
   "console.runBlock.waiting": "Waiting to start",
+  "console.messageToolbar.incidentLabel": "Incident details: {state}",
+  "console.messageToolbar.incompleteHint": "The content above stops midway and is not a final answer.",
   "console.runOutcome.editResend": "Edit and resend",
   "console.runOutcome.editResendLabel": "Edit and resend this message",
   "console.runOutcome.notStarted.title": "Didn't start",
