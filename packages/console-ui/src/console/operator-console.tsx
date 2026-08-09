@@ -3701,9 +3701,20 @@ function TimelineEntry({
   const auditRole = message.role ?? processRole ?? "agent";
   if (outcome) {
     const providerUnavailable = resolveProviderUnavailableKind(message.terminal?.safeCode);
+    // A terminal record never swallows the body: whatever the agent produced
+    // renders as an ordinary message, and the status is one extra bubble under
+    // it. Identity and timing belong to the header, not repeated in the bubble.
+    const partialMarkdown = message.terminal?.partialMarkdown?.trim() ?? "";
+    const identityRole = message.role ?? processRole;
+    // A role-less failure (died before startup) still needs the audit entry: it
+    // records which member and profile the run was planned with.
+    const canAudit = message.runId !== null
+      && onLoadRunAgentInfo !== undefined
+      && onLoadRunAgentMarkdown !== undefined;
+    const showIdentityHeader = identityRole !== null || canAudit;
     return (
       <div
-        className="relative my-4"
+        className="group relative py-3 text-sm"
         tabIndex={onAnalyzeConversation ? 0 : undefined}
         onContextMenu={onAnalyzeConversation ? openAnalysisMenu : undefined}
         onKeyDown={onAnalyzeConversation
@@ -3726,35 +3737,69 @@ function TimelineEntry({
             })}
           />
         ) : null}
-        {message.runId !== null && onLoadRunAgentInfo && onLoadRunAgentMarkdown ? (
+        {showIdentityHeader ? (
           <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
-            <AgentRunInfoPopover
-              sessionId={message.sessionId}
-              runId={message.runId}
-              role={auditRole}
-              displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
-              loadInfo={onLoadRunAgentInfo}
-              loadMarkdown={onLoadRunAgentMarkdown}
-            />
+            {canAudit ? (
+              <AgentRunInfoPopover
+                sessionId={message.sessionId}
+                runId={message.runId!}
+                role={auditRole}
+                displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+                loadInfo={onLoadRunAgentInfo}
+                loadMarkdown={onLoadRunAgentMarkdown}
+              />
+            ) : (
+              <RoleTag
+                label={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+                toneKey={auditRole}
+                portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
+                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
+                className="h-6 w-6 text-xs"
+              />
+            )}
             <span className="font-semibold text-ink">
               {resolveOperatorMemberName(auditRole, memberIdentities, t)}
             </span>
+            {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+              <RunTime
+                mode="completed"
+                elapsedMs={message.runTiming.elapsedMs}
+                completedAt={message.runTiming.completedAt}
+              />
+            ) : null}
+            <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
           </div>
+        ) : null}
+        <div className={showIdentityHeader ? "pl-8" : undefined}>
+        {partialMarkdown === "" ? null : (
+          <MarkdownMessage
+            content={partialMarkdown}
+            mode="static"
+            onOpenExternalLink={onOpenExternalLink}
+            onOpenConversationReference={onOpenConversationReference}
+            onOpenFileReference={onOpenFileReference}
+            memberIdentities={memberIdentities}
+            onOpenTeamMember={onOpenTeamMember}
+          />
+        )}
+        <div className={cn("flex flex-wrap items-center gap-2", partialMarkdown === "" ? undefined : "mt-2")}>
+        {partialMarkdown !== "" && message.terminal?.contentIncomplete ? (
+          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
+            {t("console.runOutcome.incomplete")}
+          </span>
         ) : null}
         <RunOutcome
           status={outcome}
-          role={processRole}
+          role={showIdentityHeader ? null : processRole}
           memberIdentities={memberIdentities}
           rawReason={message.error ?? message.body}
           rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
           description={terminalOutcomeDescription(message)}
-          partialMarkdown={message.terminal?.partialMarkdown}
-          contentIncomplete={message.terminal?.contentIncomplete}
           initialProfile={message.terminal?.actualProfile}
           executionRegistryState={executionRegistryState}
           providerProfiles={providerProfiles}
           onReloadExecutionRegistry={onReloadExecutionRegistry}
-          elapsedMs={message.runTiming?.elapsedMs}
+          elapsedMs={showIdentityHeader ? null : message.runTiming?.elapsedMs}
           completedAt={message.runTiming?.completedAt}
           providerUnavailable={providerUnavailable}
           onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
@@ -3827,7 +3872,10 @@ function TimelineEntry({
             role: processRole,
             fallbackOutput,
           })}
+          presentation={outcome === "user-stopped" ? "quiet-actions" : "bubble"}
         />
+        </div>
+        </div>
       </div>
     );
   }

@@ -5,16 +5,16 @@ import { RunOutcome, type RunOutcomeStatus } from "./run-outcome";
 import { EXECUTION_MODEL_REGISTRY } from "./execution-profile-registry";
 
 const outcomeFixtures: Array<{ status: RunOutcomeStatus; summary: string; reason: string }> = [
-  { status: "run-not-started", summary: "这一步没跑起来", reason: "exit:42" },
-  { status: "run-stuck", summary: "这一步卡住了", reason: "idle-timeout:10ms" },
-  { status: "user-stopped", summary: "你让这一步停下了", reason: "interrupted:user" },
-  { status: "system-stopped", summary: "这一步被系统停止了", reason: "interrupted:system" },
-  { status: "resume-unavailable", summary: "原执行已经无法继续", reason: "rollout-unavailable" },
-  { status: "retry-exhausted", summary: "这一步反复没跑起来，已经不再重试", reason: "dead-letter:max-retries" },
-  { status: "quota-exhausted", summary: "当前额度不可用", reason: "kimi-quota-exhausted" },
-  { status: "rate-limited", summary: "对方服务持续繁忙", reason: "kimi-rate-limited" },
-  { status: "auth-failed", summary: "执行引擎需要重新登录", reason: "auth" },
-  { status: "run-crashed", summary: "这一步没有产出完整结果", reason: "no-complete-result" },
+  { status: "run-not-started", summary: "没有启动", reason: "exit:42" },
+  { status: "run-stuck", summary: "无响应", reason: "idle-timeout:10ms" },
+  { status: "user-stopped", summary: "已停止", reason: "interrupted:user" },
+  { status: "system-stopped", summary: "已被系统停止", reason: "interrupted:system" },
+  { status: "resume-unavailable", summary: "无法继续", reason: "rollout-unavailable" },
+  { status: "retry-exhausted", summary: "多次未能启动", reason: "dead-letter:max-retries" },
+  { status: "quota-exhausted", summary: "额度不可用", reason: "kimi-quota-exhausted" },
+  { status: "rate-limited", summary: "服务繁忙", reason: "kimi-rate-limited" },
+  { status: "auth-failed", summary: "需要重新登录", reason: "auth" },
+  { status: "run-crashed", summary: "结果不完整", reason: "no-complete-result" },
 ];
 
 describe("RunOutcome", () => {
@@ -76,7 +76,7 @@ describe("RunOutcome", () => {
       />,
     );
 
-    expect(screen.getByText("你让这一步停下了")).toBeVisible();
+    expect(screen.getByText("已停止")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
@@ -162,22 +162,18 @@ describe("RunOutcome", () => {
     expect(screen.queryByText(/耗时|00:00/u)).not.toBeInTheDocument();
   });
 
-  it("keeps partial Markdown visible and submits a single-run profile override", async () => {
+  it("submits a single-run profile override", async () => {
     const onRetry = vi.fn();
     const onOverrideAndRetry = vi.fn();
     render(
       <RunOutcome
         status="quota-exhausted"
-        partialMarkdown={"## 已完成\n\n- 保留这部分"}
-        contentIncomplete
         initialProfile={{ cli: "kimi", model: "kimi-code/kimi-for-coding", effort: "on" }}
         onRetry={onRetry}
         onOverrideAndRetry={onOverrideAndRetry}
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "已完成" })).toBeVisible();
-    expect(screen.getByText("内容不完整")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "换执行配置重跑" }));
     fireEvent.change(screen.getByRole("combobox", { name: "CLI" }), {
       target: { value: "codex" },
@@ -191,12 +187,10 @@ describe("RunOutcome", () => {
     expect(screen.queryByRole("button", { name: "仅本次重跑" })).not.toBeInTheDocument();
   });
 
-  it("preserves terminal content across slow and failed registry states", () => {
+  it("keeps the override panel usable across slow and failed registry states", () => {
     const onReload = vi.fn();
     const props = {
       status: "quota-exhausted" as const,
-      partialMarkdown: "保留的中断内容",
-      contentIncomplete: true,
       onOverrideAndRetry: vi.fn(),
     };
     const { rerender } = render(
@@ -205,7 +199,6 @@ describe("RunOutcome", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "换执行配置重跑" }));
     expect(screen.getByText("正在读取可用的执行配置…")).toBeVisible();
-    expect(screen.getByText("保留的中断内容")).toBeVisible();
 
     rerender(
       <RunOutcome
@@ -225,7 +218,6 @@ describe("RunOutcome", () => {
       />,
     );
     expect(screen.getByRole("combobox", { name: "CLI" })).toBeVisible();
-    expect(screen.getByText("保留的中断内容")).toBeVisible();
   });
 
   it("offers ready Pi provider profiles for a single-run override", async () => {

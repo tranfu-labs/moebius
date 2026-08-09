@@ -258,21 +258,61 @@ function SubtaskTimelineEntry({
   const { t } = useI18n();
   const outcome = terminalOutcome(message);
   if (outcome !== null) {
+    // Same rule as the main conversation: the terminal status never swallows the
+    // body; produced content renders normally and the status is a bubble below it.
+    const partialMarkdown = message.terminal?.partialMarkdown?.trim() ?? "";
+    const identityRole = message.role ?? processRole;
     return (
+      <article className="group py-4 text-sm">
+        {identityRole === null ? null : (
+          <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+            <RoleTag
+              label={resolveOperatorMemberName(identityRole, memberIdentities, t)}
+              toneKey={identityRole}
+              portraitId={resolveOperatorMemberPortrait(identityRole, memberIdentities)}
+              engine={resolveOperatorMemberEngine(identityRole, memberIdentities)}
+            />
+            <span className="font-semibold text-ink">
+              {resolveOperatorMemberName(identityRole, memberIdentities, t)}
+            </span>
+            {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+              <RunTime
+                mode="completed"
+                elapsedMs={message.runTiming.elapsedMs}
+                completedAt={message.runTiming.completedAt}
+              />
+            ) : null}
+          </div>
+        )}
+        <div className={identityRole === null ? undefined : "pl-7"}>
+        {partialMarkdown === "" ? null : (
+          <MarkdownMessage
+            content={partialMarkdown}
+            mode="static"
+            onOpenExternalLink={onOpenExternalLink}
+            onOpenFileReference={onOpenFileReference}
+            memberIdentities={memberIdentities}
+            onOpenTeamMember={onOpenTeamMember}
+          />
+        )}
+        <div className={cn("flex flex-wrap items-center gap-2", partialMarkdown === "" ? undefined : "mt-2")}>
+        {partialMarkdown !== "" && message.terminal?.contentIncomplete ? (
+          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
+            {t("console.runOutcome.incomplete")}
+          </span>
+        ) : null}
       <RunOutcome
         status={outcome}
-        role={processRole}
+        role={identityRole === null ? processRole : null}
         memberIdentities={memberIdentities}
         rawReason={message.error ?? message.body}
         rawOutput={message.error ?? message.body}
         description={message.terminal === null || message.terminal === undefined ? null : message.body}
-        partialMarkdown={message.terminal?.partialMarkdown}
-        contentIncomplete={message.terminal?.contentIncomplete}
+        elapsedMs={identityRole === null ? message.runTiming?.elapsedMs : null}
         initialProfile={message.terminal?.actualProfile}
         executionRegistryState={executionRegistryState}
         providerProfiles={providerProfiles}
         onReloadExecutionRegistry={onReloadExecutionRegistry}
-        elapsedMs={message.runTiming?.elapsedMs}
         completedAt={message.runTiming?.completedAt}
         onRetry={outcome !== "retry-exhausted" && message.runId !== null
           ? () => onRetry(message.runId!)
@@ -312,8 +352,11 @@ function SubtaskTimelineEntry({
               role: processRole,
               fallbackOutput,
             })}
-        className="py-4"
+        presentation={outcome === "user-stopped" ? "quiet-actions" : "bubble"}
       />
+        </div>
+        </div>
+      </article>
     );
   }
 

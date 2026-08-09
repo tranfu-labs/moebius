@@ -2507,13 +2507,14 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getByText("你让这一步停下了")).toBeVisible();
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    // 用户自己按的停止不再报状态——他知道自己按了；恢复动作仍在（下面断言）。
+    expect(screen.queryByText("已停止")).not.toBeInTheDocument();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.getByText(
       "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
     )).toBeVisible();
-    expect(screen.getByText("这一步卡住了")).toBeVisible();
-    expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
+    expect(screen.getByText("无响应")).toBeVisible();
+    expect(screen.getByText("多次未能启动")).toBeVisible();
     expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();
     expect(screen.queryByText("idle-timeout:10ms")).not.toBeInTheDocument();
 
@@ -2656,7 +2657,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
     expect(screen.queryByText("完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录"))
@@ -2685,7 +2686,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.getByText(body)).toBeVisible();
     expect(screen.queryByText("/Users/private/.kimi-code/bin/kimi")).not.toBeInTheDocument();
     expect(screen.queryByText("spawn ENOENT raw provider payload")).not.toBeInTheDocument();
@@ -2706,7 +2707,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText(/机器信息已隐藏/u)).not.toBeInTheDocument();
   });
 
@@ -3166,7 +3167,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "/tmp/project" })).toBeVisible();
     expect(screen.getByRole("button", { name: "/tmp/run" })).toBeVisible();
     expect(screen.queryByText("正在推进这一步…")).not.toBeInTheDocument();
-    expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
+    expect(screen.getByText("多次未能启动")).toBeVisible();
     expect(screen.queryByText(/\/tmp\/moebius-run/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/cwd=\/tmp/u)).not.toBeInTheDocument();
     expect(screen.queryByText("查看详情")).not.toBeInTheDocument();

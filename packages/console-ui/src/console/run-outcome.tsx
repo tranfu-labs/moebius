@@ -1,15 +1,30 @@
-import { AlertTriangle, Ban, CirclePause, Clock3, FileText } from "lucide-react";
+import {
+  AlertTriangle,
+  Archive,
+  ArrowRightLeft,
+  Ban,
+  CirclePause,
+  Clock3,
+  FileText,
+  PenLine,
+  RotateCcw,
+  Settings,
+  SlidersHorizontal,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/tooltip";
 import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
 import { RunTime } from "@/console/run-time";
-import { MarkdownMessage } from "@/console/markdown-message";
+import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import {
   findExecutionModel,
   findPiExecutionModel,
@@ -44,8 +59,6 @@ export interface RunOutcomeProps {
   rawReason?: string | null;
   rawOutput?: string | null;
   description?: string | null;
-  partialMarkdown?: string | null;
-  contentIncomplete?: boolean;
   elapsedMs?: number | null;
   completedAt?: string | null;
   defaultOpen?: boolean;
@@ -62,6 +75,12 @@ export interface RunOutcomeProps {
   providerUnavailable?: ProviderUnavailableKind | null;
   onSelectTeam?: () => void;
   maintenanceAction?: { label: string; onClick: () => void };
+  /**
+   * "bubble" shows a standing status chip; "quiet-actions" keeps only the
+   * hover-revealed recovery actions, for a stop the user performed themselves —
+   * they already know it happened, so restating it is noise.
+   */
+  presentation?: "bubble" | "quiet-actions";
   className?: string;
 }
 
@@ -83,12 +102,12 @@ const outcomeLabelKeys: Record<RunOutcomeStatus, TranslationKey> = {
 const outcomeDescriptionKeys: Record<RunOutcomeStatus, TranslationKey | null> = {
   "retry-exhausted": null,
   "run-not-started": null,
-  "user-stopped": "console.runOutcome.userStopped.description",
-  "system-stopped": "console.runOutcome.systemStopped.description",
+  "user-stopped": null,
+  "system-stopped": null,
   "resume-unavailable": null,
   "run-stuck": null,
   "quota-exhausted": null,
-  "rate-limited": "console.runOutcome.rateLimited.description",
+  "rate-limited": null,
   "auth-failed": null,
   "run-crashed": "console.runOutcome.crashed.description",
 };
@@ -100,8 +119,6 @@ export function RunOutcome({
   rawReason: _rawReason,
   rawOutput,
   description,
-  partialMarkdown,
-  contentIncomplete = false,
   elapsedMs,
   completedAt,
   defaultOpen: _defaultOpen,
@@ -118,6 +135,7 @@ export function RunOutcome({
   providerUnavailable = null,
   onSelectTeam,
   maintenanceAction,
+  presentation = "bubble",
   className,
 }: RunOutcomeProps): JSX.Element {
   const { t } = useI18n();
@@ -167,6 +185,7 @@ export function RunOutcome({
   const roleLabel = role
     ? resolveOperatorMemberName(role, memberIdentities, t, t("console.common.collaborator"))
     : null;
+  const quiet = presentation === "quiet-actions";
   const providerBlocked = providerUnavailable !== null;
   const outcomeLabelKey = providerUnavailable === "disabled"
     ? "console.runOutcome.providerDisabled.title"
@@ -182,129 +201,104 @@ export function RunOutcome({
       : providerUnavailable === "missing"
         ? "console.runOutcome.providerMissing.description"
         : outcomeDescriptionKeys[status];
-  // Legacy runtime rows hard-coded "title sentence + guidance" into the message
-  // body, duplicating the card title; treat title-prefixed descriptions as that
-  // legacy data and fall back to the i18n description.
-  const trimmedDescription = description?.trim();
-  const fallbackDescription = outcomeDescriptionKey === null ? "" : t(outcomeDescriptionKey);
-  const displayDescription = trimmedDescription !== undefined
-    && trimmedDescription !== ""
-    && !trimmedDescription.startsWith(t(outcomeLabelKey))
-      ? trimmedDescription
-      : fallbackDescription;
+  const strippedDescription = stripLegacyOutcomeBoilerplate(description);
+  const displayDescription = strippedDescription !== ""
+    ? strippedDescription
+    : outcomeDescriptionKey === null ? "" : t(outcomeDescriptionKey);
 
   return (
     <div className={cn("max-w-[720px]", className)}>
-      {partialMarkdown?.trim() ? (
-        <div className="mb-2.5">
-          <MarkdownMessage content={partialMarkdown} mode="static" />
-          {contentIncomplete ? (
-            <span className="mt-2 inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
-              {t("console.runOutcome.incomplete")}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 flex shrink-0" aria-hidden="true">
-          <OutcomeIcon status={status} />
-        </span>
-        <span className="min-w-0 flex-1 text-[13px] leading-5 text-ink">
-          <span className="flex flex-wrap items-center gap-x-2">
-            <span>{t(outcomeLabelKey)}</span>
-            {roleLabel ? <span className="text-xs text-sub">{roleLabel}</span> : null}
-            {elapsedMs !== null && elapsedMs !== undefined ? (
-              <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
+      <TooltipProvider delayDuration={200} skipDelayDuration={100}>
+        <div className={cn(
+          "inline-flex max-w-full flex-wrap items-center gap-x-2 rounded-[10px]",
+          quiet
+            ? "opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            : "bg-sunken py-1 pl-2.5 pr-1",
+        )}>
+          {quiet ? null : (
+            <>
+              <span className="flex shrink-0" aria-hidden="true">
+                <OutcomeIcon status={status} />
+              </span>
+              <span className="text-[12.5px] leading-5 text-ink">{t(outcomeLabelKey)}</span>
+              {roleLabel ? <span className="text-xs text-sub">{roleLabel}</span> : null}
+              {elapsedMs !== null && elapsedMs !== undefined ? (
+                <RunTime mode="completed" elapsedMs={elapsedMs} completedAt={completedAt} />
+              ) : null}
+              {displayDescription === "" ? null : (
+                <span className="text-xs text-sub">{displayDescription}</span>
+              )}
+            </>
+          )}
+          <span className="flex shrink-0 items-center">
+            {maintenanceAction !== undefined ? (
+              <OutcomeAction icon={Settings} label={maintenanceAction.label} onClick={maintenanceAction.onClick} />
+            ) : null}
+            {!providerBlocked && status !== "retry-exhausted" && onRetry !== undefined ? (
+              <OutcomeAction
+                icon={RotateCcw}
+                label={t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}
+                onClick={() => {
+                  void Promise.resolve(onRetry()).catch(() => undefined);
+                }}
+              />
+            ) : null}
+            {onOverrideAndRetry !== undefined ? (
+              <OutcomeAction
+                icon={SlidersHorizontal}
+                label={t("console.runOutcome.overrideRerun")}
+                onClick={() => {
+                  setOverrideAction("retry");
+                  setOverrideOpen((open) => !open || overrideAction !== "retry");
+                }}
+              />
+            ) : null}
+            {!providerBlocked && onMigrateAndContinue !== undefined ? (
+              <OutcomeAction
+                icon={ArrowRightLeft}
+                label={t("console.runOutcome.migrateSession")}
+                onClick={() => {
+                  setOverrideAction("migrate");
+                  setOverrideOpen((open) => !open || overrideAction !== "migrate");
+                }}
+              />
+            ) : null}
+            {!providerBlocked && onEndContinuation !== undefined ? (
+              <OutcomeAction
+                icon={Archive}
+                label={t("console.runOutcome.endContinuation")}
+                disabled={submittingOverride}
+                onClick={() => {
+                  const callback = endCallbackRef.current;
+                  if (callback === undefined || submittingOverride) return;
+                  setSubmittingOverride(true);
+                  setOverrideError(null);
+                  void Promise.resolve(callback())
+                    .catch((error: unknown) => setOverrideError(error instanceof Error ? error.message : t("console.runOutcome.endContinuationFailed")))
+                    .finally(() => setSubmittingOverride(false));
+                }}
+              />
+            ) : null}
+            {providerBlocked && onSelectTeam !== undefined ? (
+              <OutcomeAction icon={Users} label={t("console.runOutcome.selectTeam")} onClick={onSelectTeam} />
+            ) : null}
+            {status === "user-stopped" && onEditAndResend !== undefined ? (
+              <OutcomeAction
+                icon={PenLine}
+                label={t("console.runOutcome.editResendLabel")}
+                onClick={onEditAndResend}
+              />
+            ) : null}
+            {onOpenOutput ? (
+              <OutcomeAction
+                icon={FileText}
+                label={t("console.common.fullOutput")}
+                onClick={() => onOpenOutput(nonBlank(rawOutput))}
+              />
             ) : null}
           </span>
-          {displayDescription === "" ? null : (
-            <span className="mt-0.5 block text-xs text-sub">
-              {displayDescription}
-            </span>
-          )}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-        {maintenanceAction !== undefined ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={maintenanceAction.onClick}
-          >
-            {maintenanceAction.label}
-          </Button>
-        ) : null}
-        {!providerBlocked && status !== "retry-exhausted" && onRetry !== undefined ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void Promise.resolve(onRetry()).catch(() => undefined);
-            }}
-          >
-            {t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}
-          </Button>
-        ) : null}
-        {onOverrideAndRetry !== undefined ? (
-          <Button type="button" variant="ghost" size="sm" onClick={() => {
-            setOverrideAction("retry");
-            setOverrideOpen((open) => !open || overrideAction !== "retry");
-          }}>
-            {t("console.runOutcome.overrideRerun")}
-          </Button>
-        ) : null}
-        {!providerBlocked && onMigrateAndContinue !== undefined ? (
-          <Button type="button" variant="ghost" size="sm" onClick={() => {
-            setOverrideAction("migrate");
-            setOverrideOpen((open) => !open || overrideAction !== "migrate");
-          }}>
-            {t("console.runOutcome.migrateSession")}
-          </Button>
-        ) : null}
-        {!providerBlocked && onEndContinuation !== undefined ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={submittingOverride}
-            onClick={() => {
-              const callback = endCallbackRef.current;
-              if (callback === undefined || submittingOverride) return;
-              setSubmittingOverride(true);
-              setOverrideError(null);
-              void Promise.resolve(callback())
-                .catch((error: unknown) => setOverrideError(error instanceof Error ? error.message : t("console.runOutcome.endContinuationFailed")))
-                .finally(() => setSubmittingOverride(false));
-            }}
-          >
-            {t("console.runOutcome.endContinuation")}
-          </Button>
-        ) : null}
-        {providerBlocked && onSelectTeam !== undefined ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onSelectTeam}>
-            {t("console.runOutcome.selectTeam")}
-          </Button>
-        ) : null}
-        {status === "user-stopped" && onEditAndResend !== undefined ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={t("console.runOutcome.editResendLabel")}
-            onClick={onEditAndResend}
-          >
-            {t("console.runOutcome.editResend")}
-          </Button>
-        ) : null}
-        {onOpenOutput ? (
-          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenOutput(nonBlank(rawOutput))}>
-            <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {t("console.common.fullOutput")}
-          </Button>
-        ) : null}
-        </span>
-      </div>
+        </div>
+      </TooltipProvider>
       {overrideOpen && (onOverrideAndRetry !== undefined || onMigrateAndContinue !== undefined) ? (
         <div className="mt-2.5 rounded-md bg-sunken p-2.5">
           {executionRegistryState.status === "loading" ? (
@@ -491,6 +485,33 @@ function resolvePiRetryModel(
 
 function isDefined<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
+}
+
+/** Icon-only recovery action; the label lives in the tooltip and the accessible name. */
+function OutcomeAction({ icon: Icon, label, onClick, disabled }: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}): JSX.Element {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          <Icon className="h-[15px] w-[15px]" strokeWidth={1.5} aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function OutcomeIcon({ status }: { status: RunOutcomeStatus }): JSX.Element {
