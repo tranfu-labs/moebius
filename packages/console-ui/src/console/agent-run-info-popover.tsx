@@ -20,11 +20,24 @@ export interface AgentRunInfoView {
 
 type LoadState<T> = { status: "idle" | "loading" } | { status: "ready"; value: T } | { status: "error" };
 
-export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadInfo, loadMarkdown }: {
+export function AgentRunInfoPopover({
+  sessionId,
+  runId,
+  role,
+  displayName,
+  portraitId,
+  engine,
+  loadInfo,
+  loadMarkdown,
+}: {
   sessionId: string;
   runId: string;
   role: string;
   displayName: string;
+  /** The face this member has been given; the trigger must match the plain RoleTag. */
+  portraitId?: string | null;
+  /** Engine known from the roster, so the badge is there before the popover loads. */
+  engine?: { cli: "codex" | "claude" | "kimi" | "pi"; providerId?: string };
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
   loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
 }): JSX.Element {
@@ -91,14 +104,15 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
             className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={t("console.agentRunInfo.view", { name: displayName })}
           >
-            {/* The run's engine only arrives with the popover payload, so the badge appears
-                once loaded rather than being threaded in separately. */}
+            {/* The roster engine shows the badge immediately; once the payload lands we
+                prefer what actually ran, which can differ from the roster default. */}
             <AgentPortrait
               displayName={displayName}
               slug={role}
+              portraitId={portraitId}
               engine={info.status === "ready" && info.value.profile !== null
                 ? { cli: info.value.profile.cli }
-                : undefined}
+                : engine}
               className="h-6 w-6"
             />
           </button>

@@ -3839,6 +3839,8 @@ function TimelineEntry({
                 runId={message.runId!}
                 role={auditRole}
                 displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+                portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
+                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
                 loadInfo={onLoadRunAgentInfo}
                 loadMarkdown={onLoadRunAgentMarkdown}
               />
@@ -3985,6 +3987,8 @@ function TimelineEntry({
               runId={message.runId}
               role={message.role}
               displayName={resolveOperatorMemberName(message.role, memberIdentities, t)}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+              engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               loadInfo={onLoadRunAgentInfo}
               loadMarkdown={onLoadRunAgentMarkdown}
             />
