@@ -312,27 +312,29 @@ function SubtaskTimelineEntry({
     );
     return (
       <article className="group py-4 text-sm">
-        {identityRole === null ? null : (
-          <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+          {identityRole === null ? null : (
             <RoleTag
               label={resolveOperatorMemberName(identityRole, memberIdentities, t)}
               toneKey={identityRole}
               portraitId={resolveOperatorMemberPortrait(identityRole, memberIdentities)}
               engine={resolveOperatorMemberEngine(identityRole, memberIdentities)}
             />
-            <span className="font-semibold text-ink">
-              {resolveOperatorMemberName(identityRole, memberIdentities, t)}
-            </span>
-            {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
-              <RunTime
-                mode="completed"
-                elapsedMs={message.runTiming.elapsedMs}
-                completedAt={message.runTiming.completedAt}
-              />
-            ) : null}
-          </div>
-        )}
-        <div className={identityRole === null ? undefined : "pl-7"}>
+          )}
+          <span className="font-semibold text-ink">
+            {identityRole === null
+              ? t("console.common.systemNotice")
+              : resolveOperatorMemberName(identityRole, memberIdentities, t)}
+          </span>
+          {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+            <RunTime
+              mode="completed"
+              elapsedMs={message.runTiming.elapsedMs}
+              completedAt={message.runTiming.completedAt}
+            />
+          ) : null}
+        </div>
+        <div className="pl-7">
         {partialMarkdown === "" ? null : (
           <MarkdownMessage
             content={partialMarkdown}
@@ -361,8 +363,6 @@ function SubtaskTimelineEntry({
                 : t(resolveOutcomeDescriptionKey(outcome, null)!)),
               contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
               severity: outcomeSeverity(outcome),
-              elapsedMs: identityRole !== null ? null : message.runTiming?.elapsedMs,
-              completedAt: message.runTiming?.completedAt,
             }}
           />
         )}

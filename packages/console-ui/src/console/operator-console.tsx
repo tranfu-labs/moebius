@@ -3722,7 +3722,10 @@ function TimelineEntry({
     const canAudit = message.runId !== null
       && onLoadRunAgentInfo !== undefined
       && onLoadRunAgentMarkdown !== undefined;
-    const showIdentityHeader = identityRole !== null || canAudit;
+    // A terminal record always has an owner: the member header when we know who
+    // ran, otherwise the existing avatar-less system-notice header. A record must
+    // never float in the timeline with neither an identity nor the body indent.
+    const showMemberIdentity = identityRole !== null || canAudit;
     const strippedDetail = stripLegacyOutcomeBoilerplate(terminalOutcomeDescription(message));
     const descriptionKey = resolveOutcomeDescriptionKey(outcome, providerUnavailable);
     const incidentDetail = strippedDetail !== ""
@@ -3826,9 +3829,9 @@ function TimelineEntry({
             })}
           />
         ) : null}
-        {showIdentityHeader ? (
-          <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
-            {canAudit ? (
+        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+          {showMemberIdentity ? (
+            canAudit ? (
               <AgentRunInfoPopover
                 sessionId={message.sessionId}
                 runId={message.runId!}
@@ -3845,21 +3848,23 @@ function TimelineEntry({
                 engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
                 className="h-6 w-6 text-xs"
               />
-            )}
-            <span className="font-semibold text-ink">
-              {resolveOperatorMemberName(auditRole, memberIdentities, t)}
-            </span>
-            {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
-              <RunTime
-                mode="completed"
-                elapsedMs={message.runTiming.elapsedMs}
-                completedAt={message.runTiming.completedAt}
-              />
-            ) : null}
-            <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
-          </div>
-        ) : null}
-        <div className={showIdentityHeader ? "pl-8" : undefined}>
+            )
+          ) : null}
+          <span className="font-semibold text-ink">
+            {showMemberIdentity
+              ? resolveOperatorMemberName(auditRole, memberIdentities, t)
+              : t("console.common.systemNotice")}
+          </span>
+          {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+            <RunTime
+              mode="completed"
+              elapsedMs={message.runTiming.elapsedMs}
+              completedAt={message.runTiming.completedAt}
+            />
+          ) : null}
+          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+        </div>
+        <div className="pl-8">
         {message.processSteps?.length ? (
           <ProcessTrail steps={message.processSteps} collapsed className="mb-2" />
         ) : null}
@@ -3882,8 +3887,6 @@ function TimelineEntry({
               detail: incidentDetail,
               contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
               severity: outcomeSeverity(outcome),
-              elapsedMs: showIdentityHeader ? null : message.runTiming?.elapsedMs,
-              completedAt: message.runTiming?.completedAt,
             }}
           />
         )}
