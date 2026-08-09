@@ -1268,5 +1268,6 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-store.ts", exportName: "reorderTeamMembers", fingerprint: "!sameMembers", kind: "external-contract", contract: "a member reorder must preserve the exact member set of the manifest" },
     { ruleId: "adapter-boundary-branch-total", file: "desktop/src/team-store.ts", exportName: "reorderTeamMembers", fingerprint: "memberOrder[0] ?? null", kind: "external-contract", contract: "the primary Agent follows the first entry of a persisted member order" },
     { ruleId: "application-use-case-shape", file: "desktop/src/console-page/use-agent-team-console.ts", exportName: "useAgentTeamConsole", fingerprint: "current?.loadStatus !== \"ready\"", kind: "transport-control", contract: "identity edits apply only to a loaded member draft" },
+    { ruleId: "application-use-case-shape", file: "desktop/src/team-runtime-binding.ts", exportName: "createTeamRuntimeBindingService", fingerprint: "member.portraitId ?? null", kind: "transport-control", contract: "the runtime snapshot carries the effective portrait with a null default for absent faces" },
   ],
 };

@@ -218,7 +218,7 @@ export interface AgentTeamDetailProps {
    */
   onChangeTeamInformation?(information: { name: string; description: string }): void | Promise<void>;
   /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
-  onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
+  onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void | Promise<void>;
   /**
    * Identity edits are reported as fields. The host owns writing them back into the file's
    * frontmatter, so this view never has to parse or serialise YAML.
@@ -344,6 +344,22 @@ export function AgentTeamDetail({
   /** Reading is the default; switching members returns to it rather than carrying edit mode over. */
   const [editingMarkdown, setEditingMarkdown] = useState(false);
   /**
+   * Member order and portraits are drafts like everything else on this page (product decision:
+   * the whole page goes through the one Save). Dragging a member or picking a face only edits
+   * these local drafts; the host persists them through the ordinary save paths — the commit
+   * callbacks (`onReorderMembers` / `onChangeMemberPortrait`) fire at save time, not on the
+   * gesture. Until then the rest of the application keeps showing the saved state.
+   */
+  const [draftMemberOrder, setDraftMemberOrder] = useState<string[] | null>(null);
+  const [draftPortraits, setDraftPortraits] = useState<Record<string, PortraitId | null>>({});
+  /** Latest single-save action; the Cmd/Ctrl+S listener reads it so the effect stays stable. */
+  const savePendingChangesRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    // A different team has different members and a different saved order; drafts do not carry.
+    setDraftMemberOrder(null);
+    setDraftPortraits({});
+  }, [team.teamKey]);
+  /**
    * A successful save is the expected outcome, so it earns the smallest possible acknowledgement:
    * the unsaved count disappears, Save greys out, and this sits beside them briefly. A banner for
    * every routine success pushes the page down and, worse, tends to fill itself with system rules.
@@ -377,8 +393,15 @@ export function AgentTeamDetail({
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
-  const orderedMembers = useMemo(() => orderAgentTeamMembers(team), [team]);
-  const availableMembers = orderedMembers.filter((member) => member.available !== false);
+  const savedOrderedMembers = useMemo(() => orderAgentTeamMembers(team), [team]);
+  const orderedMembers = draftMemberOrder === null
+    ? savedOrderedMembers
+    : draftMemberOrder
+        .map((slug) => savedOrderedMembers.find((member) => member.slug === slug))
+        .filter((member): member is AgentTeamDetailMember => member !== undefined);
+  const displayedPrimarySlug = draftMemberOrder !== null
+    ? (draftMemberOrder[0] ?? null)
+    : team.primaryAgentSlug;
   const selectedMember = orderedMembers.find((member) => member.slug === state.selectedMemberSlug) ?? null;
   const selectedEditor = selectedMember === null ? undefined : state.memberEditors[selectedMember.slug];
   const profileEditor = selectedMember === null
@@ -395,7 +418,6 @@ export function AgentTeamDetail({
     profileEngine(profileEditors[member.slug]?.draft ?? member.executionProfile?.effectiveProfile);
   const profileStatus = profileEditor?.status ?? "idle";
   const profileError = profileEditor?.error ?? null;
-  const primaryMember = availableMembers.find((member) => member.slug === team.primaryAgentSlug);
   const primaryAgentChangeStatus = state.primaryAgentChangeStatus ?? "idle";
   const primaryAgentChangeError = state.primaryAgentChangeError ?? null;
   const portraitChangeStatus = state.portraitChangeStatus ?? "idle";
@@ -405,6 +427,17 @@ export function AgentTeamDetail({
     displayName: state.memberEditors[member.slug]?.displayName || member.displayName,
   })), [orderedMembers, state.memberEditors]);
   const hasDirtyMembers = Object.values(state.memberEditors).some((editor) => editor?.isDirty === true);
+  /**
+   * The order draft is dirty when it differs from the saved displayed order (primary first).
+   * Portrait drafts are pruned to entries that differ from the saved face, so their keys are
+   * exactly the dirty members.
+   */
+  const hasDirtyOrder = draftMemberOrder !== null
+    && !sameSlugOrder(draftMemberOrder, savedOrderedMembers.map((member) => member.slug));
+  const dirtyPortraitSlugs = Object.keys(draftPortraits).filter((slug) =>
+    (draftPortraits[slug] ?? null)
+      !== (team.members.find((member) => member.slug === slug)?.portraitId ?? null));
+  const hasDirtyPortraits = dirtyPortraitSlugs.length > 0;
   const profileDirty = profileDocument !== null
     && profileDraft !== null
     && (
@@ -420,11 +453,6 @@ export function AgentTeamDetail({
     .filter((editor) => editor?.externalChangeStatus === "conflict")
     .map((editor) => editor!.memberSlug);
   const hasSavingMembers = Object.values(state.memberEditors).some((editor) => editor?.saveStatus === "saving");
-  const canSaveCurrent = !readOnly
-    && selectedEditor?.loadStatus === "ready"
-    && selectedEditor.isDirty
-    && selectedEditor.externalChangeStatus !== "conflict"
-    && selectedEditor.saveStatus !== "saving";
   /**
    * The two drafts stay separate underneath — that is the isolation rule for a partial failure —
    * but the user gets one Save. Splitting the button was leaking an implementation boundary into
@@ -432,7 +460,9 @@ export function AgentTeamDetail({
    */
   const unsavedItemCount = (selectedEditor?.isDirty === true ? 1 : 0)
     + (profileDirty ? 1 : 0)
-    + (teamInformationDirty ? 1 : 0);
+    + (teamInformationDirty ? 1 : 0)
+    + (hasDirtyOrder ? 1 : 0)
+    + dirtyPortraitSlugs.length;
   // A fresh edit retires the acknowledgement; it should never linger over unsaved work.
   useEffect(() => {
     if (unsavedItemCount > 0) {
@@ -491,19 +521,6 @@ export function AgentTeamDetail({
   }, [team.members, team.teamKey]);
 
   useEffect(() => {
-    const handleSaveShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (canSaveCurrent && selectedMember !== null) {
-          void onSaveMember(selectedMember.slug);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleSaveShortcut);
-    return () => window.removeEventListener("keydown", handleSaveShortcut);
-  }, [canSaveCurrent, onSaveMember, selectedMember]);
-
-  useEffect(() => {
     if (
       selectedMember === null
       || selectedEditor?.loadStatus !== "ready"
@@ -522,7 +539,7 @@ export function AgentTeamDetail({
       setExternalConflictPromptOpen(true);
       return;
     }
-    if (hasDirtyMembers || hasDirtyProfiles) {
+    if (hasDirtyMembers || hasDirtyProfiles || hasDirtyOrder || hasDirtyPortraits) {
       pendingGuardedActionRef.current = action;
       setLeavePromptOpen(true);
       return;
@@ -539,12 +556,62 @@ export function AgentTeamDetail({
     }
   };
 
+  /**
+   * Commits the draft member order through the host's reorder persistence. Returns whether the
+   * commit succeeded (or had nothing to do); a failure keeps the draft so the same order can be
+   * retried and is surfaced through the host's primary-change status line.
+   */
+  const commitDraftOrder = async (): Promise<boolean> => {
+    if (!hasDirtyOrder || onReorderMembers === undefined) {
+      return true;
+    }
+    try {
+      await onReorderMembers(draftMemberOrder!);
+      setDraftMemberOrder(null);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Commits one member's draft portrait through the host's portrait persistence. Same per-item
+   * failure contract as `commitDraftOrder`: the draft survives a failed commit.
+   */
+  const commitDraftPortrait = async (memberSlug: string): Promise<boolean> => {
+    if (onChangeMemberPortrait === undefined) {
+      return true;
+    }
+    const saved = team.members.find((member) => member.slug === memberSlug)?.portraitId ?? null;
+    const picked = draftPortraits[memberSlug] ?? null;
+    if (picked === saved) {
+      return true;
+    }
+    try {
+      await onChangeMemberPortrait(memberSlug, picked);
+      setDraftPortraits((current) => {
+        const next = { ...current };
+        delete next[memberSlug];
+        return next;
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const saveAllAndContinue = async () => {
     if (savingAll) {
       return;
     }
     setSavingAll(true);
     try {
+      let allSaved = await commitDraftOrder();
+      for (const memberSlug of dirtyPortraitSlugs) {
+        if (!await commitDraftPortrait(memberSlug)) {
+          allSaved = false;
+        }
+      }
       let profileSuccessCount = 0;
       for (const memberSlug of Object.keys(profileEditors)
         .filter((slug) => isProfileEditorDirty(profileEditors[slug]))) {
@@ -553,7 +620,7 @@ export function AgentTeamDetail({
         profileSuccessCount += 1;
       }
       const result = await onSaveAll(profileSuccessCount);
-      if (result.failures.length === 0) {
+      if (allSaved && result.failures.length === 0) {
         continueGuardedAction();
       } else {
         pendingGuardedActionRef.current = null;
@@ -592,9 +659,11 @@ export function AgentTeamDetail({
     && (!profileDirty || profileDraftValid);
 
   /**
-   * Saves everything the page is holding: team information plus the current member's identity,
-   * body and execution profile. Each part still reports its own outcome, so a failing execution
-   * profile does not roll back an already-saved file.
+   * Saves everything the page is holding: team information, the draft member order, the current
+   * member's portrait, identity, body and execution profile. Each part still reports its own
+   * outcome, so a failing item does not roll back an already-saved file and keeps its draft.
+   * The "saved" acknowledgement only fires when every committed item actually landed — a failed
+   * order or portrait commit leaves the draft on screen and must not read as success.
    */
   const savePendingChanges = async (): Promise<void> => {
     if (teamInformationDirty) {
@@ -603,8 +672,12 @@ export function AgentTeamDetail({
         description: teamDescriptionDraft.trim(),
       });
     }
+    let allCommitted = await commitDraftOrder();
     if (selectedMember === null) {
       return;
+    }
+    if (!await commitDraftPortrait(selectedMember.slug)) {
+      allCommitted = false;
     }
     if (profileDirty && !await saveExecutionProfile(selectedMember.slug)) {
       return;
@@ -612,8 +685,27 @@ export function AgentTeamDetail({
     if (selectedEditor?.isDirty === true) {
       await onSaveMember(selectedMember.slug);
     }
-    setJustSaved(true);
+    if (allCommitted) {
+      setJustSaved(true);
+    }
   };
+  // Kept current per render so the Cmd/Ctrl+S listener stays stable across renders.
+  useEffect(() => {
+    savePendingChangesRef.current = savePendingChanges;
+  });
+
+  useEffect(() => {
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (canSavePendingChanges) {
+          void savePendingChangesRef.current();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [canSavePendingChanges]);
 
   const saveExecutionProfile = async (
     memberSlug = selectedMember?.slug,
@@ -846,6 +938,8 @@ export function AgentTeamDetail({
                   disabled={selectedEditor?.saveStatus === "saving"}
                   onClick={() => {
                     discardTeamInformation();
+                    setDraftMemberOrder(null);
+                    setDraftPortraits({});
                     if (profileDirty && profileDocument !== null && selectedMember !== null) {
                       updateProfileEditor(selectedMember.slug, {
                         draft: profileDocument.effectiveProfile,
@@ -1148,22 +1242,22 @@ export function AgentTeamDetail({
         <AgentMemberStrip
           reorderable={canReorder}
           onSelect={onSelectMember}
-          onReorder={(slugs) => void onReorderMembers?.(slugs)}
+          onReorder={(slugs) => setDraftMemberOrder(slugs)}
           items={orderedMembers.map((member) => ({
             slug: member.slug,
             selected: member.slug === selectedMember?.slug,
-            primary: member.slug === team.primaryAgentSlug,
+            primary: member.slug === displayedPrimarySlug,
             disabled: member.available === false,
             content: (
               <>
                 <AgentPortrait
                   displayName={member.displayName}
                   slug={member.slug}
-                  portraitId={member.portraitId}
+                  portraitId={draftPortraits[member.slug] ?? member.portraitId}
                   engine={memberEngineMark(member)}
                 />
                 <span>{member.displayName || `@${member.slug}`}</span>
-                {member.slug === team.primaryAgentSlug ? (
+                {member.slug === displayedPrimarySlug ? (
                   <span className="text-xs text-hint">
                     {t("console.agentTeamDetail.primarySuffix")}
                   </span>
@@ -1305,11 +1399,25 @@ export function AgentTeamDetail({
                 <AgentPortraitPicker
                   displayName={selectedEditor.displayName || selectedMember.displayName}
                   slug={selectedMember.slug}
-                  portraitId={selectedMember.portraitId ?? null}
+                  portraitId={draftPortraits[selectedMember.slug] ?? selectedMember.portraitId ?? null}
                   engine={memberEngineMark(selectedMember)}
                   size="hero"
                   disabled={readOnly || onChangeMemberPortrait === undefined}
-                  onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
+                  onChange={(picked) => {
+                    // Picking is a draft edit; the host persists it on Save. Picking the face
+                    // that is already saved prunes the draft instead of recording a no-op.
+                    const saved = team.members
+                      .find((member) => member.slug === selectedMember.slug)?.portraitId ?? null;
+                    setDraftPortraits((current) => {
+                      const next = { ...current };
+                      if ((picked ?? null) === saved) {
+                        delete next[selectedMember.slug];
+                      } else {
+                        next[selectedMember.slug] = picked;
+                      }
+                      return next;
+                    });
+                  }}
                 />
                 <input
                   className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
@@ -1718,6 +1826,8 @@ export function AgentTeamDetail({
                 {t("console.agentTeamDetail.continueEditing")}
               </Button>
               <Button type="button" variant="outline" disabled={savingAll || hasSavingMembers} onClick={() => {
+                setDraftMemberOrder(null);
+                setDraftPortraits({});
                 onDiscardAll();
                 setProfileEditors((current) => Object.fromEntries(
                   Object.entries(current).map(([slug, editor]) => [
@@ -1832,6 +1942,10 @@ export function orderAgentTeamMembers(team: AgentTeamDetailTeam): AgentTeamDetai
 
 function memberLabel(members: readonly AgentTeamDetailMember[], memberSlug: string): string {
   return members.find((member) => member.slug === memberSlug)?.displayName || `@${memberSlug}`;
+}
+
+function sameSlugOrder(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((slug, index) => slug === right[index]);
 }
 
 function formatAgentSlugs(t: Translate, slugs: readonly string[]): string {

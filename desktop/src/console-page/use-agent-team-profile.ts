@@ -107,6 +107,9 @@ export function useAgentTeamProfile(input: {
       setPrimaryAgentChange({ teamKey, status: "saved", error: null });
     } catch (error) {
       setPrimaryAgentChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
+      // The detail's save flow keeps the order draft on a failed commit, so the caller needs
+      // the rejection rather than a silent resolve.
+      throw error;
     }
   }, []);
   const changeMemberPortrait = useCallback(async (
@@ -130,6 +133,8 @@ export function useAgentTeamProfile(input: {
       setPortraitChange({ teamKey, status: "saved", error: null });
     } catch (error) {
       setPortraitChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
+      // The detail's save flow keeps the portrait draft on a failed commit.
+      throw error;
     }
   }, []);
   const saveExecutionProfile = useCallback(async (

@@ -207,7 +207,7 @@ export function AgentTeamsPage({
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
-  onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void;
+  onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void | Promise<void>;
   onChangeMemberIdentity?: (
     teamKey: string,
     memberSlug: string,
