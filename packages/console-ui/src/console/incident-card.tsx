@@ -1,72 +1,53 @@
 import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { RunTime } from "@/console/run-time";
 
-/** Everything that went wrong with one run, as the timeline states it. */
+/** What went wrong with one run, as the timeline states it. */
 export interface MessageIncident {
   label: string;
   /** A real engine diagnostic, when the engine produced one. */
   detail?: string | null;
   /** The visible body stops mid-thought, so it must not be read as final. */
   contentIncomplete?: boolean;
-  elapsedMs?: number | null;
-  completedAt?: string | null;
   severity?: "warning" | "danger";
 }
 
 /**
- * A distinct card that follows the message it belongs to.
+ * A one-line statement that this run ended badly — and nothing else.
  *
- * It deliberately does not fold into an icon: a run that failed is not a
- * footnote on a successful message, and a lone marker leaves the user guessing.
- * The card names the state, carries the diagnostic, and puts recovery one
- * labelled click away — while the message above it stays untouched.
+ * It carries no buttons and no timing: recovery lives in the message toolbar
+ * where it sits on every message, and the elapsed time is already in the header.
+ * Keeping the notice to a single content-width line stops a two-word state from
+ * claiming a full-width box, and stops the same situation from having two
+ * different shapes depending on how it ended.
  */
-export function IncidentCard({ incident, actions, className }: {
+export function IncidentNotice({ incident, className }: {
   incident: MessageIncident;
-  actions?: ReactNode;
   className?: string;
 }): JSX.Element {
   const { t } = useI18n();
   const danger = incident.severity === "danger";
+  const detail = incident.detail?.trim();
 
   return (
     <div
-      role="group"
-      aria-label={incident.label}
+      role="status"
       className={cn(
-        "max-w-[720px] rounded-[10px] border bg-sunken px-3 py-2.5",
-        danger ? "border-danger" : "border-line",
+        "inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-md bg-sunken px-2 py-1 text-[12.5px] leading-5",
         className,
       )}
     >
-      <div className="flex items-start gap-2">
-        <AlertTriangle
-          className={cn("mt-0.5 h-4 w-4 shrink-0", danger ? "text-danger" : "text-[var(--status-run-fg)]")}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 text-[13px] leading-5 text-ink">
-            <span className="font-medium">{incident.label}</span>
-            {incident.elapsedMs !== null && incident.elapsedMs !== undefined ? (
-              <RunTime mode="completed" elapsedMs={incident.elapsedMs} completedAt={incident.completedAt} />
-            ) : null}
-          </div>
-          {incident.contentIncomplete ? (
-            <p className="mt-0.5 text-xs leading-5 text-sub">{t("console.incidentCard.incompleteHint")}</p>
-          ) : null}
-          {incident.detail?.trim() ? (
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-5 text-sub">
-              {incident.detail.trim()}
-            </p>
-          ) : null}
-          {actions ? <div className="mt-2">{actions}</div> : null}
-        </div>
-      </div>
+      <AlertTriangle
+        className={cn("h-3.5 w-3.5 shrink-0", danger ? "text-danger" : "text-[var(--status-run-fg)]")}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+      <span className="text-ink">{incident.label}</span>
+      {incident.contentIncomplete ? (
+        <span className="text-sub">{t("console.incidentCard.incompleteHint")}</span>
+      ) : null}
+      {detail ? <span className="break-words text-sub">{detail}</span> : null}
     </div>
   );
 }

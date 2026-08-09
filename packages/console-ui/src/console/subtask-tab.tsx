@@ -20,7 +20,7 @@ import {
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
-import { IncidentCard } from "@/console/incident-card";
+import { IncidentNotice } from "@/console/incident-card";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { RunTime } from "@/console/run-time";
 import type {
@@ -349,7 +349,22 @@ function SubtaskTimelineEntry({
             {t("console.runOutcome.incomplete")}
           </span>
         ) : null}
-      <MessageToolbar>
+      {outcome === "user-stopped" ? null : (
+          <IncidentNotice
+            className={partialMarkdown === "" ? undefined : "mt-2"}
+            incident={{
+              label: t(resolveOutcomeLabelKey(outcome, null)),
+              detail: stripLegacyOutcomeBoilerplate(
+                message.terminal === null || message.terminal === undefined ? null : message.body,
+              ) || (resolveOutcomeDescriptionKey(outcome, null) === null
+                ? null
+                : t(resolveOutcomeDescriptionKey(outcome, null)!)),
+              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+              severity: outcomeSeverity(outcome),
+            }}
+          />
+        )}
+        <MessageToolbar>
           {message.runId !== null && onOpenOutput !== undefined ? (
             <MessageAction
               icon={FileText}
@@ -363,26 +378,8 @@ function SubtaskTimelineEntry({
               })}
             />
           ) : null}
-          {outcome === "user-stopped" ? recoveryActions : null}
+          {recoveryActions}
         </MessageToolbar>
-        {outcome === "user-stopped" ? null : (
-          <IncidentCard
-            className="mt-1.5"
-            incident={{
-              label: t(resolveOutcomeLabelKey(outcome, null)),
-              detail: stripLegacyOutcomeBoilerplate(
-                message.terminal === null || message.terminal === undefined ? null : message.body,
-              ) || (resolveOutcomeDescriptionKey(outcome, null) === null
-                ? null
-                : t(resolveOutcomeDescriptionKey(outcome, null)!)),
-              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
-              elapsedMs: message.runTiming?.elapsedMs,
-              completedAt: message.runTiming?.completedAt,
-              severity: outcomeSeverity(outcome),
-            }}
-            actions={recoveryActions}
-          />
-        )}
         </div>
         </div>
       </article>
