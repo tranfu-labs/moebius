@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { Button } from "@/ui/button";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import {
@@ -11,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
 import { RoleTag } from "@/console/role-tag";
 import { RunTime } from "@/console/run-time";
@@ -138,56 +140,6 @@ export function RunBlock({
           ) : (
             <span className="text-xs text-sub">{t("console.runBlock.waiting")}</span>
           )}
-          {onOpenOutput && processOutputAvailable ? (
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
-              aria-label={t("console.common.fullOutput")}
-              title={t("console.common.fullOutput")}
-              onClick={() => onOpenOutput(nonBlank(rawOutput))}
-            >
-              <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          ) : null}
-          {onInterrupt ? (
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
-              onClick={onInterrupt}
-              aria-label={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
-              title={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
-            >
-              <Square className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          ) : null}
-          {onAnalyzeConversation ? (
-            <DropdownMenu open={analysisMenuOpen} onOpenChange={setAnalysisMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-sub transition-colors hover:bg-hover hover:text-ink"
-                  aria-label={t("console.sessionAnalysis.moreActions")}
-                  title={t("console.sessionAnalysis.moreActions")}
-                >
-                  <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onCloseAutoFocus={(event) => {
-                  if (analysisMenuReturnFocusRef.current !== null) {
-                    event.preventDefault();
-                    analysisMenuReturnFocusRef.current.focus();
-                    analysisMenuReturnFocusRef.current = null;
-                  }
-                }}
-              >
-                <DropdownMenuItem onSelect={onAnalyzeConversation}>
-                  {t("console.sessionAnalysis.analyzeMessage")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
         </span>
       </div>
 
@@ -247,6 +199,53 @@ export function RunBlock({
         <p className={cn("mt-1.5 text-xs text-hint", variant === "main" ? "pl-8" : "pl-7")}>
           {outputUnavailableMessage ?? t("console.common.outputUnavailable")}
         </p>
+      ) : null}
+      {onOpenOutput || onInterrupt || onAnalyzeConversation ? (
+        <MessageToolbar className={variant === "main" ? "pl-8" : "pl-7"}>
+          {onOpenOutput && processOutputAvailable ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenOutput(nonBlank(rawOutput))}
+            />
+          ) : null}
+          {onInterrupt ? (
+            <MessageAction
+              icon={Square}
+              label={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
+              onClick={onInterrupt}
+            />
+          ) : null}
+          {onAnalyzeConversation ? (
+            <DropdownMenu open={analysisMenuOpen} onOpenChange={setAnalysisMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label={t("console.sessionAnalysis.moreActions")}
+                >
+                  <Ellipsis className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                onCloseAutoFocus={(event) => {
+                  if (analysisMenuReturnFocusRef.current !== null) {
+                    event.preventDefault();
+                    analysisMenuReturnFocusRef.current.focus();
+                    analysisMenuReturnFocusRef.current = null;
+                  }
+                }}
+              >
+                <DropdownMenuItem onSelect={onAnalyzeConversation}>
+                  {t("console.sessionAnalysis.analyzeMessage")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </MessageToolbar>
       ) : null}
     </div>
   );

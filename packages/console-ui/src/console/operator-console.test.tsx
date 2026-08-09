@@ -1759,7 +1759,7 @@ describe("OperatorConsole", () => {
     expect(loadFile).toHaveBeenCalledWith("session-a", "README.md");
   });
 
-  it("keeps historical Markdown and reveals an in-place output icon on message hover or focus", () => {
+  it("keeps historical Markdown and gives the message a standing bottom toolbar", () => {
     renderConsole({
       messages: [message({
         id: 2,
@@ -1778,13 +1778,13 @@ describe("OperatorConsole", () => {
       && element.textContent === "产物位于 /tmp/private-run，runId=run-secret。")).toBeVisible();
     const outputButton = screen.getByRole("button", { name: "完整输出" });
     expect(outputButton).toHaveAccessibleName("完整输出");
-    // 轻操作从"绝对定位的单个图标"改为消息底部的安静工具条：
-    // 行内不跳版，默认透明，整条消息 hover / focus-within 时浮出。
+    // 轻操作改为消息底部常驻的工具条：始终可见但压到最低强度，
+    // 整条消息 hover / focus-within 时提亮——看不见的工具条不算工具条。
     const toolbarRow = outputButton.closest("span")!;
     expect(toolbarRow).toHaveClass(
-      "opacity-0",
-      "group-hover:opacity-100",
-      "group-focus-within:opacity-100",
+      "text-hint",
+      "group-hover:text-sub",
+      "group-focus-within:text-sub",
     )
     expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
     expect(outputButton).not.toHaveTextContent("完整输出");

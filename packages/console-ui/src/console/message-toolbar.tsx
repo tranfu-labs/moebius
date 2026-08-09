@@ -51,9 +51,10 @@ export function MessageAction({ icon: Icon, label, onClick, disabled }: {
 }
 
 /**
- * The action row under a message body. Actions stay quiet until the message is
- * hovered or focused; an incident triangle is always visible, because a failed
- * run must not look like a successful one at a glance.
+ * The action row under a message body. It is always present and always legible —
+ * a toolbar you cannot see is not a toolbar — but sits at the lowest emphasis
+ * until the message is hovered. The incident triangle keeps its own colour,
+ * because a failed run must not look like a successful one at a glance.
  */
 export function MessageToolbar({ incident, incidentDetail, children, className }: {
   incident?: MessageIncident | null;
@@ -69,7 +70,7 @@ export function MessageToolbar({ incident, incidentDetail, children, className }
   return (
     <TooltipProvider delayDuration={200} skipDelayDuration={100}>
       <div className={cn("mt-1 flex h-6 items-center gap-0.5", className)}>
-        <span className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
+        <span className="flex items-center gap-0.5 text-hint transition-colors group-hover:text-sub group-focus-within:text-sub">
           {children}
         </span>
         {incident ? (
