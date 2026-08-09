@@ -9,7 +9,7 @@ import type {
   OperatorSubSessionView,
 } from "@/console/operator-console";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
-import { FileText } from "lucide-react";
+import { FileText, RotateCcw } from "lucide-react";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
 import {
@@ -460,24 +460,31 @@ function SubtaskTimelineEntry({
             mode="message"
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
-          {message.speaker === "agent"
-          && message.runId !== null
-          && onOpenOutput !== undefined ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-2"
-              onClick={() => onOpenOutput({
-                sessionId: message.sessionId,
-                runId: message.runId!,
-                stepId: message.runTiming?.stepId ?? null,
-                role: message.role,
-                fallbackOutput: message.body,
-              })}
+          {message.speaker === "agent" && message.runId !== null ? (
+            <MessageToolbar
+              trailing={message.runTiming?.completedAt
+                ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+                : null}
             >
-              {t("console.common.fullOutput")}
-            </Button>
+              {onOpenOutput !== undefined ? (
+                <MessageAction
+                  icon={FileText}
+                  label={t("console.common.fullOutput")}
+                  onClick={() => onOpenOutput({
+                    sessionId: message.sessionId,
+                    runId: message.runId!,
+                    stepId: message.runTiming?.stepId ?? null,
+                    role: message.role,
+                    fallbackOutput: message.body,
+                  })}
+                />
+              ) : null}
+              <MessageAction
+                icon={RotateCcw}
+                label={t("common.retry")}
+                onClick={() => { void onRetry(message.runId!); }}
+              />
+            </MessageToolbar>
           ) : null}
         </>
       )}

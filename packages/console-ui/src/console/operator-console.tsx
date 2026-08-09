@@ -3913,7 +3913,6 @@ function TimelineEntry({
           {recoveryActions}
           {onAnalyzeConversation ? (
             <ConversationAnalysisMenu
-              toolbar
               open={analysisMenuOpen}
               onOpenChange={setAnalysisMenuOpen}
               returnFocusTarget={analysisMenuReturnFocusRef.current}
@@ -4070,7 +4069,6 @@ function TimelineEntry({
           ) : null}
           {onAnalyzeConversation ? (
             <ConversationAnalysisMenu
-              toolbar
               open={analysisMenuOpen}
               onOpenChange={setAnalysisMenuOpen}
               returnFocusTarget={analysisMenuReturnFocusRef.current}
@@ -4103,16 +4101,11 @@ function TimelinePerformanceBoundary({
 }
 
 function ConversationAnalysisMenu({
-  inline = false,
-  toolbar = false,
   open,
   onOpenChange,
   returnFocusTarget,
   onSelect,
 }: {
-  inline?: boolean;
-  /** Rendered as one item of the message toolbar, which owns emphasis and placement. */
-  toolbar?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   returnFocusTarget?: HTMLElement | null;
@@ -4120,17 +4113,12 @@ function ConversationAnalysisMenu({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className={toolbar ? undefined : inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
+    <div>
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-md hover:bg-hover hover:text-ink",
-              toolbar
-                ? undefined
-                : "text-sub opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
-            )}
+            className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-hover hover:text-ink"
             aria-label={t("console.sessionAnalysis.moreActions")}
             title={t("console.sessionAnalysis.moreActions")}
           >
