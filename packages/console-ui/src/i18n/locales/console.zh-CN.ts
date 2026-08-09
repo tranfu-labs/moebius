@@ -409,6 +409,7 @@ export const consoleZhCN = {
   "console.runOutcome.endContinuation": "结束并保留历史",
   "console.runOutcome.endContinuationFailed": "结束继续能力失败",
   "console.runOutcome.confirmMigrateAndContinue": "迁移并继续",
+  "console.runTime.triggeredAt": "触发于 {time}",
   "console.runTime.accessible": "{duration}，{completed}",
   "console.runTime.completedAt": "完成于 {time}",
   "console.runTime.completedAtYear": "完成于 {year}年{time}",

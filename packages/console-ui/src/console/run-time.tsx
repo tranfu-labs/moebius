@@ -86,6 +86,29 @@ export function RunCompletedAt({ completedAt, className }: {
   );
 }
 
+/**
+ * When a run never started there is no duration and no completion — the only
+ * real moment is when it was triggered. Say so, instead of leaving a bare clock
+ * reading whose meaning the reader has to guess.
+ */
+export function RunTriggeredAt({ triggeredAt, className }: {
+  triggeredAt: string;
+  className?: string;
+}): JSX.Element {
+  const { t } = useI18n();
+  const parsed = new Date(triggeredAt);
+  const clock = Number.isNaN(parsed.getTime())
+    ? null
+    : `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  return (
+    <span className={cn("tnum whitespace-nowrap text-xs text-hint", className)}>
+      {clock === null
+        ? t("console.runTime.completedUnknown")
+        : t("console.runTime.triggeredAt", { time: clock })}
+    </span>
+  );
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }

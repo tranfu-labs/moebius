@@ -305,6 +305,27 @@ type Story = StoryObj<typeof meta>;
 
 export const RelayRunning: Story = {};
 
+/** 主运行的「停下」在输入框；成员运行的「停下」长在它自己的运行块上。 */
+export const MemberRunStoppable: Story = {
+  args: {
+    activeRuns: [
+      sample.activeRun!,
+      {
+        ...sample.activeRun!,
+        runId: "run-6",
+        role: "qa",
+        liveMarkdown: "## 正在复跑分享卡片\n\n- 截图对比中",
+        lastOutputSummary: "正在复跑分享卡片",
+        elapsedMs: 12_000,
+        processSteps: [
+          { id: "q1", kind: "thinking", title: "只跑分享卡片这一段", status: "done" },
+          { id: "q2", kind: "tool", title: "截图对比", status: "running" },
+        ],
+      },
+    ],
+  },
+};
+
 export const RelayIdle: Story = {
   args: {
     activeRun: null,

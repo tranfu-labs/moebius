@@ -141,7 +141,7 @@ import {
   type ProviderUnavailableKind,
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
-import { RunCompletedAt, RunTime } from "@/console/run-time";
+import { RunCompletedAt, RunTime, RunTriggeredAt } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
@@ -3859,9 +3859,7 @@ function TimelineEntry({
           </span>
           {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
             <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
-          ) : (
-            <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
-          )}
+          ) : null}
         </div>
         <div className="pl-8">
         {message.processSteps?.length ? (
@@ -3892,7 +3890,7 @@ function TimelineEntry({
         <MessageToolbar
           trailing={message.runTiming?.completedAt
             ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
-            : null}
+            : <RunTriggeredAt triggeredAt={message.updatedAt} />}
         >
           {message.runId !== null && onOpenEvidence ? (
             <MessageAction

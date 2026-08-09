@@ -409,6 +409,7 @@ export const consoleEn = {
   "console.runOutcome.endContinuation": "End and keep history",
   "console.runOutcome.endContinuationFailed": "Failed to end continuation",
   "console.runOutcome.confirmMigrateAndContinue": "Migrate and continue",
+  "console.runTime.triggeredAt": "Triggered at {time}",
   "console.runTime.accessible": "{duration}, {completed}",
   "console.runTime.completedAt": "Completed at {time}",
   "console.runTime.completedAtYear": "Completed in {year} at {time}",
