@@ -9,15 +9,13 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
+import { AgentMemberStrip } from "@/console/agent-member-strip";
 import { AgentPortraitPicker } from "@/console/agent-portrait-picker";
 import { type ExecutionEngine } from "@/console/provider-mark";
-import {
-  AgentMarkdownMentionEditor,
-  CopyableAgentSlug,
-} from "@/console/agent-markdown-mention-editor";
+import { AgentMarkdownMentionEditor } from "@/console/agent-markdown-mention-editor";
 import {
   findExecutionModel,
   findPiExecutionModel,
@@ -27,9 +25,24 @@ import {
   resolveProfileForCli,
   resolveProfileForModel,
 } from "@/console/execution-profile-registry";
+import { splitAgentMarkdown, withAgentMarkdownBody } from "@/console/agent-markdown-body";
+import { MarkdownMessage } from "@/console/markdown-message";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/ui/select";
+
+/**
+ * The trigger renders its own label rather than leaning on Radix's `SelectValue`. That component
+ * learns the text from mounted items, and this package owns overlay presence, so the list is not
+ * mounted while closed — leaving every trigger blank.
+ */
+const EXECUTION_ENGINE_LABELS: Record<AgentExecutionProfile["cli"], string> = {
+  codex: "Codex",
+  claude: "Claude Code",
+  kimi: "Kimi",
+  pi: "Pi API",
+};
 
 export interface AgentTeamDetailMember {
   slug: string;
@@ -192,9 +205,28 @@ export interface AgentTeamDetailProps {
   memberActions?: AgentTeamActionSlot;
   onAddMember?(): void | Promise<void>;
   onChangePrimaryAgent?(memberSlug: string): void | Promise<void>;
+  /**
+   * New full order after a drag or a keyboard move. The first entry is the primary Agent — the
+   * position *is* the appointment, so the host does not receive a separate primary change.
+   */
+  onReorderMembers?(memberSlugs: string[]): void | Promise<void>;
   onSelectMember(memberSlug: string): void;
+  /**
+   * Team name and one-line description, edited in place. Absent leaves both read-only.
+   * Reported on blur: this is the same shape of data as a member's identity, and the page
+   * already commits the primary-Agent change immediately, so a second Save would be noise.
+   */
+  onChangeTeamInformation?(information: { name: string; description: string }): void | Promise<void>;
   /** Absent means this detail cannot change portraits; the heading then shows a plain portrait. */
   onChangeMemberPortrait?(memberSlug: string, portraitId: PortraitId | null): void;
+  /**
+   * Identity edits are reported as fields. The host owns writing them back into the file's
+   * frontmatter, so this view never has to parse or serialise YAML.
+   */
+  onChangeMemberIdentity?(
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ): void;
   onChangeMember(memberSlug: string, agentMarkdown: string): void;
   onSaveMember(memberSlug: string): void | Promise<void>;
   onCheckExternalChange?(memberSlug: string): void | Promise<void>;
@@ -219,17 +251,61 @@ export interface AgentTeamDetailProps {
   onLeave(): void;
 }
 
+/**
+ * Reports whether the page header has reached the top of whatever is scrolling it.
+ *
+ * Read from geometry, not from a scroll threshold: how far the header travels before it pins
+ * depends on what the host page puts above it, which this view has no way to know. The sentinel
+ * stays at the header's static position, so the moment the two separate is exactly the moment the
+ * header is pinned.
+ *
+ * Listening on `document` in the capture phase catches scroll from any ancestor — element scroll
+ * events do not bubble, and the scrolling ancestor belongs to the page, not to this component.
+ */
+function useHeaderPinned(): {
+  pinned: boolean;
+  sentinelRef: RefObject<HTMLDivElement>;
+  headerRef: RefObject<HTMLElement>;
+} {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [pinned, setPinned] = useState(false);
+
+  useEffect(() => {
+    const check = (): void => {
+      const sentinel = sentinelRef.current;
+      const header = headerRef.current;
+      if (sentinel === null || header === null) {
+        return;
+      }
+      setPinned(header.getBoundingClientRect().top - sentinel.getBoundingClientRect().top > 0.5);
+    };
+    check();
+    document.addEventListener("scroll", check, { capture: true, passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      document.removeEventListener("scroll", check, { capture: true });
+      window.removeEventListener("resize", check);
+    };
+  }, []);
+
+  return { pinned, sentinelRef, headerRef };
+}
+
 export function AgentTeamDetail({
   team,
   state,
   readOnly = false,
   teamActions,
+  onChangeTeamInformation,
   memberSelectorActions,
   memberActions,
   onAddMember,
   onChangePrimaryAgent,
+  onReorderMembers,
   onSelectMember,
   onChangeMemberPortrait,
+  onChangeMemberIdentity,
   onChangeMember,
   onSaveMember,
   onCheckExternalChange,
@@ -251,6 +327,7 @@ export function AgentTeamDetail({
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
   const { t } = useI18n();
+  const { pinned: headerPinned, sentinelRef: headerSentinelRef, headerRef } = useHeaderPinned();
   const pendingGuardedActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [externalConflictPromptOpen, setExternalConflictPromptOpen] = useState(false);
@@ -264,6 +341,39 @@ export function AgentTeamDetail({
     () => createProfileEditors(team),
   );
   const profileEditorsTeamKeyRef = useRef(team.teamKey);
+  /** Reading is the default; switching members returns to it rather than carrying edit mode over. */
+  const [editingMarkdown, setEditingMarkdown] = useState(false);
+  /**
+   * A successful save is the expected outcome, so it earns the smallest possible acknowledgement:
+   * the unsaved count disappears, Save greys out, and this sits beside them briefly. A banner for
+   * every routine success pushes the page down and, worse, tends to fill itself with system rules.
+   */
+  const [justSaved, setJustSaved] = useState(false);
+  const teamInformationEditable = !readOnly && onChangeTeamInformation !== undefined;
+  const [teamNameDraft, setTeamNameDraft] = useState(team.name ?? "");
+  const [teamDescriptionDraft, setTeamDescriptionDraft] = useState(team.description ?? "");
+  const teamInformationRef = useRef({ name: team.name ?? "", description: team.description ?? "" });
+  if (
+    teamInformationRef.current.name !== (team.name ?? "")
+    || teamInformationRef.current.description !== (team.description ?? "")
+  ) {
+    // The host is the source of truth; adopt its value when it changes underneath us.
+    teamInformationRef.current = { name: team.name ?? "", description: team.description ?? "" };
+    setTeamNameDraft(team.name ?? "");
+    setTeamDescriptionDraft(team.description ?? "");
+  }
+  /**
+   * Team information is a draft like everything else on this page. One page, one save model:
+   * typing has an in-between state, so it belongs in a draft — unlike dragging a member into
+   * first place, which either happened or did not and so commits immediately.
+   */
+  const teamInformationDirty = teamInformationEditable
+    && (teamNameDraft.trim() !== (team.name ?? "").trim()
+      || teamDescriptionDraft.trim() !== (team.description ?? "").trim());
+  const discardTeamInformation = (): void => {
+    setTeamNameDraft(team.name ?? "");
+    setTeamDescriptionDraft(team.description ?? "");
+  };
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
@@ -315,6 +425,21 @@ export function AgentTeamDetail({
     && selectedEditor.isDirty
     && selectedEditor.externalChangeStatus !== "conflict"
     && selectedEditor.saveStatus !== "saving";
+  /**
+   * The two drafts stay separate underneath — that is the isolation rule for a partial failure —
+   * but the user gets one Save. Splitting the button was leaking an implementation boundary into
+   * the interface and left two save controls 421px apart on the page.
+   */
+  const unsavedItemCount = (selectedEditor?.isDirty === true ? 1 : 0)
+    + (profileDirty ? 1 : 0)
+    + (teamInformationDirty ? 1 : 0);
+  // A fresh edit retires the acknowledgement; it should never linger over unsaved work.
+  useEffect(() => {
+    if (unsavedItemCount > 0) {
+      setJustSaved(false);
+    }
+  }, [unsavedItemCount]);
+
   const canAddMember = !readOnly
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
@@ -457,6 +582,39 @@ export function AgentTeamDetail({
     }
   };
 
+  const canReorder = !readOnly && onReorderMembers !== undefined && orderedMembers.length > 1;
+
+  const canSavePendingChanges = !readOnly
+    && unsavedItemCount > 0
+    && selectedEditor?.externalChangeStatus !== "conflict"
+    && selectedEditor?.saveStatus !== "saving"
+    && profileStatus !== "saving"
+    && (!profileDirty || profileDraftValid);
+
+  /**
+   * Saves everything the page is holding: team information plus the current member's identity,
+   * body and execution profile. Each part still reports its own outcome, so a failing execution
+   * profile does not roll back an already-saved file.
+   */
+  const savePendingChanges = async (): Promise<void> => {
+    if (teamInformationDirty) {
+      await onChangeTeamInformation?.({
+        name: teamNameDraft.trim(),
+        description: teamDescriptionDraft.trim(),
+      });
+    }
+    if (selectedMember === null) {
+      return;
+    }
+    if (profileDirty && !await saveExecutionProfile(selectedMember.slug)) {
+      return;
+    }
+    if (selectedEditor?.isDirty === true) {
+      await onSaveMember(selectedMember.slug);
+    }
+    setJustSaved(true);
+  };
+
   const saveExecutionProfile = async (
     memberSlug = selectedMember?.slug,
   ): Promise<boolean> => {
@@ -556,22 +714,79 @@ export function AgentTeamDetail({
 
   return (
     <section className="min-h-0" aria-labelledby="agent-team-detail-title" data-testid="agent-team-detail">
-      <button
-        type="button"
-        className="mb-7 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
-        onClick={() => requestGuardedAction(onLeave)}
-      >
-        <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-        {t("console.agentTeamDetail.back")}
-      </button>
+      {/* Sits at the header's resting position so `headerPinned` can be read as a gap, not a guess. */}
+      <div ref={headerSentinelRef} aria-hidden="true" className="h-0" />
 
-      <header className="border-b border-line pb-7">
+      {/*
+        Vertical rhythm on this page, tightest to loosest — spacing is what says which things
+        belong together, so it has to be a scale and not a series of local guesses:
+          6px   back link to title      a breadcrumb hanging off its own title
+          8px   title to description    one form: a team's name and its one-line description
+          12px  heading to its content
+          20px  member strip to panel   still one section; the panel's own border does the rest
+          32px  between sections        the only real break on the page
+        The previous values ran 4 / 12 / 12 / 28 / 24, which put more air inside a section than
+        between two — that is the arrangement that reads as "no rhythm".
+      */}
+      <header ref={headerRef} className="sticky top-0 z-20 -mx-1 px-1 pb-2 pt-1">
+        {/*
+          The bar reaches back up over the page's top inset. The scrolling container pads its
+          content down by `--page-inset-top` to clear the window chrome, and a bar that started at
+          its own top edge would leave that band live: text kept drifting past above the title,
+          which read as a floating slab rather than a page header. The plate is opaque rather than
+          a fade — this package draws no gradients.
+          The hairline only appears once something is actually underneath, so at rest the page is
+          not divided by a rule that means nothing.
+        */}
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 top-[calc(var(--page-inset-top,0px)*-1)] -z-10 border-b bg-canvas transition-colors",
+            headerPinned ? "border-line" : "border-transparent",
+          )}
+        />
+        {/*
+          Pulled left by the chevron's own side bearing: lucide draws the glyph 6px inside a 16px
+          box, so a button sitting flush on the column would still put visible ink 6px in. What
+          lines up down the left edge of a page is ink, not boxes.
+        */}
+        <button
+          type="button"
+          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          onClick={() => requestGuardedAction(onLeave)}
+        >
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+          {t("console.agentTeamDetail.back")}
+        </button>
+
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
-                {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
-              </h1>
+              {/*
+                Edited in place, exactly like a member's name below. Sending the same shape of
+                data through a modal on one half of the page and an inline field on the other is
+                the sort of split that makes a page feel assembled rather than designed.
+              */}
+              {/*
+                The -9px is this field's own invisible chrome — 1px transparent border plus 8px of
+                padding — pulled back out so the title's ink lands on the column and not one
+                indent to the right of everything below it. The hover surface still bleeds left,
+                which is what makes it read as a field rather than a heading that shifted.
+              */}
+              {teamInformationEditable ? (
+                <input
+                  id="agent-team-detail-title"
+                  className="-ml-[9px] min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-2xl font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
+                  aria-label={t("console.agentTeamDetail.teamNameLabel")}
+                  value={teamNameDraft}
+                  placeholder={t("console.agentTeamDetail.unnamed")}
+                  onChange={(event) => setTeamNameDraft(event.currentTarget.value)}
+                />
+              ) : (
+                <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
+                  {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
+                </h1>
+              )}
               <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[11px] font-medium text-sub">
                 {team.ownership === "system"
                   ? t("console.agentTeamDetail.official")
@@ -593,11 +808,72 @@ export function AgentTeamDetail({
                 </span>
               ) : null}
             </div>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-sub">
-              {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
-            </p>
           </div>
-          {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
+          <div className="flex shrink-0 items-center gap-2">
+            {/*
+              One page, one save. Team information, the member's identity, its body and its
+              execution profile all land here — a page that saves in two places asks the user to
+              work out which button owns what.
+            */}
+            {/*
+              Nothing to save while an external change is unresolved: the only way forward is to
+              take the file on disk or to overwrite it, and leaving Save reachable would offer a
+              third path the product does not have.
+            */}
+            {!readOnly && selectedEditor?.externalChangeStatus !== "conflict" ? (
+              <>
+                {selectedEditor?.saveStatus === "saving" || profileStatus === "saving" ? (
+                  <span className="inline-flex items-center text-sm text-sub" role="status">
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saving")}
+                  </span>
+                ) : unsavedItemCount > 0 ? (
+                  <span className="text-sm text-sub">
+                    {t("console.agentTeamDetail.unsavedCount", { count: String(unsavedItemCount) })}
+                  </span>
+                ) : justSaved ? (
+                  <span className="inline-flex items-center text-sm text-sub" role="status">
+                    <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                    {t("console.agentTeamDetail.saved")}
+                  </span>
+                ) : null}
+                {/* Hidden when there is nothing to discard: a permanently greyed button is just noise. */}
+                {unsavedItemCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={selectedEditor?.saveStatus === "saving"}
+                  onClick={() => {
+                    discardTeamInformation();
+                    if (profileDirty && profileDocument !== null && selectedMember !== null) {
+                      updateProfileEditor(selectedMember.slug, {
+                        draft: profileDocument.effectiveProfile,
+                        error: null,
+                      });
+                    }
+                    if (selectedMember !== null) {
+                      onDiscardMember(selectedMember.slug);
+                    }
+                  }}
+                >
+                  {t("console.agentTeamDetail.discardChanges")}
+                </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!canSavePendingChanges}
+                  onClick={() => void savePendingChanges()}
+                >
+                  {selectedEditor?.saveStatus === "saving" || profileStatus === "saving"
+                    ? t("console.agentTeamDetail.savingNoEllipsis")
+                    : t("console.agentTeamDetail.save")}
+                </Button>
+              </>
+            ) : null}
+            {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
+          </div>
         </div>
 
         {team.ownership === "system" && team.officialManagement?.updateStatus === "available" ? (
@@ -787,70 +1063,66 @@ export function AgentTeamDetail({
           </div>
         ) : null}
 
-        <div className="mt-6 flex min-h-8 flex-wrap items-center gap-3 text-sm">
-          <span className="text-hint">{t("console.agentTeamDetail.primaryAgent")}</span>
-          {!readOnly ? (
-            <div className="relative">
-              <select
-                className="h-8 min-w-40 appearance-none rounded-md border border-line bg-card py-1 pl-2.5 pr-8 text-sm text-ink transition-colors hover:bg-hover disabled:cursor-wait disabled:text-sub"
-                aria-label={t("console.agentTeamDetail.primaryAgent")}
-                value={primaryMember?.slug ?? ""}
-                disabled={
-                  onChangePrimaryAgent === undefined
-                  || primaryAgentChangeStatus === "saving"
-                  || availableMembers.length === 0
-                }
-                onChange={(event) => void onChangePrimaryAgent?.(event.currentTarget.value)}
-              >
-                {primaryMember === undefined ? (
-                  <option value="" disabled>{t("console.agentTeamDetail.notSet")}</option>
-                ) : null}
-                {availableMembers.map((member) => (
-                  <option key={member.slug} value={member.slug}>
-                    {member.displayName || `@${member.slug}`}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-hint"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </div>
-          ) : (
-            <span className="rounded-md border border-line bg-card px-2.5 py-1.5 text-ink">
-              {primaryMember?.displayName || t("console.agentTeamDetail.notSet")}
+        {/*
+          No primary-Agent select. Appointing is dragging a member into first place, so the
+          ability lives on the member strip itself; a second entry point for the same act only
+          gives the two a chance to disagree. The outcome is still announced here.
+        */}
+        <div className="text-xs text-sub empty:hidden" aria-live="polite">
+          {primaryAgentChangeStatus === "saving" ? (
+            <span className="inline-flex items-center" role="status">
+              <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+              {t("console.agentTeamDetail.saving")}
             </span>
-          )}
-          <span className="min-h-5 text-xs text-sub" aria-live="polite">
-            {primaryAgentChangeStatus === "saving" ? (
-              <span className="inline-flex items-center" role="status">
-                <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                {t("console.agentTeamDetail.saving")}
-              </span>
-            ) : null}
-            {primaryAgentChangeStatus === "saved" ? (
-              <span className="inline-flex items-center" role="status">
-                <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                {t("console.agentTeamDetail.saved")}
-              </span>
-            ) : null}
-            {primaryAgentChangeStatus === "failed" ? (
-              <span className="text-danger" role="alert">
-                {t("console.agentTeamDetail.switchFailed", {
-                  error: primaryAgentChangeError || t("console.agentTeamDetail.tryAgain"),
-                })}
-              </span>
-            ) : null}
-          </span>
+          ) : null}
+          {primaryAgentChangeStatus === "saved" ? (
+            <span className="inline-flex items-center" role="status">
+              <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("console.agentTeamDetail.saved")}
+            </span>
+          ) : null}
+          {primaryAgentChangeStatus === "failed" ? (
+            <span className="text-danger" role="alert">
+              {t("console.agentTeamDetail.switchFailed", {
+                error: primaryAgentChangeError || t("console.agentTeamDetail.tryAgain"),
+              })}
+            </span>
+          ) : null}
         </div>
       </header>
 
-      <div className="border-b border-line py-6">
+      {/*
+        Left out of the pinned bar deliberately. The bar has to keep carrying identity and the save
+        controls, so everything put in it is viewport the page never gets back; the description is
+        prose, and prose can scroll away like the rest of the page.
+      */}
+      {teamInformationEditable ? (
+        <input
+          className="-ml-[9px] w-[calc(100%+9px)] rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+          aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
+          value={teamDescriptionDraft}
+          placeholder={t("console.agentTeamDetail.noDescription")}
+          onChange={(event) => setTeamDescriptionDraft(event.currentTarget.value)}
+        />
+      ) : (
+        <p className="max-w-2xl text-sm leading-6 text-sub">
+          {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
+        </p>
+      )}
+
+      <div className="pt-8">
         <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
-            {t("console.agentTeamDetail.members")}
-          </h2>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2 className="text-sm font-medium text-ink">
+              {t("console.agentTeamDetail.members")}
+            </h2>
+            {/* Standing and visible, not sr-only: sighted users have to learn this too. */}
+            {canReorder ? (
+              <span id="agent-team-member-reorder-hint" className="truncate text-xs text-hint">
+                {t("console.agentTeamDetail.reorderHint")}
+              </span>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             {memberSelectorActions}
             {canAddMember && orderedMembers.length > 0 ? (
@@ -873,31 +1145,17 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         </div>
-        <div
-          className="scroll-thin flex min-w-0 flex-nowrap gap-2 overflow-x-auto pb-2"
-          role="tablist"
-          aria-label={t("console.agentTeamDetail.members")}
-          data-testid="agent-team-member-selector"
-        >
-          {orderedMembers.map((member) => {
-            const selected = member.slug === selectedMember?.slug;
-            const dirty = state.memberEditors[member.slug]?.isDirty === true;
-            const primary = member.slug === team.primaryAgentSlug;
-            return (
-              <button
-                key={member.slug}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls="agent-team-member-editor"
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors",
-                  selected
-                    ? "border-line-strong bg-sel text-ink"
-                    : "border-line bg-card text-sub hover:bg-hover hover:text-ink",
-                )}
-                onClick={() => onSelectMember(member.slug)}
-              >
+        <AgentMemberStrip
+          reorderable={canReorder}
+          onSelect={onSelectMember}
+          onReorder={(slugs) => void onReorderMembers?.(slugs)}
+          items={orderedMembers.map((member) => ({
+            slug: member.slug,
+            selected: member.slug === selectedMember?.slug,
+            primary: member.slug === team.primaryAgentSlug,
+            disabled: member.available === false,
+            content: (
+              <>
                 <AgentPortrait
                   displayName={member.displayName}
                   slug={member.slug}
@@ -905,7 +1163,7 @@ export function AgentTeamDetail({
                   engine={memberEngineMark(member)}
                 />
                 <span>{member.displayName || `@${member.slug}`}</span>
-                {primary ? (
+                {member.slug === team.primaryAgentSlug ? (
                   <span className="text-xs text-hint">
                     {t("console.agentTeamDetail.primarySuffix")}
                   </span>
@@ -915,17 +1173,17 @@ export function AgentTeamDetail({
                     {t("console.agentTeamDetail.unavailableSuffix")}
                   </span>
                 ) : null}
-                {dirty ? (
+                {state.memberEditors[member.slug]?.isDirty === true ? (
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-accent"
                     title={t("console.agentTeamDetail.unsaved")}
                     aria-label={t("console.agentTeamDetail.unsaved")}
                   />
                 ) : null}
-              </button>
-            );
-          })}
-        </div>
+              </>
+            ),
+          }))}
+        />
         {addMemberStatus === "failed" && orderedMembers.length > 0 ? (
           <p className="mt-2 text-sm text-danger" role="alert">
             {t("console.agentTeamDetail.addFailed", {
@@ -935,7 +1193,7 @@ export function AgentTeamDetail({
         ) : null}
       </div>
 
-      <div className="pt-7" id="agent-team-member-editor" role="tabpanel">
+      <div className="pt-5" id="agent-team-member-editor" role="tabpanel">
         {state.saveAllFailures.length > 0 ? (
           <div className="mb-5 border border-danger/30 bg-danger/5 px-4 py-3" role="alert">
             <div className="flex items-start gap-2.5">
@@ -957,7 +1215,7 @@ export function AgentTeamDetail({
         ) : null}
 
         {selectedMember === null ? (
-          <div className="border-y border-line px-6 py-12 text-center">
+          <div className="rounded-lg bg-sunken px-6 py-12 text-center">
             <p className="text-sm font-medium text-ink">
               {t("console.agentTeamDetail.noMembers")}
             </p>
@@ -990,7 +1248,7 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         ) : selectedEditor?.loadStatus === "failed" ? (
-          <div className="border-y border-line py-8" role="alert">
+          <div className="rounded-lg bg-sunken px-6 py-8" role="alert">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <p className="text-sm font-medium text-danger">
                 {t("console.agentTeamDetail.agentFileUnreadable", {
@@ -1005,81 +1263,109 @@ export function AgentTeamDetail({
             </Button>
           </div>
         ) : selectedEditor?.loadStatus !== "ready" ? (
-          <div className="flex min-h-48 items-center justify-center border-y border-line text-sm text-sub" role="status">
+          <div className="flex min-h-48 items-center justify-center rounded-lg bg-sunken text-sm text-sub" role="status">
             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
             {t("console.agentTeamDetail.readingAgentFile")}
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="mt-0.5">
-                  <AgentPortraitPicker
-                    displayName={selectedEditor.displayName || selectedMember.displayName}
-                    slug={selectedMember.slug}
-                    portraitId={selectedMember.portraitId ?? null}
-                    engine={memberEngineMark(selectedMember)}
-                    disabled={readOnly || onChangeMemberPortrait === undefined}
-                    onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate text-lg font-semibold tracking-[-0.01em] text-ink">
-                      {selectedEditor.displayName || selectedMember.displayName || `@${selectedMember.slug}`}
-                    </h2>
-                    {selectedEditor.isDirty ? (
-                      <span className="text-xs font-medium text-accent">
-                        {t("console.agentTeamDetail.unsaved")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-sub">
-                    {selectedEditor.description || selectedMember.description || `@${selectedMember.slug}`}
-                  </p>
-                </div>
+            {/*
+              Two columns rather than one long stack. Configuration is the main line and the
+              body is reference; side by side, that ranking is visible. Stacked they are just two
+              bands of equal width, and half the horizontal space goes unused.
+            */}
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+            {/*
+              The whole column sticks, not just the card: pinning the card alone lets the save
+              row below it scroll away. `self-start` is required — a grid item stretches to the
+              row height by default, which leaves a sticky element no room to move.
+            */}
+            <div className="lg:sticky lg:top-4 lg:self-start">
+            {/*
+              The body gets no inner scrollbar: reading a long persona through a small window is
+              worse than scrolling the page. It extends naturally and the panel scrolls, while the
+              main line stays pinned so configuration is still in view while reading.
+            */}
+            <div
+              className="rounded-lg border border-line bg-card p-4"
+              data-testid="agent-execution-profile-editor"
+            >
+              {/*
+                Identity belongs in this card rather than in a band of its own above it. That
+                band added nothing the member strip had not already shown — it simply restated the
+                selection, with the portrait and the name each appearing twice. The strip answers
+                "which member"; this card answers "who is it and how does it run".
+              */}
+              {/*
+                Portrait beside the name, description on its own full-width row. Keeping all three
+                on one line left the description about 300px inside a 400px card, which truncated
+                the very sentence that explains what the member is for.
+              */}
+              <div className="flex items-center gap-3">
+                <AgentPortraitPicker
+                  displayName={selectedEditor.displayName || selectedMember.displayName}
+                  slug={selectedMember.slug}
+                  portraitId={selectedMember.portraitId ?? null}
+                  engine={memberEngineMark(selectedMember)}
+                  size="hero"
+                  disabled={readOnly || onChangeMemberPortrait === undefined}
+                  onChange={(picked) => onChangeMemberPortrait?.(selectedMember.slug, picked)}
+                />
+                <input
+                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                  aria-label={t("console.agentTeamDetail.memberNameLabel")}
+                  value={selectedEditor.displayName}
+                  placeholder={`@${selectedMember.slug}`}
+                  disabled={readOnly || onChangeMemberIdentity === undefined}
+                  onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                    displayName: event.currentTarget.value,
+                  })}
+                />
+                {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
               </div>
-              {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
-            </div>
-            {portraitChangeStatus !== "idle" ? (
-              <span className="mt-1.5 flex min-h-5 items-center gap-1.5 text-xs text-sub" aria-live="polite">
-                {portraitChangeStatus === "saving" ? (
-                  <span className="inline-flex items-center" role="status">
-                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                    {t("console.agentTeamDetail.saving")}
-                  </span>
-                ) : null}
-                {portraitChangeStatus === "saved" ? (
-                  <span className="inline-flex items-center" role="status">
-                    <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                    {t("console.agentTeamDetail.saved")}
-                  </span>
-                ) : null}
-                {portraitChangeStatus === "failed" ? (
-                  <span className="text-danger" role="alert">
-                    {t("console.agentTeamDetail.portraitChangeFailed", {
-                      error: portraitChangeError || t("console.agentTeamDetail.tryAgain"),
-                    })}
-                  </span>
-                ) : null}
-              </span>
-            ) : null}
+              <input
+                className="mt-2 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
+                value={selectedEditor.description}
+                placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}
+                disabled={readOnly || onChangeMemberIdentity === undefined}
+                onChange={(event) => onChangeMemberIdentity?.(selectedMember.slug, {
+                  description: event.currentTarget.value,
+                })}
+              />
+              {portraitChangeStatus !== "idle" ? (
+                <span className="mt-1.5 flex min-h-5 items-center gap-1.5 text-xs text-sub" aria-live="polite">
+                  {portraitChangeStatus === "saving" ? (
+                    <span className="inline-flex items-center" role="status">
+                      <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                      {t("console.agentTeamDetail.saving")}
+                    </span>
+                  ) : null}
+                  {portraitChangeStatus === "saved" ? (
+                    <span className="inline-flex items-center" role="status">
+                      <Check className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                      {t("console.agentTeamDetail.saved")}
+                    </span>
+                  ) : null}
+                  {portraitChangeStatus === "failed" ? (
+                    <span className="text-danger" role="alert">
+                      {t("console.agentTeamDetail.portraitChangeFailed", {
+                        error: portraitChangeError || t("console.agentTeamDetail.tryAgain"),
+                      })}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
 
-            <div className="mt-6 border-y border-line py-5" data-testid="agent-execution-profile-editor">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Same scale as the page: 20px is a break inside a section, 32px is between two. */}
+              <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+                  <h3 className="text-[13px] font-semibold tracking-[0.02em] text-ink">
                     {t("console.agentTeamDetail.runtimeConfiguration")}
                   </h3>
-                  <p className="mt-1 text-sm text-sub">
-                    {t("console.agentTeamDetail.runtimeOwnership", {
-                      team: team.name?.trim() || t("console.agentTeamDetail.unnamed"),
-                      slug: selectedMember.slug,
-                    })}
-                  </p>
                 </div>
                 {profileDocument !== null ? (
-                  <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-sub">
+                  <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-[11px] font-medium text-sub">
                     {profileDocument.binding.source === "recommended"
                       ? t("console.agentTeamDetail.followRecommendation")
                       : t("console.agentTeamDetail.userOverride")}
@@ -1088,52 +1374,60 @@ export function AgentTeamDetail({
               </div>
               {profileDraft !== null && profileDocument !== null ? (
                 <>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="mt-3 grid gap-3">
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.executionEngineLabel")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                      <Select
                         value={profileDraft.cli}
                         disabled={readOnly || profileStatus === "saving"}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                          draft: resolveProfileForEngine(event.currentTarget.value as AgentExecutionProfile["cli"], selectableProviderProfiles),
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, {
+                          draft: resolveProfileForEngine(value as AgentExecutionProfile["cli"], selectableProviderProfiles),
                           error: null,
                         })}
                       >
-                        <option value="codex">Codex</option>
-                        <option value="claude">Claude Code</option>
-                        <option value="kimi">Kimi</option>
-                        <option value="pi">Pi API</option>
-                      </select>
+                        <SelectTrigger aria-label={t("console.agentTeamDetail.executionEngineLabel")}>
+                          {EXECUTION_ENGINE_LABELS[profileDraft.cli]}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="codex">Codex</SelectItem>
+                          <SelectItem value="claude">Claude Code</SelectItem>
+                          <SelectItem value="kimi">Kimi</SelectItem>
+                          <SelectItem value="pi">Pi API</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </label>
                     {profileDraft.cli === "pi" ? (
                       <label className="grid content-start gap-1.5 text-xs text-hint">
                         Provider
-                        <select
-                          aria-label="Provider"
-                          className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                        <Select
                           value={profileDraft.providerProfileId}
                           disabled={readOnly || profileStatus === "saving"}
-                          aria-invalid={profileProviderError !== null}
-                          onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                            draft: resolvePiProviderProfile(event.currentTarget.value, selectableProviderProfiles),
+                          onValueChange={(value) => updateProfileEditor(selectedMember.slug, {
+                            draft: resolvePiProviderProfile(value, selectableProviderProfiles),
                             error: null,
                           })}
                         >
-                          <option value="">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</option>
-                          {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
-                            <option value={selectedProviderProfile.id}>
-                              {t("console.agentTeamDetail.providerUnavailableOption", {
-                                providerName: selectedProviderProfile.providerName,
-                                displayName: selectedProviderProfile.displayName,
-                              })}
-                            </option>
-                          ) : null}
-                          {selectableProviderProfiles.map((profile) => (
-                            <option key={profile.id} value={profile.id}>{profile.providerName} · {profile.displayName}</option>
-                          ))}
-                        </select>
+                          <SelectTrigger aria-label="Provider" aria-invalid={profileProviderError !== null}>
+                            {selectedProviderProfile === null
+                              ? <span className="text-hint">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</span>
+                              : `${selectedProviderProfile.providerName} · ${selectedProviderProfile.displayName}`}
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
+                              <SelectItem value={selectedProviderProfile.id}>
+                                {t("console.agentTeamDetail.providerUnavailableOption", {
+                                  providerName: selectedProviderProfile.providerName,
+                                  displayName: selectedProviderProfile.displayName,
+                                })}
+                              </SelectItem>
+                            ) : null}
+                            {selectableProviderProfiles.map((profile) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.providerName} · {profile.displayName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {profileProviderError !== null ? <span className="text-danger">{profileProviderError}</span> : null}
                         {selectableProviderProfiles.length === 0 && onOpenProviderSettings !== undefined ? (
                           <button type="button" className="w-fit text-xs text-accent hover:underline" onClick={onOpenProviderSettings}>
@@ -1143,59 +1437,66 @@ export function AgentTeamDetail({
                       </label>
                     ) : null}
                     <label className="grid content-start gap-1.5 text-xs text-hint">
-                      Model
-                      <select
-                        aria-label="Model"
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                      {t("console.agentTeamDetail.modelLabel")}
+                      <Select
                         value={profileDraft.model}
                         disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileModelError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...resolveSelectedModel(profileDraft, event.currentTarget.value),
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, { draft: {
+                          ...resolveSelectedModel(profileDraft, value),
                         }, error: null })}
                       >
-                        {profileDraft.cli === "pi" && profileDraft.model === "" ? (
-                          <option value="">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</option>
-                        ) : null}
-                        {profileModelUnsupported && profileDraft.model !== "" ? (
-                          <option value={profileDraft.model}>
-                            {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
-                          </option>
-                        ) : null}
-                        {(profileDraft.cli === "pi"
-                          ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
-                          : listExecutionModels(profileDraft.cli)).map((model) => (
-                          <option key={model.value} value={model.value}>
-                            {model.membershipRestricted
-                              ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
-                              : model.label}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger aria-label="Model" aria-invalid={profileModelError !== null}>
+                          {profileDraft.model === ""
+                            ? <span className="text-hint">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</span>
+                            : profileModelUnsupported
+                              ? t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })
+                              : profileModelDefinition?.label ?? profileDraft.model}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profileModelUnsupported && profileDraft.model !== "" ? (
+                            <SelectItem value={profileDraft.model}>
+                              {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
+                            </SelectItem>
+                          ) : null}
+                          {(profileDraft.cli === "pi"
+                            ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
+                            : listExecutionModels(profileDraft.cli)).map((model) => (
+                            <SelectItem key={model.value} value={model.value}>
+                              {model.membershipRestricted
+                                ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
+                                : model.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
                     </label>
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.effort")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.effort")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
+                      <Select
                         value={profileDraft.effort}
                         disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileEffortError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
+                        onValueChange={(value) => updateProfileEditor(selectedMember.slug, { draft: {
                           ...profileDraft,
-                          effort: event.currentTarget.value,
+                          effort: value,
                         }, error: null })}
                       >
-                        {profileEffortUnsupported ? (
-                          <option value={profileDraft.effort}>
-                            {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
-                          </option>
-                        ) : null}
-                        {profileModelDefinition?.efforts.map((effort) => (
-                          <option key={effort} value={effort}>{effort}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger aria-label={t("console.agentTeamDetail.effort")} aria-invalid={profileEffortError !== null}>
+                          {profileEffortUnsupported
+                            ? t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })
+                            : profileDraft.effort}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profileEffortUnsupported ? (
+                            <SelectItem value={profileDraft.effort}>
+                              {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
+                            </SelectItem>
+                          ) : null}
+                          {profileModelDefinition?.efforts.map((effort) => (
+                            <SelectItem key={effort} value={effort}>{effort}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {profileEffortError !== null ? <span className="text-danger">{profileEffortError}</span> : null}
                     </label>
                   </div>
@@ -1204,17 +1505,19 @@ export function AgentTeamDetail({
                       {t("console.agentTeamDetail.legacyProfileNotice")}
                     </p>
                   ) : null}
-                  <p className="mt-3 text-sm text-sub">
-                    {t("console.agentTeamDetail.runtimeValidationNotice")}
-                  </p>
                   {!profileDraftValid ? (
                     <p className="mt-2 text-sm text-sub">
                       {t("console.agentTeamDetail.savedUnchanged")}
                     </p>
                   ) : null}
                   {profileError !== null ? <p className="mt-3 text-sm text-danger" role="alert">{profileError}</p> : null}
+                  {/*
+                    `empty:hidden` because the only thing in this row is conditional: with nothing
+                    to restore it collapses to zero height but its margin does not, and the card
+                    ends up with 16px more padding at the bottom than at the top.
+                  */}
                   {!readOnly ? (
-                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <div className="mt-5 flex flex-wrap justify-end gap-2 empty:hidden">
                       {profileDocument.recommendation !== null
                         && profileDocument.binding.source !== "recommended"
                         && onRestoreRecommendedProfile !== undefined ? (
@@ -1245,19 +1548,6 @@ export function AgentTeamDetail({
                             {t("console.agentTeamDetail.restoreRecommendation")}
                           </Button>
                         ) : null}
-                      <Button
-                        type="button"
-                        disabled={
-                          !profileDirty
-                          || profileStatus === "saving"
-                          || !profileDraftValid
-                        }
-                        onClick={() => void saveExecutionProfile(selectedMember.slug)}
-                      >
-                        {profileStatus === "saving"
-                          ? t("console.agentTeamDetail.saving")
-                          : t("console.agentTeamDetail.saveRuntime")}
-                      </Button>
                     </div>
                   ) : null}
                 </>
@@ -1269,25 +1559,77 @@ export function AgentTeamDetail({
                 </p>
               )}
             </div>
-
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <label htmlFor="agent-team-markdown-editor" className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
-                AGENT.md
-              </label>
-              <div className="flex items-center gap-1 text-xs text-hint">
-                {readOnly ? <span>{t("console.agentTeamDetail.readOnlyPrefix")}</span> : null}
-                <CopyableAgentSlug slug={selectedMember.slug} />
-              </div>
             </div>
-            <AgentMarkdownMentionEditor
-              id="agent-team-markdown-editor"
-              value={selectedEditor.draftMarkdown}
-              members={mentionMembers}
-              label={`${selectedEditor.displayName || selectedMember.displayName || selectedMember.slug} AGENT.md`}
-              readOnly={readOnly}
-              disabled={selectedEditor.saveStatus === "saving"}
-              onValueChange={(agentMarkdown) => onChangeMember(selectedMember.slug, agentMarkdown)}
-            />
+
+            <div className="min-w-0">
+            {/*
+              The right column is not a card. The left one is a control surface — fields and
+              selects — so a border earns its place there; the body is reading material, and
+              boxing it too is just habit. Grouping here is whitespace and type, not rules.
+            */}
+            <div>
+            {/*
+              The edit entry follows the registered light-action pattern: absolutely positioned
+              over the top-right of the body, transparent until the block is hovered or takes
+              keyboard focus — a code block's copy button. It does not deserve its own row.
+
+              The `@slug` and its copy button that used to share that row are gone: typing `@` in
+              the editor already completes member names, so copying a slug by hand is a need that
+              does not exist, and it only took up space.
+            */}
+            <div className="group relative">
+              {readOnly ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1 z-10 h-7 bg-canvas px-2 text-xs opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                  aria-pressed={editingMarkdown}
+                  onClick={() => setEditingMarkdown((editing) => !editing)}
+                >
+                  {editingMarkdown
+                    ? t("console.agentTeamDetail.doneEditingMarkdown")
+                    : t("console.agentTeamDetail.editMarkdown")}
+                </Button>
+              )}
+            {/*
+              Reading is the common case on this page — people come here to adjust how a member
+              runs, not to write its persona — so the body is rendered by default and editing is
+              an explicit second step. Both views show the same draft, so an unsaved change is
+              still visible after leaving the editor.
+            */}
+            {editingMarkdown && !readOnly ? (
+              <AgentMarkdownMentionEditor
+                id="agent-team-markdown-editor"
+                value={splitAgentMarkdown(selectedEditor.draftMarkdown).body}
+                members={mentionMembers}
+                label={t("console.agentTeamDetail.responsibilitiesLabel", {
+                  name: selectedEditor.displayName || selectedMember.displayName || selectedMember.slug,
+                })}
+                readOnly={readOnly}
+                disabled={selectedEditor.saveStatus === "saving"}
+                onValueChange={(body) => onChangeMember(
+                  selectedMember.slug,
+                  withAgentMarkdownBody(selectedEditor.draftMarkdown, body),
+                )}
+              />
+            ) : (
+              <div
+                id="agent-team-markdown-editor"
+                className="min-h-[220px] px-1"
+                data-testid="agent-team-markdown-preview"
+              >
+                {splitAgentMarkdown(selectedEditor.draftMarkdown).body.trim() === "" ? (
+                  <p className="text-sm text-hint">{t("console.agentTeamDetail.emptyMarkdown")}</p>
+                ) : (
+                  <MarkdownMessage content={splitAgentMarkdown(selectedEditor.draftMarkdown).body} />
+                )}
+              </div>
+            )}
+            </div>
+            </div>
+            </div>
+            </div>
 
             {selectedEditor.externalChangeStatus === "reloaded" ? (
               <div className="mt-3 border-l-2 border-line-strong bg-sunken px-3 py-2 text-sm text-sub" role="status">
@@ -1345,33 +1687,6 @@ export function AgentTeamDetail({
               </div>
             ) : null}
 
-            {!readOnly && selectedEditor.externalChangeStatus !== "conflict" ? (
-              <div className="mt-4 flex items-center justify-end gap-2">
-                {selectedEditor.saveStatus === "saving" ? (
-                  <span className="mr-auto inline-flex items-center text-sm text-sub" role="status">
-                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                    {t("console.agentTeamDetail.saving")}
-                  </span>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={!selectedEditor.isDirty || selectedEditor.saveStatus === "saving"}
-                  onClick={() => onDiscardMember(selectedMember.slug)}
-                >
-                  {t("console.agentTeamDetail.discardChanges")}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!canSaveCurrent}
-                  onClick={() => void onSaveMember(selectedMember.slug)}
-                >
-                  {selectedEditor.saveStatus === "saving"
-                    ? t("console.agentTeamDetail.savingNoEllipsis")
-                    : t("console.agentTeamDetail.save")}
-                </Button>
-              </div>
-            ) : null}
           </>
         )}
       </div>

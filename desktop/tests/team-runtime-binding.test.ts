@@ -101,6 +101,7 @@ describe("session-scoped Agent team runtime binding", () => {
         displayName: "dev",
         description: "负责 dev",
         agentMarkdown: "# dev\n\n负责 dev\n",
+        portraitId: null,
         executionProfile: {
           cli: "codex",
           model: "gpt-5.6-sol",

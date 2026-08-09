@@ -14,6 +14,7 @@ import type { AgentTeamListResponse } from "../team-ipc-contract.js";
 import type { AiTeamBuilderIpcResponse } from "../ai-team-builder/contract.js";
 import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import type { AgentTeamExternalChangeResponse } from "../team-external-change-contract.js";
+import { parseAgentMarkdownFrontmatter, serializeAgentMarkdownFrontmatter } from "../../../src/agent-frontmatter.js";
 import { tryParseAgentMarkdownIdentity } from "../team-model.js";
 import { getAgentTeamKey } from "./team-state.js";
 import {
@@ -354,6 +355,63 @@ export function planAgentTeamPortraitOperation(
   hasOperation: boolean,
 ): "save" | "skip" {
   return hasOperation && planAgentTeamPortraitChange(team, memberSlug) === "save" ? "save" : "skip";
+}
+
+export function planAgentTeamReorderChange(
+  team: OperatorAgentTeam | undefined,
+  memberSlugs: string[],
+): "save" | "skip" {
+  if (team === undefined || memberSlugs.length !== team.memberOrder.length) {
+    return "skip";
+  }
+  const current = new Set(team.memberOrder);
+  const next = new Set(memberSlugs);
+  const sameMembers = next.size === current.size
+    && [...next].every((slug) => current.has(slug));
+  if (!sameMembers || memberSlugs.every((slug, index) => slug === team.memberOrder[index])) {
+    return "skip";
+  }
+  return "save";
+}
+
+export function planAgentTeamReorderOperation(
+  team: OperatorAgentTeam | undefined,
+  memberSlugs: string[],
+  hasOperation: boolean,
+): "save" | "skip" {
+  return hasOperation && planAgentTeamReorderChange(team, memberSlugs) === "save" ? "save" : "skip";
+}
+
+/**
+ * Rewrites the identity fields of a member draft's AGENT.md frontmatter. The editor reports
+ * identity as plain fields (`displayName` / `description`), and the page owns serialising them
+ * back into the frontmatter; a draft without a frontmatter yet (legacy heading-format file) is
+ * seeded with the current parsed identity so a partial edit never splits the identity across
+ * two sources. The result stays inside the member's ordinary draft and is persisted by the
+ * normal save path.
+ */
+export function planAgentTeamIdentityMarkdown(
+  draftMarkdown: string,
+  identity: { displayName?: string; description?: string },
+): string {
+  let parsed: ReturnType<typeof parseAgentMarkdownFrontmatter>;
+  try {
+    parsed = parseAgentMarkdownFrontmatter(draftMarkdown);
+  } catch {
+    return draftMarkdown;
+  }
+  let frontmatter = { ...(parsed.frontmatter ?? {}) };
+  if (parsed.frontmatter === null) {
+    const current = tryParseAgentMarkdownIdentity(draftMarkdown);
+    frontmatter = { display_name: current.displayName, description: current.description };
+  }
+  if (identity.displayName !== undefined) {
+    frontmatter.display_name = identity.displayName;
+  }
+  if (identity.description !== undefined) {
+    frontmatter.description = identity.description;
+  }
+  return serializeAgentMarkdownFrontmatter(frontmatter, parsed.body);
 }
 
 export function planAgentTeamProfileOperation(

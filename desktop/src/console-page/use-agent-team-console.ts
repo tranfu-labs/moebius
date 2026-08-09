@@ -15,10 +15,12 @@ import {
   AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
   planAgentTeamFileManagerTranslationKey,
   planAgentTeamDetailState,
+  planAgentTeamIdentityMarkdown,
 } from "./agent-team-console-model.js";
 import {
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
+  getAgentTeamMemberDraft,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 
@@ -76,6 +78,20 @@ export function useAgentTeamConsole(
       agentMarkdown,
     ));
   }, [member]);
+  const changeMemberIdentity = useCallback((
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => {
+    const current = getAgentTeamMemberDraft(member.draftsRef.current, teamKey, memberSlug);
+    if (current?.loadStatus !== "ready") return;
+    member.commitDrafts(updateAgentTeamMemberDraft(
+      member.draftsRef.current,
+      teamKey,
+      memberSlug,
+      planAgentTeamIdentityMarkdown(current.draftMarkdown, identity),
+    ));
+  }, [member]);
   const discardMember = useCallback((teamKey: string, memberSlug: string) => {
     member.commitDrafts(discardAgentTeamMemberDraft(member.draftsRef.current, teamKey, memberSlug));
   }, [member]);
@@ -86,10 +102,11 @@ export function useAgentTeamConsole(
   const intents = useMemo(() => ({
     close,
     changeMember,
+    changeMemberIdentity,
     discardMember,
     discardAll,
     fileManagerLabel: t(planAgentTeamFileManagerTranslationKey(api?.agentTeamFileManagerKind)),
-  }), [api?.agentTeamFileManagerKind, changeMember, close, discardAll, discardMember, t]);
+  }), [api?.agentTeamFileManagerKind, changeMember, changeMemberIdentity, close, discardAll, discardMember, t]);
   return useMemo(() => ({
     catalog,
     member,

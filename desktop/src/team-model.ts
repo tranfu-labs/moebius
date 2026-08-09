@@ -17,13 +17,17 @@ export interface TeamDefinition {
   description: string;
   primaryAgentSlug: string | null;
   memberOrder: string[];
+  /**
+   * Chosen faces per member slug; an absent entry keeps the slug-derived default. Portraits are
+   * app-side presentation metadata, kept in the same app record as `memberOrder` — not in the
+   * prompt file the agent reads. `null` is never stored: removing a choice deletes the key.
+   */
+  memberPortraits?: Record<string, string>;
 }
 
 export interface AgentMarkdownIdentity {
   displayName: string;
   description: string;
-  /** Chosen face id; absent or null keeps the slug-derived default. */
-  portraitId?: string | null;
 }
 
 export interface TeamInformation {
@@ -78,7 +82,14 @@ export function parseTeamDefinitionJson(source: string): TeamDefinition {
     throw new TeamDefinitionError("team.json must contain a JSON object");
   }
 
-  const allowedKeys = new Set(["name", "description", "primaryAgentSlug", "memberOrder", "relayBeats"]);
+  const allowedKeys = new Set([
+    "name",
+    "description",
+    "primaryAgentSlug",
+    "memberOrder",
+    "memberPortraits",
+    "relayBeats",
+  ]);
   const unexpectedKey = Object.keys(value).find((key) => !allowedKeys.has(key));
   if (unexpectedKey !== undefined) {
     throw new TeamDefinitionError(`team.json contains unsupported field: ${unexpectedKey}`);
@@ -94,11 +105,13 @@ export function parseTeamDefinitionJson(source: string): TeamDefinition {
   if (!Array.isArray(value.memberOrder)) {
     throw new TeamDefinitionError("team.json memberOrder must be an array");
   }
+  const memberPortraits = parseOptionalMemberPortraits(value.memberPortraits);
   return {
     name: value.name,
     description: value.description,
     primaryAgentSlug: primaryAgentSlug === null || primaryAgentSlug.trim().length === 0 ? null : primaryAgentSlug,
     memberOrder: [...value.memberOrder] as string[],
+    ...(Object.keys(memberPortraits).length > 0 ? { memberPortraits } : {}),
   };
 }
 
@@ -109,6 +122,9 @@ export function serializeTeamDefinition(definition: TeamDefinition): string {
       description: definition.description,
       primaryAgentSlug: definition.primaryAgentSlug,
       memberOrder: definition.memberOrder,
+      ...(definition.memberPortraits !== undefined && Object.keys(definition.memberPortraits).length > 0
+        ? { memberPortraits: definition.memberPortraits }
+        : {}),
     },
     null,
     2,
@@ -126,9 +142,6 @@ export function parseAgentMarkdownIdentity(source: string): AgentMarkdownIdentit
   const frontmatter = parsed.frontmatter;
   const hasDisplayName = frontmatter !== null && Object.hasOwn(frontmatter, "display_name");
   const hasDescription = frontmatter !== null && Object.hasOwn(frontmatter, "description");
-  const portraitId = frontmatter !== null && Object.hasOwn(frontmatter, "portrait_id")
-    ? parseOptionalPortraitId(frontmatter.portrait_id)
-    : undefined;
   if (hasDisplayName || hasDescription) {
     if (!hasDisplayName || !hasDescription) {
       throw new AgentMarkdownMetadataError(
@@ -138,12 +151,29 @@ export function parseAgentMarkdownIdentity(source: string): AgentMarkdownIdentit
     return {
       displayName: parseIdentityField(frontmatter?.display_name, "display_name"),
       description: parseIdentityField(frontmatter?.description, "description"),
-      ...(portraitId === undefined ? {} : { portraitId }),
     };
   }
 
-  const legacy = parseLegacyAgentMarkdownIdentity(parsed.body);
-  return portraitId === undefined ? legacy : { ...legacy, portraitId };
+  return parseLegacyAgentMarkdownIdentity(parsed.body);
+}
+
+/**
+ * Reads the legacy `portrait_id` location (AGENT.md frontmatter) that pre-migration teams still
+ * carry. The portrait now lives in team.json (`TeamDefinition.memberPortraits`); this exists only
+ * so existing teams keep their faces until the portrait is next written, which migrates it.
+ * Lenient by the same rule as the old portrait parse: a missing or malformed value never fails
+ * the team read, it only falls back to the slug default.
+ */
+export function tryReadLegacyAgentMarkdownPortrait(source: string): string | null {
+  try {
+    const frontmatter = parseAgentMarkdownFrontmatter(source).frontmatter;
+    if (frontmatter === null || !Object.hasOwn(frontmatter, "portrait_id")) {
+      return null;
+    }
+    return parseOptionalPortraitId(frontmatter.portrait_id);
+  } catch {
+    return null;
+  }
 }
 
 export function tryParseAgentMarkdownIdentity(
@@ -307,6 +337,25 @@ function parseOptionalPortraitId(value: unknown): string | null {
   }
   const normalized = value.trim();
   return normalized.length === 0 ? null : normalized;
+}
+
+/**
+ * Lenient like `relayBeats`: presentation metadata must never invalidate a team. Entries that
+ * are not clean single-line strings, whose keys are not valid member path segments, or that do
+ * not reference a member are dropped rather than failing the read.
+ */
+function parseOptionalMemberPortraits(value: unknown): Record<string, string> {
+  if (value === undefined || !isPlainObject(value)) {
+    return {};
+  }
+  const portraits: Record<string, string> = {};
+  for (const [slug, portraitId] of Object.entries(value)) {
+    if (!isValidPathSegment(slug)) continue;
+    const parsed = parseOptionalPortraitId(portraitId);
+    if (parsed === null) continue;
+    portraits[slug] = parsed;
+  }
+  return portraits;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

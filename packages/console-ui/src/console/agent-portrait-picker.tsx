@@ -5,6 +5,7 @@ import {
   PORTRAIT_IDS,
   defaultPortraitId,
   portraitSrc,
+  type AgentPortraitSize,
   type PortraitId,
 } from "@/console/agent-portrait";
 import { identityToken } from "@/console/identity";
@@ -30,6 +31,7 @@ export function AgentPortraitPicker({
   slug,
   portraitId,
   engine,
+  size = "heading",
   disabled = false,
   onChange,
 }: {
@@ -38,6 +40,12 @@ export function AgentPortraitPicker({
   /** Currently chosen face; null means the member is still on the slug default. */
   portraitId: string | null;
   engine?: { cli: ExecutionEngine; providerId?: string };
+  /**
+   * Trigger size. A prop rather than a className override: with an engine badge, AgentPortrait
+   * applies its className to both the badge wrapper and the portrait, so sizing that way lands
+   * on two elements at once.
+   */
+  size?: AgentPortraitSize;
   disabled?: boolean;
   /** Null restores the slug default rather than freezing today's default as an explicit choice. */
   onChange(portraitId: PortraitId | null): void;
@@ -53,7 +61,7 @@ export function AgentPortraitPicker({
       displayName={displayName}
       slug={slug}
       portraitId={portraitId}
-      size="heading"
+      size={size}
       engine={engine}
     />
   );

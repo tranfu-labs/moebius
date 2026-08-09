@@ -138,6 +138,7 @@ type AgentTeamsPageView =
 export function AgentTeamsPage({
   state,
   selectedTeamKey,
+  openTeamKey,
   selectedMemberSlug,
   detailState,
   useStackedRows,
@@ -150,6 +151,8 @@ export function AgentTeamsPage({
   onCloseTeam,
   onSelectMember,
   onChangeMemberPortrait,
+  onChangeMemberIdentity,
+  onReorderMembers,
   onChangePrimaryAgent,
   onAddMember,
   onUpdateTeamInformation,
@@ -181,7 +184,18 @@ export function AgentTeamsPage({
   onBack,
 }: {
   state: OperatorAgentTeamsState;
+  /**
+   * Which team's data the host has loaded. Deliberately **not** a request to open that team: the
+   * desktop reconciles this to the first team whenever nothing else is selected, so treating it
+   * as an intent would mean the page never shows its list again.
+   */
   selectedTeamKey?: string | null;
+  /**
+   * Opens straight into a team's detail — the entry the repair red dot and the in-session team
+   * error need, and what lets a story of the detail render without a staged click. Only a caller
+   * that means "take the user to this team" may pass it.
+   */
+  openTeamKey?: string | null;
   selectedMemberSlug?: string | null;
   detailState?: AgentTeamDetailState | null;
   useStackedRows: boolean;
@@ -194,6 +208,12 @@ export function AgentTeamsPage({
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
   onChangeMemberPortrait?: (teamKey: string, memberSlug: string, portraitId: PortraitId | null) => void;
+  onChangeMemberIdentity?: (
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => void;
+  onReorderMembers?: (teamKey: string, memberSlugs: string[]) => void | Promise<void>;
   onChangePrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
   onAddMember?: (teamKey: string) => void | Promise<void>;
   onUpdateTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
@@ -236,7 +256,22 @@ export function AgentTeamsPage({
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const listScrollTopRef = useRef(0);
   const pendingListScrollRestoreRef = useRef(false);
-  const [view, setView] = useState<AgentTeamsPageView>({ kind: "list" });
+  const [view, setView] = useState<AgentTeamsPageView>(
+    openTeamKey === undefined || openTeamKey === null
+      ? { kind: "list" }
+      : { kind: "team-detail", teamKey: openTeamKey },
+  );
+  /**
+   * Applied on change rather than on every render, so the back button still returns to the list
+   * instead of being immediately overridden by a host that keeps passing the same key.
+   */
+  const appliedOpenTeamKey = useRef(openTeamKey);
+  if (appliedOpenTeamKey.current !== openTeamKey) {
+    appliedOpenTeamKey.current = openTeamKey;
+    if (openTeamKey !== undefined && openTeamKey !== null) {
+      setView({ kind: "team-detail", teamKey: openTeamKey });
+    }
+  }
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
@@ -430,7 +465,12 @@ export function AgentTeamsPage({
   return (
     <section
       ref={scrollContainerRef}
-      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 sm:px-8"
+      /*
+       * The top inset clears the window drag region, and it is published as a variable because a
+       * sticky header inside pins below it rather than at the viewport edge — it needs to know how
+       * far back up to reach so no content stays legible above it.
+       */
+      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 [--page-inset-top:4rem] sm:px-8"
       aria-labelledby={contentView.kind === "list" ? "agent-teams-title" : undefined}
     >
       <div className="mx-auto max-w-[960px]">
@@ -504,21 +544,6 @@ export function AgentTeamsPage({
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
-                        {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => requestGuardedAction(() => setView({
-                                kind: "information-dialog",
-                                mode: "edit",
-                                team: openedTeam,
-                                returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
-                              }))}
-                          >
-                            {t("console.agentTeams.editInformation")}
-                          </Button>
-                        ) : null}
                         <Button
                           type="button"
                           disabled={duplicatingTeamKey !== null || onDuplicateBuiltInTeam === undefined}
@@ -548,21 +573,6 @@ export function AgentTeamsPage({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      {openedTeam.canEditContent !== false && onUpdateTeamInformation !== undefined ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => requestGuardedAction(() => setView({
-                              kind: "information-dialog",
-                              mode: "edit",
-                              team: openedTeam,
-                              returnView: { kind: "team-detail", teamKey: openedTeam.teamKey },
-                            }))}
-                        >
-                          {t("console.agentTeams.editInformation")}
-                        </Button>
-                      ) : null}
                       <TeamMoreMenu
                         triggerLabel={t("console.agentTeams.moreActions", {
                           name: teamName(t, openedTeam),
@@ -629,17 +639,28 @@ export function AgentTeamsPage({
                       }
                     : undefined}
                   onSelectMember={(memberSlug) => onSelectMember?.(openedTeam.teamKey, memberSlug)}
+                  onChangeTeamInformation={onUpdateTeamInformation === undefined
+                    ? undefined
+                    : async (information) => {
+                      await onUpdateTeamInformation(openedTeam.teamKey, information);
+                    }}
                   onChangeMemberPortrait={onChangeMemberPortrait === undefined
                     ? undefined
-                    : async (memberSlug, portraitId) => {
-                        await onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId);
-                        setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
-                      }}
+                    : (memberSlug, portraitId) =>
+                      onChangeMemberPortrait(openedTeam.teamKey, memberSlug, portraitId)}
+                  onChangeMemberIdentity={onChangeMemberIdentity === undefined
+                    ? undefined
+                    : (memberSlug, identity) =>
+                      onChangeMemberIdentity(openedTeam.teamKey, memberSlug, identity)}
+                  onReorderMembers={onReorderMembers === undefined
+                    ? undefined
+                    : (memberSlugs) => onReorderMembers(openedTeam.teamKey, memberSlugs)}
                   onChangeMember={(memberSlug, agentMarkdown) => onChangeMember?.(openedTeam.teamKey, memberSlug, agentMarkdown)}
                   onSaveMember={async (memberSlug) => {
                     if (onSaveMember === undefined) return;
+                    // A routine save raises no banner: the header already says "saved", and the
+                    // banner is reserved for one-shot file operations whose result is news.
                     await onSaveMember(openedTeam.teamKey, memberSlug);
-                    setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
                   }}
                   onCheckExternalChange={openedTeam.status !== "needs-repair"
                     && onCheckMemberExternalChange !== undefined
@@ -663,7 +684,6 @@ export function AgentTeamsPage({
                     ? undefined
                     : async (memberSlug, profile) => {
                       const result = await onSaveExecutionProfile(openedTeam.teamKey, memberSlug, profile);
-                      setSaveFeedback({ kind: "saved", teamName: teamName(t, openedTeam), savedItemCount: 1, canApplyToExistingConversation: true });
                       return result;
                     }}
                   onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined
@@ -967,9 +987,15 @@ function TeamMoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label={triggerLabel}>
+        {/*
+          Icon only, matching the member's own ···. This used to also spell out "More", but all
+          three entries act on the object itself — open its location, copy it, delete it — while
+          "More" suggests there is more of the screen to see. It said nothing about what the menu
+          was, and left two identically named buttons with different scopes on one page. Scope is
+          carried by the accessible name and by placement instead.
+        */}
+        <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={triggerLabel}>
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          {t("console.agentTeams.more")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

@@ -14,6 +14,7 @@ import {
   getTeamsRoot,
   listTeamLocations,
   readTeamSnapshot,
+  reorderTeamMembers,
   resolveTeamLocation,
   setTeamPrimaryAgent,
   trashTeamMemberDirectory,
@@ -148,6 +149,56 @@ display_name: 开发经理
     });
     expect(JSON.parse(await fs.readFile(path.join(location.directory, "team.json"), "utf8"))).toMatchObject({
       primaryAgentSlug: "developer",
+    });
+  });
+
+  it("reorders members with first place appointing the primary Agent and preserves portraits", async () => {
+    const dataRoot = await makeDataRoot();
+    const location = resolveTeamLocation({ dataRoot, teamId: "my-development", ownership: "user" });
+    await writeTeamDefinition(location, {
+      ...usableDefinition,
+      memberPortraits: { manager: "cat-12" },
+    });
+    await writeMemberAgentMarkdown(location, "manager", "# 开发经理\n\n默认接单\n");
+    await writeMemberAgentMarkdown(location, "developer", "# 开发\n\n负责实现\n");
+
+    await expect(reorderTeamMembers(location, ["developer", "manager"])).resolves.toMatchObject({
+      definition: { memberOrder: ["developer", "manager"], primaryAgentSlug: "developer" },
+    });
+    const snapshot = await readTeamSnapshot(location);
+    expect(snapshot.members.map((member) => member.slug)).toEqual(["developer", "manager"]);
+    // The portrait record survives the reorder write untouched.
+    expect(snapshot.members.find((member) => member.slug === "manager")?.portraitId).toBe("cat-12");
+
+    await expect(reorderTeamMembers(location, ["manager", "developer", "intruder"])).rejects.toMatchObject({
+      code: "TEAM_MUTATION_INVALID",
+    });
+    await expect(reorderTeamMembers(location, ["manager"])).rejects.toMatchObject({
+      code: "TEAM_MUTATION_INVALID",
+    });
+    // A rejected reorder leaves the manifest as it was.
+    expect(JSON.parse(await fs.readFile(path.join(location.directory, "team.json"), "utf8"))).toMatchObject({
+      memberOrder: ["developer", "manager"],
+      primaryAgentSlug: "developer",
+    });
+  });
+
+  it("prunes portrait records of removed members from team.json", async () => {
+    const dataRoot = await makeDataRoot();
+    const location = resolveTeamLocation({ dataRoot, teamId: "my-development", ownership: "user" });
+    await writeTeamDefinition(location, {
+      ...usableDefinition,
+      memberPortraits: { manager: "cat-12", developer: "cat-03" },
+    });
+    await writeMemberAgentMarkdown(location, "manager", "# 开发经理\n\n默认接单\n");
+    await writeMemberAgentMarkdown(location, "developer", "# 开发\n\n负责实现\n");
+
+    await trashTeamMemberDirectory(location, "developer", async (target) => {
+      await fs.rm(target, { recursive: true, force: true });
+    });
+    expect(JSON.parse(await fs.readFile(path.join(location.directory, "team.json"), "utf8"))).toMatchObject({
+      memberOrder: ["manager"],
+      memberPortraits: { manager: "cat-12" },
     });
   });
 

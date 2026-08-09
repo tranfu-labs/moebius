@@ -25,6 +25,7 @@ const {
   listAgentTeams,
   readAgentTeamExecutionProfile,
   readAgentTeamMember,
+  reorderAgentTeamMembers,
   replaceUnavailableAgentTeamExecutionProfiles,
   restoreAgentTeamRecommendedProfile,
   saveAgentTeamExecutionProfile,
@@ -376,11 +377,12 @@ description: 描述这个 Agent 负责什么。
     })).resolves.toMatchObject({ displayName: "官方团队新经理" });
   });
 
-  it("persists a portrait choice into the member AGENT.md and removes it on null", async () => {
+  it("persists a portrait choice into team.json and removes it on null", async () => {
     const dataRoot = await makeDataRoot();
     const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
     const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
     await Promise.all([createUsableTeam(builtIn), createUsableTeam(user)]);
+    const manifestPath = path.join(user.directory, "team.json");
     const agentFile = path.join(user.directory, "members", "manager", "AGENT.md");
 
     const request = { teamId: "my-team", ownership: "user" as const, memberSlug: "manager" };
@@ -389,7 +391,10 @@ description: 描述这个 Agent 负责什么。
       displayName: "开发经理",
       portraitId: "cat-12",
     });
-    expect(await fs.readFile(agentFile, "utf8")).toContain("portrait_id: cat-12");
+    expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).toMatchObject({
+      memberPortraits: { manager: "cat-12" },
+    });
+    expect(await fs.readFile(agentFile, "utf8")).not.toContain("portrait_id");
     expect(await fs.readFile(agentFile, "utf8")).toContain("# 开发经理");
 
     await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
@@ -404,7 +409,7 @@ description: 描述这个 Agent 负责什么。
       slug: "manager",
       portraitId: null,
     });
-    expect(await fs.readFile(agentFile, "utf8")).not.toContain("portrait_id");
+    expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).not.toHaveProperty("memberPortraits");
     expect(await fs.readFile(agentFile, "utf8")).toContain("# 开发经理");
 
     await expect(writeAgentTeamMember(dataRoot, {
@@ -415,6 +420,46 @@ description: 描述这个 Agent 负责什么。
     await expect(writeAgentTeamMember(dataRoot, request)).rejects.toMatchObject({
       code: "AGENT_TEAM_IPC_REQUEST_INVALID",
     });
+  });
+
+  it("keeps a legacy AGENT.md portrait_id readable until the portrait is written again", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
+    await Promise.all([createUsableTeam(builtIn), createUsableTeam(user)]);
+    const agentFile = path.join(user.directory, "members", "manager", "AGENT.md");
+    await fs.writeFile(
+      agentFile,
+      `---
+display_name: 开发经理
+description: 默认接单
+portrait_id: cat-07
+---
+
+# 开发经理
+`,
+      "utf8",
+    );
+
+    await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
+      status: "ready",
+      teams: [
+        { id: "development", members: [{ slug: "manager", portraitId: null }] },
+        { id: "my-team", members: [{ slug: "manager", portraitId: "cat-07" }] },
+      ],
+    });
+
+    // Writing a new face migrates the record: team.json owns it, AGENT.md loses the stale field.
+    await writeAgentTeamMember(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberSlug: "manager",
+      portraitId: "cat-09",
+    });
+    expect(JSON.parse(await fs.readFile(path.join(user.directory, "team.json"), "utf8"))).toMatchObject({
+      memberPortraits: { manager: "cat-09" },
+    });
+    expect(await fs.readFile(agentFile, "utf8")).not.toContain("portrait_id");
   });
 
   it("rejects malformed member requests before resolving a disk location", async () => {
@@ -449,6 +494,71 @@ description: 描述这个 Agent 负责什么。
     })).resolves.toMatchObject({
       definition: { primaryAgentSlug: "developer" },
     });
+  });
+
+  it("reorders members through the strip contract: first place becomes the primary Agent", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
+    await Promise.all([
+      createUsableTeam(builtIn),
+      createUsableTeam(user, {
+        ...usableDefinition,
+        memberOrder: ["manager", "developer"],
+      }),
+    ]);
+
+    const reordered = await reorderAgentTeamMembers(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberOrder: ["developer", "manager"],
+    });
+    expect(reordered.definition?.memberOrder).toEqual(["developer", "manager"]);
+    expect(reordered.definition?.primaryAgentSlug).toBe("developer");
+    expect(reordered.members.map((member) => member.slug)).toEqual(["developer", "manager"]);
+    // The manifest on disk is the source of truth.
+    expect(JSON.parse(await fs.readFile(path.join(user.directory, "team.json"), "utf8"))).toMatchObject({
+      memberOrder: ["developer", "manager"],
+      primaryAgentSlug: "developer",
+    });
+
+    await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
+      status: "ready",
+      teams: [
+        { id: "development", definition: { primaryAgentSlug: "manager" } },
+        { id: "my-team", definition: { primaryAgentSlug: "developer" } },
+      ],
+    });
+  });
+
+  it("rejects a reorder that adds, drops, or duplicates members", async () => {
+    const dataRoot = await makeDataRoot();
+    const user = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });
+    await createUsableTeam(user, {
+      ...usableDefinition,
+      memberOrder: ["manager", "developer"],
+    });
+
+    await expect(reorderAgentTeamMembers(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberOrder: ["manager", "developer", "intruder"],
+    })).rejects.toMatchObject({ code: "TEAM_MUTATION_INVALID" });
+    await expect(reorderAgentTeamMembers(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberOrder: ["manager"],
+    })).rejects.toMatchObject({ code: "TEAM_MUTATION_INVALID" });
+    await expect(reorderAgentTeamMembers(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberOrder: ["manager", "manager"],
+    })).rejects.toMatchObject({ code: "TEAM_MUTATION_INVALID" });
+    await expect(reorderAgentTeamMembers(dataRoot, {
+      teamId: "my-team",
+      ownership: "user",
+      memberOrder: ["manager", ""],
+    })).rejects.toMatchObject({ code: "AGENT_TEAM_IPC_REQUEST_INVALID" });
   });
 
   it("duplicates a built-in team as a user-team list item and rejects user-team sources", async () => {

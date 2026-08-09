@@ -15,6 +15,7 @@ import type {
   AgentTeamMemberRequest,
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
+  AgentTeamMemberOrderWriteRequest,
   AgentTeamOfficialUpdateCommitRequest,
   AgentTeamOfficialUpdateCommitResponse,
   AgentTeamOfficialUpdatePrepareResponse,
@@ -130,6 +131,7 @@ export interface DesktopApi {
   addAgentTeamMember?: (request: AgentTeamMemberAddRequest) => Promise<AgentTeamMemberAddResponse>;
   updateAgentTeamInformation?: (request: AgentTeamUpdateInformationRequest) => Promise<AgentTeamListItem>;
   setAgentTeamPrimaryAgent?: (request: AgentTeamPrimaryAgentWriteRequest) => Promise<AgentTeamListItem>;
+  reorderAgentTeamMembers?: (request: AgentTeamMemberOrderWriteRequest) => Promise<AgentTeamListItem>;
   duplicateBuiltInAgentTeam?: (request: AgentTeamDuplicateBuiltInRequest) => Promise<AgentTeamListItem>;
   duplicateUserAgentTeam?: (request: AgentTeamDuplicateUserRequest) => Promise<AgentTeamListItem>;
   duplicateAgentTeamMember?: (request: AgentTeamMemberDuplicateRequest) => Promise<AgentTeamMemberAddResponse>;

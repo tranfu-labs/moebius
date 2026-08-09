@@ -33,6 +33,8 @@ describe("local console member identity projection", () => {
         { name: "chosen-face", agentMarkdown: "---\ndisplay_name: 换过脸\ndescription: 测试成员\nportrait_id: cat-12\n---\n\nsecret" },
         { name: "null-face", agentMarkdown: "---\ndisplay_name: 空脸\ndescription: 测试成员\nportrait_id: null\n---\n\nsecret" },
         { name: "bad-face", agentMarkdown: "---\ndisplay_name: 坏脸\ndescription: 测试成员\nportrait_id: [bad]\n---\n\nsecret" },
+        { name: "record-face", agentMarkdown: "---\ndisplay_name: 记录脸\ndescription: 测试成员\n---\n\nsecret", portraitId: "cat-21" },
+        { name: "record-null", agentMarkdown: "---\ndisplay_name: 记录空\ndescription: 测试成员\nportrait_id: cat-07\n---\n\nsecret", portraitId: null },
       ],
     });
 
@@ -46,6 +48,9 @@ describe("local console member identity projection", () => {
       { slug: "chosen-face", displayName: "换过脸", portraitId: "cat-12" },
       { slug: "null-face", displayName: "空脸" },
       { slug: "bad-face", displayName: "坏脸" },
+      // The app record in the snapshot wins; an explicit null clears a stale legacy field.
+      { slug: "record-face", displayName: "记录脸", portraitId: "cat-21" },
+      { slug: "record-null", displayName: "记录空" },
     ]);
     expect(resolveLocalConsoleMemberName("empty-name", identities)).toBe("@empty-name");
     expect(resolveLocalConsoleMemberName("missing", identities)).toBe("成员未知");

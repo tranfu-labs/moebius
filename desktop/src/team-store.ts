@@ -20,6 +20,7 @@ import {
   parseAgentMarkdownIdentity,
   parseTeamDefinitionJson,
   serializeTeamDefinition,
+  tryReadLegacyAgentMarkdownPortrait,
   validateTeamStructure,
   type AgentMarkdownIdentity,
   type TeamDefinition,
@@ -77,6 +78,12 @@ export interface TeamMemberSnapshot extends AgentMarkdownIdentity {
   directory: string;
   agentFile: string;
   agentMarkdown: string;
+  /**
+   * The effective chosen face: the app record (team.json `memberPortraits`) first, then the
+   * legacy `portrait_id` still carried by pre-migration AGENT.md files. Absent or null keeps the
+   * slug-derived default.
+   */
+  portraitId?: string | null;
 }
 
 export interface TeamSnapshot {
@@ -292,12 +299,16 @@ export async function readTeamSnapshot(location: TeamLocation): Promise<TeamSnap
     }
 
     try {
+      const identity = parseAgentMarkdownIdentity(agentRead.content);
       members.push({
         slug,
         directory: memberDirectory,
         agentFile,
         agentMarkdown: agentRead.content,
-        ...parseAgentMarkdownIdentity(agentRead.content),
+        ...identity,
+        portraitId: definition.memberPortraits?.[slug]
+          ?? tryReadLegacyAgentMarkdownPortrait(agentRead.content)
+          ?? null,
       });
     } catch (error) {
       if (!(error instanceof AgentMarkdownMetadataError)) {
@@ -316,7 +327,20 @@ export async function readTeamSnapshot(location: TeamLocation): Promise<TeamSnap
 
 export async function writeTeamDefinition(location: TeamLocation, definition: TeamDefinition): Promise<void> {
   assertTeamWritable(location);
-  const normalizedDefinition = parseTeamDefinitionJson(serializeTeamDefinition(definition));
+  // Portrait entries for members that no longer exist are stale presentation data; drop them so
+  // the manifest stays the single source of truth for who the team has.
+  const memberPortraits = definition.memberPortraits === undefined
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(definition.memberPortraits)
+          .filter(([slug]) => definition.memberOrder.includes(slug)),
+      );
+  const normalizedDefinition = parseTeamDefinitionJson(serializeTeamDefinition({
+    ...definition,
+    ...(memberPortraits === undefined || Object.keys(memberPortraits).length === 0
+      ? {}
+      : { memberPortraits }),
+  }));
   const issues = validateTeamStructure(normalizedDefinition);
   if (issues.length > 0) {
     throw new TeamDefinitionError(issues.map((issue) => issue.message).join(" "));
@@ -347,27 +371,56 @@ export async function writeMemberAgentMarkdown(
 }
 
 /**
- * Persists a portrait choice into the member's AGENT.md frontmatter. The file on disk is the
- * single source of truth, so the write is a read-modify-write of the current file rather than
- * a patch of whatever markdown the renderer happens to hold in a draft. `null` removes the
- * explicit `portrait_id` instead of freezing today's slug default as an explicit choice.
+ * Persists a portrait choice into the team's app record (`team.json` `memberPortraits`), the
+ * same file that already owns `memberOrder` and `primaryAgentSlug`. The file on disk is the
+ * single source of truth, so the write is a read-modify-write of the current manifest rather
+ * than a patch of whatever the renderer holds. `null` removes the explicit choice so the member
+ * falls back to its slug-derived default face.
+ *
+ * Teams written before the migration carry `portrait_id` in the member's AGENT.md frontmatter.
+ * The read path still falls back to that legacy location; writing a portrait here also strips
+ * the stale frontmatter field (best effort — the authoritative value is already safe in
+ * team.json by then, so a failed strip never loses the portrait).
  */
-export async function writeMemberAgentPortrait(
+export async function writeMemberTeamPortrait(
   location: TeamLocation,
   slug: string,
   portraitId: string | null,
 ): Promise<void> {
   assertTeamWritable(location);
-  const agentFile = getMemberAgentPath(location, slug);
-  const source = await fs.readFile(agentFile, "utf8");
-  const parsed = parseAgentMarkdownFrontmatter(source);
-  const frontmatter = { ...(parsed.frontmatter ?? {}) };
-  if (portraitId === null) {
-    delete frontmatter.portrait_id;
-  } else {
-    frontmatter.portrait_id = portraitId;
+  const snapshot = await readTeamSnapshot(location);
+  if (snapshot.definition === null) {
+    throw new TeamMutationError("团队信息当前不可用，无法设置画像。");
   }
-  await fs.writeFile(agentFile, serializeAgentMarkdownFrontmatter(frontmatter, parsed.body), "utf8");
+  if (!snapshot.definition.memberOrder.includes(slug)) {
+    throw new TeamMutationError("只能为当前团队中的成员设置画像。");
+  }
+  const memberPortraits = { ...(snapshot.definition.memberPortraits ?? {}) };
+  if (portraitId === null) {
+    delete memberPortraits[slug];
+  } else {
+    memberPortraits[slug] = portraitId;
+  }
+  await writeTeamDefinition(location, {
+    ...snapshot.definition,
+    memberPortraits,
+  });
+  await stripLegacyAgentMarkdownPortrait(getMemberAgentPath(location, slug));
+}
+
+async function stripLegacyAgentMarkdownPortrait(agentFile: string): Promise<void> {
+  try {
+    const source = await fs.readFile(agentFile, "utf8");
+    const parsed = parseAgentMarkdownFrontmatter(source);
+    const frontmatter = { ...(parsed.frontmatter ?? {}) };
+    if (!Object.hasOwn(frontmatter, "portrait_id")) {
+      return;
+    }
+    delete frontmatter.portrait_id;
+    await fs.writeFile(agentFile, serializeAgentMarkdownFrontmatter(frontmatter, parsed.body), "utf8");
+  } catch {
+    // Best effort: the authoritative portrait already lives in team.json.
+  }
 }
 
 export async function createUserTeam(dataRoot: string, information: TeamInformation): Promise<TeamSnapshot> {
@@ -483,6 +536,42 @@ export async function setTeamPrimaryAgent(location: TeamLocation, primaryAgentSl
   await writeTeamDefinition(location, {
     ...snapshot.definition,
     primaryAgentSlug: member.slug,
+  });
+  return readTeamSnapshot(location);
+}
+
+/**
+ * Applies a new member order from the drag-and-drop strip. The strip's contract is that first
+ * place *is* the primary appointment, so the primary Agent follows the new first entry — this
+ * keeps `memberOrder[0]` and `primaryAgentSlug` the same fact, with no path for them to diverge.
+ * The member set itself must not change: reordering moves existing members, adding or dropping
+ * one is a different operation and fails loudly instead of silently rewriting the team.
+ */
+export async function reorderTeamMembers(
+  location: TeamLocation,
+  memberOrder: string[],
+): Promise<TeamSnapshot> {
+  assertTeamWritable(location);
+  const snapshot = await readTeamSnapshot(location);
+  if (snapshot.definition === null) {
+    throw new TeamMutationError("团队信息当前不可用，无法调整成员顺序。");
+  }
+  const current = new Set(snapshot.definition.memberOrder);
+  const next = new Set(memberOrder);
+  const sameMembers = current.size === next.size
+    && [...current].every((slug) => next.has(slug))
+    && [...next].every((slug) => current.has(slug));
+  if (!sameMembers) {
+    throw new TeamMutationError("成员排序只能调整现有成员的先后，不能增删成员。");
+  }
+  if ([...next].some((slug) => !isValidPathSegment(slug))) {
+    throw new TeamMutationError("成员排序包含无效的成员标识。");
+  }
+
+  await writeTeamDefinition(location, {
+    ...snapshot.definition,
+    memberOrder,
+    primaryAgentSlug: memberOrder[0] ?? null,
   });
   return readTeamSnapshot(location);
 }

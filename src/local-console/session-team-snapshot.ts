@@ -43,6 +43,7 @@ export function finalizeAgentTeamSnapshot(
       displayName: member.displayName ?? null,
       description: member.description ?? null,
       agentMarkdown: member.agentMarkdown,
+      portraitId: member.portraitId ?? null,
       executionProfile: member.executionProfile ?? null,
     })),
   };

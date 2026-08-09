@@ -29,13 +29,14 @@ import {
   duplicateUserTeamDirectory,
   listTeamLocations,
   readTeamSnapshot,
+  reorderTeamMembers,
   resolveTeamLocation,
   setTeamPrimaryAgent,
   trashTeamMemberDirectory,
   trashUserTeamDirectory,
   updateTeamInformation,
   writeMemberAgentMarkdown,
-  writeMemberAgentPortrait,
+  writeMemberTeamPortrait,
 } from "../../src/team-store.js";
 
 export function createTestAgentTeamService() {
@@ -48,10 +49,11 @@ export function createTestAgentTeamService() {
     resolveSystem: ({ dataRoot, teamId }) => resolveTeamLocation({ dataRoot, teamId, ownership: "system" }),
     resolveUser: resolveRecordedTeamLocation,
     writeMember: writeMemberAgentMarkdown,
-    writeMemberPortrait: writeMemberAgentPortrait,
+    writeMemberPortrait: writeMemberTeamPortrait,
     addMember: addTeamMember,
     updateInformation: updateTeamInformation,
     setPrimary: setTeamPrimaryAgent,
+    reorderMembers: reorderTeamMembers,
     duplicateBuiltIn: duplicateBuiltInTeamDirectory,
     duplicateUser: duplicateUserTeamDirectory,
     duplicateMember: duplicateTeamMemberDirectory,
