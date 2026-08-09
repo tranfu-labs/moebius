@@ -712,7 +712,18 @@ export function AgentTeamDetail({
       {/* Sits at the header's resting position so `headerPinned` can be read as a gap, not a guess. */}
       <div ref={headerSentinelRef} aria-hidden="true" className="h-0" />
 
-      <header ref={headerRef} className="sticky top-0 z-20 -mx-1 px-1 pb-3 pt-1">
+      {/*
+        Vertical rhythm on this page, tightest to loosest — spacing is what says which things
+        belong together, so it has to be a scale and not a series of local guesses:
+          6px   back link to title      a breadcrumb hanging off its own title
+          8px   title to description    one form: a team's name and its one-line description
+          12px  heading to its content
+          20px  member strip to panel   still one section; the panel's own border does the rest
+          32px  between sections        the only real break on the page
+        The previous values ran 4 / 12 / 12 / 28 / 24, which put more air inside a section than
+        between two — that is the arrangement that reads as "no rhythm".
+      */}
+      <header ref={headerRef} className="sticky top-0 z-20 -mx-1 px-1 pb-2 pt-1">
         {/*
           The bar reaches back up over the page's top inset. The scrolling container pads its
           content down by `--page-inset-top` to clear the window chrome, and a bar that started at
@@ -736,7 +747,7 @@ export function AgentTeamDetail({
         */}
         <button
           type="button"
-          className="-ml-1.5 mb-1 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
           onClick={() => requestGuardedAction(onLeave)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -1094,7 +1105,7 @@ export function AgentTeamDetail({
         </p>
       )}
 
-      <div className="pt-6">
+      <div className="pt-8">
         <div className="mb-3 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-2">
             <h2 className="text-sm font-medium text-ink">
@@ -1177,7 +1188,7 @@ export function AgentTeamDetail({
         ) : null}
       </div>
 
-      <div className="pt-7" id="agent-team-member-editor" role="tabpanel">
+      <div className="pt-5" id="agent-team-member-editor" role="tabpanel">
         {state.saveAllFailures.length > 0 ? (
           <div className="mb-5 border border-danger/30 bg-danger/5 px-4 py-3" role="alert">
             <div className="flex items-start gap-2.5">
@@ -1318,7 +1329,8 @@ export function AgentTeamDetail({
                 })}
               />
 
-              <div className="mt-7 flex flex-wrap items-baseline justify-between gap-3">
+              {/* Same scale as the page: 20px is a break inside a section, 32px is between two. */}
+              <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
                   <h3 className="text-[13px] font-semibold tracking-[0.02em] text-ink">
                     {t("console.agentTeamDetail.runtimeConfiguration")}
@@ -1334,7 +1346,7 @@ export function AgentTeamDetail({
               </div>
               {profileDraft !== null && profileDocument !== null ? (
                 <>
-                  <div className="mt-4 grid gap-3">
+                  <div className="mt-3 grid gap-3">
                     <label className="grid content-start gap-1.5 text-xs text-hint">
                       {t("console.agentTeamDetail.executionEngineLabel")}
                       <Select
@@ -1471,8 +1483,13 @@ export function AgentTeamDetail({
                     </p>
                   ) : null}
                   {profileError !== null ? <p className="mt-3 text-sm text-danger" role="alert">{profileError}</p> : null}
+                  {/*
+                    `empty:hidden` because the only thing in this row is conditional: with nothing
+                    to restore it collapses to zero height but its margin does not, and the card
+                    ends up with 16px more padding at the bottom than at the top.
+                  */}
                   {!readOnly ? (
-                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <div className="mt-5 flex flex-wrap justify-end gap-2 empty:hidden">
                       {profileDocument.recommendation !== null
                         && profileDocument.binding.source !== "recommended"
                         && onRestoreRecommendedProfile !== undefined ? (
