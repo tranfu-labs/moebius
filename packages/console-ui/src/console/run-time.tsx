@@ -69,6 +69,23 @@ export function RunTime({
   );
 }
 
+/**
+ * The wall-clock moment a run landed, for the end of the message toolbar.
+ * Split from {@link RunTime} on purpose: the header answers "who and how long",
+ * while a timestamp belongs at the end of the message like any chat client.
+ */
+export function RunCompletedAt({ completedAt, className }: {
+  completedAt: string;
+  className?: string;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <span className={cn("tnum whitespace-nowrap text-xs text-hint", className)}>
+      {formatRunCompletedAt(completedAt, new Date(), t)}
+    </span>
+  );
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }

@@ -38,8 +38,10 @@ export function MessageAction({ icon: Icon, label, onClick, disabled }: {
  * message is hovered. Failures are not represented here; they get their own
  * card (see `incident-card.tsx`), because a lone marker leaves users guessing.
  */
-export function MessageToolbar({ children, className }: {
+export function MessageToolbar({ children, trailing, className }: {
   children?: ReactNode;
+  /** Static facts that close the row, after the last action. */
+  trailing?: ReactNode;
   className?: string;
 }): JSX.Element {
   return (
@@ -48,6 +50,7 @@ export function MessageToolbar({ children, className }: {
         <span className="flex items-center gap-0.5 text-hint transition-colors group-hover:text-sub group-focus-within:text-sub">
           {children}
         </span>
+        {trailing ? <span className="ml-1.5 flex items-center">{trailing}</span> : null}
       </div>
     </TooltipProvider>
   );

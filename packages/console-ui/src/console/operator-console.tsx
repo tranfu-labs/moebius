@@ -141,7 +141,7 @@ import {
   type ProviderUnavailableKind,
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
-import { RunTime } from "@/console/run-time";
+import { RunCompletedAt, RunTime } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
@@ -3858,11 +3858,7 @@ function TimelineEntry({
               : t("console.common.systemNotice")}
           </span>
           {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
-            <RunTime
-              mode="completed"
-              elapsedMs={message.runTiming.elapsedMs}
-              completedAt={message.runTiming.completedAt}
-            />
+            <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
           ) : (
             <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
           )}
@@ -3893,7 +3889,11 @@ function TimelineEntry({
             }}
           />
         )}
-        <MessageToolbar>
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : null}
+        >
           {message.runId !== null && onOpenEvidence ? (
             <MessageAction
               icon={FileText}
@@ -4008,11 +4008,7 @@ function TimelineEntry({
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
         && message.runTiming?.elapsedMs !== undefined ? (
-          <RunTime
-            mode="completed"
-            elapsedMs={message.runTiming.elapsedMs}
-            completedAt={message.runTiming.completedAt}
-          />
+          <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
         ) : (
           <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
         )}
@@ -4044,7 +4040,11 @@ function TimelineEntry({
         </>
       )}
       {message.speaker === "agent" && message.runId !== null ? (
-        <MessageToolbar>
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : null}
+        >
           {onOpenEvidence ? (
             <MessageAction
               icon={FileText}

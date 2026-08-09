@@ -22,7 +22,7 @@ import {
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { IncidentNotice } from "@/console/incident-card";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
-import { RunTime } from "@/console/run-time";
+import { RunCompletedAt, RunTime } from "@/console/run-time";
 import type {
   ExecutionRegistryState,
   RegistryExecutionProfile,
@@ -327,11 +327,7 @@ function SubtaskTimelineEntry({
               : resolveOperatorMemberName(identityRole, memberIdentities, t)}
           </span>
           {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
-            <RunTime
-              mode="completed"
-              elapsedMs={message.runTiming.elapsedMs}
-              completedAt={message.runTiming.completedAt}
-            />
+            <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
           ) : null}
         </div>
         <div className="pl-7">
@@ -366,7 +362,11 @@ function SubtaskTimelineEntry({
             }}
           />
         )}
-        <MessageToolbar>
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : null}
+        >
           {message.runId !== null && onOpenOutput !== undefined ? (
             <MessageAction
               icon={FileText}
@@ -437,11 +437,7 @@ function SubtaskTimelineEntry({
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
         && message.runTiming?.elapsedMs !== undefined ? (
-          <RunTime
-            mode="completed"
-            elapsedMs={message.runTiming.elapsedMs}
-            completedAt={message.runTiming.completedAt}
-          />
+          <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
         ) : null}
       </div>
       <div className="pl-7">
