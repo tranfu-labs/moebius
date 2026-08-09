@@ -190,6 +190,8 @@ export interface LocalConsoleAgentTeamSnapshotMember {
   displayName?: string | null;
   description?: string | null;
   agentMarkdown: string;
+  /** Chosen face id from the app record; absent or null keeps the slug default. */
+  portraitId?: string | null;
   executionProfile?: LocalConsoleExecutionProfile | null;
   continuationEnded?: boolean;
 }
@@ -287,7 +289,7 @@ export type LocalConsoleExecutionEngine = LocalConsoleExecutionProfile["cli"];
 export interface LocalConsoleMemberIdentity {
   slug: string;
   displayName: string;
-  /** Chosen face id from the member AGENT.md frontmatter; absent keeps the slug default. */
+  /** Chosen face id from the session team snapshot; absent keeps the slug default. */
   portraitId?: string;
 }
 

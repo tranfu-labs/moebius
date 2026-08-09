@@ -10,6 +10,7 @@ import {
   type AgentTeamMemberDocument,
   type AgentTeamMemberRequest,
   type AgentTeamMemberWriteRequest,
+  type AgentTeamMemberOrderWriteRequest,
   type AgentTeamOfficialUpdateCommitRequest,
   type AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
@@ -225,6 +226,20 @@ export function parsePrimaryAgentWriteRequest(value: unknown): AgentTeamPrimaryA
     throw new AgentTeamIpcRequestError("A primary Agent slug is required.");
   }
   return { ...team, primaryAgentSlug: value.primaryAgentSlug };
+}
+
+export function parseMemberOrderWriteRequest(value: unknown): AgentTeamMemberOrderWriteRequest {
+  const team = parseTeamRequest(value);
+  if (!isPlainObject(value) || !Array.isArray(value.memberOrder)) {
+    throw new AgentTeamIpcRequestError("A member order array is required.");
+  }
+  const memberOrder = value.memberOrder.map((entry) => {
+    if (typeof entry !== "string" || entry.trim().length === 0 || !isValidPathSegment(entry)) {
+      throw new AgentTeamIpcRequestError("A member order entry must be a valid member slug.");
+    }
+    return entry;
+  });
+  return { ...team, memberOrder };
 }
 
 export function parseExecutionProfileSaveRequest(value: unknown): AgentTeamExecutionProfileSaveRequest {

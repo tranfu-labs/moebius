@@ -34,6 +34,7 @@ import {
   type AgentTeamOfficialUpdatePrepareResponse,
   type AgentTeamOfficialUpdateRequest,
   type AgentTeamPrimaryAgentWriteRequest,
+  type AgentTeamMemberOrderWriteRequest,
   type AgentTeamUpdateInformationRequest,
   type AgentTeamTrashUserRequest,
 } from "./team-ipc-contract.js";
@@ -148,6 +149,7 @@ export interface MoebiusDesktopApi {
   addAgentTeamMember(request: AgentTeamMemberAddRequest): Promise<AgentTeamMemberAddResponse>;
   updateAgentTeamInformation(request: AgentTeamUpdateInformationRequest): Promise<AgentTeamListItem>;
   setAgentTeamPrimaryAgent(request: AgentTeamPrimaryAgentWriteRequest): Promise<AgentTeamListItem>;
+  reorderAgentTeamMembers(request: AgentTeamMemberOrderWriteRequest): Promise<AgentTeamListItem>;
   duplicateBuiltInAgentTeam(request: AgentTeamDuplicateBuiltInRequest): Promise<AgentTeamListItem>;
   duplicateUserAgentTeam(request: AgentTeamDuplicateUserRequest): Promise<AgentTeamListItem>;
   duplicateAgentTeamMember(request: AgentTeamMemberDuplicateRequest): Promise<AgentTeamMemberAddResponse>;
@@ -359,6 +361,9 @@ const api: MoebiusDesktopApi = {
   },
   setAgentTeamPrimaryAgent(request) {
     return ipcRenderer.invoke(TEAM_IPC_CHANNELS.setPrimaryAgent, request) as Promise<AgentTeamListItem>;
+  },
+  reorderAgentTeamMembers(request) {
+    return ipcRenderer.invoke(TEAM_IPC_CHANNELS.reorderMembers, request) as Promise<AgentTeamListItem>;
   },
   duplicateBuiltInAgentTeam(request) {
     return ipcRenderer.invoke(TEAM_IPC_CHANNELS.duplicateBuiltIn, request) as Promise<AgentTeamListItem>;

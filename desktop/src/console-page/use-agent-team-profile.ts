@@ -5,6 +5,7 @@ import type {
   AgentTeamExecutionProfileDocument,
   AgentTeamExecutionProfileSaveRequest,
   AgentTeamMemberDocument,
+  AgentTeamMemberOrderWriteRequest,
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
   AgentTeamOfficialUpdateCommitRequest,
@@ -22,6 +23,7 @@ import {
   planAgentTeamPrimaryOperation,
   planAgentTeamProfileOperation,
   planAgentTeamOfficialUpdate,
+  planAgentTeamReorderOperation,
   planFindOperatorAgentTeam,
   planOptionalOperatorAgentTeam,
   planOperatorAgentTeam,
@@ -31,6 +33,7 @@ import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 
 interface AgentTeamProfilePort {
   setAgentTeamPrimaryAgent?: (request: AgentTeamPrimaryAgentWriteRequest) => Promise<AgentTeamListItem>;
+  reorderAgentTeamMembers?: (request: AgentTeamMemberOrderWriteRequest) => Promise<AgentTeamListItem>;
   writeAgentTeamMember?: (request: AgentTeamMemberWriteRequest) => Promise<AgentTeamMemberDocument>;
   saveAgentTeamExecutionProfile?: (
     request: AgentTeamExecutionProfileSaveRequest,
@@ -87,6 +90,28 @@ export function useAgentTeamProfile(input: {
       setPrimaryAgentChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
     }
   }, []);
+  const reorderMembers = useCallback(async (teamKey: string, memberSlugs: string[]): Promise<void> => {
+    const runtime = inputRef.current;
+    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
+    const operation = runtime.api?.reorderAgentTeamMembers;
+    if (planAgentTeamReorderOperation(team, memberSlugs, operation !== undefined) === "skip") return;
+    // Reordering into first place *is* appointing the primary Agent; one status line covers it.
+    setPrimaryAgentChange({ teamKey, status: "saving", error: null });
+    try {
+      const updated = planOperatorAgentTeam(await operation!.call(runtime.api, {
+        teamId: team!.id,
+        ownership: team!.ownership,
+        memberOrder: memberSlugs,
+      }));
+      inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, updated));
+      setPrimaryAgentChange({ teamKey, status: "saved", error: null });
+    } catch (error) {
+      setPrimaryAgentChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
+      // The detail's save flow keeps the order draft on a failed commit, so the caller needs
+      // the rejection rather than a silent resolve.
+      throw error;
+    }
+  }, []);
   const changeMemberPortrait = useCallback(async (
     teamKey: string,
     memberSlug: string,
@@ -108,6 +133,8 @@ export function useAgentTeamProfile(input: {
       setPortraitChange({ teamKey, status: "saved", error: null });
     } catch (error) {
       setPortraitChange({ teamKey, status: "failed", error: planConsoleErrorMessage(error) });
+      // The detail's save flow keeps the portrait draft on a failed commit.
+      throw error;
     }
   }, []);
   const saveExecutionProfile = useCallback(async (
@@ -174,6 +201,7 @@ export function useAgentTeamProfile(input: {
     portraitChange,
     clearPortraitChange,
     changePrimaryAgent,
+    reorderMembers,
     changeMemberPortrait,
     saveExecutionProfile,
     restoreRecommendedProfile,
@@ -182,6 +210,7 @@ export function useAgentTeamProfile(input: {
     applyOfficialUpdate,
     changeMemberPortrait,
     changePrimaryAgent,
+    reorderMembers,
     clearPortraitChange,
     clearPrimaryAgentChange,
     portraitChange,

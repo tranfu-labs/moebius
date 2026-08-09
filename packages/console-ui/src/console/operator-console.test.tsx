@@ -600,6 +600,8 @@ describe("OperatorConsole", () => {
     fireEvent.click(teamsEntry);
 
     expect(teamsEntry).toHaveAttribute("aria-current", "page");
+    // A loaded selection is not a request to open that team — the host reconciles it to the first
+    // team whenever nothing else is chosen, so the page still opens on its list.
     expect(screen.getByRole("heading", { name: "Agent 团队" })).toBeVisible();
     expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-team-count", "1");
     expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-selected-team-key", "system:development");
@@ -940,7 +942,8 @@ describe("OperatorConsole", () => {
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
@@ -953,6 +956,38 @@ describe("OperatorConsole", () => {
     expect(listPage.scrollTop).toBe(187);
   });
 
+  it("forwards member reorder and identity callbacks into the team detail (seam)", () => {
+    const onReorderAgentTeamMembers = vi.fn();
+    const onChangeAgentTeamMemberIdentity = vi.fn();
+    renderConsole({
+      agentTeamsState: { status: "ready", teams: [fiveMemberTeam] },
+      agentTeamDetailState: detailStateFor(fiveMemberTeam.teamKey),
+      onReorderAgentTeamMembers,
+      onChangeAgentTeamMemberIdentity,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+    fireEvent.click(screen.getByTestId("agent-team-row"));
+
+    // The strip is reorderable only when the callback actually reaches the detail.
+    expect(screen.getByText("拖动排序，第一位是主 Agent")).toBeVisible();
+    // The identity fields are editable only when the callback actually reaches the detail.
+    expect(screen.getByRole("textbox", { name: "Agent 名称" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "一句话描述" })).toBeEnabled();
+  });
+
+  it("keeps the reorder and identity features closed when the callbacks are absent (seam)", () => {
+    renderConsole({
+      agentTeamsState: { status: "ready", teams: [fiveMemberTeam] },
+      agentTeamDetailState: detailStateFor(fiveMemberTeam.teamKey),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+    fireEvent.click(screen.getByTestId("agent-team-row"));
+
+    expect(screen.queryByText("拖动排序，第一位是主 Agent")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Agent 名称" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "一句话描述" })).toBeDisabled();
+  });
+
   it("keeps optional copying separate from direct official-team editing", async () => {
     const onDuplicateBuiltInAgentTeam = vi.fn().mockResolvedValue("user:development-copy");
     renderConsole({
@@ -962,7 +997,8 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
 
@@ -1015,8 +1051,9 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByTestId("agent-team-row"));
     const detail = screen.getByRole("region", { name: "开发团队详情" });
     expect(detail).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "主 Agent" }), { target: { value: "dev" } });
-    expect(onChangeAgentTeamPrimaryAgent).toHaveBeenCalledWith("user:development", "dev");
+    // 主 Agent 由成员条的第一位表达，页面不再有单独的选择器。
+    expect(screen.queryByRole("combobox", { name: "主 Agent" })).toBeNull();
+    expect(onChangeAgentTeamPrimaryAgent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "开发" }));
     expect(onSelectAgentTeamMember).toHaveBeenCalledWith("user:development", "dev");
     expect(screen.queryByTestId("agent-team-list")).not.toBeInTheDocument();
@@ -1035,18 +1072,15 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "修改信息" }));
-
-    const dialog = screen.getByRole("dialog", { name: "修改团队信息" });
-    expect(within(dialog).getAllByRole("textbox")).toHaveLength(2);
-    expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "团队名称" }), {
+    // 名称与描述就地编辑，不再走弹窗：同一页上同一类数据只该有一种编辑方式。
+    expect(screen.queryByRole("button", { name: "修改信息" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "团队名称" }), {
       target: { value: "研发团队" },
     });
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "一句话描述" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "团队的一句话描述" }), {
       target: { value: "负责研发交付" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onUpdateAgentTeamInformation).toHaveBeenCalledWith(
       userTeam.teamKey,

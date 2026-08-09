@@ -613,11 +613,17 @@ export interface OperatorConsoleProps {
   onCloseAgentTeam?: () => void;
   onSelectAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onChangeAgentTeamPrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
+  onReorderAgentTeamMembers?: (teamKey: string, memberSlugs: string[]) => void | Promise<void>;
   onChangeAgentTeamMemberPortrait?: (
     teamKey: string,
     memberSlug: string,
     portraitId: PortraitId | null,
   ) => void | Promise<void>;
+  onChangeAgentTeamMemberIdentity?: (
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => void;
   onAddAgentTeamMember?: (teamKey: string) => void | Promise<void>;
   onUpdateAgentTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
   onChangeAgentTeamMember?: (teamKey: string, memberSlug: string, agentMarkdown: string) => void;
@@ -806,7 +812,9 @@ export function OperatorConsole({
   onCloseAgentTeam,
   onSelectAgentTeamMember,
   onChangeAgentTeamPrimaryAgent,
+  onReorderAgentTeamMembers,
   onChangeAgentTeamMemberPortrait,
+  onChangeAgentTeamMemberIdentity,
   onAddAgentTeamMember,
   onUpdateAgentTeamInformation,
   onChangeAgentTeamMember,
@@ -2165,7 +2173,9 @@ export function OperatorConsole({
             onCloseTeam={onCloseAgentTeam}
             onSelectMember={onSelectAgentTeamMember}
             onChangePrimaryAgent={onChangeAgentTeamPrimaryAgent}
+            onReorderMembers={onReorderAgentTeamMembers}
             onChangeMemberPortrait={onChangeAgentTeamMemberPortrait}
+            onChangeMemberIdentity={onChangeAgentTeamMemberIdentity}
             onAddMember={onAddAgentTeamMember}
             onUpdateTeamInformation={onUpdateAgentTeamInformation}
             onChangeMember={onChangeAgentTeamMember}

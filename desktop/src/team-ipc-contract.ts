@@ -27,6 +27,7 @@ export const TEAM_IPC_CHANNELS = {
   addMember: "agent-teams:add-member",
   updateInformation: "agent-teams:update-information",
   setPrimaryAgent: "agent-teams:set-primary-agent",
+  reorderMembers: "agent-teams:reorder-members",
   duplicateBuiltIn: "agent-teams:duplicate-built-in",
   duplicateUser: "agent-teams:duplicate-user",
   duplicateMember: "agent-teams:duplicate-member",
@@ -114,6 +115,13 @@ export interface AgentTeamPrimaryAgentWriteRequest {
   teamId: string;
   ownership: TeamOwnership;
   primaryAgentSlug: string;
+}
+
+export interface AgentTeamMemberOrderWriteRequest {
+  teamId: string;
+  ownership: TeamOwnership;
+  /** New full member order; the first entry is the primary Agent. */
+  memberOrder: string[];
 }
 
 export interface AgentTeamDuplicateBuiltInRequest {

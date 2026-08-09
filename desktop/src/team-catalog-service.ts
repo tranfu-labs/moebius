@@ -8,6 +8,7 @@ import { AgentTeamIpcRequestError } from "./team-ipc-contract.js";
 import {
   decideReadableBuiltInTeam,
   parseDuplicateBuiltInRequest,
+  parseMemberOrderWriteRequest,
   parseMemberRequest,
   parseMemberWriteRequest,
   parsePrimaryAgentWriteRequest,
@@ -37,6 +38,7 @@ export interface TeamCatalogPorts {
   addMember(location: TeamLocation): Promise<{ team: TeamSnapshot; member: TeamSnapshot["members"][number] }>;
   updateInformation(location: TeamLocation, information: { name: string; description: string }): Promise<TeamSnapshot>;
   setPrimary(location: TeamLocation, slug: string): Promise<TeamSnapshot>;
+  reorderMembers(location: TeamLocation, memberOrder: string[]): Promise<TeamSnapshot>;
   duplicateBuiltIn(location: TeamLocation): Promise<TeamLocation>;
   duplicateUser(location: TeamLocation): Promise<TeamLocation>;
   duplicateMember(location: TeamLocation, slug: string): Promise<{ team: TeamSnapshot; member: TeamSnapshot["members"][number] }>;
@@ -137,6 +139,12 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
     setAgentTeamPrimaryAgent: async (dataRoot: string, raw: unknown) => {
       const request = parsePrimaryAgentWriteRequest(raw);
       const snapshot = await ports.setPrimary(await resolveLocation(dataRoot, request), request.primaryAgentSlug);
+      await refreshUserRecord(snapshot);
+      return ports.present(snapshot);
+    },
+    reorderAgentTeamMembers: async (dataRoot: string, raw: unknown) => {
+      const request = parseMemberOrderWriteRequest(raw);
+      const snapshot = await ports.reorderMembers(await resolveLocation(dataRoot, request), request.memberOrder);
       await refreshUserRecord(snapshot);
       return ports.present(snapshot);
     },

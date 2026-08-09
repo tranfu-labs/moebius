@@ -6,8 +6,11 @@ import {
   planAgentTeamCatalogLoad,
   planAgentTeamCatalogRemove,
   planAgentTeamFallbackSelection,
+  planAgentTeamIdentityMarkdown,
   planAgentTeamMemberRemoval,
   planAgentTeamMemberSummary,
+  planAgentTeamReorderChange,
+  planAgentTeamReorderOperation,
   planBuilderOperation,
   planBuilderRetry,
   planSelectedBuilderTeamId,
@@ -110,6 +113,66 @@ describe("agent team console model", () => {
         }],
       }],
     });
+  });
+
+  it("plans a reorder only when the member set stays intact and the order actually changes", () => {
+    const team: OperatorAgentTeam = {
+      ...operatorTeam("user:dev", "dev", "manager"),
+      memberOrder: ["manager", "developer"],
+      members: [
+        { slug: "manager", displayName: "开发经理", description: "", available: true },
+        { slug: "developer", displayName: "开发", description: "", available: true },
+      ],
+    };
+    expect(planAgentTeamReorderChange(team, ["developer", "manager"])).toBe("save");
+    expect(planAgentTeamReorderOperation(team, ["developer", "manager"], true)).toBe("save");
+    expect(planAgentTeamReorderOperation(team, ["developer", "manager"], false)).toBe("skip");
+    // No change, a different member set, or a missing team are all skips.
+    expect(planAgentTeamReorderChange(team, ["manager", "developer"])).toBe("skip");
+    expect(planAgentTeamReorderChange(team, ["manager", "developer", "intruder"])).toBe("skip");
+    expect(planAgentTeamReorderChange(team, ["manager"])).toBe("skip");
+    expect(planAgentTeamReorderChange(undefined, ["manager", "developer"])).toBe("skip");
+  });
+
+  it("rewrites identity edits into the draft frontmatter and keeps the body intact", () => {
+    const canonical = `---
+display_name: 开发经理
+description: 默认接单
+---
+
+# 开发经理
+
+正文。
+`;
+    expect(planAgentTeamIdentityMarkdown(canonical, { displayName: "新经理" })).toBe(`---
+display_name: 新经理
+description: 默认接单
+---
+
+# 开发经理
+
+正文。
+`);
+    expect(planAgentTeamIdentityMarkdown(canonical, { description: "新说明" })).toBe(`---
+display_name: 开发经理
+description: 新说明
+---
+
+# 开发经理
+
+正文。
+`);
+    // Editing only one field must not leave the identity split across two sources.
+    const legacy = "# 开发经理\n\n默认接单\n";
+    expect(planAgentTeamIdentityMarkdown(legacy, { displayName: "新经理" })).toBe(`---
+display_name: 新经理
+description: 默认接单
+---
+
+# 开发经理
+
+默认接单
+`);
   });
 });
 

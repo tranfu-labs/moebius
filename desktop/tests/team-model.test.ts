@@ -44,6 +44,35 @@ describe("team model", () => {
     }))).toEqual(usableDefinition);
   });
 
+  it("round-trips member portraits in the app record and omits them when empty", () => {
+    const withPortraits: TeamDefinition = {
+      ...usableDefinition,
+      memberPortraits: { manager: "cat-12", developer: "cat-03" },
+    };
+    const encoded = serializeTeamDefinition(withPortraits);
+    expect(JSON.parse(encoded)).toMatchObject({ memberPortraits: { manager: "cat-12", developer: "cat-03" } });
+    expect(parseTeamDefinitionJson(encoded)).toEqual(withPortraits);
+    // A team without explicit faces keeps the previous file shape.
+    expect(JSON.parse(serializeTeamDefinition(usableDefinition))).not.toHaveProperty("memberPortraits");
+  });
+
+  it("drops malformed portrait entries instead of invalidating the team", () => {
+    expect(parseTeamDefinitionJson(JSON.stringify({
+      ...usableDefinition,
+      memberPortraits: {
+        manager: "cat-12",
+        developer: ["not", "a", "string"],
+        "bad/slug": "cat-01",
+        "": "cat-02",
+        unknown: 42,
+        qa: "multi\nline",
+      },
+    }))).toEqual({
+      ...usableDefinition,
+      memberPortraits: { manager: "cat-12" },
+    });
+  });
+
   it("prefers canonical frontmatter identity over persona prose", () => {
     expect(
       parseAgentMarkdownIdentity(`---

@@ -22,8 +22,14 @@ export function projectLocalConsoleMemberIdentities(
       slug: member.name,
       displayName: readSnapshotDisplayName(member.agentMarkdown),
     };
-    const portraitId = readSnapshotPortraitId(member.agentMarkdown);
-    if (portraitId !== undefined) {
+    // The portrait now lives in the app record and rides along in the snapshot. Snapshots
+    // captured before the migration only carry the legacy AGENT.md `portrait_id`, so the
+    // frontmatter remains a fallback for those frozen facts. A resolved null in the snapshot
+    // means "no portrait" and must not be overridden by a stale legacy field.
+    const portraitId = member.portraitId === undefined
+      ? readSnapshotPortraitId(member.agentMarkdown)
+      : member.portraitId;
+    if (portraitId !== undefined && portraitId !== null) {
       identity.portraitId = portraitId;
     }
     return identity;

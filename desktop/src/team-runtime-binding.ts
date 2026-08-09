@@ -125,6 +125,7 @@ export function createTeamRuntimeBindingService(ports: TeamRuntimeBindingPorts) 
           displayName: member.displayName,
           description: member.description,
           agentMarkdown: member.agentMarkdown,
+          portraitId: member.portraitId ?? null,
           executionProfile: selectRuntimeExecutionProfile(profiles[member.slug]),
         })),
       }, { capturedAt: new Date().toISOString() });
