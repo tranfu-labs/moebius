@@ -3861,8 +3861,9 @@ function TimelineEntry({
               elapsedMs={message.runTiming.elapsedMs}
               completedAt={message.runTiming.completedAt}
             />
-          ) : null}
-          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+          ) : (
+            <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+          )}
         </div>
         <div className="pl-8">
         {message.processSteps?.length ? (
@@ -3997,8 +3998,9 @@ function TimelineEntry({
             elapsedMs={message.runTiming.elapsedMs}
             completedAt={message.runTiming.completedAt}
           />
-        ) : null}
-        <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+        ) : (
+          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+        )}
         {message.speaker === "agent" && onAnalyzeConversation ? (
           <ConversationAnalysisMenu
             inline
