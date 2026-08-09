@@ -41,8 +41,8 @@ export function MessageAction({ icon: Icon, label, onClick, disabled }: {
 export function MessageToolbar({ children, trailing, className }: {
   children?: ReactNode;
   /**
-   * Static facts that close the row, after the last action. Revealed on hover:
-   * they are worth having, not worth a permanent line of digits.
+   * Static facts that close the row, after the last action. Visible at rest like
+   * the actions themselves — a completion time nobody can see reads as missing.
    */
   trailing?: ReactNode;
   className?: string;
@@ -55,11 +55,7 @@ export function MessageToolbar({ children, trailing, className }: {
         <span className="-ml-[5px] flex items-center gap-0.5 text-hint transition-colors group-hover:text-sub group-focus-within:text-sub">
           {children}
         </span>
-        {trailing ? (
-          <span className="ml-1.5 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            {trailing}
-          </span>
-        ) : null}
+        {trailing ? <span className="ml-1.5 flex items-center">{trailing}</span> : null}
       </div>
     </TooltipProvider>
   );

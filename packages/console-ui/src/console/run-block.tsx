@@ -130,7 +130,7 @@ export function RunBlock({
           className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
         />
         <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
-        <span className="ml-auto flex items-center gap-2">
+        <span className="flex items-center gap-2">
           {elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="running" elapsedMs={elapsedMs} />
           ) : nonBlank(elapsedTime) !== null ? (
