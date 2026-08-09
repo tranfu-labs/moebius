@@ -3,6 +3,7 @@ import {
   projectAgentProgressActivity,
   projectStructuredRunActivity,
   type LocalRunActivity,
+  foldRunActivityStep,
 } from "./run-activity.js";
 import type {
   LocalRunLifecycleActiveRun,
@@ -70,6 +71,7 @@ export class LocalRunLifecycleActivityRuntime {
       engine: active.engine,
       processOutputAvailable: active.processOutputAvailable,
       activity: active.activity,
+      activitySteps: active.activitySteps,
       runDir: active.runDir,
       cwd: active.cwd,
       workspaceMode: active.workspaceMode,
@@ -122,6 +124,7 @@ export class LocalRunLifecycleActivityRuntime {
     const change = planActivityChange(active.activity, activity);
     if (change.kind === "skip") return;
     active.activity = change.activity;
+    active.activitySteps = [...foldRunActivityStep(active.activitySteps, change.activity)];
     const persistence = decideLifecycleStore(this.input.lifecycleStore());
     if (persistence.kind === "skip") return;
     active.activityFactTail = active.activityFactTail.then(() =>

@@ -430,6 +430,14 @@ export interface OperatorRunSnapshot {
   stdoutTail: string | null;
   stderrTail: string | null;
   liveMarkdown: string | null;
+  /** Activity the runtime accumulated for this run; mapped by activityStepsToProcessSteps. */
+  activitySteps?: readonly {
+    kind: "command" | "tool" | "search" | "read" | "edit" | "thinking" | "progress";
+    phase: "running" | "completed";
+    action: string;
+    object: string | null;
+    occurredAt: string;
+  }[];
   processSteps?: readonly ProcessStep[];
   lastOutputSummary: string;
   tailDiagnostic: string | null;
@@ -2466,7 +2474,7 @@ export function OperatorConsole({
                             memberIdentities={memberIdentities}
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
-                            processSteps={run.processSteps}
+                            processSteps={run.processSteps ?? activityStepsToProcessSteps(run.activitySteps)}
                             processOutputAvailable
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
@@ -3614,6 +3622,35 @@ function roleCompletionsForTeam(team: OperatorAgentTeam | undefined): RoleComple
  * written before that change, not redundancy — do not delete it until no stored
  * row has `speaker='system' AND run_id IS NOT NULL AND role IS NULL`.
  */
+const activityStepKinds: Record<string, ProcessStep["kind"]> = {
+  thinking: "thinking",
+  tool: "tool",
+  command: "command",
+  search: "search",
+  read: "file",
+  edit: "file",
+};
+
+/** Runtime activity records to timeline steps; `progress` is the streamed answer, not a step. */
+export function activityStepsToProcessSteps(
+  steps: OperatorRunSnapshot["activitySteps"],
+): readonly ProcessStep[] | undefined {
+  if (steps === undefined) return undefined;
+  const mapped = steps.flatMap((step, index) => {
+    const kind = activityStepKinds[step.kind];
+    return kind === undefined
+      ? []
+      : [{
+          id: `${step.occurredAt}-${String(index)}`,
+          kind,
+          title: step.action,
+          detail: step.object,
+          status: step.phase === "completed" ? ("done" as const) : ("running" as const),
+        }];
+  });
+  return mapped.length === 0 ? undefined : mapped;
+}
+
 function resolveMessageProcessRole(
   message: OperatorMessage | null,
   messages: readonly OperatorMessage[],

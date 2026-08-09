@@ -606,6 +606,7 @@ export interface LocalConsoleRunSnapshot {
   engine: LocalConsoleExecutionEngine;
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
+  activitySteps?: readonly import("./run-activity.js").LocalRunActivity[];
   runDir: string | null;
   cwd: string | null;
   workspaceMode: LocalConsoleWorkspaceMode | null;
