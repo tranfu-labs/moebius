@@ -52,9 +52,7 @@ describe("SubtaskTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
     expect(onSend).toHaveBeenCalledTimes(1);
 
-    // 恢复动作折叠在事故弹层里，先展开再点。
-    fireEvent.click(screen.getByRole("button", { name: /查看事故详情/u, hidden: true }));
-    fireEvent.click(screen.getByRole("button", { name: "重试", hidden: true }));
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledWith("run-1");
 
     rerender(tab({

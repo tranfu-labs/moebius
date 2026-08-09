@@ -128,6 +128,7 @@ import {
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
+import { IncidentCard } from "@/console/incident-card";
 import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { MarkdownMessage } from "@/console/markdown-message";
@@ -3882,21 +3883,22 @@ function TimelineEntry({
             onOpenTeamMember={onOpenTeamMember}
           />
         )}
-        <MessageToolbar
-          incident={outcome === "user-stopped" ? null : {
-            label: t(resolveOutcomeLabelKey(outcome, providerUnavailable)),
-            detail: incidentDetail,
-            contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
-            elapsedMs: message.runTiming?.elapsedMs,
-            completedAt: message.runTiming?.completedAt,
-            severity: outcomeSeverity(outcome),
-          }}
-          incidentDetail={outcome === "user-stopped" ? undefined : (
-            <div className="mt-2">{recoveryActions}</div>
-          )}
-        >
-          {outcome === "user-stopped" ? recoveryActions : null}
-        </MessageToolbar>
+        {outcome === "user-stopped" ? (
+          <MessageToolbar>{recoveryActions}</MessageToolbar>
+        ) : (
+          <IncidentCard
+            className={partialMarkdown === "" ? undefined : "mt-2"}
+            incident={{
+              label: t(resolveOutcomeLabelKey(outcome, providerUnavailable)),
+              detail: incidentDetail,
+              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+              elapsedMs: message.runTiming?.elapsedMs,
+              completedAt: message.runTiming?.completedAt,
+              severity: outcomeSeverity(outcome),
+            }}
+            actions={recoveryActions}
+          />
+        )}
         </div>
       </div>
     );

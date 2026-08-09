@@ -197,13 +197,18 @@ export function RunOutcome({
               <OutcomeAction icon={Settings} label={maintenanceAction.label} onClick={maintenanceAction.onClick} />
             ) : null}
             {!providerBlocked && status !== "retry-exhausted" && onRetry !== undefined ? (
-              <OutcomeAction
-                icon={RotateCcw}
-                label={t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mr-1 h-[26px] gap-1.5 px-2.5"
                 onClick={() => {
                   void Promise.resolve(onRetry()).catch(() => undefined);
                 }}
-              />
+              >
+                <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                {t(status === "resume-unavailable" ? "console.runOutcome.rerun" : "common.retry")}
+              </Button>
             ) : null}
             {onOverrideAndRetry !== undefined ? (
               <OutcomeAction

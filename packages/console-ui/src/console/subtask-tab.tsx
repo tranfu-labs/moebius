@@ -19,6 +19,7 @@ import {
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
 import { MessageToolbar } from "@/console/message-toolbar";
+import { IncidentCard } from "@/console/incident-card";
 import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { RunTime } from "@/console/run-time";
 import type {
@@ -358,25 +359,26 @@ function SubtaskTimelineEntry({
             {t("console.runOutcome.incomplete")}
           </span>
         ) : null}
-      <MessageToolbar
-          incident={outcome === "user-stopped" ? null : {
-            label: t(resolveOutcomeLabelKey(outcome, null)),
-            detail: stripLegacyOutcomeBoilerplate(
-              message.terminal === null || message.terminal === undefined ? null : message.body,
-            ) || (resolveOutcomeDescriptionKey(outcome, null) === null
-              ? null
-              : t(resolveOutcomeDescriptionKey(outcome, null)!)),
-            contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
-            elapsedMs: message.runTiming?.elapsedMs,
-            completedAt: message.runTiming?.completedAt,
-            severity: outcomeSeverity(outcome),
-          }}
-          incidentDetail={outcome === "user-stopped" ? undefined : (
-            <div className="mt-2">{recoveryActions}</div>
-          )}
-        >
-          {outcome === "user-stopped" ? recoveryActions : null}
-        </MessageToolbar>
+      {outcome === "user-stopped" ? (
+          <MessageToolbar>{recoveryActions}</MessageToolbar>
+        ) : (
+          <IncidentCard
+            className={partialMarkdown === "" ? undefined : "mt-2"}
+            incident={{
+              label: t(resolveOutcomeLabelKey(outcome, null)),
+              detail: stripLegacyOutcomeBoilerplate(
+                message.terminal === null || message.terminal === undefined ? null : message.body,
+              ) || (resolveOutcomeDescriptionKey(outcome, null) === null
+                ? null
+                : t(resolveOutcomeDescriptionKey(outcome, null)!)),
+              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+              elapsedMs: message.runTiming?.elapsedMs,
+              completedAt: message.runTiming?.completedAt,
+              severity: outcomeSeverity(outcome),
+            }}
+            actions={recoveryActions}
+          />
+        )}
         </div>
         </div>
       </article>
