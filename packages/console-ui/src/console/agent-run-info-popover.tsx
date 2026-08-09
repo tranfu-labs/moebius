@@ -101,7 +101,10 @@ export function AgentRunInfoPopover({
           <button
             ref={avatarTrigger}
             type="button"
-            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            // inline-flex, not the default block: a block button reserves line-height
+            // leading below inline content, growing a 24px portrait into a 29.5px box
+            // with the portrait pinned to the top — it then sits above the row's text.
+            className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={t("console.agentRunInfo.view", { name: displayName })}
           >
             {/* The roster engine shows the badge immediately; once the payload lands we

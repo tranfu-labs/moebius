@@ -50,7 +50,9 @@ export function MessageToolbar({ children, trailing, className }: {
   return (
     <TooltipProvider delayDuration={200} skipDelayDuration={100}>
       <div className={cn("mt-1 flex h-6 items-center gap-0.5", className)}>
-        <span className="flex items-center gap-0.5 text-hint transition-colors group-hover:text-sub group-focus-within:text-sub">
+        {/* A 14px glyph centred in a 24px button sits 5px right of the button box;
+            cancel that so the toolbar shares the left edge of the body and notice. */}
+        <span className="-ml-[5px] flex items-center gap-0.5 text-hint transition-colors group-hover:text-sub group-focus-within:text-sub">
           {children}
         </span>
         {trailing ? (
