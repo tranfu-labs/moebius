@@ -184,7 +184,7 @@ export function AgentMarkdownMentionEditor({
   const [activeIndex, setActiveIndex] = useState(0);
   const [closedTriggerKey, setClosedTriggerKey] = useState<string | null>(null);
   const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<number>>(new Set());
-  const [anchorRects, setAnchorRects] = useState<ReadonlyMap<number, { top: number }>>(new Map());
+  const [anchorRects, setAnchorRects] = useState<ReadonlyMap<number, { top: number; height: number }>>(new Map());
   const [mirrorContentTop, setMirrorContentTop] = useState(0);
   const blocks = useMemo(() => computeMarkdownBlocks(value), [value]);
   const trigger = findAgentMentionTrigger(value, caret);
@@ -238,21 +238,20 @@ export function AgentMarkdownMentionEditor({
       const range = document.createRange();
       const firstRect = measureRangeTop(range, textNode, 0);
       if (firstRect === null) {
-        // jsdom: no layout, all rects are 0×0 — use 0 as the baseline so the
-        // fallback below (line-index estimate) drives the overlay.
+        // jsdom: no layout, all rects are 0×0 — use a line-index estimate so
+        // the overlay still renders in unit tests.
         setMirrorContentTop(mirrorTop);
         setAnchorRects(new Map(
           blocks.map((block, blockIndex) => {
             if (block.end <= block.start) {
               return null;
             }
-            const estimatedTop = value.slice(0, block.start).split("\n").length - 1;
-            return [blockIndex, { top: estimatedTop * 24 }] as const;
-          }).filter((entry): entry is readonly [number, { top: number }] => entry !== null),
+            return [blockIndex, estimateBlockMetrics(value, block)] as const;
+          }).filter((entry): entry is readonly [number, { top: number; height: number }] => entry !== null),
         ));
         return;
       }
-      const next = new Map<number, { top: number }>();
+      const next = new Map<number, { top: number; height: number }>();
       blocks.forEach((block, blockIndex) => {
         if (block.end <= block.start) {
           return;
@@ -262,9 +261,13 @@ export function AgentMarkdownMentionEditor({
         // jsdom has no layout (all rects are 0×0): fall back to a line-index
         // estimate so the overlay still renders in unit tests. In real
         // browsers this branch only fires for offsets sitting on a newline.
-        const estimatedTop = value.slice(0, probeOffset).split("\n").length - 1;
+        if (blockRect === null) {
+          next.set(blockIndex, estimateBlockMetrics(value, block));
+          return;
+        }
         next.set(blockIndex, {
-          top: blockRect === null ? estimatedTop * 24 : blockRect - firstRect,
+          top: blockRect - firstRect,
+          height: measureRangeHeight(range, textNode, probeOffset, block.end),
         });
       });
       setMirrorContentTop(mirrorTop);
@@ -478,7 +481,7 @@ interface ChangeMarkerOverlayProps {
   editorRef: RefObject<HTMLDivElement | null>;
   blocks: ReadonlyArray<{ start: number; end: number }>;
   markers: readonly AgentMarkdownChangeMarker[];
-  anchorRects: ReadonlyMap<number, { top: number }>;
+  anchorRects: ReadonlyMap<number, { top: number; height: number }>;
   /** Distance from the editor's border-box top to the mirror text's first line. */
   mirrorContentTop: number;
   expandedBlocks: ReadonlySet<number>;
@@ -549,27 +552,49 @@ function ChangeMarkerOverlay({
         if (top < -64 || (editorHeight > 0 && top > editorHeight + 8)) {
           return null;
         }
+        // The layer carries real block height so the rail spans the block and
+        // the hover/focus reveal has a physical target: a zero-size layer
+        // makes every descendant unreachable by a real pointer (elementFromPoint
+        // hits nothing) and renders the rail with zero height.
+        const layerTop = Math.max(0, top);
+        const layerHeight = editorHeight > 0
+          ? Math.max(0, Math.min(rect.height + 8, editorHeight - layerTop - 8))
+          : Math.max(0, rect.height + 8);
         const expanded = expandedBlocks.has(blockIndex);
         return (
           <div
             key={`marker-layer-${blockIndex}`}
             data-change-marker="true"
-            className="group/marker absolute left-0"
-            style={{ top: `${Math.max(0, top)}px` }}
+            className="group/marker pointer-events-auto absolute left-0 w-3"
+            style={{ top: `${layerTop}px`, height: `${layerHeight}px` }}
           >
+            {/* `--accent` is a plain CSS variable, so Tailwind's `/50` opacity
+                modifier never compiles for it (no `accent/50` rule exists in the
+                bundle and the class silently does nothing); the rail color is
+                derived from the token with color-mix instead. */}
             <div
-              className="pointer-events-auto absolute -left-px top-0 bottom-0 w-0.5 bg-accent/50"
+              className="absolute -left-px top-0 bottom-0 w-0.5 bg-[color-mix(in_srgb,var(--accent)_50%,transparent)]"
               data-change-marker-rail="true"
               aria-hidden="true"
             />
-            <div className="absolute left-2 top-0 flex select-none items-center gap-2 text-xs text-hint">
-              <span className="whitespace-nowrap opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover/marker:opacity-100" aria-hidden="true">
+            {/* Attribution and the expand control are hidden by default and
+                revealed by hovering the rail band or by keyboard focus; while
+                hidden the row must stay pointer-events-none so it never blocks
+                text selection on the block's first line. The whole revealed row
+                is hit-testable (no dead gap between the attribution and the
+                button), and focus-within keeps it visible while the button has
+                focus. */}
+            <div
+              data-change-marker-row="true"
+              className="pointer-events-none absolute left-2 top-0 flex select-none items-center gap-2 text-xs text-hint opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover/marker:pointer-events-auto group-hover/marker:opacity-100 group-focus-within/marker:pointer-events-auto group-focus-within/marker:opacity-100"
+            >
+              <span className="whitespace-nowrap" aria-hidden="true">
                 {marker.authorLabel} · {marker.timeLabel}
               </span>
               {marker.previousText != null && marker.previousText.length > 0 ? (
                 <button
                   type="button"
-                  className="whitespace-nowrap opacity-0 transition-opacity duration-150 hover:text-ink motion-reduce:transition-none group-hover/marker:opacity-100"
+                  className="whitespace-nowrap hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)]"
                   aria-expanded={expanded}
                   onClick={() => onToggleExpanded(blockIndex)}
                 >
@@ -606,6 +631,42 @@ function measureRangeTop(range: Range, textNode: Node, offset: number): number |
   } catch {
     return null;
   }
+}
+
+/**
+ * Height of the text covered by the block, measured as the bounding rect of a
+ * non-collapsed range from the probe offset to the block end. Returns 0 when
+ * the environment has no layout (jsdom), where the caller falls back to
+ * `estimateBlockMetrics`.
+ */
+function measureRangeHeight(range: Range, textNode: Node, start: number, end: number): number {
+  try {
+    const length = textNode.textContent?.length ?? 0;
+    range.setStart(textNode, Math.min(start, length));
+    range.setEnd(textNode, Math.min(end, length));
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return 0;
+    }
+    return rect.height;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Layout-free estimate of a block's top and height from line counts (used in
+ * jsdom and for probe offsets that sit on a newline). Line height is the
+ * editor's leading-6 (24px); the +8 matches the overlay's -8 lead-in so the
+ * rail's bottom lands flush with the block's last line box.
+ */
+function estimateBlockMetrics(
+  value: string,
+  block: { start: number; end: number },
+): { top: number; height: number } {
+  const linesBefore = value.slice(0, block.start).split("\n").length - 1;
+  const linesInBlock = value.slice(block.start, block.end).split("\n").length;
+  return { top: linesBefore * 24, height: linesInBlock * 24 + 8 };
 }
 
 export function CopyableAgentSlug({ slug, className }: { slug: string; className?: string }): JSX.Element {

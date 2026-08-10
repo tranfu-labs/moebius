@@ -101,6 +101,19 @@
 - Story：`agent-teams-page.stories.tsx` 的 `TimelineSummaryPendingAndUnavailable` 扩展为覆盖标题行两态（dev-manager 标题行 unavailable + 机械摘要，dev 标题行 pending），时间线条目两态保留。
 - 真机：验收 1 新增标题行断言——保存后 pending 窗口断言“最近变化 · 正在生成说明…”真实渲染（`pendingTitleLineVisible=true`），终态 unavailable 后断言“最近变化 · 本次改动涉及 2 处”真实渲染（`terminalTitleLineRendered=true`）；全 7 项断言绿。
 
+### 视觉 QA 复核补修（visual-qa 发现，本 change 内同一分支提交）
+
+视觉验收（Storybook + 真实 Electron 双证据）在 `agent-markdown-mention-editor.tsx` 的变化标记层发现 3 项必修，全部修复并提交：
+
+1. **左侧色条完全不可见（亮暗双主题均复现）**：rail 用 `bg-accent/50`，而 `--accent` 是纯 CSS 变量——Tailwind 3.4 对纯 var 颜色不生成 `accent/<n>` 透明度修饰规则，类名静默失效（运行中页面的 styleSheets 已核实无该规则）。修复：rail 改为 `bg-[color-mix(in_srgb,var(--accent)_50%,transparent)]`（同色 40% 用于展开按钮焦点 ring），构建产物已核实两条 color-mix 规则真实存在。
+2. **标记交互层对真实指针不可达**：marker 层全部子元素 absolute、容器自身无高度 → 层 0×0、rail 高度 0、展开按钮继承 overlay 的 `pointer-events-none`，真实鼠标 hover 署名 opacity 恒 0、`elementFromPoint` 命中 null。修复：层按块文本高度携带真实尺寸（镜像 Range 测量 `top+height`，jsdom 退化为行数估算），层本身 `pointer-events-auto w-3` 常驻命中带；署名行默认 `opacity-0 pointer-events-none`，`group-hover/marker` / `group-focus-within/marker` 时显形并恢复指针可达（整行可命中，署名与按钮之间无死区），隐藏时绝不拦截正文首行文本选择。
+3. **展开按钮键盘焦点不可见**：`focus()` 后 opacity 仍 0、无焦点环。修复：聚焦即经 `group-focus-within` 显形，按钮自身 `focus-visible:ring-2` + color-mix 40% ring 提供可见键盘焦点。
+
+记录（未修，超出本 change 范围）：`accent/<n>` 透明度修饰系统性失效（`focus-visible:ring-accent/30` 等既有用法同样不生成规则），已同步更新 `packages/console-ui/DESIGN.md` 变化标记模式条目为 color-mix 机制；窄窗成员标签截断为既有已定性不修项。建议（记录不修）：展开原文是 absolute overlay，密集文本下会遮挡后续段落——按 popover 类设计意图保留；「最近变化」行终态不自动刷新，需切换成员重选（功能验收同观察），留待后续。
+
+- 单测：`agent-markdown-mention-editor.test.tsx` 新增 1 条回归用例钉住层尺寸（jsdom 行数估算 40/40）、`pointer-events-auto`、color-mix rail 类（并断言不再含 `bg-accent/50`）、hover/focus 显形接线与焦点 ring。
+- 门禁：console-ui 全量 552 测试、typecheck×3、check:storybook（43 stories）、console-ui build（color-mix 规则在 dist CSS）、desktop build、check:boundaries（727 文件）、`git diff --check` 全绿；真机验收重跑 exit 0、7 项断言全绿（`markerCountAfterFirstSave=2`、`pendingTitleLineVisible=true`、`terminalTitleLineRendered=true`）。
+
 ## G 功能 QA / 视觉 QA 移交记录
 
 - 功能 QA：F 节 5 条真机断言已全绿（见上表），覆盖 spec-delta 的核心场景（保存、外部修改、回退、默认 Agent 持久化、基线迁移三态）。待移交项：`change 2` 范围的自动同步/批次/撤销落盘与“查看弹窗真实数据”不属于本 change，A 节对应 UI（横幅、侧边栏同步态、查看弹窗）保持 inert 未接数据，请复核时注意区分。

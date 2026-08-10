@@ -222,6 +222,57 @@ describe("AgentMarkdownMentionEditor change markers", () => {
     expect(screen.queryByText("第二段原来的写法")).not.toBeInTheDocument();
   });
 
+  it("gives the marker layer real size and pointer reach with a color-mix accent rail", () => {
+    render(
+      <AgentMarkdownMentionEditor
+        value={"第一段没有变化\n\n第二段被你改过"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={[{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "3 天前",
+          previousText: "第二段原来的写法",
+        }]}
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    // A zero-size layer made every descendant unreachable by a real pointer
+    // (elementFromPoint hit nothing) and rendered the rail with zero height;
+    // the layer must carry the block's height and stay hit-testable. jsdom
+    // has no Range geometry, so the line-index estimate drives the overlay:
+    // block 1 starts after two line breaks (48px) minus the 8px lead-in, and
+    // one line of text (24px) plus the same lead-in.
+    const layer = document.querySelector("[data-change-marker]");
+    expect(layer).not.toBeNull();
+    expect(layer).toHaveClass("pointer-events-auto");
+    expect(layer).toHaveStyle({ top: "40px", height: "40px" });
+
+    // `--accent` is a plain CSS variable: Tailwind never compiles `accent/50`
+    // (no rule exists in the bundle), so the rail must derive its 50% tint
+    // from the token via color-mix instead of a silent no-op class.
+    const rail = document.querySelector("[data-change-marker-rail]");
+    expect(rail?.className).toContain("color-mix(in_srgb,var(--accent)_50%,transparent)");
+    expect(rail?.className).not.toContain("bg-accent/50");
+
+    // Attribution stays hidden by default; hover on the rail band or focus
+    // within the layer reveals it and makes the row pointer-reachable, so the
+    // expand button is clickable by a real mouse once revealed.
+    const row = document.querySelector("[data-change-marker-row]");
+    expect(row?.className).toContain("opacity-0");
+    expect(row?.className).toContain("group-hover/marker:opacity-100");
+    expect(row?.className).toContain("group-hover/marker:pointer-events-auto");
+    expect(row?.className).toContain("group-focus-within/marker:opacity-100");
+
+    // Keyboard focus must produce a visible control: the row is revealed via
+    // group-focus-within and the button itself carries a visible ring.
+    const button = screen.getByRole("button", { name: "展开" });
+    expect(button.className).toContain("focus-visible:ring-2");
+    expect(button.className).toContain("focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)]");
+  });
+
   it("does not show an expand toggle when a marker has no previous text", () => {
     render(
       <AgentMarkdownMentionEditor
