@@ -39,15 +39,46 @@ export function normalizeOfficialTeamStateDocument(value: unknown): OfficialTeam
     ) {
       throw new TeamManagementDocumentError(`官方团队 ${teamId} 的状态无效。`);
     }
+    const hasSnapshot = Object.hasOwn(raw, "appliedContentSnapshot");
+    const snapshot = hasSnapshot ? normalizeAppliedContentSnapshot(raw.appliedContentSnapshot) : undefined;
     teams[teamId] = {
       appliedOfficialVersion: raw.appliedOfficialVersion,
       appliedContentFingerprint: raw.appliedContentFingerprint,
       appliedRecommendationFingerprint: raw.appliedRecommendationFingerprint,
       appliedRecommendations: recommendations,
       baselineConfidence: confidence,
+      ...(hasSnapshot ? { appliedContentSnapshot: snapshot } : {}),
     };
   }
   return { schemaVersion: 1, teams };
+}
+
+/**
+ * `undefined` means "legacy fingerprint-only document, migration not run yet";
+ * `null` means "migrated conservative — A's content is unknowable"; an object is
+ * the back-filled content snapshot of a verified baseline.
+ */
+function normalizeAppliedContentSnapshot(
+  value: unknown,
+): Record<string, string> | null {
+  if (value === null) {
+    return null;
+  }
+  if (!isPlainObject(value)) {
+    throw new TeamManagementDocumentError("官方基线内容快照无效。");
+  }
+  return Object.fromEntries(Object.entries(value).map(([relativePath, content]) => {
+    if (
+      relativePath.length === 0
+      || relativePath.startsWith("/")
+      || relativePath.includes("\\")
+      || relativePath.split("/").some((segment) => segment === ".." || segment === ".")
+      || typeof content !== "string"
+    ) {
+      throw new TeamManagementDocumentError("官方基线内容快照包含无效路径。");
+    }
+    return [relativePath, content];
+  }));
 }
 
 export function normalizeTeamExecutionBindingDocument(

@@ -38,6 +38,10 @@ export const TEAM_IPC_CHANNELS = {
   restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
   prepareOfficialUpdate: "agent-teams:prepare-official-update",
   applyOfficialUpdate: "agent-teams:apply-official-update",
+  memberRevisionsList: "agent-teams:member-revisions:list",
+  memberRevisionRestore: "agent-teams:member-revisions:restore",
+  defaultAgentGet: "agent-teams:default-agent:get",
+  defaultAgentSave: "agent-teams:default-agent:save",
 } as const;
 
 export interface AgentTeamRegistrationIssue {
@@ -188,6 +192,60 @@ export type AgentTeamOfficialUpdatePrepareResponse = PreparedOfficialTeamUpdate;
 export type AgentTeamOfficialUpdateCommitResponse = AppliedOfficialTeamUpdate & {
   copiedTeam: AgentTeamListItem | null;
 };
+
+export interface AgentTeamMemberRevisionsRequest extends AgentTeamMemberRequest {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlug: string;
+}
+
+export interface AgentTeamRevisionView {
+  revisionId: string;
+  authorKind: "user" | "official" | "agent";
+  /** Official version label when the author is official; null otherwise. */
+  authorLabel: string | null;
+  summary: string | null;
+  summaryStatus: "pending" | "ready" | "unavailable";
+  timeLabel: string;
+  isEarliest: boolean;
+}
+
+export interface AgentTeamChangeMarkerView {
+  blockIndex: number;
+  authorKind: "user" | "official" | "agent";
+  authorLabel: string;
+  timeLabel: string;
+  previousText: string | null;
+}
+
+export interface AgentTeamMemberRevisionsResponse {
+  /** Latest revision's one-line summary; absent when the member has no revision yet. */
+  recentChange: { summary: string; authorLabel: string; timeLabel: string } | null;
+  /** Latest revision's paragraph ownership — presentation only, see `agent-revision-plan.ts`. */
+  changeMarkers: AgentTeamChangeMarkerView[];
+  /** Newest first. */
+  timeline: AgentTeamRevisionView[];
+}
+
+export interface AgentTeamMemberRevisionRestoreRequest extends AgentTeamMemberRevisionsRequest {
+  revisionId: string;
+}
+
+export interface AgentTeamMemberRevisionRestoreResponse {
+  agentMarkdown: string;
+  /** The new revision created by the restore itself (author = user). */
+  revision: AgentTeamRevisionView;
+}
+
+export interface AgentTeamDefaultAgentResponse {
+  profile: ExecutionProfile;
+  /** False until the user saves a choice; the UI shows the built-in recommendation. */
+  saved: boolean;
+}
+
+export interface AgentTeamDefaultAgentSaveRequest {
+  profile: ExecutionProfile;
+}
 
 export class AgentTeamIpcRequestError extends Error {
   constructor(

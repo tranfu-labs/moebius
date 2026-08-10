@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -51,7 +51,7 @@ describe("agent mention text model", () => {
 });
 
 describe("AgentMarkdownMentionEditor", () => {
-  it("shows readable names while preserving literal source across a rename", () => {
+  it("renders mention references as literal @slug text and preserves the source across a rename", () => {
     const onValueChange = vi.fn();
     const { rerender } = render(
       <AgentMarkdownMentionEditor
@@ -64,7 +64,11 @@ describe("AgentMarkdownMentionEditor", () => {
 
     const editor = screen.getByRole("textbox", { name: "AGENT.md" });
     expect(editor).toHaveAttribute("data-raw-markdown", "交棒给 @dev。");
-    expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
+    // Mentions render as plain editable text (`@slug`) — the contentEditable
+    // region must never contain non-editable nodes (Chromium detaches them on
+    // edit and React's next commit crashes); copy lives on the editor-level
+    // CopyableAgentSlug entry instead.
+    expect(editor).toHaveTextContent("交棒给 @dev。");
 
     rerender(
       <AgentMarkdownMentionEditor
@@ -77,7 +81,7 @@ describe("AgentMarkdownMentionEditor", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "软件工程师，复制 @dev" })).toBeVisible();
+    expect(editor).toHaveTextContent("交棒给 @dev。");
     expect(editor).toHaveAttribute("data-raw-markdown", "交棒给 @dev。");
     expect(onValueChange).not.toHaveBeenCalled();
   });
@@ -141,7 +145,7 @@ describe("AgentMarkdownMentionEditor", () => {
     render(<ControlledEditor />);
 
     const editor = screen.getByRole("textbox", { name: "AGENT.md" });
-    const textNode = editor.querySelector("span")?.firstChild;
+    const textNode = editor.firstChild;
     expect(textNode).not.toBeNull();
     textNode!.textContent = "abXcd";
     const range = document.createRange();
@@ -176,33 +180,117 @@ describe("AgentMarkdownMentionEditor", () => {
     expect(onValueChange).toHaveBeenCalledTimes(1);
     expect(onValueChange).toHaveBeenCalledWith("中文");
   });
+});
 
-  it("lets keyboard users focus and copy the underlying slug", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
+describe("AgentMarkdownMentionEditor change markers", () => {
+  it("keeps plain rendering when changeMarkers is omitted", () => {
     render(
       <AgentMarkdownMentionEditor
-        value="交棒给 @qa"
+        value={"第一段\n\n第二段"}
         members={teamMembers}
         label="AGENT.md"
         onValueChange={vi.fn()}
       />,
     );
+    expect(screen.queryByRole("button", { name: "展开" })).not.toBeInTheDocument();
+  });
 
-    const mention = screen.getByRole("button", { name: "测试，复制 @qa" });
-    act(() => mention.focus());
-    expect(mention).toHaveFocus();
-    expect(mention).toHaveAttribute("title", "@qa · 点击复制");
-    await act(async () => {
-      fireEvent.click(mention);
-      await Promise.resolve();
-    });
+  it("renders a marker for its block, reveals authorship and expands the previous text", () => {
+    render(
+      <AgentMarkdownMentionEditor
+        value={"第一段没有变化\n\n第二段被你改过"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={[{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "3 天前",
+          previousText: "第二段原来的写法",
+        }]}
+        onValueChange={vi.fn()}
+      />,
+    );
 
-    expect(writeText).toHaveBeenCalledWith("@qa");
-    expect(await screen.findByText("已复制 @qa")).toBeInTheDocument();
+    expect(screen.getByText("你 · 3 天前")).toBeInTheDocument();
+    expect(screen.queryByText("第二段原来的写法")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开" }));
+    expect(screen.getByText("第二段原来的写法")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(screen.queryByText("第二段原来的写法")).not.toBeInTheDocument();
+  });
+
+  it("does not show an expand toggle when a marker has no previous text", () => {
+    render(
+      <AgentMarkdownMentionEditor
+        value="唯一一段，且没有标题结构"
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={[{
+          blockIndex: 0,
+          authorKind: "official",
+          authorLabel: "官方 v1.2",
+          timeLabel: "这支团队的官方初始版本",
+          previousText: null,
+        }]}
+        onValueChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("官方 v1.2 · 这支团队的官方初始版本")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "展开" })).not.toBeInTheDocument();
+  });
+
+  it("round-trips edits through block rendering without losing blank lines", () => {
+    const onValueChange = vi.fn();
+    render(
+      <AgentMarkdownMentionEditor
+        value={"第一段\n\n第二段"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={[{ blockIndex: 0, authorKind: "user", authorLabel: "你", timeLabel: "刚刚", previousText: null }]}
+        onValueChange={onValueChange}
+      />,
+    );
+    const editor = screen.getByRole("textbox", { name: "AGENT.md" });
+    fireEvent.input(editor, { target: { textContent: "第一段改过\n\n第二段" } });
+    expect(onValueChange).toHaveBeenCalledWith("第一段改过\n\n第二段");
+  });
+
+  it("never serializes marker attribution, controls or previous-text into the Markdown while editing", () => {
+    const onValueChange = vi.fn();
+    render(
+      <AgentMarkdownMentionEditor
+        value={"第一段没有变化\n\n第二段被你改过"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={[{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "3 天前",
+          previousText: "第二段原来的写法",
+        }]}
+        onValueChange={onValueChange}
+      />,
+    );
+    const editor = screen.getByRole("textbox", { name: "AGENT.md" });
+    // Expand the previous-text preview so its content is part of the DOM, then
+    // edit a plain text node the way the browser would (the preview and the
+    // attribution stay mounted — outside the contentEditable marker layer).
+    fireEvent.click(screen.getByRole("button", { name: "展开" }));
+    expect(screen.getByText("第二段原来的写法")).toBeInTheDocument();
+    const textNode = editor.firstChild;
+    expect(textNode).not.toBeNull();
+    textNode!.textContent = "第一段真的没有变化";
+    fireEvent.input(editor);
+
+    const serialized = onValueChange.mock.calls[0]?.[0] as string;
+    expect(serialized).not.toContain("你 · 3 天前");
+    expect(serialized).not.toContain("展开");
+    expect(serialized).not.toContain("收起");
+    expect(serialized).not.toContain("第二段原来的写法");
   });
 });
 

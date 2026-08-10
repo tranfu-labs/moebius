@@ -22,6 +22,11 @@ import {
   type AgentTeamMemberAddRequest,
   type AgentTeamMemberAddResponse,
   type AgentTeamMemberRequest,
+  type AgentTeamMemberRevisionsResponse,
+  type AgentTeamMemberRevisionRestoreRequest,
+  type AgentTeamMemberRevisionRestoreResponse,
+  type AgentTeamDefaultAgentResponse,
+  type AgentTeamDefaultAgentSaveRequest,
   type AgentTeamMemberWriteRequest,
   type AgentTeamMemberDuplicateRequest,
   type AgentTeamMemberTrashRequest,
@@ -172,6 +177,16 @@ export interface MoebiusDesktopApi {
   checkAgentTeamMemberExternalChange(
     request: AgentTeamExternalChangeRequest,
   ): Promise<AgentTeamExternalChangeResponse>;
+  listAgentTeamMemberRevisions(
+    request: AgentTeamMemberRequest,
+  ): Promise<AgentTeamMemberRevisionsResponse>;
+  restoreAgentTeamMemberRevision(
+    request: AgentTeamMemberRevisionRestoreRequest,
+  ): Promise<AgentTeamMemberRevisionRestoreResponse>;
+  getDefaultAgent(): Promise<AgentTeamDefaultAgentResponse>;
+  saveDefaultAgent(
+    request: AgentTeamDefaultAgentSaveRequest,
+  ): Promise<AgentTeamDefaultAgentResponse>;
   selectAgentTeamRelocationFolder(): Promise<string | null>;
   relocateAgentTeamRecord(request: AgentTeamRelocateRequest): Promise<AgentTeamListItem>;
   removeAgentTeamRecord(request: AgentTeamRepairRequest): Promise<void>;
@@ -416,6 +431,29 @@ const api: MoebiusDesktopApi = {
       TEAM_EXTERNAL_CHANGE_IPC_CHANNEL,
       request,
     ) as Promise<AgentTeamExternalChangeResponse>;
+  },
+  listAgentTeamMemberRevisions(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.memberRevisionsList,
+      request,
+    ) as Promise<AgentTeamMemberRevisionsResponse>;
+  },
+  restoreAgentTeamMemberRevision(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.memberRevisionRestore,
+      request,
+    ) as Promise<AgentTeamMemberRevisionRestoreResponse>;
+  },
+  getDefaultAgent() {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.defaultAgentGet,
+    ) as Promise<AgentTeamDefaultAgentResponse>;
+  },
+  saveDefaultAgent(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.defaultAgentSave,
+      request,
+    ) as Promise<AgentTeamDefaultAgentResponse>;
   },
   selectAgentTeamRelocationFolder() {
     return ipcRenderer.invoke(TEAM_REPAIR_IPC_CHANNELS.selectRelocationFolder) as Promise<string | null>;

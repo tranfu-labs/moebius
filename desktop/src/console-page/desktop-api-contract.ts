@@ -1,5 +1,7 @@
 import type {
   AgentTeamCreateRequest,
+  AgentTeamDefaultAgentResponse,
+  AgentTeamDefaultAgentSaveRequest,
   AgentTeamDuplicateBuiltInRequest,
   AgentTeamDuplicateUserRequest,
   AgentTeamExecutionProfileDocument,
@@ -12,6 +14,9 @@ import type {
   AgentTeamMemberAddResponse,
   AgentTeamMemberDocument,
   AgentTeamMemberDuplicateRequest,
+  AgentTeamMemberRevisionsResponse,
+  AgentTeamMemberRevisionRestoreRequest,
+  AgentTeamMemberRevisionRestoreResponse,
   AgentTeamMemberRequest,
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
@@ -154,6 +159,14 @@ export interface DesktopApi {
   checkAgentTeamMemberExternalChange?: (
     request: AgentTeamExternalChangeRequest,
   ) => Promise<AgentTeamExternalChangeResponse>;
+  listAgentTeamMemberRevisions?: (
+    request: AgentTeamMemberRequest,
+  ) => Promise<AgentTeamMemberRevisionsResponse>;
+  restoreAgentTeamMemberRevision?: (
+    request: AgentTeamMemberRevisionRestoreRequest,
+  ) => Promise<AgentTeamMemberRevisionRestoreResponse>;
+  getDefaultAgent?: () => Promise<AgentTeamDefaultAgentResponse>;
+  saveDefaultAgent?: (request: AgentTeamDefaultAgentSaveRequest) => Promise<AgentTeamDefaultAgentResponse>;
   selectAgentTeamRelocationFolder?: () => Promise<string | null>;
   relocateAgentTeamRecord?: (request: AgentTeamRelocateRequest) => Promise<AgentTeamListItem>;
   removeAgentTeamRecord?: (request: AgentTeamRepairRequest) => Promise<void>;

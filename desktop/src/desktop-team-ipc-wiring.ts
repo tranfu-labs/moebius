@@ -6,6 +6,7 @@ import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
 import { checkAgentTeamMemberExternalChange } from "./team-external-change.js";
 import type { AgentTeamService } from "./team-ipc.js";
 import type { TeamIpcRegistrationOptions } from "./team-ipc-register.js";
+import type { AgentRevisionService } from "./agent-revision-service.js";
 import {
   relocateAgentTeamRecord,
   removeAgentTeamRecord,
@@ -30,11 +31,15 @@ export function createDesktopTeamIpcOptions(input: {
   selectDirectory(options: OpenDialogOptions): Promise<string | null>;
   relocationTitle(): string;
   sessionExists(sessionId: string): Promise<boolean>;
+  revisions?: TeamIpcRegistrationOptions["revisions"];
+  revisionService?: AgentRevisionService;
 }): TeamIpcRegistrationOptions {
   return {
     ipcMain: input.ipcMain,
     dataRoot: input.dataRoot,
     seedPending: input.seedPending,
+    revisions: input.revisions,
+    revisionService: input.revisionService,
     list: input.service.listAgentTeams,
     resolveSeedConflict: async () => {
       await seedBuiltInTeams({
@@ -61,7 +66,11 @@ export function createDesktopTeamIpcOptions(input: {
       request,
       shell: input.shell,
     }),
-    externalChange: (request) => checkAgentTeamMemberExternalChange(input.dataRoot, request),
+    externalChange: (request) => checkAgentTeamMemberExternalChange(
+      input.dataRoot,
+      request,
+      input.revisionService,
+    ),
     readPreference: () => input.preference.readLastUsedAgentTeam(input.dataRoot),
     recordPreference: (request) => input.preference.recordSuccessfulConversationAgentTeam(
       input.dataRoot,

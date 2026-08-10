@@ -36,6 +36,7 @@ export async function runDesktopStartup(input: {
   buildSeedPlan(): Promise<SeedCopyPlan>;
   executeSeedPlan(operations: readonly SeedCopyOperation[]): Promise<void>;
   seedTeams(): Promise<{ status: "seeded" | "skipped" | "conflict" }>;
+  migrateOfficialBaselines(): Promise<unknown>;
   startLocalConsole(): Promise<void>;
   startUpdates?(): Promise<void>;
   formatError(error: unknown): string;
@@ -87,6 +88,13 @@ export async function runDesktopStartup(input: {
     return;
   }
   input.publishStatus();
+  try {
+    await input.migrateOfficialBaselines();
+  } catch (error) {
+    // Migration is best-effort at startup: a failure keeps the legacy state
+    // untouched and is retried on the next launch (see team-official-management).
+    console.error(`[moebius] official baseline migration failed: ${input.formatError(error)}`);
+  }
   await input.startLocalConsole();
   await input.startUpdates?.();
 }

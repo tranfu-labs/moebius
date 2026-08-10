@@ -8,17 +8,22 @@ import {
 } from "./team-desktop-action-plan.js";
 import { parseAgentMarkdownIdentity } from "./team-model.js";
 import { resolveRecordedTeamLocation } from "./team-record-store.js";
-import { getMemberAgentPath, resolveTeamLocation } from "./team-store.js";
+import { getMemberAgentPath } from "./team-store.js";
+import type { AgentRevisionService } from "./agent-revision-service.js";
 
 export * from "./team-external-change-contract.js";
 
 /**
  * Reads only the requested AGENT.md. Referenced files and the rest of the team
- * directory deliberately do not participate in external-change detection.
+ * directory deliberately do not participate in external-change detection. When
+ * a Finder change is detected (and therefore read in as the effective content),
+ * the change is recorded as a `user`-authored revision, equivalent to an
+ * in-app save.
  */
 export async function checkAgentTeamMemberExternalChange(
   dataRoot: string,
   rawRequest: unknown,
+  revisionService?: AgentRevisionService,
 ): Promise<AgentTeamExternalChangeResponse> {
   const request = parseExternalChangeRequest(rawRequest);
   const handlers = {
@@ -31,14 +36,24 @@ export async function checkAgentTeamMemberExternalChange(
       );
       const responses = {
         unchanged: (): AgentTeamExternalChangeResponse => ({ status: "unchanged" }),
-        changed: (): AgentTeamExternalChangeResponse => ({
-          status: "changed",
-          document: {
-            slug: request.memberSlug,
-            agentMarkdown,
-            ...parseAgentMarkdownIdentity(agentMarkdown),
-          },
-        }),
+        changed: (): AgentTeamExternalChangeResponse => {
+          void revisionService?.recordMemberRevision({
+            teamStableId: location.id,
+            memberSlug: request.memberSlug,
+            content: agentMarkdown,
+            authorKind: "user",
+            authorLabel: null,
+            now: new Date().toISOString(),
+          }).catch(() => undefined);
+          return {
+            status: "changed",
+            document: {
+              slug: request.memberSlug,
+              agentMarkdown,
+              ...parseAgentMarkdownIdentity(agentMarkdown),
+            },
+          };
+        },
       };
       return responses[decideExternalChange(request.knownAgentMarkdown, agentMarkdown)]();
     },

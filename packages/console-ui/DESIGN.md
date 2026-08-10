@@ -75,6 +75,9 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **团队版本追溯与应用**：`src/console/agent-team-option.tsx`、`session-team-update-notice.tsx`、`agent-run-info-popover.tsx`、`agent-team-save-feedback.tsx`——团队选项用用途、来源、主 Agent 与可展开成员建立选择依据；composer 更新提示按定义/运行配置/团队信息保持独立中性行，但任一操作都应用完整版本；历史头像 Popover 只展示 run 冻结事实并通过只读 Dialog 延迟读取完整 `AGENT.md`。浮层沿用 Radix collision handling、视口边界与焦点回返，不显示内部摘要、路径、mtime 或 diff。
 - **空状态**：`src/console/conversation-empty-state.tsx`——中性插画图标 + 短句邀请，无彩色引导。
 - **需要修复面板**：`src/console/agent-team-detail.tsx`——危险事实使用红色图标与细边浅底，正文用普通语言列出不可用范围；修复动作保持 outline，只有“移除记录”等不可逆应用状态变更使用 danger 按钮，并在确认层明确磁盘文件不受影响。
+- **AGENT.md 变化标记与时间线**：`src/console/agent-markdown-mention-editor.tsx`（`changeMarkers`）、`agent-markdown-revision-timeline.tsx`——变化段落左侧 `border-accent/50` 色条，来历署名与展开按钮默认 `opacity-0`，只在 `group-hover` / `group-focus-within` 时显形，不常驻抢注意力；点击就地展开原文用 `bg-sunken` 块，不跳转、不开第二界面；时间线是纯列表，只有一句摘要 + 作者 + 相对时间，不渲染指纹、mtime 或逐行对比。段落切块只服务这里的呈现定位，不作为任何合并单位。
+- **官方同步横幅与常驻入口**：`src/console/agent-team-detail.tsx`（`officialSyncBanner`）、`agent-teams-page.tsx`（`RecentOfficialSyncPanel`、团队首页“官方有新变化”标记）——横幅用 `border-l-2 border-accent/50 bg-sunken`，同一内容会在横幅关闭后原样出现在“更多”菜单的常驻入口里；首页标记复用既有 `TeamStatusBadge` 的中性描边样式，不新增色相。
+- **侧边栏底部同步态**：`src/console/operator-console.tsx` 的 `SidebarAction`（`iconSpinning`、`tooltip`）——与“安装更新”共用同一插槽，进行中用 `LoaderCircle` + `animate-spin motion-reduce:animate-none`，完成态用中性 `CircleCheck`，不借用状态色相族表格之外的颜色。
 
 ## 生长机制
 

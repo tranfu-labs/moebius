@@ -26,6 +26,26 @@ export interface AppliedOfficialTeamState {
   appliedRecommendationFingerprint: string;
   appliedRecommendations: Record<string, ExecutionProfile>;
   baselineConfidence: "verified" | "conservative";
+  /**
+   * Complete snapshot of the applied official baseline A (relative path -> UTF-8 text),
+   * stored alongside the fingerprint so fast equality checks do not need to read content
+   * and change-2 comparisons have A's full text. `null` when a legacy fingerprint-only
+   * baseline was migrated as `conservative` (A's content is unknowable). Absent on legacy
+   * documents until the one-time baseline migration ran.
+   */
+  appliedContentSnapshot?: Record<string, string> | null;
+}
+
+/**
+ * Team content as a flat map of normalized relative paths to UTF-8 text. Only
+ * text files participate (team.json + member files); binary attachments never
+ * enter this snapshot.
+ */
+export type OfficialTeamContent = Readonly<Record<string, string>>;
+
+export interface OfficialTeamContentEntry {
+  relativePath: string;
+  content: Uint8Array;
 }
 
 export interface PackagedOfficialTeamState {
@@ -135,6 +155,61 @@ export function normalizeOfficialContentEntry(relativePath: string, content: Uin
     primaryAgentSlug: definition.primaryAgentSlug,
     memberOrder: definition.memberOrder,
   }));
+}
+
+export const OFFICIAL_CONTENT_FINGERPRINT_VERSION = "moebius-official-team-content-v1";
+
+/**
+ * Pure fingerprint of a set of content entries. The filesystem-walking variant in
+ * `team-official-management.ts` collects the entries; this function hashes them so
+ * the migration planner can compute the fingerprint of an in-memory `OfficialTeamContent`
+ * without touching disk.
+ */
+export function computeOfficialContentFingerprintFromEntries(
+  entries: readonly OfficialTeamContentEntry[],
+): string {
+  const hash = createHash("sha256");
+  hash.update(OFFICIAL_CONTENT_FINGERPRINT_VERSION);
+  hash.update("\0");
+  for (const entry of entries) {
+    hash.update(entry.relativePath);
+    hash.update("\0");
+    const content = normalizeOfficialContentEntry(entry.relativePath, entry.content);
+    hash.update(String(content.byteLength));
+    hash.update("\0");
+    hash.update(content);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+export function computeOfficialTeamContentFingerprintFromContent(
+  content: OfficialTeamContent,
+): string {
+  return computeOfficialContentFingerprintFromEntries(
+    Object.keys(content).sort(compareNames).map((relativePath) => ({
+      relativePath,
+      content: Buffer.from(content[relativePath]!, "utf8"),
+    })),
+  );
+}
+
+/**
+ * Plans the one-time migration of a legacy fingerprint-only applied baseline.
+ * When the current editable content's fingerprint equals the legacy fingerprint
+ * the user never edited A, so A's content is back-filled from B and the baseline
+ * becomes `verified`. Otherwise A's content is unknowable: the baseline becomes
+ * `conservative` and no content is fabricated (the caller records a revision
+ * starting point instead; no merge of any kind happens here).
+ */
+export function planAppliedBaselineMigration(input: {
+  legacyFingerprint: string;
+  currentContent: OfficialTeamContent;
+}): { confidence: "verified" | "conservative"; backfillContent: OfficialTeamContent | null } {
+  const fingerprint = computeOfficialTeamContentFingerprintFromContent(input.currentContent);
+  return fingerprint === input.legacyFingerprint
+    ? { confidence: "verified", backfillContent: input.currentContent }
+    : { confidence: "conservative", backfillContent: null };
 }
 
 export function deriveOfficialTeamUpdateState(input: {

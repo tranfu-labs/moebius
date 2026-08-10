@@ -5,7 +5,9 @@ import type {
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
+import type { AgentExecutionProfile } from "@moebius/console-ui";
 import { SingleInFlightSettingsRequest } from "./settings-request-controller.js";
+import { planConsoleErrorMessage } from "./console-state-plan.js";
 import {
   INITIAL_DESKTOP_SETTINGS_STATE,
   decideSettingsPortAvailability,
@@ -21,6 +23,8 @@ export interface DesktopSettingsPort {
   installUpdate?: () => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   openExternalLink?: (url: string) => Promise<void>;
+  getDefaultAgent?: () => Promise<{ profile: AgentExecutionProfile; saved: boolean }>;
+  saveDefaultAgent?: (request: { profile: AgentExecutionProfile }) => Promise<{ profile: AgentExecutionProfile; saved: boolean }>;
 }
 
 export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
@@ -39,6 +43,9 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     }).catch(() => undefined);
     void api?.readUpdateState?.().then((state) => {
       if (active) dispatch({ type: "update-state-received", state });
+    }).catch(() => undefined);
+    void api?.getDefaultAgent?.().then(({ profile }) => {
+      if (active) dispatch({ type: "default-agent-loaded", profile });
     }).catch(() => undefined);
     const unsubscribe = api?.onUpdateState?.((state) => {
       if (active) dispatch({ type: "update-state-received", state });
@@ -95,11 +102,30 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     await api!.installUpdate!();
   }, [api]);
 
+  const onSaveDefaultAgent = useCallback(async (profile: AgentExecutionProfile) => {
+    const availability = decideSettingsPortAvailability(api?.saveDefaultAgent !== undefined);
+    if (availability.kind === "unavailable") {
+      dispatch({ type: "default-agent-save-failed", error: "default agent service unavailable" });
+      return;
+    }
+    dispatch({ type: "default-agent-save-started" });
+    try {
+      const response = await api!.saveDefaultAgent!({ profile });
+      dispatch({ type: "default-agent-save-finished", profile: response.profile });
+    } catch (error) {
+      dispatch({
+        type: "default-agent-save-failed",
+        error: planConsoleErrorMessage(error),
+      });
+    }
+  }, [api]);
+
   return {
     ...planDesktopSettingsView(state),
     onCheckSettingsUpdates,
     onCopySettingsVersion,
     onOpenSettingsExternalLink,
     onInstallUpdate,
+    onSaveDefaultAgent,
   };
 }

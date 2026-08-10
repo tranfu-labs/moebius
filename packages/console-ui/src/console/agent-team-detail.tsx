@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -15,16 +16,16 @@ import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
 import {
   AgentMarkdownMentionEditor,
   CopyableAgentSlug,
+  type AgentMarkdownChangeMarker,
 } from "@/console/agent-markdown-mention-editor";
 import {
-  findExecutionModel,
-  findPiExecutionModel,
-  isRegisteredExecutionEffort,
-  listExecutionModels,
-  PI_EXECUTION_MODELS,
-  resolveProfileForCli,
-  resolveProfileForModel,
-} from "@/console/execution-profile-registry";
+  AgentMarkdownRevisionTimeline,
+  type AgentMarkdownRevisionEntry,
+} from "@/console/agent-markdown-revision-timeline";
+import {
+  ExecutionProfileFields,
+  isExecutionProfileValid,
+} from "@/console/execution-profile-fields";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
@@ -134,6 +135,16 @@ export interface AgentTeamMemberEditorState {
   externalChangeStatus: "none" | "reloaded" | "conflict";
   displayName: string;
   description: string;
+  /**
+   * One-line "recent change" summary shown above the editor; absent when the member has no revision yet.
+   * Semantics (deliberate, see `docs/product/pages/agent-teams.md` change timeline): always the LATEST
+   * revision regardless of author — no weighting for the user's own edits. The line must stay predictable
+   * ("which change is newest"), the moment a user wants to confirm their own latest edit it is the newest
+   * line anyway, and earlier own edits are fully visible in the expanded timeline.
+   */
+  recentChange?: { summary: string; authorLabel: string; timeLabel: string } | null;
+  changeMarkers?: readonly AgentMarkdownChangeMarker[];
+  revisionTimeline?: readonly AgentMarkdownRevisionEntry[];
 }
 
 export interface AgentTeamSaveAllFailureView {
@@ -159,6 +170,12 @@ export interface AgentOfficialUpdateResult {
     renamed: Array<{ from: string; to: string }>;
     recommendationChanged: string[];
   };
+}
+
+export interface AgentOfficialSyncBannerView {
+  officialVersion: string;
+  changeSummary: string;
+  affectedMemberCount: number;
 }
 
 export type AgentTeamGuardedAction = (action: () => void | Promise<void>) => void;
@@ -197,6 +214,19 @@ export interface AgentTeamDetailProps {
   onOpenProviderSettings?(): void;
   onApplyOfficialUpdate?(): Promise<AgentOfficialUpdateResult>;
   onOpenCopiedTeam?(teamId: string): void;
+  onRestoreRevision?(memberSlug: string, revisionId: string): void | Promise<void>;
+  officialSyncBanner?: AgentOfficialSyncBannerView | null;
+  onViewSyncChanges?(): void;
+  /**
+   * Incrementing request from a container-owned surface (e.g. the "recent official sync"
+   * panel next to the detail page's team actions) asking the component to run the same
+   * select-first-changed-member / expand-timeline / scroll-to-marker behavior as the
+   * banner's "see what changed" button. `null`/`undefined` means "no request"; the
+   * component never reacts to a request that predates its own mount.
+   */
+  viewSyncChangesSignal?: number | null;
+  onRevertSync?(): void | Promise<void>;
+  onDismissSyncBanner?(): void;
   onLeave(): void;
 }
 
@@ -228,6 +258,12 @@ export function AgentTeamDetail({
   onOpenProviderSettings,
   onApplyOfficialUpdate,
   onOpenCopiedTeam,
+  onRestoreRevision,
+  officialSyncBanner,
+  onViewSyncChanges,
+  viewSyncChangesSignal,
+  onRevertSync,
+  onDismissSyncBanner,
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
   const { t } = useI18n();
@@ -247,6 +283,9 @@ export function AgentTeamDetail({
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
+  const [expandedTimelineMemberSlug, setExpandedTimelineMemberSlug] = useState<string | null>(null);
+  const pendingSyncChangesTargetRef = useRef<string | null>(null);
+  const lastViewSyncChangesSignalRef = useRef<number | null>(null);
   const orderedMembers = useMemo(() => orderAgentTeamMembers(team), [team]);
   const availableMembers = orderedMembers.filter((member) => member.available !== false);
   const selectedMember = orderedMembers.find((member) => member.slug === state.selectedMemberSlug) ?? null;
@@ -289,35 +328,7 @@ export function AgentTeamDetail({
   const canAddMember = !readOnly
     && team.status !== "needs-repair"
     && onAddMember !== undefined;
-  const profileModelError = profileDraft !== null && profileDraft.model.trim().length === 0
-    ? t("console.agentTeamDetail.enterModel")
-    : null;
-  const profileEffortError = profileDraft !== null && profileDraft.effort.trim().length === 0
-    ? t("console.agentTeamDetail.enterEffort")
-    : null;
-  const selectedProviderProfile = profileDraft?.cli === "pi"
-    ? providerProfiles.find((profile) => profile.id === profileDraft.providerProfileId) ?? null
-    : null;
-  const selectableProviderProfiles = providerProfiles.filter((profile) => profile.readiness === "ready");
-  const profileProviderError = profileDraft?.cli === "pi" && (
-    selectedProviderProfile === null
-    || selectedProviderProfile.readiness !== "ready"
-  ) ? t("console.agentTeamDetail.selectReadyProviderProfile") : null;
-  const profileDraftValid = profileDraft !== null
-    && profileModelError === null
-    && profileEffortError === null
-    && profileProviderError === null
-    && (profileDraft.cli !== "pi" || selectedProviderProfile?.verifiedModels.includes(profileDraft.model as "deepseek-v4-flash" | "deepseek-v4-pro") === true);
-  const profileModelDefinition = profileDraft === null
-    ? null
-    : profileDraft.cli === "pi"
-      ? findPiExecutionModel(profileDraft.model)
-      : findExecutionModel(profileDraft.cli, profileDraft.model);
-  const profileModelUnsupported = profileDraft !== null && profileModelDefinition === null;
-  const profileEffortUnsupported = profileDraft !== null
-    && !(profileDraft.cli === "pi"
-      ? findPiExecutionModel(profileDraft.model)?.efforts.includes(profileDraft.effort) === true
-      : isRegisteredExecutionEffort(profileDraft.cli, profileDraft.model, profileDraft.effort));
+  const profileDraftValid = profileDraft !== null && isExecutionProfileValid(profileDraft, providerProfiles);
 
   useEffect(() => {
     const teamChanged = profileEditorsTeamKeyRef.current !== team.teamKey;
@@ -362,6 +373,76 @@ export function AgentTeamDetail({
     window.addEventListener("focus", check);
     return () => window.removeEventListener("focus", check);
   }, [onCheckExternalChange, selectedEditor?.loadStatus, selectedMember]);
+
+  /**
+   * "See what changed" is component-owned behavior, NOT a container callback: it selects the first
+   * member changed by the latest official sync (preferring official/agent-authored markers — the
+   * sync's own revisions — over user-only edits), expands that member's timeline and scrolls to its
+   * first change marker. `onViewSyncChanges` stays as an optional side notification for containers
+   * that want to react, but the button must work without it.
+   */
+  const performViewSyncChanges = () => {
+    const changedMembers = orderedMembers.filter((member) => {
+      const markers = state.memberEditors[member.slug]?.changeMarkers ?? [];
+      return markers.length > 0;
+    });
+    const firstSyncChanged = changedMembers.find((member) =>
+      (state.memberEditors[member.slug]?.changeMarkers ?? [])
+        .some((marker) => marker.authorKind !== "user"));
+    const firstChangedMember = firstSyncChanged ?? changedMembers[0];
+    if (firstChangedMember === undefined) {
+      onViewSyncChanges?.();
+      return;
+    }
+    if (selectedMember?.slug !== firstChangedMember.slug) {
+      onSelectMember(firstChangedMember.slug);
+    }
+    setExpandedTimelineMemberSlug(firstChangedMember.slug);
+    pendingSyncChangesTargetRef.current = firstChangedMember.slug;
+    onViewSyncChanges?.();
+  };
+  const performViewSyncChangesRef = useRef(performViewSyncChanges);
+  performViewSyncChangesRef.current = performViewSyncChanges;
+
+  useEffect(() => {
+    const signal = viewSyncChangesSignal;
+    if (signal === null || signal === undefined || signal === lastViewSyncChangesSignalRef.current) {
+      return;
+    }
+    lastViewSyncChangesSignalRef.current = signal;
+    performViewSyncChangesRef.current();
+  }, [viewSyncChangesSignal]);
+
+  useEffect(() => {
+    const targetSlug = pendingSyncChangesTargetRef.current;
+    if (targetSlug === null || selectedMember?.slug !== targetSlug) {
+      // The container may switch the member asynchronously; keep the request
+      // pending until the target member is actually the one being rendered.
+      return;
+    }
+    pendingSyncChangesTargetRef.current = null;
+    const markers = state.memberEditors[targetSlug]?.changeMarkers ?? [];
+    if (markers.length === 0) {
+      return;
+    }
+    const scrollToFirstMarker = (attempt = 0) => {
+      // Change markers render in the marker overlay next to the editable region
+      // (never inside contentEditable), so query the document for the first one.
+      const firstMarker = document.querySelector<HTMLElement>("[data-change-marker]");
+      if (firstMarker === null || firstMarker === undefined || typeof firstMarker.scrollIntoView !== "function") {
+        // The overlay may commit one frame after the member switch; a bounded
+        // retry covers the mount path (and jsdom, where measurement commits late).
+        if (attempt < 5) {
+          window.setTimeout(() => scrollToFirstMarker(attempt + 1), 0);
+        }
+        return;
+      }
+      const reduceMotion = typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      firstMarker.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    };
+    scrollToFirstMarker();
+  }, [state.selectedMemberSlug, expandedTimelineMemberSlug]);
 
   const requestGuardedAction: AgentTeamGuardedAction = (action) => {
     if (hasExternalConflicts) {
@@ -570,6 +651,42 @@ export function AgentTeamDetail({
           </div>
           {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
         </div>
+
+        {team.ownership === "system" && officialSyncBanner !== undefined && officialSyncBanner !== null ? (
+          <div className="mt-5 border-l-2 border-accent/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-official-sync-banner">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  {t("console.agentTeamDetail.syncedTo", {
+                    version: officialSyncBanner.officialVersion,
+                    count: officialSyncBanner.affectedMemberCount,
+                  })}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-sub">{officialSyncBanner.changeSummary}</p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm p-1 text-sub hover:bg-hover hover:text-ink"
+                aria-label={t("console.agentTeamDetail.dismissSyncBanner")}
+                onClick={onDismissSyncBanner}
+              >
+                <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              {/* Always works without a container callback: the select/expand/scroll
+                  behavior is component-owned (see performViewSyncChanges above). */}
+              <Button type="button" variant="outline" size="sm" onClick={performViewSyncChanges}>
+                {t("console.agentTeamDetail.viewSyncChanges")}
+              </Button>
+              {onRevertSync !== undefined ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => requestGuardedAction(onRevertSync)}>
+                  {t("console.agentTeamDetail.revertSync")}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {team.ownership === "system" && team.officialManagement?.updateStatus === "available" ? (
           <div className="mt-5 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status">
@@ -1027,122 +1144,18 @@ export function AgentTeamDetail({
               </div>
               {profileDraft !== null && profileDocument !== null ? (
                 <>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <label className="grid gap-1.5 text-xs text-hint">
-                      {t("console.agentTeamDetail.executionEngineLabel")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.executionEngineLabel")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
-                        value={profileDraft.cli}
-                        disabled={readOnly || profileStatus === "saving"}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                          draft: resolveProfileForEngine(event.currentTarget.value as AgentExecutionProfile["cli"], selectableProviderProfiles),
-                          error: null,
-                        })}
-                      >
-                        <option value="codex">Codex</option>
-                        <option value="claude">Claude Code</option>
-                        <option value="kimi">Kimi</option>
-                        <option value="pi">Pi API</option>
-                      </select>
-                    </label>
-                    {profileDraft.cli === "pi" ? (
-                      <label className="grid gap-1.5 text-xs text-hint">
-                        Provider
-                        <select
-                          aria-label="Provider"
-                          className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
-                          value={profileDraft.providerProfileId}
-                          disabled={readOnly || profileStatus === "saving"}
-                          aria-invalid={profileProviderError !== null}
-                          onChange={(event) => updateProfileEditor(selectedMember.slug, {
-                            draft: resolvePiProviderProfile(event.currentTarget.value, selectableProviderProfiles),
-                            error: null,
-                          })}
-                        >
-                          <option value="">{t("console.agentTeamDetail.selectProviderProfilePlaceholder")}</option>
-                          {selectedProviderProfile !== null && selectedProviderProfile.readiness !== "ready" ? (
-                            <option value={selectedProviderProfile.id}>
-                              {t("console.agentTeamDetail.providerUnavailableOption", {
-                                providerName: selectedProviderProfile.providerName,
-                                displayName: selectedProviderProfile.displayName,
-                              })}
-                            </option>
-                          ) : null}
-                          {selectableProviderProfiles.map((profile) => (
-                            <option key={profile.id} value={profile.id}>{profile.providerName} · {profile.displayName}</option>
-                          ))}
-                        </select>
-                        {profileProviderError !== null ? <span className="text-danger">{profileProviderError}</span> : null}
-                        {selectableProviderProfiles.length === 0 && onOpenProviderSettings !== undefined ? (
-                          <button type="button" className="w-fit text-xs text-accent hover:underline" onClick={onOpenProviderSettings}>
-                            {t("console.agentTeamDetail.goToProviderSettings")}
-                          </button>
-                        ) : null}
-                      </label>
-                    ) : null}
-                    <label className="grid gap-1.5 text-xs text-hint">
-                      Model
-                      <select
-                        aria-label="Model"
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
-                        value={profileDraft.model}
-                        disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileModelError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...resolveSelectedModel(profileDraft, event.currentTarget.value),
-                        }, error: null })}
-                      >
-                        {profileDraft.cli === "pi" && profileDraft.model === "" ? (
-                          <option value="">{t("console.agentTeamDetail.selectVerifiedModelPlaceholder")}</option>
-                        ) : null}
-                        {profileModelUnsupported && profileDraft.model !== "" ? (
-                          <option value={profileDraft.model}>
-                            {t("console.agentTeamDetail.legacyModelOption", { model: profileDraft.model })}
-                          </option>
-                        ) : null}
-                        {(profileDraft.cli === "pi"
-                          ? PI_EXECUTION_MODELS.filter((model) => selectedProviderProfile?.verifiedModels.includes(model.value as "deepseek-v4-flash" | "deepseek-v4-pro") === true)
-                          : listExecutionModels(profileDraft.cli)).map((model) => (
-                          <option key={model.value} value={model.value}>
-                            {model.membershipRestricted
-                              ? t("console.agentTeamDetail.membershipModelOption", { model: model.label })
-                              : model.label}
-                          </option>
-                        ))}
-                      </select>
-                      {profileModelError !== null ? <span className="text-danger">{profileModelError}</span> : null}
-                    </label>
-                    <label className="grid gap-1.5 text-xs text-hint">
-                      {t("console.agentTeamDetail.effort")}
-                      <select
-                        aria-label={t("console.agentTeamDetail.effort")}
-                        className="h-9 rounded-md border border-line bg-card px-2 text-sm text-ink"
-                        value={profileDraft.effort}
-                        disabled={readOnly || profileStatus === "saving"}
-                        aria-invalid={profileEffortError !== null}
-                        onChange={(event) => updateProfileEditor(selectedMember.slug, { draft: {
-                          ...profileDraft,
-                          effort: event.currentTarget.value,
-                        }, error: null })}
-                      >
-                        {profileEffortUnsupported ? (
-                          <option value={profileDraft.effort}>
-                            {t("console.agentTeamDetail.legacyEffortOption", { effort: profileDraft.effort })}
-                          </option>
-                        ) : null}
-                        {profileModelDefinition?.efforts.map((effort) => (
-                          <option key={effort} value={effort}>{effort}</option>
-                        ))}
-                      </select>
-                      {profileEffortError !== null ? <span className="text-danger">{profileEffortError}</span> : null}
-                    </label>
+                  <div className="mt-4">
+                    <ExecutionProfileFields
+                      profile={profileDraft}
+                      disabled={readOnly || profileStatus === "saving"}
+                      providerProfiles={providerProfiles}
+                      onOpenProviderSettings={onOpenProviderSettings}
+                      onChange={(nextProfile) => updateProfileEditor(selectedMember.slug, {
+                        draft: nextProfile,
+                        error: null,
+                      })}
+                    />
                   </div>
-                  {profileModelUnsupported || profileEffortUnsupported ? (
-                    <p className="mt-3 text-sm text-sub" role="status">
-                      {t("console.agentTeamDetail.legacyProfileNotice")}
-                    </p>
-                  ) : null}
                   <p className="mt-3 text-sm text-sub">
                     {t("console.agentTeamDetail.runtimeValidationNotice")}
                   </p>
@@ -1209,15 +1222,53 @@ export function AgentTeamDetail({
               )}
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <label htmlFor="agent-team-markdown-editor" className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
-                AGENT.md
-              </label>
-              <div className="flex items-center gap-1 text-xs text-hint">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <label htmlFor="agent-team-markdown-editor" className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+                  AGENT.md
+                </label>
+                {selectedEditor.recentChange !== undefined && selectedEditor.recentChange !== null ? (
+                  <span className="text-xs text-sub">
+                    {t("console.agentTeamDetail.recentChange", { summary: selectedEditor.recentChange.summary })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-hint">
                 {readOnly ? <span>{t("console.agentTeamDetail.readOnlyPrefix")}</span> : null}
                 <CopyableAgentSlug slug={selectedMember.slug} />
+                {selectedEditor.revisionTimeline !== undefined ? (
+                  <button
+                    type="button"
+                    data-testid="agent-team-markdown-timeline-toggle"
+                    className="inline-flex items-center gap-0.5 text-xs text-hint hover:text-ink"
+                    aria-expanded={expandedTimelineMemberSlug === selectedMember.slug}
+                    onClick={() => setExpandedTimelineMemberSlug((current) =>
+                      current === selectedMember.slug ? null : selectedMember.slug)}
+                  >
+                    {t("console.agentTeamDetail.viewAllChanges")}
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 transition-transform motion-reduce:transition-none",
+                        expandedTimelineMemberSlug === selectedMember.slug && "rotate-180",
+                      )}
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                  </button>
+                ) : null}
               </div>
             </div>
+            {expandedTimelineMemberSlug === selectedMember.slug && selectedEditor.revisionTimeline !== undefined ? (
+              <div className="mt-3">
+                <AgentMarkdownRevisionTimeline
+                  memberDisplayName={selectedEditor.displayName || selectedMember.displayName || `@${selectedMember.slug}`}
+                  entries={selectedEditor.revisionTimeline}
+                  onRestore={onRestoreRevision === undefined
+                    ? undefined
+                    : (revisionId) => void onRestoreRevision(selectedMember.slug, revisionId)}
+                />
+              </div>
+            ) : null}
             <AgentMarkdownMentionEditor
               id="agent-team-markdown-editor"
               value={selectedEditor.draftMarkdown}
@@ -1225,6 +1276,7 @@ export function AgentTeamDetail({
               label={`${selectedEditor.displayName || selectedMember.displayName || selectedMember.slug} AGENT.md`}
               readOnly={readOnly}
               disabled={selectedEditor.saveStatus === "saving"}
+              changeMarkers={selectedEditor.changeMarkers}
               onValueChange={(agentMarkdown) => onChangeMember(selectedMember.slug, agentMarkdown)}
             />
 
@@ -1520,48 +1572,6 @@ function providerProfileIdentity(profile: AgentExecutionProfile): string {
   return profile.cli === "pi" ? profile.providerProfileId : "";
 }
 
-function resolveProfileForEngine(
-  engine: AgentExecutionProfile["cli"],
-  providers: readonly AgentExecutionProviderProfile[],
-): AgentExecutionProfile {
-  if (engine !== "pi") return resolveProfileForCli(engine);
-  return providers.length === 1
-    ? resolvePiProviderProfile(providers[0]!.id, providers)
-    : { cli: "pi", providerId: "deepseek", providerProfileId: "", model: "", effort: "high" };
-}
-
-function resolvePiProviderProfile(
-  profileId: string,
-  providers: readonly AgentExecutionProviderProfile[],
-): AgentExecutionProfile {
-  const profile = providers.find((candidate) => candidate.id === profileId);
-  const model = profile?.defaultModel !== null
-    && profile?.verifiedModels.includes(profile.defaultModel) === true
-    ? profile.defaultModel
-    : "";
-  return {
-    cli: "pi",
-    providerId: "deepseek",
-    providerProfileId: profile?.id ?? "",
-    model,
-    effort: findPiExecutionModel(model)?.defaultEffort ?? "high",
-  };
-}
-
-function resolveSelectedModel(
-  profile: AgentExecutionProfile,
-  model: string,
-): AgentExecutionProfile {
-  if (profile.cli !== "pi") return resolveProfileForModel(profile, model);
-  const definition = findPiExecutionModel(model);
-  return {
-    ...profile,
-    model,
-    effort: profile.model !== "" && definition?.efforts.includes(profile.effort) === true
-      ? profile.effort
-      : definition?.defaultEffort ?? profile.effort,
-  };
-}
 
 function createProfileEditors(
   team: AgentTeamDetailTeam,

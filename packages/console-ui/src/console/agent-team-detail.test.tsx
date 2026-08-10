@@ -99,7 +99,7 @@ describe("AgentTeamDetail", () => {
     />);
     const tabs = within(screen.getByTestId("agent-team-member-selector")).getAllByRole("tab");
     expect(tabs[0]).toHaveTextContent("开发· 主 Agent");
-    expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).toHaveTextContent("下一步交给 @dev。");
     expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
       .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
     expect(screen.getAllByLabelText("未保存")).toHaveLength(1);
@@ -159,7 +159,7 @@ describe("AgentTeamDetail", () => {
     }));
     const { rerender } = renderDetail({ state: baseState });
 
-    expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).toHaveTextContent("下一步交给 @dev。");
     const rawMarkdown = screen.getByRole("textbox", { name: "开发经理 AGENT.md" });
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
 
@@ -177,7 +177,7 @@ describe("AgentTeamDetail", () => {
       },
     })} />);
 
-    expect(screen.getByRole("button", { name: "软件工程师，复制 @dev" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" })).toHaveTextContent("下一步交给 @dev。");
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
   });
 
@@ -713,10 +713,205 @@ describe("AgentTeamDetail", () => {
     expect(screen.getByRole("tab", { name: /开发经理.*不可用/u })).toBeVisible();
     expect(screen.getByRole("button", { name: "删除 Agent" })).toBeVisible();
   });
+
+  it("selects the first sync-changed member, expands its timeline and scrolls to its first marker from the banner button without a container callback", () => {
+    const scrollIntoView = stubScrollIntoView();
+    const onSelectMember = vi.fn();
+    const base = detailProps({
+      onSelectMember,
+      state: {
+        teamKey: "user:development",
+        selectedMemberSlug: "manager",
+        memberEditors: {
+          manager: { ...managerEditor(), isDirty: false, changeMarkers: [] },
+          dev: {
+            ...managerEditor(),
+            memberSlug: "dev",
+            displayName: "开发",
+            description: "负责实现",
+            isDirty: false,
+            recentChange: { summary: "官方 v2 更新了 1 处", authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "official",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              previousText: "旧文本",
+            }],
+            revisionTimeline: [{
+              id: "dev-r2",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              summary: "官方更新",
+              summaryStatus: "ready",
+            }],
+          },
+          qa: { ...managerEditor(), memberSlug: "qa", displayName: "测试", description: "负责验收", isDirty: false },
+        },
+        saveAllFailures: [],
+      },
+    });
+    const { rerender } = render(<AgentTeamDetail
+      {...base}
+      team={{ ...base.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    // 横幅按钮在没有容器回调时也必须可用（行为是组件自有的）。
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).toHaveBeenCalledWith("dev");
+
+    // 容器异步响应切换后，目标成员渲染出来：时间线展开并滚动到第一个标记。
+    rerender(<AgentTeamDetail
+      {...base}
+      team={{ ...base.team, ownership: "system" }}
+      state={{ ...base.state, selectedMemberSlug: "dev" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+  });
+
+  it("expands the timeline and scrolls without switching when the first changed member is already selected", () => {
+    const scrollIntoView = stubScrollIntoView();
+    const onSelectMember = vi.fn();
+    const props = detailProps({
+      onSelectMember,
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: { summary: "官方 v2 更新了 1 处", authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "official",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          previousText: "旧文本",
+        }],
+        revisionTimeline: [{
+          id: "r2",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          summary: "官方更新",
+          summaryStatus: "ready",
+        }],
+      })),
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).not.toHaveBeenCalled();
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers official-authored markers over user-only edits when picking the first changed member", () => {
+    const onSelectMember = vi.fn();
+    const props = detailProps({
+      onSelectMember,
+      state: {
+        teamKey: "user:development",
+        selectedMemberSlug: "manager",
+        memberEditors: {
+          manager: {
+            ...managerEditor(),
+            isDirty: false,
+            recentChange: { summary: "你把返工上限改成两轮", authorLabel: "你", timeLabel: "2026-08-03" },
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "user",
+              authorLabel: "你",
+              timeLabel: "2026-08-03",
+              previousText: "三轮",
+            }],
+          },
+          dev: {
+            ...managerEditor(),
+            memberSlug: "dev",
+            displayName: "开发",
+            description: "负责实现",
+            isDirty: false,
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "official",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              previousText: null,
+            }],
+            revisionTimeline: [{
+              id: "dev-r2",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              summary: "官方更新",
+              summaryStatus: "ready",
+            }],
+          },
+          qa: { ...managerEditor(), memberSlug: "qa", displayName: "测试", description: "负责验收", isDirty: false },
+        },
+        saveAllFailures: [],
+      },
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).toHaveBeenCalledWith("dev");
+  });
+
+  it("honors the view-changes signal raised by a container-owned surface", async () => {
+    const scrollIntoView = stubScrollIntoView();
+    const props = detailProps({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "official",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          previousText: "旧文本",
+        }],
+        revisionTimeline: [{
+          id: "r2",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          summary: "官方更新",
+          summaryStatus: "ready",
+        }],
+      })),
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      viewSyncChangesSignal={1}
+    />);
+
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    // The marker overlay commits one frame after the member switch; the scroll
+    // uses a bounded retry, so wait for it asynchronously.
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  });
 });
 
 function renderDetail(overrides: Partial<AgentTeamDetailProps> = {}) {
   return render(<AgentTeamDetail {...detailProps(overrides)} />);
+}
+
+/** jsdom does not implement `scrollIntoView`; expose a spy on the prototype for scroll assertions. */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: spy,
+  });
+  return spy;
 }
 
 function detailProps(overrides: Partial<AgentTeamDetailProps> = {}): AgentTeamDetailProps {

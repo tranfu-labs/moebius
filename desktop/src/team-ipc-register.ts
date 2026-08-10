@@ -6,6 +6,8 @@ import { TEAM_FILE_MANAGER_IPC_CHANNEL } from "./team-file-manager-contract.js";
 import { TEAM_IPC_CHANNELS } from "./team-ipc-contract.js";
 import { TEAM_REPAIR_IPC_CHANNELS } from "./team-repair-contract.js";
 import type { AgentTeamService } from "./team-ipc.js";
+import type { AgentRevisionService } from "./agent-revision-service.js";
+import { parseMemberRequest } from "./team-service-plan.js";
 
 export interface TeamIpcRegistrationOptions {
   ipcMain: Pick<IpcMain, "handle">;
@@ -24,6 +26,14 @@ export interface TeamIpcRegistrationOptions {
   service: AgentTeamService;
   moveToTrash(targetPath: string): Promise<void>;
   relocationDialogOptions(): OpenDialogOptions;
+  revisions?: {
+    listMemberRevisions(request: unknown): Promise<unknown>;
+    restoreMemberRevision(request: unknown): Promise<unknown>;
+    getDefaultAgent(): Promise<unknown>;
+    saveDefaultAgent(request: unknown): Promise<unknown>;
+  };
+  /** Records a durable revision after every successful in-app AGENT.md write. */
+  revisionService?: AgentRevisionService;
 }
 
 export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
@@ -38,8 +48,21 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
     await service.createAgentTeam(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.readMember, async (_event, request: unknown) =>
     await service.readAgentTeamMember(options.dataRoot, request));
-  ipcMain.handle(TEAM_IPC_CHANNELS.writeMember, async (_event, request: unknown) =>
-    await service.writeAgentTeamMember(options.dataRoot, request));
+  ipcMain.handle(TEAM_IPC_CHANNELS.writeMember, async (_event, request: unknown) => {
+    const document = await service.writeAgentTeamMember(options.dataRoot, request);
+    if (options.revisionService !== undefined) {
+      const member = parseMemberRequest(request);
+      await options.revisionService.recordMemberRevision({
+        teamStableId: member.teamId,
+        memberSlug: member.memberSlug,
+        content: document.agentMarkdown,
+        authorKind: "user",
+        authorLabel: null,
+        now: new Date().toISOString(),
+      });
+    }
+    return document;
+  });
   ipcMain.handle(TEAM_IPC_CHANNELS.addMember, async (_event, request: unknown) =>
     await service.addAgentTeamMember(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.updateInformation, async (_event, request: unknown) =>
@@ -82,4 +105,14 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
     await options.readPreference());
   ipcMain.handle(TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS.recordSuccessful, async (_event, request: unknown) =>
     await options.recordPreference(request));
+  if (options.revisions !== undefined) {
+    ipcMain.handle(TEAM_IPC_CHANNELS.memberRevisionsList, async (_event, request: unknown) =>
+      await options.revisions!.listMemberRevisions(request));
+    ipcMain.handle(TEAM_IPC_CHANNELS.memberRevisionRestore, async (_event, request: unknown) =>
+      await options.revisions!.restoreMemberRevision(request));
+    ipcMain.handle(TEAM_IPC_CHANNELS.defaultAgentGet, async () =>
+      await options.revisions!.getDefaultAgent());
+    ipcMain.handle(TEAM_IPC_CHANNELS.defaultAgentSave, async (_event, request: unknown) =>
+      await options.revisions!.saveDefaultAgent(request));
+  }
 }

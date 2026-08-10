@@ -29,4 +29,9 @@ export const en = {
   "dialog.install.runningTitle": "Stop tasks to restart and install",
   "dialog.install.runningMessage": "{count} task(s) are still running.",
   "dialog.install.detail": "Session records will be preserved. Moebius will close safely and reopen after confirmation.",
+  "agentTeam.revisionTime.justNow": "just now",
+  "agentTeam.revisionTime.minutesAgo": "{minutes} min ago",
+  "agentTeam.revisionTime.hoursAgo": "{hours} h ago",
+  "agentTeam.revisionTime.daysAgo": "{days} days ago",
+  "agentTeam.author.you": "You",
 } as const satisfies Record<DesktopTranslationKey, string>;

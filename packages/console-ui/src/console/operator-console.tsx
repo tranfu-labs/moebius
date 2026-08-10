@@ -4,12 +4,14 @@ import {
   Diamond,
   Ellipsis,
   FileText,
+  LoaderCircle,
   MessagesSquare,
   PanelLeft,
   PanelLeftClose,
   PanelRight,
   PanelRightClose,
   Plus,
+  CircleCheck,
   CircleHelp,
   RefreshCw,
   Search,
@@ -41,6 +43,7 @@ import {
 import {
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
+  type AgentExecutionProviderProfile,
   type AgentOfficialUpdateResult,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
@@ -108,10 +111,19 @@ import {
 } from "@/console/conversation-sidebar";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
-import { SessionTeamUpdateNotice, type SessionTeamUpdateViewState } from "@/console/session-team-update-notice";
+import {
+  SessionTeamUpdateDetailDialog,
+  type SessionTeamUpdateDetailView,
+} from "@/console/session-team-update-detail-dialog";
+import {
+  SessionTeamUpdateNotice,
+  type SessionTeamUpdateCategoryKind,
+  type SessionTeamUpdateViewState,
+} from "@/console/session-team-update-notice";
 import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
 import {
   SettingsDialog,
+  type DefaultAgentSettingsState,
   type LanguageSaveStatus,
   type SettingsAboutState,
   type SettingsSection,
@@ -180,6 +192,9 @@ export type OperatorSessionStatus =
   | "failed"
   | "interrupted";
 export type OperatorApplicationView = "conversation" | "agent-teams";
+export type TeamSyncStatusView =
+  | { kind: "syncing"; teamNames: readonly string[] }
+  | { kind: "updated" };
 export type OperatorProjectListState = "ready" | "loading" | "error";
 export type OperatorApplicationOverlay = { kind: "search" };
 
@@ -491,9 +506,12 @@ export interface OperatorConsoleProps {
   lastUsedAgentTeamKey?: string | null;
   conversationAgentTeamKey?: string | null;
   sessionTeamUpdate?: SessionTeamUpdateViewState;
+  sessionTeamUpdateDetailView?: SessionTeamUpdateDetailView | null;
   onApplySessionTeamUpdate?: () => void;
   onRetrySessionTeamUpdate?: () => void;
   onCancelSessionTeamUpdate?: () => void;
+  onViewSessionTeamUpdate?: (kind: SessionTeamUpdateCategoryKind) => void;
+  onDismissSessionTeamUpdateCategory?: (kind: SessionTeamUpdateCategoryKind) => void;
   selectedAgentTeamKey?: string | null;
   selectedAgentTeamMemberSlug?: string | null;
   agentTeamDetailState?: AgentTeamDetailState | null;
@@ -507,6 +525,8 @@ export interface OperatorConsoleProps {
   languageSaveStatus?: LanguageSaveStatus;
   settingsAbout?: SettingsAboutState;
   providerSettings?: ProviderSettingsController;
+  defaultAgent?: DefaultAgentSettingsState;
+  defaultAgentProviderProfiles?: readonly AgentExecutionProviderProfile[];
   settingsExternalLinks?: {
     releaseNotes: string;
     feedback: string;
@@ -514,8 +534,11 @@ export interface OperatorConsoleProps {
   };
   onSelectLocale?: (locale: Locale) => void;
   onRetryLocaleSave?: () => void;
+  onSaveDefaultAgent?: (profile: AgentExecutionProfile) => void | Promise<void>;
   onCheckSettingsUpdates?: () => void;
   onInstallUpdate?: () => void;
+  teamSyncStatus?: TeamSyncStatusView | null;
+  onDismissTeamSyncStatus?: () => void;
   onCopySettingsVersion?: () => void;
   onOpenSettingsExternalLink?: (url: string) => Promise<void>;
   renderSearchOverlay?: (onClose: () => void) => ReactNode;
@@ -631,6 +654,11 @@ export interface OperatorConsoleProps {
     teamKey: string,
     memberSlug: string,
   ) => Promise<AgentExecutionProfileDocument>;
+  onRestoreAgentTeamRevision?: (
+    teamKey: string,
+    memberSlug: string,
+    revisionId: string,
+  ) => Promise<{ agentMarkdown: string } | null> | void;
   onApplyOfficialAgentTeamUpdate?: (
     teamKey: string,
   ) => Promise<AgentOfficialUpdateResult>;
@@ -710,9 +738,12 @@ export function OperatorConsole({
   lastUsedAgentTeamKey = null,
   conversationAgentTeamKey = null,
   sessionTeamUpdate = { status: "idle", categories: [] },
+  sessionTeamUpdateDetailView = null,
   onApplySessionTeamUpdate,
   onRetrySessionTeamUpdate,
   onCancelSessionTeamUpdate,
+  onViewSessionTeamUpdate,
+  onDismissSessionTeamUpdateCategory,
   selectedAgentTeamKey,
   selectedAgentTeamMemberSlug,
   agentTeamDetailState,
@@ -726,11 +757,16 @@ export function OperatorConsole({
   languageSaveStatus = "idle",
   settingsAbout,
   providerSettings,
+  defaultAgent,
+  defaultAgentProviderProfiles,
   settingsExternalLinks,
   onSelectLocale,
   onRetryLocaleSave,
+  onSaveDefaultAgent,
   onCheckSettingsUpdates,
   onInstallUpdate,
+  teamSyncStatus,
+  onDismissTeamSyncStatus,
   onCopySettingsVersion,
   onOpenSettingsExternalLink,
   renderSearchOverlay,
@@ -812,6 +848,7 @@ export function OperatorConsole({
   onSaveAllAgentTeamDrafts,
   onSaveAgentExecutionProfile,
   onRestoreAgentRecommendedProfile,
+  onRestoreAgentTeamRevision,
   onApplyOfficialAgentTeamUpdate,
   onDuplicateBuiltInAgentTeam,
   onRecheckAgentTeam,
@@ -971,6 +1008,7 @@ export function OperatorConsole({
   } | null>(null);
   const [conversationRouteConflictOpen, setConversationRouteConflictOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionTeamUpdateDetailOpen, setSessionTeamUpdateDetailOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [providerRecoveryTeamMenuOpen, setProviderRecoveryTeamMenuOpen] = useState(false);
   const [settingsExternalLinkStatus, setSettingsExternalLinkStatus] = useState<"idle" | "failed">("idle");
@@ -2033,7 +2071,30 @@ export function OperatorConsole({
                 }}
               />
             </div>
-            {settingsAbout?.updateStatus === "ready" ? (
+            {teamSyncStatus?.kind === "syncing" ? (
+              <SidebarAction
+                icon={LoaderCircle}
+                iconSpinning
+                label={t("console.operator.teamSyncing")}
+                tooltip={t("console.operator.teamSyncingTeams", {
+                  teams: teamSyncStatus.teamNames.map((name) => `「${name}」`).join(""),
+                })}
+                className="w-auto shrink-0 px-2"
+                testId="sidebar-team-sync-status"
+                onClick={() => setApplicationView("agent-teams")}
+              />
+            ) : teamSyncStatus?.kind === "updated" ? (
+              <SidebarAction
+                icon={CircleCheck}
+                label={t("console.operator.teamSyncUpdated")}
+                className="w-auto shrink-0 px-2"
+                testId="sidebar-team-sync-status"
+                onClick={() => {
+                  setApplicationView("agent-teams");
+                  onDismissTeamSyncStatus?.();
+                }}
+              />
+            ) : settingsAbout?.updateStatus === "ready" ? (
               <SidebarAction
                 icon={RefreshCw}
                 label={translate(activeLocale, "sidebar.installUpdate")}
@@ -2173,6 +2234,10 @@ export function OperatorConsole({
             onSaveAll={onSaveAllAgentTeamDrafts}
             onSaveExecutionProfile={onSaveAgentExecutionProfile}
             onRestoreRecommendedProfile={onRestoreAgentRecommendedProfile}
+            onRestoreRevision={onRestoreAgentTeamRevision === undefined
+              ? undefined
+              : (teamKey, memberSlug, revisionId) =>
+                  void onRestoreAgentTeamRevision(teamKey, memberSlug, revisionId)}
             onApplyOfficialUpdate={onApplyOfficialAgentTeamUpdate}
             onDuplicateBuiltInTeam={onDuplicateBuiltInAgentTeam}
             onRecheckTeam={onRecheckAgentTeam}
@@ -2544,6 +2609,11 @@ export function OperatorConsole({
                     onApply={onApplySessionTeamUpdate}
                     onRetry={onRetrySessionTeamUpdate}
                     onCancel={onCancelSessionTeamUpdate}
+                    onView={onViewSessionTeamUpdate === undefined ? undefined : (kind) => {
+                      onViewSessionTeamUpdate(kind);
+                      setSessionTeamUpdateDetailOpen(true);
+                    }}
+                    onDismissCategory={onDismissSessionTeamUpdateCategory}
                   />
                 </div>
                 {visiblePendingDispatches.length > 0 ? (
@@ -2920,6 +2990,9 @@ export function OperatorConsole({
           about={settingsAbout}
           providers={providerSettings}
           externalLinkStatus={settingsExternalLinkStatus}
+          defaultAgent={defaultAgent}
+          defaultAgentProviderProfiles={defaultAgentProviderProfiles}
+          onSaveDefaultAgent={onSaveDefaultAgent}
           onOpenChange={(open) => {
             settingsOpenRef.current = open;
             setSettingsOpen(open);
@@ -2935,6 +3008,17 @@ export function OperatorConsole({
           onOpenReleaseNotes={() => openSettingsExternalLink(settingsExternalLinks?.releaseNotes)}
           onOpenFeedback={() => openSettingsExternalLink(settingsExternalLinks?.feedback)}
           onOpenRepository={() => openSettingsExternalLink(settingsExternalLinks?.repository)}
+        />
+
+        <SessionTeamUpdateDetailDialog
+          open={sessionTeamUpdateDetailOpen}
+          view={sessionTeamUpdateDetailView}
+          onOpenChange={setSessionTeamUpdateDetailOpen}
+          onCancel={() => setSessionTeamUpdateDetailOpen(false)}
+          onApply={onApplySessionTeamUpdate === undefined ? undefined : () => {
+            onApplySessionTeamUpdate();
+            setSessionTeamUpdateDetailOpen(false);
+          }}
         />
 
         {settingsNotifications.length > 0 ? (
@@ -3474,7 +3558,9 @@ function DashboardLoadingState({ t }: { t: Translate }): JSX.Element {
 
 function SidebarAction({
   icon: Icon,
+  iconSpinning = false,
   label,
+  tooltip,
   selected = false,
   statusIndicatorLabel,
   onClick,
@@ -3485,7 +3571,11 @@ function SidebarAction({
   testId,
 }: {
   icon: LucideIcon;
+  /** Continuous spin, e.g. a syncing indicator; automatically cancelled under prefers-reduced-motion. */
+  iconSpinning?: boolean;
   label: string;
+  /** Overrides the hover/title text without changing the accessible label. */
+  tooltip?: string;
   selected?: boolean;
   statusIndicatorLabel?: string;
   onClick?: () => void;
@@ -3508,12 +3598,16 @@ function SidebarAction({
       aria-label={label}
       aria-current={selected ? "page" : undefined}
       aria-description={disabled ? disabledReason : undefined}
-      title={disabled ? disabledReason ?? label : label}
+      title={disabled ? disabledReason ?? label : tooltip ?? label}
       disabled={disabled}
       onClick={onClick}
     >
       <Icon
-        className={cn("h-4 w-4 shrink-0", selected ? "text-ink" : "text-sub")}
+        className={cn(
+          "h-4 w-4 shrink-0",
+          selected ? "text-ink" : "text-sub",
+          iconSpinning && "animate-spin motion-reduce:animate-none",
+        )}
         strokeWidth={1.5}
         aria-hidden="true"
       />

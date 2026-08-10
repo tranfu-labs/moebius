@@ -142,6 +142,9 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       providerSettings={props.providerSettings}
       onSelectLocale={props.language.selectLocale}
       onRetryLocaleSave={props.language.retry}
+      defaultAgentProviderProfiles={props.providerSettings.state.status === "ready"
+        ? props.providerSettings.state.profiles
+        : []}
       renderSearchOverlay={(close) => (
         <ConversationSearchOverlay
           {...props.desktopShell.conversationSearch}
@@ -286,12 +289,18 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onCreateAgentTeam={props.agentTeams.recordMutations.createTeam}
       onOpenAgentTeam={props.agentTeams.navigation.open}
       onCloseAgentTeam={props.agentTeams.intents.close}
-      onSelectAgentTeamMember={props.agentTeams.navigation.selectMember}
+      onSelectAgentTeamMember={(teamKey, memberSlug) => {
+        props.agentTeams.navigation.selectMember(teamKey, memberSlug);
+        props.agentTeams.openMemberRevisions(teamKey, memberSlug);
+      }}
       onChangeAgentTeamPrimaryAgent={props.agentTeams.profile.changePrimaryAgent}
       onAddAgentTeamMember={props.agentTeams.memberMutations.addMember}
       onUpdateAgentTeamInformation={props.agentTeams.recordMutations.updateInformation}
       onChangeAgentTeamMember={props.agentTeams.intents.changeMember}
-      onSaveAgentTeamMember={props.agentTeams.member.saveMember}
+      onSaveAgentTeamMember={async (teamKey, memberSlug) => {
+        await props.agentTeams.member.saveMember(teamKey, memberSlug);
+        props.agentTeams.revisions.refreshRevisions(teamKey, memberSlug);
+      }}
       onCheckAgentTeamMemberExternalChange={props.agentTeams.member.checkExternalChange}
       onLoadAgentTeamMemberExternalVersion={props.agentTeams.member.loadExternalVersion}
       onOverwriteAgentTeamMemberExternalVersion={props.agentTeams.member.overwriteExternal}
@@ -301,6 +310,8 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onSaveAllAgentTeamDrafts={props.agentTeams.member.saveAll}
       onSaveAgentExecutionProfile={props.agentTeams.profile.saveExecutionProfile}
       onRestoreAgentRecommendedProfile={props.agentTeams.profile.restoreRecommendedProfile}
+      onRestoreAgentTeamRevision={(teamKey, memberSlug, revisionId) =>
+        props.agentTeams.restoreMemberRevision(teamKey, memberSlug, revisionId)}
       onApplyOfficialAgentTeamUpdate={props.agentTeams.profile.applyOfficialUpdate}
       onDuplicateBuiltInAgentTeam={props.agentTeams.copy.duplicateBuiltIn}
       onRecheckAgentTeam={props.agentTeams.catalog.refresh}

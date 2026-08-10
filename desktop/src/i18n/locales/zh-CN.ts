@@ -27,4 +27,9 @@ export const zhCN = {
   "dialog.install.runningTitle": "重启安装前停止任务",
   "dialog.install.runningMessage": "当前有 {count} 项任务正在运行。",
   "dialog.install.detail": "会话记录会保留；确认后 Moebius 将安全收尾并重新打开。",
+  "agentTeam.revisionTime.justNow": "刚刚",
+  "agentTeam.revisionTime.minutesAgo": "{minutes} 分钟前",
+  "agentTeam.revisionTime.hoursAgo": "{hours} 小时前",
+  "agentTeam.revisionTime.daysAgo": "{days} 天前",
+  "agentTeam.author.you": "你",
 } as const;

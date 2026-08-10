@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { Translate } from "@moebius/console-ui";
+import type { DesktopLocale } from "../language-preference-contract.js";
 
 import type { DesktopApi } from "./desktop-api-contract.js";
 import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
@@ -11,12 +12,16 @@ import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
 import { useAgentTeamProfile } from "./use-agent-team-profile.js";
 import { useAgentTeamRecordMutations } from "./use-agent-team-record-mutations.js";
 import { useAgentTeamRegistration } from "./use-agent-team-registration.js";
+import { useAgentTeamRevisions } from "./use-agent-team-revisions.js";
 import {
   AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
   planAgentTeamFileManagerTranslationKey,
   planAgentTeamDetailState,
 } from "./agent-team-console-model.js";
 import {
+  applyAgentTeamMemberExternalChange,
+  applyAgentTeamMemberRestored,
+  clearAgentTeamMemberExternalChange,
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
   updateAgentTeamMemberDraft,
@@ -27,9 +32,11 @@ export function useAgentTeamConsole(
   storage: Storage,
   createDraftId: () => string,
   t: Translate,
+  locale: DesktopLocale,
 ) {
   const catalog = useAgentTeamCatalog(api);
   const member = useAgentTeamMemberEditor({ api, catalog, t });
+  const revisions = useAgentTeamRevisions({ api, catalog, t });
   const navigation = useAgentTeamNavigation({ catalog, member });
   const profile = useAgentTeamProfile({ api, catalog, t });
   const registration = useAgentTeamRegistration({ api, catalog, open: navigation.open, t });
@@ -53,15 +60,36 @@ export function useAgentTeamConsole(
     replaceTeams: catalog.replaceTeams,
     t,
   });
+  const now = useMemo(() => new Date().toISOString(), []);
   const detailState = useMemo(() => planAgentTeamDetailState({
     activeTeamKey: navigation.activeTeamKey,
     catalog: catalog.state,
     selection: catalog.selection,
     drafts: member.drafts,
     saveAllFailures: member.saveAllFailures,
+    revisions: revisions.revisions,
+    locale,
+    now,
     primaryAgentChange: profile.primaryAgentChange,
-  }), [catalog.selection, catalog.state, member.drafts, member.saveAllFailures,
-    navigation.activeTeamKey, profile.primaryAgentChange]);
+  }), [catalog.selection, catalog.state, locale, member.drafts, member.saveAllFailures,
+    navigation.activeTeamKey, now, profile.primaryAgentChange, revisions.revisions]);
+  const openMemberRevisions = useCallback((teamKey: string, memberSlug: string) => {
+    revisions.loadRevisions(teamKey, memberSlug);
+  }, [revisions]);
+  const restoreMemberRevision = useCallback(async (
+    teamKey: string,
+    memberSlug: string,
+    revisionId: string,
+  ): Promise<{ agentMarkdown: string }> => {
+    const restored = await revisions.restoreRevision(teamKey, memberSlug, revisionId);
+    member.commitDrafts(applyAgentTeamMemberRestored(
+      member.draftsRef.current,
+      teamKey,
+      memberSlug,
+      restored.agentMarkdown,
+    ));
+    return { agentMarkdown: restored.agentMarkdown };
+  }, [member, revisions]);
   const close = useCallback(() => {
     navigation.close();
     profile.clearPrimaryAgentChange();
@@ -100,6 +128,9 @@ export function useAgentTeamConsole(
     builder,
     detailState,
     intents,
+    revisions,
+    openMemberRevisions,
+    restoreMemberRevision,
   }), [builder, catalog, copy, detailState, intents, member, memberMutations, navigation, profile,
-    recordMutations, registration]);
+    recordMutations, registration, restoreMemberRevision, revisions, openMemberRevisions]);
 }
