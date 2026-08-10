@@ -101,6 +101,11 @@ import {
   type ProviderProfileSummaryDto,
   type ProviderProfileReplaceDefaultAndRemoveModelRequest,
 } from "./provider-profile-contract.js";
+import {
+  TASK_REMINDER_IPC_CHANNELS,
+  type TaskReminderReadState,
+} from "./task-reminder-contract.js";
+import type { PermissionModalAction } from "./permission-modal-plan.js";
 
 export interface MoebiusDesktopApi {
   readLanguagePreference(): Promise<DesktopLocale>;
@@ -205,6 +210,21 @@ export interface MoebiusDesktopApi {
   retryOnboardingTeamBuilder(request: AiTeamBuilderDraftRequest): Promise<AiTeamBuilderIpcResponse>;
   commitOnboardingTeamBuilder(request: AiTeamBuilderCommitRequest): Promise<AiTeamBuilderIpcResponse>;
   openExternalLink(url: string): Promise<void>;
+  readTaskReminderState(): Promise<TaskReminderReadState>;
+  setTaskReminderEnabled(enabled: boolean): Promise<{ ok: boolean }>;
+  applyTaskReminderModalAction(action: PermissionModalAction): Promise<{
+    ok: boolean;
+    state: import("./permission-modal-plan.js").PermissionModalState | null;
+  }>;
+  recheckTaskReminderChannel(): Promise<"ok" | "anomaly" | "unknown">;
+  openTaskReminderSystemSettings(): Promise<{ ok: boolean }>;
+  onTaskReminderClicked(listener: (payload: {
+    sessionId: string;
+    roundId: number;
+    terminalMessageId: number | null;
+  }) => void): () => void;
+  /** Notification click was located and consumed by the renderer (cold-start recovery reconciliation). */
+  consumeTaskReminderClick(): Promise<{ ok: boolean }>;
 }
 
 const api: MoebiusDesktopApi = {
@@ -565,6 +585,39 @@ const api: MoebiusDesktopApi = {
   },
   openExternalLink(url) {
     return ipcRenderer.invoke(OPEN_EXTERNAL_LINK_IPC_CHANNEL, url) as Promise<void>;
+  },
+  readTaskReminderState() {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.readState) as Promise<TaskReminderReadState>;
+  },
+  setTaskReminderEnabled(enabled) {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.setEnabled, enabled) as Promise<{ ok: boolean }>;
+  },
+  applyTaskReminderModalAction(action) {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.modalAction, action) as Promise<{
+      ok: boolean;
+      state: import("./permission-modal-plan.js").PermissionModalState | null;
+    }>;
+  },
+  recheckTaskReminderChannel() {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.recheckChannel) as Promise<"ok" | "anomaly" | "unknown">;
+  },
+  openTaskReminderSystemSettings() {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.openSystemSettings) as Promise<{ ok: boolean }>;
+  },
+  consumeTaskReminderClick() {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.clickConsumed) as Promise<{ ok: boolean }>;
+  },
+  onTaskReminderClicked(listener) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      payload: { sessionId: string; roundId: number; terminalMessageId: number | null },
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(TASK_REMINDER_IPC_CHANNELS.clicked, wrapped);
+    return () => {
+      ipcRenderer.off(TASK_REMINDER_IPC_CHANNELS.clicked, wrapped);
+    };
   },
 };
 

@@ -60,6 +60,24 @@ export function resolveClaimedControlAction(input: {
   return { kind: "run-primary", role: trigger.role };
 }
 
+/**
+ * 主理人一等收束信号可记录性（domain）：complete-source 判定只对主理人 Agent 消息
+ * 生效，且需要 store 具备落盘能力；返回 record 时携带要落盘的角色。
+ */
+export function planPrimaryCloseoutRecordability(input: {
+  speaker: string;
+  role: string | null;
+  primaryAgent: string | null;
+  recordCapable: boolean;
+}): { kind: "record"; role: string } | { kind: "skip" } {
+  return input.speaker === "agent"
+    && input.role !== null
+    && input.role === input.primaryAgent
+    && input.recordCapable
+    ? { kind: "record", role: input.role }
+    : { kind: "skip" };
+}
+
 export interface LocalPendingWorkerCandidate {
   message: Pick<
     LocalConsoleMessage,
@@ -113,6 +131,14 @@ export interface LocalHandoffDispatchFactInput {
 /** 晚到结果是否覆盖为 complete-source（不再继续推动接力）。 */
 export function decideHandoffStaleOutcome(input: { stale: boolean }): { kind: "complete-source" } | { kind: "keep" } {
   return input.stale ? { kind: "complete-source" } : { kind: "keep" };
+}
+
+/** 晚到结果覆盖判定（domain）：handoff 判定为 complete-source 时覆盖当前控制动作。 */
+export function planHandoffControlOverride(
+  controlAction: LocalClaimedControlAction,
+  handoffOutcome: { kind: "complete-source" } | { kind: "keep" },
+): LocalClaimedControlAction {
+  return handoffOutcome.kind === "complete-source" ? { kind: "complete-source" } : controlAction;
 }
 
 /** store 提供派工事实写入能力时记录，否则跳过（测试替身/旧包装 store 保持现状行为）。 */

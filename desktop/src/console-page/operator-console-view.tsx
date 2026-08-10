@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import {
   createRunOutputSourceKey,
   openRightSidebarSourceTab,
@@ -24,6 +26,7 @@ import type { useConsoleStateSync } from "./use-console-state-sync.js";
 import type { useConversationConsole } from "./use-conversation-console.js";
 import type { useDesktopLanguage } from "./desktop-application-root.js";
 import type { useDesktopConsoleShell } from "./use-desktop-console-shell.js";
+import type { TaskReminderSettingsController } from "@moebius/console-ui";
 import type { useProjectMutations } from "./use-project-mutations.js";
 import type { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import type { useSessionConsole } from "./use-session-console.js";
@@ -47,6 +50,7 @@ export interface OperatorConsoleViewProps {
   agentTeams: ReturnType<typeof useAgentTeamConsole>;
   managedProcesses: ManagedProcessPanelController;
   providerSettings: ProviderSettingsController;
+  taskReminder: TaskReminderSettingsController;
   actions: ConsoleStateActions;
   newConversation: NewConversationDraftState | null;
   sessionAnalysisNotice: string | null;
@@ -65,6 +69,29 @@ export interface OperatorConsoleViewProps {
   readingPositionStore: ConversationReadingPositionStore;
   onReplayOnboarding?: () => void;
   t: Translate;
+}
+
+/** Notification click navigation: locate the target project, seek the terminal record, open the conversation; keep the scene when unavailable. */
+function navigateToTaskReminderTarget(
+  props: Pick<
+    OperatorConsoleViewProps,
+    "presentation" | "conversations" | "readingPositionStore"
+  >,
+  payload: { sessionId: string; roundId: number; terminalMessageId: number | null },
+): void {
+  const project = props.presentation.projects.find((candidate) =>
+    candidate.sessions.some((session) => session.sessionId === payload.sessionId));
+  if (project === undefined) {
+    console.warn(`task reminder target session unavailable: ${payload.sessionId}`);
+    return;
+  }
+  if (payload.terminalMessageId !== null) {
+    props.readingPositionStore.write(payload.sessionId, payload.terminalMessageId);
+  }
+  props.conversations.navigation.selectConversation({
+    sessionId: payload.sessionId,
+    projectId: project.projectId,
+  });
 }
 
 export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Element {
@@ -94,6 +121,24 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
     ? ""
     : props.sessions.subSessionComposerValues[activeSubSessionId]
       ?? props.conversationDraftStore.read(sessionDraftKey(activeSubSessionId));
+  useEffect(() => {
+    const unsubscribe = window.moebius?.onTaskReminderClicked?.((payload) => {
+      navigateToTaskReminderTarget(props, payload);
+    });
+    return unsubscribe;
+  }, [props.conversations.navigation.selectConversation, props.presentation.projects, props.readingPositionStore]);
+
+  // Cold-start recovery: when the last notification click was not consumed (crash / quick quit),
+  // navigate by the persisted payload after startup.
+  useEffect(() => {
+    if (props.taskReminder.pendingClick === null || props.taskReminder.pendingClick === undefined) {
+      return;
+    }
+    const payload = props.taskReminder.pendingClick;
+    navigateToTaskReminderTarget(props, payload);
+    void window.moebius?.consumeTaskReminderClick?.();
+  }, [props.taskReminder.pendingClick, props.conversations.navigation.selectConversation, props.presentation.projects, props.readingPositionStore]);
+
   const renderSidebarConversation = () => (
     <SidebarConversationView
       activeDraft={activeSidebarDraft}
@@ -140,6 +185,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       languageSaveStatus={props.language.status}
       {...props.desktopShell.settings}
       providerSettings={props.providerSettings}
+      taskReminder={props.taskReminder}
       onSelectLocale={props.language.selectLocale}
       onRetryLocaleSave={props.language.retry}
       renderSearchOverlay={(close) => (

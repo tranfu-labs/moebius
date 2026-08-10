@@ -62,6 +62,8 @@ describe("desktop onboarding routing", () => {
     expect(document.querySelectorAll('[data-testid="relay-message-row"]')).toHaveLength(2);
     await clickButton("继续");
     await findElement('[data-testid="onboarding-step-4"]');
+    await clickButton("继续");
+    await findElement('[data-testid="onboarding-step-5"]');
     await clickButton("开始使用");
 
     const teamSelect = await findElement<HTMLButtonElement>(
@@ -664,6 +666,7 @@ describe("desktop onboarding routing", () => {
     await clickButton("编辑团队");
     await clickButton("继续");
     await clickButton("继续");
+    await clickButton("继续");
     expect((await findButton("开始使用")).disabled).toBe(false);
     expect(Array.from(document.querySelectorAll("button")).some(
       (button) => button.textContent?.includes("完成回看"),
@@ -728,6 +731,7 @@ describe("desktop onboarding routing", () => {
     await act(async () => install.click());
     await waitFor(() => document.body.textContent?.includes("Codex CLI 正在安装") === true);
 
+    await clickButton("继续");
     await clickButton("继续");
     await clickButton("继续");
     await clickButton("继续");
@@ -856,6 +860,27 @@ describe("desktop onboarding routing", () => {
       getLocalConsoleAttachmentCapability: async () => null,
       listAgentTeams: async () => ({ status: "ready", teams: [developmentTeam] }),
       readLastUsedAgentTeam: async () => null,
+      readTaskReminderState: async () => ({
+        enabled: true,
+        permission: {
+          authorizationStatus: "authorized",
+          alert: "enabled",
+          sound: "enabled",
+          badge: "enabled",
+          error: null,
+        },
+        channelStatus: "ok",
+        modal: { open: false, phase: "idle", entries: [], saveFailed: false },
+        dockCount: 0,
+        pendingClick: null,
+      }),
+      setTaskReminderEnabled: async (enabled) => ({ ok: true }),
+      applyTaskReminderModalAction: async () => ({
+        ok: true,
+        state: { open: false, phase: "idle", entries: [], saveFailed: false },
+      }),
+      recheckTaskReminderChannel: async () => "ok",
+      openTaskReminderSystemSettings: async () => ({ ok: true }),
       ...overrides,
     };
     Object.defineProperty(window, "moebius", {

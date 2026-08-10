@@ -21,6 +21,7 @@ import { useOnboardingInstallations } from "./use-onboarding-installations.js";
 import { useOnboardingReadiness } from "./use-onboarding-readiness.js";
 import { hasProviderSettingsPort } from "../console-page/provider-settings-port.js";
 import { useProviderSettings } from "../console-page/use-provider-settings.js";
+import { useTaskReminderController } from "../console-page/use-task-reminder.js";
 
 const ONBOARDING_TEAM_BUILDER_DRAFT_ID = "onboarding-team-builder";
 
@@ -40,6 +41,7 @@ export function OnboardingRoute({
     listFailed: t("settings.providers.listFailed"),
     operationFailed: t("settings.providers.operationFailed"),
   });
+  const taskReminder = useTaskReminderController(api);
   const [teamsState, setTeamsState] = useState<OperatorAgentTeamsState>({ status: "loading" });
   const [teamBuilderState, setTeamBuilderState] = useState<TeamBuilderViewState>(
     () => createInitialTeamBuilderState(t("teamBuilder.initialPrompt")),
@@ -187,6 +189,7 @@ export function OnboardingRoute({
       teamBuilderState={teamBuilderState}
       createdTeamKey={createdTeamKey}
       providerSettings={providerSettings}
+      taskReminder={taskReminder}
       onRecheckEnvironment={checkEnvironment}
       onInstallCli={install}
       onUpdateClaude={updateClaude}
