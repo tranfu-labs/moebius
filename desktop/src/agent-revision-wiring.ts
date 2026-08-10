@@ -10,6 +10,7 @@ import { createAgentRevisionStore, type AgentRevisionStore } from "./agent-revis
 import {
   createAgentRevisionSummaryJob,
   type AgentRevisionOneShotPort,
+  type AgentRevisionSummarySettled,
 } from "./agent-revision-summary-job.js";
 import {
   createDefaultAgentConfigStore,
@@ -36,6 +37,8 @@ export function createAgentRevisionWiring(input: {
   dataRoot: string;
   sqlitePath: string;
   runPi: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
+  /** Main-process push of the summary-settled event to the renderer window(s). */
+  publishSummarySettled(settled: AgentRevisionSummarySettled): void;
 }): AgentRevisionWiring {
   const store = createAgentRevisionStore({ sqlitePath: input.sqlitePath });
   const defaultAgent = createDefaultAgentConfigStore({ dataRoot: input.dataRoot });
@@ -65,6 +68,7 @@ export function createAgentRevisionWiring(input: {
     configStore: defaultAgent,
     oneShot,
     runDirRoot: path.join(input.dataRoot, ".state", "agent-revision-summaries"),
+    onSettled: (settled) => input.publishSummarySettled(settled),
   });
   const service = createAgentRevisionService({ store, summarize });
   const ipc = createTeamRevisionIpc({

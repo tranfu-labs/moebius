@@ -259,6 +259,25 @@ export interface AgentTeamDefaultAgentSaveRequest {
   profile: ExecutionProfile;
 }
 
+/**
+ * Main-process → renderer push: the background summary job reached a terminal
+ * state (`ready` or `unavailable`) for one revision. The console refreshes the
+ * member's revisions in place (idempotent: a repeated delivery for the same
+ * terminal state never produces a new state object) so the "最近变化" line
+ * settles without any user action. `createdAt` lets the renderer tell "event
+ * for an older revision" (skip) from "event newer than the loaded view"
+ * (refresh — the view is stale, e.g. a save refresh still in flight).
+ */
+export const AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL = "agent-markdown:revision-summary-settled";
+
+export interface AgentMarkdownRevisionSummarySettledPayload {
+  teamStableId: string;
+  memberSlug: string;
+  revisionId: string;
+  /** Revision timestamp; absent only on the exceptional store-failure path. */
+  createdAt?: string;
+}
+
 export class AgentTeamIpcRequestError extends Error {
   constructor(
     message: string,

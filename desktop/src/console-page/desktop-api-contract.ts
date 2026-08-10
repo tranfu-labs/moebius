@@ -27,6 +27,7 @@ import type {
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamTrashUserRequest,
   AgentTeamUpdateInformationRequest,
+  AgentMarkdownRevisionSummarySettledPayload,
 } from "../team-ipc-contract.js";
 import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-repair-contract.js";
 import type { AgentTeamFileManagerKind, AgentTeamFileManagerRequest } from "../team-file-manager-contract.js";
@@ -165,6 +166,9 @@ export interface DesktopApi {
   restoreAgentTeamMemberRevision?: (
     request: AgentTeamMemberRevisionRestoreRequest,
   ) => Promise<AgentTeamMemberRevisionRestoreResponse>;
+  onAgentMarkdownRevisionSummarySettled?: (
+    listener: (payload: AgentMarkdownRevisionSummarySettledPayload) => void,
+  ) => () => void;
   getDefaultAgent?: () => Promise<AgentTeamDefaultAgentResponse>;
   saveDefaultAgent?: (request: AgentTeamDefaultAgentSaveRequest) => Promise<AgentTeamDefaultAgentResponse>;
   selectAgentTeamRelocationFolder?: () => Promise<string | null>;

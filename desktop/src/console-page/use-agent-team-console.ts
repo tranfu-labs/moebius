@@ -36,7 +36,12 @@ export function useAgentTeamConsole(
 ) {
   const catalog = useAgentTeamCatalog(api);
   const member = useAgentTeamMemberEditor({ api, catalog, t });
-  const revisions = useAgentTeamRevisions({ api, catalog, t });
+  const revisions = useAgentTeamRevisions({
+    api,
+    catalog,
+    t,
+    subscribeRevisionSummarySettled: api?.onAgentMarkdownRevisionSummarySettled,
+  });
   const navigation = useAgentTeamNavigation({ catalog, member });
   const profile = useAgentTeamProfile({ api, catalog, t });
   const registration = useAgentTeamRegistration({ api, catalog, open: navigation.open, t });

@@ -8,6 +8,7 @@ import {
   insertAgentMention,
   matchingAgentMentionMembers,
   segmentAgentMentions,
+  type AgentMarkdownChangeMarker,
   type AgentMentionMember,
 } from "./agent-markdown-mention-editor";
 
@@ -271,6 +272,44 @@ describe("AgentMarkdownMentionEditor change markers", () => {
     const button = screen.getByRole("button", { name: "展开" });
     expect(button.className).toContain("focus-visible:ring-2");
     expect(button.className).toContain("focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)]");
+  });
+
+  it("keeps an expanded previous-text preview across a markers refresh", () => {
+    const markers = (): AgentMarkdownChangeMarker[] => [{
+      blockIndex: 1,
+      authorKind: "user",
+      authorLabel: "你",
+      timeLabel: "3 天前",
+      previousText: "第二段原来的写法",
+    }];
+    const { rerender } = render(
+      <AgentMarkdownMentionEditor
+        value={"第一段没有变化\n\n第二段被你改过"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={markers()}
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "展开" }));
+    expect(screen.getByText("第二段原来的写法")).toBeInTheDocument();
+
+    // The summary-settled refresh replaces the markers array with a fresh one
+    // (same block index, possibly terminal summary); the expanded state lives
+    // in the editor component, so the preview must survive the replacement.
+    rerender(
+      <AgentMarkdownMentionEditor
+        value={"第一段没有变化\n\n第二段被你改过"}
+        members={teamMembers}
+        label="AGENT.md"
+        changeMarkers={markers()}
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("第二段原来的写法")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
   });
 
   it("does not show an expand toggle when a marker has no previous text", () => {

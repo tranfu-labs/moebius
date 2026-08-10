@@ -31,6 +31,14 @@ export interface AgentRevisionSummaryJobInput {
 
 export type AgentRevisionSummaryJob = (input: AgentRevisionSummaryJobInput) => Promise<void>;
 
+export interface AgentRevisionSummarySettled {
+  revisionId: string;
+  teamStableId: string;
+  memberSlug: string;
+  /** Revision timestamp from the durable update; absent on the store-failure path. */
+  createdAt?: string;
+}
+
 const DEFAULT_MAX_SUMMARY_LENGTH = 240;
 
 /**
@@ -39,7 +47,9 @@ const DEFAULT_MAX_SUMMARY_LENGTH = 240;
  * session/run lifecycle entry) and writes a plain-language one-line summary
  * back to the revision. Any failure (no default Agent, provider error, empty
  * result) downgrades the revision to `unavailable`; there is no retry storm and
- * the save feedback is never blocked by this job.
+ * the save feedback is never blocked by this job. `onSettled` fires once the
+ * terminal state is durable so the main process can push a completion event to
+ * the renderer (the view then refreshes the member in place, without polling).
  */
 export function createAgentRevisionSummaryJob(input: {
   store: Pick<AgentRevisionStore, "getRevision" | "updateSummary">;
@@ -47,10 +57,21 @@ export function createAgentRevisionSummaryJob(input: {
   oneShot: AgentRevisionOneShotPort;
   runDirRoot: string;
   maxSummaryLength?: number;
+  onSettled?: (settled: AgentRevisionSummarySettled) => void;
 }): AgentRevisionSummaryJob {
   const maxSummaryLength = input.maxSummaryLength ?? DEFAULT_MAX_SUMMARY_LENGTH;
   return async function runSummaryJob(revisionInput: AgentRevisionSummaryJobInput): Promise<void> {
     const runDir = path.join(input.runDirRoot, revisionInput.revisionId);
+    const settled: AgentRevisionSummarySettled = {
+      revisionId: revisionInput.revisionId,
+      teamStableId: revisionInput.teamStableId,
+      memberSlug: revisionInput.memberSlug,
+    };
+    const notifySettled = (revision: { createdAt: string } | null | undefined): void => {
+      input.onSettled?.(revision === null || revision === undefined
+        ? settled
+        : { ...settled, createdAt: revision.createdAt });
+    };
     try {
       const document = await input.configStore.read();
       const profile = resolveDefaultAgentProfile(document);
@@ -61,20 +82,21 @@ export function createAgentRevisionSummaryJob(input: {
         runDir,
       });
       if (!result.ok) {
-        await input.store.updateSummary(revisionInput.revisionId, null, "unavailable");
+        notifySettled(await input.store.updateSummary(revisionInput.revisionId, null, "unavailable"));
         return;
       }
       const summary = summarizeResultText(result.text, maxSummaryLength);
       if (summary.length === 0) {
-        await input.store.updateSummary(revisionInput.revisionId, null, "unavailable");
+        notifySettled(await input.store.updateSummary(revisionInput.revisionId, null, "unavailable"));
         return;
       }
-      await input.store.updateSummary(revisionInput.revisionId, summary, "ready");
+      notifySettled(await input.store.updateSummary(revisionInput.revisionId, summary, "ready"));
     } catch {
       // The revision itself is already durable; a failed summary must never
       // surface as a save failure or trigger retries.
-      await input.store.updateSummary(revisionInput.revisionId, null, "unavailable")
-        .catch(() => undefined);
+      const revision = await input.store.updateSummary(revisionInput.revisionId, null, "unavailable")
+        .catch(() => null);
+      notifySettled(revision);
     }
   };
 }

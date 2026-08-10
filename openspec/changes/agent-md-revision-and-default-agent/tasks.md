@@ -114,6 +114,18 @@
 - 单测：`agent-markdown-mention-editor.test.tsx` 新增 1 条回归用例钉住层尺寸（jsdom 行数估算 40/40）、`pointer-events-auto`、color-mix rail 类（并断言不再含 `bg-accent/50`）、hover/focus 显形接线与焦点 ring。
 - 门禁：console-ui 全量 552 测试、typecheck×3、check:storybook（43 stories）、console-ui build（color-mix 规则在 dist CSS）、desktop build、check:boundaries（727 文件）、`git diff --check` 全绿；真机验收重跑 exit 0、7 项断言全绿（`markerCountAfterFirstSave=2`、`pendingTitleLineVisible=true`、`terminalTitleLineRendered=true`）。
 
+### 交付复核补修（product-delivery-lead 复核发现，本 change 内同一分支提交）：摘要终态回传与就地刷新
+
+**「最近变化」行到终态不刷新**：`operator-console-view.tsx` 只在保存成功那一刻调一次 `refreshRevisions`，摘要是保存后异步产出的，全库再没有第二个调用点——用户保存完停在页面上，那一行永远停在「正在生成说明…」，必须切走再切回来才更新。这正是 `flows/agent-evolution.md:133` 定义的第二条完成信号，等于验收判据没闭合。修复口径（主进程事件推送，无轮询）：
+
+- **主进程**：摘要任务到达终态（ready/unavailable）后经 `windows.sendMain` 推送 `agent-markdown:revision-summary-settled`（payload 含 teamStableId/memberSlug/revisionId/createdAt）；`createAgentRevisionSummaryJob` 新增 `onSettled` 端口，在每次终态 `updateSummary` 落库后带修订时间戳通知；wiring 增加 `publishSummarySettled` 注入（main.ts 中 wiring 移到 windows 之后）。
+- **渲染层**：preload 暴露 `onAgentMarkdownRevisionSummarySettled`（contextBridge 同步补齐）；`useAgentTeamRevisions` 订阅后按 `planSummarySettledTarget`（domain：`agent-revision-plan.ts`）决定是否就地刷新——**loaded 最新仍是 pending**（或事件修订比 loaded 更新，覆盖保存刷新仍在途的竞态）才刷新，已终态/更旧事件一律跳过；`refreshRevisions` 不再把条目置 null（旧响应保持挂载，保存与结算刷新都不闪）。
+- **两条硬约束**：① 幂等——同一终态重复回传不产生新状态对象（loaded 已终态 → skip，单测用 state 对象同一性钉死）；② 迟到回传——沿用 generation 防旧响应覆盖，事件触发的刷新走同一守卫（单测钉死）。
+- **真机竞态（验收期间发现并修复）**：事件在保存刷新仍在途时到达会被 revisionId 匹配判为“已被更新的修订取代”而丢弃 → 行永久停在 pending。修复：payload 带 `createdAt`，`planSummarySettledTarget` 用修订时间序区分“更旧事件”（跳过）与“比 loaded 更新”（刷新）——单测 `refreshes when the settled event is newer than the loaded view` 钉死。
+- **真机证据**（`scripts/acceptance/agent-revision-acceptance.ts` 验收 1 重写）：保存后**不做任何操作、不切换成员**，以只读 40ms DOM 采样观察标题行从 pending 占位自行变为终态文案；两次运行真实时间间隔 **89ms / 136ms**（`settleMs`，两次观察之间的真实墙钟间隔）；采样期间标记层最小 2 处（不闪）、已展开的原文在结算刷新后仍展开（`expandRetained=true`）、时间线与标题行终态就地渲染；页面侧事件探针证实两条终态事件都到达渲染层且带 createdAt（`settleEventsAfterFirst/Second`）。第 1 次保存的慢任务（runner 60s idle + 120s cap，本机无 CLI）偶尔超出观察窗，`firstSettleMs` 按 null 如实记录并由 SQLite 交叉校验（`latestDevManagerStatus`）佐证任务终态。7 项断言 exit 0 全绿。
+- 单测：`use-agent-team-revisions.test.tsx` 新增/改写 5 条（幂等同一性、未加载跳过、更旧事件跳过、**比 loaded 更新刷新（竞态修复）**、刷新期间旧响应保持挂载、迟到响应不覆盖）；`agent-revision-summary-job.test.ts` 3 条（onSettled 一次、带 createdAt、异常路径）；`agent-markdown-mention-editor.test.tsx` 1 条（标记刷新不丢展开态）。
+- 门禁：desktop 722 测试、console-ui 553 测试、typecheck×3、check:boundaries（728 文件，domain 决策函数入 `agent-revision-plan.ts`、2 条新 transport permit 登记、删 1 条 stale permit）、desktop build、`git diff --check` 全绿；真机验收两轮 exit 0。
+
 ## G 功能 QA / 视觉 QA 移交记录
 
 - 功能 QA：F 节 5 条真机断言已全绿（见上表），覆盖 spec-delta 的核心场景（保存、外部修改、回退、默认 Agent 持久化、基线迁移三态）。待移交项：`change 2` 范围的自动同步/批次/撤销落盘与“查看弹窗真实数据”不属于本 change，A 节对应 UI（横幅、侧边栏同步态、查看弹窗）保持 inert 未接数据，请复核时注意区分。

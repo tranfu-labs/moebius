@@ -202,86 +202,186 @@ try {
   await openDevelopmentTeam(page);
   const devManagerEditor = editor(page, "开发经理");
   const firstDraft = "# 开发经理\n\n负责技术决策与质量把关。\n\n验收以真机证据为准。\n";
-  await devManagerEditor.click();
-  await devManagerEditor.fill(firstDraft);
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  const titleLine = page.locator("span.text-xs.text-sub", { hasText: "最近变化" }).first();
+  const pendingPlaceholder = "最近变化 · 正在生成说明…";
+  // The core completion signal (PRD flows/agent-evolution.md:133): the
+  // "最近变化" line settles from its pending placeholder to the terminal copy
+  // WITHOUT any user action — no member reselect, no click, no window focus.
+  // The background summary job pushes a completion event to the renderer and
+  // the open member's revisions refresh in place. This helper is the
+  // acceptance's passive observation channel (the app itself never polls):
+  // it samples the title line every 100ms while `trigger` runs and records
+  // real wall-clock timestamps of the first pending and first terminal frame,
+  // plus the minimum marker count observed (markers must never unmount).
+  const observeSettle = async (
+    trigger: () => Promise<void>,
+    options: { trackMarkers: boolean; intervalMs: number } = { trackMarkers: true, intervalMs: 100 },
+  ): Promise<{ pendingAt: number | null; terminalAt: number | null; markerMin: number }> => {
+    let pendingAt: number | null = null;
+    let terminalAt: number | null = null;
+    let markerMin = Number.POSITIVE_INFINITY;
+    const triggerPromise = trigger();
+    const startedAt = Date.now();
+    // The summary job's one-shot runner can idle up to its 60s timeout plus
+    // spawn overhead before failing (isolated PATH without the default Agent
+    // CLI), with a 120s hard cap; observe past the cap with margin and break
+    // as soon as the terminal frame arrives. The loop samples ONLY the title
+    // line (plus an optional marker count) — nothing slower may run inside it,
+    // or a fast-settling job's pending frame (~200ms) is missed.
+    while (Date.now() - startedAt < 150_000) {
+      if (options.trackMarkers) {
+        markerMin = Math.min(markerMin, await page.locator("[data-change-marker]").count());
+      }
+      const text = await titleLine.textContent().catch(() => null);
+      if (text !== null && text.includes(pendingPlaceholder) && pendingAt === null) {
+        pendingAt = Date.now();
+      }
+      if (text !== null && text.includes("最近变化 · ") && !text.includes(pendingPlaceholder)) {
+        terminalAt = Date.now();
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
+    }
+    await triggerPromise;
+    return {
+      pendingAt,
+      terminalAt,
+      markerMin: markerMin === Number.POSITIVE_INFINITY ? 0 : markerMin,
+    };
+  };
+
+  // Save 1: first revision for this member (no previousText — no expand
+  // control yet); observe the pending -> terminal transition with no action.
+  // Marker continuity is only tracked for save 2 (where markers exist before
+  // the save); the 50ms interval catches even a fast-settling job.
+  // A page-side probe records every summary-settled push the preload delivers,
+  // so a failure can be attributed: no events => the main-process push or
+  // preload bridge is broken; events without a UI update => the hook's
+  // dedupe/refresh decision is broken.
+  await page.evaluate(() => {
+    (window as unknown as Record<string, unknown>).__revisionSettleEvents = [];
+    window.moebius?.onAgentMarkdownRevisionSummarySettled?.((payload) => {
+      (window as unknown as { __revisionSettleEvents: unknown[] }).__revisionSettleEvents.push(payload);
+    });
+  });
+  const readSettleEvents = () => page.evaluate(() =>
+    (window as unknown as { __revisionSettleEvents?: unknown[] }).__revisionSettleEvents ?? []);
+  const firstSettle = await observeSettle(async () => {
+    await devManagerEditor.click();
+    await devManagerEditor.fill(firstDraft);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+  }, { trackMarkers: false, intervalMs: 40 });
+  const settleEventsAfterFirst = await readSettleEvents();
   await page.locator("#agent-team-markdown-editor").waitFor({ state: "visible", timeout: 15_000 });
-  // The revision lands synchronously; markers render immediately. Markers are
-  // presented in an overlay OUTSIDE the contentEditable (never inside it), so
-  // they are queried document-wide, not as a descendant of the editor.
-  await page.locator("[data-change-marker]").first().waitFor({ state: "attached", timeout: 15_000 });
   const markerCountAfterFirstSave = await page.locator("[data-change-marker]").count();
   await page.getByTestId("agent-team-markdown-timeline-toggle").click();
-  await page.getByRole("status").filter({ hasText: "摘要生成中" }).first().waitFor({ timeout: 15_000 });
-  const pendingVisible = await page.getByRole("status").filter({ hasText: "摘要生成中" }).count() > 0;
-  // The editor's title line stays rendered while the summary job runs: it shows
-  // a neutral "正在生成说明…" placeholder instead of disappearing (PRD: the
-  // recent-change line is常驻 and must not be blank).
-  const pendingTitleLineVisible = await page.getByText("最近变化 · 正在生成说明…", { exact: false }).count() > 0;
-  // The summary job performs ONE real provider invocation in the background.
-  // Its terminal state is environment-dependent: with a usable default Agent
-  // the summary becomes ready; without any usable provider it downgrades to
-  // unavailable (that degradation path is pinned deterministically by unit
-  // tests). Wait for the terminal state, then reselect the member and assert
-  // the UI renders it — including the title line, which must keep showing a
-  // neutral placeholder instead of disappearing.
+  const timelineVisibleBeforeSettle = await page.getByTestId("agent-markdown-revision-timeline")
+    .isVisible().catch(() => false);
+
+  // Save 2: the changed block now carries previousText, so the marker gets an
+  // expand control. Expand it as soon as it appears (while the line is still
+  // pending if the job has not settled yet) to prove the settle refresh does
+  // not flash the marker layer out or lose the expanded state.
+  const settleSecondDraft = "# 开发经理\n\n负责技术决策与质量把关，并亲自复核发布清单。\n\n验收以真机证据为准。\n";
+  const expandButton = page.getByRole("button", { name: "展开" }).first();
+  // The expanded preview is the marker layer's bg-sunken block; its text is
+  // the changed block's previous content (block splitting follows the STORED
+  // content, which normalizes the typed draft's newlines — never assume the
+  // exact paragraph text up front).
+  const expandedPreview = page.locator("[data-change-marker] .bg-sunken").first();
+  let expanded = false;
+  let expandedWhilePending: boolean | null = null;
+  // The expand interaction (hover the marker band, then click — the real user
+  // flow) runs as a CONCURRENT task so it can never slow the settle sampling
+  // loop below the pending frame's duration.
+  const expandTask = (async () => {
+    const deadline = Date.now() + 20_000;
+    while (!expanded && Date.now() < deadline) {
+      if (await expandButton.isVisible().catch(() => false)) {
+        expandedWhilePending = (await titleLine.textContent().catch(() => null))
+          ?.includes(pendingPlaceholder) === true;
+        // Real user flow: the attribution row is pointer-events-none until the
+        // marker band is hovered — hover it first (real mouse), then click.
+        await page.locator("[data-change-marker]").first().hover();
+        await expandButton.click({ timeout: 3_000 });
+        expanded = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  })();
+  const secondSettle = await observeSettle(async () => {
+    await devManagerEditor.fill(settleSecondDraft);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+  }, { trackMarkers: true, intervalMs: 40 });
+  await expandTask;
+  // Cross-check: did the summary job settle inside the observation window at
+  // all? If the DB is terminal while the title line stayed pending, the push/
+  // refresh path failed; if the DB is still pending, the job itself was slow.
+  const settleWindowRows = await readSqliteRevisions();
+  const devManagerRows = settleWindowRows.filter((row) =>
+    row.member_slug === "dev-manager" && row.team_stable_id === "development");
+  const latestDevManagerStatus = devManagerRows.at(-1)?.summary_status ?? null;
+  const settleEventsAfterSecond = await readSettleEvents();
+
   let terminalStatus: "ready" | "unavailable" | null = null;
   let terminalSummary: string | null = null;
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  let terminalTitleLineRendered = false;
+  let terminalTimelineRendered = false;
+  let expandRetained = false;
+  let expandPreviewText: string | null = null;
+  let timelineStillVisible = false;
+  const settleMs = secondSettle.pendingAt !== null && secondSettle.terminalAt !== null
+    ? secondSettle.terminalAt - secondSettle.pendingAt
+    : null;
+  const firstSettleMs = firstSettle.pendingAt !== null && firstSettle.terminalAt !== null
+    ? firstSettle.terminalAt - firstSettle.pendingAt
+    : null;
+  if (secondSettle.terminalAt !== null) {
     const rows = await readSqliteRevisions();
     const latestUserRevision = [...rows].reverse().find((row) =>
       row.member_slug === "dev-manager" && row.author_kind === "user");
     if (latestUserRevision?.summary_status === "ready") {
       terminalStatus = "ready";
       terminalSummary = String(latestUserRevision.summary ?? "");
-      break;
-    }
-    if (latestUserRevision?.summary_status === "unavailable") {
+    } else {
       terminalStatus = "unavailable";
-      break;
     }
+    const text = await titleLine.textContent().catch(() => null) ?? "";
+    terminalTitleLineRendered = terminalStatus === "unavailable"
+      ? text.includes("最近变化 · 本次改动涉及")
+      : terminalSummary !== null && text.includes(`最近变化 · ${terminalSummary}`);
+    terminalTimelineRendered = terminalStatus === "unavailable"
+      ? await page.getByText("摘要暂时无法生成", { exact: false }).first().isVisible().catch(() => false)
+      : terminalSummary !== null
+        && await page.getByText(terminalSummary, { exact: false }).first().isVisible().catch(() => false);
+    expandRetained = await expandedPreview.isVisible().catch(() => false);
+    expandPreviewText = await expandedPreview.textContent().catch(() => null);
+    timelineStillVisible = await page.getByTestId("agent-markdown-revision-timeline")
+      .isVisible().catch(() => false);
   }
-  let terminalUiRendered = false;
-  let terminalUiObservation = "";
-  // Member reselect triggers a fresh revisions load; the terminal summary
-  // state then becomes visible in the UI (ready header line or unavailable text).
-  await page.getByTestId("agent-team-member-selector").getByRole("tab", { name: /开发经理/u }).click();
-  let terminalTitleLineRendered = false;
-  if (terminalStatus === "ready" && terminalSummary !== null) {
-    await page.getByText(/最近变化/u).first().waitFor({ timeout: 15_000 });
-    terminalUiRendered = (await page.getByText(terminalSummary, { exact: false }).count()) > 0;
-    // The ready title line renders "最近变化 · {summary}" with the actual summary text.
-    terminalTitleLineRendered = (await page.getByText(`最近变化 · ${terminalSummary}`, { exact: false }).count()) > 0;
-    terminalUiObservation = "重选成员后标题行显示“最近变化 · {summary}”，摘要文本与 SQLite 一致。";
-  } else if (terminalStatus === "unavailable") {
-    // The timeline stays expanded across member reselect (component state);
-    // only (re-)expand it when it was collapsed by a previous step.
-    if (!(await page.getByTestId("agent-markdown-revision-timeline").isVisible().catch(() => false))) {
-      await page.getByTestId("agent-team-markdown-timeline-toggle").click();
-    }
-    await page.getByText("摘要暂时无法生成", { exact: false }).first().waitFor({ timeout: 15_000 });
-    terminalUiRendered = (await page.getByText("摘要暂时无法生成", { exact: false }).count()) > 0;
-    // The unavailable title line must NOT disappear: it renders a mechanical
-    // placeholder counting the changed blocks ("本次改动涉及 N 处").
-    terminalTitleLineRendered = (await page.getByText(/最近变化 · 本次改动涉及/, { exact: false }).count()) > 0;
-    terminalUiObservation = "重选成员并展开时间线后显示“摘要暂时无法生成”降级文案；标题行渲染中性占位“最近变化 · 本次改动涉及 N 处”（不消失、不编造）。";
-  }
-  const pendingRevisions = await readSqliteRevisions();
   record(
     "save-creates-revision-with-markers-and-summary-degradation",
     markerCountAfterFirstSave >= 1
-      && pendingVisible
-      && pendingTitleLineVisible
+      && firstSettle.pendingAt !== null
+      && secondSettle.pendingAt !== null
+      && secondSettle.terminalAt !== null
+      && settleMs !== null
       && terminalStatus !== null
-      && terminalUiRendered
-      && terminalTitleLineRendered,
-    { markerCountAfterFirstSave, pendingVisible, pendingTitleLineVisible, terminalStatus, terminalSummary,
-      terminalUiRendered, terminalTitleLineRendered, pendingRevisions },
+      && terminalTitleLineRendered
+      && terminalTimelineRendered
+      && secondSettle.markerMin >= 1
+      && expandRetained
+      && timelineVisibleBeforeSettle
+      && timelineStillVisible,
+    { markerCountAfterFirstSave, firstSettleMs, settleMs, terminalStatus, terminalSummary,
+      secondSettle, latestDevManagerStatus, settleEventsAfterFirst, settleEventsAfterSecond,
+      expanded, expandedWhilePending, expandRetained, expandPreviewText, terminalTitleLineRendered,
+      terminalTimelineRendered, timelineVisibleBeforeSettle, timelineStillVisible },
     {
       entrance: "Agent 团队 → 开发团队 → 开发经理 AGENT.md 编辑器",
-      action: "真实输入新内容并点击“保存”",
-      screenObservation: `编辑器正文左侧出现变化标记；标题行先显示“正在生成说明…”占位；展开时间线先显示“摘要生成中…”；后台摘要任务到达终态（${terminalStatus}）后重选成员可见对应 UI：${terminalUiObservation}`,
+      action: "真实输入新内容并点击“保存”（共两次，第二次产生带原文的标记）；展开一处标记原文后不做任何操作、不切换成员",
+      screenObservation: `编辑器正文左侧出现变化标记；标题行先显示“正在生成说明…”占位，随后在无任何用户操作下自行更新为终态文案（第 1 次保存 ${firstSettleMs ?? "—"}ms、第 2 次保存 ${settleMs ?? "—"}ms，均为两次观察之间的真实时间间隔）；标记层全程不消失（第 2 次保存期间最小 ${secondSettle.markerMin} 处）、已展开的原文（“${expandPreviewText?.slice(0, 24) ?? "—"}”）保持展开、时间线保持可见且终态文案就地渲染（${terminalStatus}）`,
     },
   );
 
@@ -289,33 +389,58 @@ try {
   // External-change detection is a user-team feature by design (official/system
   // teams are deliberately skipped). Duplicate the official team into a user
   // copy via the real UI, then Finder-edit a member of the copy and refocus.
+  const copyStartedAt = Date.now();
   await page.getByRole("button", { name: "复制团队", exact: true }).click();
   await page.getByTestId("agent-team-detail").waitFor({ timeout: 15_000 });
   await page.getByTestId("agent-team-member-selector").waitFor();
   const teamsRoot = path.join(runtimeRoot, "teams");
-  const teamEntries = await fs.readdir(teamsRoot, { withFileTypes: true });
-  const copiedTeamCandidates = await Promise.all(
-    teamEntries
-      .filter((entry) => entry.isDirectory() && entry.name !== ".system")
-      .map(async (entry) => {
-        const stat = await fs.stat(path.join(teamsRoot, entry.name));
-        return { name: entry.name, mtime: stat.mtimeMs };
-      }),
-  );
-  const newestUserTeam = copiedTeamCandidates.sort((left, right) => right.mtime - left.mtime)[0];
-  if (newestUserTeam === undefined) {
+  // The detail page stays mounted while the copy opens asynchronously; wait
+  // for the copy's directory on disk (deterministic completion signal) before
+  // interacting with its member tabs, so a tab click can never land on the
+  // source team's selector and get overwritten by the copy-open selection.
+  const waitForCopyDirectory = async (): Promise<string> => {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const entries = await fs.readdir(teamsRoot, { withFileTypes: true });
+      const candidates = await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory() && entry.name !== ".system")
+          .map(async (entry) => {
+            const stat = await fs.stat(path.join(teamsRoot, entry.name));
+            return { name: entry.name, mtime: stat.mtimeMs };
+          }),
+      );
+      const newest = candidates.sort((left, right) => right.mtime - left.mtime)[0];
+      if (newest !== undefined && newest.mtime > copyStartedAt) {
+        return path.join(teamsRoot, newest.name);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
     throw new Error("复制团队未生成用户团队目录");
-  }
-  const copiedTeamDir = path.join(teamsRoot, newestUserTeam.name);
+  };
+  const copiedTeamDir = await waitForCopyDirectory();
   const copiedDevFile = path.join(copiedTeamDir, "members", "dev", "AGENT.md");
-  await page.getByRole("tab", { name: "开发", exact: true }).click();
-  await page.locator("#agent-team-markdown-editor").waitFor({ state: "visible", timeout: 15_000 });
   const originalDevContent = await fs.readFile(copiedDevFile, "utf8");
-  await page.waitForFunction(
-    (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-    originalDevContent,
-    { timeout: 15_000 },
-  );
+  // The copy-open may reset the member selection to the copy's primary after
+  // any earlier tab click; retry until the editor actually shows the copy's
+  // dev file (bounded, each attempt waits only 3s).
+  let devSelected = false;
+  for (let attempt = 0; attempt < 10 && !devSelected; attempt += 1) {
+    await page.getByRole("tab", { name: "开发", exact: true }).click();
+    devSelected = await page.waitForFunction(
+      (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
+      originalDevContent,
+      { timeout: 3_000 },
+    ).then(() => true).catch(() => false);
+  }
+  if (!devSelected) {
+    const current = await page.evaluate(() => ({
+      raw: document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown")?.slice(0, 120) ?? null,
+      selectedTab: document.querySelector("[role='tab'][aria-selected='true']")?.textContent ?? null,
+    })).catch(() => null);
+    console.log("ACCEPTANCE-2 dev select failed:", JSON.stringify(current));
+    throw new Error("复制团队后无法选中 dev 成员");
+  }
   const externalDraft = "# 开发\n\n按方案实现功能，输出真实运行证据。\n";
   await fs.writeFile(copiedDevFile, externalDraft, "utf8");
   await focusMainWindow(application);

@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Translate } from "@moebius/console-ui";
 
 import type {
+  AgentMarkdownRevisionSummarySettledPayload,
   AgentTeamMemberRevisionsResponse,
   AgentTeamMemberRevisionRestoreResponse,
 } from "../team-ipc-contract.js";
+import { planSummarySettledTarget } from "../agent-revision-plan.js";
 import { planFindOperatorAgentTeam } from "./agent-team-console-model.js";
 import type { AgentTeamCatalogBundle } from "./use-agent-team-catalog.js";
 
@@ -44,10 +46,16 @@ export function useAgentTeamRevisions(input: {
   api: AgentTeamRevisionsPort | undefined;
   catalog: AgentTeamCatalogBundle;
   t: Translate;
+  /** Main-process push subscription; fires when a summary job reaches a terminal state. */
+  subscribeRevisionSummarySettled?: (
+    listener: (payload: AgentMarkdownRevisionSummarySettledPayload) => void,
+  ) => () => void;
 }): AgentTeamRevisionsBundle {
   const inputRef = useRef(input);
   inputRef.current = input;
   const [revisions, setRevisions] = useState<AgentTeamRevisionsByTeam>({});
+  const revisionsRef = useRef(revisions);
+  revisionsRef.current = revisions;
   const inFlightRef = useRef(new Set<string>());
   // Per-key generation: a refresh bumps the generation so a slower in-flight
   // response from an earlier request can never overwrite newer state (the
@@ -88,18 +96,25 @@ export function useAgentTeamRevisions(input: {
     const nextGeneration = (generationByKeyRef.current.get(key) ?? 1) + 1;
     generationByKeyRef.current.set(key, nextGeneration);
     inFlightRef.current.delete(key);
-    setRevisions((current) => {
-      const teamRevisions = current[teamKey];
-      if (teamRevisions === undefined || teamRevisions[memberSlug] === undefined) {
-        return current;
-      }
-      return {
-        ...current,
-        [teamKey]: { ...teamRevisions, [memberSlug]: null },
-      };
-    });
+    // The previous response stays mounted while the reload is in flight: the
+    // recent-change line, change markers and the expanded timeline must not
+    // flash out on save or on a summary-settled refresh.
     loadRevisions(teamKey, memberSlug, nextGeneration);
   }, [loadRevisions]);
+
+  useEffect(() => {
+    return inputRef.current.subscribeRevisionSummarySettled?.((payload) => {
+      const runtime = inputRef.current;
+      const target = planSummarySettledTarget({
+        catalog: runtime.catalog.state,
+        revisions: revisionsRef.current,
+        payload,
+      });
+      if (target !== null) {
+        refreshRevisions(target.teamKey, target.memberSlug);
+      }
+    });
+  }, [refreshRevisions]);
 
   const restoreRevision = useCallback(async (
     teamKey: string,

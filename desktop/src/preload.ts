@@ -12,7 +12,9 @@ import {
   type AgentTeamExternalChangeResponse,
 } from "./team-external-change-contract.js";
 import {
+  AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL,
   TEAM_IPC_CHANNELS,
+  type AgentMarkdownRevisionSummarySettledPayload,
   type AgentTeamCreateRequest,
   type AgentTeamDuplicateBuiltInRequest,
   type AgentTeamDuplicateUserRequest,
@@ -183,6 +185,9 @@ export interface MoebiusDesktopApi {
   restoreAgentTeamMemberRevision(
     request: AgentTeamMemberRevisionRestoreRequest,
   ): Promise<AgentTeamMemberRevisionRestoreResponse>;
+  onAgentMarkdownRevisionSummarySettled(
+    listener: (payload: AgentMarkdownRevisionSummarySettledPayload) => void,
+  ): () => void;
   getDefaultAgent(): Promise<AgentTeamDefaultAgentResponse>;
   saveDefaultAgent(
     request: AgentTeamDefaultAgentSaveRequest,
@@ -443,6 +448,18 @@ const api: MoebiusDesktopApi = {
       TEAM_IPC_CHANNELS.memberRevisionRestore,
       request,
     ) as Promise<AgentTeamMemberRevisionRestoreResponse>;
+  },
+  onAgentMarkdownRevisionSummarySettled(listener) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      payload: AgentMarkdownRevisionSummarySettledPayload,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.off(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, wrapped);
+    };
   },
   getDefaultAgent() {
     return ipcRenderer.invoke(

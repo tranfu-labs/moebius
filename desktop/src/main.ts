@@ -25,6 +25,7 @@ import { AiTeamBuilder } from "./ai-team-builder/index.js";
 import { AiTeamBuilderPiSpawner } from "./ai-team-builder/pi-spawner.js";
 import { createAgentTeamService } from "./team-ipc.js";
 import { createAgentRevisionWiring } from "./agent-revision-wiring.js";
+import { AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL } from "./team-ipc-contract.js";
 import { registerTeamIpc } from "./team-ipc-register.js";
 import { seedBuiltInTeams } from "./team-seed.js";
 import {
@@ -99,16 +100,6 @@ const providerWiring = createDesktopProviderProfileWiring({
 });
 const { runPi } = providerWiring;
 
-// Change 1 (agent-md-revision-and-default-agent): AGENT.md revision history and
-// the app-wide default Agent. The summary job runs ONE provider invocation in an
-// isolated run directory under the data root — never a session/run lifecycle
-// entry, so the session list never shows a user-uninitiated item.
-const agentRevisionWiring = createAgentRevisionWiring({
-  dataRoot: status.dataRoot,
-  sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
-  runPi,
-});
-
 const windows = new DesktopWindowRuntime({
   dirname,
   platform: process.platform,
@@ -120,15 +111,20 @@ const windows = new DesktopWindowRuntime({
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
 });
 
+const agentRevisionWiring = createAgentRevisionWiring({
+  dataRoot: status.dataRoot,
+  sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
+  runPi,
+  publishSummarySettled: (settled) => windows.sendMain(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, settled),
+});
+
 const updateRuntime = new DesktopUpdateRuntime({
   platform: process.platform,
   arch: process.arch,
   isPackaged: app.isPackaged,
   currentVersion: app.getVersion(),
   provider: autoUpdater as unknown as DesktopUpdateProvider,
-  readyStore: createDesktopUpdateReadyStore(
-    path.join(status.dataRoot, ".state", "desktop-update-ready.json"),
-  ),
+  readyStore: createDesktopUpdateReadyStore(path.join(status.dataRoot, ".state", "desktop-update-ready.json")),
   publish: (state) => windows.sendMain("settings:update-state", state),
   onInstallFailure: async () => {
     await localConsole.start();
