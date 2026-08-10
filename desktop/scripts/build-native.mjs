@@ -8,6 +8,13 @@ const nativeDir = path.resolve(here, "../native/macos-notification-permission");
 const buildDir = path.resolve(here, "../native/build");
 const executable = path.join(buildDir, "macos-notification-permission");
 
+// 权限桥依赖 macOS 专属的 UserNotifications 框架，且需要 codesign 打包 .app；
+// 非 macOS 平台（如 CI 的 Linux runner）跳过桥构建，避免 swiftc 找不到框架。
+if (process.platform !== "darwin") {
+  console.log(`skip native bridge build on non-macOS platform (${process.platform})`);
+  process.exit(0);
+}
+
 // 权限桥必须以 Moebius 自身应用身份读取/请求通知授权（QA #135 FQA-03）：
 // UNUserNotificationCenter 按 bundle 标识存储授权，桥的 CFBundleIdentifier 必须与
 // 通知提交身份一致，且桥必须签名——未签名或签名被破坏（签名后改 Info.plist）时
