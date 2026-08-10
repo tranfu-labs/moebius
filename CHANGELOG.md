@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-10
+
+### 新增
+
+- 官网改为英文根页与 `/zh/` 中文页的双语言结构，并保持两种语言的导航、内容与下载降级一致（#201）。
+- 官网新增单 Agent 与 Agent 团队的产物对照段，并补充两次真实运行记录，帮助访客直接比较协作过程和结果（#203、#204）。
+- Agent 采用稳定分配的角色画像与执行引擎标识；团队详情支持从完整画像池为成员选择并持久化自定义画像（#202）。
+- Agent 团队页升级为卡片化浏览和配置优先的详情布局，支持统一草稿、成员名称与说明表单、正文预览/编辑及拖拽调整主 Agent（#205）。
+- 对话消息、过程步骤与终局结果采用新的层级和交互，并补齐运行过程的持久化、异常恢复与最终记录成员归属（#206）。
+
+### 变更
+
+- Popover、下拉菜单和选择器统一使用可打断、可回退且支持同组抢占的锚点展开动效，并尊重减少动态效果偏好（#202、#205）。
+
 ## [0.4.2] - 2026-08-07
 
 ### 修复
@@ -219,7 +233,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tranfu-labs/moebius/compare/v0.3.4...v0.4.0
