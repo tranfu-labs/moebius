@@ -22,15 +22,23 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const revisionsResponse = (summary: string | null): AgentTeamMemberRevisionsResponse => ({
-  recentChange: summary === null ? null : { summary, authorLabel: "你", timeLabel: "2026-08-01T00:00:00.000Z" },
+const revisionsResponse = (
+  summary: string | null,
+  summaryStatus: "pending" | "ready" | "unavailable" = summary === null ? "unavailable" : "ready",
+): AgentTeamMemberRevisionsResponse => ({
+  recentChange: {
+    summary,
+    summaryStatus,
+    authorLabel: "你",
+    timeLabel: "2026-08-01T00:00:00.000Z",
+  },
   changeMarkers: [],
   timeline: [{
     revisionId: `rev-${summary ?? "none"}`,
     authorKind: "user",
     authorLabel: null,
     summary,
-    summaryStatus: summary === null ? "pending" : "ready",
+    summaryStatus,
     timeLabel: "2026-08-01T00:00:00.000Z",
     isEarliest: true,
   }],

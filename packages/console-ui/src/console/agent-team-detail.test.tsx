@@ -730,7 +730,7 @@ describe("AgentTeamDetail", () => {
             displayName: "开发",
             description: "负责实现",
             isDirty: false,
-            recentChange: { summary: "官方 v2 更新了 1 处", authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+            recentChange: { summary: "官方 v2 更新了 1 处", summaryStatus: "ready" as const, authorLabel: "官方 v2", timeLabel: "2026-08-06" },
             changeMarkers: [{
               blockIndex: 1,
               authorKind: "official",
@@ -780,7 +780,7 @@ describe("AgentTeamDetail", () => {
       onSelectMember,
       state: stateWith(managerEditor({
         isDirty: false,
-        recentChange: { summary: "官方 v2 更新了 1 处", authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+        recentChange: { summary: "官方 v2 更新了 1 处", summaryStatus: "ready" as const, authorLabel: "官方 v2", timeLabel: "2026-08-06" },
         changeMarkers: [{
           blockIndex: 1,
           authorKind: "official",
@@ -820,7 +820,7 @@ describe("AgentTeamDetail", () => {
           manager: {
             ...managerEditor(),
             isDirty: false,
-            recentChange: { summary: "你把返工上限改成两轮", authorLabel: "你", timeLabel: "2026-08-03" },
+            recentChange: { summary: "你把返工上限改成两轮", summaryStatus: "ready" as const, authorLabel: "你", timeLabel: "2026-08-03" },
             changeMarkers: [{
               blockIndex: 1,
               authorKind: "user",
@@ -897,6 +897,60 @@ describe("AgentTeamDetail", () => {
     // The marker overlay commits one frame after the member switch; the scroll
     // uses a bounded retry, so wait for it asynchronously.
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  });
+  it("keeps the recent-change line with a neutral placeholder while the summary is pending", () => {
+    renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "pending",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 0,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: null,
+        }],
+      })),
+    });
+
+    expect(screen.getByText("最近变化 · 正在生成说明…")).toBeVisible();
+  });
+
+  it("keeps the recent-change line with a mechanical placeholder when the summary is unavailable", () => {
+    renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "unavailable",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [
+          {
+            blockIndex: 0,
+            authorKind: "user",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+            previousText: null,
+          },
+          {
+            blockIndex: 1,
+            authorKind: "user",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+            previousText: null,
+          },
+        ],
+      })),
+    });
+
+    expect(screen.getByText("最近变化 · 本次改动涉及 2 处")).toBeVisible();
   });
 });
 

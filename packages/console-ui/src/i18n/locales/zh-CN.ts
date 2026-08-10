@@ -504,6 +504,8 @@ export const zhCN = {
   "console.agentTeamDetail.tryAgainLater": "请稍后重试。",
   "console.agentTeamDetail.readOnlyPrefix": "只读 ·",
   "console.agentTeamDetail.recentChange": "最近变化 · {summary}",
+  "console.agentTeamDetail.recentChangePending": "最近变化 · 正在生成说明…",
+  "console.agentTeamDetail.recentChangeUnavailable": "最近变化 · 本次改动涉及 {count} 处",
   "console.agentTeamDetail.viewAllChanges": "全部",
   "console.agentTeamDetail.syncedTo": "已同步到官方 {version} · {count} 名成员有变化",
   "console.agentTeamDetail.syncedToAt": "已同步到官方 {version} · {time}",

@@ -232,6 +232,7 @@ export function planAgentTeamDetailState(input: {
               ? null
               : {
                   summary: revisionView.recentChange.summary,
+                  summaryStatus: revisionView.recentChange.summaryStatus,
                   authorLabel: revisionView.recentChange.authorLabel,
                   timeLabel: planAgentRevisionTimeLabel(
                     revisionView.recentChange.timeLabel,

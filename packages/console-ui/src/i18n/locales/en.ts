@@ -505,6 +505,8 @@ export const en = {
   "console.agentTeamDetail.tryAgainLater": "Try again later.",
   "console.agentTeamDetail.readOnlyPrefix": "Read-only ·",
   "console.agentTeamDetail.recentChange": "Recent change · {summary}",
+  "console.agentTeamDetail.recentChangePending": "Recent change · generating a summary…",
+  "console.agentTeamDetail.recentChangeUnavailable": "Recent change · this change touches {count} area(s)",
   "console.agentTeamDetail.viewAllChanges": "All",
   "console.agentTeamDetail.syncedTo": "Synced to official {version} · {count} members changed",
   "console.agentTeamDetail.syncedToAt": "Synced to official {version} · {time}",

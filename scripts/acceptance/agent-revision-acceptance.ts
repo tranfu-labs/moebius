@@ -214,12 +214,17 @@ try {
   await page.getByTestId("agent-team-markdown-timeline-toggle").click();
   await page.getByRole("status").filter({ hasText: "摘要生成中" }).first().waitFor({ timeout: 15_000 });
   const pendingVisible = await page.getByRole("status").filter({ hasText: "摘要生成中" }).count() > 0;
+  // The editor's title line stays rendered while the summary job runs: it shows
+  // a neutral "正在生成说明…" placeholder instead of disappearing (PRD: the
+  // recent-change line is常驻 and must not be blank).
+  const pendingTitleLineVisible = await page.getByText("最近变化 · 正在生成说明…", { exact: false }).count() > 0;
   // The summary job performs ONE real provider invocation in the background.
   // Its terminal state is environment-dependent: with a usable default Agent
-  // (this dev machine restores the shell PATH and has a logged-in codex) the
-  // summary becomes ready; without any provider it downgrades to unavailable
-  // (that degradation path is pinned deterministically by unit tests). Wait
-  // for the terminal state, then reload the member and assert the UI renders it.
+  // the summary becomes ready; without any usable provider it downgrades to
+  // unavailable (that degradation path is pinned deterministically by unit
+  // tests). Wait for the terminal state, then reselect the member and assert
+  // the UI renders it — including the title line, which must keep showing a
+  // neutral placeholder instead of disappearing.
   let terminalStatus: "ready" | "unavailable" | null = null;
   let terminalSummary: string | null = null;
   for (let attempt = 0; attempt < 150; attempt += 1) {
@@ -242,9 +247,12 @@ try {
   // Member reselect triggers a fresh revisions load; the terminal summary
   // state then becomes visible in the UI (ready header line or unavailable text).
   await page.getByTestId("agent-team-member-selector").getByRole("tab", { name: /开发经理/u }).click();
+  let terminalTitleLineRendered = false;
   if (terminalStatus === "ready" && terminalSummary !== null) {
     await page.getByText(/最近变化/u).first().waitFor({ timeout: 15_000 });
     terminalUiRendered = (await page.getByText(terminalSummary, { exact: false }).count()) > 0;
+    // The ready title line renders "最近变化 · {summary}" with the actual summary text.
+    terminalTitleLineRendered = (await page.getByText(`最近变化 · ${terminalSummary}`, { exact: false }).count()) > 0;
     terminalUiObservation = "重选成员后标题行显示“最近变化 · {summary}”，摘要文本与 SQLite 一致。";
   } else if (terminalStatus === "unavailable") {
     // The timeline stays expanded across member reselect (component state);
@@ -254,17 +262,26 @@ try {
     }
     await page.getByText("摘要暂时无法生成", { exact: false }).first().waitFor({ timeout: 15_000 });
     terminalUiRendered = (await page.getByText("摘要暂时无法生成", { exact: false }).count()) > 0;
-    terminalUiObservation = "重选成员并展开时间线后显示“摘要暂时无法生成”降级文案。";
+    // The unavailable title line must NOT disappear: it renders a mechanical
+    // placeholder counting the changed blocks ("本次改动涉及 N 处").
+    terminalTitleLineRendered = (await page.getByText(/最近变化 · 本次改动涉及/, { exact: false }).count()) > 0;
+    terminalUiObservation = "重选成员并展开时间线后显示“摘要暂时无法生成”降级文案；标题行渲染中性占位“最近变化 · 本次改动涉及 N 处”（不消失、不编造）。";
   }
   const pendingRevisions = await readSqliteRevisions();
   record(
     "save-creates-revision-with-markers-and-summary-degradation",
-    markerCountAfterFirstSave >= 1 && pendingVisible && terminalStatus !== null && terminalUiRendered,
-    { markerCountAfterFirstSave, pendingVisible, terminalStatus, terminalSummary, terminalUiRendered, pendingRevisions },
+    markerCountAfterFirstSave >= 1
+      && pendingVisible
+      && pendingTitleLineVisible
+      && terminalStatus !== null
+      && terminalUiRendered
+      && terminalTitleLineRendered,
+    { markerCountAfterFirstSave, pendingVisible, pendingTitleLineVisible, terminalStatus, terminalSummary,
+      terminalUiRendered, terminalTitleLineRendered, pendingRevisions },
     {
       entrance: "Agent 团队 → 开发团队 → 开发经理 AGENT.md 编辑器",
       action: "真实输入新内容并点击“保存”",
-      screenObservation: `编辑器正文左侧出现变化标记；展开时间线先显示“摘要生成中…”；后台摘要任务到达终态（${terminalStatus}）后重选成员可见对应 UI：${terminalUiObservation}`,
+      screenObservation: `编辑器正文左侧出现变化标记；标题行先显示“正在生成说明…”占位；展开时间线先显示“摘要生成中…”；后台摘要任务到达终态（${terminalStatus}）后重选成员可见对应 UI：${terminalUiObservation}`,
     },
   );
 

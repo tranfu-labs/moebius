@@ -185,6 +185,7 @@ const officialSyncAndChangesDetailState = {
       description: "负责技术决策与任务拆分，把控整体质量。",
       recentChange: {
         summary: "官方 v1.3 更新了 2 处",
+        summaryStatus: "ready" as const,
         authorLabel: "官方 v1.3",
         timeLabel: "2026-08-06",
       },
@@ -236,6 +237,7 @@ const officialSyncAndChangesDetailState = {
       description: "按方案实现功能，输出代码与验证结果。",
       recentChange: {
         summary: "你补充了失败恢复路径的测试要求",
+        summaryStatus: "ready" as const,
         authorLabel: "你",
         timeLabel: "2026-08-04",
       },
@@ -277,6 +279,7 @@ const officialSyncAndChangesDetailState = {
       description: "设计测试方案，对抗性审查每个交付。",
       recentChange: {
         summary: "官方 v1.3 更新了验收记录要求",
+        summaryStatus: "ready" as const,
         authorLabel: "官方 v1.3",
         timeLabel: "2026-08-06",
       },
@@ -366,7 +369,13 @@ export const TimelineExpanded: Story = {
   },
 };
 
-/** 摘要还没生成 / 生成失败两种状态在页面里的样子，同样需要先展开时间线才能看到。 */
+/**
+ * 摘要还没生成 / 生成失败两种状态在页面里的样子：dev-manager 的标题行是
+ * unavailable（按 changeMarkers 块数出机械摘要「本次改动涉及 2 处」），dev 的
+ * 标题行是 pending（「正在生成说明…」）；时间线先展开 dev-manager 看条目，
+ * 再点 dev 成员 tab 看标题行 pending。两条标题行都不允许消失——PRD 要求
+ * 「最近变化」常驻，摘要缺失时用中性占位。
+ */
 export const TimelineSummaryPendingAndUnavailable: Story = {
   args: {
     ...OfficialSyncAndChanges.args,
@@ -375,6 +384,28 @@ export const TimelineSummaryPendingAndUnavailable: Story = {
       memberEditors: {
         "dev-manager": {
           ...officialSyncAndChangesDetailState.memberEditors["dev-manager"]!,
+          recentChange: {
+            summary: null,
+            summaryStatus: "unavailable",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+          },
+          changeMarkers: [
+            {
+              blockIndex: 0,
+              authorKind: "user",
+              authorLabel: "你",
+              timeLabel: "刚刚",
+              previousText: null,
+            },
+            {
+              blockIndex: 1,
+              authorKind: "user",
+              authorLabel: "你",
+              timeLabel: "刚刚",
+              previousText: null,
+            },
+          ],
           revisionTimeline: [
             {
               id: "rev-2",
@@ -389,6 +420,39 @@ export const TimelineSummaryPendingAndUnavailable: Story = {
               timeLabel: "5 分钟前",
               summary: null,
               summaryStatus: "unavailable",
+              isEarliest: true,
+            },
+          ],
+        },
+        dev: {
+          ...officialSyncAndChangesDetailState.memberEditors["dev"]!,
+          recentChange: {
+            summary: null,
+            summaryStatus: "pending",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+          },
+          changeMarkers: [{
+            blockIndex: 2,
+            authorKind: "user",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+            previousText: null,
+          }],
+          revisionTimeline: [
+            {
+              id: "dev-rev-2",
+              authorLabel: "你",
+              timeLabel: "刚刚",
+              summary: null,
+              summaryStatus: "pending",
+            },
+            {
+              id: "dev-rev-1",
+              authorLabel: "官方 v1.2",
+              timeLabel: "2026-07-28",
+              summary: "这支团队的官方初始版本",
+              summaryStatus: "ready",
               isEarliest: true,
             },
           ],
@@ -447,6 +511,7 @@ export const HeadlessAgentMarkdown: Story = {
           description: "处理一般对话与任务",
           recentChange: {
             summary: "官方 v1.2 · 这支团队的官方初始版本",
+            summaryStatus: "ready" as const,
             authorLabel: "官方 v1.2",
             timeLabel: "2026-07-28",
           },

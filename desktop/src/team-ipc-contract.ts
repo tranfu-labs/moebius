@@ -219,8 +219,20 @@ export interface AgentTeamChangeMarkerView {
 }
 
 export interface AgentTeamMemberRevisionsResponse {
-  /** Latest revision's one-line summary; absent when the member has no revision yet. */
-  recentChange: { summary: string; authorLabel: string; timeLabel: string } | null;
+  /**
+   * Latest revision's one-line summary slot — present whenever the member has
+   * at least one revision, NEVER dropped because the summary text is missing
+   * (the PRD's "最近变化" line must stay常驻). `summary` is null while the
+   * background summary job is pending or has failed; the view renders a neutral
+   * placeholder from `summaryStatus` (pending / unavailable), carrying the same
+   * author + time shape as the ready line.
+   */
+  recentChange: {
+    summary: string | null;
+    summaryStatus: "pending" | "ready" | "unavailable";
+    authorLabel: string;
+    timeLabel: string;
+  } | null;
   /** Latest revision's paragraph ownership — presentation only, see `agent-revision-plan.ts`. */
   changeMarkers: AgentTeamChangeMarkerView[];
   /** Newest first. */

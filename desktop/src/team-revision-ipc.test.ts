@@ -104,10 +104,61 @@ describe("createTeamRevisionIpc", () => {
     });
     expect(response.recentChange).toEqual({
       summary: "这是第一条修订",
+      summaryStatus: "ready",
       authorLabel: "",
       timeLabel: "2026-08-01T00:00:00.000Z",
     });
     expect(response.changeMarkers).toHaveLength(2);
+  });
+
+  it("keeps the recent-change line while the summary is still pending", async () => {
+    const { store, ipc } = createIpc();
+    await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n新职责。\n",
+      authorKind: "user",
+      blockOwnership: null,
+      summaryStatus: "pending",
+      now: "2026-08-01T00:00:00.000Z",
+    });
+
+    const response = await ipc.listMemberRevisions(memberRequest);
+    expect(response.recentChange).toEqual({
+      summary: null,
+      summaryStatus: "pending",
+      authorLabel: "",
+      timeLabel: "2026-08-01T00:00:00.000Z",
+    });
+    expect(response.recentChange).not.toBeNull();
+  });
+
+  it("keeps the recent-change line when the summary failed (unavailable)", async () => {
+    const { store, ipc } = createIpc();
+    await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n新职责。\n",
+      authorKind: "user",
+      blockOwnership: null,
+      summaryStatus: "unavailable",
+      now: "2026-08-01T00:00:00.000Z",
+    });
+
+    const response = await ipc.listMemberRevisions(memberRequest);
+    expect(response.recentChange).toEqual({
+      summary: null,
+      summaryStatus: "unavailable",
+      authorLabel: "",
+      timeLabel: "2026-08-01T00:00:00.000Z",
+    });
+  });
+
+  it("returns no recent-change line only before the first revision exists", async () => {
+    const { ipc } = createIpc();
+    const response = await ipc.listMemberRevisions(memberRequest);
+    expect(response.recentChange).toBeNull();
+    expect(response.timeline).toEqual([]);
   });
 
   it("rejects restoring a revision that belongs to another member", async () => {

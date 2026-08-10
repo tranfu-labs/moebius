@@ -136,13 +136,20 @@ export interface AgentTeamMemberEditorState {
   displayName: string;
   description: string;
   /**
-   * One-line "recent change" summary shown above the editor; absent when the member has no revision yet.
+   * One-line "recent change" summary shown above the editor; absent only when the member has no revision yet.
    * Semantics (deliberate, see `docs/product/pages/agent-teams.md` change timeline): always the LATEST
    * revision regardless of author — no weighting for the user's own edits. The line must stay predictable
    * ("which change is newest"), the moment a user wants to confirm their own latest edit it is the newest
    * line anyway, and earlier own edits are fully visible in the expanded timeline.
+   * When the summary job is still pending or has failed, `summary` is null and the line renders a neutral
+   * placeholder from `summaryStatus` (never disappears, never fabricated).
    */
-  recentChange?: { summary: string; authorLabel: string; timeLabel: string } | null;
+  recentChange?: {
+    summary: string | null;
+    summaryStatus: "pending" | "ready" | "unavailable";
+    authorLabel: string;
+    timeLabel: string;
+  } | null;
   changeMarkers?: readonly AgentMarkdownChangeMarker[];
   revisionTimeline?: readonly AgentMarkdownRevisionEntry[];
 }
@@ -1229,7 +1236,7 @@ export function AgentTeamDetail({
                 </label>
                 {selectedEditor.recentChange !== undefined && selectedEditor.recentChange !== null ? (
                   <span className="text-xs text-sub">
-                    {t("console.agentTeamDetail.recentChange", { summary: selectedEditor.recentChange.summary })}
+                    {recentChangeSummary(t, selectedEditor.recentChange, selectedEditor.changeMarkers)}
                   </span>
                 ) : null}
               </div>
@@ -1508,6 +1515,31 @@ export function orderAgentTeamMembers(team: AgentTeamDetailTeam): AgentTeamDetai
 
 function memberLabel(members: readonly AgentTeamDetailMember[], memberSlug: string): string {
   return members.find((member) => member.slug === memberSlug)?.displayName || `@${memberSlug}`;
+}
+
+/**
+ * Renders the "recent change" line for the latest revision. The line stays
+ * persistent once the member has any revision: pending shows a neutral
+ * "generating…" placeholder, unavailable shows a mechanical per-block count
+ * (per PRD: when the summary cannot be produced, use a neutral placeholder
+ * that says how many places this change touched), and ready renders the
+ * provider-written summary. Placeholder copy is i18n-generated in the view —
+ * the main process never composes localized text.
+ */
+function recentChangeSummary(
+  t: Translate,
+  recentChange: NonNullable<AgentTeamMemberEditorState["recentChange"]>,
+  changeMarkers: readonly AgentMarkdownChangeMarker[] | undefined,
+): string {
+  if (recentChange.summaryStatus === "pending") {
+    return t("console.agentTeamDetail.recentChangePending");
+  }
+  if (recentChange.summaryStatus === "unavailable" || recentChange.summary === null) {
+    return t("console.agentTeamDetail.recentChangeUnavailable", {
+      count: String(changeMarkers?.length ?? 0),
+    });
+  }
+  return t("console.agentTeamDetail.recentChange", { summary: recentChange.summary });
 }
 
 function formatAgentSlugs(t: Translate, slugs: readonly string[]): string {

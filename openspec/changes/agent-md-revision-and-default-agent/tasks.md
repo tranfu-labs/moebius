@@ -78,7 +78,7 @@
 
 | 断言 | 入口 | 动作 | 可观察信号 | evidence 关键值 |
 | --- | --- | --- | --- | --- |
-| 保存产生修订 + 标记 + 摘要降级 | Agent 团队 → 开发团队 → 开发经理 AGENT.md 编辑器 | 真实输入新内容并点击“保存” | 编辑器正文左侧出现变化标记；展开时间线先显示“摘要生成中…”；后台摘要任务到达终态后重选成员可见对应 UI | marker=2；pending 可见；terminalStatus=unavailable（本机默认 Agent 无可用 provider 时；“摘要暂时无法生成”降级文案可见）；SQLite 1 条 user 修订 |
+| 保存产生修订 + 标记 + 摘要降级 | Agent 团队 → 开发团队 → 开发经理 AGENT.md 编辑器 | 真实输入新内容并点击“保存” | 编辑器正文左侧出现变化标记；**标题行先显示“正在生成说明…”占位**；展开时间线先显示“摘要生成中…”；后台摘要任务到达终态后重选成员可见对应 UI | marker=2；pending 可见；**标题行 pending 占位可见**；terminalStatus=unavailable（本机默认 Agent 无可用 provider 时；时间线“摘要暂时无法生成”与**标题行“最近变化 · 本次改动涉及 2 处”均渲染**）；SQLite 1 条 user 修订 |
 | Finder 修改记同等修订 | 复制官方开发团队为用户团队 → Finder 修改其 dev 成员 AGENT.md → 返回应用聚焦窗口 | 先打开成员再真实修改文件，随后让窗口重新获得焦点 | 编辑器载入 Finder 新内容，SQLite 出现该成员的一条 user 修订（与团队页保存结构一致） | externalRevision content_len=24；共 2 条修订 |
 | 回退回滚内容并产生新修订 | 开发经理时间线 → 中间一条修订的“回到这一版” | 点击“回到这一版” | 编辑器与磁盘内容都回到中间一版（编辑器按存储的规范化全文显示）；时间线新增一条回退产生的 user 修订，历史未被删除或覆盖 | 回滚后 copy dev-manager 修订 4 条（39/49/54/49）；恢复按钮 ≥2；最新 sqlite 修订内容 == 磁盘内容 |
 | 默认 Agent 设置重启保持 | 设置 → 常规 → 默认 Agent → 重启应用 → 设置 | 首次打开显示内置推荐（Codex/gpt-5.6-sol/high）；切换为 Claude Code 保存；重启后再次打开设置 | 未配置时显示内置通用助手推荐而非空白；重启后仍是保存的 Claude Code/sonnet，配置文件落盘 | initial codex/gpt-5.6-sol → saved claude/sonnet；`default-agent-v1.json` 含 `"cli": "claude"` |
@@ -89,6 +89,17 @@
 1. **contentEditable 崩溃（v0.4.1 既有生产 bug）**：真实 Chromium 中 contentEditable 内任何 re-render 抛 `Failed to execute 'removeChild'`；基线 worktree 同样崩。修复：contentEditable 只渲染单个文本节点 `{value}`，变化标记/rail 全部移到镜像测量层（`ChangeMarkerOverlay`）；mention 渲染回退为可编辑纯文本 `@slug`，复制交互由 `CopyableAgentSlug` 承接（原 AgentMention 内嵌复制按钮删除，3 个孤儿 i18n key 一并删除）。
 2. **preload 桥缺失**：`desktop/src/preload.ts` 未暴露 4 个新 IPC 方法 → 真实 Electron 中 `window.moebius.*` undefined → UI 静默 no-op（“保存后修订不达 UI”的真实根因）。修复：接口 + contextBridge 实现同步补齐；后续新增 renderer 可见 IPC 必须同步暴露在 preload。
 3. **回退后修订爆炸循环**：restore 路径只更新 draftMarkdown、不更新 savedMarkdown → 成员脏态 → 外部变更检查把刚回滚的文件当作外来修改，每次命中 conflict 分支都产生新 state → effect 无限重查、每条查一次重记一条修订（约 250 条/秒）。修复：新增 `applyAgentTeamMemberRestored` 同时对齐 draft 与 saved 基线并清空外部状态；`applyAgentTeamMemberExternalChange` 对相同 conflict 返回同一 state（防同类循环）；`team-state.test.ts` 4 条用例钉死两个行为。
+
+### 功能复核补修（product-delivery-lead 复核发现，本 change 内同一分支提交）
+
+**“最近变化”标题行在摘要缺失时被整行摘掉**（`planMemberRevisionsResponse` 在 `latest.summary === null` 时返回 `recentChange: null`）。PRD（`flows/agent-evolution.md` 41/51/116/133）要求该行常驻，摘要 pending/unavailable 时用中性占位，绝不消失——默认 Agent 未配置是全新用户初始状态，这一行消失会让最高频场景 A 的完成信号失效。修复口径：
+
+- 契约：`recentChange` 只要存在 latest 修订就必须产出，携带 `summaryStatus`（`pending` / `ready` / `unavailable`）；`summary` 在摘要任务进行中或失败时为 null。
+- 占位文案在 **view 层用 i18n 生成**（`console.agentTeamDetail.recentChangePending` / `recentChangeUnavailable`，中英双语），主进程不拼本地化文本；unavailable 按 `changeMarkers` 块数生成机械摘要（“最近变化 · 本次改动涉及 N 处”）。
+- 三态同构：payload 都带作者署名与时间，渲染同一单行。
+- 单测：`team-revision-ipc.test.ts` 新增 pending / unavailable / 无修订三例；`agent-team-detail.test.tsx` 新增标题行两态渲染两例；`production-copy-guard` 校验无 CJK 直出。
+- Story：`agent-teams-page.stories.tsx` 的 `TimelineSummaryPendingAndUnavailable` 扩展为覆盖标题行两态（dev-manager 标题行 unavailable + 机械摘要，dev 标题行 pending），时间线条目两态保留。
+- 真机：验收 1 新增标题行断言——保存后 pending 窗口断言“最近变化 · 正在生成说明…”真实渲染（`pendingTitleLineVisible=true`），终态 unavailable 后断言“最近变化 · 本次改动涉及 2 处”真实渲染（`terminalTitleLineRendered=true`）；全 7 项断言绿。
 
 ## G 功能 QA / 视觉 QA 移交记录
 

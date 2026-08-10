@@ -82,10 +82,14 @@ export function planMemberRevisionsResponse(
 ): AgentTeamMemberRevisionsResponse {
   const latest = revisions.at(-1) ?? null;
   return {
-    recentChange: latest === null || latest.summary === null
+    // The summary slot exists for every revision: pending / unavailable states
+    // render a neutral placeholder (see agent-team-detail's recentChange line),
+    // so the line is only absent before the member's first revision.
+    recentChange: latest === null
       ? null
       : {
           summary: latest.summary,
+          summaryStatus: latest.summaryStatus,
           authorLabel: latest.authorLabel ?? "",
           timeLabel: latest.createdAt,
         },
