@@ -94,6 +94,24 @@ export function planWorkerActiveLane(lane: "primary" | "worker" | null | undefin
   return lane ?? null;
 }
 
+/** 主 Agent 派工为该 lane 分配递增序号；用户直达派工不参与覆盖，返回 null。 */
+export function planWorkerDispatchSequence(
+  current: number | undefined,
+  origin: "primary-redirect" | "user-direct",
+): number | null {
+  return origin === "primary-redirect" ? (current ?? 0) + 1 : null;
+}
+
+/** 排队中的旧派工在新派工出现后不得再启动。 */
+export function decideWorkerQueuedDispatch(
+  latest: number | undefined,
+  captured: number | null,
+): { kind: "run" } | { kind: "superseded" } {
+  return captured !== null && latest !== undefined && latest > captured
+    ? { kind: "superseded" }
+    : { kind: "run" };
+}
+
 export function planPreviousWorkerTask<T>(current: T | undefined, idle: T): T {
   return current ?? idle;
 }

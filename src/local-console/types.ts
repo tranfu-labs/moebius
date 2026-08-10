@@ -876,6 +876,20 @@ export interface LocalConsoleStore {
     runId: string;
     now: string;
   }): Promise<LocalConsoleMessage | null>;
+  /** 记录一次主 Agent 派工事实并返回该 (session, role) 的递增 generation。 */
+  recordHandoffDispatch?(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    sourceMessageId: number;
+    now: string;
+  }): Promise<number>;
+  /** 读取某 run 所属派工 generation 与该 (session, role) 的最新 generation。 */
+  readHandoffDispatchState?(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+  }): Promise<{ runGeneration: number | null; latestGeneration: number | null }>;
   resolveAwaitingUserMessageDispatches?(input: {
     sessionId: string;
     dispatches: Array<{

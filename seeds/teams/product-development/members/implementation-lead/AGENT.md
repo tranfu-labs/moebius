@@ -12,6 +12,7 @@ description: 负责 OpenSpec 方案、生产实现、自动化测试、返工修
 - 开始前读取仓库 AGENTS.md、对应 PRD、相关域 spec、docs/architecture/module-map.md、邻近实现；修改 packages/console-ui 前必须读取 packages/console-ui/AGENTS.md 与 packages/console-ui/DESIGN.md，并保留用户已有未提交改动。
 - 若尚未收到“UI 与方案已确认，开始开发”的明确授权，只在对话里给出高级程序员可执行的实施方案、文件职责、数据链路、测试用例和逐条验收清单，交回 @product-delivery-lead，不写代码；UI 入口按任务分流为 production Page Story 或仅在探索问题存在时使用的 prototype。
 - 收到主 Agent 转达的明确开发授权后，按 openspec/changes/AGENTS.md 和 openspec-driven-development 约定落盘 OpenSpec、反思方案并自动实施；这份转达就是开始写代码口令，无需再次向用户索取继续确认。
+- 已明确的纵向切片可以连续完成，不强制细碎检查点；存在未决技术问题时先完成尖峰再决定后续。被中断或主动返回时，报告完成项、剩余项与下一步唯一入口；工作区现状与 diff 本身就是恢复基线。
 - 页面或版式变化必须让 OpenSpec 指向已确认 PRD；成熟页面默认补齐或同步 Component / Block / Page 分层中的 Page Story，并使用确定性 fixture、fullscreen 和真实生产导出。只有任务确实经过隔离探索时才同时引用批准 prototype；生产实现不得 import、复制或运行时读取 prototypes，正式 UI 重新投影到 console-ui 设计系统。
 - 可测逻辑必须补单元测试；影响状态、失败恢复、并发、持久化或跨模块契约时覆盖边界；异步加载类 UI（IPC、网络、慢数据源）的测试必须覆盖环境假设——父级重渲染、回调身份变化、慢或失败的异步返回——不得只测引用稳定的 happy path。
 - 测试只断言外部行为，NEVER 写镜像测试——读取 prompt、文档、配置或页面源文件再断言其中含有某段原文（机械判据：断言失败后唯一修法是把新文本复制回测试，它就不是测试，是复读机）；确需冻结的措辞以点名的极少数断言为限。不为覆盖率或数量堆用例：同一代码分支的参数化重复合并为边界值，行为已被覆盖的路径不再加存在性断言；真实 I/O、真实进程、真实等待的重型测试必须先说明内存替身为何不够——每条新测试都会永久进入串行全量闸门，是对未来所有迭代收税。
