@@ -18,6 +18,7 @@ import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
+import { createRoundTerminalWiring } from "./runtime-round-wiring.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
@@ -79,6 +80,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
   private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
   private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
+  readonly roundWiring: ReturnType<typeof createRoundTerminalWiring>;
   private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
   private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
   private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
@@ -236,11 +238,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       loadCeoScripts: adapters.loadCeoScripts,
     });
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime(sessionWiring.pending);
+    this.roundWiring = createRoundTerminalWiring({ store: this.options.store, nowIso: () => this.now().toISOString() });
     this.projectCommandRuntime = new LocalProjectCommandRuntime(sessionWiring.command.project);
     this.sessionCreationRuntime = new LocalSessionCreationRuntime(sessionWiring.command.creation);
     this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionWiring.command.settings);
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionWiring.command.reference);
-    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionWiring.read.state);
+    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(this.roundWiring.bindStateQueryPorts(sessionWiring.read.state));
     this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionWiring.read.output);
     this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionWiring.read.workspace);
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(sessionWiring.metadata);
@@ -284,17 +287,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     });
   }
 
-  get sqlitePath(): string {
-    return this.options.store.sqlitePath;
-  }
+  get sqlitePath(): string { return this.options.store.sqlitePath; }
 
-  async init(): Promise<void> {
-    await this.startupRecoveryRuntime.init();
-  }
+  async init(): Promise<void> { await this.startupRecoveryRuntime.init(); }
 
-  async close(): Promise<void> {
-    await this.shutdownRuntime.close();
-  }
+  async close(): Promise<void> { await this.shutdownRuntime.close(); }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
     await this.pendingProcessingRuntime.process(sessionId);
@@ -307,5 +304,4 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
-
 }

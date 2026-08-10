@@ -1,5 +1,5 @@
 import { buildLocalConsoleRoutingTimeline, buildLocalConsoleTimeline } from "./timeline.js";
-import { resolveClaimedControlAction } from "./control-dispatch.js";
+import { planPrimaryCloseoutRecordability, resolveClaimedControlAction } from "./control-dispatch.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalPrimaryRunInput } from "./primary-preparation-runtime.js";
@@ -134,6 +134,21 @@ export class LocalPrimaryDispatchRuntime {
           runDir: null,
           now: this.input.nowIso(),
         }));
+      const closeout = planPrimaryCloseoutRecordability({
+        speaker: claimedMessage.speaker,
+        role: claimedMessage.role,
+        primaryAgent,
+        recordCapable: this.input.store.recordPrimaryCloseout !== undefined,
+      });
+      if (closeout.kind === "record") {
+        await this.input.storeCall("local-console-store-record-primary-closeout", () =>
+          this.input.store.recordPrimaryCloseout!({
+            sessionId,
+            messageId: claimedMessage.id,
+            role: closeout.role,
+            occurredAt: this.input.nowIso(),
+          }));
+      }
       return { kind: "continue" };
     }
     if (controlAction.kind === "route-without-primary-agent") {

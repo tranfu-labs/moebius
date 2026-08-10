@@ -34,6 +34,7 @@ config.local.toml
 desktop/dist/
 desktop/dist-types/
 desktop/release/
+desktop/native/build/
 
 ### Workspace package build outputs
 packages/*/dist/

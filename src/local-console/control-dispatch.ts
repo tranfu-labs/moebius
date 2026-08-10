@@ -60,6 +60,24 @@ export function resolveClaimedControlAction(input: {
   return { kind: "run-primary", role: trigger.role };
 }
 
+/**
+ * 主理人一等收束信号可记录性（domain）：complete-source 判定只对主理人 Agent 消息
+ * 生效，且需要 store 具备落盘能力；返回 record 时携带要落盘的角色。
+ */
+export function planPrimaryCloseoutRecordability(input: {
+  speaker: string;
+  role: string | null;
+  primaryAgent: string | null;
+  recordCapable: boolean;
+}): { kind: "record"; role: string } | { kind: "skip" } {
+  return input.speaker === "agent"
+    && input.role !== null
+    && input.role === input.primaryAgent
+    && input.recordCapable
+    ? { kind: "record", role: input.role }
+    : { kind: "skip" };
+}
+
 export interface LocalPendingWorkerCandidate {
   message: Pick<
     LocalConsoleMessage,

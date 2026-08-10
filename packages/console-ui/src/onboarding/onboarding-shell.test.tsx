@@ -152,6 +152,7 @@ describe("OnboardingShell", () => {
     ));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     expect(screen.getByRole("button", { name: "开始使用" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "完成回看" })).not.toBeInTheDocument();
@@ -330,7 +331,7 @@ describe("OnboardingShell", () => {
 
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
     expect(screen.getByTestId("onboarding-content-column")).toHaveClass("max-w-[640px]");
-    expect(screen.getByTestId("onboarding-progress-bars").children).toHaveLength(4);
+    expect(screen.getByTestId("onboarding-progress-bars").children).toHaveLength(5);
     expect(screen.getByTestId("onboarding-step-1")).not.toHaveClass("min-h-[560px]");
     expect(screen.getByTestId("onboarding-footer")).toHaveClass(
       "shrink-0",
@@ -345,6 +346,7 @@ describe("OnboardingShell", () => {
       screen.getByTestId("onboarding-actions"),
     );
     expect(screen.queryByText("1 / 4")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 / 5")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /开发团队/ })).toHaveAttribute(
@@ -359,6 +361,10 @@ describe("OnboardingShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新播放" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "2");
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByTestId("onboarding-step-4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByTestId("onboarding-step-5")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "上一步" }));
     expect(screen.getByTestId("onboarding-step-4")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "上一步" }));
     expect(screen.getByTestId("onboarding-relay-demo-slot")).toHaveAttribute("data-relay-run", "3");
@@ -381,7 +387,7 @@ describe("OnboardingShell", () => {
 
     expect(screen.getByRole("heading", { name: "AI 团队设计器" })).toBeInTheDocument();
     expect(screen.getByText("使用 Codex CLI · 仍在第 2 步")).toBeInTheDocument();
-    expect(screen.getByText("第 2 步，共 4 步")).toBeInTheDocument();
+    expect(screen.getByText("第 2 步，共 5 步")).toBeInTheDocument();
     expect(screen.getByTestId("onboarding-layout-frame")).toHaveClass("max-w-[780px]");
     expect(screen.getByTestId("onboarding-content-column")).not.toHaveClass("max-w-[640px]");
     expect(screen.queryByTestId("onboarding-footer")).not.toBeInTheDocument();
@@ -571,6 +577,7 @@ describe("OnboardingShell", () => {
     ));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     expect(screen.getByText(/其中 \d+ 名成员仍需完成 Codex 准备/u)).toBeVisible();
     expect(screen.queryByText(/进入新对话后仍会保留/u)).not.toBeInTheDocument();
@@ -586,6 +593,7 @@ describe("OnboardingShell", () => {
       "aria-pressed",
       "true",
     ));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
@@ -642,6 +650,22 @@ function createShellProps(
       proposal: null,
       proposalRevision: null,
       error: null,
+    },
+    taskReminder: {
+      enabled: true,
+      permission: "allowed",
+      channelAnomaly: false,
+      saveStatus: "idle",
+      saveResult: null,
+      checking: false,
+      channelCheckResult: null,
+      modal: { open: false, phase: "idle", entries: [], saveFailed: false },
+      onToggle: vi.fn(),
+      onRequestPermission: vi.fn(),
+      onOpenSystemSettings: vi.fn(),
+      onRecheckChannel: vi.fn(),
+      onRetrySave: vi.fn(),
+      onModalAction: vi.fn(),
     },
     onRecheckEnvironment: vi.fn(),
     onInstallCli: vi.fn(),

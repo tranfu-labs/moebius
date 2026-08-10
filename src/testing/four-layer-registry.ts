@@ -59,6 +59,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/conversation-layout.ts",
   "packages/console-ui/src/console/conversation-relay-rail-model.ts",
   "packages/console-ui/src/console/conversation-relay-rail.tsx",
+  "packages/console-ui/src/console/conversation-round-status.tsx",
   "packages/console-ui/src/console/conversation-search.tsx",
   "packages/console-ui/src/console/conversation-sidebar.tsx",
   "packages/console-ui/src/console/execution-profile-registry.ts",
@@ -70,6 +71,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/managed-process-panel.tsx",
   "packages/console-ui/src/console/member-name.ts",
   "packages/console-ui/src/console/new-conversation-page.tsx",
+  "packages/console-ui/src/console/notification-permission-dialog.tsx",
   "packages/console-ui/src/console/operator-console.tsx",
   "packages/console-ui/src/console/process-event.tsx",
   "packages/console-ui/src/console/process-scroll-model.ts",
@@ -96,6 +98,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/sub-session-panel.tsx",
   "packages/console-ui/src/console/subtask-tab.tsx",
   "packages/console-ui/src/console/team-selection-label.ts",
+  "packages/console-ui/src/console/terminal-notification-settings.tsx",
   "packages/console-ui/src/console/text-fragment-list.tsx",
   "packages/console-ui/src/console/workspace-file-view.tsx",
   "packages/console-ui/src/i18n/index.tsx",
@@ -107,6 +110,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/index.ts",
   "packages/console-ui/src/lib/utils.ts",
   "packages/console-ui/src/onboarding/onboarding-shell.tsx",
+  "packages/console-ui/src/onboarding/notification-permission-step.tsx",
   "packages/console-ui/src/onboarding/onboarding-team-list-model.ts",
   "packages/console-ui/src/onboarding/onboarding-state.ts",
   "packages/console-ui/src/onboarding/relay-demo/relay-demo.tsx",
@@ -320,6 +324,11 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/worker-wiring.ts",
   "src/local-console/workspace-query-runtime.ts",
   "src/runner.ts",
+  "src/local-console/round-terminal-runtime.ts",
+  "desktop/src/task-reminder-delivery-runtime.ts",
+  "src/local-console/round-state-projection.ts",  "src/local-console/runtime-round-wiring.ts",
+
+  "desktop/src/console-page/use-task-reminder.ts",
 ] as const;
 
 export const FOUR_LAYER_ADAPTER_FILES = [
@@ -447,6 +456,11 @@ export const FOUR_LAYER_ADAPTER_FILES = [
   "src/sqlite-state-worker.ts",
   "src/sqlite-state.ts",
   "src/trusted-jsonl.ts",
+  "desktop/src/macos-permission-adapter.ts",
+  "desktop/src/notification-channel.ts",
+  "desktop/src/task-reminder-ipc.ts",
+  "desktop/src/task-reminder-preference.ts",
+  "desktop/src/task-reminder-delivery-state.ts",
 ] as const;
 
 export const FOUR_LAYER_DOMAIN_FILES = [
@@ -649,6 +663,12 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/triggers/index.ts",
   "src/triggers/mention-trigger.ts",
   "src/triggers/types.ts",
+  "desktop/src/permission-modal-plan.ts",
+  "desktop/src/task-reminder-contract.ts",
+  "src/local-console/round-closeout-plan.ts",
+  "src/local-console/round-terminal-event-bus.ts",
+  "src/local-console/round-visible-plan.ts",
+  "desktop/src/task-reminder-delivery-plan.ts",
 ] as const;
 
 const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
@@ -1192,6 +1212,7 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
     "desktop/src/onboarding/onboarding-route.tsx",
     "desktop/src/onboarding/register.ts",
     "src/local-console/runtime.ts",
+    "src/local-console/runtime-round-wiring.ts",
     "src/local-console/start.ts",
     "src/runner.ts",
   ],

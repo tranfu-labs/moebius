@@ -958,6 +958,64 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     });
   }
 
+  async recordRoundTerminal(input: {
+    sessionId: string;
+    roundId: number;
+    outcome: import("./round-closeout-plan.js").LocalRoundTerminalOutcome;
+    terminalMessageId: number | null;
+    conversationTitle: string;
+    occurredAt: string;
+  }): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "round_terminal",
+      `round:${String(input.roundId)}`,
+      input.occurredAt,
+      {
+        roundId: input.roundId,
+        outcome: input.outcome,
+        terminalMessageId: input.terminalMessageId,
+        conversationTitle: input.conversationTitle,
+        occurredAt: input.occurredAt,
+      },
+    );
+  }
+
+  async recordPrimaryCloseout(input: {
+    sessionId: string;
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  }): Promise<void> {
+    // 与 appendIdempotentSessionFact 不同：同一消息可能因 rewind/重试被再次
+    // complete-source，occurredAt 会变化；收束信号对消息是确定的，已存在即
+    // 幂等忽略（保留首次判定时刻），不因时间戳差异抛冲突。
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const existing = events.find((event) =>
+        event.type === "primary_closeout"
+        && isRecord(event.payload)
+        && event.payload.messageId === input.messageId);
+      if (existing !== undefined) {
+        return;
+      }
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "primary_closeout",
+        recordedAt: input.occurredAt,
+        payload: {
+          messageId: input.messageId,
+          role: input.role,
+          occurredAt: input.occurredAt,
+        },
+        messageUpserts: [],
+      });
+    });
+  }
+
   async recordCodexThreadLink(input: LocalCodexThreadLinkFact): Promise<void> {
     await this.enqueue(async () => {
       await this.readMessagesFromFacts(input.sessionId);
@@ -1357,6 +1415,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
             typeof event.payload.invocationId === "string"
             && typeof event.payload.phase === "string"
             && `${event.payload.invocationId}:${event.payload.phase}` === key
+          )
+          || (
+            typeof event.payload.roundId === "number"
+            && `round:${event.payload.roundId}` === key
           )
         ));
       if (existing !== undefined) {

@@ -18,6 +18,7 @@ import { useI18n, type Locale } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { ProviderSettingsPanel, type ProviderSettingsController } from "./provider-settings-panel";
+import { TerminalNotificationSettings, type TerminalNotificationSettingsProps } from "./terminal-notification-settings";
 
 export type LanguageSaveStatus = "idle" | "saving" | "failed";
 export type SettingsSection = "general" | "providers" | "about";
@@ -40,6 +41,53 @@ export interface SettingsAboutState {
   copyStatus?: VersionCopyStatus;
 }
 
+export type TaskReminderModalOutcome = "completed" | "awaiting-user" | "no-new-content" | "silent-closeout";
+
+export interface TaskReminderModalEntry {
+  sessionId: string;
+  title: string;
+  outcome: TaskReminderModalOutcome;
+}
+
+export interface TaskReminderModalState {
+  open: boolean;
+  phase:
+    | "idle"
+    | "requesting"
+    | "request-done"
+    | "opening-settings"
+    | "opened"
+    | "failed"
+    | "closing-save"
+    | "closing-save-failed";
+  entries: TaskReminderModalEntry[];
+  saveFailed: boolean;
+}
+
+export type TaskReminderModalAction =
+  | { kind: "open"; entry: TaskReminderModalEntry }
+  | { kind: "request" }
+  | { kind: "request-finished"; permissionAllowed: boolean }
+  | { kind: "open-settings" }
+  | { kind: "settings-opened" }
+  | { kind: "settings-failed" }
+  | { kind: "recheck"; permissionAllowed?: boolean }
+  | { kind: "close-notifications" }
+  | { kind: "close-save-finished" }
+  | { kind: "close-save-failed" };
+
+export type TaskReminderSettingsController = TerminalNotificationSettingsProps & {
+  modal: TaskReminderModalState;
+  /** Unconsumed notification click payload; cold-start navigation recovery (desktop main). */
+  pendingClick?: {
+    sessionId: string;
+    roundId: number;
+    terminalMessageId: number | null;
+  } | null;
+  onRetrySave?(): void;
+  onModalAction(action: TaskReminderModalAction): void;
+};
+
 export interface SettingsDialogProps {
   open: boolean;
   activeLocale: Locale;
@@ -48,6 +96,7 @@ export interface SettingsDialogProps {
   activeSection?: SettingsSection;
   about?: SettingsAboutState;
   providers?: ProviderSettingsController;
+  taskReminder?: TaskReminderSettingsController;
   externalLinkStatus?: "idle" | "failed";
   onOpenChange(open: boolean): void;
   onSectionChange?(section: SettingsSection): void;
@@ -70,6 +119,7 @@ export function SettingsDialog({
   activeSection = "general",
   about,
   providers,
+  taskReminder,
   externalLinkStatus = "idle",
   onOpenChange,
   onSectionChange,
@@ -156,6 +206,7 @@ export function SettingsDialog({
                 <GeneralSettings
                   selectedLocale={selectedLocale}
                   saveStatus={saveStatus}
+                  taskReminder={taskReminder}
                   onSelectLocale={onSelectLocale}
                   onRetry={onRetry}
                 />
@@ -212,80 +263,104 @@ function SettingsNavItem({
 function GeneralSettings({
   selectedLocale,
   saveStatus,
+  taskReminder,
   onSelectLocale,
   onRetry,
 }: {
   selectedLocale: Locale;
   saveStatus: LanguageSaveStatus;
+  taskReminder?: TaskReminderSettingsController;
   onSelectLocale(locale: Locale): void;
   onRetry(): void;
 }): JSX.Element {
   const { t } = useI18n();
 
   return (
-    <fieldset>
-      <legend className="text-sm font-medium">{t("settings.language")}</legend>
-      <p id="settings-language-description" className="mt-1 text-sm text-sub">
-        {t("settings.language.description")}
-      </p>
-      <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
-        {localeOptions.map((locale) => {
-          const checked = selectedLocale === locale;
-          return (
-            <label
-              key={locale}
-              className={cn(
-                "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors",
-                "focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent",
-                checked ? "bg-sel" : "hover:bg-hover",
-                saveStatus === "saving" && "cursor-wait opacity-70",
-              )}
-            >
-              <input
-                type="radio"
-                name="moebius-interface-language"
-                value={locale}
-                checked={checked}
-                aria-disabled={saveStatus === "saving"}
-                onChange={() => {
-                  if (saveStatus !== "saving") {
-                    onSelectLocale(locale);
-                  }
-                }}
-                className="sr-only"
-              />
-              <span
+    <>
+      <fieldset>
+        <legend className="text-sm font-medium">{t("settings.language")}</legend>
+        <p id="settings-language-description" className="mt-1 text-sm text-sub">
+          {t("settings.language.description")}
+        </p>
+        <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+          {localeOptions.map((locale) => {
+            const checked = selectedLocale === locale;
+            return (
+              <label
+                key={locale}
                 className={cn(
-                  "flex h-4 w-4 items-center justify-center rounded-full border",
-                  checked ? "border-accent bg-accent text-accent-fg" : "border-line-strong",
+                  "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors",
+                  "focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent",
+                  checked ? "bg-sel" : "hover:bg-hover",
+                  saveStatus === "saving" && "cursor-wait opacity-70",
                 )}
-                aria-hidden="true"
               >
-                {checked ? <Check className="h-3 w-3" strokeWidth={2} /> : null}
-              </span>
-              <span>{t(`settings.locale.${locale}`)}</span>
-            </label>
-          );
-        })}
-      </div>
+                <input
+                  type="radio"
+                  name="moebius-interface-language"
+                  value={locale}
+                  checked={checked}
+                  aria-disabled={saveStatus === "saving"}
+                  onChange={() => {
+                    if (saveStatus !== "saving") {
+                      onSelectLocale(locale);
+                    }
+                  }}
+                  className="sr-only"
+                />
+                <span
+                  className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded-full border",
+                    checked ? "border-accent bg-accent text-accent-fg" : "border-line-strong",
+                  )}
+                  aria-hidden="true"
+                >
+                  {checked ? <Check className="h-3 w-3" strokeWidth={2} /> : null}
+                </span>
+                <span>{t(`settings.locale.${locale}`)}</span>
+              </label>
+            );
+          })}
+        </div>
 
-      <div className="mt-4 min-h-9" aria-live="polite">
-        {saveStatus === "saving" ? (
-          <p className="flex items-center gap-2 text-sm text-sub" role="status">
-            <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
-            {t("settings.saving")}
-          </p>
-        ) : null}
-        {saveStatus === "failed" ? (
-          <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
-            <p className="text-sm text-danger">{t("settings.saveFailed")}</p>
-            <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-              {t("common.retry")}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </fieldset>
+        <div className="mt-4 min-h-9" aria-live="polite">
+          {saveStatus === "saving" ? (
+            <p className="flex items-center gap-2 text-sm text-sub" role="status">
+              <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
+              {t("settings.saving")}
+            </p>
+          ) : null}
+          {saveStatus === "failed" ? (
+            <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
+              <p className="text-sm text-danger">{t("settings.saveFailed")}</p>
+              <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </fieldset>
+
+      {taskReminder !== undefined ? (
+        <fieldset className="mt-8 border-t border-line pt-6">
+          <legend className="text-sm font-medium">{t("settings.taskReminder")}</legend>
+          <TerminalNotificationSettings
+            enabled={taskReminder.enabled}
+            saveStatus={taskReminder.saveStatus}
+            saveResult={taskReminder.saveResult}
+            permission={taskReminder.permission}
+            channelAnomaly={taskReminder.channelAnomaly}
+            channelCheckResult={taskReminder.channelCheckResult}
+            checking={taskReminder.checking}
+            onToggle={taskReminder.onToggle}
+            onRequestPermission={taskReminder.onRequestPermission}
+            onOpenSystemSettings={taskReminder.onOpenSystemSettings}
+            onRecheckChannel={taskReminder.onRecheckChannel}
+            onRetrySave={taskReminder.onRetrySave}
+          />
+        </fieldset>
+      ) : null}
+    </>
   );
 }
 

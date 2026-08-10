@@ -474,6 +474,8 @@ export interface LocalConsoleSessionSummary {
   unresolvedSystemEventKind?: LocalConsoleSystemEventKind | null;
   lastMessageMentionsAgent?: boolean;
   hasPendingControlWork?: boolean;
+  /** 轮次状态投影（desktop 侧边栏单点/Dock 的数据源）；store 不填，由查询层组装。 */
+  roundState?: import("./round-closeout-plan.js").LocalRoundState | null;
   runningCount: number;
   managedRunningCount?: number;
   waitingCount: number;
@@ -930,6 +932,22 @@ export interface LocalConsoleStore {
   }): Promise<void>;
   recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
   recordProviderProcessStarted?(input: import("./execution-context.js").LocalProviderProcessStartedFact): Promise<void>;
+  recordRoundTerminal?(input: {
+    sessionId: string;
+    roundId: number;
+    outcome: import("./round-closeout-plan.js").LocalRoundTerminalOutcome;
+    terminalMessageId: number | null;
+    conversationTitle: string;
+    occurredAt: string;
+  }): Promise<void>;
+  /** 主理人一等收束信号（complete-source 判定）落盘；幂等键为消息 id。 */
+  recordPrimaryCloseout?(input: {
+    sessionId: string;
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  }): Promise<void>;
+  getSessionFactLogPath?(sessionId: string): string;
   readRunAgentAuditSource?(input: { sessionId: string; runId: string }): Promise<{
     context: import("./execution-context.js").LocalRunExecutionContextFact | null;
     processStarted: boolean;

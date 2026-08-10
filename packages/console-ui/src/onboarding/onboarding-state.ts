@@ -2,7 +2,7 @@ import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import type { ProviderSettingsProfile } from "@/console/provider-settings-panel";
 import type { Translate } from "@/i18n";
 
-export type OnboardingStep = 1 | 2 | 3 | 4;
+export type OnboardingStep = 1 | 2 | 3 | 4 | 5;
 export type OnboardingCli = "codex" | "claude" | "kimi";
 export type OnboardingEngine = OnboardingCli | "pi";
 
@@ -164,7 +164,7 @@ export function reduceOnboardingShell(
     case "environment-passed":
       return state.environmentPassed ? state : { ...state, environmentPassed: true };
     case "next":
-      if (state.teamBuilderOpen || state.step === 4) {
+      if (state.teamBuilderOpen || state.step === 5) {
         return state;
       }
       return {
@@ -179,7 +179,7 @@ export function reduceOnboardingShell(
       return {
         ...state,
         step: (state.step - 1) as OnboardingStep,
-        relayRun: state.step === 4 ? state.relayRun + 1 : state.relayRun,
+        relayRun: state.step === 5 ? state.relayRun + 1 : state.relayRun,
       };
     case "select-team":
       return { ...state, selectedTeamKey: action.teamKey };

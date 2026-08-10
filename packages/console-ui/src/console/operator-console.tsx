@@ -117,8 +117,10 @@ import {
   type LanguageSaveStatus,
   type SettingsAboutState,
   type SettingsSection,
+  type TaskReminderSettingsController,
 } from "@/console/settings-dialog";
 import type { ProviderSettingsController } from "@/console/provider-settings-panel";
+import { NotificationPermissionDialog } from "@/console/notification-permission-dialog";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -256,6 +258,18 @@ export interface OperatorSession {
   stuckCount: number;
   errorCount: number;
   interruptedCount: number;
+  /** Round state projection (derived by local-console; single source for sidebar dot and Dock). */
+  roundState?: {
+    kind: "not-started" | "in-progress" | "terminal";
+    roundId: number;
+    fact: {
+      roundId: number;
+      outcome: "completed" | "awaiting-user" | "no-new-content" | "silent-closeout";
+      terminalMessageId: number | null;
+      occurredAt: string;
+    } | null;
+    silentSince: string | null;
+  } | null;
   childCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -456,6 +470,31 @@ export interface OperatorMessageNavigationRequest {
   requestId: number;
 }
 
+function planPermissionModalOpenStatus(
+  phase: import("@/console/settings-dialog").TaskReminderSettingsController["modal"]["phase"],
+): import("@/console/notification-permission-dialog").PermissionModalOpenSettingsStatus {
+  switch (phase) {
+    case "requesting":
+      return "requesting";
+    case "request-done":
+      return "request-done";
+    case "opening-settings":
+      return "opening";
+    case "opened":
+      return "opened";
+    case "failed":
+      return "failed";
+    default:
+      return "idle";
+  }
+}
+
+function planPermissionModalCloseSave(
+  phase: import("@/console/settings-dialog").TaskReminderSettingsController["modal"]["phase"],
+): import("@/console/notification-permission-dialog").PermissionModalCloseSaveStatus {
+  return phase === "closing-save" ? "saving" : phase === "closing-save-failed" ? "failed" : "idle";
+}
+
 export interface OperatorConsoleProps {
   presentation?: "application" | "conversation";
   project: OperatorProject;
@@ -509,6 +548,7 @@ export interface OperatorConsoleProps {
   languageSaveStatus?: LanguageSaveStatus;
   settingsAbout?: SettingsAboutState;
   providerSettings?: ProviderSettingsController;
+  taskReminder?: TaskReminderSettingsController;
   settingsExternalLinks?: {
     releaseNotes: string;
     feedback: string;
@@ -739,6 +779,7 @@ export function OperatorConsole({
   languageSaveStatus = "idle",
   settingsAbout,
   providerSettings,
+  taskReminder,
   settingsExternalLinks,
   onSelectLocale,
   onRetryLocaleSave,
@@ -2940,6 +2981,7 @@ export function OperatorConsole({
           activeSection={settingsSection}
           about={settingsAbout}
           providers={providerSettings}
+          taskReminder={taskReminder}
           externalLinkStatus={settingsExternalLinkStatus}
           onOpenChange={(open) => {
             settingsOpenRef.current = open;
@@ -2957,6 +2999,25 @@ export function OperatorConsole({
           onOpenFeedback={() => openSettingsExternalLink(settingsExternalLinks?.feedback)}
           onOpenRepository={() => openSettingsExternalLink(settingsExternalLinks?.repository)}
         />
+
+        {taskReminder !== undefined && taskReminder.modal.open ? (
+          <NotificationPermissionDialog
+            open={taskReminder.modal.open}
+            entries={taskReminder.modal.entries.map((entry) => ({
+              id: entry.sessionId,
+              conversationTitle: entry.title,
+              outcome: entry.outcome === "awaiting-user" ? "awaiting-user" : "completed",
+            }))}
+            openingSettings={planPermissionModalOpenStatus(taskReminder.modal.phase)}
+            closingSave={planPermissionModalCloseSave(taskReminder.modal.phase)}
+            onOpenChange={() => undefined}
+            onEnablePermission={() => taskReminder.onModalAction({ kind: "request" })}
+            onRecheck={() => taskReminder.onModalAction({ kind: "recheck" })}
+            onCloseNotifications={() => taskReminder.onModalAction({ kind: "close-notifications" })}
+            onRetryOpenSettings={() => taskReminder.onModalAction({ kind: "open-settings" })}
+            onRetryCloseSave={() => taskReminder.onModalAction({ kind: "close-notifications" })}
+          />
+        ) : null}
 
         {settingsNotifications.length > 0 ? (
           <div
@@ -4090,6 +4151,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
         ? session.unresolvedSystemEventKind
         : null,
       isNonContinuable: project.directoryAvailable === false || session.continuation?.canContinue === false,
+      roundState: session.roundState ?? null,
       analysisDisabledReason: session.analysisRecordAvailable === false
         ? t("console.sessionAnalysis.recordUnavailable")
         : null,

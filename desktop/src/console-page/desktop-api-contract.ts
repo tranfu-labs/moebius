@@ -170,6 +170,21 @@ export interface DesktopApi {
   ) => Promise<LastUsedAgentTeam>;
   getOnboardingStatus?: () => Promise<OnboardingCompletionStatus>;
   completeOnboarding?: () => Promise<OnboardingCompletionStatus>;
+  readTaskReminderState?: () => Promise<import("../task-reminder-contract.js").TaskReminderReadState>;
+  setTaskReminderEnabled?: (enabled: boolean) => Promise<{ ok: boolean }>;
+  applyTaskReminderModalAction?: (action: import("../permission-modal-plan.js").PermissionModalAction) => Promise<{
+    ok: boolean;
+    state: import("../permission-modal-plan.js").PermissionModalState | null;
+  }>;
+  recheckTaskReminderChannel?: () => Promise<"ok" | "anomaly" | "unknown">;
+  openTaskReminderSystemSettings?: () => Promise<{ ok: boolean }>;
+  onTaskReminderClicked?: (listener: (payload: {
+    sessionId: string;
+    roundId: number;
+    terminalMessageId: number | null;
+  }) => void) => () => void;
+  /** Notification click was located and consumed by the renderer (cold-start recovery reconciliation). */
+  consumeTaskReminderClick?: () => Promise<{ ok: boolean }>;
   checkOnboardingCodex?: () => Promise<DoctorCheck>;
   copyOnboardingInstallCommand?: () => Promise<void>;
   getOnboardingCliReadinessState?: () => Promise<OnboardingCliReadinessState>;

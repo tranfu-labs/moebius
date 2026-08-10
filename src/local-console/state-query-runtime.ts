@@ -14,6 +14,7 @@ import {
   noSessionWorkspaceDiff,
   projectPendingDispatch,
 } from "./runtime-domain.js";
+import { projectRoundStates } from "./round-state-projection.js";
 import type {
   LocalConsoleChildSessionSummary,
   LocalConsoleProjectSummary,
@@ -21,6 +22,7 @@ import type {
   LocalConsoleRunSnapshot,
   LocalConsoleSnapshot,
   LocalConsoleStateSnapshot,
+  LocalConsoleSessionSummary,
   LocalConsoleSessionView,
   LocalConsoleStore,
   LocalConsoleWorkspaceDiffSummary,
@@ -43,6 +45,10 @@ export class LocalConsoleStateQueryRuntime {
     listChildSessions(parentSessionId: string): Promise<LocalConsoleChildSessionSummary[]>;
     readWorkspaceDiff(sessionId: string): Promise<LocalConsoleWorkspaceDiffSummary>;
     loadTeamSnapshot(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null>;
+    /** 轮次收束评估：幂等，可能落盘新收束事实并发布事件；无能力时返回 not-started。 */
+    evaluateRound?(sessionId: string): Promise<import("./round-closeout-plan.js").LocalRoundState>;
+    /** 读上次收束事实（不评估）。 */
+    readLastRoundFact?(sessionId: string): Promise<import("./round-terminal-runtime.js").LocalRoundPersistedFact | null>;
   }) {}
 
   async snapshot(sessionId = this.input.defaultSessionId): Promise<LocalConsoleSnapshot> {
@@ -81,7 +87,17 @@ export class LocalConsoleStateQueryRuntime {
       selectedSessionId: requested.sessionId,
       projectRoot: this.input.projectRoot,
     });
-    const read = decideSelectedSessionRead(selection.selectedSession);
+    const projectedProjects = await projectRoundStates(projects, {
+      evaluateRound: this.input.evaluateRound,
+      readLastRoundFact: this.input.readLastRoundFact,
+    });
+    const projectedSelection = planSelectedConsoleState({
+      projects: projectedProjects,
+      requestedProjectId: requested.projectId,
+      selectedSessionId: requested.sessionId,
+      projectRoot: this.input.projectRoot,
+    });
+    const read = decideSelectedSessionRead(projectedSelection.selectedSession);
     const messages = read.kind === "empty"
       ? []
       : await this.input.storeCall("local-console-store-list", () =>
@@ -97,18 +113,18 @@ export class LocalConsoleStateQueryRuntime {
         );
     const activeRuns = await this.input.activeRunSnapshots(selection.sessionId);
     return {
-      projects,
-      project: selection.selectedProject,
-      selectedProjectId: selection.selectedProject.projectId,
-      selectedSessionId: selection.sessionId,
-      selectedSession: selection.selectedSession,
+      projects: projectedProjects,
+      project: projectedSelection.selectedProject,
+      selectedProjectId: projectedSelection.selectedProject.projectId,
+      selectedSessionId: projectedSelection.sessionId,
+      selectedSession: projectedSelection.selectedSession,
       messages: messages.filter(isVisibleTimelineMessage),
       pendingDispatchMessages: messages.filter(isPendingDispatchMessage).map(projectPendingDispatch),
       pendingPrimaryMessages: messages.filter(isPendingPrimaryMessage),
       childSessions,
       memberIdentities,
       activeRuns,
-      activeRun: planPrimaryActiveRun(activeRuns, this.input.primaryRunId(selection.sessionId)),
+      activeRun: planPrimaryActiveRun(activeRuns, this.input.primaryRunId(projectedSelection.sessionId)),
       workspaceDiff: read.kind === "empty"
         ? noSessionWorkspaceDiff()
         : await this.input.readWorkspaceDiff(read.session.sessionId),

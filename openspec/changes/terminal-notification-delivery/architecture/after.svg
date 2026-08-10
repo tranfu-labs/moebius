@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="460" viewBox="0 0 720 460" font-family="Inter, sans-serif" font-size="12">
+  <rect width="720" height="460" fill="#ffffff"/>
+  <text x="360" y="28" text-anchor="middle" font-size="16" font-weight="600" fill="#111">改造后：主理人收束事实 → 类型化事件 → 原生消费者</text>
+
+  <rect x="40" y="70" width="190" height="64" rx="10" fill="#eef2ff" stroke="#5E6AD2"/>
+  <text x="135" y="92" text-anchor="middle" font-weight="600" fill="#111">主理人 run 终局</text>
+  <text x="135" y="110" text-anchor="middle" fill="#555">round-closeout-plan</text>
+  <text x="135" y="124" text-anchor="middle" fill="#555">30s 静默兜底（domain）</text>
+
+  <rect x="40" y="170" width="190" height="64" rx="10" fill="#eef2ff" stroke="#5E6AD2"/>
+  <text x="135" y="192" text-anchor="middle" font-weight="600" fill="#111">收束事实落盘</text>
+  <text x="135" y="210" text-anchor="middle" fill="#555">round-terminal-runtime</text>
+  <text x="135" y="224" text-anchor="middle" fill="#555">event_id 去重持久化</text>
+
+  <rect x="300" y="120" width="180" height="64" rx="10" fill="#eef2ff" stroke="#5E6AD2"/>
+  <text x="390" y="142" text-anchor="middle" font-weight="600" fill="#111">session:round:terminal</text>
+  <text x="390" y="160" text-anchor="middle" fill="#555">内部类型化事件总线</text>
+  <text x="390" y="174" text-anchor="middle" fill="#555">不开放脚本 Hook</text>
+
+  <rect x="540" y="60" width="150" height="58" rx="10" fill="#f6f6f6" stroke="#999"/>
+  <text x="615" y="82" text-anchor="middle" font-weight="600" fill="#111">侧边栏单点</text>
+  <text x="615" y="98" text-anchor="middle" fill="#555">红/蓝/闪烁/无</text>
+  <text x="615" y="112" text-anchor="middle" fill="#555">折叠聚合</text>
+
+  <rect x="540" y="140" width="150" height="58" rx="10" fill="#f6f6f6" stroke="#999"/>
+  <text x="615" y="162" text-anchor="middle" font-weight="600" fill="#111">Dock 角标</text>
+  <text x="615" y="178" text-anchor="middle" fill="#555">当前可见红+蓝</text>
+  <text x="615" y="192" text-anchor="middle" fill="#555">去重计数</text>
+
+  <rect x="540" y="220" width="150" height="58" rx="10" fill="#f6f6f6" stroke="#999"/>
+  <text x="615" y="242" text-anchor="middle" font-weight="600" fill="#111">macOS 通知+声音</text>
+  <text x="615" y="258" text-anchor="middle" fill="#555">发送前权限检查</text>
+  <text x="615" y="272" text-anchor="middle" fill="#555">failed → 通道异常</text>
+
+  <rect x="540" y="300" width="150" height="58" rx="10" fill="#f6f6f6" stroke="#999"/>
+  <text x="615" y="322" text-anchor="middle" font-weight="600" fill="#111">权限恢复弹窗</text>
+  <text x="615" y="338" text-anchor="middle" fill="#555">单弹窗合并多对话</text>
+  <text x="615" y="352" text-anchor="middle" fill="#555">不补发旧终局</text>
+
+  <rect x="540" y="380" width="150" height="58" rx="10" fill="#f6f6f6" stroke="#999"/>
+  <text x="615" y="402" text-anchor="middle" font-weight="600" fill="#111">点击回流</text>
+  <text x="615" y="418" text-anchor="middle" fill="#555">激活/启动+定位</text>
+  <text x="615" y="432" text-anchor="middle" fill="#555">退出后仍可用</text>
+
+  <line x1="230" y1="102" x2="298" y2="102" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="135" y1="170" x2="135" y2="236" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="230" y1="202" x2="298" y2="168" stroke="#5E6AD2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="152" x2="538" y2="90" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="156" x2="538" y2="170" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="480" y1="162" x2="538" y2="250" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="615" y1="278" x2="615" y2="298" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="615" y1="358" x2="615" y2="378" stroke="#999" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#5E6AD2"/>
+    </marker>
+  </defs>
+</svg>
