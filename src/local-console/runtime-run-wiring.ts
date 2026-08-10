@@ -1,5 +1,6 @@
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import type { LocalDetachedRunFailureRuntime } from "./detached-run-failure-runtime.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import type { createLocalPrimaryWiring } from "./primary-wiring.js";
@@ -34,6 +35,7 @@ export function createLocalRuntimeRunWiring(input: {
   continuation: LocalSessionContinuationRuntime;
   pendingContext: LocalPendingSessionContextRuntime;
   failure: LocalRunFailureRuntime;
+  detachedFailure: LocalDetachedRunFailureRuntime;
   workspace: LocalConversationWorkspaceRuntime;
   scheduleRun: WorkerInput["scheduleRun"];
   processPending: WorkerInput["processPending"];
@@ -84,6 +86,7 @@ export function createLocalRuntimeRunWiring(input: {
       continuation: input.continuation,
       pendingContext: input.pendingContext,
       failure: input.failure,
+      detachedFailure: input.detachedFailure,
       workspace: input.workspace,
       scheduleRun: input.scheduleRun,
       processPending: input.processPending,

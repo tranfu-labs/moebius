@@ -55,14 +55,56 @@ export function RunTime({
   const accessible = completedLabel === null
     ? visible
     : t("console.runTime.accessible", { duration: visible, completed: completedLabel });
+  // The completion time is a fact to be read, like the duration — not something
+  // to hide in a tooltip. A bare number leaves the reader unsure what moment it
+  // refers to.
   return (
     <span
-      className={cn("tnum whitespace-nowrap text-xs text-sub", className)}
+      className={cn("tnum inline-flex items-center gap-x-1.5 whitespace-nowrap text-xs text-sub", className)}
       aria-label={accessible}
-      title={completedLabel ?? visible}
-      tabIndex={completedLabel === null ? undefined : 0}
     >
-      {visible}
+      <span>{visible}</span>
+      {completedLabel === null ? null : <span className="text-hint">{completedLabel}</span>}
+    </span>
+  );
+}
+
+/**
+ * The wall-clock moment a run landed, for the end of the message toolbar.
+ * Split from {@link RunTime} on purpose: the header answers "who and how long",
+ * while a timestamp belongs at the end of the message like any chat client.
+ */
+export function RunCompletedAt({ completedAt, className }: {
+  completedAt: string;
+  className?: string;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <span className={cn("tnum whitespace-nowrap text-xs text-hint", className)}>
+      {formatRunCompletedAt(completedAt, new Date(), t)}
+    </span>
+  );
+}
+
+/**
+ * When a run never started there is no duration and no completion — the only
+ * real moment is when it was triggered. Say so, instead of leaving a bare clock
+ * reading whose meaning the reader has to guess.
+ */
+export function RunTriggeredAt({ triggeredAt, className }: {
+  triggeredAt: string;
+  className?: string;
+}): JSX.Element {
+  const { t } = useI18n();
+  const parsed = new Date(triggeredAt);
+  const clock = Number.isNaN(parsed.getTime())
+    ? null
+    : `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  return (
+    <span className={cn("tnum whitespace-nowrap text-xs text-hint", className)}>
+      {clock === null
+        ? t("console.runTime.completedUnknown")
+        : t("console.runTime.triggeredAt", { time: clock })}
     </span>
   );
 }

@@ -114,6 +114,8 @@ export class LocalRunRecoveryRuntime {
         runDir: input.runDir,
         body: "原执行已经无法继续。你可以重新运行，或直接说话、换一个成员接手。",
         systemEventKind: "other",
+        role: input.role,
+        processSteps: [],
         now: this.input.nowIso(),
       }));
   }

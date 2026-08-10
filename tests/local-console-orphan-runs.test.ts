@@ -10,6 +10,8 @@ function msg(overrides: Partial<OrphanRunInputMessage> & Pick<OrphanRunInputMess
   return {
     runId: null,
     runDir: null,
+    role: null,
+    dispatchRole: null,
     ...overrides,
   };
 }
@@ -21,7 +23,7 @@ describe("identifyOrphanRuns", () => {
       messages: [msg({ id: 42, status: "running", runId: "r-42", runDir: "/tmp/r-42" })],
       activeSessionIds: new Set<string>(),
     });
-    expect(orphans).toEqual([{ userMessageId: 42, runId: "r-42", runDir: "/tmp/r-42" }]);
+    expect(orphans).toEqual([{ userMessageId: 42, runId: "r-42", runDir: "/tmp/r-42", role: null }]);
   });
 
   it("当前进程正在持有该 session 的 activeRun 时不判为孤儿", () => {
@@ -61,8 +63,8 @@ describe("identifyOrphanRuns", () => {
       activeSessionIds: new Set<string>(),
     });
     expect(orphans).toEqual([
-      { userMessageId: 7, runId: "r-7", runDir: null },
-      { userMessageId: 9, runId: null, runDir: null },
+      { userMessageId: 7, runId: "r-7", runDir: null, role: null },
+      { userMessageId: 9, runId: null, runDir: null, role: null },
     ]);
   });
 

@@ -1,3 +1,6 @@
+import {
+  planTerminalProcessSteps,
+} from "../../../src/local-console/terminal-record-plan.js";
 import type {
   AnalysisPanelEntry,
   OperatorMessage,
@@ -12,6 +15,55 @@ import type {
 import type { LocalConsoleState } from "./console-state-contract.js";
 import { EMPTY_CONSOLE_PROJECT, NO_OPERATOR_MESSAGES } from "./console-default-state.js";
 import { parseConversationTabSourceKey } from "./right-sidebar-tabs-model.js";
+
+/**
+ * The local console serves message process steps in the activity shape
+ * (`LocalRunActivity`); the timeline consumes them as the terminal process-step
+ * shape. The mapping is a domain decision (terminal-record-plan); the view only
+ * consumes the resulting shape.
+ */
+interface LocalActivityStepWireShape {
+  cursor: number;
+  kind: "command" | "tool" | "search" | "read" | "edit" | "thinking" | "progress";
+  phase: "running" | "completed";
+  action: string;
+  object: string | null;
+  occurredAt: string;
+}
+
+function planMessageProcessSteps(message: OperatorMessage): OperatorMessage {
+  const wireSteps = message.processSteps as readonly LocalActivityStepWireShape[] | undefined;
+  if (wireSteps === undefined || wireSteps.length === 0) {
+    return message;
+  }
+  const processSteps = planTerminalProcessSteps(wireSteps);
+  return processSteps.length === 0 ? message : { ...message, processSteps };
+}
+
+/**
+ * Memoize the process-step mapping by input array identity: the same messages
+ * array always yields the same result array across renders, and unchanged
+ * elements keep their references. Downstream consumers (attachment previews,
+ * useMemo) depend on reference stability - building a fresh array on every
+ * render would make their effects cascade indefinitely.
+ */
+const processStepsMappingCache = new WeakMap<OperatorMessage[], OperatorMessage[]>();
+
+export function planMessagesWithProcessSteps(messages: OperatorMessage[]): OperatorMessage[] {
+  const cached = processStepsMappingCache.get(messages);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let changed = false;
+  const mapped = messages.map((message) => {
+    const next = planMessageProcessSteps(message);
+    if (next !== message) changed = true;
+    return next;
+  });
+  const result = changed ? mapped : messages;
+  processStepsMappingCache.set(messages, result);
+  return result;
+}
 
 export interface ConsolePresentationState {
   project: OperatorProject;
@@ -34,7 +86,7 @@ export function planConsolePresentationState(
     project,
     projects: state?.projects ?? [project],
     selectedSession: state?.selectedSession ?? null,
-    messages: state?.messages ?? NO_OPERATOR_MESSAGES,
+    messages: planMessagesWithProcessSteps(state?.messages ?? NO_OPERATOR_MESSAGES),
     activeRun,
     activeRuns: state?.activeRuns ?? (activeRun === null ? [] : [activeRun]),
     sqlitePath: state?.sqlitePath,
@@ -48,7 +100,9 @@ export function planActiveSubSessionMessages(
 ): OperatorMessage[] {
   if (activeSubSessionId === null) return NO_OPERATOR_MESSAGES;
   const state = views[activeSubSessionId];
-  return state?.status === "ready" ? state.view.messages : NO_OPERATOR_MESSAGES;
+  return state?.status === "ready"
+    ? planMessagesWithProcessSteps(state.view.messages)
+    : NO_OPERATOR_MESSAGES;
 }
 
 export function planSubSessionViewsWithPreviews(

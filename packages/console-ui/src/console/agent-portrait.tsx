@@ -184,6 +184,7 @@ export function AgentPortrait({
       {portrait}
       <span
         aria-hidden="true"
+        data-agent-engine={engine.cli}
         className={cn(
           "absolute inline-flex items-center justify-center rounded-full border border-line bg-card",
           mark.badge,

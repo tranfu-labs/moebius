@@ -1,5 +1,10 @@
 import { buildLocalConsoleRoutingTimeline, buildLocalConsoleTimeline } from "./timeline.js";
-import { planPrimaryCloseoutRecordability, resolveClaimedControlAction } from "./control-dispatch.js";
+import {
+  decideHandoffStaleOutcome,
+  planHandoffControlOverride,
+  planPrimaryCloseoutRecordability,
+  resolveClaimedControlAction,
+} from "./control-dispatch.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalPrimaryRunInput } from "./primary-preparation-runtime.js";
@@ -15,6 +20,7 @@ import {
   planPrimaryTimelineMessages,
 } from "./primary-runtime-plan.js";
 import { resolveTrigger } from "../triggers/index.js";
+import { planTerminalRecord } from "./terminal-record-plan.js";
 import type {
   LocalConsoleMessage,
   LocalConsoleSessionSummary,
@@ -22,6 +28,7 @@ import type {
   LocalConsoleStore,
 } from "./types.js";
 import type { LocalRouteJudgment } from "./route-bus.js";
+import type { LocalHandoffDispatchRuntime } from "./handoff-dispatch-runtime.js";
 
 export type LocalPrimaryDispatchOutcome =
   | { kind: "stop" }
@@ -52,6 +59,7 @@ export class LocalPrimaryDispatchRuntime {
     formatError(error: unknown): string;
     setError(error: string | null): void;
     scheduleWorker(input: import("./worker-dispatch-runtime.js").LocalWorkerRunInput): void;
+    handoffGeneration: LocalHandoffDispatchRuntime;
   }) {}
 
   async claim(
@@ -109,7 +117,19 @@ export class LocalPrimaryDispatchRuntime {
         retryIntent,
       }));
     }
+    controlAction = planHandoffControlOverride(
+      controlAction,
+      decideHandoffStaleOutcome({
+        stale: await this.input.handoffGeneration.isStaleReply({
+          sessionId,
+          message: claimedMessage,
+          primaryAgent,
+          actionKind: controlAction.kind,
+        }),
+      }),
+    );
     if (controlAction.kind === "record-retry-trigger-missing") {
+      const terminalRecord = planTerminalRecord({ role: claimedMessage.dispatchRole });
       await this.input.storeCall("local-console-store-record-retry-trigger-missing", () =>
         this.input.store.recordFailure({
           userMessageId: claimedMessage.id,
@@ -121,6 +141,8 @@ export class LocalPrimaryDispatchRuntime {
           systemEventKind: "run-not-started",
           sourceKind: "local-retry-intent",
           sourceId: controlAction.intent.intentId,
+          role: terminalRecord.role,
+          processSteps: terminalRecord.processSteps,
           now: this.input.nowIso(),
         }));
       return { kind: "continue" };
@@ -189,6 +211,13 @@ export class LocalPrimaryDispatchRuntime {
     const role = controlAction.role;
     const selectedAgent = agentFiles.find((agent) => agent.name === role)!;
     if (controlAction.kind === "schedule-worker") {
+      await this.input.handoffGeneration.record({
+        sessionId,
+        role,
+        runId,
+        sourceMessageId: claimedMessage.id,
+        now: this.input.nowIso(),
+      });
       await this.input.storeCall("local-console-store-detached-worker-source-processed", () =>
         this.input.store.recordMessageProcessed({
           userMessageId: claimedMessage.id,

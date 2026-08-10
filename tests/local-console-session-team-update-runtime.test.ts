@@ -155,6 +155,8 @@ describe("session team update runtime failure and recovery", () => {
       reason: "orphaned after crash",
       runId: "run-before-update",
       runDir: null,
+      role: null,
+      processSteps: [],
       now: "2026-08-04T00:04:00.000Z",
     });
     await fixture.store.close();

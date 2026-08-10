@@ -17,12 +17,14 @@ describe("local console persisted system event kinds", () => {
   it("persists every terminal fact and defaults neutral records to other", async () => {
     const { store } = await fixtureStore();
     try {
-      await recordTerminal(store, "failed", (input) => store.recordFailure({ ...input, error: "exit 1" }));
+      await recordTerminal(store, "failed", (input) => store.recordFailure({ ...input, error: "exit 1", role: null, processSteps: [] }));
       await recordTerminal(store, "retryable", (input) => store.recordRetryableFailure({ ...input, error: "exit 2" }));
-      await recordTerminal(store, "stuck", (input) => store.recordStuck({ ...input, reason: "idle" }));
+      await recordTerminal(store, "stuck", (input) => store.recordStuck({ ...input, reason: "idle", role: null, processSteps: [] }));
       await recordTerminal(store, "tool-stuck", (input) => store.recordStuck({
         ...input,
         reason: "tool-timeout:1800000ms",
+        role: null,
+        processSteps: [],
         terminal: {
           kind: "timeout",
           subkind: "tool",
@@ -33,19 +35,23 @@ describe("local console persisted system event kinds", () => {
           actualProfile: null,
         },
       }));
-      await recordTerminal(store, "stopped", (input) => store.recordInterrupted({ ...input, reason: "user-stop", interruptionKind: "user" }));
+      await recordTerminal(store, "stopped", (input) => store.recordInterrupted({ ...input, reason: "user-stop", interruptionKind: "user", role: null, processSteps: [] }));
       await recordTerminal(store, "system-stopped", (input) => store.recordInterrupted({
         ...input,
         reason: "runtime-closing",
         interruptionKind: "system",
+        role: null,
+        processSteps: [],
       }));
-      await recordTerminal(store, "dead-letter", (input) => store.recordDeadLetter({ ...input, error: "again", failureCount: 5 }));
+      await recordTerminal(store, "dead-letter", (input) => store.recordDeadLetter({ ...input, error: "again", failureCount: 5, role: null, processSteps: [] }));
       await store.recordSystemMessage({
         sessionId: "local:neutral",
         body: "上下文已经更新。",
         runId: null,
         runDir: null,
         error: null,
+        role: null,
+        processSteps: [],
         now: "2026-07-22T00:10:00.000Z",
       });
 
@@ -53,8 +59,8 @@ describe("local console persisted system event kinds", () => {
         ["failed", "retryable", "stuck", "tool-stuck", "stopped", "system-stopped", "dead-letter", "neutral"]
           .map((name) => store.listMessages(`local:${name}`)),
       )).flat().filter((message) => message.speaker === "system");
+      // retryable 失败静默重试，不再往对话里插系统消息，所以列表里没有它。
       expect(systemMessages.map((message) => message.systemEventKind)).toEqual([
-        "run-not-started",
         "run-not-started",
         "run-stuck",
         "run-stuck",
@@ -98,6 +104,8 @@ describe("local console persisted system event kinds", () => {
       interruptionKind: "user",
       runId: "run-partial",
       runDir: null,
+      role: null,
+      processSteps: [],
       terminal: {
         kind: "interrupted",
         subkind: "user",
@@ -159,6 +167,8 @@ describe("local console persisted system event kinds", () => {
       runId: null,
       runDir: null,
       error: null,
+      role: null,
+      processSteps: [],
       now: "2026-07-22T00:05:00.000Z",
     });
     await store.close();
@@ -213,6 +223,8 @@ describe("local console persisted system event kinds", () => {
       systemEventKind: "other",
       runId: "run-legacy-resume",
       runDir: null,
+      role: null,
+      processSteps: [],
       now: "2026-07-27T00:00:03.000Z",
     });
     await store.close();

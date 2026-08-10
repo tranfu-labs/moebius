@@ -133,6 +133,13 @@ export const IMPORT_BOUNDARY_RULES: readonly ImportBoundaryRule[] = [
     transitive: true,
   },
   {
+    id: "local-handoff-runtime-pure-orchestration",
+    importers: [exact("src/local-console/handoff-dispatch-runtime.ts")],
+    deniedRepositoryTargets: plannerDeniedTargets,
+    deniedExternalSpecifiers: plannerDeniedExternals,
+    transitive: true,
+  },
+  {
     id: "local-invocation-planner-pure-closure",
     importers: [exact("src/local-console/run-invocation-plan.ts")],
     deniedRepositoryTargets: plannerDeniedTargets,

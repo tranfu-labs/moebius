@@ -115,6 +115,25 @@ describe("AgentRunInfoPopover", () => {
     expect(await screen.findByText("Recovered team · 用户")).toBeVisible();
     expect(retryLoader).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the roster engine badge before the popover has loaded", () => {
+    render(
+      <AgentRunInfoPopover
+        sessionId="session-a"
+        runId="run-a"
+        role="lead"
+        displayName="Lead"
+        portraitId="tuxedo"
+        engine={{ cli: "claude" }}
+        loadInfo={() => new Promise<AgentRunInfoView>(() => undefined)}
+        loadMarkdown={async () => ({ markdown: "" })}
+      />,
+    );
+
+    // 角标与画像不能等弹层加载完才出现——时间线本来就知道它们
+    expect(document.querySelector('[data-agent-portrait="lead"]')).not.toBeNull();
+    expect(document.querySelector('[data-agent-engine="claude"]')).not.toBeNull();
+  });
 });
 
 function info(runId: string, teamName: string): AgentRunInfoView {

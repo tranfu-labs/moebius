@@ -6,6 +6,7 @@ import { formatLocalError } from "./runtime-domain.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import type { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import type { LocalRouteJudgment, LocalNoMentionRouteInput } from "./route-bus.js";
+import { LocalHandoffDispatchRuntime } from "./handoff-dispatch-runtime.js";
 import {
   decidePrimaryAgentFileSource,
   decidePrimaryRecoveryFactSource,
@@ -81,5 +82,9 @@ export function createLocalPrimaryDispatchPorts(input: {
     formatError: (error) => formatLocalError(error),
     setError: input.setError,
     scheduleWorker: input.scheduleWorker,
+    handoffGeneration: new LocalHandoffDispatchRuntime({
+      store: options.store,
+      storeCall: (label, operation) => storePorts.call(label, operation),
+    }),
   };
 }

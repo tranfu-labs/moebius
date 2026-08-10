@@ -2,6 +2,7 @@ import path from "node:path";
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { ActiveLocalRun } from "./active-run.js";
 import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import type { LocalDetachedRunFailureRuntime } from "./detached-run-failure-runtime.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import type { LocalRunFailureRuntime } from "./run-failure-runtime.js";
@@ -44,6 +45,7 @@ export function createLocalWorkerWiring(input: {
   continuation: LocalSessionContinuationRuntime;
   pendingContext: LocalPendingSessionContextRuntime;
   failure: LocalRunFailureRuntime;
+  detachedFailure: LocalDetachedRunFailureRuntime;
   workspace: LocalConversationWorkspaceRuntime;
   scheduleRun: DispatchInput["scheduleRun"];
   processPending: DispatchInput["processPending"];
@@ -77,7 +79,7 @@ export function createLocalWorkerWiring(input: {
       stopping: context.stopping,
       nextRunId: (sessionId, messageId) => input.recovery.targetForMessage(sessionId, messageId),
       recordMissingAgent: (message, sessionId, runId, role) =>
-        input.failure.recordStartFailure(message, sessionId, runId, null, `Agent not found: ${role}`),
+        input.failure.recordStartFailure(message, sessionId, runId, null, `Agent not found: ${role}`, role),
       nowIso: context.nowIso,
       nowRunId: () => `local-${context.now().toISOString()}-${Math.random().toString(36).slice(2, 10)}`,
       scheduleRun: input.scheduleRun,
@@ -127,10 +129,18 @@ export function createLocalWorkerWiring(input: {
       classifyFailure: input.classifyFailure,
       pauseLifecycle: (runId) => input.lifecycle.pause(runId),
       finishLifecycle: (runId, status) => input.lifecycle.finish(runId, status),
-      recordDirectFailure: (workerInput, result) =>
-        input.failure.recordDirect(workerInput.sourceMessage, workerInput.sessionId, workerInput.runId, result),
-      recordDetachedFailure: (workerInput, result) =>
-        input.failure.recordDetached(workerInput.sessionId, workerInput.runId, result),
+      recordDirectFailure: (workerInput, result, processSteps) =>
+        input.failure.recordDirect(
+          workerInput.sourceMessage,
+          workerInput.sessionId,
+          workerInput.runId,
+          result,
+          null,
+          workerInput.role,
+          processSteps,
+        ),
+      recordDetachedFailure: (workerInput, result, processSteps) =>
+        input.detachedFailure.recordDetached(workerInput.sessionId, workerInput.runId, result, workerInput.role, processSteps),
       sourceDirectoryAvailable: (sessionId) => input.continuation.sessionProjectDirectoryAvailable(sessionId),
       executeChildSession: input.executeChildSession,
       recordWorkspaceDiff: (workerInput, preparation, result) =>
@@ -161,13 +171,15 @@ export function createLocalWorkerWiring(input: {
             workerInput.runId,
             runDir,
             error,
+            workerInput.role,
           ),
         recordDetachedFailure: (workerInput, runDir, error) =>
-          input.failure.recordDetachedStartFailure({
+          input.detachedFailure.recordDetachedStartFailure({
             sessionId: workerInput.sessionId,
             runId: workerInput.runId,
             runDir,
             error,
+            role: workerInput.role,
           }),
         activeRuns: input.activeRuns,
         lifecycle: input.lifecycle,

@@ -18,6 +18,7 @@ export interface LocalRunLifecycleActiveRun {
   baseRef: string | null;
   liveMarkdown: string | null;
   activity: LocalRunActivity | null;
+  activitySteps: LocalRunActivity[];
   activitySequence: number;
   activityFactTail: Promise<void>;
   longRunReported: boolean;

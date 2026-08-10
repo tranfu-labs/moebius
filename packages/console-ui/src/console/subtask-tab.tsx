@@ -9,10 +9,20 @@ import type {
   OperatorSubSessionView,
 } from "@/console/operator-console";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
+import { FileText, RotateCcw } from "lucide-react";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
-import { RunOutcome, type RunOutcomeStatus } from "@/console/run-outcome";
-import { RunTime } from "@/console/run-time";
+import {
+  RunOutcome,
+  outcomeSeverity,
+  resolveOutcomeDescriptionKey,
+  resolveOutcomeLabelKey,
+  type RunOutcomeStatus,
+} from "@/console/run-outcome";
+import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
+import { IncidentNotice } from "@/console/incident-card";
+import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
+import { RunCompletedAt, RunTime } from "@/console/run-time";
 import type {
   ExecutionRegistryState,
   RegistryExecutionProfile,
@@ -258,62 +268,123 @@ function SubtaskTimelineEntry({
   const { t } = useI18n();
   const outcome = terminalOutcome(message);
   if (outcome !== null) {
-    return (
+    // Same rule as the main conversation: the terminal status never swallows the
+    // body; produced content renders normally and the status is a bubble below it.
+    const partialMarkdown = message.terminal?.partialMarkdown?.trim() ?? "";
+    const identityRole = message.role ?? processRole;
+    const recoveryActions = (
       <RunOutcome
-        status={outcome}
-        role={processRole}
-        memberIdentities={memberIdentities}
-        rawReason={message.error ?? message.body}
-        rawOutput={message.error ?? message.body}
-        description={message.terminal === null || message.terminal === undefined ? null : message.body}
-        partialMarkdown={message.terminal?.partialMarkdown}
-        contentIncomplete={message.terminal?.contentIncomplete}
-        initialProfile={message.terminal?.actualProfile}
-        executionRegistryState={executionRegistryState}
-        providerProfiles={providerProfiles}
-        onReloadExecutionRegistry={onReloadExecutionRegistry}
-        elapsedMs={message.runTiming?.elapsedMs}
-        completedAt={message.runTiming?.completedAt}
-        onRetry={outcome !== "retry-exhausted" && message.runId !== null
-          ? () => onRetry(message.runId!)
-          : undefined}
-        onOverrideAndRetry={
-          message.runId !== null
-          && message.terminal !== null
-          && message.terminal !== undefined
-          && (
-            message.terminal.kind === "interrupted"
-            || message.terminal.kind === "timeout"
-            || message.terminal.kind === "quota-exhausted"
-            || message.terminal.kind === "rate-limited"
-            || message.terminal.kind === "auth"
-            || message.terminal.kind === "crashed"
-          )
-            ? (profile) => onRetry(message.runId!, profile)
-            : undefined
-        }
-        onMigrateAndContinue={message.terminal?.actualProfile?.cli === "pi"
-          && processRole !== null
-          && onUpdateMemberExecution !== undefined
-          ? (profile) => onUpdateMemberExecution?.(message.sessionId, processRole, "migrate", profile)
-          : undefined}
-        onEndContinuation={message.terminal?.actualProfile?.cli === "pi"
-          && processRole !== null
-          && onUpdateMemberExecution !== undefined
-          ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
-          : undefined}
-        onOpenOutput={message.runId === null
-          || onOpenOutput === undefined
-          ? undefined
-          : (fallbackOutput) => onOpenOutput({
-              sessionId: message.sessionId,
-              runId: message.runId!,
-              stepId: message.runTiming?.stepId ?? null,
-              role: processRole,
-              fallbackOutput,
-            })}
-        className="py-4"
+      status={outcome}
+      rawReason={message.error ?? message.body}
+      initialProfile={message.terminal?.actualProfile}
+      executionRegistryState={executionRegistryState}
+      providerProfiles={providerProfiles}
+      onReloadExecutionRegistry={onReloadExecutionRegistry}
+      onRetry={outcome !== "retry-exhausted" && message.runId !== null
+        ? () => onRetry(message.runId!)
+        : undefined}
+      onOverrideAndRetry={
+        message.runId !== null
+        && message.terminal !== null
+        && message.terminal !== undefined
+        && (
+          message.terminal.kind === "interrupted"
+          || message.terminal.kind === "timeout"
+          || message.terminal.kind === "quota-exhausted"
+          || message.terminal.kind === "rate-limited"
+          || message.terminal.kind === "auth"
+          || message.terminal.kind === "crashed"
+        )
+          ? (profile) => onRetry(message.runId!, profile)
+          : undefined
+      }
+      onMigrateAndContinue={message.terminal?.actualProfile?.cli === "pi"
+        && processRole !== null
+        && onUpdateMemberExecution !== undefined
+        ? (profile) => onUpdateMemberExecution?.(message.sessionId, processRole, "migrate", profile)
+        : undefined}
+      onEndContinuation={message.terminal?.actualProfile?.cli === "pi"
+        && processRole !== null
+        && onUpdateMemberExecution !== undefined
+        ? () => onUpdateMemberExecution?.(message.sessionId, processRole, "end")
+        : undefined}
       />
+    );
+    return (
+      <article className="group py-4 text-sm">
+        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+          {identityRole === null ? null : (
+            <RoleTag
+              label={resolveOperatorMemberName(identityRole, memberIdentities, t)}
+              toneKey={identityRole}
+              portraitId={resolveOperatorMemberPortrait(identityRole, memberIdentities)}
+              engine={resolveOperatorMemberEngine(identityRole, memberIdentities)}
+            />
+          )}
+          <span className="font-semibold text-ink">
+            {identityRole === null
+              ? t("console.common.systemNotice")
+              : resolveOperatorMemberName(identityRole, memberIdentities, t)}
+          </span>
+          {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+            <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
+          ) : null}
+        </div>
+        <div className="pl-7">
+        {partialMarkdown === "" ? null : (
+          <MarkdownMessage
+            content={partialMarkdown}
+            mode="static"
+            onOpenExternalLink={onOpenExternalLink}
+            onOpenFileReference={onOpenFileReference}
+            memberIdentities={memberIdentities}
+            onOpenTeamMember={onOpenTeamMember}
+          />
+        )}
+        <div className={cn("flex flex-wrap items-center gap-2", partialMarkdown === "" ? undefined : "mt-2")}>
+        {partialMarkdown !== "" && message.terminal?.contentIncomplete ? (
+          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
+            {t("console.runOutcome.incomplete")}
+          </span>
+        ) : null}
+      {outcome === "user-stopped" ? null : (
+          <IncidentNotice
+            className={partialMarkdown === "" ? undefined : "mt-2"}
+            incident={{
+              label: t(resolveOutcomeLabelKey(outcome, null)),
+              detail: stripLegacyOutcomeBoilerplate(
+                message.terminal === null || message.terminal === undefined ? null : message.body,
+              ) || (resolveOutcomeDescriptionKey(outcome, null) === null
+                ? null
+                : t(resolveOutcomeDescriptionKey(outcome, null)!)),
+              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+              severity: outcomeSeverity(outcome),
+            }}
+          />
+        )}
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : null}
+        >
+          {message.runId !== null && onOpenOutput !== undefined ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenOutput({
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: processRole,
+                fallbackOutput: message.error ?? message.body,
+              })}
+            />
+          ) : null}
+          {recoveryActions}
+        </MessageToolbar>
+        </div>
+        </div>
+      </article>
     );
   }
 
@@ -366,11 +437,7 @@ function SubtaskTimelineEntry({
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
         && message.runTiming?.elapsedMs !== undefined ? (
-          <RunTime
-            mode="completed"
-            elapsedMs={message.runTiming.elapsedMs}
-            completedAt={message.runTiming.completedAt}
-          />
+          <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
         ) : null}
       </div>
       <div className="pl-7">
@@ -393,24 +460,31 @@ function SubtaskTimelineEntry({
             mode="message"
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
-          {message.speaker === "agent"
-          && message.runId !== null
-          && onOpenOutput !== undefined ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-2"
-              onClick={() => onOpenOutput({
-                sessionId: message.sessionId,
-                runId: message.runId!,
-                stepId: message.runTiming?.stepId ?? null,
-                role: message.role,
-                fallbackOutput: message.body,
-              })}
+          {message.speaker === "agent" && message.runId !== null ? (
+            <MessageToolbar
+              trailing={message.runTiming?.completedAt
+                ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+                : null}
             >
-              {t("console.common.fullOutput")}
-            </Button>
+              {onOpenOutput !== undefined ? (
+                <MessageAction
+                  icon={FileText}
+                  label={t("console.common.fullOutput")}
+                  onClick={() => onOpenOutput({
+                    sessionId: message.sessionId,
+                    runId: message.runId!,
+                    stepId: message.runTiming?.stepId ?? null,
+                    role: message.role,
+                    fallbackOutput: message.body,
+                  })}
+                />
+              ) : null}
+              <MessageAction
+                icon={RotateCcw}
+                label={t("common.retry")}
+                onClick={() => { void onRetry(message.runId!); }}
+              />
+            </MessageToolbar>
           ) : null}
         </>
       )}
