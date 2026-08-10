@@ -188,6 +188,7 @@ describe("local console", { timeout: 15_000 }, () => {
         body: "hello from codex",
         runId: "run-1",
         runDir: "/tmp/run-1",
+        processSteps: [],
         now: "2026-07-09T00:00:02.000Z",
       });
 
@@ -386,6 +387,7 @@ describe("local console", { timeout: 15_000 }, () => {
         body: "qa first done",
         runId: "qa-run-1",
         runDir: "/tmp/qa-run-1",
+        processSteps: [],
         now: "2026-07-29T00:00:08.000Z",
       });
       await expect(store.claimNextPendingWorkerMessage?.({
@@ -424,6 +426,7 @@ describe("local console", { timeout: 15_000 }, () => {
         body: "结果已生成\n\n等待真人：请验收结果",
         runId: "run-attention",
         runDir: "/tmp/run-attention",
+        processSteps: [],
         now: "2026-07-09T00:00:02.000Z",
       });
 
@@ -505,6 +508,7 @@ describe("local console", { timeout: 15_000 }, () => {
         body: "@qa 请继续验收\n等待真人：请确认后续安排",
         runId: "run-archive-user",
         runDir: "/tmp/run-archive-user",
+        processSteps: [],
         now: "2030-01-02T00:00:03.000Z",
       });
       const handoff = await store.claimNextPendingMessage({
@@ -631,6 +635,7 @@ describe("local console", { timeout: 15_000 }, () => {
           cutoffIso: "2026-07-09T00:00:02.000Z",
           now: "2026-07-09T00:00:03.000Z",
           reason: "Recovered stale local console run after process restart",
+          roles: { [user.id]: null },
         }),
       ).toBe(1);
       expect(await store.listMessages(LOCAL_CONSOLE_DEFAULT_SESSION_ID)).toMatchObject([
@@ -2130,6 +2135,7 @@ describe("local console", { timeout: 15_000 }, () => {
       body: "@qa 请继续验收",
       runId: "run-seed",
       runDir: "/tmp/run-seed",
+      processSteps: [],
       now: "2026-07-20T00:00:02.000Z",
     });
 
@@ -2356,6 +2362,7 @@ describe("local console", { timeout: 15_000 }, () => {
       body: "@dev continue",
       runId: "run-ceo",
       runDir: path.join(root, "runs", "ceo"),
+      processSteps: [],
       now: "2026-07-09T00:00:03.000Z",
     });
     await store.close();
@@ -3506,7 +3513,7 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   }, 30_000);
 
-  it("keeps failures user-retryable without automatic retries or retry exhaustion", async () => {
+  it("silently auto-retries no-output failures and dead-letters after the limit", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# Dev");
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");
@@ -3529,27 +3536,16 @@ describe("local console", { timeout: 15_000 }, () => {
     const session = await createSession(started.url, "failure");
     try {
       await postSessionMessage(started.url, session.sessionId, "@dev fail");
-      const first = await waitForState(started.url, session.sessionId, (data) =>
+      const settled = await waitForState(started.url, session.sessionId, (data) =>
         data.messages.some((entry) =>
-          entry.speaker === "system" && entry.systemEventKind === "run-not-started"
+          entry.speaker === "system" && entry.systemEventKind === "retry-exhausted"
         ) && data.activeRuns.length === 0,
       );
-      expect(runCodex).toHaveBeenCalledTimes(1);
-      expect(first.pendingPrimaryMessages).toHaveLength(0);
-      expect(first.messages.some((entry) => entry.systemEventKind === "retry-exhausted")).toBe(false);
-      const firstFailure = first.messages.find((entry) => entry.systemEventKind === "run-not-started");
-      expect(firstFailure?.runId).not.toBeNull();
-
-      const retry = await fetch(new URL(
-        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(firstFailure!.runId!)}/retry`,
-        started.url,
-      ), { method: "POST" });
-      expect(retry.status).toBe(202);
-      await waitForState(started.url, session.sessionId, (data) =>
-        data.messages.filter((entry) => entry.systemEventKind === "run-not-started").length === 2
-        && data.activeRuns.length === 0,
-      );
+      // 自动重试静默进行：对话里只有终局的 retry-exhausted，没有逐次失败噪音。
       expect(runCodex).toHaveBeenCalledTimes(2);
+      expect(settled.pendingPrimaryMessages).toHaveLength(0);
+      expect(settled.messages.filter((entry) => entry.systemEventKind === "run-not-started")).toHaveLength(0);
+      expect(settled.messages.filter((entry) => entry.systemEventKind === "retry-exhausted")).toHaveLength(1);
     } finally {
       await started.close();
     }
@@ -3565,11 +3561,9 @@ describe("local console", { timeout: 15_000 }, () => {
     });
     try {
       const state = await getState(restarted.url, session.sessionId);
-      const attempts = state.messages.filter((entry) =>
-        entry.speaker === "system" && entry.systemEventKind === "run-not-started");
-      expect(attempts).toHaveLength(2);
-      expect(attempts.map((entry) => entry.runTiming?.attempt)).toEqual([1, 2]);
-      expect(state.messages.some((entry) => entry.systemEventKind === "retry-exhausted")).toBe(false);
+      // 死信是终局：重启后不再自动重跑。
+      expect(state.messages.filter((entry) => entry.systemEventKind === "retry-exhausted")).toHaveLength(1);
+      expect(runCodex).toHaveBeenCalledTimes(2);
     } finally {
       await restarted.close();
     }
@@ -3792,22 +3786,12 @@ describe("local console", { timeout: 15_000 }, () => {
     let requestedRunId = "";
     try {
       await postSessionMessage(started.url, session.sessionId, "@dev retry this step");
-      const failed = await waitForState(started.url, session.sessionId, (data) =>
-        data.messages.some((entry) =>
-          entry.speaker === "system"
-          && entry.systemEventKind === "run-not-started"
-          && entry.error === "exit:42"),
-      );
-      const failure = failed.messages.find((entry) =>
-        entry.speaker === "system" && entry.systemEventKind === "run-not-started");
-      const retry = await fetch(new URL(
-        `/api/local-console/sessions/${encodeURIComponent(session.sessionId)}/runs/${encodeURIComponent(failure!.runId!)}/retry`,
-        started.url,
-      ), { method: "POST" });
-      expect(retry.status).toBe(202);
+      // 第一次尝试 exit:42 且无可见产出 → 静默自动重试，第二次成功，无需人工干预。
       const completed = await waitForState(started.url, session.sessionId, (data) =>
         data.messages.some((entry) => entry.speaker === "agent" && entry.body === "retry finished"),
       );
+      expect(runCodex).toHaveBeenCalledTimes(2);
+      expect(completed.messages.filter((entry) => entry.systemEventKind === "run-not-started")).toHaveLength(0);
       requestedRunId = completed.messages.find(
         (entry) => entry.speaker === "agent" && entry.body === "retry finished",
       )?.runId ?? "";
@@ -4733,6 +4717,7 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     if (this.failNextRecord) {
@@ -4760,6 +4745,8 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     runDir: string | null;
     error: string | null;
     status?: "displayed" | "failed" | "stuck";
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     await this.inner.recordSystemMessage(input);
@@ -4816,6 +4803,8 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordFailure(input);
   }
@@ -4839,6 +4828,8 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     runDir: string | null;
     failureCount: number;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordDeadLetter(input);
   }
@@ -4850,6 +4841,8 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordInterrupted(input);
   }
@@ -4861,6 +4854,8 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordStuck(input);
   }
@@ -4870,6 +4865,7 @@ class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
     cutoffIso: string;
     now: string;
     reason: string;
+    roles: Record<number, string | null>;
   }): Promise<number> {
     return await this.inner.markStaleRunning(input);
   }
@@ -4981,6 +4977,7 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     await this.inner.recordAgentResponse(input);
@@ -5004,6 +5001,8 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     runDir: string | null;
     error: string | null;
     status?: "displayed" | "failed" | "stuck";
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     await this.inner.recordSystemMessage(input);
@@ -5064,6 +5063,8 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordFailure(input);
   }
@@ -5087,6 +5088,8 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     runDir: string | null;
     failureCount: number;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordDeadLetter(input);
   }
@@ -5098,6 +5101,8 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordInterrupted(input);
   }
@@ -5109,6 +5114,8 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("../src/local-console/run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.inner.recordStuck(input);
   }
@@ -5118,6 +5125,7 @@ class FailOnceRecordRouteAppendStore implements LocalConsoleStore {
     cutoffIso: string;
     now: string;
     reason: string;
+    roles: Record<number, string | null>;
   }): Promise<number> {
     return await this.inner.markStaleRunning(input);
   }

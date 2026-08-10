@@ -124,6 +124,8 @@ export class LocalSessionPresentationRuntime {
           runDir: null,
           error: plan.error,
           status: "displayed",
+          role: null,
+          processSteps: [],
           now: this.input.nowIso(),
         }));
     }

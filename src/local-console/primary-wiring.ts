@@ -87,8 +87,16 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
       storePorts: context.storePorts,
       nowIso: context.nowIso,
       classifyFailure: input.classifyFailure,
-      recordFailure: (run, result) =>
-        input.failure.recordDirect(run.sourceMessage, run.sessionId, run.runId, result),
+      recordFailure: (run, result, observedExternalSessionId, processSteps) =>
+        input.failure.recordDirect(
+          run.sourceMessage,
+          run.sessionId,
+          run.runId,
+          result,
+          observedExternalSessionId,
+          run.role,
+          processSteps,
+        ),
       sourceDirectoryAvailable: (sessionId) => input.continuation.sessionProjectDirectoryAvailable(sessionId),
       executeChildSession: input.executeChildSession,
       recordWorkspaceDiff: (run, preparation, result) =>
@@ -116,7 +124,7 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
       routeJudgment: input.routeJudgment,
       validateRouteAppend: input.validateRouteAppend,
       recordTerminalFailure: (message, sessionId, runId, runDir, reason) =>
-        input.failure.recordStartFailure(message, sessionId, runId, runDir, reason),
+        input.failure.recordStartFailure(message, sessionId, runId, runDir, reason, message.dispatchRole),
       setError: context.setError,
       scheduleWorker: input.scheduleWorker,
     }),
@@ -135,7 +143,9 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
         setError: context.setError,
         report: input.report,
         recordFailure: (message, sessionId, runId, runDir, error) =>
-          input.failure.recordStartFailure(message, sessionId, runId, runDir, error),
+          input.failure.recordRetryableStartFailure(message, sessionId, runId, runDir, error, message.dispatchRole),
+        recordCompletionFailure: (message, sessionId, runId, runDir, error) =>
+          input.failure.recordCompletionFailure(message, sessionId, runId, runDir, error, message.dispatchRole),
         applyPendingContext: (sessionId) => input.pendingContext.applyWhenIdle(sessionId),
         invalidateWorkspace: input.invalidateWorkspace,
       });

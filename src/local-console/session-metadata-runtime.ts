@@ -197,6 +197,8 @@ export class LocalConsoleSessionMetadataRuntime {
           runDir: null,
           error: reason,
           status: "failed",
+          role: null,
+          processSteps: [],
           now: this.input.nowIso(),
         }));
     } catch (error) {

@@ -6,10 +6,7 @@ import type { CodexRunOptions, CodexRunResult } from "../../src/codex.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import type {
-  LocalConsoleMessage,
-  LocalConsoleProjectSummary,
   LocalConsoleSessionSummary,
-  LocalConsoleSessionWorkspaceSource,
   LocalConsoleStore,
 } from "../../src/local-console/types.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
@@ -140,6 +137,7 @@ async function runRestartScenario(): Promise<{ agentRoles: Array<string | null>;
     body: "@dev continue",
     runId: "run-ceo",
     runDir: path.join(root, "runs", "ceo"),
+    processSteps: [],
     now: now(3),
   });
   await store.close();
@@ -172,7 +170,7 @@ async function runRecordFailureScenario(): Promise<{ runCount: number; agentsAft
   const root = await makeRoot("record-failure");
   await writeAgents(root, ["dev"]);
   const innerStore = await createSqliteLocalConsoleStore({ sqlitePath: path.join(root, ".state", "local-console.sqlite") });
-  const store = new FailOnceRecordAgentResponseStore(innerStore);
+  const store = createFailOnceRecordAgentResponseStore(innerStore);
   const runCalls: string[] = [];
   const started = await startLocalConsoleServer({
     projectRoot: root,
@@ -432,167 +430,41 @@ function now(offset: number): string {
   return new Date(Date.UTC(2026, 6, 9, 0, 0, offset)).toISOString();
 }
 
-class FailOnceRecordAgentResponseStore implements LocalConsoleStore {
-  readonly sqlitePath: string;
-  private failNextRecord = true;
+/**
+ * 全量委托包装：inner 上有什么就有什么——接口内、LocalSessionFactWritingStore
+ * 这类接口外扩展、以及未来新增的成员全部自动跟随，能力探测（store.X !==
+ * undefined）得到正确答案；只有 overrides 里的行为被替换。函数绑定 inner
+ * 保留 this。
+ */
+function wrapStore<T extends object>(inner: T, overrides: Partial<T>): T {
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop in overrides) {
+        return Reflect.get(overrides, prop, receiver);
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+    set(target, prop, value, receiver) {
+      if (prop in overrides) {
+        return Reflect.set(overrides, prop, value, receiver);
+      }
+      return Reflect.set(target, prop, value, target);
+    },
+  }) as T;
+}
 
-  constructor(private readonly inner: LocalConsoleStore) {
-    this.sqlitePath = inner.sqlitePath;
-  }
-
-  async init(): Promise<void> {
-    await this.inner.init();
-  }
-
-  async close(): Promise<void> {
-    await this.inner.close();
-  }
-
-  async createProject(input: { folderPath: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary> {
-    return await this.inner.createProject(input);
-  }
-
-  async updateProject(input: { projectId: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary> {
-    return await this.inner.updateProject(input);
-  }
-
-  async reorderProjects(projectIds: string[]): Promise<LocalConsoleProjectSummary[]> {
-    return await this.inner.reorderProjects(projectIds);
-  }
-
-  async listProjects(): Promise<LocalConsoleProjectSummary[]> {
-    return await this.inner.listProjects();
-  }
-
-  async getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource> {
-    return await this.inner.getSessionWorkspace(sessionId);
-  }
-
-  async recordProjectWorkspaceStatus(input: {
-    projectId: string;
-    cwd: string;
-    mode: "direct" | "worktree";
-    worktreePath: string | null;
-    worktreeUnavailableReason: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordProjectWorkspaceStatus(input);
-  }
-
-  async createSession(input: { sessionId: string; projectId?: string; title: string; now: string }): Promise<LocalConsoleSessionSummary> {
-    return await this.inner.createSession(input);
-  }
-
-  async listSessions(): Promise<LocalConsoleSessionSummary[]> {
-    return await this.inner.listSessions();
-  }
-
-  async markSessionResultRead(input: Parameters<LocalConsoleStore["markSessionResultRead"]>[0]): Promise<boolean> {
-    return await this.inner.markSessionResultRead(input);
-  }
-
-  async appendUserMessage(input: { sessionId: string; body: string; now: string }): Promise<LocalConsoleMessage> {
-    return await this.inner.appendUserMessage(input);
-  }
-
-  async listMessages(sessionId: string): Promise<LocalConsoleMessage[]> {
-    return await this.inner.listMessages(sessionId);
-  }
-
-  async hasRunningMessage(sessionId: string): Promise<boolean> {
-    return await this.inner.hasRunningMessage(sessionId);
-  }
-
-  async claimNextPendingMessage(input: { sessionId: string; runId: string; now: string }): Promise<LocalConsoleMessage | null> {
-    return await this.inner.claimNextPendingMessage(input);
-  }
-
-  async setRunDir(input: { id: number; runDir: string; now: string }): Promise<void> {
-    await this.inner.setRunDir(input);
-  }
-
-  async recordAgentResponse(input: {
-    userMessageId: number;
-    sessionId: string;
-    role: string;
-    body: string;
-    runId: string;
-    runDir: string;
-    now: string;
-  }): Promise<void> {
-    if (this.failNextRecord) {
-      this.failNextRecord = false;
-      throw new Error("injected-record-agent-response-before-commit");
-    }
-    await this.inner.recordAgentResponse(input);
-  }
-
-  async recordSystemAndComplete(input: {
-    userMessageId: number;
-    sessionId: string;
-    body: string;
-    runId: string;
-    runDir: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordSystemAndComplete(input);
-  }
-
-  async recordMessageProcessed(input: {
-    userMessageId: number;
-    sessionId: string;
-    runId: string;
-    runDir: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordMessageProcessed(input);
-  }
-
-  async releaseMessageForRetry(input: { userMessageId: number; sessionId: string; now: string }): Promise<void> {
-    await this.inner.releaseMessageForRetry(input);
-  }
-
-  async recordFailure(input: {
-    userMessageId: number;
-    sessionId: string;
-    error: string;
-    runId: string | null;
-    runDir: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordFailure(input);
-  }
-
-  async recordInterrupted(input: {
-    userMessageId: number;
-    sessionId: string;
-    reason: string;
-    runId: string | null;
-    runDir: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordInterrupted(input);
-  }
-
-  async recordStuck(input: {
-    userMessageId: number;
-    sessionId: string;
-    reason: string;
-    runId: string | null;
-    runDir: string | null;
-    now: string;
-  }): Promise<void> {
-    await this.inner.recordStuck(input);
-  }
-
-  async markStaleRunning(input: {
-    sessionId: string;
-    cutoffIso: string;
-    now: string;
-    reason: string;
-  }): Promise<number> {
-    return await this.inner.markStaleRunning(input);
-  }
+function createFailOnceRecordAgentResponseStore(inner: LocalConsoleStore): LocalConsoleStore {
+  let failNextRecord = true;
+  return wrapStore(inner, {
+    async recordAgentResponse(input: Parameters<LocalConsoleStore["recordAgentResponse"]>[0]) {
+      if (failNextRecord) {
+        failNextRecord = false;
+        throw new Error("injected-record-agent-response-before-commit");
+      }
+      await inner.recordAgentResponse(input);
+    },
+  } as Partial<LocalConsoleStore>);
 }
 
 await main();

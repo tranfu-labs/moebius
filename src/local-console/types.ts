@@ -92,6 +92,8 @@ export interface LocalConsoleMessage {
   error: string | null;
   systemEventKind: LocalConsoleSystemEventKind;
   terminal?: LocalConsoleTerminal | null;
+  /** Steps the producing run had taken when it reached its terminal state; frozen once. */
+  processSteps?: readonly import("./run-activity.js").LocalRunActivity[];
   failureCount: number;
   lastFailureReason: string | null;
   sourceKind?: string | null;
@@ -610,6 +612,7 @@ export interface LocalConsoleRunSnapshot {
   engine: LocalConsoleExecutionEngine;
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
+  activitySteps?: readonly import("./run-activity.js").LocalRunActivity[];
   runDir: string | null;
   cwd: string | null;
   workspaceMode: LocalConsoleWorkspaceMode | null;
@@ -891,6 +894,8 @@ export interface LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    /** Steps the run had taken at its terminal state; written once, not per step. */
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void>;
   recordDetachedAgentResponse?(input: {
@@ -899,6 +904,7 @@ export interface LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void>;
   recordDetachedRunStarted?(input: {
@@ -916,6 +922,9 @@ export interface LocalConsoleStore {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
@@ -979,6 +988,9 @@ export interface LocalConsoleStore {
     error: string | null;
     status?: "displayed" | "failed" | "interrupted" | "stuck";
     systemEventKind?: LocalConsoleSystemEventKind;
+    /** Member the record belongs to; run-less notifications pass null. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
@@ -1043,6 +1055,9 @@ export interface LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     sourceKind?: string | null;
     sourceId?: string | null;
@@ -1063,6 +1078,9 @@ export interface LocalConsoleStore {
     runDir: string | null;
     failureCount: number;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
   }): Promise<void>;
   recordInterrupted(input: {
     userMessageId: number;
@@ -1072,6 +1090,9 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   recordStuck(input: {
@@ -1081,6 +1102,9 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   markStaleRunning(input: {
@@ -1088,6 +1112,8 @@ export interface LocalConsoleStore {
     cutoffIso: string;
     now: string;
     reason: string;
+    /** 每个候选消息的归属由 domain 预先决定（messageId → role），adapter 只查表。 */
+    roles: Record<number, string | null>;
   }): Promise<number>;
 }
 

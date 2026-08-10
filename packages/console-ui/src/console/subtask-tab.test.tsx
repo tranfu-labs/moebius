@@ -52,7 +52,8 @@ describe("SubtaskTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
     expect(onSend).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    // 成功消息的工具条也有重试；这里要点的是失败记录上的那个（最后一个）
+    fireEvent.click(screen.getAllByRole("button", { name: "重试" }).at(-1)!);
     expect(onRetry).toHaveBeenCalledWith("run-1");
 
     rerender(tab({
