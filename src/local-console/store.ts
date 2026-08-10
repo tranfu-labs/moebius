@@ -67,6 +67,7 @@ import {
   readProviderProcessStartedFacts,
 } from "./execution-context-reader.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
+import { planHandoffDispatchGeneration, planHandoffDispatchState } from "./control-dispatch.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;
@@ -881,6 +882,41 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         },
         messageUpserts: [],
       });
+    });
+  }
+
+  async recordHandoffDispatch(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    sourceMessageId: number;
+    now: string;
+  }): Promise<number> {
+    return this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const generation = planHandoffDispatchGeneration(events, input);
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "handoff_dispatch",
+        recordedAt: input.now,
+        payload: { ...input, generation },
+        messageUpserts: [],
+      });
+      return generation;
+    });
+  }
+
+  async readHandoffDispatchState(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+  }): Promise<{ runGeneration: number | null; latestGeneration: number | null }> {
+    return this.enqueue(async () => {
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      return planHandoffDispatchState(events, input);
     });
   }
 

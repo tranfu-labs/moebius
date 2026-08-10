@@ -255,6 +255,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/process-link-runtime.ts",
   "src/local-console/conversation-workspace-runtime.ts",
   "src/local-console/detached-run-failure-runtime.ts",
+  "src/local-console/handoff-dispatch-runtime.ts",
   "src/local-console/message-command-runtime.ts",
   "src/local-console/message-retry-wiring.ts",
   "src/local-console/provider-invocation-flow.ts",

@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { LocalCodexResumeIntentFact } from "../src/local-console/codex-resume.js";
 import {
+  decideHandoffDispatchRecording,
+  decideHandoffStaleOutcome,
+  decideHandoffStaleness,
+  decideWorkerReplyStalenessCheck,
+  planHandoffDispatchGeneration,
+  planHandoffDispatchState,
   planPendingWorkerDispatches,
   resolveClaimedControlAction,
   selectSourceRetryIntent,
@@ -163,6 +169,78 @@ describe("pending worker lane planning", () => {
       activeRoles: new Set(["dev"]),
       queuedRoles: new Set(["design"]),
     })).toEqual([{ message: messages[0], role: "qa" }]);
+  });
+});
+
+describe("handoff generation staleness planning", () => {
+  it("marks a reply stale only when its run generation falls behind the role latest", () => {
+    expect(decideHandoffStaleness({ runGeneration: 1, latestGeneration: 2 })).toEqual({ kind: "stale" });
+    expect(decideHandoffStaleness({ runGeneration: 2, latestGeneration: 2 })).toEqual({ kind: "current" });
+    expect(decideHandoffStaleness({ runGeneration: null, latestGeneration: 2 })).toEqual({ kind: "current" });
+    expect(decideHandoffStaleness({ runGeneration: 1, latestGeneration: null })).toEqual({ kind: "current" });
+  });
+
+  it("checks only non-primary agent replies that would continue the flow", () => {
+    const base = {
+      speaker: "agent" as const,
+      role: "qa",
+      primaryAgent: "manager",
+      runId: "run-1",
+      actionKind: "schedule-worker",
+      handoffStateAvailable: true,
+    };
+    expect(decideWorkerReplyStalenessCheck(base)).toEqual({ kind: "check", role: "qa", runId: "run-1" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, actionKind: "run-primary" })).toEqual({ kind: "check", role: "qa", runId: "run-1" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, actionKind: "record-retry-trigger-missing" })).toEqual({ kind: "check", role: "qa", runId: "run-1" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, actionKind: "complete-source" })).toEqual({ kind: "skip" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, role: "manager" })).toEqual({ kind: "skip" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, speaker: "user" })).toEqual({ kind: "skip" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, runId: null })).toEqual({ kind: "skip" });
+    expect(decideWorkerReplyStalenessCheck({ ...base, handoffStateAvailable: false })).toEqual({ kind: "skip" });
+  });
+
+  it("decides the complete-source override and the recording capability", () => {
+    expect(decideHandoffStaleOutcome({ stale: true })).toEqual({ kind: "complete-source" });
+    expect(decideHandoffStaleOutcome({ stale: false })).toEqual({ kind: "keep" });
+    const record = async () => 1;
+    expect(decideHandoffDispatchRecording({ record }).kind).toBe("record");
+    expect(decideHandoffDispatchRecording({ record: undefined })).toEqual({ kind: "skip" });
+  });
+
+  it("assigns monotonically increasing generations per role", () => {
+    const dispatch = (role: string, generation: number) => ({
+      type: "handoff_dispatch",
+      payload: { sessionId: "session-a", role, generation, runId: `run-${role}-${generation}`, sourceMessageId: 1, createdAt: "2026-08-01T00:00:00.000Z" },
+    });
+    expect(planHandoffDispatchGeneration([], { sessionId: "session-a", role: "qa" })).toBe(1);
+    expect(planHandoffDispatchGeneration(
+      [dispatch("qa", 1), dispatch("qa", 3), dispatch("dev", 5)],
+      { sessionId: "session-a", role: "qa" },
+    )).toBe(4);
+    expect(planHandoffDispatchGeneration(
+      [dispatch("qa", 1)],
+      { sessionId: "session-a", role: "dev" },
+    )).toBe(1);
+    expect(planHandoffDispatchGeneration(
+      [dispatch("qa", 1), { type: "handoff_dispatch", payload: { sessionId: "session-a", role: "qa", generation: "bad" } }],
+      { sessionId: "session-a", role: "qa" },
+    )).toBe(2);
+  });
+
+  it("projects the run generation and role latest from dispatch facts", () => {
+    const dispatch = (role: string, generation: number, runId: string) => ({
+      type: "handoff_dispatch",
+      payload: { sessionId: "session-a", role, generation, runId, sourceMessageId: 1, createdAt: "2026-08-01T00:00:00.000Z" },
+    });
+    const events = [dispatch("qa", 1, "run-a"), dispatch("qa", 2, "run-b"), dispatch("dev", 1, "run-c")];
+    expect(planHandoffDispatchState(events, { sessionId: "session-a", role: "qa", runId: "run-a" }))
+      .toEqual({ runGeneration: 1, latestGeneration: 2 });
+    expect(planHandoffDispatchState(events, { sessionId: "session-a", role: "qa", runId: "run-c" }))
+      .toEqual({ runGeneration: null, latestGeneration: 2 });
+    expect(planHandoffDispatchState(events, { sessionId: "session-a", role: "dev", runId: "run-c" }))
+      .toEqual({ runGeneration: 1, latestGeneration: 1 });
+    expect(planHandoffDispatchState([], { sessionId: "session-a", role: "qa", runId: "run-a" }))
+      .toEqual({ runGeneration: null, latestGeneration: null });
   });
 });
 

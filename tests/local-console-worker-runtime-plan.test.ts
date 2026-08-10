@@ -8,6 +8,7 @@ import {
   decideWorkerLifecycleCreation,
   decideWorkerOriginEffect,
   decideWorkerPreparation,
+  decideWorkerQueuedDispatch,
   decideWorkerRecoveryPersistence,
   decideWorkerSuccessPersistence,
   decideWorkerRedirectAbort,
@@ -16,6 +17,7 @@ import {
   decideWorkerTerminalContinuation,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
+  planWorkerDispatchSequence,
   planWorkerSourceDisposition,
   planWorkerGracefulResume,
   planWorkerLastSeenIndex,
@@ -38,6 +40,16 @@ describe("worker runtime plan", () => {
       .toEqual({ kind: "keep" });
     expect(decideWorkerRedirectAbort({ origin: "primary-redirect", activeLane: "primary" }))
       .toEqual({ kind: "keep" });
+  });
+
+  it("assigns dispatch sequences only to primary-redirect lanes and supersedes queued runs", () => {
+    expect(planWorkerDispatchSequence(undefined, "primary-redirect")).toBe(1);
+    expect(planWorkerDispatchSequence(1, "primary-redirect")).toBe(2);
+    expect(planWorkerDispatchSequence(3, "user-direct")).toBeNull();
+    expect(decideWorkerQueuedDispatch(2, 1)).toEqual({ kind: "superseded" });
+    expect(decideWorkerQueuedDispatch(1, 1)).toEqual({ kind: "run" });
+    expect(decideWorkerQueuedDispatch(undefined, 1)).toEqual({ kind: "run" });
+    expect(decideWorkerQueuedDispatch(2, null)).toEqual({ kind: "run" });
   });
 
   it("preserves retry run identity and releases only the current lane owner", () => {

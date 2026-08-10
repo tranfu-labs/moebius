@@ -3163,6 +3163,89 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   }, 20_000);
 
+  it("runs only the latest dispatch and expires a superseded run's late reply", async () => {
+    const root = await makeFixtureRoot();
+    const qaRun1Gate = deferred<void>();
+    const managerRun2Gate = deferred<void>();
+    const qaRun1Aborted = deferred<void>();
+    const roles: string[] = [];
+    const runCodex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
+      const role = roleFromPrompt(options.prompt);
+      roles.push(role);
+      if (role === "dev-manager") {
+        const managerCalls = roles.filter((entry) => entry === "dev-manager").length;
+        if (managerCalls === 1) return codexOk(options, "第一轮评审，@qa 请复评");
+        if (managerCalls === 2) {
+          await managerRun2Gate.promise;
+          return codexOk(options, "第一轮评审修订，@qa 请复评");
+        }
+        return codexOk(options, "收到");
+      }
+      if (role === "qa") {
+        const qaCalls = roles.filter((entry) => entry === "qa").length;
+        if (qaCalls === 1) {
+          // 第一笔派工的 run 无视 abort 仍然完成：产生晚到回复，验证其不能继续推动接力。
+          options.signal?.addEventListener("abort", () => qaRun1Aborted.resolve(undefined), { once: true });
+          await qaRun1Gate.promise;
+          return codexOk(options, "第一轮复评结论：6 项必改。@qa 请复核");
+        }
+        return codexOk(options, "修订复评结论：3 项必改。@dev-manager 请裁决");
+      }
+      throw new Error(`unexpected role: ${role}`);
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      listAgentFiles: async () => [
+        { name: "dev-manager", agentMarkdown: "ROLE:dev-manager" },
+        { name: "qa", agentMarkdown: "ROLE:qa" },
+      ],
+      makeRunDir: (count) => path.join(root, "runs", `handoff-generation-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "handoff generation");
+      expect((await postSessionMessage(started.url, session.sessionId, "请评审第一轮")).status).toBe(202);
+      await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "qa")
+      );
+
+      expect((await postSessionMessage(started.url, session.sessionId, "补充材料，请修订评审")).status).toBe(202);
+      await waitForState(started.url, session.sessionId, (state) =>
+        state.activeRuns.some((run) => run.role === "dev-manager")
+      );
+
+      // 主 Agent 修订回复先落盘：第二笔派工记录 generation 2 并 abort 第一笔派工的 run。
+      managerRun2Gate.resolve(undefined);
+      await qaRun1Aborted.promise;
+      // 第一笔派工的 run 仍然完成，晚到回复进入时间线。
+      qaRun1Gate.resolve(undefined);
+
+      const settled = await waitForState(started.url, session.sessionId, (state) =>
+        state.messages.some((message) => message.role === "qa" && message.body === "修订复评结论：3 项必改。@dev-manager 请裁决")
+        && state.selectedSession?.hasPendingControlWork === false
+        && state.activeRuns.length === 0
+      );
+      const qaReplies = settled.messages.filter((message) =>
+        message.speaker === "agent" && message.role === "qa"
+      );
+      expect(qaReplies.map((message) => message.body)).toEqual([
+        "第一轮复评结论：6 项必改。@qa 请复核",
+        "修订复评结论：3 项必改。@dev-manager 请裁决",
+      ]);
+      // 处理位点已推进（处理过），但不产生新 run：晚到回复与正常交棒回复都保持历史可读。
+      expect(qaReplies[0]?.status).toBe("displayed");
+      expect(qaReplies[1]?.status).toBe("displayed");
+      // 只有两笔 qa run：晚到回复的 @qa mention 没有触发第三笔派工。
+      expect(roles).toEqual(["dev-manager", "qa", "dev-manager", "qa", "dev-manager"]);
+    } finally {
+      qaRun1Gate.resolve(undefined);
+      managerRun2Gate.resolve(undefined);
+      await started.close();
+    }
+  }, 20_000);
+
   it("releases a delayed direct worker claim during clean close and starts it once after restart", async () => {
     const root = await makeFixtureRoot();
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");

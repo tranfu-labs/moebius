@@ -6,12 +6,14 @@ import {
   decideWorkerClaimRelease,
   decideWorkerContextFailureReport,
   decideWorkerOutstandingWork,
+  decideWorkerQueuedDispatch,
   decideWorkerRunId,
   decideWorkerRedirectAbort,
   decideWorkerTaskRelease,
   decideWorkerWakeCheckpoint,
   planPreviousWorkerTask,
   planWorkerActiveLane,
+  planWorkerDispatchSequence,
 } from "./worker-runtime-plan.js";
 import type { LocalConsoleMessage, LocalConsoleSessionWorkspaceSource } from "./types.js";
 
@@ -31,6 +33,8 @@ export interface LocalWorkerRunInput {
 export class LocalWorkerDispatchRuntime {
   private readonly wakeTasks = new Set<Promise<void>>();
   private readonly laneTails = new Map<string, Promise<void>>();
+  /** 每个 (session, role) lane 的派工序号：主 Agent 新派工会覆盖尚未启动的旧派工。 */
+  private readonly laneSequences = new Map<string, number>();
 
   constructor(private readonly input: {
     hasClaimCapability(): boolean;
@@ -110,11 +114,21 @@ export class LocalWorkerDispatchRuntime {
     const active = this.input.activeRunForRole(input.sessionId, input.role);
     const abort = decideWorkerRedirectAbort({ origin: input.origin, activeLane: planWorkerActiveLane(active?.lane) });
     if (abort.kind === "abort") active!.controller.abort("primary-redirected-active-agent");
+    const sequence = planWorkerDispatchSequence(this.laneSequences.get(key), input.origin);
+    if (sequence !== null) this.laneSequences.set(key, sequence);
     const previous = planPreviousWorkerTask(this.laneTails.get(key), Promise.resolve());
-    const task = previous.catch(() => undefined).then(() => this.input.scheduleRun(input))
+    const task = previous.catch(() => undefined)
+      .then(() => this.runScheduled(input, key, sequence))
       .catch((error: unknown) => this.reportRunFailure(input, error))
       .finally(() => this.finishScheduledRun(input, key, task));
     this.laneTails.set(key, task);
+  }
+
+  /** 排队中的旧派工被更新的主 Agent 派工覆盖时，不再启动 provider run。 */
+  private async runScheduled(input: LocalWorkerRunInput, key: string, sequence: number | null): Promise<void> {
+    const queued = decideWorkerQueuedDispatch(this.laneSequences.get(key), sequence);
+    if (queued.kind === "superseded") return;
+    await this.input.scheduleRun(input);
   }
 
   private async wake(sessionId: string): Promise<void> {
