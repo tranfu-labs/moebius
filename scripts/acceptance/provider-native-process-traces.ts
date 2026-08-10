@@ -481,6 +481,7 @@ async function seedProviderSession(input: {
         body: reply.body,
         runId: reply.runId,
         runDir: path.join(runtimeRoot, "runs", reply.runId),
+        processSteps: [],
         now: timestamp(15 + index * 10),
       });
     } else {
@@ -490,6 +491,7 @@ async function seedProviderSession(input: {
         body: reply.body,
         runId: reply.runId,
         runDir: path.join(runtimeRoot, "runs", reply.runId),
+        processSteps: [],
         now: timestamp(15 + index * 10),
       });
     }
