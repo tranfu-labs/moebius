@@ -81,6 +81,7 @@ export interface StartedLocalConsoleServer {
   managedProcessSupervisor: ManagedProcessSupervisor;
   url: string;
   sqlitePath: string;
+  stopRunningTasks(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -229,6 +230,7 @@ export async function startLocalConsoleServer(
     managedProcessSupervisor,
     url,
     sqlitePath: store.sqlitePath,
+    stopRunningTasks: () => runtime.stopRunningTasks(),
     async close() {
       await runtime.close();
       await closeLocalConsoleHttpServer(server);

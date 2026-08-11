@@ -11,6 +11,7 @@ import type { DesktopStatusSnapshot } from "./status.js";
 import { registerLanguagePreferenceIpc } from "./language-preference-ipc.js";
 import { saveLanguagePreference } from "./language-preference.js";
 import type { DesktopLocale } from "./language-preference-contract.js";
+import type { SettingsUpdateState } from "./settings-contract.js";
 import { registerProviderProfileIpc } from "./provider-profile-ipc.js";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { translateDesktop } from "./i18n/index.js";
@@ -230,6 +231,10 @@ export function registerDesktopMainInfrastructureIpc(input: {
   getLocale: () => DesktopLocale;
   setLocale: (locale: DesktopLocale) => void;
   appVersion: string;
+  getRunningTaskCount: () => number;
+  remindLater: () => Promise<SettingsUpdateState>;
+  skipVersion: () => Promise<SettingsUpdateState>;
+  respondInstallConfirmation: (requestId: number, approved: boolean) => void;
 }): { getRunningTaskCount(): number; cancelAll(): void } {
   registerLanguagePreferenceIpc({
     ipcMain: input.ipcMain,
@@ -275,6 +280,10 @@ export function registerDesktopMainInfrastructureIpc(input: {
     checkForUpdates: () => input.updateRuntime.check(),
     readUpdateState: () => input.updateRuntime.state,
     installUpdate: () => input.shutdown.requestInstall(),
+    readRunningTaskCount: input.getRunningTaskCount,
+    remindLater: () => input.remindLater(),
+    skipVersion: () => input.skipVersion(),
+    respondInstallConfirmation: input.respondInstallConfirmation,
   });
   return registerProviderProfileIpc({ ipcMain: input.ipcMain, service: input.providerProfileService });
 }

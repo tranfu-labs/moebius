@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 
 import type {
+  SettingsInstallConfirmation,
+  SettingsInstallFailure,
   SettingsApplicationInfo,
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
@@ -21,6 +23,12 @@ export interface DesktopSettingsPort {
   readUpdateState?: () => Promise<SettingsUpdateCheckResult>;
   onUpdateState?: (listener: (state: SettingsUpdateCheckResult) => void) => () => void;
   installUpdate?: () => Promise<void>;
+  readRunningTaskCount?: () => Promise<number>;
+  remindLater?: () => Promise<SettingsUpdateCheckResult>;
+  skipVersion?: () => Promise<SettingsUpdateCheckResult>;
+  onInstallConfirmation?: (listener: (confirmation: SettingsInstallConfirmation) => void) => () => void;
+  onInstallFailure?: (listener: (failure: SettingsInstallFailure) => void) => () => void;
+  respondInstallConfirmation?: (requestId: number, approved: boolean) => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   openExternalLink?: (url: string) => Promise<void>;
   getDefaultAgent?: () => Promise<{ profile: AgentExecutionProfile; saved: boolean }>;
@@ -38,21 +46,40 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
 
   useEffect(() => {
     let active = true;
+    const dispatchIfActive = (action: Parameters<typeof dispatch>[0]): void => {
+      if (active) dispatch(action);
+    };
     void api?.readApplicationInfo?.().then((info) => {
-      if (active) dispatch({ type: "application-info-loaded", info });
+      dispatchIfActive({ type: "application-info-loaded", info });
     }).catch(() => undefined);
     void api?.readUpdateState?.().then((state) => {
-      if (active) dispatch({ type: "update-state-received", state });
+      dispatchIfActive({ type: "update-state-received", state });
     }).catch(() => undefined);
     void api?.getDefaultAgent?.().then(({ profile }) => {
-      if (active) dispatch({ type: "default-agent-loaded", profile });
+      dispatchIfActive({ type: "default-agent-loaded", profile });
     }).catch(() => undefined);
     const unsubscribe = api?.onUpdateState?.((state) => {
-      if (active) dispatch({ type: "update-state-received", state });
+      dispatchIfActive({ type: "update-state-received", state });
     });
+    const unsubscribeConfirmation = api?.onInstallConfirmation?.((confirmation) => {
+      dispatchIfActive({ type: "install-confirmation-received", confirmation });
+    });
+    const unsubscribeFailure = api?.onInstallFailure?.((failure) => {
+      dispatchIfActive({ type: "install-failure-received", failure });
+    });
+    const readTaskCount = () => {
+      void api?.readRunningTaskCount?.().then((count) => {
+        dispatchIfActive({ type: "running-task-count-received", count });
+      }).catch(() => undefined);
+    };
+    readTaskCount();
+    const taskCountTimer = window.setInterval(readTaskCount, 500);
     return () => {
       active = false;
       unsubscribe?.();
+      unsubscribeConfirmation?.();
+      unsubscribeFailure?.();
+      window.clearInterval(taskCountTimer);
     };
   }, [api]);
 
@@ -120,6 +147,32 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     }
   }, [api]);
 
+  const onRemindLaterUpdate = useCallback(async () => {
+    const availability = decideSettingsPortAvailability(api?.remindLater !== undefined);
+    if (availability.kind === "unavailable") return;
+    const state = await api!.remindLater!().catch(() => null);
+    if (state !== null) dispatch({ type: "update-state-received", state });
+  }, [api]);
+
+  const onSkipUpdate = useCallback(async () => {
+    const availability = decideSettingsPortAvailability(api?.skipVersion !== undefined);
+    if (availability.kind === "unavailable") return;
+    const state = await api!.skipVersion!().catch(() => null);
+    if (state !== null) dispatch({ type: "update-state-received", state });
+  }, [api]);
+
+  const onInstallConfirmationDecision = useCallback((requestId: number, approved: boolean) => {
+    dispatch({ type: "install-confirmation-cleared", requestId });
+    void api?.respondInstallConfirmation?.(requestId, approved).catch(() => undefined);
+  }, [api]);
+
+  const onInstallFailureDecision = useCallback((decision: "dismiss" | "retry") => {
+    dispatch({ type: "install-failure-cleared" });
+    if (decision === "retry") {
+      void onInstallUpdate().catch(() => undefined);
+    }
+  }, [onInstallUpdate]);
+
   return {
     ...planDesktopSettingsView(state),
     onCheckSettingsUpdates,
@@ -127,5 +180,13 @@ export function useDesktopSettingsBundle(api: DesktopSettingsPort | undefined) {
     onOpenSettingsExternalLink,
     onInstallUpdate,
     onSaveDefaultAgent,
+    onRemindLaterUpdate,
+    onSkipUpdate,
+    onInstallConfirmationDecision,
+    onInstallFailureDecision,
+    runningTaskCount: state.runningTaskCount,
+    installConfirmation: state.installConfirmation,
+    installFailure: state.installFailure,
+    remindLaterVersion: state.remindLaterVersion,
   };
 }

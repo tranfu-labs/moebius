@@ -24,6 +24,10 @@ export function registerDesktopCoreIpc(input: {
   checkForUpdates: RegisterSettingsIpcOptions["checkForUpdates"];
   readUpdateState?: RegisterSettingsIpcOptions["readUpdateState"];
   installUpdate?: RegisterSettingsIpcOptions["installUpdate"];
+  readRunningTaskCount?: RegisterSettingsIpcOptions["readRunningTaskCount"];
+  remindLater?: RegisterSettingsIpcOptions["remindLater"];
+  skipVersion?: RegisterSettingsIpcOptions["skipVersion"];
+  respondInstallConfirmation?: RegisterSettingsIpcOptions["respondInstallConfirmation"];
 }): void {
   input.ipcMain.handle("action:open-status-page", async () => {
     input.openStatusPage();
@@ -65,6 +69,10 @@ export function registerDesktopCoreIpc(input: {
     checkForUpdates: input.checkForUpdates,
     readUpdateState: input.readUpdateState,
     installUpdate: input.installUpdate,
+    readRunningTaskCount: input.readRunningTaskCount,
+    remindLater: input.remindLater,
+    skipVersion: input.skipVersion,
+    respondInstallConfirmation: input.respondInstallConfirmation,
     clipboard: input.clipboard,
   });
 }

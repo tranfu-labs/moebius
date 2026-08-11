@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
 
+import { splitAgentMarkdown } from "../../packages/console-ui/src/console/agent-markdown-body.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
 
 interface RealAppRecord {
@@ -110,6 +111,8 @@ async function mainPage(application: ElectronApplication): Promise<Page> {
     await page.getByTestId("onboarding-step-3").waitFor();
     await page.getByRole("button", { name: "继续" }).click();
     await page.getByTestId("onboarding-step-4").waitFor();
+    await page.getByRole("button", { name: "暂时不要" }).click();
+    await page.getByTestId("onboarding-step-5").waitFor();
     await page.getByRole("button", { name: "开始使用" }).click();
   }
   await page.getByRole("button", { name: "设置" }).waitFor({ timeout: 30_000 });
@@ -159,13 +162,13 @@ const editor = (page: Page, displayName: string) =>
  * already editing.
  */
 async function enterEdit(page: Page): Promise<void> {
-  const doneButton = page.getByRole("button", { name: "完成编辑" });
-  if (await doneButton.isVisible().catch(() => false)) {
+  const markdownEditor = page.locator("#agent-team-markdown-editor[contenteditable='true']");
+  if (await markdownEditor.isVisible().catch(() => false)) {
     return;
   }
-  const editButton = page.getByRole("button", { name: "编辑" });
+  const editButton = page.getByRole("button", { name: "编辑", exact: true });
   await editButton.click();
-  await page.locator("#agent-team-markdown-editor[contenteditable='true']").waitFor({ state: "visible", timeout: 10_000 });
+  await markdownEditor.waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function editorRawMarkdown(page: Page): Promise<string | null> {
@@ -175,12 +178,15 @@ async function editorRawMarkdown(page: Page): Promise<string | null> {
 
 /** Enters edit mode and waits until the editor shows the expected raw body. */
 async function waitForEditorRaw(page: Page, expected: string, timeout = 15_000): Promise<void> {
-  await enterEdit(page);
-  await page.waitForFunction(
-    (value) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === value,
-    expected,
-    { timeout },
-  );
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    await enterEdit(page).catch(() => undefined);
+    const matched = await page.evaluate((value) =>
+      document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === value, expected);
+    if (matched) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("AGENT.md editor did not reach the expected content before the deadline");
 }
 
 async function focusMainWindow(application: ElectronApplication): Promise<void> {
@@ -256,6 +262,7 @@ try {
     options: {
       trackMarkers: boolean;
       intervalMs: number;
+      maxDurationMs?: number;
       /**
        * Terminal detection. "any-terminal" fires on the first non-pending line
        * (the line did not exist before). "timeline-entries" fires once the
@@ -295,7 +302,7 @@ try {
     // save-row status, the timeline entry count and an optional marker
     // count — nothing slower may run inside it, or a fast-settling job's
     // pending frame (~200ms) is missed.
-    while (Date.now() - startedAt < 150_000) {
+    while (Date.now() - startedAt < (options.maxDurationMs ?? 150_000)) {
       if (options.trackMarkers) {
         markerMin = Math.min(markerMin, await page.locator("[data-change-marker]").count());
       }
@@ -358,7 +365,12 @@ try {
     await enterEdit(page);
     await devManagerEditor.fill(firstDraft);
     await page.getByRole("button", { name: "保存", exact: true }).click();
-  }, { trackMarkers: false, intervalMs: 40, terminalSignal: { kind: "settle-event", minEvents: 1 } });
+  }, {
+    trackMarkers: false,
+    intervalMs: 40,
+    maxDurationMs: 10_000,
+    terminalSignal: { kind: "settle-event", minEvents: 1 },
+  });
   const settleEventsAfterFirst = await readSettleEvents();
   await page.locator("#agent-team-markdown-editor").waitFor({ state: "visible", timeout: 15_000 });
   const markerCountAfterFirstSave = await page.locator("[data-change-marker]").count();
@@ -536,7 +548,7 @@ try {
   await page.getByRole("tab", { name: "软件测试", exact: true }).click();
   const officialQaFile = path.join(developmentDirectory(), "members", "qa", "AGENT.md");
   const officialQaOriginal = await fs.readFile(officialQaFile, "utf8");
-  await waitForEditorRaw(page, officialQaOriginal);
+  await waitForEditorRaw(page, splitAgentMarkdown(officialQaOriginal).body);
   const officialQaDraft = "# 测试\n\n设计测试方案，对抗性审查每个交付。\n\n验收记录必须包含真实运行步骤。\n";
   await fs.writeFile(officialQaFile, officialQaDraft, "utf8");
   await focusMainWindow(application);
@@ -592,6 +604,7 @@ try {
   const copiedTeamDir = await waitForCopyDirectory();
   const copiedDevFile = path.join(copiedTeamDir, "members", "dev", "AGENT.md");
   const originalDevContent = await fs.readFile(copiedDevFile, "utf8");
+  const originalDevBody = splitAgentMarkdown(originalDevContent).body;
   // The copy-open may reset the member selection to the copy's primary after
   // any earlier tab click; retry until the editor actually shows the copy's
   // dev file (bounded, each attempt waits only 3s).
@@ -600,7 +613,7 @@ try {
     await page.getByRole("tab", { name: "开发", exact: true }).click();
     devSelected = await page.waitForFunction(
       (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-      originalDevContent,
+      originalDevBody,
       { timeout: 3_000 },
     ).then(() => true).catch(async () => {
       // The copy-open may reset the member selection; re-enter edit mode on retry.
@@ -689,7 +702,7 @@ try {
   // The contentEditable serialization normalizes consecutive newlines, so the
   // editor's raw attribute is compared against the actually stored content
   // (disk/sqlite), never against the typed draft string.
-  await waitForEditorRaw(page, diskAfterRestore);
+  await waitForEditorRaw(page, splitAgentMarkdown(diskAfterRestore).body);
   const restoredDiskContent = await fs.readFile(
     path.join(copiedTeamDir, "members", "dev-manager", "AGENT.md"),
     "utf8",
@@ -725,6 +738,7 @@ try {
 
   // ---------- Acceptance 4: default Agent setting survives restart ----------
   await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("button", { name: "常规", exact: true }).click();
   const defaultAgentSection = page.locator("fieldset").filter({ hasText: "默认 Agent" });
   await defaultAgentSection.waitFor();
   const engineSelect = defaultAgentSection.getByRole("combobox", { name: "执行引擎" });
@@ -738,6 +752,7 @@ try {
   application = await launch();
   page = await mainPage(application);
   await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("button", { name: "常规", exact: true }).click();
   const afterRestartSection = page.locator("fieldset").filter({ hasText: "默认 Agent" });
   await afterRestartSection.waitFor();
   const engineAfterRestart = await afterRestartSection.getByRole("combobox", { name: "执行引擎" }).inputValue();

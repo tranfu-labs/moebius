@@ -4,6 +4,7 @@ import {
   app,
   clipboard,
   ipcMain,
+  powerMonitor,
   shell,
 } from "electron";
 // electron-updater exposes a CommonJS main entry; keep the runtime import compatible
@@ -28,9 +29,7 @@ import { createAgentRevisionWiring } from "./agent-revision-wiring.js";
 import { AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL } from "./team-ipc-contract.js";
 import { registerTeamIpc } from "./team-ipc-register.js";
 import { seedBuiltInTeams } from "./team-seed.js";
-import {
-  createTeamRuntimeBindingService,
-} from "./team-runtime-binding.js";
+import { createTeamRuntimeBindingService } from "./team-runtime-binding.js";
 import {
   createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
@@ -40,9 +39,12 @@ import {
   createDesktopTeamRuntimeBindingPorts,
 } from "./desktop-team-wiring.js";
 import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
-import { DesktopUpdateRuntime } from "./desktop-update-runtime.js";
-import type { DesktopUpdateProvider } from "./desktop-update-contract.js";
-import { createDesktopUpdateReadyStore } from "./desktop-update-store.js";
+import type {
+  DesktopInstallFailure,
+  DesktopUpdateProvider,
+} from "./desktop-update-contract.js";
+import { createDesktopUpdateShutdownWiring } from "./desktop-update-shutdown-wiring.js";
+import { createDesktopUpdateReadyStore, createDesktopUpdateSkipStore } from "./desktop-update-store.js";
 import { registerDesktopMainInfrastructureIpc } from "./desktop-main-infrastructure-ipc.js";
 import { configureDesktopProcess } from "./desktop-process-config.js";
 import { registerDesktopLifecycle } from "./desktop-lifecycle-register.js";
@@ -53,8 +55,8 @@ import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
 import {
   exitTaskDialogOptions,
-  installUpdateDialogOptions,
 } from "./onboarding/shutdown-coordination.js";
+import { SETTINGS_IPC_CHANNELS } from "./settings-contract.js";
 import type { DesktopLocale } from "./language-preference-contract.js";
 import {
   readLanguagePreference,
@@ -112,26 +114,9 @@ const windows = new DesktopWindowRuntime({
 });
 
 const agentRevisionWiring = createAgentRevisionWiring({
-  dataRoot: status.dataRoot,
-  sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
-  runPi,
+  dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), runPi,
   publishSummarySettled: (settled) => windows.sendMain(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, settled),
 });
-
-const updateRuntime = new DesktopUpdateRuntime({
-  platform: process.platform,
-  arch: process.arch,
-  isPackaged: app.isPackaged,
-  currentVersion: app.getVersion(),
-  provider: autoUpdater as unknown as DesktopUpdateProvider,
-  readyStore: createDesktopUpdateReadyStore(path.join(status.dataRoot, ".state", "desktop-update-ready.json")),
-  publish: (state) => windows.sendMain("settings:update-state", state),
-  onInstallFailure: async () => {
-    await localConsole.start();
-    shutdown.recoverAfterInstallFailure();
-  },
-});
-
 localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: {
@@ -168,7 +153,24 @@ localConsole = new DesktopLocalConsoleRuntime({
 });
 
 let providerProfileOperations: { getRunningTaskCount(): number; cancelAll(): void } | null = null;
-shutdown = new DesktopShutdownRuntime({
+const getRunningTaskCount = (): number => localConsole.getRunningTaskCount()
+  + (aiTeamBuilder?.getRunningTaskCount() ?? 0)
+  + (onboardingCliInstaller?.getRunningClis().length ?? 0)
+  + (providerProfileOperations?.getRunningTaskCount() ?? 0);
+const updateWiring = createDesktopUpdateShutdownWiring({
+  platform: process.platform,
+  arch: process.arch,
+  isPackaged: app.isPackaged,
+  currentVersion: app.getVersion(),
+  provider: autoUpdater as unknown as DesktopUpdateProvider,
+  readyStore: createDesktopUpdateReadyStore(path.join(status.dataRoot, ".state", "desktop-update-ready.json")),
+  skipStore: createDesktopUpdateSkipStore(path.join(status.dataRoot, ".state", "desktop-update-skipped.json")),
+  powerMonitor,
+  publishUpdateState: (state) => windows.sendMain(SETTINGS_IPC_CHANNELS.updateState, state),
+  publishInstallConfirmation: (request) => windows.sendMain(SETTINGS_IPC_CHANNELS.installConfirmation, request),
+  publishInstallFailure: (failure: DesktopInstallFailure) => windows.sendMain(SETTINGS_IPC_CHANNELS.installFailure, failure),
+  startLocalConsole: () => localConsole.start(),
+  recoverAfterInstallFailure: () => shutdown.recoverAfterInstallFailure(),
   closeLocalConsole: () => localConsole.close(),
   closeStateWorkers: closeSqliteStateWorkers,
   quit: () => app.quit(),
@@ -184,14 +186,12 @@ shutdown = new DesktopShutdownRuntime({
       noLink: true,
     });
   },
-  getRunningTaskCount: () => localConsole.getRunningTaskCount()
-    + (aiTeamBuilder?.getRunningTaskCount() ?? 0)
-    + (onboardingCliInstaller?.getRunningClis().length ?? 0)
-    + (providerProfileOperations?.getRunningTaskCount() ?? 0),
+  getRunningTaskCount,
   cancelRunningTasks: async () => {
     await aiTeamBuilder?.cancelAll();
     await onboardingCliInstaller?.cancelAll();
     providerProfileOperations?.cancelAll();
+    await localConsole.stopRunningTasks();
   },
   confirmExit: async (runningTaskCount) => {
     if (runningTaskCount === 0) {
@@ -200,16 +200,11 @@ shutdown = new DesktopShutdownRuntime({
     const response = await windows.showMessageBox(exitTaskDialogOptions(runningTaskCount, activeLocale));
     return response !== 0;
   },
-  confirmInstall: async (runningTaskCount) => {
-    const response = await windows.showMessageBox(installUpdateDialogOptions(
-      updateRuntime.state.latestVersion ?? app.getVersion(),
-      runningTaskCount,
-      activeLocale,
-    ));
-    return response !== 0;
-  },
-  installUpdate: () => updateRuntime.install(),
 });
+const { updateRuntime, updateScheduler, installConfirmation } = updateWiring;
+shutdown = updateWiring.shutdown;
+
+app.on("will-quit", updateWiring.onWillQuit);
 
 registerDesktopLifecycle({
   app,
@@ -273,7 +268,10 @@ async function boot(): Promise<void> {
     // state and retry on the next launch (see agent-revision-wiring).
     migrateOfficialBaselines: () => agentRevisionWiring.migrateBaselines(status.dataRoot),
     startLocalConsole: () => localConsole.start(),
-    startUpdates: () => updateRuntime.start(),
+    startUpdates: async () => {
+      await updateRuntime.start();
+      updateScheduler.start();
+    },
     formatError: formatLocalError,
   });
 }
@@ -292,6 +290,12 @@ providerProfileOperations = registerDesktopMainInfrastructureIpc({
   getLocale: () => activeLocale,
   setLocale: (locale) => { activeLocale = locale; },
   appVersion: app.getVersion(),
+  getRunningTaskCount,
+  remindLater: () => updateRuntime.remindLater(),
+  skipVersion: () => updateRuntime.skipVersion(),
+  respondInstallConfirmation: (requestId, approved) => {
+    installConfirmation.respond(requestId, approved);
+  },
 });
 
 const teamConversationPreference = createTeamConversationPreferenceService(
@@ -309,11 +313,6 @@ registerTeamIpc(createDesktopTeamIpcOptions({
   selectDirectory: (options) => windows.selectDirectory(options),
   relocationTitle: () => translateDesktop(activeLocale, "dialog.relocateTeam"),
   sessionExists: (sessionId) => localConsole.sessionExists(sessionId),
-  revisions: {
-    listMemberRevisions: (request) => agentRevisionWiring.ipc.listMemberRevisions(request),
-    restoreMemberRevision: (request) => agentRevisionWiring.ipc.restoreMemberRevision(request),
-    getDefaultAgent: () => agentRevisionWiring.ipc.getDefaultAgent(),
-    saveDefaultAgent: (request) => agentRevisionWiring.ipc.saveDefaultAgent(request),
-  },
+  revisions: agentRevisionWiring.ipc,
   revisionService: agentRevisionWiring.service,
 }));

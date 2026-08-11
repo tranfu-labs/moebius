@@ -73,6 +73,59 @@ describe("desktop settings state", () => {
     });
   });
 
+  it("keeps the skipped projection and install confirmation separate from task polling", () => {
+    const ready = reduceDesktopSettings(INITIAL_DESKTOP_SETTINGS_STATE, {
+      type: "update-state-received",
+      state: {
+        status: "ready",
+        currentVersion: "0.1.4",
+        latestVersion: "0.1.5",
+        skippedVersion: "0.1.5",
+        remindLaterVersion: undefined,
+      },
+    });
+    const withCount = reduceDesktopSettings(ready, {
+      type: "running-task-count-received",
+      count: 3,
+    });
+    const withConfirmation = reduceDesktopSettings(withCount, {
+      type: "install-confirmation-received",
+      confirmation: { requestId: 7, version: "0.1.5", runningTaskCount: 3 },
+    });
+
+    expect(withConfirmation).toMatchObject({
+      skippedVersion: "0.1.5",
+      runningTaskCount: 3,
+      installConfirmation: { requestId: 7, runningTaskCount: 3 },
+    });
+    expect(reduceDesktopSettings(withConfirmation, {
+      type: "install-confirmation-cleared",
+      requestId: 6,
+    })).toBe(withConfirmation);
+    expect(reduceDesktopSettings(withConfirmation, {
+      type: "install-confirmation-cleared",
+      requestId: 7,
+    }).installConfirmation).toBeNull();
+  });
+
+  it("keeps install failure feedback until the user dismisses or retries it", () => {
+    const failure = {
+      kind: "install" as const,
+      version: "0.1.5",
+      runningTaskCount: 0,
+      hadRunningTasks: true,
+      tasksStopped: true,
+      installStarted: true,
+    };
+    const received = reduceDesktopSettings(INITIAL_DESKTOP_SETTINGS_STATE, {
+      type: "install-failure-received",
+      failure,
+    });
+
+    expect(received.installFailure).toEqual(failure);
+    expect(reduceDesktopSettings(received, { type: "install-failure-cleared" }).installFailure).toBeNull();
+  });
+
   it("deduplicates slow requests and reopens the gate after settlement", async () => {
     let finishFirst: (() => void) | undefined;
     const first = new Promise<void>((resolve) => {

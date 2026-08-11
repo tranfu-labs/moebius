@@ -45,6 +45,8 @@ export interface SettingsAboutState {
   currentVersion: string;
   latestVersion?: string;
   progress?: number;
+  skippedVersion?: boolean;
+  updateFailureReason?: "timeout" | "unavailable" | "unsupported" | "download" | "install";
   updateStatus: UpdateCheckStatus;
   copyStatus?: VersionCopyStatus;
 }
@@ -114,6 +116,7 @@ export interface SettingsDialogProps {
   onRetry(): void;
   onSaveDefaultAgent?(profile: AgentExecutionProfile): void | Promise<void>;
   onCheckForUpdates?(): void;
+  onInstallUpdate?(): void;
   onCopyVersion?(): void;
   onOpenReleaseNotes?(): void;
   onOpenFeedback?(): void;
@@ -140,6 +143,7 @@ export function SettingsDialog({
   onRetry,
   onSaveDefaultAgent,
   onCheckForUpdates,
+  onInstallUpdate,
   onCopyVersion,
   onOpenReleaseNotes,
   onOpenFeedback,
@@ -160,7 +164,7 @@ export function SettingsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[100] bg-ink/50" />
+        <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/50" />
         <Dialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-[101] grid max-h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))]",
@@ -234,6 +238,7 @@ export function SettingsDialog({
                 <AboutSettings
                   state={about}
                   onCheckForUpdates={onCheckForUpdates}
+                  onInstallUpdate={onInstallUpdate}
                   onCopyVersion={onCopyVersion}
                   onOpenReleaseNotes={onOpenReleaseNotes}
                   onOpenFeedback={onOpenFeedback}
@@ -421,7 +426,7 @@ function DefaultAgentSettingsGroup({
   const valid = isExecutionProfileValid(draft, providerProfiles);
 
   return (
-    <div className="mt-8">
+    <fieldset className="mt-8">
       <legend className="text-sm font-medium">{t("settings.defaultAgent")}</legend>
       <p className="mt-1 text-sm text-sub">{t("settings.defaultAgent.description")}</p>
       <div className="mt-4 rounded-sm border border-line bg-card p-3">
@@ -451,13 +456,14 @@ function DefaultAgentSettingsGroup({
           </Button>
         ) : null}
       </div>
-    </div>
+    </fieldset>
   );
 }
 
 function AboutSettings({
   state,
   onCheckForUpdates,
+  onInstallUpdate,
   onCopyVersion,
   onOpenReleaseNotes,
   onOpenFeedback,
@@ -466,6 +472,7 @@ function AboutSettings({
 }: {
   state: SettingsAboutState;
   onCheckForUpdates?: () => void;
+  onInstallUpdate?: () => void;
   onCopyVersion?: () => void;
   onOpenReleaseNotes?: () => void;
   onOpenFeedback?: () => void;
@@ -521,6 +528,7 @@ function AboutSettings({
           <UpdateStatus
             state={state}
             onCheckForUpdates={onCheckForUpdates}
+            onInstallUpdate={onInstallUpdate}
           />
         </SettingsInfoRow>
       </dl>
@@ -559,9 +567,11 @@ function SettingsInfoRow({
 function UpdateStatus({
   state,
   onCheckForUpdates,
+  onInstallUpdate,
 }: {
   state: SettingsAboutState;
   onCheckForUpdates?: () => void;
+  onInstallUpdate?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const checking = state.updateStatus === "checking";
@@ -574,6 +584,11 @@ function UpdateStatus({
     : state.updateStatus === "idle"
       ? t("settings.update.check")
       : t("settings.update.checkAgain");
+  const failureLabel = state.updateFailureReason === "install"
+    ? t("settings.update.installFailed")
+    : state.updateFailureReason === "download"
+      ? t("settings.update.downloadFailed")
+      : t("settings.update.checkFailed");
 
   return (
     <div className="grid justify-items-end gap-2 max-[620px]:justify-items-start" aria-live="polite">
@@ -597,10 +612,20 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "ready" ? (
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <CheckCircle2 className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
-          {t("settings.update.ready", { version: state.latestVersion ?? "" })}
-        </p>
+        <>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <CheckCircle2 className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
+            {state.skippedVersion
+              ? t("settings.update.readySkipped", { version: state.latestVersion ?? "" })
+              : t("settings.update.ready", { version: state.latestVersion ?? "" })}
+          </p>
+          {onInstallUpdate !== undefined ? (
+            <Button type="button" variant="outline" size="sm" onClick={onInstallUpdate}>
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("settings.update.install")}
+            </Button>
+          ) : null}
+        </>
       ) : null}
       {state.updateStatus === "installing" ? (
         <p className="text-sm font-medium" aria-busy="true">
@@ -608,9 +633,17 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "failed" ? (
-        <p className="text-right text-sm text-danger max-[620px]:text-left" role="alert">
-          {t("settings.update.failed")}
-        </p>
+        <>
+          <p className="text-right text-sm text-danger max-[620px]:text-left" role="alert">
+            {failureLabel}
+          </p>
+          {onInstallUpdate !== undefined && state.latestVersion !== undefined ? (
+            <Button type="button" variant="outline" size="sm" onClick={onInstallUpdate}>
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("settings.update.install")}
+            </Button>
+          ) : null}
+        </>
       ) : null}
       <Button
         type="button"

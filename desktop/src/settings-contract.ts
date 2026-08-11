@@ -1,9 +1,16 @@
 import type {
   DesktopUpdateFailureReason,
+  DesktopInstallConfirmation,
+  DesktopInstallFailure,
   DesktopUpdateState,
 } from "./desktop-update-contract.js";
 
-export type { DesktopUpdateFailureReason, DesktopUpdateState } from "./desktop-update-contract.js";
+export type {
+  DesktopInstallConfirmation,
+  DesktopInstallFailure,
+  DesktopUpdateFailureReason,
+  DesktopUpdateState,
+} from "./desktop-update-contract.js";
 
 export const SETTINGS_IPC_CHANNELS = {
   readApplicationInfo: "settings:read-application-info",
@@ -11,6 +18,12 @@ export const SETTINGS_IPC_CHANNELS = {
   readUpdateState: "settings:read-update-state",
   installUpdate: "settings:install-update",
   updateState: "settings:update-state",
+  readRunningTaskCount: "settings:read-running-task-count",
+  remindLater: "settings:remind-later",
+  skipVersion: "settings:skip-version",
+  installConfirmation: "settings:install-confirmation",
+  installFailure: "settings:install-failure",
+  respondInstallConfirmation: "settings:respond-install-confirmation",
   copyVersionInfo: "settings:copy-version-info",
 } as const;
 
@@ -26,6 +39,13 @@ export interface SettingsApplicationInfo {
 export type SettingsUpdateFailureReason = DesktopUpdateFailureReason;
 export type SettingsUpdateCheckResult = DesktopUpdateState;
 export type SettingsUpdateState = DesktopUpdateState;
+export type SettingsInstallConfirmation = DesktopInstallConfirmation;
+export type SettingsInstallFailure = DesktopInstallFailure;
+
+export interface SettingsInstallConfirmationResponse {
+  requestId: number;
+  approved: boolean;
+}
 
 export type SettingsVersionCopyResult =
   | { ok: true }

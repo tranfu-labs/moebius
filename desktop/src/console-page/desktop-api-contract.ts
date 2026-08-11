@@ -61,6 +61,8 @@ import type { CopySessionLogPathResult } from "../session-log-clipboard.js";
 import type { DesktopLocale } from "../language-preference-contract.js";
 import type {
   SettingsApplicationInfo,
+  SettingsInstallConfirmation,
+  SettingsInstallFailure,
   SettingsUpdateCheckResult,
   SettingsUpdateState,
   SettingsVersionCopyResult,
@@ -103,6 +105,12 @@ export interface DesktopApi {
   readUpdateState?: () => Promise<SettingsUpdateState>;
   onUpdateState?: (listener: (state: SettingsUpdateState) => void) => () => void;
   installUpdate?: () => Promise<void>;
+  readRunningTaskCount?: () => Promise<number>;
+  remindLater?: () => Promise<SettingsUpdateState>;
+  skipVersion?: () => Promise<SettingsUpdateState>;
+  onInstallConfirmation?: (listener: (confirmation: SettingsInstallConfirmation) => void) => () => void;
+  onInstallFailure?: (listener: (failure: SettingsInstallFailure) => void) => () => void;
+  respondInstallConfirmation?: (requestId: number, approved: boolean) => Promise<void>;
   copyVersionInfo?: () => Promise<SettingsVersionCopyResult>;
   listProviderProfiles?: () => Promise<ProviderProfileListResult>;
   createProviderProfile?: (request: ProviderProfileCreateRequest) => Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;

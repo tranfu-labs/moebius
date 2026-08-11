@@ -95,6 +95,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
 
   getRunningTaskCount(): number { return [...this.activeRunRegistry.keys()].length + (this.options.getManagedProcessRunningCount?.() ?? 0); }
 
+  async stopRunningTasks(): Promise<void> {
+    await this.shutdownRuntime.stopRunningTasks();
+  }
+
   private readonly workerExecutionRuntime: LocalWorkerExecutionRuntime;
   private readonly primaryPreparationRuntime: LocalPrimaryPreparationRuntime;
   private readonly primaryProviderRuntime: LocalPrimaryProviderRuntime;

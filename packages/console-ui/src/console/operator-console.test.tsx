@@ -202,6 +202,11 @@ describe("OperatorConsole", () => {
     expect(footer).toContainElement(screen.getByRole("button", { name: "设置" }));
     fireEvent.click(install);
     expect(onInstallUpdate).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "关于" }));
+    fireEvent.click(screen.getByRole("button", { name: "重启并安装" }));
+    expect(onInstallUpdate).toHaveBeenCalledTimes(2);
   });
 
   it("keeps all three application entries available when there are no projects", () => {

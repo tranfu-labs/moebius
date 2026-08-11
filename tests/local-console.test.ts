@@ -4002,6 +4002,65 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   });
 
+  it("waits for an active run to reach terminal state before stopping tasks", async () => {
+    const root = await makeFixtureRoot();
+    await writeAgent(root, "dev", "# Dev");
+    let abortObserved = false;
+    let releaseRun: (() => void) | null = null;
+    const runCodex = vi.fn((options: CodexRunOptions) => new Promise<CodexRunResult>((resolve) => {
+      releaseRun = () => resolve({
+        ok: false,
+        reason: "interrupted:desktop-install-stop",
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "stdout.jsonl"),
+        stderrPath: path.join(options.runDir, "stderr.log"),
+      });
+      const observeAbort = () => {
+        abortObserved = true;
+      };
+      if (options.signal?.aborted) observeAbort();
+      else options.signal?.addEventListener("abort", observeAbort, { once: true });
+    }));
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runCodex,
+      makeRunDir: (count) => path.join(root, "runs", `stop-running-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      await postMessage(started.url, "@dev keep running");
+      await waitForSnapshot(started.url, (snapshot) => snapshot.activeRun !== null);
+      await waitForCondition(() => started.runtime.getRunningTaskCount() === 1, {
+        describe: "active run enters desktop task count",
+        kind: "logic",
+      });
+
+      const stopping = started.stopRunningTasks();
+      await waitForCondition(() => abortObserved, {
+        describe: "active run receives install stop signal",
+        kind: "logic",
+      });
+      expect(runCodex).toHaveBeenCalledOnce();
+      expect(releaseRun).toBeTypeOf("function");
+      expect(started.runtime.getRunningTaskCount()).toBe(1);
+      let stopped = false;
+      void stopping.then(() => { stopped = true; });
+      expect(stopped).toBe(false);
+
+      releaseRun!();
+      await stopping;
+
+      expect(started.runtime.getRunningTaskCount()).toBe(0);
+      await waitForSnapshot(started.url, (snapshot) => snapshot.activeRun === null);
+      await expect(getState(started.url, LOCAL_CONSOLE_DEFAULT_SESSION_ID)).resolves.toMatchObject({
+        activeRun: null,
+      });
+    } finally {
+      await started.close();
+    }
+  });
+
   it("stops pending dispatch before closing an active runtime", async () => {
     const root = await makeFixtureRoot();
     await writeAgent(root, "dev", "# Dev");

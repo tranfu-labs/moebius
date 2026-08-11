@@ -1,13 +1,15 @@
-import { useEffect } from "react";
-
 import {
   createRunOutputSourceKey,
   openRightSidebarSourceTab,
   OperatorConsole,
+  UpdatePromptDialog,
+  type UpdateInstallDecision,
+  type UpdateReadyDecision,
   type AgentRunInfoView,
   type SessionTeamUpdateViewState,
   type Translate,
 } from "@moebius/console-ui";
+import { useEffect, useState } from "react";
 
 import type { ConsoleStateActions } from "./console-state-actions.js";
 import type { ConversationDraftStore } from "./draft-store.js";
@@ -33,6 +35,10 @@ import type { useSessionConsole } from "./use-session-console.js";
 import type { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
 import type { ManagedProcessPanelController } from "@moebius/console-ui";
 import type { ProviderSettingsController } from "@moebius/console-ui";
+import {
+  planDesktopUpdateReminder,
+  planUpdateInstallConfirmationDecision,
+} from "../desktop-update-plan.js";
 
 export interface OperatorConsoleViewProps {
   language: ReturnType<typeof useDesktopLanguage>;
@@ -96,6 +102,69 @@ function navigateToTaskReminderTarget(
 
 export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Element {
   const runtime = props.desktopShell.runtime;
+  const settings = props.desktopShell.settings;
+  const {
+    installConfirmation,
+    installFailure,
+    runningTaskCount,
+    remindLaterVersion,
+    onRemindLaterUpdate,
+    onSkipUpdate,
+    onInstallConfirmationDecision,
+    onInstallFailureDecision,
+    ...operatorSettings
+  } = settings;
+  const [readyReminderOpen, setReadyReminderOpen] = useState(false);
+  const [dismissedReadyVersion, setDismissedReadyVersion] = useState<string | null>(null);
+  const readyVersion = operatorSettings.settingsAbout.latestVersion;
+  const reminderPlan = planDesktopUpdateReminder({
+    state: {
+      status: operatorSettings.settingsAbout.updateStatus,
+      currentVersion: operatorSettings.settingsAbout.currentVersion,
+      latestVersion: readyVersion,
+      skippedVersion: operatorSettings.settingsAbout.skippedVersion ? readyVersion : undefined,
+      remindLaterVersion,
+    },
+    runningTaskCount,
+  });
+
+  useEffect(() => {
+    if (reminderPlan === "show" && readyVersion !== undefined && dismissedReadyVersion !== readyVersion) {
+      setReadyReminderOpen(true);
+    }
+    if (reminderPlan === "hidden" || reminderPlan === "suppressed") {
+      setReadyReminderOpen(false);
+    }
+  }, [dismissedReadyVersion, readyVersion, reminderPlan]);
+
+  const handleReadyDecision = (decision: UpdateReadyDecision): void => {
+    if (readyVersion === undefined) return;
+    setReadyReminderOpen(false);
+    setDismissedReadyVersion(decision === "install" ? null : readyVersion);
+    if (decision === "install") {
+      void operatorSettings.onInstallUpdate();
+    } else if (decision === "remind-later") {
+      void onRemindLaterUpdate();
+    } else {
+      void onSkipUpdate();
+    }
+  };
+
+  const handleInstallDecision = (decision: UpdateInstallDecision): void => {
+    if (installConfirmation === null) return;
+    const confirmationPlan = planUpdateInstallConfirmationDecision({
+      decision,
+      version: installConfirmation.version,
+    });
+    onInstallConfirmationDecision(
+      installConfirmation.requestId,
+      confirmationPlan.approved,
+    );
+    if (confirmationPlan.remindLaterVersion !== undefined) {
+      setDismissedReadyVersion(confirmationPlan.remindLaterVersion);
+      void onRemindLaterUpdate();
+    }
+  };
   const selectionState = props.localState.selection;
   const composer = props.localState.composer;
   const selection = selectionState.selection;
@@ -177,13 +246,14 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
     />
   );
   return (
-    <OperatorConsole
+    <>
+      <OperatorConsole
       executionRegistryState={runtime.executionRegistryState}
       onReloadExecutionRegistry={runtime.reloadExecutionRegistry}
       activeLocale={props.language.activeLocale}
       pendingLocale={props.language.pendingLocale}
       languageSaveStatus={props.language.status}
-      {...props.desktopShell.settings}
+      {...operatorSettings}
       providerSettings={props.providerSettings}
       taskReminder={props.taskReminder}
       onSelectLocale={props.language.selectLocale}
@@ -409,6 +479,34 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onLoadWorkspaceDiffFile={props.rightSidebar.files.readWorkspaceDiffFile}
       onLoadFileReference={props.rightSidebar.files.readFileReference}
       onLoadProcessOutputPrevious={props.rightSidebar.processData.loadPrevious}
-    />
+      />
+      <UpdatePromptDialog
+        mode="ready"
+        open={readyReminderOpen}
+        currentVersion={operatorSettings.settingsAbout.currentVersion}
+        latestVersion={readyVersion ?? operatorSettings.settingsAbout.currentVersion}
+        onDecision={handleReadyDecision}
+        onOpenReleaseNotes={() => {
+          void runtime.openExternalLink?.(operatorSettings.settingsExternalLinks.releaseNotes);
+        }}
+      />
+      {installConfirmation !== null ? (
+        <UpdatePromptDialog
+          mode="install-confirmation"
+          open
+          version={installConfirmation.version}
+          runningTaskCount={installConfirmation.runningTaskCount}
+          onDecision={handleInstallDecision}
+        />
+      ) : null}
+      {installFailure !== null ? (
+        <UpdatePromptDialog
+          mode="install-failure"
+          open
+          failure={installFailure}
+          onDecision={onInstallFailureDecision}
+        />
+      ) : null}
+    </>
   );
 }
