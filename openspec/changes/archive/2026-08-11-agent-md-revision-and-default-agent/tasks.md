@@ -66,9 +66,9 @@
 
 ## G. 功能 QA / 视觉 QA 移交清单
 
-- [ ] 功能 QA：按本 change 的 spec-delta 场景与 PRD 锚点逐条执行，记录页面入口、动作、可观察信号和 evidence 路径
-- [ ] 视觉 QA：核对左侧标记 hover 显形、就地展开、时间线面板与设置页默认 Agent 面板的信息密度、令牌使用（无裸色/渐变/阴影越界）——A 节已可在 Storybook 先行走查，本节是接上真实数据后的复核
-- [ ] 每条用户可见行为都附一条"真实运行可观察"语句；缺少真实页面证据不得声明 code-verified 完成
+- [x] 功能 QA：按本 change 的 spec-delta 场景与 PRD 锚点逐条执行，记录页面入口、动作、可观察信号和 evidence 路径——@functional-qa 独立真机验收 12 项断言全绿（evidence：`moebius-agent-revision-acceptance-RQJgMf/` 与 `moebius-qa-summary-ready-AQTyvY/`），覆盖保存修订/标记/摘要三态、Finder 修改、回退、默认 Agent 重启保持、verified/conservative 迁移幂等，并独立复现 restore 修订爆炸已消除、conservative 不合并、单次调用不进会话、change 2/3 UI inert。
+- [x] 视觉 QA：核对左侧标记 hover 显形、就地展开、时间线面板与设置页默认 Agent 面板的信息密度、令牌使用（无裸色/渐变/阴影越界）——@visual-qa Storybook + 真实 Electron 双证据验收通过（evidence：`/tmp/moebius-visual-qa-TapTRZ/`），3 项必修（色条不可见、真实指针不可达、键盘焦点不可见）修复后复验通过；`packages/console-ui/DESIGN.md` 已同步变化标记的 color-mix 机制。
+- [x] 每条用户可见行为都附一条"真实运行可观察"语句——第二轮真实产品用户任务评审（@product-reviewer，evidence：`/tmp/moebius-product-review-r2-KmPx2W/`）四项任务全部达成：首存只标实际变化且摘要准确、保存区旁摘要自行到达终态、官方团队 Finder 修改立即形成独立修订、当前版本无回退而历史版本真实回退且正文/磁盘/新修订一致、默认 Agent 重启保持；「本文件必改」为空。
 
 > 完整 `pnpm test` 不在实现者初次收口运行；按仓库规则，待功能与视觉复核通过后、合并前由交付流程对本 change 恰好运行一次。归档、spec 回流、architecture/wireframe 回流与本地提交服从 `openspec/changes/AGENTS.md`，不在本清单重复。
 

@@ -10,7 +10,7 @@ export interface AgentMarkdownRevisionEntry {
   /**
    * True only for the current (newest) revision. The current version has no
    * restore action; EVERY historical revision, including the earliest, can be
-   * restored to (「当前版本无回退，所有历史版本可回退」).
+   * restored to (per the change timeline section of agent-teams.md).
    */
   isLatest?: boolean;
 }
