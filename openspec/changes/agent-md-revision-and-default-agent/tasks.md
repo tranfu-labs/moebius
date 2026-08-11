@@ -132,3 +132,16 @@
 - 视觉 QA：左侧标记 hover 显形、就地展开、时间线面板与默认 Agent 面板在 A 节已过 Storybook 人工闸门；F 节真机复核了标记、时间线 toggle/展开、最近变化标题行与摘要降级文案。
 - 已实现但需复核时知晓的行为：摘要任务按默认 Agent 配置做一次性单轮调用，终态按环境为 ready/unavailable 两者之一（本机验收为 unavailable，确定性降级路径由 `agent-revision-service.test.ts` 钉死）；`conservative` 基线只做标记 + 起点修订，不做二路合并（合并是 change 2 范围）。
 - 移交物：本清单 + `scripts/acceptance/agent-revision-acceptance.ts`（含 evidence 输出）；`pnpm run test --scope` 基线 commit 为 `d2bd03692fb0979e4b74d32ccfb594f72367c036`。
+
+## 产品评审返工（product-reviewer 真实产品用户任务评审 #71 的四项阻断，本 change 内同一分支提交）
+
+评审在真实 Electron（隔离数据根）中走完四项用户任务后报告四项阻断，均确认是既定 PRD 的实现偏差。修复口径与证据如下：
+
+1. **首次保存必须以既有内容为比较基线**（评审：第一次只新增一段，却几乎全文都有色条）。`recordMemberRevision` 新增 `baselineContent`（写前的已持久化内容）：团队页保存路径在写盘前由主进程读磁盘全文（`team-ipc-register.ts` 的 `readMemberAgentMarkdownBeforeWrite`，按 ownership 解析 `.system`/记录位置，读失败回退 null）；外部修改路径传 renderer 的 `knownAgentMarkdown`（应用最后已知内容）。`planAgentRevisionWrite` 只在成员尚无修订时用基线：未变段落保持无主（不产生标记、不伪造作者），变更/新增段落才落标记并带 `previousText`。同时修复两个由此暴露的呈现层问题：ownership 数组是紧凑的（基线会留空），按数组下标取上一归属会错位，改为按 `blockIndex` 字段查找；段落从“末尾块”变“中间块”时块文本只差一个尾部换行，比较前归一化尾部换行，避免未动的段落被误标。
+2. **官方来源与用户团队都检测 Finder 外部修改**（评审：官方团队 Finder 修改返回应用后无任何修订信号）。`planExternalChangeRead` 不再区分 ownership（都返回 `read`）；`team-external-change.ts` 按 ownership 解析位置（system → `resolveTeamLocation`，user → 记录位置）；**修订在主进程 `changed` 响应返回前落盘**（原来 fire-and-forget）；renderer 载入外部版本后立即 `refreshRevisions` 就地刷新该成员历史（`useAgentTeamExternalChange` 新增 `refreshRevisions` 输入，`use-agent-team-console.ts` 调整 hook 顺序装配）。spec-delta 同步更新：外部修改检测 MUST 覆盖官方来源与用户团队、修订 MUST 先落盘再返回、renderer MUST 立即刷新。
+3. **保存控件附近增加同一摘要的可见状态反馈**（评审：标题行在编辑器上方，用户停在编辑器底部时看不到终态更新）。`agent-team-detail.tsx` 在底部保存按钮行新增 `[data-testid="agent-team-markdown-summary-status"]` 状态行（`role="status"` + `aria-live="polite"`，pending 带小 spinner），渲染与标题行同一摘要（复用 `recentChangeSummary`，i18n 文案不变），随摘要终态回传就地更新——用户无需滚动、切换成员或重新保存。
+4. **时间线语义改为“当前版本无回退，所有历史版本可回退”**（评审：按钮出现在最新版本上、更早版本反而没有；点击后只产生空修订）。契约 `AgentTeamRevisionView.isEarliest` 改为 `isLatest`（`team-ipc-contract.ts` / `team-revision-ipc.ts` / `agent-team-console-model.ts` / `agent-markdown-revision-timeline.tsx` 同步改名）；`restoreMemberRevision` 增加守卫：目标就是当前最新修订时拒绝（“当前版本无需回退。”），杜绝空修订；最早修订同样可回退。
+
+- 单测：`agent-revision-plan.test.ts` +3（基线只标实际变化、基线无主块下一条修订不误标、ownership-unknown 起点修订同基线语义）、`agent-revision-service.test.ts` +1（基线传给计划与摘要任务）、`team-revision-ipc.test.ts` +2（回退当前版本被拒且磁盘/修订数不变、仅最新条目 isLatest）、`team-desktop-action-plan.test.ts` 改写（外部读取覆盖两种 ownership）、`agent-team-detail.test.tsx` +1 改写 2（保存行状态 pending→终态就地更新、双行同文案断言）、`use-agent-team-member-editor.test.tsx` 补 `refreshRevisions` 输入。
+- Story：`agent-markdown-revision-timeline.stories.tsx` 与 `agent-teams-page.stories.tsx` 全部 fixture 从 `isEarliest` 迁移到 `isLatest`（最新条目标注、最早条目可回退）。
+- 真机（`scripts/acceptance/agent-revision-acceptance.ts` 扩展）：验收 1 断言**首次保存标记恰为 2 处**（基线只标实际变化）且摘要不可用时机械摘要精确为“本次改动涉及 2 处”；新增保存行状态采样（pending→终态就地就位）；验收 2 新增**官方团队 Finder 修改**（development/qa）断言 revision 落盘；验收 3 断言最新条目无“回到这一版”、点击中间条目回退、回退后持续观察 3 秒修订数不再增长（无自激）；验收 5 的 conservative 断言改为按 team 精确计数（qa 已有 Finder 修订则起点被跳过、dev 恰好 1 条起点）。

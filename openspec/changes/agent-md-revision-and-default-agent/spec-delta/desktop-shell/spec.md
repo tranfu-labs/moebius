@@ -7,7 +7,9 @@
 Source: docs/product/pages/agent-teams.md#编辑与保存-agentmd
 Source: docs/product/flows/agent-evolution.md#一本地调教留痕
 
-`AGENT.md` 每次成功保存（团队页保存或被读取到的 Finder 外部有效修改）MUST 落一条修订，MUST 至少包含完整内容、作者种类（`user | official | agent`）、发生时间。Finder 外部修改 MUST 记为 `user` 作者，与团队页内保存等价对待。修订 MUST 独立存储在团队内容目录之外，MUST NOT 出现在团队文件夹中。修订存储 MUST NOT 设置数量或时间上限。
+`AGENT.md` 每次成功保存（团队页保存或被读取到的 Finder 外部有效修改）MUST 落一条修订，MUST 至少包含完整内容、作者种类（`user | official | agent`）、发生时间。Finder 外部修改 MUST 记为 `user` 作者，与团队页内保存等价对待；外部修改检测 MUST 同时覆盖官方来源团队与用户团队（两者都解析各自磁盘位置：官方团队按稳定 id 落在 `.system/`，用户团队走记录位置）。外部修改的修订 MUST 在 `changed` 响应返回给 renderer 之前完成持久化，renderer 在载入外部版本后 MUST 立即刷新该成员的修订历史。修订 MUST 独立存储在团队内容目录之外，MUST NOT 出现在团队文件夹中。修订存储 MUST NOT 设置数量或时间上限。
+
+成员尚无任何修订时，首次保存（或首次被读取到的外部修改）MUST 以写入前的已持久化内容（保存路径为写前磁盘全文，外部修改路径为应用最后已知内容）作为比较基线：段落标记与人话摘要只反映本次实际改动，MUST NOT 把整份文档标成新增。
 
 人话摘要 MUST 由默认 Agent 在保存完成后异步生成，MUST NOT 阻塞保存反馈返回。摘要生成失败或默认 Agent 不可用时，修订 MUST 保留、MUST 用中性状态标记摘要不可用，MUST NOT 编造摘要内容、MUST NOT 阻止后续保存或读取。
 
@@ -27,11 +29,21 @@ Source: docs/product/flows/agent-evolution.md#一本地调教留痕
 - **AND** 摘要状态为不可用，不重试轰炸
 - **AND** 没有任何用户内容因为摘要失败而丢失或被覆盖。
 
+#### Scenario: 首次保存以既有内容为基线
+
+- **GIVEN** 一名成员已有持久化 `AGENT.md` 内容且尚无任何修订（如 `verified` 基线团队首次编辑）
+- **WHEN** 用户只修改其中一个段落并保存
+- **THEN** 该次修订的段落标记只落在实际变化的段落上
+- **AND** 摘要不可用时机械摘要（「本次改动涉及 N 处」）的 N 等于实际变化段落数
+- **AND** 未变化段落不出现任何变化标记或伪作者。
+
 #### Scenario: Finder 外部修改与团队页保存产生同等修订
 
-- **GIVEN** 用户在 Finder 中直接修改一名成员的 `AGENT.md`
+- **GIVEN** 用户在 Finder 中直接修改一名成员的 `AGENT.md`（官方来源团队或用户团队均可）
 - **WHEN** 应用读取到该有效修改
 - **THEN** 产生一条 `author=user` 的修订，与团队页内保存的修订结构一致
+- **AND** 该修订在 `changed` 响应返回前已落盘
+- **AND** renderer 载入外部版本后立即刷新该成员的历史，无需重新打开成员或再次保存
 - **AND** 官方来源身份不因此改变。
 
 ### Requirement: 应用级默认 Agent 配置
@@ -55,6 +67,22 @@ Source: docs/product/pages/settings.md#默认-agent
 - **WHEN** 默认 Agent 完成一次单轮调用
 - **THEN** 该次调用不创建会话、不出现在会话列表或 run 审计中
 - **AND** 调用结果只写回该修订的摘要字段。
+
+#### Scenario: 时间线只有历史版本可回退，回退本身产生新修订
+
+- **GIVEN** 一名成员已有三条修订（最新版、中间版、最早版）
+- **WHEN** 用户查看时间线
+- **THEN** 最新（当前）版本不提供「回到这一版」入口，中间版与最早版都可回退
+- **AND** 点击任一历史版本的「回到这一版」后，正文与磁盘内容回到该版本内容
+- **AND** 回退本身产生一条新的 `author=user` 修订，历史修订不被删除或覆盖
+- **AND** 直接请求回退到当前版本被拒绝，不产生重复内容的空修订。
+
+#### Scenario: 保存控件附近的摘要状态同步就位
+
+- **GIVEN** 用户刚保存一名成员的 `AGENT.md` 并停留在编辑器底部（保存按钮附近）
+- **WHEN** 摘要任务在后台到达终态（`ready` 或 `unavailable`）
+- **THEN** 保存按钮附近同一摘要行从 pending 占位自行更新为终态文案
+- **AND** 用户无需滚动、切换成员或重新保存即可观察到该更新。
 
 ## MODIFIED Requirements
 

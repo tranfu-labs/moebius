@@ -114,6 +114,39 @@ describe("createAgentRevisionService", () => {
       now: "2026-08-03T00:00:00.000Z",
     })).resolves.toBeDefined();
   });
+
+  it("uses the pre-write baseline for the FIRST revision so markers reflect only actual changes", async () => {
+    const listRevisions = vi.fn().mockResolvedValue([]);
+    const createRevision = vi.fn().mockResolvedValue(revision({ revisionId: "rev-1" }));
+    const summarize = vi.fn().mockResolvedValue(undefined);
+    const service = createAgentRevisionService({ store: { listRevisions, createRevision }, summarize });
+
+    await service.recordMemberRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n负责实现并验证。\n",
+      authorKind: "user",
+      authorLabel: null,
+      now: "2026-08-01T00:00:00.000Z",
+      baselineContent: "# 开发经理\n\n负责实现。\n",
+    });
+
+    // Only the changed block gets an ownership entry (block 1); the summary
+    // job receives the baseline as its previous content for the before/after.
+    expect(createRevision).toHaveBeenCalledWith(expect.objectContaining({
+      content: "# 开发经理\n\n负责实现并验证。\n",
+      blockOwnership: [
+        expect.objectContaining({
+          blockIndex: 1,
+          authorKind: "user",
+          previousText: "负责实现。\n",
+        }),
+      ],
+    }));
+    expect(summarize).toHaveBeenCalledWith(expect.objectContaining({
+      previousContent: "# 开发经理\n\n负责实现。\n",
+    }));
+  });
 });
 
 describe("createAgentRevisionSummaryJob", () => {

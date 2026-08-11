@@ -27,6 +27,8 @@ export interface AgentRevisionService {
     authorKind: AgentRevisionAuthorKind;
     authorLabel: string | null;
     now: string;
+    /** Pre-write persisted content; used only when the member has no revision yet. */
+    baselineContent?: string | null;
   }): Promise<AgentMarkdownRevision>;
 }
 
@@ -40,6 +42,7 @@ export function createAgentRevisionService(ports: AgentRevisionServicePorts): Ag
         authorKind: input.authorKind,
         authorLabel: input.authorLabel,
         now: input.now,
+        baselineContent: input.baselineContent,
       });
       const revision = await ports.store.createRevision({
         teamStableId: input.teamStableId,

@@ -14,6 +14,7 @@ const meta = {
         timeLabel: "2026-08-06",
         summary: "收紧了交付汇总的证据要求，保留了你写的返工轮次上限",
         summaryStatus: "ready",
+        isLatest: true,
       },
       {
         id: "rev-2",
@@ -28,7 +29,6 @@ const meta = {
         timeLabel: "2026-07-28",
         summary: "这支团队的官方初始版本",
         summaryStatus: "ready",
-        isEarliest: true,
       },
     ],
   },
@@ -49,6 +49,7 @@ export const SummaryPendingAndUnavailable: Story = {
         timeLabel: "刚刚",
         summary: null,
         summaryStatus: "pending",
+        isLatest: true,
       },
       {
         id: "rev-1",
@@ -56,7 +57,6 @@ export const SummaryPendingAndUnavailable: Story = {
         timeLabel: "5 分钟前",
         summary: null,
         summaryStatus: "unavailable",
-        isEarliest: true,
       },
     ],
   },
@@ -72,7 +72,7 @@ export const LongTimeline: Story = {
         ? "官方更新了交付汇总的证据要求"
         : "调整了返工轮次和验收清单的措辞",
       summaryStatus: "ready" as const,
-      isEarliest: index === 13,
+      isLatest: index === 0,
     })),
   },
 };

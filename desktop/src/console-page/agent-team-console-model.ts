@@ -249,7 +249,7 @@ export function planAgentTeamDetailState(input: {
               timeLabel: planAgentRevisionTimeLabel(entry.timeLabel, input.now, input.locale),
               summary: entry.summary,
               summaryStatus: entry.summaryStatus,
-              ...(entry.isEarliest ? { isEarliest: true } : {}),
+              ...(entry.isLatest ? { isLatest: true } : {}),
             })),
           }),
     };

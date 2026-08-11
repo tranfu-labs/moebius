@@ -100,7 +100,7 @@ describe("createTeamRevisionIpc", () => {
       revisionId: summary.revisionId,
       summary: "这是第一条修订",
       summaryStatus: "ready",
-      isEarliest: true,
+      isLatest: true,
     });
     expect(response.recentChange).toEqual({
       summary: "这是第一条修订",
@@ -226,6 +226,70 @@ describe("createTeamRevisionIpc", () => {
     expect(revisions.at(-1)!.authorKind).toBe("user");
     expect(revisions.at(-1)!.content).toBe("# 开发经理\n\n旧版本。\n");
     expect(response.revision.revisionId).toBe(revisions.at(-1)!.revisionId);
+  });
+
+  it("rejects restoring the CURRENT revision (a no-op would fabricate a duplicate revision)", async () => {
+    const { store, ipc } = createIpc();
+    await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n版本一。\n",
+      authorKind: "user",
+      blockOwnership: null,
+      summaryStatus: "unavailable",
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    const latest = await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n版本二。\n",
+      authorKind: "user",
+      blockOwnership: null,
+      summaryStatus: "unavailable",
+      now: "2026-08-02T00:00:00.000Z",
+    });
+
+    await expect(ipc.restoreMemberRevision({
+      ...memberRequest,
+      revisionId: latest.revisionId,
+    })).rejects.toThrow("当前版本无需回退");
+
+    // And the disk + revision count are untouched by the rejected call: the
+    // member file still holds the beforeEach fixture content (revisions alone
+    // never write to disk) and no duplicate revision was recorded.
+    const location = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    const onDisk = await fs.readFile(path.join(location.directory, "members/dev-manager/AGENT.md"), "utf8");
+    expect(onDisk).toBe("# 开发经理\n\n负责技术决策。\n");
+    expect(await store.listRevisions("development", "dev-manager")).toHaveLength(2);
+  });
+
+  it("marks only the newest timeline entry as the current (no-restore) revision", async () => {
+    const { store, ipc } = createIpc();
+    await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n版本一。\n",
+      authorKind: "official",
+      authorLabel: "官方 v1.2",
+      blockOwnership: null,
+      summaryStatus: "unavailable",
+      now: "2026-08-01T00:00:00.000Z",
+    });
+    await store.createRevision({
+      teamStableId: "development",
+      memberSlug: "dev-manager",
+      content: "# 开发经理\n\n版本二。\n",
+      authorKind: "user",
+      blockOwnership: null,
+      summaryStatus: "pending",
+      now: "2026-08-02T00:00:00.000Z",
+    });
+
+    const response = await ipc.listMemberRevisions(memberRequest);
+    expect(response.timeline.map((entry) => entry.isLatest)).toEqual([true, false]);
+    // The earliest revision (index 1) keeps its restore entry — every
+    // historical revision, including the very first, can be restored to.
+    expect(response.timeline[1]).toMatchObject({ isLatest: false, authorKind: "official" });
   });
 
   it("returns the built-in recommendation before any save and the saved profile afterwards", async () => {

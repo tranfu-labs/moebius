@@ -918,7 +918,13 @@ describe("AgentTeamDetail", () => {
       })),
     });
 
-    expect(screen.getByText("最近变化 · 正在生成说明…")).toBeVisible();
+    // Both the editor header line AND the save-row status render the same
+    // placeholder: the user stays at the editor bottom without scrolling and
+    // still sees the summary settle (product-review blocker 3).
+    expect(screen.getAllByText("最近变化 · 正在生成说明…")).toHaveLength(2);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 正在生成说明…",
+    );
   });
 
   it("keeps the recent-change line with a mechanical placeholder when the summary is unavailable", () => {
@@ -950,7 +956,58 @@ describe("AgentTeamDetail", () => {
       })),
     });
 
-    expect(screen.getByText("最近变化 · 本次改动涉及 2 处")).toBeVisible();
+    expect(screen.getAllByText("最近变化 · 本次改动涉及 2 处")).toHaveLength(2);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 本次改动涉及 2 处",
+    );
+  });
+
+  it("settles the save-row summary status in place from pending to the terminal copy", () => {
+    const { rerender } = renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "pending",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: "旧文本",
+        }],
+      })),
+    });
+    const status = screen.getByTestId("agent-team-markdown-summary-status");
+    expect(status).toHaveTextContent("最近变化 · 正在生成说明…");
+
+    // The summary-settled refresh replaces the same line in place with the
+    // terminal copy — no member switch, no scroll, no extra element.
+    rerender(<AgentTeamDetail {...detailProps({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: "把返工上限从三轮改成两轮",
+          summaryStatus: "ready",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: "旧文本",
+        }],
+      })),
+    })} />);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 把返工上限从三轮改成两轮",
+    );
+    expect(screen.getAllByText("最近变化 · 把返工上限从三轮改成两轮")).toHaveLength(2);
   });
 });
 

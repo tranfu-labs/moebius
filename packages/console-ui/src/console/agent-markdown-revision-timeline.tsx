@@ -7,8 +7,12 @@ export interface AgentMarkdownRevisionEntry {
   timeLabel: string;
   summary: string | null;
   summaryStatus: "pending" | "ready" | "unavailable";
-  /** The earliest known revision (or the migration starting point) offers no further restore action. */
-  isEarliest?: boolean;
+  /**
+   * True only for the current (newest) revision. The current version has no
+   * restore action; EVERY historical revision, including the earliest, can be
+   * restored to (「当前版本无回退，所有历史版本可回退」).
+   */
+  isLatest?: boolean;
 }
 
 export interface AgentMarkdownRevisionTimelineProps {
@@ -54,7 +58,7 @@ export function AgentMarkdownRevisionTimeline({
                     ? t("console.agentMarkdownTimeline.summaryUnavailable")
                     : entry.summary}
               </p>
-              {!entry.isEarliest && onRestore !== undefined ? (
+              {!entry.isLatest && onRestore !== undefined ? (
                 <div className="mt-2 flex justify-end">
                   <Button type="button" variant="ghost" size="sm" onClick={() => onRestore(entry.id)}>
                     {t("console.agentMarkdownTimeline.restore")}

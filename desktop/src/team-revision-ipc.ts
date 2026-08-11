@@ -39,6 +39,13 @@ export function createTeamRevisionIpc(input: TeamRevisionIpcPorts & { dataRoot: 
       ) {
         throw new Error("目标修订不存在或不属于这名成员。");
       }
+      const revisions = await input.store.listRevisions(request.teamId, request.memberSlug);
+      if (revisions.at(-1)?.revisionId === target.revisionId) {
+        // The UI never offers a restore action on the current version; this
+        // guard closes the API path so a no-op restore cannot fabricate a
+        // duplicate-content revision (product-review blocker 4).
+        throw new Error("当前版本无需回退。");
+      }
       const location = request.ownership === "system"
         ? resolveTeamLocation({
             dataRoot: input.dataRoot,
@@ -103,13 +110,13 @@ export function planMemberRevisionsResponse(
           previousText: block.previousText,
         })),
     timeline: [...revisions].reverse().map((revision, index) =>
-      toRevisionView(revision, index === revisions.length - 1)),
+      toRevisionView(revision, index === 0)),
   };
 }
 
 function toRevisionView(
   revision: AgentMarkdownRevision,
-  isEarliest: boolean,
+  isLatest: boolean,
 ): AgentTeamRevisionView {
   return {
     revisionId: revision.revisionId,
@@ -118,6 +125,6 @@ function toRevisionView(
     summary: revision.summary,
     summaryStatus: revision.summaryStatus,
     timeLabel: revision.createdAt,
-    isEarliest,
+    isLatest,
   };
 }

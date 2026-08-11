@@ -1195,6 +1195,20 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     fingerprints: ["request.ownership === \"system\""],
   }),
   ...adapterPermitGroup({
+    file: "desktop/src/team-external-change.ts",
+    exportName: "checkAgentTeamMemberExternalChange",
+    kind: "transport-control",
+    contract: "IPC ownership field selects the system location resolver or the recorded user team location (official teams are externally editable too)",
+    fingerprints: ["request.ownership === \"system\""],
+  }),
+  ...adapterPermitGroup({
+    file: "desktop/src/team-ipc-register.ts",
+    exportName: "readMemberAgentMarkdownBeforeWrite",
+    kind: "transport-control",
+    contract: "IPC ownership field selects the system location resolver or the recorded user team location for the pre-write first-revision baseline",
+    fingerprints: ["member.ownership === \"system\""],
+  }),
+  ...adapterPermitGroup({
     file: "desktop/src/team-revision-ipc.ts",
     exportName: "planMemberRevisionsResponse",
     kind: "external-contract",

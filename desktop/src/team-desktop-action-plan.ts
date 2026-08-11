@@ -27,8 +27,15 @@ export function parseExternalChangeRequest(value: unknown): AgentTeamExternalCha
   };
 }
 
-export function planExternalChangeRead(ownership: "system" | "user"): "ignored" | "read" {
-  return ownership === "system" ? "ignored" : "read";
+/**
+ * External-change detection covers BOTH official-source and user teams: the
+ * reviewer's product walk-through found an official team's Finder edit silently
+ * ignored, while PRD `agent-teams.md#编辑与保存-agentmd` requires the same
+ * revision structure for every team. Both ownerships resolve their own on-disk
+ * location (`.system` by id, user teams through the recorded location).
+ */
+export function planExternalChangeRead(): "read" {
+  return "read";
 }
 
 export function decideExternalChange(

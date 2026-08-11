@@ -1351,6 +1351,21 @@ export function AgentTeamDetail({
                     {t("console.agentTeamDetail.saving")}
                   </span>
                 ) : null}
+                {selectedEditor.saveStatus !== "saving"
+                  && selectedEditor.recentChange !== undefined
+                  && selectedEditor.recentChange !== null ? (
+                    <span
+                      className="mr-auto inline-flex items-center gap-1.5 text-xs text-sub"
+                      role="status"
+                      aria-live="polite"
+                      data-testid="agent-team-markdown-summary-status"
+                    >
+                      {selectedEditor.recentChange.summaryStatus === "pending" ? (
+                        <LoaderCircle className="h-3 w-3 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                      ) : null}
+                      {recentChangeSummary(t, selectedEditor.recentChange, selectedEditor.changeMarkers)}
+                    </span>
+                  ) : null}
                 <Button
                   type="button"
                   variant="ghost"

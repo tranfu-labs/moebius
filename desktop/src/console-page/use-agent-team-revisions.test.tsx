@@ -41,7 +41,7 @@ const revisionsResponse = (
     summary,
     summaryStatus,
     timeLabel: "2026-08-01T00:00:00.000Z",
-    isEarliest: true,
+    isLatest: true,
   }],
 });
 
@@ -81,7 +81,7 @@ function port(overrides: Partial<AgentTeamRevisionsPort> = {}): AgentTeamRevisio
         summary: null,
         summaryStatus: "pending",
         timeLabel: "2026-08-02T00:00:00.000Z",
-        isEarliest: false,
+        isLatest: true,
       },
     })),
     ...overrides,
@@ -157,7 +157,7 @@ describe("useAgentTeamRevisions", () => {
         summary: null,
         summaryStatus: "pending",
         timeLabel: "2026-08-02T00:00:00.000Z",
-        isEarliest: false,
+        isLatest: true,
       },
     }));
     const list = vi.fn()
@@ -225,7 +225,7 @@ function settledResponse(
       summary: summaryStatus === "ready" ? "摘要就绪" : null,
       summaryStatus,
       timeLabel,
-      isEarliest: true,
+      isLatest: true,
     }],
   };
 }

@@ -207,7 +207,13 @@ export interface AgentTeamRevisionView {
   summary: string | null;
   summaryStatus: "pending" | "ready" | "unavailable";
   timeLabel: string;
-  isEarliest: boolean;
+  /**
+   * True only for the CURRENT (newest) revision. The current version has no
+   * restore action — restoring to it would be a no-op that still spawns a
+   * duplicate revision; EVERY historical revision, including the earliest,
+   * can be restored to (PRD: 「当前版本无回退，所有历史版本可回退」).
+   */
+  isLatest: boolean;
 }
 
 export interface AgentTeamChangeMarkerView {

@@ -1,4 +1,5 @@
 import type { IpcMain, OpenDialogOptions } from "electron";
+import fs from "node:fs/promises";
 
 import { TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS } from "./team-conversation-preference-contract.js";
 import { TEAM_EXTERNAL_CHANGE_IPC_CHANNEL } from "./team-external-change-contract.js";
@@ -8,6 +9,9 @@ import { TEAM_REPAIR_IPC_CHANNELS } from "./team-repair-contract.js";
 import type { AgentTeamService } from "./team-ipc.js";
 import type { AgentRevisionService } from "./agent-revision-service.js";
 import { parseMemberRequest } from "./team-service-plan.js";
+import { getMemberAgentPath, resolveTeamLocation } from "./team-store.js";
+import { resolveRecordedTeamLocation } from "./team-record-store.js";
+import type { AgentTeamMemberRequest } from "./team-ipc-contract.js";
 
 export interface TeamIpcRegistrationOptions {
   ipcMain: Pick<IpcMain, "handle">;
@@ -36,6 +40,26 @@ export interface TeamIpcRegistrationOptions {
   revisionService?: AgentRevisionService;
 }
 
+/**
+ * Best-effort read of the member's current AGENT.md on disk, used as the
+ * first-revision comparison baseline before an in-app write. Missing files
+ * (a brand-new member) or read failures yield `null` — the caller then falls
+ * back to "first revision owns everything".
+ */
+async function readMemberAgentMarkdownBeforeWrite(
+  dataRoot: string,
+  member: AgentTeamMemberRequest,
+): Promise<string | null> {
+  try {
+    const location = member.ownership === "system"
+      ? resolveTeamLocation({ dataRoot, teamId: member.teamId, ownership: "system" })
+      : await resolveRecordedTeamLocation(dataRoot, member.teamId);
+    return await fs.readFile(getMemberAgentPath(location, member.memberSlug), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
   const { ipcMain, service } = options;
   ipcMain.handle(TEAM_IPC_CHANNELS.list, async () => service.listAgentTeams({
@@ -49,9 +73,14 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
   ipcMain.handle(TEAM_IPC_CHANNELS.readMember, async (_event, request: unknown) =>
     await service.readAgentTeamMember(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.writeMember, async (_event, request: unknown) => {
+    const member = parseMemberRequest(request);
+    // First-revision baseline: the persisted content BEFORE this write. Reading
+    // it here keeps the renderer's (possibly stale) draft out of the picture —
+    // markers and the mechanical summary must reflect only what this save
+    // actually changed, not the whole document (product-review blocker 1).
+    const baselineContent = await readMemberAgentMarkdownBeforeWrite(options.dataRoot, member);
     const document = await service.writeAgentTeamMember(options.dataRoot, request);
     if (options.revisionService !== undefined) {
-      const member = parseMemberRequest(request);
       await options.revisionService.recordMemberRevision({
         teamStableId: member.teamId,
         memberSlug: member.memberSlug,
@@ -59,6 +88,7 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
         authorKind: "user",
         authorLabel: null,
         now: new Date().toISOString(),
+        baselineContent,
       });
     }
     return document;

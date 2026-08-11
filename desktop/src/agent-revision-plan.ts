@@ -49,14 +49,20 @@ export interface AgentRevisionOwnershipPlan {
 }
 
 /**
- * Given the previous revision's content + ownership table and the next full
- * content, assigns each paragraph block its author for the new revision:
- * blocks whose text is unchanged carry the previous author forward; changed
- * blocks (including newly inserted ones) take this revision's author and keep
- * the previous text for inline expansion. First revision owns everything.
+ * Given the previous revision's content + ownership table (or a plain baseline
+ * with NO known owners) and the next full content, assigns each paragraph
+ * block its author for the new revision:
+ * - blocks whose text is unchanged carry the previous author forward;
+ * - blocks whose text is unchanged but have NO known owner (a baseline, or an
+ *   ownership-unknown starting revision) stay ownerless — they render without
+ *   a marker and never turn into "changed" on a later save;
+ * - changed blocks (including newly inserted ones) take this revision's author
+ *   and keep the previous text for inline expansion.
+ * The very first revision of a brand-new member (no baseline, no previous
+ * revision) owns everything.
  */
 export function planAgentRevisionOwnership(input: {
-  previous: { content: string; ownership: AgentMarkdownBlockOwnership[] } | null;
+  previous: { content: string; ownership: AgentMarkdownBlockOwnership[] | null } | null;
   nextContent: string;
   authorKind: AgentRevisionAuthorKind;
   authorLabel: string;
@@ -65,45 +71,68 @@ export function planAgentRevisionOwnership(input: {
   const nextBlocks = computeAgentMarkdownBlocks(input.nextContent);
   if (input.previous === null) {
     return {
-      blocks: nextBlocks.map((block, blockIndex) => ({
-        blockIndex,
-        authorKind: input.authorKind,
-        authorLabel: input.authorLabel,
-        timeLabel: input.timeLabel,
-        previousText: null,
-      })),
+      blocks: nextBlocks.flatMap((block, blockIndex) => {
+        // Skip zero-length trailing blocks (see the empty-block note below).
+        if (input.nextContent.slice(block.start, block.end).length === 0) {
+          return [];
+        }
+        return [{
+          blockIndex,
+          authorKind: input.authorKind,
+          authorLabel: input.authorLabel,
+          timeLabel: input.timeLabel,
+          previousText: null,
+        }];
+      }),
     };
   }
   const previousBlocks = computeAgentMarkdownBlocks(input.previous.content);
   const previous = input.previous;
-  return {
-    blocks: nextBlocks.map((block, blockIndex) => {
-      const previousBlock = previousBlocks[blockIndex];
-      const previousOwnership = previous.ownership[blockIndex];
-      const nextText = input.nextContent.slice(block.start, block.end);
-      const previousText = previousBlock === undefined
-        ? null
-        : previous.content.slice(previousBlock.start, previousBlock.end);
-      if (previousBlock !== undefined && previousText === nextText) {
-        return previousOwnership === undefined
-          ? {
-              blockIndex,
-              authorKind: input.authorKind,
-              authorLabel: input.authorLabel,
-              timeLabel: input.timeLabel,
-              previousText: null,
-            }
-          : { ...previousOwnership, blockIndex };
+  const blocks: AgentMarkdownBlockOwnership[] = [];
+  for (const [blockIndex, block] of nextBlocks.entries()) {
+    const nextText = input.nextContent.slice(block.start, block.end);
+    // An empty trailing block (the editor serialization can end with a blank
+    // line, which the boundary regex turns into a zero-length block) can never
+    // be a real change: skipping it keeps the mechanical summary count equal
+    // to the marker bands the user actually sees.
+    if (nextText.length === 0) {
+      continue;
+    }
+    const previousBlock = previousBlocks[blockIndex];
+    const previousText = previousBlock === undefined
+      ? null
+      : previous.content.slice(previousBlock.start, previousBlock.end);
+    // A paragraph moving from "last block" to "intermediate block" (a new
+    // paragraph appended below it) changes only its trailing line break — the
+    // block-boundary artifact, not a content change. Normalize it for the
+    // equality comparison so the marker never fires on an untouched paragraph.
+    if (
+      previousBlock !== undefined
+      && stripTrailingLineBreaks(previousText ?? "") === stripTrailingLineBreaks(nextText)
+    ) {
+      // Ownership entries are COMPACT (a baseline leaves ownerless blocks out),
+      // so the array index does not equal the block index — look up by field.
+      const previousOwnership = previous.ownership?.find((entry) => entry.blockIndex === blockIndex);
+      if (previousOwnership !== undefined) {
+        blocks.push({ ...previousOwnership, blockIndex });
       }
-      return {
-        blockIndex,
-        authorKind: input.authorKind,
-        authorLabel: input.authorLabel,
-        timeLabel: input.timeLabel,
-        previousText,
-      };
-    }),
-  };
+      // Unchanged with no known owner (baseline / ownership-unknown starting
+      // revision): stays ownerless, i.e. no marker and no fake author.
+      continue;
+    }
+    blocks.push({
+      blockIndex,
+      authorKind: input.authorKind,
+      authorLabel: input.authorLabel,
+      timeLabel: input.timeLabel,
+      previousText,
+    });
+  }
+  return { blocks };
+}
+
+function stripTrailingLineBreaks(value: string): string {
+  return value.replace(/\n+$/u, "");
 }
 
 export interface AgentRevisionWritePlan {
@@ -188,9 +217,14 @@ export function planSummarySettledTarget(input: {
 /**
  * Plans the durable write of one revision from the member's existing revision
  * list: normalizes optional inputs, derives paragraph ownership from the latest
- * revision (or the whole document for the first revision) and decides the
- * summary job's previous-content input. Pure; the service only executes the
- * plan and never branches on optional shapes itself.
+ * revision — or, for the FIRST revision of a member whose file already had
+ * persisted content (the pre-write disk text, or the app's last known content
+ * for an external change), from that baseline — and decides the summary job's
+ * previous-content input. The baseline MUST be the persisted content from
+ * BEFORE this write: comparing the first revision against it makes markers and
+ * the mechanical summary reflect only what actually changed, instead of
+ * claiming the whole document is new (the product-review 4-blocker). Pure; the
+ * service only executes the plan and never branches on optional shapes itself.
  */
 export function planAgentRevisionWrite(input: {
   revisions: readonly {
@@ -201,20 +235,27 @@ export function planAgentRevisionWrite(input: {
   authorKind: AgentRevisionAuthorKind;
   authorLabel: string | null;
   now: string;
+  /** Pre-write persisted content; used only when the member has no revision yet. */
+  baselineContent?: string | null;
 }): AgentRevisionWritePlan {
   const previous = input.revisions.at(-1) ?? null;
+  const baseline = previous === null
+    && input.baselineContent !== null
+    && input.baselineContent !== undefined
+    ? { content: input.baselineContent, ownership: null as AgentMarkdownBlockOwnership[] | null }
+    : null;
   const authorLabel = input.authorLabel ?? "";
   const ownership = planAgentRevisionOwnership({
     previous: previous === null
-      ? null
-      : { content: previous.content, ownership: previous.blockOwnership ?? [] },
+      ? baseline
+      : { content: previous.content, ownership: previous.blockOwnership },
     nextContent: input.nextContent,
     authorKind: input.authorKind,
     authorLabel,
     timeLabel: input.now,
   });
   return {
-    previousContent: previous?.content ?? null,
+    previousContent: (previous ?? baseline)?.content ?? null,
     authorLabel,
     blockOwnership: ownership.blocks,
     now: input.now,

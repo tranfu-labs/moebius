@@ -47,15 +47,46 @@ describe("Agent team external AGENT.md change detection", () => {
     });
   });
 
-  it("ignores built-in teams without reading or exposing an updated state", async () => {
+  it("reads and records official-team Finder changes with the known content as first-revision baseline", async () => {
+    // Product-review blocker 2: built-in teams used to be silently ignored;
+    // PRD requires the same revision structure for every team. The revision
+    // must be durably persisted BEFORE the `changed` response returns.
     const dataRoot = await makeDataRoot();
+    const location = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    const agentFile = getMemberAgentPath(location, "manager");
+    const original = "# 开发经理\n\n负责技术决策。\n";
+    await fs.mkdir(path.dirname(agentFile), { recursive: true });
+    await fs.writeFile(agentFile, original, "utf8");
 
-    await expect(checkAgentTeamMemberExternalChange(dataRoot, {
+    const request = {
       teamId: "development",
-      ownership: "system",
+      ownership: "system" as const,
       memberSlug: "manager",
-      knownAgentMarkdown: "# old\n",
-    })).resolves.toEqual({ status: "ignored" });
+      knownAgentMarkdown: original,
+    };
+    await expect(checkAgentTeamMemberExternalChange(dataRoot, request)).resolves.toEqual({ status: "unchanged" });
+
+    const external = "# 开发经理\n\n负责技术决策与质量把关。\n";
+    await fs.writeFile(agentFile, external, "utf8");
+    const revisions: unknown[] = [];
+    const response = await checkAgentTeamMemberExternalChange(dataRoot, request, {
+      recordMemberRevision: async (input) => {
+        revisions.push(input);
+        return { revisionId: "rev-1" } as never;
+      },
+    });
+    expect(response).toMatchObject({ status: "changed" });
+    // The revision was awaited before the response: the caller can rely on it
+    // being on disk, and it carries the app's last known content as the
+    // baseline so markers reflect only the actual change.
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]).toMatchObject({
+      teamStableId: "development",
+      memberSlug: "manager",
+      content: external,
+      authorKind: "user",
+      baselineContent: original,
+    });
   });
 
   it("checks a relocated user team through its recorded external location", async () => {
