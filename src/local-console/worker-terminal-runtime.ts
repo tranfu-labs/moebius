@@ -2,6 +2,7 @@ import type { CodexRunResult } from "../codex.js";
 import type { ActiveLocalRun } from "./active-run.js";
 import type { LocalProviderInvocationFact } from "./execution-context.js";
 import { executeLocalRunTerminalFlow, type LocalRunTerminalChildCard } from "./run-terminal-flow.js";
+import { planTerminalRecord } from "./terminal-record-plan.js";
 import type { LocalPreparedWorkerRun } from "./worker-preparation-runtime.js";
 import type { LocalWorkerRunInput } from "./worker-dispatch-runtime.js";
 import {
@@ -38,8 +39,16 @@ export class LocalWorkerTerminalRuntime {
     };
     pauseLifecycle(runId: string): Promise<void>;
     finishLifecycle(runId: string, status: "completed" | "failed" | "interrupted" | "stuck" | "paused"): Promise<void>;
-    recordDirectFailure(input: LocalWorkerRunInput, result: Extract<CodexRunResult, { ok: false }>): Promise<void>;
-    recordDetachedFailure(input: LocalWorkerRunInput, result: Extract<CodexRunResult, { ok: false }>): Promise<void>;
+    recordDirectFailure(
+      input: LocalWorkerRunInput,
+      result: Extract<CodexRunResult, { ok: false }>,
+      processSteps: readonly import("./run-activity.js").LocalRunActivity[],
+    ): Promise<void>;
+    recordDetachedFailure(
+      input: LocalWorkerRunInput,
+      result: Extract<CodexRunResult, { ok: false }>,
+      processSteps: readonly import("./run-activity.js").LocalRunActivity[],
+    ): Promise<void>;
     sourceDirectoryAvailable(sessionId: string): Promise<boolean>;
     executeChildSession(input: LocalWorkerRunInput, runDir: string, result: Extract<CodexRunResult, { ok: true }>): Promise<LocalRunTerminalChildCard | null>;
     recordWorkspaceDiff(input: LocalWorkerRunInput, preparation: LocalPreparedWorkerRun, result: Extract<CodexRunResult, { ok: true }>): Promise<void>;
@@ -51,6 +60,13 @@ export class LocalWorkerTerminalRuntime {
     result: CodexRunResult;
     observedExternalSessionId: string | null;
   }): Promise<"failed" | "succeeded" | "succeeded-directory-unavailable"> {
+    // Freeze the accumulated steps once, before the lifecycle removes the run:
+    // the trail is a property of the finished message, not a live stream. The
+    // decision (which role, which steps) belongs to the domain, not to this runtime.
+    const terminalRecord = planTerminalRecord({
+      role: input.role,
+      activeRun: this.input.activeRun(input.runId),
+    });
     return await executeLocalRunTerminalFlow({
       sessionId: input.sessionId,
       runId: input.runId,
@@ -70,12 +86,12 @@ export class LocalWorkerTerminalRuntime {
       classifyFailure: (result) => this.input.classifyFailure(result),
       pauseLifecycle: () => this.input.pauseLifecycle(input.runId),
       finishLifecycle: (status) => this.input.finishLifecycle(input.runId, status),
-      recordFailed: (result) => this.recordFailure(input, result),
+      recordFailed: (result) => this.recordFailure(input, result, terminalRecord.processSteps),
       recordUsage: (cachedInputTokens) => this.recordUsage(input, cachedInputTokens),
       sourceDirectoryAvailable: () => this.input.sourceDirectoryAvailable(input.sessionId),
       executeChildSession: (result) => this.input.executeChildSession(input, preparation.runDir, result),
       recordWorkspaceDiff: (result) => this.input.recordWorkspaceDiff(input, preparation, result),
-      recordSuccess: (kind, result) => this.recordSuccess(input, kind, result),
+      recordSuccess: (kind, result) => this.recordSuccess(input, kind, result, terminalRecord.processSteps),
       onSuccessPersistenceError: async () => undefined,
       recordTimelineCursor: (lastSeenIndex) => this.input.recordTimelineCursor(
         input,
@@ -93,15 +109,21 @@ export class LocalWorkerTerminalRuntime {
           runDir: result.runDir,
           error: "PROJECT_DIRECTORY_UNAVAILABLE",
           status: "failed",
+          role: terminalRecord.role,
+          processSteps: terminalRecord.processSteps,
           now: this.input.nowIso(),
         })),
     });
   }
 
-  private async recordFailure(input: LocalWorkerRunInput, result: Extract<CodexRunResult, { ok: false }>): Promise<void> {
+  private async recordFailure(
+    input: LocalWorkerRunInput,
+    result: Extract<CodexRunResult, { ok: false }>,
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[],
+  ): Promise<void> {
     const origin = decideWorkerOriginEffect(input.origin);
-    if (origin.kind === "direct") await this.input.recordDirectFailure(input, result);
-    else await this.input.recordDetachedFailure(input, result);
+    if (origin.kind === "direct") await this.input.recordDirectFailure(input, result, processSteps);
+    else await this.input.recordDetachedFailure(input, result, processSteps);
   }
 
   private async recordUsage(input: LocalWorkerRunInput, cachedInputTokens: number | null): Promise<void> {
@@ -120,6 +142,7 @@ export class LocalWorkerTerminalRuntime {
     input: LocalWorkerRunInput,
     kind: "processed" | "direct-response" | "detached-response",
     result: Extract<CodexRunResult, { ok: true }>,
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[],
   ): Promise<void> {
     const persistence = decideWorkerSuccessPersistence(kind);
     if (persistence.kind === "processed") {
@@ -133,6 +156,7 @@ export class LocalWorkerTerminalRuntime {
           ...this.processedInput(input, result.runDir),
           role: input.role,
           body: result.finalText,
+          processSteps,
         }));
       return;
     }
@@ -145,6 +169,7 @@ export class LocalWorkerTerminalRuntime {
         body: result.finalText,
         runId: input.runId,
         runDir: result.runDir,
+        processSteps,
         now: this.input.nowIso(),
       }));
   }

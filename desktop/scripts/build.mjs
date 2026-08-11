@@ -101,6 +101,7 @@ await build({
   loader: {
     ".css": "css",
     ".png": "dataurl",
+    ".webp": "dataurl",
   },
 });
 

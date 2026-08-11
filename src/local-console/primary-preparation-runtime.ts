@@ -159,6 +159,7 @@ export class LocalPrimaryPreparationRuntime {
       originalRepoRoot: ready.workspace.originalRepoRoot,
       liveMarkdown: null,
       activity: null,
+      activitySteps: [],
       activitySequence: 0,
       activityFactTail: Promise.resolve(),
       longRunReported: false,

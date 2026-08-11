@@ -38,4 +38,30 @@ describe("conversation status dots", () => {
     ])).toBe("red");
     expect(deriveProjectStatusDot([{ ...idle, isRunning: true }, { ...idle, unreadSince: "x" }])).toBe("blue");
   });
+
+  it("单点语义：收束后按需处理/未读/无点派生，进行中轮只显示闪烁", () => {
+    const terminal = (outcome: "completed" | "awaiting-user" | "silent-closeout" | "no-new-content") => ({
+      kind: "terminal" as const,
+      roundId: 1,
+      fact: { roundId: 1, outcome, terminalMessageId: null, occurredAt: "x" },
+      silentSince: null,
+    });
+    expect(deriveStatusDot({ ...idle, roundState: terminal("awaiting-user") })).toBe("red");
+    expect(deriveStatusDot({ ...idle, roundState: terminal("silent-closeout") })).toBe("red");
+    expect(deriveStatusDot({ ...idle, roundState: terminal("completed"), unreadSince: "x" })).toBe("blue");
+    expect(deriveStatusDot({ ...idle, roundState: terminal("completed") })).toBe("none");
+    expect(deriveStatusDot({ ...idle, roundState: terminal("no-new-content") })).toBe("none");
+    expect(deriveStatusDot({
+      ...idle,
+      roundState: { kind: "in-progress", roundId: 1, fact: null, silentSince: null },
+      isRunning: true,
+    })).toBe("blink");
+    // 新一轮开始后旧收束结论被清：in-progress 不显示蓝点
+    expect(deriveStatusDot({
+      ...idle,
+      roundState: { kind: "in-progress", roundId: 2, fact: null, silentSince: null },
+      unreadSince: "x",
+      isRunning: true,
+    })).toBe("blink");
+  });
 });

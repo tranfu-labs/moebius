@@ -1,0 +1,47 @@
+--- a/dashboard.html
++++ b/dashboard.html
+@@ -1166,6 +1166,11 @@
+     document.documentElement.lang = isReadmeEn ? 'en' : 'zh-CN';
+     if (isReadmeEn) {
+       try { history.replaceState(null, '', '#state=readme-en'); } catch (e) {}
++      var enConv = readmeEnState && readmeEnState.querySelector('.conv');
++      var enTl = readmeEnState && readmeEnState.querySelector('.timeline');
++      var vpEn = $('#relay-viewport');
++      if (enConv && enTl && vpEn && vpEn.parentNode !== enConv) enConv.insertBefore(vpEn, enTl);
++      refreshRelay();
+       syncDevBar('readme-en');
+       announce('README English dashboard state');
+       return;
+@@ -1854,8 +1859,10 @@
+      入站 query,事后无法再从 URL 恢复) */
+   var relayForceOpenFromUrl = relayForceOpen;
+ 
++  var RELAY_TONE = {};
+   function relayColor(actorKey, kind) {
+     if (kind === 'user') return 'var(--fg)';
++    if (RELAY_TONE[actorKey] != null) return TONE_HEX[RELAY_TONE[actorKey] % 6];
+     return TONE_HEX[parseInt(toneFor(actorKey).slice(5), 10) % 6];
+   }
+ 
+@@ -1873,6 +1880,9 @@
+           if (n.nodeType === 3) name += n.textContent;
+         });
+         name = name.trim() || '成员';
++        var tagEl = el.querySelector('.role-tag');
++        var toneCls = tagEl && /(?:^|\s)tone-(\d)(?:\s|$)/.exec(tagEl.className);
++        if (toneCls) RELAY_TONE[name] = parseInt(toneCls[1], 10);
+       }
+       var bodyEl = el.querySelector('.msg-body');
+       var timeEl = el.querySelector('.msg-time');
+@@ -1946,7 +1956,10 @@
+   function refreshRelay() {
+     var vp = $('#relay-viewport');
+     if (!vp) return;
+-    var tl = (currentConv === 'new' || currentConv === 'loading') ? null : (currentConv === 'copy' ? $('#timeline-copy') : (currentConv === 'operator' ? $('#timeline-operator') : $('#timeline-landing')));
++    var tl = (currentConv === 'new' || currentConv === 'loading') ? null
++      : (currentConv === 'readme-en' ? $('#readme-en-state .timeline')
++      : (currentConv === 'copy' ? $('#timeline-copy')
++      : (currentConv === 'operator' ? $('#timeline-operator') : $('#timeline-landing'))));
+     relay.events = relayCollect(tl);
+     relay.currentId = relay.events.length ? relay.events[relay.events.length - 1].id : null;
+     clearTimeout(relay.closeTimer);

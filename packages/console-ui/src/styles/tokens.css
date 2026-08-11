@@ -1,15 +1,14 @@
 /* ============================================================
-   Design tokens: dark-first dashboard baseline (aligned with
-   moebius-desktop-spec v1.1). A five-step neutral ladder
-   (#101010 → #171717 → #1c1c1c → #242424 → #2d2d2d) carries all
-   surfaces; sidebar shares the canvas color; layering relies on
-   luminance steps and a single 1px border — zero shadows, zero
-   gradients. Indigo #5E6AD2 remains the single interaction
-   accent in both themes (PRD mandate, overrides the spec's
-   lavender); a status hue family (amber / blue / violet /
-   neutral) powers status pills; green/red remain reserved for
-   verdict and danger facts (the red unread-count badge is the
-   single registered exception). Corner radius baseline is 14px.
+   Design tokens: dark-first dashboard baseline. A five-step
+   neutral ladder (#101010 → #171717 → #1c1c1c → #242424 → #2d2d2d)
+   carries all surfaces; sidebar shares the canvas color; layering
+   relies on luminance steps and a single 1px border — zero
+   shadows, zero gradients. Indigo #5E6AD2 remains the single
+   interaction accent in both themes (PRD mandate); a status hue
+   family (amber / blue / violet / neutral) powers status pills;
+   green/red remain reserved for verdict and danger facts (the
+   red unread-count badge is the single registered exception).
+   Corner radius baseline is 14px.
    ============================================================ */
 :root {
   --window-header-height: 46px;
@@ -32,7 +31,7 @@
   --danger: #CB1124;
   --ava-bg: rgba(24, 26, 42, 0.06);
   --ava-fg: #636363;
-  /* 身份色板（moebius-desktop-spec 6.6 采样）：彩底 + 深字，亮暗双主题共用同一组值 */
+  /* 身份色板（六色粉彩，彩底 + 深字）：亮暗双主题共用同一组值 */
   --ident-1: #E8B4C8;
   --ident-2: #F0C9A0;
   --ident-3: #BCD9F7;
@@ -62,6 +61,29 @@
   --ring-focus: 0 0 0 2px var(--accent);
   --dur-fast: 100ms;
   --dur: 150ms;
+  /* 浮层入场例外：500ms 是弹簧的总时长，感知时长约 360ms，尾巴留给它自然停住 */
+  --dur-overlay: 500ms;
+  /*
+   * 退场不是入场的倒放：弹簧的长尾倒过来播会变成「起步几乎不动、末尾撞停」。
+   * 退场自己走 --ease，时长短于入场——收起来不需要被端详。
+   */
+  --dur-overlay-out: 260ms;
+  /* 被同组另一个浮层顶掉时的退场：它已经不是焦点了，让路要快，这样切换才跟手。 */
+  --dur-overlay-preempt: 110ms;
+  /*
+   * 临界阻尼弹簧（SwiftUI spring(duration:0.36, bounce:0) 的等价物）采样成 linear()。
+   * bounce 恒为 0：它永不过冲，因此不是动效红线禁止的 bounce / elastic 曲线。
+   * 用弹簧而不是贝塞尔，是因为贝塞尔的结束是「abrupt stop」；弹簧起步有加速度、
+   * 收尾像真实物体一样停住，这才是所谓「苹果感」，而不是回弹。
+   * 重算：omega = 2*pi/0.36，x(t) = 1 - (1 + omega*t) * e^(-omega*t)，在 0…0.5s 上取 27 点。
+   */
+  --ease-spring: linear(
+    0 0%, 0.0452 4%, 0.1459 8%, 0.2668 12%, 0.3882 15%, 0.5 19%, 0.5977 23%,
+    0.6804 27%, 0.7486 31%, 0.8039 35%, 0.8481 38%, 0.8831 42%, 0.9104 46%,
+    0.9317 50%, 0.9481 54%, 0.9607 58%, 0.9704 62%, 0.9777 65%, 0.9833 69%,
+    0.9875 73%, 0.9906 77%, 0.993 81%, 0.9948 85%, 0.9961 88%, 0.9971 92%,
+    0.9979 96%, 1 100%
+  );
   --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-enter: cubic-bezier(0.165, 0.84, 0.44, 1);
 }

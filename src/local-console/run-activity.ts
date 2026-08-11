@@ -6,6 +6,7 @@ export type LocalRunActivityKind =
   | "search"
   | "read"
   | "edit"
+  | "thinking"
   | "progress";
 
 export interface LocalRunActivity {
@@ -17,6 +18,32 @@ export interface LocalRunActivity {
   occurredAt: string;
 }
 
+/**
+ * Providers wrap the interesting item in an envelope, and each one nests it
+ * differently: Codex puts it in `item`/`payload`, Claude streams it as
+ * `stream_event.event.content_block` and repeats it in `message.content[]`.
+ * Reading only the outer `type` sees "stream_event" and loses both the tool
+ * name and the thinking block, which is why the trail used to be a wall of
+ * identical "using a tool" lines.
+ */
+function unwrapActivityItem(value: Record<string, unknown>): Record<string, unknown> {
+  if (isRecord(value.item)) return value.item;
+  if (isRecord(value.payload)) return value.payload;
+  if (isRecord(value.content_block)) return value.content_block;
+  if (isRecord(value.event)) return unwrapActivityItem(value.event);
+  if (isRecord(value.message) && Array.isArray(value.message.content)) {
+    const block = [...value.message.content]
+      .reverse()
+      .find((candidate) => isRecord(candidate) && isActivityBlock(readString(candidate.type)));
+    if (isRecord(block)) return block;
+  }
+  return value;
+}
+
+function isActivityBlock(type: string | null): boolean {
+  return type === "thinking" || isToolType(type) || isCommandType(type) || isFileType(type);
+}
+
 export function projectStructuredRunActivity(
   value: unknown,
   cursor: number,
@@ -24,11 +51,7 @@ export function projectStructuredRunActivity(
 ): LocalRunActivity | null {
   if (!isRecord(value)) return null;
   const eventType = readString(value.type);
-  const item = isRecord(value.item)
-    ? value.item
-    : isRecord(value.payload)
-      ? value.payload
-      : value;
+  const item = unwrapActivityItem(value);
   const itemType = readString(item.type) ?? eventType;
   const phase = eventType?.includes("completed") === true
     || eventType?.includes("_end") === true
@@ -51,6 +74,9 @@ export function projectStructuredRunActivity(
       || itemType?.includes("write") === true
       || itemType?.includes("edit") === true;
     return activity(cursor, edit ? "edit" : "read", phase, safeFileObject(filePath), occurredAt);
+  }
+  if (itemType === "thinking") {
+    return activity(cursor, "thinking", phase, null, occurredAt);
   }
   if (isToolType(itemType)) {
     const name = safeLabel(
@@ -101,8 +127,10 @@ function activity(
   occurredAt: string,
 ): LocalRunActivity {
   const verb = phase === "completed" ? "已完成" : "正在";
-  const noun = kind === "command"
-    ? "运行命令"
+  const noun = kind === "thinking"
+    ? "思考"
+    : kind === "command"
+      ? "运行命令"
     : kind === "search"
       ? "搜索"
       : kind === "read"
@@ -208,4 +236,32 @@ function readString(value: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Cap on trail length: more is no help to the reader and must not grow unbounded. */
+export const RUN_ACTIVITY_STEP_LIMIT = 40;
+
+/**
+ * Fold one activity into the run's step trail.
+ *
+ * `progress` is the streaming answer, not a step. A repeat of the same
+ * kind+object is the same step still going, and its `completed` phase closes
+ * that step instead of appending a second copy — otherwise a single tool call
+ * that emits many deltas would fill the trail with identical lines.
+ */
+export function foldRunActivityStep(
+  steps: readonly LocalRunActivity[],
+  candidate: LocalRunActivity,
+): readonly LocalRunActivity[] {
+  if (candidate.kind === "progress") return steps;
+  const last = steps.at(-1);
+  if (last !== undefined && last.kind === candidate.kind && last.object === candidate.object) {
+    return candidate.phase === last.phase
+      ? steps
+      : [...steps.slice(0, -1), candidate];
+  }
+  const appended = [...steps, candidate];
+  return appended.length > RUN_ACTIVITY_STEP_LIMIT
+    ? appended.slice(appended.length - RUN_ACTIVITY_STEP_LIMIT)
+    : appended;
 }

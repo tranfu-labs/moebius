@@ -1,4 +1,5 @@
 import type { LocalConsoleMessageStatus } from "./types.js";
+import { planRunMemberRole } from "./terminal-record-plan.js";
 
 /**
  * 一条被判定为孤儿的运行——需要在启动 catch-up 时确定性落成既有的 stuck 状态。
@@ -9,6 +10,8 @@ export interface OrphanRunCandidate {
   userMessageId: number;
   runId: string | null;
   runDir: string | null;
+  /** Member the orphan run belonged to (the claimed message's dispatch role). */
+  role: string | null;
 }
 
 export interface OrphanRunInputMessage {
@@ -16,6 +19,8 @@ export interface OrphanRunInputMessage {
   status: LocalConsoleMessageStatus;
   runId: string | null;
   runDir: string | null;
+  role: string | null;
+  dispatchRole?: string | null;
 }
 
 export interface OrphanRunInput {
@@ -37,6 +42,7 @@ export function identifyOrphanRuns(input: OrphanRunInput): OrphanRunCandidate[] 
       userMessageId: message.id,
       runId: message.runId,
       runDir: message.runDir,
+      role: planRunMemberRole(message),
     });
   }
   return orphans;

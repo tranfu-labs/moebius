@@ -1,0 +1,2368 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Moebius — 把整个开发团队,装进一次对话</title>
+<meta name="description" content="Moebius 是桌面上的智能体指挥中心:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程可见、可回退。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Moebius — 把整个开发团队,装进一次对话">
+<meta property="og:description" content="桌面上的智能体指挥中心:一支智能体团队在同一条会话里并行推进你的目标,全程可见、可回退。">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/apple-touch-icon.png">
+<link rel="alternate" hreflang="en" href="/">
+<link rel="alternate" hreflang="zh-Hans" href="/zh/">
+<link rel="alternate" hreflang="x-default" href="/">
+<script>
+/* 语言落点:?lang= 是显式选择的唯一信号,只可能来自页头语言控件。
+   中文页不因浏览器语言反跳英文页——分享出去的 /zh/ 链接对任何访客都开中文。 */
+(function(){
+  try{
+    var KEY = 'moebius-site-lang';
+    var forced = new URLSearchParams(location.search).get('lang');
+    if (forced !== 'en' && forced !== 'zh') return;
+    try{ localStorage.setItem(KEY, forced); }catch(e){}
+    if (forced === 'en') { location.replace('../'); return; }
+    history.replaceState(null, '', location.pathname + location.hash);
+  }catch(e){ /* 存储或历史 API 不可用时按当前路径的语言正常显示 */ }
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ============ Tokens — brand-spec.md v1.0 (dark) ============ */
+  :root{
+    --bg:      #101010;
+    --surface: #171717;
+    --raised:  #1c1c1c;
+    --fg:      #f4f4f4;
+    --muted:   #a1a1a1;
+    --faint:   #6e6e6e;
+    --border:  #262626;
+    --hover:   #242424;
+    --active:  #2d2d2d;
+    --accent:  #c090ff;
+    --success: #2ee03a;
+    --info:    #5fb3ff;
+    --amber:   #f0d050;
+    --orange:  #f77342;
+    --danger:  #f72332;
+    --tint-green: #172c19;
+    --tint-amber: #2b2612;
+    --tint-blue:  #19232d;
+    --tint-red:   #321c1e;
+    --font-display: "Inter Tight","Inter",-apple-system,"PingFang SC",sans-serif;
+    --font-body:    "Inter",-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+    --font-mono:    "SF Mono","SFMono-Regular","JetBrains Mono","Menlo","Consolas","DejaVu Sans Mono","Liberation Mono",ui-monospace,monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{
+    background:var(--bg); color:var(--fg);
+    font:16px/1.6 var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+  ::selection{ background:var(--active); }
+  a{ color:inherit; text-decoration:none; }
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 32px; }
+  .skip-link{
+    position:fixed; top:12px; left:12px; z-index:100;
+    padding:8px 12px; border-radius:8px; background:var(--fg); color:var(--bg);
+    transform:translateY(-160%); transition:transform .16s;
+  }
+  .skip-link:focus{ transform:translateY(0); }
+
+  /* ============ Container guide lines ============ */
+  .vl{
+    position:fixed; top:0; bottom:0; width:1px; left:50%;
+    background:rgba(255,255,255,0.06);
+    pointer-events:none; z-index:0;
+  }
+  .vl-l{ transform:translateX(-560px); }
+  .vl-r{ transform:translateX(560px); }
+  .hero,.features,.manifesto,.cta,.footer{ position:relative; z-index:1; }
+
+  /* ============ Liquid glass ============ */
+  .liquid-glass{
+    background:rgba(255,255,255,0.01);
+    background-blend-mode:luminosity;
+    backdrop-filter:blur(4px);
+    position:relative; overflow:hidden;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,0.1);
+  }
+  .liquid-glass::before{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    padding:1.4px;
+    background:linear-gradient(180deg,
+      rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
+      rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
+      rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    pointer-events:none;
+  }
+  .liquid-glass::after{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),
+      rgba(255,255,255,0.06), transparent 70%);
+    opacity:0; transition:opacity .3s;
+    pointer-events:none;
+  }
+  .liquid-glass:hover::after{ opacity:1; }
+
+  /* ============ Scroll reveal ============ */
+  .js .reveal{ opacity:0; transform:translateY(20px); transition:opacity .7s ease, transform .7s cubic-bezier(.2,.6,.2,1); }
+  .js .reveal.in{ opacity:1; transform:none; }
+
+  /* ============ Nav ============ */
+  .nav{
+    position:absolute; top:0; left:0; right:0; z-index:50;
+    border-bottom:1px solid transparent;
+  }
+  .nav-in{ display:flex; align-items:center; height:64px; gap:32px; }
+  .brand{ display:flex; align-items:center; gap:10px; font:600 15px var(--font-display); letter-spacing:-0.01em; }
+  .brand img{ display:block; width:22px; height:22px; border-radius:5px; }
+  .nav-links{ display:flex; gap:4px; margin-left:8px; }
+  .nav-links a{
+    font-size:13.5px; font-weight:500; color:var(--muted);
+    padding:7px 12px; border-radius:8px; transition:color .15s, background .15s;
+  }
+  .nav-links a:hover{ color:var(--fg); background:var(--hover); }
+  .nav-links a.active{ color:var(--fg); background:var(--hover); }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--accent); outline-offset:3px;
+  }
+  .nav-cta{ margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .nav-cta .ghost{ font-size:13.5px; font-weight:500; color:var(--muted); padding:7px 12px; border-radius:8px; white-space:nowrap; }
+  .nav-cta .ghost:hover{ color:var(--fg); background:var(--hover); }
+
+  /* ============ Language switcher ============
+     native <details> so it opens, is keyboard-reachable and switches with no JS */
+  .lang{ position:relative; }
+  .lang > summary{
+    display:inline-flex; align-items:center; gap:6px;
+    height:32px; padding:0 10px; border-radius:8px;
+    font:500 13.5px var(--font-body); color:var(--muted);
+    white-space:nowrap; cursor:pointer;
+    list-style:none; -webkit-tap-highlight-color:transparent;
+    transition:color .15s, background .15s;
+  }
+  .lang > summary::-webkit-details-marker{ display:none; }
+  .lang > summary:hover, .lang[open] > summary{ color:var(--fg); background:var(--hover); }
+  .lang .chev{ transition:transform .15s; }
+  .lang[open] .chev{ transform:rotate(180deg); }
+  .lang-menu{
+    position:absolute; top:calc(100% + 6px); right:0; z-index:60;
+    min-width:176px; padding:5px;
+    border:1px solid var(--border); border-radius:12px;
+    background:var(--raised); box-shadow:0 12px 32px rgba(0,0,0,.45);
+  }
+  .lang-menu a{
+    display:flex; align-items:center; gap:8px;
+    padding:8px 10px; border-radius:8px;
+    font-size:13.5px; color:var(--muted); white-space:nowrap;
+  }
+  .lang-menu a:hover{ color:var(--fg); background:var(--hover); }
+  .lang-menu a[aria-current]{ color:var(--fg); }
+  .lang-menu .tick{ margin-left:auto; opacity:0; }
+  .lang-menu a[aria-current] .tick{ opacity:1; }
+
+  @keyframes navIn{ from{ opacity:0; transform:translateY(-8px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .nav-links a{ animation:navIn .5s cubic-bezier(.2,.6,.2,1) both; }
+    .nav-links a:nth-child(1){ animation-delay:.10s; }
+    .nav-links a:nth-child(2){ animation-delay:.15s; }
+    .nav-links a:nth-child(3){ animation-delay:.20s; }
+    .nav-links a:nth-child(4){ animation-delay:.25s; }
+  }
+
+  /* ============ Buttons ============ */
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    height:44px; padding:0 22px; border-radius:12px;
+    font:500 14.5px var(--font-body); letter-spacing:0.01em;
+    white-space:nowrap;
+    border:1px solid transparent; cursor:pointer;
+    transition:background .15s, border-color .15s, transform .15s, filter .15s;
+  }
+  .btn:hover{ transform:translateY(-1px); }
+  .btn:active{ transform:scale(.98); }
+  .btn-primary{ background:var(--fg); color:var(--bg); }
+  .btn-primary:hover{ background:#ffffff; filter:brightness(1.03); }
+  .btn-secondary{ background:var(--surface); color:var(--fg); border-color:var(--border); }
+  .btn-secondary:hover{ background:var(--raised); border-color:#333333; }
+  .btn-sm{ height:36px; padding:0 16px; border-radius:10px; font-size:13.5px; }
+
+  /* ============ Hero ============ */
+  .hero{
+    padding:132px 0 0; text-align:center;
+    background:
+      linear-gradient(180deg, rgba(16,16,16,0.68) 0%, rgba(16,16,16,0.52) 26%, rgba(16,16,16,0.88) 58%, var(--bg) 84%),
+      url("../assets/manifesto-ribbon.jpg") center 32%/cover no-repeat;
+  }
+  .hero-eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    height:30px; padding:0 14px; border-radius:999px;
+    border:1px solid var(--border); background:var(--surface);
+    font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:0.02em;
+  }
+  .hero-eyebrow .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); }
+  .hero h1{
+    margin:28px auto 0; max-width:840px;
+    font:600 clamp(44px, 6.4vw, 84px)/1.06 var(--font-display);
+    letter-spacing:-0.03em;
+  }
+  /* metallic silver shimmer — second headline line */
+  .shimmer{
+    background-image:linear-gradient(110deg, #55555c 0%, #e8e8ec 30%, #ffffff 50%, #e8e8ec 70%, #55555c 100%);
+    background-size:200% auto;
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+    filter:url(#c3-noise);
+    animation:shimmerSlide 6s linear infinite;
+  }
+  /* selection would paint --active over the transparent gradient glyphs —
+     restore a solid fill while selected so the text stays readable */
+  .shimmer::selection{
+    -webkit-text-fill-color:var(--fg); color:var(--fg);
+    background:var(--active);
+  }
+  @keyframes shimmerSlide{ from{ background-position:-200% center; } to{ background-position:200% center; } }
+  .hero .sub{
+    margin:24px auto 0; max-width:560px;
+    font-size:18px; line-height:1.6; color:var(--muted);
+  }
+  .hero-ctas{ margin-top:36px; display:flex; justify-content:center; gap:12px; }
+  .hero-shot{ margin:72px auto 0; max-width:1184px; padding:0 32px; }
+
+  @keyframes riseIn{ from{ opacity:0; transform:translateY(18px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: no-preference){
+    .hero-eyebrow{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) both; }
+    .hero h1{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .08s both; }
+    .hero .sub{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .16s both; }
+    .hero .hero-ctas{ animation:riseIn .7s cubic-bezier(.2,.6,.2,1) .24s both; }
+    .hero-shot{ animation:riseIn .8s cubic-bezier(.2,.6,.2,1) .34s both; }
+  }
+
+  /* macOS window chrome around the hero screenshot */
+  .hero-shot-frame{
+    position:relative;
+    border:1px solid var(--border);
+    border-radius:18px; overflow:hidden;
+    background:rgba(255,255,255,0.02);
+    backdrop-filter:blur(8px);
+  }
+  .hero-shot-bar{
+    position:absolute; top:2.25%; left:18px; z-index:2;
+    display:flex; align-items:center;
+    transform:translateY(-50%);
+  }
+  .hero-shot-bar .tl{ flex:none; width:12px; height:12px; border-radius:50%; margin-right:8px; }
+  .hero-shot-bar .tl:nth-child(1){ background:#ff5f57; }
+  .hero-shot-bar .tl:nth-child(2){ background:#febc2e; }
+  .hero-shot-bar .tl:nth-child(3){ background:#28c840; }
+  .hero-shot-frame img{ display:block; width:100%; height:auto; }
+
+  /* ============ Sticky narrative features ============ */
+  .features{ padding:120px 0 0; }
+  .fs-grid{
+    display:grid;
+    grid-template-columns:minmax(0,7fr) minmax(0,5fr);
+    column-gap:72px;
+  }
+  .fs-grid > .f-visual{
+    grid-column:1; grid-row:1 / -1;
+    position:sticky; top:18vh; height:auto; max-height:72vh;
+    align-self:start;
+    display:flex; flex-direction:column;
+    opacity:0; transform:scale(.985) translateY(10px);
+    transition:opacity .5s ease, transform .5s ease;
+    pointer-events:none;
+  }
+  .fs-grid > .f-visual.active{ opacity:1; transform:none; pointer-events:auto; z-index:2; }
+  .fs-block{
+    grid-column:2;
+    min-height:85vh;
+    display:flex; flex-direction:column; justify-content:center;
+    opacity:.4; transition:opacity .4s ease;
+  }
+  .fs-block.active{ opacity:1; }
+
+  .f-index{
+    font:500 12px var(--font-mono); letter-spacing:0.14em; color:var(--faint);
+  }
+  .f-text h2{
+    margin-top:16px;
+    font:600 clamp(28px, 3vw, 40px)/1.15 var(--font-display);
+    letter-spacing:-0.02em;
+  }
+  .f-text p{ margin-top:18px; font-size:16.5px; line-height:1.65; color:var(--muted); max-width:46ch; }
+  .f-points{ margin-top:26px; display:flex; flex-direction:column; gap:12px; }
+  /* the bullet is absolute and the content flows inline, so a label that wraps
+     stays in one text run instead of splitting into a second flex column */
+  .f-points li{
+    list-style:none; position:relative; padding-left:15px;
+    font-size:14.5px; color:var(--muted);
+  }
+  .f-points li::before{
+    content:""; position:absolute; left:0; top:.62em;
+    width:5px; height:5px; border-radius:50%;
+    background:var(--faint);
+  }
+  .f-points li strong{ color:var(--fg); font-weight:500; }
+
+  .f-visual{
+    border-radius:16px;
+    background:var(--surface); overflow:hidden;
+  }
+  /* shader border: animated mesh peeks out ~2px around the solid inner panel */
+  .f-shader{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .f-inner{
+    position:relative; z-index:1; flex:1; min-height:0; margin:2px;
+    display:flex; flex-direction:column; overflow:hidden;
+    border-radius:14px; background:var(--surface);
+  }
+  .f-visual-head{
+    flex:none;
+    display:flex; align-items:center; gap:6px;
+    height:40px; padding:0 16px; border-bottom:1px solid var(--border);
+  }
+  .f-visual-head i{ width:9px; height:9px; border-radius:50%; background:var(--active); }
+  .f-visual-head span{
+    margin-left:8px; font:500 12px var(--font-mono); color:var(--faint); letter-spacing:0.02em;
+  }
+  .f-visual-body{ flex:1; padding:20px; overflow:hidden; }
+
+  /* --- mock: conversation --- */
+  .mk-msg{ display:flex; gap:10px; margin-bottom:16px; }
+  .mk-msg.user{ justify-content:flex-end; }
+  .mk-ava{
+    flex:none; width:24px; height:24px; border-radius:50%;
+    display:grid; place-items:center;
+    font:600 12px var(--font-body); color:#101010;
+  }
+  /* role avatars reuse the dashboard's 6-tone pastel identity palette,
+     picked by FNV-1a(role name) mod 6 — see brand-spec */
+  .mk-ava.mgr{ background:#F0C9A0; } /* engineering manager → tone-1 apricot */
+  .mk-ava.dev{ background:#D9C2F0; } /* developer → tone-4 purple */
+  .mk-ava.qa{ background:#B8E3D2; }  /* QA → tone-3 green */
+  .mk-ava.you{ background:var(--fg); color:var(--bg); }
+  .mk-bubble{ max-width:78%; }
+  .mk-name{ font-size:12px; font-weight:500; color:var(--muted); margin-bottom:4px; }
+  .mk-msg.user .mk-name{ text-align:right; }
+  .mk-text{
+    font-size:13.5px; line-height:1.55; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:9px 13px;
+  }
+  .mk-text .mention{ color:var(--accent); font-weight:500; }
+  .mk-subtasks{ margin-top:10px; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .mk-sub{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 13px; font-size:13px;
+    border-bottom:1px solid var(--border); background:var(--surface);
+  }
+  .mk-sub:last-child{ border-bottom:0; }
+  .mk-sub .t{ flex:1; color:var(--fg); }
+  .mk-pill{
+    display:inline-flex; align-items:center; gap:5px;
+    height:22px; padding:0 9px; border-radius:999px;
+    font-size:11.5px; font-weight:500;
+  }
+  .mk-pill.doing{ color:var(--amber); background:var(--tint-amber); animation:pillPulse 1.8s ease-in-out infinite; }
+  .mk-pill.done{ color:var(--success); background:var(--tint-green); }
+  .mk-pill.fail{ color:var(--danger); background:var(--tint-red); }
+  @keyframes pillPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+
+  /* --- mock: agents --- */
+  .mk-agent{
+    border:1px solid var(--border); border-radius:14px;
+    background:var(--raised); padding:16px; margin-bottom:12px;
+  }
+  .mk-agent:last-child{ margin-bottom:0; }
+  .mk-agent-top{ display:flex; align-items:center; gap:10px; }
+  .mk-agent-top .n{ font-size:14px; font-weight:500; }
+  .mk-agent-top .r{ font-size:12px; color:var(--faint); }
+  .mk-agent-top .mk-pill{ margin-left:auto; }
+  .mk-task{
+    margin-top:10px; display:inline-flex; align-items:center; gap:7px;
+    height:26px; padding:0 11px; border-radius:999px;
+    border:1px solid var(--border); font-size:12px; color:var(--muted);
+  }
+  .mk-load{ margin-top:12px; height:4px; border-radius:2px; background:var(--active); overflow:hidden; }
+  .mk-load i{ display:block; height:100%; border-radius:2px; }
+
+  /* --- mock: team picker --- */
+  .mk-req{
+    display:flex; gap:10px; align-items:baseline;
+    padding:10px 13px; margin-bottom:14px;
+    border:1px dashed var(--border); border-radius:12px;
+    font-size:13px; color:var(--fg);
+  }
+  .mk-req-label{ flex:none; font:500 11px var(--font-mono); letter-spacing:0.08em; color:var(--faint); }
+  .mk-agent.sel{ border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: decision --- */
+  .mk-decision{
+    margin-top:10px; border:1px solid var(--border); border-radius:12px;
+    padding:12px 13px; background:var(--surface);
+  }
+  .mk-decision .q{ font-size:13px; color:var(--fg); margin-bottom:10px; }
+  .mk-opts{ display:flex; gap:8px; }
+  .mk-opt{
+    flex:1; height:30px; display:grid; place-items:center;
+    border:1px solid var(--border); border-radius:8px;
+    font-size:12.5px; color:var(--muted);
+  }
+  .mk-opt.hot{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, transparent); }
+
+  /* --- mock: analysis --- */
+  .mk-split{ display:grid; grid-template-columns:6fr 5fr; gap:14px; height:100%; }
+  .mk-col{ position:relative; min-width:0; }
+  .mk-col-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:12px; font:500 12px var(--font-mono); color:var(--faint);
+  }
+  .mk-dots{
+    width:26px; height:26px; border-radius:8px; border:1px solid var(--border);
+    display:grid; place-items:center; color:var(--muted);
+    font-size:13px; letter-spacing:1px; line-height:1; padding-bottom:6px;
+  }
+  .mk-menu{
+    position:absolute; top:32px; right:0; z-index:3;
+    width:176px; padding:5px;
+    border:1px solid var(--border); border-radius:12px;
+    background:var(--raised); box-shadow:0 12px 32px rgba(0,0,0,.4);
+  }
+  .mk-menu div{ padding:8px 10px; border-radius:8px; font-size:12.5px; color:var(--muted); }
+  .mk-menu .hot{
+    color:var(--accent); font-weight:500;
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .mk-side{
+    display:flex; flex-direction:column; min-width:0;
+    border-left:1px solid var(--border); padding-left:14px;
+  }
+  .mk-side-h{
+    font:500 11px var(--font-mono); letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:12px;
+  }
+  .mk-qa-q{
+    align-self:flex-end; max-width:90%; margin-bottom:10px;
+    font-size:12.5px; line-height:1.5; color:var(--fg);
+    background:var(--raised); border:1px solid var(--border);
+    border-radius:12px; padding:8px 11px;
+  }
+  .mk-qa-a{
+    font-size:12.5px; line-height:1.6; color:var(--muted);
+    border:1px solid var(--border); border-radius:12px;
+    padding:10px 12px; background:var(--surface);
+  }
+  .mk-qa-a strong{ color:var(--fg); font-weight:500; }
+  .mk-qa-in{
+    margin-top:auto; height:34px; display:flex; align-items:center;
+    padding:0 12px; border:1px solid var(--border); border-radius:999px;
+    font-size:12px; color:var(--faint);
+  }
+
+  /* ============ Manifesto band ============ */
+  .manifesto{
+    margin-top:110px;
+    border-bottom:1px solid var(--border);
+  }
+  .manifesto-in{
+    padding:96px 0;
+    display:grid; grid-template-columns:7fr 5fr;
+    column-gap:56px; align-items:end;
+  }
+  .manifesto .eyebrow{
+    grid-column:1/-1;
+    display:flex; align-items:center; gap:14px;
+    font:500 12px/1.5 var(--font-mono);
+    letter-spacing:0.14em; text-transform:uppercase;
+    color:rgba(244,244,244,.5);
+  }
+  .manifesto .eyebrow::before{
+    content:""; flex:none; width:32px; height:1px; background:currentColor;
+  }
+  .manifesto h2{
+    margin:28px 0 0;
+    font:600 clamp(36px, 4.6vw, 58px)/1.16 var(--font-display);
+    letter-spacing:-0.026em;
+  }
+  .manifesto .m-sub{
+    margin:0 0 5px; max-width:28ch; justify-self:end;
+    font-size:19px; line-height:1.65; color:var(--muted);
+  }
+  .manifesto .m-hl{ font-style:normal; font-weight:500; color:var(--accent); }
+
+  /* ============ CTA band ============ */
+  .cta{ margin-top:140px; border-top:1px solid var(--border); }
+  .cta-in{ padding:120px 0; text-align:center; }
+  .cta h2{
+    font:600 clamp(32px, 4vw, 52px)/1.12 var(--font-display);
+    letter-spacing:-0.025em;
+  }
+  .cta p{ margin:18px auto 0; max-width:440px; color:var(--muted); font-size:16.5px; }
+  .cta .hero-ctas{ margin-top:32px; }
+
+  /* ============ Footer ============ */
+  .footer{ border-top:1px solid var(--border); }
+  .footer-in{
+    padding:56px 0 64px;
+    display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:32px;
+  }
+  .footer .brand{ margin-bottom:14px; }
+  .footer .tag{ font-size:13px; color:var(--faint); max-width:26ch; line-height:1.6; }
+  .fcol h4{
+    font-size:12px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:14px;
+  }
+  .fcol a{ display:block; font-size:13.5px; color:var(--muted); padding:5px 0; }
+  .fcol a:hover{ color:var(--fg); }
+  .footer-base{
+    border-top:1px solid var(--border); padding:20px 0;
+    display:flex; justify-content:space-between;
+    font-size:12.5px; color:var(--faint);
+  }
+
+
+  /* ============ Pelican comparison ============ */
+  .pelican{ padding:120px 0 0; }
+  .pelican-in{ max-width:1120px; margin:0 auto; padding:0 32px; }
+  .pelican h2{ font:600 clamp(30px,4vw,44px)/1.15 var(--font-display); letter-spacing:-.02em; }
+  .pelican .pk-sub{ margin-top:14px; max-width:60ch; color:var(--muted); font-size:17px; }
+  .pk-prompt{
+    margin-top:28px; padding:16px 18px;
+    border:1px solid var(--border); border-radius:12px; background:var(--surface);
+    font:13.5px/1.7 var(--font-mono); color:var(--muted);
+    overflow-x:auto;
+  }
+  .pk-prompt b{ display:block; margin-bottom:8px; color:var(--faint); font:600 11px/1 var(--font-body); letter-spacing:.08em; text-transform:uppercase; }
+  .pk-grid{ margin-top:24px; display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  .pk-card{ border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); }
+  .pk-head{ padding:14px 18px; border-bottom:1px solid var(--border); }
+  .pk-head strong{ font:600 15px/1.3 var(--font-body); }
+  .pk-head span{ display:block; margin-top:3px; color:var(--faint); font-size:13px; }
+  .pk-art{ display:block; width:100%; height:auto; background:#cfe0ea; }
+  .pk-foot{ margin-top:20px; color:var(--faint); font-size:13.5px; }
+  .pk-foot a{ color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+
+  /* ---- run record: both runs on one time axis; a step opens its own detail ----
+     Step selection is native radio + :checked, so it works with no JavaScript
+     and with the keyboard. Segment widths are real: each is its own share of the
+     longer run (32 min 31 s). The 23-second sign-off gets a floor width so it
+     stays clickable — the only place the bars are not exactly to scale. */
+  .pk-run{ margin-top:60px; padding-top:44px; border-top:1px solid var(--border); }
+  .pk-run h3{ font:600 clamp(22px,2.6vw,30px)/1.2 var(--font-display); letter-spacing:-.015em; }
+  .pk-run-sub{ margin-top:12px; max-width:64ch; color:var(--muted); font-size:16px; }
+  .pk-vh{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap;
+  }
+
+  .pk-tl{ --pk-lab:108px; --pk-tot:150px; margin-top:30px; position:relative; }
+  .pk-r{ position:absolute; width:1px; height:1px; opacity:0; margin:0; }
+
+  .pk-ruler, .pk-row{
+    display:grid; grid-template-columns:var(--pk-lab) minmax(0,1fr) var(--pk-tot);
+    align-items:center; gap:0 16px;
+  }
+  .pk-ruler{ height:20px; }
+  .pk-ruler-track{ position:relative; height:100%; }
+  .pk-ruler-track i{
+    position:absolute; top:0; font:11px/1 var(--font-mono);
+    color:var(--faint); font-style:normal; padding-left:5px; white-space:nowrap;
+    border-left:1px solid var(--border); height:100%;
+  }
+
+  .pk-row + .pk-row{ margin-top:10px; }
+  .pk-row-lab{
+    margin:0; color:var(--faint); font:600 11px/1.3 var(--font-body);
+    letter-spacing:.08em; text-transform:uppercase;
+  }
+  .pk-bar{ display:flex; height:46px; }
+  .pk-seg{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
+    padding:0 12px; cursor:pointer; white-space:nowrap; container-type:inline-size;
+    background:var(--surface); border:1px solid var(--border);
+    transition:background .18s ease, border-color .18s ease, color .18s ease;
+  }
+  /* A short step has no room for its duration; the panel and the totals carry it. */
+  @container (max-width: 168px){ .pk-seg i{ display:none; } }
+  @container (max-width: 74px){ .pk-seg b{ display:none; } }
+  /* The 23-second sign-off is 9px wide at full scale. Keep that width so the bar
+     stays honest, and widen only the pointer target with an overlay. */
+  .pk-seg-tiny{ position:relative; padding:0; }
+  .pk-seg-tiny::after{ content:""; position:absolute; inset:-7px -9px; }
+  .pk-seg + .pk-seg{ border-left:none; }
+  .pk-bar > .pk-seg:first-child{ border-radius:10px 0 0 10px; }
+  .pk-bar > .pk-seg:last-child{ border-radius:0 10px 10px 0; }
+  .pk-bar > .pk-seg:only-child{ border-radius:10px; }
+  .pk-seg b{ font:600 13px/1.3 var(--font-body); color:var(--muted); }
+  .pk-seg i{ font:12px/1.3 var(--font-mono); font-style:normal; color:var(--faint); }
+  .pk-seg:hover{ background:var(--hover); }
+  .pk-seg-review{ background:rgba(192,144,255,.09); border-color:rgba(192,144,255,.26); }
+  .pk-seg-review:hover{ background:rgba(192,144,255,.15); }
+  .pk-row-tot{ margin:0; display:flex; flex-direction:column; gap:2px; }
+  .pk-row-tot b{ font:600 16px/1.2 var(--font-display); letter-spacing:-.01em; }
+  .pk-row-tot span{ color:var(--faint); font-size:12.5px; }
+
+  .pk-cap{ margin:14px 0 0; padding-left:calc(var(--pk-lab) + 16px); color:var(--faint); font-size:13px; line-height:1.65; }
+  .pk-cap b{ color:var(--muted); font-weight:600; }
+
+  /* selected + focused step, driven by the radio that precedes the rows */
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"] b{ color:var(--fg); }
+  #pk-s1:checked ~ .pk-rows label[for="pk-s1"] i{ color:var(--muted); }
+  #pk-s1:focus-visible ~ .pk-rows label[for="pk-s1"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s1:checked ~ .pk-panels #pk-p1{ display:block; }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"] b{ color:var(--fg); }
+  #pk-s2:checked ~ .pk-rows label[for="pk-s2"] i{ color:var(--muted); }
+  #pk-s2:focus-visible ~ .pk-rows label[for="pk-s2"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s2:checked ~ .pk-panels #pk-p2{ display:block; }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"] b{ color:var(--fg); }
+  #pk-s3:checked ~ .pk-rows label[for="pk-s3"] i{ color:var(--muted); }
+  #pk-s3:focus-visible ~ .pk-rows label[for="pk-s3"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s3:checked ~ .pk-panels #pk-p3{ display:block; }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"]{ background:var(--raised); border-color:var(--fg); }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"] b{ color:var(--fg); }
+  #pk-s4:checked ~ .pk-rows label[for="pk-s4"] i{ color:var(--muted); }
+  #pk-s4:focus-visible ~ .pk-rows label[for="pk-s4"]{ outline:2px solid var(--accent); outline-offset:2px; }
+  #pk-s4:checked ~ .pk-panels #pk-p4{ display:block; }
+
+  .pk-panels{ margin-top:22px; }
+  .pk-panel{
+    display:none; border:1px solid var(--border); border-radius:14px;
+    background:var(--surface); padding:20px 22px;
+  }
+  .pk-panel-head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+  .pk-panel-head b{ font:600 16px/1.3 var(--font-body); }
+  .pk-panel-head span{ color:var(--faint); font:12.5px/1.5 var(--font-mono); }
+  .pk-run code{ font-family:var(--font-mono); font-size:.92em; color:var(--fg); }
+
+  /* Verbatim transcript: exactly what the agent wrote in that step. `data-verbatim`
+     marks it as quoted source material, so it stays in the language of the run
+     even on the other language's page. */
+  .pk-src{ margin-top:14px; color:var(--faint); font-size:13px; line-height:1.65; max-width:84ch; }
+  .pk-tr{
+    margin-top:10px; list-style:none; max-height:360px; overflow-y:auto; overscroll-behavior:contain;
+    border:1px solid var(--border); border-radius:10px; background:var(--bg); padding:14px 16px;
+  }
+  .pk-tr > li{ display:grid; grid-template-columns:70px minmax(0,1fr); gap:0 14px; }
+  .pk-tr > li + li{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .pk-tr time{ color:var(--faint); font:12px/1.75 var(--font-mono); }
+  .pk-tr p{ color:var(--muted); font-size:13.5px; line-height:1.75; white-space:pre-wrap; max-width:78ch; }
+  .pk-tr strong{ color:var(--fg); font-weight:600; }
+  .pk-elide{
+    display:inline-block; margin:3px 0; padding:2px 9px; white-space:normal;
+    border:1px dashed var(--border); border-radius:6px;
+    color:var(--faint); font:12px/1.7 var(--font-mono);
+  }
+  .pk-gloss{ margin-top:12px; color:var(--muted); font-size:13.5px; line-height:1.7; max-width:82ch; }
+  .pk-checks{
+    margin:12px 0 0; padding:0; list-style:none;
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px 18px;
+  }
+  .pk-checks li{ position:relative; padding-left:15px; color:var(--muted); font-size:13px; line-height:1.6; }
+  .pk-checks li::before{
+    content:""; position:absolute; left:1px; top:.62em;
+    width:5px; height:5px; border-radius:50%; background:var(--accent);
+  }
+  .pk-method{ margin-top:12px; color:var(--faint); font-size:13px; line-height:1.65; max-width:88ch; }
+
+  @media (max-width: 900px){
+    .pk-grid{ grid-template-columns:1fr; }
+    .pk-ruler-track i:last-child{ display:none; }
+    .pk-checks{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+  @media (max-width: 720px){
+    /* Label above the bar, totals below it: the bar keeps its full width. */
+    .pk-tl{ --pk-lab:0px; --pk-tot:0px; }
+    .pk-ruler{ display:none; }
+    .pk-row{ display:block; }
+    .pk-row + .pk-row{ margin-top:26px; }
+    .pk-row-lab{ margin-bottom:8px; }
+    .pk-row-tot{ margin-top:10px; flex-direction:row; align-items:baseline; gap:10px; }
+    .pk-cap{ padding-left:0; }
+  }
+  @media (max-width: 560px){
+    .pk-checks{ grid-template-columns:1fr; }
+    .pk-seg:not(.pk-seg-tiny){ padding:0 9px; }
+    .pk-tr > li{ grid-template-columns:1fr; }
+    .pk-tr time{ display:block; margin-bottom:5px; }
+  }
+  @media (max-width: 560px){
+    .pelican-in{ padding:0 20px; }
+  }
+  @media (max-width: 360px){
+    .pelican-in{ padding:0 16px; }
+  }
+
+  /* ============ Text reveal (word stagger, blur + rise) ============ */
+  .js .tr-w{
+    display:inline-block; opacity:0;
+    transform:translateY(45%); filter:blur(10px);
+    transition:opacity .7s cubic-bezier(.2,.6,.2,1),
+               transform .7s cubic-bezier(.2,.6,.2,1),
+               filter .7s ease;
+  }
+  .js .tr-in .tr-w{ opacity:1; transform:none; filter:blur(0); }
+
+  /* ============ Expanding arrow button (beui) ============
+     accent tile expands to cover the whole button on hover/focus;
+     label fades out, a trail of fading dotted chevrons staggers in */
+  .btn-exp{ position:relative; overflow:hidden; padding:0 20px 0 0; }
+  .exp-tile{
+    position:absolute; top:5px; bottom:5px; left:5px; z-index:1;
+    width:36px; border-radius:9px; overflow:hidden;
+    background:var(--bg); color:var(--fg);
+    transition:width .5s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-tile{ width:calc(100% - 10px); }
+  .exp-chev{ display:block; height:16px; width:auto; }
+  .exp-idle{
+    position:absolute; inset:0; display:grid; place-items:center;
+    transition:opacity .1s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-idle{ opacity:0; }
+  .exp-trail{
+    position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:space-around; padding:0 14px;
+  }
+  .exp-trail .exp-chev{
+    opacity:0; transform:translateX(-6px);
+    transition:opacity .18s cubic-bezier(.16,1,.3,1), transform .18s cubic-bezier(.16,1,.3,1);
+  }
+  .exp-trail .exp-chev:nth-child(1){ color:rgba(244,244,244,1); }
+  .exp-trail .exp-chev:nth-child(2){ color:rgba(244,244,244,.78); }
+  .exp-trail .exp-chev:nth-child(3){ color:rgba(244,244,244,.54); }
+  .exp-trail .exp-chev:nth-child(4){ color:rgba(244,244,244,.32); }
+  .exp-trail .exp-chev:nth-child(5){ color:rgba(244,244,244,.16); }
+  .btn-exp:hover .exp-trail .exp-chev{
+    opacity:1; transform:none;
+  }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(1){ transition-delay:.04s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(2){ transition-delay:.065s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(3){ transition-delay:.09s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(4){ transition-delay:.115s; }
+  .btn-exp:hover .exp-trail .exp-chev:nth-child(5){ transition-delay:.14s; }
+  .exp-label{
+    position:relative; z-index:0; margin-left:55px; white-space:nowrap;
+    transition:opacity .12s cubic-bezier(.16,1,.3,1), transform .12s cubic-bezier(.16,1,.3,1);
+  }
+  .btn-exp:hover .exp-label{ opacity:0; transform:translateX(6px); }
+
+  @media (max-width: 900px){
+    .fs-grid{ grid-template-columns:1fr; row-gap:28px; }
+    .fs-grid > .f-visual{
+      grid-column:auto; grid-row:auto;
+      position:relative; height:auto; align-self:auto;
+      opacity:1; transform:none; pointer-events:auto;
+      margin-top:64px;
+    }
+    .fs-grid > .f-visual:first-child{ margin-top:0; }
+    .fs-block{ grid-column:auto; min-height:0; opacity:1; }
+    .fs-block:not(:last-child){ margin-bottom:36px; }
+    .nav-links{ display:none; }
+    .footer-in{ grid-template-columns:1fr 1fr; }
+    .hero{ padding-top:80px; }
+    .manifesto-in{ padding:72px 0; grid-template-columns:1fr; row-gap:22px; }
+    .manifesto h2{ margin-top:2px; }
+    .manifesto .m-sub{ justify-self:start; margin:0; }
+  }
+  @media (max-width: 768px){
+    .vl{ display:none; }
+  }
+  /* narrow header: keep brand + language + download on one line.
+     the GitHub ghost link and the language label are the two things that give way */
+  @media (max-width: 560px){
+    .wrap{ padding:0 20px; }
+    .nav-in{ gap:8px; }
+    .nav-cta{ gap:6px; }
+    .nav-cta .ghost{ display:none; }
+    .lang > summary{ padding:0 8px; }
+    .lang > summary .lang-label{ display:none; }
+    .hero-ctas{ flex-wrap:wrap; }
+  }
+  /* 360px and below: the globe alone carries the language control and the
+     download label keeps its platform wording, so the chevron gives way instead */
+  @media (max-width: 360px){
+    .wrap{ padding:0 16px; }
+    .lang .chev{ display:none; }
+    .lang > summary{ gap:0; }
+    .nav-cta .btn-sm{ padding:0 12px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *,*::before,*::after{
+      animation-duration:.01ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+    .shimmer{ animation:none; background-position:50% center; }
+    .js .reveal{ opacity:1; transform:none; }
+    .fs-block{ opacity:1; }
+    .fs-grid > .f-visual{ opacity:0; }
+    .fs-grid > .f-visual.active{ opacity:1; }
+    .pk-art{ opacity:1; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<!-- grain filter for the shimmer headline -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="c3-noise">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+    <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.35 0"/>
+    <feComposite in2="SourceGraphic" operator="in"/>
+    <feBlend in2="SourceGraphic" mode="multiply"/>
+  </filter>
+</svg>
+
+<!-- container guide lines -->
+<div class="vl vl-l" aria-hidden="true"></div>
+<div class="vl vl-r" aria-hidden="true"></div>
+
+<!-- ================= Nav ================= -->
+<nav class="nav" data-od-id="site-nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" data-od-id="brand" aria-label="回到 Moebius 首页顶部">
+      <img src="../assets/moebius-icon-64.png" width="22" height="22" alt="" aria-hidden="true" />
+      Moebius
+    </a>
+    <div class="nav-links" data-od-id="nav-links">
+      <a href="#f-agents">团队</a>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-diff">分析</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases" target="_blank" rel="noreferrer">更新日志</a>
+    </div>
+    <div class="nav-cta">
+      <details class="lang" data-od-id="lang-switch">
+        <summary aria-label="切换语言,当前:简体中文">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15.3 15.3 0 0 1 0 18a15.3 15.3 0 0 1 0-18"/></svg>
+          <span class="lang-label">简体中文</span>
+          <svg class="chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="lang-menu">
+          <a href="../?lang=en" hreflang="en" lang="en">English<svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m5 12 5 5L19 7"/></svg></a>
+          <a href="./?lang=zh" hreflang="zh-Hans" aria-current="true">简体中文<svg class="tick" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m5 12 5 5L19 7"/></svg></a>
+        </div>
+      </details>
+      <a class="ghost" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="nav-download">下载 macOS 版</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+<!-- ================= Hero ================= -->
+<header class="hero" id="top" data-od-id="hero">
+  <div class="wrap">
+    <span class="hero-eyebrow"><i class="dot"></i>v0.4.2 · macOS · Apple Silicon 公测中</span>
+    <h1 data-text-reveal>把整个开发团队,<br><span class="shimmer">装进一次对话。</span></h1>
+    <p class="sub">Moebius 是桌面上的智能体指挥中心:产品经理、开发、文案、测试在同一条会话里并行推进,每一段改动全程可见、可回退。</p>
+    <div class="hero-ctas" data-od-id="hero-ctas">
+      <a class="btn btn-primary btn-exp" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="hero-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">查看 GitHub 源码</a>
+    </div>
+  </div>
+  <div class="hero-shot" data-od-id="hero-shot">
+    <div class="hero-shot-frame">
+      <div class="hero-shot-bar">
+        <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+      </div>
+      <img src="../assets/preview-center.png" width="2880" height="2000" fetchpriority="high" alt="Moebius 桌面端:一条对话里,开发经理拆解任务、开发与测试并行推进,右栏实时展示文件改动" />
+    </div>
+  </div>
+</header>
+
+<!-- ================= Manifesto band ================= -->
+<section class="manifesto" id="manifesto" data-od-id="manifesto">
+  <div class="wrap manifesto-in reveal">
+    <p class="eyebrow">Moebius 的方式</p>
+    <h2 data-text-reveal="view">不要一个个<br>管理 Agent。</h2>
+    <p class="m-sub">只需要和 <em class="m-hl">Leader Agent</em> 聊清楚就可以了。</p>
+  </div>
+</section>
+
+
+
+<!-- ================= Sticky narrative features ================= -->
+<section class="features wrap" data-od-id="features">
+  <div class="fs-grid">
+
+    <div class="f-visual liquid-glass active" data-od-id="mock-team">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>新对话 · 选择团队</span></div>
+      <div class="f-visual-body">
+        <div class="mk-req"><span class="mk-req-label">需求</span>帮我把落地页的空状态补上验收语句</div>
+        <div class="mk-agent sel">
+          <div class="mk-agent-top">
+            <div class="mk-ava dev">开</div>
+            <div><div class="n">开发团队</div><div class="r">开发经理 · 开发 · 测试</div></div>
+            <span class="mk-pill done">已匹配</span>
+          </div>
+          <div class="mk-task">擅长:产品落地、脚本、验收回归</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava mgr">文</div>
+            <div><div class="n">文案团队</div><div class="r">主编 · 撰稿 · 校对</div></div>
+          </div>
+          <div class="mk-task">擅长:品牌文案、内容排期</div>
+        </div>
+        <div class="mk-agent">
+          <div class="mk-agent-top">
+            <div class="mk-ava qa">增</div>
+            <div><div class="n">增长团队</div><div class="r">策划 · 投放 · 数据</div></div>
+          </div>
+          <div class="mk-task">擅长:活动页、A/B 实验</div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block active" id="f-agents" data-od-id="feature-team">
+      <span class="f-index">01</span>
+      <h2>从一个团队开始</h2>
+      <p>每一个需求,都有对应最专业的团队。</p>
+      <ul class="f-points">
+        <li><strong>团队开箱即用</strong>——开发、文案、增长,按领域预置好角色</li>
+        <li><strong>按需求匹配</strong>——说出目标,为你推荐最合适的一支</li>
+        <li><strong>成员各司其职</strong>——专长写在卡片上,谁做什么一眼看清</li>
+      </ul>
+    </div>
+
+    <div class="f-visual liquid-glass" data-od-id="mock-conversation">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化</span></div>
+      <div class="f-visual-body">
+        <div class="mk-msg user">
+          <div class="mk-bubble">
+            <div class="mk-name">你</div>
+            <div class="mk-text">落地页空状态太生硬,按验收标准补上,今天下班前我要看到。</div>
+          </div>
+          <div class="mk-ava you">你</div>
+        </div>
+        <div class="mk-msg">
+          <div class="mk-ava mgr">经</div>
+          <div class="mk-bubble">
+            <div class="mk-name">开发经理</div>
+            <div class="mk-text">收到,<span class="mention">@开发</span> 改文案,<span class="mention">@测试</span> 同步验收。有一处需要你定:</div>
+            <div class="mk-subtasks">
+              <div class="mk-sub"><span class="t">空状态文案</span><span class="mk-pill doing">进行中</span></div>
+              <div class="mk-sub"><span class="t">验收脚本</span><span class="mk-pill done">已结束</span></div>
+            </div>
+            <div class="mk-decision">
+              <div class="q">空状态配图,两版选一:</div>
+              <div class="mk-opts">
+                <span class="mk-opt hot">A · 极简线条</span>
+                <span class="mk-opt">B · 插画</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-conversation" data-od-id="feature-conversation">
+      <span class="f-index">02</span>
+      <h2>尽情表达需求,团队自己会推进</h2>
+      <p>你就像老板一样,只需要发号施令。Agent 管理者会主动推进,遇到问题会即时和你汇报,供你决策。</p>
+      <ul class="f-points">
+        <li><strong>说人话就行</strong>——不拆任务、不排期,一句话下达目标</li>
+        <li><strong>进度主动汇报</strong>——每一步状态实时长在会话里</li>
+        <li><strong>决策摆到面前</strong>——需要拍板时,选项直接给你</li>
+      </ul>
+    </div>
+
+    <div class="f-visual liquid-glass" data-od-id="mock-analysis">
+      <canvas class="f-shader" aria-hidden="true"></canvas>
+      <div class="f-inner">
+      <div class="f-visual-head"><i></i><i></i><i></i><span>官网落地页优化 · 分析</span></div>
+      <div class="f-visual-body">
+        <div class="mk-split">
+          <div class="mk-col">
+            <div class="mk-col-head"><span>会话</span><span class="mk-dots">•••</span></div>
+            <div class="mk-menu">
+              <div>重命名</div>
+              <div>导出记录</div>
+              <div class="hot">分析这段对话</div>
+              <div>归档</div>
+            </div>
+            <div class="mk-msg user">
+              <div class="mk-bubble">
+                <div class="mk-name">你</div>
+                <div class="mk-text">落地页空状态太生硬,按验收标准补上。</div>
+              </div>
+              <div class="mk-ava you">你</div>
+            </div>
+            <div class="mk-msg">
+              <div class="mk-ava mgr">经</div>
+              <div class="mk-bubble">
+                <div class="mk-name">开发经理</div>
+                <div class="mk-text">验收脚本第二次失败了,我先按旧选择器重试。</div>
+              </div>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-side-h">对话分析</div>
+            <div class="mk-qa-q">为什么测试环节慢了?</div>
+            <div class="mk-qa-a"><strong>卡在「空状态验收」:</strong>脚本两次失败,原因是选择器与新版 DOM 不匹配,建议让开发先修选择器再回归。</div>
+            <div class="mk-qa-in">提出你的疑问…</div>
+          </aside>
+        </div>
+      </div>
+      </div>
+    </div>
+    <div class="f-text fs-block" id="f-diff" data-od-id="feature-analysis">
+      <span class="f-index">03</span>
+      <h2>团队进程不满意?直接开始优化</h2>
+      <p>在会话的更多菜单点击「分析这段对话」,在侧边栏直接提出你想要的疑问。</p>
+      <ul class="f-points">
+        <li><strong>一键分析</strong>——更多菜单里点一下,整段对话的得失自动梳理</li>
+        <li><strong>侧边栏直接问</strong>——哪里慢了、哪里偏了,想问就问</li>
+        <li><strong>优化成指令</strong>——分析结论可以直接转成下一轮安排</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- ================= Pelican comparison ================= -->
+<section class="pelican" id="pelican" data-od-id="pelican">
+  <div class="pelican-in reveal">
+    <h2>同一道题，一个 Agent，和一支团队。</h2>
+    <p class="pk-sub">两次都用 Claude Opus 5。唯一的差别是交付前有没有第二个 Agent 复核。</p>
+    <div class="pk-prompt" data-verbatim lang="en"><b>题目</b>Generate an animated SVG of a California brown pelican riding a bicycle. The bicycle must have spokes and a correctly shaped bicycle frame. The pelican must have its characteristic large pouch, and there should be a clear indication of feathers. The pelican must be clearly pedaling the bicycle. The image should show the full breeding plumage of the California brown pelican. The SVG must be animated using only SMIL or CSS contained inside the file: both wheels must rotate continuously, the crank and pedals must rotate in phase with the rear wheel, the pelican&#39;s legs must follow the pedals, and the animation must loop seamlessly.</div>
+    <div class="pk-grid">
+      <figure class="pk-card" data-od-id="pelican-single">
+        <figcaption class="pk-head"><strong>一个 Agent</strong><span>产出即交付。</span></figcaption>
+        <svg class="pk-art" aria-label="单 Agent 的产出" xmlns="http://www.w3.org/2000/svg" viewBox="130 45 600 480" role="img" 
+  <title>California Brown Pelican on a Bicycle</title>
+
+  <defs>
+    <linearGradient id="pa-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8e8f1"/>
+      <stop offset="0.55" stop-color="#eef3ee"/>
+      <stop offset="1" stop-color="#f7f0e3"/>
+    </linearGradient>
+    <linearGradient id="pa-bodyG" x1="0.15" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#98a1a9"/>
+      <stop offset="0.5" stop-color="#6c757d"/>
+      <stop offset="1" stop-color="#454c53"/>
+    </linearGradient>
+    <linearGradient id="pa-wingG" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#8b949c"/>
+      <stop offset="0.55" stop-color="#5b636b"/>
+      <stop offset="1" stop-color="#3c434a"/>
+    </linearGradient>
+    <linearGradient id="pa-pouchG" x1="0.1" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#e8663c"/>
+      <stop offset="0.45" stop-color="#d13a26"/>
+      <stop offset="1" stop-color="#96201c"/>
+    </linearGradient>
+    <linearGradient id="pa-billG" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#ded4ca"/>
+      <stop offset="0.5" stop-color="#bcaea7"/>
+      <stop offset="1" stop-color="#8e7e7a"/>
+    </linearGradient>
+    <linearGradient id="pa-napeG" x1="0.2" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#87502c"/>
+      <stop offset="0.5" stop-color="#5d3221"/>
+      <stop offset="1" stop-color="#3a1d16"/>
+    </linearGradient>
+    <linearGradient id="pa-crownG" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#faeda6"/>
+      <stop offset="1" stop-color="#e4c664"/>
+    </linearGradient>
+    <linearGradient id="pa-frameG" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#2a8e97"/>
+      <stop offset="0.5" stop-color="#17646d"/>
+      <stop offset="1" stop-color="#0d434a"/>
+    </linearGradient>
+    <radialGradient id="pa-vig" cx="0.5" cy="0.45" r="0.75">
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#8fa3ab" stop-opacity="0.22"/>
+    </radialGradient>
+
+    <!-- 16 radial spokes, drawn as 8 full-diameter wires -->
+    <g id="pa-spokes" stroke="#e4e8ec" stroke-width="2.1" stroke-linecap="round">
+      <line x1="77" y1="0" x2="-77" y2="0"/>
+      <line x1="71.14" y1="29.47" x2="-71.14" y2="-29.47"/>
+      <line x1="54.45" y1="54.45" x2="-54.45" y2="-54.45"/>
+      <line x1="29.47" y1="71.14" x2="-29.47" y2="-71.14"/>
+      <line x1="0" y1="77" x2="0" y2="-77"/>
+      <line x1="-29.47" y1="71.14" x2="29.47" y2="-71.14"/>
+      <line x1="-54.45" y1="54.45" x2="54.45" y2="-54.45"/>
+      <line x1="-71.14" y1="29.47" x2="71.14" y2="-29.47"/>
+    </g>
+
+    <g id="pa-wheelbody">
+      <circle r="88" fill="none" stroke="#22262a" stroke-width="10"/>
+      <circle r="88" fill="none" stroke="#3d444a" stroke-width="3" stroke-dasharray="7 7"/>
+      <circle r="79.5" fill="none" stroke="#c9d0d6" stroke-width="6"/>
+      <circle r="79.5" fill="none" stroke="#ffffff" stroke-width="1.6" opacity="0.7"/>
+      <use href="#pa-spokes"/>
+      <circle r="9" fill="#8d959c" stroke="#4c5359" stroke-width="2.5"/>
+      <circle r="3" fill="#2b3035"/>
+      <circle cx="0" cy="-74" r="4" fill="#e8a021" stroke="#8a5a10" stroke-width="1.4"/>
+    </g>
+
+    <g id="pa-crankarm">
+      <path d="M -9 -7 L 26 -6 A 6 6 0 0 1 26 6 L -9 7 A 8 8 0 0 1 -9 -7 Z" fill="#b9c1c7" stroke="#5c646b" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M -6 -4 L 24 -3.4" stroke="#eef2f5" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+    </g>
+    <g id="pa-pedalbody">
+      <rect x="-17" y="-2.5" width="34" height="10" rx="2.5" fill="#2f353a" stroke="#171b1e" stroke-width="1.6"/>
+      <rect x="-15" y="-1.6" width="30" height="3" rx="1.5" fill="#6f787f"/>
+      <rect x="9" y="2.4" width="6" height="4" rx="1" fill="#e0a53a"/>
+      <rect x="-15" y="2.4" width="6" height="4" rx="1" fill="#e0a53a"/>
+      <circle r="3.4" fill="#8d959c" stroke="#3b4146" stroke-width="1.4"/>
+    </g>
+
+    <!-- webbed, totipalmate pelican foot; origin sits on the pedal spindle -->
+    <g id="pa-foot">
+      <path d="M -13 -11.5 C -18 -5 -15 0.5 -6 0.8 C 8 2.2 25 1.2 33 -2 C 39.5 -4.6 39 -10 31.5 -10.8 L -3 -13.6 C -8.5 -14 -11 -13.4 -13 -11.5 Z" fill="#4e575f" stroke="#181c20" stroke-width="1.9" stroke-linejoin="round"/>
+      <path d="M 3 0.6 L 5.5 -6.5 M 14 0.4 L 15.5 -7.6 M 24.5 -0.6 L 25 -8.6" stroke="#20262a" stroke-width="1.5" stroke-linecap="round" opacity="0.85"/>
+      <path d="M -11 -10.5 C -14 -6 -12 -2 -6 -1.6" stroke="#68727a" stroke-width="1.4" fill="none" opacity="0.8"/>
+      <path d="M 33 -8.8 C 37 -8.2 38 -5 35.5 -3.4" stroke="#98a1a7" stroke-width="1.3" fill="none" opacity="0.7"/>
+    </g>
+  </defs>
+
+  <!-- background -->
+  <rect x="130" y="45" width="600" height="480" fill="url(#pa-sky)"/>
+  <circle cx="672" cy="104" r="34" fill="#ffe6a8" opacity="0.5"/>
+  <circle cx="672" cy="104" r="20" fill="#fff3cf" opacity="0.75"/>
+  <path d="M 130 470 L 730 470" stroke="#c2b79f" stroke-width="1.6" opacity="0.5"/>
+  <path d="M 130 506 L 730 506" stroke="#a99c82" stroke-width="2.4" opacity="0.75"/>
+  <rect x="130" y="45" width="600" height="480" fill="url(#pa-vig)"/>
+  <ellipse cx="424" cy="508" rx="215" ry="12" fill="#7d7362" opacity="0.22"/>
+
+  <!-- speed lines -->
+  <g stroke="#8fa6b2" stroke-width="4" stroke-linecap="round" fill="none">
+    <g opacity="0">
+      <line x1="150" y1="250" x2="215" y2="250"/>
+      <animateTransform attributeName="transform" type="translate" values="120 0;-70 0" dur="0.6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.5;0" dur="0.6s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <line x1="150" y1="340" x2="205" y2="340"/>
+      <animateTransform attributeName="transform" type="translate" values="120 0;-70 0" dur="0.6s" begin="-0.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.42;0" dur="0.6s" begin="-0.2s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <line x1="150" y1="425" x2="222" y2="425"/>
+      <animateTransform attributeName="transform" type="translate" values="120 0;-70 0" dur="0.6s" begin="-0.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0.46;0" dur="0.6s" begin="-0.4s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
+  <!-- rig: bike and bird bob together, so the leg IK stays exact -->
+  <g id="pa-rig">
+    <animateTransform attributeName="transform" type="translate" values="0 0;0 -2.6;0 0" keyTimes="0;0.5;1"
+                      calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" dur="0.6s" repeatCount="indefinite"/>
+
+    <!-- FAR crank arm and pedal -->
+    <g transform="translate(405,425)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="180;540" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+        <g opacity="0.7"><use href="#pa-crankarm"/></g>
+        <g transform="translate(28,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" values="-180;-540" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+            <g opacity="0.7"><use href="#pa-pedalbody"/></g>
+          </g>
+        </g>
+      </g>
+    </g>
+
+    <!-- FAR leg -->
+    <g transform="translate(360,298)" opacity="0.8">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+          keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+          values="35.22;32.31;29.17;25.87;22.47;19.1;15.9;13.03;10.66;8.91;7.89;7.64;8.15;9.37;11.23;13.65;16.51;19.73;23.2;26.81;30.46;34.02;37.38;40.41;42.99;45.03;46.48;47.33;47.6;47.36;46.67;45.58;44.12;42.34;40.25;37.87;35.22"/>
+        <path d="M -8 -19 C 18 -26 58 -21 84 -12 C 93 -8.5 93 8.5 84 12 C 58 21 18 24 -8 17 C -18 10 -18 -12 -8 -19 Z" fill="#2b323a" stroke="#171b1f" stroke-width="2"/>
+        <path d="M -4 -14 C 12 -18 30 -18 44 -15 M -2 -5 C 14 -9 32 -9 46 -6 M 0 4 C 16 1 34 1 46 4" stroke="#818b93" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.5"/>
+        <g transform="translate(84,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+              keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+              values="88.09;92.43;96.38;99.82;102.64;104.75;106.08;106.55;106.16;104.92;102.88;100.12;96.74;92.84;88.53;83.92;79.12;74.23;69.36;64.64;60.21;56.2;52.8;50.17;48.49;47.88;48.39;49.97;52.51;55.84;59.79;64.2;68.89;73.75;78.64;83.46;88.09"/>
+            <path d="M 0 -10 C 34 -11 68 -8 91 -5.5 C 97.5 -4.6 97.5 4.6 91 5.5 C 68 8 34 11 0 10 Z" fill="#5b656d" stroke="#1b2025" stroke-width="2"/>
+            <circle r="9.5" fill="#5f696f" stroke="#1b2025" stroke-width="2"/>
+            <g transform="translate(94,0)">
+              <g>
+                <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+                  keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+                  values="-123.31;-124.74;-125.55;-125.68;-125.11;-123.86;-121.98;-119.59;-116.82;-113.83;-110.78;-107.76;-104.89;-102.21;-99.76;-97.57;-95.63;-93.96;-92.56;-91.46;-90.67;-90.23;-90.18;-90.59;-91.49;-92.92;-94.87;-97.29;-100.11;-103.2;-106.46;-109.77;-113.01;-116.09;-118.89;-121.33;-123.31"/>
+                <use href="#pa-foot"/>
+              </g>
+            </g>
+          </g>
+        </g>
+      </g>
+    </g>
+
+    <!-- wheels -->
+    <g transform="translate(248,418)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;360" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+        <use href="#pa-wheelbody"/>
+        <circle r="13" fill="none" stroke="#9aa2a9" stroke-width="5" stroke-dasharray="2.4 2.71"/>
+        <circle r="10" fill="#6d767d" stroke="#3d444a" stroke-width="1.6"/>
+      </g>
+    </g>
+    <g transform="translate(600,418)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;360" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+        <use href="#pa-wheelbody"/>
+      </g>
+    </g>
+
+    <!-- chain: the top run is the tight side and travels forward -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M 247.2 405 L 403.1 395.1" stroke="#3a4045" stroke-width="6"/>
+      <path d="M 247.2 405 L 403.1 395.1" stroke="#aeb6bd" stroke-width="3" stroke-dasharray="3.927 3.927">
+        <animate attributeName="stroke-dashoffset" values="0;-188.5" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+      </path>
+      <path d="M 400.4 454.6 Q 323 451 246 430.8" stroke="#3a4045" stroke-width="6"/>
+      <path d="M 400.4 454.6 Q 323 451 246 430.8" stroke="#aeb6bd" stroke-width="3" stroke-dasharray="3.927 3.927">
+        <animate attributeName="stroke-dashoffset" values="0;-188.5" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+      </path>
+    </g>
+
+    <!-- diamond frame -->
+    <g stroke="url(#pa-frameG)" stroke-width="11" stroke-linecap="round" fill="none">
+      <path d="M 405 425 L 248 418"/>
+      <path d="M 346 330 L 248 418"/>
+      <path d="M 405 425 L 346 330"/>
+      <path d="M 346 330 L 534 322"/>
+      <path d="M 405 425 L 546 362"/>
+    </g>
+    <g stroke="#5fc3cb" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.5">
+      <path d="M 400 419.5 L 254 413"/>
+      <path d="M 347.5 336 L 252 421.5"/>
+      <path d="M 400.5 420 L 342 336"/>
+      <path d="M 349 325.5 L 531 317.8"/>
+      <path d="M 402 419.5 L 542 357"/>
+    </g>
+    <path d="M 534 322 L 546 364" stroke="url(#pa-frameG)" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M 546 364 C 556 382, 578 396, 600 418" stroke="#4b555c" stroke-width="9" stroke-linecap="round" fill="none"/>
+    <path d="M 546 364 C 556 382, 578 396, 600 418" stroke="#9aa4ab" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.7"/>
+    <path d="M 346 330 L 333 307" stroke="#8d959c" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 302 310 C 296 298, 316 292, 338 294 L 366 296 C 376 298, 375 307, 365 309 L 322 314 C 312 315, 305 314, 302 310 Z" fill="#2b3035" stroke="#14181b" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M 534 322 L 539 298 L 566 293" stroke="#8d959c" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M 566 293 C 582 291, 590 298, 586 310 C 583 320, 573 322, 568 316" stroke="#3c4348" stroke-width="9" stroke-linecap="round" fill="none"/>
+    <path d="M 560 293 C 574 291, 582 294, 584 300" stroke="#d8dee3" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <circle cx="405" cy="425" r="12" fill="#0d434a" stroke="#062c31" stroke-width="2"/>
+
+    <!-- chainring, locked in phase with the crank -->
+    <g transform="translate(405,425)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;360" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+        <circle r="30" fill="none" stroke="#b6bec4" stroke-width="5.5" stroke-dasharray="2.5 2.736"/>
+        <circle r="27" fill="#8f989f" stroke="#5b6369" stroke-width="2"/>
+        <circle r="18" fill="#eef2f5" opacity="0.25"/>
+        <g stroke="#5b6369" stroke-width="3" stroke-linecap="round">
+          <path d="M 0 0 L 20 0"/><path d="M 0 0 L -10 17.3"/><path d="M 0 0 L -10 -17.3"/>
+        </g>
+        <circle r="7" fill="#c8d0d6" stroke="#5b6369" stroke-width="2"/>
+      </g>
+    </g>
+
+    <!-- ******************** the pelican ******************** -->
+
+    <!-- far wing, tucked behind the body -->
+    <path d="M 384 228 C 350 224, 308 238, 290 262 C 276 280, 278 300, 292 306 C 314 300, 344 290, 368 276 C 388 266, 396 244, 384 228 Z" fill="#3c434a" stroke="#242a2f" stroke-width="2"/>
+
+    <!-- tail -->
+    <path d="M 296 288 C 274 286, 250 292, 234 302 L 252 306 L 238 315 L 258 317 L 248 326 L 302 314 Z" fill="#394046" stroke="#1e2327" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M 292 296 L 246 303 M 294 304 L 244 312 M 296 310 L 252 318" stroke="#79838b" stroke-width="1.4" opacity="0.55"/>
+
+    <!-- torso -->
+    <path d="M 388 224 C 366 210, 322 208, 300 228 C 282 244, 280 288, 296 304 C 314 318, 356 320, 380 304 C 398 292, 404 272, 400 252 C 396 234, 396 226, 388 224 Z" fill="url(#pa-bodyG)" stroke="#2a3036" stroke-width="2.4"/>
+
+    <!-- silvery scapular feathering of the mantle -->
+    <g stroke="#dde3e8" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.72">
+      <path d="M 306 224 C 320 216, 340 214, 356 217"/>
+      <path d="M 296 236 C 314 226, 336 224, 356 228"/>
+      <path d="M 289 250 C 308 239, 332 237, 354 241"/>
+      <path d="M 285 264 C 304 253, 330 251, 352 255"/>
+      <path d="M 288 278 C 306 267, 330 265, 350 269"/>
+      <path d="M 362 218 C 378 222, 390 231, 396 242"/>
+      <path d="M 360 231 C 376 235, 388 244, 394 255"/>
+    </g>
+    <g stroke="#98a2aa" stroke-width="1.3" fill="none" opacity="0.5">
+      <path d="M 310 233 C 326 226, 344 224, 358 227"/>
+      <path d="M 301 247 C 319 237, 338 235, 356 239"/>
+      <path d="M 297 261 C 315 250, 335 248, 353 252"/>
+      <path d="M 300 275 C 318 264, 336 262, 352 266"/>
+    </g>
+    <!-- dark underparts -->
+    <path d="M 296 302 C 316 318, 356 320, 379 305 C 369 315, 348 322, 328 321 C 310 320, 302 311, 296 302 Z" fill="#2b3138" opacity="0.9"/>
+
+    <!-- neck: the dark chestnut hindneck of full breeding plumage -->
+    <path d="M 384 220 C 386 186, 406 158, 444 146 L 462 174 C 432 184, 414 210, 402 246 Z" fill="url(#pa-napeG)" stroke="#2a1610" stroke-width="2.2"/>
+    <g stroke="#9a643e" stroke-width="1.3" fill="none" opacity="0.5">
+      <path d="M 390 216 C 393 187, 411 163, 442 153"/>
+      <path d="M 396 228 C 399 201, 417 178, 447 165"/>
+    </g>
+    <!-- white side-neck stripe -->
+    <path d="M 402 246 C 414 210, 432 184, 462 174 L 465 187 C 437 196, 423 220, 412 251 Z" fill="#f4f1e8" stroke="#cdc7b8" stroke-width="1.3"/>
+    <!-- ochre patch at the base of the foreneck -->
+    <path d="M 398 224 C 409 224, 415 235, 409 248 C 402 261, 389 259, 386 247 C 384 234, 389 224, 398 224 Z" fill="#e6bf58" opacity="0.9"/>
+    <path d="M 393 231 C 401 230, 406 236, 405 243" stroke="#f8e49c" stroke-width="1.5" fill="none" opacity="0.8"/>
+
+    <!-- head: white face, straw-yellow breeding crown -->
+    <path d="M 444 144 C 452 124, 478 118, 494 129 C 507 138, 510 154, 503 165 L 484 176 C 462 183, 444 169, 444 154 Z" fill="#f6f3ea" stroke="#cac4b5" stroke-width="2"/>
+    <path d="M 446 149 C 453 126, 478 118, 494 129 C 499 133, 503 139, 504 147 C 483 133, 461 136, 446 149 Z" fill="url(#pa-crownG)" stroke="#cfae4e" stroke-width="1.4"/>
+    <path d="M 455 133 C 468 124, 486 125, 495 133" stroke="#fdf6cf" stroke-width="2" fill="none" opacity="0.85"/>
+    <!-- eye -->
+    <circle cx="479" cy="142" r="6" fill="#f0ead8" stroke="#4a4335" stroke-width="1.6"/>
+    <circle cx="480.4" cy="142.6" r="3.1" fill="#141210"/>
+    <circle cx="478.6" cy="140.6" r="1.2" fill="#ffffff" opacity="0.9"/>
+    <path d="M 471 150 C 480 155, 491 155, 498 152" stroke="#6f6553" stroke-width="1.4" fill="none" opacity="0.5"/>
+
+    <!-- gular pouch: the bright red of a California brown pelican in breeding condition -->
+    <path d="M 490 140 C 481 179, 510 212, 553 208 C 589 204, 612 179, 621 160 C 602 165, 552 157, 516 148 C 503 144, 494 145, 490 140 Z" fill="url(#pa-pouchG)" stroke="#7d1a17" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M 500 156 C 498 184, 520 202, 549 199" stroke="#f4936c" stroke-width="2.2" fill="none" opacity="0.5"/>
+    <path d="M 514 166 C 514 186, 529 197, 550 195" stroke="#f8b795" stroke-width="1.6" fill="none" opacity="0.34"/>
+    <path d="M 564 203 C 588 196, 604 177, 612 162" stroke="#8f2019" stroke-width="2" fill="none" opacity="0.45"/>
+
+    <!-- bill: roughly twice the length of the head, with the hooked nail -->
+    <path d="M 492 126 C 526 128, 586 142, 620 155 C 626.5 157.5, 626.5 164, 620 165 C 602 168, 552 160, 516 151 C 501 147, 492 140, 492 126 Z" fill="url(#pa-billG)" stroke="#6d605c" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M 495 129 C 528 134, 588 147, 619 158" stroke="#f2eae2" stroke-width="2.1" fill="none" opacity="0.7"/>
+    <path d="M 498 143 C 532 151, 584 160, 616 163" stroke="#82746f" stroke-width="1.5" fill="none" opacity="0.5"/>
+    <path d="M 619 154 C 629 157.5, 629.5 170, 620 173 C 615 168, 614.5 159, 619 154 Z" fill="#5e534f" stroke="#3b3331" stroke-width="1.6"/>
+    <path d="M 512 135 C 516 137, 518 140, 517 143" stroke="#4d4340" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+
+    <!-- NEAR crank arm and pedal -->
+    <g transform="translate(405,425)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;360" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+        <use href="#pa-crankarm"/>
+        <g transform="translate(28,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" values="0;-360" dur="1.2s" calcMode="linear" repeatCount="indefinite"/>
+            <use href="#pa-pedalbody"/>
+          </g>
+        </g>
+      </g>
+    </g>
+
+    <!-- near wing: leading edge reaches the bar, flight feathers sweep back -->
+    <g>
+      <g fill="#4d555d" stroke="#20262b" stroke-width="1.7" stroke-linejoin="round">
+        <path d="M 448 266 C 400 296, 344 316, 280 322 C 340 306, 396 282, 438 258 Z"/>
+        <path d="M 434 262 C 388 288, 332 306, 272 310 C 328 296, 380 274, 424 254 Z"/>
+        <path d="M 420 258 C 376 280, 322 296, 266 298 C 318 286, 366 266, 410 250 Z"/>
+        <path d="M 406 254 C 364 272, 312 286, 264 286 C 310 276, 354 258, 396 246 Z"/>
+        <path d="M 392 250 C 352 262, 306 272, 266 274 C 306 266, 344 252, 382 242 Z"/>
+      </g>
+      <g stroke="#95a0a8" stroke-width="1.3" fill="none" opacity="0.55">
+        <path d="M 442 262 C 396 291, 342 311, 280 318"/>
+        <path d="M 428 258 C 384 283, 330 301, 272 306"/>
+        <path d="M 414 254 C 372 275, 320 291, 266 294"/>
+        <path d="M 400 250 C 360 267, 310 281, 264 282"/>
+      </g>
+      <!-- wing arm from shoulder to handlebar -->
+      <path d="M 382 214 C 412 220, 440 240, 464 258 C 496 270, 536 280, 562 286 C 572 290, 570 302, 556 298 C 520 290, 484 278, 456 270 C 428 262, 390 252, 382 246 Z" fill="url(#pa-wingG)" stroke="#20262b" stroke-width="2.4" stroke-linejoin="round"/>
+      <g stroke="#cbd3d9" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.55">
+        <path d="M 392 222 C 418 230, 442 244, 462 261"/>
+        <path d="M 389 231 C 412 239, 436 251, 458 264"/>
+        <path d="M 472 262 C 500 270, 526 278, 552 285"/>
+        <path d="M 470 270 C 496 277, 520 284, 548 291"/>
+      </g>
+      <g fill="#8c959c" opacity="0.45">
+        <path d="M 396 220 C 408 224, 418 230, 426 237 C 416 236, 404 230, 396 225 Z"/>
+        <path d="M 430 240 C 442 246, 452 252, 458 259 C 448 257, 437 251, 430 245 Z"/>
+        <path d="M 480 266 C 494 270, 508 274, 518 279 C 506 280, 491 277, 480 271 Z"/>
+      </g>
+      <!-- wrist gripping the bar -->
+      <path d="M 553 276 C 569 274, 579 284, 576 296 C 573 306, 559 308, 552 300 C 546 293, 545 280, 553 276 Z" fill="#414951" stroke="#20262b" stroke-width="2"/>
+      <path d="M 555 282 C 565 280, 572 286, 570 294" stroke="#8b959c" stroke-width="1.7" fill="none" opacity="0.7"/>
+      <path d="M 386 218 C 402 215, 416 219, 424 227 C 412 227, 396 224, 386 223 Z" fill="#a5aeb5" opacity="0.5"/>
+    </g>
+
+    <!-- NEAR leg: drawn last, so the pedalling stroke is unmistakable -->
+    <g transform="translate(360,298)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+          keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+          values="23.2;26.81;30.46;34.02;37.38;40.41;42.99;45.03;46.48;47.33;47.6;47.36;46.67;45.58;44.12;42.34;40.25;37.87;35.22;32.31;29.17;25.87;22.47;19.1;15.9;13.03;10.66;8.91;7.89;7.64;8.15;9.37;11.23;13.65;16.51;19.73;23.2"/>
+        <!-- feathered thigh -->
+        <path d="M -8 -19 C 18 -26 58 -21 84 -12 C 93 -8.5 93 8.5 84 12 C 58 21 18 24 -8 17 C -18 10 -18 -12 -8 -19 Z" fill="#39404a" stroke="#181c21" stroke-width="2.6"/>
+        <g stroke="#aeb9c1" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.7">
+          <path d="M -4 -16 C 12 -21 32 -21 48 -18"/>
+          <path d="M -2 -7 C 14 -12 34 -12 50 -9"/>
+          <path d="M 0 2 C 16 -2 36 -2 50 1"/>
+          <path d="M 0 11 C 16 8 34 8 48 10"/>
+        </g>
+        <g transform="translate(84,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+              keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+              values="69.36;64.64;60.21;56.2;52.8;50.17;48.49;47.88;48.39;49.97;52.51;55.84;59.79;64.2;68.89;73.75;78.64;83.46;88.09;92.43;96.38;99.82;102.64;104.75;106.08;106.55;106.16;104.92;102.88;100.12;96.74;92.84;88.53;83.92;79.12;74.23;69.36"/>
+            <!-- scaly tarsus -->
+            <path d="M 0 -10.5 C 34 -11.5 68 -8.5 91 -6 C 98 -5, 98 5, 91 6 C 68 8.5 34 11.5 0 10.5 Z" fill="#7d8891" stroke="#1b2025" stroke-width="2.6"/>
+            <g stroke="#3d464e" stroke-width="1.5" opacity="0.8">
+              <path d="M 18 -9.5 L 18 9.8"/><path d="M 34 -9.2 L 34 9.4"/>
+              <path d="M 50 -8.6 L 50 8.8"/><path d="M 66 -8 L 66 8.2"/><path d="M 80 -7 L 80 7.2"/>
+            </g>
+            <circle r="10" fill="#828d96" stroke="#1b2025" stroke-width="2.6"/>
+            <circle r="4" fill="#aab4bc" opacity="0.85"/>
+            <g transform="translate(94,0)">
+              <g>
+                <animateTransform attributeName="transform" type="rotate" calcMode="linear" dur="1.2s" repeatCount="indefinite"
+                  keyTimes="0;0.02778;0.05556;0.08333;0.11111;0.13889;0.16667;0.19444;0.22222;0.25;0.27778;0.30556;0.33333;0.36111;0.38889;0.41667;0.44444;0.47222;0.5;0.52778;0.55556;0.58333;0.61111;0.63889;0.66667;0.69444;0.72222;0.75;0.77778;0.80556;0.83333;0.86111;0.88889;0.91667;0.94444;0.97222;1"
+                  values="-92.56;-91.46;-90.67;-90.23;-90.18;-90.59;-91.49;-92.92;-94.87;-97.29;-100.11;-103.2;-106.46;-109.77;-113.01;-116.09;-118.89;-121.33;-123.31;-124.74;-125.55;-125.68;-125.11;-123.86;-121.98;-119.59;-116.82;-113.83;-110.78;-107.76;-104.89;-102.21;-99.76;-97.57;-95.63;-93.96;-92.56"/>
+                <use href="#pa-foot"/>
+              </g>
+            </g>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
+      </figure>
+      <figure class="pk-card" data-od-id="pelican-team">
+        <figcaption class="pk-head"><strong>两个 Agent</strong><span>一个执行，一个复核。复核通过才交付。</span></figcaption>
+        <svg class="pk-art" aria-label="双 Agent 的产出" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 900 600" role="img" 
+  <title>California Brown Pelican Riding a Bicycle</title>
+
+  <defs>
+    <linearGradient id="pb-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d7ebf3"/>
+      <stop offset="0.55" stop-color="#f3ead9"/>
+      <stop offset="1" stop-color="#f8e3c4"/>
+    </linearGradient>
+    <linearGradient id="pb-sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ba7bc"/>
+      <stop offset="1" stop-color="#abc8d4"/>
+    </linearGradient>
+    <linearGradient id="pb-road" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9a9287"/>
+      <stop offset="1" stop-color="#756e68"/>
+    </linearGradient>
+    <linearGradient id="pb-bodyG" x1="0.1" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#9aa5af"/>
+      <stop offset="0.45" stop-color="#727d88"/>
+      <stop offset="1" stop-color="#4b525a"/>
+    </linearGradient>
+    <linearGradient id="pb-bellyG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6f6559"/>
+      <stop offset="1" stop-color="#48423b"/>
+    </linearGradient>
+    <linearGradient id="pb-napeG" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#8a4527"/>
+      <stop offset="0.55" stop-color="#63301a"/>
+      <stop offset="1" stop-color="#43200f"/>
+    </linearGradient>
+    <linearGradient id="pb-pouchG" x1="0.2" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#e04a3a"/>
+      <stop offset="0.5" stop-color="#c02a22"/>
+      <stop offset="1" stop-color="#87130f"/>
+    </linearGradient>
+    <linearGradient id="pb-billG" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#d2cabb"/>
+      <stop offset="0.55" stop-color="#a89e8e"/>
+      <stop offset="1" stop-color="#7f7567"/>
+    </linearGradient>
+    <linearGradient id="pb-frameG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ea6b4c"/>
+      <stop offset="1" stop-color="#b53a29"/>
+    </linearGradient>
+    <linearGradient id="pb-wingG" x1="0.1" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#b3bec8"/>
+      <stop offset="0.6" stop-color="#8b959f"/>
+      <stop offset="1" stop-color="#69737d"/>
+    </linearGradient>
+    <radialGradient id="pb-sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffe9b8" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffe9b8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 16 spokes, reused by both wheels -->
+    <g id="pb-spokes" stroke="#e2e8ed" stroke-width="2.2" stroke-linecap="round">
+      <line y2="-78" transform="rotate(0)"/>
+      <line y2="-78" transform="rotate(22.5)"/>
+      <line y2="-78" transform="rotate(45)"/>
+      <line y2="-78" transform="rotate(67.5)"/>
+      <line y2="-78" transform="rotate(90)"/>
+      <line y2="-78" transform="rotate(112.5)"/>
+      <line y2="-78" transform="rotate(135)"/>
+      <line y2="-78" transform="rotate(157.5)"/>
+      <line y2="-78" transform="rotate(180)"/>
+      <line y2="-78" transform="rotate(202.5)"/>
+      <line y2="-78" transform="rotate(225)"/>
+      <line y2="-78" transform="rotate(247.5)"/>
+      <line y2="-78" transform="rotate(270)"/>
+      <line y2="-78" transform="rotate(292.5)"/>
+      <line y2="-78" transform="rotate(315)"/>
+      <line y2="-78" transform="rotate(337.5)"/>
+    </g>
+
+    <g id="pb-wheel">
+      <circle r="90" fill="none" stroke="#23272c" stroke-width="11"/>
+      <circle r="90" fill="none" stroke="#3b4148" stroke-width="3" stroke-dasharray="7 7"/>
+      <circle r="82" fill="none" stroke="#c6cfd7" stroke-width="5"/>
+      <circle r="79" fill="none" stroke="#98a2ab" stroke-width="1.2"/>
+      <use href="#pb-spokes" xlink:href="#pb-spokes"/>
+      <circle r="8" fill="#909aa2" stroke="#4c5359" stroke-width="2.5"/>
+      <circle r="2.5" fill="#3b4147"/>
+      <rect x="-2" y="-84" width="4" height="10" rx="1.5" fill="#3b4147"/>
+    </g>
+
+    <clipPath id="pb-bodyClip">
+      <path d="M352 306C340 268 366 236 412 228C452 221 496 232 516 254C534 274 528 300 508 314C480 332 430 340 396 336C372 333 356 322 352 306Z"/>
+    </clipPath>
+    <clipPath id="pb-neckClip">
+      <path d="M486 252C488 218 512 192 546 178C566 170 586 164 602 164C608 178 606 192 598 198C574 204 548 220 530 246C518 260 494 264 486 252Z"/>
+    </clipPath>
+    <clipPath id="pb-headClip">
+      <ellipse cx="612" cy="150" rx="36" ry="32"/>
+    </clipPath>
+    <clipPath id="pb-pouchClip">
+      <path d="M640 160C658 202 692 246 732 256C764 264 792 238 798 196C750 184 690 172 640 160Z"/>
+    </clipPath>
+    <clipPath id="pb-wingClip">
+      <path d="M432 254C470 242 516 256 550 280C566 291 580 296 594 296C596 306 586 312 572 310C538 305 500 296 468 292C444 289 430 274 432 254Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- ================= background ================= -->
+  <rect width="900" height="600" fill="url(#pb-sky)"/>
+  <circle cx="748" cy="112" r="150" fill="url(#pb-sun)"/>
+  <rect x="0" y="392" width="900" height="60" fill="url(#pb-sea)" opacity="0.55"/>
+  <path d="M0 452H900V520H0Z" fill="#cbb894" opacity="0.7"/>
+  <rect x="0" y="518" width="900" height="82" fill="url(#pb-road)"/>
+  <line x1="0" y1="518" x2="900" y2="518" stroke="#5f5952" stroke-width="3"/>
+  <line x1="-40" y1="562" x2="940" y2="562" stroke="#f0e6cf" stroke-width="6"
+        stroke-dasharray="48 40" stroke-linecap="round" opacity="0.85">
+    <animate attributeName="stroke-dashoffset" values="0;-88" dur="0.9s" repeatCount="indefinite"/>
+  </line>
+  <g stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.5">
+    <line x1="806" y1="252" x2="884" y2="252">
+      <animate attributeName="opacity" values="0.2;0.9;0.2" dur="1.2s" repeatCount="indefinite"/>
+    </line>
+    <line x1="826" y1="300" x2="890" y2="300">
+      <animate attributeName="opacity" values="0.9;0.2;0.9" dur="1.2s" repeatCount="indefinite"/>
+    </line>
+    <line x1="798" y1="346" x2="872" y2="346">
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="1.2s" repeatCount="indefinite"/>
+    </line>
+  </g>
+  <ellipse cx="450" cy="524" rx="252" ry="14" fill="#4a443e" opacity="0.28"/>
+
+  <!-- ================= far (offside) leg, behind the frame ================= -->
+  <g>
+    <path fill="none" stroke="#2c3238" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"
+          d="M392 328L451.7 400.6L380 455">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" calcMode="linear"
+        values="M392 328L451.7 400.6L380 455;M392 328L457 395.9L381.4 444.6;M392 328L463 389.6L385.4 435;M392 328L469.4 381.3L391.7 426.7;M392 328L475.4 371.3L400 420.4;M392 328L480.2 360.5L409.6 416.4;M392 328L483.2 350.9L420 415;M392 328L484.5 344.5L430.4 416.4;M392 328L484.9 342.4L440 420.4;M392 328L484.6 344.4L448.3 426.7;M392 328L483.5 349.7L454.6 435;M392 328L481.2 357.5L458.6 444.6;M392 328L477.6 366.7L460 455;M392 328L472.6 376.4L458.6 465.4;M392 328L466.2 385.7L454.6 475;M392 328L459 393.9L448.3 483.3;M392 328L451.9 400.4L440 489.6;M392 328L445.9 405L430.4 493.6;M392 328L441.9 407.7L420 495;M392 328L439.9 408.9L409.6 493.6;M392 328L439.8 408.9L400 489.6;M392 328L441.2 408.1L391.7 483.3;M392 328L443.7 406.5L385.4 475;M392 328L447.3 404L381.4 465.4;M392 328L451.7 400.6L380 455"/>
+    </path>
+    <path fill="#20262b" d="M370 447L378 451L406 455L399 458L406 461L397 463L402 467L387 466L373 459Z">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" calcMode="linear"
+        values="M370 447L378 451L406 455L399 458L406 461L397 463L402 467L387 466L373 459Z;M371.4 436.6L379.4 440.6L407.4 444.6L400.4 447.6L407.4 450.6L398.4 452.6L403.4 456.6L388.4 455.6L374.4 448.6Z;M375.4 427L383.4 431L411.4 435L404.4 438L411.4 441L402.4 443L407.4 447L392.4 446L378.4 439Z;M381.7 418.7L389.7 422.7L417.7 426.7L410.7 429.7L417.7 432.7L408.7 434.7L413.7 438.7L398.7 437.7L384.7 430.7Z;M390 412.4L398 416.4L426 420.4L419 423.4L426 426.4L417 428.4L422 432.4L407 431.4L393 424.4Z;M399.6 408.4L407.6 412.4L435.6 416.4L428.6 419.4L435.6 422.4L426.6 424.4L431.6 428.4L416.6 427.4L402.6 420.4Z;M410 407L418 411L446 415L439 418L446 421L437 423L442 427L427 426L413 419Z;M420.4 408.4L428.4 412.4L456.4 416.4L449.4 419.4L456.4 422.4L447.4 424.4L452.4 428.4L437.4 427.4L423.4 420.4Z;M430 412.4L438 416.4L466 420.4L459 423.4L466 426.4L457 428.4L462 432.4L447 431.4L433 424.4Z;M438.3 418.7L446.3 422.7L474.3 426.7L467.3 429.7L474.3 432.7L465.3 434.7L470.3 438.7L455.3 437.7L441.3 430.7Z;M444.6 427L452.6 431L480.6 435L473.6 438L480.6 441L471.6 443L476.6 447L461.6 446L447.6 439Z;M448.6 436.6L456.6 440.6L484.6 444.6L477.6 447.6L484.6 450.6L475.6 452.6L480.6 456.6L465.6 455.6L451.6 448.6Z;M450 447L458 451L486 455L479 458L486 461L477 463L482 467L467 466L453 459Z;M448.6 457.4L456.6 461.4L484.6 465.4L477.6 468.4L484.6 471.4L475.6 473.4L480.6 477.4L465.6 476.4L451.6 469.4Z;M444.6 467L452.6 471L480.6 475L473.6 478L480.6 481L471.6 483L476.6 487L461.6 486L447.6 479Z;M438.3 475.3L446.3 479.3L474.3 483.3L467.3 486.3L474.3 489.3L465.3 491.3L470.3 495.3L455.3 494.3L441.3 487.3Z;M430 481.6L438 485.6L466 489.6L459 492.6L466 495.6L457 497.6L462 501.6L447 500.6L433 493.6Z;M420.4 485.6L428.4 489.6L456.4 493.6L449.4 496.6L456.4 499.6L447.4 501.6L452.4 505.6L437.4 504.6L423.4 497.6Z;M410 487L418 491L446 495L439 498L446 501L437 503L442 507L427 506L413 499Z;M399.6 485.6L407.6 489.6L435.6 493.6L428.6 496.6L435.6 499.6L426.6 501.6L431.6 505.6L416.6 504.6L402.6 497.6Z;M390 481.6L398 485.6L426 489.6L419 492.6L426 495.6L417 497.6L422 501.6L407 500.6L393 493.6Z;M381.7 475.3L389.7 479.3L417.7 483.3L410.7 486.3L417.7 489.3L408.7 491.3L413.7 495.3L398.7 494.3L384.7 487.3Z;M375.4 467L383.4 471L411.4 475L404.4 478L411.4 481L402.4 483L407.4 487L392.4 486L378.4 479Z;M371.4 457.4L379.4 461.4L407.4 465.4L400.4 468.4L407.4 471.4L398.4 473.4L403.4 477.4L388.4 476.4L374.4 469.4Z;M370 447L378 451L406 455L399 458L406 461L397 463L402 467L387 466L373 459Z"/>
+    </path>
+  </g>
+
+  <!-- ================= bicycle ================= -->
+  <g id="pb-bike">
+    <!-- wheels: continuous, seamless 0 to 360 every 2s -->
+    <g transform="translate(250,430)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2s" repeatCount="indefinite"/>
+        <use href="#pb-wheel" xlink:href="#pb-wheel"/>
+        <!-- rear sprocket is fixed to the rear hub, so it shares the wheel's rotation -->
+        <circle r="13" fill="none" stroke="#9aa3ab" stroke-width="5"/>
+        <circle r="16" fill="none" stroke="#7f888f" stroke-width="4" stroke-dasharray="2.5 4"/>
+      </g>
+    </g>
+    <g transform="translate(650,430)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2s" repeatCount="indefinite"/>
+        <use href="#pb-wheel" xlink:href="#pb-wheel"/>
+      </g>
+    </g>
+
+    <!-- diamond frame: seat tube, top tube, down tube, seat stay, chain stay, head tube, fork -->
+    <g fill="none" stroke="url(#pb-frameG)" stroke-width="10" stroke-linecap="round">
+      <line x1="420" y1="455" x2="352" y2="300"/>
+      <line x1="352" y1="300" x2="585" y2="300"/>
+      <line x1="420" y1="455" x2="605" y2="352"/>
+      <line x1="352" y1="300" x2="250" y2="430"/>
+      <line x1="420" y1="455" x2="250" y2="430"/>
+    </g>
+    <line x1="586" y1="294" x2="609" y2="356" stroke="#8f2c1f" stroke-width="13" stroke-linecap="round"/>
+    <path d="M609 356C620 384 636 410 650 430" fill="none" stroke="#4d545b" stroke-width="8" stroke-linecap="round"/>
+    <g fill="none" stroke="#ffbaa2" stroke-width="2" stroke-linecap="round" opacity="0.5">
+      <line x1="357" y1="296" x2="580" y2="296"/>
+      <line x1="425" y1="450" x2="601" y2="349"/>
+      <line x1="349" y1="306" x2="415" y2="452"/>
+    </g>
+
+    <!-- seat post and saddle -->
+    <line x1="352" y1="300" x2="345" y2="284" stroke="#3f464c" stroke-width="8" stroke-linecap="round"/>
+    <path d="M310 292C322 280 350 276 372 280C382 282 384 292 374 296C356 303 326 304 312 300C306 298 306 295 310 292Z" fill="#2c3237"/>
+    <path d="M314 288C328 281 350 279 368 283" fill="none" stroke="#5c656d" stroke-width="2.5" stroke-linecap="round"/>
+
+    <!-- stem and drop handlebar -->
+    <line x1="597" y1="288" x2="622" y2="276" stroke="#3f464c" stroke-width="8" stroke-linecap="round"/>
+    <path d="M597 290C622 272 652 280 656 302C660 322 646 336 628 334" fill="none" stroke="#3f464c" stroke-width="8" stroke-linecap="round"/>
+    <path d="M589 292C597 288 605 287 612 288" fill="none" stroke="#20252a" stroke-width="11" stroke-linecap="round"/>
+
+    <!-- chain: two runs between chainring and sprocket, links scrolling -->
+    <g stroke="#6a737b" stroke-width="4.5" fill="none" stroke-linecap="round">
+      <line x1="250" y1="415" x2="420" y2="428"/>
+      <line x1="250" y1="445" x2="420" y2="482"/>
+    </g>
+    <g stroke="#2f353b" stroke-width="4.5" fill="none" stroke-dasharray="6 10">
+      <line x1="250" y1="415" x2="420" y2="428">
+        <animate attributeName="stroke-dashoffset" values="0;-16" dur="0.25s" repeatCount="indefinite"/>
+      </line>
+      <line x1="250" y1="445" x2="420" y2="482">
+        <animate attributeName="stroke-dashoffset" values="0;16" dur="0.25s" repeatCount="indefinite"/>
+      </line>
+    </g>
+  </g>
+
+  <!-- ========= crank, chainring and pedals: same 2s period and phase as the wheels ========= -->
+  <g transform="translate(420,455)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2s" repeatCount="indefinite"/>
+      <circle r="27.5" fill="none" stroke="#6f787f" stroke-width="6" stroke-dasharray="3 6.2"/>
+      <circle r="24" fill="none" stroke="#b8c1c9" stroke-width="4"/>
+      <g stroke="#aab3bb" stroke-width="4" stroke-linecap="round">
+        <line y2="-22" transform="rotate(0)"/>
+        <line y2="-22" transform="rotate(72)"/>
+        <line y2="-22" transform="rotate(144)"/>
+        <line y2="-22" transform="rotate(216)"/>
+        <line y2="-22" transform="rotate(288)"/>
+      </g>
+
+      <!-- offside crank arm and pedal, 180 degrees out of phase -->
+      <g transform="rotate(180)">
+        <rect x="2" y="-5" width="42" height="10" rx="4" fill="#394046"/>
+        <g transform="translate(40,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="2s" repeatCount="indefinite"/>
+            <rect x="-13" y="-5" width="26" height="10" rx="3" fill="#272d33"/>
+            <rect x="-13" y="-5" width="26" height="3" rx="1.5" fill="#525b62"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- nearside crank arm and pedal -->
+      <g>
+        <rect x="2" y="-6" width="44" height="12" rx="5" fill="#5b646c"/>
+        <rect x="4" y="-4" width="40" height="3" rx="1.5" fill="#8d969e"/>
+        <circle r="7.5" fill="#7d868e" stroke="#454d54" stroke-width="2"/>
+        <g transform="translate(40,0)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" from="0" to="-360" dur="2s" repeatCount="indefinite"/>
+            <rect x="-15" y="-6" width="30" height="12" rx="3" fill="#2b3137"/>
+            <rect x="-15" y="-6" width="30" height="3.5" rx="1.75" fill="#6b747c"/>
+            <rect x="-15" y="2.5" width="30" height="3.5" rx="1.75" fill="#1b2025"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- ================= pelican ================= -->
+  <g id="pb-pelican">
+
+    <!-- tail: short fan of rectrices, tucked under the folded wing tips -->
+    <path d="M362 308C334 312 306 322 282 336C288 347 301 353 315 351C336 347 353 336 364 327Z" fill="#3f464e" stroke="#2c333a" stroke-width="1.6"/>
+    <g stroke="#2c333a" stroke-width="1.5" fill="none">
+      <path d="M292 332C312 330 336 324 358 316"/>
+      <path d="M300 344C320 341 342 334 362 325"/>
+    </g>
+
+    <!-- torso -->
+    <path d="M352 306C340 268 366 236 412 228C452 221 496 232 516 254C534 274 528 300 508 314C480 332 430 340 396 336C372 333 356 322 352 306Z" fill="url(#pb-bodyG)"/>
+    <g clip-path="url(#pb-bodyClip)">
+      <!-- dark brown belly of the adult, silvery grey mantle above -->
+      <path d="M336 302C372 250 452 226 534 248L538 322L332 344Z" fill="url(#pb-bellyG)" opacity="0.5"/>
+      <!-- scapular and covert feather scalloping -->
+      <g fill="none" stroke="#c8d1d9" stroke-width="1.7" opacity="0.6">
+        <path d="M340 244q16 14 32 0M372 244q16 14 32 0M404 244q16 14 32 0M436 244q16 14 32 0M468 244q16 14 32 0M500 244q16 14 32 0"/>
+        <path d="M332 262q16 14 32 0M364 262q16 14 32 0M396 262q16 14 32 0M428 262q16 14 32 0M460 262q16 14 32 0M492 262q16 14 32 0M524 262q16 14 32 0"/>
+        <path d="M340 280q16 14 32 0M372 280q16 14 32 0M404 280q16 14 32 0M436 280q16 14 32 0M468 280q16 14 32 0M500 280q16 14 32 0"/>
+        <path d="M332 298q16 14 32 0M364 298q16 14 32 0M396 298q16 14 32 0M428 298q16 14 32 0M460 298q16 14 32 0M492 298q16 14 32 0M524 298q16 14 32 0"/>
+        <path d="M340 316q16 14 32 0M372 316q16 14 32 0M404 316q16 14 32 0M436 316q16 14 32 0M468 316q16 14 32 0"/>
+      </g>
+      <g fill="none" stroke="#f0f4f7" stroke-width="1.1" opacity="0.45">
+        <path d="M358 228q18 14 36 0M394 228q18 14 36 0M430 228q18 14 36 0M466 228q18 14 36 0"/>
+      </g>
+    </g>
+    <path d="M352 306C340 268 366 236 412 228C452 221 496 232 516 254C534 274 528 300 508 314C480 332 430 340 396 336C372 333 356 322 352 306Z" fill="none" stroke="#39414a" stroke-width="2"/>
+
+    <!-- folded wing tips: long primaries lying back across the rump -->
+    <g fill="#333b43" stroke="#232a31" stroke-width="1.4" stroke-linejoin="round">
+      <path d="M466 268C420 280 372 289 330 293C372 302 424 296 462 286C472 281 474 272 466 268Z"/>
+      <path d="M470 280C424 292 378 300 336 305C378 314 428 307 466 297C476 292 478 283 470 280Z"/>
+      <path d="M472 292C428 303 384 311 344 316C384 324 430 318 466 309C476 304 478 295 472 292Z"/>
+      <path d="M472 304C432 314 392 321 354 326C390 334 432 328 464 320C474 316 476 307 472 304Z"/>
+    </g>
+    <g fill="none" stroke="#828b94" stroke-width="1.2" opacity="0.8">
+      <path d="M460 274C418 284 374 292 338 295"/>
+      <path d="M464 286C422 296 380 303 344 307"/>
+      <path d="M466 298C426 307 388 313 352 318"/>
+      <path d="M466 310C430 318 396 323 362 328"/>
+    </g>
+
+    <!-- feathered thigh cover, hiding where the legs meet the belly -->
+    <path d="M368 300C396 291 426 296 436 315C442 328 424 342 399 342C376 342 360 329 360 317C360 310 363 303 368 300Z" fill="#59616a" stroke="#3c444c" stroke-width="1.6"/>
+    <g fill="none" stroke="#aeb8c1" stroke-width="1.5" opacity="0.6">
+      <path d="M370 310q13 11 26 0M396 310q13 11 26 0M366 324q13 11 26 0M392 324q13 11 26 0"/>
+    </g>
+
+    <!-- near wing, bent forward so the wrist rests on the handlebar -->
+    <path d="M432 254C470 242 516 256 550 280C566 291 580 296 594 296C596 306 586 312 572 310C538 305 500 296 468 292C444 289 430 274 432 254Z"
+          fill="url(#pb-wingG)" stroke="#2f3740" stroke-width="2.4"/>
+    <g clip-path="url(#pb-wingClip)">
+      <!-- marginal coverts -->
+      <g fill="none" stroke="#e2e9ee" stroke-width="1.7" opacity="0.7">
+        <path d="M432 252q14 12 28 0M460 256q14 12 28 0M488 264q14 12 28 0M516 274q14 12 28 0M544 286q14 12 28 0"/>
+      </g>
+      <!-- greater coverts as separated feathers along the trailing edge -->
+      <g fill="#5d6771" stroke="#414a53" stroke-width="1.2">
+        <path d="M440 276C454 276 468 281 478 288C466 294 450 292 438 287Z"/>
+        <path d="M472 284C486 284 500 289 510 296C498 302 482 300 470 295Z"/>
+        <path d="M504 292C518 293 532 298 541 305C529 311 513 308 502 303Z"/>
+        <path d="M534 300C546 302 558 307 566 313C555 318 542 315 532 310Z"/>
+      </g>
+      <path d="M428 248C462 238 500 246 530 264" fill="none" stroke="#f2f6f9" stroke-width="3.5" opacity="0.55"/>
+    </g>
+    <!-- wrist folded over the bar top, alula raised -->
+    <path d="M574 288C588 282 606 284 612 292C617 300 610 310 597 311C584 312 574 305 572 297C571 292 571 289 574 288Z"
+          fill="#7e8892" stroke="#2f3740" stroke-width="2"/>
+    <path d="M578 287C589 280 601 280 608 285" fill="none" stroke="#333b43" stroke-width="4.5" stroke-linecap="round"/>
+
+    <!-- neck -->
+    <path d="M486 252C488 218 512 192 546 178C566 170 586 164 602 164C608 178 606 192 598 198C574 204 548 220 530 246C518 260 494 264 486 252Z" fill="#f8f5ee"/>
+    <g clip-path="url(#pb-neckClip)">
+      <!-- broad dark chestnut hindneck: the breeding-plumage marker -->
+      <path d="M604 160C598 180 572 194 548 206C526 219 508 236 498 256L478 246C490 214 516 188 548 174C568 165 590 158 604 160Z" fill="url(#pb-napeG)"/>
+      <g fill="none" stroke="#a3603a" stroke-width="1.2" opacity="0.6">
+        <path d="M584 172q10 10 20 2M562 184q10 10 20 2M540 198q10 10 20 2M520 214q10 10 20 2M502 234q10 10 20 2"/>
+      </g>
+      <!-- crisp white border stripe along the lower edge of the chestnut -->
+      <path d="M498 258C508 238 526 221 550 208C572 196 592 186 604 184" fill="none" stroke="#fdfbf6" stroke-width="4.5" opacity="0.95"/>
+      <!-- pale straw wash where the foreneck meets the breast -->
+      <path d="M484 260C494 244 508 232 522 224C528 238 516 252 504 260C496 266 488 266 484 260Z" fill="#f0d78b" opacity="0.5"/>
+      <g fill="none" stroke="#d9d3c5" stroke-width="1.2" opacity="0.8">
+        <path d="M500 250q12 9 24 0M524 234q12 9 24 0M550 218q12 9 24 0M574 206q12 9 24 0"/>
+      </g>
+    </g>
+    <path d="M486 252C488 218 512 192 546 178C566 170 586 164 602 164" fill="none" stroke="#33190c" stroke-width="1.6" opacity="0.55"/>
+    <path d="M530 246C548 220 574 204 598 198" fill="none" stroke="#d2cbbd" stroke-width="1.6" opacity="0.75"/>
+
+    <!-- head -->
+    <ellipse cx="612" cy="150" rx="36" ry="32" fill="#f9f6ef"/>
+    <g clip-path="url(#pb-headClip)">
+      <!-- straw-yellow breeding crown -->
+      <path d="M574 148C578 128 596 118 614 119C634 120 649 131 652 148C628 134 597 136 574 148Z" fill="#f0cf6d"/>
+      <path d="M578 144C592 132 616 130 638 136" fill="none" stroke="#dcb84f" stroke-width="2" stroke-linecap="round"/>
+      <!-- chestnut of the hindneck reaching onto the back of the head -->
+      <path d="M576 164C578 180 590 191 606 194C595 183 590 172 590 160C585 163 580 164 576 164Z" fill="#5f2e18"/>
+      <g fill="none" stroke="#e6e1d4" stroke-width="1.1" opacity="0.85">
+        <path d="M586 172q9 7 18 0M604 176q9 7 18 0M594 184q9 7 18 0M612 162q9 7 18 0"/>
+      </g>
+      <!-- soft shading where the bill meets the face -->
+      <path d="M638 130C648 140 650 160 642 176L668 180L672 126Z" fill="#ddd6c6" opacity="0.3"/>
+    </g>
+    <ellipse cx="612" cy="150" rx="36" ry="32" fill="none" stroke="#3f3a32" stroke-width="1.6" opacity="0.4"/>
+    <!-- bare blue-grey orbital skin and pale breeding iris -->
+    <ellipse cx="624" cy="140" rx="11" ry="9.5" fill="#9bb7c8"/>
+    <circle cx="624" cy="140" r="7.4" fill="#f7f5ed"/>
+    <circle cx="624.8" cy="140" r="4.5" fill="#ece1a2"/>
+    <circle cx="625.5" cy="140" r="2.4" fill="#12100e"/>
+    <circle cx="623.5" cy="138" r="1.3" fill="#ffffff"/>
+
+    <!-- gular pouch: swollen breeding red, with a gentle jiggle -->
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+        values="0 644 160;-1.8 644 160;0 644 160;1.8 644 160;0 644 160"
+        dur="2s" repeatCount="indefinite"/>
+      <path d="M640 160C658 202 692 246 732 256C764 264 792 238 798 196C750 184 690 172 640 160Z" fill="url(#pb-pouchG)"/>
+      <g clip-path="url(#pb-pouchClip)">
+        <path d="M702 180C728 210 738 238 730 264L808 256L816 174Z" fill="#79100d" opacity="0.4"/>
+        <g fill="none" stroke="#f5a294" stroke-width="1.7" opacity="0.5">
+          <path d="M658 168C672 198 686 226 698 250"/>
+          <path d="M682 176C696 202 710 228 720 254"/>
+          <path d="M706 184C720 206 732 228 740 250"/>
+          <path d="M732 192C744 210 754 228 760 242"/>
+        </g>
+      </g>
+      <path d="M640 160C658 202 692 246 732 256C764 264 792 238 798 196C750 184 690 172 640 160Z" fill="none" stroke="#79100d" stroke-width="2"/>
+      <!-- lower mandible rami running along the top of the pouch -->
+      <path d="M640 162C690 174 748 188 796 198" fill="none" stroke="#8d8375" stroke-width="6" stroke-linecap="round"/>
+      <path d="M644 160C692 171 748 185 794 195" fill="none" stroke="#c8c1b2" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- upper mandible with the hooked nail -->
+    <path d="M642 138C690 146 760 166 812 186C820 189 823 196 817 200C811 205 802 200 796 197C752 182 692 168 648 160C641 155 639 143 642 138Z"
+          fill="url(#pb-billG)" stroke="#6f675b" stroke-width="1.8"/>
+    <path d="M646 142C692 150 760 171 809 190" fill="none" stroke="#e9e3d7" stroke-width="2.2" opacity="0.65"/>
+    <path d="M808 187C818 189 825 195 821 202C817 208 807 204 800 199" fill="#8d8376" stroke="#6f675b" stroke-width="1.5"/>
+    <!-- reddish breeding flush at the bill base -->
+    <path d="M642 140C658 143 676 148 692 154C680 160 660 161 647 159C641 153 640 145 642 140Z" fill="#c96a4d" opacity="0.5"/>
+    <g fill="#7e7568" opacity="0.5">
+      <circle cx="690" cy="155" r="1.8"/><circle cx="720" cy="165" r="1.8"/>
+      <circle cx="750" cy="175" r="1.8"/><circle cx="780" cy="185" r="1.8"/>
+    </g>
+    <path d="M656 148C668 151 680 155 692 159" fill="none" stroke="#6f675b" stroke-width="1.4" opacity="0.75"/>
+  </g>
+
+  <!-- ============ near leg, drawn on top, tracking the nearside pedal ============ -->
+  <g>
+    <path fill="none" stroke="#59606a" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"
+          d="M400 325L483.5 368.1L460 455">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" calcMode="linear"
+        values="M400 325L483.5 368.1L460 455;M400 325L478 377.5L458.6 465.4;M400 325L471.1 386.5L454.6 475;M400 325L463.3 394.5L448.3 483.3;M400 325L455.4 401L440 489.6;M400 325L448.5 405.5L430.4 493.6;M400 325L443.8 408.2L420 495;M400 325L441.4 409.4L409.6 493.6;M400 325L441.1 409.6L400 489.6;M400 325L442.4 408.9L391.7 483.3;M400 325L445 407.6L385.4 475;M400 325L448.6 405.5L381.4 465.4;M400 325L453.1 402.5L380 455;M400 325L458.6 398.5L381.4 444.6;M400 325L464.9 393L385.4 435;M400 325L471.8 385.7L391.7 426.7;M400 325L478.6 376.5L400 420.4;M400 325L484.4 366.3L409.6 416.4;M400 325L488.5 356.6L420 415;M400 325L490.7 349.6L430.4 416.4;M400 325L491.5 346.5L440 420.4;M400 325L491.2 347.6L448.3 426.7;M400 325L490 352.2L454.6 435;M400 325L487.5 359.4L458.6 444.6;M400 325L483.5 368.1L460 455"/>
+    </path>
+    <path fill="none" stroke="#8e979f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"
+          d="M400 325L483.5 368.1L460 455">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" calcMode="linear"
+        values="M400 325L483.5 368.1L460 455;M400 325L478 377.5L458.6 465.4;M400 325L471.1 386.5L454.6 475;M400 325L463.3 394.5L448.3 483.3;M400 325L455.4 401L440 489.6;M400 325L448.5 405.5L430.4 493.6;M400 325L443.8 408.2L420 495;M400 325L441.4 409.4L409.6 493.6;M400 325L441.1 409.6L400 489.6;M400 325L442.4 408.9L391.7 483.3;M400 325L445 407.6L385.4 475;M400 325L448.6 405.5L381.4 465.4;M400 325L453.1 402.5L380 455;M400 325L458.6 398.5L381.4 444.6;M400 325L464.9 393L385.4 435;M400 325L471.8 385.7L391.7 426.7;M400 325L478.6 376.5L400 420.4;M400 325L484.4 366.3L409.6 416.4;M400 325L488.5 356.6L420 415;M400 325L490.7 349.6L430.4 416.4;M400 325L491.5 346.5L440 420.4;M400 325L491.2 347.6L448.3 426.7;M400 325L490 352.2L454.6 435;M400 325L487.5 359.4L458.6 444.6;M400 325L483.5 368.1L460 455"/>
+    </path>
+    <path fill="#394047" stroke="#242a30" stroke-width="1.6" stroke-linejoin="round"
+          d="M450 447L458 451L486 455L479 458L486 461L477 463L482 467L467 466L453 459Z">
+      <animate attributeName="d" dur="2s" repeatCount="indefinite" calcMode="linear"
+        values="M450 447L458 451L486 455L479 458L486 461L477 463L482 467L467 466L453 459Z;M448.6 457.4L456.6 461.4L484.6 465.4L477.6 468.4L484.6 471.4L475.6 473.4L480.6 477.4L465.6 476.4L451.6 469.4Z;M444.6 467L452.6 471L480.6 475L473.6 478L480.6 481L471.6 483L476.6 487L461.6 486L447.6 479Z;M438.3 475.3L446.3 479.3L474.3 483.3L467.3 486.3L474.3 489.3L465.3 491.3L470.3 495.3L455.3 494.3L441.3 487.3Z;M430 481.6L438 485.6L466 489.6L459 492.6L466 495.6L457 497.6L462 501.6L447 500.6L433 493.6Z;M420.4 485.6L428.4 489.6L456.4 493.6L449.4 496.6L456.4 499.6L447.4 501.6L452.4 505.6L437.4 504.6L423.4 497.6Z;M410 487L418 491L446 495L439 498L446 501L437 503L442 507L427 506L413 499Z;M399.6 485.6L407.6 489.6L435.6 493.6L428.6 496.6L435.6 499.6L426.6 501.6L431.6 505.6L416.6 504.6L402.6 497.6Z;M390 481.6L398 485.6L426 489.6L419 492.6L426 495.6L417 497.6L422 501.6L407 500.6L393 493.6Z;M381.7 475.3L389.7 479.3L417.7 483.3L410.7 486.3L417.7 489.3L408.7 491.3L413.7 495.3L398.7 494.3L384.7 487.3Z;M375.4 467L383.4 471L411.4 475L404.4 478L411.4 481L402.4 483L407.4 487L392.4 486L378.4 479Z;M371.4 457.4L379.4 461.4L407.4 465.4L400.4 468.4L407.4 471.4L398.4 473.4L403.4 477.4L388.4 476.4L374.4 469.4Z;M370 447L378 451L406 455L399 458L406 461L397 463L402 467L387 466L373 459Z;M371.4 436.6L379.4 440.6L407.4 444.6L400.4 447.6L407.4 450.6L398.4 452.6L403.4 456.6L388.4 455.6L374.4 448.6Z;M375.4 427L383.4 431L411.4 435L404.4 438L411.4 441L402.4 443L407.4 447L392.4 446L378.4 439Z;M381.7 418.7L389.7 422.7L417.7 426.7L410.7 429.7L417.7 432.7L408.7 434.7L413.7 438.7L398.7 437.7L384.7 430.7Z;M390 412.4L398 416.4L426 420.4L419 423.4L426 426.4L417 428.4L422 432.4L407 431.4L393 424.4Z;M399.6 408.4L407.6 412.4L435.6 416.4L428.6 419.4L435.6 422.4L426.6 424.4L431.6 428.4L416.6 427.4L402.6 420.4Z;M410 407L418 411L446 415L439 418L446 421L437 423L442 427L427 426L413 419Z;M420.4 408.4L428.4 412.4L456.4 416.4L449.4 419.4L456.4 422.4L447.4 424.4L452.4 428.4L437.4 427.4L423.4 420.4Z;M430 412.4L438 416.4L466 420.4L459 423.4L466 426.4L457 428.4L462 432.4L447 431.4L433 424.4Z;M438.3 418.7L446.3 422.7L474.3 426.7L467.3 429.7L474.3 432.7L465.3 434.7L470.3 438.7L455.3 437.7L441.3 430.7Z;M444.6 427L452.6 431L480.6 435L473.6 438L480.6 441L471.6 443L476.6 447L461.6 446L447.6 439Z;M448.6 436.6L456.6 440.6L484.6 444.6L477.6 447.6L484.6 450.6L475.6 452.6L480.6 456.6L465.6 455.6L451.6 448.6Z;M450 447L458 451L486 455L479 458L486 461L477 463L482 467L467 466L453 459Z"/>
+    </path>
+  </g>
+</svg>
+      </figure>
+    </div>
+    <!-- Run record. Every figure below is read off the two recorded sessions:
+         local:2026-08-08T08:29:40.051Z-3k50ha (one agent) and
+         local:2026-08-08T09:14:17.615Z-hg7p56 (two agents). -->
+    <div class="pk-run" data-od-id="pelican-run">
+      <h3>这两份产物各自是怎么跑出来的。</h3>
+      <p class="pk-run-sub">两次运行都被完整记录下来，放在下面同一条时间轴上。点任意一步，看那个 Agent 当时在做什么、花了多少钱、说了什么。</p>
+
+      <div class="pk-tl" role="group" aria-label="两次运行的各个步骤">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s1">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s2">
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s3" checked>
+        <input class="pk-r" type="radio" name="pk-step" id="pk-s4">
+
+        <div class="pk-rows">
+          <div class="pk-ruler" aria-hidden="true">
+            <span></span>
+            <div class="pk-ruler-track">
+              <i style="left:0">0</i>
+              <i style="left:30.755%">10 分钟</i>
+              <i style="left:61.511%">20 分钟</i>
+              <i style="left:92.266%">30 分钟</i>
+            </div>
+            <span></span>
+          </div>
+
+          <div class="pk-row" data-od-id="pelican-run-single">
+            <p class="pk-row-lab">一个 Agent</p>
+            <div class="pk-bar">
+              <label class="pk-seg" for="pk-s1" style="width:100%">
+                <b>执行</b><i>32 分 31 秒</i>
+                <span class="pk-vh">一个 Agent，执行，32 分 31 秒</span>
+              </label>
+            </div>
+            <p class="pk-row-tot"><b>32 分 31 秒</b><span>$7.28 · 139.1k token</span></p>
+          </div>
+
+          <div class="pk-row" data-od-id="pelican-run-team">
+            <p class="pk-row-lab">两个 Agent</p>
+            <div class="pk-bar">
+              <label class="pk-seg" for="pk-s2" style="width:71.694%">
+                <b>执行</b><i>23 分 19 秒</i>
+                <span class="pk-vh">两个 Agent，执行，23 分 19 秒</span>
+              </label>
+              <label class="pk-seg pk-seg-review" for="pk-s3" style="width:26.782%">
+                <b>复核</b><i>8 分 42 秒</i>
+                <span class="pk-vh">两个 Agent，复核，8 分 42 秒</span>
+              </label>
+              <label class="pk-seg pk-seg-tiny" for="pk-s4" style="width:1.175%">
+                <span class="pk-vh">两个 Agent，执行定稿，23 秒</span>
+              </label>
+            </div>
+            <p class="pk-row-tot"><b>32 分 24 秒</b><span>$8.14 · 121.2k token</span></p>
+          </div>
+
+          <p class="pk-cap">同样的墙钟时间，切分方式不同。<b>两个 Agent 生成的 token 反而比一个少 13%</b>——多出来的 $0.85 花在上下文上：两条会话各自带着自己的历史。两条轴都按上面那把尺子的真实比例画——第二条末尾那一小条就是 23 秒的定稿。</p>
+        </div>
+
+        <div class="pk-panels">
+          <div class="pk-panel" id="pk-p1">
+            <div class="pk-panel-head"><b>一个 Agent · 执行</b><span>32 分 31 秒 · 40 轮模型往返 · 39 次工具调用 · $7.28 · 08:29:40 → 09:02:11</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步写下的全部 11 条消息，未经编辑。它这一轮是用英文工作的。只把它贴进对话的 SVG 源码折叠了。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="en"><time>08:31:12</time><p>I&#x27;ll compute the leg inverse-kinematics keyframes first so the feet track the pedals exactly, then assemble the SVG.</p></li>
+              <li lang="en"><time>08:34:15</time><p>Geometry is settled; recomputing the IK against the final frame dimensions.</p></li>
+              <li lang="en"><time>08:38:22</time><p>Feet track the pedals to within 0.14px. Now assembling the SVG.</p></li>
+              <li lang="en"><time>08:41:39</time><p>XML comments can&#x27;t contain <code>--</code> — my divider comments are invalid. Fixing.</p></li>
+              <li lang="en"><time>08:44:05</time><p>The bike reads well; the pelican&#x27;s proportions are wrong and the legs are lost behind it. Let me check the current markup around the bird before replacing it.</p></li>
+              <li lang="en"><time>08:48:37</time><p>The proportions are still off and the legs are buried under the wing. Rewriting with a smaller, lighter bird and the pedalling leg drawn in front.</p></li>
+              <li lang="en"><time>08:54:26</time><p>The static renderer ignores SMIL, so that PNG shows the un-animated pose. Let me bake explicit poses at several crank angles to verify the geometry.</p></li>
+              <li lang="en"><time>08:55:47</time><p>Mechanics check out at every phase. Now improving leg readability and the pouch attachment.</p></li>
+              <li lang="en"><time>08:56:25</time><p>Baked poses are correct. Now confirming SMIL actually runs in a real browser.</p></li>
+              <li lang="en"><time>08:57:58</time><p>Everything checks out mechanically. One last fix so the chain shares the exact 1.2 s master period.</p></li>
+              <li lang="en"><time>09:02:05</time><p>Here is the finished animated SVG. Save it as a <code>.svg</code> file and open it in a browser (also embeddable via <code>&lt;img&gt;</code>, <code>&lt;object&gt;</code>, or inline in HTML). It&#x27;s fully self-contained — no external fonts, images, scripts, or CSS.
+
+<strong>How it&#x27;s built</strong>
+
+- <strong>Bicycle</strong> — a true diamond frame: seat tube, top tube, down tube, head tube, chainstay and seat stay, plus a raked fork, seatpost/saddle, stem and bar. Both wheels carry 16 radial spokes, a rim, a tyre and a hub, with an orange valve so the rotation is unambiguous.
+- <strong>Drivetrain</strong> — the chainring is welded in phase to the crank, the rear sprocket to the rear wheel, and the chain&#x27;s link dashes travel forward on the taut upper run and back along the sagging lower run, at exactly the chainring&#x27;s surface speed.
+- <strong>Legs</strong> — I solved the two-link inverse kinematics offline (hip → knee → ankle, 84 and 94 units against a 28-unit crank) and baked 36 keyframes per joint. The feet aren&#x27;t approximately near the pedals, they&#x27;re <em>on</em> them: measured live in Chrome, the worst foot-to-spindle gap over a full revolution is <strong>0.225 px</strong>.
+- <strong>Plumage</strong> — full breeding dress of the California race: bright red gular pouch, dark chestnut hindneck, pale straw-yellow crown, white side-neck stripe, ochre patch at the base of the foreneck, silvery scapular streaking on the mantle, layered wing coverts, long flight feathers sweeping back over the flank, a feathered thigh and webbed totipalmate feet.
+- <strong>Loop</strong> — everything runs on a 1.2 s master period (the bob and speed lines at 0.6 s divide it evenly). Sampling the full transform state of all 157 rendered nodes at <em>t</em> and <em>t</em>+1.2 s differs by at most <strong>0.0002 px</strong>, so the loop is seamless.
+<span class="pk-elide">[ 25,877 字节的 SVG 源码 ]</span>
+One honest caveat: I made the crank turn 1:1 with the rear wheel, since you asked for them to be in phase. A real bike gears that up several times over — if you&#x27;d rather have realistic gearing, change the two wheel <code>dur=&quot;1.2s&quot;</code> values to <code>dur=&quot;0.4s&quot;</code> for a 3:1 ratio; the legs and chain stay tied to the crank and nothing else needs touching.
+
+A working copy is also on disk at <code>scratchpad/pelican.svg</code>.</p></li>
+            </ol>
+            <p class="pk-gloss">逐条大意：先解腿部逆运动学关键帧、组装 SVG，发现 XML 注释里的 <code>--</code> 非法，两次重画鹈鹕的比例与腿的层次，烘焙多个曲柄相位验证几何，确认 SMIL 在真实浏览器里确实在走，最后把链条统一到 1.2 秒主周期。</p>
+            <p class="pk-method">然后就交付了。它一路上核过自己的几何，上面看得到——但没有任何一步把题面拿回来对着成品逐条核。这次运行没有第二步。</p>
+          </div>
+
+          <div class="pk-panel" id="pk-p2">
+            <div class="pk-panel-head"><b>两个 Agent · 执行</b><span>23 分 19 秒 · 38 轮模型往返 · 37 次工具调用 · $5.20 · 09:14:17 → 09:37:36</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步写下的全部 9 条消息，未经编辑。只把它贴进对话的 SVG 源码折叠了。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:16:07</time><p>我来先算好腿部 IK 关键帧，再组装 SVG。</p></li>
+              <li lang="zh-CN"><time>09:17:41</time><p>IK 校验通过（伸展范围 90.1–171.3，落在 |L1−L2|=4 与 L1+L2=184 之间，无死点）。现在组装成品。</p></li>
+              <li lang="zh-CN"><time>09:22:38</time><p>结构对了，但头颈/嘴/嗉囊的解剖和翼、尾的可读性不够。重做这几处，并把脚重画成蹼足。</p></li>
+              <li lang="en"><time>09:27:59</time><p>Improving readability of head, neck, wing and tail.</p></li>
+              <li lang="en"><time>09:29:14</time><p>Now the neck, head, bill and pouch.</p></li>
+              <li lang="zh-CN"><time>09:31:11</time><p>头被喙盖住了，眼睛也被压在喙下。调整头部与喙的相对位置。</p></li>
+              <li lang="zh-CN"><time>09:32:48</time><p>头部现在读得清楚了。做最后微调，然后烘焙中间帧验证腿是否始终踩在踏板上。</p></li>
+              <li lang="en"><time>09:33:17</time><p>Now baking intermediate frames to verify the legs stay locked to the pedals.</p></li>
+              <li lang="zh-CN"><time>09:37:30</time><p>成品 — 单个自包含 <code>&lt;svg&gt;</code>，无外部字体/图片/脚本，动画全部为文件内 SMIL。已用 rsvg 逐帧烘焙验证：0°/60°/120°/180°/240°/300° 六个相位下双脚始终贴合踏板。
+
+<strong>文件</strong>：<code>workspace/pelican-bicycle.svg</code>
+<span class="pk-elide">[ 30,286 字节的 SVG 源码 ]</span>
+<strong>实现要点</strong>
+
+- <strong>传动同相</strong>：后轮、前轮、曲柄三个 <code>animateTransform type=&quot;rotate&quot; from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot;</code> 完全同周期同相位；后飞轮画在后轮旋转组内，随轮同转。两个踏板板面各带一个 <code>to=&quot;-360&quot;</code> 的反向旋转，抵消曲柄旋转后始终保持水平。
+- <strong>腿部跟随</strong>：腿不是靠猜的关键帧，而是先解二连杆逆运动学 —— 髋点固定 (400,325)/(392,328)，大腿 94、小腿 90，末端严格落在曲柄圆 <code>C(420,455)+40·(cosθ, sinθ)</code> 上，取&quot;膝向前&quot;解，采样 24 个相位。伸展范围 90.1–171.3，落在 |L1−L2|=4 与 L1+L2=184 之间，全程无死点、无翻转。第 i 帧对应曲柄角 360·i/24，与旋转动画逐帧对齐。
+- <strong>无缝循环</strong>：所有 <code>values</code> 列表首尾同值，旋转为整圈，链条 <code>stroke-dashoffset</code> 每周期正好走一个 dash 周期。
+- <strong>繁殖羽</strong>：草黄色顶冠、深栗色后颈带（下缘一道清晰白边）、白色脸与前颈、前颈基部淡黄晕、鲜红膨大的喉囊、淡色虹膜配蓝灰裸眼周、喙基泛红、灰褐带银灰羽缘的体羽 + 深褐腹部、黑色蹼足。
+- <strong>自行车</strong>：菱形车架（座管/上管/下管/座撑/链撑/头管/前叉）、下弯把、每轮 16 根辐条 + 双层轮圈 + 胎纹、五爪牙盘、上下两段链条。
+
+已验证：XML 良构；无 <code>&lt;script&gt;</code>/<code>&lt;style&gt;</code>/外链资源；5 组 <code>d</code> 动画均为 25 关键帧、首尾一致、命令数一致（可插值）；rsvg 烘焙 6 个相位确认双脚全程贴合踏板。
+
+@verifier</p></li>
+            </ol>
+          </div>
+
+          <div class="pk-panel" id="pk-p3">
+            <div class="pk-panel-head"><b>两个 Agent · 复核</b><span>8 分 42 秒 · 24 轮模型往返 · 23 次工具调用 · $1.94 · 09:37:36 → 09:46:19</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步只写了这一条，未经编辑。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:46:12</time><p>核对对象：<code>workspace/pelican-bicycle.svg</code>（30,286 字节，唯一交付文件）。验收方式：XML 解析 + 静态属性核查 + 用 stdlib 烘焙 6 个相位后 rsvg-convert 渲染 + Chrome headless 在 4 个虚拟时间点实拍（确认 SMIL 在浏览器里真的走）+ 对全部 24 个关键帧做几何计算。
+
+<strong>逐条结论</strong>
+
+- <strong>产出一个动画 SVG，内容是加州褐鹈鹕骑自行车</strong>：通过 —— 单个根 <code>&lt;svg viewBox=&quot;0 0 900 600&quot;&gt;</code>（第 1 行），XML 解析无误。渲染图（frame0）中鹈鹕跨坐于车架之上、双翼腕部搭在车把（第 311–313 行的腕部形状落在第 183–184 行的把位上），构图明确是&quot;骑车&quot;。
+
+- <strong>自行车必须有辐条</strong>：通过 —— 第 57–74 行 <code>&lt;g id=&quot;spokes&quot;&gt;</code> 定义 16 条 <code>y2=&quot;-78&quot;</code> 放射线，每 22.5° 一根；第 81 行被 <code>&lt;g id=&quot;wheel&quot;&gt;</code> 引用，第 147、156 行两轮各 <code>&lt;use href=&quot;#wheel&quot;&gt;</code>。渲染的前后轮辐条条条可见（见轮部对比图）。
+
+- <strong>车架形状正确</strong>：通过 —— 第 161–167 行五根管构成菱形主体：座管 (420,455)→(352,300)、上管 (352,300)→(585,300)、下管 (420,455)→(605,352)、座撑 (352,300)→(250,430)、链撑 (420,455)→(250,430)；第 168 行头管 (586,294)→(609,356)（离垂直 20.3°，即 69.7° 头管角）、第 169 行前叉接前轴 (650,430)。前后三角闭合、五通 (420,455) 位于轴线 (y=430) 下方 25px、轮底 y=520 贴合路面 y=518，无悬空、无断开。
+
+- <strong>鹈鹕有其标志性的大喉囊</strong>：通过 —— 第 361–374 行 <code>pouchG</code> 填充的喉囊路径自 (640,160) 延伸至 (798,196)，横跨约 158px，远大于头部（第 335 行 rx=36）；第 373 行下颌骨支沿囊顶走，第 364–369 行囊面褶纹。头部特写图中红色喉囊为画面最显眼元素。
+
+- <strong>有清晰的羽毛表现</strong>：通过 —— 第 260–269 行躯干鳞状羽缘（5 排扇贝形描边，被 <code>bodyClip</code> 裁形）、第 274–285 行 4 片叠压的收拢初级飞羽、第 296–308 行翼上覆羽与 4 枚分离的大覆羽、第 248–252 行尾羽扇。躯干特写图中羽片分层与羽缘均可辨。
+
+- <strong>鹈鹕明确在蹬车</strong>：通过 —— 两条腿末端严格落在曲柄圆上：对全部 25 个关键帧计算，末端点与 <code>C(420,455)+40·(cosθ,sinθ)</code> 的最大偏差 <strong>0.060px</strong>（近腿第 393–402 行、远腿第 130–134 行）；两腿相位差 180°（第 0 帧近腿末端 (460,455)=θ0°，远腿末端 (380,455)=θ180°）。第 403–407 行蹼足多边形逐帧位移与踏板位移完全一致（如第 6 帧偏移 (−40,+40)，踏板由 (460,455)→(420,495) 亦为 (−40,+40)）。烘焙的 0°/120°/180°/240°/300° 各相位放大图中，双足始终压在踏板板面上。
+
+- <strong>完整繁殖羽</strong>：通过 —— 草黄色顶冠（第 338 行 <code>#f0cf6d</code>）、深栗色后颈带（第 319 行 <code>napeG</code>，延伸至枕部第 341 行）、下缘白色分界带（第 324 行）、前颈基部淡黄斑（第 326 行）、鲜红膨大喉囊（第 361 行 <code>pouchG</code> 红系，正是 <em>californicus</em> 区别于 <em>carolinensis</em> 的关键特征）、淡色虹膜配蓝灰裸眼周（第 350–353 行）、喙基泛红（第 383 行）。头部特写图中以上七项同时可见。
+
+- <strong>动画只用文件内的 SMIL 或 CSS</strong>：通过 —— 标签清点结果：无 <code>&lt;script&gt;</code>、无 <code>&lt;style&gt;</code>、无 <code>&lt;image&gt;</code>、无 <code>&lt;text&gt;</code>；全部 <code>href</code>/<code>xlink:href</code> 只有 <code>#spokes</code> 与 <code>#wheel</code> 两个内部锚点；动画由 11 个 <code>&lt;animate&gt;</code> + 6 个 <code>&lt;animateTransform&gt;</code> 共 17 个 SMIL 元素构成。所有涂色均为文件内 <code>url(#…)</code> 渐变。
+
+- <strong>两个轮子都连续旋转</strong>：通过 —— 第 146 行（后轮，<code>translate(250,430)</code> 内）与第 155 行（前轮，<code>translate(650,430)</code> 内）各有 <code>type=&quot;rotate&quot; from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot; repeatCount=&quot;indefinite&quot;</code>。前轮气门嘴标记（第 84 行 rect）在 6 个相位图中依次走到 上→右上→右下→下→左下→左上，顺时针，与车头朝右的行进方向一致；后轮同理。
+
+- <strong>曲柄与踏板与后轮同相位旋转</strong>：通过 —— 曲柄组第 204 行的 <code>from=&quot;0&quot; to=&quot;360&quot; dur=&quot;2s&quot; repeatCount=&quot;indefinite&quot;</code> 与后轮第 146 行完全同参数，两者均无 <code>begin</code> 偏移，故周期与相位严格相同（气门嘴与曲柄臂在同一帧图中角度一致）。踏板（第 220、234 行）随曲柄绕五通公转的同时各自 <code>to=&quot;-360&quot;</code> 反转，使板面保持水平——这是踏板的正确物理行为，公转仍与后轮同相。
+
+- <strong>动画无缝循环</strong>：通过 —— 6 个 <code>animateTransform</code> 全为整圈 ±360，天然闭合；11 个 <code>&lt;animate&gt;</code> 中 8 个 <code>values</code> 首尾同值（5 组 <code>d</code> 均为 25 帧且首末相同、命令序列一致可插值；喉囊第 359 行与 3 条速度线首尾同值）。余下 3 个 <code>stroke-dashoffset</code> 首尾不同值但恰好走满一个 dash 周期：路面 <code>0→-88</code> 对 <code>stroke-dasharray=&quot;48 40&quot;</code>（88，第 112–113 行）、链条 <code>0→∓16</code> 对 <code>dasharray=&quot;6 10&quot;</code>（16，第 191–197 行），因此同样无跳变。所有 17 个动画 <code>repeatCount=&quot;indefinite&quot;</code>。
+
+<strong>总判定</strong>
+全部通过（11/11）。不再交回修正。</p></li>
+            </ol>
+            <p class="pk-method">它从题面里拆出的十一条要求：</p>
+            <ul class="pk-checks">
+              <li>是一份鹈鹕骑车的动画 SVG</li>
+              <li>自行车有辐条</li>
+              <li>车架形状正确</li>
+              <li>标志性的大喉囊</li>
+              <li>有清晰的羽毛表现</li>
+              <li>鹈鹕明确在蹬车</li>
+              <li>完整的加州繁殖羽</li>
+              <li>动画只用文件内的 SMIL 或 CSS</li>
+              <li>两个轮子都连续旋转</li>
+              <li>曲柄踏板与后轮同相位</li>
+              <li>动画无缝循环</li>
+            </ul>
+            <p class="pk-method">怎么核的：解析 XML、核查静态属性、烘焙六个曲柄相位后用 <code>rsvg-convert</code> 渲染、在 headless Chrome 的四个虚拟时间点实拍以确认 SMIL 真的在走，再对全部 24 个关键帧逐帧算几何。</p>
+          </div>
+
+          <div class="pk-panel" id="pk-p4">
+            <div class="pk-panel-head"><b>两个 Agent · 执行定稿</b><span>23 秒 · 1 轮模型往返 · $0.99 · 09:46:19 → 09:46:42</span></div>
+            <p class="pk-src">原话——这个 Agent 在这一步只写了这一条，未经编辑。</p>
+            <ol class="pk-tr" data-verbatim>
+              <li lang="zh-CN"><time>09:46:36</time><p>复核已全部通过（11/11），无需修正，成品定稿。
+
+<strong>交付</strong>：<code>workspace/pelican-bicycle.svg</code>（30,286 字节，单文件自包含），完整源码已在上一条回复中给出。
+
+复核补充确认的两点值得记下：
+
+- 腿末端与曲柄圆的最大偏差 <strong>0.060px</strong>，即两条腿在全部 24 个相位上都是真正锁在踏板上的，不是视觉近似——这来自先解二连杆 IK 再逐帧烘焙的做法。
+- Chrome headless 在 4 个虚拟时间点实拍确认 SMIL 在浏览器中确实运行，不只是静态属性正确。
+
+关于三条 <code>stroke-dashoffset</code> 动画首尾值不同：这是有意的。它们分别位移 88 与 ±16，正好等于各自 <code>stroke-dasharray</code> 的一个完整周期（48+40、6+10），视觉上仍然无缝——路面与链条要表现的是持续流动，用首尾同值反而会来回弹跳。
+
+文件可直接在浏览器打开、<code>&lt;img&gt;</code> 引用或嵌入 HTML 使用。</p></li>
+            </ol>
+            <p class="pk-method">只有一条消息，仍然花了 $0.99：执行方在回答前把整条会话重读了一遍。这是缓存里的上下文，不是新干的活。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="pk-foot">题面取自 Simon Willison 的<a href="https://simonwillison.net/2025/Nov/18/gemini-3/" target="_blank" rel="noreferrer">鹈鹕基准</a>，另加了一条动画要求。用时、往返次数与 token 数取自两次运行的会话记录，花费是这些 token 按 Claude Opus 5 公开 API 价目折算，取到分。每一步的记录都是原话——那个 Agent 写的每一条消息，未经编辑，用它当时工作的语言；只把它贴进对话的 SVG 源码折叠了。用本页口吻写的都是概述，并已标明。一道题跑两次是个例，不是基准测试。</p>
+  </div>
+</section>
+
+<!-- ================= CTA ================= -->
+<section class="cta" data-od-id="cta">
+  <div class="wrap cta-in reveal">
+    <h2 data-text-reveal="view">让团队自己推进。</h2>
+    <p>下载 Moebius 的 macOS Apple Silicon 桌面端,把你的第一个目标交给一支智能体团队。</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary btn-exp" href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer" data-download data-od-id="cta-download">
+        <span class="exp-tile" aria-hidden="true">
+          <span class="exp-idle"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+          <span class="exp-trail"><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg><svg class="exp-chev" viewBox="0 0 20 28" fill="none"><circle cx="4" cy="4" r="2" fill="currentColor"/><circle cx="10" cy="9" r="2" fill="currentColor"/><circle cx="16" cy="14" r="2" fill="currentColor"/><circle cx="10" cy="19" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/></svg></span>
+        </span>
+        <span class="exp-label">下载 macOS 版</span>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">查看 GitHub 源码</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ================= Footer ================= -->
+<footer class="footer" data-od-id="footer">
+  <div class="wrap footer-in">
+    <div>
+      <a class="brand" href="#top" aria-label="回到 Moebius 首页顶部">
+        <img src="../assets/moebius-icon-64.png" width="22" height="22" alt="" aria-hidden="true" />
+        Moebius
+      </a>
+      <p class="tag">桌面上的智能体指挥中心,让开发团队并行推进每一个目标。</p>
+    </div>
+    <div class="fcol">
+      <h4>产品</h4>
+      <a href="#f-conversation">对话</a>
+      <a href="#f-agents">Agent 团队</a>
+      <a href="#f-diff">改动追踪</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases" target="_blank" rel="noreferrer">更新日志</a>
+    </div>
+    <div class="fcol">
+      <h4>资源</h4>
+      <a href="https://github.com/tranfu-labs/moebius" target="_blank" rel="noreferrer">GitHub 源码</a>
+      <a href="https://github.com/tranfu-labs/moebius/releases/latest" target="_blank" rel="noreferrer">最新版本</a>
+      <a href="https://github.com/tranfu-labs/moebius/issues" target="_blank" rel="noreferrer">问题反馈</a>
+    </div>
+    <div class="fcol">
+      <h4>公司</h4>
+      <a href="https://github.com/tranfu-labs/moebius#readme" target="_blank" rel="noreferrer">关于 Moebius</a>
+      <a href="https://github.com/tranfu-labs/moebius/issues" target="_blank" rel="noreferrer">联系与反馈</a>
+      <a href="https://github.com/tranfu-labs/moebius/blob/main/LICENSE" target="_blank" rel="noreferrer">开源许可</a>
+    </div>
+  </div>
+  <div class="footer-base">
+    <div class="wrap" style="display:flex; justify-content:space-between; width:100%;">
+      <span>© 2026 Moebius</span>
+      <span>macOS 14+ · Apple Silicon</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var isZh = /^zh/i.test(document.documentElement.lang);
+  var releaseApi = 'https://api.github.com/repos/tranfu-labs/moebius/releases/latest';
+  var downloadLinks = [].slice.call(document.querySelectorAll('[data-download]'));
+
+  fetch(releaseApi, { headers: { Accept:'application/vnd.github+json' } })
+    .then(function(response){
+      if (!response.ok) throw new Error('release lookup failed');
+      return response.json();
+    })
+    .then(function(release){
+      if (!release || release.draft || release.prerelease || !Array.isArray(release.assets)) return;
+      var dmg = release.assets.find(function(asset){
+        return asset && typeof asset.name === 'string' &&
+          /-mac-arm64\.dmg$/i.test(asset.name) &&
+          typeof asset.browser_download_url === 'string';
+      });
+      if (!dmg) return;
+      downloadLinks.forEach(function(link){ link.href = dmg.browser_download_url; });
+    })
+    .catch(function(){ /* the Releases page stays a working fallback */ });
+
+  /* ---- scroll reveals ---- */
+  var reveals = [].slice.call(document.querySelectorAll('.reveal'));
+  if (!reduced && 'IntersectionObserver' in window) {
+    var ro = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('in'); ro.unobserve(e.target); }
+      });
+    }, { threshold: .12 });
+    reveals.forEach(function(el){
+      if (el.getBoundingClientRect().top < innerHeight * .92) el.classList.add('in');
+      else ro.observe(el);
+    });
+    /* safety net: never leave content hidden (e.g. full-page exports) */
+    setTimeout(function(){
+      reveals.forEach(function(el){ el.classList.add('in'); });
+      [].slice.call(document.querySelectorAll('[data-text-reveal]')).forEach(function(el){ el.classList.add('tr-in'); });
+    }, 1600);
+  } else {
+    reveals.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  /* ---- sticky narrative features ---- */
+  var blocks  = [].slice.call(document.querySelectorAll('.fs-block'));
+  var visuals = [].slice.call(document.querySelectorAll('.fs-grid > .f-visual'));
+  var navMap = {};
+  [].slice.call(document.querySelectorAll('.nav-links a[href^="#f-"]')).forEach(function(a){
+    navMap[a.getAttribute('href').slice(1)] = a;
+  });
+  function setActive(i){
+    blocks.forEach(function(b,j){ b.classList.toggle('active', j === i); });
+    visuals.forEach(function(v,j){ v.classList.toggle('active', j === i); });
+    Object.keys(navMap).forEach(function(id){
+      var on = id === blocks[i].id;
+      navMap[id].classList.toggle('active', on);
+      if (on) navMap[id].setAttribute('aria-current', 'true');
+      else navMap[id].removeAttribute('aria-current');
+    });
+  }
+  var ticking = false;
+  function update(){
+    ticking = false;
+    if (innerWidth <= 900) return;
+    var mid = innerHeight / 2, best = 0, bd = Infinity;
+    blocks.forEach(function(b,i){
+      var r = b.getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - mid);
+      if (d < bd) { bd = d; best = i; }
+    });
+    setActive(best);
+    /* outside the features narrative (hero / manifesto / cta) no nav item stays lit */
+    var inRange = blocks[0].getBoundingClientRect().top <= mid &&
+                  blocks[blocks.length - 1].getBoundingClientRect().bottom >= mid;
+    if (!inRange) Object.keys(navMap).forEach(function(id){
+      navMap[id].classList.remove('active');
+      navMap[id].removeAttribute('aria-current');
+    });
+  }
+  function onScroll(){ if (!ticking) { ticking = true; requestAnimationFrame(update); } }
+  addEventListener('scroll', onScroll, { passive:true });
+  addEventListener('resize', onScroll);
+  update();
+
+  /* ---- language switcher: <details> already opens and switches without JS,
+          this only adds dismissal on outside click / Escape ---- */
+  var langEl = document.querySelector('.lang');
+  if (langEl) {
+    document.addEventListener('click', function(e){
+      if (langEl.open && !langEl.contains(e.target)) langEl.open = false;
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && langEl.open) {
+        langEl.open = false;
+        var s = langEl.querySelector('summary');
+        if (s) s.focus();
+      }
+    });
+  }
+
+  /* ---- pointer-follow highlight on glass cards ---- */
+  if (matchMedia('(pointer: fine)').matches) {
+    [].slice.call(document.querySelectorAll('.liquid-glass')).forEach(function(card){
+      card.addEventListener('mousemove', function(e){
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    });
+  }
+
+  /* ---- text reveal: word/segment split with blur + rise ---- */
+  var revealEls = [].slice.call(document.querySelectorAll('[data-text-reveal]'));
+  if (!reduced && revealEls.length) {
+    var segmenter = (isZh && 'Segmenter' in Intl) ? new Intl.Segmenter('zh', { granularity:'word' }) : null;
+    /* zh splits into words/characters and drops whitespace; latin text must keep the
+       spaces between words, so they ride along as plain text nodes between the spans */
+    function splitParts(text){
+      if (isZh) {
+        return (segmenter
+          ? Array.from(segmenter.segment(text)).map(function(s){ return s.segment; })
+          : text.split('')
+        ).filter(function(s){ return s.trim(); });
+      }
+      return text.split(/(\s+)/).filter(function(s){ return s.length; });
+    }
+    revealEls.forEach(function(el){
+      var nodes = [].slice.call(el.childNodes), idx = 0;
+      el.textContent = '';
+      nodes.forEach(function(node){
+        if (node.nodeType === 3) {
+          splitParts(node.textContent).forEach(function(p){
+            if (!p.trim()) { el.appendChild(document.createTextNode(p)); return; }
+            var s = document.createElement('span');
+            s.className = 'tr-w'; s.textContent = p;
+            s.style.transitionDelay = (idx++ * 55) + 'ms';
+            el.appendChild(s);
+          });
+        } else if (node.nodeName === 'BR') {
+          el.appendChild(node);
+        } else {
+          /* wrap (not re-class) so inner effects like .shimmer's grain filter survive */
+          var wrap = document.createElement('span');
+          wrap.className = 'tr-w';
+          wrap.style.transitionDelay = (idx++ * 55) + 'ms';
+          wrap.appendChild(node);
+          el.appendChild(wrap);
+        }
+      });
+      if (el.getAttribute('data-text-reveal') === 'view') {
+        if ('IntersectionObserver' in window) {
+          var to = new IntersectionObserver(function(entries){
+            entries.forEach(function(e){
+              if (e.isIntersecting) { el.classList.add('tr-in'); to.unobserve(el); }
+            });
+          }, { threshold:.35 });
+          to.observe(el);
+        } else { el.classList.add('tr-in'); }
+      } else {
+        el.style.animation = 'none'; /* word stagger replaces the block riseIn */
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.classList.add('tr-in'); }); });
+      }
+    });
+  }
+
+  /* ---- WebGL shader border on feature visuals (domain-warped fbm mesh) ---- */
+  (function initShaders(){
+    var canvases = [].slice.call(document.querySelectorAll('.f-shader'));
+    if (!canvases.length) return;
+    var VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+    var FS = [
+      'precision highp float;',
+      'uniform vec2 u_res;uniform float u_time;',
+      'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}',
+      'float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+      ' return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}',
+      'float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}',
+      'void main(){',
+      ' vec2 uv=gl_FragCoord.xy/u_res;',
+      ' vec2 p=uv*vec2(u_res.x/u_res.y,1.)*1.7;',
+      ' float t=u_time*.05;',
+      ' vec2 q=vec2(fbm(p+t),fbm(p+vec2(5.2,1.3)-t*.7));',
+      ' vec2 r=vec2(fbm(p+2.4*q+vec2(1.7,9.2)+t*.4),fbm(p+2.4*q+vec2(8.3,2.8)-t*.3));',
+      ' float f=fbm(p+2.6*r);',
+      ' vec3 base=vec3(.063,.063,.063);',
+      ' vec3 purple=vec3(.753,.565,1.)*.32;',
+      ' vec3 blue=vec3(.373,.702,1.)*.22;',
+      ' vec3 col=base;',
+      ' col=mix(col,purple,smoothstep(.42,.95,f));',
+      ' col=mix(col,blue,smoothstep(.55,1.15,length(q)));',
+      ' col+=(hash(gl_FragCoord.xy)-.5)/255.;',        /* dither against banding */
+      ' gl_FragColor=vec4(col,1.);',
+      '}'
+    ].join('\n');
+    canvases.forEach(function(canvas, seed){
+      var gl = canvas.getContext('webgl', { antialias:false, alpha:false, powerPreference:'low-power' });
+      if (!gl) { canvas.remove(); return; } /* solid --surface ring remains as fallback */
+      function compile(type, src){
+        var sh = gl.createShader(type);
+        gl.shaderSource(sh, src); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { return null; }
+        return sh;
+      }
+      var vs = compile(gl.VERTEX_SHADER, VS), fs = compile(gl.FRAGMENT_SHADER, FS);
+      if (!vs || !fs) { canvas.remove(); return; }
+      var prog = gl.createProgram();
+      gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+      gl.useProgram(prog);
+      var buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+      var loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      var uRes = gl.getUniformLocation(prog, 'u_res');
+      var uTime = gl.getUniformLocation(prog, 'u_time');
+      var dpr = Math.min(devicePixelRatio || 1, 1.75);
+      function resize(){
+        var w = canvas.clientWidth, h = canvas.clientHeight;
+        if (!w || !h) return;
+        canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+      }
+      resize();
+      addEventListener('resize', resize);
+      function draw(t){ gl.uniform1f(uTime, t); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+      if (reduced) { draw(14.0 + seed * 40); return; } /* single frozen frame */
+      var visible = true, start = performance.now() - seed * 4000; /* desync the three meshes */
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function(entries){ visible = entries[0].isIntersecting; }).observe(canvas);
+      }
+      (function loop(now){
+        requestAnimationFrame(loop);
+        if (visible) draw((now - start) / 1000);
+      })(start);
+    });
+  })();
+
+  /* pelican artefacts: SMIL keeps running under prefers-reduced-motion because CSS
+     cannot stop it, so pause the timeline explicitly and hold the first frame */
+  if (reduced) {
+    [].slice.call(document.querySelectorAll('.pk-art')).forEach(function(svg){
+      if (typeof svg.setCurrentTime === 'function') { svg.setCurrentTime(0); }
+      if (typeof svg.pauseAnimations === 'function') { svg.pauseAnimations(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

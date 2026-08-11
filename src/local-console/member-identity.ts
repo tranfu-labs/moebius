@@ -17,10 +17,23 @@ const BUILT_IN_MEMBER_NAMES: Readonly<Record<string, string>> = {
 export function projectLocalConsoleMemberIdentities(
   snapshot: LocalConsoleAgentTeamSnapshot | null | undefined,
 ): LocalConsoleMemberIdentity[] {
-  return snapshot?.members.map((member) => ({
-    slug: member.name,
-    displayName: readSnapshotDisplayName(member.agentMarkdown),
-  })) ?? [];
+  return snapshot?.members.map((member) => {
+    const identity: LocalConsoleMemberIdentity = {
+      slug: member.name,
+      displayName: readSnapshotDisplayName(member.agentMarkdown),
+    };
+    // The portrait now lives in the app record and rides along in the snapshot. Snapshots
+    // captured before the migration only carry the legacy AGENT.md `portrait_id`, so the
+    // frontmatter remains a fallback for those frozen facts. A resolved null in the snapshot
+    // means "no portrait" and must not be overridden by a stale legacy field.
+    const portraitId = member.portraitId === undefined
+      ? readSnapshotPortraitId(member.agentMarkdown)
+      : member.portraitId;
+    if (portraitId !== undefined && portraitId !== null) {
+      identity.portraitId = portraitId;
+    }
+    return identity;
+  }) ?? [];
 }
 
 export function resolveLocalConsoleMemberName(
@@ -62,6 +75,23 @@ function readSingleLineDisplayName(value: unknown): string {
     return "";
   }
   return value.trim();
+}
+
+function readSnapshotPortraitId(agentMarkdown: string): string | undefined {
+  try {
+    const frontmatter = parseAgentMarkdownFrontmatter(agentMarkdown).frontmatter;
+    if (frontmatter === null || !Object.hasOwn(frontmatter, "portrait_id")) {
+      return undefined;
+    }
+    const value = frontmatter.portrait_id;
+    if (typeof value !== "string" || /\r|\n/u.test(value)) {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized.length === 0 ? undefined : normalized;
+  } catch {
+    return undefined;
+  }
 }
 
 function readLegacyDisplayName(body: string): string {

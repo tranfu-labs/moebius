@@ -17,6 +17,7 @@ export function createLocalPrimaryExecutionPorts(input: {
   setError: PrimaryExecutionPorts["setError"];
   report: PrimaryExecutionPorts["report"];
   recordFailure: PrimaryExecutionPorts["recordFailure"];
+  recordCompletionFailure: PrimaryExecutionPorts["recordCompletionFailure"];
   applyPendingContext: PrimaryExecutionPorts["applyPendingContext"];
   invalidateWorkspace: PrimaryExecutionPorts["invalidateWorkspace"];
 }): PrimaryExecutionPorts {
@@ -30,6 +31,7 @@ export function createLocalPrimaryExecutionPorts(input: {
     setError: input.setError,
     report: input.report,
     recordFailure: input.recordFailure,
+    recordCompletionFailure: input.recordCompletionFailure,
     activeRun: (runId) => {
       const decision = decidePrimaryRunLookup(runId);
       return decision.kind === "skip" ? undefined : input.activeRuns.get(decision.runId);

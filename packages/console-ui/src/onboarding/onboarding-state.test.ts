@@ -39,6 +39,9 @@ describe("onboarding shell state", () => {
     });
     state = reduceOnboardingShell(state, { type: "next" });
     state = reduceOnboardingShell(state, { type: "next" });
+    state = reduceOnboardingShell(state, { type: "next" });
+    state = reduceOnboardingShell(state, { type: "next" });
+    state = reduceOnboardingShell(state, { type: "back" });
     state = reduceOnboardingShell(state, { type: "back" });
     state = reduceOnboardingShell(state, { type: "back" });
 

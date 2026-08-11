@@ -58,6 +58,8 @@ describe("run-scoped Agent audit HTTP API", () => {
       error: "spawn rejected",
       status: "failed",
       systemEventKind: "run-not-started",
+      role: null,
+      processSteps: [],
       now: "2026-08-04T01:01:00.000Z",
     });
 

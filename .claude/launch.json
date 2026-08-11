@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "console-ui-storybook",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@moebius/console-ui", "storybook"],
+      "port": 6006,
+      "url": "http://127.0.0.1:6006"
+    }
+  ]
+}

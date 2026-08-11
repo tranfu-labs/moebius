@@ -4,15 +4,19 @@ import type {
   AgentTeamMemberAddResponse,
   AgentTeamMemberDocument,
 } from "./team-ipc-contract.js";
+import { AgentTeamIpcRequestError } from "./team-ipc-contract.js";
 import {
   decideReadableBuiltInTeam,
   parseDuplicateBuiltInRequest,
+  parseMemberOrderWriteRequest,
   parseMemberRequest,
   parseMemberWriteRequest,
   parsePrimaryAgentWriteRequest,
   parseTeamInformation,
   parseTeamRequest,
   parseUserTeamRequest,
+  planAgentTeamMemberDocument,
+  planMemberWriteAction,
   planTeamListLoad,
   planUserRecordRefresh,
   selectTeamMember,
@@ -30,9 +34,11 @@ export interface TeamCatalogPorts {
   resolveSystem(input: { dataRoot: string; teamId: string; ownership: "system" }): TeamLocation;
   resolveUser(dataRoot: string, teamId: string): Promise<TeamLocation>;
   writeMember(location: TeamLocation, slug: string, markdown: string): Promise<void>;
+  writeMemberPortrait(location: TeamLocation, slug: string, portraitId: string | null): Promise<void>;
   addMember(location: TeamLocation): Promise<{ team: TeamSnapshot; member: TeamSnapshot["members"][number] }>;
   updateInformation(location: TeamLocation, information: { name: string; description: string }): Promise<TeamSnapshot>;
   setPrimary(location: TeamLocation, slug: string): Promise<TeamSnapshot>;
+  reorderMembers(location: TeamLocation, memberOrder: string[]): Promise<TeamSnapshot>;
   duplicateBuiltIn(location: TeamLocation): Promise<TeamLocation>;
   duplicateUser(location: TeamLocation): Promise<TeamLocation>;
   duplicateMember(location: TeamLocation, slug: string): Promise<{ team: TeamSnapshot; member: TeamSnapshot["members"][number] }>;
@@ -100,17 +106,21 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
     },
     readAgentTeamMember: async (dataRoot: string, raw: unknown): Promise<AgentTeamMemberDocument> => {
       const request = parseMemberRequest(raw);
-      return toMemberDocument(selectTeamMember(await ports.readSnapshot(
+      return planAgentTeamMemberDocument(selectTeamMember(await ports.readSnapshot(
         await resolveLocation(dataRoot, request),
       ), request.memberSlug));
     },
     writeAgentTeamMember: async (dataRoot: string, raw: unknown): Promise<AgentTeamMemberDocument> => {
       const request = parseMemberWriteRequest(raw);
       const location = await resolveLocation(dataRoot, request);
-      await ports.writeMember(location, request.memberSlug, request.agentMarkdown);
+      const actions = {
+        markdown: async () => await ports.writeMember(location, request.memberSlug, request.agentMarkdown!),
+        portrait: async () => await ports.writeMemberPortrait(location, request.memberSlug, request.portraitId!),
+      };
+      await actions[planMemberWriteAction(request)]();
       const snapshot = await ports.readSnapshot(location);
       await refreshUserRecord(snapshot);
-      return toMemberDocument(selectTeamMember(snapshot, request.memberSlug));
+      return planAgentTeamMemberDocument(selectTeamMember(snapshot, request.memberSlug));
     },
     addAgentTeamMember: async (dataRoot: string, raw: unknown): Promise<AgentTeamMemberAddResponse> => {
       const location = await resolveLocation(dataRoot, parseTeamRequest(raw));
@@ -118,7 +128,7 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
       await ports.saveBinding({ dataRoot, ownership: location.ownership, teamId: location.id,
         memberSlug: result.member.slug, binding: { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE } });
       await refreshUserRecord(result.team);
-      return { team: await ports.present(result.team), member: toMemberDocument(result.member) };
+      return { team: await ports.present(result.team), member: planAgentTeamMemberDocument(result.member) };
     },
     updateAgentTeamInformation: async (dataRoot: string, raw: unknown) => {
       const request = parseTeamRequest(raw);
@@ -129,6 +139,12 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
     setAgentTeamPrimaryAgent: async (dataRoot: string, raw: unknown) => {
       const request = parsePrimaryAgentWriteRequest(raw);
       const snapshot = await ports.setPrimary(await resolveLocation(dataRoot, request), request.primaryAgentSlug);
+      await refreshUserRecord(snapshot);
+      return ports.present(snapshot);
+    },
+    reorderAgentTeamMembers: async (dataRoot: string, raw: unknown) => {
+      const request = parseMemberOrderWriteRequest(raw);
+      const snapshot = await ports.reorderMembers(await resolveLocation(dataRoot, request), request.memberOrder);
       await refreshUserRecord(snapshot);
       return ports.present(snapshot);
     },
@@ -158,7 +174,7 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
       await ports.saveBinding({ dataRoot, ownership: location.ownership, teamId: location.id,
         memberSlug: result.member.slug, binding: { source: "explicit", profile: sourceProfile.effectiveProfile } });
       await refreshUserRecord(result.team);
-      return { team: await ports.present(result.team), member: toMemberDocument(result.member) };
+      return { team: await ports.present(result.team), member: planAgentTeamMemberDocument(result.member) };
     },
     trashAgentTeamMember: async (dataRoot: string, raw: unknown, move: MovePathToTrash) => {
       const request = parseMemberRequest(raw);
@@ -176,9 +192,4 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
       await ports.forget({ dataRoot, teamId: request.teamId });
     },
   };
-}
-
-function toMemberDocument(member: TeamSnapshot["members"][number]): AgentTeamMemberDocument {
-  return { slug: member.slug, displayName: member.displayName, description: member.description,
-    available: true, agentMarkdown: member.agentMarkdown };
 }

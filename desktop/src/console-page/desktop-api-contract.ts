@@ -20,6 +20,7 @@ import type {
   AgentTeamMemberRequest,
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
+  AgentTeamMemberOrderWriteRequest,
   AgentTeamOfficialUpdateCommitRequest,
   AgentTeamOfficialUpdateCommitResponse,
   AgentTeamOfficialUpdatePrepareResponse,
@@ -136,6 +137,7 @@ export interface DesktopApi {
   addAgentTeamMember?: (request: AgentTeamMemberAddRequest) => Promise<AgentTeamMemberAddResponse>;
   updateAgentTeamInformation?: (request: AgentTeamUpdateInformationRequest) => Promise<AgentTeamListItem>;
   setAgentTeamPrimaryAgent?: (request: AgentTeamPrimaryAgentWriteRequest) => Promise<AgentTeamListItem>;
+  reorderAgentTeamMembers?: (request: AgentTeamMemberOrderWriteRequest) => Promise<AgentTeamListItem>;
   duplicateBuiltInAgentTeam?: (request: AgentTeamDuplicateBuiltInRequest) => Promise<AgentTeamListItem>;
   duplicateUserAgentTeam?: (request: AgentTeamDuplicateUserRequest) => Promise<AgentTeamListItem>;
   duplicateAgentTeamMember?: (request: AgentTeamMemberDuplicateRequest) => Promise<AgentTeamMemberAddResponse>;
@@ -185,6 +187,21 @@ export interface DesktopApi {
   ) => Promise<LastUsedAgentTeam>;
   getOnboardingStatus?: () => Promise<OnboardingCompletionStatus>;
   completeOnboarding?: () => Promise<OnboardingCompletionStatus>;
+  readTaskReminderState?: () => Promise<import("../task-reminder-contract.js").TaskReminderReadState>;
+  setTaskReminderEnabled?: (enabled: boolean) => Promise<{ ok: boolean }>;
+  applyTaskReminderModalAction?: (action: import("../permission-modal-plan.js").PermissionModalAction) => Promise<{
+    ok: boolean;
+    state: import("../permission-modal-plan.js").PermissionModalState | null;
+  }>;
+  recheckTaskReminderChannel?: () => Promise<"ok" | "anomaly" | "unknown">;
+  openTaskReminderSystemSettings?: () => Promise<{ ok: boolean }>;
+  onTaskReminderClicked?: (listener: (payload: {
+    sessionId: string;
+    roundId: number;
+    terminalMessageId: number | null;
+  }) => void) => () => void;
+  /** Notification click was located and consumed by the renderer (cold-start recovery reconciliation). */
+  consumeTaskReminderClick?: () => Promise<{ ok: boolean }>;
   checkOnboardingCodex?: () => Promise<DoctorCheck>;
   copyOnboardingInstallCommand?: () => Promise<void>;
   getOnboardingCliReadinessState?: () => Promise<OnboardingCliReadinessState>;

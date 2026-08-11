@@ -247,7 +247,8 @@ function bareFileReferenceNodes(
     if (start < 0) {
       break;
     }
-    if (!isBarePathStart(value, start)) {
+    const tier = barePathTier(value, start);
+    if (tier === null) {
       search = start + 1;
       continue;
     }
@@ -258,7 +259,7 @@ function bareFileReferenceNodes(
     const end = trimBarePathEnd(value, start, rawEnd);
     const rawPath = value.slice(start, end);
     const reference = parseMarkdownFileReference(rawPath);
-    if (reference === null) {
+    if (reference === null || !passesBarePathShapeGate(tier, reference)) {
       search = start + 1;
       continue;
     }
@@ -286,19 +287,55 @@ function bareFileReferenceNodes(
   return nodes;
 }
 
-function isBarePathStart(value: string, index: number): boolean {
+const BARE_PATH_CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const BARE_PATH_FULLWIDTH_PUNCTUATION = /[\u3000-\u303f\uFF01-\uFF5E\u2018-\u201f]/u;
+const BARE_PATH_LATIN_SEGMENT = /[A-Za-z]/u;
+const BARE_PATH_EXTENSION = /\.[A-Za-z0-9]{1,8}$/u;
+
+type BarePathTier = "loose" | "strict";
+
+function barePathTier(value: string, index: number): BarePathTier | null {
   if (value[index] !== "/" || value[index + 1] === "/") {
-    return false;
+    return null;
   }
   if (index === 0) {
-    return true;
+    return "loose";
   }
   const previous = value[index - 1]!;
-  return previous !== ":" && previous !== "/" && !/[A-Za-z0-9_.-]/u.test(previous);
+  if (
+    previous === ":"
+    || previous === "/"
+    || previous === "~"
+    || /[A-Za-z0-9_.-]/u.test(previous)
+  ) {
+    return null;
+  }
+  if (/\s/u.test(previous)) {
+    return "loose";
+  }
+  if (
+    BARE_PATH_CJK_SCRIPT.test(previous)
+    || BARE_PATH_FULLWIDTH_PUNCTUATION.test(previous)
+  ) {
+    return "strict";
+  }
+  return "loose";
+}
+
+function passesBarePathShapeGate(tier: BarePathTier, reference: MarkdownFileReference): boolean {
+  const segments = reference.path.split("/");
+  if (tier === "loose") {
+    return segments.some((segment) => BARE_PATH_LATIN_SEGMENT.test(segment));
+  }
+  if (reference.hasExplicitLine) {
+    return true;
+  }
+  const lastSegment = segments[segments.length - 1] ?? "";
+  return BARE_PATH_EXTENSION.test(lastSegment);
 }
 
 function isBarePathTerminator(value: string): boolean {
-  return /\s|[`<>"'“”‘’，。；！？、：,;!?]/u.test(value);
+  return /\s|[`<>\\"'“”‘’，。；！？、：,;!?（）「」【】]/u.test(value);
 }
 
 function trimBarePathEnd(value: string, start: number, rawEnd: number): number {

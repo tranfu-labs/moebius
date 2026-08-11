@@ -1753,7 +1753,7 @@ Source: docs/product/pages/main-right-sidebar.md#关闭标签
 ## Requirement: 验收 #17 加号只创建两类可选内容
 Source: docs/product/pages/main-right-sidebar.md#空白标签与类型选择
 
-系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中提供“新会话”“改动”和“项目文件”三种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。参考 HTML 未包含“新会话”时，生产类型与既有普通会话行为仍 MUST 保留。
+系统 MUST 让加号创建一个不参与去重的空白标签，并在 Git 项目中提供“新会话”“改动”和“项目文件”三种选择。系统 MUST NOT 在类型选择中出现过程、子任务、终端、预览或浏览器。没有“新会话”类型时，生产类型与既有普通会话行为仍 MUST 保留。
 
 ### Scenario: Git 项目打开空白标签
 - GIVEN 当前会话绑定的是 Git 项目
@@ -2351,6 +2351,32 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 - **THEN** 系统压缩泳道间距且面板不超过 224px
 - **AND** 目录不迁入项目 / 会话侧栏，也不推动正文重排
 
+### Requirement: 目录轨展开以覆盖层呈现且窄容器留白固定
+
+Source: docs/product/pages/main-conversation.md#会话目录轨
+
+系统 MUST 让目录轨展开面板以悬浮覆盖层呈现：展开面板 MUST 从收起态槽位向右延伸、z-index 高于时间线正文列，MUST NOT 推动正文、标题、输入框位置或主时间线滚动位置，MUST NOT 改变任何消息的排布。窄容器（自然居中 840px 内容列左缘不足 56px，即 `conversationPaneWidth < 952px`）下，时间线消息列与 composer MUST 以固定 56px 左内边距（12px 左内缩 + 44px 收起态目录轨视口）预留收起态目录轨占地，且该值 MUST NOT 随目录轨展开/收起变化。宽容器（自然居中列左缘 ≥ 56px）下，时间线消息列与 composer MUST 保持标准 32px gutter，且 MUST NOT 因目录轨展开改变。时间线消息列与 composer 的左侧内容边界 MUST 在两种容器宽度下保持一致。
+
+#### Scenario: 窄容器目录轨展开不推动正文
+
+- **GIVEN** 窄主会话（`conversationPaneWidth` < 952px）包含目录轨、消息与输入框
+- **WHEN** 用户悬停目录轨使其展开
+- **THEN** 消息列与 composer 的左内边距保持 56px 不变，正文与输入框左缘像素坐标不变
+- **AND** 展开面板覆盖在正文左缘之上且事件行整行可点击
+
+#### Scenario: 窄容器目录轨收起
+
+- **GIVEN** 窄主会话包含目录轨、消息与输入框
+- **WHEN** 目录轨处于收起态且用户未悬停
+- **THEN** 消息列与 composer 的左内边距为 56px，与展开态相同
+- **AND** 收起态目录轨（44px 视口 + 12px 内缩）不压到消息文字
+
+#### Scenario: 宽容器目录轨展开不改变布局
+
+- **GIVEN** 宽主会话（自然居中列左缘 ≥ 56px）包含目录轨
+- **WHEN** 用户悬停目录轨使其展开
+- **THEN** 消息列与 composer 保持 32px gutter 且内容边界不随展开变化
+
 ### Requirement: 目录预览连续跟随检查事件且尊重 reduced motion
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
@@ -2540,9 +2566,11 @@ Source: docs/product/pages/main-conversation.md#时间线
 
 共享 Markdown renderer MUST 只把规范化后在根 `/` 之外至少包含一个实际路径段的目标解析为应用内文件引用。该边界 MUST 同时适用于语法有效的显式 Markdown 绝对 POSIX 文件目标、普通文本中的裸绝对 POSIX 路径及整个 inline code；单独 `/`、规范化后仍为 `/` 的目标以及 `A / B` 中作为分隔符的 `/` MUST 保持原有文本语义，MUST NOT 登记文件 intent 或触发文件引用回调。
 
-有效文件引用的可选 `:line[:column]`、URI 解码、路径规范化与私有 intent 身份 MUST 保持现有行为，并在 path、line、column 之外保留行号是否由正文显式给出；无行号路径与显式 `:1` MUST NOT 合并为同一初始显示意图。renderer MUST NOT 根据扩展名、磁盘存在性、目标是否为目录或可读性预判引用；`/tmp`、无扩展名路径和不存在目标仍 MUST 进入文件引用回调，点击后的目录、不存在或不可读结果 MUST 由文件面板反馈。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
+有效文件引用的可选 `:line[:column]`、URI 解码、路径规范化与私有 intent 身份 MUST 保持现有行为，并在 path、line、column 之外保留行号是否由正文显式给出；无行号路径与显式 `:1` MUST NOT 合并为同一初始显示意图。renderer MUST NOT 根据磁盘存在性、目标是否为目录或可读性预判引用，也不对 inline code、显式 Markdown 文件链接与宽松档裸路径做扩展名约束；`/tmp`、无扩展名路径和不存在目标在通过边界判定后仍 MUST 进入文件引用回调，点击后的目录、不存在或不可读结果 MUST 由文件面板反馈。内部动作身份 MUST 来自当前 renderer 实例在 Markdown AST 变换时登记的私有意图，MUST NOT 只凭正文可构造的 URL 或 hash 判定。
 
 普通文本中的尾随句子标点 MUST 留在文件引用外；有效 inline code 文件目标 MUST 保留代码视觉并可点击。已有 Markdown link、图片与 fenced code MUST NOT 被递归拆成嵌套文件引用，其中的路径文本仍 MUST 保持原文。任何正文 HTTPS URL 都仍是普通外链并走既有确认回调；图片、`file:`、`javascript:`、data 与自定义协议仍按既有边界阻断。点击有效文件引用 MUST 只把规范化的 path、line、column 交给文件引用回调，MUST NOT 触发浏览器导航、外链确认或 `window.open`。
+
+普通文本中的裸绝对 POSIX 路径 MUST 按斜杠前一个字符分级判定起点：空白、行首与半角符号之后使用宽松档（规范化路径至少一个段含拉丁字母）；中日韩文字与全角标点之后使用严格档（末段带扩展名，即 `.` 加 1–8 位拉丁字母数字，或整体带显式 `:行号`）；拉丁字母、数字、`.`、`_`、`-`、`:`、`/` 与 `~` 之后不构成路径起点。全角括号 `（）「」【】` 与反斜杠 MUST 终止裸路径扫描，`~` MUST NOT 成为路径起点。这些约束只作用于裸文本扫描，不改变 inline code 与显式 Markdown 文件链接的既有行为。紧贴中日韩文字且无扩展名、无显式行号的目标保持普通文本，路径含全角括号的目标在括号处截断，均属接受代价；日期（`2026/08/07`）、分数（`1/2`）与 HTTPS URL MUST NOT 成为文件引用。
 
 #### Scenario: 单独斜杠保持普通文本
 
@@ -2617,6 +2645,36 @@ Source: docs/product/pages/main-conversation.md#时间线
 - WHEN 用户点击该链接
 - THEN 它只进入外链确认流程
 - AND 文件引用与成员 mention 回调都不触发
+
+#### Scenario: 紧贴中日韩文字的裸路径需要更强形状证据
+
+- GIVEN 正文包含 `工程文件在/工程/笔记.md`、`产物在/Users/wing/app.ts` 与 `见/src/index.ts:42`
+- WHEN 主时间线渲染这些文本
+- THEN 三者均呈现为文件引用并分别携带路径与行号信息
+- GIVEN 正文包含 `在我构建过程中被另一个正在运行的进程/会话实时修改（i18n 文件`、`成本/收益如何计算` 与 `成本/收益ROI计算`
+- WHEN 主时间线渲染
+- THEN 三者均保持普通文本，不登记文件 intent
+
+#### Scenario: 宽松档要求至少一个拉丁字母段
+
+- GIVEN 正文包含 `取 /2 作为系数` 与 `rm -rf /tmp/cache && node /app/x.js`
+- WHEN 主时间线渲染
+- THEN `/2` 保持普通文本
+- AND `/tmp/cache` 与 `/app/x.js` 各自呈现为文件引用
+
+#### Scenario: 全角括号与反斜杠终止裸路径
+
+- GIVEN 正文包含 `/tmp/a（备份）`、`正则 /\d+/ 匹配数字` 与 `家目录 ~/projects/x`
+- WHEN 主时间线渲染
+- THEN 只呈现 `/tmp/a` 为文件引用且全角括号保持普通文本
+- AND `/\d+/` 与 `~/projects/x` 整体保持普通文本
+
+#### Scenario: 日期、分数与 URL 不进入文件引用
+
+- GIVEN 正文包含 `2026/08/07`、`1/2`、`(1/2)` 与 `https://example.com/a`
+- WHEN 主时间线渲染
+- THEN 日期与分数保持普通文本
+- AND HTTPS URL 走既有外链确认流程而不进入文件引用回调
 
 ### Requirement: 已知团队 mention 显示可读名称并连接既有团队详情
 
@@ -3101,11 +3159,11 @@ Source: docs/product/pages/main-left-sidebar.md#响应式与窗口行为；docs/
 hover、focus、展开、折叠或状态切换 MUST NOT 改变同层文字的基线或横向起点。该规则 MUST NOT
 自动应用到品牌 Logo 或右侧栏内部。
 
-#### Scenario: 参考页与生产页的对应图标几何一致
+#### Scenario: 生产侧栏与主会话图标按宿主盒对齐
 
-- **GIVEN** `dashboard.html` 与真实 Electron 分别显示侧栏和主会话代表状态
-- **WHEN** 检查 shell、导航、项目/会话操作、消息/活动工具、子会话、状态、上下文和 Composer
-- **THEN** 具有直接对应关系的参考与生产图标使用相符的图形尺寸、描边和自然居中方式
+- **GIVEN** 生产侧栏与主会话显示 shell、导航、项目/会话操作、消息/活动工具、子会话、状态、上下文和 Composer 代表状态
+- **WHEN** 检查这些图标与其宿主
+- **THEN** 具有相同视觉角色与密度的图标使用相符的图形尺寸、描边和自然居中方式
 - **AND** 单行图标中心与宿主行或按钮中心的垂直差不超过 0.5px
 - **AND** 图标与文字基线自然，同一行相邻按钮视觉重量一致
 - **AND** 其他已经自然对齐且视觉重量一致的生产图标保持既有尺寸和布局
@@ -3138,7 +3196,7 @@ Source: docs/product/pages/main-left-sidebar.md#响应式与窗口行为
 
 Source: docs/product/pages/main-conversation.md#页面结构
 
-系统 MUST 让主会话 sticky 标题、通知、空态、时间线消息、活动 run、结果、待发射区和 composer 共用最大 840px 的居中内容轴；可用宽度不足时各区域 MUST 共同收缩并保持 32px 左右 gutter。顶部窗口控制行与 sticky 会话标题 MUST 均为 46px。系统 MUST NOT 让任一区域继续使用独立的 760px / 720px 宽度，MUST NOT 因内容轴变宽而把目录轨迁入项目 / 会话侧栏或产生根级横向滚动。
+系统 MUST 让主会话 sticky 标题、通知、空态、时间线消息、活动 run、结果、待发射区和 composer 共用最大 840px 的居中内容轴；可用宽度不足时各区域 MUST 共同收缩并保持 32px 左右 gutter；存在会话目录轨时，时间线消息列与 composer 的左侧 gutter 例外地按收起态目录轨宽度预留（56px）且不随目录轨展开变化，sticky 标题行位于目录轨上方、不受该例外影响。顶部窗口控制行与 sticky 会话标题 MUST 均为 46px。系统 MUST NOT 让任一区域继续使用独立的 760px / 720px 宽度，MUST NOT 因内容轴变宽而把目录轨迁入项目 / 会话侧栏或产生根级横向滚动。
 
 #### Scenario: 宽窗打开长会话
 
@@ -3151,20 +3209,20 @@ Source: docs/product/pages/main-conversation.md#页面结构
 
 - **GIVEN** 左侧栏打开且主会话正在显示
 - **WHEN** 窗口缩窄到无法容纳 840px 内容轴
-- **THEN** 标题、时间线和 composer 同步收缩并保留 32px 左右 gutter
+- **THEN** 标题、时间线和 composer 同步收缩；无目录轨时保留 32px 左右 gutter，有目录轨时消息列与 composer 左缘固定让出收起态目录轨宽度（56px）且不随目录轨展开变化
 - **AND** 长正文、附件和 Markdown 在自身边界换行或滚动，不撑宽根页面
 
 ### Requirement: 主会话消息采用 dashboard 身份与正文层级
 
 Source: docs/product/pages/main-conversation.md#时间线
 
-系统 MUST 在主会话把用户与 Agent 身份头像渲染为 24px 圆形，把 Agent / system 正文相对身份行缩进 32px，并把 Agent 长正文限制为最大 68ch。用户身份行和消息 MUST 右对齐，用户消息气泡 MUST 不超过主内容轴的 75%，使用 8px × 12px 内边距和 10px 圆角。系统 MUST 保持消息时间只在 hover / focus 时可见，并保持 Markdown、附件、完整输出、分析入口及活动 run 的既有行为。主会话视觉参数 MUST NOT 自动应用到右侧栏的 embedded 会话。
+系统 MUST 在主会话把用户与 Agent 身份头像渲染为 24px 圆形，把 Agent / system 正文相对身份行缩进 32px，并让 Agent 正文占满 840px 内容列、不再附加行宽上限。用户身份行和消息 MUST 右对齐，用户消息气泡 MUST 不超过主内容轴的 75%，使用 8px × 12px 内边距和 10px 圆角。系统 MUST 保持消息时间只在 hover / focus 时可见，并保持 Markdown、附件、完整输出、分析入口及活动 run 的既有行为。主会话视觉参数 MUST NOT 自动应用到右侧栏的 embedded 会话。
 
 #### Scenario: 同一时间线含用户长消息与 Agent 长回复
 
 - **GIVEN** 主会话包含用户消息、Agent 长回复与活动 run
 - **WHEN** 用户悬停并键盘聚焦这些记录
-- **THEN** 主会话头像为 24px，Agent 正文缩进 32px 且不超过 68ch
+- **THEN** 主会话头像为 24px，Agent 正文缩进 32px 且占满内容列宽度
 - **AND** 用户气泡右对齐且不超过内容轴 75%，消息时间可见
 - **AND** 原有消息操作仍可由鼠标和键盘使用
 

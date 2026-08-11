@@ -1,7 +1,7 @@
 import { FileText, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
-import { AgentInitialAvatar } from "@/console/agent-initial-avatar";
+import { AgentPortrait } from "@/console/agent-portrait";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/ui/dialog";
@@ -20,11 +20,24 @@ export interface AgentRunInfoView {
 
 type LoadState<T> = { status: "idle" | "loading" } | { status: "ready"; value: T } | { status: "error" };
 
-export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadInfo, loadMarkdown }: {
+export function AgentRunInfoPopover({
+  sessionId,
+  runId,
+  role,
+  displayName,
+  portraitId,
+  engine,
+  loadInfo,
+  loadMarkdown,
+}: {
   sessionId: string;
   runId: string;
   role: string;
   displayName: string;
+  /** The face this member has been given; the trigger must match the plain RoleTag. */
+  portraitId?: string | null;
+  /** Engine known from the roster, so the badge is there before the popover loads. */
+  engine?: { cli: "codex" | "claude" | "kimi" | "pi"; providerId?: string };
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
   loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
 }): JSX.Element {
@@ -77,6 +90,7 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
 
   return (
     <Popover
+        group="agent-run-info"
         open={open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen && dialogOpenRef.current) return;
@@ -87,10 +101,23 @@ export function AgentRunInfoPopover({ sessionId, runId, role, displayName, loadI
           <button
             ref={avatarTrigger}
             type="button"
-            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            // inline-flex, not the default block: a block button reserves line-height
+            // leading below inline content, growing a 24px portrait into a 29.5px box
+            // with the portrait pinned to the top — it then sits above the row's text.
+            className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={t("console.agentRunInfo.view", { name: displayName })}
           >
-            <AgentInitialAvatar displayName={displayName} slug={role} className="h-6 w-6 text-xs" />
+            {/* The roster engine shows the badge immediately; once the payload lands we
+                prefer what actually ran, which can differ from the roster default. */}
+            <AgentPortrait
+              displayName={displayName}
+              slug={role}
+              portraitId={portraitId}
+              engine={info.status === "ready" && info.value.profile !== null
+                ? { cli: info.value.profile.cli }
+                : engine}
+              className="h-6 w-6"
+            />
           </button>
         </PopoverTrigger>
         <PopoverContent

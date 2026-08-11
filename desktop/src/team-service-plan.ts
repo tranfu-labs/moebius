@@ -7,8 +7,10 @@ import {
   type AgentTeamExecutionProfilesReplaceRequest,
   type AgentTeamListItem,
   type AgentTeamMemberAddRequest,
+  type AgentTeamMemberDocument,
   type AgentTeamMemberRequest,
   type AgentTeamMemberWriteRequest,
+  type AgentTeamMemberOrderWriteRequest,
   type AgentTeamOfficialUpdateCommitRequest,
   type AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
@@ -152,6 +154,7 @@ export function toListItem(
         displayName: current?.displayName ?? "",
         description: current?.description ?? "",
         available: current !== undefined,
+        portraitId: current?.portraitId ?? null,
       };
     }),
     status: snapshot.status,
@@ -172,10 +175,49 @@ export function parseMemberRequest(value: unknown): AgentTeamMemberRequest {
 
 export function parseMemberWriteRequest(value: unknown): AgentTeamMemberWriteRequest {
   const request = parseMemberRequest(value);
-  if (!isPlainObject(value) || typeof value.agentMarkdown !== "string") {
-    throw new AgentTeamIpcRequestError("AGENT.md content is required.");
+  if (!isPlainObject(value)) {
+    throw new AgentTeamIpcRequestError("A member write request is required.");
   }
-  return { ...request, agentMarkdown: value.agentMarkdown };
+  const hasMarkdown = typeof value.agentMarkdown === "string";
+  const hasPortrait = Object.hasOwn(value, "portraitId");
+  if (hasMarkdown === hasPortrait) {
+    throw new AgentTeamIpcRequestError(
+      "A member write requires exactly one of AGENT.md content or a portrait choice.",
+    );
+  }
+  if (typeof value.agentMarkdown === "string") {
+    return { ...request, agentMarkdown: value.agentMarkdown };
+  }
+  return { ...request, portraitId: parseOptionalPortraitId(value.portraitId) };
+}
+
+export function planMemberWriteAction(request: AgentTeamMemberWriteRequest): "markdown" | "portrait" {
+  return request.portraitId !== undefined ? "portrait" : "markdown";
+}
+
+export function planAgentTeamMemberDocument(member: TeamSnapshot["members"][number]): AgentTeamMemberDocument {
+  return {
+    slug: member.slug,
+    displayName: member.displayName,
+    description: member.description,
+    available: true,
+    agentMarkdown: member.agentMarkdown,
+    portraitId: member.portraitId ?? null,
+  };
+}
+
+function parseOptionalPortraitId(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string" || /\r|\n/u.test(value)) {
+    throw new AgentTeamIpcRequestError("A portrait id must be a single-line string or null.");
+  }
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new AgentTeamIpcRequestError("A portrait id must not be empty.");
+  }
+  return normalized;
 }
 
 export function parseMemberRevisionRestoreRequest(value: unknown): {
@@ -210,6 +252,20 @@ export function parsePrimaryAgentWriteRequest(value: unknown): AgentTeamPrimaryA
     throw new AgentTeamIpcRequestError("A primary Agent slug is required.");
   }
   return { ...team, primaryAgentSlug: value.primaryAgentSlug };
+}
+
+export function parseMemberOrderWriteRequest(value: unknown): AgentTeamMemberOrderWriteRequest {
+  const team = parseTeamRequest(value);
+  if (!isPlainObject(value) || !Array.isArray(value.memberOrder)) {
+    throw new AgentTeamIpcRequestError("A member order array is required.");
+  }
+  const memberOrder = value.memberOrder.map((entry) => {
+    if (typeof entry !== "string" || entry.trim().length === 0 || !isValidPathSegment(entry)) {
+      throw new AgentTeamIpcRequestError("A member order entry must be a valid member slug.");
+    }
+    return entry;
+  });
+  return { ...team, memberOrder };
 }
 
 export function parseExecutionProfileSaveRequest(value: unknown): AgentTeamExecutionProfileSaveRequest {

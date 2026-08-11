@@ -23,3 +23,4 @@
 - 修改成熟页面时默认同步其 Page Story；新增 Story 时选择最小准确层级，不用 Page 掩盖缺失的 Component 或 Block。
 - 运行 `pnpm --filter @moebius/console-ui check:storybook` 检查目录分类并构建静态 Storybook。
 - Storybook 静态构建是临时产物，不提交 `storybook-static/`，也不维护平行 `*.ui.html`。
+- 本包不保留静态设计参考稿（HTML/CSS/图片等）：设计探索材料归档在 `docs/design-explorations/`，未解决的设计问题进 `prototypes/`，浏览展示唯一入口是 Storybook。

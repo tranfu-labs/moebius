@@ -53,6 +53,7 @@ describe("会话事实日志的增量写入", () => {
         body: `第 ${String(round)} 轮回复`,
         runId: `run-${String(round)}`,
         runDir: `/tmp/run-${String(round)}`,
+        processSteps: [],
         now: stamp(round * 10 + 3),
       });
       await store.recordMessageProcessed({

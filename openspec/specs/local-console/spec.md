@@ -264,7 +264,8 @@ Source: docs/product/pages/main-left-sidebar.md#入口与去向
 - MUST require interrupt requests to target the active run by session id and run id; a request for another session or stale run id must not abort the active run.
 - MUST persist user interruption distinctly from stuck state and error failure; interrupted local messages must be distinguishable from stuck and failed local messages in SQLite, API responses, and UI.
 - MUST append a visible local system record when a run is interrupted by the user.
-- MUST append a visible local error record when Codex fails by non-zero exit, spawn error, or other non-timeout driver failure.
+- MUST append a visible local error record when a run fails by non-zero exit, spawn error, or other non-timeout driver failure, unless the failure is eligible for silent auto-retry: deterministic dispatch failures (missing agent, broken route, missing retry trigger) and failures that already produced visible Agent output MUST land as a visible terminal record immediately.
+- MUST NOT append a visible system record for an intermediate silent auto-retry attempt of an infra start failure; the attempt MUST persist failure_count / last_failure_reason on the source message, keep it claimable for the next attempt, and only reach a visible record when the retry budget is exhausted (dead-letter, see below).
 - MUST NOT classify user interruption as an error failure.
 - MUST allow a local session to accept a later message after an interrupted run.
 
@@ -279,6 +280,7 @@ Source: docs/product/pages/main-left-sidebar.md#入口与去向
 - MUST keep a failure count and last failure reason for each local source message processing failure.
 - MUST count failures by source session id and source message id, not by run id.
 - MUST keep a failed source message retryable until the configured local failure retry limit is exhausted.
+- MUST retry eligible start failures silently: an intermediate retry MUST NOT append a visible system record, MUST persist the failure on the source message (`failure_count` / `last_failure_reason`), MUST keep the message claimable for the next attempt, and MUST NOT advance the processing cursor past the source.
 - MUST write exactly one visible local dead-letter system record when a source message exhausts the retry budget.
 - MUST persist a matching `local_dead_letters` fact for the dead-lettered source message.
 - MUST complete or otherwise terminally mark the dead-lettered source message so later polling does not replay the same source message.
@@ -407,6 +409,7 @@ And neither child session is selected as a successful recovery.
 Given a local source message repeatedly fails with the same non-timeout processing error
 When the failure count reaches the local retry limit
 Then the local timeline contains one visible dead-letter system record for that source message
+And the intermediate failed attempts before the limit appended no visible system record to the timeline
 And `local_dead_letters` contains one matching fact
 And later polling does not write another dead-letter for the same source message
 And the session can process a later local message.

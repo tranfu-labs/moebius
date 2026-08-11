@@ -67,6 +67,7 @@ import {
   readProviderProcessStartedFacts,
 } from "./execution-context-reader.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
+import { planHandoffDispatchGeneration, planHandoffDispatchState } from "./control-dispatch.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;
@@ -562,6 +563,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-agent-response", ...input }, [input.sessionId]);
@@ -573,6 +575,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-detached-agent-response", ...input }, [input.sessionId]);
@@ -596,6 +599,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void> {
@@ -622,6 +627,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     error: string | null;
     status?: "displayed" | "failed" | "interrupted" | "stuck";
     systemEventKind?: LocalConsoleSystemEventKind;
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void> {
@@ -723,6 +730,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: import("./types.js").LocalConsoleTerminal | null;
     sourceKind?: string | null;
     sourceId?: string | null;
@@ -749,6 +758,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runDir: string | null;
     failureCount: number;
     now: string;
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
   }): Promise<void> {
     await this.runFact({ kind: "local-record-dead-letter-and-complete", ...input }, [input.sessionId]);
   }
@@ -761,6 +772,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: import("./types.js").LocalConsoleTerminal | null;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-interrupted", ...input }, [input.sessionId]);
@@ -773,6 +786,8 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: import("./types.js").LocalConsoleTerminal | null;
   }): Promise<void> {
     await this.runFact({ kind: "local-record-stuck", ...input }, [input.sessionId]);
@@ -783,6 +798,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     cutoffIso: string;
     now: string;
     reason: string;
+    roles: Record<number, string | null>;
   }): Promise<number> {
     return this.runFact({ kind: "local-mark-stale-running", ...input }, [input.sessionId]);
   }
@@ -866,6 +882,41 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         },
         messageUpserts: [],
       });
+    });
+  }
+
+  async recordHandoffDispatch(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    sourceMessageId: number;
+    now: string;
+  }): Promise<number> {
+    return this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const generation = planHandoffDispatchGeneration(events, input);
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "handoff_dispatch",
+        recordedAt: input.now,
+        payload: { ...input, generation },
+        messageUpserts: [],
+      });
+      return generation;
+    });
+  }
+
+  async readHandoffDispatchState(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+  }): Promise<{ runGeneration: number | null; latestGeneration: number | null }> {
+    return this.enqueue(async () => {
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      return planHandoffDispatchState(events, input);
     });
   }
 
@@ -953,6 +1004,64 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         type: "run_activity",
         recordedAt: input.activity.occurredAt,
         payload: input,
+        messageUpserts: [],
+      });
+    });
+  }
+
+  async recordRoundTerminal(input: {
+    sessionId: string;
+    roundId: number;
+    outcome: import("./round-closeout-plan.js").LocalRoundTerminalOutcome;
+    terminalMessageId: number | null;
+    conversationTitle: string;
+    occurredAt: string;
+  }): Promise<void> {
+    await this.appendIdempotentSessionFact(
+      input.sessionId,
+      "round_terminal",
+      `round:${String(input.roundId)}`,
+      input.occurredAt,
+      {
+        roundId: input.roundId,
+        outcome: input.outcome,
+        terminalMessageId: input.terminalMessageId,
+        conversationTitle: input.conversationTitle,
+        occurredAt: input.occurredAt,
+      },
+    );
+  }
+
+  async recordPrimaryCloseout(input: {
+    sessionId: string;
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  }): Promise<void> {
+    // 与 appendIdempotentSessionFact 不同：同一消息可能因 rewind/重试被再次
+    // complete-source，occurredAt 会变化；收束信号对消息是确定的，已存在即
+    // 幂等忽略（保留首次判定时刻），不因时间戳差异抛冲突。
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const existing = events.find((event) =>
+        event.type === "primary_closeout"
+        && isRecord(event.payload)
+        && event.payload.messageId === input.messageId);
+      if (existing !== undefined) {
+        return;
+      }
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "primary_closeout",
+        recordedAt: input.occurredAt,
+        payload: {
+          messageId: input.messageId,
+          role: input.role,
+          occurredAt: input.occurredAt,
+        },
         messageUpserts: [],
       });
     });
@@ -1358,6 +1467,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
             && typeof event.payload.phase === "string"
             && `${event.payload.invocationId}:${event.payload.phase}` === key
           )
+          || (
+            typeof event.payload.roundId === "number"
+            && `round:${event.payload.roundId}` === key
+          )
         ));
       if (existing !== undefined) {
         if (JSON.stringify(existing.payload) !== JSON.stringify(payload)) {
@@ -1680,6 +1793,7 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       error: readNullableString(value.error, "error"),
       systemEventKind: readMessageSystemEventKind(value.systemEventKind, value.error),
       terminal: "terminal" in value ? normalizeTerminal(value.terminal) : null,
+      processSteps: "processSteps" in value ? readProcessSteps(value.processSteps) : [],
       failureCount: "failureCount" in value ? readNumber(value.failureCount, "failureCount") : 0,
       lastFailureReason: "lastFailureReason" in value ? readNullableString(value.lastFailureReason, "lastFailureReason") : null,
       sourceKind: "sourceKind" in value ? readNullableString(value.sourceKind, "sourceKind") : null,
@@ -1866,6 +1980,47 @@ function normalizeExecutionProfile(value: unknown): LocalConsoleTerminal["actual
     };
   }
   return { cli, model, effort };
+}
+
+function readProcessSteps(value: unknown): readonly import("./run-activity.js").LocalRunActivity[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Invalid local process steps");
+  }
+  const seen = new Set<number>();
+  return value.map((step) => {
+    if (!isRecord(step)) {
+      throw new Error("Invalid local process step");
+    }
+    const cursor = readNumber(step.cursor, "process step cursor");
+    if (seen.has(cursor)) {
+      throw new Error("Local process step cursors must be unique");
+    }
+    seen.add(cursor);
+    const kind = readString(step.kind, "process step kind");
+    if (
+      kind !== "command"
+      && kind !== "tool"
+      && kind !== "search"
+      && kind !== "read"
+      && kind !== "edit"
+      && kind !== "thinking"
+      && kind !== "progress"
+    ) {
+      throw new Error(`Invalid local process step kind: ${String(kind)}`);
+    }
+    const phase = readString(step.phase, "process step phase");
+    if (phase !== "running" && phase !== "completed") {
+      throw new Error(`Invalid local process step phase: ${String(phase)}`);
+    }
+    return {
+      cursor,
+      kind,
+      phase,
+      action: readString(step.action, "process step action"),
+      object: readNullableString(step.object, "process step object"),
+      occurredAt: readString(step.occurredAt, "process step occurredAt"),
+    };
+  });
 }
 
 function normalizeTextFragment(value: unknown): LocalConsoleTextFragment {

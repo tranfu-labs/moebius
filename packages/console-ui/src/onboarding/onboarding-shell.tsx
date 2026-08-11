@@ -56,6 +56,8 @@ import {
 } from "./onboarding-state";
 import { RelayDemo } from "./relay-demo/relay-demo";
 import { projectOnboardingTeamList } from "./onboarding-team-list-model";
+import { NotificationPermissionStep } from "./notification-permission-step";
+import type { TaskReminderSettingsController } from "@/console/settings-dialog";
 
 export type OnboardingMode = "first-run" | "replay";
 
@@ -67,6 +69,7 @@ export interface OnboardingShellProps {
   teamBuilderState: TeamBuilderViewState;
   createdTeamKey?: string | null;
   providerSettings?: ProviderSettingsController;
+  taskReminder?: TaskReminderSettingsController;
   onRecheckEnvironment: () => void | Promise<void>;
   onInstallCli: (cli: OnboardingCli) => void | Promise<void>;
   onUpdateClaude?: () => void | Promise<void>;
@@ -98,6 +101,7 @@ export function OnboardingShell({
   teamBuilderState,
   createdTeamKey = null,
   providerSettings,
+  taskReminder,
   onRecheckEnvironment,
   onInstallCli,
   onUpdateClaude,
@@ -185,13 +189,13 @@ export function OnboardingShell({
   const primaryDisabled = state.teamBuilderOpen
     || completionState === "saving"
     || (state.step === 1 && !canContinueOnboardingEnvironment(environment, providerProfiles))
-    || (state.step >= 2 && selectedTeam === null);
+    || (state.step >= 2 && state.step <= 3 && selectedTeam === null);
 
   const advance = async () => {
     if (primaryDisabled) {
       return;
     }
-    if (state.step !== 4) {
+    if (state.step !== 5) {
       dispatch({ type: "next" });
       return;
     }
@@ -205,6 +209,28 @@ export function OnboardingShell({
       setCompletionState("error");
     }
   };
+
+  if (state.step === 4) {
+    return (
+      <div data-testid="onboarding-step-4">
+        <NotificationPermissionStep
+          masterSwitchEnabled={taskReminder?.enabled ?? true}
+          permission={taskReminder === undefined
+            ? "undetermined"
+            : taskReminder.channelAnomaly
+              ? "unavailable"
+              : taskReminder.permission}
+          waitingForSystem={taskReminder?.modal.phase === "requesting"}
+          checking={taskReminder?.checking}
+          onAllow={() => taskReminder?.onModalAction({ kind: "request" })}
+          onSkip={() => dispatch({ type: "next" })}
+          onRecheck={() => taskReminder?.onRecheckChannel?.()}
+          onBack={() => dispatch({ type: "back" })}
+          onContinue={() => dispatch({ type: "next" })}
+        />
+      </div>
+    );
+  }
 
   return (
     <main
@@ -270,7 +296,7 @@ export function OnboardingShell({
         >
           <header className="mx-auto w-full max-w-lg text-center">
             <div className="mb-3 flex justify-center gap-1" aria-hidden="true" data-testid="onboarding-progress-bars">
-              {([1, 2, 3, 4] as const).map((step) => (
+              {([1, 2, 3, 4, 5] as const).map((step) => (
                 <i
                   className={cn(
                     "h-[3px] w-[22px] rounded-full",
@@ -362,7 +388,7 @@ export function OnboardingShell({
                 />
               )
             ) : null}
-            {state.step === 4 ? <ReadyStep compatibility={compatibility} /> : null}
+            {state.step === 5 ? <ReadyStep compatibility={compatibility} /> : null}
             {completionState === "error" ? (
               <p className="mt-4 text-center text-sm text-danger" role="alert">
                 {t("onboarding.saveProgressFailed")}
@@ -373,7 +399,7 @@ export function OnboardingShell({
       </section>
       {state.teamBuilderOpen ? null : (
         <OnboardingFooter
-          primaryLabel={state.step === 4
+          primaryLabel={state.step === 5
             ? completionState === "saving"
               ? mode === "replay" ? t("onboarding.savingReturn") : t("onboarding.savingEnter")
               : t("onboarding.startUsing")
@@ -1070,7 +1096,7 @@ function readyProviderProfiles(controller: ProviderSettingsController | undefine
   return controller?.state.status === "ready" ? controller.state.profiles : [];
 }
 
-function ReadyStep({
+export function ReadyStep({
   compatibility,
 }: {
   compatibility: ReturnType<typeof getOnboardingTeamCompatibility>;
@@ -1210,6 +1236,8 @@ function stepTitle(t: Translate, step: OnboardingStep, affectedMembers: number):
     case 3:
       return t("onboarding.step3Title");
     case 4:
+      return t("notification.settings.title");
+    case 5:
       return affectedMembers > 0
         ? t("onboarding.step4PartialTitle")
         : t("onboarding.step4ReadyTitle");
@@ -1229,6 +1257,8 @@ function stepSubtitle(
     case 3:
       return t("onboarding.step3Subtitle");
     case 4:
+      return t("notification.settings.description");
+    case 5:
       return compatibility.affectedCount > 0
         ? compatibilityCopy(t, compatibility)
         : t("onboarding.step4ReadySubtitle");

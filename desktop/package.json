@@ -1,11 +1,11 @@
 {
   "name": "@moebius/desktop",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "pnpm --filter @moebius/console-ui build && node scripts/build.mjs",
+    "build": "pnpm --filter @moebius/console-ui build && node scripts/build-native.mjs && node scripts/build.mjs",
     "dev": "pnpm build && electron .",
     "dev:web-shell": "node scripts/dev-web-shell.mjs",
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
@@ -51,6 +51,10 @@
       {
         "from": "../seeds/teams",
         "to": "seed/teams"
+      },
+      {
+        "from": "native/build/MoebiusPermissionBridge.app",
+        "to": "native/MoebiusPermissionBridge.app"
       }
     ],
     "directories": {

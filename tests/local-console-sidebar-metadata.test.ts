@@ -75,6 +75,8 @@ describe("local console sidebar metadata", () => {
       error: "failed",
       status: "failed",
       systemEventKind: "run-not-started",
+      role: null,
+      processSteps: [],
       now: "2026-07-30T00:00:01.000Z",
     });
     const alerted = (await store.listSessions()).find((session) => session.sessionId === "attention");
@@ -112,6 +114,8 @@ describe("local console sidebar metadata", () => {
       error: "failed again",
       status: "failed",
       systemEventKind: "retry-exhausted",
+      role: null,
+      processSteps: [],
       now: "2026-07-30T00:00:03.000Z",
     });
     expect((await reopened.listSessions()).find((session) => session.sessionId === "attention"))
@@ -255,6 +259,7 @@ describe("local console sidebar metadata", () => {
       body: "第一条结果",
       runId: "run-1",
       runDir: "/tmp/run-1",
+      processSteps: [],
       now: "2026-07-30T00:00:03.000Z",
     });
     const menuState = (await store.listSessions()).find((session) =>
@@ -270,6 +275,7 @@ describe("local console sidebar metadata", () => {
       body: "后来到达的新结果",
       runId: "run-2",
       runDir: "/tmp/run-2",
+      processSteps: [],
       now: "2026-07-30T00:00:06.000Z",
     });
 

@@ -60,6 +60,7 @@ import { hasProviderSettingsPort } from "./provider-settings-port.js";
 import { useProviderSettings } from "./use-provider-settings.js";
 import { buildProviderSettingsMessages } from "./provider-settings-messages.js";
 import { browserManagedProcessPort } from "./managed-process-client.js";
+import { useTaskReminderController } from "./use-task-reminder.js";
 import {
   DesktopApplicationRoot,
   useDesktopLanguage,
@@ -285,6 +286,7 @@ export function OperatorConsoleApp({
       agentTeams={agentTeamControllersBundle}
       managedProcesses={managedProcesses}
       providerSettings={providerSettings}
+      taskReminder={useTaskReminderController(window.moebius)}
       actions={actions}
       newConversation={newConversation}
       sessionAnalysisNotice={sessionAnalysisNotice}
@@ -303,9 +305,7 @@ export function OperatorConsoleApp({
 }
 
 function createAgentTeamBuilderDraftId(): string {
-  const suffix = typeof globalThis.crypto?.randomUUID === "function"
-    ? globalThis.crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const suffix = typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `agent-teams-${suffix}`;
 }
 

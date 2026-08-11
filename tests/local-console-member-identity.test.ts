@@ -30,6 +30,11 @@ describe("local console member identity projection", () => {
         { name: "empty-name", agentMarkdown: "---\ndisplay_name: \"\"\ndescription: 缺失名称\n---\n\nsecret" },
         { name: "bad-type", agentMarkdown: "---\ndisplay_name: [bad]\ndescription: 非字符串\n---\n\nsecret" },
         { name: "broken-yaml", agentMarkdown: "---\ndisplay_name: [\n---\n\nsecret" },
+        { name: "chosen-face", agentMarkdown: "---\ndisplay_name: 换过脸\ndescription: 测试成员\nportrait_id: cat-12\n---\n\nsecret" },
+        { name: "null-face", agentMarkdown: "---\ndisplay_name: 空脸\ndescription: 测试成员\nportrait_id: null\n---\n\nsecret" },
+        { name: "bad-face", agentMarkdown: "---\ndisplay_name: 坏脸\ndescription: 测试成员\nportrait_id: [bad]\n---\n\nsecret" },
+        { name: "record-face", agentMarkdown: "---\ndisplay_name: 记录脸\ndescription: 测试成员\n---\n\nsecret", portraitId: "cat-21" },
+        { name: "record-null", agentMarkdown: "---\ndisplay_name: 记录空\ndescription: 测试成员\nportrait_id: cat-07\n---\n\nsecret", portraitId: null },
       ],
     });
 
@@ -40,6 +45,12 @@ describe("local console member identity projection", () => {
       { slug: "empty-name", displayName: "" },
       { slug: "bad-type", displayName: "" },
       { slug: "broken-yaml", displayName: "" },
+      { slug: "chosen-face", displayName: "换过脸", portraitId: "cat-12" },
+      { slug: "null-face", displayName: "空脸" },
+      { slug: "bad-face", displayName: "坏脸" },
+      // The app record in the snapshot wins; an explicit null clears a stale legacy field.
+      { slug: "record-face", displayName: "记录脸", portraitId: "cat-21" },
+      { slug: "record-null", displayName: "记录空" },
     ]);
     expect(resolveLocalConsoleMemberName("empty-name", identities)).toBe("@empty-name");
     expect(resolveLocalConsoleMemberName("missing", identities)).toBe("成员未知");
@@ -86,6 +97,7 @@ describe("local console member identity projection", () => {
       body: "监督结论",
       runId: "run-supervisor",
       runDir: path.join(root, "runs", "supervisor"),
+      processSteps: [],
       now: "2026-07-25T00:00:01.000Z",
     });
     await store.recordDetachedAgentResponse({
@@ -94,6 +106,7 @@ describe("local console member identity projection", () => {
       body: "执行结论",
       runId: "run-executor",
       runDir: path.join(root, "runs", "executor"),
+      processSteps: [],
       now: "2026-07-25T00:00:02.000Z",
     });
 

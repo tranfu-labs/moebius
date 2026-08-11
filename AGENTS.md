@@ -17,7 +17,7 @@
 ├── packages/console-ui/    # shadcn/Radix + Tailwind 的 React 操作台组件库与 Storybook
 ├── prototypes/             # 与生产代码双向隔离的高保真原型沙盒（规则见 prototypes/AGENTS.md）
 ├── seeds/teams/            # 打包进桌面应用的只读内置团队种子
-├── sites/marketeam/        # 自包含静态官网（marketing-site 域，同目录 DEPLOY.md）
+├── sites/marketeam/        # 自包含静态官网，英文根页 + `zh/` 中文页（marketing-site 域，同目录 DEPLOY.md）
 ├── scripts/                # 品牌资产生成、验收脚本
 ├── tests/                  # Vitest 单元测试
 ├── docs/
@@ -48,6 +48,7 @@
 - import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核；临时数据与 evidence 均写系统临时目录）
+- 官网双语言验收：`pnpm exec tsx scripts/acceptance/marketing-site-locales.ts`（自起静态服务 + 真实 Chromium，断言语言路由、语言控件无脚本可用、单语言无残留、两页结构平价、320–1440px 无横滚与下载降级；不需要网络，evidence 写系统临时目录）
 - BYOK / Pi Electron 验收：`pnpm exec tsx scripts/acceptance/byok-pi-electron.ts`（从真实设置入口验证 DeepSeek 失败恢复、重启一致性、窄窗口与秘密落盘边界；临时数据与 evidence 均写系统临时目录）
 - BYOK / Pi API-only 引导验收：`pnpm exec tsx scripts/acceptance/byok-pi-onboarding.ts [--app <独立 Moebius.app>]`（在三套 CLI 均不可用的真实引导页验证 DeepSeek 建档、团队原子替换、完成与重启；传 `--app` 时同时验证签名 arm64 应用、safeStorage 与退出进程树；临时数据与 evidence 均写系统临时目录）
 - Pi Agent 能力验收：`pnpm exec tsx scripts/acceptance/pi-agent-capabilities.ts`（从本机 Keychain 的 `moebius-byok-acceptance` 项读取临时 Key，在隔离工作区真实验证 DeepSeek 工具循环、原生 resume 与秘密落盘边界；临时数据与 evidence 均写系统临时目录）
@@ -99,7 +100,7 @@
 | 目标账本（goal / milestone / task / 验收 fact） | `openspec/specs/goal-ledger/spec.md` | |
 | 本地会话运行时（jsonl 事实源 / 主 Agent 控制 / 恢复 resume / 附件 / 运行过程） | `openspec/specs/local-console/spec.md` | |
 | 桌面壳（数据根 / 种子 / 团队 / preload 边界 / 打包发布 / 更新） | `openspec/specs/desktop-shell/spec.md` | ADR-0002（CDP 调试通道） |
-| 操作台 UI（时间线 / composer / 侧栏 / onboarding / RelayDemo / Markdown 渲染） | `openspec/specs/console-ui/spec.md` | 设计语言 `packages/console-ui/DESIGN.md` |
+| 操作台 UI（时间线 / composer / 侧栏 / onboarding / RelayDemo / Markdown 渲染） | `openspec/specs/console-ui/spec.md` | 设计语言 `packages/console-ui/DESIGN.md`；Agent 画像资产的生成与再生成流程见 `.claude/skills/generate-avatar-set/` |
 | 设计原型沙盒 | `openspec/specs/design-prototypes/spec.md` | `prototypes/AGENTS.md` |
 | 官网 | `openspec/specs/marketing-site/spec.md` | `sites/marketeam/DEPLOY.md` |
 | 产品标识与品牌资产 | `openspec/specs/product-identity/spec.md` | |

@@ -30,7 +30,7 @@ describe("local console startup recovery plan", () => {
   it("distinguishes a graceful orphan from an ordinary stuck orphan", () => {
     const intent = gracefulIntent();
     const graceful = planOrphanRecovery({
-      orphan: { userMessageId: 12, runId: "run-1", runDir: "/tmp/worker" },
+      orphan: { userMessageId: 12, runId: "run-1", runDir: "/tmp/worker", role: null },
       facts: { intents: [intent], consumedIntentIds: new Set(), repairedIntentIds: new Set() },
     });
     expect(graceful).toEqual({
@@ -42,11 +42,11 @@ describe("local console startup recovery plan", () => {
       role: "qa",
     });
     expect(planOrphanRecovery({
-      orphan: { userMessageId: 13, runId: "run-2", runDir: "/tmp/run-2" },
+      orphan: { userMessageId: 13, runId: "run-2", runDir: "/tmp/run-2", role: null },
       facts: { intents: [intent], consumedIntentIds: new Set(), repairedIntentIds: new Set() },
     })).toEqual({
       kind: "record-stuck",
-      orphan: { userMessageId: 13, runId: "run-2", runDir: "/tmp/run-2" },
+      orphan: { userMessageId: 13, runId: "run-2", runDir: "/tmp/run-2", role: null },
     });
   });
 

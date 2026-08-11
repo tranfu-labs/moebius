@@ -893,6 +893,110 @@ describe("Kimi ACP driver", () => {
     expect(traceReady).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves whitespace-only chunks so accumulated Agent text matches the full chunk concatenation", async () => {
+    const root = await makeRunRoot();
+    const visible = vi.fn();
+    // Real-wire shape: kimi streams markdown boundary whitespace as standalone
+    // chunks ("##" + " " + text, "-" + " " + item, "\n\n" paragraph breaks).
+    const chunks = [
+      "##",
+      " ",
+      "QA 复核意见",
+      "\n\n",
+      "-",
+      " ",
+      "环境、main 同步",
+      "\n",
+      "-",
+      " ",
+      "门禁：`install --frozen-lockfile`",
+    ];
+    const transport = fakeTransport({
+      promptResult: { stopReason: "end_turn" },
+      sessionUpdates: chunks.map((text) => ({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      })),
+    });
+    const expected = chunks.join("");
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "answer",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      onVisibleAgentMarkdown: visible,
+    })).resolves.toMatchObject({
+      ok: true,
+      finalText: expected,
+      completionKind: "visible-text",
+    });
+    expect(visible).toHaveBeenLastCalledWith(expected);
+  });
+
+  it("keeps prompt-result text verbatim and drops a whitespace-suffixed echo of streamed text", async () => {
+    const root = await makeRunRoot();
+    const transport = fakeTransport({
+      promptResult: { stopReason: "end_turn", finalText: "Kimi 完成\n\n- 已同步\n" },
+    });
+
+    await expect(runKimiAcpWithTransport(transport, {
+      prompt: "answer",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).resolves.toMatchObject({
+      ok: true,
+      finalText: "Kimi 完成\n\n- 已同步\n",
+    });
+
+    const echoRoot = await makeRunRoot();
+    const echoTransport = fakeTransport({
+      promptResult: { stopReason: "end_turn", finalText: "Kimi 完成\n" },
+      sessionUpdates: [
+        {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Kimi 完成" },
+        },
+      ],
+    });
+
+    await expect(runKimiAcpWithTransport(echoTransport, {
+      prompt: "answer",
+      runDir: echoRoot,
+      cwd: echoRoot,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).resolves.toMatchObject({
+      ok: true,
+      finalText: "Kimi 完成",
+    });
+
+    const trailingRoot = await makeRunRoot();
+    const trailingTransport = fakeTransport({
+      promptResult: { stopReason: "end_turn", finalText: "Kimi 完成" },
+      sessionUpdates: [
+        {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Kimi 完成\n" },
+        },
+      ],
+    });
+
+    await expect(runKimiAcpWithTransport(trailingTransport, {
+      prompt: "answer",
+      runDir: trailingRoot,
+      cwd: trailingRoot,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+    })).resolves.toMatchObject({
+      ok: true,
+      finalText: "Kimi 完成\n",
+    });
+  });
+
   it("fails closed when trace readiness cannot be persisted", async () => {
     const root = await makeRunRoot();
     const transport = fakeTransport({

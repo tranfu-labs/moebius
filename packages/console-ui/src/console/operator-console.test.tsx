@@ -24,6 +24,11 @@ afterEach(() => {
   setWindowWidth(originalWindowWidth);
 });
 
+/** 消息底部工具条那一行（图标动作都在里面）。 */
+function toolbarRow0(node: HTMLElement): HTMLElement {
+  return node.closest("div.mt-1")!;
+}
+
 describe("OperatorConsole", () => {
   it("keeps the composer editable while a host-provided submission block disables send", () => {
     const onSend = vi.fn();
@@ -600,6 +605,8 @@ describe("OperatorConsole", () => {
     fireEvent.click(teamsEntry);
 
     expect(teamsEntry).toHaveAttribute("aria-current", "page");
+    // A loaded selection is not a request to open that team — the host reconciles it to the first
+    // team whenever nothing else is chosen, so the page still opens on its list.
     expect(screen.getByRole("heading", { name: "Agent 团队" })).toBeVisible();
     expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-team-count", "1");
     expect(screen.getByLabelText("团队数据已载入")).toHaveAttribute("data-selected-team-key", "system:development");
@@ -862,19 +869,19 @@ describe("OperatorConsole", () => {
     expect(rows).toHaveLength(3);
     expect(rows.every((row) => row.tagName === "BUTTON")).toBe(true);
     expect(rows.every((row) => row.querySelector("svg") === null)).toBe(true);
-    expect(within(rows[0]).getByText("官方来源")).toBeVisible();
+    const groups = screen.getAllByTestId("agent-team-group");
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["official", "mine"]);
+    expect(within(groups[0]!).getAllByTestId("agent-team-row")).toHaveLength(1);
+    expect(within(groups[1]!).getAllByTestId("agent-team-row")).toHaveLength(2);
     expect(within(rows[1]).getByText("未完成")).toBeVisible();
     expect(within(rows[2]).getByText("需要修复")).toBeVisible();
-    expect(within(rows[0]).getByText("5 名成员 · 主 Agent：开发经理")).toBeVisible();
+    expect(within(rows[0]).getByText("开发经理 接单 · 5 人")).toBeVisible();
 
+    // 主 Agent 占据卡片主头像后，成员条只承载「还有谁」：5 人 → 其余 4 人全部铺开
     const memberStrip = within(rows[0]).getByTestId("agent-team-members");
-    expect(within(memberStrip).getByTitle("开发经理")).toHaveAccessibleName("开发经理");
-    expect(memberStrip.querySelectorAll("[data-agent-initial-avatar]")).toHaveLength(3);
-    for (const memberName of ["开发经理", "开发", "测试"]) {
-      expect(within(memberStrip).getByTitle(memberName)).toHaveClass("w-28");
-    }
-    expect(within(memberStrip).getByText("· 主 Agent")).toBeVisible();
-    expect(within(memberStrip).getByLabelText("还有 2 名成员")).toHaveTextContent("＋2");
+    expect(memberStrip.querySelectorAll("[data-agent-portrait]")).toHaveLength(4);
+    expect(within(memberStrip).getByRole("group"))
+      .toHaveAccessibleName("成员：开发经理、开发、测试、产品、安全");
     expect(screen.queryByText("修改信息")).not.toBeInTheDocument();
     expect(screen.queryByText("复制并编辑")).not.toBeInTheDocument();
     expect(screen.queryByText("删除团队")).not.toBeInTheDocument();
@@ -916,9 +923,8 @@ describe("OperatorConsole", () => {
     const row = screen.getByTestId("agent-team-row");
     expect(screen.getAllByTestId("agent-team-row")).toHaveLength(1);
     expect(row).toHaveAttribute("data-layout", "narrow");
-    expect(row).toHaveClass("grid-cols-1");
-    expect(within(row).getByTestId("agent-team-members")).toHaveClass("border-t");
-    expect(within(row).getByLabelText("还有 2 名成员")).toHaveTextContent("＋2");
+    expect(within(row).getByTestId("agent-team-members").querySelectorAll("[data-agent-portrait]"))
+      .toHaveLength(4);
   });
 
   it("opens the real detail editor for the whole row and restores list scroll on return", () => {
@@ -941,7 +947,8 @@ describe("OperatorConsole", () => {
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
     expect(screen.getByText("官方来源")).toBeVisible();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     expect(screen.getByRole("button", { name: "复制团队" })).toBeVisible();
     expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
@@ -954,6 +961,38 @@ describe("OperatorConsole", () => {
     expect(listPage.scrollTop).toBe(187);
   });
 
+  it("forwards member reorder and identity callbacks into the team detail (seam)", () => {
+    const onReorderAgentTeamMembers = vi.fn();
+    const onChangeAgentTeamMemberIdentity = vi.fn();
+    renderConsole({
+      agentTeamsState: { status: "ready", teams: [fiveMemberTeam] },
+      agentTeamDetailState: detailStateFor(fiveMemberTeam.teamKey),
+      onReorderAgentTeamMembers,
+      onChangeAgentTeamMemberIdentity,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+    fireEvent.click(screen.getByTestId("agent-team-row"));
+
+    // The strip is reorderable only when the callback actually reaches the detail.
+    expect(screen.getByText("拖动排序，第一位是主 Agent")).toBeVisible();
+    // The identity fields are editable only when the callback actually reaches the detail.
+    expect(screen.getByRole("textbox", { name: "Agent 名称" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "一句话描述" })).toBeEnabled();
+  });
+
+  it("keeps the reorder and identity features closed when the callbacks are absent (seam)", () => {
+    renderConsole({
+      agentTeamsState: { status: "ready", teams: [fiveMemberTeam] },
+      agentTeamDetailState: detailStateFor(fiveMemberTeam.teamKey),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
+    fireEvent.click(screen.getByTestId("agent-team-row"));
+
+    expect(screen.queryByText("拖动排序，第一位是主 Agent")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Agent 名称" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "一句话描述" })).toBeDisabled();
+  });
+
   it("keeps optional copying separate from direct official-team editing", async () => {
     const onDuplicateBuiltInAgentTeam = vi.fn().mockResolvedValue("user:development-copy");
     renderConsole({
@@ -963,7 +1002,8 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    expect(screen.getByRole("textbox", { name: "开发经理 AGENT.md" }))
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
       .not.toHaveAttribute("aria-readonly", "true");
     fireEvent.click(screen.getByRole("button", { name: "复制团队" }));
 
@@ -1016,8 +1056,9 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByTestId("agent-team-row"));
     const detail = screen.getByRole("region", { name: "开发团队详情" });
     expect(detail).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "主 Agent" }), { target: { value: "dev" } });
-    expect(onChangeAgentTeamPrimaryAgent).toHaveBeenCalledWith("user:development", "dev");
+    // 主 Agent 由成员条的第一位表达，页面不再有单独的选择器。
+    expect(screen.queryByRole("combobox", { name: "主 Agent" })).toBeNull();
+    expect(onChangeAgentTeamPrimaryAgent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "开发" }));
     expect(onSelectAgentTeamMember).toHaveBeenCalledWith("user:development", "dev");
     expect(screen.queryByTestId("agent-team-list")).not.toBeInTheDocument();
@@ -1036,18 +1077,15 @@ describe("OperatorConsole", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "修改信息" }));
-
-    const dialog = screen.getByRole("dialog", { name: "修改团队信息" });
-    expect(within(dialog).getAllByRole("textbox")).toHaveLength(2);
-    expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "团队名称" }), {
+    // 名称与描述就地编辑，不再走弹窗：同一页上同一类数据只该有一种编辑方式。
+    expect(screen.queryByRole("button", { name: "修改信息" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "团队名称" }), {
       target: { value: "研发团队" },
     });
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "一句话描述" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "团队的一句话描述" }), {
       target: { value: "负责研发交付" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onUpdateAgentTeamInformation).toHaveBeenCalledWith(
       userTeam.teamKey,
@@ -1202,8 +1240,9 @@ describe("OperatorConsole", () => {
     expect(title).toHaveClass("w-full", "max-w-[840px]", "text-left");
     expect(composer).toHaveClass("w-full", "max-w-[840px]");
     expect(composer).not.toHaveClass("max-w-[720px]");
-    expect(composerHost).toHaveClass("px-8");
-    expect(composerHost).not.toHaveClass("px-6");
+    expect(composerHost).toHaveClass("pr-8");
+    expect(composerHost).not.toHaveClass("px-8", "px-6");
+    expect(composerHost).toHaveStyle({ paddingLeft: "56px" });
     expect(title).not.toHaveClass("pl-10");
   });
 
@@ -1749,8 +1788,10 @@ describe("OperatorConsole", () => {
     expect(loadFile).toHaveBeenCalledWith("session-a", "README.md");
   });
 
-  it("keeps historical Markdown and reveals an in-place output icon on message hover or focus", () => {
+  it("keeps historical Markdown and gives the message a standing bottom toolbar", () => {
     renderConsole({
+      onRetryRun: vi.fn(),
+      onAnalyzeConversation: vi.fn(),
       messages: [message({
         id: 2,
         speaker: "agent",
@@ -1767,22 +1808,23 @@ describe("OperatorConsole", () => {
       element?.tagName === "P"
       && element.textContent === "产物位于 /tmp/private-run，runId=run-secret。")).toBeVisible();
     const outputButton = screen.getByRole("button", { name: "完整输出" });
-    expect(outputButton).toHaveAttribute("title", "完整输出");
-    expect(outputButton).toHaveClass(
-      "absolute",
-      "left-8",
-      "top-full",
-      "h-6",
-      "w-6",
-      "opacity-0",
-      "group-hover:opacity-100",
-      "group-focus-within:opacity-100",
-      "focus-visible:opacity-100",
-    );
+    expect(outputButton).toHaveAccessibleName("完整输出");
+    // 轻操作改为消息底部常驻的工具条：始终可见但压到最低强度，
+    // 整条消息 hover / focus-within 时提亮——看不见的工具条不算工具条。
+    // 每条 Agent 消息的工具条组成一致：查看、重试、更多——成功消息也不例外
+    expect([...toolbarRow0(outputButton).querySelectorAll("button")].map((node) =>
+      node.getAttribute("aria-label"))).toEqual(["完整输出", "重试", "更多操作"]);
+    const toolbarRow = outputButton.closest("span")!;
+    expect(toolbarRow).toHaveClass(
+      "text-hint",
+      "group-hover:text-sub",
+      "group-focus-within:text-sub",
+    )
     expect(outputButton).not.toHaveClass("h-[30px]", "px-3");
     expect(outputButton).not.toHaveTextContent("完整输出");
     expect(outputButton.querySelector("svg")).not.toBeNull();
-    expect(outputButton.parentElement).toHaveClass("relative", "max-w-[68ch]", "pl-8");
+    // 工具条挂在正文下方、与正文同一左边界，不再是绝对定位的孤立图标。
+    expect(outputButton.closest("div")).toHaveClass("mt-1", "flex", "h-6", "items-center");
     expect(screen.queryByText(/路径已隐藏/u)).not.toBeInTheDocument();
   });
 
@@ -2504,18 +2546,8 @@ describe("OperatorConsole", () => {
       ],
     });
 
-    expect(screen.getByText("你让这一步停下了")).toBeVisible();
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
-    expect(screen.getByText(
-      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
-    )).toBeVisible();
-    expect(screen.getByText("这一步卡住了")).toBeVisible();
-    expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
-    expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();
-    expect(screen.queryByText("idle-timeout:10ms")).not.toBeInTheDocument();
-
-    expect(screen.queryByRole("button", { name: "查看日志" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "完整输出" })).toHaveLength(4);
+    // 用户自己按的停止不报状态，恢复动作直接留在工具条上。
+    expect(screen.queryByText("已停止")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "改一改重发这轮消息" }));
     expect(onEditAndResend).toHaveBeenCalledWith({
       stoppedMessageId: 1,
@@ -2523,13 +2555,26 @@ describe("OperatorConsole", () => {
       runId: "run-stop",
     });
     expect(screen.getAllByRole("button", { name: /改一改重发/u })).toHaveLength(1);
-    const retryButtons = screen.getAllByRole("button", { name: "重试" });
-    fireEvent.click(retryButtons[0]!);
-    fireEvent.click(retryButtons[1]!);
-    fireEvent.click(retryButtons[2]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "重试" })[0]!);
     expect(onRetryRun).toHaveBeenNthCalledWith(1, "session-a", "run-stop");
+
+    // 三条失败各有一张报错卡片，同时在场、各自带恢复动作。
+    expect(screen.getByText("没有启动")).toBeVisible();
+    expect(screen.getByText(
+      "Codex 版本过旧，无法运行模型 gpt-5.6-sol。请升级当前 Codex 后再重试。",
+    )).toBeVisible();
+    expect(screen.getByText("无响应")).toBeVisible();
+    expect(screen.getByText("多次未能启动")).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "完整输出" })).toHaveLength(4);
+    const failureRetries = screen.getAllByRole("button", { name: "重试" });
+    fireEvent.click(failureRetries[1]!);
+    fireEvent.click(failureRetries[2]!);
     expect(onRetryRun).toHaveBeenNthCalledWith(2, "session-a", "run-fail");
     expect(onRetryRun).toHaveBeenNthCalledWith(3, "session-a", "run-stuck");
+
+    expect(screen.queryByText("interrupted:user-interrupted")).not.toBeInTheDocument();
+    expect(screen.queryByText("idle-timeout:10ms")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看日志" })).not.toBeInTheDocument();
   });
 
   it("shows a planned-configuration audit avatar when a run fails before startup without a message role", async () => {
@@ -2602,6 +2647,7 @@ describe("OperatorConsole", () => {
       ],
     });
 
+    // 两条失败各自在自己的报错卡片里提供「仅本次换执行配置」。
     expect(screen.getAllByRole("button", { name: "换执行配置重跑" })).toHaveLength(2);
   });
 
@@ -2621,7 +2667,6 @@ describe("OperatorConsole", () => {
         }),
       ],
     });
-
     expect(screen.getByText("Claude Code 版本过旧，需要 2.1.170 或更高版本。")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "更新 Claude Code" }));
     expect(onUpdateClaude).toHaveBeenCalledOnce();
@@ -2652,8 +2697,7 @@ describe("OperatorConsole", () => {
         }),
       ],
     });
-
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText("Kimi ACP 已关闭。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
     expect(screen.queryByText("完整输出不可用 · 当前执行引擎不提供可恢复的完整过程记录"))
@@ -2681,8 +2725,7 @@ describe("OperatorConsole", () => {
         }),
       ],
     });
-
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.getByText(body)).toBeVisible();
     expect(screen.queryByText("/Users/private/.kimi-code/bin/kimi")).not.toBeInTheDocument();
     expect(screen.queryByText("spawn ENOENT raw provider payload")).not.toBeInTheDocument();
@@ -2702,8 +2745,7 @@ describe("OperatorConsole", () => {
         }),
       ],
     });
-
-    expect(screen.getByText("这一步没跑起来")).toBeVisible();
+    expect(screen.getByText("没有启动")).toBeVisible();
     expect(screen.queryByText(/机器信息已隐藏/u)).not.toBeInTheDocument();
   });
 
@@ -3163,7 +3205,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "/tmp/project" })).toBeVisible();
     expect(screen.getByRole("button", { name: "/tmp/run" })).toBeVisible();
     expect(screen.queryByText("正在推进这一步…")).not.toBeInTheDocument();
-    expect(screen.getByText("这一步反复没跑起来，已经不再重试")).toBeVisible();
+    expect(screen.getByText("多次未能启动")).toBeVisible();
     expect(screen.queryByText(/\/tmp\/moebius-run/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/cwd=\/tmp/u)).not.toBeInTheDocument();
     expect(screen.queryByText("查看详情")).not.toBeInTheDocument();

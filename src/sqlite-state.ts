@@ -322,6 +322,7 @@ export type SqliteStateCommand =
       body: string;
       runId: string;
       runDir: string;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       now: string;
     }
   | {
@@ -331,6 +332,7 @@ export type SqliteStateCommand =
       body: string;
       runId: string;
       runDir: string;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       now: string;
     }
   | {
@@ -350,6 +352,8 @@ export type SqliteStateCommand =
       runDir: string | null;
       error: string;
       status: "failed" | "interrupted" | "stuck";
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       now: string;
     }
@@ -372,6 +376,8 @@ export type SqliteStateCommand =
       error: string | null;
       status?: "displayed" | "failed" | "interrupted" | "stuck";
       systemEventKind: import("./local-console/types.js").LocalConsoleSystemEventKind;
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       now: string;
     }
@@ -385,6 +391,8 @@ export type SqliteStateCommand =
       now: string;
       body?: string;
       systemEventKind?: import("./local-console/types.js").LocalConsoleSystemEventKind;
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
       sourceKind?: string | null;
       sourceId?: string | null;
@@ -407,6 +415,8 @@ export type SqliteStateCommand =
       runDir: string | null;
       failureCount: number;
       now: string;
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
     }
   | {
       kind: "local-record-interrupted";
@@ -417,6 +427,8 @@ export type SqliteStateCommand =
       runId: string | null;
       runDir: string | null;
       now: string;
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
     }
   | {
@@ -427,6 +439,8 @@ export type SqliteStateCommand =
       runId: string | null;
       runDir: string | null;
       now: string;
+      role: string | null;
+      processSteps: readonly import("./local-console/run-activity.js").LocalRunActivity[];
       terminal?: import("./local-console/types.js").LocalConsoleTerminal | null;
     }
   | {
@@ -463,7 +477,15 @@ export type SqliteStateCommand =
       now: string;
     }
   | { kind: "local-list-t5-facts"; sessionId: string | null }
-  | { kind: "local-mark-stale-running"; sessionId: string; cutoffIso: string; now: string; reason: string }
+  | {
+      kind: "local-mark-stale-running";
+      sessionId: string;
+      cutoffIso: string;
+      now: string;
+      reason: string;
+      /** 每个候选消息的归属由 domain 预先决定（messageId → role），adapter 只查表。 */
+      roles: Record<number, string | null>;
+    }
   | {
       kind: "agent-revision-create";
       revisionId: string;

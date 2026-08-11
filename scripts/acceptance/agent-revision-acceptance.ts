@@ -148,8 +148,40 @@ async function openDevelopmentTeam(page: Page): Promise<void> {
   await page.getByTestId("agent-team-detail").waitFor();
 }
 
-const editor = (page: Page, name: string) =>
-  page.locator(`[aria-label="${name} AGENT.md"]`);
+const editor = (page: Page, displayName: string) =>
+  page.locator(`[aria-label="${displayName} 的职责说明"]`);
+
+/**
+ * The detail now reads the member body by default; editing is an explicit
+ * second step (hover the body's top-right "编辑" button). The change markers
+ * and the `data-raw-markdown` attribute only exist in edit mode, so every
+ * fill/read below enters edit mode first. Idempotent: "完成编辑" means we are
+ * already editing.
+ */
+async function enterEdit(page: Page): Promise<void> {
+  const doneButton = page.getByRole("button", { name: "完成编辑" });
+  if (await doneButton.isVisible().catch(() => false)) {
+    return;
+  }
+  const editButton = page.getByRole("button", { name: "编辑" });
+  await editButton.click();
+  await page.locator("#agent-team-markdown-editor[contenteditable='true']").waitFor({ state: "visible", timeout: 10_000 });
+}
+
+async function editorRawMarkdown(page: Page): Promise<string | null> {
+  return page.evaluate(() =>
+    document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") ?? null);
+}
+
+/** Enters edit mode and waits until the editor shows the expected raw body. */
+async function waitForEditorRaw(page: Page, expected: string, timeout = 15_000): Promise<void> {
+  await enterEdit(page);
+  await page.waitForFunction(
+    (value) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === value,
+    expected,
+    { timeout },
+  );
+}
 
 async function focusMainWindow(application: ElectronApplication): Promise<void> {
   // Real OS window focus is unreliable under a driver; the product trigger for
@@ -323,7 +355,7 @@ try {
   const readSettleEvents = () => page.evaluate(() =>
     (window as unknown as { __revisionSettleEvents?: unknown[] }).__revisionSettleEvents ?? []);
   const firstSettle = await observeSettle(async () => {
-    await devManagerEditor.click();
+    await enterEdit(page);
     await devManagerEditor.fill(firstDraft);
     await page.getByRole("button", { name: "保存", exact: true }).click();
   }, { trackMarkers: false, intervalMs: 40, terminalSignal: { kind: "settle-event", minEvents: 1 } });
@@ -384,6 +416,7 @@ try {
     }
   })();
   const secondSettle = await observeSettle(async () => {
+    await enterEdit(page);
     await devManagerEditor.fill(settleSecondDraft);
     await page.getByRole("button", { name: "保存", exact: true }).click();
   }, { trackMarkers: true, intervalMs: 40, terminalSignal: { kind: "timeline-entries", count: 2 } });
@@ -503,19 +536,11 @@ try {
   await page.getByRole("tab", { name: "软件测试", exact: true }).click();
   const officialQaFile = path.join(developmentDirectory(), "members", "qa", "AGENT.md");
   const officialQaOriginal = await fs.readFile(officialQaFile, "utf8");
-  await page.waitForFunction(
-    (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-    officialQaOriginal,
-    { timeout: 15_000 },
-  );
+  await waitForEditorRaw(page, officialQaOriginal);
   const officialQaDraft = "# 测试\n\n设计测试方案，对抗性审查每个交付。\n\n验收记录必须包含真实运行步骤。\n";
   await fs.writeFile(officialQaFile, officialQaDraft, "utf8");
   await focusMainWindow(application);
-  await page.waitForFunction(
-    (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-    officialQaDraft,
-    { timeout: 15_000 },
-  );
+  await waitForEditorRaw(page, officialQaDraft);
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   const revisionsAfterOfficialExternal = await readSqliteRevisions();
   const officialQaRevision = revisionsAfterOfficialExternal.find((revision) =>
@@ -577,7 +602,11 @@ try {
       (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
       originalDevContent,
       { timeout: 3_000 },
-    ).then(() => true).catch(() => false);
+    ).then(() => true).catch(async () => {
+      // The copy-open may reset the member selection; re-enter edit mode on retry.
+      await enterEdit(page).catch(() => undefined);
+      return false;
+    });
   }
   if (!devSelected) {
     const current = await page.evaluate(() => ({
@@ -590,11 +619,7 @@ try {
   const externalDraft = "# 开发\n\n按方案实现功能，输出真实运行证据。\n";
   await fs.writeFile(copiedDevFile, externalDraft, "utf8");
   await focusMainWindow(application);
-  await page.waitForFunction(
-    (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-    externalDraft,
-    { timeout: 15_000 },
-  );
+  await waitForEditorRaw(page, externalDraft);
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const revisionsAfterExternal = await readSqliteRevisions();
@@ -622,14 +647,17 @@ try {
   const middleDraft = "# 开发经理\n\n负责技术决策与质量把关，并亲自复核发布清单。\n\n验收以真机证据为准。（副本基线）\n";
   const secondDraft = "# 开发经理\n\n负责技术决策与质量把关，并亲自复核发布清单与回滚演练。\n\n验收以真机证据为准。（副本基线）\n";
   await page.getByRole("tab", { name: /开发经理/u }).click();
+  await enterEdit(page);
   await editor(page, "开发经理").fill(firstCopyDraft);
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await new Promise((resolve) => setTimeout(resolve, 1_200));
   console.log("ACCEPTANCE-3 rows after save1:", (await readSqliteRevisions()).length);
+  await enterEdit(page);
   await editor(page, "开发经理").fill(middleDraft);
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await new Promise((resolve) => setTimeout(resolve, 1_200));
   console.log("ACCEPTANCE-3 rows after save2:", (await readSqliteRevisions()).length);
+  await enterEdit(page);
   await editor(page, "开发经理").fill(secondDraft);
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await new Promise((resolve) => setTimeout(resolve, 1_200));
@@ -647,8 +675,8 @@ try {
   // order); it rolls the file back to its own content.
   await page.getByText("回到这一版").first().click();
   await new Promise((resolve) => setTimeout(resolve, 2_000));
-  const rawAfterRestore = await page.evaluate(() =>
-    document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown"));
+  await enterEdit(page);
+  const rawAfterRestore = await editorRawMarkdown(page);
   console.log("ACCEPTANCE-3 raw after restore:", JSON.stringify(rawAfterRestore?.slice(0, 60)));
   const diskAfterRestore = await fs.readFile(
     path.join(copiedTeamDir, "members", "dev-manager", "AGENT.md"),
@@ -661,11 +689,7 @@ try {
   // The contentEditable serialization normalizes consecutive newlines, so the
   // editor's raw attribute is compared against the actually stored content
   // (disk/sqlite), never against the typed draft string.
-  await page.waitForFunction(
-    (expected) => document.querySelector("#agent-team-markdown-editor")?.getAttribute("data-raw-markdown") === expected,
-    diskAfterRestore,
-    { timeout: 15_000 },
-  );
+  await waitForEditorRaw(page, diskAfterRestore);
   const restoredDiskContent = await fs.readFile(
     path.join(copiedTeamDir, "members", "dev-manager", "AGENT.md"),
     "utf8",

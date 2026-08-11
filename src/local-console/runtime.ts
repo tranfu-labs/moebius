@@ -5,6 +5,7 @@ import {
   type LocalExecutionRunner,
 } from "./execution-driver.js";
 import { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import { LocalDetachedRunFailureRuntime } from "./detached-run-failure-runtime.js";
 import { LocalSessionContinuationRuntime } from "./session-continuation-runtime.js";
 import { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
 import { LocalRunFailureRuntime } from "./run-failure-runtime.js";
@@ -18,6 +19,7 @@ import { LocalSessionCreationRuntime } from "./session-creation-runtime.js";
 import { LocalSessionSettingsRuntime } from "./session-settings-runtime.js";
 import { LocalSessionReferenceRuntime } from "./session-reference-runtime.js";
 import { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
+import { createRoundTerminalWiring } from "./runtime-round-wiring.js";
 import { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
@@ -36,6 +38,7 @@ import { createLocalRuntimeWiringContext } from "./runtime-wiring-context.js";
 import { createLocalRuntimeFoundationWiring } from "./runtime-foundation-wiring.js";
 import { createLocalRuntimeAdapters } from "./runtime-adapters.js";
 import { createLocalRuntimeRunWiring } from "./runtime-run-wiring.js";
+import { planLocalRunWiringPorts } from "./runtime-composition-wiring.js";
 import { createLocalRuntimeSessionWiring } from "./runtime-session-wiring.js";
 import { createLocalRuntimeLifecycleWiring } from "./runtime-lifecycle-wiring.js";
 import { LocalRuntimeShutdownRuntime } from "./runtime-shutdown-runtime.js";
@@ -46,7 +49,6 @@ import { LocalPrimaryTerminalRuntime } from "./primary-terminal-runtime.js";
 import { LocalPrimaryDispatchRuntime } from "./primary-dispatch-runtime.js";
 import { LocalPrimaryExecutionRuntime } from "./primary-execution-runtime.js";
 import { LocalPendingProcessingRuntime } from "./pending-processing-runtime.js";
-import { formatLocalError } from "./runtime-domain.js";
 import { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
@@ -70,6 +72,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly sessionContinuationRuntime: LocalSessionContinuationRuntime;
   private readonly sessionPresentationRuntime: LocalSessionPresentationRuntime;
   private readonly runFailureRuntime: LocalRunFailureRuntime;
+  private readonly detachedRunFailureRuntime: LocalDetachedRunFailureRuntime;
   private readonly runLifecycleRuntime: LocalRunLifecycleRuntime;
   private readonly pendingSessionContextRuntime: LocalPendingSessionContextRuntime;
   private readonly runRecoveryRuntime: LocalRunRecoveryRuntime;
@@ -79,6 +82,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly sessionSettingsRuntime: LocalSessionSettingsRuntime;
   private readonly sessionReferenceRuntime: LocalSessionReferenceRuntime;
   private readonly stateQueryRuntime: LocalConsoleStateQueryRuntime;
+  readonly roundWiring: ReturnType<typeof createRoundTerminalWiring>;
   private readonly runOutputRuntime: LocalConsoleRunOutputRuntime;
   private readonly workspaceQueryRuntime: LocalConsoleWorkspaceQueryRuntime;
   private readonly sessionMetadataRuntime: LocalConsoleSessionMetadataRuntime;
@@ -136,11 +140,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       baselineCommits: this.conversationBaselineCommits,
       ...adapters,
       getSessionFactLogPath: (sessionId) => this.getSessionFactLogPath(sessionId),
-      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId),
+      hasScheduledWorker: (sessionId) => this.workerDispatchRuntime.hasScheduledWorker(sessionId), scheduleReprocess: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
     });
     this.conversationWorkspaceRuntime = new LocalConversationWorkspaceRuntime(foundationWiring.conversation);
     this.sessionContinuationRuntime = new LocalSessionContinuationRuntime(foundationWiring.continuation);
     this.runFailureRuntime = new LocalRunFailureRuntime(foundationWiring.failure);
+    this.detachedRunFailureRuntime = new LocalDetachedRunFailureRuntime(foundationWiring.detachedFailure);
     this.runLifecycleRuntime = new LocalRunLifecycleRuntime(foundationWiring.lifecycle);
     this.sessionPresentationRuntime = new LocalSessionPresentationRuntime(
       foundationWiring.presentation(this.sessionContinuationRuntime, this.runLifecycleRuntime),
@@ -163,32 +168,18 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       continuation: this.sessionContinuationRuntime,
       pendingContext: this.pendingSessionContextRuntime,
       failure: this.runFailureRuntime,
+      detachedFailure: this.detachedRunFailureRuntime,
       workspace: this.conversationWorkspaceRuntime,
-      scheduleRun: (input) => this.workerExecutionRuntime.run(input),
-      processPending: (sessionId) => { void this.processPending(sessionId); },
       workerReport: (event, sessionId, role, error) =>
         log({ event, sessionId, ...(role === null ? {} : { role }), error }),
-      executeWorkerChildSession: (input, _runDir, result) => this.sessionMetadataRuntime.executeChildOrchestration({
-        sessionId: input.sessionId,
-        runId: input.runId,
-        runDir: result.runDir,
-        finalText: result.finalText,
-        availableAgentNames: input.agentFiles.map((agent) => agent.name),
+      ...planLocalRunWiringPorts({
+        setLastError: (error) => { this.lastError = error; },
+        processPending: (sessionId) => this.processPending(sessionId),
+        workerExecutionRun: (input) => this.workerExecutionRuntime.run(input),
+        workerDispatchSchedule: (input) => this.workerDispatchRuntime.schedule(input),
+        executeChildOrchestration: (input) => this.sessionMetadataRuntime.executeChildOrchestration(input),
+        recordVisibleChildFailure: (sessionId, reason) => this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason),
       }),
-      executePrimaryChildSession: (run, result) => this.sessionMetadataRuntime.executeChildOrchestration({
-        sessionId: run.sessionId,
-        runId: run.runId,
-        runDir: result.runDir,
-        finalText: result.finalText,
-        availableAgentNames: run.agentFiles.map((agent) => agent.name),
-      }),
-      recordChildSessionCardError: async (sessionId, error) => {
-        const reason = formatLocalError(error);
-        this.lastError = reason;
-        await this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason);
-      },
-      scheduleWorker: (input) => this.workerDispatchRuntime.schedule(input),
-      primaryReport: (event, error) => log({ event, error }),
     });
     this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(runWiring.worker.dispatch);
     this.workerPreparationRuntime = new LocalWorkerPreparationRuntime(runWiring.worker.preparation);
@@ -236,11 +227,12 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       loadCeoScripts: adapters.loadCeoScripts,
     });
     this.pendingProcessingRuntime = new LocalPendingProcessingRuntime(sessionWiring.pending);
+    this.roundWiring = createRoundTerminalWiring({ store: this.options.store, nowIso: () => this.now().toISOString() });
     this.projectCommandRuntime = new LocalProjectCommandRuntime(sessionWiring.command.project);
     this.sessionCreationRuntime = new LocalSessionCreationRuntime(sessionWiring.command.creation);
     this.sessionSettingsRuntime = new LocalSessionSettingsRuntime(sessionWiring.command.settings);
     this.sessionReferenceRuntime = new LocalSessionReferenceRuntime(sessionWiring.command.reference);
-    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(sessionWiring.read.state);
+    this.stateQueryRuntime = new LocalConsoleStateQueryRuntime(this.roundWiring.bindStateQueryPorts(sessionWiring.read.state));
     this.runOutputRuntime = new LocalConsoleRunOutputRuntime(sessionWiring.read.output);
     this.workspaceQueryRuntime = new LocalConsoleWorkspaceQueryRuntime(sessionWiring.read.workspace);
     this.sessionMetadataRuntime = new LocalConsoleSessionMetadataRuntime(sessionWiring.metadata);
@@ -284,17 +276,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     });
   }
 
-  get sqlitePath(): string {
-    return this.options.store.sqlitePath;
-  }
+  get sqlitePath(): string { return this.options.store.sqlitePath; }
 
-  async init(): Promise<void> {
-    await this.startupRecoveryRuntime.init();
-  }
+  async init(): Promise<void> { await this.startupRecoveryRuntime.init(); }
 
-  async close(): Promise<void> {
-    await this.shutdownRuntime.close();
-  }
+  async close(): Promise<void> { await this.shutdownRuntime.close(); }
 
   async processPending(sessionId = this.sessionId): Promise<void> {
     await this.pendingProcessingRuntime.process(sessionId);
@@ -307,5 +293,4 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
-
 }

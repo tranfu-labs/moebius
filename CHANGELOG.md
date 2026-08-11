@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-10
+
+### 新增
+
+- 官网改为英文根页与 `/zh/` 中文页的双语言结构，并保持两种语言的导航、内容与下载降级一致（#201）。
+- 官网新增单 Agent 与 Agent 团队的产物对照段，并补充两次真实运行记录，帮助访客直接比较协作过程和结果（#203、#204）。
+- Agent 采用稳定分配的角色画像与执行引擎标识；团队详情支持从完整画像池为成员选择并持久化自定义画像（#202）。
+- Agent 团队页升级为卡片化浏览和配置优先的详情布局，支持统一草稿、成员名称与说明表单、正文预览/编辑及拖拽调整主 Agent（#205）。
+- 对话消息、过程步骤与终局结果采用新的层级和交互，并补齐运行过程的持久化、异常恢复与最终记录成员归属（#206）。
+
+### 变更
+
+- Popover、下拉菜单和选择器统一使用可打断、可回退且支持同组抢占的锚点展开动效，并尊重减少动态效果偏好（#202、#205）。
+
+## [0.4.2] - 2026-08-07
+
+### 修复
+
+- 修复 Markdown 渲染将普通中文文本中的斜杠误识别为文件引用的问题：收紧裸路径起止判定并增加形状门禁，「成本/收益」类文本不再成链，工程路径带扩展名或行号时仍可点击（#198）。
+- 修复 Kimi ACP 流式输出把独立成 chunk 的空白（`##`/`-` 后的空格、`\n\n`）整体丢弃导致 Agent 输出无法按 Markdown 渲染的问题：chunk 原文无条件累积，空响应契约改由可见性判定层守住（#200）。
+
+### 变更
+
+- 主会话目录轨收起态留白改为覆盖式悬浮面板：正文、标题与输入框位置不随展开变化，composer 与消息列左缘对齐（#199）。
+- 移除 Agent 正文 68ch 限宽，正文占满内容列（#199）。
+- 退役 console-ui design-refs 参考资产：dashboard/onboarding/app.css 与图标集删除，home-page.html 迁至官网目录，brand-spec 与 refs 迁入 docs/design-explorations/console-ui（#199）。
+- 限制团队选择器菜单高度，并将团队评审变更范围收敛到 Agent 提示词（#199）。
+
 ## [0.4.1] - 2026-08-07
 
 ### 修复
@@ -205,7 +233,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/tranfu-labs/moebius/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/tranfu-labs/moebius/compare/v0.3.3...v0.3.4

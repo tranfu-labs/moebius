@@ -91,7 +91,10 @@ describe("desktop App subtask tab wiring", () => {
       request.path === "/api/local-console/sessions/child-a/messages"
       && (request.body as { body?: string }).body === "@qa 请继续验收"));
 
-    const retry = Array.from(subtask.querySelectorAll("button")).find((button) => button.textContent === "重试");
+    // 重试已是图标按钮（文字在 aria-label / tooltip 里）；失败记录上的那个是最后一个
+    const retry = Array.from(subtask.querySelectorAll("button"))
+      .filter((button) => button.getAttribute("aria-label") === "重试")
+      .at(-1);
     expect(retry).toBeDefined();
     await act(async () => retry!.click());
     await waitFor(() => requests.some((request) =>

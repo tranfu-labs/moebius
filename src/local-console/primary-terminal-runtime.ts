@@ -9,6 +9,7 @@ import {
   planPrimaryLastSeenIndex,
 } from "./primary-runtime-plan.js";
 import { executeLocalRunTerminalFlow, type LocalRunTerminalChildCard } from "./run-terminal-flow.js";
+import { planTerminalRecord } from "./terminal-record-plan.js";
 import type { LocalConsoleStore } from "./types.js";
 
 interface PrimaryRecoveryUsageStore {
@@ -34,7 +35,12 @@ export class LocalPrimaryTerminalRuntime {
     };
     pauseLifecycle(runId: string): Promise<void>;
     finishLifecycle(runId: string, status: "completed" | "failed" | "interrupted" | "stuck" | "paused"): Promise<void>;
-    recordFailure(run: LocalPrimaryRunInput, result: Extract<CodexRunResult, { ok: false }>): Promise<void>;
+    recordFailure(
+      run: LocalPrimaryRunInput,
+      result: Extract<CodexRunResult, { ok: false }>,
+      observedExternalSessionId: string | null,
+      processSteps: readonly import("./run-activity.js").LocalRunActivity[],
+    ): Promise<void>;
     sourceDirectoryAvailable(sessionId: string): Promise<boolean>;
     executeChildSession(
       run: LocalPrimaryRunInput,
@@ -63,6 +69,13 @@ export class LocalPrimaryTerminalRuntime {
       result: Extract<CodexRunResult, { ok: true }>,
     ) => Promise<void>,
   ): Promise<"failed" | "succeeded" | "succeeded-directory-unavailable"> {
+    // Freeze the accumulated steps once, before the lifecycle removes the run:
+    // the trail is a property of the finished message, not a live stream. The
+    // decision (which role, which steps) belongs to the domain, not to this runtime.
+    const terminalRecord = planTerminalRecord({
+      role: run.role,
+      activeRun: this.input.activeRun(run.runId),
+    });
     return await executeLocalRunTerminalFlow({
       sessionId: run.sessionId,
       runId: run.runId,
@@ -82,12 +95,12 @@ export class LocalPrimaryTerminalRuntime {
       classifyFailure: (result) => this.input.classifyFailure(result),
       pauseLifecycle: () => this.input.pauseLifecycle(run.runId),
       finishLifecycle: (status) => this.input.finishLifecycle(run.runId, status),
-      recordFailed: (result) => this.input.recordFailure(run, result),
+      recordFailed: (result) => this.input.recordFailure(run, result, provider.observedExternalSessionId, terminalRecord.processSteps),
       recordUsage: (cachedInputTokens) => this.recordUsage(run, cachedInputTokens),
       sourceDirectoryAvailable: () => this.input.sourceDirectoryAvailable(run.sessionId),
       executeChildSession: (result) => this.input.executeChildSession(run, result),
       recordWorkspaceDiff: (result) => this.input.recordWorkspaceDiff(run, preparation, result),
-      recordSuccess: (kind, result) => this.recordSuccess(run, kind, result),
+      recordSuccess: (kind, result) => this.recordSuccess(run, kind, result, terminalRecord.processSteps),
       onSuccessPersistenceError,
       recordTimelineCursor: (lastSeenIndex) => this.input.recordTimelineCursor(
         run,
@@ -105,6 +118,8 @@ export class LocalPrimaryTerminalRuntime {
           runDir: result.runDir,
           error: "PROJECT_DIRECTORY_UNAVAILABLE",
           status: "failed",
+          role: terminalRecord.role,
+          processSteps: terminalRecord.processSteps,
           now: this.input.nowIso(),
         })),
     });
@@ -127,6 +142,7 @@ export class LocalPrimaryTerminalRuntime {
     run: LocalPrimaryRunInput,
     kind: "processed" | "direct-response" | "detached-response",
     result: Extract<CodexRunResult, { ok: true }>,
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[],
   ): Promise<void> {
     const persistence = decidePrimarySuccessPersistence(kind);
     if (persistence.kind === "processed") {
@@ -148,6 +164,7 @@ export class LocalPrimaryTerminalRuntime {
         body: result.finalText,
         runId: run.runId,
         runDir: result.runDir,
+        processSteps,
         now: this.input.nowIso(),
       }));
   }

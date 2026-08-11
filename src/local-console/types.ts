@@ -92,6 +92,8 @@ export interface LocalConsoleMessage {
   error: string | null;
   systemEventKind: LocalConsoleSystemEventKind;
   terminal?: LocalConsoleTerminal | null;
+  /** Steps the producing run had taken when it reached its terminal state; frozen once. */
+  processSteps?: readonly import("./run-activity.js").LocalRunActivity[];
   failureCount: number;
   lastFailureReason: string | null;
   sourceKind?: string | null;
@@ -190,6 +192,8 @@ export interface LocalConsoleAgentTeamSnapshotMember {
   displayName?: string | null;
   description?: string | null;
   agentMarkdown: string;
+  /** Chosen face id from the app record; absent or null keeps the slug default. */
+  portraitId?: string | null;
   executionProfile?: LocalConsoleExecutionProfile | null;
   continuationEnded?: boolean;
 }
@@ -287,6 +291,8 @@ export type LocalConsoleExecutionEngine = LocalConsoleExecutionProfile["cli"];
 export interface LocalConsoleMemberIdentity {
   slug: string;
   displayName: string;
+  /** Chosen face id from the session team snapshot; absent keeps the slug default. */
+  portraitId?: string;
 }
 
 export interface LocalConsoleSessionWorkspaceSource {
@@ -470,6 +476,8 @@ export interface LocalConsoleSessionSummary {
   unresolvedSystemEventKind?: LocalConsoleSystemEventKind | null;
   lastMessageMentionsAgent?: boolean;
   hasPendingControlWork?: boolean;
+  /** 轮次状态投影（desktop 侧边栏单点/Dock 的数据源）；store 不填，由查询层组装。 */
+  roundState?: import("./round-closeout-plan.js").LocalRoundState | null;
   runningCount: number;
   managedRunningCount?: number;
   waitingCount: number;
@@ -606,6 +614,7 @@ export interface LocalConsoleRunSnapshot {
   engine: LocalConsoleExecutionEngine;
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
+  activitySteps?: readonly import("./run-activity.js").LocalRunActivity[];
   runDir: string | null;
   cwd: string | null;
   workspaceMode: LocalConsoleWorkspaceMode | null;
@@ -869,6 +878,20 @@ export interface LocalConsoleStore {
     runId: string;
     now: string;
   }): Promise<LocalConsoleMessage | null>;
+  /** 记录一次主 Agent 派工事实并返回该 (session, role) 的递增 generation。 */
+  recordHandoffDispatch?(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+    sourceMessageId: number;
+    now: string;
+  }): Promise<number>;
+  /** 读取某 run 所属派工 generation 与该 (session, role) 的最新 generation。 */
+  readHandoffDispatchState?(input: {
+    sessionId: string;
+    role: string;
+    runId: string;
+  }): Promise<{ runGeneration: number | null; latestGeneration: number | null }>;
   resolveAwaitingUserMessageDispatches?(input: {
     sessionId: string;
     dispatches: Array<{
@@ -887,6 +910,8 @@ export interface LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    /** Steps the run had taken at its terminal state; written once, not per step. */
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void>;
   recordDetachedAgentResponse?(input: {
@@ -895,6 +920,7 @@ export interface LocalConsoleStore {
     body: string;
     runId: string;
     runDir: string;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     now: string;
   }): Promise<void>;
   recordDetachedRunStarted?(input: {
@@ -912,6 +938,9 @@ export interface LocalConsoleStore {
     runDir: string | null;
     error: string;
     status: "failed" | "interrupted" | "stuck";
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
@@ -926,6 +955,22 @@ export interface LocalConsoleStore {
   }): Promise<void>;
   recordRunExecutionContext?(input: import("./execution-context.js").LocalRunExecutionContextFact): Promise<void>;
   recordProviderProcessStarted?(input: import("./execution-context.js").LocalProviderProcessStartedFact): Promise<void>;
+  recordRoundTerminal?(input: {
+    sessionId: string;
+    roundId: number;
+    outcome: import("./round-closeout-plan.js").LocalRoundTerminalOutcome;
+    terminalMessageId: number | null;
+    conversationTitle: string;
+    occurredAt: string;
+  }): Promise<void>;
+  /** 主理人一等收束信号（complete-source 判定）落盘；幂等键为消息 id。 */
+  recordPrimaryCloseout?(input: {
+    sessionId: string;
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  }): Promise<void>;
+  getSessionFactLogPath?(sessionId: string): string;
   readRunAgentAuditSource?(input: { sessionId: string; runId: string }): Promise<{
     context: import("./execution-context.js").LocalRunExecutionContextFact | null;
     processStarted: boolean;
@@ -975,6 +1020,9 @@ export interface LocalConsoleStore {
     error: string | null;
     status?: "displayed" | "failed" | "interrupted" | "stuck";
     systemEventKind?: LocalConsoleSystemEventKind;
+    /** Member the record belongs to; run-less notifications pass null. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     now: string;
   }): Promise<void>;
@@ -1039,6 +1087,9 @@ export interface LocalConsoleStore {
     now: string;
     body?: string;
     systemEventKind?: LocalConsoleSystemEventKind;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
     sourceKind?: string | null;
     sourceId?: string | null;
@@ -1059,6 +1110,9 @@ export interface LocalConsoleStore {
     runDir: string | null;
     failureCount: number;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
   }): Promise<void>;
   recordInterrupted(input: {
     userMessageId: number;
@@ -1068,6 +1122,9 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   recordStuck(input: {
@@ -1077,6 +1134,9 @@ export interface LocalConsoleStore {
     runId: string | null;
     runDir: string | null;
     now: string;
+    /** Member the run belonged to; null when genuinely unattributable. */
+    role: string | null;
+    processSteps: readonly import("./run-activity.js").LocalRunActivity[];
     terminal?: LocalConsoleTerminal | null;
   }): Promise<void>;
   markStaleRunning(input: {
@@ -1084,6 +1144,8 @@ export interface LocalConsoleStore {
     cutoffIso: string;
     now: string;
     reason: string;
+    /** 每个候选消息的归属由 domain 预先决定（messageId → role），adapter 只查表。 */
+    roles: Record<number, string | null>;
   }): Promise<number>;
 }
 

@@ -4,14 +4,30 @@
 
 ## 正式文件
 
-- `index.html`：当前正式营销页；2026-07-29 经用户明确确认，由 `packages/console-ui/design-refs/home-page.html` 提升为深色工作台首页，并接入公开 GitHub 仓库与 Releases 下载。
+- `index.html`：当前正式营销页的**英文版**，站点根路径与默认语言；2026-07-29 经用户明确确认，由 `sites/marketeam/design-refs/home-page.html` 提升为深色工作台首页，并接入公开 GitHub 仓库与 Releases 下载；2026-08-08 转为英文规范页。
+- `zh/index.html`：同一页面的**中文版**，路径 `/zh/`。
+- `assets/preview-center-en.png` / `assets/preview-center.png`：英文页与中文页各自的首屏产品预览截图。英文那张的复现配方在 `docs/design-explorations/marketing-site/preview-center-en/`。
 - `rebrand-narrative-plan.md`：2026-07-30 品牌与叙事改版方案（待评审）。诊断两层病灶（无可占有品牌资产、无情绪叙事），决策走风格化不拟人路线（Leader Agent 固定词 + 「欲望开场、对照收尾」叙事线 + 战吼口号；旧世界对照按参照站实证放页面后段作情绪高潮，不用痛开场）；视觉签名不由文字拍板，列了三个候选方向（首选角色色板系统），由样张同视口截图对比决出。名字故事只以文案存在，明确不做环形/缎带/∞ 字面隐喻图形。实施须按该文档「实施拆分」先出样张，评审收敛前不改 `index.html`。
 - `index-pre-atlas.html`：Atlas 提升前的正式营销页归档，只用于回看和差异比较，不作为部署入口。
 - `DEPLOY.md`：静态站点部署说明。
 
+### 双语言版本：两页必须同改（2026-08-08）
+
+`index.html` 与 `zh/index.html` 是同一份设计的两个语言版本，允许的差异只有：本语言文案、
+`<html lang>`、`hreflang` 与语言控件的当前项、资源相对深度（`./assets/` vs `../assets/`）、
+首屏预览截图和 `<head>` 里的语言落点脚本。**CSS 与主脚本必须逐字一致**，改任何一页都要同步
+另一页；校验命令和逐语言的上线检查在 `DEPLOY.md`。
+
+语言策略：英文是默认语言，根路径首访按 `navigator.language` 推断，中文则替换跳转到 `/zh/`；
+显式选择记在 `localStorage['moebius-site-lang']` 并优先于浏览器语言；`/zh/` 单向不反跳，
+让分享出去的中文链接对任何访客都打开中文。这条不许改成服务端协商或托管平台重定向规则
+（`marketing-site` 不引入服务端进程，部署平台也未最终确定）。
+
+本目录下其余 `index-*.html` / `style*.html` 样张仍是单语言实验稿，不需要跟着做双语。
+
 ### 深色工作台首页正式收敛（2026-07-29）
 
-设计参考 HTML 继续留在 `packages/console-ui/design-refs/` 作为来源锚点；正式 `index.html` 在其基础上接入生产品牌资产、GitHub 仓库、Releases 与可降级的最新 Apple Silicon DMG 解析。`index-field-atlas-a31f.html` 和 `style-atlas-a31f.html` 只保留为历史设计参考，不再代表正式入口。
+设计参考 HTML 保留在 `sites/marketeam/design-refs/` 作为来源锚点；正式 `index.html` 在其基础上接入生产品牌资产、GitHub 仓库、Releases 与可降级的最新 Apple Silicon DMG 解析。`index-field-atlas-a31f.html` 和 `style-atlas-a31f.html` 只保留为历史设计参考，不再代表正式入口。
 
 ## 品牌叙事样张（2026-07-30）
 
@@ -27,7 +43,7 @@
 - `index-loop-narrative-a9b6.html`：候选 C · 团队群像 v1（圆角色块，已被 D 取代，保留作对照）。在候选 A 骨架上加入生成式角色资产 `assets/team-cast.png`（六色身份色板人格化为六个极简几何成员，身份紫 Leader Agent 居中站前；背景像素已校准为页面底色 #101010），首屏 CTA 后新增「你的一句话 + 听见的团队」场景（右对齐指令气泡 + 群像 + 「听到了。Leader Agent 和整支团队,已经开工。」）。修订理由与资产小尺寸检验要求见 `rebrand-narrative-plan.md` 方向修订节。
 - `index-loop-narrative-2e1d.html`：候选 B · 中文排印声部。标题声部换 Noto Serif SC 衬线（首屏、宣言、功能、信任、高潮、行动区），分节标改汉字序号（壹/贰/叁），名字故事用衬线文学声部；点缀色与其余视觉保持原样。视觉方差中、动效低、密度中。
 
-两份样张相对正式页共同修复：390px 下导航下载按钮换行溢出（隐藏 GitHub 幽灵链接 + 按钮禁换行 + 首屏按钮组允许折行）。该缺陷正式页仍存在，收敛时应一并带回。
+两份样张相对正式页共同修复：390px 下导航下载按钮换行溢出（隐藏 GitHub 幽灵链接 + 按钮禁换行 + 首屏按钮组允许折行）。该修复已于 2026-08-08 随双语言改版带回两个正式页，并顺带压掉了 320–360px 的溢出（收窄移动端 gutter、语言控件收成图标态）。
 
 ## 去框实验（2026-07-18）
 

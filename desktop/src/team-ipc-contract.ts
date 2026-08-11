@@ -27,6 +27,7 @@ export const TEAM_IPC_CHANNELS = {
   addMember: "agent-teams:add-member",
   updateInformation: "agent-teams:update-information",
   setPrimaryAgent: "agent-teams:set-primary-agent",
+  reorderMembers: "agent-teams:reorder-members",
   duplicateBuiltIn: "agent-teams:duplicate-built-in",
   duplicateUser: "agent-teams:duplicate-user",
   duplicateMember: "agent-teams:duplicate-member",
@@ -61,6 +62,8 @@ export interface AgentTeamMemberSummary {
   description: string;
   available?: boolean;
   executionProfile?: AgentTeamExecutionProfileSummary;
+  /** Chosen face id; absent or null keeps the slug-derived default. */
+  portraitId?: string | null;
 }
 
 export interface AgentTeamListItem {
@@ -102,13 +105,27 @@ export interface AgentTeamMemberRequest {
 }
 
 export interface AgentTeamMemberWriteRequest extends AgentTeamMemberRequest {
-  agentMarkdown: string;
+  /** Full AGENT.md content; present when the write is a markdown save. */
+  agentMarkdown?: string;
+  /**
+   * Present when the write is a portrait choice; `null` removes the explicit choice so the
+   * member falls back to its slug-derived default face. Exactly one of `agentMarkdown` and
+   * `portraitId` must be present (see `parseMemberWriteRequest`).
+   */
+  portraitId?: string | null;
 }
 
 export interface AgentTeamPrimaryAgentWriteRequest {
   teamId: string;
   ownership: TeamOwnership;
   primaryAgentSlug: string;
+}
+
+export interface AgentTeamMemberOrderWriteRequest {
+  teamId: string;
+  ownership: TeamOwnership;
+  /** New full member order; the first entry is the primary Agent. */
+  memberOrder: string[];
 }
 
 export interface AgentTeamDuplicateBuiltInRequest {

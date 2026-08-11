@@ -99,6 +99,8 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
     await service.updateAgentTeamInformation(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.setPrimaryAgent, async (_event, request: unknown) =>
     await service.setAgentTeamPrimaryAgent(options.dataRoot, request));
+  ipcMain.handle(TEAM_IPC_CHANNELS.reorderMembers, async (_event, request: unknown) =>
+    await service.reorderAgentTeamMembers(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.duplicateBuiltIn, async (_event, request: unknown) =>
     await service.duplicateBuiltInAgentTeam(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.duplicateUser, async (_event, request: unknown) =>

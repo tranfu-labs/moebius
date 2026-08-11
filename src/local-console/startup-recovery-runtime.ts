@@ -13,6 +13,7 @@ import {
   planStaleRunningRepair,
   planStartupRecoverySessions,
 } from "./startup-recovery-plan.js";
+import { planStaleRunningRoles } from "./terminal-record-plan.js";
 import type { LocalConsoleMessage, LocalConsoleStore } from "./types.js";
 
 interface LocalStartupRecoveryFactStore {
@@ -46,6 +47,12 @@ export class LocalStartupRecoveryRuntime {
   }
 
   async repairStaleRunning(sessionId: string): Promise<number> {
+    const messages = await this.input.storeCall("local-console-store-list-messages", () =>
+      this.input.store.listMessages(sessionId));
+    return await this.repairStaleRunningWithMessages(sessionId, messages);
+  }
+
+  private async repairStaleRunningWithMessages(sessionId: string, messages: LocalConsoleMessage[]): Promise<number> {
     const plan = planStaleRunningRepair({
       nowMs: this.input.now().getTime(),
       idleTimeoutMs: this.input.idleTimeoutMs,
@@ -58,6 +65,7 @@ export class LocalStartupRecoveryRuntime {
         cutoffIso: plan.cutoffIso,
         now: this.input.nowIso(),
         reason: plan.reason,
+        roles: planStaleRunningRoles(messages),
       }));
   }
 
@@ -78,7 +86,11 @@ export class LocalStartupRecoveryRuntime {
     const projectedWork = decideStartupProjectedWork(sessionPlan.hasProjectedWork);
     if (projectedWork.kind === "run") {
       try {
-        startupMessages = await this.claimOrphanRuns(sessionPlan.sessionId);
+        // 启动 catch-up 对每个 session 只读一次消息：orphan 识别与 stale 归属共用同一份快照。
+        const messages = await this.input.storeCall("local-console-store-list-messages", () =>
+          this.input.store.listMessages(sessionPlan.sessionId));
+        startupMessages = messages;
+        await this.claimOrphanRuns(sessionPlan.sessionId, messages);
       } catch (error) {
         this.reportFailure("local-console-claim-orphan-runs-failed", sessionPlan.sessionId, error);
       }
@@ -96,16 +108,16 @@ export class LocalStartupRecoveryRuntime {
     }
     if (projectedWork.kind === "run") {
       try {
-        await this.repairStaleRunning(sessionPlan.sessionId);
+        // 与首块共用同一份消息快照；读失败时 startupMessages 为 undefined，
+        // 由下方 catch 统一报告，不会进入正常路径。
+        await this.repairStaleRunningWithMessages(sessionPlan.sessionId, startupMessages!);
       } catch (error) {
         this.reportFailure("local-console-repair-stale-failed", sessionPlan.sessionId, error);
       }
     }
   }
 
-  private async claimOrphanRuns(sessionId: string): Promise<LocalConsoleMessage[]> {
-    const messages = await this.input.storeCall("local-console-store-list-messages", () =>
-      this.input.store.listMessages(sessionId));
+  private async claimOrphanRuns(sessionId: string, messages: LocalConsoleMessage[]): Promise<void> {
     const orphans = identifyOrphanRuns({
       sessionId,
       messages,
@@ -127,6 +139,8 @@ export class LocalStartupRecoveryRuntime {
               reason: ORPHAN_RUN_STUCK_REASON,
               runId: plan.orphan.runId,
               runDir: plan.orphan.runDir,
+              role: plan.orphan.role,
+              processSteps: [],
               now: this.input.nowIso(),
             }));
           continue;
@@ -169,7 +183,6 @@ export class LocalStartupRecoveryRuntime {
         });
       }
     }
-    return messages;
   }
 
   private reportFailure(event: string, sessionId: string, error: unknown): void {

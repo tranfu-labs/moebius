@@ -64,10 +64,10 @@ import {
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
+import { type PortraitId } from "@/console/agent-portrait";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
 import {
-  deriveConversationRelayLayout,
   projectConversationRelayEvents,
   type ConversationRelayEvent,
 } from "@/console/conversation-relay-rail-model";
@@ -100,6 +100,8 @@ import {
 } from "@/console/process-tab";
 import type { OperatorProcessInvocationState } from "@/console/process-event";
 import {
+  resolveOperatorMemberEngine,
+  resolveOperatorMemberPortrait,
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
 } from "@/console/member-name";
@@ -127,8 +129,10 @@ import {
   type LanguageSaveStatus,
   type SettingsAboutState,
   type SettingsSection,
+  type TaskReminderSettingsController,
 } from "@/console/settings-dialog";
 import type { ProviderSettingsController } from "@/console/provider-settings-panel";
+import { NotificationPermissionDialog } from "@/console/notification-permission-dialog";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -138,13 +142,21 @@ import {
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
+import { RotateCcw } from "lucide-react";
+import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
+import { IncidentNotice } from "@/console/incident-card";
+import { ProcessTrail, type ProcessStep } from "@/console/process-trail";
+import { stripLegacyOutcomeBoilerplate } from "@/console/legacy-run-outcome-copy";
 import { MarkdownMessage } from "@/console/markdown-message";
 import {
   RunOutcome,
+  outcomeSeverity,
+  resolveOutcomeDescriptionKey,
+  resolveOutcomeLabelKey,
   type ProviderUnavailableKind,
   type RunOutcomeStatus,
 } from "@/console/run-outcome";
-import { RunTime } from "@/console/run-time";
+import { RunCompletedAt, RunTime, RunTriggeredAt } from "@/console/run-time";
 import { SubSessionCard, type SubSessionCardItem } from "@/console/sub-session-card";
 import { SubtaskTab, type OperatorSubSessionViewState } from "@/console/subtask-tab";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
@@ -269,6 +281,18 @@ export interface OperatorSession {
   stuckCount: number;
   errorCount: number;
   interruptedCount: number;
+  /** Round state projection (derived by local-console; single source for sidebar dot and Dock). */
+  roundState?: {
+    kind: "not-started" | "in-progress" | "terminal";
+    roundId: number;
+    fact: {
+      roundId: number;
+      outcome: "completed" | "awaiting-user" | "no-new-content" | "silent-closeout";
+      terminalMessageId: number | null;
+      occurredAt: string;
+    } | null;
+    silentSince: string | null;
+  } | null;
   childCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -328,6 +352,8 @@ export type OperatorExecutionProfile = {
 
 export interface OperatorMessage {
   id: number;
+  /** Thinking and tool calls that produced this message; folded once it lands. */
+  processSteps?: readonly ProcessStep[];
   sessionId: string;
   speaker: OperatorMessageSpeaker;
   role: string | null;
@@ -434,6 +460,15 @@ export interface OperatorRunSnapshot {
   stdoutTail: string | null;
   stderrTail: string | null;
   liveMarkdown: string | null;
+  /** Activity the runtime accumulated for this run; mapped by activityStepsToProcessSteps. */
+  activitySteps?: readonly {
+    kind: "command" | "tool" | "search" | "read" | "edit" | "thinking" | "progress";
+    phase: "running" | "completed";
+    action: string;
+    object: string | null;
+    occurredAt: string;
+  }[];
+  processSteps?: readonly ProcessStep[];
   lastOutputSummary: string;
   tailDiagnostic: string | null;
   interruptible: boolean;
@@ -467,6 +502,31 @@ export interface OperatorAnalysisPanelController {
 export interface OperatorMessageNavigationRequest {
   messageId: number;
   requestId: number;
+}
+
+function planPermissionModalOpenStatus(
+  phase: import("@/console/settings-dialog").TaskReminderSettingsController["modal"]["phase"],
+): import("@/console/notification-permission-dialog").PermissionModalOpenSettingsStatus {
+  switch (phase) {
+    case "requesting":
+      return "requesting";
+    case "request-done":
+      return "request-done";
+    case "opening-settings":
+      return "opening";
+    case "opened":
+      return "opened";
+    case "failed":
+      return "failed";
+    default:
+      return "idle";
+  }
+}
+
+function planPermissionModalCloseSave(
+  phase: import("@/console/settings-dialog").TaskReminderSettingsController["modal"]["phase"],
+): import("@/console/notification-permission-dialog").PermissionModalCloseSaveStatus {
+  return phase === "closing-save" ? "saving" : phase === "closing-save-failed" ? "failed" : "idle";
 }
 
 export interface OperatorConsoleProps {
@@ -527,6 +587,7 @@ export interface OperatorConsoleProps {
   providerSettings?: ProviderSettingsController;
   defaultAgent?: DefaultAgentSettingsState;
   defaultAgentProviderProfiles?: readonly AgentExecutionProviderProfile[];
+  taskReminder?: TaskReminderSettingsController;
   settingsExternalLinks?: {
     releaseNotes: string;
     feedback: string;
@@ -634,6 +695,17 @@ export interface OperatorConsoleProps {
   onCloseAgentTeam?: () => void;
   onSelectAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onChangeAgentTeamPrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
+  onReorderAgentTeamMembers?: (teamKey: string, memberSlugs: string[]) => void | Promise<void>;
+  onChangeAgentTeamMemberPortrait?: (
+    teamKey: string,
+    memberSlug: string,
+    portraitId: PortraitId | null,
+  ) => void | Promise<void>;
+  onChangeAgentTeamMemberIdentity?: (
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => void;
   onAddAgentTeamMember?: (teamKey: string) => void | Promise<void>;
   onUpdateAgentTeamInformation?: (teamKey: string, information: AgentTeamInformationInput) => void | Promise<void>;
   onChangeAgentTeamMember?: (teamKey: string, memberSlug: string, agentMarkdown: string) => void;
@@ -759,6 +831,7 @@ export function OperatorConsole({
   providerSettings,
   defaultAgent,
   defaultAgentProviderProfiles,
+  taskReminder,
   settingsExternalLinks,
   onSelectLocale,
   onRetryLocaleSave,
@@ -835,6 +908,9 @@ export function OperatorConsole({
   onCloseAgentTeam,
   onSelectAgentTeamMember,
   onChangeAgentTeamPrimaryAgent,
+  onReorderAgentTeamMembers,
+  onChangeAgentTeamMemberPortrait,
+  onChangeAgentTeamMemberIdentity,
   onAddAgentTeamMember,
   onUpdateAgentTeamInformation,
   onChangeAgentTeamMember,
@@ -1120,10 +1196,7 @@ export function OperatorConsole({
   );
   const conversationRelayClearance = conversationRelayEvents.length === 0
     ? null
-    : planConversationRelayClearance(
-        conversationPaneWidth,
-        deriveConversationRelayLayout(conversationRelayEvents, conversationPaneWidth).expandedWidth,
-      );
+    : planConversationRelayClearance(conversationPaneWidth);
   const resultCardVisible = shouldShowResultCard({
     diffAvailable: workspaceDiff.available,
     isRunning: displayedActiveRuns.length > 0 || selectedSession?.status === "running" || (selectedSession?.runningCount ?? 0) > 0,
@@ -2221,6 +2294,9 @@ export function OperatorConsole({
             onCloseTeam={onCloseAgentTeam}
             onSelectMember={onSelectAgentTeamMember}
             onChangePrimaryAgent={onChangeAgentTeamPrimaryAgent}
+            onReorderMembers={onReorderAgentTeamMembers}
+            onChangeMemberPortrait={onChangeAgentTeamMemberPortrait}
+            onChangeMemberIdentity={onChangeAgentTeamMemberIdentity}
             onAddMember={onAddAgentTeamMember}
             onUpdateTeamInformation={onUpdateAgentTeamInformation}
             onChangeMember={onChangeAgentTeamMember}
@@ -2522,6 +2598,7 @@ export function OperatorConsole({
                             memberIdentities={memberIdentities}
                             elapsedMs={run.elapsedMs}
                             activity={run.activity}
+                            processSteps={run.processSteps ?? activityStepsToProcessSteps(run.activitySteps)}
                             processOutputAvailable
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
@@ -2598,10 +2675,15 @@ export function OperatorConsole({
               ref={attachConversationDock}
               className={cn(
                 "pointer-events-none absolute inset-x-0 bottom-0 bg-canvas pb-4 pt-3",
-                MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
+                conversationRelayClearance === null
+                  ? MAIN_CONVERSATION_COLUMN_GUTTER_CLASS
+                  : "pr-8",
                 analysisPanelReservesSpace && "pr-[312px]",
               )}
               data-testid="conversation-bottom-dock"
+              style={conversationRelayClearance === null
+                ? undefined
+                : { paddingLeft: conversationRelayClearance }}
             >
                 <div className={cn("pointer-events-auto mx-auto w-full", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
                   <SessionTeamUpdateNotice
@@ -2989,6 +3071,7 @@ export function OperatorConsole({
           activeSection={settingsSection}
           about={settingsAbout}
           providers={providerSettings}
+          taskReminder={taskReminder}
           externalLinkStatus={settingsExternalLinkStatus}
           defaultAgent={defaultAgent}
           defaultAgentProviderProfiles={defaultAgentProviderProfiles}
@@ -3020,6 +3103,25 @@ export function OperatorConsole({
             setSessionTeamUpdateDetailOpen(false);
           }}
         />
+
+        {taskReminder !== undefined && taskReminder.modal.open ? (
+          <NotificationPermissionDialog
+            open={taskReminder.modal.open}
+            entries={taskReminder.modal.entries.map((entry) => ({
+              id: entry.sessionId,
+              conversationTitle: entry.title,
+              outcome: entry.outcome === "awaiting-user" ? "awaiting-user" : "completed",
+            }))}
+            openingSettings={planPermissionModalOpenStatus(taskReminder.modal.phase)}
+            closingSave={planPermissionModalCloseSave(taskReminder.modal.phase)}
+            onOpenChange={() => undefined}
+            onEnablePermission={() => taskReminder.onModalAction({ kind: "request" })}
+            onRecheck={() => taskReminder.onModalAction({ kind: "recheck" })}
+            onCloseNotifications={() => taskReminder.onModalAction({ kind: "close-notifications" })}
+            onRetryOpenSettings={() => taskReminder.onModalAction({ kind: "open-settings" })}
+            onRetryCloseSave={() => taskReminder.onModalAction({ kind: "close-notifications" })}
+          />
+        ) : null}
 
         {settingsNotifications.length > 0 ? (
           <div
@@ -3686,6 +3788,42 @@ function roleCompletionsForTeam(team: OperatorAgentTeam | undefined): RoleComple
     })) ?? [];
 }
 
+/**
+ * Terminal records are stored with `role = NULL` (see openspec change
+ * `terminal-record-member-attribution`), so the member has to be recovered from
+ * a sibling message sharing the same step. This is a compatibility path for rows
+ * written before that change, not redundancy — do not delete it until no stored
+ * row has `speaker='system' AND run_id IS NOT NULL AND role IS NULL`.
+ */
+const activityStepKinds: Record<string, ProcessStep["kind"]> = {
+  thinking: "thinking",
+  tool: "tool",
+  command: "command",
+  search: "search",
+  read: "file",
+  edit: "file",
+};
+
+/** Runtime activity records to timeline steps; `progress` is the streamed answer, not a step. */
+export function activityStepsToProcessSteps(
+  steps: OperatorRunSnapshot["activitySteps"],
+): readonly ProcessStep[] | undefined {
+  if (steps === undefined) return undefined;
+  const mapped = steps.flatMap((step, index) => {
+    const kind = activityStepKinds[step.kind];
+    return kind === undefined
+      ? []
+      : [{
+          id: `${step.occurredAt}-${String(index)}`,
+          kind,
+          title: step.action,
+          detail: step.object,
+          status: step.phase === "completed" ? ("done" as const) : ("running" as const),
+        }];
+  });
+  return mapped.length === 0 ? undefined : mapped;
+}
+
 function resolveMessageProcessRole(
   message: OperatorMessage | null,
   messages: readonly OperatorMessage[],
@@ -3789,12 +3927,110 @@ function TimelineEntry({
     );
   }
   const outcome = terminalOutcome(message);
+  // The final `"agent"` step makes an unattributable run resolve to the generic
+  // collaborator label and a default portrait — an invented member for a machine
+  // failure. It exists only because terminal records drop the role at write time;
+  // openspec change `terminal-record-member-attribution` removes the need for it.
   const auditRole = message.role ?? processRole ?? "agent";
   if (outcome) {
     const providerUnavailable = resolveProviderUnavailableKind(message.terminal?.safeCode);
+    // A terminal record never swallows the body: whatever the agent produced
+    // renders as an ordinary message, and the status is one extra bubble under
+    // it. Identity and timing belong to the header, not repeated in the bubble.
+    const partialMarkdown = message.terminal?.partialMarkdown?.trim() ?? "";
+    const identityRole = message.role ?? processRole;
+    // A role-less failure (died before startup) still needs the audit entry: it
+    // records which member and profile the run was planned with.
+    const canAudit = message.runId !== null
+      && onLoadRunAgentInfo !== undefined
+      && onLoadRunAgentMarkdown !== undefined;
+    // A terminal record always has an owner: the member header when we know who
+    // ran, otherwise the existing avatar-less system-notice header. A record must
+    // never float in the timeline with neither an identity nor the body indent.
+    // The system-notice fallback is a symptom of the same dropped role — see
+    // openspec change `terminal-record-member-attribution`.
+    const showMemberIdentity = identityRole !== null || canAudit;
+    const strippedDetail = stripLegacyOutcomeBoilerplate(terminalOutcomeDescription(message));
+    const descriptionKey = resolveOutcomeDescriptionKey(outcome, providerUnavailable);
+    const incidentDetail = strippedDetail !== ""
+      ? strippedDetail
+      : descriptionKey === null ? null : t(descriptionKey);
+    const recoveryActions = (
+      <RunOutcome
+        status={outcome}
+        rawReason={message.error ?? message.body}
+        initialProfile={message.terminal?.actualProfile}
+        executionRegistryState={executionRegistryState}
+        providerProfiles={providerProfiles}
+        onReloadExecutionRegistry={onReloadExecutionRegistry}
+        providerUnavailable={providerUnavailable}
+        onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
+          ? () => onRetryRun?.(message.sessionId, message.runId!)
+          : undefined}
+        onOverrideAndRetry={
+          message.runId !== null
+          && message.terminal !== null
+          && message.terminal !== undefined
+          && (
+            message.terminal.kind === "interrupted"
+            || message.terminal.kind === "timeout"
+            || message.terminal.kind === "quota-exhausted"
+            || message.terminal.kind === "rate-limited"
+            || message.terminal.kind === "auth"
+            || message.terminal.kind === "crashed"
+          )
+            ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
+            : undefined
+        }
+        onMigrateAndContinue={providerUnavailable === null
+          && message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateSessionMemberExecution !== undefined
+          ? (profile) => onUpdateSessionMemberExecution(message.sessionId, processRole, "migrate", profile)
+          : undefined}
+        onEndContinuation={providerUnavailable === null
+          && message.terminal?.actualProfile?.cli === "pi"
+          && processRole !== null
+          && onUpdateSessionMemberExecution !== undefined
+          ? () => onUpdateSessionMemberExecution(message.sessionId, processRole, "end")
+          : undefined}
+        onSelectTeam={providerUnavailable !== null && onOpenTeamMenu !== undefined
+          ? onOpenTeamMenu
+          : undefined}
+        maintenanceAction={providerUnavailable === "disabled" && onOpenProviderSettings !== undefined
+          ? {
+              label: t("console.runOutcome.reenableProvider"),
+              onClick: onOpenProviderSettings,
+            }
+          : providerUnavailable === "needs-attention" && onOpenProviderSettings !== undefined
+            ? {
+                label: t("console.runOutcome.repairProvider"),
+                onClick: onOpenProviderSettings,
+              }
+            : providerUnavailable === "missing" && onOpenProviderSettings !== undefined
+              ? {
+                  label: t("console.runOutcome.openProviderSettings"),
+                  onClick: onOpenProviderSettings,
+                }
+              : message.error === "claude-cli-unsupported-version"
+          && onUpdateClaude !== undefined
+          ? {
+              label: t("onboarding.updateClaude"),
+              onClick: onUpdateClaude,
+            }
+          : undefined}
+        onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
+          ? () => onEditAndResend({
+              stoppedMessageId: message.id,
+              sessionId: message.sessionId,
+              runId: message.runId,
+            })
+          : undefined}
+      />
+    );
     return (
       <div
-        className="relative my-4"
+        className="group relative py-3 text-sm"
         tabIndex={onAnalyzeConversation ? 0 : undefined}
         onContextMenu={onAnalyzeConversation ? openAnalysisMenu : undefined}
         onKeyDown={onAnalyzeConversation
@@ -3805,124 +4041,103 @@ function TimelineEntry({
             }
           : undefined}
       >
-        {onAnalyzeConversation ? (
-          <ConversationAnalysisMenu
-            open={analysisMenuOpen}
-            onOpenChange={setAnalysisMenuOpen}
-            returnFocusTarget={analysisMenuReturnFocusRef.current}
-            onSelect={() => onAnalyzeConversation({
-              sessionId: message.sessionId,
-              runId: message.runId,
-              messageId: message.id,
-            })}
-          />
-        ) : null}
-        {message.runId !== null && onLoadRunAgentInfo && onLoadRunAgentMarkdown ? (
-          <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
-            <AgentRunInfoPopover
-              sessionId={message.sessionId}
-              runId={message.runId}
-              role={auditRole}
-              displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
-              loadInfo={onLoadRunAgentInfo}
-              loadMarkdown={onLoadRunAgentMarkdown}
-            />
-            <span className="font-semibold text-ink">
-              {resolveOperatorMemberName(auditRole, memberIdentities, t)}
-            </span>
-          </div>
-        ) : null}
-        <RunOutcome
-          status={outcome}
-          role={processRole}
-          memberIdentities={memberIdentities}
-          rawReason={message.error ?? message.body}
-          rawOutput={providerUnavailable === null ? message.error ?? message.body : message.body}
-          description={terminalOutcomeDescription(message)}
-          partialMarkdown={message.terminal?.partialMarkdown}
-          contentIncomplete={message.terminal?.contentIncomplete}
-          initialProfile={message.terminal?.actualProfile}
-          executionRegistryState={executionRegistryState}
-          providerProfiles={providerProfiles}
-          onReloadExecutionRegistry={onReloadExecutionRegistry}
-          elapsedMs={message.runTiming?.elapsedMs}
-          completedAt={message.runTiming?.completedAt}
-          providerUnavailable={providerUnavailable}
-          onRetry={providerUnavailable === null && outcome !== "retry-exhausted" && message.runId !== null
-            ? () => onRetryRun?.(message.sessionId, message.runId!)
-            : undefined}
-          onOverrideAndRetry={
-            message.runId !== null
-            && message.terminal !== null
-            && message.terminal !== undefined
-            && (
-              message.terminal.kind === "interrupted"
-              || message.terminal.kind === "timeout"
-              || message.terminal.kind === "quota-exhausted"
-              || message.terminal.kind === "rate-limited"
-              || message.terminal.kind === "auth"
-              || message.terminal.kind === "crashed"
+        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+          {showMemberIdentity ? (
+            canAudit ? (
+              <AgentRunInfoPopover
+                sessionId={message.sessionId}
+                runId={message.runId!}
+                role={auditRole}
+                displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+                portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
+                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
+                loadInfo={onLoadRunAgentInfo}
+                loadMarkdown={onLoadRunAgentMarkdown}
+              />
+            ) : (
+              <RoleTag
+                label={resolveOperatorMemberName(auditRole, memberIdentities, t)}
+                toneKey={auditRole}
+                portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
+                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
+                className="h-6 w-6 text-xs"
+              />
             )
-              ? (profile) => onRetryRun?.(message.sessionId, message.runId!, profile)
-              : undefined
-          }
-          onMigrateAndContinue={providerUnavailable === null
-            && message.terminal?.actualProfile?.cli === "pi"
-            && processRole !== null
-            && onUpdateSessionMemberExecution !== undefined
-            ? (profile) => onUpdateSessionMemberExecution(message.sessionId, processRole, "migrate", profile)
-            : undefined}
-          onEndContinuation={providerUnavailable === null
-            && message.terminal?.actualProfile?.cli === "pi"
-            && processRole !== null
-            && onUpdateSessionMemberExecution !== undefined
-            ? () => onUpdateSessionMemberExecution(message.sessionId, processRole, "end")
-            : undefined}
-          onSelectTeam={providerUnavailable !== null && onOpenTeamMenu !== undefined
-            ? onOpenTeamMenu
-            : undefined}
-          maintenanceAction={providerUnavailable === "disabled" && onOpenProviderSettings !== undefined
-            ? {
-                label: t("console.runOutcome.reenableProvider"),
-                onClick: onOpenProviderSettings,
-              }
-            : providerUnavailable === "needs-attention" && onOpenProviderSettings !== undefined
-              ? {
-                  label: t("console.runOutcome.repairProvider"),
-                  onClick: onOpenProviderSettings,
-                }
-              : providerUnavailable === "missing" && onOpenProviderSettings !== undefined
-                ? {
-                    label: t("console.runOutcome.openProviderSettings"),
-                    onClick: onOpenProviderSettings,
-                  }
-                : message.error === "claude-cli-unsupported-version"
-            && onUpdateClaude !== undefined
-            ? {
-                label: t("onboarding.updateClaude"),
-                onClick: onUpdateClaude,
-              }
-            : undefined}
-          onEditAndResend={outcome === "user-stopped" && onEditAndResend !== undefined
-            ? () => onEditAndResend({
-                stoppedMessageId: message.id,
+          ) : null}
+          <span className="font-semibold text-ink">
+            {showMemberIdentity
+              ? resolveOperatorMemberName(auditRole, memberIdentities, t)
+              : t("console.common.systemNotice")}
+          </span>
+          {message.runTiming?.elapsedMs !== null && message.runTiming?.elapsedMs !== undefined ? (
+            <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
+          ) : null}
+        </div>
+        <div className="pl-8">
+        {message.processSteps?.length ? (
+          <ProcessTrail steps={message.processSteps} collapsed className="mb-2" />
+        ) : null}
+        {partialMarkdown === "" ? null : (
+          <MarkdownMessage
+            content={partialMarkdown}
+            mode="static"
+            onOpenExternalLink={onOpenExternalLink}
+            onOpenConversationReference={onOpenConversationReference}
+            onOpenFileReference={onOpenFileReference}
+            memberIdentities={memberIdentities}
+            onOpenTeamMember={onOpenTeamMember}
+          />
+        )}
+        {outcome === "user-stopped" ? null : (
+          <IncidentNotice
+            className={partialMarkdown === "" ? undefined : "mt-2"}
+            incident={{
+              label: t(resolveOutcomeLabelKey(outcome, providerUnavailable)),
+              detail: incidentDetail,
+              contentIncomplete: partialMarkdown !== "" && message.terminal?.contentIncomplete === true,
+              severity: outcomeSeverity(outcome),
+            }}
+          />
+        )}
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : <RunTriggeredAt triggeredAt={message.updatedAt} />}
+        >
+          {message.runId !== null && onOpenEvidence ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenEvidence({
+                kind: "run-output",
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: processRole,
+                fallbackOutput: providerUnavailable === null
+                  ? message.error ?? message.body
+                  : message.body,
+              })}
+            />
+          ) : null}
+          {recoveryActions}
+          {onAnalyzeConversation ? (
+            <ConversationAnalysisMenu
+              open={analysisMenuOpen}
+              onOpenChange={setAnalysisMenuOpen}
+              returnFocusTarget={analysisMenuReturnFocusRef.current}
+              onSelect={() => onAnalyzeConversation({
                 sessionId: message.sessionId,
                 runId: message.runId,
-              })
-            : undefined}
-          onOpenOutput={message.runId === null ? undefined : (fallbackOutput) => onOpenEvidence?.({
-            kind: "run-output",
-            sessionId: message.sessionId,
-            runId: message.runId!,
-            stepId: message.runTiming?.stepId ?? null,
-            role: processRole,
-            fallbackOutput,
-          })}
-        />
+                messageId: message.id,
+              })}
+            />
+          ) : null}
+        </MessageToolbar>
+        </div>
       </div>
     );
   }
-
   if (message.speaker === "user") {
     return (
       <div className="group py-3 text-sm">
@@ -3981,6 +4196,8 @@ function TimelineEntry({
               runId={message.runId}
               role={message.role}
               displayName={resolveOperatorMemberName(message.role, memberIdentities, t)}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+              engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               loadInfo={onLoadRunAgentInfo}
               loadMarkdown={onLoadRunAgentMarkdown}
             />
@@ -3988,6 +4205,8 @@ function TimelineEntry({
             <RoleTag
               label={resolveOperatorMemberName(message.role, memberIdentities, t)}
               toneKey={message.role ?? "agent"}
+              portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
+              engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               className="h-6 w-6 text-xs"
             />
           )
@@ -4000,28 +4219,15 @@ function TimelineEntry({
         {message.speaker === "agent"
         && message.runTiming?.elapsedMs !== null
         && message.runTiming?.elapsedMs !== undefined ? (
-          <RunTime
-            mode="completed"
-            elapsedMs={message.runTiming.elapsedMs}
-            completedAt={message.runTiming.completedAt}
-          />
-        ) : null}
-        <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
-        {message.speaker === "agent" && onAnalyzeConversation ? (
-          <ConversationAnalysisMenu
-            inline
-            open={analysisMenuOpen}
-            onOpenChange={setAnalysisMenuOpen}
-            returnFocusTarget={analysisMenuReturnFocusRef.current}
-            onSelect={() => onAnalyzeConversation({
-              sessionId: message.sessionId,
-              runId: message.runId,
-              messageId: message.id,
-            })}
-          />
-        ) : null}
+          <RunTime mode="completed" elapsedMs={message.runTiming.elapsedMs} />
+        ) : (
+          <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
+        )}
       </div>
-      <div className="relative max-w-[68ch] pl-8">
+      <div className="relative pl-8">
+      {message.speaker === "agent" && message.processSteps?.length ? (
+        <ProcessTrail steps={message.processSteps} collapsed className="mb-2" />
+      ) : null}
       {message.speaker === "system" ? (
         <div className="whitespace-pre-wrap break-words leading-6 text-ink">{systemSummary(message, t)}</div>
       ) : (
@@ -4044,25 +4250,46 @@ function TimelineEntry({
           />
         </>
       )}
-      {message.speaker === "agent"
-      && message.runId !== null
-      && onOpenEvidence ? (
-        <button
-          type="button"
-          className="absolute left-8 top-full z-10 mt-1 flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100"
-          aria-label={t("console.common.fullOutput")}
-          title={t("console.common.fullOutput")}
-          onClick={() => onOpenEvidence({
-            kind: "run-output",
-            sessionId: message.sessionId,
-            runId: message.runId!,
-            stepId: message.runTiming?.stepId ?? null,
-            role: message.role,
-            fallbackOutput: message.body,
-          })}
+      {message.speaker === "agent" && message.runId !== null ? (
+        <MessageToolbar
+          trailing={message.runTiming?.completedAt
+            ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
+            : null}
         >
-          <FileText className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-        </button>
+          {onOpenEvidence ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.common.fullOutput")}
+              onClick={() => onOpenEvidence({
+                kind: "run-output",
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: message.role,
+                fallbackOutput: message.body,
+              })}
+            />
+          ) : null}
+          {onRetryRun ? (
+            <MessageAction
+              icon={RotateCcw}
+              label={t("common.retry")}
+              onClick={() => onRetryRun(message.sessionId, message.runId!)}
+            />
+          ) : null}
+          {onAnalyzeConversation ? (
+            <ConversationAnalysisMenu
+              open={analysisMenuOpen}
+              onOpenChange={setAnalysisMenuOpen}
+              returnFocusTarget={analysisMenuReturnFocusRef.current}
+              onSelect={() => onAnalyzeConversation({
+                sessionId: message.sessionId,
+                runId: message.runId,
+                messageId: message.id,
+              })}
+            />
+          ) : null}
+        </MessageToolbar>
       ) : null}
       </div>
     </div>
@@ -4084,13 +4311,11 @@ function TimelinePerformanceBoundary({
 }
 
 function ConversationAnalysisMenu({
-  inline = false,
   open,
   onOpenChange,
   returnFocusTarget,
   onSelect,
 }: {
-  inline?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   returnFocusTarget?: HTMLElement | null;
@@ -4098,12 +4323,12 @@ function ConversationAnalysisMenu({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className={inline ? "ml-auto" : "absolute right-0 top-0 z-10"}>
+    <div>
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-opacity hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-hover hover:text-ink"
             aria-label={t("console.sessionAnalysis.moreActions")}
             title={t("console.sessionAnalysis.moreActions")}
           >
@@ -4159,6 +4384,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
         ? session.unresolvedSystemEventKind
         : null,
       isNonContinuable: project.directoryAvailable === false || session.continuation?.canContinue === false,
+      roundState: session.roundState ?? null,
       analysisDisabledReason: session.analysisRecordAvailable === false
         ? t("console.sessionAnalysis.recordUnavailable")
         : null,

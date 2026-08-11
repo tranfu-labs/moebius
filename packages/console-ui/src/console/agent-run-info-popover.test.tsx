@@ -3,8 +3,31 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentRunInfoPopover, type AgentRunInfoView } from "./agent-run-info-popover";
+import { defaultPortraitId, portraitSrc } from "./agent-portrait";
 
 describe("AgentRunInfoPopover", () => {
+  it("threads a chosen portrait into the trigger avatar and falls back to the slug default", () => {
+    const { rerender } = render(<AgentRunInfoPopover
+      sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
+      loadInfo={async () => info("run-a", "Team")}
+      loadMarkdown={async () => ({ markdown: "old" })}
+    />);
+    expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc(defaultPortraitId("lead")));
+
+    rerender(<AgentRunInfoPopover
+      sessionId="session-a" runId="run-a" role="lead" displayName="Lead" portraitId="bengal"
+      loadInfo={async () => info("run-a", "Team")}
+      loadMarkdown={async () => ({ markdown: "old" })}
+    />);
+    expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc("bengal"));
+
+    rerender(<AgentRunInfoPopover
+      sessionId="session-a" runId="run-a" role="lead" displayName="Lead" portraitId={null}
+      loadInfo={async () => info("run-a", "Team")}
+      loadMarkdown={async () => ({ markdown: "old" })}
+    />);
+    expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc(defaultPortraitId("lead")));
+  });
   it("ignores a late response after the run key changes despite callback identity changes", async () => {
     const first = deferred<AgentRunInfoView>();
     const second = deferred<AgentRunInfoView>();
@@ -92,6 +115,25 @@ describe("AgentRunInfoPopover", () => {
     expect(await screen.findByText("Recovered team · 用户")).toBeVisible();
     expect(retryLoader).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the roster engine badge before the popover has loaded", () => {
+    render(
+      <AgentRunInfoPopover
+        sessionId="session-a"
+        runId="run-a"
+        role="lead"
+        displayName="Lead"
+        portraitId="tuxedo"
+        engine={{ cli: "claude" }}
+        loadInfo={() => new Promise<AgentRunInfoView>(() => undefined)}
+        loadMarkdown={async () => ({ markdown: "" })}
+      />,
+    );
+
+    // 角标与画像不能等弹层加载完才出现——时间线本来就知道它们
+    expect(document.querySelector('[data-agent-portrait="lead"]')).not.toBeNull();
+    expect(document.querySelector('[data-agent-engine="claude"]')).not.toBeNull();
+  });
 });
 
 function info(runId: string, teamName: string): AgentRunInfoView {
@@ -102,6 +144,10 @@ function info(runId: string, teamName: string): AgentRunInfoView {
     profile: { cli: "codex", model: "gpt", effort: "high" },
     loadedAt: "2026-08-04T00:00:00.000Z", evidence: "executed",
   };
+}
+
+function portraitImage(): HTMLImageElement | null {
+  return document.querySelector<HTMLImageElement>('[data-agent-portrait="lead"] img');
 }
 
 function deferred<T>() {

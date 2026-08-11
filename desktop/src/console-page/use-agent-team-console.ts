@@ -17,6 +17,7 @@ import {
   AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY,
   planAgentTeamFileManagerTranslationKey,
   planAgentTeamDetailState,
+  planAgentTeamIdentityMarkdown,
 } from "./agent-team-console-model.js";
 import {
   applyAgentTeamMemberExternalChange,
@@ -24,6 +25,7 @@ import {
   clearAgentTeamMemberExternalChange,
   discardAgentTeamMemberDraft,
   discardAllAgentTeamDrafts,
+  getAgentTeamMemberDraft,
   updateAgentTeamMemberDraft,
 } from "./team-state.js";
 
@@ -81,8 +83,9 @@ export function useAgentTeamConsole(
     locale,
     now,
     primaryAgentChange: profile.primaryAgentChange,
+    portraitChange: profile.portraitChange,
   }), [catalog.selection, catalog.state, locale, member.drafts, member.saveAllFailures,
-    navigation.activeTeamKey, now, profile.primaryAgentChange, revisions.revisions]);
+    navigation.activeTeamKey, now, profile.primaryAgentChange, profile.portraitChange, revisions.revisions]);
   const openMemberRevisions = useCallback((teamKey: string, memberSlug: string) => {
     revisions.loadRevisions(teamKey, memberSlug);
   }, [revisions]);
@@ -103,6 +106,7 @@ export function useAgentTeamConsole(
   const close = useCallback(() => {
     navigation.close();
     profile.clearPrimaryAgentChange();
+    profile.clearPortraitChange();
   }, [navigation, profile]);
   const changeMember = useCallback((teamKey: string, memberSlug: string, agentMarkdown: string) => {
     member.commitDrafts(updateAgentTeamMemberDraft(
@@ -110,6 +114,20 @@ export function useAgentTeamConsole(
       teamKey,
       memberSlug,
       agentMarkdown,
+    ));
+  }, [member]);
+  const changeMemberIdentity = useCallback((
+    teamKey: string,
+    memberSlug: string,
+    identity: { displayName?: string; description?: string },
+  ) => {
+    const current = getAgentTeamMemberDraft(member.draftsRef.current, teamKey, memberSlug);
+    if (current?.loadStatus !== "ready") return;
+    member.commitDrafts(updateAgentTeamMemberDraft(
+      member.draftsRef.current,
+      teamKey,
+      memberSlug,
+      planAgentTeamIdentityMarkdown(current.draftMarkdown, identity),
     ));
   }, [member]);
   const discardMember = useCallback((teamKey: string, memberSlug: string) => {
@@ -122,10 +140,11 @@ export function useAgentTeamConsole(
   const intents = useMemo(() => ({
     close,
     changeMember,
+    changeMemberIdentity,
     discardMember,
     discardAll,
     fileManagerLabel: t(planAgentTeamFileManagerTranslationKey(api?.agentTeamFileManagerKind)),
-  }), [api?.agentTeamFileManagerKind, changeMember, close, discardAll, discardMember, t]);
+  }), [api?.agentTeamFileManagerKind, changeMember, changeMemberIdentity, close, discardAll, discardMember, t]);
   return useMemo(() => ({
     catalog,
     member,

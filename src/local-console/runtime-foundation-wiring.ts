@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
 import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import type { LocalDetachedRunFailureRuntime } from "./detached-run-failure-runtime.js";
 import type { LocalPendingSessionContextRuntime } from "./pending-session-context-runtime.js";
 import type { LocalRunFailureRuntime } from "./run-failure-runtime.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
@@ -13,6 +14,7 @@ import { decideTeamSnapshotLoad, planSessionHasActiveRun } from "./session-setti
 
 type ConversationPorts = ConstructorParameters<typeof LocalConversationWorkspaceRuntime>[0];
 type ContinuationPorts = ConstructorParameters<typeof LocalSessionContinuationRuntime>[0];
+type DetachedFailurePorts = ConstructorParameters<typeof LocalDetachedRunFailureRuntime>[0];
 type FailurePorts = ConstructorParameters<typeof LocalRunFailureRuntime>[0];
 type LifecyclePorts = ConstructorParameters<typeof LocalRunLifecycleRuntime>[0];
 type PresentationPorts = ConstructorParameters<typeof LocalSessionPresentationRuntime>[0];
@@ -40,6 +42,7 @@ export function createLocalRuntimeFoundationWiring(input: {
   longRunReportMs: LifecyclePorts["longRunReportMs"];
   getSessionFactLogPath(sessionId: string): string;
   hasScheduledWorker(sessionId: string): boolean;
+  scheduleReprocess(sessionId: string): void;
   report(input: { event: string; [key: string]: unknown }): void;
 }) {
   const { context, options } = input;
@@ -81,7 +84,20 @@ export function createLocalRuntimeFoundationWiring(input: {
       activeRun: (runId) => input.activeRuns.get(runId),
       recordError: (event, error, originalError) =>
         input.report({ event, error: context.formatAndSetError(error), originalError }),
+      failureRetryLimit: options.failureRetryLimit,
+      scheduleReprocess: input.scheduleReprocess,
     } satisfies FailurePorts,
+    detachedFailure: {
+      store: options.store,
+      storeCall: (label, operation) => context.storePorts.call(label, operation),
+      nowIso: context.nowIso,
+      timeoutKind: input.timeoutKind,
+      interrupted: input.interrupted,
+      interruptionCause: input.interruptionCause,
+      activeRun: (runId) => input.activeRuns.get(runId),
+      recordError: (event, error, originalError) =>
+        input.report({ event, error: context.formatAndSetError(error), originalError }),
+    } satisfies DetachedFailurePorts,
     lifecycle: {
       activeRun: (runId) => input.activeRuns.get(runId),
       activeRuns: () => input.activeRuns.values(),
