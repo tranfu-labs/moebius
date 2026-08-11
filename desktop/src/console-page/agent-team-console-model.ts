@@ -16,7 +16,10 @@ import type { AiTeamBuilderState } from "../ai-team-builder/dto.js";
 import type { AgentTeamExternalChangeResponse } from "../team-external-change-contract.js";
 import { parseAgentMarkdownFrontmatter, serializeAgentMarkdownFrontmatter } from "../../../src/agent-frontmatter.js";
 import { tryParseAgentMarkdownIdentity } from "../team-model.js";
+import type { DesktopLocale } from "../language-preference-contract.js";
+import { translateDesktop } from "../i18n/index.js";
 import { getAgentTeamKey } from "./team-state.js";
+import type { AgentTeamRevisionsByTeam } from "./use-agent-team-revisions.js";
 import {
   getAgentTeamMemberDraft,
   isAgentTeamMemberDirty,
@@ -186,6 +189,9 @@ export function planAgentTeamDetailState(input: {
   selection: AgentTeamSelection | null;
   drafts: AgentTeamDraftState;
   saveAllFailures: AgentTeamSaveAllFailure[];
+  revisions: AgentTeamRevisionsByTeam;
+  locale: DesktopLocale;
+  now: string;
   primaryAgentChange: {
     teamKey: string;
     status: "saving" | "saved" | "failed";
@@ -213,6 +219,7 @@ export function planAgentTeamDetailState(input: {
           description: member.description,
         })
       : { displayName: member.displayName, description: member.description };
+    const revisionView = input.revisions[input.activeTeamKey]?.[member.slug] ?? null;
     memberEditors[member.slug] = {
       memberSlug: member.slug,
       loadStatus: editor.loadStatus,
@@ -224,6 +231,33 @@ export function planAgentTeamDetailState(input: {
       externalChangeStatus: editor.externalChangeStatus,
       displayName: identity.displayName,
       description: identity.description,
+      ...(revisionView === null
+        ? {}
+        : {
+            recentChange: revisionView.recentChange === null
+              ? null
+              : {
+                  summary: revisionView.recentChange.summary,
+                  summaryStatus: revisionView.recentChange.summaryStatus,
+                  authorLabel: revisionView.recentChange.authorLabel,
+                  timeLabel: planAgentRevisionTimeLabel(
+                    revisionView.recentChange.timeLabel,
+                    input.now,
+                    input.locale,
+                  ),
+                },
+            changeMarkers: revisionView.changeMarkers,
+            revisionTimeline: revisionView.timeline.map((entry) => ({
+              id: entry.revisionId,
+              authorLabel: entry.authorKind === "user"
+                ? translateDesktop(input.locale, "agentTeam.author.you")
+                : entry.authorLabel ?? "",
+              timeLabel: planAgentRevisionTimeLabel(entry.timeLabel, input.now, input.locale),
+              summary: entry.summary,
+              summaryStatus: entry.summaryStatus,
+              ...(entry.isLatest ? { isLatest: true } : {}),
+            })),
+          }),
     };
   }
   return {
@@ -244,6 +278,43 @@ export function planAgentTeamDetailState(input: {
       ? input.portraitChange.error
       : null,
   };
+}
+
+/**
+ * Relative time label for revision provenance lines. Deliberately coarse:
+ * a plain relative phrase beats an ISO timestamp for the target user; absolute
+ * dates appear once the entry is older than a month.
+ */
+export function planAgentRevisionTimeLabel(
+  iso: string,
+  now: string,
+  locale: DesktopLocale,
+): string {
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return iso;
+  const elapsedMs = Math.max(0, Date.parse(now) - timestamp);
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  if (elapsedMs < minuteMs) {
+    return translateDesktop(locale, "agentTeam.revisionTime.justNow");
+  }
+  if (elapsedMs < hourMs) {
+    return translateDesktop(locale, "agentTeam.revisionTime.minutesAgo", {
+      minutes: String(Math.floor(elapsedMs / minuteMs)),
+    });
+  }
+  if (elapsedMs < dayMs) {
+    return translateDesktop(locale, "agentTeam.revisionTime.hoursAgo", {
+      hours: String(Math.floor(elapsedMs / hourMs)),
+    });
+  }
+  if (elapsedMs < 30 * dayMs) {
+    return translateDesktop(locale, "agentTeam.revisionTime.daysAgo", {
+      days: String(Math.floor(elapsedMs / dayMs)),
+    });
+  }
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 export function planAgentTeamMemberSummary(

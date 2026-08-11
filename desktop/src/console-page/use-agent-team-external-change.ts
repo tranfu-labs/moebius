@@ -33,6 +33,12 @@ export function useAgentTeamExternalChange(input: {
   catalog: AgentTeamCatalogBundle;
   draft: AgentTeamDraftBundle;
   updateSummary(teamKey: string, document: AgentTeamMemberDocument): void;
+  /**
+   * Called after an external change is RELOADED: the main process persisted the
+   * revision before returning `changed`, so refreshing here shows the new
+   * timeline entry immediately — no wait for a re-open or a save.
+   */
+  refreshRevisions(teamKey: string, memberSlug: string): void;
   t: Translate;
 }) {
   const inputRef = useRef(input);
@@ -74,7 +80,13 @@ export function useAgentTeamExternalChange(input: {
       const reloaded = planAgentTeamExternalReloaded(
         getAgentTeamMemberDraft(nextState, teamKey, memberSlug),
       );
-      if (reloaded) runtime.updateSummary(teamKey, result.document);
+      if (reloaded) {
+        runtime.updateSummary(teamKey, result.document);
+        // The revision is already durably persisted (the main process awaits
+        // it before answering `changed`); refresh the member's history in
+        // place so the timeline entry appears without any user action.
+        runtime.refreshRevisions(teamKey, memberSlug);
+      }
     } catch (error) {
       inputRef.current.draft.commitDrafts(failAgentTeamMemberLoad(
         inputRef.current.draft.draftsRef.current,

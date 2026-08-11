@@ -92,6 +92,9 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **纵向节奏**：间距是在说「哪些东西属于同一件事」，所以必须是一把尺子，不是一处一处各自估的数。团队详情页用的这把尺子（由紧到松）：6px 面包屑→标题、8px 一组表单内的字段之间（名称→描述）、12px 小标题→它领起的内容、20px 同一段落内的块之间（成员条→成员面板、成员身份→运行配置）、32px 段与段之间。**段内的空隙一旦大于段间的空隙，层级就反了**——这正是「没有呼吸感」的成因，不是空得不够。只有条件渲染内容的行必须带 `empty:hidden`：它塌成 0 高时 margin 不会跟着塌，卡片会凭空多出一截底部内边距。
 - **页面吸顶页头**：`src/console/agent-team-detail.tsx` 的 `<header>`——只承载返回、页面标题与页面级操作，描述之类的正文留在滚动区。吸住时页头的底板必须向上延伸盖满滚动容器的顶部留白（`--page-inset-top`，由 `agent-teams-page.tsx` 声明），否则正文会从页头上方继续滚过去，读成一块浮空的板子；底板是不透明纯色，不用渐变淡出（见零阴影零渐变红线）。下缘发丝线只在真的吸住时出现，用 `--dur` 色彩过渡淡入，不做位移或高度动画——页头高度全程恒定，任何「吸住就压缩」的做法都会在吸住那一刻把下方正文顶掉一截。是否吸住由页头静态位置上的零高哨兵与页头自身的位置差判定（`useHeaderPinned`），不用滚动阈值：页头之上有多少东西由宿主页面决定，组件不知道。
 - **需要修复面板**：`src/console/agent-team-detail.tsx`——危险事实使用红色图标与细边浅底，正文用普通语言列出不可用范围；修复动作保持 outline，只有“移除记录”等不可逆应用状态变更使用 danger 按钮，并在确认层明确磁盘文件不受影响。
+- **AGENT.md 变化标记与时间线**：`src/console/agent-markdown-mention-editor.tsx`（`changeMarkers`）、`agent-markdown-revision-timeline.tsx`——变化段落左侧 2px 色条（`color-mix(in srgb, var(--accent) 50%, transparent)`：accent 是纯 CSS 变量，Tailwind 的 `accent/<n>` 透明度修饰不生成任何规则，`bg-accent/50` 会静默失效，色条必须以 color-mix 派生），色条所在的 12px 命中带常驻可 hover；来历署名与展开按钮默认 `opacity-0` 且指针不可达，只在 `group-hover` / `group-focus-within`（Tab 聚焦到展开按钮时）显形并恢复指针可达，展开按钮聚焦时带同色 40% ring，不常驻抢注意力；点击就地展开原文用 `bg-sunken` 块，不跳转、不开第二界面；时间线是纯列表，只有一句摘要 + 作者 + 相对时间，不渲染指纹、mtime 或逐行对比。段落切块只服务这里的呈现定位，不作为任何合并单位。
+- **官方同步横幅与常驻入口**：`src/console/agent-team-detail.tsx`（`officialSyncBanner`）、`agent-teams-page.tsx`（`RecentOfficialSyncPanel`、团队首页“官方有新变化”标记）——横幅用 `border-l-2 border-accent/50 bg-sunken`，同一内容会在横幅关闭后原样出现在“更多”菜单的常驻入口里；首页标记复用既有 `TeamStatusBadge` 的中性描边样式，不新增色相。
+- **侧边栏底部同步态**：`src/console/operator-console.tsx` 的 `SidebarAction`（`iconSpinning`、`tooltip`）——与“安装更新”共用同一插槽，进行中用 `LoaderCircle` + `animate-spin motion-reduce:animate-none`，完成态用中性 `CircleCheck`，不借用状态色相族表格之外的颜色。
 
 ## 生长机制
 

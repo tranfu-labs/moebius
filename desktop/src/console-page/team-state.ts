@@ -251,6 +251,12 @@ export function applyAgentTeamMemberExternalChange(
   }
 
   if (isAgentTeamMemberDirty(current)) {
+    // An identical conflict must not produce fresh state: a new object here
+    // would re-run the external-check effect forever (each run sees the same
+    // difference and records yet another revision).
+    if (current.externalChangeStatus === "conflict" && current.externalMarkdown === externalMarkdown) {
+      return state;
+    }
     return setMember(state, {
       ...current,
       externalChangeStatus: "conflict",
@@ -267,6 +273,35 @@ export function applyAgentTeamMemberExternalChange(
     saveStatus: "idle",
     saveError: null,
     saveRequestedMarkdown: null,
+  });
+}
+
+/**
+ * Applies a restored revision as the member's effective content: the main
+ * process already wrote the restored text to disk and recorded a new revision,
+ * so BOTH the draft and the saved baseline move to it. Leaving `savedMarkdown`
+ * stale would mark the member dirty and make every external check treat the
+ * just-restored file as a foreign change, re-recording revisions in a loop.
+ */
+export function applyAgentTeamMemberRestored(
+  state: AgentTeamDraftState,
+  teamKey: string,
+  memberSlug: string,
+  restoredMarkdown: string,
+): AgentTeamDraftState {
+  const current = getAgentTeamMemberDraft(state, teamKey, memberSlug);
+  if (current?.loadStatus !== "ready") {
+    return state;
+  }
+  return setMember(state, {
+    ...current,
+    savedMarkdown: restoredMarkdown,
+    draftMarkdown: restoredMarkdown,
+    saveStatus: "idle",
+    saveError: null,
+    saveRequestedMarkdown: null,
+    externalChangeStatus: "none",
+    externalMarkdown: null,
   });
 }
 

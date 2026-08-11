@@ -407,6 +407,14 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return recordLocalWorkspaceDiff(database, input.command);
       case "local-list-t5-facts":
         return listLocalT5Facts(database, input.command.sessionId);
+      case "agent-revision-create":
+        return createAgentMarkdownRevision(database, input.command);
+      case "agent-revision-list":
+        return listAgentMarkdownRevisions(database, input.command);
+      case "agent-revision-get":
+        return getAgentMarkdownRevision(database, input.command.revisionId);
+      case "agent-revision-update-summary":
+        return updateAgentMarkdownRevisionSummary(database, input.command);
       default:
         assertNever(input.command);
     }
@@ -673,6 +681,21 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_provider_operations_profile_updated
       ON provider_operations(profile_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS agent_markdown_revisions (
+      revision_id TEXT PRIMARY KEY,
+      team_stable_id TEXT NOT NULL,
+      member_slug TEXT NOT NULL,
+      content TEXT NOT NULL,
+      author_kind TEXT NOT NULL CHECK (author_kind IN ('user', 'official', 'agent')),
+      author_label TEXT,
+      block_ownership_json TEXT,
+      summary TEXT,
+      summary_status TEXT NOT NULL CHECK (summary_status IN ('pending', 'ready', 'unavailable')),
+      batch_id TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_markdown_revisions_team_member_created
+      ON agent_markdown_revisions(team_stable_id, member_slug, created_at);
   `);
   ensureProviderOperationColumns(database);
   migrateSessionEdgesHiddenKey(database);
@@ -712,6 +735,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   markSchemaMigration(database, "local-console-managed-attachments");
   markSchemaMigration(database, "sidebar-chat-session-analysis");
   markSchemaMigration(database, "byok-provider-profiles-v1");
+  markSchemaMigration(database, "agent-markdown-revisions-v1");
 }
 
 function listProviderProfiles(database: SqliteDatabase): ProviderProfile[] {
@@ -5147,6 +5171,155 @@ function listLocalT5Facts(database: SqliteDatabase, sessionId: string | null): u
           .prepare("SELECT * FROM session_edges WHERE parent_session_id = ? OR child_session_id = ? ORDER BY created_at ASC")
           .all(sessionId, sessionId),
   };
+}
+
+interface AgentMarkdownRevisionRow {
+  revisionId: string;
+  teamStableId: string;
+  memberSlug: string;
+  content: string;
+  authorKind: "user" | "official" | "agent";
+  authorLabel: string | null;
+  blockOwnership: AgentMarkdownBlockOwnershipRow[] | null;
+  summary: string | null;
+  summaryStatus: "pending" | "ready" | "unavailable";
+  batchId: string | null;
+  createdAt: string;
+}
+
+function createAgentMarkdownRevision(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "agent-revision-create" }>,
+): AgentMarkdownRevisionRow {
+  if (
+    input.revisionId.trim().length === 0
+    || input.teamStableId.trim().length === 0
+    || input.memberSlug.trim().length === 0
+  ) {
+    throw new Error("Invalid Agent Markdown revision input");
+  }
+  database.prepare(
+    `INSERT INTO agent_markdown_revisions
+      (revision_id, team_stable_id, member_slug, content, author_kind, author_label, block_ownership_json, summary, summary_status, batch_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+  ).run(
+    input.revisionId,
+    input.teamStableId,
+    input.memberSlug,
+    input.content,
+    input.authorKind,
+    input.authorLabel,
+    input.blockOwnershipJson,
+    input.summaryStatus,
+    input.batchId,
+    input.now,
+  );
+  return readAgentMarkdownRevisionRow(
+    database.prepare("SELECT * FROM agent_markdown_revisions WHERE revision_id = ?").get(input.revisionId) as Record<string, unknown>,
+  );
+}
+
+function listAgentMarkdownRevisions(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "agent-revision-list" }>,
+): AgentMarkdownRevisionRow[] {
+  return database.prepare(
+    `SELECT * FROM agent_markdown_revisions
+     WHERE team_stable_id = ? AND member_slug = ?
+     ORDER BY created_at ASC, revision_id ASC`,
+  ).all(input.teamStableId, input.memberSlug).map((row) =>
+    readAgentMarkdownRevisionRow(row as Record<string, unknown>));
+}
+
+function getAgentMarkdownRevision(
+  database: SqliteDatabase,
+  revisionId: string,
+): AgentMarkdownRevisionRow | null {
+  const row = database.prepare("SELECT * FROM agent_markdown_revisions WHERE revision_id = ?").get(revisionId);
+  return row === undefined ? null : readAgentMarkdownRevisionRow(row as Record<string, unknown>);
+}
+
+function updateAgentMarkdownRevisionSummary(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "agent-revision-update-summary" }>,
+): AgentMarkdownRevisionRow {
+  const result = database.prepare(
+    `UPDATE agent_markdown_revisions
+     SET summary = ?, summary_status = ?
+     WHERE revision_id = ?`,
+  ).run(input.summary, input.summaryStatus, input.revisionId);
+  if (Number(result.changes ?? 0) !== 1) {
+    throw new Error("Agent Markdown revision not found");
+  }
+  return readAgentMarkdownRevisionRow(
+    database.prepare("SELECT * FROM agent_markdown_revisions WHERE revision_id = ?").get(input.revisionId) as Record<string, unknown>,
+  );
+}
+
+interface AgentMarkdownBlockOwnershipRow {
+  blockIndex: number;
+  authorKind: "user" | "official" | "agent";
+  authorLabel: string;
+  timeLabel: string;
+  previousText: string | null;
+}
+
+function readAgentMarkdownRevisionRow(row: Record<string, unknown>): AgentMarkdownRevisionRow {
+  const authorKind = row.author_kind;
+  if (authorKind !== "user" && authorKind !== "official" && authorKind !== "agent") {
+    throw new Error("Invalid Agent Markdown revision author kind");
+  }
+  const summaryStatus = row.summary_status;
+  if (summaryStatus !== "pending" && summaryStatus !== "ready" && summaryStatus !== "unavailable") {
+    throw new Error("Invalid Agent Markdown revision summary status");
+  }
+  return {
+    revisionId: readString(row.revision_id, "revision_id"),
+    teamStableId: readString(row.team_stable_id, "team_stable_id"),
+    memberSlug: readString(row.member_slug, "member_slug"),
+    content: readString(row.content, "content"),
+    authorKind,
+    authorLabel: readNullableString(row.author_label, "author_label"),
+    blockOwnership: readBlockOwnership(row.block_ownership_json),
+    summary: readNullableString(row.summary, "summary"),
+    summaryStatus,
+    batchId: readNullableString(row.batch_id, "batch_id"),
+    createdAt: readString(row.created_at, "created_at"),
+  };
+}
+
+function readBlockOwnership(value: unknown): AgentMarkdownBlockOwnershipRow[] | null {
+  const serialized = readNullableString(value, "block_ownership_json");
+  if (serialized === null) {
+    return null;
+  }
+  const parsed = JSON.parse(serialized) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error("Invalid Agent Markdown revision block ownership");
+  }
+  return parsed.map((entry) => {
+    if (!isRecord(entry)) {
+      throw new Error("Invalid Agent Markdown revision block ownership");
+    }
+    const authorKind = entry.authorKind;
+    if (authorKind !== "user" && authorKind !== "official" && authorKind !== "agent") {
+      throw new Error("Invalid Agent Markdown revision block ownership");
+    }
+    if (typeof entry.blockIndex !== "number" || typeof entry.authorLabel !== "string" || typeof entry.timeLabel !== "string") {
+      throw new Error("Invalid Agent Markdown revision block ownership");
+    }
+    return {
+      blockIndex: entry.blockIndex,
+      authorKind,
+      authorLabel: entry.authorLabel,
+      timeLabel: entry.timeLabel,
+      previousText: entry.previousText === null || entry.previousText === undefined
+        ? null
+        : typeof entry.previousText === "string"
+          ? entry.previousText
+          : (() => { throw new Error("Invalid Agent Markdown revision block ownership"); })(),
+    };
+  });
 }
 
 function markStaleRunning(

@@ -14,10 +14,7 @@ import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
 import { formatLocalError } from "../../src/local-console/runtime-domain.js";
-import {
-  buildSeedCopyPlan,
-  executeSeedCopyPlan,
-} from "./data-root.js";
+import { buildSeedCopyPlan, executeSeedCopyPlan } from "./data-root.js";
 import { DesktopWindowRuntime } from "./desktop-window-runtime.js";
 import { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
 import { DesktopShutdownRuntime } from "./desktop-shutdown-runtime.js";
@@ -28,11 +25,11 @@ import { registerAiTeamBuilderIpc } from "./ai-team-builder-ipc.js";
 import { AiTeamBuilder } from "./ai-team-builder/index.js";
 import { AiTeamBuilderPiSpawner } from "./ai-team-builder/pi-spawner.js";
 import { createAgentTeamService } from "./team-ipc.js";
+import { createAgentRevisionWiring } from "./agent-revision-wiring.js";
+import { AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL } from "./team-ipc-contract.js";
 import { registerTeamIpc } from "./team-ipc-register.js";
 import { seedBuiltInTeams } from "./team-seed.js";
-import {
-  createTeamRuntimeBindingService,
-} from "./team-runtime-binding.js";
+import { createTeamRuntimeBindingService } from "./team-runtime-binding.js";
 import {
   createTeamConversationPreferenceService,
 } from "./team-conversation-preference.js";
@@ -116,6 +113,10 @@ const windows = new DesktopWindowRuntime({
   statusTitle: () => translateDesktop(activeLocale, "window.statusTitle"),
 });
 
+const agentRevisionWiring = createAgentRevisionWiring({
+  dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), runPi,
+  publishSummarySettled: (settled) => windows.sendMain(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, settled),
+});
 localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: {
@@ -219,9 +220,7 @@ async function boot(): Promise<void> {
     platform: process.platform,
     isPackaged: app.isPackaged,
     readLocale: () => readLanguagePreference(status.dataRoot),
-    setLocale: (locale) => {
-      activeLocale = locale;
-    },
+    setLocale: (locale) => { activeLocale = locale; },
     registerLanguage: () => undefined,
     createShellPathGate: (apply) => createShellPathReadinessGate({
       resolve: () => resolveShellPath({ platform: process.platform, currentPath: process.env.PATH }),
@@ -243,9 +242,7 @@ async function boot(): Promise<void> {
       return aiTeamBuilder;
     },
     createInstaller: (onInstallSucceeded) => new OnboardingCliInstallManager({ onInstallSucceeded }),
-    setInstaller: (installer) => {
-      onboardingCliInstaller = installer;
-    },
+    setInstaller: (installer) => { onboardingCliInstaller = installer; },
     observeInstaller: (installer) => installer.subscribe((snapshot) => {
       windows.sendMain(ONBOARDING_IPC_CHANNELS.cliInstallSnapshot, snapshot);
     }),
@@ -267,6 +264,9 @@ async function boot(): Promise<void> {
       seedTeamsRoot,
       dataRoot: status.dataRoot,
     }),
+    // One-time, idempotent legacy baseline migration; failures keep the old
+    // state and retry on the next launch (see agent-revision-wiring).
+    migrateOfficialBaselines: () => agentRevisionWiring.migrateBaselines(status.dataRoot),
     startLocalConsole: () => localConsole.start(),
     startUpdates: async () => {
       await updateRuntime.start();
@@ -313,4 +313,6 @@ registerTeamIpc(createDesktopTeamIpcOptions({
   selectDirectory: (options) => windows.selectDirectory(options),
   relocationTitle: () => translateDesktop(activeLocale, "dialog.relocateTeam"),
   sessionExists: (sessionId) => localConsole.sessionExists(sessionId),
+  revisions: agentRevisionWiring.ipc,
+  revisionService: agentRevisionWiring.service,
 }));

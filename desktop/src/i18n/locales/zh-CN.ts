@@ -18,4 +18,9 @@ export const zhCN = {
   "dialog.exit.title": "仍有任务正在运行",
   "dialog.exit.message": "当前有 {count} 项任务正在运行。",
   "dialog.exit.detail": "继续将停止这些任务；会话记录会保留。",
+  "agentTeam.revisionTime.justNow": "刚刚",
+  "agentTeam.revisionTime.minutesAgo": "{minutes} 分钟前",
+  "agentTeam.revisionTime.hoursAgo": "{hours} 小时前",
+  "agentTeam.revisionTime.daysAgo": "{days} 天前",
+  "agentTeam.author.you": "你",
 } as const;

@@ -6,6 +6,7 @@ import type {
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
 } from "../settings-contract.js";
+import type { AgentExecutionProfile } from "@moebius/console-ui";
 import {
   SETTINGS_RELEASES_URL,
   SETTINGS_REPOSITORY_URL,
@@ -14,6 +15,12 @@ import {
 
 export type DesktopUpdateStatus = SettingsUpdateCheckResult["status"];
 export type DesktopCopyStatus = "idle" | "copied" | "failed";
+
+export interface DesktopDefaultAgentState {
+  profile: AgentExecutionProfile;
+  saveStatus: "idle" | "saving" | "failed";
+  saveError: string | null;
+}
 
 export interface DesktopSettingsState {
   applicationInfo: SettingsApplicationInfo | null;
@@ -26,6 +33,7 @@ export interface DesktopSettingsState {
   updateRequestId: number | null;
   copyStatus: DesktopCopyStatus;
   copyRequestId: number | null;
+  defaultAgent: DesktopDefaultAgentState | null;
   runningTaskCount: number | null;
   installConfirmation: SettingsInstallConfirmation | null;
   installFailure: SettingsInstallFailure | null;
@@ -42,7 +50,11 @@ export type DesktopSettingsAction =
   | { type: "install-failure-received"; failure: SettingsInstallFailure }
   | { type: "install-failure-cleared" }
   | { type: "copy-started"; requestId: number }
-  | { type: "copy-finished"; requestId: number; result: SettingsVersionCopyResult };
+  | { type: "copy-finished"; requestId: number; result: SettingsVersionCopyResult }
+  | { type: "default-agent-loaded"; profile: AgentExecutionProfile }
+  | { type: "default-agent-save-started" }
+  | { type: "default-agent-save-finished"; profile: AgentExecutionProfile }
+  | { type: "default-agent-save-failed"; error: string };
 
 export const INITIAL_DESKTOP_SETTINGS_STATE: DesktopSettingsState = {
   applicationInfo: null,
@@ -50,6 +62,7 @@ export const INITIAL_DESKTOP_SETTINGS_STATE: DesktopSettingsState = {
   updateRequestId: null,
   copyStatus: "idle",
   copyRequestId: null,
+  defaultAgent: null,
   runningTaskCount: null,
   installConfirmation: null,
   installFailure: null,
@@ -86,6 +99,13 @@ export function planDesktopSettingsView(state: DesktopSettingsState) {
         : createSettingsFeedbackUrl(state.applicationInfo),
       repository: SETTINGS_REPOSITORY_URL,
     },
+    defaultAgent: state.defaultAgent === null
+      ? undefined
+      : {
+          profile: state.defaultAgent.profile,
+          saveStatus: state.defaultAgent.saveStatus,
+          error: state.defaultAgent.saveError,
+        },
   };
 }
 
@@ -145,6 +165,40 @@ export function reduceDesktopSettings(
         ...state,
         copyStatus: action.result.ok ? "copied" : "failed",
         copyRequestId: null,
+      };
+    case "default-agent-loaded":
+      return {
+        ...state,
+        defaultAgent: {
+          profile: action.profile,
+          saveStatus: "idle",
+          saveError: null,
+        },
+      };
+    case "default-agent-save-started":
+      if (state.defaultAgent === null || state.defaultAgent.saveStatus === "saving") {
+        return state;
+      }
+      return {
+        ...state,
+        defaultAgent: { ...state.defaultAgent, saveStatus: "saving", saveError: null },
+      };
+    case "default-agent-save-finished":
+      return {
+        ...state,
+        defaultAgent: {
+          profile: action.profile,
+          saveStatus: "idle",
+          saveError: null,
+        },
+      };
+    case "default-agent-save-failed":
+      if (state.defaultAgent === null) {
+        return state;
+      }
+      return {
+        ...state,
+        defaultAgent: { ...state.defaultAgent, saveStatus: "failed", saveError: action.error },
       };
   }
 }

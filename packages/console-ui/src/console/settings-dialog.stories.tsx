@@ -143,10 +143,15 @@ const meta = {
       updateStatus: "idle",
       copyStatus: "idle",
     },
+    defaultAgent: {
+      profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
+      saveStatus: "idle",
+    },
     onOpenChange: () => undefined,
     onSectionChange: () => undefined,
     onSelectLocale: () => undefined,
     onRetry: () => undefined,
+    onSaveDefaultAgent: async () => undefined,
     onCheckForUpdates: () => undefined,
     onCopyVersion: () => undefined,
     onOpenReleaseNotes: () => undefined,
@@ -159,6 +164,45 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const General: Story = {};
+
+/** 从未保存过默认 Agent 时必须显示内置"通用助手"官方推荐组合，不能是空白或"未设置"。 */
+export const DefaultAgentNeverConfigured: Story = {};
+
+export const DefaultAgentDark: Story = { globals: { theme: "dark" } };
+
+export const DefaultAgentNarrow: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: "settingsDefaultAgentNarrow",
+      viewports: {
+        settingsDefaultAgentNarrow: {
+          name: "Default Agent narrow · 480 × 640",
+          styles: { width: "480px", height: "640px" },
+        },
+      },
+    },
+  },
+};
+
+export const DefaultAgentPiApiWithFailure: Story = {
+  args: {
+    defaultAgent: {
+      profile: { cli: "pi", providerId: "deepseek", providerProfileId: "deepseek-production", model: "deepseek-v4-pro", effort: "high" },
+      saveStatus: "failed",
+      error: "保存失败，请重试。",
+    },
+    defaultAgentProviderProfiles: [{
+      id: "deepseek-production",
+      providerId: "deepseek",
+      providerName: "DeepSeek",
+      displayName: "生产 DeepSeek",
+      defaultModel: "deepseek-v4-pro",
+      verifiedModels: ["deepseek-v4-pro", "deepseek-v4-flash"],
+      readiness: "ready",
+      reason: null,
+    }],
+  },
+};
 
 export const About: Story = {
   args: {

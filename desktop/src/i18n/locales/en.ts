@@ -20,4 +20,9 @@ export const en = {
   "dialog.exit.title": "Tasks are still running",
   "dialog.exit.message": "{count} task(s) are still running.",
   "dialog.exit.detail": "Continuing will stop these tasks; session records will be preserved.",
+  "agentTeam.revisionTime.justNow": "just now",
+  "agentTeam.revisionTime.minutesAgo": "{minutes} min ago",
+  "agentTeam.revisionTime.hoursAgo": "{hours} h ago",
+  "agentTeam.revisionTime.daysAgo": "{days} days ago",
+  "agentTeam.author.you": "You",
 } as const satisfies Record<DesktopTranslationKey, string>;

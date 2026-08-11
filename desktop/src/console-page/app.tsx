@@ -134,7 +134,7 @@ export function OperatorConsoleApp({
   const commitComposerDraft = composerBundle.commit;
   const activateComposerDraft = composerBundle.activate;
   const clearComposerDraft = composerBundle.clear;
-  const agentTeamControllersBundle = useAgentTeamConsole(window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t);
+  const agentTeamControllersBundle = useAgentTeamConsole(window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t, language.activeLocale);
   const agentTeamCatalogBundle = agentTeamControllersBundle.catalog;
   const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
     initialPendingAgentTeamKey,

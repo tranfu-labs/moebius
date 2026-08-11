@@ -42,6 +42,7 @@ describe("agent team member editor controller", () => {
       api,
       catalog: catalog(firstCatalogCommit),
       t: translate,
+      refreshRevisions: () => undefined,
     }} />));
     await act(async () => latest.loadMember("user:launch", "lead"));
     await act(async () => latest.commitDrafts(updateAgentTeamMemberDraft(
@@ -60,6 +61,7 @@ describe("agent team member editor controller", () => {
       api,
       catalog: catalog(latestCatalogCommit),
       t: translate,
+      refreshRevisions: () => undefined,
     }} />));
     await act(async () => {
       saved.resolve(memberDocument("# Lead\n\nChanged"));
@@ -83,6 +85,7 @@ describe("agent team member editor controller", () => {
       api: { ...api, writeAgentTeamMember: async () => Promise.reject(new Error("offline")) },
       catalog: catalog(latestCatalogCommit),
       t: translate,
+      refreshRevisions: () => undefined,
     }} />));
     await act(async () => latest.saveMember("user:launch", "lead"));
     expect(latest.draftsRef.current.membersByKey["user:launch\u0000lead"]).toMatchObject({

@@ -11,8 +11,10 @@ import {
 
 describe("team desktop action plan", () => {
   it("plans external reads and content comparison", () => {
-    expect(planExternalChangeRead("system")).toBe("ignored");
-    expect(planExternalChangeRead("user")).toBe("read");
+    // External-change detection covers BOTH official-source and user teams
+    // (product-review blocker 2: an official team's Finder edit used to be
+    // silently ignored).
+    expect(planExternalChangeRead()).toBe("read");
     expect(decideExternalChange("same", "same")).toBe("unchanged");
     expect(decideExternalChange("old", "new")).toBe("changed");
   });

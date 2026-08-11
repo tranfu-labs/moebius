@@ -1,5 +1,7 @@
 import type {
   AgentTeamCreateRequest,
+  AgentTeamDefaultAgentResponse,
+  AgentTeamDefaultAgentSaveRequest,
   AgentTeamDuplicateBuiltInRequest,
   AgentTeamDuplicateUserRequest,
   AgentTeamExecutionProfileDocument,
@@ -12,6 +14,9 @@ import type {
   AgentTeamMemberAddResponse,
   AgentTeamMemberDocument,
   AgentTeamMemberDuplicateRequest,
+  AgentTeamMemberRevisionsResponse,
+  AgentTeamMemberRevisionRestoreRequest,
+  AgentTeamMemberRevisionRestoreResponse,
   AgentTeamMemberRequest,
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
@@ -23,6 +28,7 @@ import type {
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamTrashUserRequest,
   AgentTeamUpdateInformationRequest,
+  AgentMarkdownRevisionSummarySettledPayload,
 } from "../team-ipc-contract.js";
 import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-repair-contract.js";
 import type { AgentTeamFileManagerKind, AgentTeamFileManagerRequest } from "../team-file-manager-contract.js";
@@ -164,6 +170,17 @@ export interface DesktopApi {
   checkAgentTeamMemberExternalChange?: (
     request: AgentTeamExternalChangeRequest,
   ) => Promise<AgentTeamExternalChangeResponse>;
+  listAgentTeamMemberRevisions?: (
+    request: AgentTeamMemberRequest,
+  ) => Promise<AgentTeamMemberRevisionsResponse>;
+  restoreAgentTeamMemberRevision?: (
+    request: AgentTeamMemberRevisionRestoreRequest,
+  ) => Promise<AgentTeamMemberRevisionRestoreResponse>;
+  onAgentMarkdownRevisionSummarySettled?: (
+    listener: (payload: AgentMarkdownRevisionSummarySettledPayload) => void,
+  ) => () => void;
+  getDefaultAgent?: () => Promise<AgentTeamDefaultAgentResponse>;
+  saveDefaultAgent?: (request: AgentTeamDefaultAgentSaveRequest) => Promise<AgentTeamDefaultAgentResponse>;
   selectAgentTeamRelocationFolder?: () => Promise<string | null>;
   relocateAgentTeamRecord?: (request: AgentTeamRelocateRequest) => Promise<AgentTeamListItem>;
   removeAgentTeamRecord?: (request: AgentTeamRepairRequest) => Promise<void>;

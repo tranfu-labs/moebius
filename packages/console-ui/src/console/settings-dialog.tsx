@@ -11,14 +11,22 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { MoebiusLogo } from "@/brand/moebius-logo";
+import type { AgentExecutionProfile, AgentExecutionProviderProfile } from "@/console/agent-team-detail";
+import { ExecutionProfileFields, isExecutionProfileValid } from "@/console/execution-profile-fields";
 import { useI18n, type Locale } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { ProviderSettingsPanel, type ProviderSettingsController } from "./provider-settings-panel";
 import { TerminalNotificationSettings, type TerminalNotificationSettingsProps } from "./terminal-notification-settings";
+
+export interface DefaultAgentSettingsState {
+  profile: AgentExecutionProfile;
+  saveStatus: "idle" | "saving" | "failed";
+  error?: string | null;
+}
 
 export type LanguageSaveStatus = "idle" | "saving" | "failed";
 export type SettingsSection = "general" | "providers" | "about";
@@ -100,10 +108,13 @@ export interface SettingsDialogProps {
   providers?: ProviderSettingsController;
   taskReminder?: TaskReminderSettingsController;
   externalLinkStatus?: "idle" | "failed";
+  defaultAgent?: DefaultAgentSettingsState;
+  defaultAgentProviderProfiles?: readonly AgentExecutionProviderProfile[];
   onOpenChange(open: boolean): void;
   onSectionChange?(section: SettingsSection): void;
   onSelectLocale(locale: Locale): void;
   onRetry(): void;
+  onSaveDefaultAgent?(profile: AgentExecutionProfile): void | Promise<void>;
   onCheckForUpdates?(): void;
   onInstallUpdate?(): void;
   onCopyVersion?(): void;
@@ -124,10 +135,13 @@ export function SettingsDialog({
   providers,
   taskReminder,
   externalLinkStatus = "idle",
+  defaultAgent,
+  defaultAgentProviderProfiles = [],
   onOpenChange,
   onSectionChange,
   onSelectLocale,
   onRetry,
+  onSaveDefaultAgent,
   onCheckForUpdates,
   onInstallUpdate,
   onCopyVersion,
@@ -213,6 +227,10 @@ export function SettingsDialog({
                   taskReminder={taskReminder}
                   onSelectLocale={onSelectLocale}
                   onRetry={onRetry}
+                  defaultAgent={defaultAgent}
+                  defaultAgentProviderProfiles={defaultAgentProviderProfiles}
+                  onSaveDefaultAgent={onSaveDefaultAgent}
+                  onOpenProviders={providers === undefined ? undefined : () => onSectionChange?.("providers")}
                 />
               ) : visibleSection === "providers" && providers !== undefined ? (
                 <ProviderSettingsPanel controller={providers} />
@@ -271,12 +289,20 @@ function GeneralSettings({
   taskReminder,
   onSelectLocale,
   onRetry,
+  defaultAgent,
+  defaultAgentProviderProfiles = [],
+  onSaveDefaultAgent,
+  onOpenProviders,
 }: {
   selectedLocale: Locale;
   saveStatus: LanguageSaveStatus;
   taskReminder?: TaskReminderSettingsController;
   onSelectLocale(locale: Locale): void;
   onRetry(): void;
+  defaultAgent?: DefaultAgentSettingsState;
+  defaultAgentProviderProfiles?: readonly AgentExecutionProviderProfile[];
+  onSaveDefaultAgent?(profile: AgentExecutionProfile): void | Promise<void>;
+  onOpenProviders?(): void;
 }): JSX.Element {
   const { t } = useI18n();
 
@@ -346,6 +372,15 @@ function GeneralSettings({
         </div>
       </fieldset>
 
+      {defaultAgent !== undefined ? (
+        <DefaultAgentSettingsGroup
+          state={defaultAgent}
+          providerProfiles={defaultAgentProviderProfiles}
+          onSave={onSaveDefaultAgent}
+          onOpenProviders={onOpenProviders}
+        />
+      ) : null}
+
       {taskReminder !== undefined ? (
         <fieldset className="mt-8 border-t border-line pt-6">
           <legend className="text-sm font-medium">{t("settings.taskReminder")}</legend>
@@ -366,6 +401,62 @@ function GeneralSettings({
         </fieldset>
       ) : null}
     </>
+  );
+}
+
+function DefaultAgentSettingsGroup({
+  state,
+  providerProfiles,
+  onSave,
+  onOpenProviders,
+}: {
+  state: DefaultAgentSettingsState;
+  providerProfiles: readonly AgentExecutionProviderProfile[];
+  onSave?(profile: AgentExecutionProfile): void | Promise<void>;
+  onOpenProviders?(): void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(state.profile);
+
+  useEffect(() => {
+    setDraft(state.profile);
+  }, [state.profile]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(state.profile);
+  const valid = isExecutionProfileValid(draft, providerProfiles);
+
+  return (
+    <fieldset className="mt-8">
+      <legend className="text-sm font-medium">{t("settings.defaultAgent")}</legend>
+      <p className="mt-1 text-sm text-sub">{t("settings.defaultAgent.description")}</p>
+      <div className="mt-4 rounded-sm border border-line bg-card p-3">
+        <ExecutionProfileFields
+          profile={draft}
+          disabled={state.saveStatus === "saving"}
+          providerProfiles={providerProfiles}
+          onOpenProviderSettings={onOpenProviders}
+          onChange={setDraft}
+        />
+      </div>
+      <div className="mt-3 flex min-h-9 items-center justify-between gap-3" aria-live="polite">
+        <span className="text-sm text-danger" role={state.saveStatus === "failed" ? "alert" : undefined}>
+          {state.saveStatus === "failed" ? state.error ?? t("settings.defaultAgent.saveFailed") : ""}
+        </span>
+        {onSave !== undefined ? (
+          <Button
+            type="button"
+            size="sm"
+            // A failed save MUST stay retryable even when the draft equals `state.profile`
+            // (the parent may have echoed the attempted value back on failure): the error
+            // message invites a retry, so the button cannot be a dead end.
+            disabled={(!dirty && state.saveStatus !== "failed") || !valid || state.saveStatus === "saving"}
+            onClick={() => void onSave(draft)}
+          >
+            {state.saveStatus === "saving" ? t("settings.saving") : t("console.agentTeamDetail.save")}
+          </Button>
+        ) : null}
+      </div>
+    </fieldset>
   );
 }
 

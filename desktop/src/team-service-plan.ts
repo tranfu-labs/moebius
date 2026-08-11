@@ -14,7 +14,7 @@ import {
   type AgentTeamOfficialUpdateCommitRequest,
   type AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
-import { isValidPathSegment, type TeamDefinition, type TeamInformation } from "./team-model.js";
+import { isValidPathSegment, type TeamDefinition, type TeamInformation, type TeamOwnership } from "./team-model.js";
 import type { PreparedOfficialTeamUpdate } from "./team-official-update.js";
 import type { TeamSnapshot } from "./team-store.js";
 import type { TeamOnboardingOrchestrationReadResult } from "./team-onboarding-orchestration-plan.js";
@@ -218,6 +218,32 @@ function parseOptionalPortraitId(value: unknown): string | null {
     throw new AgentTeamIpcRequestError("A portrait id must not be empty.");
   }
   return normalized;
+}
+
+export function parseMemberRevisionRestoreRequest(value: unknown): {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlug: string;
+  revisionId: string;
+} {
+  const request = parseMemberRequest(value);
+  if (
+    !isPlainObject(value)
+    || typeof value.revisionId !== "string"
+    || value.revisionId.trim().length === 0
+    || value.revisionId.length > 128
+    || /[\r\n\0]/u.test(value.revisionId)
+  ) {
+    throw new AgentTeamIpcRequestError("A valid revision id is required.");
+  }
+  return { ...request, revisionId: value.revisionId };
+}
+
+export function parseDefaultAgentSaveRequest(value: unknown): ExecutionProfile {
+  if (!isPlainObject(value) || value.profile === undefined) {
+    throw new AgentTeamIpcRequestError("默认 Agent 配置内容缺失。");
+  }
+  return normalizeExecutionProfile(value.profile);
 }
 
 export function parsePrimaryAgentWriteRequest(value: unknown): AgentTeamPrimaryAgentWriteRequest {

@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   Copy,
   FolderOpen,
+  History,
   LoaderCircle,
   MoreHorizontal,
   Plus,
@@ -25,6 +26,7 @@ import {
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
   type AgentExecutionProviderProfile,
+  type AgentOfficialSyncBannerView,
   type AgentOfficialUpdateResult,
   type AgentOfficialManagementState,
   type AgentTeamDetailMember,
@@ -80,6 +82,12 @@ export interface OperatorAgentTeam {
   canDeleteTeam?: boolean;
   issues?: AgentTeamRepairIssueView[];
   officialManagement?: AgentOfficialManagementState;
+  /** Set once after an automatic official sync until the user opens this team's detail. */
+  hasUnseenOfficialSync?: boolean;
+  /** Present while the sync-result banner is showing on the detail page. */
+  officialSyncBanner?: AgentOfficialSyncBannerView | null;
+  /** Backs the "more" menu's persistent "recent official sync" entry once the banner has been dismissed. */
+  recentOfficialSync?: AgentOfficialSyncBannerView & { timeLabel: string } | null;
 }
 
 export type OperatorAgentTeamsState =
@@ -168,6 +176,10 @@ export function AgentTeamsPage({
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
   onApplyOfficialUpdate,
+  onRestoreRevision,
+  onViewSyncChanges,
+  onRevertSync,
+  onDismissSyncBanner,
   onDuplicateBuiltInTeam,
   onRecheckTeam,
   onRelocateTeam,
@@ -236,6 +248,10 @@ export function AgentTeamsPage({
     memberSlug: string,
   ) => Promise<AgentExecutionProfileDocument>;
   onApplyOfficialUpdate?: (teamKey: string) => Promise<AgentOfficialUpdateResult>;
+  onRestoreRevision?: (teamKey: string, memberSlug: string, revisionId: string) => void | Promise<void>;
+  onViewSyncChanges?: (teamKey: string) => void;
+  onRevertSync?: (teamKey: string) => void | Promise<void>;
+  onDismissSyncBanner?: (teamKey: string) => void;
   onDuplicateBuiltInTeam?: (teamKey: string) => Promise<string>;
   onRecheckTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateTeam?: (teamKey: string) => void | Promise<void>;
@@ -274,6 +290,8 @@ export function AgentTeamsPage({
   }
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [recentSyncPanelOpen, setRecentSyncPanelOpen] = useState(false);
+  const [viewSyncChangesSignal, setViewSyncChangesSignal] = useState<number | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
@@ -319,6 +337,11 @@ export function AgentTeamsPage({
     }
     reloadedExternalMembersRef.current = { teamKey: openedTeam.teamKey, members: current };
   }, [openedDetailState, openedTeam, t]);
+
+  useEffect(() => {
+    setRecentSyncPanelOpen(false);
+    setViewSyncChangesSignal(null);
+  }, [openedTeamKey]);
 
   const openTeam = (teamKey: string) => {
     listScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? 0;
@@ -541,6 +564,20 @@ export function AgentTeamsPage({
                   state={openedDetailState}
                   providerProfiles={providerProfiles}
                   onOpenProviderSettings={onOpenProviderSettings}
+                  onRestoreRevision={onRestoreRevision === undefined
+                    ? undefined
+                    : (memberSlug, revisionId) => onRestoreRevision(openedTeam.teamKey, memberSlug, revisionId)}
+                  officialSyncBanner={openedTeam.officialSyncBanner}
+                  onViewSyncChanges={onViewSyncChanges === undefined
+                    ? undefined
+                    : () => onViewSyncChanges(openedTeam.teamKey)}
+                  viewSyncChangesSignal={viewSyncChangesSignal}
+                  onRevertSync={onRevertSync === undefined
+                    ? undefined
+                    : () => onRevertSync(openedTeam.teamKey)}
+                  onDismissSyncBanner={onDismissSyncBanner === undefined
+                    ? undefined
+                    : () => onDismissSyncBanner(openedTeam.teamKey)}
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
@@ -556,19 +593,33 @@ export function AgentTeamsPage({
                             ? t("console.agentTeams.duplicating")
                             : t("console.agentTeams.duplicateTeam")}
                         </Button>
-                        {onOpenLocation !== undefined ? (
+                        {onOpenLocation !== undefined || openedTeam.recentOfficialSync !== undefined ? (
                           <TeamMoreMenu
                             triggerLabel={t("console.agentTeams.moreActions", {
                               name: teamName(t, openedTeam),
                             })}
                             fileManagerActionLabel={resolvedFileManagerActionLabel}
                             disabled={duplicatingTeamKey !== null}
-                            onOpen={() => void openLocation(openedTeam)}
+                            onOpen={onOpenLocation === undefined ? undefined : () => void openLocation(openedTeam)}
+                            hasRecentOfficialSync={openedTeam.recentOfficialSync !== undefined && openedTeam.recentOfficialSync !== null}
+                            onViewRecentOfficialSync={() => setRecentSyncPanelOpen(true)}
                           />
                         ) : null}
                       </div>
                       {duplicateError !== null ? (
                         <p className="text-right text-sm leading-5 text-danger" role="alert">{duplicateError}</p>
+                      ) : null}
+                      {recentSyncPanelOpen && openedTeam.recentOfficialSync !== undefined && openedTeam.recentOfficialSync !== null ? (
+                        <RecentOfficialSyncPanel
+                          view={openedTeam.recentOfficialSync}
+                          onViewChanges={() => {
+                            // Component-owned behavior lives in AgentTeamDetail; the signal
+                            // triggers it, the callback stays an optional side notification.
+                            setViewSyncChangesSignal((current) => (current ?? 0) + 1);
+                            onViewSyncChanges?.(openedTeam.teamKey);
+                          }}
+                          onRevert={onRevertSync === undefined ? undefined : () => requestGuardedAction(() => onRevertSync(openedTeam.teamKey))}
+                        />
                       ) : null}
                     </div>
                   ) : (
@@ -968,6 +1019,34 @@ export function AgentTeamsPage({
   );
 }
 
+function RecentOfficialSyncPanel({ view, onViewChanges, onRevert }: {
+  view: AgentOfficialSyncBannerView & { timeLabel: string };
+  onViewChanges: () => void;
+  onRevert?: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="mt-3 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status" data-testid="recent-official-sync-panel">
+      <p className="text-sm font-medium text-ink">
+        {t("console.agentTeamDetail.syncedToAt", { version: view.officialVersion, time: view.timeLabel })}
+      </p>
+      <p className="mt-1 text-sm leading-6 text-sub">{view.changeSummary}</p>
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {/* The action itself is component-owned (AgentTeamDetail signal); this button
+            only forwards the request, so it never depends on a container callback. */}
+        <Button type="button" variant="outline" size="sm" onClick={onViewChanges}>
+          {t("console.agentTeamDetail.viewSyncChanges")}
+        </Button>
+        {onRevert !== undefined ? (
+          <Button type="button" variant="outline" size="sm" onClick={onRevert}>
+            {t("console.agentTeamDetail.revertSync")}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TeamMoreMenu({
   triggerLabel,
   fileManagerActionLabel,
@@ -975,6 +1054,8 @@ function TeamMoreMenu({
   onOpen,
   onDuplicate,
   onTrash,
+  hasRecentOfficialSync = false,
+  onViewRecentOfficialSync,
 }: {
   triggerLabel: string;
   fileManagerActionLabel: string;
@@ -982,6 +1063,8 @@ function TeamMoreMenu({
   onOpen?: () => void;
   onDuplicate?: () => void;
   onTrash?: () => void;
+  hasRecentOfficialSync?: boolean;
+  onViewRecentOfficialSync?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   return (
@@ -994,11 +1077,24 @@ function TeamMoreMenu({
           was, and left two identically named buttons with different scopes on one page. Scope is
           carried by the accessible name and by placement instead.
         */}
-        <Button type="button" variant="ghost" size="icon" disabled={disabled} aria-label={triggerLabel}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={disabled}
+          aria-label={triggerLabel}
+          data-testid="agent-team-more-menu-trigger"
+        >
           <MoreHorizontal className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {hasRecentOfficialSync && onViewRecentOfficialSync !== undefined ? (
+          <DropdownMenuItem onSelect={onViewRecentOfficialSync}>
+            <History className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
+            {t("console.agentTeamDetail.recentOfficialSync")}
+          </DropdownMenuItem>
+        ) : null}
         {onOpen !== undefined ? (
           <DropdownMenuItem onSelect={onOpen}>
             <FolderOpen className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
@@ -1328,6 +1424,7 @@ function AgentTeamRow({
             {team.officialManagement?.updateStatus === "available"
               ? <TeamStatusBadge kind="update" />
               : null}
+            {team.hasUnseenOfficialSync === true ? <TeamStatusBadge kind="synced" /> : null}
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
@@ -1364,16 +1461,20 @@ function AgentTeamRow({
 }
 
 function TeamStatusBadge({ kind }: {
-  kind: "customized" | "update" | "unfinished" | "needs-repair";
+  kind: "official" | "customized" | "update" | "synced" | "unfinished" | "needs-repair";
 }): JSX.Element {
   const { t } = useI18n();
-  const label = kind === "customized"
-    ? t("console.agentTeams.customized")
-    : kind === "update"
-      ? t("console.agentTeams.updateAvailable")
-      : kind === "unfinished"
-        ? t("console.agentTeams.unfinished")
-        : t("console.agentTeams.needsRepair");
+  const label = kind === "official"
+    ? t("console.agentTeams.official")
+    : kind === "customized"
+      ? t("console.agentTeams.customized")
+      : kind === "update"
+        ? t("console.agentTeams.updateAvailable")
+        : kind === "synced"
+          ? t("console.agentTeams.hasUnseenOfficialSync")
+          : kind === "unfinished"
+            ? t("console.agentTeams.unfinished")
+            : t("console.agentTeams.needsRepair");
   return (
     <span
       className={cn(
@@ -1382,7 +1483,9 @@ function TeamStatusBadge({ kind }: {
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
           : kind === "update"
             ? "border-[var(--status-info-line)] bg-[var(--status-info-bg)] text-[color:var(--status-info-fg)]"
-            : "border-line-strong text-hint",
+            : kind === "unfinished" || kind === "customized" || kind === "synced"
+              ? "border-line-strong text-hint"
+              : "border-line-strong bg-sunken text-sub",
       )}
     >
       {label}

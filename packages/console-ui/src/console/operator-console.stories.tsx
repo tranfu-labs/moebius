@@ -245,6 +245,21 @@ type Story = StoryObj<typeof meta>;
 
 export const T65Running: Story = {};
 
+/** 侧边栏底部同步进行态：与"安装更新"共用同一位置，hover 报出正在同步的团队名。 */
+export const TeamSyncInProgress: Story = {
+  args: {
+    teamSyncStatus: { kind: "syncing", teamNames: ["开发团队", "内容生产团队"] },
+  },
+};
+
+/** 同步产生了实际改动后的一次性提示；点击进入团队页并收起。 */
+export const TeamSyncUpdated: Story = {
+  args: {
+    teamSyncStatus: { kind: "updated" },
+    onDismissTeamSyncStatus: () => undefined,
+  },
+};
+
 export const PiApiRunning: Story = {
   args: {
     activeRun: {
@@ -948,4 +963,92 @@ export const TeamTraceabilityReducedMotion: Story = {
       </div>
     ),
   ],
+};
+
+const sessionTeamUpdateDetailArgs = {
+  ...traceabilityArgs,
+  onViewSessionTeamUpdate: () => undefined,
+  onDismissSessionTeamUpdateCategory: () => undefined,
+  sessionTeamUpdateDetailView: {
+    teamName: "开发团队",
+    members: [
+      {
+        memberSlug: "dev-manager",
+        displayName: "开发经理",
+        changes: [{
+          summary: "交付汇总以真机行为证据开头……",
+          authorLabel: "官方 v1.3",
+          previousText: "交付汇总列出改动文件",
+        }],
+      },
+      {
+        memberSlug: "qa",
+        displayName: "测试",
+        changes: [{
+          summary: "把自动返工上限从三轮改成两轮",
+          authorLabel: "你 · 3 天前",
+          previousText: null,
+        }],
+      },
+    ],
+  },
+} satisfies Partial<OperatorConsoleProps>;
+
+/** 会话内变化提示带"查看"和"×"，在完整会话页语境里查看信息密度与相邻关系。 */
+export const SessionTeamUpdateWithViewAndDismiss: Story = {
+  args: sessionTeamUpdateDetailArgs,
+};
+
+export const SessionTeamUpdateWithViewAndDismissDark: Story = {
+  args: sessionTeamUpdateDetailArgs,
+  globals: { theme: "dark" },
+};
+
+export const SessionTeamUpdateWithViewAndDismissNarrow: Story = {
+  args: sessionTeamUpdateDetailArgs,
+  parameters: {
+    viewport: {
+      defaultViewport: "sessionTeamUpdateNarrow",
+      viewports: {
+        sessionTeamUpdateNarrow: {
+          name: "Session team update narrow · 680 × 800",
+          styles: { width: "680px", height: "800px" },
+        },
+      },
+    },
+  },
+};
+
+/** 点击"查看"后的弹窗打开态，压在会话页上；右下角"取消"只关闭弹窗，"应用"与提示上的应用同语义。 */
+export const SessionTeamUpdateDetailDialogOpen: Story = {
+  args: sessionTeamUpdateDetailArgs,
+  play: async ({ canvasElement }) => {
+    const viewButton = [...canvasElement.querySelectorAll("button")]
+      .find((button) => button.textContent?.trim() === "查看");
+    if (viewButton === undefined) throw new Error("SessionTeamUpdateDetailDialogOpen story requires a 查看 button");
+    viewButton.click();
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  },
+};
+
+export const SessionTeamUpdateDetailDialogOpenDark: Story = {
+  args: sessionTeamUpdateDetailArgs,
+  play: SessionTeamUpdateDetailDialogOpen.play,
+  globals: { theme: "dark" },
+};
+
+export const SessionTeamUpdateDetailDialogOpenNarrow: Story = {
+  args: sessionTeamUpdateDetailArgs,
+  play: SessionTeamUpdateDetailDialogOpen.play,
+  parameters: {
+    viewport: {
+      defaultViewport: "sessionTeamUpdateDialogNarrow",
+      viewports: {
+        sessionTeamUpdateDialogNarrow: {
+          name: "Session team update dialog narrow · 480 × 720",
+          styles: { width: "480px", height: "720px" },
+        },
+      },
+    },
+  },
 };

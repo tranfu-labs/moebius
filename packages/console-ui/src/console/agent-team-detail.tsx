@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
@@ -15,7 +16,12 @@ import { AgentPortrait, type PortraitId } from "@/console/agent-portrait";
 import { AgentMemberStrip } from "@/console/agent-member-strip";
 import { AgentPortraitPicker } from "@/console/agent-portrait-picker";
 import { type ExecutionEngine } from "@/console/provider-mark";
-import { AgentMarkdownMentionEditor } from "@/console/agent-markdown-mention-editor";
+import {
+  AgentMarkdownMentionEditor,
+  computeMarkdownBlocks,
+  type AgentMarkdownChangeMarker,
+} from "@/console/agent-markdown-mention-editor";
+import { AgentMarkdownRevisionTimeline, type AgentMarkdownRevisionEntry } from "@/console/agent-markdown-revision-timeline";
 import {
   findExecutionModel,
   findPiExecutionModel,
@@ -161,6 +167,20 @@ export interface AgentTeamMemberEditorState {
   externalChangeStatus: "none" | "reloaded" | "conflict";
   displayName: string;
   description: string;
+  /**
+   * One-line "recent change" summary shown above the member's body; absent only when the member
+   * has no revision yet. `summary` is null while the background summary job is pending or failed;
+   * the view renders a neutral placeholder from `summaryStatus` (never disappears).
+   */
+  recentChange?: {
+    summary: string | null;
+    summaryStatus: "pending" | "ready" | "unavailable";
+    authorLabel: string;
+    timeLabel: string;
+  } | null;
+  /** Presentational paragraph markers keyed by block index in the FULL AGENT.md content. */
+  changeMarkers?: readonly AgentMarkdownChangeMarker[];
+  revisionTimeline?: readonly AgentMarkdownRevisionEntry[];
 }
 
 export interface AgentTeamSaveAllFailureView {
@@ -189,6 +209,12 @@ export interface AgentOfficialUpdateResult {
     renamed: Array<{ from: string; to: string }>;
     recommendationChanged: string[];
   };
+}
+
+export interface AgentOfficialSyncBannerView {
+  officialVersion: string;
+  changeSummary: string;
+  affectedMemberCount: number;
 }
 
 export type AgentTeamGuardedAction = (action: () => void | Promise<void>) => void;
@@ -248,6 +274,18 @@ export interface AgentTeamDetailProps {
   onOpenProviderSettings?(): void;
   onApplyOfficialUpdate?(): Promise<AgentOfficialUpdateResult>;
   onOpenCopiedTeam?(teamId: string): void;
+  onRestoreRevision?(memberSlug: string, revisionId: string): void | Promise<void>;
+  /** Present only after an official sync; the banner is component-owned and needs no container. */
+  officialSyncBanner?: AgentOfficialSyncBannerView | null;
+  onViewSyncChanges?(): void;
+  /**
+   * Incrementing request from a container-owned surface (e.g. the "recent official sync" panel)
+   * asking the component to run the same select-first-changed-member / expand-timeline /
+   * scroll-to-marker behavior as the banner's "see what changed" button.
+   */
+  viewSyncChangesSignal?: number | null;
+  onRevertSync?(): void | Promise<void>;
+  onDismissSyncBanner?(): void;
   onLeave(): void;
 }
 
@@ -324,6 +362,12 @@ export function AgentTeamDetail({
   onOpenProviderSettings,
   onApplyOfficialUpdate,
   onOpenCopiedTeam,
+  onRestoreRevision,
+  officialSyncBanner,
+  onViewSyncChanges,
+  viewSyncChangesSignal,
+  onRevertSync,
+  onDismissSyncBanner,
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
   const { t } = useI18n();
@@ -393,6 +437,10 @@ export function AgentTeamDetail({
   const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
   const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
+  /** The expanded member revision timeline lives on the detail; it is not a container concern. */
+  const [expandedTimelineMemberSlug, setExpandedTimelineMemberSlug] = useState<string | null>(null);
+  const pendingSyncChangesTargetRef = useRef<string | null>(null);
+  const lastViewSyncChangesSignalRef = useRef<number | null>(null);
   const savedOrderedMembers = useMemo(() => orderAgentTeamMembers(team), [team]);
   const orderedMembers = draftMemberOrder === null
     ? savedOrderedMembers
@@ -502,6 +550,32 @@ export function AgentTeamDetail({
     && !(profileDraft.cli === "pi"
       ? findPiExecutionModel(profileDraft.model)?.efforts.includes(profileDraft.effort) === true
       : isRegisteredExecutionEffort(profileDraft.cli, profileDraft.model, profileDraft.effort));
+
+  /**
+   * Change markers are keyed by block index in the FULL `AGENT.md` content (the desktop computes
+   * them that way), but the body editor renders only the persona body — the frontmatter owns the
+   * first block(s). Re-base the marker indices onto the body's own block space; markers that
+   * belong to the frontmatter (identity changes are edits too) simply have no block in the body
+   * and are dropped. Presentation-only: the underlying revision data is untouched.
+   */
+  const bodyChangeMarkers = useMemo(() => {
+    const markers = selectedEditor?.changeMarkers;
+    if (selectedEditor === undefined || markers === undefined || selectedEditor.draftMarkdown.length === 0) {
+      return markers;
+    }
+    const full = selectedEditor.draftMarkdown;
+    const { body } = splitAgentMarkdown(full);
+    if (body.length === 0) {
+      return [];
+    }
+    const bodyStart = full.lastIndexOf(body);
+    const firstBodyBlock = computeMarkdownBlocks(full)
+      .findIndex((block) => block.start >= bodyStart);
+    const offset = firstBodyBlock <= 0 ? 0 : firstBodyBlock;
+    return markers
+      .filter((marker) => marker.blockIndex >= offset)
+      .map((marker) => ({ ...marker, blockIndex: marker.blockIndex - offset }));
+  }, [selectedEditor?.changeMarkers, selectedEditor?.draftMarkdown]);
 
   useEffect(() => {
     const teamChanged = profileEditorsTeamKeyRef.current !== team.teamKey;
@@ -804,6 +878,70 @@ export function AgentTeamDetail({
     }
   };
 
+  /**
+   * "See what changed" is component-owned behavior, NOT a container callback: it selects the
+   * first member changed by the latest official sync (preferring official/agent-authored
+   * markers — the sync's own revisions — over user-only edits), enters the body's edit mode
+   * (change markers live in the editor), expands that member's timeline and scrolls to its
+   * first change marker. `onViewSyncChanges` stays an optional side notification; the button
+   * must work without it.
+   */
+  const performViewSyncChanges = () => {
+    const changedMembers = orderedMembers.filter((member) => {
+      const markers = state.memberEditors[member.slug]?.changeMarkers ?? [];
+      return markers.length > 0;
+    });
+    const firstSyncChanged = changedMembers.find((member) =>
+      (state.memberEditors[member.slug]?.changeMarkers ?? [])
+        .some((marker) => marker.authorKind !== "user"));
+    const firstChangedMember = firstSyncChanged ?? changedMembers[0];
+    if (firstChangedMember === undefined) {
+      onViewSyncChanges?.();
+      return;
+    }
+    if (selectedMember?.slug !== firstChangedMember.slug) {
+      onSelectMember(firstChangedMember.slug);
+    }
+    setEditingMarkdown(true);
+    setExpandedTimelineMemberSlug(firstChangedMember.slug);
+    pendingSyncChangesTargetRef.current = firstChangedMember.slug;
+    onViewSyncChanges?.();
+  };
+  const performViewSyncChangesRef = useRef(performViewSyncChanges);
+  performViewSyncChangesRef.current = performViewSyncChanges;
+
+  useEffect(() => {
+    const signal = viewSyncChangesSignal;
+    if (signal === null || signal === undefined || signal === lastViewSyncChangesSignalRef.current) {
+      return;
+    }
+    lastViewSyncChangesSignalRef.current = signal;
+    performViewSyncChangesRef.current();
+  }, [viewSyncChangesSignal]);
+
+  useEffect(() => {
+    const targetSlug = pendingSyncChangesTargetRef.current;
+    if (targetSlug === null || selectedMember?.slug !== targetSlug) {
+      // The container may switch the member asynchronously; keep the request
+      // pending until the target member is actually the one being rendered.
+      return;
+    }
+    pendingSyncChangesTargetRef.current = null;
+    const scrollToFirstMarker = (attempt = 0) => {
+      const firstMarker = document.querySelector<HTMLElement>("[data-change-marker]");
+      if (firstMarker === null || firstMarker === undefined || typeof firstMarker.scrollIntoView !== "function") {
+        if (attempt < 20) {
+          window.setTimeout(() => scrollToFirstMarker(attempt + 1), 16);
+        }
+        return;
+      }
+      const reduceMotion = typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      firstMarker.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    };
+    scrollToFirstMarker();
+  }, [editingMarkdown, state.selectedMemberSlug, expandedTimelineMemberSlug]);
+
   return (
     <section className="min-h-0" aria-labelledby="agent-team-detail-title" data-testid="agent-team-detail">
       {/* Sits at the header's resting position so `headerPinned` can be read as a gap, not a guess. */}
@@ -914,6 +1052,19 @@ export function AgentTeamDetail({
             */}
             {!readOnly && selectedEditor?.externalChangeStatus !== "conflict" ? (
               <>
+                {selectedEditor?.recentChange !== undefined && selectedEditor?.recentChange !== null ? (
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs text-sub"
+                    role="status"
+                    aria-live="polite"
+                    data-testid="agent-team-markdown-summary-status"
+                  >
+                    {selectedEditor.recentChange.summaryStatus === "pending" ? (
+                      <LoaderCircle className="h-3 w-3 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                    ) : null}
+                    {recentChangeSummary(t, selectedEditor.recentChange, selectedEditor.changeMarkers)}
+                  </span>
+                ) : null}
                 {selectedEditor?.saveStatus === "saving" || profileStatus === "saving" ? (
                   <span className="inline-flex items-center text-sm text-sub" role="status">
                     <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
@@ -969,6 +1120,42 @@ export function AgentTeamDetail({
             {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
           </div>
         </div>
+
+        {team.ownership === "system" && officialSyncBanner !== undefined && officialSyncBanner !== null ? (
+          <div className="mt-5 border-l-2 border-accent/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-official-sync-banner">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  {t("console.agentTeamDetail.syncedTo", {
+                    version: officialSyncBanner.officialVersion,
+                    count: officialSyncBanner.affectedMemberCount,
+                  })}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-sub">{officialSyncBanner.changeSummary}</p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm p-1 text-sub hover:bg-hover hover:text-ink"
+                aria-label={t("console.agentTeamDetail.dismissSyncBanner")}
+                onClick={onDismissSyncBanner}
+              >
+                <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              {/* Always works without a container callback: the select/expand/scroll
+                  behavior is component-owned (see performViewSyncChanges above). */}
+              <Button type="button" variant="outline" size="sm" onClick={performViewSyncChanges}>
+                {t("console.agentTeamDetail.viewSyncChanges")}
+              </Button>
+              {onRevertSync !== undefined ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => requestGuardedAction(onRevertSync)}>
+                  {t("console.agentTeamDetail.revertSync")}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {team.ownership === "system" && team.officialManagement?.updateStatus === "available" ? (
           <div className="mt-5 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status">
@@ -1670,6 +1857,50 @@ export function AgentTeamDetail({
             </div>
 
             <div className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-hint">
+                  AGENT.md
+                </span>
+                {selectedEditor.recentChange !== undefined && selectedEditor.recentChange !== null ? (
+                  <span className="text-xs text-sub">
+                    {recentChangeSummary(t, selectedEditor.recentChange, selectedEditor.changeMarkers)}
+                  </span>
+                ) : null}
+              </div>
+              {selectedEditor.revisionTimeline !== undefined ? (
+                <button
+                  type="button"
+                  data-testid="agent-team-markdown-timeline-toggle"
+                  className="inline-flex items-center gap-0.5 text-xs text-hint hover:text-ink"
+                  aria-expanded={expandedTimelineMemberSlug === selectedMember.slug}
+                  onClick={() => setExpandedTimelineMemberSlug((current) =>
+                    current === selectedMember.slug ? null : selectedMember.slug)}
+                >
+                  {t("console.agentTeamDetail.viewAllChanges")}
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 transition-transform motion-reduce:transition-none",
+                      expandedTimelineMemberSlug === selectedMember.slug && "rotate-180",
+                    )}
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : null}
+            </div>
+            {expandedTimelineMemberSlug === selectedMember.slug
+              && selectedEditor.revisionTimeline !== undefined ? (
+                <div className="mb-4">
+                  <AgentMarkdownRevisionTimeline
+                    memberDisplayName={selectedEditor.displayName || selectedMember.displayName || `@${selectedMember.slug}`}
+                    entries={selectedEditor.revisionTimeline}
+                    onRestore={onRestoreRevision === undefined
+                      ? undefined
+                      : (revisionId) => void onRestoreRevision(selectedMember.slug, revisionId)}
+                  />
+                </div>
+              ) : null}
             {/*
               The right column is not a card. The left one is a control surface — fields and
               selects — so a border earns its place there; the body is reading material, and
@@ -1716,6 +1947,7 @@ export function AgentTeamDetail({
                 })}
                 readOnly={readOnly}
                 disabled={selectedEditor.saveStatus === "saving"}
+                changeMarkers={bodyChangeMarkers}
                 onValueChange={(body) => onChangeMember(
                   selectedMember.slug,
                   withAgentMarkdownBody(selectedEditor.draftMarkdown, body),
@@ -1942,6 +2174,28 @@ export function orderAgentTeamMembers(team: AgentTeamDetailTeam): AgentTeamDetai
 
 function memberLabel(members: readonly AgentTeamDetailMember[], memberSlug: string): string {
   return members.find((member) => member.slug === memberSlug)?.displayName || `@${memberSlug}`;
+}
+
+/**
+ * Renders the "recent change" line for the latest revision. The line stays persistent once the
+ * member has any revision: pending shows a neutral "generating…" placeholder, unavailable shows a
+ * mechanical per-block count, and ready renders the provider-written summary. Placeholder copy is
+ * i18n-generated in the view — the main process never composes localized text.
+ */
+function recentChangeSummary(
+  t: Translate,
+  recentChange: NonNullable<AgentTeamMemberEditorState["recentChange"]>,
+  changeMarkers: readonly AgentMarkdownChangeMarker[] | undefined,
+): string {
+  if (recentChange.summaryStatus === "pending") {
+    return t("console.agentTeamDetail.recentChangePending");
+  }
+  if (recentChange.summaryStatus === "unavailable" || recentChange.summary === null) {
+    return t("console.agentTeamDetail.recentChangeUnavailable", {
+      count: String(changeMarkers?.length ?? 0),
+    });
+  }
+  return t("console.agentTeamDetail.recentChange", { summary: recentChange.summary });
 }
 
 function sameSlugOrder(left: readonly string[], right: readonly string[]): boolean {

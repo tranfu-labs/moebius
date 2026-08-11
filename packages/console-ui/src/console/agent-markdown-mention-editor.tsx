@@ -9,10 +9,11 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
 } from "react";
 
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { useI18n, type Translate } from "@/i18n";
 
 export interface AgentMentionMember {
   slug: string;
@@ -29,6 +30,21 @@ export type AgentMentionSegment =
   | { kind: "text"; text: string }
   | { kind: "mention"; member: AgentMentionMember };
 
+/**
+ * Marks one paragraph block (see `computeMarkdownBlocks`) as changed by a
+ * revision. `blockIndex` is presentation-only — see the design tradeoffs
+ * section of `openspec/changes/agent-md-revision-and-default-agent/`: block
+ * splitting here MUST NOT be reused as a merge unit, only for where the
+ * marker renders.
+ */
+export interface AgentMarkdownChangeMarker {
+  blockIndex: number;
+  authorKind: "user" | "official" | "agent";
+  authorLabel: string;
+  timeLabel: string;
+  previousText?: string | null;
+}
+
 export interface AgentMarkdownMentionEditorProps {
   id?: string;
   value: string;
@@ -36,7 +52,28 @@ export interface AgentMarkdownMentionEditorProps {
   label: string;
   readOnly?: boolean;
   disabled?: boolean;
+  /** Presentational change markers keyed by paragraph block index; omit entirely to keep today's plain rendering. */
+  changeMarkers?: readonly AgentMarkdownChangeMarker[];
   onValueChange(value: string): void;
+}
+
+/**
+ * Splits Markdown into paragraph blocks separated by one or more blank lines.
+ * Does not assume any heading structure — a document with no blank line
+ * (e.g. `seeds/general-assistant`'s headless `AGENT.md`) yields exactly one
+ * block. Presentation-only; see `AgentMarkdownChangeMarker` above.
+ */
+export function computeMarkdownBlocks(value: string): Array<{ start: number; end: number }> {
+  const blocks: Array<{ start: number; end: number }> = [];
+  const boundary = /\n[ \t]*\n+/gu;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(value)) !== null) {
+    blocks.push({ start: cursor, end: match.index });
+    cursor = match.index + match[0].length;
+  }
+  blocks.push({ start: cursor, end: value.length });
+  return blocks;
 }
 
 const slugQueryPattern = /^[A-Za-z0-9._-]*$/u;
@@ -132,10 +169,13 @@ export function AgentMarkdownMentionEditor({
   label,
   readOnly = false,
   disabled = false,
+  changeMarkers,
   onValueChange,
 }: AgentMarkdownMentionEditorProps): JSX.Element {
   const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mirrorTextRef = useRef<HTMLSpanElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const composingRef = useRef(false);
   const listboxId = useId();
@@ -143,7 +183,10 @@ export function AgentMarkdownMentionEditor({
   const [caret, setCaret] = useState(value.length);
   const [activeIndex, setActiveIndex] = useState(0);
   const [closedTriggerKey, setClosedTriggerKey] = useState<string | null>(null);
-  const segments = useMemo(() => segmentAgentMentions(value, members), [members, value]);
+  const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<number>>(new Set());
+  const [anchorRects, setAnchorRects] = useState<ReadonlyMap<number, { top: number; height: number }>>(new Map());
+  const [mirrorContentTop, setMirrorContentTop] = useState(0);
+  const blocks = useMemo(() => computeMarkdownBlocks(value), [value]);
   const trigger = findAgentMentionTrigger(value, caret);
   const triggerKey = trigger === null ? null : `${trigger.start}:${trigger.end}:${trigger.query}`;
   const matches = trigger === null ? [] : matchingAgentMentionMembers(members, trigger.query);
@@ -168,6 +211,77 @@ export function AgentMarkdownMentionEditor({
     editor.focus();
     setEditorCaret(editor, nextCaret);
   }, [members, value]);
+
+  // The editable region renders exactly ONE text node (`{value}`): Chromium
+  // merges adjacent text nodes inside contentEditable and detaches
+  // contentEditable=false children while editing, both of which make React's
+  // next commit throw "removeChild is not a child of this node" and unmount
+  // the whole tree (Electron 38 / Chromium 136, React 18). Block geometry for
+  // the marker overlay is therefore measured on an invisible, non-editable
+  // MIRROR of the content instead of anchors inside the editable region.
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    const mirrorText = mirrorTextRef.current;
+    if (editor === null || mirrorText === null || changeMarkers === undefined) {
+      setAnchorRects(new Map());
+      return;
+    }
+    const measure = () => {
+      const textNode = mirrorText.firstChild;
+      if (textNode === null || textNode.nodeType !== Node.TEXT_NODE) {
+        setAnchorRects(new Map());
+        return;
+      }
+      const mirrorRect = mirrorText.getBoundingClientRect();
+      const editorRect = editor.getBoundingClientRect();
+      const mirrorTop = mirrorRect.top - editorRect.top;
+      const range = document.createRange();
+      const firstRect = measureRangeTop(range, textNode, 0);
+      if (firstRect === null) {
+        // jsdom: no layout, all rects are 0×0 — use a line-index estimate so
+        // the overlay still renders in unit tests.
+        setMirrorContentTop(mirrorTop);
+        setAnchorRects(new Map(
+          blocks.map((block, blockIndex) => {
+            if (block.end <= block.start) {
+              return null;
+            }
+            return [blockIndex, estimateBlockMetrics(value, block)] as const;
+          }).filter((entry): entry is readonly [number, { top: number; height: number }] => entry !== null),
+        ));
+        return;
+      }
+      const next = new Map<number, { top: number; height: number }>();
+      blocks.forEach((block, blockIndex) => {
+        if (block.end <= block.start) {
+          return;
+        }
+        const probeOffset = Math.min(block.start, block.end - 1);
+        const blockRect = measureRangeTop(range, textNode, probeOffset);
+        // jsdom has no layout (all rects are 0×0): fall back to a line-index
+        // estimate so the overlay still renders in unit tests. In real
+        // browsers this branch only fires for offsets sitting on a newline.
+        if (blockRect === null) {
+          next.set(blockIndex, estimateBlockMetrics(value, block));
+          return;
+        }
+        next.set(blockIndex, {
+          top: blockRect - firstRect,
+          height: measureRangeHeight(range, textNode, probeOffset, block.end),
+        });
+      });
+      setMirrorContentTop(mirrorTop);
+      setAnchorRects(next);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(editor);
+    observer.observe(mirrorText);
+    return () => observer.disconnect();
+  }, [blocks, changeMarkers, value]);
 
   const updateCaret = () => {
     const editor = editorRef.current;
@@ -252,7 +366,7 @@ export function AgentMarkdownMentionEditor({
   };
 
   return (
-    <div className="relative mt-2">
+    <div ref={containerRef} className="relative mt-2">
       <div
         id={id}
         ref={editorRef}
@@ -299,12 +413,36 @@ export function AgentMarkdownMentionEditor({
         onKeyDown={handleKeyDown}
         onKeyUp={updateCaret}
       >
-        {segments.map((segment, index) => segment.kind === "text" ? (
-          <span key={`text-${index}`}>{segment.text}</span>
-        ) : (
-          <AgentMention key={`mention-${index}-${segment.member.slug}`} member={segment.member} />
-        ))}
+        {value}
       </div>
+
+      {/* Invisible non-editable mirror used ONLY for measuring block geometry
+          (see the measurement comment above). It mirrors the editor's content
+          layout so Range rects line up with the real text; it is never
+          interactive and never contains contentEditable=false nodes. */}
+      <div
+        aria-hidden="true"
+        className="invisible pointer-events-none absolute inset-x-0 top-0 w-full whitespace-pre-wrap break-words bg-input px-4 py-3 font-sans text-sm leading-6 text-ink"
+      >
+        <span ref={mirrorTextRef}>{value}</span>
+      </div>
+
+      {changeMarkers !== undefined && anchorRects.size > 0 ? (
+        <ChangeMarkerOverlay
+          editorRef={editorRef}
+          blocks={blocks}
+          markers={changeMarkers}
+          anchorRects={anchorRects}
+          mirrorContentTop={mirrorContentTop}
+          expandedBlocks={expandedBlocks}
+          onToggleExpanded={(blockIndex) => setExpandedBlocks((current) => {
+            const next = new Set(current);
+            if (next.has(blockIndex)) next.delete(blockIndex); else next.add(blockIndex);
+            return next;
+          })}
+          renderPreviousText={t}
+        />
+      ) : null}
 
       {panelOpen ? (
         <div
@@ -339,6 +477,198 @@ export function AgentMarkdownMentionEditor({
   );
 }
 
+interface ChangeMarkerOverlayProps {
+  editorRef: RefObject<HTMLDivElement | null>;
+  blocks: ReadonlyArray<{ start: number; end: number }>;
+  markers: readonly AgentMarkdownChangeMarker[];
+  anchorRects: ReadonlyMap<number, { top: number; height: number }>;
+  /** Distance from the editor's border-box top to the mirror text's first line. */
+  mirrorContentTop: number;
+  expandedBlocks: ReadonlySet<number>;
+  onToggleExpanded(blockIndex: number): void;
+  renderPreviousText: Translate;
+}
+
+/**
+ * Renders change markers OUTSIDE the contentEditable region. Block vertical
+ * positions come from the mirror measurement (see the measurement comment in
+ * `AgentMarkdownMentionEditor`); scrolling only shifts the markers by the
+ * editor's scrollTop, so marker updates never re-render the editable tree.
+ */
+function ChangeMarkerOverlay({
+  editorRef,
+  blocks,
+  markers,
+  anchorRects,
+  mirrorContentTop,
+  expandedBlocks,
+  onToggleExpanded,
+  renderPreviousText: t,
+}: ChangeMarkerOverlayProps): JSX.Element {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [editorHeight, setEditorHeight] = useState(0);
+  const scrollFrameRef = useRef<number | null>(null);
+  const [overlayTop, setOverlayTop] = useState(0);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor === null) {
+      return;
+    }
+    const measureEditor = () => {
+      const rect = editor.getBoundingClientRect();
+      setEditorHeight(rect.height);
+      setOverlayTop(rect.top);
+    };
+    measureEditor();
+    const handleScroll = () => {
+      if (scrollFrameRef.current !== null) {
+        return;
+      }
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        setScrollTop(editor.scrollTop);
+      });
+    };
+    editor.addEventListener("scroll", handleScroll);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      editor.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, [editorRef]);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {blocks.map((block, blockIndex) => {
+        const marker = markers.find((candidate) => candidate.blockIndex === blockIndex);
+        if (marker === undefined) return null;
+        const rect = anchorRects.get(blockIndex);
+        if (rect === undefined) return null;
+        const top = mirrorContentTop + rect.top - scrollTop - 8;
+        if (top < -64 || (editorHeight > 0 && top > editorHeight + 8)) {
+          return null;
+        }
+        // The layer carries real block height so the rail spans the block and
+        // the hover/focus reveal has a physical target: a zero-size layer
+        // makes every descendant unreachable by a real pointer (elementFromPoint
+        // hits nothing) and renders the rail with zero height.
+        const layerTop = Math.max(0, top);
+        const layerHeight = editorHeight > 0
+          ? Math.max(0, Math.min(rect.height + 8, editorHeight - layerTop - 8))
+          : Math.max(0, rect.height + 8);
+        const expanded = expandedBlocks.has(blockIndex);
+        return (
+          <div
+            key={`marker-layer-${blockIndex}`}
+            data-change-marker="true"
+            className="group/marker pointer-events-auto absolute left-0 w-3"
+            style={{ top: `${layerTop}px`, height: `${layerHeight}px` }}
+          >
+            {/* `--accent` is a plain CSS variable, so Tailwind's `/50` opacity
+                modifier never compiles for it (no `accent/50` rule exists in the
+                bundle and the class silently does nothing); the rail color is
+                derived from the token with color-mix instead. */}
+            <div
+              className="absolute -left-px top-0 bottom-0 w-0.5 bg-[color-mix(in_srgb,var(--accent)_50%,transparent)]"
+              data-change-marker-rail="true"
+              aria-hidden="true"
+            />
+            {/* Attribution and the expand control are hidden by default and
+                revealed by hovering the rail band or by keyboard focus; while
+                hidden the row must stay pointer-events-none so it never blocks
+                text selection on the block's first line. The whole revealed row
+                is hit-testable (no dead gap between the attribution and the
+                button), and focus-within keeps it visible while the button has
+                focus. */}
+            <div
+              data-change-marker-row="true"
+              className="pointer-events-none absolute left-2 top-0 flex select-none items-center gap-2 text-xs text-hint opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover/marker:pointer-events-auto group-hover/marker:opacity-100 group-focus-within/marker:pointer-events-auto group-focus-within/marker:opacity-100"
+            >
+              <span className="whitespace-nowrap" aria-hidden="true">
+                {marker.authorLabel} · {marker.timeLabel}
+              </span>
+              {marker.previousText != null && marker.previousText.length > 0 ? (
+                <button
+                  type="button"
+                  className="whitespace-nowrap hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)]"
+                  aria-expanded={expanded}
+                  onClick={() => onToggleExpanded(blockIndex)}
+                >
+                  {expanded
+                    ? t("console.mentionEditor.changeMarkerCollapse")
+                    : t("console.mentionEditor.changeMarkerExpand")}
+                </button>
+              ) : null}
+            </div>
+            {expanded && marker.previousText != null && marker.previousText.length > 0 ? (
+              <div
+                className="absolute left-2 top-2 whitespace-pre-wrap rounded-sm border-l border-line bg-sunken px-2.5 py-2 text-xs leading-5 text-sub"
+                style={{ minWidth: "min(420px, calc(100vw - 4rem))" }}
+              >
+                {marker.previousText}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function measureRangeTop(range: Range, textNode: Node, offset: number): number | null {
+  try {
+    range.setStart(textNode, Math.min(offset, textNode.textContent?.length ?? 0));
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return null;
+    }
+    return rect.top;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Height of the text covered by the block, measured as the bounding rect of a
+ * non-collapsed range from the probe offset to the block end. Returns 0 when
+ * the environment has no layout (jsdom), where the caller falls back to
+ * `estimateBlockMetrics`.
+ */
+function measureRangeHeight(range: Range, textNode: Node, start: number, end: number): number {
+  try {
+    const length = textNode.textContent?.length ?? 0;
+    range.setStart(textNode, Math.min(start, length));
+    range.setEnd(textNode, Math.min(end, length));
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      return 0;
+    }
+    return rect.height;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Layout-free estimate of a block's top and height from line counts (used in
+ * jsdom and for probe offsets that sit on a newline). Line height is the
+ * editor's leading-6 (24px); the +8 matches the overlay's -8 lead-in so the
+ * rail's bottom lands flush with the block's last line box.
+ */
+function estimateBlockMetrics(
+  value: string,
+  block: { start: number; end: number },
+): { top: number; height: number } {
+  const linesBefore = value.slice(0, block.start).split("\n").length - 1;
+  const linesInBlock = value.slice(block.start, block.end).split("\n").length;
+  return { top: linesBefore * 24, height: linesInBlock * 24 + 8 };
+}
+
 export function CopyableAgentSlug({ slug, className }: { slug: string; className?: string }): JSX.Element {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -361,40 +691,6 @@ export function CopyableAgentSlug({ slug, className }: { slug: string; className
       <span>@{slug}</span>
       {copied ? <Check className="h-3 w-3" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
       <span className="sr-only" aria-live="polite">{copied ? t("console.mentionEditor.copied") : ""}</span>
-    </button>
-  );
-}
-
-function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      contentEditable={false}
-      data-agent-mention={member.slug}
-      className="group relative mx-0.5 inline-flex items-baseline rounded-md bg-accent/10 px-1.5 py-0.5 font-medium text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
-      aria-label={t("console.mentionEditor.memberCopy", {
-        member: member.displayName || member.slug,
-        slug: member.slug,
-      })}
-      title={t("console.mentionEditor.clickCopy", { slug: member.slug })}
-      onClick={async () => {
-        if (await copyPlainText(`@${member.slug}`)) {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        }
-      }}
-    >
-      <span data-mention-label>{member.displayName || `@${member.slug}`}</span>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[11px] font-normal leading-4 text-card group-hover:block group-focus-visible:block"
-      >
-        {copied
-          ? t("console.mentionEditor.copiedSlug", { slug: member.slug })
-          : t("console.mentionEditor.clickCopy", { slug: member.slug })}
-      </span>
     </button>
   );
 }
@@ -445,6 +741,11 @@ function serializeMentionNode(node: Node): string {
   const mentionSlug = node.dataset.agentMention;
   if (mentionSlug !== undefined) {
     return `@${mentionSlug}`;
+  }
+  // Presentation-only nodes (marker attribution, expand controls, previous-text
+  // previews) are contentEditable=false and must never leak into the Markdown.
+  if (node.getAttribute("contenteditable") === "false") {
+    return "";
   }
   if (node.tagName === "BR") {
     return "\n";
@@ -498,6 +799,11 @@ function plainTextOffset(root: Node, target: Node, targetOffset: number): number
       offset += node.dataset.agentMention.length + 1;
       return;
     }
+    if (node instanceof HTMLElement && node.getAttribute("contenteditable") === "false") {
+      // Marker attribution / expand controls / previous-text previews occupy no
+      // Markdown offset.
+      return;
+    }
     if (node.nodeType === Node.TEXT_NODE) {
       offset += node.textContent?.length ?? 0;
       return;
@@ -517,6 +823,9 @@ function mentionNodeLength(node: Node): number {
   }
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent?.length ?? 0;
+  }
+  if (node instanceof HTMLElement && node.getAttribute("contenteditable") === "false") {
+    return 0;
   }
   if (node instanceof HTMLElement && node.tagName === "BR") {
     return 1;
@@ -550,6 +859,9 @@ function setEditorCaret(root: HTMLElement, requestedOffset: number): void {
       } else {
         consumed += length;
       }
+      return;
+    }
+    if (node instanceof HTMLElement && node.getAttribute("contenteditable") === "false") {
       return;
     }
     if (node.nodeType === Node.TEXT_NODE) {

@@ -485,6 +485,28 @@ export type SqliteStateCommand =
       reason: string;
       /** 每个候选消息的归属由 domain 预先决定（messageId → role），adapter 只查表。 */
       roles: Record<number, string | null>;
+    }
+  | {
+      kind: "agent-revision-create";
+      revisionId: string;
+      teamStableId: string;
+      memberSlug: string;
+      content: string;
+      authorKind: "user" | "official" | "agent";
+      authorLabel: string | null;
+      blockOwnershipJson: string | null;
+      summaryStatus: "pending" | "unavailable";
+      batchId: string | null;
+      now: string;
+    }
+  | { kind: "agent-revision-list"; teamStableId: string; memberSlug: string }
+  | { kind: "agent-revision-get"; revisionId: string }
+  | {
+      kind: "agent-revision-update-summary";
+      revisionId: string;
+      summary: string | null;
+      summaryStatus: "ready" | "unavailable";
+      now: string;
     };
 
 export interface SqliteStateCommandOptions {

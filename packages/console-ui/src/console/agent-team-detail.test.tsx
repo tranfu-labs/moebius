@@ -365,8 +365,6 @@ describe("AgentTeamDetail", () => {
     const { rerender } = renderDetail({ state: baseState });
 
     enterMarkdownEdit();
-    expect(screen.getByRole("button", { name: "开发，复制 @dev" })).toBeVisible();
-    enterMarkdownEdit();
     const rawMarkdown = screen.getByRole("textbox", { name: "开发经理 的职责说明" });
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
 
@@ -384,7 +382,7 @@ describe("AgentTeamDetail", () => {
       },
     })} />);
 
-    expect(screen.getByRole("button", { name: "软件工程师，复制 @dev" })).toBeVisible();
+    // The mention's stored text stays `@dev`; only the rendered member identity changes.
     expect(rawMarkdown).toHaveAttribute("data-raw-markdown", "# 开发经理\n\n下一步交给 @dev。\n");
   });
 
@@ -935,10 +933,345 @@ describe("AgentTeamDetail", () => {
     expect(onChangePrimaryAgent).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "删除 Agent" })).toBeVisible();
   });
+
+  it("selects the first sync-changed member, enters edit mode, expands its timeline and scrolls to its first marker from the banner button without a container callback", () => {
+    const scrollIntoView = stubScrollIntoView();
+    const onSelectMember = vi.fn();
+    const base = detailProps({
+      onSelectMember,
+      state: {
+        ...stateWith(managerEditor({ isDirty: false })),
+        memberEditors: {
+          manager: { ...managerEditor(), isDirty: false, changeMarkers: [] },
+          dev: {
+            ...managerEditor(),
+            memberSlug: "dev",
+            displayName: "开发",
+            description: "负责实现",
+            isDirty: false,
+            recentChange: { summary: "官方 v2 更新了 1 处", summaryStatus: "ready" as const, authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "official",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              previousText: "旧文本",
+            }],
+            revisionTimeline: [{
+              id: "dev-r2",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              summary: "官方更新",
+              summaryStatus: "ready" as const,
+            }],
+          },
+          qa: { ...managerEditor(), memberSlug: "qa", displayName: "测试", description: "负责验收", isDirty: false },
+        },
+      },
+    });
+    const { rerender } = render(<AgentTeamDetail
+      {...base}
+      team={{ ...base.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    // 横幅按钮在没有容器回调时也必须可用（行为是组件自有的）。
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).toHaveBeenCalledWith("dev");
+
+    // 容器异步响应切换后，目标成员渲染出来：编辑模式开启（标记可见）、时间线展开并滚动到第一个标记。
+    rerender(<AgentTeamDetail
+      {...base}
+      team={{ ...base.team, ownership: "system" }}
+      state={{ ...base.state, selectedMemberSlug: "dev" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+    expect(screen.getByRole("textbox", { name: "开发 的职责说明" })).toBeVisible();
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("agent-markdown-revision-timeline")).toBeVisible();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+  });
+
+  it("expands the timeline and scrolls without switching when the first changed member is already selected", async () => {
+    const scrollIntoView = stubScrollIntoView();
+    const onSelectMember = vi.fn();
+    const props = detailProps({
+      onSelectMember,
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: { summary: "官方 v2 更新了 1 处", summaryStatus: "ready" as const, authorLabel: "官方 v2", timeLabel: "2026-08-06" },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "official",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          previousText: "旧文本",
+        }],
+        revisionTimeline: [{
+          id: "r2",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          summary: "官方更新",
+          summaryStatus: "ready" as const,
+        }],
+      })),
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).not.toHaveBeenCalled();
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    // The marker overlay commits a frame after the editor mounts; the bounded
+    // retry scrolls once the marker appears.
+    await waitFor(() => expect(scrollIntoView.mock.calls.length).toBeGreaterThanOrEqual(1));
+  });
+
+  it("prefers official-authored markers over user-only edits when picking the first changed member", () => {
+    const onSelectMember = vi.fn();
+    const props = detailProps({
+      onSelectMember,
+      state: {
+        ...stateWith(managerEditor({ isDirty: false })),
+        memberEditors: {
+          manager: {
+            ...managerEditor(),
+            isDirty: false,
+            recentChange: { summary: "你把返工上限改成两轮", summaryStatus: "ready" as const, authorLabel: "你", timeLabel: "2026-08-03" },
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "user",
+              authorLabel: "你",
+              timeLabel: "2026-08-03",
+              previousText: "三轮",
+            }],
+          },
+          dev: {
+            ...managerEditor(),
+            memberSlug: "dev",
+            displayName: "开发",
+            description: "负责实现",
+            isDirty: false,
+            changeMarkers: [{
+              blockIndex: 1,
+              authorKind: "official",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              previousText: null,
+            }],
+            revisionTimeline: [{
+              id: "dev-r2",
+              authorLabel: "官方 v2",
+              timeLabel: "2026-08-06",
+              summary: "官方更新",
+              summaryStatus: "ready" as const,
+            }],
+          },
+          qa: { ...managerEditor(), memberSlug: "qa", displayName: "测试", description: "负责验收", isDirty: false },
+        },
+      },
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
+    expect(onSelectMember).toHaveBeenCalledWith("dev");
+  });
+
+  it("honors the view-changes signal raised by a container-owned surface", async () => {
+    const scrollIntoView = stubScrollIntoView();
+    const props = detailProps({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "official",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          previousText: "旧文本",
+        }],
+        revisionTimeline: [{
+          id: "r2",
+          authorLabel: "官方 v2",
+          timeLabel: "2026-08-06",
+          summary: "官方更新",
+          summaryStatus: "ready" as const,
+        }],
+      })),
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      viewSyncChangesSignal={1}
+    />);
+
+    expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
+    // The marker overlay commits one frame after the editor mounts; the scroll
+    // uses a bounded retry, so wait for at least one scroll asynchronously.
+    await waitFor(() => expect(scrollIntoView.mock.calls.length).toBeGreaterThanOrEqual(1));
+  });
+
+  it("keeps the recent-change line with a neutral placeholder while the summary is pending", () => {
+    renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "pending",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 0,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: null,
+        }],
+      })),
+    });
+
+    // The line above the member's body AND the header summary status render the
+    // same placeholder: the user stays near the editor and still sees the
+    // summary settle (product-review blocker 3).
+    expect(screen.getAllByText("最近变化 · 正在生成说明…")).toHaveLength(2);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 正在生成说明…",
+    );
+  });
+
+  it("keeps the recent-change line with a mechanical placeholder when the summary is unavailable", () => {
+    renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "unavailable",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [
+          {
+            blockIndex: 0,
+            authorKind: "user",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+            previousText: null,
+          },
+          {
+            blockIndex: 1,
+            authorKind: "user",
+            authorLabel: "你",
+            timeLabel: "刚刚",
+            previousText: null,
+          },
+        ],
+      })),
+    });
+
+    expect(screen.getAllByText("最近变化 · 本次改动涉及 2 处")).toHaveLength(2);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 本次改动涉及 2 处",
+    );
+  });
+
+  it("settles the header summary status in place from pending to the terminal copy", () => {
+    const { rerender } = renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: null,
+          summaryStatus: "pending",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: "旧文本",
+        }],
+      })),
+    });
+    const status = screen.getByTestId("agent-team-markdown-summary-status");
+    expect(status).toHaveTextContent("最近变化 · 正在生成说明…");
+
+    // The summary-settled refresh replaces the same line in place with the
+    // terminal copy — no member switch, no scroll, no extra element.
+    rerender(<AgentTeamDetail {...detailProps({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        recentChange: {
+          summary: "把返工上限从三轮改成两轮",
+          summaryStatus: "ready",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+        },
+        changeMarkers: [{
+          blockIndex: 1,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: "旧文本",
+        }],
+      })),
+    })} />);
+    expect(screen.getByTestId("agent-team-markdown-summary-status")).toHaveTextContent(
+      "最近变化 · 把返工上限从三轮改成两轮",
+    );
+    expect(screen.getAllByText("最近变化 · 把返工上限从三轮改成两轮")).toHaveLength(2);
+  });
+
+  it("marks a changed body block in the editor using body-relative block indices", () => {
+    // The member file carries frontmatter: the desktop computes markers against
+    // the FULL document, so block 0 is the frontmatter; the editor only shows the
+    // body, and the marker must land on the body's own second block.
+    renderDetail({
+      state: stateWith(managerEditor({
+        isDirty: false,
+        draftMarkdown: "---\ndisplay_name: 开发经理\ndescription: 默认接单\n---\n\n# 开发经理\n\n负责实现。\n",
+        changeMarkers: [{
+          blockIndex: 2,
+          authorKind: "user",
+          authorLabel: "你",
+          timeLabel: "刚刚",
+          previousText: "旧职责",
+        }],
+      })),
+    });
+
+    enterMarkdownEdit();
+    // The body has two blocks ("# 开发经理" and "负责实现。"); the marker's full-document
+    // block 2 becomes body block 1, and the marker band renders.
+    expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
+      .toHaveAttribute("data-raw-markdown", "# 开发经理\n\n负责实现。\n");
+    const markers = document.querySelectorAll("[data-change-marker]");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]!.getAttribute("data-block-index")).toBe(null);
+  });
 });
 
 function renderDetail(overrides: Partial<AgentTeamDetailProps> = {}) {
   return render(<AgentTeamDetail {...detailProps(overrides)} />);
+}
+
+/** jsdom does not implement `scrollIntoView`; expose a spy on the prototype for scroll assertions. */
+function stubScrollIntoView(): ReturnType<typeof vi.fn> {
+  const spy = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: spy,
+  });
+  return spy;
 }
 
 /**

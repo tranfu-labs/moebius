@@ -39,6 +39,10 @@ export const TEAM_IPC_CHANNELS = {
   restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
   prepareOfficialUpdate: "agent-teams:prepare-official-update",
   applyOfficialUpdate: "agent-teams:apply-official-update",
+  memberRevisionsList: "agent-teams:member-revisions:list",
+  memberRevisionRestore: "agent-teams:member-revisions:restore",
+  defaultAgentGet: "agent-teams:default-agent:get",
+  defaultAgentSave: "agent-teams:default-agent:save",
 } as const;
 
 export interface AgentTeamRegistrationIssue {
@@ -205,6 +209,97 @@ export type AgentTeamOfficialUpdatePrepareResponse = PreparedOfficialTeamUpdate;
 export type AgentTeamOfficialUpdateCommitResponse = AppliedOfficialTeamUpdate & {
   copiedTeam: AgentTeamListItem | null;
 };
+
+export interface AgentTeamMemberRevisionsRequest extends AgentTeamMemberRequest {
+  teamId: string;
+  ownership: TeamOwnership;
+  memberSlug: string;
+}
+
+export interface AgentTeamRevisionView {
+  revisionId: string;
+  authorKind: "user" | "official" | "agent";
+  /** Official version label when the author is official; null otherwise. */
+  authorLabel: string | null;
+  summary: string | null;
+  summaryStatus: "pending" | "ready" | "unavailable";
+  timeLabel: string;
+  /**
+   * True only for the CURRENT (newest) revision. The current version has no
+   * restore action — restoring to it would be a no-op that still spawns a
+   * duplicate revision; EVERY historical revision, including the earliest,
+   * can be restored to (PRD: 「当前版本无回退，所有历史版本可回退」).
+   */
+  isLatest: boolean;
+}
+
+export interface AgentTeamChangeMarkerView {
+  blockIndex: number;
+  authorKind: "user" | "official" | "agent";
+  authorLabel: string;
+  timeLabel: string;
+  previousText: string | null;
+}
+
+export interface AgentTeamMemberRevisionsResponse {
+  /**
+   * Latest revision's one-line summary slot — present whenever the member has
+   * at least one revision, NEVER dropped because the summary text is missing
+   * (the PRD's "最近变化" line must stay常驻). `summary` is null while the
+   * background summary job is pending or has failed; the view renders a neutral
+   * placeholder from `summaryStatus` (pending / unavailable), carrying the same
+   * author + time shape as the ready line.
+   */
+  recentChange: {
+    summary: string | null;
+    summaryStatus: "pending" | "ready" | "unavailable";
+    authorLabel: string;
+    timeLabel: string;
+  } | null;
+  /** Latest revision's paragraph ownership — presentation only, see `agent-revision-plan.ts`. */
+  changeMarkers: AgentTeamChangeMarkerView[];
+  /** Newest first. */
+  timeline: AgentTeamRevisionView[];
+}
+
+export interface AgentTeamMemberRevisionRestoreRequest extends AgentTeamMemberRevisionsRequest {
+  revisionId: string;
+}
+
+export interface AgentTeamMemberRevisionRestoreResponse {
+  agentMarkdown: string;
+  /** The new revision created by the restore itself (author = user). */
+  revision: AgentTeamRevisionView;
+}
+
+export interface AgentTeamDefaultAgentResponse {
+  profile: ExecutionProfile;
+  /** False until the user saves a choice; the UI shows the built-in recommendation. */
+  saved: boolean;
+}
+
+export interface AgentTeamDefaultAgentSaveRequest {
+  profile: ExecutionProfile;
+}
+
+/**
+ * Main-process → renderer push: the background summary job reached a terminal
+ * state (`ready` or `unavailable`) for one revision. The console refreshes the
+ * member's revisions in place (idempotent: a repeated delivery for the same
+ * terminal state never produces a new state object) so the "最近变化" line
+ * settles without any user action. `createdAt` lets the renderer tell "event
+ * for an older revision" (skip) from "event newer than the loaded view"
+ * (refresh — the view is stale, e.g. a save refresh still in flight).
+ */
+export const AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL = "agent-markdown:revision-summary-settled";
+
+export interface AgentMarkdownRevisionSummarySettledPayload {
+  teamStableId: string;
+  memberSlug: string;
+  revisionId: string;
+  /** Revision timestamp; absent only on the exceptional store-failure path. */
+  createdAt?: string;
+}
 
 export class AgentTeamIpcRequestError extends Error {
   constructor(

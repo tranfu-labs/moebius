@@ -12,7 +12,9 @@ import {
   type AgentTeamExternalChangeResponse,
 } from "./team-external-change-contract.js";
 import {
+  AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL,
   TEAM_IPC_CHANNELS,
+  type AgentMarkdownRevisionSummarySettledPayload,
   type AgentTeamCreateRequest,
   type AgentTeamDuplicateBuiltInRequest,
   type AgentTeamDuplicateUserRequest,
@@ -22,6 +24,11 @@ import {
   type AgentTeamMemberAddRequest,
   type AgentTeamMemberAddResponse,
   type AgentTeamMemberRequest,
+  type AgentTeamMemberRevisionsResponse,
+  type AgentTeamMemberRevisionRestoreRequest,
+  type AgentTeamMemberRevisionRestoreResponse,
+  type AgentTeamDefaultAgentResponse,
+  type AgentTeamDefaultAgentSaveRequest,
   type AgentTeamMemberWriteRequest,
   type AgentTeamMemberDuplicateRequest,
   type AgentTeamMemberTrashRequest,
@@ -187,6 +194,19 @@ export interface MoebiusDesktopApi {
   checkAgentTeamMemberExternalChange(
     request: AgentTeamExternalChangeRequest,
   ): Promise<AgentTeamExternalChangeResponse>;
+  listAgentTeamMemberRevisions(
+    request: AgentTeamMemberRequest,
+  ): Promise<AgentTeamMemberRevisionsResponse>;
+  restoreAgentTeamMemberRevision(
+    request: AgentTeamMemberRevisionRestoreRequest,
+  ): Promise<AgentTeamMemberRevisionRestoreResponse>;
+  onAgentMarkdownRevisionSummarySettled(
+    listener: (payload: AgentMarkdownRevisionSummarySettledPayload) => void,
+  ): () => void;
+  getDefaultAgent(): Promise<AgentTeamDefaultAgentResponse>;
+  saveDefaultAgent(
+    request: AgentTeamDefaultAgentSaveRequest,
+  ): Promise<AgentTeamDefaultAgentResponse>;
   selectAgentTeamRelocationFolder(): Promise<string | null>;
   relocateAgentTeamRecord(request: AgentTeamRelocateRequest): Promise<AgentTeamListItem>;
   removeAgentTeamRecord(request: AgentTeamRepairRequest): Promise<void>;
@@ -482,6 +502,41 @@ const api: MoebiusDesktopApi = {
       TEAM_EXTERNAL_CHANGE_IPC_CHANNEL,
       request,
     ) as Promise<AgentTeamExternalChangeResponse>;
+  },
+  listAgentTeamMemberRevisions(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.memberRevisionsList,
+      request,
+    ) as Promise<AgentTeamMemberRevisionsResponse>;
+  },
+  restoreAgentTeamMemberRevision(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.memberRevisionRestore,
+      request,
+    ) as Promise<AgentTeamMemberRevisionRestoreResponse>;
+  },
+  onAgentMarkdownRevisionSummarySettled(listener) {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      payload: AgentMarkdownRevisionSummarySettledPayload,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, wrapped);
+    return () => {
+      ipcRenderer.off(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, wrapped);
+    };
+  },
+  getDefaultAgent() {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.defaultAgentGet,
+    ) as Promise<AgentTeamDefaultAgentResponse>;
+  },
+  saveDefaultAgent(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.defaultAgentSave,
+      request,
+    ) as Promise<AgentTeamDefaultAgentResponse>;
   },
   selectAgentTeamRelocationFolder() {
     return ipcRenderer.invoke(TEAM_REPAIR_IPC_CHANNELS.selectRelocationFolder) as Promise<string | null>;

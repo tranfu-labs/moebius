@@ -15,6 +15,8 @@ export function useAgentTeamMemberEditor(input: {
   api: MemberApi | undefined;
   catalog: AgentTeamCatalogBundle;
   t: Translate;
+  /** See `useAgentTeamExternalChange`: refresh the member's history after a reloaded external change. */
+  refreshRevisions(teamKey: string, memberSlug: string): void;
 }) {
   const draftBundle = useAgentTeamDraftState();
   const loadingBundle = useAgentTeamMemberLoading({ ...input, draft: draftBundle });

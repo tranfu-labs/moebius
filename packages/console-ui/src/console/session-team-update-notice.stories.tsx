@@ -21,6 +21,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const ThreeCategories: Story = {};
+
+/** 加上"查看"和"×"两个动作；omit `onView`/`onDismissCategory` 时保持今天只有"应用"的旧行为。 */
+export const WithViewAndDismiss: Story = {
+  args: {
+    onView: () => undefined,
+    onDismissCategory: () => undefined,
+  },
+};
 export const Waiting: Story = { args: { state: { status: "waiting", categories: [] } } };
 export const Failed: Story = { args: { state: { status: "failed", categories: [], failure: { code: "FAILED", summary: "读取磁盘版本失败。" } } } };
 export const Dark: Story = { globals: { theme: "dark" } };

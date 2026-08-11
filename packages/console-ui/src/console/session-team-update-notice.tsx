@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, X } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/ui/button";
@@ -11,9 +11,12 @@ export interface SessionTeamUpdateViewState {
   failure?: { code: string; summary: string } | null;
 }
 
-export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
+export function SessionTeamUpdateNotice({ state, onApply, onView, onDismissCategory, onRetry, onCancel }: {
   state: SessionTeamUpdateViewState;
   onApply?: () => void;
+  /** Opens the "view changes" detail dialog; omit to keep today's apply-only row (no view/dismiss action rendered). */
+  onView?: (kind: SessionTeamUpdateCategoryKind) => void;
+  onDismissCategory?: (kind: SessionTeamUpdateCategoryKind) => void;
   onRetry?: () => void;
   onCancel?: () => void;
 }): JSX.Element | null {
@@ -64,7 +67,22 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
         <div key={category.kind} className="flex min-h-9 items-center gap-3 border-b border-line px-3 py-1.5 text-xs last:border-b-0">
           <span className="min-w-0 flex-1 text-ink">{labels[category.kind]}</span>
           <span className="text-sub">{t("console.sessionTeamUpdate.memberCount", { count: category.affectedMemberCount })}</span>
+          {onView !== undefined ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => onView(category.kind)}>
+              {t("console.sessionTeamUpdate.view")}
+            </Button>
+          ) : null}
           <Button type="button" size="sm" variant="ghost" onClick={onApply}>{t("console.sessionTeamUpdate.apply")}</Button>
+          {onDismissCategory !== undefined ? (
+            <button
+              type="button"
+              className="rounded-sm p-1 text-hint hover:bg-hover hover:text-ink"
+              aria-label={t("console.sessionTeamUpdate.dismiss", { category: labels[category.kind] })}
+              onClick={() => onDismissCategory(category.kind)}
+            >
+              <X className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       ))}
     </section>
