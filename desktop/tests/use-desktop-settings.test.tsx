@@ -70,11 +70,30 @@ describe("desktop settings bundle", () => {
     await waitFor(() => host.textContent?.includes("ready") === true);
     expect(host.textContent).toContain("2.1.0");
   });
+
+  it("does not let a slow task-count read from an old parent port reopen a reminder", async () => {
+    const older = deferred<number>();
+    const newer = deferred<number>();
+    const first: DesktopSettingsPort = {
+      readRunningTaskCount: () => older.promise,
+    };
+    const second: DesktopSettingsPort = {
+      readRunningTaskCount: () => newer.promise,
+    };
+
+    await act(async () => root.render(<SettingsHarness api={first} />));
+    await act(async () => root.render(<SettingsHarness api={second} />));
+    await act(async () => newer.resolve(2));
+    await waitFor(() => host.textContent?.endsWith(":2") === true);
+    await act(async () => older.resolve(0));
+
+    expect(host.textContent).toMatch(/:2$/u);
+  });
 });
 
 function SettingsHarness({ api }: { api: DesktopSettingsPort }): JSX.Element {
   const bundle = useDesktopSettingsBundle(api);
-  return <div>{bundle.settingsAbout.currentVersion}:{bundle.settingsAbout.updateStatus}:{bundle.settingsAbout.latestVersion ?? ""}</div>;
+  return <div>{bundle.settingsAbout.currentVersion}:{bundle.settingsAbout.updateStatus}:{bundle.settingsAbout.latestVersion ?? ""}:{bundle.runningTaskCount ?? "pending"}</div>;
 }
 
 function applicationInfo(version: string): SettingsApplicationInfo {

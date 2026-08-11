@@ -372,4 +372,4 @@ Agent 重复提问、重复审查、没有新增信息的交棒或错误路由�
 5. 项目添加、失效、重新绑定、移除和数据保留规则中尚未被现有页面 PRD覆盖的边界。
 6. 当前实现与已确认产品要求之间的实施顺序、模块拆分和迁移策略；这些由本次 OpenSpec 方案收束，不回写成新的产品决定。
 
-已确认的首次引导、设置、Agent 团队、主对话和单 Agent 会话要求分别以 `docs/product/pages/` 中对应页面为事实源；跨页面 BYOK 旅程以 `docs/product/flows/byok-agent-runtime.md` 为事实源。总 PRD只持有产品定位、核心概念、能力承诺和全局边界。
+已确认的首次引导、设置、Agent 团队、主对话和单 Agent 会话要求分别以 `docs/product/pages/` 中对应页面为事实源；跨页面 BYOK 旅程以 `docs/product/flows/byok-agent-runtime.md` 为事实源，应用自动更新的检测节奏、下载完成提醒与安装决定以 `docs/product/flows/app-auto-update.md` 为事实源。总 PRD只持有产品定位、核心概念、能力承诺和全局边界。

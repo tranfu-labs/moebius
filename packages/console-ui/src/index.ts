@@ -48,6 +48,7 @@ export * from "./console/session-context-header";
 export * from "./console/session-team-menu";
 export * from "./console/session-team-update-notice";
 export * from "./console/settings-dialog";
+export * from "./console/update-prompt-dialog";
 export * from "./console/provider-settings-panel";
 export * from "./console/sub-session-card";
 export * from "./console/sub-session-panel";

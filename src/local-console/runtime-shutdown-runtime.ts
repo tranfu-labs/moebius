@@ -26,7 +26,18 @@ export class LocalRuntimeShutdownRuntime {
     beforeStoreClose?(): Promise<void>;
     randomId(): string;
     reportFailure(sessionId: string, runId: string, error: string): void;
+    getRunningTaskCount(): number;
   }) {}
+
+  async stopRunningTasks(): Promise<void> {
+    for (const active of [...this.input.activeRuns.values()]) {
+      active.controller.abort("desktop-install-stop");
+    }
+    const deadline = Date.now() + this.input.timeoutMs;
+    while (this.input.getRunningTaskCount() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
 
   async close(): Promise<void> {
     const admission = decideRuntimeShutdownAttempt({ closed: this.#closed, attemptPending: this.#closePromise !== null });

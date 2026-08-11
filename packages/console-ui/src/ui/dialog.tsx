@@ -7,13 +7,21 @@ const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogClose = DialogPrimitive.Close;
 const DialogTitle = DialogPrimitive.Title;
+const DialogDescription = DialogPrimitive.Description;
+
+type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  overlayClassName?: string;
+};
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  DialogContentProps
+>(({ className, overlayClassName, children, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay className="fixed inset-0 z-[100] bg-ink/50" />
+    <DialogPrimitive.Overlay
+      className={cn("fixed inset-0 z-[100] bg-black/50", overlayClassName)}
+      data-testid="dialog-overlay"
+    />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
@@ -28,4 +36,4 @@ const DialogContent = React.forwardRef<
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
-export { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger };
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger };
