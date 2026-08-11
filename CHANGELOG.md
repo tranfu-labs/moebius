@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-11
+
+### 新增
+
+- 新增任务提醒：主理人收束一轮成为持久化一等事实（有新结果 / 需要用户处理 / 确认没有新增内容），任务完成或等待处理时发送一次系统通知，侧边栏单点与 Dock 角标一致，点击通知回流到对应对话（含应用退出后启动定位）；首次引导与设置提供通知权限申请与「任务提醒」开关（#208）。
+- 新增自动更新提醒流程：运行期启动后每 4 小时与唤醒补检新版本，下载就绪后弹出应用内提醒，支持「重启并安装 / 稍后提醒 / 跳过此版本」；安装确认改为应用内弹窗，任务停止与安装阶段失败就地可见（#210）。
+- 新增 Agent 素材修订历史与默认 Agent：`AGENT.md` 每次保存落一条带完整内容、作者与人话摘要的修订，编辑器左侧变化标记与成员级时间线支持「回到这一版」回退；设置新增应用级「默认 Agent」，复用团队页成员的运行配置选择（#211）。
+- 主 Agent 派工新增世代机制：对同一成员的后续派工会取代先前派工，未启动的旧派工不再执行，被覆盖派工的晚到结果不再推动接力；用户直达派工不受影响（#207）。
+
+### 变更
+
+- 产品协作流程改为批次化：同一依赖批次整批起草、冻结快照、整批评审与修订，取代逐文件串行评审（#207）。
+
 ## [0.4.3] - 2026-08-10
 
 ### 新增
@@ -233,7 +246,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/tranfu-labs/moebius/compare/v0.4.0...v0.4.1
