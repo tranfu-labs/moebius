@@ -23,13 +23,28 @@ export const AI_TEAM_BUILDER_OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["slug", "name", "role", "responsibilities", "constraints", "handoffs"],
+        required: ["slug", "name", "role", "responsibilities", "inputContract", "outputContract", "onContractViolation", "constraints", "handoffs"],
         properties: {
           slug: { type: "string", minLength: 1 },
           name: { type: "string", minLength: 1 },
           role: { type: "string", minLength: 1 },
           responsibilities: {
             type: "array",
+            items: { type: "string", minLength: 1 },
+          },
+          inputContract: {
+            type: "array",
+            description: "Inputs that must be present before this member starts, including the acceptance criteria and who can judge them; at least one entry.",
+            items: { type: "string", minLength: 1 },
+          },
+          outputContract: {
+            type: "array",
+            description: "The deliverable shape and how its completion can be checked; at least one entry.",
+            items: { type: "string", minLength: 1 },
+          },
+          onContractViolation: {
+            type: "array",
+            description: "Pre-agreed actions when the input contract is not met: non-primary members hand back to the primary agent stating what is missing instead of guessing; at least one entry.",
             items: { type: "string", minLength: 1 },
           },
           constraints: {

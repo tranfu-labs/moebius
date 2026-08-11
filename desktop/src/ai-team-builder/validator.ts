@@ -25,6 +25,9 @@ export interface AiTeamBuilderMember {
   name: string;
   role: string;
   responsibilities: string[];
+  inputContract: string[];
+  outputContract: string[];
+  onContractViolation: string[];
   constraints: string[];
   handoffs: string[];
 }
@@ -195,6 +198,11 @@ export function renderAiTeamMemberMarkdown(member: AiTeamBuilderMember): string 
   const handoffLines = member.handoffs.length === 0
     ? "- 完成工作后把结论交回主 Agent。"
     : member.handoffs.map((slug) => `- 需要下一步协作时交给 @${slug}。`).join("\n");
+  const contractSections = [
+    renderListSection("输入契约", member.inputContract),
+    renderListSection("输出契约", member.outputContract),
+    renderListSection("契约不满足时", member.onContractViolation),
+  ].join("");
   return serializeAgentMarkdownFrontmatter(
     {
       display_name: member.name,
@@ -204,7 +212,7 @@ export function renderAiTeamMemberMarkdown(member: AiTeamBuilderMember): string 
 
 ${member.role}
 
-## 职责
+${contractSections}## 职责
 
 ${responsibilityLines}
 
@@ -217,6 +225,18 @@ ${constraintLines}
 ${handoffLines}
 `,
   );
+}
+
+function renderListSection(title: string, entries: readonly string[]): string {
+  if (entries.length === 0) {
+    return "";
+  }
+  const lines = entries.map((entry) => `- ${entry}`).join("\n");
+  return `## ${title}
+
+${lines}
+
+`;
 }
 
 export function formatAiTeamBuilderValidationIssues(
@@ -252,8 +272,10 @@ function parseMembers(
   const members: AiTeamBuilderMember[] = [];
   for (const [index, candidate] of value.entries()) {
     const base = `$.members[${String(index)}]`;
+    const legacyKeys = ["slug", "name", "role", "responsibilities", "constraints", "handoffs"];
+    const contractKeys = ["slug", "name", "role", "responsibilities", "inputContract", "outputContract", "onContractViolation", "constraints", "handoffs"];
     if (!isPlainObject(candidate)
-      || !hasOnlyKeys(candidate, ["slug", "name", "role", "responsibilities", "constraints", "handoffs"])) {
+      || (!hasOnlyKeys(candidate, legacyKeys) && !hasOnlyKeys(candidate, contractKeys))) {
       issues.push(issue("invalid-shape", base, "member has an invalid shape."));
       continue;
     }
@@ -261,10 +283,21 @@ function parseMembers(
     const name = parseSingleLineText(candidate.name, `${base}.name`, issues);
     const role = parseSingleLineText(candidate.role, `${base}.role`, issues);
     const responsibilities = parseTextArray(candidate.responsibilities, `${base}.responsibilities`, issues, true);
+    const inputContract = candidate.inputContract === undefined
+      ? []
+      : parseTextArray(candidate.inputContract, `${base}.inputContract`, issues, false);
+    const outputContract = candidate.outputContract === undefined
+      ? []
+      : parseTextArray(candidate.outputContract, `${base}.outputContract`, issues, false);
+    const onContractViolation = candidate.onContractViolation === undefined
+      ? []
+      : parseTextArray(candidate.onContractViolation, `${base}.onContractViolation`, issues, false);
     const constraints = parseTextArray(candidate.constraints, `${base}.constraints`, issues, true);
     const handoffs = parseTextArray(candidate.handoffs, `${base}.handoffs`, issues, false);
-    if (slug !== null && name !== null && role !== null && responsibilities !== null && constraints !== null && handoffs !== null) {
-      members.push({ slug, name, role, responsibilities, constraints, handoffs });
+    if (slug !== null && name !== null && role !== null && responsibilities !== null
+      && inputContract !== null && outputContract !== null && onContractViolation !== null
+      && constraints !== null && handoffs !== null) {
+      members.push({ slug, name, role, responsibilities, inputContract, outputContract, onContractViolation, constraints, handoffs });
     }
   }
   return members;

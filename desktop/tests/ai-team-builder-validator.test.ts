@@ -16,6 +16,9 @@ const validProposal: AiTeamBuilderProposalOutput = {
       name: "发布负责人",
       role: "统筹发布目标并最终收尾",
       responsibilities: ["拆解工作", "核对交付证据"],
+      inputContract: ["任务目标与验收判据已写明判定者"],
+      outputContract: ["交付物附可核查证据"],
+      onContractViolation: ["输入缺项时交回主 Agent 并说明缺什么"],
       constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["content-planner"],
     },
@@ -24,6 +27,9 @@ const validProposal: AiTeamBuilderProposalOutput = {
       name: "内容策划",
       role: "产出发布内容",
       responsibilities: ["提炼叙事", "准备渠道素材"],
+      inputContract: ["任务目标与验收判据已写明判定者"],
+      outputContract: ["交付物附可核查证据"],
+      onContractViolation: ["输入缺项时交回主 Agent 并说明缺什么"],
       constraints: ["不修改其他成员负责的交付物"],
       handoffs: ["launch-lead"],
     },
@@ -156,6 +162,40 @@ describe("AI team builder validator", () => {
         validProposal.members[1],
       ],
     })).toMatchObject({ ok: false, issues: [{ code: "invalid-shape" }] });
+  });
+
+  it("renders contract sections between the role and the responsibilities", () => {
+    const markdown = renderAiTeamMemberMarkdown(validProposal.members[0]);
+    const order = [
+      "# 角色",
+      "## 输入契约",
+      "## 输出契约",
+      "## 契约不满足时",
+      "## 职责",
+      "## 克制与启用条件",
+      "## 协作与交棒",
+    ].map((heading) => markdown.indexOf(heading));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(markdown).toContain("任务目标与验收判据已写明判定者");
+  });
+
+  it("accepts legacy members without contract fields and renders no contract sections", () => {
+    const legacyMembers = validProposal.members.map(({ inputContract, outputContract, onContractViolation, ...member }) => member);
+    const result = validateAiTeamBuilderOutput({
+      ...validProposal,
+      members: legacyMembers,
+    });
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok || result.value.phase !== "proposal") throw new Error("expected proposal");
+    expect(result.value.members[0]).toMatchObject({
+      inputContract: [],
+      outputContract: [],
+      onContractViolation: [],
+    });
+    const markdown = renderAiTeamMemberMarkdown(result.value.members[0]!);
+    expect(markdown).not.toContain("## 输入契约");
+    expect(markdown).toContain("## 职责");
   });
 
   it("rejects malformed JSON and unsupported fields without throwing", () => {

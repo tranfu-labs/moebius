@@ -82,7 +82,7 @@ describe("built-in team seed", () => {
     expect(packageJson.build.extraResources).toContainEqual({ from: "../seeds/teams", to: "seed/teams" });
   });
 
-  it("packages the general assistant as one unconstrained primary Agent with its own recommendation", async () => {
+  it("packages the general assistant as one lightweight primary Agent with its own recommendation", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
     await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
@@ -104,12 +104,13 @@ describe("built-in team seed", () => {
         description: "处理一般对话与任务",
       }],
     });
-    expect(snapshot.members[0]?.agentMarkdown.trimEnd()).toBe([
+    expect(snapshot.members[0]?.agentMarkdown).toContain([
       "---",
       "display_name: 通用助手",
       "description: 处理一般对话与任务",
       "---",
     ].join("\n"));
+    expect(snapshot.members[0]?.agentMarkdown).toContain("## 输入契约");
     expect(await readTeamExecutionBindings({
       dataRoot,
       ownership: "system",

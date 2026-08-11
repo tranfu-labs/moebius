@@ -88,6 +88,9 @@ function cloneProposal(proposal: AiTeamBuilderProposal): AiTeamBuilderProposal {
     members: proposal.members.map((member) => ({
       ...member,
       responsibilities: [...member.responsibilities],
+      inputContract: [...member.inputContract],
+      outputContract: [...member.outputContract],
+      onContractViolation: [...member.onContractViolation],
       constraints: [...member.constraints],
       handoffs: [...member.handoffs],
     })),
