@@ -95,14 +95,37 @@ describe("SettingsDialog", () => {
     expect(onCopyVersion).toHaveBeenCalledOnce();
   });
 
-  it("shows ready state without an install action in About", () => {
+  it("shows ready state with an install action in About", () => {
+    const onInstallUpdate = vi.fn();
     renderDialog({
       activeSection: "about",
       about: { currentVersion: "0.1.4", latestVersion: "0.1.5", updateStatus: "ready" },
+      onInstallUpdate,
     });
 
-    expect(screen.getByText("新版 0.1.5 已准备好，请从侧栏安装。")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /安装更新/u })).not.toBeInTheDocument();
+    expect(screen.getByText("新版 0.1.5 已准备好")).toBeVisible();
+    const install = screen.getByRole("button", { name: "重启并安装" });
+    expect(install).toBeVisible();
+    fireEvent.click(install);
+    expect(onInstallUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("remembers the skipped-version explanation inside the ready state", () => {
+    const onInstallUpdate = vi.fn();
+    renderDialog({
+      activeSection: "about",
+      about: {
+        currentVersion: "0.1.4",
+        latestVersion: "0.1.5",
+        updateStatus: "ready",
+        skippedVersion: true,
+      },
+      onInstallUpdate,
+    });
+
+    expect(screen.getByText("新版 0.1.5 已准备好 · 你选择了跳过这个版本")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "重启并安装" }));
+    expect(onInstallUpdate).toHaveBeenCalledOnce();
   });
 
   it("delegates section changes without owning runtime integration", () => {
@@ -164,6 +187,24 @@ describe("SettingsDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("检查更新失败");
     expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
     expect(screen.getByText("0.1.4")).toBeVisible();
+
+    rerender(
+      <I18nProvider locale="zh-CN">
+        <SettingsDialog
+          open
+          activeLocale="zh-CN"
+          pendingLocale={null}
+          saveStatus="idle"
+          activeSection="about"
+          about={{ currentVersion: "0.1.4", latestVersion: "0.1.5", updateStatus: "failed", updateFailureReason: "install" }}
+          onOpenChange={vi.fn()}
+          onSelectLocale={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("更新安装失败");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("检查更新失败");
   });
 
   it("keeps language and update controls focused while controlled async state changes", () => {

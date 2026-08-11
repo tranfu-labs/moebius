@@ -1,5 +1,7 @@
 import type {
   DesktopUpdateState,
+  SettingsInstallFailure,
+  SettingsInstallConfirmation,
   SettingsApplicationInfo,
   SettingsUpdateCheckResult,
   SettingsVersionCopyResult,
@@ -19,9 +21,14 @@ export interface DesktopSettingsState {
   latestVersion?: string;
   progress?: number;
   updateFailureReason?: DesktopUpdateState["reason"];
+  skippedVersion?: string;
+  remindLaterVersion?: string;
   updateRequestId: number | null;
   copyStatus: DesktopCopyStatus;
   copyRequestId: number | null;
+  runningTaskCount: number | null;
+  installConfirmation: SettingsInstallConfirmation | null;
+  installFailure: SettingsInstallFailure | null;
 }
 
 export type DesktopSettingsAction =
@@ -29,6 +36,11 @@ export type DesktopSettingsAction =
   | { type: "update-started"; requestId: number }
   | { type: "update-state-received"; state: SettingsUpdateCheckResult }
   | { type: "update-finished"; requestId: number; result: SettingsUpdateCheckResult }
+  | { type: "running-task-count-received"; count: number }
+  | { type: "install-confirmation-received"; confirmation: SettingsInstallConfirmation }
+  | { type: "install-confirmation-cleared"; requestId: number }
+  | { type: "install-failure-received"; failure: SettingsInstallFailure }
+  | { type: "install-failure-cleared" }
   | { type: "copy-started"; requestId: number }
   | { type: "copy-finished"; requestId: number; result: SettingsVersionCopyResult };
 
@@ -38,6 +50,9 @@ export const INITIAL_DESKTOP_SETTINGS_STATE: DesktopSettingsState = {
   updateRequestId: null,
   copyStatus: "idle",
   copyRequestId: null,
+  runningTaskCount: null,
+  installConfirmation: null,
+  installFailure: null,
 };
 
 export function decideSettingsRequestAdmission(isRunning: boolean): {
@@ -60,6 +75,8 @@ export function planDesktopSettingsView(state: DesktopSettingsState) {
       latestVersion: state.latestVersion,
       progress: state.progress,
       updateFailureReason: state.updateFailureReason,
+      skippedVersion: state.skippedVersion !== undefined
+        && state.skippedVersion === state.latestVersion,
       copyStatus: state.copyStatus,
     },
     settingsExternalLinks: {
@@ -98,6 +115,23 @@ export function reduceDesktopSettings(
       return applyUpdateState({ ...state, updateRequestId: null }, action.result);
     case "update-state-received":
       return applyUpdateState(state, action.state);
+    case "running-task-count-received":
+      return {
+        ...state,
+        runningTaskCount: Number.isFinite(action.count) && action.count >= 0
+          ? Math.floor(action.count)
+          : state.runningTaskCount,
+      };
+    case "install-confirmation-received":
+      return { ...state, installConfirmation: action.confirmation };
+    case "install-confirmation-cleared":
+      return state.installConfirmation?.requestId === action.requestId
+        ? { ...state, installConfirmation: null }
+        : state;
+    case "install-failure-received":
+      return { ...state, installFailure: action.failure };
+    case "install-failure-cleared":
+      return state.installFailure === null ? state : { ...state, installFailure: null };
     case "copy-started":
       if (state.copyRequestId !== null) {
         return state;
@@ -125,5 +159,7 @@ function applyUpdateState(
     latestVersion: update.latestVersion,
     progress: update.progress,
     updateFailureReason: update.reason,
+    skippedVersion: update.skippedVersion,
+    remindLaterVersion: update.remindLaterVersion,
   };
 }

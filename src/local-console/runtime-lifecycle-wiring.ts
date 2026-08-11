@@ -57,6 +57,8 @@ export function createLocalRuntimeLifecycleWiring(input: {
         runId,
         error,
       }),
+      getRunningTaskCount: () => [...input.activeRuns.keys()].length
+        + (input.options.getManagedProcessRunningCount?.() ?? 0),
     } satisfies ShutdownPorts,
   };
 }

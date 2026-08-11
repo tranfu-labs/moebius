@@ -30,6 +30,34 @@ export interface DesktopUpdateState {
   downloadUrl?: string;
   progress?: number;
   reason?: DesktopUpdateFailureReason;
+  /** The ready version explicitly skipped by the user, if it is still current. */
+  skippedVersion?: string;
+  /** The ready version dismissed for the remainder of this app run. */
+  remindLaterVersion?: string;
+}
+
+export interface DesktopUpdateSkipStore {
+  read(): Promise<{ version: string } | null>;
+  write(marker: { version: string }): Promise<void>;
+}
+
+export interface DesktopInstallConfirmation {
+  requestId: number;
+  version: string;
+  runningTaskCount: number;
+}
+
+export interface DesktopInstallAttemptContext {
+  hadRunningTasks: boolean;
+}
+
+export interface DesktopInstallFailure {
+  kind: "task-stop" | "install";
+  version: string;
+  runningTaskCount: number;
+  hadRunningTasks: boolean;
+  tasksStopped: boolean;
+  installStarted: boolean;
 }
 
 export type DesktopUpdateEvent =

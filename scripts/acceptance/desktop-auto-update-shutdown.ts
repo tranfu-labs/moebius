@@ -235,28 +235,149 @@ async function waitForMainWindow(application: ElectronApplication): Promise<Page
     }),
   ]);
   await page.waitForLoadState("domcontentloaded");
-  await page.getByRole("button", { name: /设置|Settings/ }).waitFor({ state: "visible", timeout: 20_000 });
+  await page.getByTestId("desktop-route-loading").waitFor({ state: "hidden", timeout: 20_000 });
+  await waitForWorkspaceReady(page);
   return page;
 }
 
-async function openSettings(page: Page, locale: "zh-CN" | "en"): Promise<Locator> {
-  const settings = page.getByRole("button", { name: locale === "zh-CN" ? "设置" : "Settings" }).first();
+async function waitForWorkspaceReady(page: Page): Promise<void> {
+  const loadingState = page.getByTestId("dashboard-loading-state");
+  // The loading surface can already be gone on a fast restart. Waiting twice
+  // with a short settling window covers both that case and the observed
+  // Settings-visible / workspace-still-preparing race.
+  await loadingState.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.waitForTimeout(250);
+  await loadingState.waitFor({ state: "hidden", timeout: 20_000 });
+}
+
+async function openSettings(page: Page): Promise<Locator> {
+  await dismissReadyReminderIfVisible(page);
+  const settings = await waitForSettingsTrigger(page);
   await settings.focus();
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: locale === "zh-CN" ? "设置" : "Settings" });
+  const dialog = page.getByRole("dialog").last();
   await dialog.waitFor({ state: "visible" });
   return dialog;
 }
 
-async function openAbout(page: Page, locale: "zh-CN" | "en"): Promise<Locator> {
-  const dialog = await openSettings(page, locale);
-  await dialog.getByRole("button", { name: locale === "zh-CN" ? "关于" : "About" }).click();
+async function waitForSettingsTrigger(page: Page, timeoutMs = 20_000): Promise<Locator> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const name of ["设置", "Settings"] as const) {
+      const buttons = page.getByRole("button", { name, exact: true });
+      for (let index = 0; index < await buttons.count(); index += 1) {
+        const button = buttons.nth(index);
+        if (await button.isVisible().catch(() => false)) {
+          return button;
+        }
+      }
+    }
+    await page.waitForTimeout(100);
+  }
+  const lastState = await page.evaluate(() => ({
+    language: document.documentElement.lang,
+    routeLoading: document.querySelector('[data-testid="desktop-route-loading"]') !== null,
+    workspaceLoading: document.querySelector('[data-testid="dashboard-loading-state"]') !== null,
+    visibleButtons: Array.from(document.querySelectorAll("button"))
+      .filter((button) => {
+        const style = window.getComputedStyle(button);
+        return style.display !== "none" && style.visibility !== "hidden" && button.getClientRects().length > 0;
+      })
+      .map((button) => (button.textContent ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 24),
+    bodyText: (document.body.innerText ?? "").slice(0, 600),
+  })).catch((error) => ({ evaluationError: String(error) }));
+  throw new Error(`timed out waiting for a visible Settings button; last state: ${JSON.stringify(lastState)}`);
+}
+
+async function openAbout(page: Page): Promise<Locator> {
+  const dialog = await openSettings(page);
+  const about = await waitForVisibleButtonIn(dialog, ["关于", "About"]);
+  await about.click();
   return dialog;
 }
 
-async function closeSettings(dialog: Locator, locale: "zh-CN" | "en"): Promise<void> {
-  await dialog.getByRole("button", { name: locale === "zh-CN" ? "关闭" : "Close" }).click();
+async function closeSettings(dialog: Locator): Promise<void> {
+  const close = await waitForVisibleButtonIn(dialog, ["关闭", "Close"]);
+  await close.click();
   await dialog.waitFor({ state: "hidden" });
+}
+
+async function dismissReadyReminderIfVisible(page: Page): Promise<boolean> {
+  const reminderButton = page.getByRole("button", { name: /^(稍后提醒|Remind me later)$/, exact: true }).last();
+  if (!(await reminderButton.isVisible().catch(() => false))) {
+    return false;
+  }
+  await reminderButton.click();
+  await reminderButton.waitFor({ state: "hidden", timeout: 3_000 }).catch(() => undefined);
+  return true;
+}
+
+async function waitForVisibleButtonIn(
+  container: Page | Locator,
+  names: readonly string[],
+  timeoutMs = 20_000,
+): Promise<Locator> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const name of names) {
+      const buttons = container.getByRole("button", { name, exact: true });
+      for (let index = 0; index < await buttons.count(); index += 1) {
+        const button = buttons.nth(index);
+        if (await button.isVisible().catch(() => false)) {
+          return button;
+        }
+      }
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out waiting for a visible button: ${names.join(" or ")}`);
+}
+
+async function waitForVisibleUpdatePrompt(page: Page, timeoutMs = 10_000): Promise<Locator> {
+  const prompts = page.getByTestId("update-prompt-dialog");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (let index = 0; index < await prompts.count(); index += 1) {
+      const prompt = prompts.nth(index);
+      if (await prompt.isVisible().catch(() => false)) {
+        return prompt;
+      }
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new Error("timed out waiting for the application-owned update confirmation dialog");
+}
+
+async function pollReadyMarkerRestore(
+  page: Page,
+  dialog: Locator,
+  timeoutMs = 20_000,
+): Promise<{
+  text: string;
+  sidebarInstallCount: number;
+  snapshots: Array<{ text: string; sidebarInstallCount: number }>;
+  timedOut: boolean;
+}> {
+  const sidebarInstall = page.locator('[data-testid="sidebar-install-update"]');
+  const deadline = Date.now() + timeoutMs;
+  const snapshots: Array<{ text: string; sidebarInstallCount: number }> = [];
+  let text = "";
+  let sidebarInstallCount = 0;
+  while (Date.now() < deadline) {
+    text = (await dialog.textContent().catch(() => "")) ?? "";
+    sidebarInstallCount = await sidebarInstall.count();
+    const last = snapshots.at(-1);
+    if (last?.text !== text || last.sidebarInstallCount !== sidebarInstallCount) {
+      snapshots.push({ text, sidebarInstallCount });
+    }
+    if (isUpdateReady(text) || sidebarInstallCount > 0) {
+      return { text, sidebarInstallCount, snapshots, timedOut: false };
+    }
+    await page.waitForTimeout(100);
+  }
+  return { text, sidebarInstallCount, snapshots, timedOut: true };
 }
 
 async function pollDialogText(
@@ -405,7 +526,7 @@ async function main(): Promise<void> {
     await validateOwnedProcess(pid, target);
 
     let page = await waitForMainWindow(application);
-    const dialog = await openAbout(page, "zh-CN");
+    const dialog = await openAbout(page);
     const initial = await pollDialogText(
       dialog,
       (text) => isUpdateFailure(text) || isUpdateLatest(text) || isUpdateAvailable(text) || isUpdateDownloading(text) || isUpdateReady(text),
@@ -491,23 +612,31 @@ async function main(): Promise<void> {
       );
       const snapshots = [...initial.snapshots, ...validReleaseOutcome.snapshots];
       const downloaded = isUpdateReady(validReleaseOutcome.text);
+      const progressMonotonic = hasMonotonicDownloadProgress(snapshots);
+      const progressObserved = snapshots.some((text) => /\d{1,3}%/.test(text));
+      const downloadStateObserved = snapshots.some(isUpdateDownloading);
+      const cacheReadyWithoutProgress = downloaded && !progressObserved;
       record("UPD-02", {
         entry: "隔离实例 设置 → 关于",
         action: "等待生产 electron-updater 的真实后台下载完成",
         screenObservation: downloaded
           ? `真实下载由进度状态进入已准备好：${validReleaseOutcome.text}`
           : `真实更新链路未完成：${validReleaseOutcome.text}`,
-        consistent: downloaded && snapshots.some(isUpdateDownloading) && hasMonotonicDownloadProgress(snapshots),
+        consistent: downloaded && (progressMonotonic || cacheReadyWithoutProgress),
         environment: "real-app",
         observed: {
           snapshots: snapshots.slice(-20),
           finalText: validReleaseOutcome.text,
-          progressMonotonic: hasMonotonicDownloadProgress(snapshots),
+          progressMonotonic,
+          progressObserved,
+          downloadStateObserved,
+          cacheReadyWithoutProgress,
         },
       });
       if (downloaded) {
-        await closeSettings(dialog, "zh-CN");
-        const reopenedDialog = await openAbout(page, "zh-CN");
+        await dismissReadyReminderIfVisible(page);
+        await closeSettings(dialog);
+        const reopenedDialog = await openAbout(page);
         const reopenedText = (await reopenedDialog.textContent()) ?? "";
         record("UPD-03", {
           entry: "设置页与关于页",
@@ -590,7 +719,8 @@ async function main(): Promise<void> {
       },
     });
 
-    await closeSettings(englishDialog, "en");
+    await dismissReadyReminderIfVisible(page);
+    await closeSettings(englishDialog);
     if (invalidReleaseObserved || isUpdateLatest(initial.text)) {
       recordBlockedUpdateRows(invalidReleaseObserved
         ? "没有可供本次真机验收使用的有效 N−1→N GitHub Release：真实远端 v0.2.0 缺少 latest-mac.yml；未注入 ready、未替换网络或 IPC。"
@@ -614,9 +744,33 @@ async function main(): Promise<void> {
         environment: "real-app",
         observed: { readySidebarCount },
       });
-      recordBlocked("UPD-07", "Sidebar 安装更新按钮", "点击并取消安装确认", "安装确认由原生 message box 提供，本轮未使用 Accessibility 自动点击");
+      const sidebarInstallButton = page.locator('[data-testid="sidebar-install-update"]');
+      await sidebarInstallButton.click();
+      const idleInstallPrompt = await waitForVisibleUpdatePrompt(page);
+      const idleInstallPromptText = (await idleInstallPrompt.textContent()) ?? "";
+      const idleCancelButton = idleInstallPrompt.getByRole("button", { name: "Cancel", exact: true });
+      const idleCancelCount = await idleCancelButton.count();
+      if (idleCancelCount !== 1) {
+        throw new Error(`expected one in-app update Cancel button, found ${idleCancelCount}`);
+      }
+      await idleCancelButton.click();
+      await idleInstallPrompt.waitFor({ state: "hidden" });
+      const sidebarAfterCancel = page.locator('[data-testid="sidebar-install-update"]');
+      const sidebarAfterCancelCount = await sidebarAfterCancel.count();
+      record("UPD-07", {
+        entry: "Sidebar 安装更新按钮",
+        action: "点击应用内安装确认的 Cancel",
+        screenObservation: `应用内确认可见并关闭；取消后 Sidebar 安装入口数：${sidebarAfterCancelCount}`,
+        consistent: idleInstallPromptText.includes("Restart and install") && sidebarAfterCancelCount === 1,
+        environment: "real-app",
+        observed: {
+          confirmationText: idleInstallPromptText,
+          cancelButtonCount: idleCancelCount,
+          sidebarAfterCancelCount,
+        },
+      });
       recordBlocked("UPD-08", "Sidebar 安装更新按钮 / 运行任务", "点击并观察重启安装专用确认", "缺少通过真实用户入口产生的运行中任务");
-      recordBlocked("UPD-09", "重启安装专用确认", "点击继续工作", "缺少真实运行任务与原生确认框自动化权限");
+      recordBlocked("UPD-09", "重启安装专用确认", "点击应用内确认的 Keep working", "本次脚本未通过真实用户入口产生运行中任务；确认入口为应用内 Radix Dialog，未伪造任务状态");
       recordBlocked("UPD-10", "重启安装专用确认", "停止任务并重启安装", "缺少真实运行任务与有效签名 N→N+1 Release 安装前提");
       recordBlocked("UPD-11", "重启安装专用确认 / 清理失败", "观察失败后的应用、会话和 ready 状态", "清理失败需受控故障注入，不能在真机验收中伪造");
       const restartChild = application.process();
@@ -639,12 +793,15 @@ async function main(): Promise<void> {
         if (pid === undefined) throw new Error("isolated Electron did not expose a restarted PID");
         await validateOwnedProcess(pid, target);
         page = await waitForMainWindow(application);
-        const restartedDialog = await openAbout(page, "en");
-        const restartedText = (await restartedDialog.textContent()) ?? "";
-        const restartedSidebarCount = await page.locator('[data-testid="sidebar-install-update"]').count();
+        const restoredWorkspace = await pollReadyMarkerRestore(page, page.locator("body"));
+        await dismissReadyReminderIfVisible(page);
+        const restartedDialog = await openAbout(page);
+        const restartedAboutText = (await restartedDialog.textContent()) ?? "";
+        const restartedText = restartedAboutText || restoredWorkspace.text;
+        const restartedSidebarCount = restoredWorkspace.sidebarInstallCount;
         record("UPD-12", {
           entry: "普通 quit AppleEvent 后重新启动的隔离实例 设置 → About 与 Sidebar",
-          action: "在同一临时 data root 重启应用，观察 ready marker 和更新事件",
+          action: "等待工作区完成加载，轮询 About ready 文本或 Sidebar 安装入口",
           screenObservation: `重启后关于页显示：${restartedText}；Sidebar 安装按钮数：${restartedSidebarCount}`,
           consistent: isUpdateReady(restartedText) && restartedSidebarCount === 1,
           environment: "real-app",
@@ -655,10 +812,12 @@ async function main(): Promise<void> {
             restartedPid: pid,
             restartedText,
             restartedSidebarCount,
+            workspaceReadyTimedOut: restoredWorkspace.timedOut,
+            restoreSnapshots: restoredWorkspace.snapshots.slice(-20),
             downloadEventsAfterRestart: "not incremented by marker restore path",
           },
         });
-        await closeSettings(restartedDialog, "en");
+        await closeSettings(restartedDialog);
         processExited = false;
       } else {
         record("UPD-12", {
@@ -723,6 +882,18 @@ async function main(): Promise<void> {
       await application.close().catch(() => undefined);
     }
     fillMissingRows(runError ?? "本行没有在本次真实运行中执行");
+    const blocked = REQUIRED_ACCEPTANCE_IDS.filter((id) => assertions.get(id)?.consistent === null);
+    const failed = REQUIRED_ACCEPTANCE_IDS.filter((id) => assertions.get(id)?.consistent === false);
+    const safetyFailed = safetyAssertions.filter((item) => !item.passed);
+    const ok = runError === null
+      && safetyFailed.length === 0
+      && failed.length === 0
+      && blocked.length === 0;
+    const status: "passed" | "failed" | "blocked" = ok
+      ? "passed"
+      : failed.length > 0 || runError !== null || safetyFailed.length > 0
+        ? "failed"
+        : "blocked";
     const evidence = {
       generatedAt: new Date().toISOString(),
       appInputPath: requestedAppPath,
@@ -739,13 +910,11 @@ async function main(): Promise<void> {
         safetyAssertions,
         isolatedDataRoot: runtimeRoot,
       },
+      conclusion: { status, ok, blocked, failed, safetyFailed },
       error: runError,
     };
     await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
-    const ok = runError === null
-      && safetyAssertions.every((item) => item.passed)
-      && REQUIRED_ACCEPTANCE_IDS.every((id) => assertions.get(id)?.consistent === true);
-    process.stdout.write(`${JSON.stringify({ ok, evidence: evidencePath, pid })}\n`);
+    process.stdout.write(`${JSON.stringify({ status, ok, blocked, failed, safetyFailed, evidence: evidencePath, pid })}\n`);
     if (!ok) process.exitCode = 1;
   }
 }

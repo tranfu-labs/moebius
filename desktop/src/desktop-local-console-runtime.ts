@@ -81,6 +81,10 @@ export class DesktopLocalConsoleRuntime {
     return decideLocalConsoleRunningTaskCount(this.#server);
   }
 
+  async stopRunningTasks(): Promise<void> {
+    await this.#server?.stopRunningTasks();
+  }
+
   async start(): Promise<void> {
     try {
       this.#attachmentCapability = this.#createCapability();

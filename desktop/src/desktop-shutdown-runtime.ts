@@ -1,7 +1,6 @@
 import {
   planBeforeQuit,
   planDesktopShutdownRequest,
-  planInstallerShutdownApproval,
   planLastWindowClosed,
 } from "./desktop-shutdown-plan.js";
 import {
@@ -11,6 +10,15 @@ import {
   resolveShutdownIntent,
   type DesktopShutdownIntent,
 } from "./desktop-shutdown-intent-plan.js";
+import { coordinateDesktopShutdown } from "./desktop-shutdown-coordinator.js";
+import { performDesktopShutdown } from "./desktop-shutdown-execution.js";
+import type {
+  DesktopInstallAttemptContext,
+  DesktopInstallFailure,
+} from "./desktop-update-contract.js";
+
+const noop = (): void => undefined;
+const noopAsync = async (): Promise<void> => undefined;
 
 export class DesktopShutdownRuntime {
   readonly #closeLocalConsole: () => Promise<void>;
@@ -21,7 +29,11 @@ export class DesktopShutdownRuntime {
   readonly #cancelRunningTasks: () => Promise<void>;
   readonly #confirmExit: (runningTaskCount: number) => Promise<boolean>;
   readonly #confirmInstall: (runningTaskCount: number) => Promise<boolean>;
-  readonly #installUpdate: () => Promise<void>;
+  readonly #installUpdate: (context?: DesktopInstallAttemptContext) => Promise<void>;
+  readonly #getInstallVersion: () => string;
+  readonly #reportInstallFailure: (failure: DesktopInstallFailure) => Promise<void>;
+  readonly #stopUpdates: () => void;
+  readonly #resumeUpdates: () => void;
   #shutdownPromise: Promise<void> | null = null;
   #coordinationPromise: Promise<void> | null = null;
   #shutdownComplete = false;
@@ -37,7 +49,11 @@ export class DesktopShutdownRuntime {
     cancelRunningTasks(): Promise<void>;
     confirmExit(runningTaskCount: number): Promise<boolean>;
     confirmInstall(runningTaskCount: number): Promise<boolean>;
-    installUpdate(): Promise<void>;
+    installUpdate(context?: DesktopInstallAttemptContext): Promise<void>;
+    getInstallVersion?(): string;
+    reportInstallFailure?(failure: DesktopInstallFailure): Promise<void>;
+    stopUpdates?(): void;
+    resumeUpdates?(): void;
   }) {
     this.#closeLocalConsole = input.closeLocalConsole;
     this.#closeStateWorkers = input.closeStateWorkers;
@@ -48,6 +64,11 @@ export class DesktopShutdownRuntime {
     this.#confirmExit = input.confirmExit;
     this.#confirmInstall = input.confirmInstall;
     this.#installUpdate = input.installUpdate;
+    this.#getInstallVersion = input.getInstallVersion ?? (() => "unknown");
+    this.#reportInstallFailure = input.reportInstallFailure ?? noopAsync;
+    const { stopUpdates = noop, resumeUpdates = noop } = input;
+    this.#stopUpdates = stopUpdates;
+    this.#resumeUpdates = resumeUpdates;
   }
 
   get isQuitting(): boolean {
@@ -102,7 +123,7 @@ export class DesktopShutdownRuntime {
       hasRunningTasks: decideRunningShutdownTasks(runningTaskCount),
     });
     if (plan === "await-shutdown") {
-      await this.#shutdown(resolveShutdownIntent(this.#intent));
+      await this.#shutdown(resolveShutdownIntent(this.#intent), { hadRunningTasks: false });
       return;
     }
     if (plan === "await-coordination") {
@@ -116,7 +137,7 @@ export class DesktopShutdownRuntime {
         });
         await this.#coordinationPromise;
       } else {
-        await this.#shutdown(intent);
+        await this.#shutdown(intent, { hadRunningTasks: false });
       }
       return;
     }
@@ -127,47 +148,45 @@ export class DesktopShutdownRuntime {
   }
 
   async #coordinate(runningTaskCount: number, intent: DesktopShutdownIntent): Promise<void> {
-    const approved = decideInstallShutdownIntent(intent)
-      ? await this.#confirmInstall(runningTaskCount)
-      : await this.#confirmExit(runningTaskCount);
-    const approval = planInstallerShutdownApproval(approved);
-    if (approval === "stay-open") {
+    const result = await coordinateDesktopShutdown({
+      intent,
+      runningTaskCount,
+      getRunningTaskCount: this.#getRunningTaskCount,
+      confirmExit: this.#confirmExit,
+      confirmInstall: this.#confirmInstall,
+      cancelRunningTasks: this.#cancelRunningTasks,
+      getInstallVersion: this.#getInstallVersion,
+      reportCleanupBlocked: this.#reportCleanupBlocked,
+      reportInstallFailure: this.#reportInstallFailure,
+    });
+    if (result.kind === "stay-open") {
       this.#intent = null;
       this.#isQuitting = false;
       return;
     }
-    try {
-      if (decideRunningShutdownTasks(runningTaskCount)) {
-        await this.#cancelRunningTasks();
-      }
-    } catch {
-      this.#intent = null;
-      this.#isQuitting = false;
-      await this.#reportCleanupBlocked();
-      return;
-    }
-    await this.#shutdown(intent);
+    await this.#shutdown(intent, { hadRunningTasks: result.hadRunningTasks });
   }
 
-  async #shutdown(intent: DesktopShutdownIntent): Promise<void> {
+  async #shutdown(intent: DesktopShutdownIntent, context: DesktopInstallAttemptContext): Promise<void> {
     this.#isQuitting = true;
-    this.#shutdownPromise ??= this.#performShutdown(intent);
+    this.#shutdownPromise ??= performDesktopShutdown({
+      intent,
+      context,
+      stopUpdates: this.#stopUpdates,
+      resumeUpdates: this.#resumeUpdates,
+      closeLocalConsole: this.#closeLocalConsole,
+      closeStateWorkers: this.#closeStateWorkers,
+      markShutdownComplete: () => {
+        this.#shutdownComplete = true;
+      },
+      recoverAfterInstallFailure: () => this.recoverAfterInstallFailure(),
+      installUpdate: (installContext) => this.#installUpdate(installContext),
+      quit: this.#quit,
+      getRunningTaskCount: this.#getRunningTaskCount,
+      getInstallVersion: this.#getInstallVersion,
+      reportCleanupBlocked: this.#reportCleanupBlocked,
+      reportInstallFailure: this.#reportInstallFailure,
+    });
     await this.#shutdownPromise;
-  }
-
-  async #performShutdown(intent: DesktopShutdownIntent): Promise<void> {
-    try {
-      await this.#closeLocalConsole();
-      await this.#closeStateWorkers();
-      this.#shutdownComplete = true;
-      if (decideInstallShutdownIntent(intent)) {
-        await this.#installUpdate();
-      } else {
-        this.#quit();
-      }
-    } catch {
-      this.recoverAfterInstallFailure();
-      await this.#reportCleanupBlocked().catch(() => undefined);
-    }
   }
 }

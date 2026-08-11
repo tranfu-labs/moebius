@@ -93,39 +93,6 @@ export function exitTaskDialogOptions(
   };
 }
 
-export function installUpdateDialogOptions(
-  version: string,
-  runningTaskCount: number,
-  locale: DesktopLocale = "zh-CN",
-): {
-  type: "warning";
-  buttons: [string, string];
-  defaultId: 0;
-  cancelId: 0;
-  title: string;
-  message: string;
-  detail: string;
-  noLink: true;
-} {
-  const hasTasks = runningTaskCount > 0;
-  return {
-    type: "warning",
-    buttons: [
-      translateDesktop(locale, hasTasks ? "dialog.install.stay" : "dialog.install.cancel"),
-      translateDesktop(locale, hasTasks ? "dialog.install.stopAndRestart" : "dialog.install.restart"),
-    ],
-    defaultId: 0,
-    cancelId: 0,
-    title: translateDesktop(locale, hasTasks ? "dialog.install.runningTitle" : "dialog.install.title"),
-    message: translateDesktop(locale, hasTasks ? "dialog.install.runningMessage" : "dialog.install.message", {
-      version,
-      count: runningTaskCount,
-    }),
-    detail: translateDesktop(locale, "dialog.install.detail"),
-    noLink: true,
-  };
-}
-
 export function onboardingCliLabel(cli: OnboardingCli): string {
   return cli === "codex" ? "Codex" : cli === "claude" ? "Claude Code" : "Kimi";
 }

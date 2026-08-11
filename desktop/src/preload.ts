@@ -81,6 +81,8 @@ import {
 import {
   SETTINGS_IPC_CHANNELS,
   type SettingsApplicationInfo,
+  type SettingsInstallConfirmation,
+  type SettingsInstallFailure,
   type SettingsUpdateCheckResult,
   type SettingsUpdateState,
   type SettingsVersionCopyResult,
@@ -122,6 +124,12 @@ export interface MoebiusDesktopApi {
   readUpdateState(): Promise<SettingsUpdateState>;
   onUpdateState(listener: (state: SettingsUpdateState) => void): () => void;
   installUpdate(): Promise<void>;
+  readRunningTaskCount(): Promise<number>;
+  remindLater(): Promise<SettingsUpdateState>;
+  skipVersion(): Promise<SettingsUpdateState>;
+  onInstallConfirmation(listener: (confirmation: SettingsInstallConfirmation) => void): () => void;
+  onInstallFailure(listener: (failure: SettingsInstallFailure) => void): () => void;
+  respondInstallConfirmation(requestId: number, approved: boolean): Promise<void>;
   copyVersionInfo(): Promise<SettingsVersionCopyResult>;
   listProviderProfiles(): Promise<ProviderProfileListResult>;
   createProviderProfile(request: ProviderProfileCreateRequest): Promise<ProviderProfileIpcResult<ProviderProfileSummaryDto>>;
@@ -287,6 +295,39 @@ const api: MoebiusDesktopApi = {
   },
   installUpdate() {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.installUpdate) as Promise<void>;
+  },
+  readRunningTaskCount() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.readRunningTaskCount) as Promise<number>;
+  },
+  remindLater() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.remindLater) as Promise<SettingsUpdateState>;
+  },
+  skipVersion() {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.skipVersion) as Promise<SettingsUpdateState>;
+  },
+  onInstallConfirmation(listener) {
+    const wrapped = (_event: Electron.IpcRendererEvent, confirmation: SettingsInstallConfirmation): void => {
+      listener(confirmation);
+    };
+    ipcRenderer.on(SETTINGS_IPC_CHANNELS.installConfirmation, wrapped);
+    return () => {
+      ipcRenderer.off(SETTINGS_IPC_CHANNELS.installConfirmation, wrapped);
+    };
+  },
+  onInstallFailure(listener) {
+    const wrapped = (_event: Electron.IpcRendererEvent, failure: SettingsInstallFailure): void => {
+      listener(failure);
+    };
+    ipcRenderer.on(SETTINGS_IPC_CHANNELS.installFailure, wrapped);
+    return () => {
+      ipcRenderer.off(SETTINGS_IPC_CHANNELS.installFailure, wrapped);
+    };
+  },
+  respondInstallConfirmation(requestId, approved) {
+    return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.respondInstallConfirmation, {
+      requestId,
+      approved,
+    }) as Promise<void>;
   },
   copyVersionInfo() {
     return ipcRenderer.invoke(SETTINGS_IPC_CHANNELS.copyVersionInfo) as Promise<SettingsVersionCopyResult>;

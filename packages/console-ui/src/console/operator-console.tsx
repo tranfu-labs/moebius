@@ -2106,7 +2106,8 @@ export function OperatorConsole({
                 }}
               />
             </div>
-            {settingsAbout?.updateStatus === "ready" ? (
+            {settingsAbout?.updateStatus === "ready"
+              || (settingsAbout?.updateStatus === "failed" && settingsAbout.latestVersion !== undefined) ? (
               <SidebarAction
                 icon={RefreshCw}
                 label={translate(activeLocale, "sidebar.installUpdate")}
@@ -3014,6 +3015,7 @@ export function OperatorConsole({
           onSelectLocale={(locale) => onSelectLocale?.(locale)}
           onRetry={() => onRetryLocaleSave?.()}
           onCheckForUpdates={() => onCheckSettingsUpdates?.()}
+          onInstallUpdate={onInstallUpdate}
           onCopyVersion={() => onCopySettingsVersion?.()}
           onOpenReleaseNotes={() => openSettingsExternalLink(settingsExternalLinks?.releaseNotes)}
           onOpenFeedback={() => openSettingsExternalLink(settingsExternalLinks?.feedback)}
