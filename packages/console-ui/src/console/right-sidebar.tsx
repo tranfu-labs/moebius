@@ -307,13 +307,6 @@ export function RightSidebar({
         if (!openRef.current) completeExit();
       }}
     >
-      <div
-        className={cn(
-          "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
-          layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
-        )}
-        style={layout === "split" ? { width: `${width}px` } : undefined}
-      >
       {layout === "split" ? (
         <div
           ref={separatorRef}
@@ -359,6 +352,13 @@ export function RightSidebar({
         </div>
       ) : null}
 
+      <div
+        className={cn(
+          "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
+          layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
+        )}
+        style={layout === "split" ? { width: `${width}px` } : undefined}
+      >
       <header className="window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center gap-1 border-b border-line px-2">
         <div
           className="scroll-thin window-no-drag flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"

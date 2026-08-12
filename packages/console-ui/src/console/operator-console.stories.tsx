@@ -1,12 +1,318 @@
-import { act, useState } from "react";
-import type { Meta, StoryObj } from "@storybook/react";
+import { act, type ReactNode, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import type { Decorator, Meta, StoryObj } from "@storybook/react";
+import { ArrowUp, Copy, FolderTree, Square, Trash2, UsersRound } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import { MessageAction } from "@/console/message-toolbar";
 import {
   OperatorConsole,
   type OperatorConsoleProps,
   type OperatorProject,
 } from "@/console/operator-console";
+import { RIGHT_SIDEBAR_BUILTIN_TAB_TITLES } from "@/console/right-sidebar-tabs";
+import { TooltipProvider } from "@/ui/tooltip";
+import "./operator-console.balanced-workspace.css";
+
+type StoryPendingMessage = NonNullable<OperatorConsoleProps["pendingPrimaryMessages"]>[number];
+type StoryTimelineMessage = OperatorConsoleProps["messages"][number];
+
+interface StoryMessageCopyTarget {
+  message: StoryTimelineMessage;
+  target: HTMLElement;
+}
+
+interface StoryTeamIconTarget {
+  kind: "navigation" | "selector";
+  target: HTMLElement;
+}
+
+function StoryTeamIconOverrides(): ReactNode {
+  const [targets, setTargets] = useState<StoryTeamIconTarget[]>([]);
+
+  useLayoutEffect(() => {
+    const selectors: StoryTeamIconTarget["kind"][] = ["navigation", "selector"];
+    const createdTargets = selectors.flatMap((kind): StoryTeamIconTarget[] => {
+      const button = document.querySelector<HTMLElement>(kind === "navigation"
+        ? '.operator-balanced-workspace [data-testid="sidebar-nav-agent-teams"]'
+        : '.operator-balanced-workspace [data-context-entry="team"] button');
+      const originalIcon = button?.querySelector<SVGElement>(":scope > svg");
+      if (button === null || originalIcon === undefined || originalIcon === null) return [];
+
+      const target = document.createElement("span");
+      target.className = "operator-story-team-icon-slot";
+      target.dataset.iconPlacement = kind;
+      originalIcon.dataset.storyIconHidden = "true";
+      originalIcon.before(target);
+      return [{ kind, target }];
+    });
+
+    setTargets(createdTargets);
+    return () => {
+      createdTargets.forEach(({ target }) => {
+        const originalIcon = target.parentElement?.querySelector<SVGElement>('[data-story-icon-hidden="true"]');
+        originalIcon?.removeAttribute("data-story-icon-hidden");
+        target.remove();
+      });
+    };
+  }, []);
+
+  return targets.map(({ kind, target }) => createPortal(
+    <UsersRound aria-hidden="true" />,
+    target,
+    `story-team-icon-${kind}`,
+  ));
+}
+
+function StoryMessageCopyActions({ messages }: { messages: StoryTimelineMessage[] }): ReactNode {
+  const [targets, setTargets] = useState<StoryMessageCopyTarget[]>([]);
+
+  useLayoutEffect(() => {
+    const createdTargets: HTMLElement[] = [];
+    const nextTargets = Array.from(document.querySelectorAll<HTMLElement>(
+      '.operator-balanced-workspace [data-testid^="timeline-message-"]',
+    )).flatMap((messageElement, index): StoryMessageCopyTarget[] => {
+      const message = messages[index];
+      if (message === undefined || message.body.trim() === "") return [];
+
+      const existingActions = messageElement.querySelector<HTMLElement>(
+        ":scope > .group .mt-1.flex.h-6.items-center > span:first-child",
+      );
+      const target = document.createElement(existingActions === null ? "div" : "span");
+      target.className = existingActions === null
+        ? "operator-story-user-message-toolbar"
+        : "operator-story-agent-copy-slot";
+
+      if (existingActions !== null) {
+        existingActions.insertBefore(target, existingActions.firstChild);
+      } else {
+        messageElement.querySelector<HTMLElement>(":scope > .group")?.append(target);
+      }
+      createdTargets.push(target);
+      return [{ message, target }];
+    });
+
+    setTargets(nextTargets);
+    return () => {
+      createdTargets.forEach((target) => target.remove());
+    };
+  }, [messages]);
+
+  return targets.map(({ message, target }) => createPortal(
+    <TooltipProvider delayDuration={200} skipDelayDuration={100}>
+      <MessageAction
+        icon={Copy}
+        label="复制消息"
+        onClick={() => {
+          void navigator.clipboard?.writeText(message.body).catch(() => undefined);
+        }}
+      />
+    </TooltipProvider>,
+    target,
+    `story-copy-${message.id}`,
+  ));
+}
+
+function StoryPrimaryRunActions({ activeRun }: { activeRun: OperatorConsoleProps["activeRun"] }): ReactNode {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (activeRun?.interruptible !== true) return undefined;
+
+    const runElement = Array.from(document.querySelectorAll<HTMLElement>(
+      '.operator-balanced-workspace [data-testid="active-run-block"]',
+    )).find((element) => element.dataset.runId === activeRun.runId);
+    const actions = runElement?.querySelector<HTMLElement>(
+      ":scope .mt-1.flex.h-6.items-center > span:first-child",
+    );
+    if (actions === null || actions === undefined) return undefined;
+
+    const slot = document.createElement("span");
+    slot.className = "operator-story-active-run-stop-slot";
+    actions.firstElementChild?.after(slot);
+    setTarget(slot);
+    return () => {
+      slot.remove();
+    };
+  }, [activeRun]);
+
+  if (target === null) return null;
+  return createPortal(
+    <TooltipProvider delayDuration={200} skipDelayDuration={100}>
+      <MessageAction
+        icon={Square}
+        label="停下主理人"
+        onClick={() => undefined}
+      />
+    </TooltipProvider>,
+    target,
+  );
+}
+
+function StoryPendingIsland({
+  messages,
+  target,
+}: {
+  messages: StoryPendingMessage[];
+  target: HTMLElement;
+}): ReactNode {
+  const [items, setItems] = useState(messages);
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items : items.slice(0, 1);
+
+  useLayoutEffect(() => {
+    target.hidden = items.length === 0;
+    return () => {
+      target.hidden = false;
+    };
+  }, [items.length, target]);
+
+  return createPortal(
+    <div className="operator-story-pending-island" data-testid="story-pending-island">
+      {visibleItems.map((message) => {
+        const body = message.body.trim()
+          || message.attachments?.map((attachment) => attachment.displayName).join(", ")
+          || "附件消息";
+        return (
+          <div className="operator-story-pending-row" key={message.id}>
+            <button
+              type="button"
+              className="operator-story-pending-copy"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+              title={body}
+            >
+              {body}
+            </button>
+            <div className="operator-story-pending-actions">
+              <button
+                type="button"
+                className="operator-story-pending-action operator-story-pending-action-send"
+                aria-label={`立即发送：${body}`}
+                title="立即发送"
+                onClick={() => setItems((current) => current.filter((item) => item.id !== message.id))}
+              >
+                <ArrowUp aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="operator-story-pending-action operator-story-pending-action-remove"
+                aria-label={`删除：${body}`}
+                title="删除"
+                onClick={() => setItems((current) => current.filter((item) => item.id !== message.id))}
+              >
+                <Trash2 aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>,
+    target,
+  );
+}
+
+function StoryWorkspaceTreeToggle(): ReactNode {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [treeVisible, setTreeVisible] = useState(true);
+
+  useLayoutEffect(() => {
+    const workspace = document.querySelector<HTMLElement>(".operator-balanced-workspace");
+    if (workspace === null) return undefined;
+
+    let pathElement: HTMLElement | null = null;
+    let slot: HTMLElement | null = null;
+    const syncTarget = (): void => {
+      const nextPath = workspace.querySelector<HTMLElement>('[data-testid="selected-file-path"]');
+      if (nextPath === null || nextPath === pathElement) return;
+
+      slot?.remove();
+      pathElement = nextPath;
+      slot = document.createElement("span");
+      slot.className = "operator-story-workspace-tree-toggle-slot";
+      pathElement.append(slot);
+      setTarget(slot);
+    };
+
+    syncTarget();
+    const observer = new MutationObserver(syncTarget);
+    observer.observe(workspace, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      slot?.remove();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const changeTab = document.querySelector<HTMLElement>(
+      '.operator-balanced-workspace [data-testid="change-tab"]',
+    );
+    changeTab?.toggleAttribute("data-story-tree-hidden", !treeVisible);
+    return () => {
+      changeTab?.removeAttribute("data-story-tree-hidden");
+    };
+  }, [treeVisible, target]);
+
+  if (target === null) return null;
+  return createPortal(
+    <button
+      type="button"
+      className="operator-story-workspace-tree-toggle"
+      aria-label={treeVisible ? "隐藏文件树" : "显示文件树"}
+      aria-expanded={treeVisible}
+      title={treeVisible ? "隐藏文件树" : "显示文件树"}
+      onClick={() => setTreeVisible((visible) => !visible)}
+    >
+      <FolderTree aria-hidden="true" />
+    </button>,
+    target,
+  );
+}
+
+function BalancedWorkspace({
+  children,
+  messages,
+  pendingMessages,
+  activeRun,
+}: {
+  children: ReactNode;
+  messages: StoryTimelineMessage[];
+  pendingMessages: StoryPendingMessage[];
+  activeRun: OperatorConsoleProps["activeRun"];
+}): ReactNode {
+  const [pendingTarget, setPendingTarget] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const target = document.querySelector<HTMLElement>('.operator-balanced-workspace [data-testid="primary-pending-zone"]');
+    if (target !== null) {
+      target.setAttribute("aria-label", "待发送消息");
+    }
+    setPendingTarget(target);
+  }, [pendingMessages]);
+
+  return (
+    <div className="operator-balanced-workspace">
+      {children}
+      <StoryMessageCopyActions messages={messages} />
+      <StoryPrimaryRunActions activeRun={activeRun} />
+      <StoryTeamIconOverrides />
+      {pendingTarget !== null && pendingMessages.length > 0 ? (
+        <StoryPendingIsland messages={pendingMessages} target={pendingTarget} />
+      ) : null}
+      <StoryWorkspaceTreeToggle />
+    </div>
+  );
+}
+
+const withBalancedWorkspace: Decorator = (Story, context) => (
+  <BalancedWorkspace
+    messages={(context.args.messages ?? []) as StoryTimelineMessage[]}
+    pendingMessages={(context.args.pendingPrimaryMessages ?? []) as StoryPendingMessage[]}
+    activeRun={(context.args.activeRun ?? null) as OperatorConsoleProps["activeRun"]}
+  >
+    <Story />
+  </BalancedWorkspace>
+);
 
 const agentMarkdown = [
   "## 结论",
@@ -176,6 +482,25 @@ const traceabilityTeams: OperatorAgentTeam[] = [
       { slug: "functional-qa", displayName: "功能验收", description: "功能验证" },
       { slug: "visual-qa", displayName: "视觉验收", description: "视觉验证" },
       { slug: "release", displayName: "发布", description: "发布收尾" },
+    ],
+    status: "usable",
+    canCreateConversation: true,
+  },
+];
+
+const dashboardComposerTeams: OperatorAgentTeam[] = [
+  ...traceabilityTeams,
+  {
+    teamKey: "user:product-review",
+    id: "product-review",
+    ownership: "user",
+    name: "产品评审团队",
+    description: "用于从当前会话切换到另一套可继续执行的团队配置。",
+    primaryAgentSlug: "product-reviewer",
+    memberOrder: ["product-reviewer", "visual-qa"],
+    members: [
+      { slug: "product-reviewer", displayName: "产品评审", description: "产品复核" },
+      { slug: "visual-qa", displayName: "视觉验收", description: "视觉验证" },
     ],
     status: "usable",
     canCreateConversation: true,
@@ -420,6 +745,10 @@ export const DashboardShellAlignment: Story = {
         ],
       },
     ],
+    selectedSession: traceabilitySession,
+    conversationAgentTeamKey: "system:development",
+    agentTeamsState: { status: "ready", teams: dashboardComposerTeams },
+    onChangeSessionTeam: () => undefined,
     messages: [
       {
         ...sample.messages[0]!,
@@ -430,17 +759,40 @@ export const DashboardShellAlignment: Story = {
         body: [
           "## 对齐说明",
           "",
-          "这是一段用于检查正文占满内容列的长回复。它保留 Markdown、完整输出和成员身份，同时让正文从 24px 头像左缘向右缩进 32px。",
+          "**关键判断：** 正文、操作与行内强调必须使用稳定的字重层级。这段长回复保留 Markdown、完整输出和成员身份，同时让正文从 24px 头像左缘向右缩进 32px。",
           "",
-          "窗口变窄后，标题、消息、活动 run、待发射区和 composer 应该共同收缩，不能让根页面产生横向滚动。",
+          "窗口变窄后，标题、消息、活动 run、排队区和 composer 应该共同收缩，不能让根页面产生横向滚动。",
         ].join("\n"),
+        runTiming: {
+          stepId: "step-dashboard-alignment",
+          attempt: 1,
+          createdAt: "2026-07-11T10:01:00.000Z",
+          startedAt: "2026-07-11T10:01:00.000Z",
+          elapsedMs: 60_000,
+          completedAt: "2026-07-11T10:02:00.000Z",
+          status: "completed",
+          engine: "codex",
+          processOutputAvailable: true,
+        },
       },
     ],
     pendingPrimaryMessages: [
       {
         ...sample.messages[0]!,
         id: 41,
-        body: "等待主理人结束后继续核对窄窗。",
+        body: "等待主理人结束后继续核对窄窗，并补充右侧文件改动区域的边界与选中状态。",
+        status: "pending",
+      },
+      {
+        ...sample.messages[0]!,
+        id: 42,
+        body: "复核文件树选中状态与改动行的层次。",
+        status: "pending",
+      },
+      {
+        ...sample.messages[0]!,
+        id: 43,
+        body: "最后检查深色模式下输入框与浮岛的层次。",
         status: "pending",
       },
     ],
@@ -762,20 +1114,83 @@ export const DashboardEmptyState: Story = {
 };
 
 export const DashboardShellWithRightSidebar: Story = {
+  name: "Focused canvas · 1440 × 832",
   args: {
     ...DashboardShellAlignment.args,
+    projects: DashboardShellAlignment.args?.projects?.map((project) => ({
+      ...project,
+      isGitRepository: true,
+    })),
+    project: {
+      ...sample.project,
+      isGitRepository: true,
+    },
     rightSidebarOpen: true,
     rightSidebarTabs: {
       tabs: [{
-        id: "new-conversation",
-        type: "conversation",
-        title: "新会话",
-        sourceKey: "conversation:new",
+        id: "workspace-diff",
+        type: "workspace-diff",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
+        sourceKey: "workspace-diff:running",
         closable: true,
       }],
-      activeTabId: "new-conversation",
+      activeTabId: "workspace-diff",
+    },
+    workspaceDiff: { available: true, fileCount: 4, reason: null },
+    onRetryRun: () => undefined,
+    onAnalyzeConversation: () => undefined,
+    onLoadWorkspaceDiff: async () => ({
+      available: true,
+      fileCount: 4,
+      files: [
+        { path: "packages/console-ui/src/console/operator-console.stories.tsx", additions: 48, deletions: 7 },
+        { path: "packages/console-ui/src/styles/tokens.css", additions: 12, deletions: 6 },
+        { path: "packages/console-ui/src/console/conversation-layout.ts", additions: 8, deletions: 3 },
+        { path: "packages/console-ui/src/console/operator-console.test.tsx", additions: 26, deletions: 0 },
+      ],
+      reason: null,
+      workspaceMode: "worktree",
+    }),
+    onLoadWorkspaceDiffFile: async (_sessionId, filePath) => ({
+      available: true,
+      path: filePath,
+      reason: null,
+      lines: [
+        { kind: "unchanged", oldLineNumber: 760, newLineNumber: 760, text: "export const DashboardShellWithRightSidebar: Story = {" },
+        { kind: "deletion", oldLineNumber: 761, newLineNumber: null, text: "  args: DashboardShellAlignment.args," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 761, text: "  name: \"Focused canvas · 1440 × 832\"," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 762, text: "  decorators: [withBalancedWorkspace]," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 763, text: "  args: { ...DashboardShellAlignment.args }," },
+        { kind: "unchanged", oldLineNumber: 762, newLineNumber: 764, text: "};" },
+      ],
+    }),
+  },
+  decorators: [withBalancedWorkspace],
+  parameters: {
+    viewport: {
+      defaultViewport: "balancedDesktop",
+      viewports: {
+        balancedDesktop: {
+          name: "Balanced desktop 1440 × 832",
+          styles: { width: "1440px", height: "832px" },
+        },
+      },
     },
   },
+};
+
+export const DashboardShellWithLongComposer: Story = {
+  name: "Focused canvas · long composer",
+  args: {
+    ...DashboardShellWithRightSidebar.args,
+    composerValue: [
+      "请继续检查当前收尾方案，尤其关注右侧文件改动、主对话内容轴和输入区之间的响应式关系。",
+      "窗口变窄时不要让输入内容挤压操作按钮，也不要让 Composer 突然横向滚动。",
+      "最后请补充一份可以直接交给测试同学复核的验收说明。",
+    ].join("\n"),
+  },
+  decorators: [withBalancedWorkspace],
+  parameters: DashboardShellWithRightSidebar.parameters,
 };
 
 export const DashboardNarrowSidebarDrawer: Story = {

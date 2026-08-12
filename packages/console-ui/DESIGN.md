@@ -20,7 +20,16 @@
 ## 排版
 
 - 拉丁字体：自托管 Inter Variable（`src/styles/fonts/inter-var-latin-cv01.woff2`，latin 子集，wght 100-900 轴，OFL 1.1，license 同目录 `OFL.txt`）；CJK 回退 PingFang SC 等系统字体，取最近字重档。会话 sticky 标题、品牌名、空状态邀请语等展示性标题使用 `--font-display`（`font-display` 工具类）：Inter Tight 优先、未安装时自然回落 InterVar，配 `tracking-[-0.01em]`。
-- 字重梯度：UI 强调 `font-medium`（wght 510）、标题 `font-semibold`（wght 590）、正文 400。Tailwind 的 `fontWeight.medium/semibold` 已映射到 510/590，禁止 700+。
+- 字重只使用三档，避免同一页面靠零散的“微调字重”制造层级：
+
+  | 字重 | CSS / Tailwind | 用途 |
+  | --- | --- | --- |
+  | 400 | `font-normal` | 正文、说明文字、导航项、工具按钮与普通操作文案；当背景、图标或位置已经表达主次时，按钮不再额外加粗。 |
+  | 500 | `font-weight: 500` / `font-[500]` | 选中标签、分组/项目名和紧凑语义标签；用于建立轻度层级，不承担正文中的强强调。 |
+  | 600 | `font-weight: 600` / `font-[600]` | 品牌与页面标题、内容标题、角色名，以及富文本中的 `strong` / `b` 行内强调。 |
+
+  字重值必须使用 100 的整数倍，禁止 700+，也禁止组件局部引入 450、510、540、590、620 等中间档。CJK 系统回退会把任意中间值吸附到不同字重，固定三档才能让中英文层级稳定。
+- hover / focus / active 不改变字重，避免文字宽度变化和布局抖动；交互状态用前景色、背景色、描边或图标表达。
 - 全局 `font-feature-settings: "cv01", "ss03"`；13px 正文字距为 0，负字距只用于 ≥16px 标题。
 - 数字与相对时间用 `.tnum`（tabular-nums）。
 
