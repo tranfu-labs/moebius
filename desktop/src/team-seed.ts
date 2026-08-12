@@ -23,7 +23,6 @@ import {
   recommendationFingerprint,
   recommendationsFromManifest,
 } from "./team-official-management.js";
-import { recoverOfficialTeamUpdateTransactions } from "./team-official-update.js";
 import {
   assertSeedEntryIsNotReserved,
   deriveBuiltInTeamSeedStatus,
@@ -70,7 +69,6 @@ export async function seedBuiltInTeams(input: {
   dataRoot: string;
   preserveGeneralAssistantConflicts?: boolean;
 }): Promise<BuiltInTeamSeedResult> {
-  await recoverOfficialTeamUpdateTransactions(input.dataRoot);
   const seedTeamsRoot = path.resolve(input.seedTeamsRoot);
   const systemRoot = getSystemTeamsRoot(input.dataRoot);
   const fingerprint = await computeTeamSeedFingerprint(seedTeamsRoot);

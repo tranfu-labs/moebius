@@ -256,6 +256,33 @@ describe("round-closeout-plan 交棒五场景（一等收束信号）", () => {
     expect(view.lastPrimaryFinishAt).toBe("2026-08-10T09:04:00.000Z");
     expect(plan).toMatchObject({ kind: "start-silent", state: { kind: "in-progress", roundId: 2 } });
   });
+
+  it("主理人收束信号与上一轮收束同毫秒 → 属于当前轮，重评仍按一等信号收束而非静默兜底", () => {
+    // primary_closeout 与 round_terminal 在同一判定时刻成对落盘（同毫秒）。
+    // 重评时严格 > 会把信号误判为旧轮 → 静默兜底 30s 后 silent-closeout。
+    const lastRound = fact(1, "2026-08-10T09:05:00.000Z");
+    const messages = [message(2, "agent", "2026-08-10T09:05:00.000Z", { role: "implementation-lead" })];
+    const { view, plan } = evaluate(messages, closeout(2, "2026-08-10T09:05:00.000Z"), lastRound, "2026-08-10T09:05:00.500Z");
+    expect(view.producedContent).toBe(true);
+    expect(view.latestAgentMessageId).toBe(2);
+    expect(plan).toMatchObject({
+      kind: "record-terminal",
+      fact: { roundId: 1, outcome: "completed", terminalMessageId: 2, occurredAt: "2026-08-10T09:05:00.000Z" },
+    });
+  });
+
+  it("同一毫秒内新用户消息后收束：信号与上一轮同刻但用户消息更新 → 仍算当前轮", () => {
+    const lastRound = fact(1, "2026-08-10T09:05:00.000Z");
+    const messages = [message(5, "user", "2026-08-10T09:05:00.000Z")];
+    const { view, plan } = evaluate(messages, closeout(6, "2026-08-10T09:05:00.000Z"), lastRound, "2026-08-10T09:05:00.500Z");
+    expect(view.lastPrimaryFinishAt).toBe("2026-08-10T09:05:00.000Z");
+    // 用户消息不晚于收束（同毫秒不算新一轮开始），信号与上一轮同刻 → 当前轮
+    // 判定为 completed（与上一轮同 roundId，由 persist-skip 返回既有事实）。
+    expect(plan).toMatchObject({
+      kind: "record-terminal",
+      fact: { roundId: 1, outcome: "completed" },
+    });
+  });
 });
 
 describe("primary-closeout 事实解析与投影", () => {

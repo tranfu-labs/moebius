@@ -37,6 +37,7 @@ export async function runDesktopStartup(input: {
   executeSeedPlan(operations: readonly SeedCopyOperation[]): Promise<void>;
   seedTeams(): Promise<{ status: "seeded" | "skipped" | "conflict" }>;
   migrateOfficialBaselines(): Promise<unknown>;
+  syncOfficialTeams(): Promise<unknown>;
   startLocalConsole(): Promise<void>;
   startUpdates?(): Promise<void>;
   formatError(error: unknown): string;
@@ -94,6 +95,15 @@ export async function runDesktopStartup(input: {
     // Migration is best-effort at startup: a failure keeps the legacy state
     // untouched and is retried on the next launch (see team-official-management).
     console.error(`[moebius] official baseline migration failed: ${input.formatError(error)}`);
+  }
+  try {
+    // 08-07 product decision: after an upgrade the packaged official version is
+    // merged automatically (user intent first, the whole batch revertible).
+    await input.syncOfficialTeams();
+  } catch (error) {
+    // Auto-sync is best-effort at startup: a failure leaves teams untouched and
+    // is retried on the next launch or through the pending-merge retry entry.
+    console.error(`[moebius] official team auto-sync failed: ${input.formatError(error)}`);
   }
   await input.startLocalConsole();
   await input.startUpdates?.();

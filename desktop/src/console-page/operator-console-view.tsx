@@ -403,7 +403,10 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       }}
       onRetryAgentTeams={props.agentTeams.catalog.refresh}
       onCreateAgentTeam={props.agentTeams.recordMutations.createTeam}
-      onOpenAgentTeam={props.agentTeams.navigation.open}
+      onOpenAgentTeam={(teamKey) => {
+        props.agentTeams.navigation.open(teamKey);
+        void props.agentTeams.profile.markOfficialSyncSeen(teamKey);
+      }}
       onCloseAgentTeam={props.agentTeams.intents.close}
       onSelectAgentTeamMember={(teamKey, memberSlug) => {
         props.agentTeams.navigation.selectMember(teamKey, memberSlug);
@@ -431,7 +434,9 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onRestoreAgentRecommendedProfile={props.agentTeams.profile.restoreRecommendedProfile}
       onRestoreAgentTeamRevision={(teamKey, memberSlug, revisionId) =>
         props.agentTeams.restoreMemberRevision(teamKey, memberSlug, revisionId)}
-      onApplyOfficialAgentTeamUpdate={props.agentTeams.profile.applyOfficialUpdate}
+      onRevertAgentTeamOfficialSync={props.agentTeams.profile.revertOfficialSync}
+      onRetryAgentTeamOfficialSync={props.agentTeams.profile.retryOfficialSync}
+      onDismissAgentTeamOfficialSyncBanner={props.agentTeams.profile.dismissOfficialSyncBanner}
       onDuplicateBuiltInAgentTeam={props.agentTeams.copy.duplicateBuiltIn}
       onRecheckAgentTeam={props.agentTeams.catalog.refresh}
       onRelocateAgentTeam={props.agentTeams.recordMutations.relocateTeam}

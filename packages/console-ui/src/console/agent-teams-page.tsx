@@ -27,12 +27,13 @@ import {
   type AgentExecutionProfileDocument,
   type AgentExecutionProviderProfile,
   type AgentOfficialSyncBannerView,
-  type AgentOfficialUpdateResult,
   type AgentOfficialManagementState,
   type AgentTeamDetailMember,
   type AgentTeamRepairIssueView,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
+  officialSyncChangeSummary,
+  RevertSyncConfirmationDialog,
 } from "@/console/agent-team-detail";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
@@ -87,7 +88,13 @@ export interface OperatorAgentTeam {
   /** Present while the sync-result banner is showing on the detail page. */
   officialSyncBanner?: AgentOfficialSyncBannerView | null;
   /** Backs the "more" menu's persistent "recent official sync" entry once the banner has been dismissed. */
-  recentOfficialSync?: AgentOfficialSyncBannerView & { timeLabel: string } | null;
+  recentOfficialSync?: AgentOfficialSyncBannerView & { occurredAt: string } | null;
+  /** Official changes still waiting for the default Agent or the one-time merge. */
+  pendingOfficialSync?: {
+    officialVersion: string;
+    reason: "CONSERVATIVE_BASELINE" | "DEFAULT_AGENT_UNAVAILABLE";
+    pendingMemberSlugs: string[];
+  } | null;
 }
 
 export type OperatorAgentTeamsState =
@@ -175,8 +182,10 @@ export function AgentTeamsPage({
   onSaveAll,
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
-  onApplyOfficialUpdate,
   onRestoreRevision,
+  onRevertOfficialSync,
+  onRetryOfficialSync,
+  onDismissOfficialSyncBanner,
   onViewSyncChanges,
   onRevertSync,
   onDismissSyncBanner,
@@ -247,7 +256,9 @@ export function AgentTeamsPage({
     teamKey: string,
     memberSlug: string,
   ) => Promise<AgentExecutionProfileDocument>;
-  onApplyOfficialUpdate?: (teamKey: string) => Promise<AgentOfficialUpdateResult>;
+  onRevertOfficialSync?: (teamKey: string) => void | Promise<void>;
+  onRetryOfficialSync?: (teamKey: string) => void | Promise<void>;
+  onDismissOfficialSyncBanner?: (teamKey: string) => void;
   onRestoreRevision?: (teamKey: string, memberSlug: string, revisionId: string) => void | Promise<void>;
   onViewSyncChanges?: (teamKey: string) => void;
   onRevertSync?: (teamKey: string) => void | Promise<void>;
@@ -578,6 +589,10 @@ export function AgentTeamsPage({
                   onDismissSyncBanner={onDismissSyncBanner === undefined
                     ? undefined
                     : () => onDismissSyncBanner(openedTeam.teamKey)}
+                  pendingOfficialSync={openedTeam.pendingOfficialSync}
+                  onRetryOfficialSync={onRetryOfficialSync === undefined
+                    ? undefined
+                    : () => onRetryOfficialSync(openedTeam.teamKey)}
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
@@ -740,18 +755,6 @@ export function AgentTeamsPage({
                   onRestoreRecommendedProfile={onRestoreRecommendedProfile === undefined
                     ? undefined
                     : (memberSlug) => onRestoreRecommendedProfile(openedTeam.teamKey, memberSlug)}
-                  onApplyOfficialUpdate={openedTeam.ownership === "system" && onApplyOfficialUpdate !== undefined
-                    ? () => onApplyOfficialUpdate(openedTeam.teamKey)
-                    : undefined}
-                  onOpenCopiedTeam={(teamId) => {
-                    const teamKey = `user:${teamId}`;
-                    if (state.status !== "ready"
-                      || !state.teams.some((team) => team.teamKey === teamKey)) {
-                      return;
-                    }
-                    setView({ kind: "team-detail", teamKey });
-                    onOpenTeam?.(teamKey);
-                  }}
                   onRecheck={onRecheckTeam === undefined ? undefined : () => onRecheckTeam(openedTeam.teamKey)}
                   onRelocate={openedTeam.ownership === "user"
                     && hasTeamLocationIssue(openedTeam)
@@ -1020,17 +1023,18 @@ export function AgentTeamsPage({
 }
 
 function RecentOfficialSyncPanel({ view, onViewChanges, onRevert }: {
-  view: AgentOfficialSyncBannerView & { timeLabel: string };
+  view: AgentOfficialSyncBannerView & { occurredAt: string };
   onViewChanges: () => void;
   onRevert?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
+  const [revertPromptOpen, setRevertPromptOpen] = useState(false);
   return (
     <div className="mt-3 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status" data-testid="recent-official-sync-panel">
       <p className="text-sm font-medium text-ink">
-        {t("console.agentTeamDetail.syncedToAt", { version: view.officialVersion, time: view.timeLabel })}
+        {t("console.agentTeamDetail.syncedToAt", { version: view.officialVersion, time: formatSyncTime(t, view.occurredAt) })}
       </p>
-      <p className="mt-1 text-sm leading-6 text-sub">{view.changeSummary}</p>
+      <p className="mt-1 text-sm leading-6 text-sub">{officialSyncChangeSummary(t, view.memberChanges)}</p>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         {/* The action itself is component-owned (AgentTeamDetail signal); this button
             only forwards the request, so it never depends on a container callback. */}
@@ -1038,13 +1042,55 @@ function RecentOfficialSyncPanel({ view, onViewChanges, onRevert }: {
           {t("console.agentTeamDetail.viewSyncChanges")}
         </Button>
         {onRevert !== undefined ? (
-          <Button type="button" variant="outline" size="sm" onClick={onRevert}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setRevertPromptOpen(true)}>
             {t("console.agentTeamDetail.revertSync")}
           </Button>
         ) : null}
       </div>
+      {revertPromptOpen ? (
+        <RevertSyncConfirmationDialog
+          officialVersion={view.officialVersion}
+          affectedMemberCount={view.affectedMemberCount}
+          onCancel={() => setRevertPromptOpen(false)}
+          onConfirm={() => {
+            setRevertPromptOpen(false);
+            onRevert?.();
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+/** Coarse relative time for the recent-sync panel; absolute date past one month. */
+function formatSyncTime(t: Translate, iso: string): string {
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) {
+    return iso;
+  }
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  if (elapsedMs < minuteMs) {
+    return t("console.agentTeamDetail.syncTimeJustNow");
+  }
+  if (elapsedMs < hourMs) {
+    return t("console.agentTeamDetail.syncTimeMinutesAgo", {
+      minutes: String(Math.floor(elapsedMs / minuteMs)),
+    });
+  }
+  if (elapsedMs < dayMs) {
+    return t("console.agentTeamDetail.syncTimeHoursAgo", {
+      hours: String(Math.floor(elapsedMs / hourMs)),
+    });
+  }
+  if (elapsedMs < 30 * dayMs) {
+    return t("console.agentTeamDetail.syncTimeDaysAgo", {
+      days: String(Math.floor(elapsedMs / dayMs)),
+    });
+  }
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function TeamMoreMenu({
@@ -1421,9 +1467,6 @@ function AgentTeamRow({
             {team.officialManagement?.customizationStatus === "customized"
               ? <TeamStatusBadge kind="customized" />
               : null}
-            {team.officialManagement?.updateStatus === "available"
-              ? <TeamStatusBadge kind="update" />
-              : null}
             {team.hasUnseenOfficialSync === true ? <TeamStatusBadge kind="synced" /> : null}
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
@@ -1461,31 +1504,27 @@ function AgentTeamRow({
 }
 
 function TeamStatusBadge({ kind }: {
-  kind: "official" | "customized" | "update" | "synced" | "unfinished" | "needs-repair";
+  kind: "official" | "customized" | "synced" | "unfinished" | "needs-repair";
 }): JSX.Element {
   const { t } = useI18n();
   const label = kind === "official"
     ? t("console.agentTeams.official")
     : kind === "customized"
       ? t("console.agentTeams.customized")
-      : kind === "update"
-        ? t("console.agentTeams.updateAvailable")
-        : kind === "synced"
-          ? t("console.agentTeams.hasUnseenOfficialSync")
-          : kind === "unfinished"
-            ? t("console.agentTeams.unfinished")
-            : t("console.agentTeams.needsRepair");
+      : kind === "synced"
+        ? t("console.agentTeams.hasUnseenOfficialSync")
+        : kind === "unfinished"
+          ? t("console.agentTeams.unfinished")
+          : t("console.agentTeams.needsRepair");
   return (
     <span
       className={cn(
         "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-[11.5px] font-medium",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
-          : kind === "update"
-            ? "border-[var(--status-info-line)] bg-[var(--status-info-bg)] text-[color:var(--status-info-fg)]"
-            : kind === "unfinished" || kind === "customized" || kind === "synced"
-              ? "border-line-strong text-hint"
-              : "border-line-strong bg-sunken text-sub",
+          : kind === "unfinished" || kind === "customized" || kind === "synced"
+            ? "border-line-strong text-hint"
+            : "border-line-strong bg-sunken text-sub",
       )}
     >
       {label}

@@ -3545,15 +3545,15 @@ function markSessionResultRead(
   database: SqliteDatabase,
   input: Extract<SqliteStateCommand, { kind: "local-mark-session-result-read" }>,
 ): boolean {
+  // 读状态变化不是内容活动：不推进 updated_at（否则会破坏轮次剪枝并扰动会话排序）。
   const result = database
     .prepare(
       `UPDATE sessions
        SET unread_since = NULL,
-           read_state_revision = read_state_revision + 1,
-           updated_at = ?
+           read_state_revision = read_state_revision + 1
        WHERE session_id = ? AND source_type = 'local' AND unread_since = ?`,
     )
-    .run(input.now, input.sessionId, input.unreadSince);
+    .run(input.sessionId, input.unreadSince);
   return Number(result.changes ?? 0) === 1;
 }
 
@@ -3591,32 +3591,29 @@ function updateSessionReadState(
         .prepare(
           `UPDATE sessions
            SET attention_acknowledged_revision = attention_revision,
-               read_state_revision = read_state_revision + 1,
-               updated_at = ?
+               read_state_revision = read_state_revision + 1
            WHERE session_id = ?`,
         )
-        .run(input.now, input.sessionId);
+        .run(input.sessionId);
     } else if (input.action === "mark-read-unread") {
       database
         .prepare(
           `UPDATE sessions
            SET unread_since = NULL, manual_unread_at = NULL,
                manual_unread_requires_leave = 0,
-               read_state_revision = read_state_revision + 1,
-               updated_at = ?
+               read_state_revision = read_state_revision + 1
            WHERE session_id = ?`,
         )
-        .run(input.now, input.sessionId);
+        .run(input.sessionId);
     } else {
       database
         .prepare(
           `UPDATE sessions
            SET manual_unread_at = ?, manual_unread_requires_leave = ?,
-               read_state_revision = read_state_revision + 1,
-               updated_at = ?
+               read_state_revision = read_state_revision + 1
            WHERE session_id = ?`,
         )
-        .run(input.now, input.isCurrent ? 1 : 0, input.now, input.sessionId);
+        .run(input.now, input.isCurrent ? 1 : 0, input.sessionId);
     }
     return requireLocalSession(database, input.sessionId);
   });
@@ -3630,12 +3627,11 @@ function armSessionManualUnread(
     .prepare(
       `UPDATE sessions
        SET manual_unread_requires_leave = 0,
-           read_state_revision = read_state_revision + 1,
-           updated_at = ?
+           read_state_revision = read_state_revision + 1
        WHERE session_id = ? AND source_type = 'local'
          AND manual_unread_at IS NOT NULL AND manual_unread_requires_leave <> 0`,
     )
-    .run(input.now, input.sessionId);
+    .run(input.sessionId);
   return requireLocalSession(database, input.sessionId);
 }
 
@@ -3647,12 +3643,11 @@ function markSessionViewed(
     .prepare(
       `UPDATE sessions
        SET manual_unread_at = NULL, manual_unread_requires_leave = 0,
-           read_state_revision = read_state_revision + 1,
-           updated_at = ?
+           read_state_revision = read_state_revision + 1
        WHERE session_id = ? AND source_type = 'local'
          AND manual_unread_at IS NOT NULL AND manual_unread_requires_leave = 0`,
     )
-    .run(input.now, input.sessionId);
+    .run(input.sessionId);
   return requireLocalSession(database, input.sessionId);
 }
 

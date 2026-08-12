@@ -108,6 +108,64 @@ describe("AgentTeamsPage built-in duplication", () => {
   });
 });
 
+describe("AgentTeamsPage official sync revert confirmation", () => {
+  it("asks for confirmation with the reverted version and member count before reverting from the recent-sync panel", async () => {
+    const onRevertSync = vi.fn();
+    const syncedTeam: OperatorAgentTeam = {
+      ...builtInTeam,
+      recentOfficialSync: {
+        officialVersion: "2",
+        affectedMemberCount: 1,
+        memberChanges: {
+          added: ["dev"],
+          removed: [],
+          renamed: [],
+          adopted: [],
+          recommendationChanged: [],
+          keptOverridden: [],
+          collidedMembers: [],
+          mergedMembers: [],
+          pendingMergeMembers: [],
+        },
+        occurredAt: "2026-08-11T00:00:00.000Z",
+      },
+    };
+    render(
+      <AgentTeamsPage
+        state={{ status: "ready", teams: [syncedTeam] }}
+        detailState={detailStateFor(syncedTeam.teamKey)}
+        useStackedRows={false}
+        onOpenTeam={() => undefined}
+        onCloseTeam={() => undefined}
+        onSelectMember={() => undefined}
+        onChangePrimaryAgent={() => undefined}
+        onChangeMember={() => undefined}
+        onSaveMember={() => undefined}
+        onRetryMember={() => undefined}
+        onDiscardMember={() => undefined}
+        onDiscardAll={() => undefined}
+        onSaveAll={async () => ({ failures: [] })}
+        onRevertSync={onRevertSync}
+        onBack={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("agent-team-row"));
+    fireEvent.keyDown(screen.getByRole("button", { name: "开发团队 的操作" }), { key: "ArrowDown" });
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: "最近的官方同步" }));
+
+    const panel = screen.getByTestId("recent-official-sync-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "撤销这次同步" }));
+    const dialog = screen.getByRole("dialog", { name: "撤销这次同步" });
+    expect(dialog.textContent).toContain("官方 2");
+    expect(dialog.textContent).toContain("1 名成员");
+    expect(onRevertSync).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "撤销同步" }));
+    expect(onRevertSync).toHaveBeenCalledWith(syncedTeam.teamKey);
+  });
+});
+
 describe("AgentTeamsPage creation entry", () => {
   it("opens a two-path menu, uses the page body for AI building, and keeps blank creation in the dialog", async () => {
     const onStart = vi.fn(async () => null);

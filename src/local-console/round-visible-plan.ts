@@ -17,7 +17,7 @@ export interface VisibleDotFacts {
   hasUnread: boolean;
   /** 正在运行/待发射工作（进行中轮或活动工作）。 */
   isRunning: boolean;
-  /** 需要用户处理（awaiting-user / silent-closeout 结论）。 */
+  /** 需要用户处理（awaiting-user 结论；silent-closeout 不单独点亮，见 needsAttention 投影）。 */
   needsAttention: boolean;
   /** 非延续会话（项目不可用等）优先红点。 */
   isNonContinuable: boolean;
@@ -96,7 +96,7 @@ export function projectDockSessionFacts(session: {
       needsAttention: session.awaitsHumanReason !== null
         || (roundState !== null
           && roundState.kind === "terminal"
-          && (roundState.fact?.outcome === "awaiting-user" || roundState.fact?.outcome === "silent-closeout")),
+          && roundState.fact?.outcome === "awaiting-user"),
       isNonContinuable: session.continuation !== null
         && session.continuation !== undefined
         && session.continuation.canContinue === false,

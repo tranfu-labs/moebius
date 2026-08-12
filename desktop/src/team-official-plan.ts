@@ -53,35 +53,21 @@ export interface PackagedOfficialTeamState {
   contentFingerprint: string;
 }
 
-export type OfficialTeamPrimaryAction =
-  | "none"
-  | "update"
-  | "register"
-  | "protect-and-update"
-  | "retry";
+export type OfficialTeamCustomizationStatus = "clean" | "customized" | "unknown";
 
-export interface OfficialTeamUpdateState {
-  currentOfficialVersion: string;
-  latestOfficialVersion: string;
-  customizationStatus: "clean" | "customized" | "unknown";
-  updateStatus: "current" | "available" | "unknown";
-  primaryAction: OfficialTeamPrimaryAction;
-  requiresProtectiveCopy: boolean;
+/**
+ * Member-level delta between the applied official baseline A and the packaged
+ * latest official version C. Shared by the auto-sync planner; the page only
+ * consumes `customizationStatus` (see `deriveOfficialTeamCustomizationStatus`).
+ */
+export interface OfficialTeamMemberChanges {
   addedMembers: string[];
   removedMembers: string[];
   renamedMembers: Array<{ from: string; to: string }>;
   recommendationChangedMembers: string[];
-  protectedMembers: string[];
-  collidingMembers: string[];
-  reasonCode:
-    | "CURRENT"
-    | "CLEAN_UPDATE"
-    | "CONTENT_ALREADY_LATEST"
-    | "CUSTOMIZED_UPDATE"
-    | "PROTECTED_MEMBER_REMOVAL"
-    | "USER_MEMBER_COLLISION"
-    | "CONSERVATIVE_BASELINE"
-    | "COMPARISON_UNAVAILABLE";
+  packagedRecommendations: Record<string, ExecutionProfile>;
+  packagedRecommendationFingerprint: string;
+  hasOfficialUpdate: boolean;
 }
 
 export function parsePackagedOfficialTeamManifest(
@@ -212,13 +198,26 @@ export function planAppliedBaselineMigration(input: {
     : { confidence: "conservative", backfillContent: null };
 }
 
-export function deriveOfficialTeamUpdateState(input: {
+export function deriveOfficialTeamCustomizationStatus(input: {
   applied: AppliedOfficialTeamState;
   currentContentFingerprint: string | null;
-  currentMemberSlugs: readonly string[];
+}): OfficialTeamCustomizationStatus {
+  if (input.currentContentFingerprint === null) return "unknown";
+  return input.currentContentFingerprint === input.applied.appliedContentFingerprint
+    ? "clean"
+    : "customized";
+}
+
+/**
+ * Computes the member-level delta between the applied baseline A and the
+ * packaged latest official version C. Protection decisions (removed overrides,
+ * user-member collisions) live in the auto-sync planner, which also consumes
+ * these lists.
+ */
+export function computeOfficialTeamMemberChanges(input: {
+  applied: AppliedOfficialTeamState;
   packaged: PackagedOfficialTeamState;
-  bindings: Readonly<Record<string, ExecutionProfileBinding>>;
-}): OfficialTeamUpdateState {
+}): OfficialTeamMemberChanges {
   const appliedSlugs = Object.keys(input.applied.appliedRecommendations);
   const packagedSlugs = Object.keys(input.packaged.manifest.members);
   const addedMembers = packagedSlugs.filter((slug) => !appliedSlugs.includes(slug)).sort(compareNames);
@@ -234,85 +233,19 @@ export function deriveOfficialTeamUpdateState(input: {
       || profileFingerprint(input.applied.appliedRecommendations[slug]!)
         !== profileFingerprint(packagedRecommendations[slug]!))
     .sort(compareNames);
-  const protectedMembers = removedMembers.filter((slug) =>
-    input.bindings[slug]?.source === "override");
-  const currentMemberSet = new Set(input.currentMemberSlugs);
-  const appliedMemberSet = new Set(appliedSlugs);
-  const collidingMembers = addedMembers.filter((slug) =>
-    currentMemberSet.has(slug) && !appliedMemberSet.has(slug));
   const packagedRecommendationFingerprint = recommendationFingerprint(packagedRecommendations);
   const hasOfficialUpdate =
     input.applied.appliedOfficialVersion !== input.packaged.manifest.officialVersion
     || input.applied.appliedContentFingerprint !== input.packaged.contentFingerprint
     || input.applied.appliedRecommendationFingerprint !== packagedRecommendationFingerprint;
-
-  const shared = {
-    currentOfficialVersion: input.applied.appliedOfficialVersion,
-    latestOfficialVersion: input.packaged.manifest.officialVersion,
+  return {
     addedMembers,
     removedMembers,
     renamedMembers,
     recommendationChangedMembers,
-    protectedMembers,
-    collidingMembers,
-  };
-  if (input.currentContentFingerprint === null) {
-    return makeState(shared, "unknown", "unknown", "retry", "COMPARISON_UNAVAILABLE");
-  }
-  const customized = input.currentContentFingerprint !== input.applied.appliedContentFingerprint;
-  const contentAlreadyLatest = input.currentContentFingerprint === input.packaged.contentFingerprint;
-  const protectionReason = protectedMembers.length > 0
-    ? "PROTECTED_MEMBER_REMOVAL"
-    : collidingMembers.length > 0
-      ? "USER_MEMBER_COLLISION"
-      : input.applied.baselineConfidence === "conservative"
-        ? "CONSERVATIVE_BASELINE"
-        : null;
-  const requiresProtectiveCopy = hasOfficialUpdate
-    && (protectionReason !== null || (customized && !contentAlreadyLatest));
-
-  if (!hasOfficialUpdate) {
-    return makeState(shared, customized ? "customized" : "clean", "current", "none", "CURRENT");
-  }
-  if (requiresProtectiveCopy) {
-    return makeState(
-      shared,
-      customized ? "customized" : "clean",
-      "available",
-      "protect-and-update",
-      protectionReason ?? "CUSTOMIZED_UPDATE",
-      true,
-    );
-  }
-  if (contentAlreadyLatest && customized) {
-    return makeState(shared, "customized", "available", "register", "CONTENT_ALREADY_LATEST");
-  }
-  return makeState(shared, "clean", "available", "update", "CLEAN_UPDATE");
-}
-
-function makeState(
-  shared: Pick<OfficialTeamUpdateState,
-    | "currentOfficialVersion"
-    | "latestOfficialVersion"
-    | "addedMembers"
-    | "removedMembers"
-    | "renamedMembers"
-    | "recommendationChangedMembers"
-    | "protectedMembers"
-    | "collidingMembers">,
-  customizationStatus: OfficialTeamUpdateState["customizationStatus"],
-  updateStatus: OfficialTeamUpdateState["updateStatus"],
-  primaryAction: OfficialTeamPrimaryAction,
-  reasonCode: OfficialTeamUpdateState["reasonCode"],
-  requiresProtectiveCopy = false,
-): OfficialTeamUpdateState {
-  return {
-    ...shared,
-    customizationStatus,
-    updateStatus,
-    primaryAction,
-    requiresProtectiveCopy,
-    reasonCode,
+    packagedRecommendations,
+    packagedRecommendationFingerprint,
+    hasOfficialUpdate,
   };
 }
 

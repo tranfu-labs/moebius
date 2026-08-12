@@ -65,6 +65,10 @@ export function planOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTea
     canDeleteTeam: team.capabilities?.canDeleteTeam ?? team.ownership === "user",
     issues: team.issues,
     officialManagement: team.officialManagement,
+    hasUnseenOfficialSync: team.hasUnseenOfficialSync,
+    officialSyncBanner: team.officialSyncBanner,
+    recentOfficialSync: team.recentOfficialSync,
+    pendingOfficialSync: team.pendingOfficialSync,
   };
 }
 
@@ -492,12 +496,11 @@ export function planAgentTeamProfileOperation(
   return team !== undefined && hasOperation ? "run" : "unavailable";
 }
 
-export function planAgentTeamOfficialUpdate(
+export function planAgentTeamOfficialSync(
   team: OperatorAgentTeam | undefined,
-  hasPrepare: boolean,
-  hasApply: boolean,
+  hasOperation: boolean,
 ): "run" | "unavailable" {
-  return team?.ownership === "system" && hasPrepare && hasApply ? "run" : "unavailable";
+  return team?.ownership === "system" && hasOperation ? "run" : "unavailable";
 }
 
 export function planAgentTeamCatalogReplace(

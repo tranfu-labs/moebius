@@ -21,10 +21,7 @@ import type {
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
   AgentTeamMemberOrderWriteRequest,
-  AgentTeamOfficialUpdateCommitRequest,
-  AgentTeamOfficialUpdateCommitResponse,
-  AgentTeamOfficialUpdatePrepareResponse,
-  AgentTeamOfficialUpdateRequest,
+  AgentTeamOfficialSyncRequest,
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamTrashUserRequest,
   AgentTeamUpdateInformationRequest,
@@ -161,12 +158,14 @@ export interface DesktopApi {
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
-  prepareAgentTeamOfficialUpdate?: (
-    request: AgentTeamOfficialUpdateRequest,
-  ) => Promise<AgentTeamOfficialUpdatePrepareResponse>;
-  applyAgentTeamOfficialUpdate?: (
-    request: AgentTeamOfficialUpdateCommitRequest,
-  ) => Promise<AgentTeamOfficialUpdateCommitResponse>;
+  revertAgentTeamOfficialSync?: (
+    request: AgentTeamOfficialSyncRequest,
+  ) => Promise<AgentTeamListItem>;
+  retryAgentTeamOfficialSync?: (
+    request: AgentTeamOfficialSyncRequest,
+  ) => Promise<AgentTeamListItem>;
+  dismissAgentTeamOfficialSyncBanner?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
+  markAgentTeamOfficialSyncSeen?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
   checkAgentTeamMemberExternalChange?: (
     request: AgentTeamExternalChangeRequest,
   ) => Promise<AgentTeamExternalChangeResponse>;

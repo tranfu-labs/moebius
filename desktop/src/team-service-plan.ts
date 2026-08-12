@@ -11,11 +11,9 @@ import {
   type AgentTeamMemberRequest,
   type AgentTeamMemberWriteRequest,
   type AgentTeamMemberOrderWriteRequest,
-  type AgentTeamOfficialUpdateCommitRequest,
   type AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
 import { isValidPathSegment, type TeamDefinition, type TeamInformation, type TeamOwnership } from "./team-model.js";
-import type { PreparedOfficialTeamUpdate } from "./team-official-update.js";
 import type { TeamSnapshot } from "./team-store.js";
 import type { TeamOnboardingOrchestrationReadResult } from "./team-onboarding-orchestration-plan.js";
 
@@ -294,22 +292,9 @@ export function parseExecutionProfilesReplaceRequest(value: unknown): AgentTeamE
 export function parseOfficialTeamRequest(value: unknown): { teamId: string; ownership: "system" } {
   const request = parseTeamRequest(value);
   if (request.ownership !== "system") {
-    throw new AgentTeamIpcRequestError("只有官方来源团队可以检查官方更新。");
+    throw new AgentTeamIpcRequestError("只有官方来源团队可以执行官方同步操作。");
   }
   return { teamId: request.teamId, ownership: "system" };
-}
-
-export function parseOfficialUpdateCommitRequest(value: unknown): AgentTeamOfficialUpdateCommitRequest {
-  if (!isPlainObject(value) || !isPlainObject(value.plan)) {
-    throw new AgentTeamIpcRequestError("需要有效的官方团队更新计划。");
-  }
-  const plan = value.plan;
-  if (plan.schemaVersion !== 1 || typeof plan.planId !== "string" || typeof plan.teamId !== "string"
-    || typeof plan.inputFingerprint !== "string" || !isPlainObject(plan.state)
-    || (plan.copyTeamId !== null && typeof plan.copyTeamId !== "string")) {
-    throw new AgentTeamIpcRequestError("官方团队更新计划无效。");
-  }
-  return { plan: plan as unknown as PreparedOfficialTeamUpdate };
 }
 
 export function parseTeamRequest(value: unknown): AgentTeamMemberAddRequest {

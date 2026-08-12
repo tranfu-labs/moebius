@@ -60,6 +60,56 @@ describe("local console sidebar metadata", () => {
     await reopened.close();
   });
 
+  it("read-state mutations do not advance the session updatedAt (reads are not activity)", async () => {
+    const { store } = await fixtureStore();
+    await store.createSession({
+      sessionId: "readonly",
+      title: "读操作",
+      now: "2026-07-30T00:00:00.000Z",
+    });
+    await store.recordSystemMessage({
+      sessionId: "readonly",
+      body: "失败",
+      runId: null,
+      runDir: null,
+      error: "failed",
+      status: "failed",
+      systemEventKind: "run-not-started",
+      role: null,
+      processSteps: [],
+      now: "2026-07-30T00:00:01.000Z",
+    });
+    const afterActivity = (await store.listSessions()).find((session) => session.sessionId === "readonly");
+    expect(afterActivity?.updatedAt).toBe("2026-07-30T00:00:01.000Z");
+
+    await store.updateSessionReadState({
+      sessionId: "readonly",
+      action: "mark-read-attention",
+      expectedAttentionRevision: 1,
+      expectedReadStateRevision: 0,
+      expectedTitleRevision: 0,
+      isCurrent: false,
+      now: "2026-07-30T00:00:02.000Z",
+    });
+    const afterAck = (await store.listSessions()).find((session) => session.sessionId === "readonly");
+    expect(afterAck?.updatedAt).toBe("2026-07-30T00:00:01.000Z");
+    expect(afterAck?.hasUnacknowledgedAttention).toBe(false);
+
+    await store.updateSessionReadState({
+      sessionId: "readonly",
+      action: "mark-unread",
+      expectedAttentionRevision: 1,
+      expectedReadStateRevision: 1,
+      expectedTitleRevision: 0,
+      isCurrent: false,
+      now: "2026-07-30T00:00:03.000Z",
+    });
+    const afterUnread = (await store.listSessions()).find((session) => session.sessionId === "readonly");
+    expect(afterUnread?.updatedAt).toBe("2026-07-30T00:00:01.000Z");
+    expect(afterUnread?.manualUnreadAt).toBe("2026-07-30T00:00:03.000Z");
+    await store.close();
+  });
+
   it("acknowledges one attention revision and alerts again only for a later fact", async () => {
     const { store, sqlitePath } = await fixtureStore();
     await store.createSession({

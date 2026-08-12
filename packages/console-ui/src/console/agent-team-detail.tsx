@@ -110,18 +110,7 @@ interface AgentExecutionProfileEditorState {
 }
 
 export interface AgentOfficialManagementState {
-  currentOfficialVersion?: string;
-  latestOfficialVersion?: string;
   customizationStatus: "clean" | "customized" | "unknown";
-  updateStatus: "current" | "available" | "unknown";
-  primaryAction: "none" | "update" | "register" | "protect-and-update" | "retry";
-  requiresProtectiveCopy: boolean;
-  addedMembers: string[];
-  removedMembers: string[];
-  renamedMembers?: Array<{ from: string; to: string }>;
-  recommendationChangedMembers: string[];
-  protectedMembers: string[];
-  collidingMembers: string[];
 }
 
 export type AgentTeamRepairIssueCode =
@@ -200,21 +189,22 @@ export interface AgentTeamDetailState {
   portraitChangeError?: string | null;
 }
 
-export interface AgentOfficialUpdateResult {
-  copiedTeamId: string | null;
-  appliedOfficialVersion: string;
-  memberChanges: {
-    added: string[];
-    removed: string[];
-    renamed: Array<{ from: string; to: string }>;
-    recommendationChanged: string[];
-  };
+export interface AgentOfficialSyncMemberChanges {
+  added: string[];
+  removed: string[];
+  renamed: Array<{ from: string; to: string }>;
+  adopted: string[];
+  recommendationChanged: string[];
+  keptOverridden: string[];
+  collidedMembers: string[];
+  mergedMembers: string[];
+  pendingMergeMembers: string[];
 }
 
 export interface AgentOfficialSyncBannerView {
   officialVersion: string;
-  changeSummary: string;
   affectedMemberCount: number;
+  memberChanges: AgentOfficialSyncMemberChanges;
 }
 
 export type AgentTeamGuardedAction = (action: () => void | Promise<void>) => void;
@@ -272,11 +262,16 @@ export interface AgentTeamDetailProps {
   onRestoreRecommendedProfile?(memberSlug: string): Promise<AgentExecutionProfileDocument>;
   providerProfiles?: readonly AgentExecutionProviderProfile[];
   onOpenProviderSettings?(): void;
-  onApplyOfficialUpdate?(): Promise<AgentOfficialUpdateResult>;
-  onOpenCopiedTeam?(teamId: string): void;
   onRestoreRevision?(memberSlug: string, revisionId: string): void | Promise<void>;
   /** Present only after an official sync; the banner is component-owned and needs no container. */
   officialSyncBanner?: AgentOfficialSyncBannerView | null;
+  /** Official changes still waiting for the default Agent or the one-time merge. */
+  pendingOfficialSync?: {
+    officialVersion: string;
+    reason: "CONSERVATIVE_BASELINE" | "DEFAULT_AGENT_UNAVAILABLE";
+    pendingMemberSlugs: string[];
+  } | null;
+  onRetryOfficialSync?(): void | Promise<void>;
   onViewSyncChanges?(): void;
   /**
    * Incrementing request from a container-owned surface (e.g. the "recent official sync" panel)
@@ -360,10 +355,10 @@ export function AgentTeamDetail({
   onRestoreRecommendedProfile,
   providerProfiles = [],
   onOpenProviderSettings,
-  onApplyOfficialUpdate,
-  onOpenCopiedTeam,
   onRestoreRevision,
   officialSyncBanner,
+  pendingOfficialSync,
+  onRetryOfficialSync,
   onViewSyncChanges,
   viewSyncChangesSignal,
   onRevertSync,
@@ -375,6 +370,7 @@ export function AgentTeamDetail({
   const pendingGuardedActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [externalConflictPromptOpen, setExternalConflictPromptOpen] = useState(false);
+  const [revertSyncPromptOpen, setRevertSyncPromptOpen] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [addMemberStatus, setAddMemberStatus] = useState<"idle" | "adding" | "failed">("idle");
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
@@ -434,9 +430,8 @@ export function AgentTeamDetail({
     setTeamNameDraft(team.name ?? "");
     setTeamDescriptionDraft(team.description ?? "");
   };
-  const [officialUpdateStatus, setOfficialUpdateStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
-  const [officialUpdateMessage, setOfficialUpdateMessage] = useState<string | null>(null);
-  const [officialUpdateCopyTeamId, setOfficialUpdateCopyTeamId] = useState<string | null>(null);
+  const [pendingSyncAction, setPendingSyncAction] = useState<"idle" | "running" | "failed">("idle");
+  const [pendingSyncError, setPendingSyncError] = useState<string | null>(null);
   /** The expanded member revision timeline lives on the detail; it is not a container concern. */
   const [expandedTimelineMemberSlug, setExpandedTimelineMemberSlug] = useState<string | null>(null);
   const pendingSyncChangesTargetRef = useRef<string | null>(null);
@@ -705,21 +700,18 @@ export function AgentTeamDetail({
     }
   };
 
-  const applyOfficialUpdate = async () => {
-    if (onApplyOfficialUpdate === undefined || officialUpdateStatus === "saving") {
+  const runPendingSyncAction = async () => {
+    if (pendingSyncAction === "running" || onRetryOfficialSync === undefined) {
       return;
     }
-    setOfficialUpdateStatus("saving");
-    setOfficialUpdateMessage(null);
-    setOfficialUpdateCopyTeamId(null);
+    setPendingSyncAction("running");
+    setPendingSyncError(null);
     try {
-      const result = await onApplyOfficialUpdate();
-      setOfficialUpdateStatus("saved");
-      setOfficialUpdateCopyTeamId(result.copiedTeamId);
-      setOfficialUpdateMessage(formatOfficialUpdateResult(t, result));
+      await onRetryOfficialSync();
+      setPendingSyncAction("idle");
     } catch (error) {
-      setOfficialUpdateStatus("failed");
-      setOfficialUpdateMessage(error instanceof Error ? error.message : String(error));
+      setPendingSyncAction("failed");
+      setPendingSyncError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -1027,11 +1019,6 @@ export function AgentTeamDetail({
                   {t("console.agentTeamDetail.customized")}
                 </span>
               ) : null}
-              {team.officialManagement?.updateStatus === "available" ? (
-                <span className="shrink-0 rounded-sm bg-sel px-1.5 py-0.5 text-[11px] font-medium text-ink">
-                  {t("console.agentTeamDetail.updateAvailable")}
-                </span>
-              ) : null}
               {readOnly ? (
                 <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-hint">
                   {t("console.agentTeamDetail.readOnly")}
@@ -1131,7 +1118,7 @@ export function AgentTeamDetail({
                     count: officialSyncBanner.affectedMemberCount,
                   })}
                 </p>
-                <p className="mt-1 text-sm leading-6 text-sub">{officialSyncBanner.changeSummary}</p>
+                <p className="mt-1 text-sm leading-6 text-sub">{officialSyncChangeSummary(t, officialSyncBanner.memberChanges)}</p>
               </div>
               <button
                 type="button"
@@ -1149,7 +1136,12 @@ export function AgentTeamDetail({
                 {t("console.agentTeamDetail.viewSyncChanges")}
               </Button>
               {onRevertSync !== undefined ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => requestGuardedAction(onRevertSync)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => requestGuardedAction(() => setRevertSyncPromptOpen(true))}
+                >
                   {t("console.agentTeamDetail.revertSync")}
                 </Button>
               ) : null}
@@ -1157,115 +1149,45 @@ export function AgentTeamDetail({
           </div>
         ) : null}
 
-        {team.ownership === "system" && team.officialManagement?.updateStatus === "available" ? (
-          <div className="mt-5 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+        {team.ownership === "system" && pendingOfficialSync !== undefined && pendingOfficialSync !== null ? (
+          <div className="mt-5 border-l-2 border-warning/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-pending-official-sync">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-ink">
-                  {t("console.agentTeamDetail.officialUpdateAvailable")}
+                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
+                    ? t("console.agentTeamDetail.pendingConservativeTitle", {
+                        version: pendingOfficialSync.officialVersion,
+                      })
+                    : t("console.agentTeamDetail.pendingMergeTitle", {
+                        version: pendingOfficialSync.officialVersion,
+                      })}
                 </p>
                 <p className="mt-1 text-sm leading-6 text-sub">
-                  {team.officialManagement.requiresProtectiveCopy
-                    ? t("console.agentTeamDetail.protectBeforeUpdate")
-                    : t("console.agentTeamDetail.preserveRuntimeSettings")}
+                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
+                    ? t("console.agentTeamDetail.pendingConservativeDescription")
+                    : t("console.agentTeamDetail.pendingMergeDescription", {
+                        agents: formatAgentSlugs(t, pendingOfficialSync.pendingMemberSlugs),
+                      })}
                 </p>
-                {team.officialManagement.currentOfficialVersion !== undefined
-                  && team.officialManagement.latestOfficialVersion !== undefined ? (
-                    <p className="mt-1 text-xs text-hint">
-                      {t("console.agentTeamDetail.versionChange", {
-                        current: team.officialManagement.currentOfficialVersion,
-                        latest: team.officialManagement.latestOfficialVersion,
-                      })}
-                    </p>
-                  ) : null}
-                {team.officialManagement.addedMembers.length > 0
-                  || team.officialManagement.removedMembers.length > 0
-                  || (team.officialManagement.renamedMembers?.length ?? 0) > 0
-                  || team.officialManagement.recommendationChangedMembers.length > 0 ? (
-                    <div className="mt-1 space-y-0.5 text-xs text-hint">
-                      {team.officialManagement.addedMembers.length > 0
-                        ? <p>{t("console.agentTeamDetail.added", {
-                            agents: formatAgentSlugs(t, team.officialManagement.addedMembers),
-                          })}</p>
-                        : null}
-                      {team.officialManagement.removedMembers.length > 0
-                        ? <p>{t("console.agentTeamDetail.removed", {
-                            agents: formatAgentSlugs(t, team.officialManagement.removedMembers),
-                          })}</p>
-                        : null}
-                      {(team.officialManagement.renamedMembers?.length ?? 0) > 0
-                        ? (
-                            <p>
-                              {t("console.agentTeamDetail.renamed", {
-                                agents: team.officialManagement.renamedMembers!
-                                  .map(({ from, to }) => `@${from} → @${to}`)
-                                  .join(t("console.agentTeamDetail.listSeparator")),
-                              })}
-                            </p>
-                          )
-                        : null}
-                      {team.officialManagement.recommendationChangedMembers.length > 0
-                        ? (
-                            <p>
-                              {t("console.agentTeamDetail.recommendationChanged", {
-                                agents: formatAgentSlugs(
-                                  t,
-                                  team.officialManagement.recommendationChangedMembers,
-                                ),
-                              })}
-                            </p>
-                          )
-                        : null}
-                    </div>
-                  ) : null}
-                {team.officialManagement.protectedMembers.length > 0
-                  || team.officialManagement.collidingMembers.length > 0 ? (
-                    <p className="mt-1 text-xs text-hint">
-                      {t("console.agentTeamDetail.protectionScope", {
-                        agents: formatAgentSlugs(t, [
-                          ...team.officialManagement.protectedMembers,
-                          ...team.officialManagement.collidingMembers,
-                        ]),
-                      })}
-                    </p>
-                  ) : null}
+                {pendingSyncError !== null ? (
+                  <p className="mt-2 text-sm text-danger" role="alert">{pendingSyncError}</p>
+                ) : null}
               </div>
-              {onApplyOfficialUpdate !== undefined ? (
+              {onRetryOfficialSync !== undefined ? (
                 <Button
                   type="button"
-                  disabled={officialUpdateStatus === "saving"}
-                  onClick={() => requestGuardedAction(applyOfficialUpdate)}
+                  disabled={pendingSyncAction === "running"}
+                  onClick={() => requestGuardedAction(runPendingSyncAction)}
                 >
-                  {officialUpdateStatus === "saving"
-                    ? t("console.agentTeamDetail.updating")
-                    : team.officialManagement.requiresProtectiveCopy
-                      ? t("console.agentTeamDetail.protectAndUpdate")
-                      : t("console.agentTeamDetail.updateLatest")}
+                  {pendingSyncAction === "running" ? (
+                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                  ) : null}
+                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
+                    ? t("console.agentTeamDetail.mergeOfficialOnce")
+                    : t("console.agentTeamDetail.retryOfficialSync")}
                 </Button>
               ) : null}
             </div>
-            {officialUpdateMessage !== null ? (
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <p
-                  className={cn("text-sm", officialUpdateStatus === "failed" ? "text-danger" : "text-sub")}
-                  role={officialUpdateStatus === "failed" ? "alert" : "status"}
-                >
-                  {officialUpdateMessage}
-                </p>
-                {officialUpdateStatus === "saved"
-                  && officialUpdateCopyTeamId !== null
-                  && onOpenCopiedTeam !== undefined ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onOpenCopiedTeam(officialUpdateCopyTeamId)}
-                    >
-                      {t("console.agentTeamDetail.openProtectedCopy")}
-                    </Button>
-                  ) : null}
-              </div>
-            ) : null}
           </div>
         ) : null}
 
@@ -2149,7 +2071,74 @@ export function AgentTeamDetail({
           </div>
         </div>
       ) : null}
+
+      {revertSyncPromptOpen && officialSyncBanner !== null && officialSyncBanner !== undefined ? (
+        <RevertSyncConfirmationDialog
+          officialVersion={officialSyncBanner.officialVersion}
+          affectedMemberCount={officialSyncBanner.affectedMemberCount}
+          onCancel={() => setRevertSyncPromptOpen(false)}
+          onConfirm={() => {
+            setRevertSyncPromptOpen(false);
+            void onRevertSync?.();
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * Confirmation before "revert this sync" (PRD §dialogs-and-dangerous-actions): the action
+ * rewrites the whole team, so it must say which official version it returns to
+ * and how many members are affected before the user confirms — without
+ * delete-level warning language (the sync itself is a revertible revision).
+ */
+export function RevertSyncConfirmationDialog({
+  officialVersion,
+  affectedMemberCount,
+  onCancel,
+  onConfirm,
+}: {
+  officialVersion: string;
+  affectedMemberCount: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <div
+        className="w-full max-w-md border border-line bg-card p-5 text-ink"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("console.agentTeamDetail.revertSyncTitle")}
+      >
+        <h2 className="text-base font-semibold">
+          {t("console.agentTeamDetail.revertSyncTitle")}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-sub">
+          {t("console.agentTeamDetail.revertSyncDetail", {
+            version: officialVersion,
+            count: String(affectedMemberCount),
+          })}
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            {t("console.agentTeamDetail.cancel")}
+          </Button>
+          <Button type="button" onClick={onConfirm}>
+            {t("console.agentTeamDetail.revertSyncConfirm")}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2208,42 +2197,66 @@ function formatAgentSlugs(t: Translate, slugs: readonly string[]): string {
     .join(t("console.agentTeamDetail.listSeparator"));
 }
 
-function formatOfficialUpdateResult(t: Translate, result: AgentOfficialUpdateResult): string {
+/**
+ * Plain-language sync summary composed from the structured member changes; the
+ * main process never composes localized copy.
+ */
+export function officialSyncChangeSummary(
+  t: Translate,
+  changes: AgentOfficialSyncMemberChanges,
+): string {
   const facts = [
-    result.memberChanges.added.length > 0
-      ? t("console.agentTeamDetail.addedFact", {
-          agents: formatAgentSlugs(t, result.memberChanges.added),
+    changes.added.length > 0
+      ? t("console.agentTeamDetail.syncFactAdded", {
+          agents: formatAgentSlugs(t, changes.added),
         })
       : null,
-    result.memberChanges.removed.length > 0
-      ? t("console.agentTeamDetail.removedFact", {
-          agents: formatAgentSlugs(t, result.memberChanges.removed),
+    changes.removed.length > 0
+      ? t("console.agentTeamDetail.syncFactRemoved", {
+          agents: formatAgentSlugs(t, changes.removed),
         })
       : null,
-    result.memberChanges.renamed.length > 0
-      ? t("console.agentTeamDetail.renamedFact", {
-          agents: result.memberChanges.renamed
+    changes.renamed.length > 0
+      ? t("console.agentTeamDetail.syncFactRenamed", {
+          agents: changes.renamed
             .map(({ from, to }) => `@${from} → @${to}`)
             .join(t("console.agentTeamDetail.listSeparator")),
         })
       : null,
-    result.memberChanges.recommendationChanged.length > 0
-      ? t("console.agentTeamDetail.recommendationFact", {
-          agents: formatAgentSlugs(t, result.memberChanges.recommendationChanged),
+    changes.adopted.length > 0
+      ? t("console.agentTeamDetail.syncFactAdopted", {
+          agents: formatAgentSlugs(t, changes.adopted),
+        })
+      : null,
+    changes.recommendationChanged.length > 0
+      ? t("console.agentTeamDetail.syncFactRecommendations", {
+          agents: formatAgentSlugs(t, changes.recommendationChanged),
+        })
+      : null,
+    changes.keptOverridden.length > 0
+      ? t("console.agentTeamDetail.syncFactKept", {
+          agents: formatAgentSlugs(t, changes.keptOverridden),
+        })
+      : null,
+    changes.collidedMembers.length > 0
+      ? t("console.agentTeamDetail.syncFactCollided", {
+          agents: formatAgentSlugs(t, changes.collidedMembers),
+        })
+      : null,
+    changes.mergedMembers.length > 0
+      ? t("console.agentTeamDetail.syncFactMerged", {
+          agents: formatAgentSlugs(t, changes.mergedMembers),
+        })
+      : null,
+    changes.pendingMergeMembers.length > 0
+      ? t("console.agentTeamDetail.syncFactPendingMerge", {
+          agents: formatAgentSlugs(t, changes.pendingMergeMembers),
         })
       : null,
   ].filter((fact): fact is string => fact !== null);
-  const copyFact = result.copiedTeamId === null
-    ? ""
-    : t("console.agentTeamDetail.copyPreservedFact", { id: result.copiedTeamId });
-  const memberFact = facts.length === 0
-    ? t("console.agentTeamDetail.noMemberChanges")
-    : facts.join(t("console.agentTeamDetail.factSeparator"));
-  return t("console.agentTeamDetail.updateResult", {
-    copy: copyFact,
-    version: result.appliedOfficialVersion,
-    changes: memberFact,
-  });
+  return facts.length === 0
+    ? t("console.agentTeamDetail.syncNoMemberChanges")
+    : facts.join(t("console.agentTeamDetail.syncFactSeparator"));
 }
 
 function isProfileEditorDirty(

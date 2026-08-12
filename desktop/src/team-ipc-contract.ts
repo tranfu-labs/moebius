@@ -9,13 +9,7 @@ import type {
   ExecutionProfile,
   ExecutionProfileBinding,
 } from "./team-execution-profile.js";
-import type {
-  OfficialTeamUpdateState,
-} from "./team-official-management.js";
-import type {
-  AppliedOfficialTeamUpdate,
-  PreparedOfficialTeamUpdate,
-} from "./team-official-update.js";
+import type { OfficialTeamCustomizationStatus } from "./team-official-management.js";
 
 export const TEAM_IPC_CHANNELS = {
   list: "agent-teams:list",
@@ -37,8 +31,10 @@ export const TEAM_IPC_CHANNELS = {
   saveExecutionProfile: "agent-teams:save-execution-profile",
   replaceUnavailableExecutionProfiles: "agent-teams:replace-unavailable-execution-profiles",
   restoreRecommendedProfile: "agent-teams:restore-recommended-profile",
-  prepareOfficialUpdate: "agent-teams:prepare-official-update",
-  applyOfficialUpdate: "agent-teams:apply-official-update",
+  officialSyncRevert: "agent-teams:official-sync:revert",
+  officialSyncDismissBanner: "agent-teams:official-sync:dismiss-banner",
+  officialSyncRetry: "agent-teams:official-sync:retry",
+  officialSyncMarkSeen: "agent-teams:official-sync:mark-seen",
   memberRevisionsList: "agent-teams:member-revisions:list",
   memberRevisionRestore: "agent-teams:member-revisions:restore",
   defaultAgentGet: "agent-teams:default-agent:get",
@@ -86,7 +82,39 @@ export interface AgentTeamListItem {
         relayBeats: Array<{ speakerSlug: string; message: string }>;
       }
     | { status: "unavailable" };
-  officialManagement?: OfficialTeamUpdateState;
+  officialManagement?: {
+    customizationStatus: OfficialTeamCustomizationStatus;
+  };
+  /** Present while the sync-result banner is showing on the detail page. */
+  officialSyncBanner?: AgentTeamOfficialSyncBannerView | null;
+  /** Backs the "more" menu's persistent "recent official sync" entry. */
+  recentOfficialSync?: (AgentTeamOfficialSyncBannerView & { occurredAt: string }) | null;
+  /** Row marker "官方有新变化" until the user opens this team's detail. */
+  hasUnseenOfficialSync?: boolean;
+  /** Official changes that still need the default Agent or the one-time merge. */
+  pendingOfficialSync?: {
+    officialVersion: string;
+    reason: "CONSERVATIVE_BASELINE" | "DEFAULT_AGENT_UNAVAILABLE";
+    pendingMemberSlugs: string[];
+  } | null;
+}
+
+export interface AgentTeamOfficialSyncMemberChanges {
+  added: string[];
+  removed: string[];
+  renamed: Array<{ from: string; to: string }>;
+  adopted: string[];
+  recommendationChanged: string[];
+  keptOverridden: string[];
+  collidedMembers: string[];
+  mergedMembers: string[];
+  pendingMergeMembers: string[];
+}
+
+export interface AgentTeamOfficialSyncBannerView {
+  officialVersion: string;
+  affectedMemberCount: number;
+  memberChanges: AgentTeamOfficialSyncMemberChanges;
 }
 
 export type AgentTeamListResponse =
@@ -196,19 +224,10 @@ export interface AgentTeamExecutionProfilesReplaceResult {
   profile: ExecutionProfile;
 }
 
-export interface AgentTeamOfficialUpdateRequest {
+export interface AgentTeamOfficialSyncRequest {
   teamId: string;
   ownership: "system";
 }
-
-export interface AgentTeamOfficialUpdateCommitRequest {
-  plan: PreparedOfficialTeamUpdate;
-}
-
-export type AgentTeamOfficialUpdatePrepareResponse = PreparedOfficialTeamUpdate;
-export type AgentTeamOfficialUpdateCommitResponse = AppliedOfficialTeamUpdate & {
-  copiedTeam: AgentTeamListItem | null;
-};
 
 export interface AgentTeamMemberRevisionsRequest extends AgentTeamMemberRequest {
   teamId: string;

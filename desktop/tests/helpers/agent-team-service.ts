@@ -9,11 +9,7 @@ import {
   saveTeamExecutionBinding,
 } from "../../src/team-management-store.js";
 import { readTeamOnboardingOrchestration } from "../../src/team-onboarding-orchestration-store.js";
-import {
-  commitOfficialTeamUpdate,
-  inspectOfficialTeamUpdate,
-  prepareOfficialTeamUpdate,
-} from "../../src/team-official-update.js";
+import { computeOfficialTeamContentFingerprint } from "../../src/team-official-management.js";
 import {
   forgetTrashedUserTeamRecord,
   listRecordedUserTeamSnapshots,
@@ -66,9 +62,22 @@ export function createTestAgentTeamService() {
     register: registerUserTeamSnapshot,
     forget: forgetTrashedUserTeamRecord,
     readOfficial: readOfficialTeamStateDocument,
-    inspectUpdate: inspectOfficialTeamUpdate,
-    prepareUpdate: prepareOfficialTeamUpdate,
-    commitUpdate: commitOfficialTeamUpdate,
+    readSyncViews: async () => ({
+      banner: null,
+      recent: null,
+      hasUnseen: false,
+      pendingMerge: null,
+    }),
+    readCurrentContentFingerprint: async ({ dataRoot, teamId }) =>
+      computeOfficialTeamContentFingerprint(resolveTeamLocation({
+        dataRoot,
+        teamId,
+        ownership: "system",
+      }).directory).catch(() => null),
+    revertOfficialSync: async () => undefined,
+    retryOfficialSync: async () => undefined,
+    dismissOfficialSyncBanner: async () => undefined,
+    markOfficialSyncSeen: async () => undefined,
     resolveLocation: resolveTeamLocation,
     readOnboarding: readTeamOnboardingOrchestration,
     readCreatedAt: readTeamDirectoryCreatedAt,

@@ -31,12 +31,18 @@ export interface StatusDotFacts {
   roundState?: OperatorRoundState | null;
 }
 
-/** 收束后需要用户处理（与 local-console round-visible-plan 的 needsAttention 同语义）。 */
+/**
+ * 收束后需要用户处理。
+ *
+ * 只保留 awaiting-user：silent-closeout 是兜底收束（无一等收束信号时的静置
+ * 结论），升级前被追溯落盘的 silent-closeout 不能把历史会话整片点亮；真实
+ * 异常会话的红点由 attention / unresolvedSystemEventKind 机制承担。
+ */
 export function planRoundNeedsAttention(roundState: OperatorRoundState | null | undefined): boolean {
   return roundState !== null
     && roundState !== undefined
     && roundState.kind === "terminal"
-    && (roundState.fact?.outcome === "awaiting-user" || roundState.fact?.outcome === "silent-closeout");
+    && roundState.fact?.outcome === "awaiting-user";
 }
 
 export function deriveStatusDot(facts: StatusDotFacts): ConversationStatusDot {
