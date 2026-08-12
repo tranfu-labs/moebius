@@ -7,6 +7,7 @@ import {
   planLatestRoundFactFromLog,
   planPersistOutcome,
   planRoundCloseout,
+  planRoundExistingState,
   planRoundPersist,
   planSessionSummary,
   planSummaryTitle,
@@ -74,13 +75,24 @@ export class LocalRoundTerminalRuntime {
     const view = await this.buildView(sessionId);
     const plan = planRoundCloseout(view);
     if (plan.kind === "record-terminal") {
-      await this.persist(sessionId, plan);
+      const existing = await this.readLastRoundFact(sessionId);
+      const persistPlan = planRoundPersist(existing, plan.fact);
+      if (persistPlan.kind === "skip") {
+        // 同一 roundId 已有收束结论：绝不把重评产生的（静默兜底等）新结论当状态
+        // 返回——否则 UI 会看到与事实日志不一致的 red（persist 被跳过的 silent
+        // -closeout）。既有事实的 terminal 状态才是唯一权威投影。
+        return planRoundExistingState(existing, plan.state);
+      }
+      await this.persist(sessionId, plan, existing);
     }
     return plan.state;
   }
 
-  private async persist(sessionId: string, plan: Extract<LocalRoundPlanResult, { kind: "record-terminal" }>): Promise<void> {
-    const existing = await this.readLastRoundFact(sessionId);
+  private async persist(
+    sessionId: string,
+    plan: Extract<LocalRoundPlanResult, { kind: "record-terminal" }>,
+    existing: LocalRoundPersistedFact | null,
+  ): Promise<void> {
     const persistPlan = planRoundPersist(existing, plan.fact);
     if (persistPlan.kind === "skip") {
       return;

@@ -8,24 +8,19 @@ import type {
   AgentTeamMemberOrderWriteRequest,
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
-  AgentTeamOfficialUpdateCommitRequest,
-  AgentTeamOfficialUpdateCommitResponse,
-  AgentTeamOfficialUpdatePrepareResponse,
-  AgentTeamOfficialUpdateRequest,
+  AgentTeamOfficialSyncRequest,
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamListItem,
 } from "../team-ipc-contract.js";
 import {
-  planAgentTeamCatalogAddIfMissing,
   planAgentTeamCatalogReplace,
   planAgentTeamMemberSummary,
+  planAgentTeamOfficialSync,
   planAgentTeamPortraitOperation,
   planAgentTeamPrimaryOperation,
   planAgentTeamProfileOperation,
-  planAgentTeamOfficialUpdate,
   planAgentTeamReorderOperation,
   planFindOperatorAgentTeam,
-  planOptionalOperatorAgentTeam,
   planOperatorAgentTeam,
 } from "./agent-team-console-model.js";
 import { planConsoleErrorMessage } from "./console-state-plan.js";
@@ -41,12 +36,10 @@ interface AgentTeamProfilePort {
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
-  prepareAgentTeamOfficialUpdate?: (
-    request: AgentTeamOfficialUpdateRequest,
-  ) => Promise<AgentTeamOfficialUpdatePrepareResponse>;
-  applyAgentTeamOfficialUpdate?: (
-    request: AgentTeamOfficialUpdateCommitRequest,
-  ) => Promise<AgentTeamOfficialUpdateCommitResponse>;
+  revertAgentTeamOfficialSync?: (request: AgentTeamOfficialSyncRequest) => Promise<AgentTeamListItem>;
+  retryAgentTeamOfficialSync?: (request: AgentTeamOfficialSyncRequest) => Promise<AgentTeamListItem>;
+  dismissAgentTeamOfficialSyncBanner?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
+  markAgentTeamOfficialSyncSeen?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
 }
 
 export interface PrimaryAgentChangeState {
@@ -174,26 +167,54 @@ export function useAgentTeamProfile(input: {
     inputRef.current.catalog.refresh();
     return document;
   }, []);
-  const applyOfficialUpdate = useCallback(async (teamKey: string) => {
+  const revertOfficialSync = useCallback(async (teamKey: string) => {
     const runtime = inputRef.current;
     const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
-    const prepare = runtime.api?.prepareAgentTeamOfficialUpdate;
-    const apply = runtime.api?.applyAgentTeamOfficialUpdate;
-    if (planAgentTeamOfficialUpdate(team, prepare !== undefined, apply !== undefined) === "unavailable") {
-      throw new Error(runtime.t("desktop.error.officialUpdate"));
+    const operation = runtime.api?.revertAgentTeamOfficialSync;
+    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
+      throw new Error(runtime.t("desktop.error.officialSyncRevert"));
     }
-    const prepared = await prepare!.call(runtime.api, { teamId: team!.id, ownership: "system" });
-    const result = await apply!.call(runtime.api, { plan: prepared });
-    const copiedTeam = planOptionalOperatorAgentTeam(result.copiedTeam);
-    if (copiedTeam !== null) {
-      inputRef.current.catalog.setState((current) => planAgentTeamCatalogAddIfMissing(current, copiedTeam));
+    const updated = planOperatorAgentTeam(await operation!.call(runtime.api, {
+      teamId: team!.id,
+      ownership: "system",
+    }));
+    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, updated));
+  }, []);
+  const retryOfficialSync = useCallback(async (teamKey: string) => {
+    const runtime = inputRef.current;
+    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
+    const operation = runtime.api?.retryAgentTeamOfficialSync;
+    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
+      throw new Error(runtime.t("desktop.error.officialSyncRetry"));
     }
+    const updated = planOperatorAgentTeam(await operation!.call(runtime.api, {
+      teamId: team!.id,
+      ownership: "system",
+    }));
+    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, updated));
+  }, []);
+  const dismissOfficialSyncBanner = useCallback(async (teamKey: string) => {
+    const runtime = inputRef.current;
+    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
+    const operation = runtime.api?.dismissAgentTeamOfficialSyncBanner;
+    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
+      return;
+    }
+    await operation!.call(runtime.api, { teamId: team!.id, ownership: "system" });
     inputRef.current.catalog.refresh();
-    return {
-      copiedTeamId: result.copiedTeamId,
-      appliedOfficialVersion: result.appliedOfficialVersion,
-      memberChanges: result.memberChanges,
-    };
+  }, []);
+  const markOfficialSyncSeen = useCallback(async (teamKey: string) => {
+    const runtime = inputRef.current;
+    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
+    const operation = runtime.api?.markAgentTeamOfficialSyncSeen;
+    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
+      return;
+    }
+    await operation!.call(runtime.api, { teamId: team!.id, ownership: "system" });
+    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, {
+      ...team!,
+      hasUnseenOfficialSync: false,
+    }));
   }, []);
   return useMemo(() => ({
     primaryAgentChange,
@@ -205,17 +226,23 @@ export function useAgentTeamProfile(input: {
     changeMemberPortrait,
     saveExecutionProfile,
     restoreRecommendedProfile,
-    applyOfficialUpdate,
+    revertOfficialSync,
+    retryOfficialSync,
+    dismissOfficialSyncBanner,
+    markOfficialSyncSeen,
   }), [
-    applyOfficialUpdate,
     changeMemberPortrait,
     changePrimaryAgent,
     reorderMembers,
     clearPortraitChange,
     clearPrimaryAgentChange,
+    dismissOfficialSyncBanner,
+    markOfficialSyncSeen,
     portraitChange,
     primaryAgentChange,
     restoreRecommendedProfile,
+    retryOfficialSync,
+    revertOfficialSync,
     saveExecutionProfile,
   ]);
 }

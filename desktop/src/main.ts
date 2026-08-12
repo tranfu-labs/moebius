@@ -74,9 +74,7 @@ const { dirname, dataRoot, seedRoot, seedTeamsRoot } = configureDesktopProcess({
 const teamRuntimeBinding = createTeamRuntimeBindingService(
   createDesktopTeamRuntimeBindingPorts(),
 );
-const agentTeamService = createAgentTeamService(
-  createDesktopAgentTeamServicePorts(),
-);
+const agentTeamServicePorts = createDesktopAgentTeamServicePorts(), agentTeamService = createAgentTeamService(agentTeamServicePorts);
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let aiTeamBuilder: AiTeamBuilder | null = null;
 let activeLocale: DesktopLocale = "zh-CN";
@@ -117,6 +115,7 @@ const agentRevisionWiring = createAgentRevisionWiring({
   dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), runPi,
   publishSummarySettled: (settled) => windows.sendMain(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, settled),
 });
+agentTeamServicePorts.attachAutoSync(agentRevisionWiring.autoSync);
 localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: {
@@ -267,6 +266,7 @@ async function boot(): Promise<void> {
     // One-time, idempotent legacy baseline migration; failures keep the old
     // state and retry on the next launch (see agent-revision-wiring).
     migrateOfficialBaselines: () => agentRevisionWiring.migrateBaselines(status.dataRoot),
+    syncOfficialTeams: () => agentRevisionWiring.syncOfficialTeams(status.dataRoot),
     startLocalConsole: () => localConsole.start(),
     startUpdates: async () => {
       await updateRuntime.start();

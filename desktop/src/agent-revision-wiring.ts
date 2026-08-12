@@ -18,14 +18,22 @@ import {
 } from "./default-agent-config-store.js";
 import { migrateOfficialTeamBaselines } from "./team-official-management.js";
 import { createTeamRevisionIpc } from "./team-revision-ipc.js";
+import {
+  createOfficialTeamAutoSyncService,
+  type OfficialTeamAutoSyncOutcome,
+  type OfficialTeamAutoSyncService,
+} from "./team-auto-sync.js";
 
 export interface AgentRevisionWiring {
   store: AgentRevisionStore;
   defaultAgent: DefaultAgentConfigStore;
   service: ReturnType<typeof createAgentRevisionService>;
   ipc: ReturnType<typeof createTeamRevisionIpc>;
+  autoSync: OfficialTeamAutoSyncService;
   /** One-time, idempotent legacy baseline migration; runs once at startup. */
   migrateBaselines(dataRoot: string): Promise<{ migratedTeamIds: string[] }>;
+  /** Startup auto-sync of every official team (three-way merge per the 08-07 decision). */
+  syncOfficialTeams(dataRoot: string): Promise<Record<string, OfficialTeamAutoSyncOutcome>>;
 }
 
 /**
@@ -77,12 +85,20 @@ export function createAgentRevisionWiring(input: {
     service,
     defaultAgent,
   });
+  const autoSync = createOfficialTeamAutoSyncService({
+    revisionService: service,
+    defaultAgent,
+    oneShot,
+    runDirRoot: path.join(input.dataRoot, ".state", "official-auto-sync"),
+  });
   return {
     store,
     defaultAgent,
     service,
     ipc,
+    autoSync,
     migrateBaselines: async (dataRoot: string) =>
       migrateOfficialTeamBaselines({ dataRoot, revisionStore: store }),
+    syncOfficialTeams: async (dataRoot: string) => autoSync.runAll(dataRoot),
   };
 }

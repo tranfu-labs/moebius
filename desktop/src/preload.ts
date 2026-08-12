@@ -36,10 +36,7 @@ import {
   type AgentTeamExecutionProfileSaveRequest,
   type AgentTeamExecutionProfilesReplaceRequest,
   type AgentTeamExecutionProfilesReplaceResult,
-  type AgentTeamOfficialUpdateCommitRequest,
-  type AgentTeamOfficialUpdateCommitResponse,
-  type AgentTeamOfficialUpdatePrepareResponse,
-  type AgentTeamOfficialUpdateRequest,
+  type AgentTeamOfficialSyncRequest,
   type AgentTeamPrimaryAgentWriteRequest,
   type AgentTeamMemberOrderWriteRequest,
   type AgentTeamUpdateInformationRequest,
@@ -185,12 +182,10 @@ export interface MoebiusDesktopApi {
   restoreAgentTeamRecommendedProfile(
     request: AgentTeamMemberRequest,
   ): Promise<AgentTeamExecutionProfileDocument>;
-  prepareAgentTeamOfficialUpdate(
-    request: AgentTeamOfficialUpdateRequest,
-  ): Promise<AgentTeamOfficialUpdatePrepareResponse>;
-  applyAgentTeamOfficialUpdate(
-    request: AgentTeamOfficialUpdateCommitRequest,
-  ): Promise<AgentTeamOfficialUpdateCommitResponse>;
+  revertAgentTeamOfficialSync(request: AgentTeamOfficialSyncRequest): Promise<AgentTeamListItem>;
+  retryAgentTeamOfficialSync(request: AgentTeamOfficialSyncRequest): Promise<AgentTeamListItem>;
+  dismissAgentTeamOfficialSyncBanner(request: AgentTeamOfficialSyncRequest): Promise<void>;
+  markAgentTeamOfficialSyncSeen(request: AgentTeamOfficialSyncRequest): Promise<void>;
   checkAgentTeamMemberExternalChange(
     request: AgentTeamExternalChangeRequest,
   ): Promise<AgentTeamExternalChangeResponse>;
@@ -485,17 +480,29 @@ const api: MoebiusDesktopApi = {
       request,
     ) as Promise<AgentTeamExecutionProfileDocument>;
   },
-  prepareAgentTeamOfficialUpdate(request) {
+  revertAgentTeamOfficialSync(request) {
     return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.prepareOfficialUpdate,
+      TEAM_IPC_CHANNELS.officialSyncRevert,
       request,
-    ) as Promise<AgentTeamOfficialUpdatePrepareResponse>;
+    ) as Promise<AgentTeamListItem>;
   },
-  applyAgentTeamOfficialUpdate(request) {
+  retryAgentTeamOfficialSync(request) {
     return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.applyOfficialUpdate,
+      TEAM_IPC_CHANNELS.officialSyncRetry,
       request,
-    ) as Promise<AgentTeamOfficialUpdateCommitResponse>;
+    ) as Promise<AgentTeamListItem>;
+  },
+  dismissAgentTeamOfficialSyncBanner(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.officialSyncDismissBanner,
+      request,
+    ) as Promise<void>;
+  },
+  markAgentTeamOfficialSyncSeen(request) {
+    return ipcRenderer.invoke(
+      TEAM_IPC_CHANNELS.officialSyncMarkSeen,
+      request,
+    ) as Promise<void>;
   },
   checkAgentTeamMemberExternalChange(request) {
     return ipcRenderer.invoke(

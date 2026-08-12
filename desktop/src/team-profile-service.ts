@@ -10,11 +10,10 @@ import type {
   AgentTeamListItem,
 } from "./team-ipc-contract.js";
 import type { OfficialTeamStateDocumentV1 } from "./team-management-document-codec.js";
-import type { OfficialTeamUpdateState } from "./team-official-plan.js";
+import { deriveOfficialTeamCustomizationStatus } from "./team-official-plan.js";
 import type {
-  AppliedOfficialTeamUpdate,
-  PreparedOfficialTeamUpdate,
-} from "./team-official-update.js";
+  OfficialTeamSyncViews,
+} from "./team-auto-sync.js";
 import {
   assertRecommendedProfileAvailable,
   assertRequestedMembersAvailable,
@@ -22,8 +21,6 @@ import {
   parseExecutionProfilesReplaceRequest,
   parseMemberRequest,
   parseOfficialTeamRequest,
-  parseOfficialUpdateCommitRequest,
-  planCopiedTeamLoad,
   planExecutionBindingSource,
   planOptionalValue,
   planOwnershipSource,
@@ -46,9 +43,12 @@ export interface TeamProfilePorts {
   saveBinding(input: { dataRoot: string; ownership: TeamOwnership; teamId: string; memberSlug: string; binding: ExecutionProfileBinding }): Promise<void>;
   replaceBindings(input: { dataRoot: string; ownership: TeamOwnership; teamId: string; bindings: Readonly<Record<string, ExecutionProfileBinding>> }): Promise<void>;
   readOfficial(dataRoot: string): Promise<OfficialTeamStateDocumentV1>;
-  inspectUpdate(input: { dataRoot: string; teamId: string }): Promise<OfficialTeamUpdateState>;
-  prepareUpdate(input: { dataRoot: string; teamId: string }): Promise<PreparedOfficialTeamUpdate>;
-  commitUpdate(input: { dataRoot: string; plan: PreparedOfficialTeamUpdate }): Promise<AppliedOfficialTeamUpdate>;
+  readSyncViews(input: { dataRoot: string; teamId: string }): Promise<OfficialTeamSyncViews>;
+  readCurrentContentFingerprint(input: { dataRoot: string; teamId: string }): Promise<string | null>;
+  revertOfficialSync(input: { dataRoot: string; teamId: string }): Promise<unknown>;
+  retryOfficialSync(input: { dataRoot: string; teamId: string }): Promise<unknown>;
+  dismissOfficialSyncBanner(input: { dataRoot: string; teamId: string }): Promise<void>;
+  markOfficialSyncSeen(input: { dataRoot: string; teamId: string }): Promise<void>;
   readSnapshot(location: TeamLocation): Promise<TeamSnapshot>;
   resolveLocation(input: { dataRoot: string; teamId: string; ownership: TeamOwnership }): TeamLocation;
   readOnboarding(input: { directory: string; memberOrder: readonly string[] }): Promise<TeamOnboardingOrchestrationReadResult>;
@@ -116,10 +116,22 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
         }) } };
     });
     if (planOptionalValue(official) === "value") {
-      item.officialManagement = await ports.inspectUpdate({
+      const customizationStatus = deriveOfficialTeamCustomizationStatus({
+        applied: official!,
+        currentContentFingerprint: await ports.readCurrentContentFingerprint({
+          dataRoot: snapshot.location.dataRoot,
+          teamId: snapshot.location.id,
+        }),
+      });
+      item.officialManagement = { customizationStatus };
+      const syncViews = await ports.readSyncViews({
         dataRoot: snapshot.location.dataRoot,
         teamId: snapshot.location.id,
       });
+      item.officialSyncBanner = syncViews.banner;
+      item.recentOfficialSync = syncViews.recent;
+      item.hasUnseenOfficialSync = syncViews.hasUnseen;
+      item.pendingOfficialSync = syncViews.pendingMerge;
     }
     return item;
   };
@@ -195,20 +207,31 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
         memberSlug: request.memberSlug, binding: { source: "recommended" } });
       return { ...request, ...await resolveStoredMemberProfile({ dataRoot, ...request }) };
     },
-    prepareAgentTeamOfficialUpdate: async (dataRoot: string, raw: unknown) => {
+    revertAgentTeamOfficialSync: async (dataRoot: string, raw: unknown) => {
       const request = parseOfficialTeamRequest(raw);
-      return ports.prepareUpdate({ dataRoot, teamId: request.teamId });
+      await ports.revertOfficialSync({ dataRoot, teamId: request.teamId });
+      return present(await ports.readSnapshot(ports.resolveLocation({
+        dataRoot,
+        teamId: request.teamId,
+        ownership: "system",
+      })));
     },
-    applyAgentTeamOfficialUpdate: async (dataRoot: string, raw: unknown) => {
-      const request = parseOfficialUpdateCommitRequest(raw);
-      const result = await ports.commitUpdate({ dataRoot, plan: request.plan });
-      const loaders = {
-        none: async () => null,
-        load: async () => await present(await ports.readSnapshot(ports.resolveLocation({
-          dataRoot, teamId: result.copiedTeamId!, ownership: "user",
-        }))),
-      };
-      return { ...result, copiedTeam: await loaders[planCopiedTeamLoad(result.copiedTeamId)]() };
+    retryAgentTeamOfficialSync: async (dataRoot: string, raw: unknown) => {
+      const request = parseOfficialTeamRequest(raw);
+      await ports.retryOfficialSync({ dataRoot, teamId: request.teamId });
+      return present(await ports.readSnapshot(ports.resolveLocation({
+        dataRoot,
+        teamId: request.teamId,
+        ownership: "system",
+      })));
+    },
+    dismissAgentTeamOfficialSyncBanner: async (dataRoot: string, raw: unknown) => {
+      const request = parseOfficialTeamRequest(raw);
+      await ports.dismissOfficialSyncBanner({ dataRoot, teamId: request.teamId });
+    },
+    markAgentTeamOfficialSyncSeen: async (dataRoot: string, raw: unknown) => {
+      const request = parseOfficialTeamRequest(raw);
+      await ports.markOfficialSyncSeen({ dataRoot, teamId: request.teamId });
     },
   };
 }

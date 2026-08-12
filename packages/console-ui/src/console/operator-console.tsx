@@ -44,7 +44,6 @@ import {
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
   type AgentExecutionProviderProfile,
-  type AgentOfficialUpdateResult,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
 } from "@/console/agent-team-detail";
@@ -731,9 +730,9 @@ export interface OperatorConsoleProps {
     memberSlug: string,
     revisionId: string,
   ) => Promise<{ agentMarkdown: string } | null> | void;
-  onApplyOfficialAgentTeamUpdate?: (
-    teamKey: string,
-  ) => Promise<AgentOfficialUpdateResult>;
+  onRevertAgentTeamOfficialSync?: (teamKey: string) => void | Promise<void>;
+  onRetryAgentTeamOfficialSync?: (teamKey: string) => void | Promise<void>;
+  onDismissAgentTeamOfficialSyncBanner?: (teamKey: string) => void;
   onDuplicateBuiltInAgentTeam?: (teamKey: string) => Promise<string>;
   onRecheckAgentTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateAgentTeam?: (teamKey: string) => void | Promise<void>;
@@ -925,7 +924,9 @@ export function OperatorConsole({
   onSaveAgentExecutionProfile,
   onRestoreAgentRecommendedProfile,
   onRestoreAgentTeamRevision,
-  onApplyOfficialAgentTeamUpdate,
+  onRevertAgentTeamOfficialSync,
+  onRetryAgentTeamOfficialSync,
+  onDismissAgentTeamOfficialSyncBanner,
   onDuplicateBuiltInAgentTeam,
   onRecheckAgentTeam,
   onRelocateAgentTeam,
@@ -2315,7 +2316,9 @@ export function OperatorConsole({
               ? undefined
               : (teamKey, memberSlug, revisionId) =>
                   void onRestoreAgentTeamRevision(teamKey, memberSlug, revisionId)}
-            onApplyOfficialUpdate={onApplyOfficialAgentTeamUpdate}
+            onRevertSync={onRevertAgentTeamOfficialSync}
+            onRetryOfficialSync={onRetryAgentTeamOfficialSync}
+            onDismissSyncBanner={onDismissAgentTeamOfficialSyncBanner}
             onDuplicateBuiltInTeam={onDuplicateBuiltInAgentTeam}
             onRecheckTeam={onRecheckAgentTeam}
             onRelocateTeam={onRelocateAgentTeam}

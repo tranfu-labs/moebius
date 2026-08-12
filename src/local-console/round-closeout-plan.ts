@@ -77,6 +77,11 @@ function isAfter(value: string | null, reference: string | null): boolean {
   return value !== null && reference !== null && isoToMs(value) > isoToMs(reference);
 }
 
+/** 不早于比较：收束信号与上一轮收束事实同毫秒时仍属于当前轮。 */
+function isNotBefore(value: string | null, reference: string | null): boolean {
+  return value !== null && reference !== null && isoToMs(value) >= isoToMs(reference);
+}
+
 /** 判定新一轮是否开始：用户动作发生在上一轮收束之后。 */
 export function planRoundStart(
   lastUserMessageAt: string | null,
@@ -128,7 +133,7 @@ export function planRoundCloseout(input: LocalRoundViewInput): LocalRoundPlanRes
     return { kind: "cancel-silent", state: baseState };
   }
 
-  const primaryFinishedAfterRoundStart = isAfter(input.lastPrimaryFinishAt, roundStartAt);
+  const primaryFinishedAfterRoundStart = isNotBefore(input.lastPrimaryFinishAt, roundStartAt);
   if (primaryFinishedAfterRoundStart && !input.awaitingHuman) {
     const outcome: LocalRoundTerminalOutcome = input.producedContent
       ? "completed"
@@ -289,6 +294,21 @@ export function planRoundPersist(
     return { kind: "skip" };
   }
   return { kind: "persist" };
+}
+
+/**
+ * 重评权威投影（domain）：落盘被跳过的重评（同 roundId 已有事实）必须返回既有
+ * 事实的 terminal 状态，绝不把重评新结论（如静默兜底的 silent-closeout）当状态
+ * 返回——否则 UI 会出现与事实日志不一致的 red。无既有事实时回退传入状态。
+ */
+export function planRoundExistingState(
+  existing: LocalRoundFact | null,
+  fallback: LocalRoundState,
+): LocalRoundState {
+  if (existing === null) {
+    return fallback;
+  }
+  return { kind: "terminal", roundId: existing.roundId, fact: existing, silentSince: null };
 }
 
 /** 可选值规整（domain）：undefined 归一为 null。 */
@@ -470,8 +490,10 @@ export function buildRoundView(
 ): LocalRoundViewInput {
   const visible = messages.filter((message) => planRoundSpeaker(message.speaker));
   const lastUserMessage = [...visible].reverse().find((message) => message.speaker === "user");
+  // 一等收束信号与上一轮收束事实同毫秒（primary_closeout 与 round_terminal 在
+  // 同一判定时刻成对落盘）时仍属于当前轮；严格早于上一轮收束的旧信号不算。
   const closeoutInRound = primaryCloseout !== null
-    && (lastRound === null || planRoundStart(primaryCloseout.occurredAt, lastRound));
+    && (lastRound === null || isNotBefore(primaryCloseout.occurredAt, lastRound.occurredAt));
 
   return {
     nowIso,

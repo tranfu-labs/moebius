@@ -23,7 +23,7 @@ import type { AgentRevisionStore } from "./agent-revision-store.js";
 
 export {
   computeOfficialContentFingerprintFromEntries,
-  deriveOfficialTeamUpdateState,
+  deriveOfficialTeamCustomizationStatus,
   OfficialTeamManagementError,
   parsePackagedOfficialTeamManifest,
   planAppliedBaselineMigration,
@@ -32,9 +32,8 @@ export {
 } from "./team-official-plan.js";
 export type {
   AppliedOfficialTeamState,
-  OfficialTeamPrimaryAction,
-  OfficialTeamUpdateState,
   OfficialTeamContent,
+  OfficialTeamCustomizationStatus,
   PackagedOfficialMemberV1,
   PackagedOfficialTeamManifestV1,
   PackagedOfficialTeamState,

@@ -376,19 +376,18 @@ Source: docs/product/pages/agent-teams.md#官方版本与三方比较
   without inventing A's content, and MUST record one `user`-authored Agent Markdown revision
   capturing B's content at migration time so the member's revision timeline has a starting point.
 - MUST NOT use a package fingerprint mismatch as authority to replace `.system`.
-- MUST keep user team directories byte-identical while registering or applying official updates,
-  except for an explicitly requested protective copy.
-- MUST leave the migration's `conservative` outcome untouched by this requirement — no merge, no
-  one-time merge entry point and no baseline reconstruction are performed as part of migration;
-  those remain out of scope until a future auto-sync capability defines them.
+- MUST keep user team directories byte-identical while registering or auto-merging official
+  updates.
+- MUST leave the migration's `conservative` outcome untouched by migration itself: the
+  conservative team is then served by the auto-sync one-time explicit merge entry, never by an
+  automatic merge.
 
-#### Scenario: Upgrade registers rather than applies
+#### Scenario: Clean upgrade auto-merges
 
-- **GIVEN** the current official-source team has local edits
-- **WHEN** a new application version carries different official content
-- **THEN** startup leaves the current team unchanged
-- **AND** the team reports an available official update
-- **AND** applying the packaged version still requires an explicit team-page action.
+- **GIVEN** the current official-source team's content equals the applied baseline A
+- **WHEN** a new application version carries different official content C
+- **THEN** startup merges C into the team (B becomes C), records one revertible sync batch, and
+  the team reports the sync result banner instead of an available-update action.
 
 #### Scenario: Clean legacy baseline is back-filled as verified
 
@@ -500,40 +499,59 @@ exclude onboarding orchestration, official manifests, execution profiles, caches
 metadata. Protection for removed/renamed overridden members and user-member slug collisions MUST
 take priority over a `B == C` fast path.
 
-#### Scenario: Equal content still needs protection
+#### Scenario: Protection wins over equal content
 
 - **GIVEN** B content equals C content
 - **AND** C removes a member whose saved source is user override
-- **WHEN** the update state is derived
-- **THEN** the primary action is protective-copy-and-update
-- **AND** the equal-content registration path is not offered.
+- **WHEN** the auto-sync plan is derived
+- **THEN** the overridden member stays in the team with its saved profile
+- **AND** no protective user-team copy is created.
 
-### Requirement: Official update is explicit, planned and failure-safe
+### Requirement: Official auto-sync merges C into B at startup and stays revertible
 
 Source: docs/product/pages/agent-teams.md#更新官方来源团队
+Source: docs/product/flows/agent-evolution.md#三升级后自动接收官方改进
 
-The desktop MUST show current/latest versions, member changes, recommendation changes and protected
-bindings before update. It MUST revalidate an immutable update plan immediately before commit.
-When protection is required it MUST create a valid user-team copy with explicit saved profiles
-before making the official latest state visible. Failure or retry MUST leave either the complete old
-state or the complete copy-plus-latest state, without visible partial copies or duplicate copies.
+The desktop MUST auto-merge packaged official content into every official-source team during
+startup, without any explicit team-page action, and MUST NOT expose an available-update state or
+manual update buttons. The merge MUST be idempotent across restarts, MUST keep the user's intent
+first (same-slug overrides stay, user-edited members stay even when C removes them, user-member
+slug collisions keep the user member), and MUST record one revertible sync batch with a full
+pre-sync snapshot per team. The whole batch MUST be revertible without a time limit through the
+sync result banner and the team "more" menu; a reverted official version MUST NOT be re-merged or
+re-prompted on later startups. The desktop MUST NOT create protective copies or update-before
+copies for auto-sync.
 
-#### Scenario: Diverged content is preserved before update
+#### Scenario: Clean team adopts the packaged version at startup
 
-- **GIVEN** B differs from A and C
-- **WHEN** the user confirms protective-copy-and-update
-- **THEN** a user team preserves B and every saved member profile as explicit
-- **AND** the official team becomes C with same-slug overrides preserved and recommendations
-  migrated
-- **AND** the copy has no official update identity.
+- **GIVEN** B content equals A and C differs
+- **WHEN** the application starts
+- **THEN** the team becomes C
+- **AND** a sync batch is recorded with the pre-sync snapshot
+- **AND** the team row shows "官方有新变化" until its detail is opened.
 
-#### Scenario: Stale update plan is rejected
+#### Scenario: Reverted version is not re-merged
 
-- **GIVEN** an update plan was prepared from a specific A/B/C state
-- **AND** a member file changes before commit
-- **WHEN** the plan is submitted
-- **THEN** the store rejects it as stale
-- **AND** neither the official team nor a user copy is changed.
+- **GIVEN** a sync batch for official version C was reverted by the user
+- **WHEN** the application starts again with the same packaged version C
+- **THEN** the team content stays at the pre-sync state
+- **AND** no new sync batch or prompt appears.
+
+#### Scenario: Diverged member keeps the user content when the default Agent is unavailable
+
+- **GIVEN** B and C both differ from A for a member
+- **AND** the default Agent cannot merge it
+- **WHEN** the application starts
+- **THEN** one-sided official changes still apply
+- **AND** the diverged member keeps B's content and is marked as pending
+- **AND** the pending merge is retried on a later startup or explicit retry.
+
+#### Scenario: Conservative baseline never auto-merges
+
+- **GIVEN** the applied baseline is `conservative` (A's content unknowable)
+- **WHEN** the application starts
+- **THEN** the team content stays unchanged
+- **AND** the detail page shows a one-time explicit merge entry instead of an automatic merge.
 
 ### Requirement: Official member profile migration uses stable slug only
 
@@ -542,14 +560,16 @@ Source: docs/product/pages/agent-teams.md#官方成员与运行配置迁移
 Same-slug overrides MUST remain unchanged; same-slug recommended members MUST adopt C's current
 recommendation; new official slugs MUST use C's recommendation. Removed or renamed slugs MUST NOT
 transfer profiles to another slug. Removing/renaming an overridden member and colliding with a
-user-added slug MUST require a protective copy.
+user-added slug MUST keep the user member in place with its saved profile; the desktop MUST NOT
+create a protective copy for these cases.
 
 #### Scenario: Rename does not steal an override
 
 - **GIVEN** A has overridden member `qa`
 - **AND** C removes `qa` and adds `quality`
-- **WHEN** the protected update completes
-- **THEN** the user copy retains `qa` and its saved profile
+- **WHEN** the auto-sync completes
+- **THEN** `qa` stays in the team with its saved profile (as an overridden member C no longer
+  carries)
 - **AND** official `quality` uses C's recommendation
 - **AND** `qa`'s profile is not attached to `quality`.
 

@@ -673,15 +673,8 @@ describe("AgentTeamDetail", () => {
     ["删除成员", "删除 Agent"],
     ["复制用户团队", "复制用户团队"],
     ["删除用户团队", "删除用户团队"],
-    ["更新官方团队", "更新到最新版"],
   ] as const)("guards %s when only the execution profile has an unsaved draft", async (actionKind, buttonName) => {
-    const action = vi.fn().mockResolvedValue(actionKind === "更新官方团队"
-      ? {
-          copiedTeamId: null,
-          appliedOfficialVersion: "2",
-          memberChanges: { added: [], removed: [], renamed: [], recommendationChanged: [] },
-        }
-      : undefined);
+    const action = vi.fn().mockResolvedValue(undefined);
     const base = detailProps({
       state: stateWith(managerEditor({ isDirty: false })),
       onLeave: actionKind === "返回团队列表" ? action : vi.fn(),
@@ -691,30 +684,8 @@ describe("AgentTeamDetail", () => {
       memberActions: ["复制成员", "删除成员"].includes(actionKind)
         ? (request) => <button type="button" onClick={() => request(action)}>{buttonName}</button>
         : undefined,
-      onApplyOfficialUpdate: actionKind === "更新官方团队" ? action : undefined,
     });
-    render(<AgentTeamDetail
-      {...base}
-      team={actionKind === "更新官方团队"
-        ? {
-            ...base.team,
-            ownership: "system",
-            officialManagement: {
-              currentOfficialVersion: "1",
-              latestOfficialVersion: "2",
-              customizationStatus: "clean",
-              updateStatus: "available",
-              primaryAction: "update",
-              requiresProtectiveCopy: false,
-              addedMembers: [],
-              removedMembers: [],
-              recommendationChangedMembers: [],
-              protectedMembers: [],
-              collidingMembers: [],
-            },
-          }
-        : base.team}
-    />);
+    render(<AgentTeamDetail {...base} />);
 
     await waitFor(() => expect(selectedOption("执行引擎")).toBe("Codex"));
     chooseOption("执行引擎", "Kimi");
@@ -734,58 +705,6 @@ describe("AgentTeamDetail", () => {
     expect(selectedOption("Model")).toBe("gpt-5.4-mini");
     expect(screen.queryByText("正在读取运行配置…")).not.toBeInTheDocument();
     expect(screen.queryByText(/无法验证|需要调整|重新检查运行能力/u)).not.toBeInTheDocument();
-  });
-
-  it("shows an official update as a normal management state and reports the protected copy", async () => {
-    const onApplyOfficialUpdate = vi.fn().mockResolvedValue({
-      copiedTeamId: "development-copy",
-      appliedOfficialVersion: "2",
-      memberChanges: {
-        added: ["reviewer"],
-        removed: ["qa"],
-        renamed: [],
-        recommendationChanged: ["manager"],
-      },
-    });
-    const onOpenCopiedTeam = vi.fn();
-    const base = detailProps();
-    renderDetail({
-      team: {
-        ...base.team,
-        ownership: "system",
-        officialManagement: {
-          currentOfficialVersion: "1",
-          latestOfficialVersion: "2",
-          customizationStatus: "customized",
-          updateStatus: "available",
-          primaryAction: "protect-and-update",
-          requiresProtectiveCopy: true,
-          addedMembers: ["reviewer"],
-          removedMembers: ["qa"],
-          recommendationChangedMembers: ["manager"],
-          protectedMembers: ["qa"],
-          collidingMembers: [],
-        },
-      },
-      state: stateWith(managerEditor({ isDirty: false })),
-      onApplyOfficialUpdate,
-      onOpenCopiedTeam,
-    });
-
-    expect(screen.getByText("已自定义")).toBeVisible();
-    expect(screen.getByText("有更新")).toBeVisible();
-    expect(screen.getByText("当前 1 → 最新 2")).toBeVisible();
-    expect(screen.getByText("新增：@reviewer")).toBeVisible();
-    expect(screen.getByText("删除：@qa")).toBeVisible();
-    expect(screen.getByText("副本保护范围：@qa")).toBeVisible();
-    expect(screen.queryByText("这支团队需要修复")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保留副本并更新" }));
-    await waitFor(() => expect(onApplyOfficialUpdate).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(
-      "已保留为 development-copy；已更新到官方版本 2：新增 @reviewer；删除 @qa；推荐配置更新 @manager。",
-    )).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "进入保留的副本" }));
-    expect(onOpenCopiedTeam).toHaveBeenCalledWith("development-copy");
   });
 
   it("shows exactly the two external-conflict choices and keeps normal save paths out", () => {
@@ -969,10 +888,11 @@ describe("AgentTeamDetail", () => {
         },
       },
     });
+    const banner = { officialVersion: "2", affectedMemberCount: 1, memberChanges: { added: ["dev"], removed: [], renamed: [], adopted: [], recommendationChanged: [], keptOverridden: [], collidedMembers: [], mergedMembers: [], pendingMergeMembers: [] } };
     const { rerender } = render(<AgentTeamDetail
       {...base}
       team={{ ...base.team, ownership: "system" }}
-      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      officialSyncBanner={banner}
     />);
 
     // 横幅按钮在没有容器回调时也必须可用（行为是组件自有的）。
@@ -984,7 +904,7 @@ describe("AgentTeamDetail", () => {
       {...base}
       team={{ ...base.team, ownership: "system" }}
       state={{ ...base.state, selectedMemberSlug: "dev" }}
-      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      officialSyncBanner={banner}
     />);
     expect(screen.getByRole("textbox", { name: "开发 的职责说明" })).toBeVisible();
     expect(screen.getByTestId("agent-team-markdown-timeline-toggle")).toHaveAttribute("aria-expanded", "true");
@@ -1020,7 +940,7 @@ describe("AgentTeamDetail", () => {
     render(<AgentTeamDetail
       {...props}
       team={{ ...props.team, ownership: "system" }}
-      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      officialSyncBanner={{ officialVersion: "2", affectedMemberCount: 1, memberChanges: { added: ["dev"], removed: [], renamed: [], adopted: [], recommendationChanged: [], keptOverridden: [], collidedMembers: [], mergedMembers: [], pendingMergeMembers: [] } }}
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
@@ -1078,11 +998,38 @@ describe("AgentTeamDetail", () => {
     render(<AgentTeamDetail
       {...props}
       team={{ ...props.team, ownership: "system" }}
-      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      officialSyncBanner={{ officialVersion: "2", affectedMemberCount: 1, memberChanges: { added: ["dev"], removed: [], renamed: [], adopted: [], recommendationChanged: [], keptOverridden: [], collidedMembers: [], mergedMembers: [], pendingMergeMembers: [] } }}
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "看看改了什么" }));
     expect(onSelectMember).toHaveBeenCalledWith("dev");
+  });
+
+  it("asks for confirmation with the reverted version and member count before reverting from the banner", () => {
+    const onRevertSync = vi.fn();
+    const props = detailProps({
+      onRevertSync,
+      state: stateWith(managerEditor({ isDirty: false })),
+    });
+    render(<AgentTeamDetail
+      {...props}
+      team={{ ...props.team, ownership: "system" }}
+      officialSyncBanner={{ officialVersion: "2", affectedMemberCount: 3, memberChanges: { added: [], removed: [], renamed: [], adopted: ["dev-manager", "dev", "qa"], recommendationChanged: [], keptOverridden: [], collidedMembers: [], mergedMembers: [], pendingMergeMembers: [] } }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销这次同步" }));
+    const dialog = screen.getByRole("dialog", { name: "撤销这次同步" });
+    expect(dialog.textContent).toContain("官方 2");
+    expect(dialog.textContent).toContain("3 名成员");
+    expect(onRevertSync).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(onRevertSync).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "撤销这次同步" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销这次同步" }));
+    fireEvent.click(screen.getByRole("button", { name: "撤销同步" }));
+    expect(onRevertSync).toHaveBeenCalledTimes(1);
   });
 
   it("honors the view-changes signal raised by a container-owned surface", async () => {
@@ -1109,7 +1056,7 @@ describe("AgentTeamDetail", () => {
     render(<AgentTeamDetail
       {...props}
       team={{ ...props.team, ownership: "system" }}
-      officialSyncBanner={{ officialVersion: "2", changeSummary: "1 名成员有变化", affectedMemberCount: 1 }}
+      officialSyncBanner={{ officialVersion: "2", affectedMemberCount: 1, memberChanges: { added: [], removed: [], renamed: [], adopted: [], recommendationChanged: [], keptOverridden: [], collidedMembers: [], mergedMembers: [], pendingMergeMembers: [] } }}
       viewSyncChangesSignal={1}
     />);
 

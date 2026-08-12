@@ -226,7 +226,7 @@ export const ConfigurationError: Story = {
   args: { state: { status: "configuration-error" }, onRetry: () => undefined },
 };
 
-/** 三种状态药丸同屏：官方 + 已定制 + 有更新、未完成草稿、需要修复。 */
+/** 状态药丸同屏：已定制 + 未完成草稿 + 需要修复（官方来源本身不带药丸）。 */
 export const StatusBadges: Story = {
   name: "状态标记",
   args: {
@@ -237,14 +237,6 @@ export const StatusBadges: Story = {
           ...builtInTeam,
           officialManagement: {
             customizationStatus: "customized",
-            updateStatus: "available",
-            primaryAction: "protect-and-update",
-            requiresProtectiveCopy: true,
-            addedMembers: [],
-            removedMembers: [],
-            recommendationChangedMembers: [],
-            protectedMembers: [],
-            collidingMembers: [],
           },
         },
         {
@@ -367,19 +359,31 @@ export const ProviderMarks: Story = {
 
 // ---------- 官方同步与修订历史（agent-md-revision-and-default-agent） ----------
 
+const syncMemberChanges = {
+  added: ["release"],
+  removed: ["qa"],
+  renamed: [],
+  adopted: [],
+  recommendationChanged: ["dev"],
+  keptOverridden: [],
+  collidedMembers: [],
+  mergedMembers: [],
+  pendingMergeMembers: [],
+};
+
 const syncedTeam: OperatorAgentTeam = {
   ...builtInTeam,
   hasUnseenOfficialSync: true,
   officialSyncBanner: {
     officialVersion: "1.3",
-    changeSummary: "新增 release，移除 qa，dev 的职责有更新",
+    memberChanges: syncMemberChanges,
     affectedMemberCount: 3,
   },
   recentOfficialSync: {
     officialVersion: "1.3",
-    changeSummary: "新增 release，移除 qa，dev 的职责有更新",
+    memberChanges: syncMemberChanges,
     affectedMemberCount: 3,
-    timeLabel: "2026-08-06",
+    occurredAt: "2026-08-06T00:00:00.000Z",
   },
 };
 
@@ -700,9 +704,19 @@ const generalAssistantTeam: OperatorAgentTeam = {
   hasUnseenOfficialSync: true,
   recentOfficialSync: {
     officialVersion: "1.2",
-    changeSummary: "这支团队的官方初始版本",
+    memberChanges: {
+      added: [],
+      removed: [],
+      renamed: [],
+      adopted: [],
+      recommendationChanged: [],
+      keptOverridden: [],
+      collidedMembers: [],
+      mergedMembers: [],
+      pendingMergeMembers: [],
+    },
     affectedMemberCount: 1,
-    timeLabel: "2026-07-28",
+    occurredAt: "2026-07-28T00:00:00.000Z",
   },
 };
 

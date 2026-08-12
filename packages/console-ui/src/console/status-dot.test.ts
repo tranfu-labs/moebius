@@ -47,7 +47,10 @@ describe("conversation status dots", () => {
       silentSince: null,
     });
     expect(deriveStatusDot({ ...idle, roundState: terminal("awaiting-user") })).toBe("red");
-    expect(deriveStatusDot({ ...idle, roundState: terminal("silent-closeout") })).toBe("red");
+    // silent-closeout 是兜底收束：不单独点亮（真实异常由 attention 机制承担；
+    // 升级前被追溯落盘的 silent-closeout 因此不再把历史会话整片点亮）。
+    expect(deriveStatusDot({ ...idle, roundState: terminal("silent-closeout") })).toBe("none");
+    expect(deriveStatusDot({ ...idle, roundState: terminal("silent-closeout"), unreadSince: "x" })).toBe("blue");
     expect(deriveStatusDot({ ...idle, roundState: terminal("completed"), unreadSince: "x" })).toBe("blue");
     expect(deriveStatusDot({ ...idle, roundState: terminal("completed") })).toBe("none");
     expect(deriveStatusDot({ ...idle, roundState: terminal("no-new-content") })).toBe("none");
