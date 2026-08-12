@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-12
+
+### 新增
+
+- 内置官方团队改为启动时自动同步：在保留用户内容与修订历史的前提下自动应用新版种子，替代旧的手动更新入口（#212）。
+
+### 修复
+
+- 修复侧边栏 attention dot 与一轮静默收束状态不一致的问题，让提醒只反映确实需要用户关注的新结果或待处理状态（#212）。
+
 ## [0.5.0] - 2026-08-11
 
 ### 新增
@@ -246,7 +256,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/tranfu-labs/moebius/compare/v0.4.1...v0.4.2
