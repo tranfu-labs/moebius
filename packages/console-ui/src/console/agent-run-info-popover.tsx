@@ -2,6 +2,8 @@ import { FileText, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { AgentPortrait } from "@/console/agent-portrait";
+import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/ui/dialog";
@@ -29,6 +31,7 @@ export function AgentRunInfoPopover({
   engine,
   loadInfo,
   loadMarkdown,
+  appearance = "default",
 }: {
   sessionId: string;
   runId: string;
@@ -40,6 +43,7 @@ export function AgentRunInfoPopover({
   engine?: { cli: "codex" | "claude" | "kimi" | "pi"; providerId?: string };
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
   loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
+  appearance?: OperatorConsoleAppearance;
 }): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -124,7 +128,10 @@ export function AgentRunInfoPopover({
           side="bottom"
           align="start"
           collisionPadding={12}
-          className="w-[min(340px,calc(100vw-24px))] p-0"
+          className={operatorFloatingSurfaceClassName(
+            appearance,
+            "w-[min(340px,calc(100vw-24px))] p-0",
+          )}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             avatarTrigger.current?.focus();
@@ -191,7 +198,7 @@ function AgentRunInfoContent({ info, t, markdownTrigger }: {
   const notRecorded = t("console.agentRunInfo.notRecorded");
   return (
     <div className="grid gap-3 p-4 text-xs">
-      <div><p className="font-medium text-ink">{info.agent.displayName ?? `@${info.agent.slug}`}</p><p className="text-sub">@{info.agent.slug}</p></div>
+      <div><p className="font-normal text-ink">{info.agent.displayName ?? `@${info.agent.slug}`}</p><p className="text-sub">@{info.agent.slug}</p></div>
       <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5">
         <dt className="text-sub">{t("console.agentRunInfo.team")}</dt><dd className="text-ink">{info.team.name ?? notRecorded}{info.team.ownership ? ` · ${info.team.ownership === "system" ? (info.team.sourceName ?? t("console.agentRunInfo.official")) : t("console.agentRunInfo.user")}` : ""}</dd>
         <dt className="text-sub">{t("console.agentRunInfo.evidence")}</dt><dd className="text-ink">{evidence}</dd>

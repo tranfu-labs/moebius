@@ -133,7 +133,7 @@ export function TeamBuilderView({
           </span>
         </div>
         {contextLabel ? (
-          <span className="rounded-full border border-line px-2.5 py-1 text-xs font-medium text-sub">
+          <span className="rounded-full border border-line px-2.5 py-1 text-xs font-normal text-sub">
             {contextLabel}
           </span>
         ) : null}

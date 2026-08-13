@@ -20,7 +20,7 @@ export const WaitList: Story = {
       <PopoverContent align="start" className="w-80">
         <div className="mb-2 text-sm font-semibold text-ink">等你 (1)</div>
         <div className="rounded-md p-2 text-sm hover:bg-hover">
-          <div className="font-medium text-ink">失败汇总</div>
+          <div className="font-normal text-ink">失败汇总</div>
           <div className="text-xs text-sub">等你验收 · tranfu-agents</div>
         </div>
       </PopoverContent>

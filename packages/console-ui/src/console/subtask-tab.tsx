@@ -132,7 +132,7 @@ export function SubtaskTab({
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <h2 className="min-w-0 truncate font-semibold text-ink" title={title}>{title}</h2>
           <span aria-hidden="true" className="text-hint">·</span>
-          <span className="shrink-0 text-[12.5px] text-sub">{memberName}</span>
+          <span className="shrink-0 text-sm text-sub">{memberName}</span>
           <Badge variant={subtaskBadgeVariant(summary?.status ?? view?.session.status)}>{statusLabel}</Badge>
         </div>
         <p className="mt-1 text-xs leading-5 text-hint">
@@ -312,7 +312,7 @@ function SubtaskTimelineEntry({
     );
     return (
       <article className="group py-4 text-sm">
-        <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+        <div className="mb-1.5 flex items-center gap-2 text-sm text-sub">
           {identityRole === null ? null : (
             <RoleTag
               label={resolveOperatorMemberName(identityRole, memberIdentities, t)}
@@ -343,7 +343,7 @@ function SubtaskTimelineEntry({
         )}
         <div className={cn("flex flex-wrap items-center gap-2", partialMarkdown === "" ? undefined : "mt-2")}>
         {partialMarkdown !== "" && message.terminal?.contentIncomplete ? (
-          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-[11px] text-sub">
+          <span className="inline-flex rounded bg-muted px-1.5 py-0.5 text-meta text-sub">
             {t("console.runOutcome.incomplete")}
           </span>
         ) : null}
@@ -391,7 +391,7 @@ function SubtaskTimelineEntry({
   if (message.speaker === "user") {
     return (
       <article className="py-4 text-sm">
-        <div className="mb-1.5 flex items-center justify-end gap-2 text-[12.5px] text-sub">
+        <div className="mb-1.5 flex items-center justify-end gap-2 text-sm text-sub">
           <span className="font-semibold text-ink">{t("console.common.you")}</span>
           <RoleTag label={t("console.common.you")} toneKey="user" />
         </div>
@@ -420,7 +420,7 @@ function SubtaskTimelineEntry({
 
   return (
     <article className="py-4 text-sm">
-      <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-sub">
+      <div className="mb-1.5 flex items-center gap-2 text-sm text-sub">
         {message.speaker === "agent" ? (
           <RoleTag
             label={resolveOperatorMemberName(message.role, memberIdentities, t)}

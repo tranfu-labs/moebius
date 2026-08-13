@@ -269,7 +269,7 @@ export function RunOutcome({
             </div>
           ) : (
           <div className="grid gap-2 sm:grid-cols-4">
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             {t("console.agentTeamDetail.executionEngineLabel")}
             <select
               aria-label="CLI"
@@ -292,7 +292,7 @@ export function RunOutcome({
             </select>
           </label>
           {overrideProfile.cli === "pi" ? (
-            <label className="grid gap-1 text-[11px] text-hint">
+            <label className="grid gap-1 text-meta text-hint">
               {t("settings.providers")}
               <select
                 aria-label={t("settings.providers")}
@@ -309,7 +309,7 @@ export function RunOutcome({
               </select>
             </label>
           ) : null}
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             Model
             <select
               aria-label="Model"
@@ -331,7 +331,7 @@ export function RunOutcome({
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             {t("console.agentTeamDetail.effort")}
             <select
               aria-label={t("console.agentTeamDetail.effort")}

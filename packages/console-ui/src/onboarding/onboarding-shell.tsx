@@ -306,17 +306,17 @@ export function OnboardingShell({
                 />
               ))}
             </div>
-            <p className="text-xs font-medium tabular-nums text-hint">
+            <p className="text-xs font-normal tabular-nums text-hint">
               {t("onboarding.progress", { step: state.step })}
             </p>
             <h1
               ref={titleRef}
-              className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink outline-none"
+              className="mt-2 text-lg font-semibold leading-tight tracking-[-0.02em] text-ink outline-none"
               tabIndex={-1}
             >
               {stepTitle(t, state.step, compatibility.affectedCount)}
             </h1>
-            <p className="mt-2 text-[13px] leading-5 text-sub">
+            <p className="mt-2 text-sm leading-5 text-sub">
               {stepSubtitle(t, state.step, compatibility)}
             </p>
           </header>
@@ -529,7 +529,7 @@ function CliReadinessRow({
         <span className="flex items-center justify-between gap-3">
           <strong className="block text-sm font-semibold text-ink">{visual.title}</strong>
           {isOnboardingCliReady(readiness) && !installing ? (
-            <span className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-medium text-pass">
+            <span className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-normal text-pass">
               {t("onboarding.cliAvailable")}
             </span>
           ) : null}
@@ -537,7 +537,7 @@ function CliReadinessRow({
         <small className="mt-0.5 block text-xs leading-5 text-sub">{visual.detail}</small>
         {readiness.status === "missing" && !installing && !recoverableInstall ? (
           <span className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-sunken py-1.5 pl-2.5 pr-1.5">
-            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">
+            <code className="min-w-0 flex-1 truncate font-mono text-meta text-ink">
               {cli === "codex"
                 ? "npm install -g @openai/codex"
                 : cli === "claude"
@@ -775,7 +775,7 @@ function TeamSelectionStep({
           <span className="sr-only">{t("onboarding.searchTeams")}</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-hint" strokeWidth={1.5} aria-hidden="true" />
           <input
-            className="h-9 w-full rounded-sm border border-line bg-card pl-8 pr-9 text-[13px] text-ink outline-none placeholder:text-hint focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-9 w-full rounded-sm border border-line bg-card pl-8 pr-9 text-sm text-ink outline-none placeholder:text-hint focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
             type="search"
             value={query}
             disabled={!ready}
@@ -823,7 +823,7 @@ function TeamSelectionStep({
           </div>
         ) : projection.total === 0 ? (
           <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-line bg-card p-5 text-center" role="alert">
-            <p className="text-sm font-medium text-ink">{t("onboarding.noUsableTeams")}</p>
+            <p className="text-sm font-normal text-ink">{t("onboarding.noUsableTeams")}</p>
             <p className="mt-1 text-xs leading-5 text-sub">{t("onboarding.noUsableTeamsDetail")}</p>
             {onRetry ? (
               <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
@@ -937,7 +937,7 @@ function TeamSelectionStep({
                 })}
           </small>
         </span>
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--status-info-bg)] px-2.5 py-1 text-xs font-medium text-[var(--status-info-fg)]">
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--status-info-bg)] px-2.5 py-1 text-xs font-normal text-[var(--status-info-fg)]">
           <Sparkles className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
           {t("onboarding.startConversation")}
         </span>
@@ -970,7 +970,7 @@ function TeamGroup({
   if (teams.length === 0) return null;
   return (
     <section className="min-w-0 max-w-full" aria-label={label}>
-      <h2 className="px-1 pb-1 pt-1 text-[11.5px] font-medium tracking-[0.04em] text-hint">
+      <h2 className="px-1 pb-1 pt-1 text-xs font-normal tracking-[0.04em] text-hint">
         {label} · {teams.length}
       </h2>
       <div className="grid min-w-0 max-w-full gap-2">
@@ -1057,7 +1057,7 @@ function TeamChoiceCard({
             {orderedMembers.length > 0 ? (
               <small className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sub">
                 {orderedMembers.map((member, index) => (
-                  <span className={cn(member.slug === team.primaryAgentSlug && "font-medium text-ink")} key={member.slug}>
+                  <span className={cn(member.slug === team.primaryAgentSlug && "font-normal text-ink")} key={member.slug}>
                     {index > 0 ? <span className="mr-1.5 text-hint" aria-hidden="true">│</span> : null}
                     {member.slug === team.primaryAgentSlug ? <i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-hidden="true" /> : null}
                     {member.displayName || `@${member.slug}`}
@@ -1071,7 +1071,7 @@ function TeamChoiceCard({
           </span>
         </span>
         {selected ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-medium text-sub">
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-normal text-sub">
             <Check className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
             {t("onboarding.selected")}
           </span>
@@ -1172,8 +1172,8 @@ function InstallationAggregate({
               >
                 <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
                 <span className="min-w-0">
-                  <strong className="block text-xs font-medium text-ink">{name}</strong>
-                  <small className="block truncate text-[11px] text-hint">
+                  <strong className="block text-xs font-normal text-ink">{name}</strong>
+                  <small className="block truncate text-meta text-hint">
                     {installStageCopy(t, installation.stage)}
                   </small>
                 </span>

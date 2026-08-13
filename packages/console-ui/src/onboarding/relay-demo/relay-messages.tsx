@@ -57,7 +57,7 @@ export function RelayMessages({
                   name: member.displayName || member.slug,
                 })}
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-[9px] font-semibold text-sub">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-meta font-semibold text-sub">
                   {(member.displayName || member.slug).slice(0, 1)}
                 </span>
                 <span className="flex items-center gap-1" aria-hidden="true">
@@ -79,11 +79,11 @@ export function RelayMessages({
                   <strong className="min-w-0 text-xs font-semibold text-ink">
                     {member.displayName || `@${member.slug}`}
                   </strong>
-                  <span className="shrink-0 text-[10px] tabular-nums text-hint">
+                  <span className="shrink-0 text-meta tabular-nums text-hint">
                     {t("onboarding.relay.beat", { count: index + 1 })}
                   </span>
                   {current ? (
-                    <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-run-fg)]">
+                    <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-meta font-normal text-[var(--status-run-fg)]">
                       {index === beats.length - 1
                         ? t("onboarding.relay.wrapUp")
                         : t("onboarding.relay.processing")}

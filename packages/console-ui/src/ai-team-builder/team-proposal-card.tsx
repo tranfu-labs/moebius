@@ -72,7 +72,7 @@ export function TeamProposalCard({
           </h2>
           <p className="mt-1 text-xs leading-5 text-sub">{proposal.team.purpose}</p>
         </div>
-        <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-accent/30 bg-sel px-2.5 text-xs font-medium text-accent">
+        <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-accent/30 bg-sel px-2.5 text-xs font-normal text-accent">
           <Sparkles className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
           {t("teamBuilder.generated")}
         </span>
@@ -88,9 +88,9 @@ export function TeamProposalCard({
               </span>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <strong className="text-sm font-medium text-ink">{member.name}</strong>
+                  <strong className="text-sm font-normal text-ink">{member.name}</strong>
                   {primary ? (
-                    <span className="rounded-full bg-sel px-2 py-0.5 text-[11px] font-medium text-accent">
+                    <span className="rounded-full bg-sel px-2 py-0.5 text-meta font-normal text-accent">
                       {t("teamBuilder.primaryAgent")}
                     </span>
                   ) : null}
@@ -113,7 +113,7 @@ export function TeamProposalCard({
           return (
             <span className="contents" key={`${beat.speakerSlug}-${String(index)}`}>
               <ArrowRight className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-              <strong className="font-medium text-sub" title={beat.message}>
+              <strong className="font-normal text-sub" title={beat.message}>
                 {member?.name ?? `@${beat.speakerSlug}`}
               </strong>
             </span>

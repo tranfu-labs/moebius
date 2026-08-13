@@ -1,6 +1,8 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
+import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { AgentTeamOption } from "@/console/agent-team-option";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";
 import { useI18n } from "@/i18n";
@@ -23,6 +25,7 @@ export function SessionTeamMenu({
   open,
   onOpenChange,
   onSelectTeam,
+  appearance = "default",
 }: {
   team?: OperatorAgentTeam;
   pendingTeam?: OperatorAgentTeam;
@@ -33,6 +36,7 @@ export function SessionTeamMenu({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onSelectTeam?: (team: OperatorAgentTeam) => void;
+  appearance?: OperatorConsoleAppearance;
 }): JSX.Element | null {
   const { locale, t } = useI18n();
   const displayedTeam = pendingTeam ?? team;
@@ -65,7 +69,7 @@ export function SessionTeamMenu({
         <button
           type="button"
           className={cn(
-            "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
+            "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-normal transition-colors",
             needsAttention
               ? "border-danger text-danger"
               : "border-line text-ink hover:bg-hover",
@@ -80,7 +84,7 @@ export function SessionTeamMenu({
             <Diamond className="h-[13px] w-[13px] shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
           )}
           <span className="truncate">{teamLabel}</span>
-          {needsAttention ? <span className="whitespace-nowrap font-medium">{stateLabel}</span> : null}
+          {needsAttention ? <span className="whitespace-nowrap font-normal">{stateLabel}</span> : null}
           <ChevronDown className="h-[11px] w-[11px] shrink-0 text-hint" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -88,12 +92,15 @@ export function SessionTeamMenu({
         align="end"
         side="top"
         collisionPadding={12}
-        className="scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain"
+        className={operatorFloatingSurfaceClassName(
+          appearance,
+          "scroll-thin w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain",
+        )}
         style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
       >
         {displayedTeam ? (
           <div className="px-2 py-2" aria-label={t("console.sessionTeam.loadedVersion")}>
-            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.loaded")}</p>
+            <p className="mb-1 text-meta font-normal uppercase tracking-wide text-hint">{t("console.sessionTeam.loaded")}</p>
             <AgentTeamOption team={{
               label: selectionLabel(displayedTeam),
               ownership: displayedTeam.ownership,
@@ -104,7 +111,7 @@ export function SessionTeamMenu({
           </div>
         ) : null}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-hint">{t("console.sessionTeam.catalog")}</p>
+        <p className="px-2 py-1 text-meta font-normal uppercase tracking-wide text-hint">{t("console.sessionTeam.catalog")}</p>
         {choices.map((candidate) => (
           <DropdownMenuCheckboxItem
             key={candidate.teamKey}

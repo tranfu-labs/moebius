@@ -136,7 +136,7 @@ function RelayPlaybackDemo({
       </div>
 
       <div
-        className="grid items-center gap-x-3 border-b border-line bg-sunken px-3 py-2 text-[10px] font-semibold text-hint"
+        className="grid items-center gap-x-3 border-b border-line bg-sunken px-3 py-2 text-meta font-semibold text-hint"
         style={{ gridTemplateColumns: RELAY_STAGE_COLUMNS }}
       >
         <RelayRoleColumns
@@ -174,7 +174,7 @@ function RelayPlaybackDemo({
         />
       </div>
 
-      <footer className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-[10px] text-hint">
+      <footer className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-meta text-hint">
         <Users className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
         <span>
           {playback.complete

@@ -46,7 +46,7 @@ export function ProcessTrail({ steps, collapsed = false, className }: {
   const folded = collapsed && !open;
 
   return (
-    <div className={cn("text-[12.5px]", className)}>
+    <div className={cn("text-sm", className)}>
       {collapsed ? (
         <button
           type="button"

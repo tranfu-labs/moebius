@@ -39,7 +39,7 @@ export function ResultCard({ fileCount, onOpen, className }: ResultCardProps): J
       data-testid="conversation-result-card"
     >
       <CircleCheck className="h-[15px] w-[15px] shrink-0 text-pass" strokeWidth={1.5} aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink">{summary}</p>
+      <p className="min-w-0 flex-1 text-sm leading-5 text-ink">{summary}</p>
       <Button type="button" variant="outline" size="sm" onClick={onOpen}>
         {t("console.resultCard.view")}
       </Button>

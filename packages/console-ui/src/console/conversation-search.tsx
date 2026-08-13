@@ -145,7 +145,7 @@ export function ConversationSearch({
                     })}
                     onClick={() => onOpen(result)}
                   >
-                    <span className="block truncate text-sm font-medium text-ink">{result.title}</span>
+                    <span className="block truncate text-sm font-normal text-ink">{result.title}</span>
                     <span className="mt-0.5 block text-xs text-sub">
                       {result.projectTitle}{result.archived
                         ? ` · ${t("console.conversationSearch.archived")}`

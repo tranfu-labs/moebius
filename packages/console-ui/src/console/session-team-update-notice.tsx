@@ -26,7 +26,7 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
         role="status"
         aria-label={t("console.sessionTeamUpdate.label")}
       >
-        <p className="font-medium text-ink">{t("console.sessionTeamUpdate.waitingTitle")}</p>
+        <p className="font-normal text-ink">{t("console.sessionTeamUpdate.waitingTitle")}</p>
         <p className="mt-0.5">{t("console.sessionTeamUpdate.waitingDescription")}</p>
       </section>
     );
@@ -40,7 +40,7 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
       >
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-ink">{t("console.sessionTeamUpdate.failedTitle")}</p>
+          <p className="font-normal text-ink">{t("console.sessionTeamUpdate.failedTitle")}</p>
           <p className="mt-0.5 text-sub">{state.failure?.summary ?? t("console.sessionTeamUpdate.failedDescription")}</p>
           <div className="mt-2 flex gap-2">
             <Button type="button" size="sm" variant="outline" onClick={onRetry}>

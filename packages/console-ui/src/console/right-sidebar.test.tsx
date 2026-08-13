@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -54,6 +54,19 @@ describe("RightSidebar", () => {
     expect(screen.queryByText("新标签")).not.toBeInTheDocument();
   });
 
+  it("uses primary foreground for focused inactive tabs and weight for the active tab", () => {
+    renderSidebar({
+      appearance: "focused",
+      state: addBlankRightSidebarTab(initialState(), "blank"),
+    });
+
+    const inactive = screen.getByRole("tab", { name: "改动" }).parentElement;
+    const active = screen.getByRole("tab", { name: "新标签" }).parentElement;
+    expect(inactive).toHaveClass("text-ink", "font-normal");
+    expect(inactive).not.toHaveClass("text-sub");
+    expect(active).toHaveClass("bg-sel", "text-ink", "font-normal");
+  });
+
   it("keeps plus reachable beside an overflowing tablist and closes every tab", () => {
     const onStateChange = vi.fn();
     const state = Array.from({ length: 8 }).reduce<RightSidebarTabsState>(
@@ -80,6 +93,44 @@ describe("RightSidebar", () => {
 
     expect(onStateChange).toHaveBeenCalledWith({ tabs: [], activeTabId: null });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("uses an in-flow split track with content anchored to its right edge", () => {
+    renderSidebar();
+
+    const sidebar = screen.getByTestId("right-sidebar");
+    const surface = screen.getByTestId("right-sidebar-surface");
+    expect(sidebar).toHaveClass("relative", "transition-[width]");
+    expect(sidebar).not.toHaveClass("absolute", "transition-transform");
+    expect(surface).toHaveClass("absolute", "inset-y-0", "right-0");
+  });
+
+  it("paints a collapsed split track before revealing its right-anchored content", () => {
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    try {
+      render(<ControlledSidebar />);
+      fireEvent.click(screen.getByRole("button", { name: "隐藏右侧栏" }));
+      fireEvent.transitionEnd(screen.getByTestId("right-sidebar"), { propertyName: "width" });
+      fireEvent.click(screen.getByRole("button", { name: "显示右侧栏" }));
+
+      const sidebar = screen.getByTestId("right-sidebar");
+      expect(sidebar).toHaveStyle({ width: "0px" });
+      expect(frames).toHaveLength(1);
+
+      act(() => frames.shift()?.(0));
+      expect(sidebar).toHaveStyle({ width: "0px" });
+      expect(frames).toHaveLength(1);
+
+      act(() => frames.shift()?.(16));
+      expect(sidebar.style.width).not.toBe("0px");
+    } finally {
+      requestFrame.mockRestore();
+    }
   });
 
   it("renders an ordinary conversation through the generic conversation content slot", () => {
@@ -278,7 +329,10 @@ describe("RightSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭标签：改动" }));
 
     const sidebar = screen.getByTestId("right-sidebar");
+    const surface = screen.getByTestId("right-sidebar-surface");
     expect(sidebar).toHaveAttribute("data-motion-state", "closing");
+    expect(sidebar).toHaveStyle({ width: "0px" });
+    expect(surface).not.toHaveClass("translate-x-full", "transition-transform");
     expect(sidebar.inert).toBe(true);
     expect(screen.getByRole("tab", { name: "改动", hidden: true })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示右侧栏" })).toHaveFocus();

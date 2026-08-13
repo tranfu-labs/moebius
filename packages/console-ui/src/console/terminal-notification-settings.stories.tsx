@@ -94,7 +94,7 @@ function SettingsGroupCanvas({ initial }: { initial: SettingsJourneyState }): JS
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
       <aside className="flex w-[168px] shrink-0 flex-col border-r border-line bg-card p-3">
-        <div className="px-2.5 py-2 font-display text-base font-semibold tracking-[-0.01em]">
+        <div className="px-2.5 py-2 font-sans text-base font-semibold tracking-[-0.01em]">
           设置
         </div>
         <div className="mt-1 space-y-1 text-sm">

@@ -55,7 +55,7 @@ export function AnalysisPanel({
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3.5">
         <MessagesSquare className="h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-        <h2 className="text-[12.5px] font-semibold text-ink">
+        <h2 className="text-sm font-semibold text-ink">
           {t("console.analysisPanel.title")}
         </h2>
       </header>
@@ -78,7 +78,7 @@ export function AnalysisPanel({
             {onRetry ? (
               <button
                 type="button"
-                className="mt-2 rounded-sm border border-line px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                className="mt-2 rounded-sm border border-line px-2.5 py-1.5 text-xs font-normal text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 onClick={onRetry}
               >
                 {t("console.analysisPanel.retry")}
@@ -109,11 +109,11 @@ export function AnalysisPanel({
                     title={accessibleName}
                     onClick={() => onOpenEntry(entry)}
                   >
-                    <span className="block truncate text-[12.5px] font-medium text-ink">
+                    <span className="block truncate text-sm font-normal text-ink">
                       {entry.title}
                     </span>
                     {metadata === "" ? null : (
-                      <span className="mt-0.5 block truncate text-[11.5px] text-sub">
+                      <span className="mt-0.5 block truncate text-xs text-sub">
                         {metadata}
                       </span>
                     )}

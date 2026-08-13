@@ -56,7 +56,7 @@ export function TerminalNotificationSettings({
 
   return (
     <fieldset aria-busy={saving}>
-      <legend className="text-sm font-medium">{t("notification.settings.title")}</legend>
+      <legend className="text-sm font-normal">{t("notification.settings.title")}</legend>
       <p id="terminal-notification-description" className="mt-1 text-sm text-sub">
         {t("notification.settings.description")}
       </p>
@@ -167,7 +167,7 @@ export function TerminalNotificationSettings({
           >
             <CircleAlert className="mt-1 h-4 w-4 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium text-ink">
+              <span className="block text-sm font-normal text-ink">
                 {t("notification.settings.channelAnomaly")}
               </span>
               <span className="mt-0.5 block text-xs leading-5 text-sub">
@@ -232,7 +232,7 @@ function PermissionAction({
   if (permission === "allowed") {
     return (
       <span
-        className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-medium text-pass"
+        className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-normal text-pass"
         data-testid="terminal-notification-permission"
       >
         {t("notification.state.allowed")}
@@ -243,7 +243,7 @@ function PermissionAction({
     return (
       <span className="flex flex-wrap items-center gap-2">
         <span
-          className="rounded-full border border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] px-2.5 py-1 text-xs font-medium text-danger"
+          className="rounded-full border border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] px-2.5 py-1 text-xs font-normal text-danger"
           data-testid="terminal-notification-permission"
         >
           {t("notification.state.denied")}
@@ -260,7 +260,7 @@ function PermissionAction({
     return (
       <span className="flex flex-wrap items-center gap-2">
         <span
-          className="rounded-full border border-line bg-sunken px-2.5 py-1 text-xs font-medium text-sub"
+          className="rounded-full border border-line bg-sunken px-2.5 py-1 text-xs font-normal text-sub"
           data-testid="terminal-notification-permission"
         >
           {t("notification.state.unavailable")}
@@ -288,7 +288,7 @@ function PermissionAction({
   return (
     <span className="flex flex-wrap items-center gap-2">
       <span
-        className="rounded-full border border-line bg-sunken px-2.5 py-1 text-xs font-medium text-sub"
+        className="rounded-full border border-line bg-sunken px-2.5 py-1 text-xs font-normal text-sub"
         data-testid="terminal-notification-permission"
       >
         {t("notification.state.undetermined")}

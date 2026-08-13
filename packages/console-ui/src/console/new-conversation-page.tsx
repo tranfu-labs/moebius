@@ -148,7 +148,7 @@ export function NewConversationPage({
       >
         <h1
           className={cn(
-            "mx-auto w-full truncate font-display text-[15px] font-semibold tracking-[-0.01em] text-ink",
+            "mx-auto w-full truncate font-sans text-base font-semibold tracking-[-0.01em] text-ink",
             MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
           )}
           title={t("console.newConversation.title")}
@@ -169,7 +169,7 @@ export function NewConversationPage({
           )}
           data-testid="new-conversation-column"
         >
-          <p className="mb-8 text-center text-lg font-medium text-ink">{t("console.newConversation.invitation")}</p>
+          <p className="mb-8 text-center text-lg font-normal text-ink">{t("console.newConversation.invitation")}</p>
           {promptSuggestions.length > 0 ? (
             <div
               className="mb-4 flex flex-wrap justify-center gap-2"

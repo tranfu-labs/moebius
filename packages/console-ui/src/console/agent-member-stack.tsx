@@ -68,7 +68,7 @@ export function AgentMemberStack({
       })}
       {hiddenCount > 0 ? (
         <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sunken text-[11px] font-medium text-hint"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sunken text-meta font-normal text-hint"
           aria-label={t("console.agentTeams.moreMembers", { count: hiddenCount })}
         >
           ＋{hiddenCount}

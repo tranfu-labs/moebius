@@ -299,6 +299,21 @@ describe("ConversationSidebar", () => {
     ]);
   });
 
+  it("keeps focused workspace session titles readable before selection or hover", () => {
+    render(
+      <ConversationSidebar
+        projects={[project]}
+        selectedSessionId="idle-refactor"
+        appearance="focused"
+      />,
+    );
+
+    const unselected = screen.getAllByTestId("conversation-sidebar-session")
+      .find((row) => row.dataset.sessionId === "running-progress");
+    expect(unselected).toHaveClass("text-ink");
+    expect(unselected).not.toHaveClass("text-sub");
+  });
+
   it("keeps order unchanged when selection and statuses change, then puts a new session first", () => {
     const { rerender } = render(<ConversationSidebar projects={[project]} selectedSessionId="idle-refactor" />);
     const sessionIds = () => screen.getAllByTestId("conversation-sidebar-session").map((row) => row.dataset.sessionId);

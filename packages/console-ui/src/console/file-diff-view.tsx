@@ -8,6 +8,7 @@ import {
 
 import { translate, useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console";
 
 export interface WorkspaceFileChange {
   path: string;
@@ -64,11 +65,13 @@ export function WorkspaceFileTree({
   selectedPath,
   onSelect,
   className,
+  appearance = "default",
 }: {
   files: readonly WorkspaceFileChange[];
   selectedPath: string | null;
   onSelect(path: string): void;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }): JSX.Element {
   const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement | null>(null);
@@ -92,6 +95,7 @@ export function WorkspaceFileTree({
           selectedPath={selectedPath}
           selectedRef={selectedRef}
           onSelect={onSelect}
+          appearance={appearance}
         />
       ))}
     </div>
@@ -105,6 +109,8 @@ export function FileDiffView({
   scrollTop = 0,
   onScrollTopChange,
   className,
+  appearance = "default",
+  pathAction,
 }: {
   path: string | null;
   content: WorkspaceFileContent | null;
@@ -112,6 +118,8 @@ export function FileDiffView({
   scrollTop?: number;
   onScrollTopChange?: (scrollTop: number) => void;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
+  pathAction?: React.ReactNode;
 }): JSX.Element {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -127,12 +135,23 @@ export function FileDiffView({
   }
 
   return (
-    <section className={cn("flex min-h-0 flex-1 flex-col", className)} aria-label={t("console.fileDiff.contentLabel")}>
+    <section
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        appearance === "focused" && "contents",
+        className,
+      )}
+      aria-label={t("console.fileDiff.contentLabel")}
+    >
       <div
-        className="shrink-0 border-b border-line px-3 py-2 font-mono text-xs text-sub selection:bg-sel selection:text-ink"
+        className={cn(
+          "shrink-0 border-b border-line px-3 py-2 font-mono text-xs text-sub selection:bg-sel selection:text-ink",
+          appearance === "focused" && "relative col-span-2 row-start-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent pr-[42px]",
+        )}
         data-testid="selected-file-path"
       >
         {path}
+        {pathAction}
       </div>
       {loading ? (
         <FileContentMessage>{t("console.fileDiff.loading")}</FileContentMessage>
@@ -143,7 +162,10 @@ export function FileDiffView({
       ) : (
         <div
           ref={scrollRef}
-          className="scroll-thin min-h-0 flex-1 select-text overflow-auto font-mono text-xs leading-5"
+          className={cn(
+            "scroll-thin min-h-0 flex-1 select-text overflow-auto font-mono text-xs leading-5",
+            appearance === "focused" && "col-start-1 row-start-2",
+          )}
           data-testid="file-diff-scroll"
           onScroll={(event: UIEvent<HTMLDivElement>) => onScrollTopChange?.(event.currentTarget.scrollTop)}
         >
@@ -224,12 +246,14 @@ function FileTreeNode({
   selectedPath,
   selectedRef,
   onSelect,
+  appearance,
   depth = 0,
 }: {
   node: FileTreeNodeModel;
   selectedPath: string | null;
   selectedRef: React.MutableRefObject<HTMLButtonElement | null>;
   onSelect(path: string): void;
+  appearance: OperatorConsoleAppearance;
   depth?: number;
 }): JSX.Element {
   const { t } = useI18n();
@@ -237,7 +261,12 @@ function FileTreeNode({
     return (
       <div role="treeitem" aria-expanded="true" aria-label={node.name}>
         <div
-          className="flex h-7 items-center gap-1.5 px-2 text-xs font-medium text-sub"
+          className={cn(
+            "flex h-7 items-center gap-1.5 px-2 text-xs font-normal",
+            appearance === "focused"
+              ? "mx-1.5 h-[30px] rounded-[8px] text-ink"
+              : "text-sub",
+          )}
           style={{ paddingLeft: `${String(8 + depth * 14)}px` }}
         >
           <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
@@ -251,6 +280,7 @@ function FileTreeNode({
               selectedPath={selectedPath}
               selectedRef={selectedRef}
               onSelect={onSelect}
+              appearance={appearance}
               depth={depth + 1}
             />
           ))}
@@ -268,7 +298,10 @@ function FileTreeNode({
       role="treeitem"
       aria-selected={selected}
       className={cn(
-        "flex h-7 w-full min-w-0 items-center gap-1.5 px-2 text-left text-xs text-sub hover:bg-hover hover:text-ink",
+        "flex h-7 w-full min-w-0 items-center gap-1.5 px-2 text-left text-xs hover:bg-hover",
+        appearance === "focused"
+          ? "mx-1.5 my-px h-[30px] w-[calc(100%-12px)] rounded-[8px] text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/25"
+          : "text-sub hover:text-ink",
         selected && "bg-sel text-ink",
       )}
       style={{ paddingLeft: `${String(8 + depth * 14)}px` }}
@@ -278,7 +311,7 @@ function FileTreeNode({
       <File className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
       {change !== null && change.changed !== false && (change.additions !== null || change.deletions !== null) ? (
-        <span className="tnum flex shrink-0 gap-1 text-[11px]" aria-label={changeSummary(change, t)}>
+        <span className="tnum flex shrink-0 gap-1 text-meta" aria-label={changeSummary(change, t)}>
           {change.additions !== null ? <span className="text-pass">+{change.additions}</span> : null}
           {change.deletions !== null ? <span className="text-danger">−{change.deletions}</span> : null}
         </span>

@@ -1,318 +1,14 @@
-import { act, type ReactNode, useLayoutEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import type { Decorator, Meta, StoryObj } from "@storybook/react";
-import { ArrowUp, Copy, FolderTree, Square, Trash2, UsersRound } from "lucide-react";
+import { act, useState } from "react";
+import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
-import { MessageAction } from "@/console/message-toolbar";
 import {
   OperatorConsole,
+  ResponsiveOperatorConsole,
   type OperatorConsoleProps,
   type OperatorProject,
 } from "@/console/operator-console";
 import { RIGHT_SIDEBAR_BUILTIN_TAB_TITLES } from "@/console/right-sidebar-tabs";
-import { TooltipProvider } from "@/ui/tooltip";
-import "./operator-console.balanced-workspace.css";
-
-type StoryPendingMessage = NonNullable<OperatorConsoleProps["pendingPrimaryMessages"]>[number];
-type StoryTimelineMessage = OperatorConsoleProps["messages"][number];
-
-interface StoryMessageCopyTarget {
-  message: StoryTimelineMessage;
-  target: HTMLElement;
-}
-
-interface StoryTeamIconTarget {
-  kind: "navigation" | "selector";
-  target: HTMLElement;
-}
-
-function StoryTeamIconOverrides(): ReactNode {
-  const [targets, setTargets] = useState<StoryTeamIconTarget[]>([]);
-
-  useLayoutEffect(() => {
-    const selectors: StoryTeamIconTarget["kind"][] = ["navigation", "selector"];
-    const createdTargets = selectors.flatMap((kind): StoryTeamIconTarget[] => {
-      const button = document.querySelector<HTMLElement>(kind === "navigation"
-        ? '.operator-balanced-workspace [data-testid="sidebar-nav-agent-teams"]'
-        : '.operator-balanced-workspace [data-context-entry="team"] button');
-      const originalIcon = button?.querySelector<SVGElement>(":scope > svg");
-      if (button === null || originalIcon === undefined || originalIcon === null) return [];
-
-      const target = document.createElement("span");
-      target.className = "operator-story-team-icon-slot";
-      target.dataset.iconPlacement = kind;
-      originalIcon.dataset.storyIconHidden = "true";
-      originalIcon.before(target);
-      return [{ kind, target }];
-    });
-
-    setTargets(createdTargets);
-    return () => {
-      createdTargets.forEach(({ target }) => {
-        const originalIcon = target.parentElement?.querySelector<SVGElement>('[data-story-icon-hidden="true"]');
-        originalIcon?.removeAttribute("data-story-icon-hidden");
-        target.remove();
-      });
-    };
-  }, []);
-
-  return targets.map(({ kind, target }) => createPortal(
-    <UsersRound aria-hidden="true" />,
-    target,
-    `story-team-icon-${kind}`,
-  ));
-}
-
-function StoryMessageCopyActions({ messages }: { messages: StoryTimelineMessage[] }): ReactNode {
-  const [targets, setTargets] = useState<StoryMessageCopyTarget[]>([]);
-
-  useLayoutEffect(() => {
-    const createdTargets: HTMLElement[] = [];
-    const nextTargets = Array.from(document.querySelectorAll<HTMLElement>(
-      '.operator-balanced-workspace [data-testid^="timeline-message-"]',
-    )).flatMap((messageElement, index): StoryMessageCopyTarget[] => {
-      const message = messages[index];
-      if (message === undefined || message.body.trim() === "") return [];
-
-      const existingActions = messageElement.querySelector<HTMLElement>(
-        ":scope > .group .mt-1.flex.h-6.items-center > span:first-child",
-      );
-      const target = document.createElement(existingActions === null ? "div" : "span");
-      target.className = existingActions === null
-        ? "operator-story-user-message-toolbar"
-        : "operator-story-agent-copy-slot";
-
-      if (existingActions !== null) {
-        existingActions.insertBefore(target, existingActions.firstChild);
-      } else {
-        messageElement.querySelector<HTMLElement>(":scope > .group")?.append(target);
-      }
-      createdTargets.push(target);
-      return [{ message, target }];
-    });
-
-    setTargets(nextTargets);
-    return () => {
-      createdTargets.forEach((target) => target.remove());
-    };
-  }, [messages]);
-
-  return targets.map(({ message, target }) => createPortal(
-    <TooltipProvider delayDuration={200} skipDelayDuration={100}>
-      <MessageAction
-        icon={Copy}
-        label="复制消息"
-        onClick={() => {
-          void navigator.clipboard?.writeText(message.body).catch(() => undefined);
-        }}
-      />
-    </TooltipProvider>,
-    target,
-    `story-copy-${message.id}`,
-  ));
-}
-
-function StoryPrimaryRunActions({ activeRun }: { activeRun: OperatorConsoleProps["activeRun"] }): ReactNode {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    if (activeRun?.interruptible !== true) return undefined;
-
-    const runElement = Array.from(document.querySelectorAll<HTMLElement>(
-      '.operator-balanced-workspace [data-testid="active-run-block"]',
-    )).find((element) => element.dataset.runId === activeRun.runId);
-    const actions = runElement?.querySelector<HTMLElement>(
-      ":scope .mt-1.flex.h-6.items-center > span:first-child",
-    );
-    if (actions === null || actions === undefined) return undefined;
-
-    const slot = document.createElement("span");
-    slot.className = "operator-story-active-run-stop-slot";
-    actions.firstElementChild?.after(slot);
-    setTarget(slot);
-    return () => {
-      slot.remove();
-    };
-  }, [activeRun]);
-
-  if (target === null) return null;
-  return createPortal(
-    <TooltipProvider delayDuration={200} skipDelayDuration={100}>
-      <MessageAction
-        icon={Square}
-        label="停下主理人"
-        onClick={() => undefined}
-      />
-    </TooltipProvider>,
-    target,
-  );
-}
-
-function StoryPendingIsland({
-  messages,
-  target,
-}: {
-  messages: StoryPendingMessage[];
-  target: HTMLElement;
-}): ReactNode {
-  const [items, setItems] = useState(messages);
-  const [expanded, setExpanded] = useState(false);
-  const visibleItems = expanded ? items : items.slice(0, 1);
-
-  useLayoutEffect(() => {
-    target.hidden = items.length === 0;
-    return () => {
-      target.hidden = false;
-    };
-  }, [items.length, target]);
-
-  return createPortal(
-    <div className="operator-story-pending-island" data-testid="story-pending-island">
-      {visibleItems.map((message) => {
-        const body = message.body.trim()
-          || message.attachments?.map((attachment) => attachment.displayName).join(", ")
-          || "附件消息";
-        return (
-          <div className="operator-story-pending-row" key={message.id}>
-            <button
-              type="button"
-              className="operator-story-pending-copy"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
-              title={body}
-            >
-              {body}
-            </button>
-            <div className="operator-story-pending-actions">
-              <button
-                type="button"
-                className="operator-story-pending-action operator-story-pending-action-send"
-                aria-label={`立即发送：${body}`}
-                title="立即发送"
-                onClick={() => setItems((current) => current.filter((item) => item.id !== message.id))}
-              >
-                <ArrowUp aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="operator-story-pending-action operator-story-pending-action-remove"
-                aria-label={`删除：${body}`}
-                title="删除"
-                onClick={() => setItems((current) => current.filter((item) => item.id !== message.id))}
-              >
-                <Trash2 aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>,
-    target,
-  );
-}
-
-function StoryWorkspaceTreeToggle(): ReactNode {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-  const [treeVisible, setTreeVisible] = useState(true);
-
-  useLayoutEffect(() => {
-    const workspace = document.querySelector<HTMLElement>(".operator-balanced-workspace");
-    if (workspace === null) return undefined;
-
-    let pathElement: HTMLElement | null = null;
-    let slot: HTMLElement | null = null;
-    const syncTarget = (): void => {
-      const nextPath = workspace.querySelector<HTMLElement>('[data-testid="selected-file-path"]');
-      if (nextPath === null || nextPath === pathElement) return;
-
-      slot?.remove();
-      pathElement = nextPath;
-      slot = document.createElement("span");
-      slot.className = "operator-story-workspace-tree-toggle-slot";
-      pathElement.append(slot);
-      setTarget(slot);
-    };
-
-    syncTarget();
-    const observer = new MutationObserver(syncTarget);
-    observer.observe(workspace, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      slot?.remove();
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    const changeTab = document.querySelector<HTMLElement>(
-      '.operator-balanced-workspace [data-testid="change-tab"]',
-    );
-    changeTab?.toggleAttribute("data-story-tree-hidden", !treeVisible);
-    return () => {
-      changeTab?.removeAttribute("data-story-tree-hidden");
-    };
-  }, [treeVisible, target]);
-
-  if (target === null) return null;
-  return createPortal(
-    <button
-      type="button"
-      className="operator-story-workspace-tree-toggle"
-      aria-label={treeVisible ? "隐藏文件树" : "显示文件树"}
-      aria-expanded={treeVisible}
-      title={treeVisible ? "隐藏文件树" : "显示文件树"}
-      onClick={() => setTreeVisible((visible) => !visible)}
-    >
-      <FolderTree aria-hidden="true" />
-    </button>,
-    target,
-  );
-}
-
-function BalancedWorkspace({
-  children,
-  messages,
-  pendingMessages,
-  activeRun,
-}: {
-  children: ReactNode;
-  messages: StoryTimelineMessage[];
-  pendingMessages: StoryPendingMessage[];
-  activeRun: OperatorConsoleProps["activeRun"];
-}): ReactNode {
-  const [pendingTarget, setPendingTarget] = useState<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    const target = document.querySelector<HTMLElement>('.operator-balanced-workspace [data-testid="primary-pending-zone"]');
-    if (target !== null) {
-      target.setAttribute("aria-label", "待发送消息");
-    }
-    setPendingTarget(target);
-  }, [pendingMessages]);
-
-  return (
-    <div className="operator-balanced-workspace">
-      {children}
-      <StoryMessageCopyActions messages={messages} />
-      <StoryPrimaryRunActions activeRun={activeRun} />
-      <StoryTeamIconOverrides />
-      {pendingTarget !== null && pendingMessages.length > 0 ? (
-        <StoryPendingIsland messages={pendingMessages} target={pendingTarget} />
-      ) : null}
-      <StoryWorkspaceTreeToggle />
-    </div>
-  );
-}
-
-const withBalancedWorkspace: Decorator = (Story, context) => (
-  <BalancedWorkspace
-    messages={(context.args.messages ?? []) as StoryTimelineMessage[]}
-    pendingMessages={(context.args.pendingPrimaryMessages ?? []) as StoryPendingMessage[]}
-    activeRun={(context.args.activeRun ?? null) as OperatorConsoleProps["activeRun"]}
-  >
-    <Story />
-  </BalancedWorkspace>
-);
 
 const agentMarkdown = [
   "## 结论",
@@ -1115,8 +811,10 @@ export const DashboardEmptyState: Story = {
 
 export const DashboardShellWithRightSidebar: Story = {
   name: "Focused canvas · 1440 × 832",
+  render: (args) => <ResponsiveOperatorConsole {...args} />,
   args: {
     ...DashboardShellAlignment.args,
+    appearance: "focused",
     projects: DashboardShellAlignment.args?.projects?.map((project) => ({
       ...project,
       isGitRepository: true,
@@ -1159,13 +857,12 @@ export const DashboardShellWithRightSidebar: Story = {
         { kind: "unchanged", oldLineNumber: 760, newLineNumber: 760, text: "export const DashboardShellWithRightSidebar: Story = {" },
         { kind: "deletion", oldLineNumber: 761, newLineNumber: null, text: "  args: DashboardShellAlignment.args," },
         { kind: "addition", oldLineNumber: null, newLineNumber: 761, text: "  name: \"Focused canvas · 1440 × 832\"," },
-        { kind: "addition", oldLineNumber: null, newLineNumber: 762, text: "  decorators: [withBalancedWorkspace]," },
-        { kind: "addition", oldLineNumber: null, newLineNumber: 763, text: "  args: { ...DashboardShellAlignment.args }," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 762, text: "  render: (args) => <ResponsiveOperatorConsole {...args} />," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 763, text: "  args: { ...DashboardShellAlignment.args, appearance: \"focused\" }," },
         { kind: "unchanged", oldLineNumber: 762, newLineNumber: 764, text: "};" },
       ],
     }),
   },
-  decorators: [withBalancedWorkspace],
   parameters: {
     viewport: {
       defaultViewport: "balancedDesktop",
@@ -1181,6 +878,7 @@ export const DashboardShellWithRightSidebar: Story = {
 
 export const DashboardShellWithLongComposer: Story = {
   name: "Focused canvas · long composer",
+  render: (args) => <ResponsiveOperatorConsole {...args} />,
   args: {
     ...DashboardShellWithRightSidebar.args,
     composerValue: [
@@ -1189,7 +887,6 @@ export const DashboardShellWithLongComposer: Story = {
       "最后请补充一份可以直接交给测试同学复核的验收说明。",
     ].join("\n"),
   },
-  decorators: [withBalancedWorkspace],
   parameters: DashboardShellWithRightSidebar.parameters,
 };
 
@@ -1357,8 +1054,7 @@ export const TeamTraceabilityReducedMotion: Story = {
   args: traceabilityArgs,
   decorators: [
     (Story) => (
-      <div data-reduced-motion-fixture>
-        <style>{`[data-reduced-motion-fixture] *, [data-reduced-motion-fixture] *::before, [data-reduced-motion-fixture] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }`}</style>
+      <div className="[&_*]:!animate-none [&_*]:!transition-none [&_*]:!scroll-auto [&_*::before]:!animate-none [&_*::before]:!transition-none [&_*::after]:!animate-none [&_*::after]:!transition-none">
         <Story />
       </div>
     ),

@@ -176,7 +176,7 @@ export function FileReferenceTab({
     >
       <div className="shrink-0 border-b border-line px-3 py-2.5">
         {content?.scope === "external-preview" ? (
-          <p className="mb-1 text-xs font-medium text-ink" data-testid="external-file-preview-label">
+          <p className="mb-1 text-xs font-normal text-ink" data-testid="external-file-preview-label">
             {t("console.fileReference.externalPreview")}
           </p>
         ) : null}
@@ -199,7 +199,7 @@ export function FileReferenceTab({
           <p>{t(fileReferenceUnavailableKey(content?.reason ?? "unavailable"))}</p>
           <button
             type="button"
-            className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
+            className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
             onClick={() => setReloadVersion((current) => current + 1)}
           >
             {t("common.retry")}

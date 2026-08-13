@@ -67,7 +67,7 @@ function SettingsStoryCanvas(args: SettingsDialogProps): JSX.Element {
     <I18nProvider locale={args.activeLocale}>
       <div className="flex min-h-screen bg-canvas text-ink">
         <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-rail p-3">
-          <div className="px-2 py-3 font-display text-sm font-semibold">Moebius</div>
+          <div className="px-2 py-3 font-sans text-sm font-semibold">Moebius</div>
           <div className="mt-3 space-y-1 text-sm text-sub">
             <div className="flex h-9 items-center gap-2 rounded-sm px-2">
               <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -98,7 +98,7 @@ function SettingsStoryCanvas(args: SettingsDialogProps): JSX.Element {
               <MessageSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               产品交付
             </div>
-            <h1 className="mt-4 font-display text-2xl font-semibold tracking-[-0.01em]">
+            <h1 className="mt-4 font-sans text-lg font-semibold tracking-[-0.01em]">
               设置页视觉评审
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-sub">

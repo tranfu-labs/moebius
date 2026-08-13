@@ -84,7 +84,7 @@ export function WorkspaceFileView({
                 type="button"
                 className={cn(
                   "rounded px-2 py-1 text-xs text-sub hover:text-ink",
-                  mode === candidate && "bg-sel font-medium text-accent",
+                  mode === candidate && "bg-sel font-normal text-accent",
                 )}
                 aria-pressed={mode === candidate}
                 onClick={() => selectMode(candidate)}

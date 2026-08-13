@@ -59,7 +59,7 @@ export function FileSourceView({
               <span
                 className={cn(
                   "sticky left-0 w-16 shrink-0 border-r border-line bg-canvas px-2 text-right text-hint",
-                  target && "bg-sel font-medium text-accent",
+                  target && "bg-sel font-normal text-accent",
                 )}
                 aria-hidden="true"
               >

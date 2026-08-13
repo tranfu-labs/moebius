@@ -19,17 +19,35 @@
 
 ## 排版
 
-- 拉丁字体：自托管 Inter Variable（`src/styles/fonts/inter-var-latin-cv01.woff2`，latin 子集，wght 100-900 轴，OFL 1.1，license 同目录 `OFL.txt`）；CJK 回退 PingFang SC 等系统字体，取最近字重档。会话 sticky 标题、品牌名、空状态邀请语等展示性标题使用 `--font-display`（`font-display` 工具类）：Inter Tight 优先、未安装时自然回落 InterVar，配 `tracking-[-0.01em]`。
-- 字重只使用三档，避免同一页面靠零散的“微调字重”制造层级：
+- 字体只保留两族：界面、标题和富文本统一使用自托管 Inter Variable（`font-sans`，CJK 回退 PingFang SC 等系统字体）；代码、路径、终端输出和机器标识使用 `font-mono`。不再设置 display 字体或标题专用字体族，标题层级由字号和 600 字重建立。
+- 字重只使用两档，避免靠“稍微粗一点”制造含混层级：
 
-  | 字重 | CSS / Tailwind | 用途 |
+  | 字重 | Tailwind | 用途 |
   | --- | --- | --- |
-  | 400 | `font-normal` | 正文、说明文字、导航项、工具按钮与普通操作文案；当背景、图标或位置已经表达主次时，按钮不再额外加粗。 |
-  | 500 | `font-weight: 500` / `font-[500]` | 选中标签、分组/项目名和紧凑语义标签；用于建立轻度层级，不承担正文中的强强调。 |
-  | 600 | `font-weight: 600` / `font-[600]` | 品牌与页面标题、内容标题、角色名，以及富文本中的 `strong` / `b` 行内强调。 |
+  | 400 | `font-normal` | 正文、说明、导航、标签、按钮、选中项与普通操作文案。选中态由背景、前景色或图标表达，不因 active 升字重。 |
+  | 600 | `font-semibold` | 品牌与页面标题、内容标题、角色名，以及富文本中的 `strong` / `b` 真正强调。 |
 
-  字重值必须使用 100 的整数倍，禁止 700+，也禁止组件局部引入 450、510、540、590、620 等中间档。CJK 系统回退会把任意中间值吸附到不同字重，固定三档才能让中英文层级稳定。
+  禁止使用 500、700+ 或任意字重值；Tailwind 中历史 `medium` / `bold` 等别名也只映射到 400 / 600，防止第三方内容产生第三档实际字重，但新代码不得继续使用这些别名。
+- UI 字号只使用五档：
+
+  | 角色 | 字号 / Tailwind | 用途 |
+  | --- | --- | --- |
+  | Meta | 11px / `text-meta` | 时间、计数、紧凑状态和代码辅助信息。 |
+  | Caption | 12px / `text-xs` | 辅助标签、表头、字段说明。 |
+  | Body | 13px / `text-sm` | 默认正文、导航和控件文案。 |
+  | Section | 15px / `text-base` | 分区标题、对话标题和较强标签。 |
+  | Page | 18px / `text-lg` | 页面级标题和主要空状态标题。 |
+
+  Markdown 内容保留语义例外：H1 / H2 / H3 分别为 20 / 18 / 16px；这三档只属于用户内容渲染，普通 UI 不得借用 20px 或另造任意字号。字号表达结构，前景色表达优先级，背景表达交互状态，字重只表达真正强调。
 - hover / focus / active 不改变字重，避免文字宽度变化和布局抖动；交互状态用前景色、背景色、描边或图标表达。
+- 前景色按信息职责分三层，不能把“未选中”直接等同于“次要文字”：
+
+  | 前景 | 用途 |
+  | --- | --- |
+  | `text-ink` | 正文、标题，以及用户需要直接识别和选择的默认操作标签：应用导航、会话标题、文件/文件夹名、标签页名、底部命令。选中态主要由 `bg-sel` 表达，默认态不得等到 hover 才变得清晰。 |
+  | `text-sub` | 时间、路径、阶段、计数、状态说明、补充描述，以及随主标签出现的非必要图标；它必须依附于同屏的主信息，不能独自承担导航名称。 |
+  | `text-hint` | placeholder、尚未激活的工具条和最低优先级提示；禁用态在既有前景上使用 opacity，不另造一档灰。 |
+
 - 全局 `font-feature-settings: "cv01", "ss03"`；13px 正文字距为 0，负字距只用于 ≥16px 标题。
 - 数字与相对时间用 `.tnum`（tabular-nums）。
 
@@ -57,7 +75,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 ## elevation / focus / 动效红线
 
-- 零阴影零渐变：`--shadow-pop` 恒为 `none`，浮层（dropdown / popover / 对话框）只靠 1px 描边与 `bg-sunken` 亮一档的底色分层；禁止任何投影与渐变（包括滚动淡出渐变）。
+- 默认界面仍是零阴影零渐变：`--shadow-pop` 恒为 `none`，dropdown / popover / 对话框只靠 1px 描边与 `bg-sunken` 亮一档的底色分层。`OperatorConsole appearance="focused"` 是登记过的页面组合例外：主面板、composer、排队浮岛与只读悬浮信息面只能使用 Tailwind 的 `shadow-panel` / `shadow-composer` / `shadow-pending` / `shadow-floating` 命名令牌，不得在 Story 或组件里重新写投影值；仍禁止渐变（包括滚动淡出渐变）。
 - 不设置组件库级全局 `:focus-visible` 样式；需要可视键盘焦点的控件由组件按交互语义局部声明。
 - 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场是**容器自己长大**：`clip-path: inset()` 从「它被锚定的那个角」的零尺寸方块展开到全尺寸，时长 `--dur-overlay`，曲线 `--ease-spring`；关闭是同一段动画倒放，缩回同一个角，不是另换一段淡出。
 
@@ -69,12 +87,12 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 用 clip 而不是 `scale`：scale 会把面板内容一起缩放，读成整体放大而不是「卡片长出来」。角的位置由 Radix **碰撞处理之后**的 `data-side` / `data-align` 两个轴共同决定（side 定贴哪条边、align 定靠那条边的哪一端），映射写在 `globals.css` 的 `[data-overlay-clip]` 规则里，翻转时自动跟着换角。**触发器本身不参与动画**：它是另一个元素，任何让它缩放或被当作动画起始快照的做法（例如与面板共用 `view-transition-name`）都会把它拉伸并盖住原点，已验证不可取。
 
-`--ease-spring` 是**临界阻尼**弹簧（等价于 SwiftUI `spring(duration: 0.36, bounce: 0)`）采样成的 CSS `linear()`，定义与重算公式在 `tokens.css`。**它不违反上面的「禁止 bounce / elastic」**：bounce = 0 的弹簧数学上永不过冲，实测 scale 全程不超过 1.000。选弹簧而非贝塞尔的理由是速度剖面——贝塞尔的结束是硬停，弹簧起步有加速度、收尾像真实物体一样停住；WWDC23《Animate with springs》给的默认建议也是 bounce = 0，bounce > 40% 被明确点名为 UI 里应避免。仍然禁止：任何 bounce > 0 的弹簧、goo / clip-path morph、以及为动效引入 framer-motion 之类运行时（`linear()` 在 Electron 38 / Chromium 140 上原生可用，不需要）。右侧辅助工作区是登记的空间动效例外：允许在 150ms 内以宽度裁切完成并排开合、以右缘位移完成覆盖开合，中途反向从当前进度继续；内容不得缩放，响应式布局切换不得追加开关动画，`prefers-reduced-motion` 下立即完成。禁止 bounce / elastic 曲线；按钮按下用 `active:scale-[0.98]`，不做更夸张的形变。持续加载 pulse 必须在 `prefers-reduced-motion: reduce` 下取消动画并保留等价静态骨架。
+`--ease-spring` 是**临界阻尼**弹簧（等价于 SwiftUI `spring(duration:0.36, bounce:0)`）采样成的 CSS `linear()`，定义与重算公式在 `tokens.css`。**它不违反上面的「禁止 bounce / elastic」**：bounce = 0 的弹簧数学上永不过冲，实测 scale 全程不超过 1.000。选弹簧而非贝塞尔的理由是速度剖面——贝塞尔的结束是硬停，弹簧起步有加速度、收尾像真实物体一样停住；WWDC23《Animate with springs》给的默认建议也是 bounce = 0，bounce > 40% 被明确点名为 UI 里应避免。仍然禁止：任何 bounce > 0 的弹簧、goo / clip-path morph、以及为动效引入 framer-motion 之类运行时（`linear()` 在 Electron 38 / Chromium 140 上原生可用，不需要）。右侧辅助工作区是登记的空间动效例外：并排布局只动画一条共享边界——右栏内容固定锚定右缘，外层轨道在 220ms 内从 `0` 展开到目标宽度并裁切内容，主面板由同一条 flex 边界自然收缩；不得让主面板和右栏各自计算、各自动画。覆盖布局只沿右缘位移。中途反向从当前进度继续，内容不得缩放，响应式布局切换不得追加开关动画，`prefers-reduced-motion` 下立即完成。禁止 bounce / elastic 曲线；按钮按下用 `active:scale-[0.98]`，不做更夸张的形变。持续加载 pulse 必须在 `prefers-reduced-motion: reduce` 下取消动画并保留等价静态骨架。
 - Card 维持无默认阴影的中性面：可见细边、圆角基线 `--radius: 14px`（Tailwind lg/md/sm 由 calc 派生）。
 
 ## 组件模式目录
 
-- **inbox 行**：`src/console/agent-message.tsx`——32px 圆形角色头像（右下角 15px stage 角标）+ 行 1（角色名 510 + stage muted + 右侧状态图标与 tnum 时间）+ 行 2 结论 + 行 3 箭头 + handoff；行间发丝线（行内 `border-t`），hover 行底色，无常驻卡片边框。
+- **inbox 行**：`src/console/agent-message.tsx`——32px 圆形角色头像（右下角 15px stage 角标）+ 行 1（角色名 600 + stage muted + 右侧状态图标与 tnum 时间）+ 行 2 结论 + 行 3 箭头 + handoff；行间发丝线（行内 `border-t`），hover 行底色，无常驻卡片边框。
 - **Agent 画像与角色标签**：`src/console/agent-portrait.tsx`（团队页 20/28/32px）与 `src/console/role-tag.tsx`（时间线 who 行 20px）共用同一身份体系——36 张预生成的拟人猫画像组成固定池，按 slug 稳定哈希取脸，底色按 slug 另取一套独立哈希从身份色板（`--ident-1…6`）取色（两套哈希必须互不整除，否则脸与色绑死），同一角色全产品同脸同色；画像占比已烘焙进素材（主体宽 86%、顶部留白 7%），UI 只负责底色与裁切形状——个体用正圆、团队用 10px 圆角方（容器与个体的形状区分）；「你」是对话里唯一的人，保持首字而非画像；画像自身 `aria-hidden`，旁边必须保留可读名称。画像素材位于 `src/assets/portraits/`，扩容或换风格走 `.claude/skills/generate-avatar-set/`（跨批风格一致与占比烘焙都有既定做法，别逐张重画）。
 - **画像选择器**：`src/console/agent-portrait-picker.tsx`——触发器就是当前成员的画像本身，不加独立按钮；popover 内 6×6 平铺整池，**每个候选都用该成员现有的身份色渲染**（底色不可选，中性底色挑完再上色会让一半候选是假预览）。选中项用 `border-accent` 环，roving tabindex + 方向键把 36 个候选收成一个 tab stop（`role="radiogroup"` / `role="radio"`）；**选中与 roving 焦点必须同移**，否则屏上同时亮两个 accent 圈，方向键还会从打开时那一格续走。面内顶部居中常驻 `preview` 档（80px）画像 + 其下角色名的纵向组，显示该成员当前的样子（含引擎角标）；**选中不关闭浮层**，预览原地更新，用户才能连着比较几个候选，点选即关会让人只能在做完选择之后看清一张。候选本身恒定 40px（六列 352px 面：列宽 48px − 2px 选中环 = 44px 内径，给 40px 的脸留出两侧各 2px；再挤下去环就贴死在脸上，读起来变成粗描边而不是选中），28px 下画像风格会直接失效（见 `.claude/skills/generate-avatar-set/`）；再往上的可读性交给这个常驻预览，不用 hover 放大——预览对指针、键盘、触摸一视同仁，且选完仍在。格子用 `aspect-square w-full` 跟随栅格列宽，不写死宽度，否则列宽一变就溢出。选中默认那张时回调 `null` 而不是它的 id，否则「跟随默认」会被冻成一次显式选择——但这个区别只存在于存储层：**不做「恢复默认」按钮，也不给任何一格标注「默认」**，默认那张就在候选里，而「显式选过 / 跟随默认」用户看不见。面内也不写画像的设计意图，那是给我们自己看的。存的是稳定 id 不是下标——扩池会让下标整体错位；读到池里不存在的 id 时回落默认而不是渲染空框。
 - **执行引擎标识**：`src/console/provider-mark.tsx`——四种引擎（codex / claude / kimi / pi+provider）的 provider 图形，作为角标由 `AgentPortrait` 按尺寸档位自动渲染，调用点只传 `engine`，不手工定位。图形一律 `aria-hidden`：给它可访问名会折进容器的可访问名，SVG `<title>` 还会计入 `textContent`。图形来自 models.dev（MIT），但商标属各厂商，仅用于标示某个 Agent 运行在哪个引擎上，NEVER 当作品质或背书标记。**会话时间线一侧的角标依赖 desktop renderer 在构造 `memberIdentities` 时填入 `engine` 字段**；未填时不报错，只是不显示。
@@ -89,7 +107,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **右侧辅助工作区**：`src/console/right-sidebar.tsx` + `right-sidebar-layout.ts`——以扣除左导航后的内容面计算 50% 默认宽度、双面 480px 下限和 960px 并排/覆盖边界；并排分隔线使用 1px `border-line` 与扩大的透明命中区，hover / drag / focus / 抵边只增强为 accent。开合遵循上方唯一空间动效例外，关闭开始即 inert 并保留最后内容到退场结束，不引入阴影、渐变、弹跳或内容缩放。
 - **Agent 运行活动与时间**：`src/console/run-block.tsx` + `src/console/run-time.tsx`——who 行右侧常驻语义明确的「已进行」时长，下一行只保留最新一条安全活动并截断对象；终态改为「耗时」，完成时刻通过 title、键盘焦点与可访问名称提供。`main` 变体使用 24px 身份头像与 32px 正文缩进，`embedded` 保留原密度；活动记录不显示百分比、不轮播旧工具、不堆积工具日志；无稳定过程能力的执行引擎原位显示不可用说明，不渲染空入口。
 - **主 / embedded composer**：`src/console/role-composer.tsx`——`main` 使用 14px card、10/12px 内间距、单行起步且最多 120px 的 textarea，并把附件、发送和主理人停止保持为 32px 方形操作；`embedded` 保留 76px 起步与右侧栏自己的可用宽度。两者只隔离视觉密度，不改变发送、停止、附件、mention、输入法或待发射规则。
-- **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px 510 + 14px 图标）在下。
+- **属性面板头**：`src/console/session-context-header.tsx`——label（12px muted）在上、value（13px normal + 14px 图标）在下。
 - **分析对话入口面板**：`src/console/analysis-panel.tsx`——所在对话右上角的轻量入口面，只显示直接子分析对话的可读标题与必要的同名消歧；宽容器为 288px 并排面，窄容器覆盖所在对话而不改正文宽度。空、加载、失败与长列表都留在面板内部，条目只触发外层右侧栏唯一会话标签，不承载时间线、状态、摘要或管理操作。
 - **运行项入口面板**：`src/console/managed-process-panel.tsx`——仅在当前会话存在托管进程或未确认的结束事实时占用 46px 顶栏，位于分析入口之前；单项显示名称与状态，多项显示数量。Popover 只展示服务端事实、loopback 打开入口、有限日志、停止与结束确认，不提供 restart、命令编辑或工作流编排；最后一项结束后保留到用户明确确认，确认后由 Radix 焦点回返顶栏触发器再移除入口。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。

@@ -157,7 +157,7 @@ export function SettingsDialog({
           onInteractOutside={(event) => event.preventDefault()}
         >
           <header className="flex min-h-[52px] items-center justify-between border-b border-line bg-card px-4">
-            <Dialog.Title className="font-display text-base font-semibold tracking-[-0.01em]">
+            <Dialog.Title className="font-sans text-base font-semibold tracking-[-0.01em]">
               {t("settings.title")}
             </Dialog.Title>
             <Dialog.Close asChild>
@@ -249,7 +249,7 @@ function SettingsNavItem({
         "flex h-9 w-full items-center gap-2 rounded-sm px-2.5 text-left text-sm transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         "max-[620px]:w-auto max-[620px]:min-w-24",
-        active ? "bg-sel font-medium text-ink" : "text-sub hover:bg-hover hover:text-ink",
+        active ? "bg-sel font-normal text-ink" : "text-sub hover:bg-hover hover:text-ink",
       )}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
@@ -278,7 +278,7 @@ function GeneralSettings({
   return (
     <>
       <fieldset>
-        <legend className="text-sm font-medium">{t("settings.language")}</legend>
+        <legend className="text-sm font-normal">{t("settings.language")}</legend>
         <p id="settings-language-description" className="mt-1 text-sm text-sub">
           {t("settings.language.description")}
         </p>
@@ -343,7 +343,7 @@ function GeneralSettings({
 
       {taskReminder !== undefined ? (
         <fieldset className="mt-8 border-t border-line pt-6">
-          <legend className="text-sm font-medium">{t("settings.taskReminder")}</legend>
+          <legend className="text-sm font-normal">{t("settings.taskReminder")}</legend>
           <TerminalNotificationSettings
             enabled={taskReminder.enabled}
             saveStatus={taskReminder.saveStatus}
@@ -389,7 +389,7 @@ function AboutSettings({
       <div className="flex items-center gap-3">
         <MoebiusLogo className="h-11 w-11" decorative />
         <div className="min-w-0">
-          <p className="font-display text-lg font-semibold tracking-[-0.01em]">Moebius</p>
+          <p className="font-sans text-lg font-semibold tracking-[-0.01em]">Moebius</p>
           <p className="mt-0.5 text-sm text-sub">{t("settings.about.tagline")}</p>
         </div>
       </div>
@@ -397,7 +397,7 @@ function AboutSettings({
       <dl className="mt-6 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
         <SettingsInfoRow label={t("settings.version")}>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <span className="tnum select-text text-sm font-medium">{state.currentVersion}</span>
+            <span className="tnum select-text text-sm font-normal">{state.currentVersion}</span>
             <Button
               type="button"
               variant="ghost"
@@ -493,12 +493,12 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "available" ? (
-        <p className="text-sm font-medium">
+        <p className="text-sm font-normal">
           {t("settings.update.downloading", { version: state.latestVersion ?? "" })}
         </p>
       ) : null}
       {state.updateStatus === "downloading" ? (
-        <p className="text-sm font-medium">
+        <p className="text-sm font-normal">
           {t("settings.update.downloadingProgress", {
             version: state.latestVersion ?? "",
             progress: Math.round(state.progress ?? 0),
@@ -506,13 +506,13 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "ready" ? (
-        <p className="flex items-center gap-2 text-sm font-medium">
+        <p className="flex items-center gap-2 text-sm font-normal">
           <CheckCircle2 className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
           {t("settings.update.ready", { version: state.latestVersion ?? "" })}
         </p>
       ) : null}
       {state.updateStatus === "installing" ? (
-        <p className="text-sm font-medium" aria-busy="true">
+        <p className="text-sm font-normal" aria-busy="true">
           {t("settings.update.installing")}
         </p>
       ) : null}

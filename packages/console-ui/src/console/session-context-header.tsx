@@ -31,7 +31,7 @@ export function SessionContextHeader({
   return (
     <header className={cn("rounded-lg border border-line bg-card px-3 py-2.5 text-ink", className)}>
       {parentTitle ? <ParentCrumb parentTitle={parentTitle} onOpenParent={onOpenParent} /> : null}
-      <h1 className={cn("truncate text-[15px] font-semibold leading-6", parentTitle ? "mt-0.5" : "")}>{taskLabel}</h1>
+      <h1 className={cn("truncate text-base font-semibold leading-6", parentTitle ? "mt-0.5" : "")}>{taskLabel}</h1>
     </header>
   );
 }

@@ -89,7 +89,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
     <section aria-labelledby="provider-settings-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="provider-settings-title" className="text-sm font-medium">{t("settings.providers")}</h2>
+          <h2 id="provider-settings-title" className="text-sm font-normal">{t("settings.providers")}</h2>
           <p className="mt-1 text-sm text-sub">{t("settings.providers.description")}</p>
         </div>
         <Button size="sm" onClick={() => setAdding(true)} disabled={adding}>
@@ -110,7 +110,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
             });
           }}
         >
-          <div className="flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4" />{t("settings.providers.addDeepSeek")}</div>
+          <div className="flex items-center gap-2 text-sm font-normal"><KeyRound className="h-4 w-4" />{t("settings.providers.addDeepSeek")}</div>
           <label className="grid gap-1 text-sm">
             <span>{t("settings.providers.profileName")}</span>
             <Input value={displayName} maxLength={80} onChange={(event) => setDisplayName(event.target.value)} required />
@@ -237,7 +237,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
                 <Button size="sm" type="submit" disabled={busy || nextName.trim() === profile.displayName}>{t("settings.providers.saveName")}</Button>
                 <Button size="sm" type="button" variant="ghost" onClick={() => { setNextName(profile.displayName); setRenaming(false); }}>{t("settings.providers.cancel")}</Button>
               </form>
-            ) : <h3 className="font-medium">{profile.displayName}</h3>}
+            ) : <h3 className="font-normal">{profile.displayName}</h3>}
             <span className={cn("rounded-full px-2 py-0.5 text-xs", profile.readiness === "ready" ? "bg-pass/10 text-pass" : profile.readiness === "disabled" ? "bg-sunken text-sub" : "bg-accent/10 text-accent")}>{status}</span>
           </div>
           <p className="mt-1 text-sm text-sub">DeepSeek · Key •••• {profile.keySuffix}</p>
@@ -250,7 +250,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       {isReferenceActivity && activity !== null ? (
         <div className="mt-3 grid gap-2 rounded-sm border border-accent/30 bg-accent/5 p-3" data-testid="provider-migration-recovery" role="status">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">
+            <p className="text-sm font-normal">
               {activity.status === "migrating"
                 ? t("settings.providers.activity.migrationInProgress")
                 : t("settings.providers.activity.migrationInterrupted")}
@@ -267,7 +267,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           ) : null}
           <div className="grid gap-2 text-xs">
             <div>
-              <p className="font-medium text-sub">{t("settings.providers.activity.completed", { count: completedReferenceLabels.length })}</p>
+              <p className="font-normal text-sub">{t("settings.providers.activity.completed", { count: completedReferenceLabels.length })}</p>
               {completedReferenceLabels.length > 0 ? (
                 <ul className="mt-1 grid gap-1 text-sub">
                   {completedReferenceLabels.map((label, index) => <li key={`completed:${index}:${label}`}>{label}</li>)}
@@ -275,7 +275,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
               ) : null}
             </div>
             <div>
-              <p className="font-medium text-sub">{t("settings.providers.activity.pending", { count: pendingReferenceLabels.length })}</p>
+              <p className="font-normal text-sub">{t("settings.providers.activity.pending", { count: pendingReferenceLabels.length })}</p>
               {pendingReferenceLabels.length > 0 ? (
                 <ul className="mt-1 grid gap-1 text-sub">
                   {pendingReferenceLabels.map((label) => <li key={`pending:${label}`}>{label}</li>)}
@@ -298,7 +298,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       ) : null}
       <div className="mt-3 grid gap-2 rounded-sm border border-line p-3" aria-label={t("settings.providers.modelsLabel", { name: profile.displayName })}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-medium text-sub">{t("settings.providers.verifiedModels")}</p>
+          <p className="text-xs font-normal text-sub">{t("settings.providers.verifiedModels")}</p>
           {availableModel !== null ? (
             <Button
               size="sm"
@@ -344,7 +344,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         })}
       </div>
       <div className="mt-3 rounded-sm border border-line p-3">
-        <p className="text-xs font-medium text-sub">{t("settings.providers.references", { count: profile.references.length })}</p>
+        <p className="text-xs font-normal text-sub">{t("settings.providers.references", { count: profile.references.length })}</p>
         {profile.references.length === 0 ? (
           <p className="mt-2 text-sm text-sub">{t("settings.providers.noReferences")}</p>
         ) : (
@@ -391,7 +391,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
             if (saved) setMigrating(false);
           });
         }}>
-          <p className="text-sm font-medium">{t("settings.providers.migrationTitle")}</p>
+          <p className="text-sm font-normal">{t("settings.providers.migrationTitle")}</p>
           <p className="text-xs text-sub">{t("settings.providers.migrationNotice")}</p>
           <div className="grid gap-2">
             {profile.references.map((reference) => {
@@ -473,7 +473,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           if (event.target === event.currentTarget) { setDeleteName(""); setConfirmingDelete(false); }
         }}>
           <div role="dialog" aria-modal="true" aria-labelledby={`delete-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
-            <h4 id={`delete-provider-${profile.id}`} className="font-medium">{t("settings.providers.deleteTitle", { name: profile.displayName })}</h4>
+            <h4 id={`delete-provider-${profile.id}`} className="font-normal">{t("settings.providers.deleteTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.deleteWarning", { provider: profile.providerName, name: profile.displayName })}</p>
             <label className="mt-4 grid gap-1 text-sm">
               <span>{t("settings.providers.typeName", { name: profile.displayName })}</span>
@@ -489,7 +489,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       {endingOwnerId !== null ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`end-provider-reference-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
-            <h4 id={`end-provider-reference-${profile.id}`} className="font-medium">{t("settings.providers.endContinuationTitle")}</h4>
+            <h4 id={`end-provider-reference-${profile.id}`} className="font-normal">{t("settings.providers.endContinuationTitle")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.endContinuationWarning")}</p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEndingOwnerId(null)}>{t("settings.providers.cancel")}</Button>
@@ -503,7 +503,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       {confirmingDisable ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`disable-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
-            <h4 id={`disable-provider-${profile.id}`} className="font-medium">{t("settings.providers.disableTitle", { name: profile.displayName })}</h4>
+            <h4 id={`disable-provider-${profile.id}`} className="font-normal">{t("settings.providers.disableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.disableWarning", { count: profile.references.length })}</p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setConfirmingDisable(false)}>{t("settings.providers.cancel")}</Button>
@@ -515,7 +515,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       {confirmingEnable ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`enable-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
-            <h4 id={`enable-provider-${profile.id}`} className="font-medium">{t("settings.providers.enableTitle", { name: profile.displayName })}</h4>
+            <h4 id={`enable-provider-${profile.id}`} className="font-normal">{t("settings.providers.enableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.enableWarning", { count: profile.verifiedModels.length })}</p>
             <ul className="mt-3 grid gap-1 text-sm">{profile.verifiedModels.map((candidate) => <li key={candidate}>{modelLabel(candidate)}</li>)}</ul>
             <div className="mt-4 flex justify-end gap-2">
@@ -528,7 +528,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       {defaultModelToRemove !== null ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`replace-default-model-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
-            <h4 id={`replace-default-model-${profile.id}`} className="font-medium">{t("settings.providers.replaceDefaultBeforeRemove")}</h4>
+            <h4 id={`replace-default-model-${profile.id}`} className="font-normal">{t("settings.providers.replaceDefaultBeforeRemove")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.replaceDefaultBeforeRemoveWarning", { model: modelLabel(defaultModelToRemove) })}</p>
             <label className="mt-4 grid gap-1 text-sm">
               <span>{t("settings.providers.newDefaultModel")}</span>

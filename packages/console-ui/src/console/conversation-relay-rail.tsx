@@ -23,6 +23,8 @@ import {
 } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n } from "@/i18n";
 import {
   Popover,
@@ -37,6 +39,7 @@ export interface ConversationRelayRailProps {
   onActivate: (event: ConversationRelayEvent) => void;
   onBrowse?: (event: ConversationRelayEvent) => void;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }
 
 export function ConversationRelayRail({
@@ -46,6 +49,7 @@ export function ConversationRelayRail({
   onActivate,
   onBrowse,
   className,
+  appearance = "default",
 }: ConversationRelayRailProps): JSX.Element | null {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -189,6 +193,7 @@ export function ConversationRelayRail({
           aria-label={t("console.relayRail.label")}
           className={cn(
             "pointer-events-auto absolute left-0 overflow-visible rounded-[8px] border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+            appearance === "focused" && "border-0",
             expanded
               ? "border-line bg-sunken"
               : "border-transparent bg-transparent",
@@ -244,12 +249,16 @@ export function ConversationRelayRail({
                 style={{
                   opacity: expanded ? (emphasized ? 1 : 0.85) : 0,
                   strokeDashoffset: expanded ? 0 : 1,
-                  transition: [
-                    "stroke-dashoffset 260ms var(--ease-enter)",
-                    "opacity 150ms var(--ease)",
-                    "stroke-width 150ms var(--ease)",
-                  ].join(", "),
-                  transitionDelay: expanded
+                  transition: appearance === "focused"
+                    ? "opacity 100ms var(--ease), stroke-width 120ms var(--ease)"
+                    : [
+                        "stroke-dashoffset 260ms var(--ease-enter)",
+                        "opacity 150ms var(--ease)",
+                        "stroke-width 150ms var(--ease)",
+                      ].join(", "),
+                  transitionDelay: appearance === "focused"
+                    ? "0ms"
+                    : expanded
                     ? `${String(Math.min(pathIndex * 18, 126))}ms`
                     : "0ms",
                 }}
@@ -266,7 +275,7 @@ export function ConversationRelayRail({
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
                 aria-label={t("console.relayRail.omitted", { count: row.count })}
                 className={cn(
-                  "absolute left-0 z-[1] flex items-center text-[8px] tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
+                  "absolute left-0 z-[1] flex items-center text-meta tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",
                 )}
                 data-testid="relay-omission"
@@ -414,7 +423,10 @@ export function ConversationRelayRail({
       {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
         <PopoverContent
           align="center"
-          className="w-[240px] max-w-[calc(100vw-24px)] rounded-sm px-3 py-2.5"
+          className={operatorFloatingSurfaceClassName(
+            appearance,
+            "w-[240px] max-w-[calc(100vw-24px)] rounded-sm px-3 py-2.5",
+          )}
           collisionPadding={12}
           data-relay-side-offset="12"
           data-testid="relay-event-preview"
@@ -431,7 +443,7 @@ export function ConversationRelayRail({
             className="motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]"
             data-testid="relay-preview-content"
           >
-            <p className="flex items-center gap-1.5 text-[11px] text-hint">
+            <p className="flex items-center gap-1.5 text-meta text-hint">
               <span
                 aria-hidden="true"
                 className="h-[7px] w-[7px] rounded-full"

@@ -60,7 +60,7 @@ export function ConversationRoundStatusList({
       )}
     >
       <span className="h-3 w-3 rounded-sm bg-line" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+      <span className="min-w-0 flex-1 truncate text-sm font-normal text-ink">
         {t("console.conversationSidebar.projects")}
       </span>
       {projectStatus !== "none" ? (
@@ -83,7 +83,7 @@ export function ConversationRoundStatusList({
       data-testid="conversation-round-status"
     >
       <header className="flex h-9 items-center border-b border-line px-3">
-        <h2 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.06em] text-sub">
           {t("notification.status.title")}
         </h2>
       </header>
@@ -114,7 +114,7 @@ export function ConversationRoundStatusList({
                 data-testid="conversation-round-status-row"
                 data-dot={row.dot}
               >
-                <span className="min-w-0 flex-1 truncate text-[13.5px] text-sub" title={row.title}>
+                <span className="min-w-0 flex-1 truncate text-sm text-sub" title={row.title}>
                   {row.title}
                 </span>
                 {row.dot !== "none" ? (

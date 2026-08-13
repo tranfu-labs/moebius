@@ -78,7 +78,7 @@ export function NotificationPermissionDialog({
           aria-describedby={undefined}
         >
           <div className="p-5">
-            <Dialog.Title className="font-display text-base font-semibold tracking-[-0.01em]">
+            <Dialog.Title className="font-sans text-base font-semibold tracking-[-0.01em]">
               {t("notification.dialog.title")}
             </Dialog.Title>
 
@@ -94,7 +94,7 @@ export function NotificationPermissionDialog({
                   </span>
                   <span
                     className={cn(
-                      "shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium",
+                      "shrink-0 rounded-full border px-2.5 py-1 text-xs font-normal",
                       entry.outcome === "awaiting-user"
                         ? "border-[var(--status-violet-line)] bg-[var(--status-violet-bg)] text-[var(--status-violet-fg)]"
                         : "border-[var(--status-neutral-line)] bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",

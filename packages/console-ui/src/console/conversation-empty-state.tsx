@@ -14,7 +14,7 @@ export function ConversationEmptyState({ projectName, className }: ConversationE
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-hint">
           {t("console.emptyState.eyebrow")}
         </p>
-        <h1 className="font-display text-[28px] font-medium leading-9 tracking-[-0.025em] text-ink">
+        <h1 className="font-sans text-lg font-normal leading-9 tracking-[-0.025em] text-ink">
           {t("console.emptyState.promptBefore")} <span className="font-semibold">{projectName}</span> {t("console.emptyState.promptAfter")}
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-sub">

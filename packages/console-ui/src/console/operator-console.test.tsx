@@ -91,6 +91,27 @@ describe("OperatorConsole", () => {
     expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
   });
 
+  it("reveals the split sidebar through the same flex boundary that contracts main", async () => {
+    renderConsole();
+
+    const main = screen.getByTestId("operator-main");
+    const shell = screen.getByTestId("operator-content-shell");
+    expect(shell).toHaveClass("flex");
+    expect(main).toHaveClass("flex-1");
+    expect(main.style.width).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示右侧栏" }));
+
+    const rightSidebar = screen.getByTestId("right-sidebar");
+    expect(rightSidebar).toHaveAttribute("data-motion-state", "opening");
+    expect(rightSidebar).toHaveStyle({ width: "0px" });
+    expect(main.style.width).toBe("");
+
+    await waitFor(() => {
+      expect(rightSidebar.style.width).not.toBe("0px");
+    });
+  });
+
   it("renders the fixed sidebar skeleton around the only scrolling project region", () => {
     renderConsole();
 
@@ -1859,7 +1880,7 @@ describe("OperatorConsole", () => {
     expect(onAnalyzeConversation).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the dashboard user message in a bordered 75 percent right lane", () => {
+  it("keeps the dashboard user message in a bordered 75 percent right lane without a redundant avatar", () => {
     renderConsole();
 
     const userMessage = screen.getByTestId("timeline-message-1");
@@ -1873,7 +1894,8 @@ describe("OperatorConsole", () => {
       "px-3",
       "py-2",
     );
-    expect(userMessage.querySelector(".h-6.w-6")).toHaveClass("h-6", "w-6");
+    expect(within(userMessage).getByText("你")).toBeVisible();
+    expect(userMessage.querySelector(".h-6.w-6")).toBeNull();
   });
 
   it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {

@@ -292,7 +292,7 @@ export function ProcessTab({
         <ProcessNotice>{t("console.process.loadFailed", { error: state.message })}</ProcessNotice>
       ) : state.output.status === "unavailable" ? (
         <ProcessNotice>
-          <span className="block font-medium text-ink">
+          <span className="block font-normal text-ink">
             {state.output.unavailableEngine == null
               ? t("console.process.unavailable")
               : t("console.process.providerUnavailable", {
@@ -352,7 +352,7 @@ export function ProcessTab({
       {scrollModel.mode === "reading" && scrollModel.unreadCount > 0 ? (
         <button
           type="button"
-          className="sticky bottom-4 ml-auto mt-3 block rounded-full border border-line bg-card px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
+          className="sticky bottom-4 ml-auto mt-3 block rounded-full border border-line bg-card px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
           onClick={returnLatest}
         >
           {t("console.process.toLatest", { count: scrollModel.unreadCount })}

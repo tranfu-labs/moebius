@@ -54,15 +54,15 @@ export function NotificationPermissionStep({
       <section className="flex min-h-0 flex-1 justify-center overflow-y-auto px-6 py-10 max-sm:px-4 max-sm:py-7">
         <div className="flex w-full max-w-[780px] flex-col justify-center" data-testid="notification-permission-step">
           <header className="mx-auto w-full max-w-lg text-center">
-            <p className="text-xs font-medium tabular-nums text-hint">
+            <p className="text-xs font-normal tabular-nums text-hint">
               {t("notification.step.progress")}
             </p>
-            <h1 className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+            <h1 className="mt-2 text-lg font-semibold leading-tight tracking-[-0.02em] text-ink">
               {t(masterSwitchEnabled
                 ? "notification.step.titleOn"
                 : "notification.step.titleOff")}
             </h1>
-            <p className="mt-2 text-[13px] leading-5 text-sub">
+            <p className="mt-2 text-sm leading-5 text-sub">
               {t(masterSwitchEnabled
                 ? "notification.step.subtitleOn"
                 : "notification.step.subtitleOff")}
@@ -162,10 +162,10 @@ function StatusRow({
 }): JSX.Element {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-line px-4 py-3.5">
-      <span className="text-sm font-medium text-ink">{label}</span>
+      <span className="text-sm font-normal text-ink">{label}</span>
       <span
         className={cn(
-          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
+          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-normal",
           tone === "pass"
             ? "border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] text-pass"
             : "border-line bg-sunken text-sub",
@@ -213,10 +213,10 @@ function PermissionRow({
   return (
     <div className="px-4 py-3.5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <span className="text-sm font-medium text-ink">{t("notification.step.systemPermission")}</span>
+        <span className="text-sm font-normal text-ink">{t("notification.step.systemPermission")}</span>
         <span
           className={cn(
-            "rounded-full border px-2.5 py-1 text-xs font-medium",
+            "rounded-full border px-2.5 py-1 text-xs font-normal",
             permission === "allowed"
               ? "border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] text-pass"
               : permission === "denied"

@@ -4,6 +4,8 @@ import { ArrowUp, Plus, Square } from "lucide-react";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import {
   StructuredAttachmentList,
   hasBlockingComposerAttachment,
@@ -73,6 +75,7 @@ export interface RoleComposerProps {
   roles?: readonly RoleCompletion[];
   context?: React.ReactNode;
   variant?: "main" | "embedded";
+  appearance?: OperatorConsoleAppearance;
   className?: string;
 }
 
@@ -220,6 +223,7 @@ export function RoleComposer({
   onAttachmentRetry,
   onTextFragmentRemove,
   variant = "embedded",
+  appearance = "default",
 }: RoleComposerProps): JSX.Element {
   const { t } = useI18n();
   const roleOptions = roles ?? localizedRoleCompletions(t);
@@ -333,7 +337,10 @@ export function RoleComposer({
         <div
           id={listboxId}
           role="listbox"
-          className="absolute bottom-full left-0 z-30 mb-2 w-full rounded-md border border-line bg-sunken p-1.5"
+          className={operatorFloatingSurfaceClassName(
+            appearance,
+            "absolute bottom-full left-0 z-30 mb-2 w-full rounded-md border border-line bg-sunken p-1.5",
+          )}
           aria-label={t("console.roleComposer.completions")}
         >
           {matchingRoleOptions.map((role, index) => (
@@ -355,7 +362,7 @@ export function RoleComposer({
                 {role.avatar ?? (role.label.trim().charAt(0) || role.handle.charAt(0).toUpperCase())}
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-ink">{role.label}</span>
+                <span className="block truncate text-sm font-normal text-ink">{role.label}</span>
                 <span className="block truncate text-xs text-sub">{role.description}</span>
               </span>
             </button>
@@ -367,6 +374,7 @@ export function RoleComposer({
         className={cn(
           "relative overflow-hidden rounded-[14px] border border-line",
           variant === "main" ? "flex flex-col gap-2 bg-card px-3 pb-3 pt-2.5" : "bg-input",
+          appearance === "focused" && variant === "main" && "rounded-[12px] border-line bg-input shadow-composer focus-within:border-line-strong focus-within:shadow-composer-focus",
           dragActive && "border-accent ring-2 ring-accent/20",
         )}
         data-layout-variant={variant}
@@ -411,7 +419,9 @@ export function RoleComposer({
           onRemove={onAttachmentRemove}
           onRetry={onAttachmentRetry}
         />
-        <div className={variant === "main" ? "flex min-h-8 items-end gap-2" : "relative min-h-[76px]"}>
+        <div className={variant === "main"
+          ? cn("flex min-h-8 items-end", appearance === "focused" ? "gap-1" : "gap-2")
+          : "relative min-h-[76px]"}>
           <textarea
             ref={inputRef}
             value={value}
@@ -474,6 +484,7 @@ export function RoleComposer({
             size="icon"
             className={cn(
               "h-8 w-8 shrink-0 rounded-[10px] border-line bg-transparent p-0 text-sub hover:bg-hover hover:text-ink",
+              appearance === "focused" && variant === "main" && "h-7 w-7 rounded-[8px] [&>svg]:h-3.5 [&>svg]:w-3.5",
               variant === "embedded" && "absolute bottom-3",
               variant === "embedded" && (runActive ? "right-[84px]" : "right-12"),
             )}
@@ -490,6 +501,7 @@ export function RoleComposer({
               size="icon"
               className={cn(
                 "h-8 w-8 shrink-0 rounded-[10px] bg-ink p-0 text-canvas hover:opacity-85",
+                appearance === "focused" && variant === "main" && "h-7 w-7 rounded-[8px] [&>svg]:h-3.5 [&>svg]:w-3.5",
                 variant === "embedded" && "absolute bottom-3 right-12",
               )}
               disabled={!canSubmit}
@@ -505,6 +517,7 @@ export function RoleComposer({
             size="icon"
             className={cn(
               "h-8 w-8 shrink-0 rounded-[10px] p-0",
+              appearance === "focused" && variant === "main" && "h-7 w-7 rounded-[8px] [&>svg]:h-3.5 [&>svg]:w-3.5",
               variant === "embedded" && "absolute bottom-3 right-3",
               runActive
                 ? "bg-[var(--status-danger-bg)] text-danger hover:bg-[var(--status-danger-bg)] hover:opacity-85"

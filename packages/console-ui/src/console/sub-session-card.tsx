@@ -47,7 +47,7 @@ export function SubSessionCard({
             key={item.sessionId}
             type="button"
             className={cn(
-              "grid min-h-11 w-full grid-cols-[minmax(0,1fr)_minmax(5rem,auto)_auto] items-center gap-3 border-b border-line px-3.5 text-left text-[13px] last:border-b-0 hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent",
+              "grid min-h-11 w-full grid-cols-[minmax(0,1fr)_minmax(5rem,auto)_auto] items-center gap-3 border-b border-line px-3.5 text-left text-sm last:border-b-0 hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent",
               opened && "bg-sel",
             )}
             aria-label={t("console.subSession.itemLabel", {
@@ -61,7 +61,7 @@ export function SubSessionCard({
             data-testid="sub-session-card-row"
             onClick={() => onOpen?.(item.sessionId)}
           >
-            <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink">
+            <span className="flex min-w-0 items-center gap-1.5 font-normal text-ink">
               <ChevronRight
                 className={cn("h-3.5 w-3.5 shrink-0 text-hint", opened && "rotate-90 text-accent")}
                 strokeWidth={1.5}
@@ -69,7 +69,7 @@ export function SubSessionCard({
               />
               <span className="truncate" title={item.title}>{item.title}</span>
             </span>
-            <span className="truncate text-[12.5px] text-sub" title={item.memberName}>{item.memberName}</span>
+            <span className="truncate text-sm text-sub" title={item.memberName}>{item.memberName}</span>
             <span className="flex justify-end">
               <Badge variant={statusBadgeVariant(item.status)}>{item.statusLabel}</Badge>
             </span>

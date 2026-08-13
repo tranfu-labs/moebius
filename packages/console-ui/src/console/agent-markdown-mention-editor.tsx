@@ -329,7 +329,7 @@ export function AgentMarkdownMentionEditor({
                 selectMember(member);
               }}
             >
-              <span className="truncate text-sm font-medium text-ink">{member.displayName || `@${member.slug}`}</span>
+              <span className="truncate text-sm font-normal text-ink">{member.displayName || `@${member.slug}`}</span>
               <span className="shrink-0 text-xs text-hint">@{member.slug}</span>
             </button>
           ))}
@@ -373,7 +373,7 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
       type="button"
       contentEditable={false}
       data-agent-mention={member.slug}
-      className="group relative mx-0.5 inline-flex items-baseline rounded-md bg-accent/10 px-1.5 py-0.5 font-medium text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+      className="group relative mx-0.5 inline-flex items-baseline rounded-md bg-accent/10 px-1.5 py-0.5 font-normal text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
       aria-label={t("console.mentionEditor.memberCopy", {
         member: member.displayName || member.slug,
         slug: member.slug,
@@ -389,7 +389,7 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
       <span data-mention-label>{member.displayName || `@${member.slug}`}</span>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[11px] font-normal leading-4 text-card group-hover:block group-focus-visible:block"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-meta font-normal leading-4 text-card group-hover:block group-focus-visible:block"
       >
         {copied
           ? t("console.mentionEditor.copiedSlug", { slug: member.slug })

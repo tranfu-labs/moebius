@@ -60,7 +60,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="window-no-drag w-[min(420px,calc(100vw-24px))] p-0" data-testid="managed-process-panel">
-        <header className="flex h-10 items-center border-b border-line px-3 text-sm font-medium">{t("console.managedProcesses.title")}</header>
+        <header className="flex h-10 items-center border-b border-line px-3 text-sm font-normal">{t("console.managedProcesses.title")}</header>
         {controller.state.message !== undefined ? <p className="border-b border-line px-3 py-2 text-xs text-danger">{controller.state.message}</p> : null}
         <div className="max-h-[420px] overflow-y-auto p-2">
           {items.map((item) => {
@@ -71,7 +71,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
                 <div className="flex items-start gap-2">
                   <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full bg-sub", item.state === "ready" && "bg-accent", item.state === "unhealthy" && "bg-danger")} aria-hidden="true" />
                   <div className="min-w-0 flex-1">
-                    <strong className="block truncate text-sm font-medium">{item.label}</strong>
+                    <strong className="block truncate text-sm font-normal">{item.label}</strong>
                     <span className="text-xs text-sub">{stateLabel(item.state, t)}</span>
                   </div>
                   {item.endpoint !== null ? (
@@ -85,7 +85,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
                 ) : null}
                 {log?.status === "ready" ? (
                   <>
-                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-sunken p-2 text-[11px] leading-4 text-sub">{`${log.stdout}${log.stderr}` || t("console.managedProcesses.noLogs")}</pre>
+                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-sunken p-2 text-meta leading-4 text-sub">{`${log.stdout}${log.stderr}` || t("console.managedProcesses.noLogs")}</pre>
                     {log.truncated ? <p className="mt-1 text-xs text-sub">{t("console.managedProcesses.logsTruncated")}</p> : null}
                     {log.message !== undefined ? <p className="mt-1 text-xs text-danger">{log.message}</p> : null}
                   </>

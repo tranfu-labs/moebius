@@ -734,7 +734,7 @@ export function AgentTeamsPage({
                 <div className="min-w-0">
                   <h1
                     id="agent-teams-title"
-                    className="text-[28px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink"
+                    className="text-lg font-semibold leading-[1.2] tracking-[-0.02em] text-ink"
                   >
                     {t("console.agentTeams.title")}
                   </h1>
@@ -811,7 +811,7 @@ export function AgentTeamsPage({
                         aria-hidden="true"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-ink">
+                        <p className="text-sm font-normal text-ink">
                           {t("console.agentTeams.registrationConflictTitle")}
                         </p>
                         <ul className="mt-2 space-y-1 text-sm leading-5 text-sub">
@@ -874,7 +874,7 @@ export function AgentTeamsPage({
                     className="rounded-[14px] border border-line bg-card px-5 py-10 text-center"
                     data-testid="agent-teams-empty"
                   >
-                    <p className="text-sm font-medium text-ink">{t("console.agentTeams.emptyTitle")}</p>
+                    <p className="text-sm font-normal text-ink">{t("console.agentTeams.emptyTitle")}</p>
                     <p className="mt-1.5 text-sm leading-6 text-sub">
                       {t("console.agentTeams.emptyDescription")}
                     </p>
@@ -883,7 +883,7 @@ export function AgentTeamsPage({
                   <div className="space-y-7" data-testid="agent-team-list">
                     {teamGroups(state.teams).map((group) => (
                       <section key={group.kind} data-testid="agent-team-group" data-group={group.kind}>
-                        <h2 className="mb-2.5 flex items-center gap-2 text-[12.5px] font-medium text-sub">
+                        <h2 className="mb-2.5 flex items-center gap-2 text-sm font-normal text-sub">
                           {t(group.kind === "official"
                             ? "console.agentTeams.groupOfficial"
                             : "console.agentTeams.groupMine")}
@@ -1238,7 +1238,7 @@ function TeamInformationDialog({
         <h2 className="text-base font-semibold">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-sub">{description}</p>
         <div className="mt-5 grid gap-4">
-          <label className="grid gap-1.5 text-sm font-medium text-ink">
+          <label className="grid gap-1.5 text-sm font-normal text-ink">
             {t("console.agentTeams.teamName")}
             <Input
               autoFocus
@@ -1248,7 +1248,7 @@ function TeamInformationDialog({
               onChange={(event) => setName(event.currentTarget.value)}
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-medium text-ink">
+          <label className="grid gap-1.5 text-sm font-normal text-ink">
             {t("console.agentTeams.shortDescription")}
             <Input
               value={teamDescription}
@@ -1319,7 +1319,7 @@ function AgentTeamRow({
         )}
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span className="max-w-full truncate text-[17px] font-semibold leading-6 tracking-[-0.01em] text-ink">
+            <span className="max-w-full truncate text-lg font-semibold leading-6 tracking-[-0.01em] text-ink">
               {teamName(t, team)}
             </span>
             {team.officialManagement?.customizationStatus === "customized"
@@ -1331,7 +1331,7 @@ function AgentTeamRow({
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
-          <span className="mt-1 line-clamp-2 text-[13.5px] leading-5 text-sub">
+          <span className="mt-1 line-clamp-2 text-sm leading-5 text-sub">
             {teamDescription(t, team)}
           </span>
         </span>
@@ -1349,12 +1349,12 @@ function AgentTeamRow({
               limit={5}
             />
           ) : (
-            <span className="text-[12.5px] leading-5 text-sub">
+            <span className="text-sm leading-5 text-sub">
               {t("console.agentTeams.membersUnavailable")}
             </span>
           )}
         </span>
-        <span className="min-w-0 truncate text-[12.5px] text-hint">
+        <span className="min-w-0 truncate text-sm text-hint">
           {teamMetaLine(t, team, primaryAgent?.displayName)}
         </span>
 
@@ -1377,7 +1377,7 @@ function TeamStatusBadge({ kind }: {
   return (
     <span
       className={cn(
-        "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-[11.5px] font-medium",
+        "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-xs font-normal",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
           : kind === "update"
@@ -1536,7 +1536,7 @@ function AgentTeamsFailure({
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-ink">{title}</p>
+          <p className="text-sm font-normal text-ink">{title}</p>
           <p className="mt-1 text-sm leading-6 text-sub">{description}</p>
           <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
             {t("console.agentTeams.retry")}

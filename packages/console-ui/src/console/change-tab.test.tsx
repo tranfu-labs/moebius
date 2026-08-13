@@ -111,6 +111,26 @@ describe("ChangeTab", () => {
     expect(screen.getByText("x".repeat(240))).toHaveClass("whitespace-pre");
     expect(screen.queryByRole("button", { name: /编辑|保存|撤销|还原|提交|推送/u })).not.toBeInTheDocument();
   });
+
+  it("keeps focused file and folder names at the primary foreground level", async () => {
+    render(
+      <ChangeTab
+        appearance="focused"
+        sessionId="session-a"
+        workspaceMode="worktree"
+        conversationStarted
+        isWorking={false}
+        loadDiff={async () => availableDiff(1)}
+        loadFile={async () => fileContent("content")}
+      />,
+    );
+
+    const file = await screen.findByTitle("src/app.ts");
+    const folder = screen.getByText("src").parentElement;
+    expect(file).toHaveClass("text-ink");
+    expect(file).not.toHaveClass("text-sub");
+    expect(folder).toHaveClass("text-ink");
+  });
 });
 
 function availableDiff(additions: number): WorkspaceDiffData {
