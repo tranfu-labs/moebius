@@ -142,3 +142,60 @@
 路线 1 与路线 3 已以最初图片为唯一视觉事实源完成重做，并由独立审查者关闭全部 P1/P2；两个 `indexN.html` 仍保持暂停，等待用户先验收 `styleN.html`。
 
 final result: passed
+
+---
+
+# Operator Console Page 共享视觉迁移 QA · 2026-08-14
+
+## 验收范围与视觉事实源
+
+- 范围：Storybook `Page/Console/OperatorConsole` 下全部 20 个 Page Story。
+- 参考 Story：`page-console-operatorconsole--dashboard-shell-with-right-sidebar`。
+- 参考截图：`/tmp/operator-console-reference-1440x832.png`。
+- 迁移后截图：`/tmp/operator-console-after-1440x832.png`。
+- 同状态并排比较：`/tmp/operator-console-reference-comparison.png`。
+- 全部 Page 联系表：`/tmp/operator-console-qa-contact-sheet.png`。
+- 视口配置：Storybook `balancedDesktop`，声明尺寸 1440×832；Codex Desktop 浏览器实际 CSS 可视区及截图尺寸为 1309×756，参考与实现使用同一密度和同一状态，不做跨密度缩放比较。
+
+完整视图用于判断侧栏、主画布、右侧栏、消息轴、排队区和输入区的共同骨架。此次迁移不更换内容 fixture，因此局部内容长度差异属于 Story 状态差异，不作为视觉漂移。参考与实现截图像素变化占比约 8.52%，平均通道差约 4.08；并排复核未发现结构、层级、边界、圆角或密度的可见退化。
+
+## 共享实现证据
+
+- Story meta 的唯一 Page 组件改为 `ResponsiveOperatorConsole`，并统一注入 `appearance: "focused"`。
+- 19 个普通 Story 直接继承共享 meta；唯一带本地交互状态的 `ProjectActions` 也把 Story args 透传到同一个 `ResponsiveOperatorConsole`，未复制页面壳层。
+- 20 个 Story 均保留各自消息、运行状态、侧栏开关、深色和窄窗 fixture，只共享布局与视觉实现。
+- Storybook 索引中的 20 个具体条目均使用中文显示名；技术标识 `T6.5`、`Pi API` 仅作为不可翻译产品/协议名保留。
+
+## 逐页检查矩阵
+
+对 20 个 Story 各检查 7 项：Page 根节点、主画布颜色、面板边界/圆角/阴影、页面级横向溢出、400 基础字重、侧栏颜色/宽度、项目条目 28px 高度与 6px 圆角。加载态和关闭侧栏态按其预期省略项目条目检查。
+
+- 通过 Story：20/20。
+- 通过断言：140/140。
+- 通过率：100.0%，高于退出阈值 95%。
+- 浅色主画布：`#fff`；浅色侧栏：`#fcfcfc`；深色主画布：`rgb(39, 40, 45)`；深色侧栏：`rgb(29, 30, 34)`。
+- 主面板：12px 圆角、约 1px 边界、共享面板阴影。
+- 侧栏：桌面约 228px；关闭侧栏 Story 为 0px；项目条目约 28px 高、6px 圆角。
+- 全部 Story 页面级横向溢出为 0。
+
+## 响应式与交互证据
+
+- 左侧抽屉窄窗：`/tmp/operator-console-narrow-700x600.png`，实际 636×545；主画布保留，左侧栏作为覆盖抽屉出现，页面无横向溢出。
+- 右侧栏窄窗：`/tmp/operator-console-right-sidebar-narrow.png`，实际 636×545；右侧栏自动收起，只保留主窗口和重新打开按钮，页面无横向溢出。
+- 团队可追溯窄窗：`/tmp/operator-console-team-traceability-narrow.png`，实际 618×727；上下文工具条未换行，页面无横向溢出。
+- `ProjectActions` play Story 在干净浏览器标签页完成新增、重命名、排序和移除流程；反馈为“项目已从侧栏移除，磁盘文件夹保留。”，无 `NotFoundError` 或 play assertion error。
+
+## 打回与复验历史
+
+1. 第一轮视觉迁移后，20 个 Page 的共享外观和响应式指标已一致；无 P0/P1。
+2. 第一轮交互复验发现 P2：`ProjectActions` 使用合成 PointerEvent 时，浏览器未建立原生 pointer capture，直接调用释放接口会抛 `NotFoundError`。改为安全捕获/释放 helper 后，在干净浏览器标签页复验通过。
+3. 受影响测试随后暴露 P2：Story 切换到响应式共享组件后，jsdom 没有 `window.matchMedia`。补齐该 Story 测试的浏览器能力桩后，165/165 受影响测试通过。
+4. 第二轮完整视觉矩阵为 20/20 Story、140/140 检查项，无剩余 P0/P1/P2，因此按用户设定退出循环。
+
+## 自动化验证
+
+- `pnpm --filter @moebius/console-ui typecheck`：通过。
+- `pnpm run test --scope`：3 个测试文件、165 个测试通过。
+- `pnpm --filter @moebius/console-ui check:storybook`：通过，Storybook 静态构建完成。
+
+final result: passed

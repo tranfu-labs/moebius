@@ -3,7 +3,6 @@ import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import {
-  OperatorConsole,
   ResponsiveOperatorConsole,
   type OperatorConsoleProps,
   type OperatorProject,
@@ -254,19 +253,25 @@ const traceabilityArgs = {
 
 const meta = {
   title: "Page/Console/OperatorConsole",
-  component: OperatorConsole,
-  args: sample,
+  component: ResponsiveOperatorConsole,
+  args: {
+    ...sample,
+    appearance: "focused",
+  },
   parameters: {
     layout: "fullscreen",
   },
-} satisfies Meta<typeof OperatorConsole>;
+} satisfies Meta<typeof ResponsiveOperatorConsole>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const T65Running: Story = {};
+export const T65Running: Story = {
+  name: "T6.5 · 运行中",
+};
 
 export const PiApiRunning: Story = {
+  name: "Pi API · 运行中",
   args: {
     activeRun: {
       ...sample.activeRun!,
@@ -286,6 +291,7 @@ export const PiApiRunning: Story = {
 };
 
 export const SidebarConversationManagement: Story = {
+  name: "侧边栏 · 会话管理",
   args: {
     project: {
       ...sample.project,
@@ -358,6 +364,7 @@ export const SidebarConversationManagement: Story = {
 };
 
 export const PrimaryControlLanes: Story = {
+  name: "主理人 · 多车道控制",
   args: {
     activeRun: {
       ...sample.activeRun!,
@@ -412,6 +419,7 @@ export const PrimaryControlLanes: Story = {
 };
 
 export const DashboardShellAlignment: Story = {
+  name: "仪表盘 · 内容轴对齐",
   args: {
     projects: [
       {
@@ -498,6 +506,7 @@ export const DashboardShellAlignment: Story = {
 };
 
 export const ProjectActions: Story = {
+  name: "项目 · 菜单与排序",
   parameters: {
     userActionCoverage: {
       required: true,
@@ -510,7 +519,7 @@ export const ProjectActions: Story = {
       ],
     },
   },
-  render: () => <ProjectActionsStory />,
+  render: (args) => <ProjectActionsStory args={args} />,
   play: async ({ canvasElement }) => {
     const secondaryProjectId = "project-actions-secondary";
     const secondaryRow = () => projectActionsRow(canvasElement, secondaryProjectId);
@@ -639,7 +648,7 @@ async function setStoryInputValue(input: HTMLInputElement, value: string): Promi
   });
 }
 
-function ProjectActionsStory(): JSX.Element {
+function ProjectActionsStory({ args }: { args: OperatorConsoleProps }): JSX.Element {
   const [projects, setProjects] = useState<OperatorProject[]>(createProjectActionsFixture);
   const [selectedProjectId, setSelectedProjectId] = useState("project-actions");
   const [selectedSessionId, setSelectedSessionId] = useState("project-actions-session");
@@ -651,8 +660,8 @@ function ProjectActionsStory(): JSX.Element {
     ?? null;
 
   return (
-    <OperatorConsole
-      {...sample}
+    <ResponsiveOperatorConsole
+      {...args}
       project={selectedProject}
       projects={projects}
       selectedProjectId={selectedProject.projectId}
@@ -793,6 +802,7 @@ async function waitStoryMilliseconds(milliseconds: number): Promise<void> {
 }
 
 export const DashboardLoadingState: Story = {
+  name: "仪表盘 · 加载中",
   args: {
     ...DashboardShellAlignment.args,
     projectListState: "loading",
@@ -800,6 +810,7 @@ export const DashboardLoadingState: Story = {
 };
 
 export const DashboardEmptyState: Story = {
+  name: "仪表盘 · 空会话",
   args: {
     ...DashboardShellAlignment.args,
     messages: [],
@@ -810,11 +821,9 @@ export const DashboardEmptyState: Story = {
 };
 
 export const DashboardShellWithRightSidebar: Story = {
-  name: "Focused canvas · 1440 × 832",
-  render: (args) => <ResponsiveOperatorConsole {...args} />,
+  name: "聚焦画布 · 右侧栏",
   args: {
     ...DashboardShellAlignment.args,
-    appearance: "focused",
     projects: DashboardShellAlignment.args?.projects?.map((project) => ({
       ...project,
       isGitRepository: true,
@@ -868,7 +877,7 @@ export const DashboardShellWithRightSidebar: Story = {
       defaultViewport: "balancedDesktop",
       viewports: {
         balancedDesktop: {
-          name: "Balanced desktop 1440 × 832",
+          name: "均衡桌面 1440 × 832",
           styles: { width: "1440px", height: "832px" },
         },
       },
@@ -877,8 +886,7 @@ export const DashboardShellWithRightSidebar: Story = {
 };
 
 export const DashboardShellWithLongComposer: Story = {
-  name: "Focused canvas · long composer",
-  render: (args) => <ResponsiveOperatorConsole {...args} />,
+  name: "聚焦画布 · 长输入",
   args: {
     ...DashboardShellWithRightSidebar.args,
     composerValue: [
@@ -891,13 +899,14 @@ export const DashboardShellWithLongComposer: Story = {
 };
 
 export const DashboardNarrowSidebarDrawer: Story = {
+  name: "窄窗口 · 侧边栏抽屉",
   args: DashboardShellAlignment.args,
   parameters: {
     viewport: {
       defaultViewport: "dashboardNarrow",
       viewports: {
         dashboardNarrow: {
-          name: "Dashboard narrow 700 × 600",
+          name: "仪表盘窄窗 700 × 600",
           styles: { width: "700px", height: "600px" },
         },
       },
@@ -911,6 +920,7 @@ export const DashboardNarrowSidebarDrawer: Story = {
 };
 
 export const T65Outcomes: Story = {
+  name: "T6.5 · 终局结果",
   args: {
     activeRun: null,
     selectedSession: { ...sessions[1]!, status: "idle", runningCount: 0 },
@@ -952,6 +962,7 @@ export const T65Outcomes: Story = {
 };
 
 export const T65EmptyComposer: Story = {
+  name: "T6.5 · 空输入框",
   args: {
     activeRun: null,
     messages: [],
@@ -962,6 +973,7 @@ export const T65EmptyComposer: Story = {
 };
 
 export const ConversationRelayReference: Story = {
+  name: "会话目录轨 · 接力参考",
   args: {
     activeRun: null,
     memberIdentities: [
@@ -1011,6 +1023,7 @@ export const ConversationRelayReference: Story = {
 };
 
 export const ConversationRelayRightSidebarOpen: Story = {
+  name: "会话目录轨 · 打开右侧栏",
   args: {
     ...ConversationRelayReference.args,
     rightSidebarOpen: true,
@@ -1019,6 +1032,7 @@ export const ConversationRelayRightSidebarOpen: Story = {
 };
 
 export const ConversationRelayProjectSidebarClosed: Story = {
+  name: "会话目录轨 · 关闭项目侧栏",
   args: {
     ...ConversationRelayReference.args,
     rightSidebarOpen: false,
@@ -1027,22 +1041,25 @@ export const ConversationRelayProjectSidebarClosed: Story = {
 };
 
 export const TeamTraceabilityLight: Story = {
+  name: "团队可追溯 · 浅色",
   args: traceabilityArgs,
 };
 
 export const TeamTraceabilityDark: Story = {
+  name: "团队可追溯 · 深色",
   args: traceabilityArgs,
   globals: { theme: "dark" },
 };
 
 export const TeamTraceabilityNarrow: Story = {
+  name: "团队可追溯 · 窄窗口",
   args: traceabilityArgs,
   parameters: {
     viewport: {
       defaultViewport: "teamTraceabilityNarrow",
       viewports: {
         teamTraceabilityNarrow: {
-          name: "Team traceability narrow · 680 × 800",
+          name: "团队可追溯窄窗 · 680 × 800",
           styles: { width: "680px", height: "800px" },
         },
       },
@@ -1051,6 +1068,7 @@ export const TeamTraceabilityNarrow: Story = {
 };
 
 export const TeamTraceabilityReducedMotion: Story = {
+  name: "团队可追溯 · 减弱动效",
   args: traceabilityArgs,
   decorators: [
     (Story) => (

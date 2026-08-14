@@ -10,6 +10,7 @@ afterEach(() => {
 describe("ProjectActions Page Story", () => {
   it("executes every declared project action and observes its local result", async () => {
     installPointerEventForJsdom();
+    installMatchMediaForJsdom();
     if (ProjectActions.render === undefined || ProjectActions.play === undefined) {
       throw new Error("ProjectActions must expose both render and play");
     }
@@ -23,6 +24,23 @@ describe("ProjectActions Page Story", () => {
       .toHaveTextContent("项目已从侧栏移除，磁盘文件夹保留。");
   });
 });
+
+function installMatchMediaForJsdom(): void {
+  if (typeof window.matchMedia === "function") return;
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
+}
 
 function installPointerEventForJsdom(): void {
   if (typeof globalThis.PointerEvent === "function") return;

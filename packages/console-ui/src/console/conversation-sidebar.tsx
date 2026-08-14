@@ -184,6 +184,25 @@ interface ProjectPointerGesture {
 const PROJECT_DRAG_DISTANCE_PX = 5;
 const PROJECT_DRAG_DELAY_MS = 150;
 
+function capturePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // Synthetic pointer events (Storybook/tests) do not always register an
+    // active browser pointer. Dragging still works through the row handlers.
+  }
+}
+
+function releasePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    if (element.hasPointerCapture?.(pointerId)) {
+      element.releasePointerCapture?.(pointerId);
+    }
+  } catch {
+    // The browser may have released capture before pointerup/pointercancel.
+  }
+}
+
 export function ConversationSidebar({
   projects,
   dataState = "ready",
@@ -309,7 +328,7 @@ export function ConversationSidebar({
     }
     window.clearTimeout(gesture.activationTimer);
     gestureRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    releasePointer(event.currentTarget, event.pointerId);
     if (gesture.activated) {
       const nextOrder = orderProjectIdsForPointer(
         draftProjectOrder ?? gesture.initialOrder,
@@ -467,7 +486,7 @@ export function ConversationSidebar({
                   };
                   gesture.activationTimer = window.setTimeout(() => activateGesture(gesture), PROJECT_DRAG_DELAY_MS);
                   gestureRef.current = gesture;
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
+                  capturePointer(event.currentTarget, event.pointerId);
                 }}
                 onPointerMove={(event) => {
                   const gesture = gestureRef.current;
