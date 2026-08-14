@@ -1,0 +1,9 @@
+{
+  "name": "UI 设计团队",
+  "description": "UI 设计师按步骤产出界面设计交付物，UI 评审员依据确定性条件分发提醒；双方自动交接，用户只在步骤明确要求或真实阻断时决策。",
+  "primaryAgentSlug": "ui-designer",
+  "memberOrder": [
+    "ui-designer",
+    "ui-reviewer"
+  ]
+}
