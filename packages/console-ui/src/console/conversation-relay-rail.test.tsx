@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ConversationRelayRail } from "@/console/conversation-relay-rail";
+import {
+  ConversationRelayRail,
+  type ConversationRelayRailProps,
+} from "@/console/conversation-relay-rail";
 import type { ConversationRelayEvent } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 
@@ -132,13 +135,22 @@ describe("ConversationRelayRail", () => {
 
   it("shows a fixed-density preview and preserves it across the pointer gap", () => {
     vi.useFakeTimers();
-    renderRail();
+    renderRail(vi.fn(), vi.fn(), events, "message-1", "focused");
     const rail = screen.getByTestId("conversation-relay-rail");
     fireEvent.mouseEnter(rail);
     fireEvent.mouseEnter(screen.getByTestId("relay-event-message-1"));
 
     const preview = screen.getByTestId("relay-event-preview");
-    expect(preview).toHaveClass("w-[240px]", "px-3", "py-2.5");
+    expect(preview).not.toHaveAttribute("data-overlay-clip");
+    expect(preview).toHaveClass(
+      "w-[240px]",
+      "border",
+      "border-line",
+      "px-3",
+      "py-2.5",
+      "shadow-md",
+      "dark:shadow-none",
+    );
     expect(preview).toHaveAttribute("data-relay-side-offset", "12");
     expect(preview).toHaveTextContent("请实现目录轨");
     expect(preview).not.toHaveTextContent("@user");
@@ -278,10 +290,12 @@ function renderRail(
   onBrowse = vi.fn(),
   railEvents = events,
   currentEventId = "message-1",
+  appearance: ConversationRelayRailProps["appearance"] = "default",
 ): void {
   render(
     <div style={{ height: 400 }}>
       <ConversationRelayRail
+        appearance={appearance}
         containerWidth={760}
         currentEventId={currentEventId}
         events={railEvents}

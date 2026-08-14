@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import type { Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 export interface ManagedProcessPanelItem {
   id: string;
@@ -59,7 +59,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
           <span className="truncate">{label}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="window-no-drag w-[min(420px,calc(100vw-24px))] p-0" data-testid="managed-process-panel">
+      <AnimatedPopoverContent align="end" className="window-no-drag w-[min(420px,calc(100vw-24px))] p-0" data-testid="managed-process-panel">
         <header className="flex h-10 items-center border-b border-line px-3 text-sm font-normal">{t("console.managedProcesses.title")}</header>
         {controller.state.message !== undefined ? <p className="border-b border-line px-3 py-2 text-xs text-danger">{controller.state.message}</p> : null}
         <div className="max-h-[420px] overflow-y-auto p-2">
@@ -112,7 +112,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
             </button>
           </footer>
         ) : null}
-      </PopoverContent>
+      </AnimatedPopoverContent>
     </Popover>
   );
 }

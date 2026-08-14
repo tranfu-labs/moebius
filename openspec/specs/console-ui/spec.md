@@ -2239,7 +2239,7 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让预览卡默认宽 240px、正文最多三行，并相对整个展开轨迹面板保持 12px side offset；窗口碰撞时 MAY 整卡翻转或约束宽度，但 MUST NOT 按节点泳道位置改变偏移。Agent 事件预览 MUST 只显示成员可读名称、时间和原回复开头；用户事件预览 MUST 显示“你”、时间和用户原文开头。系统 MUST NOT 在 Agent 预览顶部重复显示关联用户消息、内部 slug 或生成摘要。指针从面板跨入预览卡时 MUST 保持展开；只有离开面板与预览卡后才 MAY 延迟收起。
+系统 MUST 让预览卡默认宽 240px、正文最多三行，并相对整个展开轨迹面板保持 12px side offset；窗口碰撞时 MAY 整卡翻转或约束宽度，但 MUST NOT 按节点泳道位置改变偏移。亮色预览卡 MUST 使用 shadcn 的 1px 描边与 `shadow-md` 抬升，暗色预览卡 MUST 取消阴影并使用与画布不同的实色卡面分层。Agent 事件预览 MUST 只显示成员可读名称、时间和原回复开头；用户事件预览 MUST 显示“你”、时间和用户原文开头。系统 MUST NOT 在 Agent 预览顶部重复显示关联用户消息、内部 slug 或生成摘要。指针从面板跨入预览卡时 MUST 保持展开；只有离开面板与预览卡后才 MAY 延迟收起。
 
 #### Scenario: 从最左泳道检查到最右泳道
 

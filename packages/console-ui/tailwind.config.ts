@@ -86,7 +86,6 @@ const config = {
       boxShadow: {
         overlay: "var(--shadow-pop)",
         panel: "var(--shadow-panel)",
-        floating: "var(--shadow-floating)",
         composer: "var(--shadow-composer)",
         "composer-focus": "var(--shadow-composer-focus)",
         pending: "var(--shadow-pending)"

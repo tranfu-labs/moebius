@@ -75,11 +75,11 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 
 ## elevation / focus / 动效红线
 
-- 默认界面仍是零阴影零渐变：`--shadow-pop` 恒为 `none`，dropdown / popover / 对话框只靠 1px 描边与 `bg-sunken` 亮一档的底色分层。`OperatorConsole appearance="focused"` 是登记过的页面组合例外：主面板、composer、排队浮岛与只读悬浮信息面只能使用 Tailwind 的 `shadow-panel` / `shadow-composer` / `shadow-pending` / `shadow-floating` 命名令牌，不得在 Story 或组件里重新写投影值；仍禁止渐变（包括滚动淡出渐变）。
+- 默认界面仍是零阴影零渐变：`--shadow-pop` 恒为 `none`，dropdown / popover / 对话框只靠 1px 描边与 `bg-sunken` 亮一档的底色分层。`OperatorConsole appearance="focused"` 是登记过的页面组合例外：主面板、composer 与排队浮岛只能使用 Tailwind 的 `shadow-panel` / `shadow-composer` / `shadow-pending` 命名令牌，不得在 Story 或组件里重新写投影值；只读悬浮信息面统一采用 shadcn 的 `border border-line shadow-md` 组合，暗色覆盖为 `shadow-none` 并改用更亮的 `--focused-floating-surface` 实色区分层级。仍禁止渐变（包括滚动淡出渐变）。
 - 不设置组件库级全局 `:focus-visible` 样式；需要可视键盘焦点的控件由组件按交互语义局部声明。
-- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**浮层入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：popover 入场是**容器自己长大**：`clip-path: inset()` 从「它被锚定的那个角」的零尺寸方块展开到全尺寸，时长 `--dur-overlay`，曲线 `--ease-spring`；关闭是同一段动画倒放，缩回同一个角，不是另换一段淡出。
+- 动效只走令牌：`--dur-fast: 100ms`、`--dur: 150ms`、`--ease: cubic-bezier(0.25,0.46,0.45,0.94)`、入场 `--ease-enter: cubic-bezier(0.165,0.84,0.44,1)`；默认只做颜色过渡，不做位移缩放飞入。**显式动画浮层的入场 / 退场是第二条登记的空间动效例外**（2026-08-08 按产品决定加入）：`AnimatedPopoverContent` 入场是**容器自己长大**：`clip-path: inset()` 从「它被锚定的那个角」的零尺寸方块展开到全尺寸，时长 `--dur-overlay`，曲线 `--ease-spring`；关闭是同一段动画倒放，缩回同一个角，不是另换一段淡出。普通 `PopoverContent` 不带容器裁切或自定义 presence；只需跟随锚点、或已有局部内容动效的预览面使用普通版本，避免裁切边框与外投影。
 
-**必须可打断且位置连续**：全过程由 Web Animations API 驱动，每次状态翻转都以元素**当前计算值**为起点新建动画。不要退回 CSS keyframes——CSS 动画只能从自己的首帧重启，实测中途反向会让面板从 39% 直接弹到全尺寸再淡出。代价是 presence 必须自己持有（Radix 靠 CSS `animationend` 决定卸载，WAAPI 不会触发它），所以 `Portal` 用 `forceMount`，`open` 经 context 传给 `PopoverContent`；jsdom 无 WAAPI、以及 `prefers-reduced-motion` 下直接落到终态。新挂载时计算值是 `none`，兜底必须跟方向走（开→收起态、关→展开态），否则入场会从展开动到展开、等于没播。
+**必须可打断且位置连续**：全过程由 Web Animations API 驱动，每次状态翻转都以元素**当前计算值**为起点新建动画。不要退回 CSS keyframes——CSS 动画只能从自己的首帧重启，实测中途反向会让面板从 39% 直接弹到全尺寸再淡出。代价是 presence 必须自己持有（Radix 靠 CSS `animationend` 决定卸载，WAAPI 不会触发它），所以 `AnimatedPopoverContent` 的 `Portal` 用 `forceMount`，`open` 经 context 传给动画内容层；jsdom 无 WAAPI、以及 `prefers-reduced-motion` 下直接落到终态。新挂载时计算值是 `none`，兜底必须跟方向走（开→收起态、关→展开态），否则入场会从展开动到展开、等于没播。
 
 **退场不是入场的倒放**：临界阻尼弹簧的长尾倒过来播会变成「起步几乎不动、末尾撞停」——实测倒放到 240ms 时才走了 7.7%。退场走 `--ease` + `--dur-overlay-out`，第一帧就动。
 
@@ -112,7 +112,7 @@ Badge 渲染为「12px 状态图标 + 文字 + tinted 底 + 同色描边」的�
 - **运行项入口面板**：`src/console/managed-process-panel.tsx`——仅在当前会话存在托管进程或未确认的结束事实时占用 46px 顶栏，位于分析入口之前；单项显示名称与状态，多项显示数量。Popover 只展示服务端事实、loopback 打开入口、有限日志、停止与结束确认，不提供 restart、命令编辑或工作流编排；最后一项结束后保留到用户明确确认，确认后由 Radix 焦点回返顶栏触发器再移除入口。
 - **状态 pill**：`src/ui/badge.tsx`（见状态语义表）。
 - **裁决段**：`src/console/accept-card.tsx` 的 `DecisionSegment`——pass / failed pill，未选中项为中性描边 pill。
-- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-xl`（12px）+ `bg-sunken`，无阴影。Popover 入场 / 退场见动效红线里登记的浮层例外（`animate-overlay-in` / `animate-overlay-out`），写在共用组件上让全产品浮层一致，单个浮层不得自带另一套。锚点取 Radix **碰撞处理之后**的 `--radix-popover-content-transform-origin`，贴边翻转时生长方向自动跟着翻。不引入 framer-motion / Animate UI：那类库给的是弹簧**运行时**，其真正不可替代的能力是中途打断时保留速度并重定向目标——那对拖拽和手势有意义，对一个离散开合的浮层没有；而弹簧的曲线形状用 CSS `linear()` 就能精确表达。顺带一提 Animate UI popover 的默认 `stiffness: 300, damping: 25` 阻尼比约 0.72，是会过冲的，比苹果自己的默认更弹。
+- **浮层**：`src/ui/dropdown-menu.tsx`、`src/ui/popover.tsx`——细边 + `rounded-xl`（12px）+ `bg-sunken`，无阴影。基础 `PopoverContent` 保持普通 Radix/shadcn 语义，不附加空间动效；明确需要从锚点生长的场景使用 `AnimatedPopoverContent`，其入场 / 退场见动效红线里登记的浮层例外。动画内容层的锚点取 Radix **碰撞处理之后**的 `data-side` / `data-align`，贴边翻转时生长方向自动跟着翻。单个浮层不得再自带第三套容器动效。不引入 framer-motion / Animate UI：那类库给的是弹簧**运行时**，其真正不可替代的能力是中途打断时保留速度并重定向目标——那对拖拽和手势有意义，对一个离散开合的浮层没有；而弹簧的曲线形状用 CSS `linear()` 就能精确表达。顺带一提 Animate UI popover 的默认 `stiffness: 300, damping: 25` 阻尼比约 0.72，是会过冲的，比苹果自己的默认更弹。
 - **团队版本追溯与应用**：`src/console/agent-team-option.tsx`、`session-team-update-notice.tsx`、`agent-run-info-popover.tsx`、`agent-team-save-feedback.tsx`——团队选项用用途、来源、主 Agent 与可展开成员建立选择依据；composer 更新提示按定义/运行配置/团队信息保持独立中性行，但任一操作都应用完整版本；历史头像 Popover 只展示 run 冻结事实并通过只读 Dialog 延迟读取完整 `AGENT.md`。浮层沿用 Radix collision handling、视口边界与焦点回返，不显示内部摘要、路径、mtime 或 diff。
 - **空状态**：`src/console/conversation-empty-state.tsx`——中性插画图标 + 短句邀请，无彩色引导。
 - **纵向节奏**：间距是在说「哪些东西属于同一件事」，所以必须是一把尺子，不是一处一处各自估的数。团队详情页用的这把尺子（由紧到松）：6px 面包屑→标题、8px 一组表单内的字段之间（名称→描述）、12px 小标题→它领起的内容、20px 同一段落内的块之间（成员条→成员面板、成员身份→运行配置）、32px 段与段之间。**段内的空隙一旦大于段间的空隙，层级就反了**——这正是「没有呼吸感」的成因，不是空得不够。只有条件渲染内容的行必须带 `empty:hidden`：它塌成 0 高时 margin 不会跟着塌，卡片会凭空多出一截底部内边距。

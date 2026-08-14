@@ -60,7 +60,6 @@
   /* 默认浮层无阴影；focused 操作台只通过下列命名令牌获得层级。 */
   --shadow-pop: none;
   --shadow-panel: 0 1px 2px rgba(30, 31, 38, 0.035), 0 8px 20px -20px rgba(30, 31, 38, 0.16);
-  --shadow-floating: 0 2px 6px rgba(24, 25, 31, 0.07), 0 12px 32px -12px rgba(24, 25, 31, 0.2);
   --shadow-composer: 0 1px 2px rgba(30, 31, 38, 0.045), 0 8px 20px -18px rgba(30, 31, 38, 0.19);
   --shadow-composer-focus: 0 0 0 3px rgba(35, 36, 44, 0.035), 0 1px 2px rgba(30, 31, 38, 0.055), 0 8px 20px -18px rgba(30, 31, 38, 0.19);
   --shadow-pending: 0 -1px 2px rgba(30, 31, 38, 0.025), 0 -10px 22px -20px rgba(30, 31, 38, 0.18);
@@ -148,7 +147,6 @@
     --status-danger-line: rgba(247, 35, 50, 0.35);
     --shadow-pop: none;
     --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 24px -22px rgba(0, 0, 0, 0.48);
-    --shadow-floating: 0 2px 8px rgba(0, 0, 0, 0.34), 0 16px 36px -12px rgba(0, 0, 0, 0.64);
     --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
     --shadow-composer-focus: 0 0 0 3px rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
     --shadow-pending: 0 -1px 2px rgba(0, 0, 0, 0.16), 0 -10px 22px -20px rgba(0, 0, 0, 0.44);
@@ -166,7 +164,7 @@
     --focused-line-strong: rgba(255, 255, 255, 0.1);
     --focused-accent: #AA9CF2;
     --focused-accent-hover: #B9ADF8;
-    --focused-floating-surface: #242424;
+    --focused-floating-surface: #34353B;
   }
 }
 
@@ -208,7 +206,6 @@
   --status-danger-line: rgba(247, 35, 50, 0.35);
   --shadow-pop: none;
   --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 24px -22px rgba(0, 0, 0, 0.48);
-  --shadow-floating: 0 2px 8px rgba(0, 0, 0, 0.34), 0 16px 36px -12px rgba(0, 0, 0, 0.64);
   --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
   --shadow-composer-focus: 0 0 0 3px rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
   --shadow-pending: 0 -1px 2px rgba(0, 0, 0, 0.16), 0 -10px 22px -20px rgba(0, 0, 0, 0.44);
@@ -226,5 +223,5 @@
   --focused-line-strong: rgba(255, 255, 255, 0.1);
   --focused-accent: #AA9CF2;
   --focused-accent-hover: #B9ADF8;
-  --focused-floating-surface: #242424;
+  --focused-floating-surface: #34353B;
 }

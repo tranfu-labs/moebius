@@ -7,7 +7,7 @@ import { operatorFloatingSurfaceClassName } from "@/console/operator-console-app
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 export interface AgentRunInfoView {
   sessionId: string;
@@ -124,7 +124,7 @@ export function AgentRunInfoPopover({
             />
           </button>
         </PopoverTrigger>
-        <PopoverContent
+        <AnimatedPopoverContent
           side="bottom"
           align="start"
           collisionPadding={12}
@@ -180,7 +180,7 @@ export function AgentRunInfoPopover({
               </div>
             </DialogContent>
           </Dialog>
-        </PopoverContent>
+        </AnimatedPopoverContent>
     </Popover>
   );
 }

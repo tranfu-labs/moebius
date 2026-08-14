@@ -32,6 +32,24 @@ const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
 >(({ className, align = "center", sideOffset = 6, ...props }, forwardedRef) => {
+  return (
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content
+        ref={forwardedRef}
+        align={align}
+        sideOffset={sideOffset}
+        className={cn("z-50 rounded-xl border border-line bg-sunken p-3 text-ink", className)}
+        {...props}
+      />
+    </PopoverPrimitive.Portal>
+  );
+});
+PopoverContent.displayName = PopoverPrimitive.Content.displayName;
+
+const AnimatedPopoverContent = React.forwardRef<
+  React.ElementRef<typeof PopoverPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
+>(({ className, align = "center", sideOffset = 6, ...props }, forwardedRef) => {
   const { open, group } = React.useContext(OpenContext);
   const { present, ref } = useGrowFromAnchor(open, group);
   const setRefs = React.useCallback((node: HTMLDivElement | null) => {
@@ -63,6 +81,6 @@ const PopoverContent = React.forwardRef<
     </PopoverPrimitive.Portal>
   );
 });
-PopoverContent.displayName = PopoverPrimitive.Content.displayName;
+AnimatedPopoverContent.displayName = "AnimatedPopoverContent";
 
-export { Popover, PopoverAnchor, PopoverContent, PopoverTrigger };
+export { AnimatedPopoverContent, Popover, PopoverAnchor, PopoverContent, PopoverTrigger };

@@ -64,7 +64,7 @@ export function operatorFloatingSurfaceClassName(
   return cn(
     className,
     appearance === "focused" && [
-      "border-0 bg-[var(--focused-floating-surface)] text-[var(--focused-ink)] shadow-floating",
+      "border border-line bg-[var(--focused-floating-surface)] text-[var(--focused-ink)] shadow-md dark:shadow-none",
       "[--ink:var(--focused-ink)] [--sub:var(--focused-sub)] [--hint:var(--focused-hint)]",
       "[--line:var(--focused-line)] [--line-strong:var(--focused-line-strong)]",
       "[--hover:var(--focused-interaction)] [--sel:var(--focused-interaction)]",
