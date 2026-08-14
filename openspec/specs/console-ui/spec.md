@@ -2235,6 +2235,14 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 - **THEN** 主干与成员分支在省略边界各自收束
 - **AND** 省略区两侧不绘制一条跨区直接连接
 
+#### Scenario: 省略段保持展开轨道
+
+- **GIVEN** 长会话目录包含省略段且某个事件预览可见
+- **WHEN** 指针从事件行移入省略段
+- **THEN** 目录轨保持展开
+- **AND** 当前事件预览保持不变
+- **AND** 只有指针真正离开整个目录轨或预览卡时才进入关闭宽限
+
 ### Requirement: 节点预览模板与面板锚点保持稳定
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
@@ -2299,7 +2307,15 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让预览卡相对展开面板保持固定 side offset，并在检查事件变化时沿事件行纵向连续跟随，内容 MUST 使用短促淡换。`prefers-reduced-motion: reduce` 命中时，系统 MUST 取消面板、横线、节点、曲线、锚点和内容的位移、绘制及淡换时序，以即时静态切换提供等价信息。
+系统 MUST 让预览卡相对展开面板保持固定 side offset，并在检查事件变化时沿事件行纵向连续跟随，内容 MUST 使用短促淡换。系统 MUST 等到首个有效视口尺寸后才呈现可定位的轨道内容；预览锚点 MUST 使用独立于展开面板动画的稳定坐标层，首次呈现 MUST 直接使用最终展开坐标，不得把未测量的临时坐标或收起面板的位置作为动画起点；后续检查事件切换和真实尺寸变化 MUST 保持连续。`prefers-reduced-motion: reduce` 命中时，系统 MUST 取消面板、横线、节点、曲线、锚点和内容的位移、绘制及淡换时序，以即时静态切换提供等价信息。
+
+#### Scenario: 首次测量不产生位置修正动画
+
+- GIVEN 目录轨尚未取得有效视口高度
+- WHEN 页面首次挂载并随后取得有效高度
+- THEN 测量前不呈现导航、预览锚点或预览卡
+- AND 测量后它们直接出现在最终展开位置
+- AND 展开面板自身的位移动画不改变预览锚点坐标
 
 #### Scenario: 从最左泳道切换到最右泳道
 

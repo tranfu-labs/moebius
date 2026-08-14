@@ -52,10 +52,11 @@ export function ConversationRelayRail({
   appearance = "default",
 }: ConversationRelayRailProps): JSX.Element | null {
   const { t } = useI18n();
+  const hasEvents = events.length > 0;
   const [expanded, setExpanded] = useState(false);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [browseId, setBrowseId] = useState(currentEventId ?? events.at(-1)?.id ?? "");
-  const [viewportHeight, setViewportHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -67,16 +68,25 @@ export function ConversationRelayRail({
     }
   }, [currentEventId, events, expanded]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!hasEvents) {
+      setViewportHeight(null);
+      return;
+    }
     const viewport = viewportRef.current;
     if (viewport === null) return;
-    const update = () => setViewportHeight(Math.round(viewport.getBoundingClientRect().height));
+    const update = () => {
+      const nextHeight = Math.round(viewport.getBoundingClientRect().height);
+      if (nextHeight <= 0) return;
+      setViewportHeight((currentHeight) =>
+        currentHeight === nextHeight ? currentHeight : nextHeight);
+    };
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [hasEvents]);
 
   useEffect(() => () => {
     if (closeTimerRef.current !== null) {
@@ -84,7 +94,8 @@ export function ConversationRelayRail({
     }
   }, []);
 
-  const capacity = deriveConversationRelayCapacity(viewportHeight);
+  const measuredViewportHeight = viewportHeight ?? 0;
+  const capacity = deriveConversationRelayCapacity(measuredViewportHeight);
   const focusId = browseId || currentEventId;
   const rows = useMemo(
     () => computeConversationRelayRows(events, focusId, capacity),
@@ -95,7 +106,7 @@ export function ConversationRelayRail({
     [containerWidth, events],
   );
   const expandedRowHeight = deriveConversationRelayExpandedRowHeight(
-    viewportHeight,
+    measuredViewportHeight,
     rows.length,
   );
   const rowHeight = expanded
@@ -103,7 +114,11 @@ export function ConversationRelayRail({
     : CONVERSATION_RELAY_COLLAPSED_ROW_HEIGHT;
   const railHeight = rows.length * rowHeight;
   const expandedRailHeight = rows.length * expandedRowHeight;
-  const stageTop = Math.max(0, (viewportHeight - railHeight) / 2);
+  const stageTop = Math.max(0, (measuredViewportHeight - railHeight) / 2);
+  const expandedStageTop = Math.max(
+    0,
+    (measuredViewportHeight - expandedRailHeight) / 2,
+  );
   const paths = useMemo(
     () => deriveConversationRelayPaths(events, rows, layout, expandedRowHeight),
     [events, expandedRowHeight, layout, rows],
@@ -139,7 +154,7 @@ export function ConversationRelayRail({
     return () => viewport.removeEventListener("wheel", handleWheel);
   }, [browse, events, focusId]);
 
-  if (events.length === 0) return null;
+  if (!hasEvents) return null;
 
   const cancelClose = () => {
     if (closeTimerRef.current !== null) {
@@ -168,7 +183,9 @@ export function ConversationRelayRail({
     : conversationRelayEventColor(inspectedEvent);
 
   return (
-    <Popover open={inspectedEvent !== undefined && inspectedRowIndex >= 0}>
+    <Popover
+      open={viewportHeight !== null && inspectedEvent !== undefined && inspectedRowIndex >= 0}
+    >
       <div
         ref={viewportRef}
         className={cn(
@@ -181,6 +198,7 @@ export function ConversationRelayRail({
         data-expanded-width={layout.expandedWidth}
         data-row-height={rowHeight}
         data-testid="conversation-relay-rail"
+        data-viewport-measured={viewportHeight === null ? "false" : "true"}
         onMouseEnter={() => {
           cancelClose();
           setExpanded(true);
@@ -188,33 +206,34 @@ export function ConversationRelayRail({
         onMouseLeave={scheduleClose}
         style={style}
       >
-        <nav
-          ref={stageRef}
-          aria-label={t("console.relayRail.label")}
-          className={cn(
-            "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
-            appearance === "focused" && "border-0",
-            expanded
-              ? "border-line bg-sunken"
-              : "border-transparent bg-transparent",
-          )}
-          data-motion-origin="left"
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
-          }}
-          onFocus={() => {
-            cancelClose();
-            setExpanded(true);
-          }}
-          style={{
-            height: railHeight,
-            top: stageTop,
-            transformOrigin: "left center",
-            width: expanded
-              ? layout.expandedWidth
-              : CONVERSATION_RELAY_COLLAPSED_WIDTH,
-          }}
-        >
+        {viewportHeight !== null ? (
+          <nav
+            ref={stageRef}
+            aria-label={t("console.relayRail.label")}
+            className={cn(
+              "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+              appearance === "focused" && "border-0",
+              expanded
+                ? "border-line bg-sunken"
+                : "border-transparent bg-transparent",
+            )}
+            data-motion-origin="left"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
+            }}
+            onFocus={() => {
+              cancelClose();
+              setExpanded(true);
+            }}
+            style={{
+              height: railHeight,
+              top: stageTop,
+              transformOrigin: "left center",
+              width: expanded
+                ? layout.expandedWidth
+                : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+            }}
+          >
           <svg
             aria-hidden="true"
             className={cn(
@@ -346,7 +365,6 @@ export function ConversationRelayRail({
                   cancelClose();
                   setInspectedId(event.id);
                 }}
-                onMouseLeave={scheduleClose}
                 style={{
                   height: rowHeight,
                   top: rowIndex * rowHeight,
@@ -404,23 +422,36 @@ export function ConversationRelayRail({
             </Fragment>
           );
         })}
-        {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
-          <PopoverAnchor asChild>
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute left-0 transition-[top,height] duration-200 ease-enter motion-reduce:transition-none"
-              data-testid="relay-preview-anchor"
-              style={{
-                height: rowHeight,
-                top: inspectedRowIndex * rowHeight,
-                width: layout.expandedWidth,
-              }}
-            />
-          </PopoverAnchor>
+          </nav>
         ) : null}
-        </nav>
+        {viewportHeight !== null ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0"
+            data-testid="relay-preview-anchor-layer"
+            style={{
+              height: expandedRailHeight,
+              top: expandedStageTop,
+              width: layout.expandedWidth,
+            }}
+          >
+            {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
+              <PopoverAnchor asChild>
+                <span
+                  className="pointer-events-none absolute left-0 transition-[top,height] duration-200 ease-enter motion-reduce:transition-none"
+                  data-testid="relay-preview-anchor"
+                  style={{
+                    height: expandedRowHeight,
+                    top: inspectedRowIndex * expandedRowHeight,
+                    width: layout.expandedWidth,
+                  }}
+                />
+              </PopoverAnchor>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
+      {viewportHeight !== null && inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
         <PopoverContent
           align="center"
           className={operatorFloatingSurfaceClassName(

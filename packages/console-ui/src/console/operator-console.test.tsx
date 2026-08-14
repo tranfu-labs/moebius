@@ -2994,7 +2994,7 @@ describe("OperatorConsole", () => {
       ],
       memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
     } satisfies Partial<OperatorConsoleProps>;
-    const { rerender } = renderConsole(relayProps);
+    const { rerender } = renderConsoleWithMeasuredRelay(relayProps);
 
     const slot = screen.getByTestId("main-conversation-relay-slot");
     const rail = within(slot).getByTestId("conversation-relay-rail");
@@ -3087,7 +3087,7 @@ describe("OperatorConsole", () => {
   });
 
   it("keeps the timeline position unchanged when a relay target disappears", () => {
-    renderConsole({
+    renderConsoleWithMeasuredRelay({
       messages: [
         message({ id: 1, speaker: "user", role: null, body: "请开始" }),
         message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
@@ -3564,6 +3564,23 @@ async function openProjectMenu(projectName: string): Promise<void> {
 
 function renderConsole(overrides: Partial<OperatorConsoleProps> = {}) {
   return render(<OperatorConsole {...baseProps(overrides)} />);
+}
+
+function renderConsoleWithMeasuredRelay(overrides: Partial<OperatorConsoleProps> = {}) {
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.dataset.testid === "conversation-relay-rail") {
+        return DOMRect.fromRect({ height: 400, width: 44 });
+      }
+      return originalGetBoundingClientRect.call(this);
+    },
+  );
+  try {
+    return renderConsole(overrides);
+  } finally {
+    bounds.mockRestore();
+  }
 }
 
 function renderControlledConsole(overrides: Partial<OperatorConsoleProps> = {}) {

@@ -61,6 +61,43 @@ describe("ConversationRelayRail", () => {
     });
   });
 
+  it("waits for the first positive viewport measurement before mounting positioned content", () => {
+    let viewportHeight = 0;
+    let resizeCallback: ResizeObserverCallback | null = null;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
+      rect(760, viewportHeight));
+
+    class TestResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+      disconnect(): void {}
+      observe(): void {}
+      unobserve(): void {}
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+
+    try {
+      renderRail();
+      const rail = screen.getByTestId("conversation-relay-rail");
+
+      expect(rail).toHaveAttribute("data-viewport-measured", "false");
+      expect(screen.queryByRole("navigation", {
+        name: "当前主会话消息目录",
+      })).not.toBeInTheDocument();
+
+      viewportHeight = 400;
+      act(() => resizeCallback?.([], {} as ResizeObserver));
+
+      expect(rail).toHaveAttribute("data-viewport-measured", "true");
+      expect(screen.getByRole("navigation", {
+        name: "当前主会话消息目录",
+      })).toHaveStyle({ height: "120px", top: "140px" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("expands from the shared left edge for pointer and keyboard focus", async () => {
     const user = userEvent.setup();
     renderRail();
@@ -159,6 +196,11 @@ describe("ConversationRelayRail", () => {
       top: "0px",
       width: "82px",
     });
+    expect(screen.getByTestId("relay-preview-anchor-layer")).toHaveStyle({
+      height: "192px",
+      top: "104px",
+      width: "82px",
+    });
 
     fireEvent.pointerMove(screen.getByTestId("relay-event-message-6"));
     expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("交付自动证据");
@@ -204,6 +246,7 @@ describe("ConversationRelayRail", () => {
   });
 
   it("splits branches at omission windows and keeps the expanded panel in the viewport", () => {
+    vi.useFakeTimers();
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
       rect(760, 160),
     );
@@ -225,6 +268,18 @@ describe("ConversationRelayRail", () => {
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-2");
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-12");
     }
+
+    const inspectedRow = screen.getByTestId("relay-event-message-7");
+    const omissionRow = screen.getAllByTestId("relay-omission")[0]!;
+    fireEvent.mouseEnter(inspectedRow);
+    expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("消息 7");
+
+    fireEvent.mouseLeave(inspectedRow, { relatedTarget: omissionRow });
+    fireEvent.mouseEnter(omissionRow, { relatedTarget: inspectedRow });
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(rail).toHaveAttribute("data-expanded", "true");
+    expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("消息 7");
   });
 
   it("isolates wheel browsing from its scrolling parent", () => {
