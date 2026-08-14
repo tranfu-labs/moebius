@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
+import type { ConversationRelayRailProps } from "@/console/conversation-relay-rail";
 import type { ConversationRelayEvent } from "@/console/conversation-relay-rail-model";
 
 const referenceEvents = [
@@ -12,25 +13,41 @@ const referenceEvents = [
   event(6, "agent", "dev", "开发", "已准备交付自动证据"),
 ] satisfies ConversationRelayEvent[];
 
-const meta = {
-  title: "Block/Console/ConversationRelayRail",
-  component: ConversationRelayRail,
-  render: (args) => (
+type ConversationRelayRailStoryProps = ConversationRelayRailProps & {
+  storyHeight: number;
+};
+
+function ConversationRelayRailStory({
+  storyHeight,
+  ...props
+}: ConversationRelayRailStoryProps): JSX.Element {
+  return (
     <div
       className="bg-canvas p-4"
-      style={{ height: 560, width: Math.max(120, args.containerWidth) }}
+      style={{ height: storyHeight, width: Math.max(120, props.containerWidth) }}
     >
-      <ConversationRelayRail {...args} />
+      <ConversationRelayRail {...props} />
     </div>
-  ),
+  );
+}
+
+const meta = {
+  title: "Block/Console/ConversationRelayRail",
+  component: ConversationRelayRailStory,
+  argTypes: {
+    storyHeight: {
+      control: { max: 900, min: 120, step: 40, type: "range" },
+    },
+  },
   args: {
     appearance: "focused",
     containerWidth: 760,
     currentEventId: "message-4",
     events: referenceEvents,
     onActivate: () => undefined,
+    storyHeight: 560,
   },
-} satisfies Meta<typeof ConversationRelayRail>;
+} satisfies Meta<typeof ConversationRelayRailStory>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -66,6 +83,26 @@ export const LongConversationMiddle: Story = {
         body: `长会话中的第 ${String(index + 1)} 条真实消息`,
       };
     }),
+  },
+  play: ({ canvasElement }) => {
+    hover(canvasElement.querySelector('[data-testid="conversation-relay-rail"]'));
+  },
+};
+
+export const LongConversationAdaptiveHeight: Story = {
+  name: "长对话 · 自适应高度",
+  args: {
+    currentEventId: "message-21",
+    events: Array.from({ length: 40 }, (_, index) => {
+      const source = referenceEvents[index % referenceEvents.length]!;
+      return {
+        ...source,
+        id: `message-${String(index + 1)}`,
+        messageId: index + 1,
+        body: `自适应高度长会话中的第 ${String(index + 1)} 条真实消息`,
+      };
+    }),
+    storyHeight: 800,
   },
   play: ({ canvasElement }) => {
     hover(canvasElement.querySelector('[data-testid="conversation-relay-rail"]'));

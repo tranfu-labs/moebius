@@ -274,10 +274,11 @@ describe("ConversationRelayRail", () => {
     const rail = screen.getByTestId("conversation-relay-rail");
     fireEvent.mouseEnter(rail);
 
-    expect(rail).toHaveAttribute("data-capacity", "7");
+    expect(rail).toHaveAttribute("data-capacity", "6");
+    expect(rail).toHaveAttribute("data-height-budget", "136");
     expect(screen.getAllByTestId("relay-omission")).toHaveLength(2);
     expect(screen.getAllByTestId("relay-spine")).toHaveLength(3);
-    expect(screen.getByRole("navigation")).toHaveStyle({ height: "160px" });
+    expect(screen.getByRole("navigation")).toHaveStyle({ height: "136px", top: "12px" });
     for (const path of screen.getAllByTestId("relay-branch")) {
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-2");
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-12");

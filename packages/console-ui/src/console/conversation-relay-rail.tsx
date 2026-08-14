@@ -17,6 +17,7 @@ import {
   computeConversationRelayRows,
   deriveConversationRelayCapacity,
   deriveConversationRelayExpandedRowHeight,
+  deriveConversationRelayHeightBudget,
   deriveConversationRelayLayout,
   deriveConversationRelayPaths,
   type ConversationRelayEvent,
@@ -99,7 +100,8 @@ export function ConversationRelayRail({
   }, []);
 
   const measuredViewportHeight = viewportHeight ?? 0;
-  const capacity = deriveConversationRelayCapacity(measuredViewportHeight);
+  const railHeightBudget = deriveConversationRelayHeightBudget(measuredViewportHeight);
+  const capacity = deriveConversationRelayCapacity(railHeightBudget);
   const focusId = browseId || currentEventId;
   const rows = useMemo(
     () => computeConversationRelayRows(events, focusId, capacity),
@@ -110,7 +112,7 @@ export function ConversationRelayRail({
     [containerWidth, events],
   );
   const expandedRowHeight = deriveConversationRelayExpandedRowHeight(
-    measuredViewportHeight,
+    railHeightBudget,
     rows.length,
   );
   const rowHeight = expanded
@@ -200,6 +202,7 @@ export function ConversationRelayRail({
         data-container-width={containerWidth}
         data-expanded={expanded ? "true" : "false"}
         data-expanded-width={layout.expandedWidth}
+        data-height-budget={railHeightBudget}
         data-row-height={rowHeight}
         data-testid="conversation-relay-rail"
         data-viewport-measured={viewportHeight === null ? "false" : "true"}

@@ -2335,7 +2335,7 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 按主时间线可用视口与最大 32px 展开事件行计算可见容量；超出容量时 MUST 围绕当前阅读消息保留连续窗口并尽量保留首尾边界，远端区间以省略行表示。可用高度不足时，展开事件行 MAY 在 32–20px 之间有界压缩，但目录面板 MUST NOT 越过主会话可用视口或 composer。目录滚轮与方向键浏览 MUST NOT 移动主时间线，只有点击、Enter 或 Space 激活真实事件后才 MUST 将原消息定位到阅读区并短暂突出。定位失败 MUST 保持原阅读位置。
+系统 MUST 从主时间线实际可用视口推导长会话目录的显示高度预算：正常窗口取视口高度约 70%，上下 MUST 保留至少 24px 总间隙，高窗口 MUST 最多显示 15 个 32px 标准行（480px），不得铺满整个会话区。系统 MUST 按该预算与最大 32px 展开事件行计算可见容量；超出容量时 MUST 围绕当前阅读消息保留连续窗口并尽量保留首尾边界，远端区间以省略行表示。可用高度不足时，展开事件行 MAY 在 32–20px 之间有界压缩，但目录面板 MUST NOT 越过主会话可用视口或 composer。目录滚轮与方向键浏览 MUST NOT 移动主时间线，只有点击、Enter 或 Space 激活真实事件后才 MUST 将原消息定位到阅读区并短暂突出。定位失败 MUST 保持原阅读位置。
 
 #### Scenario: 矮窗口阅读长会话中段
 
