@@ -157,7 +157,15 @@ describe("ConversationRelayRail", () => {
     expect(farRightRow).toHaveAttribute("data-hit-target", "row");
     expect(farRightRow).toHaveClass("z-[3]");
     expect(farRightRow).toHaveStyle({ width: "82px" });
-    expect(screen.getByTestId("relay-band-message-6")).toHaveClass("z-[1]");
+    expect(screen.getByTestId("relay-band-message-6")).toHaveClass(
+      "z-[1]",
+      "rounded-md",
+    );
+    expect(screen.getByTestId("relay-band-message-6")).toHaveStyle({
+      height: "28px",
+      left: "3px",
+      width: "74px",
+    });
     expect(screen.getByTestId("relay-spine").closest("svg")).toHaveClass("z-[2]");
 
     fireEvent.mouseEnter(farRightRow);

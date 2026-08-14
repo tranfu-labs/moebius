@@ -32,6 +32,10 @@ import {
   PopoverContent,
 } from "@/ui/popover";
 
+const RELAY_BAND_HORIZONTAL_INSET = 4;
+const RELAY_BAND_VERTICAL_INSET = 2;
+const RELAY_PANEL_BORDER_WIDTH = 1;
+
 export interface ConversationRelayRailProps {
   events: readonly ConversationRelayEvent[];
   currentEventId: string | null;
@@ -322,16 +326,18 @@ export function ConversationRelayRail({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "pointer-events-none absolute left-0 z-[1] rounded-lg transition-[width,height,top,background-color] duration-150 motion-reduce:transition-none",
+                  "pointer-events-none absolute z-[1] rounded-md transition-[left,width,height,top,background-color] duration-150 motion-reduce:transition-none",
                   inspected ? "bg-hover" : "bg-transparent",
                 )}
                 data-testid={`relay-band-${event.id}`}
                 style={{
-                  height: rowHeight,
-                  top: rowIndex * rowHeight,
-                  width: expanded
+                  height: rowHeight - RELAY_BAND_VERTICAL_INSET * 2,
+                  left: RELAY_BAND_HORIZONTAL_INSET - RELAY_PANEL_BORDER_WIDTH,
+                  top: rowIndex * rowHeight + RELAY_BAND_VERTICAL_INSET,
+                  width: (expanded
                     ? layout.expandedWidth
-                    : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+                    : CONVERSATION_RELAY_COLLAPSED_WIDTH)
+                    - RELAY_BAND_HORIZONTAL_INSET * 2,
                 }}
               />
               <button
