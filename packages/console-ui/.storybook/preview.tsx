@@ -1,6 +1,26 @@
 import type { Decorator, Preview } from "@storybook/react";
 import { useEffect, type ReactNode } from "react";
+import {
+  operatorConsoleAppearanceClassName,
+  type OperatorConsoleAppearance,
+} from "../src/console/operator-console-appearance";
+import { cn } from "../src/lib/utils";
 import "../src/styles/globals.css";
+
+const withOperatorConsoleAppearance: Decorator = (Story, context) => {
+  const appearance: OperatorConsoleAppearance = context.args.appearance === "focused"
+    ? "focused"
+    : "default";
+
+  return (
+    <div
+      className={cn("contents", operatorConsoleAppearanceClassName(appearance))}
+      data-appearance={appearance}
+    >
+      <Story />
+    </div>
+  );
+};
 
 const withTheme: Decorator = (Story, context) => {
   const theme = context.globals.theme as "light" | "dark" | undefined;
@@ -39,7 +59,7 @@ function ThemeFrame({
 }
 
 const preview: Preview = {
-  decorators: [withTheme],
+  decorators: [withTheme, withOperatorConsoleAppearance],
   globalTypes: {
     theme: {
       description: "Theme",

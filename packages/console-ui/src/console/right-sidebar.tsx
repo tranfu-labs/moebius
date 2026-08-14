@@ -45,7 +45,7 @@ import {
 } from "@/console/right-sidebar-tabs";
 import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 
 type RightSidebarContentType = Exclude<RightSidebarTabType, "blank">;
 

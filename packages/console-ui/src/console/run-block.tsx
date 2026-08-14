@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { Button } from "@/ui/button";
 import { MarkdownMessage } from "@/console/markdown-message";
@@ -106,6 +106,7 @@ export function RunBlock({
     <div
       className={cn("max-w-[680px]", className)}
       data-layout-variant={variant}
+      data-testid="run-block"
       tabIndex={onAnalyzeConversation ? 0 : undefined}
       onContextMenu={(event) => {
         if (onAnalyzeConversation) {

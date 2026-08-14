@@ -24,6 +24,7 @@ const meta = {
     </div>
   ),
   args: {
+    appearance: "focused",
     containerWidth: 760,
     currentEventId: "message-4",
     events: referenceEvents,
@@ -34,15 +35,17 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Collapsed: Story = {};
+export const Collapsed: Story = { name: "页面同款 · 收起" };
 
 export const ExpandedByHover: Story = {
+  name: "页面同款 · 悬浮展开",
   play: ({ canvasElement }) => {
     hover(canvasElement.querySelector('[data-testid="relay-event-message-3"]'));
   },
 };
 
 export const ExpandedByKeyboardFocus: Story = {
+  name: "页面同款 · 键盘展开",
   play: ({ canvasElement }) => {
     canvasElement.querySelector<HTMLElement>(
       '[data-testid="relay-event-message-1"]',
@@ -51,6 +54,7 @@ export const ExpandedByKeyboardFocus: Story = {
 };
 
 export const LongConversationMiddle: Story = {
+  name: "长对话 · 中段定位",
   args: {
     currentEventId: "message-13",
     events: Array.from({ length: 25 }, (_, index) => {
@@ -69,6 +73,7 @@ export const LongConversationMiddle: Story = {
 };
 
 export const ManyMembersNarrow: Story = {
+  name: "窄窗口 · 多成员",
   args: {
     containerWidth: 150,
     currentEventId: "message-9",
@@ -90,6 +95,7 @@ export const ManyMembersNarrow: Story = {
 };
 
 export const DarkThemeExpanded: Story = {
+  name: "深色 · 展开",
   decorators: [
     (Story) => (
       <div className="dark">

@@ -2,7 +2,8 @@ import { ChevronDown, FolderOpen, GitBranch, Laptop } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
-import type { OperatorConsoleAppearance, OperatorProject, OperatorSession } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
+import type { OperatorProject, OperatorSession } from "@/console/operator-console";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { SessionTeamMenu } from "@/console/session-team-menu";
 import { useI18n, type Translate } from "@/i18n";

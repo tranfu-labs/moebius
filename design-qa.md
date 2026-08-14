@@ -143,8 +143,6 @@
 
 final result: passed
 
----
-
 # Operator Console Page 共享视觉迁移 QA · 2026-08-14
 
 ## 验收范围与视觉事实源
@@ -197,5 +195,47 @@ final result: passed
 - `pnpm --filter @moebius/console-ui typecheck`：通过。
 - `pnpm run test --scope`：3 个测试文件、165 个测试通过。
 - `pnpm --filter @moebius/console-ui check:storybook`：通过，Storybook 静态构建完成。
+
+final result: passed
+
+---
+
+# Operator Console Page ↔ Block/Component 复用闭环 QA · 2026-08-14
+
+## 问题与修复边界
+
+- 参考 Page：`page-console-operatorconsole--dashboard-shell-with-right-sidebar`。
+- 目标：确认 Page 中的 `ConversationRelayRail`、侧栏、运行块、输入区、右侧改动区及浮层来自共享 Block/Component，并让相应独立 Story 使用与 Page 完全相同的 focused 外观契约。
+- 根因：Page 根节点曾独占 focused token aliases 与 descendant rules；独立 Story 虽传入 `appearance="focused"`，却没有同一祖先 scope，造成组件相同而计算样式不同。
+
+## 共享实现证据
+
+- `operatorConsoleAppearanceClassName()` 下沉到 `operator-console-appearance.ts`，Page 与 Storybook preview 共同调用同一 Tailwind composition；没有复制 CSS，也没有为 Story 另写外观实现。
+- `OperatorConsoleAppearance` 类型一并下沉，Block/Component 不再反向从 `operator-console.tsx` Page 文件导入外观契约；Page 只做兼容 re-export。
+- 原有 7 个 appearance-aware Story 全部接入共享 preview scope；补齐 `ChangeTab`、`FileDiffView`、`SessionTeamMenu` 3 个此前缺失的独立 Story。
+- Page 仍直接组合真实 `ConversationRelayRail`；接力轨的层级顺序固定为 active band `z=1`、原始 graph SVG `z=2`、可交互行 `z=3`，避免悬浮背景截断原图曲线。
+
+## Page ↔ 独立 Story 对比
+
+- 同状态组合比较：`/tmp/operator-relay-page-block-comparison.png`。
+- 计算样式抽样覆盖 10/10 共享 Story，Page 与独立 Story 在 focused tokens、文字颜色、背景、边界、圆角、阴影和基础字重上匹配。
+- `ConversationRelayRail` 收起态的颜色、透明背景、0 边界、6px 圆角、事件命中区域与 Page 匹配。
+- `ConversationSidebar` 选中项为 28px 高、6px 圆角、`#eff0f0`；`RoleComposer` 为白底、12px 圆角、focused 边线和共享 composer 阴影。
+- `RightSidebar` 为白底、12px 圆角、focused 边线和共享 panel 阴影；`ChangeTab`、`ComposerContext`、`RunBlock` 的透明层级和 focused 色板匹配。
+- `SessionTeamMenu` 与 `AgentRunInfoPopover` 浅色均为白底、0 边界、12px 圆角和共享 floating shadow；深色 popover 为 `rgb(36,36,36)`、0 边界和共享深色阴影。
+- 仅 fixture 内容和独立 Story 可用宽度造成的尺寸差异被排除；这些不是视觉契约漂移。
+
+## 循环结果
+
+1. 第一轮修复 Page/Story scope，抽样计算样式达到 10/10；发现组件类型仍反向依赖 Page，未退出循环。
+2. 第二轮下沉外观类型与 class composition，并把 Story scope 统一到全局 preview；import boundary、类型、受影响测试和 Storybook 构建全部通过。
+3. 最终覆盖率 100%，高于 95% 退出阈值；无剩余 P0/P1/P2。
+
+## 自动化验证
+
+- `pnpm check:boundaries`：通过，758 个源码文件、634 个生产文件无新增边界债务。
+- `pnpm --filter @moebius/console-ui typecheck`：通过。
+- `pnpm run test --scope`：13 个测试文件、255 个测试通过；保留既有 React `act()` 警告，不影响退出码。
+- `pnpm --filter @moebius/console-ui check:storybook`：通过，静态 Storybook 构建完成。
 
 final result: passed

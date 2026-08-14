@@ -8,7 +8,7 @@ import {
 
 import { translate, useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 
 export interface WorkspaceFileChange {
   path: string;

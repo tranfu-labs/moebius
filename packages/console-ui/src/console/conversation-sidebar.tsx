@@ -2,7 +2,7 @@ import * as React from "react";
 import { ChevronRight, Folder, GitBranch, MoreHorizontal, Plus, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import {

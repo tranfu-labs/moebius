@@ -7,6 +7,7 @@ const meta = {
   title: "Component/Console/RoleComposer",
   component: RoleComposer,
   args: {
+    appearance: "focused",
     value: "",
     onValueChange: () => undefined,
     statusText: "发消息不会打断运行"
@@ -20,6 +21,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const MentionCompletion: Story = {
+  name: "成员提及 · 自动补全",
   render: (args) => {
     const [value, setValue] = useState(args.value);
 
@@ -35,6 +37,7 @@ export const MentionCompletion: Story = {
 };
 
 export const ExistingMentionBlocked: Story = {
+  name: "成员提及 · 阻止重复",
   args: {
     value: "@dev 已经在消息里，继续输入 @",
     statusText: "同一条消息只由控件插入一个角色"
@@ -43,6 +46,7 @@ export const ExistingMentionBlocked: Story = {
 };
 
 export const MainDashboardLayout: Story = {
+  name: "页面同款 · 主输入框",
   args: {
     variant: "main",
     value: "主会话输入框从单行起步，并随正文增长到 120px。",
@@ -57,6 +61,7 @@ export const MainDashboardLayout: Story = {
 };
 
 export const EmbeddedLayoutIsolation: Story = {
+  name: "嵌入布局 · 隔离验证",
   args: {
     variant: "embedded",
     value: "右侧栏继续使用原有密度。",

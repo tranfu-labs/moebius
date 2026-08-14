@@ -23,7 +23,7 @@ import {
 } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 import { cn } from "@/lib/utils";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n } from "@/i18n";
 import {

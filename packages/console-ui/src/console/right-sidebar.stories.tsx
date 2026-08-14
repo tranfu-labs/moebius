@@ -16,6 +16,7 @@ const meta = {
   title: "Block/Console/RightSidebar",
   component: RightSidebarStory,
   args: {
+    appearance: "focused",
     isGitRepository: true,
   },
   parameters: { layout: "fullscreen" },
@@ -24,29 +25,35 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const BlankTab: Story = {};
+export const BlankTab: Story = { name: "页面同款 · 空标签" };
 
 export const Default1200: Story = {
+  name: "页面同款 · 标准桌面",
   args: { availableWidth: 1_200 },
 };
 
 export const NonGit: Story = {
+  name: "非 Git 项目",
   args: { isGitRepository: false },
 };
 
 export const NarrowOverlay: Story = {
+  name: "窄窗口 · 覆盖层",
   args: { availableWidth: 959 },
 };
 
 export const SplitMinimum: Story = {
+  name: "分栏 · 最小宽度",
   args: { availableWidth: 960 },
 };
 
 export const SameTitlesAndUpdating: Story = {
+  name: "同名标签 · 更新中",
   args: { scenario: "same-titles" },
 };
 
 export const KeyboardResize: Story = {
+  name: "键盘 · 调整宽度",
   args: { availableWidth: 1_200 },
   play: async ({ canvasElement }) => {
     const separator = canvasElement.querySelector<HTMLElement>("[data-testid='right-sidebar-resize-handle']");
@@ -58,6 +65,7 @@ export const KeyboardResize: Story = {
 };
 
 export const ClosingSnapshot: Story = {
+  name: "动画 · 关闭快照",
   args: { holdClosingSnapshot: true, scenario: "final-tab" },
   play: async ({ canvasElement }) => {
     const closeButton = canvasElement.querySelector<HTMLButtonElement>("[aria-label^='关闭标签']");
@@ -68,10 +76,11 @@ export const ClosingSnapshot: Story = {
 };
 
 export const ReducedMotion: Story = {
+  name: "减弱动效",
   args: { reducedMotion: true, scenario: "final-tab" },
 };
 
-interface RightSidebarStoryProps extends Pick<RightSidebarProps, "isGitRepository"> {
+interface RightSidebarStoryProps extends Pick<RightSidebarProps, "appearance" | "isGitRepository"> {
   availableWidth?: number;
   holdClosingSnapshot?: boolean;
   layout?: RightSidebarLayout;
@@ -80,6 +89,7 @@ interface RightSidebarStoryProps extends Pick<RightSidebarProps, "isGitRepositor
 }
 
 function RightSidebarStory({
+  appearance = "focused",
   isGitRepository = true,
   availableWidth = 1_200,
   holdClosingSnapshot = false,
@@ -161,6 +171,7 @@ function RightSidebarStory({
         {open ? "隐藏右侧栏" : "显示右侧栏"}
       </button>
       <RightSidebar
+        appearance={appearance}
         open={open}
         availableWidth={availableWidth}
         width={projection.width}

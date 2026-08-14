@@ -1,7 +1,7 @@
 import { AlertTriangle, ChevronDown, Diamond } from "lucide-react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { AgentTeamOption } from "@/console/agent-team-option";
 import { getAgentTeamSelectionLabel } from "@/console/team-selection-label";

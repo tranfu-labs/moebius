@@ -29,6 +29,8 @@ const meta = {
   title: "Block/Console/RunBlock",
   component: RunBlock,
   args: {
+    appearance: "focused",
+    variant: "main",
     role: "dev",
     elapsedTime: "3分12秒",
     steps,
@@ -38,9 +40,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const WithSteps: Story = {};
+export const WithSteps: Story = { name: "页面同款 · 分步运行" };
 
 export const WithoutSteps: Story = {
+  name: "页面同款 · 无步骤运行",
   args: {
     steps: [],
     summary: "正在运行测试 · 已进行 3 分 12 秒",
@@ -49,6 +52,7 @@ export const WithoutSteps: Story = {
 };
 
 export const MissingPresentationData: Story = {
+  name: "降级 · 缺少展示数据",
   args: {
     elapsedTime: "   ",
     steps: undefined,

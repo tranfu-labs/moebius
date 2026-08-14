@@ -2,7 +2,7 @@ import { FileText, RotateCcw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { AgentPortrait } from "@/console/agent-portrait";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";

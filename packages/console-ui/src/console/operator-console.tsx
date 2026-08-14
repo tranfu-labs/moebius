@@ -115,7 +115,11 @@ import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
 import { SessionTeamUpdateNotice, type SessionTeamUpdateViewState } from "@/console/session-team-update-notice";
 import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
-import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
+import {
+  operatorConsoleAppearanceClassName,
+  operatorFloatingSurfaceClassName,
+  type OperatorConsoleAppearance,
+} from "@/console/operator-console-appearance";
 import {
   SettingsDialog,
   type LanguageSaveStatus,
@@ -180,57 +184,7 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { TooltipProvider } from "@/ui/tooltip";
 
-export type OperatorConsoleAppearance = "default" | "focused";
-
-/**
- * Reusable Tailwind composition for the focused three-pane workspace.
- * Literal utilities keep Storybook and the desktop application on one path.
- */
-function operatorConsoleAppearanceClassName(
-  appearance: OperatorConsoleAppearance,
-): string | undefined {
-  if (appearance !== "focused") return undefined;
-
-  return cn(
-    "bg-[var(--focused-rail)] font-sans antialiased",
-    "[--canvas:var(--focused-canvas)] [--rail:var(--focused-rail)]",
-    "[--card:var(--focused-card)] [--input:var(--focused-input)] [--sunken:var(--focused-sunken)]",
-    "[--hover:var(--focused-interaction)] [--sel:var(--focused-interaction)]",
-    "[--ink:var(--focused-ink)] [--sub:var(--focused-sub)] [--hint:var(--focused-hint)]",
-    "[--line:var(--focused-line)] [--line-strong:var(--focused-line-strong)]",
-    "[--accent:var(--focused-accent)] [--accent-hover:var(--focused-accent-hover)]",
-    "[--floating-surface:var(--focused-floating-surface)]",
-    "[&_.font-normal]:font-normal [&_.font-semibold]:font-semibold",
-    "[&_[data-testid=main-window-drag-region]]:border-transparent",
-    "[&_[data-testid=sidebar-footer]]:border-transparent",
-    "[&_[data-testid=conversation-title-header]]:bg-transparent",
-    "[&_[data-testid=conversation-bottom-dock]]:bg-transparent",
-    "[&_[data-testid=sidebar-brand-region]]:h-[34px]",
-    "[&_[data-testid=sidebar-app-actions]]:py-1",
-    "[&_[data-testid=sidebar-app-actions]_button]:h-7",
-    "[&_[data-testid=sidebar-app-actions]_button]:rounded-md",
-    "[&_[data-testid=sidebar-app-actions]_button]:font-normal",
-    "[&_[data-testid=sidebar-footer]_button]:font-normal",
-    "[&_[data-testid=conversation-sidebar-session]:focus-visible]:outline-none",
-    "[&_[data-testid=conversation-sidebar-session]:focus-visible]:ring-1",
-    "[&_[data-testid=conversation-sidebar-session]:focus-visible]:ring-inset",
-    "[&_[data-testid=conversation-sidebar-session]:focus-visible]:ring-ink/25",
-    "[&_[data-testid=conversation-sidebar-session][aria-current=page]]:bg-sel",
-    "[&_[data-testid=conversation-sidebar-session][aria-current=page]]:text-ink",
-    "[&_[data-testid=conversation-title-header]_h1]:font-sans",
-    "[&_[data-testid=conversation-title-header]_h1]:tracking-[-0.018em]",
-    "[&_[data-testid^=timeline-message-]_h1]:font-sans [&_[data-testid^=timeline-message-]_h1]:font-semibold [&_[data-testid^=timeline-message-]_h1]:tracking-[-0.018em]",
-    "[&_[data-testid^=timeline-message-]_h2]:font-sans [&_[data-testid^=timeline-message-]_h2]:font-semibold [&_[data-testid^=timeline-message-]_h2]:tracking-[-0.018em]",
-    "[&_[data-testid^=timeline-message-]_h3]:font-sans [&_[data-testid^=timeline-message-]_h3]:font-semibold [&_[data-testid^=timeline-message-]_h3]:tracking-[-0.018em]",
-    "[&_[data-testid^=timeline-message-]_strong]:font-semibold",
-    "[&_[data-testid^=timeline-message-]_b]:font-semibold",
-    "[&_[data-testid=active-run-block]_h1]:font-sans [&_[data-testid=active-run-block]_h1]:font-semibold [&_[data-testid=active-run-block]_h1]:tracking-[-0.018em]",
-    "[&_[data-testid=active-run-block]_h2]:font-sans [&_[data-testid=active-run-block]_h2]:font-semibold [&_[data-testid=active-run-block]_h2]:tracking-[-0.018em]",
-    "[&_[data-testid=active-run-block]_h3]:font-sans [&_[data-testid=active-run-block]_h3]:font-semibold [&_[data-testid=active-run-block]_h3]:tracking-[-0.018em]",
-    "[&_[data-testid=active-run-block]_strong]:font-semibold",
-    "[&_[data-testid=active-run-block]_b]:font-semibold",
-  );
-}
+export type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 
 export type OperatorMessageSpeaker = "user" | "agent" | "system";
 export type OperatorMessageStatus =

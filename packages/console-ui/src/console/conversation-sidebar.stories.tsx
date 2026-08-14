@@ -33,6 +33,7 @@ const meta = {
   title: "Block/Console/ConversationSidebar",
   component: ConversationSidebar,
   args: {
+    appearance: "focused",
     projects,
     selectedSessionId: "running-progress"
   },
@@ -45,6 +46,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const NewestSessionsFirst: Story = {
+  name: "页面同款 · 最近会话",
   render: (args) => {
     const [selectedSessionId, setSelectedSessionId] = useState(args.selectedSessionId);
     const [storyProjects, setStoryProjects] = useState(args.projects);

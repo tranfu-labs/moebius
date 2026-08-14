@@ -4,7 +4,7 @@ import { ArrowUp, Plus, Square } from "lucide-react";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import type { OperatorConsoleAppearance } from "@/console/operator-console";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import {
   StructuredAttachmentList,
