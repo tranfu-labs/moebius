@@ -57,7 +57,7 @@ export function ConversationSearch({
         <h1 className="text-sm font-semibold text-ink">{t("console.conversationSearch.title")}</h1>
         <button
           type="button"
-          className="window-no-drag ml-auto flex h-8 w-8 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+          className="window-no-drag ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
           aria-label={t("console.conversationSearch.close")}
           onClick={onClose}
         >
@@ -129,7 +129,7 @@ export function ConversationSearch({
           ) : results.length === 0 ? (
             <p className="py-10 text-center text-sm text-sub">{t("console.conversationSearch.empty")}</p>
           ) : (
-            <ul className="divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
               {results.map((result) => (
                 <li key={result.sessionId} className="flex items-center gap-3 p-3">
                   <button

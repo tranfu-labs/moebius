@@ -22,7 +22,7 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
   if (state.status === "waiting") {
     return (
       <section
-        className="mb-2 rounded-md border border-line bg-card px-3 py-2 text-xs text-sub"
+        className="mb-2 rounded-lg border border-line bg-card px-3 py-2 text-xs text-sub"
         role="status"
         aria-label={t("console.sessionTeamUpdate.label")}
       >
@@ -34,7 +34,7 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
   if (state.status === "failed") {
     return (
       <section
-        className="mb-2 flex items-start gap-2 rounded-md border border-line bg-card px-3 py-2 text-xs"
+        className="mb-2 flex items-start gap-2 rounded-lg border border-line bg-card px-3 py-2 text-xs"
         role="alert"
         aria-label={t("console.sessionTeamUpdate.label")}
       >
@@ -59,7 +59,7 @@ export function SessionTeamUpdateNotice({ state, onApply, onRetry, onCancel }: {
     "team-information": t("console.sessionTeamUpdate.teamInformation"),
   };
   return (
-    <section className="mb-2 overflow-hidden rounded-md border border-line bg-card" aria-label={t("console.sessionTeamUpdate.labelPlural")}>
+    <section className="mb-2 overflow-hidden rounded-lg border border-line bg-card" aria-label={t("console.sessionTeamUpdate.labelPlural")}>
       {state.categories.map((category) => (
         <div key={category.kind} className="flex min-h-9 items-center gap-3 border-b border-line px-3 py-1.5 text-xs last:border-b-0">
           <span className="min-w-0 flex-1 text-ink">{labels[category.kind]}</span>

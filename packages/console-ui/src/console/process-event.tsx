@@ -330,7 +330,7 @@ function AttemptDebugHeader({
           ? <DebugMeta label="cwd" value={metadata.cwd} />
           : null}
       </dl>
-      <p className="mt-3 rounded-sm border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub">
+      <p className="mt-3 rounded-md border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub">
         {t("console.processEvent.sensitiveNotice")}
       </p>
       <div className="mt-3 grid gap-2">
@@ -376,7 +376,7 @@ function PromptDisclosure({
   };
   return (
     <details
-      className="rounded-sm border border-line bg-card px-3 py-2"
+      className="rounded-md border border-line bg-card px-3 py-2"
       onToggle={(event) => {
         if (event.currentTarget.open) {
           request();
@@ -394,7 +394,7 @@ function PromptDisclosure({
             {t("console.processEvent.promptLoadFailed", { error: state.message })}
             <button
               type="button"
-              className="ml-2 rounded-sm border border-line px-2 py-1 text-ink hover:bg-hover"
+              className="ml-2 rounded-md border border-line px-2 py-1 text-ink hover:bg-hover"
               onClick={request}
             >
               {t("common.retry")}
@@ -486,7 +486,7 @@ function DebugCard({
   const { t } = useI18n();
   return (
     <article className={cn(
-      "my-2 overflow-hidden rounded-lg border bg-card",
+      "my-2 overflow-hidden rounded-xl border bg-card",
       danger ? "border-danger/30" : "border-line",
     )}>
       <header className="border-b border-line px-3 py-2">

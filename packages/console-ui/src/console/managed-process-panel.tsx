@@ -50,7 +50,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="window-no-drag z-20 ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-md px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="window-no-drag z-20 ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           aria-label={`${t("console.managedProcesses.open")} · ${label}`}
           aria-expanded={open}
           data-testid="managed-process-indicator"
@@ -67,7 +67,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
             const log = controller.logs[item.id];
             const pending = controller.pendingIds.has(item.id);
             return (
-              <section key={item.id} className="rounded-md border border-line bg-card p-3" data-testid={`managed-process-${item.id}`}>
+              <section key={item.id} className="rounded-lg border border-line bg-card p-3" data-testid={`managed-process-${item.id}`}>
                 <div className="flex items-start gap-2">
                   <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full bg-sub", item.state === "ready" && "bg-accent", item.state === "unhealthy" && "bg-danger")} aria-hidden="true" />
                   <div className="min-w-0 flex-1">

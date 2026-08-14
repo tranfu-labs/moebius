@@ -205,13 +205,12 @@ function operatorConsoleAppearanceClassName(
     "[&_[data-testid=sidebar-footer]]:border-transparent",
     "[&_[data-testid=conversation-title-header]]:bg-transparent",
     "[&_[data-testid=conversation-bottom-dock]]:bg-transparent",
-    "[&_[data-testid=sidebar-brand-region]]:h-8",
+    "[&_[data-testid=sidebar-brand-region]]:h-[34px]",
     "[&_[data-testid=sidebar-app-actions]]:py-1",
-    "[&_[data-testid=sidebar-app-actions]_button]:h-8",
-    "[&_[data-testid=sidebar-app-actions]_button]:rounded-[7px]",
+    "[&_[data-testid=sidebar-app-actions]_button]:h-7",
+    "[&_[data-testid=sidebar-app-actions]_button]:rounded-md",
     "[&_[data-testid=sidebar-app-actions]_button]:font-normal",
     "[&_[data-testid=sidebar-footer]_button]:font-normal",
-    "[&_[data-testid=conversation-sidebar-session]]:rounded-[8px]",
     "[&_[data-testid=conversation-sidebar-session]:focus-visible]:outline-none",
     "[&_[data-testid=conversation-sidebar-session]:focus-visible]:ring-1",
     "[&_[data-testid=conversation-sidebar-session]:focus-visible]:ring-inset",
@@ -1920,7 +1919,7 @@ export function OperatorConsole({
             else conversationMessageRefs.current.set(message.id, element);
           }}
           className={cn(
-            "rounded-md outline-none transition-colors",
+            "rounded-lg outline-none transition-colors",
             highlightedMessageId === message.id && "bg-sel ring-2 ring-inset ring-accent",
           )}
           data-message-id={message.id}
@@ -1994,7 +1993,7 @@ export function OperatorConsole({
       {!embeddedConversation ? (
         <a
           href="#operator-main-content"
-          className="window-no-drag absolute left-3 top-2 z-[90] -translate-y-16 rounded-md bg-ink px-3 py-2 text-sm font-normal text-canvas focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-accent motion-reduce:transition-none"
+          className="window-no-drag absolute left-3 top-2 z-[90] -translate-y-16 rounded-lg bg-ink px-3 py-2 text-sm font-normal text-canvas focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-accent motion-reduce:transition-none"
           onClick={(event) => {
             event.preventDefault();
             operatorMainRef.current?.focus();
@@ -2053,7 +2052,7 @@ export function OperatorConsole({
           <button
             type="button"
             ref={sidebarCloseButtonRef}
-            className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+            className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
             aria-label={translate(activeLocale, "sidebar.close")}
             title={translate(activeLocale, "sidebar.close")}
             onClick={() => setSidebarOpen(false)}
@@ -2277,7 +2276,7 @@ export function OperatorConsole({
         tabIndex={-1}
         className={cn(
           "relative flex min-w-0 flex-1 flex-col bg-canvas",
-          appearance === "focused" && "m-[4px_2px_4px_4px] overflow-hidden rounded-[14px] border border-line bg-card shadow-panel [container-type:inline-size]",
+          appearance === "focused" && "m-[4px_2px_4px_4px] overflow-hidden rounded-xl border border-line bg-card shadow-panel [container-type:inline-size]",
         )}
         data-appearance={appearance}
         data-testid="operator-main"
@@ -2292,7 +2291,7 @@ export function OperatorConsole({
             <button
               type="button"
               ref={sidebarOpenButtonRef}
-              className="window-no-drag z-20 ml-[96px] flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+              className="window-no-drag z-20 ml-[96px] flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
               aria-label={t("console.operator.openSidebar")}
               title={t("console.operator.openSidebar")}
               onClick={() => setSidebarOpen(true)}
@@ -2304,7 +2303,7 @@ export function OperatorConsole({
           {analysisPanel && selectedSession ? (
             <button
               type="button"
-              className={cn("window-no-drag z-20 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
+              className={cn("window-no-drag z-20 flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
               aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               aria-expanded={analysisPanel.open}
@@ -2318,7 +2317,7 @@ export function OperatorConsole({
             type="button"
             ref={rightSidebarToggleRef}
             className={cn(
-              "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink",
+              "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink",
               (analysisPanel && selectedSession) || hasManagedProcesses ? "ml-1" : "ml-auto",
             )}
             aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
@@ -2582,7 +2581,7 @@ export function OperatorConsole({
                     {embeddedConversation && analysisPanel ? (
                       <button
                         type="button"
-                        className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                         aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
                         title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
                         aria-expanded={analysisPanel.open}
@@ -2599,7 +2598,7 @@ export function OperatorConsole({
                 <div className={MAIN_CONVERSATION_COLUMN_GUTTER_CLASS}>
                   <div
                     className={cn(
-                      "mx-auto mt-3 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub",
+                      "mx-auto mt-3 rounded-xl border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub",
                       MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                     )}
                     role="status"
@@ -2759,7 +2758,7 @@ export function OperatorConsole({
                     className={cn(
                       appearance === "focused"
                         ? "pointer-events-auto relative z-[1] mx-auto mb-0 w-fit max-w-[min(76%,540px)] overflow-hidden rounded-t-[12px] border border-line border-b-0 bg-input p-0 shadow-pending [&>ol]:hidden [&>p]:hidden"
-                        : "pointer-events-auto mx-auto mb-2 w-full rounded-[14px] border border-accent/35 bg-accent/10 px-3.5 py-2.5",
+                        : "pointer-events-auto mx-auto mb-2 w-full rounded-xl border border-accent/35 bg-accent/10 px-3.5 py-2.5",
                       appearance === "default" && MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                     )}
                     aria-label={t("console.operator.pendingDispatch")}
@@ -2789,7 +2788,7 @@ export function OperatorConsole({
                               <div className="flex shrink-0 items-center gap-0.5">
                                 <button
                                   type="button"
-                                  className="grid h-7 w-7 place-items-center rounded-[7px] text-hint transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
+                                  className="grid h-7 w-7 place-items-center rounded-md text-hint transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
                                   aria-label={`立即发送：${body}`}
                                   title="立即发送"
                                   onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
@@ -2798,7 +2797,7 @@ export function OperatorConsole({
                                 </button>
                                 <button
                                   type="button"
-                                  className="grid h-7 w-7 place-items-center rounded-[7px] text-hint transition-colors hover:bg-[var(--status-danger-bg)] hover:text-danger focus-visible:bg-[var(--status-danger-bg)] focus-visible:text-danger focus-visible:outline-none"
+                                  className="grid h-7 w-7 place-items-center rounded-md text-hint transition-colors hover:bg-[var(--status-danger-bg)] hover:text-danger focus-visible:bg-[var(--status-danger-bg)] focus-visible:text-danger focus-visible:outline-none"
                                   aria-label={`删除：${body}`}
                                   title="删除"
                                   onClick={() => onRemovePendingMessage?.(selectedSessionId, message.id)}
@@ -2840,7 +2839,7 @@ export function OperatorConsole({
                               </span>
                               {editing ? (
                                 <input
-                                  className="min-w-0 flex-1 rounded-md border border-line bg-card px-2 py-1 text-sm text-ink"
+                                  className="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1 text-sm text-ink"
                                   aria-label={t("console.operator.pendingEditLabel")}
                                   value={editingPendingMessage.body}
                                   onChange={(event) => setEditingPendingMessage({
@@ -2859,7 +2858,7 @@ export function OperatorConsole({
                             {message.error || dispatch.waitingForTeam || dispatch.targetUnavailable ? (
                               <div
                                 className={cn(
-                                  "ml-5 mt-1 rounded-md border px-2 py-1.5 text-xs",
+                                  "ml-5 mt-1 rounded-lg border px-2 py-1.5 text-xs",
                                   message.error
                                     ? "border-danger/30 bg-danger/5 text-danger"
                                     : "border-line bg-card text-sub",
@@ -3229,7 +3228,7 @@ export function OperatorConsole({
             {settingsNotifications.map((notification) => (
               <div
                 key={notification.id}
-                className="rounded-sm border border-line bg-card p-3 text-sm text-ink shadow-lg"
+                className="rounded-md border border-line bg-card p-3 text-sm text-ink shadow-lg"
                 role="status"
               >
                 <p>{notification.message}</p>
@@ -3312,7 +3311,7 @@ export function OperatorConsole({
             }
           }}
         >
-          <dl className="grid gap-3 rounded-lg border border-line bg-rail p-3 text-xs">
+          <dl className="grid gap-3 rounded-xl border border-line bg-rail p-3 text-xs">
             <div className="grid gap-1">
               <dt className="font-normal text-sub">{t("console.operator.oldLocation")}</dt>
               <dd className="break-all text-ink" data-testid="repair-original-folder">{repairRequest.project.folderPath}</dd>
@@ -3366,7 +3365,7 @@ export function OperatorConsole({
             }
           }}
         >
-          <p className="rounded-md border border-line bg-rail px-3 py-2 text-xs text-sub">
+          <p className="rounded-lg border border-line bg-rail px-3 py-2 text-xs text-sub">
             {t("console.operator.folderPreserved", { path: removalRequest.project.folderPath })}
           </p>
           <DialogButtons
@@ -3598,7 +3597,7 @@ function ProjectActionDialog({
     >
       <div
         ref={dialogRef}
-        className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink"
+        className="w-full max-w-md rounded-xl border border-line bg-sunken p-5 text-ink"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -3783,7 +3782,7 @@ function SidebarAction({
       ref={buttonRef}
       type="button"
       className={cn(
-        "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm font-normal text-ink hover:bg-hover",
+        "flex h-7 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm font-normal text-ink hover:bg-hover",
         selected ? "bg-sel" : "bg-transparent",
         className,
       )}
@@ -3824,7 +3823,7 @@ function ApplicationPlaceholder({
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-6" data-testid="application-overlay">
       <section
-        className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5"
+        className="w-full max-w-md rounded-xl border border-line bg-sunken p-5"
         role="dialog"
         aria-modal="true"
         aria-labelledby="application-placeholder-title"
@@ -4154,7 +4153,7 @@ function TimelineEntry({
               />
             )
           ) : null}
-          <span className="font-semibold text-ink">
+          <span className="text-ink">
             {showMemberIdentity
               ? resolveOperatorMemberName(auditRole, memberIdentities, t)
               : t("console.common.systemNotice")}
@@ -4241,12 +4240,12 @@ function TimelineEntry({
       <div className="group py-3 text-sm">
         <div className="mb-1.5 flex items-center justify-end gap-2 text-sm text-sub">
           <span className="tnum text-hint opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{formatTime(message.updatedAt, locale)}</span>
-          <span className="font-semibold text-ink">{t("console.common.you")}</span>
+          <span className="text-ink">{t("console.common.you")}</span>
         </div>
         <div className="flex justify-end">
           <div className={cn(
-            "max-w-[75%] rounded-[10px] border border-line bg-card px-3 py-2",
-            appearance === "focused" && "rounded-[12px] border-transparent bg-sunken",
+            "max-w-[75%] rounded-lg border border-line bg-card px-3 py-2",
+            appearance === "focused" && "border-transparent bg-sunken",
           )}>
             {message.body.trim() === "" ? null : (
               <MarkdownMessage
@@ -4323,7 +4322,7 @@ function TimelineEntry({
             />
           )
         ) : null}
-        <span className="font-semibold text-ink">
+        <span className="text-ink">
           {message.speaker === "agent"
             ? resolveOperatorMemberName(message.role, memberIdentities, t)
             : t("console.common.systemNotice")}
@@ -4450,7 +4449,7 @@ function ConversationAnalysisMenu({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-hover hover:text-ink"
+            className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-hover hover:text-ink"
             aria-label={t("console.sessionAnalysis.moreActions")}
             title={t("console.sessionAnalysis.moreActions")}
           >

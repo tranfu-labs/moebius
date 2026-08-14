@@ -143,7 +143,7 @@ function MemberChip({
         transition: sortable.transition ?? undefined,
       }}
       className={cn(
-        "relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm",
+        "relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm",
         item.selected
           ? "border-line-strong bg-sel text-ink"
           : "border-line bg-card text-sub hover:bg-hover hover:text-ink",

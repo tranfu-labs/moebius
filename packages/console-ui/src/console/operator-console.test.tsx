@@ -147,6 +147,8 @@ describe("OperatorConsole", () => {
     for (const [index, entry] of appEntries.entries()) {
       expect(entry).toHaveAttribute("aria-label", ["新建对话", "搜索", "Agent 团队"][index]);
       expect(entry).toHaveAttribute("title", ["新建对话", "搜索", "Agent 团队"][index]);
+      expect(entry).toHaveClass("h-7");
+      expect(entry).not.toHaveClass("h-[34px]");
     }
     expect(projectHeading).toBeVisible();
     expect(screen.getByRole("button", { name: "重新查看引导" })).toBeVisible();
@@ -1887,7 +1889,7 @@ describe("OperatorConsole", () => {
     const bubble = userMessage.querySelector(".max-w-\\[75\\%\\]");
     expect(bubble).toHaveClass(
       "max-w-[75%]",
-      "rounded-[10px]",
+      "rounded-lg",
       "border",
       "border-line",
       "bg-card",

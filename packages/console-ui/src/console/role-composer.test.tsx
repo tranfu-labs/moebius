@@ -188,7 +188,7 @@ describe("RoleComposer", () => {
 
     expect(mainInput).toHaveAttribute("rows", "1");
     expect(mainInput).toHaveClass("max-h-[120px]", "min-h-8");
-    expect(mainBox).toHaveClass("bg-card", "rounded-[14px]", "border-line");
+    expect(mainBox).toHaveClass("bg-card", "rounded-xl", "border-line");
 
     rerender(<RoleComposer value="" onValueChange={vi.fn()} />);
     const embeddedInput = screen.getByRole("textbox");

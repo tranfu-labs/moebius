@@ -844,7 +844,7 @@ export function AgentTeamDetail({
         */}
         <button
           type="button"
-          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-lg pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
           onClick={() => requestGuardedAction(onLeave)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -868,7 +868,7 @@ export function AgentTeamDetail({
               {teamInformationEditable ? (
                 <input
                   id="agent-team-detail-title"
-                  className="-ml-[9px] min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-lg font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
+                  className="-ml-[9px] min-w-0 max-w-full rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-lg font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
                   aria-label={t("console.agentTeamDetail.teamNameLabel")}
                   value={teamNameDraft}
                   placeholder={t("console.agentTeamDetail.unnamed")}
@@ -879,23 +879,23 @@ export function AgentTeamDetail({
                   {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
                 </h1>
               )}
-              <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
+              <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
                 {team.ownership === "system"
                   ? t("console.agentTeamDetail.official")
                   : t("console.agentTeamDetail.userTeam")}
               </span>
               {team.officialManagement?.customizationStatus === "customized" ? (
-                <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-meta font-normal text-sub">
+                <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-sub">
                   {t("console.agentTeamDetail.customized")}
                 </span>
               ) : null}
               {team.officialManagement?.updateStatus === "available" ? (
-                <span className="shrink-0 rounded-sm bg-sel px-1.5 py-0.5 text-meta font-normal text-ink">
+                <span className="shrink-0 rounded-md bg-sel px-1.5 py-0.5 text-meta font-normal text-ink">
                   {t("console.agentTeamDetail.updateAvailable")}
                 </span>
               ) : null}
               {readOnly ? (
-                <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-meta font-normal text-hint">
+                <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-hint">
                   {t("console.agentTeamDetail.readOnly")}
                 </span>
               ) : null}
@@ -1192,7 +1192,7 @@ export function AgentTeamDetail({
       */}
       {teamInformationEditable ? (
         <input
-          className="-ml-[9px] w-[calc(100%+9px)] rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+          className="-ml-[9px] w-[calc(100%+9px)] rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
           aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
           value={teamDescriptionDraft}
           placeholder={t("console.agentTeamDetail.noDescription")}
@@ -1309,7 +1309,7 @@ export function AgentTeamDetail({
         ) : null}
 
         {selectedMember === null ? (
-          <div className="rounded-lg bg-sunken px-6 py-12 text-center">
+          <div className="rounded-xl bg-sunken px-6 py-12 text-center">
             <p className="text-sm font-normal text-ink">
               {t("console.agentTeamDetail.noMembers")}
             </p>
@@ -1342,7 +1342,7 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         ) : selectedEditor?.loadStatus === "failed" ? (
-          <div className="rounded-lg bg-sunken px-6 py-8" role="alert">
+          <div className="rounded-xl bg-sunken px-6 py-8" role="alert">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <p className="text-sm font-normal text-danger">
                 {t("console.agentTeamDetail.agentFileUnreadable", {
@@ -1357,7 +1357,7 @@ export function AgentTeamDetail({
             </Button>
           </div>
         ) : selectedEditor?.loadStatus !== "ready" ? (
-          <div className="flex min-h-48 items-center justify-center rounded-lg bg-sunken text-sm text-sub" role="status">
+          <div className="flex min-h-48 items-center justify-center rounded-xl bg-sunken text-sm text-sub" role="status">
             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
             {t("console.agentTeamDetail.readingAgentFile")}
           </div>
@@ -1381,7 +1381,7 @@ export function AgentTeamDetail({
               main line stays pinned so configuration is still in view while reading.
             */}
             <div
-              className="rounded-lg border border-line bg-card p-4"
+              className="rounded-xl border border-line bg-card p-4"
               data-testid="agent-execution-profile-editor"
             >
               {/*
@@ -1420,7 +1420,7 @@ export function AgentTeamDetail({
                   }}
                 />
                 <input
-                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                  className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
                   aria-label={t("console.agentTeamDetail.memberNameLabel")}
                   value={selectedEditor.displayName}
                   placeholder={`@${selectedMember.slug}`}
@@ -1432,7 +1432,7 @@ export function AgentTeamDetail({
                 {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
               </div>
               <input
-                className="mt-2 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                className="mt-2 w-full rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
                 aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
                 value={selectedEditor.description}
                 placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}

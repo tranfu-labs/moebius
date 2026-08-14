@@ -51,7 +51,7 @@ export function StructuredAttachmentList({
             {status === "failed" && onRetry ? (
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
                 aria-label={t("console.attachments.retryLabel", { name: attachment.displayName })}
                 title={t("console.attachments.retry", { name: attachment.displayName })}
                 onClick={() => onRetry(itemId)}
@@ -62,7 +62,7 @@ export function StructuredAttachmentList({
             {onRemove ? (
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
                 aria-label={t("console.attachments.removeLabel", { name: attachment.displayName })}
                 title={t("console.attachments.remove", { name: attachment.displayName })}
                 onClick={() => onRemove(itemId)}
@@ -77,7 +77,7 @@ export function StructuredAttachmentList({
           return (
             <article
               key={itemId}
-              className="relative flex h-24 w-32 min-w-0 overflow-hidden rounded-[10px] border border-line bg-sunken"
+              className="relative flex h-24 w-32 min-w-0 overflow-hidden rounded-md border border-line bg-sunken"
               aria-label={t("console.attachments.itemLabel", {
                 name: attachment.displayName,
                 status: attachmentStatusLabel(status, t),
@@ -106,7 +106,7 @@ export function StructuredAttachmentList({
           <article
             key={itemId}
             className={cn(
-              "flex min-h-14 min-w-0 max-w-full items-center gap-2 rounded-[10px] border bg-sunken px-3 py-2",
+              "flex min-h-14 min-w-0 max-w-full items-center gap-2 rounded-md border bg-sunken px-3 py-2",
               status === "failed" ? "border-danger/40" : "border-line",
             )}
             aria-label={t("console.attachments.itemLabel", {

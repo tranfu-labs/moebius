@@ -72,7 +72,7 @@ export function AgentMessage({
   return (
     <details className={cn("group border-t border-line text-sm text-sub", className)} open={open}>
       <summary
-        className="grid cursor-pointer list-none grid-cols-[32px_minmax(0,1fr)] gap-x-3 rounded-md outline-none transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden"
+        className="grid cursor-pointer list-none grid-cols-[32px_minmax(0,1fr)] gap-x-3 rounded-lg outline-none transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden"
         aria-expanded={open}
         aria-label={t(open ? "console.agentMessage.collapseRaw" : "console.agentMessage.expandRaw", { role: roleLabel })}
         tabIndex={0}

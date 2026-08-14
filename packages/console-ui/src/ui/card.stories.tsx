@@ -22,7 +22,7 @@ export const ConsolePanel: Story = {
       </CardHeader>
       <CardContent className="space-y-2 text-sm text-sub">
         <p>已完成 2 步，正在运行测试。</p>
-        <p className="rounded-md bg-sunken p-2 font-mono text-xs text-hint">pnpm test</p>
+        <p className="rounded-lg bg-sunken p-2 font-mono text-xs text-hint">pnpm test</p>
       </CardContent>
     </Card>
   )

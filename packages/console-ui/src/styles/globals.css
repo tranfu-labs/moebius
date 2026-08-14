@@ -27,7 +27,6 @@
     --destructive: var(--danger);
     --destructive-foreground: var(--accent-fg);
     --ring: var(--accent);
-    --radius: 14px;
     color-scheme: light;
   }
 

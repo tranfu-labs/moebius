@@ -209,7 +209,7 @@ export function ComposerContext({
 
 /* i18n-exempt: developer-only component note; interactive chip uses h28/r12 and locked entries use plain text */
 const COMPOSER_CHIP_CLASS =
-  "inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-line px-2.5 text-xs font-normal text-ink transition-colors hover:bg-hover";
+  "inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-line px-2.5 text-xs font-normal text-ink transition-colors hover:bg-hover";
 const COMPOSER_LOCKED_CLASS =
   "inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap px-1 py-1 text-sub";
 

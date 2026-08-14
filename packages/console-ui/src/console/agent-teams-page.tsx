@@ -871,7 +871,7 @@ export function AgentTeamsPage({
                 ) : null}
                 {state.teams.length === 0 ? (
                   <div
-                    className="rounded-[14px] border border-line bg-card px-5 py-10 text-center"
+                    className="rounded-xl border border-line bg-card px-5 py-10 text-center"
                     data-testid="agent-teams-empty"
                   >
                     <p className="text-sm font-normal text-ink">{t("console.agentTeams.emptyTitle")}</p>
@@ -1169,7 +1169,7 @@ function DialogFrame({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-xl border border-line bg-card p-5 text-ink" role="dialog" aria-modal="true" aria-label={label}>
+      <div className="w-full max-w-md rounded-lg border border-line bg-card p-5 text-ink" role="dialog" aria-modal="true" aria-label={label}>
         {children}
       </div>
     </div>
@@ -1226,7 +1226,7 @@ function TeamInformationDialog({
       }}
     >
       <form
-        className="w-full max-w-md rounded-xl border border-line bg-card p-5 text-ink"
+        className="w-full max-w-md rounded-lg border border-line bg-card p-5 text-ink"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -1290,7 +1290,7 @@ function AgentTeamRow({
     <button
       type="button"
       className={cn(
-        "group flex h-full w-full flex-col rounded-[14px] border border-line bg-card p-4 text-left",
+        "group flex h-full w-full flex-col rounded-xl border border-line bg-card p-4 text-left",
         "transition-colors hover:bg-hover focus-visible:bg-hover",
       )}
       data-testid="agent-team-row"
@@ -1303,7 +1303,7 @@ function AgentTeamRow({
         {primaryAgent === undefined || team.status === "needs-repair" ? (
           <span
             aria-hidden="true"
-            className="inline-flex h-14 w-14 shrink-0 rounded-xl border border-dashed border-line-strong"
+            className="inline-flex h-14 w-14 shrink-0 rounded-lg border border-dashed border-line-strong"
           />
         ) : (
           <AgentPortrait
@@ -1313,7 +1313,7 @@ function AgentTeamRow({
             slug={primaryAgent.slug}
             portraitId={primaryAgent.portraitId}
             engine={memberEngine(primaryAgent)}
-            className="rounded-xl"
+            className="rounded-lg"
             title={teamName(t, team)}
           />
         )}
@@ -1490,7 +1490,7 @@ function AgentTeamsLoading(): JSX.Element {
   const { t } = useI18n();
   return (
     <div
-      className="mt-8 overflow-hidden rounded-[14px] border border-line bg-card"
+      className="mt-8 overflow-hidden rounded-xl border border-line bg-card"
       role="status"
       aria-label={t("console.agentTeams.loading")}
     >
@@ -1532,7 +1532,7 @@ function AgentTeamsFailure({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="mt-8 rounded-xl border border-line bg-rail p-5" role="alert">
+    <div className="mt-8 rounded-lg border border-line bg-rail p-5" role="alert">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
         <div className="min-w-0 flex-1">

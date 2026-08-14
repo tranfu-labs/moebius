@@ -164,7 +164,7 @@ export function AgentRunInfoPopover({
             >
               <header className="flex min-h-[52px] items-center justify-between border-b border-line bg-card px-4">
                 <DialogTitle className="font-semibold">{t("console.agentRunInfo.markdownTitle")}</DialogTitle>
-                <DialogClose asChild><button type="button" className="rounded-sm p-2 text-sub hover:bg-hover" aria-label={t("common.close")}><X className="h-4 w-4" strokeWidth={1.5} /></button></DialogClose>
+                <DialogClose asChild><button type="button" className="rounded-md p-2 text-sub hover:bg-hover" aria-label={t("common.close")}><X className="h-4 w-4" strokeWidth={1.5} /></button></DialogClose>
               </header>
               <div className="scroll-thin min-h-0 overflow-auto p-4">
                 {markdown.status === "loading" || markdown.status === "idle" ? <p className="text-sm text-sub">{t("console.agentRunInfo.loading")}</p> : null}

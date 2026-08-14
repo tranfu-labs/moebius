@@ -29,7 +29,7 @@ export function SessionContextHeader({
   className
 }: SessionContextHeaderProps): JSX.Element {
   return (
-    <header className={cn("rounded-lg border border-line bg-card px-3 py-2.5 text-ink", className)}>
+    <header className={cn("rounded-xl border border-line bg-card px-3 py-2.5 text-ink", className)}>
       {parentTitle ? <ParentCrumb parentTitle={parentTitle} onOpenParent={onOpenParent} /> : null}
       <h1 className={cn("truncate text-base font-semibold leading-6", parentTitle ? "mt-0.5" : "")}>{taskLabel}</h1>
     </header>
@@ -55,7 +55,7 @@ function ParentCrumb({
     return (
       <button
         type="button"
-        className="inline-flex max-w-full items-center gap-1 rounded-md text-xs text-sub hover:text-ink"
+        className="inline-flex max-w-full items-center gap-1 rounded-lg text-xs text-sub hover:text-ink"
         onClick={onOpenParent}
       >
         {content}

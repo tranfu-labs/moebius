@@ -151,7 +151,7 @@ export function SettingsDialog({
           className={cn(
             "fixed left-1/2 top-1/2 z-[101] grid max-h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))]",
             "-translate-x-1/2 -translate-y-1/2 grid-rows-[auto_minmax(0,1fr)] overflow-hidden",
-            "rounded-[14px] border border-line bg-sunken text-ink",
+            "rounded-xl border border-line bg-sunken text-ink",
           )}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
@@ -163,7 +163,7 @@ export function SettingsDialog({
             <Dialog.Close asChild>
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label={t("common.close")}
                 title={t("common.close")}
               >
@@ -246,7 +246,7 @@ function SettingsNavItem({
     <button
       type="button"
       className={cn(
-        "flex h-9 w-full items-center gap-2 rounded-sm px-2.5 text-left text-sm transition-colors",
+        "flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         "max-[620px]:w-auto max-[620px]:min-w-24",
         active ? "bg-sel font-normal text-ink" : "text-sub hover:bg-hover hover:text-ink",
@@ -282,7 +282,7 @@ function GeneralSettings({
         <p id="settings-language-description" className="mt-1 text-sm text-sub">
           {t("settings.language.description")}
         </p>
-        <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+        <div className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
           {localeOptions.map((locale) => {
             const checked = selectedLocale === locale;
             return (
@@ -394,7 +394,7 @@ function AboutSettings({
         </div>
       </div>
 
-      <dl className="mt-6 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+      <dl className="mt-6 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
         <SettingsInfoRow label={t("settings.version")}>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <span className="tnum select-text text-sm font-normal">{state.currentVersion}</span>

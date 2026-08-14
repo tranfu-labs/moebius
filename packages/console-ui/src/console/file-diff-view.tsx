@@ -264,7 +264,7 @@ function FileTreeNode({
           className={cn(
             "flex h-7 items-center gap-1.5 px-2 text-xs font-normal",
             appearance === "focused"
-              ? "mx-1.5 h-[30px] rounded-[8px] text-ink"
+              ? "mx-1.5 h-[30px] rounded-md text-ink"
               : "text-sub",
           )}
           style={{ paddingLeft: `${String(8 + depth * 14)}px` }}
@@ -300,7 +300,7 @@ function FileTreeNode({
       className={cn(
         "flex h-7 w-full min-w-0 items-center gap-1.5 px-2 text-left text-xs hover:bg-hover",
         appearance === "focused"
-          ? "mx-1.5 my-px h-[30px] w-[calc(100%-12px)] rounded-[8px] text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/25"
+          ? "mx-1.5 my-px h-[30px] w-[calc(100%-12px)] rounded-md text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/25"
           : "text-sub hover:text-ink",
         selected && "bg-sel text-ink",
       )}

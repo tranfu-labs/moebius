@@ -76,11 +76,11 @@ export function AcceptCard({
 
       <div className="space-y-1 text-sm">
         <p>
-          <span className="font-semibold text-ink">{t("console.accept.whatChanged")}</span>
+          <span className="text-ink">{t("console.accept.whatChanged")}</span>
           <span className="text-ink"> · {summary}</span>
         </p>
         <p>
-          <span className="font-semibold text-ink">{t("console.accept.selfTested")}</span>
+          <span className="text-ink">{t("console.accept.selfTested")}</span>
           <span className="text-ink"> · {selfTestSummary}</span>
           {selfTestHref ? (
             <a className="ml-1 inline-flex items-center gap-1 text-accent" href={selfTestHref}>
@@ -90,7 +90,7 @@ export function AcceptCard({
         </p>
       </div>
 
-      <div className="my-2.5 text-xs font-semibold text-sub">{t("console.accept.reviewEach")}</div>
+      <div className="my-2.5 text-xs text-sub">{t("console.accept.reviewEach")}</div>
 
       <div className="space-y-2.5">
         {items.map((item, index) => (
@@ -116,7 +116,7 @@ function AcceptanceRow({ item, index }: { item: AcceptanceItem; index: number })
   return (
     <div>
       <div className="flex items-center gap-2.5">
-        <span className="w-3 text-sm font-semibold text-sub">{index + 1}</span>
+        <span className="w-3 text-sm text-sub">{index + 1}</span>
         <span className="min-w-0 flex-1 text-sm text-ink">{item.statement}</span>
         <DecisionSegment decision={item.decision} />
       </div>

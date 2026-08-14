@@ -133,7 +133,7 @@ export function RunBlock({
           engine={resolveOperatorMemberEngine(role, memberIdentities)}
           className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
         />
-        <span className="text-sm font-semibold text-ink">{roleLabel}</span>
+        <span className="text-sm text-ink">{roleLabel}</span>
         <span className="flex items-center gap-2">
           {elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="running" elapsedMs={elapsedMs} />

@@ -70,7 +70,7 @@ export function NotificationPermissionDialog({
         <Dialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-[101] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2",
-            "rounded-[14px] border border-line bg-sunken text-ink",
+            "rounded-xl border border-line bg-sunken text-ink",
           )}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
@@ -82,7 +82,7 @@ export function NotificationPermissionDialog({
               {t("notification.dialog.title")}
             </Dialog.Title>
 
-            <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+            <div className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
               {entries.map((entry) => (
                 <div
                   key={entry.id}
@@ -115,7 +115,7 @@ export function NotificationPermissionDialog({
             <div className="mt-3 min-h-9" aria-live="polite">
               {openingSettings === "requesting" ? (
                 <p
-                  className="flex items-center gap-2 rounded-md border border-line bg-card px-3 py-2 text-xs leading-5 text-sub"
+                  className="flex items-center gap-2 rounded-lg border border-line bg-card px-3 py-2 text-xs leading-5 text-sub"
                   role="status"
                   data-testid="notification-permission-requesting"
                 >
@@ -125,7 +125,7 @@ export function NotificationPermissionDialog({
               ) : null}
               {openingSettings === "request-done" ? (
                 <p
-                  className="flex items-center gap-2 rounded-md border border-[var(--status-info-line)] bg-[var(--status-info-bg)] px-3 py-2 text-xs leading-5 text-[var(--status-info-fg)]"
+                  className="flex items-center gap-2 rounded-lg border border-[var(--status-info-line)] bg-[var(--status-info-bg)] px-3 py-2 text-xs leading-5 text-[var(--status-info-fg)]"
                   role="status"
                   data-testid="notification-permission-request-done"
                 >
@@ -135,7 +135,7 @@ export function NotificationPermissionDialog({
               ) : null}
               {openingSettings === "opened" ? (
                 <p
-                  className="flex items-start gap-2 rounded-md border border-[var(--status-info-line)] bg-[var(--status-info-bg)] px-3 py-2 text-xs leading-5 text-[var(--status-info-fg)]"
+                  className="flex items-start gap-2 rounded-lg border border-[var(--status-info-line)] bg-[var(--status-info-bg)] px-3 py-2 text-xs leading-5 text-[var(--status-info-fg)]"
                   role="status"
                 >
                   <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
@@ -143,19 +143,19 @@ export function NotificationPermissionDialog({
                 </p>
               ) : null}
               {openSettingsFailed ? (
-                <p className="flex items-start gap-2 rounded-md border border-danger/40 bg-[var(--status-danger-bg)] px-3 py-2 text-xs leading-5 text-danger" role="alert">
+                <p className="flex items-start gap-2 rounded-lg border border-danger/40 bg-[var(--status-danger-bg)] px-3 py-2 text-xs leading-5 text-danger" role="alert">
                   <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                   {t("notification.dialog.openFailed")}
                 </p>
               ) : null}
               {closingSave === "saving" ? (
-                <p className="flex items-center gap-2 rounded-md border border-line bg-card px-3 py-2 text-xs leading-5 text-sub" role="status">
+                <p className="flex items-center gap-2 rounded-lg border border-line bg-card px-3 py-2 text-xs leading-5 text-sub" role="status">
                   <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin" strokeWidth={1.5} aria-hidden="true" />
                   {t("notification.dialog.closing")}
                 </p>
               ) : null}
               {closeSaveFailed ? (
-                <p className="flex items-start gap-2 rounded-md border border-danger/40 bg-[var(--status-danger-bg)] px-3 py-2 text-xs leading-5 text-danger" role="alert">
+                <p className="flex items-start gap-2 rounded-lg border border-danger/40 bg-[var(--status-danger-bg)] px-3 py-2 text-xs leading-5 text-danger" role="alert">
                   <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                   <span>
                     {t("notification.dialog.closeFailed")}

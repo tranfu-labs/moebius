@@ -18,16 +18,16 @@ function MainArea({ children }: { children: ReactNode }): JSX.Element {
           Moebius
         </div>
         <div className="mt-2 space-y-1 text-sm">
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">＋ 新建对话</div>
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">⌕ 搜索</div>
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">◇ Agent 团队</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">＋ 新建对话</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">⌕ 搜索</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">◇ Agent 团队</div>
         </div>
-        <div className="mt-4 border-t border-line pt-3 text-xs font-semibold uppercase tracking-[0.06em] text-sub">
+        <div className="mt-4 border-t border-line pt-3 text-xs uppercase tracking-[0.06em] text-sub">
           项目
         </div>
-        <div className="mt-2 flex h-8 items-center gap-2 rounded-sm bg-sel px-2 text-sm">发布前检查</div>
+        <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-sel px-2 text-sm">发布前检查</div>
         <div className="mt-3 border-t border-line pt-3">
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sm text-sub">⚙ 设置</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-sub">⚙ 设置</div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 p-8">

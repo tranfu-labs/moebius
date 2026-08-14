@@ -37,7 +37,7 @@ export function RelayMessages({
             className={cn(
               "min-w-0 border-b border-line px-3 py-2.5 transition-[opacity,background-color] last:border-b-0",
               visible || typing ? "opacity-100" : "opacity-0",
-              current && "rounded-lg bg-sunken",
+              current && "rounded-xl bg-sunken",
             )}
             style={{ gridColumn: 2, gridRow: index + 1 }}
             data-testid="relay-message-row"
@@ -50,7 +50,7 @@ export function RelayMessages({
           >
             {typing ? (
               <div
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-sunken px-2.5 py-2"
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-sunken px-2.5 py-2"
                 data-testid="relay-typing"
                 role="status"
                 aria-label={t("onboarding.relay.typing", {
@@ -76,9 +76,9 @@ export function RelayMessages({
             ) : (
               <>
                 <header className="flex min-w-0 items-center gap-2">
-                  <strong className="min-w-0 text-xs font-semibold text-ink">
+                  <span className="min-w-0 text-xs text-ink">
                     {member.displayName || `@${member.slug}`}
-                  </strong>
+                  </span>
                   <span className="shrink-0 text-meta tabular-nums text-hint">
                     {t("onboarding.relay.beat", { count: index + 1 })}
                   </span>

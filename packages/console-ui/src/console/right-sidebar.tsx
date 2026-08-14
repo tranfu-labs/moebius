@@ -296,7 +296,7 @@ export function RightSidebar({
           : "absolute inset-0 z-40 w-full border-l-0 transition-transform duration-[220ms] ease-[var(--ease)]",
         layout === "split" && resizing && "transition-none",
         appearance === "focused" && layout === "split" && "border-0 bg-transparent shadow-none",
-        appearance === "focused" && layout === "overlay" && "inset-1 rounded-[14px] border border-line bg-card shadow-panel",
+        appearance === "focused" && layout === "overlay" && "inset-1 rounded-xl border border-line bg-card shadow-panel",
         closing && "pointer-events-none",
         className,
       )}
@@ -374,7 +374,7 @@ export function RightSidebar({
         className={cn(
           "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
           layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
-          appearance === "focused" && layout === "split" && "inset-y-1 right-1 h-auto overflow-hidden rounded-[14px] border border-line bg-card shadow-panel",
+          appearance === "focused" && layout === "split" && "inset-y-1 right-1 h-auto overflow-hidden rounded-xl border border-line bg-card shadow-panel",
           appearance === "focused" && layout === "overlay" && "w-full rounded-[inherit] border-transparent bg-card",
         )}
         style={layout === "split"
@@ -411,8 +411,8 @@ export function RightSidebar({
                   else tabElementsRef.current.set(tab.id, element);
                 }}
                 className={cn(
-                  "flex h-[38px] max-w-[190px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-sm transition-colors",
-                  appearance === "focused" ? "h-8 rounded-[8px] px-1 text-sm" : "font-normal",
+                  "flex h-[38px] max-w-[190px] shrink-0 items-center gap-1 rounded-lg pl-3 pr-1 text-sm transition-colors",
+                  appearance === "focused" ? "h-8 rounded-md px-1 text-sm" : "font-normal",
                   activeTab?.id === tab.id
                     ? cn("bg-sel text-ink", appearance === "focused" && "font-normal")
                     : appearance === "focused"
@@ -506,7 +506,7 @@ export function RightSidebar({
 
         <button
           type="button"
-          className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+          className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
           aria-label={t("console.rightSidebar.newTab")}
           title={t("console.rightSidebar.newTab")}
           onClick={() => onStateChange(addBlankRightSidebarTab(renderedState, createTabId()))}
@@ -518,7 +518,7 @@ export function RightSidebar({
           <button
             ref={overlayCloseButtonRef}
             type="button"
-            className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+            className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
             aria-label={t("console.rightSidebar.closeReturn")}
             title={t("console.rightSidebar.return")}
             data-testid="right-sidebar-overlay-close"
@@ -541,7 +541,7 @@ export function RightSidebar({
           <span>{t("console.rightSidebar.titleRetrying")}</span>
           <button
             type="button"
-            className="shrink-0 rounded-sm border border-line px-2 py-1 font-normal text-ink hover:bg-hover"
+            className="shrink-0 rounded-md border border-line px-2 py-1 font-normal text-ink hover:bg-hover"
             onClick={onRetryTitles}
           >
             {t("console.rightSidebar.retryTitle")}
@@ -603,10 +603,10 @@ function BlankTab({
   );
   return (
     <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-6 py-10">
-      <h2 className="text-center font-sans text-base font-semibold tracking-[-0.01em] text-ink">
+      <h2 className="text-center font-sans text-base font-normal tracking-[-0.01em] text-ink">
         {t("console.rightSidebar.chooseContent")}
       </h2>
-      <div className="mt-5 overflow-hidden rounded-md border border-line bg-card">
+      <div className="mt-5 overflow-hidden rounded-lg border border-line bg-card">
         {visibleTypes.map((type) => (
           <button
             key={type}

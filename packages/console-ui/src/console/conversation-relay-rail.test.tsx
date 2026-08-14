@@ -67,7 +67,7 @@ describe("ConversationRelayRail", () => {
     fireEvent.mouseEnter(rail);
     expect(rail).toHaveAttribute("data-expanded", "true");
     expect(rail).toHaveAttribute("data-row-height", "32");
-    expect(nav).toHaveClass("border-line", "bg-sunken", "rounded-[8px]");
+    expect(nav).toHaveClass("border-line", "bg-sunken", "rounded-md");
     expect(nav).toHaveStyle({ height: "192px", width: "82px" });
 
     fireEvent.mouseLeave(rail);

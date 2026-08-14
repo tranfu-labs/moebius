@@ -311,7 +311,7 @@ export function AgentMarkdownMentionEditor({
           id={listboxId}
           role="listbox"
           aria-label={t("console.mentionEditor.completions")}
-          className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-md border border-line bg-sunken p-1.5"
+          className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-lg border border-line bg-sunken p-1.5"
         >
           {matches.map((member, index) => (
             <button
@@ -321,7 +321,7 @@ export function AgentMarkdownMentionEditor({
               role="option"
               aria-selected={index === activeIndex}
               className={cn(
-                "flex w-full items-center justify-between gap-4 rounded-md px-2.5 py-2 text-left hover:bg-hover",
+                "flex w-full items-center justify-between gap-4 rounded-lg px-2.5 py-2 text-left hover:bg-hover",
                 index === activeIndex && "bg-sel",
               )}
               onMouseDown={(event) => {
@@ -373,7 +373,7 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
       type="button"
       contentEditable={false}
       data-agent-mention={member.slug}
-      className="group relative mx-0.5 inline-flex items-baseline rounded-md bg-accent/10 px-1.5 py-0.5 font-normal text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+      className="group relative mx-0.5 inline-flex items-baseline rounded-lg bg-accent/10 px-1.5 py-0.5 font-normal text-accent hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
       aria-label={t("console.mentionEditor.memberCopy", {
         member: member.displayName || member.slug,
         slug: member.slug,
@@ -389,7 +389,7 @@ function AgentMention({ member }: { member: AgentMentionMember }): JSX.Element {
       <span data-mention-label>{member.displayName || `@${member.slug}`}</span>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-meta font-normal leading-4 text-card group-hover:block group-focus-visible:block"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-meta font-normal leading-4 text-card group-hover:block group-focus-visible:block"
       >
         {copied
           ? t("console.mentionEditor.copiedSlug", { slug: member.slug })

@@ -26,7 +26,7 @@ export const MentionCompletion: Story = {
     return (
       <div className="w-[520px] space-y-3">
         <RoleComposer {...args} value={value} onValueChange={setValue} />
-        <div className="rounded-lg border border-line bg-card px-3 py-2 text-xs text-sub">
+        <div className="rounded-xl border border-line bg-card px-3 py-2 text-xs text-sub">
           当前值：<span className="text-ink">{value || "空"}</span>
         </div>
       </div>

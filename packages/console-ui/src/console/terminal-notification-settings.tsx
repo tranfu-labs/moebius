@@ -61,7 +61,7 @@ export function TerminalNotificationSettings({
         {t("notification.settings.description")}
       </p>
 
-      <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+      <div className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
         <div className="flex min-h-11 items-center gap-3 px-3 py-2.5">
           <span className="min-w-0 flex-1">
             <span className="block text-sm text-ink">{t("notification.settings.title")}</span>

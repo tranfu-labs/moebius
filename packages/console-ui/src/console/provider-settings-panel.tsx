@@ -75,7 +75,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
   }
   if (controller.state.status === "error") {
     return (
-      <div role="alert" className="rounded-sm border border-danger/30 bg-danger/5 p-4">
+      <div role="alert" className="rounded-md border border-danger/30 bg-danger/5 p-4">
         <p className="text-sm text-danger">{controller.state.message}</p>
         <Button className="mt-3" size="sm" variant="outline" onClick={controller.refresh}>
           <RefreshCw className="mr-2 h-4 w-4" />{t("settings.providers.retry")}
@@ -99,7 +99,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
 
       {adding ? (
         <form
-          className="mt-4 grid gap-3 rounded-sm border border-line bg-card p-4"
+          className="mt-4 grid gap-3 rounded-md border border-line bg-card p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void controller.create({ displayName, apiKey, defaultModel: model }).then((saved) => {
@@ -121,7 +121,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
           </label>
           <label className="grid gap-1 text-sm">
             <span>{t("settings.providers.validationModel")}</span>
-            <select className="h-9 rounded-sm border border-line bg-input px-3 text-sm" value={model} onChange={(event) => setModel(event.target.value)}>
+            <select className="h-9 rounded-md border border-line bg-input px-3 text-sm" value={model} onChange={(event) => setModel(event.target.value)}>
               <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
               <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
             </select>
@@ -158,7 +158,7 @@ export function ProviderSettingsPanel({ controller }: { controller: ProviderSett
 
       <div className="mt-4 grid gap-3">
         {profiles.length === 0 && !adding ? (
-          <div className="rounded-sm border border-dashed border-line p-6 text-center text-sm text-sub">{t("settings.providers.empty")}</div>
+          <div className="rounded-md border border-dashed border-line p-6 text-center text-sm text-sub">{t("settings.providers.empty")}</div>
         ) : profiles.map((profile) => (
           <ProviderCard key={profile.id} profile={profile} allProfiles={profiles} controller={controller} />
         ))}
@@ -222,7 +222,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
     ? null
     : allProfiles.find((candidate) => candidate.id === activity.targetProfileId) ?? null;
   return (
-    <article className="rounded-sm border border-line bg-card p-4" aria-label={`${profile.displayName}，${status}`}>
+    <article className="rounded-md border border-line bg-card p-4" aria-label={`${profile.displayName}，${status}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -248,7 +248,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       </div>
       {profile.reason !== null ? <p className="mt-3 text-sm text-accent">{t(reasonKey(profile.reason))}</p> : null}
       {isReferenceActivity && activity !== null ? (
-        <div className="mt-3 grid gap-2 rounded-sm border border-accent/30 bg-accent/5 p-3" data-testid="provider-migration-recovery" role="status">
+        <div className="mt-3 grid gap-2 rounded-md border border-accent/30 bg-accent/5 p-3" data-testid="provider-migration-recovery" role="status">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-normal">
               {activity.status === "migrating"
@@ -296,7 +296,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           ) : null}
         </div>
       ) : null}
-      <div className="mt-3 grid gap-2 rounded-sm border border-line p-3" aria-label={t("settings.providers.modelsLabel", { name: profile.displayName })}>
+      <div className="mt-3 grid gap-2 rounded-md border border-line p-3" aria-label={t("settings.providers.modelsLabel", { name: profile.displayName })}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-normal text-sub">{t("settings.providers.verifiedModels")}</p>
           {availableModel !== null ? (
@@ -343,7 +343,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           );
         })}
       </div>
-      <div className="mt-3 rounded-sm border border-line p-3">
+      <div className="mt-3 rounded-md border border-line p-3">
         <p className="text-xs font-normal text-sub">{t("settings.providers.references", { count: profile.references.length })}</p>
         {profile.references.length === 0 ? (
           <p className="mt-2 text-sm text-sub">{t("settings.providers.noReferences")}</p>
@@ -385,7 +385,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         ) : null}
       </div>
       {migrating ? (
-        <form className="mt-3 grid gap-3 rounded-sm border border-line bg-sunken/40 p-3" onSubmit={(event) => {
+        <form className="mt-3 grid gap-3 rounded-md border border-line bg-sunken/40 p-3" onSubmit={(event) => {
           event.preventDefault();
           void controller.migrateReferences(profile, selectedOwnerIds, targetProfileId, targetModel).then((saved) => {
             if (saved) setMigrating(false);
@@ -414,7 +414,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           </div>
           <label className="grid gap-1 text-sm">
             <span>{t("settings.providers.targetProfile")}</span>
-            <select className="h-9 rounded-sm border border-line bg-input px-3 text-sm" value={targetProfileId} onChange={(event) => {
+            <select className="h-9 rounded-md border border-line bg-input px-3 text-sm" value={targetProfileId} onChange={(event) => {
               const nextProfile = targetProfiles.find((candidate) => candidate.id === event.target.value);
               setTargetProfileId(event.target.value);
               setTargetModel(nextProfile?.verifiedModels[0] ?? "");
@@ -424,7 +424,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
           </label>
           <label className="grid gap-1 text-sm">
             <span>{t("settings.providers.targetModel")}</span>
-            <select className="h-9 rounded-sm border border-line bg-input px-3 text-sm" value={targetModel} onChange={(event) => setTargetModel(event.target.value)}>
+            <select className="h-9 rounded-md border border-line bg-input px-3 text-sm" value={targetModel} onChange={(event) => setTargetModel(event.target.value)}>
               {(selectedTargetProfile?.verifiedModels ?? []).map((candidate) => <option key={candidate} value={candidate}>{modelLabel(candidate)}</option>)}
             </select>
           </label>
@@ -472,7 +472,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) { setDeleteName(""); setConfirmingDelete(false); }
         }}>
-          <div role="dialog" aria-modal="true" aria-labelledby={`delete-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby={`delete-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`delete-provider-${profile.id}`} className="font-normal">{t("settings.providers.deleteTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.deleteWarning", { provider: profile.providerName, name: profile.displayName })}</p>
             <label className="mt-4 grid gap-1 text-sm">
@@ -488,7 +488,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       ) : null}
       {endingOwnerId !== null ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby={`end-provider-reference-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby={`end-provider-reference-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`end-provider-reference-${profile.id}`} className="font-normal">{t("settings.providers.endContinuationTitle")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.endContinuationWarning")}</p>
             <div className="mt-4 flex justify-end gap-2">
@@ -502,7 +502,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       ) : null}
       {confirmingDisable ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby={`disable-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby={`disable-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`disable-provider-${profile.id}`} className="font-normal">{t("settings.providers.disableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.disableWarning", { count: profile.references.length })}</p>
             <div className="mt-4 flex justify-end gap-2">
@@ -514,7 +514,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       ) : null}
       {confirmingEnable ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby={`enable-provider-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby={`enable-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`enable-provider-${profile.id}`} className="font-normal">{t("settings.providers.enableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.enableWarning", { count: profile.verifiedModels.length })}</p>
             <ul className="mt-3 grid gap-1 text-sm">{profile.verifiedModels.map((candidate) => <li key={candidate}>{modelLabel(candidate)}</li>)}</ul>
@@ -527,12 +527,12 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
       ) : null}
       {defaultModelToRemove !== null ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby={`replace-default-model-${profile.id}`} className="w-full max-w-md rounded-sm border border-line bg-card p-5 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby={`replace-default-model-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`replace-default-model-${profile.id}`} className="font-normal">{t("settings.providers.replaceDefaultBeforeRemove")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.replaceDefaultBeforeRemoveWarning", { model: modelLabel(defaultModelToRemove) })}</p>
             <label className="mt-4 grid gap-1 text-sm">
               <span>{t("settings.providers.newDefaultModel")}</span>
-              <select className="h-9 rounded-sm border border-line bg-input px-3 text-sm" value={replacementDefaultModel} onChange={(event) => setReplacementDefaultModel(event.target.value)}>
+              <select className="h-9 rounded-md border border-line bg-input px-3 text-sm" value={replacementDefaultModel} onChange={(event) => setReplacementDefaultModel(event.target.value)}>
                 {profile.verifiedModels.filter((candidate) => candidate !== defaultModelToRemove).map((candidate) => <option key={candidate} value={candidate}>{modelLabel(candidate)}</option>)}
               </select>
             </label>

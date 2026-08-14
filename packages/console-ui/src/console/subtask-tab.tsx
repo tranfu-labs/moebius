@@ -321,7 +321,7 @@ function SubtaskTimelineEntry({
               engine={resolveOperatorMemberEngine(identityRole, memberIdentities)}
             />
           )}
-          <span className="font-semibold text-ink">
+          <span className="text-ink">
             {identityRole === null
               ? t("console.common.systemNotice")
               : resolveOperatorMemberName(identityRole, memberIdentities, t)}
@@ -392,11 +392,11 @@ function SubtaskTimelineEntry({
     return (
       <article className="py-4 text-sm">
         <div className="mb-1.5 flex items-center justify-end gap-2 text-sm text-sub">
-          <span className="font-semibold text-ink">{t("console.common.you")}</span>
+          <span className="text-ink">{t("console.common.you")}</span>
           <RoleTag label={t("console.common.you")} toneKey="user" />
         </div>
         <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-[14px] border border-line bg-card px-3.5 py-2.5">
+          <div className="max-w-[85%] rounded-xl border border-line bg-card px-3.5 py-2.5">
             {message.body.trim() === "" ? null : (
               <MarkdownMessage
                 content={message.body}
@@ -429,7 +429,7 @@ function SubtaskTimelineEntry({
             engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
           />
         ) : null}
-        <span className="font-semibold text-ink">
+        <span className="text-ink">
           {message.speaker === "agent"
             ? resolveOperatorMemberName(message.role, memberIdentities, t)
             : t("console.common.systemNotice")}

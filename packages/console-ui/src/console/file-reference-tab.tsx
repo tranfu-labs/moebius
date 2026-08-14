@@ -199,7 +199,7 @@ export function FileReferenceTab({
           <p>{t(fileReferenceUnavailableKey(content?.reason ?? "unavailable"))}</p>
           <button
             type="button"
-            className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
+            className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
             onClick={() => setReloadVersion((current) => current + 1)}
           >
             {t("common.retry")}

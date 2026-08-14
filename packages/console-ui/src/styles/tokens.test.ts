@@ -51,11 +51,10 @@ describe("dashboard tokens", () => {
     }
   });
 
-  it("sets the near-black dark canvas and the 14px radius baseline", () => {
+  it("sets the near-black dark canvas", () => {
     expect(tokens.match(/--canvas: #101010/g)?.length).toBe(2);
     expect(tokens.match(/--card: #171717/g)?.length).toBe(2);
     expect(tokens.match(/--rail: #101010/g)?.length).toBe(2);
-    expect(globals).toContain("--radius: 14px");
   });
 
   it("drops elevation shadows and keeps shared focus and motion tokens", () => {

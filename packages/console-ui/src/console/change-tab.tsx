@@ -187,7 +187,7 @@ export function ChangeTab({
         <p>{diffUnavailableCopy(diff?.reason ?? "workspace-unavailable", t)}</p>
         <button
           type="button"
-          className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
+          className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
           onClick={() => void refresh(true)}
         >
           {t("common.retry")}
@@ -262,7 +262,7 @@ export function ChangeTab({
         pathAction={appearance === "focused" ? (
           <button
             type="button"
-            className="absolute right-1.5 top-1/2 grid h-[26px] w-[26px] -translate-y-1/2 place-items-center rounded-[7px] bg-card text-sub transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none active:scale-[0.98]"
+            className="absolute right-1.5 top-1/2 grid h-[26px] w-[26px] -translate-y-1/2 place-items-center rounded-md bg-card text-sub transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none active:scale-[0.98]"
             aria-label={treeVisible ? "隐藏文件树" : "显示文件树"}
             aria-expanded={treeVisible}
             title={treeVisible ? "隐藏文件树" : "显示文件树"}
@@ -303,7 +303,7 @@ function ChangeHeader({
         {isWorking ? (
           <button
             type="button"
-            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 font-normal text-ink hover:bg-hover disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-line px-2 py-1 font-normal text-ink hover:bg-hover disabled:opacity-50"
             disabled={refreshing}
             onClick={onRefresh}
           >

@@ -31,7 +31,7 @@ export const LongMemberList: Story = {};
 export const SameNameTeams: Story = {
   render: () => (
     <div className="grid gap-3">
-      <div className="rounded-md border border-line p-3">
+      <div className="rounded-lg border border-line p-3">
         <AgentTeamOption team={{
           label: "开发团队 · Moebius",
           ownership: "system",
@@ -43,7 +43,7 @@ export const SameNameTeams: Story = {
           ],
         }} />
       </div>
-      <div className="rounded-md border border-line p-3">
+      <div className="rounded-lg border border-line p-3">
         <AgentTeamOption team={{
           label: "开发团队 · 用户来源",
           ownership: "user",

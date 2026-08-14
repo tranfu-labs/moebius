@@ -192,7 +192,7 @@ export function ConversationRelayRail({
           ref={stageRef}
           aria-label={t("console.relayRail.label")}
           className={cn(
-            "pointer-events-auto absolute left-0 overflow-visible rounded-[8px] border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+            "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
             appearance === "focused" && "border-0",
             expanded
               ? "border-line bg-sunken"
@@ -302,7 +302,7 @@ export function ConversationRelayRail({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "pointer-events-none absolute left-0 z-[1] rounded-md transition-[width,height,top,background-color] duration-150 motion-reduce:transition-none",
+                  "pointer-events-none absolute left-0 z-[1] rounded-lg transition-[width,height,top,background-color] duration-150 motion-reduce:transition-none",
                   inspected ? "bg-hover" : "bg-transparent",
                 )}
                 data-testid={`relay-band-${event.id}`}
@@ -425,7 +425,7 @@ export function ConversationRelayRail({
           align="center"
           className={operatorFloatingSurfaceClassName(
             appearance,
-            "w-[240px] max-w-[calc(100vw-24px)] rounded-sm px-3 py-2.5",
+            "w-[240px] max-w-[calc(100vw-24px)] rounded-md px-3 py-2.5",
           )}
           collisionPadding={12}
           data-relay-side-offset="12"

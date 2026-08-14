@@ -98,15 +98,15 @@ function SettingsGroupCanvas({ initial }: { initial: SettingsJourneyState }): JS
           设置
         </div>
         <div className="mt-1 space-y-1 text-sm">
-          <span className="flex h-9 items-center gap-2 rounded-sm bg-sel px-2.5 text-ink">
+          <span className="flex h-9 items-center gap-2 rounded-md bg-sel px-2.5 text-ink">
             <Languages className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             常规
           </span>
-          <span className="flex h-9 items-center gap-2 rounded-sm px-2.5 text-sub">
+          <span className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sub">
             <KeyRound className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             AI 服务商
           </span>
-          <span className="flex h-9 items-center gap-2 rounded-sm px-2.5 text-sub">
+          <span className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sub">
             <Info className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             关于
           </span>

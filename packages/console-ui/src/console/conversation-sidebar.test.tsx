@@ -359,7 +359,7 @@ describe("ConversationSidebar", () => {
 
     const selected = screen.getByRole("button", { name: "导出功能重构" });
     expect(selected).toHaveAttribute("aria-current", "page");
-    expect(selected).toHaveClass("h-8", "rounded-lg", "pl-7", "bg-sel");
+    expect(selected).toHaveClass("h-7", "rounded-md", "pl-7", "bg-sel");
     expect(selected).not.toHaveTextContent(/»|>>/u);
     fireEvent.click(screen.getByRole("button", { name: "进度提示，正在运行" }));
     expect(onSelectSession).toHaveBeenCalledWith("running-progress", "moebius");
@@ -376,6 +376,7 @@ describe("ConversationSidebar", () => {
     );
 
     const projectToggle = screen.getByTestId("conversation-sidebar-project-toggle");
+    expect(screen.getByTestId("conversation-sidebar-project")).toHaveClass("h-7");
     expect(projectToggle.querySelector("svg")).toHaveClass("h-3.5", "w-3.5");
 
     const newConversation = screen.getByRole("button", { name: "在 moebius 中新建会话" });
@@ -419,7 +420,9 @@ describe("ConversationSidebar", () => {
     };
     render(<ConversationSidebar projects={[project, secondProject]} selectedSessionId="idle-refactor" />);
 
-    const [firstRow] = screen.getAllByTestId("conversation-sidebar-project");
+    const [firstRow, secondRow] = screen.getAllByTestId("conversation-sidebar-project");
+    expect(firstRow?.closest("section")).toHaveClass("pb-2", "last:pb-0");
+    expect(secondRow?.closest("section")).toHaveClass("pb-2", "last:pb-0");
     const firstToggle = screen.getByRole("button", { name: "moebius 项目，已展开" });
     const secondToggle = screen.getByRole("button", { name: "second-project 项目，已展开" });
     expect(firstToggle).toHaveAttribute("aria-expanded", "true");

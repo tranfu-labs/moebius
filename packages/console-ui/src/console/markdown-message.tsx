@@ -213,7 +213,7 @@ function SafeMarkdownLink({
       : (
           <button
             type="button"
-            className="inline rounded-sm font-normal text-accent underline decoration-dotted underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="inline rounded-md font-normal text-accent underline decoration-dotted underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             onClick={() => onOpenTeamMember(memberSlug)}
           >
             {children}
@@ -240,7 +240,7 @@ function SafeMarkdownLink({
         <span
           role="dialog"
           aria-label={t("console.markdown.confirmExternal")}
-          className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-md border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
+          className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-lg border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
         >
           <span className="block break-all text-sub">{safeUrl}</span>
           <span className="mt-3 flex justify-end gap-2">

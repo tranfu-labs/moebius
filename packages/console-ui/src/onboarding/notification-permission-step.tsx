@@ -71,7 +71,7 @@ export function NotificationPermissionStep({
 
           <div className="mx-auto mt-7 w-full max-w-[640px]">
             <section
-              className="overflow-hidden rounded-xl border border-line bg-card"
+              className="overflow-hidden rounded-lg border border-line bg-card"
               aria-label={t("notification.step.systemPermission")}
               aria-live="polite"
             >
@@ -95,7 +95,7 @@ export function NotificationPermissionStep({
 
             {masterSwitchEnabled && permission !== "allowed" && !waitingForSystem ? (
               <p
-                className="mt-3 rounded-lg border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub"
+                className="mt-3 rounded-xl border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub"
                 data-testid="notification-permission-skip-notice"
               >
                 {t("notification.step.skipNotice")}

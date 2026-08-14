@@ -69,7 +69,7 @@ export function SessionTeamMenu({
         <button
           type="button"
           className={cn(
-            "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-normal transition-colors",
+            "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-normal transition-colors",
             needsAttention
               ? "border-danger text-danger"
               : "border-line text-ink hover:bg-hover",

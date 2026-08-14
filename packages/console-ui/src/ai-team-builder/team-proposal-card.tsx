@@ -57,14 +57,14 @@ export function TeamProposalCard({
     <section
       aria-label={t("teamBuilder.proposalLabel")}
       className={cn(
-        "ml-9 shrink-0 overflow-hidden rounded-lg border bg-card transition-colors max-sm:ml-0",
+        "ml-9 shrink-0 overflow-hidden rounded-xl border bg-card transition-colors max-sm:ml-0",
         readOnly ? "border-line" : "border-accent",
       )}
       data-testid="team-proposal"
     >
       <div className="flex items-start justify-between gap-3 border-b border-line bg-sunken p-4">
         <div className="min-w-0">
-          <span className="text-xs font-semibold uppercase tracking-[0.05em] text-sub">
+          <span className="text-xs uppercase tracking-[0.05em] text-sub">
             {t("teamBuilder.proposalMembers", { count: proposal.members.length })}
           </span>
           <h2 className="mt-1.5 truncate text-base font-semibold tracking-[-0.01em] text-ink">

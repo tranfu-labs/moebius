@@ -36,7 +36,7 @@ export function SubSessionCard({
   const { t } = useI18n();
   return (
     <section
-      className={cn("overflow-hidden rounded-md border border-line bg-card", className)}
+      className={cn("overflow-hidden rounded-lg border border-line bg-card", className)}
       aria-label={t("console.subSession.label")}
       data-testid="sub-session-card"
     >

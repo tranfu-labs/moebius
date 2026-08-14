@@ -39,7 +39,7 @@ export function RelayRoleColumns({
       {members.map((member, index) => (
         <span
           className={cn(
-            "relative grid min-w-0 place-items-center px-1 pb-2 text-center text-meta font-semibold leading-3",
+            "relative grid min-w-0 place-items-center px-1 pb-2 text-center text-meta leading-3",
             member.slug === activeSpeakerSlug
               ? "text-ink"
               : "text-hint",

@@ -45,7 +45,7 @@ export function AnalysisPanel({
     <aside
       id={id}
       className={cn(
-        "absolute right-3 top-[var(--window-header-height)] z-20 flex max-h-[min(420px,calc(100%_-_var(--window-header-height)_-_16px))] min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-card",
+        "absolute right-3 top-[var(--window-header-height)] z-20 flex max-h-[min(420px,calc(100%_-_var(--window-header-height)_-_16px))] min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-card",
         layout === "split" ? "w-72" : "left-3",
         className,
       )}
@@ -78,7 +78,7 @@ export function AnalysisPanel({
             {onRetry ? (
               <button
                 type="button"
-                className="mt-2 rounded-sm border border-line px-2.5 py-1.5 text-xs font-normal text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                className="mt-2 rounded-md border border-line px-2.5 py-1.5 text-xs font-normal text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 onClick={onRetry}
               >
                 {t("console.analysisPanel.retry")}
@@ -104,7 +104,7 @@ export function AnalysisPanel({
                   <button
                     key={entry.sessionId}
                     type="button"
-                    className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                    className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                     aria-label={accessibleName}
                     title={accessibleName}
                     onClick={() => onOpenEntry(entry)}
