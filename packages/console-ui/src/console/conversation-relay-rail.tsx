@@ -212,9 +212,10 @@ export function ConversationRelayRail({
             aria-label={t("console.relayRail.label")}
             className={cn(
               "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
-              appearance === "focused" && "border-0",
               expanded
-                ? "border-line bg-sunken"
+                ? appearance === "focused"
+                  ? "border-line bg-[var(--focused-side-surface)]"
+                  : "border-line bg-sunken"
                 : "border-transparent bg-transparent",
             )}
             data-motion-origin="left"

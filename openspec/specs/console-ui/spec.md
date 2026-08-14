@@ -2260,7 +2260,7 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让收起态短横线保持共同左端基线，并在展开时从同一左侧锚点向右打开面板。正常可用高度下，事件行 MUST 从 20px 展开到 32px；短横线 MUST 从左端收束，节点 MUST 横向进入对应泳道，用户主干与成员分支 MUST 随展开绘入。面板 MUST 使用抬升中性底、1px 描边、8px 圆角、零阴影和位于轨迹下方的事件 hover 带。面板宽度 MUST 由实际成员泳道数决定：主干和右侧留白各 14px、成员泳道默认相隔 18px，成员过多时压缩间距，最终宽度 MUST NOT 超过 224px。系统 MUST NOT 按主会话宽度在 148–224px 之间无条件插值，也 MUST NOT 采用居中膨胀、左右同时生长或邻近事件金字塔。
+系统 MUST 让收起态短横线保持共同左端基线，并在展开时从同一左侧锚点向右打开面板。正常可用高度下，事件行 MUST 从 20px 展开到 32px；短横线 MUST 从左端收束，节点 MUST 横向进入对应泳道，用户主干与成员分支 MUST 随展开绘入。面板 MUST 使用抬升中性底、1px 描边、8px 圆角、零阴影和位于轨迹下方的事件 hover 带；focused 外观 MUST 使用 side surface 作为面板底色、interaction surface 作为 hover 带，两者 MUST 保持可见层级差。面板宽度 MUST 由实际成员泳道数决定：主干和右侧留白各 14px、成员泳道默认相隔 18px，成员过多时压缩间距，最终宽度 MUST NOT 超过 224px。系统 MUST NOT 按主会话宽度在 148–224px 之间无条件插值，也 MUST NOT 采用居中膨胀、左右同时生长或邻近事件金字塔。
 
 #### Scenario: 从收起目录展开少量成员轨迹
 

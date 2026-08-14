@@ -177,6 +177,12 @@ describe("ConversationRelayRail", () => {
     fireEvent.mouseEnter(rail);
     fireEvent.mouseEnter(screen.getByTestId("relay-event-message-1"));
 
+    expect(screen.getByRole("navigation", {
+      name: "当前主会话消息目录",
+    })).toHaveClass("border-line", "bg-[var(--focused-side-surface)]");
+    expect(screen.getByRole("navigation", {
+      name: "当前主会话消息目录",
+    })).not.toHaveClass("border-0", "bg-sunken");
     const preview = screen.getByTestId("relay-event-preview");
     expect(preview).not.toHaveAttribute("data-overlay-clip");
     expect(preview).toHaveClass(
