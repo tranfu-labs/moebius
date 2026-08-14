@@ -1,9 +1,0 @@
-{
-  "name": "UI 设计团队",
-  "description": "UI 设计师按步骤自主产出界面设计交付物，UI 评审员依据确定性条件分发提醒；中段用户确认仅由未关闭的风格风险触发，无风险则全程自动推进，用户知情权由遗留事项清单保障。",
-  "primaryAgentSlug": "ui-designer",
-  "memberOrder": [
-    "ui-designer",
-    "ui-reviewer"
-  ]
-}
