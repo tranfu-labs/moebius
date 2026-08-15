@@ -482,7 +482,7 @@ try {
 
   await page.reload();
   await selectSession(page, failed.sessionId);
-  const failedOutcome = page.getByText(/这一步(?:没跑起来|反复没跑起来，已经不再重试)/u).first();
+  const failedOutcome = page.getByText(/(?:没有启动|多次未能启动)/u).first();
   await failedOutcome.waitFor();
   const failedRetry = page.getByRole("button", { name: "重试", exact: true }).first();
   await failedRetry.waitFor();
@@ -494,7 +494,7 @@ try {
     const session = findSession(state, failed.sessionId);
     return session?.unresolvedSystemEventKind != null && session.runningCount === 0;
   });
-  const failedRetryOutcome = page.getByText(/这一步(?:没跑起来|反复没跑起来，已经不再重试)/u).first();
+  const failedRetryOutcome = page.getByText(/(?:没有启动|多次未能启动)/u).first();
   await failedRetryOutcome.waitFor();
   const failedMessageCountAfterRetry = await sessionMessageCount(apiBase, failed.sessionId);
   const failedConsoleErrorEvidence = {

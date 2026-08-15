@@ -1,7 +1,7 @@
 import {
   createRunOutputSourceKey,
   openRightSidebarSourceTab,
-  OperatorConsole,
+  ResponsiveOperatorConsole,
   UpdatePromptDialog,
   type UpdateInstallDecision,
   type UpdateReadyDecision,
@@ -247,7 +247,8 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
   );
   return (
     <>
-      <OperatorConsole
+      <ResponsiveOperatorConsole
+      appearance="focused"
       executionRegistryState={runtime.executionRegistryState}
       onReloadExecutionRegistry={runtime.reloadExecutionRegistry}
       activeLocale={props.language.activeLocale}
