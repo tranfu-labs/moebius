@@ -1757,6 +1757,7 @@ describe("OperatorConsole", () => {
       reason: null,
     }));
     renderConsole({
+      appearance: "focused",
       selectedSession: { ...sessions[0], status: "idle", runningCount: 0, lastMessageMentionsAgent: false },
       messages: [message({ id: 2, speaker: "agent", role: "dev", body: "完成实现" })],
       workspaceDiff: { available: true, fileCount: 1, reason: null },
@@ -1767,6 +1768,12 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
 
     const panel = await screen.findByTestId("change-tab");
+    expect(screen.getByTestId("main-role-composer").querySelector('[data-layout-variant="main"]')).toHaveClass(
+      "bg-input",
+      "shadow-composer",
+    );
+    expect(screen.getByTestId("right-sidebar-surface")).toHaveClass("bg-card");
+    expect(panel).toHaveClass("grid", "grid-cols-[minmax(0,1fr)_180px]");
     expect(within(panel).getByText("这段对话期间，项目发生了这些改动（独立工作空间）。")).toBeVisible();
     expect(within(panel).getByText("这些改动在一份隔离副本里，你的项目文件夹没有被动过。")).toBeVisible();
     expect(within(panel).getByTitle("src/app.ts")).toBeVisible();
