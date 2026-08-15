@@ -801,15 +801,18 @@ export function ResponsiveOperatorConsole(props: OperatorConsoleProps): ReactNod
   const [compactRightSidebarOpen, setCompactRightSidebarOpen] = useState(false);
 
   useLayoutEffect(() => {
-    const media = window.matchMedia(`(max-width: ${String(FOCUSED_THREE_PANE_MIN_WIDTH_PX - 1)}px)`);
+    const media = typeof window.matchMedia === "function"
+      ? window.matchMedia(`(max-width: ${String(FOCUSED_THREE_PANE_MIN_WIDTH_PX - 1)}px)`)
+      : null;
     const update = (): void => {
-      const nextCompact = media.matches;
+      const nextCompact = media?.matches
+        ?? window.innerWidth < FOCUSED_THREE_PANE_MIN_WIDTH_PX;
       setCompact(nextCompact);
       if (nextCompact) setCompactRightSidebarOpen(false);
     };
     update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
+    media?.addEventListener("change", update);
+    return () => media?.removeEventListener("change", update);
   }, []);
 
   useLayoutEffect(() => {

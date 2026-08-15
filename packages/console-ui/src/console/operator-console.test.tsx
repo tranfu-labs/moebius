@@ -8,6 +8,7 @@ import {
   MIN_SIDEBAR_WIDTH_PX,
   NARROW_WINDOW_WIDTH_PX,
   OperatorConsole,
+  ResponsiveOperatorConsole,
   resolveNewConversationAgentTeamKey,
   type OperatorConsoleProps,
   type OperatorMessage,
@@ -30,6 +31,26 @@ function toolbarRow0(node: HTMLElement): HTMLElement {
 }
 
 describe("OperatorConsole", () => {
+  it("falls back to the window width when media queries are unavailable", () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: undefined,
+    });
+    setWindowWidth(900);
+    try {
+      render(<ResponsiveOperatorConsole {...baseProps({ appearance: "focused", rightSidebarOpen: true })} />);
+
+      expect(screen.getByTestId("operator-content-shell")).toBeInTheDocument();
+      expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
   it("keeps the composer editable while a host-provided submission block disables send", () => {
     const onSend = vi.fn();
     renderConsole({
