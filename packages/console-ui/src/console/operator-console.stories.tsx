@@ -3,10 +3,11 @@ import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import {
-  OperatorConsole,
+  ResponsiveOperatorConsole,
   type OperatorConsoleProps,
   type OperatorProject,
 } from "@/console/operator-console";
+import { RIGHT_SIDEBAR_BUILTIN_TAB_TITLES } from "@/console/right-sidebar-tabs";
 
 const agentMarkdown = [
   "## 结论",
@@ -182,6 +183,25 @@ const traceabilityTeams: OperatorAgentTeam[] = [
   },
 ];
 
+const dashboardComposerTeams: OperatorAgentTeam[] = [
+  ...traceabilityTeams,
+  {
+    teamKey: "user:product-review",
+    id: "product-review",
+    ownership: "user",
+    name: "产品评审团队",
+    description: "用于从当前会话切换到另一套可继续执行的团队配置。",
+    primaryAgentSlug: "product-reviewer",
+    memberOrder: ["product-reviewer", "visual-qa"],
+    members: [
+      { slug: "product-reviewer", displayName: "产品评审", description: "产品复核" },
+      { slug: "visual-qa", displayName: "视觉验收", description: "视觉验证" },
+    ],
+    status: "usable",
+    canCreateConversation: true,
+  },
+];
+
 const traceabilitySession: OperatorConsoleProps["selectedSession"] = {
   ...sessions[1]!,
   agentTeamOwnership: "system",
@@ -233,17 +253,22 @@ const traceabilityArgs = {
 
 const meta = {
   title: "Page/Console/OperatorConsole",
-  component: OperatorConsole,
-  args: sample,
+  component: ResponsiveOperatorConsole,
+  args: {
+    ...sample,
+    appearance: "focused",
+  },
   parameters: {
     layout: "fullscreen",
   },
-} satisfies Meta<typeof OperatorConsole>;
+} satisfies Meta<typeof ResponsiveOperatorConsole>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const T65Running: Story = {};
+export const T65Running: Story = {
+  name: "T6.5 · 运行中",
+};
 
 /** 侧边栏底部同步进行态：与"安装更新"共用同一位置，hover 报出正在同步的团队名。 */
 export const TeamSyncInProgress: Story = {
@@ -261,6 +286,7 @@ export const TeamSyncUpdated: Story = {
 };
 
 export const PiApiRunning: Story = {
+  name: "Pi API · 运行中",
   args: {
     activeRun: {
       ...sample.activeRun!,
@@ -280,6 +306,7 @@ export const PiApiRunning: Story = {
 };
 
 export const SidebarConversationManagement: Story = {
+  name: "侧边栏 · 会话管理",
   args: {
     project: {
       ...sample.project,
@@ -352,6 +379,7 @@ export const SidebarConversationManagement: Story = {
 };
 
 export const PrimaryControlLanes: Story = {
+  name: "主理人 · 多车道控制",
   args: {
     activeRun: {
       ...sample.activeRun!,
@@ -406,6 +434,7 @@ export const PrimaryControlLanes: Story = {
 };
 
 export const DashboardShellAlignment: Story = {
+  name: "仪表盘 · 内容轴对齐",
   args: {
     projects: [
       {
@@ -435,6 +464,10 @@ export const DashboardShellAlignment: Story = {
         ],
       },
     ],
+    selectedSession: traceabilitySession,
+    conversationAgentTeamKey: "system:development",
+    agentTeamsState: { status: "ready", teams: dashboardComposerTeams },
+    onChangeSessionTeam: () => undefined,
     messages: [
       {
         ...sample.messages[0]!,
@@ -445,17 +478,40 @@ export const DashboardShellAlignment: Story = {
         body: [
           "## 对齐说明",
           "",
-          "这是一段用于检查正文占满内容列的长回复。它保留 Markdown、完整输出和成员身份，同时让正文从 24px 头像左缘向右缩进 32px。",
+          "**关键判断：** 正文、操作与行内强调必须使用稳定的字重层级。这段长回复保留 Markdown、完整输出和成员身份，同时让正文从 24px 头像左缘向右缩进 32px。",
           "",
-          "窗口变窄后，标题、消息、活动 run、待发射区和 composer 应该共同收缩，不能让根页面产生横向滚动。",
+          "窗口变窄后，标题、消息、活动 run、排队区和 composer 应该共同收缩，不能让根页面产生横向滚动。",
         ].join("\n"),
+        runTiming: {
+          stepId: "step-dashboard-alignment",
+          attempt: 1,
+          createdAt: "2026-07-11T10:01:00.000Z",
+          startedAt: "2026-07-11T10:01:00.000Z",
+          elapsedMs: 60_000,
+          completedAt: "2026-07-11T10:02:00.000Z",
+          status: "completed",
+          engine: "codex",
+          processOutputAvailable: true,
+        },
       },
     ],
     pendingPrimaryMessages: [
       {
         ...sample.messages[0]!,
         id: 41,
-        body: "等待主理人结束后继续核对窄窗。",
+        body: "等待主理人结束后继续核对窄窗，并补充右侧文件改动区域的边界与选中状态。",
+        status: "pending",
+      },
+      {
+        ...sample.messages[0]!,
+        id: 42,
+        body: "复核文件树选中状态与改动行的层次。",
+        status: "pending",
+      },
+      {
+        ...sample.messages[0]!,
+        id: 43,
+        body: "最后检查深色模式下输入框与浮岛的层次。",
         status: "pending",
       },
     ],
@@ -465,6 +521,7 @@ export const DashboardShellAlignment: Story = {
 };
 
 export const ProjectActions: Story = {
+  name: "项目 · 菜单与排序",
   parameters: {
     userActionCoverage: {
       required: true,
@@ -477,7 +534,7 @@ export const ProjectActions: Story = {
       ],
     },
   },
-  render: () => <ProjectActionsStory />,
+  render: (args) => <ProjectActionsStory args={args} />,
   play: async ({ canvasElement }) => {
     const secondaryProjectId = "project-actions-secondary";
     const secondaryRow = () => projectActionsRow(canvasElement, secondaryProjectId);
@@ -606,7 +663,7 @@ async function setStoryInputValue(input: HTMLInputElement, value: string): Promi
   });
 }
 
-function ProjectActionsStory(): JSX.Element {
+function ProjectActionsStory({ args }: { args: OperatorConsoleProps }): JSX.Element {
   const [projects, setProjects] = useState<OperatorProject[]>(createProjectActionsFixture);
   const [selectedProjectId, setSelectedProjectId] = useState("project-actions");
   const [selectedSessionId, setSelectedSessionId] = useState("project-actions-session");
@@ -618,8 +675,8 @@ function ProjectActionsStory(): JSX.Element {
     ?? null;
 
   return (
-    <OperatorConsole
-      {...sample}
+    <ResponsiveOperatorConsole
+      {...args}
       project={selectedProject}
       projects={projects}
       selectedProjectId={selectedProject.projectId}
@@ -760,6 +817,7 @@ async function waitStoryMilliseconds(milliseconds: number): Promise<void> {
 }
 
 export const DashboardLoadingState: Story = {
+  name: "仪表盘 · 加载中",
   args: {
     ...DashboardShellAlignment.args,
     projectListState: "loading",
@@ -767,6 +825,7 @@ export const DashboardLoadingState: Story = {
 };
 
 export const DashboardEmptyState: Story = {
+  name: "仪表盘 · 空会话",
   args: {
     ...DashboardShellAlignment.args,
     messages: [],
@@ -777,30 +836,92 @@ export const DashboardEmptyState: Story = {
 };
 
 export const DashboardShellWithRightSidebar: Story = {
+  name: "聚焦画布 · 右侧栏",
   args: {
     ...DashboardShellAlignment.args,
+    projects: DashboardShellAlignment.args?.projects?.map((project) => ({
+      ...project,
+      isGitRepository: true,
+    })),
+    project: {
+      ...sample.project,
+      isGitRepository: true,
+    },
     rightSidebarOpen: true,
     rightSidebarTabs: {
       tabs: [{
-        id: "new-conversation",
-        type: "conversation",
-        title: "新会话",
-        sourceKey: "conversation:new",
+        id: "workspace-diff",
+        type: "workspace-diff",
+        title: RIGHT_SIDEBAR_BUILTIN_TAB_TITLES.workspaceDiff,
+        sourceKey: "workspace-diff:running",
         closable: true,
       }],
-      activeTabId: "new-conversation",
+      activeTabId: "workspace-diff",
+    },
+    workspaceDiff: { available: true, fileCount: 4, reason: null },
+    onRetryRun: () => undefined,
+    onAnalyzeConversation: () => undefined,
+    onLoadWorkspaceDiff: async () => ({
+      available: true,
+      fileCount: 4,
+      files: [
+        { path: "packages/console-ui/src/console/operator-console.stories.tsx", additions: 48, deletions: 7 },
+        { path: "packages/console-ui/src/styles/tokens.css", additions: 12, deletions: 6 },
+        { path: "packages/console-ui/src/console/conversation-layout.ts", additions: 8, deletions: 3 },
+        { path: "packages/console-ui/src/console/operator-console.test.tsx", additions: 26, deletions: 0 },
+      ],
+      reason: null,
+      workspaceMode: "worktree",
+    }),
+    onLoadWorkspaceDiffFile: async (_sessionId, filePath) => ({
+      available: true,
+      path: filePath,
+      reason: null,
+      lines: [
+        { kind: "unchanged", oldLineNumber: 760, newLineNumber: 760, text: "export const DashboardShellWithRightSidebar: Story = {" },
+        { kind: "deletion", oldLineNumber: 761, newLineNumber: null, text: "  args: DashboardShellAlignment.args," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 761, text: "  name: \"Focused canvas · 1440 × 832\"," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 762, text: "  render: (args) => <ResponsiveOperatorConsole {...args} />," },
+        { kind: "addition", oldLineNumber: null, newLineNumber: 763, text: "  args: { ...DashboardShellAlignment.args, appearance: \"focused\" }," },
+        { kind: "unchanged", oldLineNumber: 762, newLineNumber: 764, text: "};" },
+      ],
+    }),
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "balancedDesktop",
+      viewports: {
+        balancedDesktop: {
+          name: "均衡桌面 1440 × 832",
+          styles: { width: "1440px", height: "832px" },
+        },
+      },
     },
   },
 };
 
+export const DashboardShellWithLongComposer: Story = {
+  name: "聚焦画布 · 长输入",
+  args: {
+    ...DashboardShellWithRightSidebar.args,
+    composerValue: [
+      "请继续检查当前收尾方案，尤其关注右侧文件改动、主对话内容轴和输入区之间的响应式关系。",
+      "窗口变窄时不要让输入内容挤压操作按钮，也不要让 Composer 突然横向滚动。",
+      "最后请补充一份可以直接交给测试同学复核的验收说明。",
+    ].join("\n"),
+  },
+  parameters: DashboardShellWithRightSidebar.parameters,
+};
+
 export const DashboardNarrowSidebarDrawer: Story = {
+  name: "窄窗口 · 侧边栏抽屉",
   args: DashboardShellAlignment.args,
   parameters: {
     viewport: {
       defaultViewport: "dashboardNarrow",
       viewports: {
         dashboardNarrow: {
-          name: "Dashboard narrow 700 × 600",
+          name: "仪表盘窄窗 700 × 600",
           styles: { width: "700px", height: "600px" },
         },
       },
@@ -814,6 +935,7 @@ export const DashboardNarrowSidebarDrawer: Story = {
 };
 
 export const T65Outcomes: Story = {
+  name: "T6.5 · 终局结果",
   args: {
     activeRun: null,
     selectedSession: { ...sessions[1]!, status: "idle", runningCount: 0 },
@@ -855,6 +977,7 @@ export const T65Outcomes: Story = {
 };
 
 export const T65EmptyComposer: Story = {
+  name: "T6.5 · 空输入框",
   args: {
     activeRun: null,
     messages: [],
@@ -865,6 +988,7 @@ export const T65EmptyComposer: Story = {
 };
 
 export const ConversationRelayReference: Story = {
+  name: "会话目录轨 · 接力参考",
   args: {
     activeRun: null,
     memberIdentities: [
@@ -914,6 +1038,7 @@ export const ConversationRelayReference: Story = {
 };
 
 export const ConversationRelayRightSidebarOpen: Story = {
+  name: "会话目录轨 · 打开右侧栏",
   args: {
     ...ConversationRelayReference.args,
     rightSidebarOpen: true,
@@ -922,6 +1047,7 @@ export const ConversationRelayRightSidebarOpen: Story = {
 };
 
 export const ConversationRelayProjectSidebarClosed: Story = {
+  name: "会话目录轨 · 关闭项目侧栏",
   args: {
     ...ConversationRelayReference.args,
     rightSidebarOpen: false,
@@ -930,22 +1056,25 @@ export const ConversationRelayProjectSidebarClosed: Story = {
 };
 
 export const TeamTraceabilityLight: Story = {
+  name: "团队可追溯 · 浅色",
   args: traceabilityArgs,
 };
 
 export const TeamTraceabilityDark: Story = {
+  name: "团队可追溯 · 深色",
   args: traceabilityArgs,
   globals: { theme: "dark" },
 };
 
 export const TeamTraceabilityNarrow: Story = {
+  name: "团队可追溯 · 窄窗口",
   args: traceabilityArgs,
   parameters: {
     viewport: {
       defaultViewport: "teamTraceabilityNarrow",
       viewports: {
         teamTraceabilityNarrow: {
-          name: "Team traceability narrow · 680 × 800",
+          name: "团队可追溯窄窗 · 680 × 800",
           styles: { width: "680px", height: "800px" },
         },
       },
@@ -954,11 +1083,11 @@ export const TeamTraceabilityNarrow: Story = {
 };
 
 export const TeamTraceabilityReducedMotion: Story = {
+  name: "团队可追溯 · 减弱动效",
   args: traceabilityArgs,
   decorators: [
     (Story) => (
-      <div data-reduced-motion-fixture>
-        <style>{`[data-reduced-motion-fixture] *, [data-reduced-motion-fixture] *::before, [data-reduced-motion-fixture] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }`}</style>
+      <div className="[&_*]:!animate-none [&_*]:!transition-none [&_*]:!scroll-auto [&_*::before]:!animate-none [&_*::before]:!transition-none [&_*::after]:!animate-none [&_*::after]:!transition-none">
         <Story />
       </div>
     ),

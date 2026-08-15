@@ -6,6 +6,7 @@ const meta: Meta<typeof AgentRunInfoPopover> = {
   title: "Component/Console/AgentRunInfoPopover",
   component: AgentRunInfoPopover,
   args: {
+    appearance: "focused",
     sessionId: "session-a", runId: "run-a", role: "implementation-lead", displayName: "实现负责人",
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
@@ -21,8 +22,9 @@ const meta: Meta<typeof AgentRunInfoPopover> = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const Executed: Story = {};
+export const Executed: Story = { name: "页面同款 · 已执行" };
 export const PlannedNotStarted: Story = {
+  name: "计划中 · 尚未开始",
   args: {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
@@ -34,6 +36,7 @@ export const PlannedNotStarted: Story = {
   },
 };
 export const BoundStartUnknown: Story = {
+  name: "已绑定 · 启动时间未知",
   args: {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
@@ -45,6 +48,7 @@ export const BoundStartUnknown: Story = {
   },
 };
 export const LegacyMissingFacts: Story = {
+  name: "兼容 · 缺少历史事实",
   args: {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
@@ -57,10 +61,12 @@ export const LegacyMissingFacts: Story = {
 };
 
 export const Dark: Story = {
+  name: "深色",
   globals: { theme: "dark" },
 };
 
 export const NarrowWindow: Story = {
+  name: "窄窗口",
   parameters: {
     viewport: {
       defaultViewport: "agentAuditNarrow",

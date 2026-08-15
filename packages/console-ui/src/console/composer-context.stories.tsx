@@ -58,6 +58,7 @@ const meta = {
   title: "Block/Console/ComposerContext",
   component: ComposerContext,
   args: {
+    appearance: "focused",
     project,
     projects: [project],
     selectedSession: session,
@@ -71,8 +72,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const LockedWorkspace: Story = {};
+export const LockedWorkspace: Story = { name: "页面同款 · 已锁定工作区" };
 
 export const BeforeFirstMessage: Story = {
+  name: "页面同款 · 首条消息前",
   args: { onChangeSessionWorkspace: () => undefined },
 };

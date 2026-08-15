@@ -2332,11 +2332,19 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 - **THEN** 主干与成员分支在省略边界各自收束
 - **AND** 省略区两侧不绘制一条跨区直接连接
 
+#### Scenario: 省略段保持展开轨道
+
+- **GIVEN** 长会话目录包含省略段且某个事件预览可见
+- **WHEN** 指针从事件行移入省略段
+- **THEN** 目录轨保持展开
+- **AND** 当前事件预览保持不变
+- **AND** 只有指针真正离开整个目录轨或预览卡时才进入关闭宽限
+
 ### Requirement: 节点预览模板与面板锚点保持稳定
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让预览卡默认宽 240px、正文最多三行，并相对整个展开轨迹面板保持 12px side offset；窗口碰撞时 MAY 整卡翻转或约束宽度，但 MUST NOT 按节点泳道位置改变偏移。Agent 事件预览 MUST 只显示成员可读名称、时间和原回复开头；用户事件预览 MUST 显示“你”、时间和用户原文开头。系统 MUST NOT 在 Agent 预览顶部重复显示关联用户消息、内部 slug 或生成摘要。指针从面板跨入预览卡时 MUST 保持展开；只有离开面板与预览卡后才 MAY 延迟收起。
+系统 MUST 让预览卡默认宽 240px、正文最多三行，并相对整个展开轨迹面板保持 12px side offset；窗口碰撞时 MAY 整卡翻转或约束宽度，但 MUST NOT 按节点泳道位置改变偏移。亮色预览卡 MUST 使用 shadcn 的 1px 描边与 `shadow-md` 抬升，暗色预览卡 MUST 取消阴影并使用与画布不同的实色卡面分层。Agent 事件预览 MUST 只显示成员可读名称、时间和原回复开头；用户事件预览 MUST 显示“你”、时间和用户原文开头。系统 MUST NOT 在 Agent 预览顶部重复显示关联用户消息、内部 slug 或生成摘要。指针从面板跨入预览卡时 MUST 保持展开；只有离开面板与预览卡后才 MAY 延迟收起。
 
 #### Scenario: 从最左泳道检查到最右泳道
 
@@ -2349,7 +2357,7 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让收起态短横线保持共同左端基线，并在展开时从同一左侧锚点向右打开面板。正常可用高度下，事件行 MUST 从 20px 展开到 32px；短横线 MUST 从左端收束，节点 MUST 横向进入对应泳道，用户主干与成员分支 MUST 随展开绘入。面板 MUST 使用抬升中性底、1px 描边、8px 圆角、零阴影和位于轨迹下方的事件 hover 带。面板宽度 MUST 由实际成员泳道数决定：主干和右侧留白各 14px、成员泳道默认相隔 18px，成员过多时压缩间距，最终宽度 MUST NOT 超过 224px。系统 MUST NOT 按主会话宽度在 148–224px 之间无条件插值，也 MUST NOT 采用居中膨胀、左右同时生长或邻近事件金字塔。
+系统 MUST 让收起态短横线保持共同左端基线，并在展开时从同一左侧锚点向右打开面板。正常可用高度下，事件行 MUST 从 20px 展开到 32px；短横线 MUST 从左端收束，节点 MUST 横向进入对应泳道，用户主干与成员分支 MUST 随展开绘入。面板 MUST 使用抬升中性底、1px 描边、8px 圆角、零阴影和位于轨迹下方的事件 hover 带；focused 外观 MUST 使用 side surface 作为面板底色、interaction surface 作为 hover 带，两者 MUST 保持可见层级差。hover 带 MUST 仅作为整行命中区内缩后的视觉反馈，左右各留 4px、上下各留 2px，不得贴住面板边界。面板宽度 MUST 由实际成员泳道数决定：主干和右侧留白各 14px、成员泳道默认相隔 18px，成员过多时压缩间距，最终宽度 MUST NOT 超过 224px。系统 MUST NOT 按主会话宽度在 148–224px 之间无条件插值，也 MUST NOT 采用居中膨胀、左右同时生长或邻近事件金字塔。
 
 #### Scenario: 从收起目录展开少量成员轨迹
 
@@ -2396,7 +2404,15 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 让预览卡相对展开面板保持固定 side offset，并在检查事件变化时沿事件行纵向连续跟随，内容 MUST 使用短促淡换。`prefers-reduced-motion: reduce` 命中时，系统 MUST 取消面板、横线、节点、曲线、锚点和内容的位移、绘制及淡换时序，以即时静态切换提供等价信息。
+系统 MUST 让预览卡相对展开面板保持固定 side offset，并在检查事件变化时沿事件行纵向连续跟随，内容 MUST 使用短促淡换。系统 MUST 等到首个有效视口尺寸后才呈现可定位的轨道内容；预览锚点 MUST 使用独立于展开面板动画的稳定坐标层，首次呈现 MUST 直接使用最终展开坐标，不得把未测量的临时坐标或收起面板的位置作为动画起点；后续检查事件切换和真实尺寸变化 MUST 保持连续。`prefers-reduced-motion: reduce` 命中时，系统 MUST 取消面板、横线、节点、曲线、锚点和内容的位移、绘制及淡换时序，以即时静态切换提供等价信息。
+
+#### Scenario: 首次测量不产生位置修正动画
+
+- GIVEN 目录轨尚未取得有效视口高度
+- WHEN 页面首次挂载并随后取得有效高度
+- THEN 测量前不呈现导航、预览锚点或预览卡
+- AND 测量后它们直接出现在最终展开位置
+- AND 展开面板自身的位移动画不改变预览锚点坐标
 
 #### Scenario: 从最左泳道切换到最右泳道
 
@@ -2416,7 +2432,7 @@ Source: docs/product/pages/main-conversation.md#会话目录轨
 
 Source: docs/product/pages/main-conversation.md#会话目录轨
 
-系统 MUST 按主时间线可用视口与最大 32px 展开事件行计算可见容量；超出容量时 MUST 围绕当前阅读消息保留连续窗口并尽量保留首尾边界，远端区间以省略行表示。可用高度不足时，展开事件行 MAY 在 32–20px 之间有界压缩，但目录面板 MUST NOT 越过主会话可用视口或 composer。目录滚轮与方向键浏览 MUST NOT 移动主时间线，只有点击、Enter 或 Space 激活真实事件后才 MUST 将原消息定位到阅读区并短暂突出。定位失败 MUST 保持原阅读位置。
+系统 MUST 从主时间线实际可用视口推导长会话目录的显示高度预算：正常窗口取视口高度约 70%，上下 MUST 保留至少 24px 总间隙，高窗口 MUST 最多显示 15 个 32px 标准行（480px），不得铺满整个会话区。系统 MUST 按该预算与最大 32px 展开事件行计算可见容量；超出容量时 MUST 围绕当前阅读消息保留连续窗口并尽量保留首尾边界，远端区间以省略行表示。可用高度不足时，展开事件行 MAY 在 32–20px 之间有界压缩，但目录面板 MUST NOT 越过主会话可用视口或 composer。目录滚轮与方向键浏览 MUST NOT 移动主时间线，只有点击、Enter 或 Space 激活真实事件后才 MUST 将原消息定位到阅读区并短暂突出。定位失败 MUST 保持原阅读位置。
 
 #### Scenario: 矮窗口阅读长会话中段
 

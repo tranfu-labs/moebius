@@ -35,6 +35,7 @@ export interface MarkdownMessageProps {
   memberIdentities?: readonly MarkdownMemberIdentity[];
   onOpenTeamMember?: (slug: string) => void;
   className?: string;
+  caretStyle?: "default" | "thin";
 }
 
 const math = createMathPlugin({ singleDollarTextMath: false, errorColor: "var(--sub)" });
@@ -62,6 +63,7 @@ export function MarkdownMessage({
   memberIdentities = [],
   onOpenTeamMember,
   className,
+  caretStyle = "default",
 }: MarkdownMessageProps): JSX.Element {
   const [intentKey] = useState(createMarkdownIntentKey);
   useEffect(() => {
@@ -98,6 +100,33 @@ export function MarkdownMessage({
       className={cn(
         "markdown-message min-w-0 max-w-full text-ink",
         density === "live" ? "text-sm text-sub" : "text-sm leading-6",
+        caretStyle === "thin" && [
+          "[&>:last-child::after]:!content-none",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:ml-[3px]",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:inline-block",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:h-[0.9em]",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:w-px",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:bg-current",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:align-[-0.08em]",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:opacity-65",
+          "[&>:last-child>p:last-child_[data-sd-animate]:last-child::after]:content-['']",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:ml-[3px]",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:inline-block",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:h-[0.9em]",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:w-px",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:bg-current",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:align-[-0.08em]",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:opacity-65",
+          "[&>:last-child>ul:last-child>li:last-child_[data-sd-animate]:last-child::after]:content-['']",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:ml-[3px]",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:inline-block",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:h-[0.9em]",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:w-px",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:bg-current",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:align-[-0.08em]",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:opacity-65",
+          "[&>:last-child>:is(h1,h2,h3):last-child_[data-sd-animate]:last-child::after]:content-['']",
+        ],
         className,
       )}
       components={components}
@@ -158,7 +187,7 @@ function SafeMarkdownLink({
       : (
           <button
             type="button"
-            className="inline break-words text-left font-medium text-accent underline"
+            className="inline break-words text-left font-normal text-accent underline"
             onClick={() => onOpenFileReference(fileReference)}
           >
             {children}
@@ -171,7 +200,7 @@ function SafeMarkdownLink({
       : (
           <button
             type="button"
-            className="inline break-words text-left font-medium text-accent underline"
+            className="inline break-words text-left font-normal text-accent underline"
             onClick={() => onOpenConversationReference(conversationReference)}
           >
             {children}
@@ -180,11 +209,11 @@ function SafeMarkdownLink({
   }
   if (memberSlug !== null) {
     return onOpenTeamMember === undefined
-      ? <span className="font-medium text-accent">{children}</span>
+      ? <span className="font-normal text-accent">{children}</span>
       : (
           <button
             type="button"
-            className="inline rounded-sm font-medium text-accent underline decoration-dotted underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="inline rounded-md font-normal text-accent underline decoration-dotted underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             onClick={() => onOpenTeamMember(memberSlug)}
           >
             {children}
@@ -192,7 +221,7 @@ function SafeMarkdownLink({
         );
   }
   if (safeUrl?.startsWith("#")) {
-    return <a className="font-medium text-accent underline" href={safeUrl}>{children}</a>;
+    return <a className="font-normal text-accent underline" href={safeUrl}>{children}</a>;
   }
   if (safeUrl === null || onOpenExternalLink === undefined) {
     return <span className="break-words text-sub underline decoration-dotted">{children}</span>;
@@ -202,7 +231,7 @@ function SafeMarkdownLink({
     <span className="relative inline">
       <button
         type="button"
-        className="inline break-words text-left font-medium text-accent underline"
+        className="inline break-words text-left font-normal text-accent underline"
         onClick={() => setConfirming(true)}
       >
         {children}
@@ -211,7 +240,7 @@ function SafeMarkdownLink({
         <span
           role="dialog"
           aria-label={t("console.markdown.confirmExternal")}
-          className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-md border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
+          className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-lg border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
         >
           <span className="block break-all text-sub">{safeUrl}</span>
           <span className="mt-3 flex justify-end gap-2">

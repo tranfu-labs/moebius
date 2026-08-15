@@ -165,7 +165,7 @@ export function AgentPortrait({
       data-agent-portrait={slug}
       className={cn(
         "inline-block shrink-0 overflow-hidden",
-        shape === "circle" ? "rounded-full" : "rounded-[10px]",
+        shape === "circle" ? "rounded-full" : "rounded-md",
         FRAME_SIZE[size],
         className,
       )}

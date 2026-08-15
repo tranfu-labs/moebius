@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import { Button } from "@/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 const meta = {
   title: "Component/UI/Popover",
@@ -17,13 +17,13 @@ export const WaitList: Story = {
       <PopoverTrigger asChild>
         <Button variant="outline">1 等你</Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80">
-        <div className="mb-2 text-sm font-semibold text-ink">等你 (1)</div>
-        <div className="rounded-md p-2 text-sm hover:bg-hover">
-          <div className="font-medium text-ink">失败汇总</div>
+      <AnimatedPopoverContent align="start" className="w-80">
+        <div className="mb-2 text-sm text-ink">等你 (1)</div>
+        <div className="rounded-lg p-2 text-sm hover:bg-hover">
+          <div className="font-normal text-ink">失败汇总</div>
           <div className="text-xs text-sub">等你验收 · tranfu-agents</div>
         </div>
-      </PopoverContent>
+      </AnimatedPopoverContent>
     </Popover>
   )
 };

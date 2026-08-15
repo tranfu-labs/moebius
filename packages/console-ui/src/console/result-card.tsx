@@ -34,12 +34,12 @@ export function ResultCard({ fileCount, onOpen, className }: ResultCardProps): J
 
   return (
     <section
-      className={cn("mt-4 flex max-w-[420px] items-center gap-2.5 rounded-[10px] border border-line bg-card px-3.5 py-2.5", className)}
+      className={cn("mt-4 flex max-w-[420px] items-center gap-2.5 rounded-md border border-line bg-card px-3.5 py-2.5", className)}
       aria-label={t("console.resultCard.label")}
       data-testid="conversation-result-card"
     >
       <CircleCheck className="h-[15px] w-[15px] shrink-0 text-pass" strokeWidth={1.5} aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink">{summary}</p>
+      <p className="min-w-0 flex-1 text-sm leading-5 text-ink">{summary}</p>
       <Button type="button" variant="outline" size="sm" onClick={onOpen}>
         {t("console.resultCard.view")}
       </Button>

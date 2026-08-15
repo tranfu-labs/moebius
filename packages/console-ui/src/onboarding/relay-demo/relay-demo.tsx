@@ -116,7 +116,7 @@ function RelayPlaybackDemo({
 
   return (
     <section
-      className="[--relay-lane-width:28px] [--relay-row-height:clamp(60px,8dvh,72px)] overflow-hidden rounded-xl border border-line bg-card sm:[--relay-lane-width:64px]"
+      className="[--relay-lane-width:28px] [--relay-row-height:clamp(60px,8dvh,72px)] overflow-hidden rounded-lg border border-line bg-card sm:[--relay-lane-width:64px]"
       style={relayStyle}
       data-testid="onboarding-relay-demo-slot"
       data-relay-run={relayRun}
@@ -128,15 +128,15 @@ function RelayPlaybackDemo({
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
           <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-run-fg)]" aria-hidden="true" />
           <span className="text-xs text-sub">{t("onboarding.relay.title")}</span>
-          <strong className="min-w-0 break-words text-xs font-semibold text-ink">
+          <span className="min-w-0 break-words text-xs text-ink">
             {team.name ?? t("onboarding.relay.selectedTeam")}
-          </strong>
+          </span>
         </span>
         <RelayReplayButton onReplay={onReplay} />
       </div>
 
       <div
-        className="grid items-center gap-x-3 border-b border-line bg-sunken px-3 py-2 text-[10px] font-semibold text-hint"
+        className="grid items-center gap-x-3 border-b border-line bg-sunken px-3 py-2 text-meta text-hint"
         style={{ gridTemplateColumns: RELAY_STAGE_COLUMNS }}
       >
         <RelayRoleColumns
@@ -174,7 +174,7 @@ function RelayPlaybackDemo({
         />
       </div>
 
-      <footer className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-[10px] text-hint">
+      <footer className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-meta text-hint">
         <Users className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
         <span>
           {playback.complete
@@ -190,7 +190,7 @@ function RelayUnavailable({ team }: { team: OperatorAgentTeam }): JSX.Element {
   const { t } = useI18n();
   return (
     <section
-      className="overflow-hidden rounded-xl border border-line bg-card"
+      className="overflow-hidden rounded-lg border border-line bg-card"
       data-testid="onboarding-relay-demo-slot"
       data-orchestration-status="unavailable"
       aria-label={t("onboarding.relay.label")}
@@ -198,9 +198,9 @@ function RelayUnavailable({ team }: { team: OperatorAgentTeam }): JSX.Element {
       <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
         <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-hint" aria-hidden="true" />
         <span className="text-xs text-sub">{t("onboarding.relay.title")}</span>
-        <strong className="truncate text-xs font-semibold text-ink">
+        <span className="truncate text-xs text-ink">
           {team.name ?? t("onboarding.relay.selectedTeam")}
-        </strong>
+        </span>
       </div>
       <div className="flex min-h-56 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
         <strong className="text-sm font-semibold text-ink">{t("onboarding.relay.unavailable")}</strong>

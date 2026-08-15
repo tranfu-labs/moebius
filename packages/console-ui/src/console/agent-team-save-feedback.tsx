@@ -12,10 +12,10 @@ export interface AgentTeamSaveFeedbackView {
 export function AgentTeamSaveFeedback({ feedback }: { feedback: AgentTeamSaveFeedbackView }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="flex items-start gap-2 rounded-md border border-line bg-card px-3 py-2.5 text-sm" role="status">
+    <div className="flex items-start gap-2 rounded-lg border border-line bg-card px-3 py-2.5 text-sm" role="status">
       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-pass" strokeWidth={1.5} aria-hidden="true" />
       <div>
-        <p className="font-medium text-ink">
+        <p className="font-normal text-ink">
           {feedback.kind === "external-loaded"
             ? t("console.agentTeamSaveFeedback.externalLoaded", { team: feedback.teamName })
             : t("console.agentTeamSaveFeedback.saved", { team: feedback.teamName, count: feedback.savedItemCount })}

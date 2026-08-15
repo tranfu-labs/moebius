@@ -5,11 +5,14 @@ export const CONVERSATION_RELAY_EXPANDED_ROW_HEIGHT = 32;
 export const CONVERSATION_RELAY_ROW_HEIGHT = CONVERSATION_RELAY_COLLAPSED_ROW_HEIGHT;
 export const CONVERSATION_RELAY_MIN_CAPACITY = 3;
 export const CONVERSATION_RELAY_PREFERRED_MIN_CAPACITY = 7;
+export const CONVERSATION_RELAY_MAX_CAPACITY = 15;
 export const CONVERSATION_RELAY_COLLAPSED_WIDTH = 44;
 export const CONVERSATION_RELAY_MAX_EXPANDED_WIDTH = 224;
 export const CONVERSATION_RELAY_SPINE_X = 14;
 export const CONVERSATION_RELAY_LANE_STEP = 18;
 export const CONVERSATION_RELAY_RIGHT_PADDING = 14;
+const CONVERSATION_RELAY_VERTICAL_GUTTER = 24;
+const CONVERSATION_RELAY_PREFERRED_HEIGHT_RATIO = 0.7;
 
 export interface ConversationRelayMessageInput {
   id: number;
@@ -112,6 +115,24 @@ export function deriveConversationRelayCapacity(
   return compactCapacity >= CONVERSATION_RELAY_PREFERRED_MIN_CAPACITY
     ? CONVERSATION_RELAY_PREFERRED_MIN_CAPACITY
     : Math.max(CONVERSATION_RELAY_MIN_CAPACITY, compactCapacity);
+}
+
+export function deriveConversationRelayHeightBudget(
+  viewportHeight: number,
+): number {
+  const safeViewportHeight = Number.isFinite(viewportHeight)
+    ? Math.max(0, viewportHeight)
+    : 0;
+  const availableHeight = Math.max(
+    0,
+    safeViewportHeight - CONVERSATION_RELAY_VERTICAL_GUTTER,
+  );
+  const preferredHeight = clamp(
+    safeViewportHeight * CONVERSATION_RELAY_PREFERRED_HEIGHT_RATIO,
+    CONVERSATION_RELAY_PREFERRED_MIN_CAPACITY * CONVERSATION_RELAY_EXPANDED_ROW_HEIGHT,
+    CONVERSATION_RELAY_MAX_CAPACITY * CONVERSATION_RELAY_EXPANDED_ROW_HEIGHT,
+  );
+  return Math.min(availableHeight, preferredHeight);
 }
 
 export function deriveConversationRelayExpandedRowHeight(

@@ -122,7 +122,7 @@ export function ProjectFilesTab({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="project-files-tab">
       <div className="shrink-0 border-b border-line px-3 py-3 text-xs leading-5 text-sub">
-        <p className="font-medium text-ink">{t("console.projectFiles.browsing", { location: location.label })}</p>
+        <p className="font-normal text-ink">{t("console.projectFiles.browsing", { location: location.label })}</p>
         {location.consequence !== null ? (
           <p className="mt-1">{t("console.projectFiles.isolatedCopy")}</p>
         ) : null}

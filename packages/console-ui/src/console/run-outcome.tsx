@@ -251,7 +251,7 @@ export function RunOutcome({
         </div>
       </TooltipProvider>
       {overrideOpen && (onOverrideAndRetry !== undefined || onMigrateAndContinue !== undefined) ? (
-        <div className="mt-2.5 rounded-md bg-sunken p-2.5">
+        <div className="mt-2.5 rounded-lg bg-sunken p-2.5">
           {executionRegistryState.status === "loading" ? (
             <p className="text-xs text-sub" role="status">
               {t("console.runOutcome.registryLoading")}
@@ -269,11 +269,11 @@ export function RunOutcome({
             </div>
           ) : (
           <div className="grid gap-2 sm:grid-cols-4">
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             {t("console.agentTeamDetail.executionEngineLabel")}
             <select
               aria-label="CLI"
-              className="h-8 rounded-md border border-line bg-card px-2 text-xs text-ink"
+              className="h-8 rounded-lg border border-line bg-card px-2 text-xs text-ink"
               value={overrideProfile.cli}
               onChange={(event) => setOverrideProfile(
                 resolveRetryProfile(
@@ -292,11 +292,11 @@ export function RunOutcome({
             </select>
           </label>
           {overrideProfile.cli === "pi" ? (
-            <label className="grid gap-1 text-[11px] text-hint">
+            <label className="grid gap-1 text-meta text-hint">
               {t("settings.providers")}
               <select
                 aria-label={t("settings.providers")}
-                className="h-8 rounded-md border border-line bg-card px-2 text-xs text-ink"
+                className="h-8 rounded-lg border border-line bg-card px-2 text-xs text-ink"
                 value={overrideProfile.providerProfileId}
                 onChange={(event) => {
                   const provider = providerProfiles.find((candidate) => candidate.id === event.currentTarget.value);
@@ -309,11 +309,11 @@ export function RunOutcome({
               </select>
             </label>
           ) : null}
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             Model
             <select
               aria-label="Model"
-              className="h-8 rounded-md border border-line bg-card px-2 text-xs text-ink"
+              className="h-8 rounded-lg border border-line bg-card px-2 text-xs text-ink"
               value={overrideProfile.model}
               onChange={(event) => setOverrideProfile(overrideProfile.cli === "pi"
                 ? resolvePiRetryModel(overrideProfile, event.currentTarget.value)
@@ -331,11 +331,11 @@ export function RunOutcome({
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-[11px] text-hint">
+          <label className="grid gap-1 text-meta text-hint">
             {t("console.agentTeamDetail.effort")}
             <select
               aria-label={t("console.agentTeamDetail.effort")}
-              className="h-8 rounded-md border border-line bg-card px-2 text-xs text-ink"
+              className="h-8 rounded-lg border border-line bg-card px-2 text-xs text-ink"
               value={overrideProfile.effort}
               onChange={(event) => setOverrideProfile({
                 ...overrideProfile,

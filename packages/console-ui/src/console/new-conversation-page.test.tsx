@@ -17,7 +17,7 @@ describe("NewConversationPage", () => {
     expect(column).not.toHaveClass("max-w-[720px]");
     expect(column.parentElement).toHaveClass("px-8");
     expect(column.parentElement).not.toHaveClass("px-6");
-    expect(title).toHaveClass("w-full", "max-w-[840px]", "font-display");
+    expect(title).toHaveClass("w-full", "max-w-[840px]", "font-sans");
     expect(screen.getByRole("textbox", { name: "消息内容" })).toHaveAttribute("rows", "1");
   });
 

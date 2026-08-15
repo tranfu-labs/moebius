@@ -26,6 +26,7 @@ import {
   type RightSidebarResizeKey,
 } from "@/console/right-sidebar-layout";
 import {
+  RIGHT_SIDEBAR_TOGGLE_DURATION_MS,
   rightSidebarToggleProgressAt,
   startRightSidebarToggleMotion,
   type RightSidebarToggleMotion,
@@ -44,6 +45,7 @@ import {
 } from "@/console/right-sidebar-tabs";
 import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 
 type RightSidebarContentType = Exclude<RightSidebarTabType, "blank">;
 
@@ -75,6 +77,7 @@ export interface RightSidebarProps {
   toggleButtonRef?: RefObject<HTMLButtonElement>;
   onExitComplete?: () => void;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }
 
 interface ResizeGesture {
@@ -106,6 +109,7 @@ export function RightSidebar({
   toggleButtonRef,
   onExitComplete,
   className,
+  appearance = "default",
 }: RightSidebarProps): JSX.Element | null {
   const { t } = useI18n();
   const reducedMotion = usePrefersReducedMotion();
@@ -121,6 +125,7 @@ export function RightSidebar({
   const [mounted, setMounted] = useState(open);
   const [expanded, setExpanded] = useState(open);
   const [closing, setClosing] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const [transitionDuration, setTransitionDuration] = useState(0);
   const mountedRef = useRef(open);
   const expandedRef = useRef(open);
@@ -183,9 +188,11 @@ export function RightSidebar({
         setExpanded(true);
       } else if (!expandedRef.current) {
         openFrameRef.current = window.requestAnimationFrame(() => {
-          openFrameRef.current = null;
-          expandedRef.current = true;
-          setExpanded(true);
+          openFrameRef.current = window.requestAnimationFrame(() => {
+            openFrameRef.current = null;
+            expandedRef.current = true;
+            setExpanded(true);
+          });
         });
       }
       return;
@@ -201,7 +208,7 @@ export function RightSidebar({
       completeExit();
       return;
     }
-    exitTimerRef.current = window.setTimeout(completeExit, 200);
+    exitTimerRef.current = window.setTimeout(completeExit, RIGHT_SIDEBAR_TOGGLE_DURATION_MS + 50);
   }, [completeExit, open, reducedMotion]);
 
   useEffect(() => () => {
@@ -272,23 +279,30 @@ export function RightSidebar({
       return;
     }
     resizeGestureRef.current = null;
+    setResizing(false);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
+
+  const focusedSplitGutter = appearance === "focused" ? 6 : 0;
+  const splitTrackWidth = width + focusedSplitGutter;
 
   return (
     <aside
       ref={asideRef}
       className={cn(
-        "relative flex min-w-0 shrink-0 flex-col overflow-hidden border-l border-line bg-canvas motion-reduce:transition-none",
+        "flex min-w-0 shrink-0 flex-col overflow-hidden border-l border-line bg-canvas motion-reduce:transition-none",
         layout === "split"
-          ? "transition-[width] duration-150 ease-[var(--ease)]"
-          : "absolute inset-0 z-40 w-full border-l-0 transition-transform duration-150 ease-[var(--ease)]",
+          ? "relative z-20 transition-[width] duration-[220ms] ease-[var(--ease)]"
+          : "absolute inset-0 z-40 w-full border-l-0 transition-transform duration-[220ms] ease-[var(--ease)]",
+        layout === "split" && resizing && "transition-none",
+        appearance === "focused" && layout === "split" && "border-0 bg-transparent shadow-none",
+        appearance === "focused" && layout === "overlay" && "inset-1 rounded-xl border border-line bg-card shadow-panel",
         closing && "pointer-events-none",
         className,
       )}
       style={layout === "split"
         ? {
-            width: expanded ? `${width}px` : "0px",
+            width: expanded ? `${String(splitTrackWidth)}px` : "0px",
             transitionDuration: `${String(transitionDuration)}ms`,
           }
         : {
@@ -307,17 +321,13 @@ export function RightSidebar({
         if (!openRef.current) completeExit();
       }}
     >
-      <div
-        className={cn(
-          "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
-          layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
-        )}
-        style={layout === "split" ? { width: `${width}px` } : undefined}
-      >
       {layout === "split" ? (
         <div
           ref={separatorRef}
-          className="window-no-drag group absolute inset-y-0 left-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none"
+          className={cn(
+            "window-no-drag group absolute inset-y-0 left-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none",
+            appearance === "focused" && "-left-0.5 w-3 border-0 bg-transparent shadow-none [&>span]:hidden",
+          )}
           role="separator"
           tabIndex={0}
           aria-label={t("console.rightSidebar.resize")}
@@ -338,6 +348,7 @@ export function RightSidebar({
               startX: event.clientX,
               startWidth: width,
             };
+            setResizing(true);
             event.currentTarget.setPointerCapture?.(event.pointerId);
           }}
           onPointerMove={resize}
@@ -359,7 +370,25 @@ export function RightSidebar({
         </div>
       ) : null}
 
-      <header className="window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center gap-1 border-b border-line px-2">
+      <div
+        className={cn(
+          "relative flex h-full min-w-0 flex-col border-l border-line bg-canvas",
+          layout === "split" ? "absolute inset-y-0 right-0" : "w-full border-l-0",
+          appearance === "focused" && layout === "split" && "inset-y-1 right-1 h-auto overflow-hidden rounded-xl border border-line bg-card shadow-panel",
+          appearance === "focused" && layout === "overlay" && "w-full rounded-[inherit] border-transparent bg-card",
+        )}
+        style={layout === "split"
+          ? {
+              width: `${width}px`,
+              transitionDuration: `${String(transitionDuration)}ms`,
+            }
+          : undefined}
+        data-testid="right-sidebar-surface"
+      >
+      <header className={cn(
+        "window-drag-region flex h-[var(--window-header-height)] shrink-0 items-center gap-1 border-b border-line px-2",
+        appearance === "focused" && "border-transparent",
+      )}>
         <div
           className="scroll-thin window-no-drag flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
           role="tablist"
@@ -382,8 +411,13 @@ export function RightSidebar({
                   else tabElementsRef.current.set(tab.id, element);
                 }}
                 className={cn(
-                  "flex h-[38px] max-w-[190px] shrink-0 items-center gap-1 rounded-md pl-3 pr-1 text-[12.5px] font-medium transition-colors",
-                  activeTab?.id === tab.id ? "bg-sel text-ink" : "text-sub hover:bg-hover hover:text-ink",
+                  "flex h-[38px] max-w-[190px] shrink-0 items-center gap-1 rounded-lg pl-3 pr-1 text-sm transition-colors",
+                  appearance === "focused" ? "h-8 rounded-md px-1 text-sm" : "font-normal",
+                  activeTab?.id === tab.id
+                    ? cn("bg-sel text-ink", appearance === "focused" && "font-normal")
+                    : appearance === "focused"
+                      ? "font-normal text-ink hover:bg-hover"
+                      : "text-sub hover:bg-hover hover:text-ink",
                 )}
               >
                 <button
@@ -438,7 +472,7 @@ export function RightSidebar({
                   <span className="min-w-0">
                     <span className="block truncate">{displayTitle}</span>
                     {discriminator !== null ? (
-                      <span className="block truncate text-[10.5px] font-normal text-hint">
+                      <span className="block truncate text-meta font-normal text-hint">
                         {discriminator}
                       </span>
                     ) : null}
@@ -472,7 +506,7 @@ export function RightSidebar({
 
         <button
           type="button"
-          className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+          className="window-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
           aria-label={t("console.rightSidebar.newTab")}
           title={t("console.rightSidebar.newTab")}
           onClick={() => onStateChange(addBlankRightSidebarTab(renderedState, createTabId()))}
@@ -484,7 +518,7 @@ export function RightSidebar({
           <button
             ref={overlayCloseButtonRef}
             type="button"
-            className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+            className="window-no-drag mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
             aria-label={t("console.rightSidebar.closeReturn")}
             title={t("console.rightSidebar.return")}
             data-testid="right-sidebar-overlay-close"
@@ -507,7 +541,7 @@ export function RightSidebar({
           <span>{t("console.rightSidebar.titleRetrying")}</span>
           <button
             type="button"
-            className="shrink-0 rounded-sm border border-line px-2 py-1 font-medium text-ink hover:bg-hover"
+            className="shrink-0 rounded-md border border-line px-2 py-1 font-normal text-ink hover:bg-hover"
             onClick={onRetryTitles}
           >
             {t("console.rightSidebar.retryTitle")}
@@ -569,10 +603,10 @@ function BlankTab({
   );
   return (
     <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-6 py-10">
-      <h2 className="text-center font-display text-base font-semibold tracking-[-0.01em] text-ink">
+      <h2 className="text-center font-sans text-base font-normal tracking-[-0.01em] text-ink">
         {t("console.rightSidebar.chooseContent")}
       </h2>
-      <div className="mt-5 overflow-hidden rounded-md border border-line bg-card">
+      <div className="mt-5 overflow-hidden rounded-lg border border-line bg-card">
         {visibleTypes.map((type) => (
           <button
             key={type}
@@ -588,7 +622,7 @@ function BlankTab({
               <Files className="mt-0.5 h-4 w-4 shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
             )}
             <span>
-              <span className="block text-sm font-medium text-ink">
+              <span className="block text-sm font-normal text-ink">
                 {t(type === "workspace-diff"
                   ? "console.rightSidebar.changes"
                   : type === "conversation"
@@ -625,7 +659,7 @@ function ContentSlotPlaceholder({ tab }: { tab: RightSidebarTab }): JSX.Element 
     <div className="grid min-h-full place-items-center p-6 text-center">
       <div>
         <TabIcon type={tab.type} className="mx-auto h-5 w-5 text-hint" />
-        <h2 className="mt-3 text-sm font-medium text-ink">{label}</h2>
+        <h2 className="mt-3 text-sm font-normal text-ink">{label}</h2>
         <p className="mt-1 text-xs leading-5 text-sub">{t("console.rightSidebar.placeholder")}</p>
       </div>
     </div>

@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ConversationRelayRail } from "@/console/conversation-relay-rail";
+import {
+  ConversationRelayRail,
+  type ConversationRelayRailProps,
+} from "@/console/conversation-relay-rail";
 import type { ConversationRelayEvent } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 
@@ -58,6 +61,43 @@ describe("ConversationRelayRail", () => {
     });
   });
 
+  it("waits for the first positive viewport measurement before mounting positioned content", () => {
+    let viewportHeight = 0;
+    let resizeCallback: ResizeObserverCallback | null = null;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
+      rect(760, viewportHeight));
+
+    class TestResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+      disconnect(): void {}
+      observe(): void {}
+      unobserve(): void {}
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+
+    try {
+      renderRail();
+      const rail = screen.getByTestId("conversation-relay-rail");
+
+      expect(rail).toHaveAttribute("data-viewport-measured", "false");
+      expect(screen.queryByRole("navigation", {
+        name: "当前主会话消息目录",
+      })).not.toBeInTheDocument();
+
+      viewportHeight = 400;
+      act(() => resizeCallback?.([], {} as ResizeObserver));
+
+      expect(rail).toHaveAttribute("data-viewport-measured", "true");
+      expect(screen.getByRole("navigation", {
+        name: "当前主会话消息目录",
+      })).toHaveStyle({ height: "120px", top: "140px" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("expands from the shared left edge for pointer and keyboard focus", async () => {
     const user = userEvent.setup();
     renderRail();
@@ -67,7 +107,7 @@ describe("ConversationRelayRail", () => {
     fireEvent.mouseEnter(rail);
     expect(rail).toHaveAttribute("data-expanded", "true");
     expect(rail).toHaveAttribute("data-row-height", "32");
-    expect(nav).toHaveClass("border-line", "bg-sunken", "rounded-[8px]");
+    expect(nav).toHaveClass("border-line", "bg-sunken", "rounded-md");
     expect(nav).toHaveStyle({ height: "192px", width: "82px" });
 
     fireEvent.mouseLeave(rail);
@@ -117,7 +157,15 @@ describe("ConversationRelayRail", () => {
     expect(farRightRow).toHaveAttribute("data-hit-target", "row");
     expect(farRightRow).toHaveClass("z-[3]");
     expect(farRightRow).toHaveStyle({ width: "82px" });
-    expect(screen.getByTestId("relay-band-message-6")).toHaveClass("z-[1]");
+    expect(screen.getByTestId("relay-band-message-6")).toHaveClass(
+      "z-[1]",
+      "rounded-md",
+    );
+    expect(screen.getByTestId("relay-band-message-6")).toHaveStyle({
+      height: "28px",
+      left: "3px",
+      width: "74px",
+    });
     expect(screen.getByTestId("relay-spine").closest("svg")).toHaveClass("z-[2]");
 
     fireEvent.mouseEnter(farRightRow);
@@ -132,19 +180,39 @@ describe("ConversationRelayRail", () => {
 
   it("shows a fixed-density preview and preserves it across the pointer gap", () => {
     vi.useFakeTimers();
-    renderRail();
+    renderRail(vi.fn(), vi.fn(), events, "message-1", "focused");
     const rail = screen.getByTestId("conversation-relay-rail");
     fireEvent.mouseEnter(rail);
     fireEvent.mouseEnter(screen.getByTestId("relay-event-message-1"));
 
+    expect(screen.getByRole("navigation", {
+      name: "当前主会话消息目录",
+    })).toHaveClass("border-line", "bg-[var(--focused-side-surface)]");
+    expect(screen.getByRole("navigation", {
+      name: "当前主会话消息目录",
+    })).not.toHaveClass("border-0", "bg-sunken");
     const preview = screen.getByTestId("relay-event-preview");
-    expect(preview).toHaveClass("w-[240px]", "px-3", "py-2.5");
+    expect(preview).not.toHaveAttribute("data-overlay-clip");
+    expect(preview).toHaveClass(
+      "w-[240px]",
+      "border",
+      "border-line",
+      "px-3",
+      "py-2.5",
+      "shadow-md",
+      "dark:shadow-none",
+    );
     expect(preview).toHaveAttribute("data-relay-side-offset", "12");
     expect(preview).toHaveTextContent("请实现目录轨");
     expect(preview).not.toHaveTextContent("@user");
     expect(screen.getByText("请实现目录轨")).toHaveClass("line-clamp-3");
     expect(screen.getByTestId("relay-preview-anchor")).toHaveStyle({
       top: "0px",
+      width: "82px",
+    });
+    expect(screen.getByTestId("relay-preview-anchor-layer")).toHaveStyle({
+      height: "192px",
+      top: "104px",
       width: "82px",
     });
 
@@ -192,6 +260,7 @@ describe("ConversationRelayRail", () => {
   });
 
   it("splits branches at omission windows and keeps the expanded panel in the viewport", () => {
+    vi.useFakeTimers();
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
       rect(760, 160),
     );
@@ -205,14 +274,27 @@ describe("ConversationRelayRail", () => {
     const rail = screen.getByTestId("conversation-relay-rail");
     fireEvent.mouseEnter(rail);
 
-    expect(rail).toHaveAttribute("data-capacity", "7");
+    expect(rail).toHaveAttribute("data-capacity", "6");
+    expect(rail).toHaveAttribute("data-height-budget", "136");
     expect(screen.getAllByTestId("relay-omission")).toHaveLength(2);
     expect(screen.getAllByTestId("relay-spine")).toHaveLength(3);
-    expect(screen.getByRole("navigation")).toHaveStyle({ height: "160px" });
+    expect(screen.getByRole("navigation")).toHaveStyle({ height: "136px", top: "12px" });
     for (const path of screen.getAllByTestId("relay-branch")) {
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-2");
       expect(path.getAttribute("data-relay-event-ids")).not.toContain("message-12");
     }
+
+    const inspectedRow = screen.getByTestId("relay-event-message-7");
+    const omissionRow = screen.getAllByTestId("relay-omission")[0]!;
+    fireEvent.mouseEnter(inspectedRow);
+    expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("消息 7");
+
+    fireEvent.mouseLeave(inspectedRow, { relatedTarget: omissionRow });
+    fireEvent.mouseEnter(omissionRow, { relatedTarget: inspectedRow });
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(rail).toHaveAttribute("data-expanded", "true");
+    expect(screen.getByTestId("relay-event-preview")).toHaveTextContent("消息 7");
   });
 
   it("isolates wheel browsing from its scrolling parent", () => {
@@ -278,10 +360,12 @@ function renderRail(
   onBrowse = vi.fn(),
   railEvents = events,
   currentEventId = "message-1",
+  appearance: ConversationRelayRailProps["appearance"] = "default",
 ): void {
   render(
     <div style={{ height: 400 }}>
       <ConversationRelayRail
+        appearance={appearance}
         containerWidth={760}
         currentEventId={currentEventId}
         events={railEvents}

@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { Button } from "@/ui/button";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
@@ -59,6 +61,7 @@ export interface RunBlockProps {
   interruptLabel?: string;
   variant?: "main" | "embedded";
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }
 
 export function RunBlock({
@@ -83,6 +86,7 @@ export function RunBlock({
   interruptLabel,
   variant = "embedded",
   className,
+  appearance = "default",
 }: RunBlockProps): JSX.Element {
   const { t } = useI18n();
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
@@ -102,6 +106,7 @@ export function RunBlock({
     <div
       className={cn("max-w-[680px]", className)}
       data-layout-variant={variant}
+      data-testid="run-block"
       tabIndex={onAnalyzeConversation ? 0 : undefined}
       onContextMenu={(event) => {
         if (onAnalyzeConversation) {
@@ -129,7 +134,7 @@ export function RunBlock({
           engine={resolveOperatorMemberEngine(role, memberIdentities)}
           className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
         />
-        <span className="text-[12.5px] font-semibold text-ink">{roleLabel}</span>
+        <span className="text-sm text-ink">{roleLabel}</span>
         <span className="flex items-center gap-2">
           {elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="running" elapsedMs={elapsedMs} />
@@ -179,6 +184,7 @@ export function RunBlock({
           className={cn(
             "mt-2.5 max-w-full overflow-x-auto text-sm text-sub",
             variant === "main" ? "pl-8" : "pl-7",
+            appearance === "focused" && "[&_.markdown-message>:first-child>:is(h1,h2,h3):first-child]:mt-0",
           )}
           data-testid="run-live-output"
         >
@@ -188,6 +194,7 @@ export function RunBlock({
               : liveContent}
             density="live"
             mode={liveContent === null ? "static" : "streaming"}
+            caretStyle={appearance === "focused" ? "thin" : "default"}
             onOpenExternalLink={onOpenExternalLink}
             onOpenFileReference={onOpenFileReference}
             memberIdentities={memberIdentities}
@@ -231,6 +238,7 @@ export function RunBlock({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
+                className={operatorFloatingSurfaceClassName(appearance)}
                 onCloseAutoFocus={(event) => {
                   if (analysisMenuReturnFocusRef.current !== null) {
                     event.preventDefault();

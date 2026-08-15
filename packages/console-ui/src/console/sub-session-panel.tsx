@@ -37,7 +37,7 @@ export function SubSessionPanel({
         <h2 className="min-w-0 truncate text-sm font-semibold text-ink" title={title}>{title}</h2>
         <button
           type="button"
-          className="window-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="window-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           aria-label={closeLabel ?? t("console.subSessionPanel.close")}
           onClick={onClose}
         >

@@ -974,7 +974,7 @@ export function AgentTeamDetail({
         */}
         <button
           type="button"
-          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-md pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
+          className="-ml-1.5 mb-1.5 inline-flex h-7 items-center gap-1 rounded-lg pr-2 text-sm text-sub hover:bg-hover hover:text-ink"
           onClick={() => requestGuardedAction(onLeave)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -998,29 +998,29 @@ export function AgentTeamDetail({
               {teamInformationEditable ? (
                 <input
                   id="agent-team-detail-title"
-                  className="-ml-[9px] min-w-0 max-w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-2xl font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
+                  className="-ml-[9px] min-w-0 max-w-full rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-lg font-semibold tracking-[-0.02em] text-ink transition-colors [field-sizing:content] hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none"
                   aria-label={t("console.agentTeamDetail.teamNameLabel")}
                   value={teamNameDraft}
                   placeholder={t("console.agentTeamDetail.unnamed")}
                   onChange={(event) => setTeamNameDraft(event.currentTarget.value)}
                 />
               ) : (
-                <h1 id="agent-team-detail-title" className="truncate text-2xl font-semibold tracking-[-0.02em] text-ink">
+                <h1 id="agent-team-detail-title" className="truncate text-lg font-semibold tracking-[-0.02em] text-ink">
                   {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
                 </h1>
               )}
-              <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[11px] font-medium text-sub">
+              <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
                 {team.ownership === "system"
                   ? t("console.agentTeamDetail.official")
                   : t("console.agentTeamDetail.userTeam")}
               </span>
               {team.officialManagement?.customizationStatus === "customized" ? (
-                <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-sub">
+                <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-sub">
                   {t("console.agentTeamDetail.customized")}
                 </span>
               ) : null}
               {readOnly ? (
-                <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-hint">
+                <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-hint">
                   {t("console.agentTeamDetail.readOnly")}
                 </span>
               ) : null}
@@ -1112,7 +1112,7 @@ export function AgentTeamDetail({
           <div className="mt-5 border-l-2 border-accent/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-official-sync-banner">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-ink">
+                <p className="text-sm font-normal text-ink">
                   {t("console.agentTeamDetail.syncedTo", {
                     version: officialSyncBanner.officialVersion,
                     count: officialSyncBanner.affectedMemberCount,
@@ -1196,7 +1196,7 @@ export function AgentTeamDetail({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-danger">
+                <p className="text-sm font-normal text-danger">
                   {t("console.agentTeamDetail.needsRepair")}
                 </p>
                 <ul className="mt-1 space-y-1 text-sm leading-5 text-sub">
@@ -1301,7 +1301,7 @@ export function AgentTeamDetail({
       */}
       {teamInformationEditable ? (
         <input
-          className="-ml-[9px] w-[calc(100%+9px)] rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
+          className="-ml-[9px] w-[calc(100%+9px)] rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-sm leading-6 text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none"
           aria-label={t("console.agentTeamDetail.teamDescriptionLabel")}
           value={teamDescriptionDraft}
           placeholder={t("console.agentTeamDetail.noDescription")}
@@ -1316,7 +1316,7 @@ export function AgentTeamDetail({
       <div className="pt-8">
         <div className="mb-3 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className="text-sm font-medium text-ink">
+            <h2 className="text-sm font-normal text-ink">
               {t("console.agentTeamDetail.members")}
             </h2>
             {/* Standing and visible, not sr-only: sighted users have to learn this too. */}
@@ -1402,7 +1402,7 @@ export function AgentTeamDetail({
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={1.5} aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-danger">
+                <p className="text-sm font-normal text-danger">
                   {t("console.agentTeamDetail.membersSaveFailed")}
                 </p>
                 <ul className="mt-1 space-y-1 text-sm text-sub">
@@ -1418,8 +1418,8 @@ export function AgentTeamDetail({
         ) : null}
 
         {selectedMember === null ? (
-          <div className="rounded-lg bg-sunken px-6 py-12 text-center">
-            <p className="text-sm font-medium text-ink">
+          <div className="rounded-xl bg-sunken px-6 py-12 text-center">
+            <p className="text-sm font-normal text-ink">
               {t("console.agentTeamDetail.noMembers")}
             </p>
             <p className="mt-2 text-sm text-sub">
@@ -1451,9 +1451,9 @@ export function AgentTeamDetail({
             ) : null}
           </div>
         ) : selectedEditor?.loadStatus === "failed" ? (
-          <div className="rounded-lg bg-sunken px-6 py-8" role="alert">
+          <div className="rounded-xl bg-sunken px-6 py-8" role="alert">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <p className="text-sm font-medium text-danger">
+              <p className="text-sm font-normal text-danger">
                 {t("console.agentTeamDetail.agentFileUnreadable", {
                   agent: selectedMember.displayName || `@${selectedMember.slug}`,
                 })}
@@ -1466,7 +1466,7 @@ export function AgentTeamDetail({
             </Button>
           </div>
         ) : selectedEditor?.loadStatus !== "ready" ? (
-          <div className="flex min-h-48 items-center justify-center rounded-lg bg-sunken text-sm text-sub" role="status">
+          <div className="flex min-h-48 items-center justify-center rounded-xl bg-sunken text-sm text-sub" role="status">
             <LoaderCircle className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
             {t("console.agentTeamDetail.readingAgentFile")}
           </div>
@@ -1490,7 +1490,7 @@ export function AgentTeamDetail({
               main line stays pinned so configuration is still in view while reading.
             */}
             <div
-              className="rounded-lg border border-line bg-card p-4"
+              className="rounded-xl border border-line bg-card p-4"
               data-testid="agent-execution-profile-editor"
             >
               {/*
@@ -1529,7 +1529,7 @@ export function AgentTeamDetail({
                   }}
                 />
                 <input
-                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                  className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-base font-semibold tracking-[-0.01em] text-ink transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
                   aria-label={t("console.agentTeamDetail.memberNameLabel")}
                   value={selectedEditor.displayName}
                   placeholder={`@${selectedMember.slug}`}
@@ -1541,7 +1541,7 @@ export function AgentTeamDetail({
                 {typeof memberActions === "function" ? memberActions(requestGuardedAction) : memberActions}
               </div>
               <input
-                className="mt-2 w-full rounded-md border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
+                className="mt-2 w-full rounded-lg border border-transparent bg-transparent px-2 py-0.5 text-sm text-sub transition-colors hover:border-line hover:bg-sunken focus:border-accent focus:bg-sunken focus:text-ink focus:outline-none disabled:cursor-default disabled:border-transparent disabled:bg-transparent disabled:px-0"
                 aria-label={t("console.agentTeamDetail.memberDescriptionLabel")}
                 value={selectedEditor.description}
                 placeholder={t("console.agentTeamDetail.memberDescriptionPlaceholder")}
@@ -1577,12 +1577,12 @@ export function AgentTeamDetail({
               {/* Same scale as the page: 20px is a break inside a section, 32px is between two. */}
               <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
-                  <h3 className="text-[13px] font-semibold tracking-[0.02em] text-ink">
+                  <h3 className="text-sm font-semibold tracking-[0.02em] text-ink">
                     {t("console.agentTeamDetail.runtimeConfiguration")}
                   </h3>
                 </div>
                 {profileDocument !== null ? (
-                  <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-[11px] font-medium text-sub">
+                  <span className="rounded-full border border-line bg-sunken px-2 py-0.5 text-meta font-normal text-sub">
                     {profileDocument.binding.source === "recommended"
                       ? t("console.agentTeamDetail.followRecommendation")
                       : t("console.agentTeamDetail.userOverride")}
@@ -1901,7 +1901,7 @@ export function AgentTeamDetail({
 
             {selectedEditor.externalChangeStatus === "conflict" ? (
               <div className="mt-3 border border-line bg-sunken px-3 py-3" role="alert">
-                <p className="text-sm font-medium text-ink">
+                <p className="text-sm font-normal text-ink">
                   {t("console.agentTeamDetail.externalChanged")}
                 </p>
                 <p className="mt-1 text-sm leading-6 text-sub">

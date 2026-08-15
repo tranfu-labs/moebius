@@ -37,7 +37,7 @@ export function RelayMessages({
             className={cn(
               "min-w-0 border-b border-line px-3 py-2.5 transition-[opacity,background-color] last:border-b-0",
               visible || typing ? "opacity-100" : "opacity-0",
-              current && "rounded-lg bg-sunken",
+              current && "rounded-xl bg-sunken",
             )}
             style={{ gridColumn: 2, gridRow: index + 1 }}
             data-testid="relay-message-row"
@@ -50,14 +50,14 @@ export function RelayMessages({
           >
             {typing ? (
               <div
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-sunken px-2.5 py-2"
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-sunken px-2.5 py-2"
                 data-testid="relay-typing"
                 role="status"
                 aria-label={t("onboarding.relay.typing", {
                   name: member.displayName || member.slug,
                 })}
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-[9px] font-semibold text-sub">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sel text-meta font-semibold text-sub">
                   {(member.displayName || member.slug).slice(0, 1)}
                 </span>
                 <span className="flex items-center gap-1" aria-hidden="true">
@@ -76,14 +76,14 @@ export function RelayMessages({
             ) : (
               <>
                 <header className="flex min-w-0 items-center gap-2">
-                  <strong className="min-w-0 text-xs font-semibold text-ink">
+                  <span className="min-w-0 text-xs text-ink">
                     {member.displayName || `@${member.slug}`}
-                  </strong>
-                  <span className="shrink-0 text-[10px] tabular-nums text-hint">
+                  </span>
+                  <span className="shrink-0 text-meta tabular-nums text-hint">
                     {t("onboarding.relay.beat", { count: index + 1 })}
                   </span>
                   {current ? (
-                    <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--status-run-fg)]">
+                    <span className="ml-auto shrink-0 rounded-full border border-[var(--status-run-line)] bg-[var(--status-run-bg)] px-2 py-0.5 text-meta font-normal text-[var(--status-run-fg)]">
                       {index === beats.length - 1
                         ? t("onboarding.relay.wrapUp")
                         : t("onboarding.relay.processing")}

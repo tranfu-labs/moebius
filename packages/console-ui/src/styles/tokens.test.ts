@@ -51,15 +51,15 @@ describe("dashboard tokens", () => {
     }
   });
 
-  it("sets the near-black dark canvas and the 14px radius baseline", () => {
+  it("sets the near-black dark canvas", () => {
     expect(tokens.match(/--canvas: #101010/g)?.length).toBe(2);
     expect(tokens.match(/--card: #171717/g)?.length).toBe(2);
     expect(tokens.match(/--rail: #101010/g)?.length).toBe(2);
-    expect(globals).toContain("--radius: 14px");
   });
 
-  it("drops elevation shadows and keeps shared focus and motion tokens", () => {
+  it("keeps shared focus, motion, and dark floating-surface tokens", () => {
     expect(tokens.match(/--shadow-pop: none/g)?.length).toBe(3);
+    expect(tokens.match(/--focused-floating-surface: #34353B/g)?.length).toBe(2);
     expect(tokens).not.toContain("inset 0 0 0 1px");
     expect(tokens).toContain("--ring-focus: 0 0 0 2px var(--accent)");
     expect(tokens).toContain("--dur: 150ms");

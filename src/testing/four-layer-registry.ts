@@ -78,6 +78,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/member-name.ts",
   "packages/console-ui/src/console/new-conversation-page.tsx",
   "packages/console-ui/src/console/notification-permission-dialog.tsx",
+  "packages/console-ui/src/console/operator-console-appearance.ts",
   "packages/console-ui/src/console/operator-console.tsx",
   "packages/console-ui/src/console/update-prompt-dialog.tsx",
   "packages/console-ui/src/console/process-event.tsx",

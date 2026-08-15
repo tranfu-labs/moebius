@@ -32,7 +32,7 @@ export function RoleTag({
     return (
       <span
         className={cn(
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-meta font-semibold",
           className,
         )}
         style={{ backgroundColor: `var(${identityToken(key)})`, color: "var(--ident-fg)" }}

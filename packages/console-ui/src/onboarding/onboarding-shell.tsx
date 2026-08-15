@@ -306,17 +306,17 @@ export function OnboardingShell({
                 />
               ))}
             </div>
-            <p className="text-xs font-medium tabular-nums text-hint">
+            <p className="text-xs font-normal tabular-nums text-hint">
               {t("onboarding.progress", { step: state.step })}
             </p>
             <h1
               ref={titleRef}
-              className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink outline-none"
+              className="mt-2 text-lg font-semibold leading-tight tracking-[-0.02em] text-ink outline-none"
               tabIndex={-1}
             >
               {stepTitle(t, state.step, compatibility.affectedCount)}
             </h1>
-            <p className="mt-2 text-[13px] leading-5 text-sub">
+            <p className="mt-2 text-sm leading-5 text-sub">
               {stepSubtitle(t, state.step, compatibility)}
             </p>
           </header>
@@ -462,7 +462,7 @@ function EnvironmentStep({
   const { t } = useI18n();
   return (
     <section
-      className="overflow-hidden rounded-xl border border-line bg-card"
+      className="overflow-hidden rounded-lg border border-line bg-card"
       aria-label={t("onboarding.environmentLabel")}
       aria-live="polite"
     >
@@ -529,15 +529,15 @@ function CliReadinessRow({
         <span className="flex items-center justify-between gap-3">
           <strong className="block text-sm font-semibold text-ink">{visual.title}</strong>
           {isOnboardingCliReady(readiness) && !installing ? (
-            <span className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-medium text-pass">
+            <span className="rounded-full border border-[var(--status-pass-line)] bg-[var(--status-pass-bg)] px-2.5 py-1 text-xs font-normal text-pass">
               {t("onboarding.cliAvailable")}
             </span>
           ) : null}
         </span>
         <small className="mt-0.5 block text-xs leading-5 text-sub">{visual.detail}</small>
         {readiness.status === "missing" && !installing && !recoverableInstall ? (
-          <span className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-sunken py-1.5 pl-2.5 pr-1.5">
-            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink">
+          <span className="mt-2 flex items-center gap-2 rounded-xl border border-line bg-sunken py-1.5 pl-2.5 pr-1.5">
+            <code className="min-w-0 flex-1 truncate font-mono text-meta text-ink">
               {cli === "codex"
                 ? "npm install -g @openai/codex"
                 : cli === "claude"
@@ -775,7 +775,7 @@ function TeamSelectionStep({
           <span className="sr-only">{t("onboarding.searchTeams")}</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-hint" strokeWidth={1.5} aria-hidden="true" />
           <input
-            className="h-9 w-full rounded-sm border border-line bg-card pl-8 pr-9 text-[13px] text-ink outline-none placeholder:text-hint focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-9 w-full rounded-md border border-line bg-card pl-8 pr-9 text-sm text-ink outline-none placeholder:text-hint focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
             type="search"
             value={query}
             disabled={!ready}
@@ -791,7 +791,7 @@ function TeamSelectionStep({
           {query !== "" ? (
             <button
               type="button"
-              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
               aria-label={t("onboarding.clearTeamSearch")}
               onClick={() => onQueryChange("")}
             >
@@ -808,12 +808,12 @@ function TeamSelectionStep({
         data-testid="onboarding-team-scroll"
       >
         {teamsState.status === "loading" ? (
-          <div className="flex min-h-[120px] items-center justify-center rounded-lg border border-line bg-card" role="status" aria-busy="true">
+          <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-line bg-card" role="status" aria-busy="true">
             <LoaderCircle className="h-5 w-5 motion-safe:animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
             <span className="ml-2 text-sm text-sub">{t("onboarding.teamsLoading")}</span>
           </div>
         ) : teamsState.status !== "ready" ? (
-          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-line bg-card p-5 text-center" role="alert">
+          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-line bg-card p-5 text-center" role="alert">
             <p className="text-sm text-sub">{t("onboarding.teamsUnavailable")}</p>
             {onRetry ? (
               <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
@@ -822,8 +822,8 @@ function TeamSelectionStep({
             ) : null}
           </div>
         ) : projection.total === 0 ? (
-          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border border-line bg-card p-5 text-center" role="alert">
-            <p className="text-sm font-medium text-ink">{t("onboarding.noUsableTeams")}</p>
+          <div className="flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-line bg-card p-5 text-center" role="alert">
+            <p className="text-sm font-normal text-ink">{t("onboarding.noUsableTeams")}</p>
             <p className="mt-1 text-xs leading-5 text-sub">{t("onboarding.noUsableTeamsDetail")}</p>
             {onRetry ? (
               <Button className="mt-4" type="button" variant="outline" onClick={() => void onRetry()}>
@@ -869,7 +869,7 @@ function TeamSelectionStep({
               onSelect={onSelect}
             />
             {projection.matched === 0 ? (
-              <div className="rounded-lg border border-dashed border-line px-5 py-6 text-center text-xs leading-5 text-sub" role="status">
+              <div className="rounded-xl border border-dashed border-line px-5 py-6 text-center text-xs leading-5 text-sub" role="status">
                 {t("onboarding.noTeamMatches", { query: query.trim() })}
               </div>
             ) : null}
@@ -880,7 +880,7 @@ function TeamSelectionStep({
         && selectedCompatibility.affectedCount > 0
         && replacementTarget !== undefined
         && onReplaceTeamWithProvider !== undefined ? (
-          <div className="mt-3 shrink-0 rounded-xl border border-line bg-sunken p-3" data-testid="onboarding-api-replacement">
+          <div className="mt-3 shrink-0 rounded-lg border border-line bg-sunken p-3" data-testid="onboarding-api-replacement">
             <p className="text-xs leading-5 text-sub">
               {t("onboarding.replaceTeamWithApiDescription", { count: selectedCompatibility.affectedCount })}
             </p>
@@ -919,7 +919,7 @@ function TeamSelectionStep({
         ) : null}
       <button
         type="button"
-        className="mt-3 flex w-full shrink-0 items-center gap-3 rounded-lg border border-dashed border-line-strong bg-card px-4 py-3 text-left transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 [@media(max-height:520px)]:mt-2 [@media(max-height:520px)]:py-2"
+        className="mt-3 flex w-full shrink-0 items-center gap-3 rounded-xl border border-dashed border-line-strong bg-card px-4 py-3 text-left transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 [@media(max-height:520px)]:mt-2 [@media(max-height:520px)]:py-2"
         onClick={onOpenBuilder}
         disabled={!canBuild}
         data-testid="open-onboarding-team-builder"
@@ -928,7 +928,7 @@ function TeamSelectionStep({
           <MessageSquarePlus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <strong className="block text-sm font-semibold text-ink">{t("onboarding.buildTeam")}</strong>
+          <span className="block text-sm text-ink">{t("onboarding.buildTeam")}</span>
           <small className="mt-0.5 block text-xs leading-5 text-sub [@media(max-height:520px)]:hidden">
             {builderCli === null
               ? t("onboarding.buildTeamWaiting")
@@ -937,7 +937,7 @@ function TeamSelectionStep({
                 })}
           </small>
         </span>
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--status-info-bg)] px-2.5 py-1 text-xs font-medium text-[var(--status-info-fg)]">
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--status-info-bg)] px-2.5 py-1 text-xs font-normal text-[var(--status-info-fg)]">
           <Sparkles className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
           {t("onboarding.startConversation")}
         </span>
@@ -970,7 +970,7 @@ function TeamGroup({
   if (teams.length === 0) return null;
   return (
     <section className="min-w-0 max-w-full" aria-label={label}>
-      <h2 className="px-1 pb-1 pt-1 text-[11.5px] font-medium tracking-[0.04em] text-hint">
+      <h2 className="px-1 pb-1 pt-1 text-xs font-normal tracking-[0.04em] text-hint">
         {label} · {teams.length}
       </h2>
       <div className="grid min-w-0 max-w-full gap-2">
@@ -1034,7 +1034,7 @@ function TeamChoiceCard({
       type="button"
       ref={buttonRef}
       className={cn(
-        "min-w-0 w-full max-w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "min-w-0 w-full max-w-full rounded-xl border bg-card px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         selected ? "border-accent bg-sel" : "border-line hover:bg-hover",
       )}
       aria-pressed={selected}
@@ -1057,7 +1057,7 @@ function TeamChoiceCard({
             {orderedMembers.length > 0 ? (
               <small className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-sub">
                 {orderedMembers.map((member, index) => (
-                  <span className={cn(member.slug === team.primaryAgentSlug && "font-medium text-ink")} key={member.slug}>
+                  <span className={cn(member.slug === team.primaryAgentSlug && "font-normal text-ink")} key={member.slug}>
                     {index > 0 ? <span className="mr-1.5 text-hint" aria-hidden="true">│</span> : null}
                     {member.slug === team.primaryAgentSlug ? <i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-hidden="true" /> : null}
                     {member.displayName || `@${member.slug}`}
@@ -1071,7 +1071,7 @@ function TeamChoiceCard({
           </span>
         </span>
         {selected ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-medium text-sub">
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-sunken px-2.5 py-1 text-xs font-normal text-sub">
             <Check className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
             {t("onboarding.selected")}
           </span>
@@ -1152,7 +1152,7 @@ function InstallationAggregate({
       </Button>
       {open ? (
         <span
-          className="absolute left-0 top-full z-20 mt-2 grid w-72 gap-2 rounded-lg border border-line bg-card p-3 shadow-lg"
+          className="absolute left-0 top-full z-20 mt-2 grid w-72 gap-2 rounded-xl border border-line bg-card p-3 shadow-lg"
           role="dialog"
           aria-label={t("onboarding.installDetails")}
           data-testid="install-details"
@@ -1172,8 +1172,8 @@ function InstallationAggregate({
               >
                 <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
                 <span className="min-w-0">
-                  <strong className="block text-xs font-medium text-ink">{name}</strong>
-                  <small className="block truncate text-[11px] text-hint">
+                  <strong className="block text-xs font-normal text-ink">{name}</strong>
+                  <small className="block truncate text-meta text-hint">
                     {installStageCopy(t, installation.stage)}
                   </small>
                 </span>

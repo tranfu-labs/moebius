@@ -67,25 +67,25 @@ function SettingsStoryCanvas(args: SettingsDialogProps): JSX.Element {
     <I18nProvider locale={args.activeLocale}>
       <div className="flex min-h-screen bg-canvas text-ink">
         <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-rail p-3">
-          <div className="px-2 py-3 font-display text-sm font-semibold">Moebius</div>
+          <div className="px-2 py-3 font-sans text-sm font-semibold">Moebius</div>
           <div className="mt-3 space-y-1 text-sm text-sub">
-            <div className="flex h-9 items-center gap-2 rounded-sm px-2">
+            <div className="flex h-9 items-center gap-2 rounded-md px-2">
               <Plus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               新建对话
             </div>
-            <div className="flex h-9 items-center gap-2 rounded-sm px-2">
+            <div className="flex h-9 items-center gap-2 rounded-md px-2">
               <Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               搜索
             </div>
           </div>
           <div className="mt-5 border-t border-line pt-4 text-xs text-hint">项目</div>
-          <div className="mt-2 flex h-9 items-center gap-2 rounded-sm bg-sel px-2 text-sm">
+          <div className="mt-2 flex h-9 items-center gap-2 rounded-md bg-sel px-2 text-sm">
             <Folder className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             Moebius Desktop
           </div>
           <button
             type="button"
-            className="mt-auto flex h-9 items-center gap-2 rounded-sm px-2 text-sm text-sub hover:bg-hover hover:text-ink"
+            className="mt-auto flex h-9 items-center gap-2 rounded-md px-2 text-sm text-sub hover:bg-hover hover:text-ink"
             onClick={() => setOpen(true)}
           >
             <Settings className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -98,7 +98,7 @@ function SettingsStoryCanvas(args: SettingsDialogProps): JSX.Element {
               <MessageSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               产品交付
             </div>
-            <h1 className="mt-4 font-display text-2xl font-semibold tracking-[-0.01em]">
+            <h1 className="mt-4 font-sans text-lg font-semibold tracking-[-0.01em]">
               设置页视觉评审
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-sub">
