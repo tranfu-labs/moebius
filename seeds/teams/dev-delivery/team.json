@@ -1,0 +1,9 @@
+{
+  "name": "开发交付团队",
+  "description": "开发负责人按步骤自主产出功能交付物，开发评审员依据确定性条件分发提醒；方向性技术风险默认由最小 spike 自验证关闭，仅不可自验证时触发用户确认；终验收与外发授权合并为同一触点，用户知情权由遗留事项清单保障。",
+  "primaryAgentSlug": "dev-lead",
+  "memberOrder": [
+    "dev-lead",
+    "dev-reviewer"
+  ]
+}
