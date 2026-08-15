@@ -263,9 +263,9 @@ export function ChangeTab({
           <button
             type="button"
             className="absolute right-1.5 top-1/2 grid h-[26px] w-[26px] -translate-y-1/2 place-items-center rounded-md bg-card text-sub transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none active:scale-[0.98]"
-            aria-label={treeVisible ? "隐藏文件树" : "显示文件树"}
+            aria-label={t(treeVisible ? "console.changeTab.hideFileTree" : "console.changeTab.showFileTree")}
             aria-expanded={treeVisible}
-            title={treeVisible ? "隐藏文件树" : "显示文件树"}
+            title={t(treeVisible ? "console.changeTab.hideFileTree" : "console.changeTab.showFileTree")}
             onClick={() => setTreeVisible((visible) => !visible)}
           >
             <FolderTree className="h-[15px] w-[15px]" strokeWidth={1.5} aria-hidden="true" />

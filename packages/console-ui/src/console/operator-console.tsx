@@ -2820,8 +2820,8 @@ export function OperatorConsole({
                                 <button
                                   type="button"
                                   className="grid h-7 w-7 place-items-center rounded-md text-hint transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
-                                  aria-label={`立即发送：${body}`}
-                                  title="立即发送"
+                                  aria-label={t("console.operator.pendingSendNow", { body })}
+                                  title={t("console.operator.pendingSendNowTitle")}
                                   onClick={() => onRetryPendingMessage?.(selectedSessionId, message.id)}
                                 >
                                   <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden="true" />
@@ -2829,8 +2829,8 @@ export function OperatorConsole({
                                 <button
                                   type="button"
                                   className="grid h-7 w-7 place-items-center rounded-md text-hint transition-colors hover:bg-[var(--status-danger-bg)] hover:text-danger focus-visible:bg-[var(--status-danger-bg)] focus-visible:text-danger focus-visible:outline-none"
-                                  aria-label={`删除：${body}`}
-                                  title="删除"
+                                  aria-label={t("console.operator.pendingDelete", { body })}
+                                  title={t("console.operator.pendingDeleteTitle")}
                                   onClick={() => onRemovePendingMessage?.(selectedSessionId, message.id)}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden="true" />
