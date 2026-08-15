@@ -3046,6 +3046,25 @@ describe("OperatorConsole", () => {
     )).not.toBeInTheDocument();
   });
 
+  it("passes focused appearance to the main conversation relay rail", () => {
+    renderConsoleWithMeasuredRelay({
+      appearance: "focused",
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "请开始" }),
+        message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
+      ],
+      memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
+    });
+
+    const rail = screen.getByTestId("conversation-relay-rail");
+    fireEvent.mouseEnter(rail);
+
+    expect(screen.getByRole("navigation", { name: "当前主会话消息目录" })).toHaveClass(
+      "border-line",
+      "bg-[var(--focused-side-surface)]",
+    );
+  });
+
   it("keeps top, middle, and bottom Agent audit avatars clickable beside the expanded relay", async () => {
     renderConsole({
       messages: [
