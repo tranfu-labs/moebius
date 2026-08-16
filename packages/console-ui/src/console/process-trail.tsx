@@ -46,11 +46,11 @@ export function ProcessTrail({ steps, collapsed = false, className }: {
   const folded = collapsed && !open;
 
   return (
-    <div className={cn("text-[12.5px]", className)}>
+    <div className={cn("text-sm", className)}>
       {collapsed ? (
         <button
           type="button"
-          className="flex items-center gap-1 rounded-md py-0.5 text-sub transition-colors hover:text-ink"
+          className="flex items-center gap-1 rounded-lg py-0.5 text-sub transition-colors hover:text-ink"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >

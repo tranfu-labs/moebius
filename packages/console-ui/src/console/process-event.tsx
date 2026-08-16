@@ -330,7 +330,7 @@ function AttemptDebugHeader({
           ? <DebugMeta label="cwd" value={metadata.cwd} />
           : null}
       </dl>
-      <p className="mt-3 rounded-sm border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub">
+      <p className="mt-3 rounded-md border border-line bg-sunken px-3 py-2 text-xs leading-5 text-sub">
         {t("console.processEvent.sensitiveNotice")}
       </p>
       <div className="mt-3 grid gap-2">
@@ -376,14 +376,14 @@ function PromptDisclosure({
   };
   return (
     <details
-      className="rounded-sm border border-line bg-card px-3 py-2"
+      className="rounded-md border border-line bg-card px-3 py-2"
       onToggle={(event) => {
         if (event.currentTarget.open) {
           request();
         }
       }}
     >
-      <summary className="cursor-pointer select-none font-mono text-xs font-medium text-ink">
+      <summary className="cursor-pointer select-none font-mono text-xs font-normal text-ink">
         {label}
       </summary>
       <div className="mt-2 border-t border-line pt-2">
@@ -394,7 +394,7 @@ function PromptDisclosure({
             {t("console.processEvent.promptLoadFailed", { error: state.message })}
             <button
               type="button"
-              className="ml-2 rounded-sm border border-line px-2 py-1 text-ink hover:bg-hover"
+              className="ml-2 rounded-md border border-line px-2 py-1 text-ink hover:bg-hover"
               onClick={request}
             >
               {t("common.retry")}
@@ -486,11 +486,11 @@ function DebugCard({
   const { t } = useI18n();
   return (
     <article className={cn(
-      "my-2 overflow-hidden rounded-lg border bg-card",
+      "my-2 overflow-hidden rounded-xl border bg-card",
       danger ? "border-danger/30" : "border-line",
     )}>
       <header className="border-b border-line px-3 py-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-ink">
+        <div className="flex items-center gap-2 text-xs font-normal text-ink">
           {icon}
           <span className="min-w-0 truncate">{title}</span>
         </div>
@@ -511,7 +511,7 @@ function DebugEventHeader({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <p className="mt-1 break-all font-mono text-[11px] leading-4 text-sub">
+    <p className="mt-1 break-all font-mono text-meta leading-4 text-sub">
       {timestamp ?? t("console.processEvent.timestampMissing")} · {protocolType}
     </p>
   );
@@ -528,7 +528,7 @@ function DebugFacts({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <p className="mt-1 break-all font-mono text-[11px] leading-4 text-sub">
+    <p className="mt-1 break-all font-mono text-meta leading-4 text-sub">
       call_id: {callId ?? t("console.processEvent.notRecorded")} · {status ?? phase}
     </p>
   );
@@ -550,7 +550,7 @@ function ReadonlyBlock({ label, value }: { label: string; value: string }): JSX.
   const collapsible = displayValue.length > 1_200 || displayValue.split("\n").length > 20;
   return (
     <details className="border-t border-line px-3 py-2" open={!collapsible}>
-      <summary className="cursor-pointer select-none text-[11px] font-medium text-sub">
+      <summary className="cursor-pointer select-none text-meta font-normal text-sub">
         {collapsible ? t("console.processEvent.expandFull", { label }) : label}
       </summary>
       <pre className="scroll-thin mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">

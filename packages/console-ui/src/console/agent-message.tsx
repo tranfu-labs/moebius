@@ -72,7 +72,7 @@ export function AgentMessage({
   return (
     <details className={cn("group border-t border-line text-sm text-sub", className)} open={open}>
       <summary
-        className="grid cursor-pointer list-none grid-cols-[32px_minmax(0,1fr)] gap-x-3 rounded-md outline-none transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden"
+        className="grid cursor-pointer list-none grid-cols-[32px_minmax(0,1fr)] gap-x-3 rounded-lg outline-none transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden"
         aria-expanded={open}
         aria-label={t(open ? "console.agentMessage.collapseRaw" : "console.agentMessage.expandRaw", { role: roleLabel })}
         tabIndex={0}
@@ -86,7 +86,7 @@ export function AgentMessage({
         {USER_ROLES.has(role) ? (
           <span
             aria-hidden="true"
-            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ava-bg text-xs font-medium text-ava-fg"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ava-bg text-xs font-normal text-ava-fg"
           >
             {Array.from(roleLabel.trim())[0] ?? "U"}
           </span>
@@ -101,7 +101,7 @@ export function AgentMessage({
         )}
         <span className="min-w-0">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="font-medium text-ink">{roleLabel}</span>
+            <span className="font-normal text-ink">{roleLabel}</span>
             <span className="text-xs font-normal text-sub">{stageLabel}</span>
             <span className="ml-auto flex flex-none items-center gap-2">
               <StageStatusIcon stage={resolvedStage} />

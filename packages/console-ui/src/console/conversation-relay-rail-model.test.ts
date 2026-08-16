@@ -7,6 +7,7 @@ import {
   createConversationRelayCurvePath,
   deriveConversationRelayCapacity,
   deriveConversationRelayExpandedRowHeight,
+  deriveConversationRelayHeightBudget,
   deriveConversationRelayLayout,
   deriveConversationRelayPaths,
   projectConversationRelayEvents,
@@ -68,6 +69,15 @@ describe("conversation relay rail model", () => {
       computeConversationRelayRows(EVENTS, "message-7", 3)
         .map((row) => row.type === "event" ? row.event.id : "omission"),
     ).toEqual(["message-1", "message-7", "message-13"]);
+  });
+
+  it("budgets long rails from their container without filling tall viewports", () => {
+    expect(deriveConversationRelayHeightBudget(160)).toBe(136);
+    expect(deriveConversationRelayHeightBudget(320)).toBe(224);
+    expect(deriveConversationRelayHeightBudget(560)).toBeCloseTo(392);
+    expect(deriveConversationRelayHeightBudget(800)).toBe(480);
+    expect(deriveConversationRelayHeightBudget(1_200)).toBe(480);
+    expect(deriveConversationRelayHeightBudget(Number.NaN)).toBe(0);
   });
 
   it("assigns member lanes by first appearance and grows width from lane count", () => {

@@ -93,7 +93,7 @@ function ProcessTabStory({
         <button
           id="append-process-event"
           type="button"
-          className="absolute left-6 top-6 rounded-md border border-line bg-card px-3 py-2 text-sm text-ink"
+          className="absolute left-6 top-6 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink"
           onClick={() => setExtraEvents((current) => current + 1)}
         >
           追加过程事件

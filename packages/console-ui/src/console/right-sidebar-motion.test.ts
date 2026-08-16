@@ -8,7 +8,7 @@ import {
 } from "./right-sidebar-motion";
 
 describe("right sidebar toggle motion", () => {
-  it("uses 150ms for a complete path", () => {
+  it("uses 220ms for a complete path", () => {
     expect(startRightSidebarToggleMotion(0, 1, 100)).toEqual({
       from: 0,
       to: 1,
@@ -25,7 +25,7 @@ describe("right sidebar toggle motion", () => {
     expect(current).toBeGreaterThan(0);
     expect(current).toBeLessThan(1);
     expect(reopening.from).toBe(current);
-    expect(reopening.duration).toBeCloseTo((1 - current) * 150, 5);
+    expect(reopening.duration).toBeCloseTo((1 - current) * 220, 5);
     expect(rightSidebarToggleComplete(reopening, 60 + reopening.duration)).toBe(true);
   });
 });

@@ -94,19 +94,19 @@ function SettingsGroupCanvas({ initial }: { initial: SettingsJourneyState }): JS
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
       <aside className="flex w-[168px] shrink-0 flex-col border-r border-line bg-card p-3">
-        <div className="px-2.5 py-2 font-display text-base font-semibold tracking-[-0.01em]">
+        <div className="px-2.5 py-2 font-sans text-base font-semibold tracking-[-0.01em]">
           设置
         </div>
         <div className="mt-1 space-y-1 text-sm">
-          <span className="flex h-9 items-center gap-2 rounded-sm bg-sel px-2.5 text-ink">
+          <span className="flex h-9 items-center gap-2 rounded-md bg-sel px-2.5 text-ink">
             <Languages className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             常规
           </span>
-          <span className="flex h-9 items-center gap-2 rounded-sm px-2.5 text-sub">
+          <span className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sub">
             <KeyRound className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             AI 服务商
           </span>
-          <span className="flex h-9 items-center gap-2 rounded-sm px-2.5 text-sub">
+          <span className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sub">
             <Info className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             关于
           </span>

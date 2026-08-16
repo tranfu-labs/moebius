@@ -13,25 +13,25 @@ function MainArea({ children }: { children: ReactNode }): JSX.Element {
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
       <aside className="flex w-[252px] shrink-0 flex-col border-r border-line p-3">
-        <div className="px-2.5 py-2 font-display text-base font-semibold tracking-[-0.01em]">
+        <div className="px-2.5 py-2 font-sans text-base font-semibold tracking-[-0.01em]">
           Moebius
         </div>
         <div className="mt-2 space-y-1 text-sm">
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">＋ 新建对话</div>
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">⌕ 搜索</div>
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sub">◇ Agent 团队</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">＋ 新建对话</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">⌕ 搜索</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sub">◇ Agent 团队</div>
         </div>
-        <div className="mt-4 border-t border-line pt-3 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+        <div className="mt-4 border-t border-line pt-3 text-xs uppercase tracking-[0.06em] text-sub">
           项目
         </div>
-        <div className="mt-2 flex h-8 items-center gap-2 rounded-sm bg-sel px-2 text-sm">开发团队</div>
+        <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-sel px-2 text-sm">开发团队</div>
         <div className="mt-3 border-t border-line pt-3">
-          <div className="flex h-8 items-center gap-2 rounded-sm px-2 text-sm text-sub">⚙ 设置</div>
+          <div className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-sub">⚙ 设置</div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 p-8">
         <div className="mx-auto max-w-3xl">
-          <h1 className="font-display text-xl font-semibold tracking-[-0.01em]">新对话</h1>
+          <h1 className="font-sans text-lg font-semibold tracking-[-0.01em]">新对话</h1>
           <p className="mt-2 text-sm text-sub">描述你的目标，团队会开始推进</p>
           <div className="mt-6">{children}</div>
         </div>
@@ -88,13 +88,13 @@ function ReadyStepScreen({ onBack }: { onBack: () => void }): JSX.Element {
       <section className="flex min-h-0 flex-1 justify-center overflow-y-auto px-6 py-10 max-sm:px-4 max-sm:py-7">
         <div className="flex w-full max-w-[780px] flex-col justify-center">
           <header className="mx-auto w-full max-w-lg text-center">
-            <p className="text-xs font-medium tabular-nums text-hint">
+            <p className="text-xs font-normal tabular-nums text-hint">
               {t("notification.step.progressReady")}
             </p>
-            <h1 className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+            <h1 className="mt-2 text-lg font-semibold leading-tight tracking-[-0.02em] text-ink">
               {t("onboarding.step4ReadyTitle")}
             </h1>
-            <p className="mt-2 text-[13px] leading-5 text-sub">
+            <p className="mt-2 text-sm leading-5 text-sub">
               {t("onboarding.step4ReadySubtitle")}
             </p>
           </header>

@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { FolderTree, RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -14,6 +14,8 @@ import {
   type WorkspaceFileContent,
 } from "@/console/file-diff-view";
 import { useI18n, type Translate } from "@/i18n";
+import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 
 export type WorkspaceDiffData =
   | {
@@ -37,6 +39,7 @@ export type WorkspaceDiffData =
     };
 
 export interface ChangeTabProps {
+  appearance?: OperatorConsoleAppearance;
   sessionId: string;
   workspaceMode: "direct" | "worktree";
   conversationStarted: boolean;
@@ -51,6 +54,7 @@ interface PendingRefresh {
 }
 
 export function ChangeTab({
+  appearance = "default",
   sessionId,
   workspaceMode,
   conversationStarted,
@@ -67,6 +71,7 @@ export function ChangeTab({
   const [contentLoading, setContentLoading] = useState(false);
   const [contentScrollTop, setContentScrollTop] = useState(0);
   const [pendingRefresh, setPendingRefresh] = useState<PendingRefresh | null>(null);
+  const [treeVisible, setTreeVisible] = useState(true);
   const requestGenerationRef = useRef(0);
   const previousWorkingRef = useRef(isWorking);
   const location = workspaceLocationCopy(workspaceMode, t);
@@ -182,7 +187,7 @@ export function ChangeTab({
         <p>{diffUnavailableCopy(diff?.reason ?? "workspace-unavailable", t)}</p>
         <button
           type="button"
-          className="mt-3 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-hover"
+          className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-normal text-ink hover:bg-hover"
           onClick={() => void refresh(true)}
         >
           {t("common.retry")}
@@ -206,7 +211,15 @@ export function ChangeTab({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="change-tab">
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden",
+        appearance === "focused" && "grid grid-cols-[minmax(0,1fr)_180px] grid-rows-[auto_minmax(0,1fr)]",
+        appearance === "focused" && !treeVisible && "grid-cols-[minmax(0,1fr)_0px]",
+      )}
+      data-testid="change-tab"
+    >
+      <div className={appearance === "focused" ? "hidden" : undefined}>
       <ChangeHeader
         isWorking={isWorking}
         locationLabel={location.label}
@@ -214,10 +227,11 @@ export function ChangeTab({
         refreshing={refreshing}
         onRefresh={() => void refresh(false)}
       />
+      </div>
       {pendingRefresh !== null ? (
         <button
           type="button"
-          className="shrink-0 border-b border-line bg-sel px-3 py-2 text-left text-xs font-medium text-accent hover:bg-hover"
+          className="shrink-0 border-b border-line bg-sel px-3 py-2 text-left text-xs font-normal text-accent hover:bg-hover"
           onClick={() => applyDiff(pendingRefresh.diff, pendingRefresh.content)}
         >
           {t("console.changeTab.newChanges")}
@@ -230,7 +244,13 @@ export function ChangeTab({
           setSelectedPath(filePath);
           setContentScrollTop(0);
         }}
-        className="min-h-28 max-h-[42%] shrink-0 border-b border-line py-1"
+        className={appearance === "focused"
+          ? cn(
+              "col-start-2 row-start-2 min-h-0 max-h-none border-l border-line py-1",
+              !treeVisible && "hidden",
+            )
+          : "min-h-28 max-h-[42%] shrink-0 border-b border-line py-1"}
+        appearance={appearance}
       />
       <FileDiffView
         path={selectedPath}
@@ -238,6 +258,19 @@ export function ChangeTab({
         loading={contentLoading}
         scrollTop={contentScrollTop}
         onScrollTopChange={setContentScrollTop}
+        appearance={appearance}
+        pathAction={appearance === "focused" ? (
+          <button
+            type="button"
+            className="absolute right-1.5 top-1/2 grid h-[26px] w-[26px] -translate-y-1/2 place-items-center rounded-md bg-card text-sub transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none active:scale-[0.98]"
+            aria-label={t(treeVisible ? "console.changeTab.hideFileTree" : "console.changeTab.showFileTree")}
+            aria-expanded={treeVisible}
+            title={t(treeVisible ? "console.changeTab.hideFileTree" : "console.changeTab.showFileTree")}
+            onClick={() => setTreeVisible((visible) => !visible)}
+          >
+            <FolderTree className="h-[15px] w-[15px]" strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        ) : null}
       />
     </div>
   );
@@ -261,7 +294,7 @@ function ChangeHeader({
     <div className="shrink-0 border-b border-line px-3 py-3 text-xs leading-5 text-sub">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-medium text-ink">
+          <p className="font-normal text-ink">
             {t("console.changeTab.summary", { location: locationLabel })}
           </p>
           {consequence !== null ? <p className="mt-1">{consequence}</p> : null}
@@ -270,7 +303,7 @@ function ChangeHeader({
         {isWorking ? (
           <button
             type="button"
-            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 font-medium text-ink hover:bg-hover disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-line px-2 py-1 font-normal text-ink hover:bg-hover disabled:opacity-50"
             disabled={refreshing}
             onClick={onRefresh}
           >

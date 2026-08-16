@@ -2,6 +2,8 @@ import * as React from "react";
 import { ChevronRight, Folder, GitBranch, MoreHorizontal, Plus, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { translate, useI18n, type Translate, type TranslationKey } from "@/i18n";
 import {
   deriveProjectStatusDot,
@@ -102,6 +104,7 @@ export interface ConversationSidebarProps {
   projectActionsDisabledReason?: string;
   showProjectPath?: boolean;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }
 
 const statusLabelKey: Record<ConversationSessionStatus, TranslationKey> = {
@@ -181,6 +184,25 @@ interface ProjectPointerGesture {
 const PROJECT_DRAG_DISTANCE_PX = 5;
 const PROJECT_DRAG_DELAY_MS = 150;
 
+function capturePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // Synthetic pointer events (Storybook/tests) do not always register an
+    // active browser pointer. Dragging still works through the row handlers.
+  }
+}
+
+function releasePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    if (element.hasPointerCapture?.(pointerId)) {
+      element.releasePointerCapture?.(pointerId);
+    }
+  } catch {
+    // The browser may have released capture before pointerup/pointercancel.
+  }
+}
+
 export function ConversationSidebar({
   projects,
   dataState = "ready",
@@ -204,7 +226,8 @@ export function ConversationSidebar({
   projectActionsDisabled = false,
   projectActionsDisabledReason,
   showProjectPath = true,
-  className
+  className,
+  appearance = "default",
 }: ConversationSidebarProps): JSX.Element {
   const { t } = useI18n();
   const asideRef = React.useRef<HTMLElement | null>(null);
@@ -305,7 +328,7 @@ export function ConversationSidebar({
     }
     window.clearTimeout(gesture.activationTimer);
     gestureRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    releasePointer(event.currentTarget, event.pointerId);
     if (gesture.activated) {
       const nextOrder = orderProjectIdsForPointer(
         draftProjectOrder ?? gesture.initialOrder,
@@ -364,7 +387,7 @@ export function ConversationSidebar({
           <>
             {pinnedSessions.length > 0 ? (
               <section aria-label={t("console.conversationSidebar.pinned")} className="mb-3">
-                <div className="px-2 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+                <div className="px-2 pb-1 pt-2 text-xs uppercase tracking-[0.06em] text-sub">
                   {t("console.conversationSidebar.pinned")}
                 </div>
                 <div className="space-y-0.5" role="list">
@@ -384,13 +407,14 @@ export function ConversationSidebar({
                       onRenameSession={onRenameSession}
                       onPreview={showPreview}
                       onPreviewEnd={() => setPreview(null)}
+                      appearance={appearance}
                       disabled={disabled}
                     />
                   ))}
                 </div>
               </section>
             ) : null}
-            <div className="flex items-center justify-between px-2 pb-1 pt-2 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+            <div className="flex items-center justify-between px-2 pb-1 pt-2 text-xs uppercase tracking-[0.06em] text-sub">
               <span>{t("console.conversationSidebar.projects")}</span>
               {projectActionsDisabled ? <span role="status">{t("sidebar.updating")}</span> : null}
             </div>
@@ -416,7 +440,7 @@ export function ConversationSidebar({
             ?? (disabled ? disabledReason ?? t("sidebar.projectChanging") : null);
 
           return (
-            <section key={project.id} className="mb-2" aria-label={t("console.conversationSidebar.project", { project: projectName })}>
+            <section key={project.id} className="pb-2 last:pb-0" aria-label={t("console.conversationSidebar.project", { project: projectName })}>
               <div
                 ref={(element) => {
                   if (element === null) {
@@ -428,7 +452,7 @@ export function ConversationSidebar({
                 data-testid="conversation-sidebar-project"
                 data-project-id={project.id}
                 className={cn(
-                  "mb-0.5 flex h-8 min-w-0 cursor-grab touch-none select-none items-center gap-1.5 rounded-lg px-2 hover:bg-hover",
+                  "mb-0.5 flex h-7 min-w-0 cursor-grab touch-none select-none items-center gap-1.5 rounded-md px-2 hover:bg-hover",
                   draggingProjectId === project.id && "cursor-grabbing bg-sel opacity-80",
                 )}
                 onPointerDown={(event) => {
@@ -462,7 +486,7 @@ export function ConversationSidebar({
                   };
                   gesture.activationTimer = window.setTimeout(() => activateGesture(gesture), PROJECT_DRAG_DELAY_MS);
                   gestureRef.current = gesture;
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
+                  capturePointer(event.currentTarget, event.pointerId);
                 }}
                 onPointerMove={(event) => {
                   const gesture = gestureRef.current;
@@ -493,7 +517,7 @@ export function ConversationSidebar({
                   data-testid="conversation-sidebar-project-toggle"
                   data-project-id={project.id}
                   data-status-dot={aggregatedStatus}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -515,7 +539,7 @@ export function ConversationSidebar({
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-[13.5px] font-semibold leading-5" title={projectName}>{projectName}</h2>
+                    <h2 className="truncate text-sm leading-5" title={projectName}>{projectName}</h2>
                     {showProjectPath ? <p className="truncate text-xs text-hint" title={project.path}>{project.path}</p> : null}
                   </div>
                   {!expanded ? <ConversationStatusIndicator status={aggregatedStatus} /> : null}
@@ -572,7 +596,11 @@ export function ConversationSidebar({
                         <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" aria-label={t("console.conversationSidebar.projectActions", { project: projectName })} className="min-w-48">
+                    <DropdownMenuContent
+                      align="end"
+                      aria-label={t("console.conversationSidebar.projectActions", { project: projectName })}
+                      className={operatorFloatingSurfaceClassName(appearance, "min-w-48")}
+                    >
                       {onShowProjectInFolder ? (
                         <DropdownMenuItem onSelect={() => onShowProjectInFolder(project)}>
                           {t("console.conversationSidebar.showInManager")}
@@ -625,6 +653,7 @@ export function ConversationSidebar({
                       onRenameSession={onRenameSession}
                       onPreview={showPreview}
                       onPreviewEnd={() => setPreview(null)}
+                      appearance={appearance}
                       disabled={disabled}
                     />
                   ))}
@@ -636,7 +665,7 @@ export function ConversationSidebar({
           </>
         )}
       </nav>
-      <ConversationPreview preview={preview} />
+      <ConversationPreview preview={preview} appearance={appearance} />
     </aside>
   );
 }
@@ -647,12 +676,12 @@ function ProjectListSkeleton(): JSX.Element {
     <div className="space-y-3 px-2 py-2" aria-label={t("console.conversationSidebar.projectsLoading")} aria-busy="true" data-testid="conversation-sidebar-loading">
       {["first", "second", "third"].map((key, index) => (
         <div key={key} className="animate-pulse space-y-2 motion-reduce:animate-none" aria-hidden="true">
-          <div className="flex h-8 items-center gap-2">
-            <span className="h-3 w-3 rounded-sm bg-line" />
+          <div className="flex h-7 items-center gap-2">
+            <span className="h-3 w-3 rounded-md bg-line" />
             <span className={cn("h-3 rounded bg-line", index === 1 ? "w-24" : "w-32")} />
           </div>
-          <div className="ml-5 h-7 rounded-md bg-line/60" />
-          {index === 0 ? <div className="ml-5 h-7 rounded-md bg-line/40" /> : null}
+          <div className="ml-5 h-7 rounded-lg bg-line/60" />
+          {index === 0 ? <div className="ml-5 h-7 rounded-lg bg-line/40" /> : null}
         </div>
       ))}
     </div>
@@ -662,13 +691,13 @@ function ProjectListSkeleton(): JSX.Element {
 function ProjectListError({ onRetry }: { onRetry?: () => void }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="mx-2 mt-2 rounded-lg border border-line bg-card px-3 py-3" role="alert" data-testid="conversation-sidebar-error">
-      <p className="text-sm font-medium text-ink">{t("console.conversationSidebar.loadFailed")}</p>
+    <div className="mx-2 mt-2 rounded-xl border border-line bg-card px-3 py-3" role="alert" data-testid="conversation-sidebar-error">
+      <p className="text-sm font-normal text-ink">{t("console.conversationSidebar.loadFailed")}</p>
       <p className="mt-1 text-xs leading-5 text-sub">{t("console.conversationSidebar.loadFailedDescription")}</p>
       {onRetry ? (
         <button
           type="button"
-          className="mt-2 h-7 rounded-md border border-line bg-input px-2.5 text-xs font-medium text-ink hover:bg-hover"
+          className="mt-2 h-7 rounded-lg border border-line bg-input px-2.5 text-xs font-normal text-ink hover:bg-hover"
           onClick={onRetry}
         >
           {t("common.retry")}
@@ -680,12 +709,14 @@ function ProjectListError({ onRetry }: { onRetry?: () => void }): JSX.Element {
 
 function ConversationPreview({
   preview,
+  appearance,
 }: {
   preview: {
     session: ConversationSidebarSession;
     project: ConversationSidebarProject;
     top: number;
   } | null;
+  appearance: OperatorConsoleAppearance;
 }): JSX.Element {
   const { t } = useI18n();
   const folderName = preview === null
@@ -706,7 +737,11 @@ function ConversationPreview({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute left-[calc(100%+8px)] top-0 z-50 w-64 rounded-lg border border-line bg-sunken px-3 py-2.5 shadow-lg",
+        operatorFloatingSurfaceClassName(
+          appearance,
+          "pointer-events-none absolute left-[calc(100%+8px)] top-0 z-50 w-64 rounded-xl px-3 py-2.5",
+        ),
+        appearance === "default" && "border border-line bg-sunken shadow-lg",
         "transition-[transform,opacity] duration-150 ease-out motion-reduce:transition-none",
         preview === null ? "invisible opacity-0" : "visible opacity-100",
       )}
@@ -715,7 +750,7 @@ function ConversationPreview({
       data-visible={preview === null ? "false" : "true"}
       aria-hidden={preview === null}
     >
-      <p className="truncate text-sm font-semibold text-ink">
+      <p className="truncate text-sm text-ink">
         {preview?.session.title ?? ""}
       </p>
       <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-sub">
@@ -746,6 +781,7 @@ function SessionRow({
   onRenameSession,
   onPreview,
   onPreviewEnd,
+  appearance,
   disabled
 }: {
   project: ConversationSidebarProject;
@@ -765,6 +801,7 @@ function SessionRow({
     element: HTMLElement,
   ) => void;
   onPreviewEnd: () => void;
+  appearance: OperatorConsoleAppearance;
   disabled: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -805,14 +842,15 @@ function SessionRow({
     }
   };
   return (
-    <div className="group relative flex h-8 min-w-0 items-center" data-testid="conversation-sidebar-session-row">
+    <div className="group relative flex h-7 min-w-0 items-center" data-testid="conversation-sidebar-session-row">
       <button
         type="button"
         data-testid="conversation-sidebar-session"
         data-session-id={session.id}
         data-status-dot={status}
         className={cn(
-          "grid h-8 w-full grid-cols-[minmax(0,1fr)_18px] items-center gap-1.5 rounded-lg pl-7 pr-2 text-left text-sub hover:bg-hover hover:text-ink",
+          "grid h-7 w-full grid-cols-[minmax(0,1fr)_18px] items-center gap-1.5 rounded-md pl-7 pr-2 text-left hover:bg-hover",
+          appearance === "focused" ? "text-ink" : "text-sub hover:text-ink",
           selected ? "bg-sel" : "bg-transparent"
         )}
         aria-current={selected ? "page" : undefined}
@@ -841,7 +879,7 @@ function SessionRow({
       >
         <span className="min-w-0">
           <span
-            className="block truncate text-[13.5px] font-normal leading-4"
+            className="block truncate text-sm font-normal leading-4"
             data-testid="conversation-sidebar-session-title"
           >
             {session.title}
@@ -861,7 +899,7 @@ function SessionRow({
             <button
               type="button"
               className={cn(
-                "absolute right-1 flex h-6 w-6 items-center justify-center rounded-md bg-canvas text-sub opacity-0 hover:bg-hover hover:text-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100",
+                "absolute right-1 flex h-6 w-6 items-center justify-center rounded-lg bg-canvas text-sub opacity-0 hover:bg-hover hover:text-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent group-hover:opacity-100 group-focus-within:opacity-100",
                 menuOpen && "opacity-100",
               )}
               aria-label={t("console.conversationSidebar.conversationMenu", { title: session.title })}
@@ -874,7 +912,7 @@ function SessionRow({
           <DropdownMenuContent
             align="end"
             aria-label={t("console.conversationSidebar.conversationActions", { title: session.title })}
-            className="min-w-32"
+            className={operatorFloatingSurfaceClassName(appearance, "min-w-32")}
             onCloseAutoFocus={(event) => {
               if (menuReturnFocusRef.current !== null) {
                 event.preventDefault();
@@ -985,8 +1023,9 @@ function SessionRow({
       {copyFeedback !== null ? (
         <span
           className={cn(
-            "pointer-events-none absolute right-8 z-20 whitespace-nowrap rounded-md border bg-card px-2 py-1 text-xs",
+            "pointer-events-none absolute right-8 z-20 whitespace-nowrap rounded-lg border bg-card px-2 py-1 text-xs",
             copyFeedback === "success" ? "border-line text-ink" : "border-danger/40 text-danger",
+            appearance === "focused" && copyFeedback === "success" && operatorFloatingSurfaceClassName(appearance),
           )}
           role={copyFeedback === "success" ? "status" : "alert"}
         >
@@ -995,7 +1034,7 @@ function SessionRow({
       ) : null}
       {mutationError !== null ? (
         <span
-          className="absolute right-0 top-8 z-40 max-w-64 rounded-md border border-danger/40 bg-sunken px-2 py-1 text-xs text-danger"
+          className="absolute right-0 top-8 z-40 max-w-64 rounded-lg border border-danger/40 bg-sunken px-2 py-1 text-xs text-danger"
           role="alert"
         >
           {mutationError}
@@ -1003,15 +1042,18 @@ function SessionRow({
       ) : null}
       {renameOpen ? (
         <div
-          className="absolute left-2 top-8 z-50 w-60 rounded-md border border-line bg-sunken p-3"
+          className={operatorFloatingSurfaceClassName(
+            appearance,
+            "absolute left-2 top-8 z-50 w-60 rounded-lg border border-line bg-sunken p-3",
+          )}
           role="dialog"
           aria-label={t("console.conversationSidebar.renameConversation")}
         >
-          <label className="block text-xs font-medium text-sub">
+          <label className="block text-xs font-normal text-sub">
             {t("console.conversationSidebar.conversationName")}
             <input
               autoFocus
-              className="mt-1 h-8 w-full rounded-sm border border-line bg-input px-2 text-sm text-ink outline-none focus:border-accent"
+              className="mt-1 h-8 w-full rounded-md border border-line bg-input px-2 text-sm text-ink outline-none focus:border-accent"
               disabled={mutationPending}
               value={renameValue}
               onChange={(event) => setRenameValue(event.target.value)}
@@ -1023,7 +1065,7 @@ function SessionRow({
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
-              className="h-7 rounded-sm px-2 text-xs text-sub hover:bg-hover"
+              className="h-7 rounded-md px-2 text-xs text-sub hover:bg-hover"
               disabled={mutationPending}
               onClick={() => setRenameOpen(false)}
             >
@@ -1031,7 +1073,7 @@ function SessionRow({
             </button>
             <button
               type="button"
-              className="h-7 rounded-sm bg-accent px-2 text-xs font-medium text-white disabled:opacity-40"
+              className="h-7 rounded-md bg-accent px-2 text-xs font-normal text-white disabled:opacity-40"
               disabled={mutationPending || renameValue.trim() === ""}
               onClick={() => {
                 setMutationPending(true);

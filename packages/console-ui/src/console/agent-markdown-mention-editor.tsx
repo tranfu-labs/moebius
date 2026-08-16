@@ -449,7 +449,7 @@ export function AgentMarkdownMentionEditor({
           id={listboxId}
           role="listbox"
           aria-label={t("console.mentionEditor.completions")}
-          className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-md border border-line bg-sunken p-1.5"
+          className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-lg border border-line bg-sunken p-1.5"
         >
           {matches.map((member, index) => (
             <button
@@ -459,7 +459,7 @@ export function AgentMarkdownMentionEditor({
               role="option"
               aria-selected={index === activeIndex}
               className={cn(
-                "flex w-full items-center justify-between gap-4 rounded-md px-2.5 py-2 text-left hover:bg-hover",
+                "flex w-full items-center justify-between gap-4 rounded-lg px-2.5 py-2 text-left hover:bg-hover",
                 index === activeIndex && "bg-sel",
               )}
               onMouseDown={(event) => {
@@ -467,7 +467,7 @@ export function AgentMarkdownMentionEditor({
                 selectMember(member);
               }}
             >
-              <span className="truncate text-sm font-medium text-ink">{member.displayName || `@${member.slug}`}</span>
+              <span className="truncate text-sm font-normal text-ink">{member.displayName || `@${member.slug}`}</span>
               <span className="shrink-0 text-xs text-hint">@{member.slug}</span>
             </button>
           ))}

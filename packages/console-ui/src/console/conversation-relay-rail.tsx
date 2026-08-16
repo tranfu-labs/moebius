@@ -17,18 +17,25 @@ import {
   computeConversationRelayRows,
   deriveConversationRelayCapacity,
   deriveConversationRelayExpandedRowHeight,
+  deriveConversationRelayHeightBudget,
   deriveConversationRelayLayout,
   deriveConversationRelayPaths,
   type ConversationRelayEvent,
 } from "@/console/conversation-relay-rail-model";
 import { identityToken } from "@/console/role-tag";
 import { cn } from "@/lib/utils";
+import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
+import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n } from "@/i18n";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/ui/popover";
+
+const RELAY_BAND_HORIZONTAL_INSET = 4;
+const RELAY_BAND_VERTICAL_INSET = 2;
+const RELAY_PANEL_BORDER_WIDTH = 1;
 
 export interface ConversationRelayRailProps {
   events: readonly ConversationRelayEvent[];
@@ -37,6 +44,7 @@ export interface ConversationRelayRailProps {
   onActivate: (event: ConversationRelayEvent) => void;
   onBrowse?: (event: ConversationRelayEvent) => void;
   className?: string;
+  appearance?: OperatorConsoleAppearance;
 }
 
 export function ConversationRelayRail({
@@ -46,12 +54,14 @@ export function ConversationRelayRail({
   onActivate,
   onBrowse,
   className,
+  appearance = "default",
 }: ConversationRelayRailProps): JSX.Element | null {
   const { t } = useI18n();
+  const hasEvents = events.length > 0;
   const [expanded, setExpanded] = useState(false);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [browseId, setBrowseId] = useState(currentEventId ?? events.at(-1)?.id ?? "");
-  const [viewportHeight, setViewportHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -63,16 +73,25 @@ export function ConversationRelayRail({
     }
   }, [currentEventId, events, expanded]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!hasEvents) {
+      setViewportHeight(null);
+      return;
+    }
     const viewport = viewportRef.current;
     if (viewport === null) return;
-    const update = () => setViewportHeight(Math.round(viewport.getBoundingClientRect().height));
+    const update = () => {
+      const nextHeight = Math.round(viewport.getBoundingClientRect().height);
+      if (nextHeight <= 0) return;
+      setViewportHeight((currentHeight) =>
+        currentHeight === nextHeight ? currentHeight : nextHeight);
+    };
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [hasEvents]);
 
   useEffect(() => () => {
     if (closeTimerRef.current !== null) {
@@ -80,7 +99,9 @@ export function ConversationRelayRail({
     }
   }, []);
 
-  const capacity = deriveConversationRelayCapacity(viewportHeight);
+  const measuredViewportHeight = viewportHeight ?? 0;
+  const railHeightBudget = deriveConversationRelayHeightBudget(measuredViewportHeight);
+  const capacity = deriveConversationRelayCapacity(railHeightBudget);
   const focusId = browseId || currentEventId;
   const rows = useMemo(
     () => computeConversationRelayRows(events, focusId, capacity),
@@ -91,7 +112,7 @@ export function ConversationRelayRail({
     [containerWidth, events],
   );
   const expandedRowHeight = deriveConversationRelayExpandedRowHeight(
-    viewportHeight,
+    railHeightBudget,
     rows.length,
   );
   const rowHeight = expanded
@@ -99,7 +120,11 @@ export function ConversationRelayRail({
     : CONVERSATION_RELAY_COLLAPSED_ROW_HEIGHT;
   const railHeight = rows.length * rowHeight;
   const expandedRailHeight = rows.length * expandedRowHeight;
-  const stageTop = Math.max(0, (viewportHeight - railHeight) / 2);
+  const stageTop = Math.max(0, (measuredViewportHeight - railHeight) / 2);
+  const expandedStageTop = Math.max(
+    0,
+    (measuredViewportHeight - expandedRailHeight) / 2,
+  );
   const paths = useMemo(
     () => deriveConversationRelayPaths(events, rows, layout, expandedRowHeight),
     [events, expandedRowHeight, layout, rows],
@@ -135,7 +160,7 @@ export function ConversationRelayRail({
     return () => viewport.removeEventListener("wheel", handleWheel);
   }, [browse, events, focusId]);
 
-  if (events.length === 0) return null;
+  if (!hasEvents) return null;
 
   const cancelClose = () => {
     if (closeTimerRef.current !== null) {
@@ -164,7 +189,9 @@ export function ConversationRelayRail({
     : conversationRelayEventColor(inspectedEvent);
 
   return (
-    <Popover open={inspectedEvent !== undefined && inspectedRowIndex >= 0}>
+    <Popover
+      open={viewportHeight !== null && inspectedEvent !== undefined && inspectedRowIndex >= 0}
+    >
       <div
         ref={viewportRef}
         className={cn(
@@ -175,8 +202,10 @@ export function ConversationRelayRail({
         data-container-width={containerWidth}
         data-expanded={expanded ? "true" : "false"}
         data-expanded-width={layout.expandedWidth}
+        data-height-budget={railHeightBudget}
         data-row-height={rowHeight}
         data-testid="conversation-relay-rail"
+        data-viewport-measured={viewportHeight === null ? "false" : "true"}
         onMouseEnter={() => {
           cancelClose();
           setExpanded(true);
@@ -184,32 +213,35 @@ export function ConversationRelayRail({
         onMouseLeave={scheduleClose}
         style={style}
       >
-        <nav
-          ref={stageRef}
-          aria-label={t("console.relayRail.label")}
-          className={cn(
-            "pointer-events-auto absolute left-0 overflow-visible rounded-[8px] border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
-            expanded
-              ? "border-line bg-sunken"
-              : "border-transparent bg-transparent",
-          )}
-          data-motion-origin="left"
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
-          }}
-          onFocus={() => {
-            cancelClose();
-            setExpanded(true);
-          }}
-          style={{
-            height: railHeight,
-            top: stageTop,
-            transformOrigin: "left center",
-            width: expanded
-              ? layout.expandedWidth
-              : CONVERSATION_RELAY_COLLAPSED_WIDTH,
-          }}
-        >
+        {viewportHeight !== null ? (
+          <nav
+            ref={stageRef}
+            aria-label={t("console.relayRail.label")}
+            className={cn(
+              "pointer-events-auto absolute left-0 overflow-visible rounded-md border transition-[width,height,top,background-color,border-color] duration-200 ease-enter motion-reduce:transition-none",
+              expanded
+                ? appearance === "focused"
+                  ? "border-line bg-[var(--focused-side-surface)]"
+                  : "border-line bg-sunken"
+                : "border-transparent bg-transparent",
+            )}
+            data-motion-origin="left"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) scheduleClose();
+            }}
+            onFocus={() => {
+              cancelClose();
+              setExpanded(true);
+            }}
+            style={{
+              height: railHeight,
+              top: stageTop,
+              transformOrigin: "left center",
+              width: expanded
+                ? layout.expandedWidth
+                : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+            }}
+          >
           <svg
             aria-hidden="true"
             className={cn(
@@ -244,12 +276,16 @@ export function ConversationRelayRail({
                 style={{
                   opacity: expanded ? (emphasized ? 1 : 0.85) : 0,
                   strokeDashoffset: expanded ? 0 : 1,
-                  transition: [
-                    "stroke-dashoffset 260ms var(--ease-enter)",
-                    "opacity 150ms var(--ease)",
-                    "stroke-width 150ms var(--ease)",
-                  ].join(", "),
-                  transitionDelay: expanded
+                  transition: appearance === "focused"
+                    ? "opacity 100ms var(--ease), stroke-width 120ms var(--ease)"
+                    : [
+                        "stroke-dashoffset 260ms var(--ease-enter)",
+                        "opacity 150ms var(--ease)",
+                        "stroke-width 150ms var(--ease)",
+                      ].join(", "),
+                  transitionDelay: appearance === "focused"
+                    ? "0ms"
+                    : expanded
                     ? `${String(Math.min(pathIndex * 18, 126))}ms`
                     : "0ms",
                 }}
@@ -266,7 +302,7 @@ export function ConversationRelayRail({
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
                 aria-label={t("console.relayRail.omitted", { count: row.count })}
                 className={cn(
-                  "absolute left-0 z-[1] flex items-center text-[8px] tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
+                  "absolute left-0 z-[1] flex items-center text-meta tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",
                 )}
                 data-testid="relay-omission"
@@ -293,16 +329,18 @@ export function ConversationRelayRail({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "pointer-events-none absolute left-0 z-[1] rounded-md transition-[width,height,top,background-color] duration-150 motion-reduce:transition-none",
+                  "pointer-events-none absolute z-[1] rounded-md transition-[left,width,height,top,background-color] duration-150 motion-reduce:transition-none",
                   inspected ? "bg-hover" : "bg-transparent",
                 )}
                 data-testid={`relay-band-${event.id}`}
                 style={{
-                  height: rowHeight,
-                  top: rowIndex * rowHeight,
-                  width: expanded
+                  height: rowHeight - RELAY_BAND_VERTICAL_INSET * 2,
+                  left: RELAY_BAND_HORIZONTAL_INSET - RELAY_PANEL_BORDER_WIDTH,
+                  top: rowIndex * rowHeight + RELAY_BAND_VERTICAL_INSET,
+                  width: (expanded
                     ? layout.expandedWidth
-                    : CONVERSATION_RELAY_COLLAPSED_WIDTH,
+                    : CONVERSATION_RELAY_COLLAPSED_WIDTH)
+                    - RELAY_BAND_HORIZONTAL_INSET * 2,
                 }}
               />
               <button
@@ -337,7 +375,6 @@ export function ConversationRelayRail({
                   cancelClose();
                   setInspectedId(event.id);
                 }}
-                onMouseLeave={scheduleClose}
                 style={{
                   height: rowHeight,
                   top: rowIndex * rowHeight,
@@ -395,26 +432,42 @@ export function ConversationRelayRail({
             </Fragment>
           );
         })}
-        {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
-          <PopoverAnchor asChild>
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute left-0 transition-[top,height] duration-200 ease-enter motion-reduce:transition-none"
-              data-testid="relay-preview-anchor"
-              style={{
-                height: rowHeight,
-                top: inspectedRowIndex * rowHeight,
-                width: layout.expandedWidth,
-              }}
-            />
-          </PopoverAnchor>
+          </nav>
         ) : null}
-        </nav>
+        {viewportHeight !== null ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0"
+            data-testid="relay-preview-anchor-layer"
+            style={{
+              height: expandedRailHeight,
+              top: expandedStageTop,
+              width: layout.expandedWidth,
+            }}
+          >
+            {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
+              <PopoverAnchor asChild>
+                <span
+                  className="pointer-events-none absolute left-0 transition-[top,height] duration-200 ease-enter motion-reduce:transition-none"
+                  data-testid="relay-preview-anchor"
+                  style={{
+                    height: expandedRowHeight,
+                    top: inspectedRowIndex * expandedRowHeight,
+                    width: layout.expandedWidth,
+                  }}
+                />
+              </PopoverAnchor>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      {inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
+      {viewportHeight !== null && inspectedEvent !== undefined && inspectedRowIndex >= 0 ? (
         <PopoverContent
           align="center"
-          className="w-[240px] max-w-[calc(100vw-24px)] rounded-sm px-3 py-2.5"
+          className={operatorFloatingSurfaceClassName(
+            appearance,
+            "w-[240px] max-w-[calc(100vw-24px)] rounded-md px-3 py-2.5",
+          )}
           collisionPadding={12}
           data-relay-side-offset="12"
           data-testid="relay-event-preview"
@@ -431,7 +484,7 @@ export function ConversationRelayRail({
             className="motion-safe:animate-[relay-preview-content-in_160ms_var(--ease-enter)]"
             data-testid="relay-preview-content"
           >
-            <p className="flex items-center gap-1.5 text-[11px] text-hint">
+            <p className="flex items-center gap-1.5 text-meta text-hint">
               <span
                 aria-hidden="true"
                 className="h-[7px] w-[7px] rounded-full"

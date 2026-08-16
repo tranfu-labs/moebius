@@ -27,11 +27,6 @@
     --destructive: var(--danger);
     --destructive-foreground: var(--accent-fg);
     --ring: var(--accent);
-    --radius: 14px;
-    /* 标题/品牌用展示字体：Inter Tight 优先，未自托管时回落 InterVar */
-    --font-display:
-      "Inter Tight", "Inter", "InterVar", ui-sans-serif, system-ui,
-      -apple-system, "PingFang SC", sans-serif;
     color-scheme: light;
   }
 
@@ -180,7 +175,7 @@
   }
 
   .markdown-message [data-streamdown="heading-3"] {
-    @apply mb-2 mt-3 text-base font-semibold;
+    @apply mb-2 mt-3 text-[16px] font-semibold;
   }
 
   .markdown-message [data-streamdown="blockquote"] {

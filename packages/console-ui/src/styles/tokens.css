@@ -2,8 +2,9 @@
    Design tokens: dark-first dashboard baseline. A five-step
    neutral ladder (#101010 → #171717 → #1c1c1c → #242424 → #2d2d2d)
    carries all surfaces; sidebar shares the canvas color; layering
-   relies on luminance steps and a single 1px border — zero
-   shadows, zero gradients. Indigo #5E6AD2 remains the single
+   relies on luminance steps and a single 1px border; the focused
+   OperatorConsole appearance adds named elevation tokens, while
+   gradients remain forbidden. Indigo #5E6AD2 remains the single
    interaction accent in both themes (PRD mandate); a status hue
    family (amber / blue / violet / neutral) powers status pills;
    green/red remain reserved for verdict and danger facts (the
@@ -56,8 +57,27 @@
   --status-pass-line: rgba(7, 124, 21, 0.3);
   --status-danger-bg: #F9EFF0;
   --status-danger-line: rgba(203, 17, 36, 0.28);
-  /* 零阴影：浮层只靠 1px 描边分层 */
+  /* 默认浮层无阴影；focused 操作台只通过下列命名令牌获得层级。 */
   --shadow-pop: none;
+  --shadow-panel: 0 1px 2px rgba(30, 31, 38, 0.035), 0 8px 20px -20px rgba(30, 31, 38, 0.16);
+  --shadow-composer: 0 1px 2px rgba(30, 31, 38, 0.045), 0 8px 20px -18px rgba(30, 31, 38, 0.19);
+  --shadow-composer-focus: 0 0 0 3px rgba(35, 36, 44, 0.035), 0 1px 2px rgba(30, 31, 38, 0.055), 0 8px 20px -18px rgba(30, 31, 38, 0.19);
+  --shadow-pending: 0 -1px 2px rgba(30, 31, 38, 0.025), 0 -10px 22px -20px rgba(30, 31, 38, 0.18);
+  --focused-canvas: #FFFFFF;
+  --focused-rail: #FCFCFC;
+  --focused-card: #FFFFFF;
+  --focused-side-surface: #FCFCFC;
+  --focused-interaction: #EFF0F0;
+  --focused-sunken: #EFF0F0;
+  --focused-input: #FFFFFF;
+  --focused-ink: #202126;
+  --focused-sub: #686A73;
+  --focused-hint: #92949D;
+  --focused-line: rgba(20, 22, 26, 0.07);
+  --focused-line-strong: rgba(35, 36, 44, 0.1);
+  --focused-accent: #7565D6;
+  --focused-accent-hover: #6655C6;
+  --focused-floating-surface: #FFFFFF;
   --ring-focus: 0 0 0 2px var(--accent);
   --dur-fast: 100ms;
   --dur: 150ms;
@@ -126,6 +146,25 @@
     --status-danger-bg: #321C1E;
     --status-danger-line: rgba(247, 35, 50, 0.35);
     --shadow-pop: none;
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 24px -22px rgba(0, 0, 0, 0.48);
+    --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
+    --shadow-composer-focus: 0 0 0 3px rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
+    --shadow-pending: 0 -1px 2px rgba(0, 0, 0, 0.16), 0 -10px 22px -20px rgba(0, 0, 0, 0.44);
+    --focused-canvas: #27282D;
+    --focused-rail: #1D1E22;
+    --focused-card: #27282D;
+    --focused-side-surface: #27282D;
+    --focused-interaction: #3B3C43;
+    --focused-sunken: #232429;
+    --focused-input: #313239;
+    --focused-ink: #F4F4F6;
+    --focused-sub: #B7B8C0;
+    --focused-hint: #81838C;
+    --focused-line: rgba(255, 255, 255, 0.06);
+    --focused-line-strong: rgba(255, 255, 255, 0.1);
+    --focused-accent: #AA9CF2;
+    --focused-accent-hover: #B9ADF8;
+    --focused-floating-surface: #34353B;
   }
 }
 
@@ -166,4 +205,23 @@
   --status-danger-bg: #321C1E;
   --status-danger-line: rgba(247, 35, 50, 0.35);
   --shadow-pop: none;
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 24px -22px rgba(0, 0, 0, 0.48);
+  --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
+  --shadow-composer-focus: 0 0 0 3px rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.24), 0 8px 20px -18px rgba(0, 0, 0, 0.35);
+  --shadow-pending: 0 -1px 2px rgba(0, 0, 0, 0.16), 0 -10px 22px -20px rgba(0, 0, 0, 0.44);
+  --focused-canvas: #27282D;
+  --focused-rail: #1D1E22;
+  --focused-card: #27282D;
+  --focused-side-surface: #27282D;
+  --focused-interaction: #3B3C43;
+  --focused-sunken: #232429;
+  --focused-input: #313239;
+  --focused-ink: #F4F4F6;
+  --focused-sub: #B7B8C0;
+  --focused-hint: #81838C;
+  --focused-line: rgba(255, 255, 255, 0.06);
+  --focused-line-strong: rgba(255, 255, 255, 0.1);
+  --focused-accent: #AA9CF2;
+  --focused-accent-hover: #B9ADF8;
+  --focused-floating-surface: #34353B;
 }

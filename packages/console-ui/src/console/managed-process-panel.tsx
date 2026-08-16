@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import type { Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 export interface ManagedProcessPanelItem {
   id: string;
@@ -50,7 +50,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="window-no-drag z-20 ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-md px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="window-no-drag z-20 ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           aria-label={`${t("console.managedProcesses.open")} · ${label}`}
           aria-expanded={open}
           data-testid="managed-process-indicator"
@@ -59,19 +59,19 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
           <span className="truncate">{label}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="window-no-drag w-[min(420px,calc(100vw-24px))] p-0" data-testid="managed-process-panel">
-        <header className="flex h-10 items-center border-b border-line px-3 text-sm font-medium">{t("console.managedProcesses.title")}</header>
+      <AnimatedPopoverContent align="end" className="window-no-drag w-[min(420px,calc(100vw-24px))] p-0" data-testid="managed-process-panel">
+        <header className="flex h-10 items-center border-b border-line px-3 text-sm font-normal">{t("console.managedProcesses.title")}</header>
         {controller.state.message !== undefined ? <p className="border-b border-line px-3 py-2 text-xs text-danger">{controller.state.message}</p> : null}
         <div className="max-h-[420px] overflow-y-auto p-2">
           {items.map((item) => {
             const log = controller.logs[item.id];
             const pending = controller.pendingIds.has(item.id);
             return (
-              <section key={item.id} className="rounded-md border border-line bg-card p-3" data-testid={`managed-process-${item.id}`}>
+              <section key={item.id} className="rounded-lg border border-line bg-card p-3" data-testid={`managed-process-${item.id}`}>
                 <div className="flex items-start gap-2">
                   <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full bg-sub", item.state === "ready" && "bg-accent", item.state === "unhealthy" && "bg-danger")} aria-hidden="true" />
                   <div className="min-w-0 flex-1">
-                    <strong className="block truncate text-sm font-medium">{item.label}</strong>
+                    <strong className="block truncate text-sm font-normal">{item.label}</strong>
                     <span className="text-xs text-sub">{stateLabel(item.state, t)}</span>
                   </div>
                   {item.endpoint !== null ? (
@@ -85,7 +85,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
                 ) : null}
                 {log?.status === "ready" ? (
                   <>
-                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-sunken p-2 text-[11px] leading-4 text-sub">{`${log.stdout}${log.stderr}` || t("console.managedProcesses.noLogs")}</pre>
+                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-sunken p-2 text-meta leading-4 text-sub">{`${log.stdout}${log.stderr}` || t("console.managedProcesses.noLogs")}</pre>
                     {log.truncated ? <p className="mt-1 text-xs text-sub">{t("console.managedProcesses.logsTruncated")}</p> : null}
                     {log.message !== undefined ? <p className="mt-1 text-xs text-danger">{log.message}</p> : null}
                   </>
@@ -112,7 +112,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
             </button>
           </footer>
         ) : null}
-      </PopoverContent>
+      </AnimatedPopoverContent>
     </Popover>
   );
 }

@@ -8,6 +8,7 @@ import {
   MIN_SIDEBAR_WIDTH_PX,
   NARROW_WINDOW_WIDTH_PX,
   OperatorConsole,
+  ResponsiveOperatorConsole,
   resolveNewConversationAgentTeamKey,
   type OperatorConsoleProps,
   type OperatorMessage,
@@ -30,6 +31,26 @@ function toolbarRow0(node: HTMLElement): HTMLElement {
 }
 
 describe("OperatorConsole", () => {
+  it("falls back to the window width when media queries are unavailable", () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: undefined,
+    });
+    setWindowWidth(900);
+    try {
+      render(<ResponsiveOperatorConsole {...baseProps({ appearance: "focused", rightSidebarOpen: true })} />);
+
+      expect(screen.getByTestId("operator-content-shell")).toBeInTheDocument();
+      expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
   it("keeps the composer editable while a host-provided submission block disables send", () => {
     const onSend = vi.fn();
     renderConsole({
@@ -91,6 +112,27 @@ describe("OperatorConsole", () => {
     expect(screen.queryByTestId("right-sidebar")).not.toBeInTheDocument();
   });
 
+  it("reveals the split sidebar through the same flex boundary that contracts main", async () => {
+    renderConsole();
+
+    const main = screen.getByTestId("operator-main");
+    const shell = screen.getByTestId("operator-content-shell");
+    expect(shell).toHaveClass("flex");
+    expect(main).toHaveClass("flex-1");
+    expect(main.style.width).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "显示右侧栏" }));
+
+    const rightSidebar = screen.getByTestId("right-sidebar");
+    expect(rightSidebar).toHaveAttribute("data-motion-state", "opening");
+    expect(rightSidebar).toHaveStyle({ width: "0px" });
+    expect(main.style.width).toBe("");
+
+    await waitFor(() => {
+      expect(rightSidebar.style.width).not.toBe("0px");
+    });
+  });
+
   it("renders the fixed sidebar skeleton around the only scrolling project region", () => {
     renderConsole();
 
@@ -126,6 +168,8 @@ describe("OperatorConsole", () => {
     for (const [index, entry] of appEntries.entries()) {
       expect(entry).toHaveAttribute("aria-label", ["新建对话", "搜索", "Agent 团队"][index]);
       expect(entry).toHaveAttribute("title", ["新建对话", "搜索", "Agent 团队"][index]);
+      expect(entry).toHaveClass("h-7");
+      expect(entry).not.toHaveClass("h-[34px]");
     }
     expect(projectHeading).toBeVisible();
     expect(screen.getByRole("button", { name: "重新查看引导" })).toBeVisible();
@@ -1734,6 +1778,7 @@ describe("OperatorConsole", () => {
       reason: null,
     }));
     renderConsole({
+      appearance: "focused",
       selectedSession: { ...sessions[0], status: "idle", runningCount: 0, lastMessageMentionsAgent: false },
       messages: [message({ id: 2, speaker: "agent", role: "dev", body: "完成实现" })],
       workspaceDiff: { available: true, fileCount: 1, reason: null },
@@ -1744,6 +1789,12 @@ describe("OperatorConsole", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
 
     const panel = await screen.findByTestId("change-tab");
+    expect(screen.getByTestId("main-role-composer").querySelector('[data-layout-variant="main"]')).toHaveClass(
+      "bg-input",
+      "shadow-composer",
+    );
+    expect(screen.getByTestId("right-sidebar-surface")).toHaveClass("bg-card");
+    expect(panel).toHaveClass("grid", "grid-cols-[minmax(0,1fr)_180px]");
     expect(within(panel).getByText("这段对话期间，项目发生了这些改动（独立工作空间）。")).toBeVisible();
     expect(within(panel).getByText("这些改动在一份隔离副本里，你的项目文件夹没有被动过。")).toBeVisible();
     expect(within(panel).getByTitle("src/app.ts")).toBeVisible();
@@ -1864,21 +1915,22 @@ describe("OperatorConsole", () => {
     expect(onAnalyzeConversation).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the dashboard user message in a bordered 75 percent right lane", () => {
+  it("keeps the dashboard user message in a bordered 75 percent right lane without a redundant avatar", () => {
     renderConsole();
 
     const userMessage = screen.getByTestId("timeline-message-1");
     const bubble = userMessage.querySelector(".max-w-\\[75\\%\\]");
     expect(bubble).toHaveClass(
       "max-w-[75%]",
-      "rounded-[10px]",
+      "rounded-lg",
       "border",
       "border-line",
       "bg-card",
       "px-3",
       "py-2",
     );
-    expect(userMessage.querySelector(".h-6.w-6")).toHaveClass("h-6", "w-6");
+    expect(within(userMessage).getByText("你")).toBeVisible();
+    expect(userMessage.querySelector(".h-6.w-6")).toBeNull();
   });
 
   it("opens an explicit Markdown file reference in a focused right-sidebar detail", async () => {
@@ -2975,7 +3027,7 @@ describe("OperatorConsole", () => {
       ],
       memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
     } satisfies Partial<OperatorConsoleProps>;
-    const { rerender } = renderConsole(relayProps);
+    const { rerender } = renderConsoleWithMeasuredRelay(relayProps);
 
     const slot = screen.getByTestId("main-conversation-relay-slot");
     const rail = within(slot).getByTestId("conversation-relay-rail");
@@ -3020,6 +3072,25 @@ describe("OperatorConsole", () => {
     expect(within(screen.getByTestId("operator-sidebar")).queryByTestId(
       "conversation-relay-rail",
     )).not.toBeInTheDocument();
+  });
+
+  it("passes focused appearance to the main conversation relay rail", () => {
+    renderConsoleWithMeasuredRelay({
+      appearance: "focused",
+      messages: [
+        message({ id: 1, speaker: "user", role: null, body: "请开始" }),
+        message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
+      ],
+      memberIdentities: [{ slug: "dev", displayName: "开发工程师" }],
+    });
+
+    const rail = screen.getByTestId("conversation-relay-rail");
+    fireEvent.mouseEnter(rail);
+
+    expect(screen.getByRole("navigation", { name: "当前主会话消息目录" })).toHaveClass(
+      "border-line",
+      "bg-[var(--focused-side-surface)]",
+    );
   });
 
   it("keeps top, middle, and bottom Agent audit avatars clickable beside the expanded relay", async () => {
@@ -3068,7 +3139,7 @@ describe("OperatorConsole", () => {
   });
 
   it("keeps the timeline position unchanged when a relay target disappears", () => {
-    renderConsole({
+    renderConsoleWithMeasuredRelay({
       messages: [
         message({ id: 1, speaker: "user", role: null, body: "请开始" }),
         message({ id: 2, speaker: "agent", role: "dev", body: "已经开始" }),
@@ -3545,6 +3616,23 @@ async function openProjectMenu(projectName: string): Promise<void> {
 
 function renderConsole(overrides: Partial<OperatorConsoleProps> = {}) {
   return render(<OperatorConsole {...baseProps(overrides)} />);
+}
+
+function renderConsoleWithMeasuredRelay(overrides: Partial<OperatorConsoleProps> = {}) {
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.dataset.testid === "conversation-relay-rail") {
+        return DOMRect.fromRect({ height: 400, width: 44 });
+      }
+      return originalGetBoundingClientRect.call(this);
+    },
+  );
+  try {
+    return renderConsole(overrides);
+  } finally {
+    bounds.mockRestore();
+  }
 }
 
 function renderControlledConsole(overrides: Partial<OperatorConsoleProps> = {}) {

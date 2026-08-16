@@ -12,7 +12,7 @@ import { identityToken } from "@/console/identity";
 import type { ExecutionEngine } from "@/console/provider-mark";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
+import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 /** Six per row: the pool divides evenly, so the grid never ends on a ragged partial row. */
 const COLUMNS = 6;
@@ -80,7 +80,7 @@ export function AgentPortraitPicker({
         {trigger}
       </PopoverTrigger>
       {/* 352px is what leaves the selection ring a 2px gap around a 40px face; see PortraitGrid. */}
-      <PopoverContent align="start" className="w-[352px] p-3">
+      <AnimatedPopoverContent align="start" className="w-[352px] p-3">
         {/*
           A standing preview at the size the portrait is actually worn, so the face being judged
           is never the 40px thumbnail. It sits above the grid and stays put: picking updates it
@@ -104,7 +104,7 @@ export function AgentPortraitPicker({
           background={background}
           onPick={(picked) => onChange(picked === fallbackId ? null : picked)}
         />
-      </PopoverContent>
+      </AnimatedPopoverContent>
     </Popover>
   );
 }

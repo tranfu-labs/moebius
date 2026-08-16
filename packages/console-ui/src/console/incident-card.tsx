@@ -35,7 +35,7 @@ export function IncidentNotice({ incident, className }: {
     <div
       role="status"
       className={cn(
-        "inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-md bg-sunken px-2 py-1 text-[12.5px] leading-5",
+        "inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-lg bg-sunken px-2 py-1 text-sm leading-5",
         className,
       )}
     >

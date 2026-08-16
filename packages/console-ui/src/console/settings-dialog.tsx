@@ -169,19 +169,19 @@ export function SettingsDialog({
           className={cn(
             "fixed left-1/2 top-1/2 z-[101] grid max-h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))]",
             "-translate-x-1/2 -translate-y-1/2 grid-rows-[auto_minmax(0,1fr)] overflow-hidden",
-            "rounded-[14px] border border-line bg-sunken text-ink",
+            "rounded-xl border border-line bg-sunken text-ink",
           )}
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
           <header className="flex min-h-[52px] items-center justify-between border-b border-line bg-card px-4">
-            <Dialog.Title className="font-display text-base font-semibold tracking-[-0.01em]">
+            <Dialog.Title className="font-sans text-base font-semibold tracking-[-0.01em]">
               {t("settings.title")}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label={t("common.close")}
                 title={t("common.close")}
               >
@@ -269,10 +269,10 @@ function SettingsNavItem({
     <button
       type="button"
       className={cn(
-        "flex h-9 w-full items-center gap-2 rounded-sm px-2.5 text-left text-sm transition-colors",
+        "flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         "max-[620px]:w-auto max-[620px]:min-w-24",
-        active ? "bg-sel font-medium text-ink" : "text-sub hover:bg-hover hover:text-ink",
+        active ? "bg-sel font-normal text-ink" : "text-sub hover:bg-hover hover:text-ink",
       )}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
@@ -309,11 +309,11 @@ function GeneralSettings({
   return (
     <>
       <fieldset>
-        <legend className="text-sm font-medium">{t("settings.language")}</legend>
+        <legend className="text-sm font-normal">{t("settings.language")}</legend>
         <p id="settings-language-description" className="mt-1 text-sm text-sub">
           {t("settings.language.description")}
         </p>
-        <div className="mt-4 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+        <div className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
           {localeOptions.map((locale) => {
             const checked = selectedLocale === locale;
             return (
@@ -383,7 +383,7 @@ function GeneralSettings({
 
       {taskReminder !== undefined ? (
         <fieldset className="mt-8 border-t border-line pt-6">
-          <legend className="text-sm font-medium">{t("settings.taskReminder")}</legend>
+          <legend className="text-sm font-normal">{t("settings.taskReminder")}</legend>
           <TerminalNotificationSettings
             enabled={taskReminder.enabled}
             saveStatus={taskReminder.saveStatus}
@@ -487,15 +487,15 @@ function AboutSettings({
       <div className="flex items-center gap-3">
         <MoebiusLogo className="h-11 w-11" decorative />
         <div className="min-w-0">
-          <p className="font-display text-lg font-semibold tracking-[-0.01em]">Moebius</p>
+          <p className="font-sans text-lg font-semibold tracking-[-0.01em]">Moebius</p>
           <p className="mt-0.5 text-sm text-sub">{t("settings.about.tagline")}</p>
         </div>
       </div>
 
-      <dl className="mt-6 divide-y divide-line overflow-hidden rounded-sm border border-line bg-card">
+      <dl className="mt-6 divide-y divide-line overflow-hidden rounded-md border border-line bg-card">
         <SettingsInfoRow label={t("settings.version")}>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <span className="tnum select-text text-sm font-medium">{state.currentVersion}</span>
+            <span className="tnum select-text text-sm font-normal">{state.currentVersion}</span>
             <Button
               type="button"
               variant="ghost"
@@ -599,12 +599,12 @@ function UpdateStatus({
         </p>
       ) : null}
       {state.updateStatus === "available" ? (
-        <p className="text-sm font-medium">
+        <p className="text-sm font-normal">
           {t("settings.update.downloading", { version: state.latestVersion ?? "" })}
         </p>
       ) : null}
       {state.updateStatus === "downloading" ? (
-        <p className="text-sm font-medium">
+        <p className="text-sm font-normal">
           {t("settings.update.downloadingProgress", {
             version: state.latestVersion ?? "",
             progress: Math.round(state.progress ?? 0),
@@ -613,7 +613,7 @@ function UpdateStatus({
       ) : null}
       {state.updateStatus === "ready" ? (
         <>
-          <p className="flex items-center gap-2 text-sm font-medium">
+          <p className="flex items-center gap-2 text-sm font-normal">
             <CheckCircle2 className="h-4 w-4 text-sub" strokeWidth={1.5} aria-hidden="true" />
             {state.skippedVersion
               ? t("settings.update.readySkipped", { version: state.latestVersion ?? "" })
@@ -628,7 +628,7 @@ function UpdateStatus({
         </>
       ) : null}
       {state.updateStatus === "installing" ? (
-        <p className="text-sm font-medium" aria-busy="true">
+        <p className="text-sm font-normal" aria-busy="true">
           {t("settings.update.installing")}
         </p>
       ) : null}

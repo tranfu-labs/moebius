@@ -148,7 +148,7 @@ export function NewConversationPage({
       >
         <h1
           className={cn(
-            "mx-auto w-full truncate font-display text-[15px] font-semibold tracking-[-0.01em] text-ink",
+            "mx-auto w-full truncate font-sans text-base font-semibold tracking-[-0.01em] text-ink",
             MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
           )}
           title={t("console.newConversation.title")}
@@ -169,7 +169,7 @@ export function NewConversationPage({
           )}
           data-testid="new-conversation-column"
         >
-          <p className="mb-8 text-center text-lg font-medium text-ink">{t("console.newConversation.invitation")}</p>
+          <p className="mb-8 text-center text-lg font-normal text-ink">{t("console.newConversation.invitation")}</p>
           {promptSuggestions.length > 0 ? (
             <div
               className="mb-4 flex flex-wrap justify-center gap-2"
@@ -238,7 +238,7 @@ export function NewConversationPage({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
                       aria-label={t("console.common.agentTeam")}
                       disabled={isSubmitting || teams.length === 0}
                       data-testid="new-conversation-team-picker"
@@ -292,7 +292,7 @@ export function NewConversationPage({
       {confirmIndependentWorkspace ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/20 p-6">
           <section
-            className="w-full max-w-md rounded-[14px] border border-line bg-sunken p-5 text-ink"
+            className="w-full max-w-md rounded-xl border border-line bg-sunken p-5 text-ink"
             role="dialog"
             aria-modal="true"
             aria-label={t("console.newConversation.switchWorktree")}
@@ -342,7 +342,7 @@ function WorkspaceMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50"
           aria-label={t("console.composerContext.workspaceSwitch", { workspace: label })}
           disabled={disabled}
         >
@@ -399,7 +399,7 @@ function ProjectMenu({
         <button
           type="button"
           className={cn(
-            "inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50",
+            "inline-flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-hover hover:text-ink disabled:opacity-50",
             selectedProject?.available === false && "bg-danger/10 text-danger hover:bg-danger/15 hover:text-danger",
           )}
           aria-label={selectedProject

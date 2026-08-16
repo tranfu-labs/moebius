@@ -77,14 +77,14 @@ export function WorkspaceFileView({
           {path}
         </div>
         {markdown ? (
-          <div className="flex shrink-0 rounded-md border border-line p-0.5" role="group" aria-label={t("console.fileSource.modeLabel")}>
+          <div className="flex shrink-0 rounded-lg border border-line p-0.5" role="group" aria-label={t("console.fileSource.modeLabel")}>
             {(["preview", "source"] as const).map((candidate) => (
               <button
                 key={candidate}
                 type="button"
                 className={cn(
                   "rounded px-2 py-1 text-xs text-sub hover:text-ink",
-                  mode === candidate && "bg-sel font-medium text-accent",
+                  mode === candidate && "bg-sel font-normal text-accent",
                 )}
                 aria-pressed={mode === candidate}
                 onClick={() => selectMode(candidate)}

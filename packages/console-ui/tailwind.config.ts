@@ -11,6 +11,45 @@ const config = {
     "../../node_modules/.pnpm/@streamdown+{code,cjk,math,mermaid}@*/node_modules/@streamdown/*/dist/**/*.js",
   ],
   theme: {
+    fontFamily: {
+      sans: [
+        "InterVar",
+        "ui-sans-serif",
+        "system-ui",
+        "-apple-system",
+        "\"Segoe UI\"",
+        "Roboto",
+        "\"PingFang SC\"",
+        "\"Hiragino Sans GB\"",
+        "\"Microsoft YaHei\"",
+        "sans-serif"
+      ],
+      mono: ["\"SF Mono\"", "Menlo", "Consolas", "monospace"]
+    },
+    fontSize: {
+      meta: ["11px", { lineHeight: "16px" }],
+      xs: ["12px", { lineHeight: "18px" }],
+      sm: ["13px", { lineHeight: "20px" }],
+      base: ["15px", { lineHeight: "22px" }],
+      lg: ["18px", { lineHeight: "26px" }],
+      // Markdown H1 only; legacy larger aliases collapse to the UI page-title ceiling.
+      xl: ["20px", { lineHeight: "28px" }],
+      "2xl": ["18px", { lineHeight: "26px" }],
+      "3xl": ["18px", { lineHeight: "26px" }],
+      "4xl": ["18px", { lineHeight: "26px" }]
+    },
+    fontWeight: {
+      // Keep compatibility aliases from creating real intermediate weights.
+      thin: "400",
+      extralight: "400",
+      light: "400",
+      normal: "400",
+      medium: "400",
+      semibold: "600",
+      bold: "600",
+      extrabold: "600",
+      black: "600"
+    },
     extend: {
       colors: {
         canvas: "var(--canvas)",
@@ -44,33 +83,12 @@ const config = {
         ring: "var(--ring)",
         sidebar: "var(--card)"
       },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)"
-      },
       boxShadow: {
-        overlay: "var(--shadow-pop)"
-      },
-      fontFamily: {
-        display: ["var(--font-display)"],
-        sans: [
-          "InterVar",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "\"Segoe UI\"",
-          "Roboto",
-          "\"PingFang SC\"",
-          "\"Hiragino Sans GB\"",
-          "\"Microsoft YaHei\"",
-          "sans-serif"
-        ],
-        mono: ["\"SF Mono\"", "Menlo", "Consolas", "monospace"]
-      },
-      fontWeight: {
-        medium: "510",
-        semibold: "590"
+        overlay: "var(--shadow-pop)",
+        panel: "var(--shadow-panel)",
+        composer: "var(--shadow-composer)",
+        "composer-focus": "var(--shadow-composer-focus)",
+        pending: "var(--shadow-pending)"
       },
       transitionDuration: {
         fast: "var(--dur-fast)",

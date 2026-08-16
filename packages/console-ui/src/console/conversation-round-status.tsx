@@ -59,8 +59,8 @@ export function ConversationRoundStatusList({
         onToggleProject !== undefined && "w-full text-left",
       )}
     >
-      <span className="h-3 w-3 rounded-sm bg-line" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+      <span className="h-3 w-3 rounded-md bg-line" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-sm font-normal text-ink">
         {t("console.conversationSidebar.projects")}
       </span>
       {projectStatus !== "none" ? (
@@ -78,12 +78,12 @@ export function ConversationRoundStatusList({
 
   return (
     <section
-      className="w-[252px] rounded-xl border border-line bg-canvas text-ink"
+      className="w-[252px] rounded-lg border border-line bg-canvas text-ink"
       aria-label={t("notification.status.title")}
       data-testid="conversation-round-status"
     >
       <header className="flex h-9 items-center border-b border-line px-3">
-        <h2 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-sub">
+        <h2 className="text-xs font-normal uppercase tracking-[0.06em] text-sub">
           {t("notification.status.title")}
         </h2>
       </header>
@@ -110,11 +110,11 @@ export function ConversationRoundStatusList({
           {rows.map((row) => (
             <li key={row.id}>
               <div
-                className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2"
+                className="flex h-8 min-w-0 items-center gap-1.5 rounded-xl px-2"
                 data-testid="conversation-round-status-row"
                 data-dot={row.dot}
               >
-                <span className="min-w-0 flex-1 truncate text-[13.5px] text-sub" title={row.title}>
+                <span className="min-w-0 flex-1 truncate text-sm text-sub" title={row.title}>
                   {row.title}
                 </span>
                 {row.dot !== "none" ? (
@@ -128,7 +128,7 @@ export function ConversationRoundStatusList({
 
       <footer className="flex h-9 items-center justify-between border-t border-line px-3">
         <span className="text-xs text-sub">{t("notification.dock.label")}</span>
-        <span className="tnum text-sm font-semibold text-ink" data-testid="conversation-round-dock-count">
+        <span className="tnum text-sm text-ink" data-testid="conversation-round-dock-count">
           {t("notification.dock.count", { count: dockCount })}
         </span>
       </footer>

@@ -1,4 +1,4 @@
-export const RIGHT_SIDEBAR_TOGGLE_DURATION_MS = 150;
+export const RIGHT_SIDEBAR_TOGGLE_DURATION_MS = 220;
 
 export interface RightSidebarToggleMotion {
   from: number;

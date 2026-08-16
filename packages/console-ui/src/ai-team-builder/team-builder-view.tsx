@@ -118,7 +118,7 @@ export function TeamBuilderView({
 
   return (
     <section
-      className="flex h-[min(720px,calc(100dvh-220px))] min-h-[460px] w-full max-w-[780px] flex-col overflow-hidden rounded-lg border border-line bg-card text-ink"
+      className="flex h-[min(720px,calc(100dvh-220px))] min-h-[460px] w-full max-w-[780px] flex-col overflow-hidden rounded-xl border border-line bg-card text-ink"
       data-testid="team-builder-view"
     >
       <header className="grid min-h-[58px] shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-line bg-sunken px-3.5">
@@ -133,7 +133,7 @@ export function TeamBuilderView({
           </span>
         </div>
         {contextLabel ? (
-          <span className="rounded-full border border-line px-2.5 py-1 text-xs font-medium text-sub">
+          <span className="rounded-full border border-line px-2.5 py-1 text-xs font-normal text-sub">
             {contextLabel}
           </span>
         ) : null}
@@ -159,8 +159,8 @@ export function TeamBuilderView({
             ) : null}
             <div
               className={cn(
-                "min-w-0 rounded-lg border border-line bg-sunken px-3 py-2",
-                message.role === "assistant" ? "rounded-tl-sm" : "rounded-tr-sm border-accent/50 bg-hover",
+                "min-w-0 rounded-xl border border-line bg-sunken px-3 py-2",
+                message.role === "assistant" ? "rounded-tl-md" : "rounded-tr-md border-accent/50 bg-hover",
               )}
             >
               <MarkdownMessage content={message.text} mode="static" />
@@ -184,7 +184,7 @@ export function TeamBuilderView({
             className="flex max-w-[88%] self-end items-start gap-2 max-sm:max-w-[96%]"
             data-testid="pending-team-builder-user-message"
           >
-            <div className="min-w-0 rounded-lg rounded-tr-sm border border-accent/50 bg-hover px-3 py-2">
+            <div className="min-w-0 rounded-xl rounded-tr-md border border-accent/50 bg-hover px-3 py-2">
               <MarkdownMessage content={pendingUserMessage.text} mode="static" />
             </div>
           </div>
@@ -195,7 +195,7 @@ export function TeamBuilderView({
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-accent text-accent">
               <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             </span>
-            <div className="rounded-lg rounded-tl-sm border border-line bg-sunken px-3 py-2.5">
+            <div className="rounded-xl rounded-tl-md border border-line bg-sunken px-3 py-2.5">
               <LoaderCircle className="h-4 w-4 animate-spin text-sub" strokeWidth={1.5} aria-hidden="true" />
               <span className="sr-only">{t("teamBuilder.typing")}</span>
             </div>
@@ -203,7 +203,7 @@ export function TeamBuilderView({
         ) : null}
 
         {state.error !== null ? (
-          <div className="ml-9 rounded-lg border border-danger/30 bg-card p-3 max-sm:ml-0" role="alert">
+          <div className="ml-9 rounded-xl border border-danger/30 bg-card p-3 max-sm:ml-0" role="alert">
             <div className="flex items-start gap-2 text-sm text-danger">
               <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span>{state.error.humanMessage}</span>
@@ -222,7 +222,7 @@ export function TeamBuilderView({
         <textarea
           ref={composerRef}
           aria-label={adjusting ? t("teamBuilder.adjustLabel") : t("teamBuilder.goalLabel")}
-          className="min-h-12 max-h-24 w-full resize-none rounded-md border border-line bg-input px-3 py-2 text-sm leading-5 text-ink outline-none placeholder:text-hint focus:border-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 max-h-24 w-full resize-none rounded-lg border border-line bg-input px-3 py-2 text-sm leading-5 text-ink outline-none placeholder:text-hint focus:border-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!canCompose || busy}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={adjusting

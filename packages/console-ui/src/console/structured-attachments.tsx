@@ -51,7 +51,7 @@ export function StructuredAttachmentList({
             {status === "failed" && onRetry ? (
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
                 aria-label={t("console.attachments.retryLabel", { name: attachment.displayName })}
                 title={t("console.attachments.retry", { name: attachment.displayName })}
                 onClick={() => onRetry(itemId)}
@@ -62,7 +62,7 @@ export function StructuredAttachmentList({
             {onRemove ? (
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-sub hover:bg-hover hover:text-ink"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
                 aria-label={t("console.attachments.removeLabel", { name: attachment.displayName })}
                 title={t("console.attachments.remove", { name: attachment.displayName })}
                 onClick={() => onRemove(itemId)}
@@ -77,7 +77,7 @@ export function StructuredAttachmentList({
           return (
             <article
               key={itemId}
-              className="relative flex h-24 w-32 min-w-0 overflow-hidden rounded-[10px] border border-line bg-sunken"
+              className="relative flex h-24 w-32 min-w-0 overflow-hidden rounded-md border border-line bg-sunken"
               aria-label={t("console.attachments.itemLabel", {
                 name: attachment.displayName,
                 status: attachmentStatusLabel(status, t),
@@ -91,7 +91,7 @@ export function StructuredAttachmentList({
                   <ImageIcon className="h-6 w-6" strokeWidth={1.5} aria-hidden="true" />
                 </span>
               )}
-              <span className="absolute inset-x-0 bottom-0 flex min-w-0 items-center gap-1 bg-ink/70 px-2 py-1 text-[11px] text-white">
+              <span className="absolute inset-x-0 bottom-0 flex min-w-0 items-center gap-1 bg-ink/70 px-2 py-1 text-meta text-white">
                 {status === "pending" ? <LoaderCircle className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" /> : null}
                 {status === "failed" ? <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> : null}
                 <span className="min-w-0 flex-1 truncate">{status === "pending" ? t("console.attachments.preparing") : attachment.displayName}</span>
@@ -106,7 +106,7 @@ export function StructuredAttachmentList({
           <article
             key={itemId}
             className={cn(
-              "flex min-h-14 min-w-0 max-w-full items-center gap-2 rounded-[10px] border bg-sunken px-3 py-2",
+              "flex min-h-14 min-w-0 max-w-full items-center gap-2 rounded-md border bg-sunken px-3 py-2",
               status === "failed" ? "border-danger/40" : "border-line",
             )}
             aria-label={t("console.attachments.itemLabel", {
@@ -123,8 +123,8 @@ export function StructuredAttachmentList({
               <FileText className="h-5 w-5 shrink-0 text-sub" strokeWidth={1.5} aria-hidden="true" />
             )}
             <span className="min-w-0 flex-1">
-              <span className="block max-w-56 truncate text-xs font-medium text-ink">{attachment.displayName}</span>
-              <span className={cn("block truncate text-[11px]", status === "failed" ? "text-danger" : "text-hint")}>
+              <span className="block max-w-56 truncate text-xs font-normal text-ink">{attachment.displayName}</span>
+              <span className={cn("block truncate text-meta", status === "failed" ? "text-danger" : "text-hint")}>
                 {status === "pending"
                   ? t("console.attachments.preparing")
                   : status === "failed"
