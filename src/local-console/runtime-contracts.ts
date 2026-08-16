@@ -30,6 +30,8 @@ export interface LocalConsoleRuntimeOptions {
   runCodex(options: CodexRunOptions): Promise<CodexRunResult>;
   runExecution?: LocalExecutionRunner;
   runPi?: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
+  /** 新会话首条消息后的自动标题生成（默认 true；测试基建可关闭以避免干扰执行 spy）。 */
+  enableSessionTitleGeneration?: boolean;
   createManagedProcessMcp?(input: { sessionId: string; providerRunId: string; workspaceRoot: string }): ManagedProcessMcpInvocation | Promise<ManagedProcessMcpInvocation>;
   getManagedProcessRunningCount?(): number;
   beforeStoreClose?(): Promise<void>;

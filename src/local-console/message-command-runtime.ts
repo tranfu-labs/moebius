@@ -6,6 +6,7 @@ import {
   decideSubmittedMessageWake,
   planSubmittedMessageContent,
 } from "./message-command-plan.js";
+import { decideTitleGeneration } from "./session-title-plan.js";
 import { LocalConsoleBusyError, type LocalConsoleMessage, type LocalConsoleTextFragment } from "./types.js";
 
 export class LocalConsoleMessageCommandRuntime {
@@ -15,6 +16,7 @@ export class LocalConsoleMessageCommandRuntime {
     assertSessionCanContinue(sessionId: string): Promise<void>;
     hasActivePrimary(sessionId: string): boolean;
     hasPersistedPrimary(sessionId: string): Promise<boolean>;
+    hasAnyMessages(sessionId: string): Promise<boolean>;
     sessionSummary(sessionId: string): Promise<import("./types.js").LocalConsoleSessionSummary>;
     resolveDispatch(sessionId: string, body: string): Promise<import("./user-message-routing.js").LocalUserMessageDispatch>;
     appendUserMessage(input: {
@@ -42,6 +44,8 @@ export class LocalConsoleMessageCommandRuntime {
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
     setLastError(error: string | null): void;
     schedulePendingProcessing(sessionId: string): void;
+    /** 新会话首条消息落库后触发异步标题生成（fire-and-forget）。 */
+    generateSessionTitle(input: { sessionId: string; firstMessageBody: string }): void;
   }) {}
 
   async submit(
@@ -53,9 +57,11 @@ export class LocalConsoleMessageCommandRuntime {
   ): Promise<LocalConsoleMessage> {
     const content = planSubmittedMessageContent({ body, attachmentIds, textFragments });
     await this.input.assertSessionCanContinue(sessionId);
+    const persistedPrimary = await this.input.hasPersistedPrimary(sessionId);
+    const wasFirstMessage = !(await this.input.hasAnyMessages(sessionId));
     const admission = decidePrimaryMessageAdmission({
       activePrimary: this.input.hasActivePrimary(sessionId),
-      persistedPrimary: await this.input.hasPersistedPrimary(sessionId),
+      persistedPrimary,
     });
     if (admission.kind === "busy") throw new LocalConsoleBusyError();
     const dispatchDecision = decideSubmittedMessageDispatch(await this.input.sessionSummary(sessionId));
@@ -71,6 +77,13 @@ export class LocalConsoleMessageCommandRuntime {
         dispatch,
         now: this.input.nowIso(),
       }));
+    const titleGeneration = decideTitleGeneration({
+      wasFirstMessage,
+      firstMessageHasText: content.trimmed !== "",
+    });
+    if (titleGeneration.kind === "generate") {
+      this.input.generateSessionTitle({ sessionId, firstMessageBody: content.trimmed });
+    }
     const resumeLinkRead = decideEditResumeLinkRead(resumeRunId);
     const resume = decideEditResumeRecord({
       resumeRunId,
