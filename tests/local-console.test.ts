@@ -59,6 +59,7 @@ async function startLocalConsoleServer(options: LocalConsoleServerOptions = {}):
   const projectRoot = options.projectRoot ?? process.cwd();
   return startLocalConsoleServerImpl({
     ...options,
+    enableSessionTitleGeneration: options.enableSessionTitleGeneration ?? false,
     isCodexThreadAvailable: options.isCodexThreadAvailable ?? (async () => true),
     listAgentFiles: options.listAgentFiles ?? (async () => {
       const agentsDirectory = path.join(projectRoot, "agents");

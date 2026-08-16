@@ -7,7 +7,12 @@ import { waitForValue } from "../src/testing/wait.js";
 
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
+import { startLocalConsoleServer as startLocalConsoleServerImpl, type StartedLocalConsoleServer } from "../src/local-console/start.js";
+import type { LocalConsoleServerOptions } from "../src/local-console/start.js";
+
+/** 测试基建统一关闭自动标题生成，避免标题 one-shot 污染执行 spy；需要时显式开启。 */
+const startLocalConsoleServer = (options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> =>
+  startLocalConsoleServerImpl({ ...options, enableSessionTitleGeneration: options.enableSessionTitleGeneration ?? false });
 import {
   LOCAL_CONSOLE_DEFAULT_SESSION_ID,
   type LocalConsoleMessage,
