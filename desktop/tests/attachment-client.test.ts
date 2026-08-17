@@ -83,6 +83,7 @@ describe("managed attachment client", () => {
       draftKey: "draft:new",
       file,
       preview: null,
+      largePreview: null,
       signal: new AbortController().signal,
     };
 
@@ -94,6 +95,80 @@ describe("managed attachment client", () => {
       ...options,
       fetch: vi.fn(async () => jsonResponse({}, 500)),
     })).rejects.toEqual(new ManagedAttachmentFailure("attachment-upload"));
+  });
+
+  it("submits both derived preview tiers before the attachment becomes ready", async () => {
+    const responses = [
+      jsonResponse({ status: "preview-required", uploadId: "upload-1", svg: false }, 202),
+      jsonResponse({ status: "staged" }, 202),
+      jsonResponse({ attachment: {
+        attachmentId: "final",
+        kind: "image",
+        displayName: "screen.png",
+        mediaType: "image/png",
+        byteSize: 3,
+      } }, 201),
+    ];
+    const fetch = vi.fn(async (_input: RequestInfo | URL) => responses.shift()!);
+    const attachment = await uploadManagedAttachment({
+      apiBase: "http://127.0.0.1:8788/",
+      capability: "test-capability",
+      draftKey: "draft:new",
+      file: new File(["png-bytes"], "screen.png", { type: "image/png" }),
+      preview: new Blob(["thumbnail"]),
+      largePreview: new Blob(["large"]),
+      signal: new AbortController().signal,
+      fetch,
+    });
+    expect(attachment.attachmentId).toBe("final");
+    expect(fetch.mock.calls.map((call) => new URL(String(call[0])).pathname)).toEqual([
+      "/api/local-console/attachments",
+      "/api/local-console/attachments/uploads/upload-1/preview",
+      "/api/local-console/attachments/uploads/upload-1/preview-large",
+    ]);
+  });
+
+  it("falls back a server-recognized SVG to an ordinary file when previews are unavailable", async () => {
+    const responses = [
+      jsonResponse({ status: "preview-required", uploadId: "upload-svg", svg: true }, 202),
+      jsonResponse({ attachment: {
+        attachmentId: "svg-file",
+        kind: "file",
+        displayName: "diagram.svg",
+        mediaType: "image/svg+xml",
+        byteSize: 4,
+      } }, 200),
+    ];
+    const fetch = vi.fn(async (_input: RequestInfo | URL) => responses.shift()!);
+    const attachment = await uploadManagedAttachment({
+      apiBase: "http://127.0.0.1:8788/",
+      capability: "test-capability",
+      draftKey: "draft:new",
+      file: new File(["<svg/>"], "diagram.svg", { type: "image/svg+xml" }),
+      preview: null,
+      largePreview: null,
+      signal: new AbortController().signal,
+      fetch,
+    });
+    expect(attachment).toMatchObject({ attachmentId: "svg-file", kind: "file", mediaType: "image/svg+xml" });
+    expect(fetch.mock.calls.map((call) => new URL(String(call[0])).pathname)).toEqual([
+      "/api/local-console/attachments",
+      "/api/local-console/attachments/uploads/upload-svg/fallback",
+    ]);
+  });
+
+  it("keeps a preview candidate without previews and without the SVG mark unavailable", async () => {
+    const fetch = vi.fn(async () => jsonResponse({ status: "preview-required", uploadId: "upload-1", svg: false }, 202));
+    await expect(uploadManagedAttachment({
+      apiBase: "http://127.0.0.1:8788/",
+      capability: "test-capability",
+      draftKey: "draft:new",
+      file: new File(["x"], "x.png", { type: "image/png" }),
+      preview: null,
+      largePreview: null,
+      signal: new AbortController().signal,
+      fetch,
+    })).rejects.toEqual(new ManagedAttachmentFailure("attachment-preview-not-ready"));
   });
 });
 

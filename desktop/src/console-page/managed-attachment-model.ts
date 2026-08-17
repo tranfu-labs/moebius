@@ -1,10 +1,7 @@
-import type {
-  ComposerAttachment,
-  OperatorMessage,
-  StructuredAttachment,
-} from "@moebius/console-ui";
+import type { ComposerAttachment, OperatorMessage, StructuredAttachment } from "@moebius/console-ui";
 
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
+import type { DerivedPngPreviews } from "./attachment-preview.js";
 import type {
   ManagedAttachmentFailureCode,
   PendingAttachmentHandle,
@@ -45,6 +42,15 @@ export function decideAttachmentService(options: {
   return options.apiBase === null || options.capability === null
     ? { kind: "unavailable" }
     : { kind: "available", apiBase: options.apiBase, capability: options.capability };
+}
+
+/** Maps two-tier derivation results to upload commit arguments (domain): both tiers are null without a decode. */
+export function planUploadPreviewArgs(
+  previews: DerivedPngPreviews | null,
+): { preview: Blob | null; largePreview: Blob | null } {
+  return previews === null
+    ? { preview: null, largePreview: null }
+    : { preview: previews.thumbnail, largePreview: previews.large };
 }
 
 export function planReadyAttachmentIds(attachments: readonly ComposerAttachment[]): string[] {

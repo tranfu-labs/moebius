@@ -26,6 +26,7 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
   draftKey: string;
   file: File;
   preview: Blob | null;
+  largePreview: Blob | null;
   signal: AbortSignal;
 }): Promise<StructuredAttachment> {
   const url = endpoint(input.apiBase, "/api/local-console/attachments");
@@ -43,6 +44,7 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
   const uploaded = await readJson<{
     status?: "ready" | "preview-required";
     uploadId?: string;
+    svg?: boolean;
     attachment?: StructuredAttachment;
     error?: string;
   }>(uploadResponse);
@@ -52,12 +54,48 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
       : new Error(uploaded.error);
   }
   if (uploaded.status === "ready" && uploaded.attachment !== undefined) return uploaded.attachment;
-  if (uploaded.status !== "preview-required" || uploaded.uploadId === undefined || input.preview === null) {
+  if (uploaded.status !== "preview-required" || uploaded.uploadId === undefined) {
     throw new ManagedAttachmentFailure("attachment-preview-not-ready");
   }
+  const uploadId = encodeURIComponent(uploaded.uploadId);
+  if (input.preview !== null && input.largePreview !== null) {
+    const thumbnail = await submitDerivedPreview(input, uploadId, "/preview", input.preview);
+    if (thumbnail.attachment !== undefined) return thumbnail.attachment;
+    const large = await submitDerivedPreview(input, uploadId, "/preview-large", input.largePreview);
+    if (large.attachment !== undefined) return large.attachment;
+    throw new ManagedAttachmentFailure("attachment-preview-save");
+  }
+  if (uploaded.svg === true) {
+    const fallbackUrl = endpoint(
+      input.apiBase,
+      `/api/local-console/attachments/uploads/${uploadId}/fallback`,
+    );
+    fallbackUrl.searchParams.set("draftKey", input.draftKey);
+    const fallbackResponse = await input.fetch(fallbackUrl, {
+      method: "POST",
+      headers: { [ATTACHMENT_CAPABILITY_HEADER]: input.capability },
+      signal: input.signal,
+    });
+    const fallback = await readJson<{ attachment?: StructuredAttachment; error?: string }>(fallbackResponse);
+    if (!fallbackResponse.ok || fallback.attachment === undefined) {
+      throw fallback.error === undefined
+        ? new ManagedAttachmentFailure("attachment-preview-save")
+        : new Error(fallback.error);
+    }
+    return fallback.attachment;
+  }
+  throw new ManagedAttachmentFailure("attachment-preview-not-ready");
+}
+
+async function submitDerivedPreview(
+  input: AttachmentClientOptions & { draftKey: string; signal: AbortSignal },
+  uploadId: string,
+  suffix: "/preview" | "/preview-large",
+  preview: Blob,
+): Promise<{ attachment?: StructuredAttachment }> {
   const previewUrl = endpoint(
     input.apiBase,
-    `/api/local-console/attachments/uploads/${encodeURIComponent(uploaded.uploadId)}/preview`,
+    `/api/local-console/attachments/uploads/${uploadId}${suffix}`,
   );
   previewUrl.searchParams.set("draftKey", input.draftKey);
   const previewResponse = await input.fetch(previewUrl, {
@@ -66,16 +104,16 @@ export async function uploadManagedAttachment(input: AttachmentClientOptions & {
       [ATTACHMENT_CAPABILITY_HEADER]: input.capability,
       "content-type": "image/png",
     },
-    body: input.preview,
+    body: preview,
     signal: input.signal,
   });
-  const finalized = await readJson<{ attachment?: StructuredAttachment; error?: string }>(previewResponse);
-  if (!previewResponse.ok || finalized.attachment === undefined) {
+  const finalized = await readJson<{ attachment?: StructuredAttachment; error?: string; status?: string }>(previewResponse);
+  if (!previewResponse.ok) {
     throw finalized.error === undefined
       ? new ManagedAttachmentFailure("attachment-preview-save")
       : new Error(finalized.error);
   }
-  return finalized.attachment;
+  return finalized;
 }
 
 export async function listManagedDraftAttachments(

@@ -7,6 +7,7 @@ export interface ManagedAttachmentClient {
     draftKey: string;
     file: File;
     preview: Blob | null;
+    largePreview: Blob | null;
     signal: AbortSignal;
   }): Promise<StructuredAttachment>;
   listDraft(input: {

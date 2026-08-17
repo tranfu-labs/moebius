@@ -13,6 +13,7 @@ export type ManagedAttachmentFailureCode =
   | "attachment-remove"
   | "attachment-preview-read"
   | "image-preview-budget"
+  | "image-preview-decode"
   | "image-dimensions-invalid"
   | "image-preview-canvas"
   | "image-preview-encode"

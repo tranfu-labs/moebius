@@ -9,6 +9,7 @@ import {
   planPendingAttachment,
   planMessagesWithAttachmentPreviews,
   planRemovedPreviewIds,
+  planUploadPreviewArgs,
   previewCacheKey,
   planVisibleRestoredAttachments,
 } from "../src/console-page/managed-attachment-model.js";
@@ -122,6 +123,14 @@ describe("managed attachment decisions", () => {
     })).toMatchObject({ main: "draft:new", sidebar: "draft:sidebar:draft-a" });
     expect(decideSidebarAttachmentPresenceCommit(false)).toBe("skip");
     expect(decideSidebarAttachmentPresenceCommit(true)).toBe("commit");
+  });
+
+  it("maps derived previews to upload arguments and fails to null without a decode", () => {
+    expect(planUploadPreviewArgs(null)).toEqual({ preview: null, largePreview: null });
+    expect(planUploadPreviewArgs({ thumbnail: new Blob(["t"]), large: new Blob(["l"]) })).toEqual({
+      preview: new Blob(["t"]),
+      largePreview: new Blob(["l"]),
+    });
   });
 });
 

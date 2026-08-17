@@ -14,7 +14,7 @@ import { useManagedAttachmentDrafts } from "../src/console-page/use-managed-atta
 import type { SidebarConversationDraftAttachmentPresence } from "../src/console-page/sidebar-conversation-drafts.js";
 
 vi.mock("../src/console-page/attachment-preview.js", () => ({
-  createBoundedPngPreview: async () => null,
+  createBoundedPngPreviews: async () => null,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
