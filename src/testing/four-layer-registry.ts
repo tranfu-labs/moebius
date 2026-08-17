@@ -498,6 +498,7 @@ export const FOUR_LAYER_ADAPTER_FILES = [
 export const FOUR_LAYER_DOMAIN_FILES = [
   "packages/console-ui/src/console/identity.ts",
   "packages/console-ui/src/console/file-view-state.ts",
+  "packages/console-ui/src/console/markdown-file-reference-plan.ts",
   "desktop/src/console-page/managed-process-sync-contract.ts",
   "desktop/src/console-page/managed-process-sync-model.ts",
   "src/local-console/managed-process-contract.ts",
