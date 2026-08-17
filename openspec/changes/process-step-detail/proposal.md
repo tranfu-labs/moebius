@@ -4,7 +4,7 @@
 
 | 文件 | 小节 | 变更 | 状态 |
 | --- | --- | --- | --- |
-| `docs/product/pages/agent-conversation.md` | [#过程步骤](../../../docs/product/pages/agent-conversation.md) | 新增小节：定义步骤行的动作与对象、按类型的可辨认事实、失败态、就地展开的输入与输出、单步输出有界规则 | 已写入 |
+| `docs/product/pages/agent-conversation.md` | [#过程步骤](../../../docs/product/pages/agent-conversation.md) | 新增小节：定义步骤行的动作与对象、按类型的可辨认事实、失败态、就地展开的输入与输出、单步输出有界规则；2026-08-17 按用户验收意见补充过程区位于角色与实时正文之间，并登记克制的展开反馈 | 已写入 |
 | `docs/product/pages/agent-conversation.md` | #最新活动 | 修改：「活动行不展示命令参数与命令输出」收窄为只约束常驻活动行，不约束主动展开的步骤详情；说明活动行的「正在／已完成」措辞为何不沿用到步骤行 | 已写入 |
 | `docs/product/pages/agent-conversation.md` | #指标与验收 | 新增验收 44–50；验收 4 收窄为只约束活动行 | 已写入 |
 | `docs/product/pages/agent-conversation.md` | #现状参考与产品缺口 | 新增 3 条缺口；#非目标 中「不把全量日志铺进时间线」补明有界展开不是例外 | 已写入 |
@@ -42,6 +42,7 @@
 4. **新增步骤级展开**：先输入后输出，单步输出超过约 12 行截断并说明剩余量，截断时错误信息优先保留。
 5. **失败步骤可辨认**：收起态显示错误中第一句有内容的话，跳过纯退出码行。
 6. **打开两个引擎的思考文本**：Claude 调用加 `--thinking-display summarized`，Codex 调用加 `-c model_reasoning_summary="detailed"`。两者均已实测有效，证据见 `design.md`。
+7. **调整过程区层级与展开反馈**：过程步骤紧贴角色信息并位于流式正文／活动摘要之前；过程区与单步详情使用可打断的高度和透明度过渡，减弱动效下即时切换。
 
 ## 影响
 
