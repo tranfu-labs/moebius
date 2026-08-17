@@ -20,6 +20,7 @@ export * from "./console/conversation-relay-rail-model";
 export * from "./console/conversation-sidebar";
 export * from "./console/execution-profile-registry";
 export * from "./console/markdown-message";
+export * from "./console/markdown-file-reference-plan";
 export * from "./console/managed-process-panel";
 export type { OperatorMemberIdentity } from "./console/member-name";
 export * from "./console/composer-context";

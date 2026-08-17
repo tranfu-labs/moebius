@@ -17,7 +17,8 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(here, "src/index.ts"),
-        styles: resolve(here, "src/style-entry.ts")
+        styles: resolve(here, "src/style-entry.ts"),
+        "markdown-file-reference-plan": resolve(here, "src/console/markdown-file-reference-plan.ts")
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`

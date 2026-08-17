@@ -14,6 +14,7 @@ export const managedAttachmentClient: ManagedAttachmentClient = {
   cloneMessage: (input) => cloneManagedMessageAttachments({ ...input, fetch: managedAttachmentFetch }),
   removeDraft: (input) => removeManagedDraftAttachment({ ...input, fetch: managedAttachmentFetch }),
   loadPreview: (input) => loadManagedAttachmentPreview({ ...input, fetch: managedAttachmentFetch }),
+  loadAgentImageSource: (input) => loadAgentImageSource({ ...input, fetch: managedAttachmentFetch }),
 };
 
 export interface AttachmentClientOptions {
@@ -199,6 +200,37 @@ export async function loadManagedAttachmentPreview(
     throw new ManagedAttachmentFailure("attachment-preview-read");
   }
   return await response.blob();
+}
+
+export type AgentImageSourceLoadResult =
+  | { ok: true; mediaType: string; blob: Blob }
+  | { ok: false; reason: string };
+
+export async function loadAgentImageSource(
+  input: AttachmentClientOptions & {
+    sessionId: string;
+    path: string;
+    signal?: AbortSignal;
+  },
+): Promise<AgentImageSourceLoadResult> {
+  const url = endpoint(
+    input.apiBase,
+    `/api/local-console/sessions/${encodeURIComponent(input.sessionId)}/agent-image-source`,
+  );
+  url.searchParams.set("path", input.path);
+  const response = await input.fetch(url, {
+    headers: { [ATTACHMENT_CAPABILITY_HEADER]: input.capability },
+    signal: input.signal,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { reason?: string } | null;
+    return { ok: false, reason: body?.reason ?? "unavailable" };
+  }
+  return {
+    ok: true,
+    mediaType: response.headers.get("content-type") ?? "application/octet-stream",
+    blob: await response.blob(),
+  };
 }
 
 function endpoint(base: string, path: string): URL {

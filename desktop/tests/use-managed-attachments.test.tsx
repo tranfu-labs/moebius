@@ -295,6 +295,11 @@ function attachmentClient(overrides: Partial<ManagedAttachmentClient>): ManagedA
     cloneMessage: vi.fn(async () => []),
     removeDraft: vi.fn(async () => undefined),
     loadPreview: vi.fn(async () => new Blob()),
+    loadAgentImageSource: vi.fn(async (): Promise<import("../src/console-page/managed-attachment-port.js").AgentImageSourceLoadResult> => ({
+      ok: true,
+      mediaType: "image/png",
+      blob: new Blob(),
+    })),
     ...overrides,
   };
 }

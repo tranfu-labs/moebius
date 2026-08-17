@@ -1,5 +1,9 @@
 import type { StructuredAttachment } from "@moebius/console-ui";
 
+export type AgentImageSourceLoadResult =
+  | { ok: true; mediaType: string; blob: Blob }
+  | { ok: false; reason: string };
+
 export interface ManagedAttachmentClient {
   upload(input: {
     apiBase: string;
@@ -37,4 +41,11 @@ export interface ManagedAttachmentClient {
     sessionId?: string;
     signal?: AbortSignal;
   }): Promise<Blob>;
+  loadAgentImageSource(input: {
+    apiBase: string;
+    capability: string;
+    sessionId: string;
+    path: string;
+    signal?: AbortSignal;
+  }): Promise<AgentImageSourceLoadResult>;
 }
