@@ -29,6 +29,12 @@ interface LocalActivityStepWireShape {
   action: string;
   object: string | null;
   occurredAt: string;
+  lineObject?: string | null;
+  callId?: string | null;
+  input?: string | null;
+  output?: string | null;
+  outputRemainingLines?: number;
+  error?: string | null;
 }
 
 function planMessageProcessSteps(message: OperatorMessage): OperatorMessage {

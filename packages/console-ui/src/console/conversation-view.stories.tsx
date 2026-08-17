@@ -51,17 +51,75 @@ const loadRunAgentMarkdown: OperatorConsoleProps["onLoadRunAgentMarkdown"] = asy
 });
 
 const devTrail: ProcessStep[] = [
-  { id: "d1", kind: "thinking", title: "先确认构建能过，再看两处细节", status: "done" },
-  { id: "d2", kind: "command", title: "pnpm --filter marketing-site build", detail: "退出码 0", status: "done" },
-  { id: "d3", kind: "file", title: "读取 index.astro", status: "done" },
-  { id: "d4", kind: "file", title: "读取 share-card.tsx", status: "done" },
-  { id: "d5", kind: "search", title: "搜索标题截断逻辑", detail: "3 处命中", status: "done" },
+  {
+    id: "d1",
+    kind: "thinking",
+    title: "先确认构建能过，再看两处细节",
+    status: "done",
+    input: "先跑构建，再核对首页文案与分享卡片标题截断。",
+    output: null,
+  },
+  {
+    id: "d2",
+    kind: "command",
+    title: "pnpm --filter marketing-site build",
+    detail: "退出码 0",
+    status: "done",
+    input: "pnpm --filter marketing-site build",
+    output: "12 pages built\ncompleted in 1.8s",
+  },
+  {
+    id: "d3",
+    kind: "file",
+    title: "读取 index.astro",
+    status: "done",
+    input: "sites/marketing/src/pages/index.astro",
+    output: "首页标题与英文版对应，未发现缺失段落。",
+  },
+  {
+    id: "d4",
+    kind: "file",
+    title: "读取 share-card.tsx",
+    status: "done",
+    input: "sites/marketing/src/components/share-card.tsx",
+    output: "分享卡片使用 1200×630 画布。",
+  },
+  {
+    id: "d5",
+    kind: "search",
+    title: "搜索标题截断逻辑",
+    detail: "3 处命中",
+    status: "done",
+    input: "title.length > 40",
+    output: "share-card.tsx:18\nshare-card.test.ts:42\nshare-card.test.ts:57",
+  },
 ];
 
 const releaseTrail: ProcessStep[] = [
-  { id: "r1", kind: "thinking", title: "确认版本号与 changelog 是否齐了", status: "done" },
-  { id: "r2", kind: "command", title: "git tag v0.4.3", status: "done" },
-  { id: "r3", kind: "tool", title: "生成 changelog", status: "running" },
+  {
+    id: "r1",
+    kind: "thinking",
+    title: "确认版本号与 changelog 是否齐了",
+    status: "done",
+    input: "先核对版本号，再生成 changelog。",
+    output: null,
+  },
+  {
+    id: "r2",
+    kind: "command",
+    title: "git tag v0.4.3",
+    status: "done",
+    input: "git tag v0.4.3",
+    output: "tag v0.4.3 created",
+  },
+  {
+    id: "r3",
+    kind: "tool",
+    title: "生成 changelog",
+    status: "running",
+    input: "release notes from v0.4.2..HEAD",
+    output: null,
+  },
 ];
 
 const pmMarkdown = [
@@ -348,6 +406,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const RelayRunning: Story = {};
+
+export const ProcessTrailLifecycle: Story = {
+  name: "过程步骤 · 运行中与终局",
+};
 
 /** 主运行的「停下」在输入框；成员运行的「停下」长在它自己的运行块上。 */
 export const MemberRunStoppable: Story = {

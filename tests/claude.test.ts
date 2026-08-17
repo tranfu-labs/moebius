@@ -11,6 +11,7 @@ import {
   runClaude,
 } from "../src/claude.js";
 import {
+  isClaudeThinkingDisplaySupported,
   isSupportedClaudeCliVersion,
   parseClaudeCliVersion,
 } from "../src/claude-cli-version.js";
@@ -36,6 +37,13 @@ describe("Claude CLI version and executable contracts", () => {
     expect(isSupportedClaudeCliVersion("2.1.170 (Claude Code)")).toBe(true);
     expect(isSupportedClaudeCliVersion("2.1.169 (Claude Code)")).toBe(false);
     expect(isSupportedClaudeCliVersion("not-a-version")).toBe(false);
+  });
+
+  it("gates the thinking-display flag on its own measured floor without raising the global minimum", () => {
+    expect(isClaudeThinkingDisplaySupported("2.1.222 (Claude Code)")).toBe(true);
+    expect(isClaudeThinkingDisplaySupported("2.1.221 (Claude Code)")).toBe(false);
+    expect(isClaudeThinkingDisplaySupported("2.1.170 (Claude Code)")).toBe(false);
+    expect(isClaudeThinkingDisplaySupported("not-a-version")).toBe(false);
   });
 
   it("keeps PATH-first resolution and only falls back when PATH has no candidate", async () => {
@@ -424,6 +432,52 @@ setTimeout(() => {}, 10000);
     });
     expect(spawnProcess).not.toHaveBeenCalled();
     expect(onSessionStarted).not.toHaveBeenCalled();
+  });
+
+  it("passes --thinking-display summarized only on CLIs at or above the measured floor", async () => {
+    const root = await makeTempRoot();
+    const argvLog = path.join(root, "argv.json");
+    const fixture = await makeFakeClaude(`
+const fs = require("node:fs");
+const session = process.argv[process.argv.indexOf("--session-id")+1];
+fs.writeFileSync(process.env.MOEBIUS_TEST_ARGV_LOG, JSON.stringify(process.argv));
+console.log(JSON.stringify({type:"system",subtype:"init",session_id:session,tools:["Read"]}));
+console.log(JSON.stringify({type:"result",session_id:session,result:"done",subtype:"success"}));
+`);
+    const previous = process.env.MOEBIUS_TEST_ARGV_LOG;
+    process.env.MOEBIUS_TEST_ARGV_LOG = argvLog;
+    try {
+      await runClaude({
+        prompt: "hello",
+        runDir: path.join(root, "run-new"),
+        cwd: root,
+        profile: { cli: "claude", model: "sonnet", effort: "high" },
+        mode: { kind: "full" },
+        executablePath: fixture.executablePath,
+        runVersion: async () => "2.1.222 (Claude Code)",
+      });
+      const newArgs = JSON.parse(await fs.readFile(argvLog, "utf8")) as string[];
+      expect(newArgs).toContain("--thinking-display");
+      expect(newArgs[newArgs.indexOf("--thinking-display") + 1]).toBe("summarized");
+
+      await runClaude({
+        prompt: "hello",
+        runDir: path.join(root, "run-old"),
+        cwd: root,
+        profile: { cli: "claude", model: "sonnet", effort: "high" },
+        mode: { kind: "full" },
+        executablePath: fixture.executablePath,
+        runVersion: async () => "2.1.170 (Claude Code)",
+      });
+      const oldArgs = JSON.parse(await fs.readFile(argvLog, "utf8")) as string[];
+      expect(oldArgs).not.toContain("--thinking-display");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.MOEBIUS_TEST_ARGV_LOG;
+      } else {
+        process.env.MOEBIUS_TEST_ARGV_LOG = previous;
+      }
+    }
   });
 
   it("settles cancellation through bounded signal escalation", async () => {

@@ -9,6 +9,7 @@ import {
   NARROW_WINDOW_WIDTH_PX,
   OperatorConsole,
   ResponsiveOperatorConsole,
+  activityStepsToProcessSteps,
   resolveNewConversationAgentTeamKey,
   type OperatorConsoleProps,
   type OperatorMessage,
@@ -3605,6 +3606,59 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "项目：未选择，点击选择" })).toHaveTextContent("选择项目");
     expect(screen.queryByRole("region", { name: "会话时间线" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "默认会话，正在运行" })).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("activityStepsToProcessSteps", () => {
+  it("strips the running/completed verb prefix and maps failure, input, output, and remaining count", () => {
+    const steps = activityStepsToProcessSteps([
+      {
+        kind: "command",
+        phase: "running",
+        action: "正在运行命令",
+        object: "pnpm test",
+        occurredAt: "2026-08-09T00:00:00.000Z",
+        input: "pnpm test --filter x",
+      },
+      {
+        kind: "command",
+        phase: "completed",
+        action: "已完成运行命令",
+        object: "pnpm test",
+        occurredAt: "2026-08-09T00:00:01.000Z",
+        output: "error: missing",
+        outputRemainingLines: 3,
+        error: "error: missing",
+      },
+    ]);
+
+    expect(steps).toEqual([
+      {
+        id: "2026-08-09T00:00:00.000Z-0",
+        kind: "command",
+        title: "运行命令",
+        detail: "pnpm test",
+        status: "running",
+        input: "pnpm test --filter x",
+      },
+      {
+        id: "2026-08-09T00:00:01.000Z-1",
+        kind: "command",
+        title: "运行命令",
+        detail: "pnpm test",
+        status: "failed",
+        output: "error: missing",
+        outputRemainingLines: 3,
+        error: "error: missing",
+      },
+    ]);
+  });
+
+  it("returns undefined for empty, progress-only, or absent trails", () => {
+    expect(activityStepsToProcessSteps(undefined)).toBeUndefined();
+    expect(activityStepsToProcessSteps([
+      { kind: "progress", phase: "running", action: "正在处理", object: "正文", occurredAt: "2026-08-09T00:00:00.000Z" },
+    ])).toBeUndefined();
   });
 });
 

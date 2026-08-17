@@ -461,6 +461,8 @@ export interface OperatorRunSnapshot {
     phase: "running" | "completed";
     action: string;
     object: string | null;
+    /** Safe object for the always-visible activity line; falls back to `object`. */
+    lineObject?: string | null;
     occurredAt: string;
   } | null;
   runDir: string | null;
@@ -477,6 +479,12 @@ export interface OperatorRunSnapshot {
     action: string;
     object: string | null;
     occurredAt: string;
+    lineObject?: string | null;
+    callId?: string | null;
+    input?: string | null;
+    output?: string | null;
+    outputRemainingLines?: number;
+    error?: string | null;
   }[];
   processSteps?: readonly ProcessStep[];
   lastOutputSummary: string;
@@ -3958,12 +3966,29 @@ export function activityStepsToProcessSteps(
       : [{
           id: `${step.occurredAt}-${String(index)}`,
           kind,
-          title: step.action,
+          // Step rows strip the running/completed verb prefix (PRD acceptance 47).
+          title: stripActivityStepPrefix(step.action),
           detail: step.object,
-          status: step.phase === "completed" ? ("done" as const) : ("running" as const),
+          status: step.error === undefined || step.error === null
+            ? step.phase === "completed" ? ("done" as const) : ("running" as const)
+            : ("failed" as const),
+          ...(step.input === undefined ? {} : { input: step.input }),
+          ...(step.output === undefined ? {} : { output: step.output }),
+          ...(step.outputRemainingLines === undefined ? {} : { outputRemainingLines: step.outputRemainingLines }),
+          ...(step.error === undefined ? {} : { error: step.error }),
         }];
   });
   return mapped.length === 0 ? undefined : mapped;
+}
+
+/**
+ * Step rows must not repeat the running/completed verb prefix (PRD acceptance
+ * 47); the always-visible activity line keeps the prefixed action. The prefix
+ * comes from the domain-side activity verbs; it is matched with escapes here
+ * to keep the component library free of CJK literals (production-copy-guard).
+ */
+function stripActivityStepPrefix(action: string): string {
+  return action.replace(/^(?:\u6b63\u5728|\u5df2\u5b8c\u6210)/u, "");
 }
 
 function resolveMessageProcessRole(

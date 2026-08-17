@@ -52,6 +52,30 @@ describe("RunBlock", () => {
     expect(screen.getByTestId("run-live-output")).toHaveClass("pl-7");
   });
 
+  it("places the open process trail between the role row and current output", () => {
+    render(
+      <RunBlock
+        role="dev"
+        activity={{ action: "正在运行命令", object: "pnpm test" }}
+        processSteps={[{
+          id: "command",
+          kind: "command",
+          title: "运行测试",
+          status: "running",
+          input: "pnpm test",
+          output: null,
+        }]}
+      />,
+    );
+
+    const activity = screen.getByTestId("run-activity");
+    const step = screen.getByRole("button", { name: "展开步骤：运行测试" });
+    const role = screen.getByText("开发");
+    expect(role.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(step.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /思考与工具调用/u })).not.toBeInTheDocument();
+  });
+
   it("degrades to a single useful line when no step data exists", () => {
     render(
       <RunBlock

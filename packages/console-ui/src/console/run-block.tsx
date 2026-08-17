@@ -43,6 +43,8 @@ export interface RunBlockProps {
   activity?: {
     action: string;
     object: string | null;
+    /** Safe object for the activity line; falls back to `object` when absent. */
+    lineObject?: string | null;
   } | null;
   processOutputAvailable?: boolean;
   outputUnavailableMessage?: string;
@@ -167,15 +169,15 @@ export function RunBlock({
             "mt-2.5 flex min-w-0 items-center gap-1 overflow-hidden text-sm text-sub",
             variant === "main" ? "pl-8" : "pl-7",
           )}
-          title={[activity.action, activity.object].filter(Boolean).join(" · ")}
+          title={[activity.action, activityLineObject(activity)].filter(Boolean).join(" · ")}
           tabIndex={0}
           data-testid="run-activity"
         >
           <span className="shrink-0">{activity.action}</span>
-          {activity.object ? (
+          {activityLineObject(activity) ? (
             <>
               <span aria-hidden="true" className="text-hint">·</span>
-              <span className="truncate">{activity.object}</span>
+              <span className="truncate">{activityLineObject(activity)}</span>
             </>
           ) : null}
         </div>
@@ -277,4 +279,8 @@ function RunStepItem({ step }: { step: RunBlockStep; index: number }): JSX.Eleme
 function nonBlank(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function activityLineObject(activity: { object: string | null; lineObject?: string | null }): string | null {
+  return activity.lineObject ?? activity.object;
 }

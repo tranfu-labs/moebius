@@ -88,6 +88,13 @@ export interface LocalTerminalProcessStep {
   title: string;
   detail?: string | null;
   status?: "running" | "done" | "failed";
+  /** Read-only input captured for this step. `undefined` means an older record did not store it. */
+  input?: string | null;
+  /** Bounded, plain-text output. `undefined` means an older record did not store it. */
+  output?: string | null;
+  outputRemainingLines?: number;
+  /** A sanitized failure description; pure exit-code lines are ignored by the view. */
+  error?: string | null;
 }
 
 const TERMINAL_STEP_KIND: Record<string, LocalTerminalProcessStepKind | undefined> = {
@@ -111,10 +118,22 @@ export function planTerminalProcessSteps(
     mapped.push({
       id: `${step.occurredAt}-${String(index)}`,
       kind,
-      title: step.action,
+      // 步骤行不重复「正在／已完成」前缀：进行中由该行自身的进行态表达
+      // （PRD 验收 47）。活动行继续使用带前缀的 action。
+      title: stripStepPrefix(step.action),
       detail: step.object,
-      status: step.phase === "completed" ? "done" : "running",
+      status: step.error === undefined || step.error === null
+        ? step.phase === "completed" ? "done" : "running"
+        : "failed",
+      ...(step.input === undefined ? {} : { input: step.input }),
+      ...(step.output === undefined ? {} : { output: step.output }),
+      ...(step.outputRemainingLines === undefined ? {} : { outputRemainingLines: step.outputRemainingLines }),
+      ...(step.error === undefined ? {} : { error: step.error }),
     });
   });
   return mapped;
+}
+
+function stripStepPrefix(action: string): string {
+  return action.replace(/^(?:正在|已完成)/u, "");
 }
