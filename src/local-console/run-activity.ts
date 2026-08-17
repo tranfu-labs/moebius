@@ -407,6 +407,8 @@ function thinkingObject(text: string | null): string | null {
 function readThinkingText(item: Record<string, unknown>): string | null {
   const direct = readString(item.thinking) ?? readString(item.thought);
   if (direct !== null) return direct;
+  // Pi host 的 reasoning-delta 直接携带字符串增量。
+  if (typeof item.delta === "string") return item.delta;
   const delta = isRecord(item.delta) ? item.delta : null;
   const deltaText = readString(delta?.thinking) ?? readString(delta?.text);
   if (deltaText !== null) return deltaText;
@@ -550,7 +552,13 @@ function isToolReturnType(type: string | null): boolean {
 }
 
 function isThinkingType(type: string | null, item: Record<string, unknown>): boolean {
-  if (type === "thinking" || type === "reasoning" || type === "agent_reasoning" || type === "agent_thought_chunk") {
+  if (
+    type === "thinking"
+    || type === "reasoning"
+    || type === "agent_reasoning"
+    || type === "agent_thought_chunk"
+    || type === "reasoning-delta"
+  ) {
     return true;
   }
   const delta = isRecord(item.delta) ? item.delta : null;

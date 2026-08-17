@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  isClaudeThinkingDisplaySupported,
   isSupportedClaudeCliVersion,
   MINIMUM_CLAUDE_CLI_VERSION,
 } from "./claude-cli-version.js";
@@ -123,13 +124,14 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
     );
   }
 
+  let cliVersion: string | null = null;
   try {
-    const version = await (options.runVersion ?? runClaudeVersion)(
+    cliVersion = await (options.runVersion ?? runClaudeVersion)(
       executable,
       options.versionTimeoutMs ?? DEFAULT_VERSION_TIMEOUT_MS,
       options.signal,
     );
-    if (!isSupportedClaudeCliVersion(version)) {
+    if (!isSupportedClaudeCliVersion(cliVersion)) {
       return failed(
         "claude-cli-unsupported-version",
         `Claude Code 版本过旧，需要 ${MINIMUM_CLAUDE_CLI_VERSION} 或更高版本。`,
@@ -200,6 +202,11 @@ export async function runClaude(options: ClaudeRunOptions): Promise<CodexRunResu
     ...options,
     extraArgs: [
       ...(mcpConfigPath === null ? [] : ["--mcp-config", mcpConfigPath]),
+      // 思考展示是独立能力门槛（CLAUDE_THINKING_DISPLAY_MINIMUM_VERSION）；
+      // 低于门槛不传 flag，步骤行退化为无首句思考行，不影响其他步骤类型。
+      ...(cliVersion !== null && isClaudeThinkingDisplaySupported(cliVersion)
+        ? ["--thinking-display", "summarized"]
+        : []),
       ...(options.extraArgs ?? []),
     ],
   }, sessionId);

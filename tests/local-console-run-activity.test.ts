@@ -250,6 +250,32 @@ describe("thinking projection", () => {
 
     expect(activity).toMatchObject({ kind: "thinking", object: "**Planning complete** weighing decision tree" });
   });
+
+  it("projects a Pi reasoning-delta as a thinking step", () => {
+    const activity = projectStructuredRunActivity({
+      type: "reasoning-delta",
+      delta: "权衡两条路径。再决定。",
+    }, 6, "2026-08-09T05:32:29.000Z");
+
+    expect(activity).toMatchObject({ kind: "thinking", object: "权衡两条路径。" });
+  });
+
+  it("redacts credential assignments inside captured thinking text", () => {
+    const activity = projectStructuredRunActivity({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "thinking_delta",
+          thinking: "需要调用 Authorization: Bearer sk-live-0001 的接口。",
+        },
+      },
+    }, 7, "2026-08-09T05:32:30.000Z");
+
+    expect(JSON.stringify(activity)).not.toMatch(/sk-live-0001/u);
+    expect(activity?.input).toContain("***");
+  });
 });
 
 describe("tool return projection", () => {

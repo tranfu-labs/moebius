@@ -2,9 +2,9 @@
 
 ## 引擎能力
 
-- [ ] `buildClaudeArgs` 增加 `--thinking-display summarized`，并在现有 Claude CLI 版本校验处覆盖该 flag 可用性
-- [ ] `buildCodexExecOptionsForProfile` 增加 `-c model_reasoning_summary="detailed"`
-- [ ] 确认两个引擎开启后思考明文经过既有秘密边界，未出现 Key、凭据或授权头
+- [x] `buildClaudeArgs` 增加 `--thinking-display summarized`，并在现有 Claude CLI 版本校验处覆盖该 flag 可用性
+- [x] `buildCodexExecOptionsForProfile` 增加 `-c model_reasoning_summary="detailed"`
+- [x] 确认两个引擎开启后思考明文经过既有秘密边界，未出现 Key、凭据或授权头
 
 ## 步骤投影（local-console）
 
