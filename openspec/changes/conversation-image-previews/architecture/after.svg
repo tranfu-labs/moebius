@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="700" viewBox="0 0 1080 700" role="img" aria-labelledby="title desc">
+  <title id="title">Conversation image preview architecture after change</title>
+  <desc id="desc">User and Agent local images share Chromium-derived previews, an inline conversation component, and a large-image dialog while retaining separate storage and path controls.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#5E6AD2"/></marker>
+    <style>.box{fill:#fff;stroke:#60646c;stroke-width:1.5;rx:12}.accent{fill:#eef0ff;stroke:#5E6AD2;stroke-width:1.8;rx:12}.label{font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202124}.note{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#60646c}.line{stroke:#5E6AD2;stroke-width:2;fill:none;marker-end:url(#arrow)}.dash{stroke:#8b8d98;stroke-width:1.5;stroke-dasharray:6 5;fill:none;marker-end:url(#arrow)}</style>
+  </defs>
+  <rect width="1080" height="700" fill="#f7f7f8"/>
+  <text x="48" y="48" class="label">After · shared controlled image presentation</text>
+  <rect class="box" x="48" y="84" width="190" height="86"/><text class="label" x="74" y="118">User local file</text><text class="note" x="74" y="142">PNG/JPEG/GIF/WebP/SVG</text>
+  <rect class="accent" x="300" y="84" width="220" height="86"/><text class="label" x="328" y="118">Chromium image context</text><text class="note" x="328" y="142">thumbnail + detail PNG</text>
+  <rect class="box" x="582" y="84" width="220" height="86"/><text class="label" x="610" y="118">Managed attachment</text><text class="note" x="610" y="142">original + two derivatives</text>
+  <path class="line" d="M238 127 H300"/><path class="line" d="M520 127 H582"/>
+  <rect class="box" x="48" y="288" width="190" height="86"/><text class="label" x="74" y="322">Agent final reply</text><text class="note" x="74" y="346">ordered local file refs</text>
+  <rect class="box" x="300" y="288" width="220" height="86"/><text class="label" x="328" y="322">Session image endpoint</text><text class="note" x="328" y="346">capability + bounded bytes</text>
+  <rect class="accent" x="582" y="288" width="220" height="86"/><text class="label" x="610" y="322">Chromium image context</text><text class="note" x="610" y="346">temporary source → PNG</text>
+  <path class="line" d="M238 331 H300"/><path class="line" d="M520 331 H582"/>
+  <rect class="accent" x="842" y="176" width="190" height="106"/><text class="label" x="868" y="212">Conversation image</text><text class="note" x="868" y="236">inline preview + source</text><text class="note" x="868" y="258">local failure state</text>
+  <rect class="accent" x="842" y="374" width="190" height="86"/><text class="label" x="868" y="408">Large-image Dialog</text><text class="note" x="868" y="432">detail preview + return</text>
+  <path class="line" d="M802 127 C834 127 826 205 842 218"/>
+  <path class="line" d="M802 331 C834 331 826 252 842 240"/>
+  <path class="line" d="M937 282 V374"/>
+  <rect class="box" x="48" y="530" width="754" height="92"/><text class="label" x="74" y="564">Unchanged controls</text><text class="note" x="74" y="588">original Markdown file link · controlled file opening · no file: URL · no Node integration · object URLs released</text>
+  <path class="dash" d="M842 417 C760 450 720 500 680 530"/>
+</svg>
